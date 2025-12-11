@@ -1,6 +1,10 @@
 import { Linking, NativeEventEmitter, Platform } from 'react-native';
 import OKLiteManager from './NativeReactNativeLiteCard';
-import type { CallbackResult, CardInfo, PromiseResult } from './type';
+import type {
+  CallbackResult,
+  CardInfo,
+  PromiseResult,
+} from './NativeReactNativeLiteCard';
 
 export type NfcConnectUiState = {
   code: number;
@@ -93,4 +97,4 @@ class OnekeyLite {
 
 const onekeyLite = new OnekeyLite();
 export default onekeyLite;
-export * from './type';
+export type * from './NativeReactNativeLiteCard';
