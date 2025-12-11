@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["litecard"],
+  "ios": {
+    "iosModuleName": "LiteCard"
+  },
+  "android": {
+    "androidNamespace": ["litecard"],
+    "androidCxxLibName": "litecard"
+  },
+  "autolinking": {
+    "LiteCard": {
+      "swift": "LiteCard",
+      "kotlin": "LiteCard"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
