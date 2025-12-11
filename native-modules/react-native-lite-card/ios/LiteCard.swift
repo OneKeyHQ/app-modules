@@ -4,12 +4,6 @@ import NitroModules
 class LiteCard: HybridLiteCardSpec {
     private let liteManager: OKLiteManager
     
-    public var hybridContext = margelo.nitro.HybridContext()
-    
-    public var memorySize: Int {
-        return getSizeOf(self)
-    }
-    
     override init() {
         self.liteManager = OKLiteManager.shared()
         super.init()
@@ -50,7 +44,7 @@ class LiteCard: HybridLiteCardSpec {
                         
                         let liteCardInfo = LiteCardInfo(
                             hasBackup: hasBackup,
-                            pinRetryCount: pinRetryCount,
+                            pinRetryCount: Double(pinRetryCount),
                             isNewCard: isNewCard,
                             serialNum: serialNum
                         )
