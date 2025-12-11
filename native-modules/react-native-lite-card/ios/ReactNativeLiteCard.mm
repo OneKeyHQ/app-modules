@@ -181,7 +181,7 @@ typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
 
 - (void)reset:(RCTResponseSenderBlock)callBack
 {
-  if ([OKLiteManager checkSDKVaild:callBack]) {
+  if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager reset:^(OKLiteV1 *lite, BOOL isSuccess, NSError *error) {
       if (isSuccess) {
