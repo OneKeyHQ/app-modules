@@ -10,12 +10,11 @@ const root = path.resolve(__dirname, '..');
  *
  * @type {import('metro-config').MetroConfig}
  */
+const workspaceRoot = path.resolve(__dirname, '../../../');
 const metroConfig = withMetroConfig(getDefaultConfig(__dirname), {
   root,
   dirname: __dirname,
 });
-
-const workspaceRoot = path.resolve(__dirname, '../../../');
 
 metroConfig.watchFolders = [workspaceRoot];
 
@@ -24,4 +23,4 @@ metroConfig.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
-return metroConfig;
+module.exports = metroConfig;
