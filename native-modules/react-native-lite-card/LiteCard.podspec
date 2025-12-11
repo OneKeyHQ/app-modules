@@ -20,6 +20,19 @@ Pod::Spec.new do |s|
     "keys/**/*.{h,c}",
   ]
   s.vendored_framework = "ios/GPChannelSDKCore.xcframework"
+  
+  # Configure Swift and Objective-C interop
+  s.swift_version = "5.0"
+  s.pod_target_xcconfig = {
+    'SWIFT_OBJC_BRIDGING_HEADER' => '$(PODS_TARGET_SRCROOT)/ios/LiteCard-Bridging-Header.h'
+  }
+  
+  # Public headers for module mapping
+  s.public_header_files = [
+    "ios/Classes/OKLiteManager.h",
+    "ios/Classes/OKNFCLiteDefine.h",
+    "ios/Classes/OKNFCBridge.h"
+  ]
 
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
