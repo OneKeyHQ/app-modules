@@ -2,6 +2,7 @@ const path = require('path');
 const pkg = require('../package.json');
 
 module.exports = {
+  reactNativePath: path.join(__dirname, '..', '..', '..', 'node_modules', 'react-native'),
   project: {
     ios: {
       automaticPodsInstallation: true,
