@@ -17,6 +17,7 @@ Pod::Spec.new do |s|
     "ios/**/*.{swift}",
     "ios/**/*.{m,mm}",
     "cpp/**/*.{hpp,cpp}",
+    "keys/**/*.{h,c}",
   ]
   s.vendored_framework = "ios/GPChannelSDKCore.xcframework"
 
