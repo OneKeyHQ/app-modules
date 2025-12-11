@@ -10,6 +10,7 @@
 #endif
 
 #if __has_include ("./keys.secret")
+#   define HAS_KEYS 1
 #   include "./keys.secret"
 #else
 #   define HAS_KEYS 0
