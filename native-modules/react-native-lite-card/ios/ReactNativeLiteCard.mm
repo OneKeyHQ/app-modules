@@ -42,7 +42,7 @@ typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
   return @"ReactNativeLiteCard";
 }
 
-RCT_EXPORT_METHOD(checkNFCPermission:(RCTResponseSenderBlock)callback)
+- (void)checkNFCPermission:(RCTResponseSenderBlock)callback
 {
   BOOL permission = [NFCNDEFReaderSession readingAvailable];
   if (permission) {
@@ -53,9 +53,9 @@ RCT_EXPORT_METHOD(checkNFCPermission:(RCTResponseSenderBlock)callback)
   
 }
 
-RCT_EXPORT_METHOD(getLiteInfo:(RCTResponseSenderBlock)callBack)
+- (void)getLiteInfo:(RCTResponseSenderBlock)callBack
 {
-  if ([OKLiteManager checkSDKVaild:callBack]) {
+  if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
     [liteManager getLiteInfo:^(OKLiteV1 *lite, OKNFCLiteStatus status) {
       NSDictionary *cardInfo = [lite cardInfo];
@@ -70,11 +70,11 @@ RCT_EXPORT_METHOD(getLiteInfo:(RCTResponseSenderBlock)callBack)
   }
 }
 
-RCT_EXPORT_METHOD(setMnemonic:(NSString *)mnemonic pin:(NSString *)pin overwrite:(BOOL)overwrite callback:(RCTResponseSenderBlock)callBack)
+- (void)setMnemonic:(NSString *)mnemonic pwd:(NSString *)pwd overwrite:(BOOL)overwrite callback:(RCTResponseSenderBlock)callBack
 {
-  if ([OKLiteManager checkSDKVaild:callBack]) {
+  if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
-    [liteManager setMnemonic:mnemonic withPin:pin overwrite:overwrite complete:^(OKLiteV1 *lite, OKNFCLiteSetMncStatus status) {
+    [liteManager setMnemonic:mnemonic withPin:pwd overwrite:overwrite complete:^(OKLiteV1 *lite, OKNFCLiteSetMncStatus status) {
       NSDictionary *cardInfo = [lite cardInfo];
       switch (status) {
         case OKNFCLiteSetMncStatusSuccess:
@@ -107,11 +107,11 @@ RCT_EXPORT_METHOD(setMnemonic:(NSString *)mnemonic pin:(NSString *)pin overwrite
   }
 }
 
-RCT_EXPORT_METHOD(getMnemonicWithPin:(NSString *)pin callback:(RCTResponseSenderBlock)callBack)
+- (void)getMnemonicWithPin:(NSString *)pwd callback:(RCTResponseSenderBlock)callBack
 {
-  if ([OKLiteManager checkSDKVaild:callBack]) {
+  if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
-    [liteManager getMnemonicWithPin:pin complete:^(OKLiteV1 *lite, NSString *mnemonic, OKNFCLiteGetMncStatus status) {
+    [liteManager getMnemonicWithPin:pwd complete:^(OKLiteV1 *lite, NSString *mnemonic, OKNFCLiteGetMncStatus status) {
       NSDictionary *cardInfo = [lite cardInfo];
       switch (status) {
         case OKNFCLiteGetMncStatusSuccess:
@@ -146,11 +146,11 @@ RCT_EXPORT_METHOD(getMnemonicWithPin:(NSString *)pin callback:(RCTResponseSender
   }
 }
 
-RCT_EXPORT_METHOD(changePin:(NSString *)oldPwd newPwd:(NSString *)newPwd callback:(RCTResponseSenderBlock)callBack)
+- (void)changePin:(NSString *)oldPin newPin:(NSString *)newPin callback:(RCTResponseSenderBlock)callBack
 {
-  if ([OKLiteManager checkSDKVaild:callBack]) {
+  if ([ReactNativeLiteCard checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
-    [liteManager changePin:oldPwd to:newPwd complete:^(OKLiteV1 *lite, OKNFCLiteChangePinStatus status) {
+    [liteManager changePin:oldPin to:newPin complete:^(OKLiteV1 *lite, OKNFCLiteChangePinStatus status) {
       NSDictionary *cardInfo = [lite cardInfo];
       switch (status) {
         case OKNFCLiteChangePinStatusSuccess: {
@@ -179,7 +179,7 @@ RCT_EXPORT_METHOD(changePin:(NSString *)oldPwd newPwd:(NSString *)newPwd callbac
   }
 }
 
-RCT_EXPORT_METHOD(reset:(RCTResponseSenderBlock)callBack)
+- (void)reset:(RCTResponseSenderBlock)callBack
 {
   if ([OKLiteManager checkSDKVaild:callBack]) {
     __block OKNFCManager *liteManager = [[OKNFCManager alloc] init];
@@ -197,6 +197,14 @@ RCT_EXPORT_METHOD(reset:(RCTResponseSenderBlock)callBack)
       liteManager = nil;
     }];
   }
+}
+
+- (void)cancel { 
+  // iOS does not need cancel implementation
+}
+
+- (void)intoSetting { 
+  [[UIApplication sharedApplication] openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString] options:@{} completionHandler:nil];
 }
 
 + (BOOL)checkSDKVaild:(RCTResponseSenderBlock)callback {
