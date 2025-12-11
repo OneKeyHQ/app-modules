@@ -1,4 +1,12 @@
 import Foundation
+import NitroModules
+
+struct LiteCardInfo: Codable {
+    var hasBackup: Bool
+    var pinRetryCount: Int
+    var isNewCard: Bool
+    var serialNum: String
+}
 
 class LiteCard: HybridLiteCardSpec {
     private let liteManager: OKLiteManager
@@ -26,13 +34,13 @@ class LiteCard: HybridLiteCardSpec {
         }
     }
     
-    public func getLiteInfo() throws -> Promise<[String: Any]> {
+    public func getLiteInfo() throws -> Promise<LiteCardInfo | null> {
         return Promise.async { resolve, reject in
             self.liteManager.getLiteInfo { error, result, info in
                 if let error = error {
                     reject(error)
                 } else if let result = result as? [String: Any] {
-                    resolve(result)
+                    resolve(LiteCardInfo)
                 } else {
                     reject(NSError(domain: "LiteCard", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid result type"]))
                 }
