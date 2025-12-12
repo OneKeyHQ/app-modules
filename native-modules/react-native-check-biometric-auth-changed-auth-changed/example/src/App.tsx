@@ -6,11 +6,11 @@ import { useEffect, useState } from 'react';
 export default function App() {
   const [result, setResult] = useState<boolean>(false);
 
-  // useEffect(() => {
-  //   checkBiometricAuthChanged().then((result) => {
-  //     setResult(result);
-  //   });
-  // }, []);
+  useEffect(() => {
+    checkBiometricAuthChanged().then((result) => {
+      setResult(result);
+    });
+  }, []);
 
   return (
     <View style={styles.container}>
