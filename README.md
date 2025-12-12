@@ -6,7 +6,7 @@
 
 1. Create project with `npx create-react-native-library@latest` then select turbo module or turbo view
 
-2. `yarn`
+2. Remove `packageManager` field from `package.json` in the new library, then run `yarn` to install dependencies
 
 3. Generate Nitro module code. Run the following command in the module directory to generate `./nitrogen/generated` files, which are required by both iOS and Android.
 
