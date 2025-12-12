@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.BaseActivityEventListener
 import com.facebook.react.bridge.LifecycleEventListener
+import com.facebook.react.bridge.WritableMap
 import so.onekey.app.wallet.lite.nfc.broadcast.NfcStatusChangeBroadcastReceiver
 import java.util.concurrent.Executors.newFixedThreadPool
 
@@ -208,6 +209,24 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
     // 没有 NFC 使用权限
     Log.d(TAG, "NFC device not permission")
     callback?.invoke(NFCExceptions.NotNFCPermission().createArguments(), null, null)
+  }
+
+  private fun CardState?.createArguments(): WritableMap {
+    val map = Arguments.createMap()
+    if (this == null) return map
+    map.putBoolean("hasBackup", this.hasBackup)
+    map.putBoolean("isNewCard", this.isNewCard)
+    map.putString("serialNum", this.serialNum)
+    map.putInt("pinRetryCount", this.pinRetryCount)
+    return map
+  }
+
+  private fun NFCExceptions?.createArguments(): WritableMap {
+    val map = Arguments.createMap()
+    if (this == null) return map
+    map.putInt("code", this.code)
+    map.putString("message", this.message)
+    return map
   }
 
   override fun getLiteInfo(callback: Callback?) {
