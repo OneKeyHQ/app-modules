@@ -28,6 +28,12 @@ def getExtOrIntegerDefault(name) {
 android {
   namespace "com.onekeyfe.reactnativelitecard"
 
+  externalNativeBuild {
+    cmake {
+        path "src/main/cpp/CMakeLists.txt"
+    }
+  }
+
   compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
 
   defaultConfig {
