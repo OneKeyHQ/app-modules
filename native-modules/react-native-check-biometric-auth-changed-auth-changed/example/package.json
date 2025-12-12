@@ -15,6 +15,9 @@
     "react-native-nitro-modules": "^0.31.10",
     "@onekeyfe/react-native-check-biometric-auth-changed": "file:./react-native-check-biometric-auth-changed"
   },
+  "workspaces": [
+    "example"
+  ],
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@babel/preset-env": "^7.25.3",
