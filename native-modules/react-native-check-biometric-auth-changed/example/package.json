@@ -12,8 +12,7 @@
   "dependencies": {
     "react": "19.2.0",
     "react-native": "0.83.0",
-    "react-native-nitro-modules": "^0.31.10",
-    "@onekeyfe/react-native-check-biometric-auth-changed": "file:./react-native-check-biometric-auth-changed"
+    "react-native-nitro-modules": "^0.31.10"
   },
   "workspaces": [
     "example"
