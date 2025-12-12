@@ -1,4 +1,4 @@
-package so.onekey.app.wallet.lite.nfc
+package com.onekeyfe.reactnativelitecard.nfc
 
 import android.app.Activity
 import android.app.PendingIntent
@@ -9,7 +9,7 @@ import android.nfc.NfcAdapter
 import android.nfc.tech.*
 import android.os.Build
 import android.provider.Settings
-import so.onekey.app.wallet.lite.utils.MiUtil
+import com.onekeyfe.reactnativelitecard.utils.MiUtil
 
 object NfcUtils {
 

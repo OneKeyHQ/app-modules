@@ -1,9 +1,9 @@
-package so.onekey.app.wallet.lite.onekeyLite.nfc
+package com.onekeyfe.reactnativelitecard.onekeyLite.nfc
 
 import com.google.gson.Gson
 import org.haobtc.onekey.card.gpchannel.GPChannelNatives
-import so.onekey.app.wallet.lite.onekeyLite.entitys.APDUParam
-import so.onekey.app.wallet.lite.utils.LogUtil.printLog
+import com.onekeyfe.reactnativelitecard.onekeyLite.entitys.APDUParam
+import com.onekeyfe.reactnativelitecard.utils.LogUtil.printLog
 
 object GPCAPDUGenerator {
     private const val TAG = "GPCAPDUGenerator"

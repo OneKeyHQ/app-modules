@@ -12,18 +12,18 @@ import kotlinx.coroutines.channels.Channel
 import com.facebook.react.bridge.Callback
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.annotations.ReactModule
-import so.onekey.app.wallet.lite.nfc.NFCExceptions
-import so.onekey.app.wallet.lite.nfc.NfcUtils
-import so.onekey.app.wallet.lite.onekeyLite.OneKeyLiteCard
-import so.onekey.app.wallet.lite.onekeyLite.entitys.CardState
-import so.onekey.app.wallet.lite.utils.NfcPermissionUtils
-import so.onekey.app.wallet.lite.utils.Utils
+import com.onekeyfe.reactnativelitecard.nfc.NFCExceptions
+import com.onekeyfe.reactnativelitecard.nfc.NfcUtils
+import com.onekeyfe.reactnativelitecard.onekeyLite.OneKeyLiteCard
+import com.onekeyfe.reactnativelitecard.onekeyLite.entitys.CardState
+import com.onekeyfe.reactnativelitecard.utils.NfcPermissionUtils
+import com.onekeyfe.reactnativelitecard.utils.Utils
 import java.util.concurrent.atomic.AtomicInteger
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.BaseActivityEventListener
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.WritableMap
-import so.onekey.app.wallet.lite.nfc.broadcast.NfcStatusChangeBroadcastReceiver
+import com.onekeyfe.reactnativelitecard.nfc.broadcast.NfcStatusChangeBroadcastReceiver
 import java.util.concurrent.Executors.newFixedThreadPool
 
 private val NFCDispatcher = newFixedThreadPool(1).asCoroutineDispatcher()

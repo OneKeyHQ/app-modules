@@ -1,4 +1,4 @@
-package so.onekey.app.wallet.lite.onekeyLite
+package com.onekeyfe.reactnativelitecard.onekeyLite
 
 import android.app.Activity
 import android.nfc.tech.IsoDep
@@ -8,14 +8,14 @@ import androidx.lifecycle.Lifecycle
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import so.onekey.app.wallet.lite.nfc.NFCExceptions
-import so.onekey.app.wallet.lite.nfc.NfcUtils
-import so.onekey.app.wallet.lite.onekeyLite.entitys.CardState
-import so.onekey.app.wallet.lite.onekeyLite.nfc.AppleCardType
-import so.onekey.app.wallet.lite.onekeyLite.nfc.Connection
-import so.onekey.app.wallet.lite.onekeyLite.nfc.CommandGenerator
-import so.onekey.app.wallet.lite.utils.LogUtil.printLog
-import so.onekey.app.wallet.lite.utils.NfcPermissionUtils
+import com.onekeyfe.reactnativelitecard.nfc.NFCExceptions
+import com.onekeyfe.reactnativelitecard.nfc.NfcUtils
+import com.onekeyfe.reactnativelitecard.onekeyLite.entitys.CardState
+import com.onekeyfe.reactnativelitecard.onekeyLite.nfc.AppleCardType
+import com.onekeyfe.reactnativelitecard.onekeyLite.nfc.Connection
+import com.onekeyfe.reactnativelitecard.onekeyLite.nfc.CommandGenerator
+import com.onekeyfe.reactnativelitecard.utils.LogUtil.printLog
+import com.onekeyfe.reactnativelitecard.utils.NfcPermissionUtils
 
 object OneKeyLiteCard {
     const val TAG = "OneKeyLiteCard"

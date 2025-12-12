@@ -1,10 +1,10 @@
-package so.onekey.app.wallet.lite
+package com.onekeyfe.reactnativelitecard
 
 import android.util.Log
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
-import so.onekey.app.wallet.lite.utils.sendEvent
+import com.onekeyfe.reactnativelitecard.utils.sendEvent
 
 class LoggerManager(private val context: ReactApplicationContext) :
     ReactContextBaseJavaModule(context) {

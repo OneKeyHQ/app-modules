@@ -1,4 +1,4 @@
-package so.onekey.app.wallet.lite.utils;
+package com.onekeyfe.reactnativelitecard.utils;
 
 import java.math.BigInteger;
 import java.util.Collections;

@@ -1,4 +1,4 @@
-package so.onekey.app.wallet.lite.nfc.broadcast
+package com.onekeyfe.reactnativelitecard.nfc.broadcast
 
 import android.content.BroadcastReceiver
 import android.content.Context

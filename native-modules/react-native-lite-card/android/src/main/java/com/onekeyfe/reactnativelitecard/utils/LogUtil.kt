@@ -1,7 +1,7 @@
-package so.onekey.app.wallet.lite.utils
+package com.onekeyfe.reactnativelitecard.utils
 
-import so.onekey.app.wallet.lite.onekeyLite.NfcConstant
-import so.onekey.app.wallet.lite.LoggerManager
+import com.onekeyfe.reactnativelitecard.onekeyLite.NfcConstant
+import com.onekeyfe.reactnativelitecard.LoggerManager
 
 object LogUtil {
     @JvmStatic

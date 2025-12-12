@@ -1,4 +1,4 @@
-package so.onekey.app.wallet.lite.keys
+package com.onekeyfe.reactnativelitecard.keys
 
 import android.content.Context
 
