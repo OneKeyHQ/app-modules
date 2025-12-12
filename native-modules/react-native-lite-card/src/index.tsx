@@ -1,4 +1,4 @@
-import { Linking, NativeEventEmitter, Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import OKLiteManager from './NativeReactNativeLiteCard';
 import type {
   CallbackResult,
