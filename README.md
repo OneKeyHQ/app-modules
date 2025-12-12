@@ -7,8 +7,8 @@
 To update the versions of all workspace packages, run the following command in the project root directory:
 
 ```shell
-yarn workspaces foreach --all  --no-private --topological version --deferred patch
-yarn version apply --all
+yarn version:bump
+yarn version:apply
 ```
 Commit version changes and push to GitHub.
 
