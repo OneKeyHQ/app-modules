@@ -18,6 +18,7 @@
     "keys",
     "android",
     "ios",
+    "framework",
     "cpp",
     "*.podspec",
     "react-native.config.js",
