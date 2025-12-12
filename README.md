@@ -116,6 +116,12 @@ react {
 
 11. Now you can build and run the Android version.
 
+12. add release script in `package.json`
+
+```json
+    "release": "yarn nitrogen && yarn prepare && release-it --only-version"
+```
+
 
 ## Publish all package
 
