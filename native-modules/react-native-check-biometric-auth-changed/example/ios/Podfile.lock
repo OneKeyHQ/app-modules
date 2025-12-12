@@ -2478,7 +2478,7 @@ PODS:
     - React-perflogger (= 0.83.0)
     - React-utils (= 0.83.0)
     - SocketRocket
-  - ReactNativeCheckBiometricAuthChanged (0.1.0):
+  - ReactNativeCheckBiometricAuthChanged (0.1.2):
     - boost
     - DoubleConversion
     - fast_float
@@ -2519,7 +2519,7 @@ DEPENDENCIES:
   - fmt (from `../../../../node_modules/react-native/third-party-podspecs/fmt.podspec`)
   - glog (from `../../../../node_modules/react-native/third-party-podspecs/glog.podspec`)
   - hermes-engine (from `../../../../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
-  - NitroModules (from `../../node_modules/react-native-nitro-modules`)
+  - NitroModules (from `../node_modules/react-native-nitro-modules`)
   - RCT-Folly (from `../../../../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec`)
   - RCTDeprecation (from `../../../../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
   - RCTRequired (from `../../../../node_modules/react-native/Libraries/Required`)
@@ -2615,7 +2615,7 @@ EXTERNAL SOURCES:
     :podspec: "../../../../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec"
     :tag: hermes-v0.14.0
   NitroModules:
-    :path: "../../node_modules/react-native-nitro-modules"
+    :path: "../node_modules/react-native-nitro-modules"
   RCT-Folly:
     :podspec: "../../../../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec"
   RCTDeprecation:
@@ -2837,7 +2837,7 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: ebcf3a78dc1bcdf054c9e8d309244bade6b31568
   ReactCodegen: 038e59443a6e1ff5d42e041395148a6561b523d6
   ReactCommon: 424cc34cf5055d69a3dcf02f3436481afb8b0f6f
-  ReactNativeCheckBiometricAuthChanged: 5d99b27e4216c21b3eb63d1334d724e3e97b5ee0
+  ReactNativeCheckBiometricAuthChanged: 6a695020be8bde249048fb3e4cf771c8d122c8cb
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Yoga: 6ca93c8c13f56baeec55eb608577619b17a4d64e
 
