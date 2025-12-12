@@ -8,7 +8,7 @@
     "version:apply": "yarn version apply --all",
     "version:commit": "git commit -am 'chore: release ${version}'",
     "version:push": "git push",
-    "version:publish": "yarn workspace @onekeyfe/react-native-lite-card publish",
+    "version:publish": "yarn workspace @onekeyfe/react-native-lite-card publish"
   },
   "workspaces": [
     "native-modules/*",
