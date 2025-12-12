@@ -23,9 +23,9 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.BaseActivityEventListener
 import com.facebook.react.bridge.LifecycleEventListener
 import so.onekey.app.wallet.lite.nfc.broadcast.NfcStatusChangeBroadcastReceiver
-import java.util.concurrent.Executors
+import java.util.concurrent.Executors.newFixedThreadPool
 
-private val NFCDispatcher = Executors.newFixedThreadPool(1).asCoroutineDispatcher()
+private val NFCDispatcher = newFixedThreadPool(1).asCoroutineDispatcher()
 public fun NFCScope(): CoroutineScope = CoroutineScope(SupervisorJob() + NFCDispatcher)
 
 @ReactModule(name = ReactNativeLiteCardModule.NAME)
