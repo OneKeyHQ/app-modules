@@ -1,4 +1,8 @@
-import { TurboModuleRegistry, type CodegenTypes, type TurboModule } from 'react-native';
+import {
+  TurboModuleRegistry,
+  type CodegenTypes,
+  type TurboModule,
+} from 'react-native';
 
 export type CallbackError = { code: number; message: string | null } | null;
 
@@ -45,8 +49,8 @@ export enum CardErrors {
 }
 
 type KeyValuePair = {
-  key: string;
-  value: string;
+  code: string;
+  message: string;
 };
 
 export interface Spec extends TurboModule {

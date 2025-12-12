@@ -11,26 +11,20 @@ export type NfcConnectUiState = {
   message: string;
 };
 class OnekeyLite {
-  UiEventEmitter: NativeEventEmitter | null = null;
-
-  constructor() {
-    if (Platform.OS !== 'android') return;
-    this.UiEventEmitter = new NativeEventEmitter(OKLiteManager);
-  }
-
   addConnectListener(listener: (event: NfcConnectUiState) => void) {
     this.removeConnectListeners();
-    return this.UiEventEmitter?.addListener('nfc_ui_event', listener);
+    return OKLiteManager.onNFCUIEvent((event) => {
+      listener({
+        code: Number(event.code),
+        message: event.message,
+      });
+    });
   }
 
-  removeConnectListeners() {
-    return this.UiEventEmitter?.removeAllListeners('nfc_ui_event');
-  }
+  removeConnectListeners() {}
 
   addAccordListener() {
-    if (Platform.OS !== 'android') return;
-    const eventEmitter = new NativeEventEmitter(OKLiteManager);
-    return eventEmitter.addListener('nfc_active_connection', () => {});
+    return OKLiteManager.onNFCActiveConnection(() => {});
   }
 
   getLiteInfo() {
