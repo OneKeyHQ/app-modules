@@ -1,0 +1,5 @@
+#import <ReactNativeCheckBiometricAuthChangedSpec/ReactNativeCheckBiometricAuthChangedSpec.h>
+
+@interface ReactNativeCheckBiometricAuthChanged : NSObject <NativeReactNativeCheckBiometricAuthChangedSpec>
+
+@end
