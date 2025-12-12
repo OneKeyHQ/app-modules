@@ -30,7 +30,7 @@ private val NFCDispatcher = newFixedThreadPool(1).asCoroutineDispatcher()
 public fun NFCScope(): CoroutineScope = CoroutineScope(SupervisorJob() + NFCDispatcher)
 
 @ReactModule(name = ReactNativeLiteCardModule.NAME)
-class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
+class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
   NativeReactNativeLiteCardSpec(reactContext), LifecycleEventListener, CoroutineScope by NFCScope() {
 
   companion object {
@@ -49,6 +49,21 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
   override fun getName(): String {
     return NAME
   }
+
+  override fun initialize() {
+    super.initialize()
+    Utils.init(reactContext)
+    Utils.getActivityLifecycle()
+    Utils.getTopActivity()?.registerReceiver(
+        mNfcStateBroadcastReceiver,
+        NfcStatusChangeBroadcastReceiver.nfcBroadcastReceiverIntentFilter
+    )
+    Utils.getTopActivity()?.let {
+        launch(Dispatchers.IO) {
+            OneKeyLiteCard.startNfc(it as FragmentActivity) {}
+        }
+    }
+}
 
   private val mNFCConnectedChannel = Channel<IsoDep?>(1)
   private var lastIsoDep: IsoDep? = null
@@ -74,7 +89,7 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
           val dataMap = Arguments.createMap().apply {
             putString("type", "unknown")
           }
-          emitOnNFCActiveConnection(dataMap)
+          emitOnNFCActiveConnection(dataMap.copy())
           Log.d(TAG, "Unknown device")
           return
         }
@@ -96,7 +111,7 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
                 putBoolean("isNewCard", startRequest.isNewCard)
                 putBoolean("hasBackup", startRequest.hasBackup)
               }
-              emitOnNFCActiveConnection(dataMap)
+              emitOnNFCActiveConnection(dataMap.copy())
             }
           } catch (e: Exception) {
             e.printStackTrace()
@@ -105,8 +120,7 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
               putInt("code", -1)
               putString("type", "unknown")
             }
-            emitOnNFCActiveConnection(dataMap)
-            emitOnNFCActiveConnection(dataMap)
+            emitOnNFCActiveConnection(dataMap.copy())
           }
         }
       }
@@ -128,7 +142,7 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
     emitOnNFCUIEvent(Arguments.createMap().also {
       it.putInt("code", 3)
       it.putString("message", "close_connect_ui")
-    })
+    }.copy())
 
     // 还有需要处理的 NFC 事件
     if (decrementAndGet > 0) {
@@ -136,7 +150,7 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
       emitOnNFCUIEvent(Arguments.createMap().also {
         it.putInt("code", 1)
         it.putString("message", "show_connect_ui")
-      })
+      }.copy())
     }
   }
 
@@ -146,7 +160,7 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
     emitOnNFCUIEvent(Arguments.createMap().also {
       it.putInt("code", 1)
       it.putString("message", "show_connect_ui")
-    })
+    }.copy())
     mShowDialogNumber.incrementAndGet()
     val tryReceiveResult = mNFCConnectedChannel.tryReceive()
 
@@ -182,7 +196,7 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
       emitOnNFCUIEvent(Arguments.createMap().also {
         it.putInt("code", 2)
         it.putString("message", "connected")
-      })
+      }.copy())
     }
     return receiveIsoDep
   }
@@ -218,7 +232,7 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
     map.putBoolean("isNewCard", this.isNewCard)
     map.putString("serialNum", this.serialNum)
     map.putInt("pinRetryCount", this.pinRetryCount)
-    return map
+    return map.copy()
   }
 
   private fun NFCExceptions?.createArguments(): WritableMap {
@@ -226,7 +240,7 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
     if (this == null) return map
     map.putInt("code", this.code)
     map.putString("message", this.message)
-    return map
+    return map.copy()
   }
 
   override fun getLiteInfo(callback: Callback?) {
@@ -387,7 +401,6 @@ class ReactNativeLiteCardModule(reactContext: ReactApplicationContext) :
         try {
           OneKeyLiteCard.startNfc(it) {
             mNFCState.set(NFCState.Started)
-
             Log.d(TAG, "NFC starting success")
           }
         } catch (e: Exception) {
