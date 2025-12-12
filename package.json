@@ -3,6 +3,13 @@
   "packageManager": "yarn@4.1.0",
   "private": true,
   "version": "1.0.0",
+  "scripts": {
+    "version:bump": "yarn workspaces foreach --all  --no-private --topological version --deferred patch",
+    "version:apply": "yarn version apply --all",
+    "version:commit": "git commit -am 'chore: release ${version}'",
+    "version:push": "git push",
+    "version:publish": "yarn workspace @onekeyfe/react-native-lite-card publish",
+  },
   "workspaces": [
     "native-modules/*",
     "native-components/*"
