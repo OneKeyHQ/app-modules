@@ -4,6 +4,9 @@
 
 ### Create Nitro Module
 
+> **Important**: Avoid generating a new `node_modules` folder. All dependencies should be managed from the monorepo root to avoid conflicts and ensure proper workspace linking.
+
+
 1. Create project with `npx create-react-native-library@latest` then select turbo module or turbo view
 
 2. Remove `packageManager` field from `package.json` in the new library, then run `yarn` to install dependencies
@@ -70,6 +73,48 @@ module.exports = metroConfig;
 
 8. start metro server in `example` folder with `yarn start`
 
+9. Let's talk about Android now. Change `new-library/example/android/settings.gradle`:
+
+```
+pluginManagement {
+  def reactNativeGradlePlugin = new File(
+    providers.exec {
+      workingDir(rootDir)
+      commandLine("node", "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })")
+    }.standardOutput.asText.get().trim()
+  ).getParentFile().absolutePath
+  includeBuild(reactNativeGradlePlugin)
+}
+plugins { id("com.facebook.react.settings") }
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+rootProject.name = 'onekeyfe.reactnativecheckbiometricauthchanged.example'
+include ':app'
+
+def reactNativeGradlePlugin = new File(
+providers.exec {
+    workingDir(rootDir)
+    commandLine("node", "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })")
+}.standardOutput.asText.get().trim()
+).getParentFile().absolutePath
+includeBuild(reactNativeGradlePlugin)
+```
+
+10.  Add the following variables at the top of the react block in `new-library/example/android/app/build.gradle`: 
+
+```
+react {
+    reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
+    hermesCommand = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/sdks/hermesc/%OS-BIN%/hermesc"
+    codegenDir = new File(["node", "--print", "require.resolve('@react-native/codegen/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
+    enableBundleCompression = (findProperty('android.enableBundleCompression') ?: false).toBoolean()
+    /* Folders */
+    //   The root of your project, i.e. where "package.json" lives. Default is '../..'
+    // root = file("../../")
+    // ...
+}
+```
+
+11. Now you can build and run the Android version.
 
 
 ## Publish all package
