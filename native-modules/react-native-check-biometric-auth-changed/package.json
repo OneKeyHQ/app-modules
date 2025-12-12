@@ -44,7 +44,7 @@
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
-    "release": "yarn nitrogen && yarn prepare && release-it --only-version"
+    "release": "yarn nitrogen && yarn prepare && npm publish --access public"
   },
   "keywords": [
     "react-native",

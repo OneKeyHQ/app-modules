@@ -38,7 +38,7 @@
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
-    "release": "bob build && release-it --only-version"
+    "release": "yarn prepare && npm publish --access public"
   },
   "keywords": [
     "react-native",
