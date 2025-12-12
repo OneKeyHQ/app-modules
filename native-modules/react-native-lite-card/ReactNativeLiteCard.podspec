@@ -13,9 +13,8 @@ Pod::Spec.new do |s|
   s.platforms    = { :ios => min_ios_version_supported }
   s.source       = { :git => "https://github.com/OneKeyHQ/app-modules/onekeyfe-react-native-lite-card.git", :tag => "#{s.version}" }
 
-  s.source_files = "ios/**/*.{h,m,mm,swift,cpp}", "keys/**/*.{h,c,m,mm,swift,cpp}"
+  s.source_files = "ios/Classes/**/*.{h,m,mm,swift,cpp}", "ios/ReactNativeLiteCard.(h,m,mm,swift,cpp)" ,"keys/**/*.{h,c,m,mm,swift,cpp}"
   s.vendored_framework = "ios/GPChannelSDKCore.xcframework"
-  s.private_header_files = "ios/**/*.h"
 
 
   install_modules_dependencies(s)
