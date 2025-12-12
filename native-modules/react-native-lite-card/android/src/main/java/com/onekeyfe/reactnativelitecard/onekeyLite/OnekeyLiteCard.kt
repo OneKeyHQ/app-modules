@@ -102,11 +102,11 @@ object OneKeyLiteCard {
 
     @Throws(NFCExceptions::class)
     fun setMnemonic(
-        cardState: CardState?,
-        isoDep: IsoDep,
-        mnemonic: String,
-        pwd: String,
-        overwrite: Boolean = false
+      cardState: CardState?,
+      isoDep: IsoDep,
+      mnemonic: String?,
+      pwd: String?,
+      overwrite: Boolean = false
     ): Boolean {
         if (cardState == null) throw NFCExceptions.ConnectionFailException()
 
@@ -146,7 +146,7 @@ object OneKeyLiteCard {
             }
         }
 
-        return mCardConnection?.backupData(mnemonic) == true
+        return mCardConnection?.backupData(mnemonic ?: "") == true
     }
 
     @Throws(NFCExceptions::class)

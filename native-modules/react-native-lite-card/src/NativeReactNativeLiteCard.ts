@@ -1,4 +1,4 @@
-import { TurboModuleRegistry, type TurboModule } from 'react-native';
+import { TurboModuleRegistry, type CodegenTypes, type TurboModule } from 'react-native';
 
 export type CallbackError = { code: number; message: string | null } | null;
 
@@ -43,6 +43,11 @@ export enum CardErrors {
   InitializedError = 4001,
   NotInitializedError = 4002,
 }
+
+type KeyValuePair = {
+  key: string;
+  value: string;
+};
 
 export interface Spec extends TurboModule {
   getLiteInfo(
@@ -95,6 +100,9 @@ export interface Spec extends TurboModule {
   ): void;
   cancel(): void;
   intoSetting(): void;
+
+  readonly onNFCActiveConnection: CodegenTypes.EventEmitter<KeyValuePair>;
+  readonly onNFCUIEvent: CodegenTypes.EventEmitter<KeyValuePair>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('ReactNativeLiteCard');
