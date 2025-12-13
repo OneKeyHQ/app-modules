@@ -74,13 +74,16 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
                                                                initialProperties:initialProperties
                                                                    launchOptions:launchOptions];
       [sharedInstance.reactNativeFactoryDelegate setOnMessageCallback:^(NSString *message) {
-          [self emitOnMessage:@{@"message": message}];
+          [sharedInstance emitOnBackgroundMessage:message];
       }];
     });
 }
 
-- (void)postMessage:(nonnull NSString *)message { 
-  [sharedInstance.reactNativeFactoryDelegate postMessage:std::string([message UTF8String])];
+- (void)postBackgroundMessage:(nonnull NSString *)message {
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    [sharedInstance emitOnBackgroundMessage:@"2221"];
+  });
+//  [sharedInstance.reactNativeFactoryDelegate postMessage:std::string([message UTF8String])];
 }
 
 + (NSString *)moduleName
