@@ -10277,9 +10277,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-cloud-kit-example@workspace:native-modules/react-native-cloud-kit/example":
+"react-native-cloud-kit-module-example@workspace:native-modules/react-native-cloud-kit-module/example":
   version: 0.0.0-use.local
-  resolution: "react-native-cloud-kit-example@workspace:native-modules/react-native-cloud-kit/example"
+  resolution: "react-native-cloud-kit-module-example@workspace:native-modules/react-native-cloud-kit-module/example"
   dependencies:
     "@babel/core": "npm:^7.25.2"
     "@babel/preset-env": "npm:^7.25.3"
@@ -10295,13 +10295,13 @@ __metadata:
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-monorepo-config: "npm:^0.3.1"
-    react-native-nitro-modules: "npm:^0.31.10"
+    react-native-nitro-modules: "npm:^0.29.8"
   languageName: unknown
   linkType: soft
 
-"react-native-cloud-kit@workspace:native-modules/react-native-cloud-kit":
+"react-native-cloud-kit-module@workspace:native-modules/react-native-cloud-kit-module":
   version: 0.0.0-use.local
-  resolution: "react-native-cloud-kit@workspace:native-modules/react-native-cloud-kit"
+  resolution: "react-native-cloud-kit-module@workspace:native-modules/react-native-cloud-kit-module"
   dependencies:
     "@commitlint/config-conventional": "npm:^19.8.1"
     "@eslint/compat": "npm:^1.3.2"
@@ -10319,19 +10319,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:^0.31.10"
+    nitrogen: "npm:^0.29.8"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:^0.31.10"
+    react-native-nitro-modules: "npm:^0.29.8"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: ^0.31.10
+    react-native-nitro-modules: ^0.29.8
   languageName: unknown
   linkType: soft
 
