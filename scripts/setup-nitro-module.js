@@ -58,9 +58,38 @@ function backupFile(filePath) {
     }
 }
 
+// Step 0: Sync version from react-native-lite-card
+console.log("Step 0: Syncing version from react-native-lite-card...");
+const liteCardPackageJsonPath = path.join(workspaceRoot, 'native-modules', 'react-native-lite-card', 'package.json');
+const packageJsonPath = path.join(absModuleDir, 'package.json');
+
+if (fs.existsSync(liteCardPackageJsonPath) && fs.existsSync(packageJsonPath)) {
+    try {
+        const liteCardPackageJson = JSON.parse(fs.readFileSync(liteCardPackageJsonPath, 'utf8'));
+        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+        
+        if (liteCardPackageJson.version) {
+            backupFile(packageJsonPath);
+            packageJson.version = liteCardPackageJson.version;
+            fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
+            console.log(`  - ✓ Version synced to ${liteCardPackageJson.version}`);
+        } else {
+            console.log("  - Warning: Version field not found in react-native-lite-card/package.json");
+        }
+    } catch (error) {
+        console.log(`  - Warning: Failed to sync version: ${error.message}`);
+    }
+} else {
+    if (!fs.existsSync(liteCardPackageJsonPath)) {
+        console.log("  - Warning: react-native-lite-card/package.json not found");
+    }
+    if (!fs.existsSync(packageJsonPath)) {
+        console.log("  - Warning: package.json file not found");
+    }
+}
+
 // Step 1: Check and remove packageManager field from package.json
 console.log("Step 1: Checking packageManager field in package.json...");
-const packageJsonPath = path.join(absModuleDir, 'package.json');
 
 if (fs.existsSync(packageJsonPath)) {
     if (fileContains(packageJsonPath, '"packageManager"')) {
