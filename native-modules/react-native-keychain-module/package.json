@@ -1,7 +1,7 @@
 {
-  "name": "@onekeyfe/react-native-cloud-kit-module",
+  "name": "react-native-keychain-module",
   "version": "1.1.5",
-  "description": "react-native-cloud-kit-module",
+  "description": "react-native-keychain-module",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
@@ -34,7 +34,7 @@
     "!**/.*"
   ],
   "scripts": {
-    "example": "yarn workspace react-native-cloud-kit-module-example",
+    "example": "yarn workspace react-native-keychain-module-example",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
     "nitrogen": "nitrogen",
@@ -50,14 +50,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-keychain-module.git"
   },
-  "author": "react-native-cloud-kit-module <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
+  "author": "onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/react-native-keychain-module/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-keychain-module#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
@@ -78,12 +78,12 @@
     "eslint-plugin-prettier": "^5.5.4",
     "jest": "^29.7.0",
     "lefthook": "^2.0.3",
-    "nitrogen": "^0.29.8",
+    "nitrogen": "^0.31.10",
     "prettier": "^2.8.8",
     "react": "19.2.0",
     "react-native": "0.83.0",
     "react-native-builder-bob": "^0.40.13",
-    "react-native-nitro-modules": "^0.29.8",
+    "react-native-nitro-modules": "^0.31.10",
     "release-it": "^19.0.4",
     "turbo": "^2.5.6",
     "typescript": "^5.9.2"
@@ -91,7 +91,7 @@
   "peerDependencies": {
     "react": "*",
     "react-native": "*",
-    "react-native-nitro-modules": "^0.29.8"
+    "react-native-nitro-modules": "^0.31.10"
   },
   "workspaces": [
     "example"
