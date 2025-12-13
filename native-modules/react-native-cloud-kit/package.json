@@ -1,0 +1,25 @@
+{
+  "name": "react-native-cloud-kit",
+  "version": "0.0.0",
+  "description": "react-native-cloud-kit",
+  "main": "src/index",
+  "codegenConfig": {
+    "name": "CloudKitSpec",
+    "type": "modules",
+    "jsSrcsDir": "src"
+  },
+  "author": "huhuanming <huanming@onekey.so> (https://github.com/huhuanming)",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/huhuanming/react-native-cloud-kit#readme",
+  "create-react-native-library": {
+    "type": "nitro-module",
+    "languages": "kotlin-swift",
+    "tools": [
+      "eslint",
+      "jest",
+      "lefthook",
+      "release-it"
+    ],
+    "version": "0.56.0"
+  }
+}
