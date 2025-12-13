@@ -5,10 +5,7 @@ class KeychainModule: HybridKeychainModuleSpec {
     private let moduleCore = KeychainModuleCore()
     
     public func setItem(params: SetItemParams) throws -> Promise<Bool> {
-          guard let typedParams = SetItemParams(from: params) else {
-            return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Invalid parameters: key and value"]))
-          }
-
+          let typedParams = params
           do {
             try moduleCore.setItem(params: typedParams)
             return Promise.resolved(withResult: true)
@@ -18,7 +15,7 @@ class KeychainModule: HybridKeychainModuleSpec {
               return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to encode value"]))
             case .operationFailed(let status):
               let nsError = NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil)
-              return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item: \(status)"]))
+              return Promise.rejected(withError: NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil))
             default:
               return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item"]))
             }
