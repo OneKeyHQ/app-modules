@@ -41,7 +41,7 @@
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
-    "release": "release-it --only-version"
+    "release": "yarn nitrogen && yarn prepare && release-it --only-version"
   },
   "keywords": [
     "react-native",
@@ -96,7 +96,6 @@
   "workspaces": [
     "example"
   ],
-  "packageManager": "yarn@4.11.0",
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",
