@@ -13,15 +13,15 @@ const path = require('path');
 
 // Check arguments
 if (process.argv.length < 3) {
-    console.log("Error: Please provide module directory path");
-    console.log(`Usage: ${path.basename(process.argv[1])} <module-directory>`);
-    console.log(`Example: ${path.basename(process.argv[1])} native-modules/react-native-cloud-kit`);
+    console.log("Error: Please provide module directory name");
+    console.log(`Usage: ${path.basename(process.argv[1])} <module-directory-name>`);
+    console.log(`Example: ${path.basename(process.argv[1])} react-native-cloud-kit-module`);
     process.exit(1);
 }
 
-const moduleDir = process.argv[2];
 const scriptDir = __dirname;
 const workspaceRoot = path.dirname(scriptDir);
+const moduleDir = path.join(workspaceRoot, 'native-modules', process.argv[2]);
 
 // Check if module directory exists
 if (!fs.existsSync(moduleDir)) {
@@ -29,13 +29,7 @@ if (!fs.existsSync(moduleDir)) {
     process.exit(1);
 }
 
-// Convert to absolute path
-let absModuleDir;
-if (path.isAbsolute(moduleDir)) {
-    absModuleDir = moduleDir;
-} else {
-    absModuleDir = path.join(workspaceRoot, moduleDir);
-}
+const absModuleDir = moduleDir;
 
 console.log(`Setting up Nitro Module: ${absModuleDir}`);
 
@@ -46,15 +40,6 @@ function fileContains(filePath, searchString) {
         return content.includes(searchString);
     } catch (error) {
         return false;
-    }
-}
-
-// Helper function: Backup file
-function backupFile(filePath) {
-    try {
-        fs.copyFileSync(filePath, `${filePath}.backup`);
-    } catch (error) {
-        console.log(`  - Warning: Unable to backup file ${filePath}: ${error.message}`);
     }
 }
 
@@ -69,7 +54,6 @@ if (fs.existsSync(liteCardPackageJsonPath) && fs.existsSync(packageJsonPath)) {
         const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
         
         if (liteCardPackageJson.version) {
-            backupFile(packageJsonPath);
             packageJson.version = liteCardPackageJson.version;
             fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
             console.log(`  - ✓ Version synced to ${liteCardPackageJson.version}`);
@@ -112,7 +96,6 @@ if (fs.existsSync(rnConfigFile)) {
         console.log("  - ✓ react-native.config.js already contains baseConfig configuration");
     } else {
         console.log("  - Updating react-native.config.js...");
-        backupFile(rnConfigFile);
         
         const newConfig = `const path = require('path');
 const pkg = require('../package.json');
@@ -149,7 +132,6 @@ if (fs.existsSync(metroConfigFile)) {
         console.log("  - ✓ metro.config.js already contains monorepo configuration");
     } else {
         console.log("  - Updating metro.config.js...");
-        backupFile(metroConfigFile);
         
         const newMetroConfig = `const path = require('path');
 const { getDefaultConfig } = require('@react-native/metro-config');
@@ -195,7 +177,6 @@ if (fs.existsSync(androidSettingsFile)) {
         console.log("  - ✓ Android settings.gradle already contains correct configuration");
     } else {
         console.log("  - Updating Android settings.gradle...");
-        backupFile(androidSettingsFile);
         
         // Get project name
         let projectName = 'example';
@@ -242,7 +223,6 @@ if (fs.existsSync(androidBuildFile)) {
         console.log("  - ✓ Android app/build.gradle already contains correct react configuration");
     } else {
         console.log("  - Updating Android app/build.gradle...");
-        backupFile(androidBuildFile);
         
         let buildContent = fs.readFileSync(androidBuildFile, 'utf8');
         
@@ -287,5 +267,3 @@ console.log(`2. Run 'yarn nitrogen' in ${absModuleDir} directory to generate nec
 console.log(`3. Run 'pod install' in ${absModuleDir}/example/ios directory`);
 console.log(`4. Start Metro server: cd ${absModuleDir}/example && yarn start`);
 console.log("5. Build and run iOS/Android app for testing");
-console.log("");
-console.log("Backup files saved as *.backup, can be restored if needed");
