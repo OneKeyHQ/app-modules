@@ -1,5 +1,4 @@
 import Foundation
-import CloudKit
 import NitroModules
 
 // MARK: - Constants
