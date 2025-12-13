@@ -16,61 +16,6 @@ struct CloudKitConstants {
   static let recordMetaField = "meta"
 }
 
-// MARK: - Parameter Models
-
-struct SaveRecordParams: Codable {
-  let recordType: String
-  let recordID: String
-  let data: String
-  let meta: String
-}
-
-struct FetchRecordParams: Codable {
-  let recordType: String
-  let recordID: String
-}
-
-struct DeleteRecordParams: Codable {
-  let recordType: String
-  let recordID: String
-}
-
-struct RecordExistsParams: Codable {
-  let recordType: String
-  let recordID: String
-}
-
-struct QueryRecordsParams: Codable {
-  let recordType: String
-}
-
-// MARK: - Result Models
-
-struct SaveRecordResult: Codable {
-  let recordID: String
-  let createdAt: Int64
-}
-
-struct RecordResult: Codable {
-  let recordID: String
-  let recordType: String
-  let data: String
-  let meta: String
-  let createdAt: Int64
-  let modifiedAt: Int64
-}
-
-struct QueryRecordsResult: Codable {
-  let records: [RecordResult]
-}
-
-// New: Account Info Result
-struct AccountInfoResult: Codable {
-  let status: Int
-  let statusName: String
-  let containerUserId: String?
-}
-
 // MARK: - Error Types
 
 enum CloudKitModuleError: Error {
@@ -121,7 +66,7 @@ class CloudKitModuleCore {
     default:
       name = "couldNotDetermine"
     }
-    return AccountInfoResult(status: status.rawValue, statusName: name, containerUserId: userId)
+    return AccountInfoResult(status: Double(status.rawValue), statusName: name, containerUserId: userId)
   }
 
   // MARK: - Save Record
@@ -144,7 +89,7 @@ class CloudKitModuleCore {
     let createdAt = Int64((savedRecord.creationDate?.timeIntervalSince1970 ?? 0) * 1000)
     return SaveRecordResult(
       recordID: savedRecord.recordID.recordName,
-      createdAt: createdAt
+      createdAt: Double(createdAt)
     )
   }
 
@@ -166,8 +111,8 @@ class CloudKitModuleCore {
         recordType: record.recordType,
         data: data,
         meta: meta,
-        createdAt: createdAt,
-        modifiedAt: modifiedAt
+        createdAt: Double(createdAt),
+        modifiedAt: Double(modifiedAt)
       )
     } catch let error as CKError where error.code == .unknownItem {
       return nil
@@ -224,8 +169,8 @@ class CloudKitModuleCore {
             recordType: record.recordType,
             data: "",
             meta: meta,
-            createdAt: createdAt,
-            modifiedAt: modifiedAt
+            createdAt: Double(createdAt),
+            modifiedAt: Double(modifiedAt)
           )
           results.append(rr)
         case .failure:
