@@ -16,35 +16,6 @@ struct KeychainConstants {
   static let serviceIdentifier = Bundle.main.bundleIdentifier
 }
 
-// MARK: - Parameter Models
-
-struct SetItemParams: Codable {
-  let key: String
-  let value: String
-  let enableSync: Bool?  // Optional, defaults to true
-  let label: String?
-  let description: String?
-}
-
-struct GetItemParams: Codable {
-  let key: String
-}
-
-struct RemoveItemParams: Codable {
-  let key: String
-}
-
-struct HasItemParams: Codable {
-  let key: String
-}
-
-// MARK: - Result Models
-
-struct GetItemResult: Codable {
-  let key: String
-  let value: String
-}
-
 // MARK: - Error Types
 
 enum KeychainModuleError: Error {

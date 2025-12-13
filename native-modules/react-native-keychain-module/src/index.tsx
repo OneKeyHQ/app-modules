@@ -1,9 +1,8 @@
 import { NitroModules } from 'react-native-nitro-modules';
-import type { KeychainModule } from './KeychainModule.nitro';
+import type { KeychainModule as KeychainModuleType } from './KeychainModule.nitro';
 
 const KeychainModuleHybridObject =
-  NitroModules.createHybridObject<KeychainModule>('KeychainModule');
+  NitroModules.createHybridObject<KeychainModuleType>('KeychainModule');
 
-export function multiply(a: number, b: number): number {
-  return KeychainModuleHybridObject.multiply(a, b);
-}
+export const KeychainModule = KeychainModuleHybridObject;
+export type * from './KeychainModule.nitro';

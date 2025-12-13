@@ -5,3 +5,4 @@ const CloudKitModuleHybridObject =
   NitroModules.createHybridObject<CloudKitModule>('CloudKitModule');
 
 export const CloudKit = CloudKitModuleHybridObject;
+export type * from './CloudKitModule.nitro';
