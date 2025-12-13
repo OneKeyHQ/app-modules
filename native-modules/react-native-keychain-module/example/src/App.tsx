@@ -26,7 +26,8 @@ export default function App() {
       });
       appendResult(`Success: ${result}`);
     } catch (error) {
-      appendResult(`Error: ${error}`);
+      console.error(error);
+      appendResult(`Error: ${error.message}, ${error.code}, ${error.domain}`);
     }
   };
 
