@@ -1,5 +1,3 @@
-import BackgroundThread from './NativeBackgroundThread';
+import NativeBackgroundThread from './NativeBackgroundThread';
 
-export function multiply(a: number, b: number): number {
-  return BackgroundThread.multiply(a, b);
-}
+export const BackgroundThread = NativeBackgroundThread;
