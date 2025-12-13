@@ -52,7 +52,7 @@ export interface QueryRecordsResult {
   records: RecordResult[];
 }
 
-export interface CloudKit
+export interface CloudKitModule
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   multiply(a: number, b: number): number;
   isAvailable(): Promise<boolean>;
