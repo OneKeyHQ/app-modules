@@ -55,6 +55,10 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 }
 
 - (void)startBackgroundRunner {
+  [sharedInstance startBackgroundRunnerWithEntryURL:MODULE_DEBUG_URL];
+}
+
+- (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL {
   if (isStarted) {
       return;
     }
@@ -64,7 +68,7 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
       NSDictionary *initialProperties = @{};
       NSDictionary *launchOptions = @{};
       #if DEBUG
-      [sharedInstance.reactNativeFactoryDelegate setJsBundleSource:std::string([MODULE_DEBUG_URL UTF8String])];
+        [sharedInstance.reactNativeFactoryDelegate setJsBundleSource:std::string([entryURL UTF8String])];
       #endif
       [sharedInstance.reactNativeFactory.rootViewFactory viewWithModuleName:MODULE_NAME
                                                                initialProperties:initialProperties
