@@ -17,6 +17,12 @@ const metroConfig = withMetroConfig(getDefaultConfig(__dirname), {
 });
 
 metroConfig.watchFolders = [workspaceRoot];
+metroConfig.server.enhanceMiddleware = (middleware, server) => {
+  return (req, res, next) => {
+    console.log('req.url', req.url);
+    return middleware(req, res, next);
+  };
+};
 
 metroConfig.resolver.nodeModulesPaths = [
   path.resolve(root, 'node_modules'),

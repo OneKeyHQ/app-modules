@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		078440772EEDBBE40090A8DA /* BackgroundRunnerModule.mm in Sources */ = {isa = PBXBuildFile; fileRef = 078440762EEDBBE40090A8DA /* BackgroundRunnerModule.mm */; };
 		0C80B921A6F3F58F76C31292 /* libPods-BackgroundThreadExample.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-BackgroundThreadExample.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		2FE0747EE34B6286771A94C7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
@@ -15,7 +16,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		078440712EEDB1DB0090A8DA /* BackgroundThreadExample-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "BackgroundThreadExample-Bridging-Header.h"; sourceTree = "<group>"; };
+		078440752EEDBBE40090A8DA /* BackgroundRunnerModule.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BackgroundRunnerModule.h; sourceTree = "<group>"; };
+		078440762EEDBBE40090A8DA /* BackgroundRunnerModule.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = BackgroundRunnerModule.mm; sourceTree = "<group>"; };
+		078440782EEDBC020090A8DA /* BackgroundThreadExample-Bridging-header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "BackgroundThreadExample-Bridging-header.h"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* BackgroundThreadExample.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BackgroundThreadExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = BackgroundThreadExample/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = BackgroundThreadExample/Info.plist; sourceTree = "<group>"; };
@@ -48,7 +51,9 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
-				078440712EEDB1DB0090A8DA /* BackgroundThreadExample-Bridging-Header.h */,
+				078440752EEDBBE40090A8DA /* BackgroundRunnerModule.h */,
+				078440762EEDBBE40090A8DA /* BackgroundRunnerModule.mm */,
+				078440782EEDBC020090A8DA /* BackgroundThreadExample-Bridging-header.h */,
 			);
 			name = BackgroundThreadExample;
 			sourceTree = "<group>";
@@ -193,9 +198,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BackgroundThreadExample/Pods-BackgroundThreadExample-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BackgroundThreadExample/Pods-BackgroundThreadExample-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -232,9 +241,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BackgroundThreadExample/Pods-BackgroundThreadExample-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BackgroundThreadExample/Pods-BackgroundThreadExample-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -249,6 +262,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				078440772EEDBBE40090A8DA /* BackgroundRunnerModule.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
