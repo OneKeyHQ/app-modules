@@ -3,7 +3,6 @@ import CloudKit
 import NitroModules
 
 class CloudKitModule: HybridCloudKitModuleSpec {
-    
   // MARK: - Properties
   private let container = CKContainer.default()
   private lazy var database = container.privateCloudDatabase
@@ -19,7 +18,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
   // MARK: - Get Account Info
   
-  public func getAccountInfo() throws -> Promise<[String: Any]> {
+  public func getAccountInfo() throws -> Promise<AccountInfoResult> {
     return Promise.async {
       let status = try await self.container.accountStatus()
       var userId: String?
@@ -42,29 +41,16 @@ class CloudKitModule: HybridCloudKitModuleSpec {
       default:
         name = "couldNotDetermine"
       }
-      let result = AccountInfoResult(status: status.rawValue, statusName: name, containerUserId: userId)
-      return [
-        "status": result.status,
-        "statusName": result.statusName,
-        "containerUserId": result.containerUserId ?? NSNull()
-      ]
+      let result = AccountInfoResult(status: Double(status.rawValue), statusName: name, containerUserId: userId)
+      return result
     }
   }
 
   // MARK: - Save Record
   
-  public func saveRecord(params: [String: Any]) throws -> Promise<[String: Any]> {
-    guard let recordType = params["recordType"] as? String,
-          let recordID = params["recordID"] as? String,
-          let data = params["data"] as? String,
-          let meta = params["meta"] as? String else {
-      throw CloudKitModuleError.invalidParameters("recordType, recordID, data and meta are required")
-    }
-    
-    let saveParams = SaveRecordParams(recordType: recordType, recordID: recordID, data: data, meta: meta)
-    
+  public func saveRecord(params: SaveRecordParams) throws -> Promise<SaveRecordResult> {
     return Promise.async {
-      let ckRecordID = CKRecord.ID(recordName: saveParams.recordID)
+      let ckRecordID = CKRecord.ID(recordName: params.recordID)
       let recordToSave: CKRecord
       do {
         // Update existing record if found
@@ -72,36 +58,26 @@ class CloudKitModule: HybridCloudKitModuleSpec {
         recordToSave = record
       } catch let error as CKError where error.code == .unknownItem {
         // Create new record when not found
-        let record = CKRecord(recordType: saveParams.recordType, recordID: ckRecordID)
+        let record = CKRecord(recordType: params.recordType, recordID: ckRecordID)
         recordToSave = record
       }
-      recordToSave[CloudKitConstants.recordDataField] = saveParams.data as CKRecordValue
-      recordToSave[CloudKitConstants.recordMetaField] = saveParams.meta as CKRecordValue
+      recordToSave[CloudKitConstants.recordDataField] = params.data as CKRecordValue
+      recordToSave[CloudKitConstants.recordMetaField] = params.meta as CKRecordValue
       let savedRecord = try await self.database.save(recordToSave)
       let createdAt = Int64((savedRecord.creationDate?.timeIntervalSince1970 ?? 0) * 1000)
       let result = SaveRecordResult(
         recordID: savedRecord.recordID.recordName,
-        createdAt: createdAt
+        createdAt: Double(createdAt)
       )
-      return [
-        "recordID": result.recordID,
-        "createdAt": result.createdAt
-      ]
+      return result
     }
   }
 
   // MARK: - Fetch Record
   
-  public func fetchRecord(params: [String: Any]) throws -> Promise<[String: Any]?> {
-    guard let recordType = params["recordType"] as? String,
-          let recordID = params["recordID"] as? String else {
-      throw CloudKitModuleError.invalidParameters("recordType and recordID are required")
-    }
-    
-    let fetchParams = FetchRecordParams(recordType: recordType, recordID: recordID)
-    
+  public func fetchRecord(params: FetchRecordParams) throws -> Promise<RecordResult?> {
     return Promise.async {
-      let ckRecordID = CKRecord.ID(recordName: fetchParams.recordID)
+      let ckRecordID = CKRecord.ID(recordName: params.recordID)
       
       do {
         let record = try await self.database.record(for: ckRecordID)
@@ -116,17 +92,10 @@ class CloudKitModule: HybridCloudKitModuleSpec {
           recordType: record.recordType,
           data: data,
           meta: meta,
-          createdAt: createdAt,
-          modifiedAt: modifiedAt
+          createdAt: Double(createdAt),
+          modifiedAt: Double(modifiedAt)
         )
-        return [
-          "recordID": result.recordID,
-          "recordType": result.recordType,
-          "data": result.data,
-          "meta": result.meta,
-          "createdAt": result.createdAt,
-          "modifiedAt": result.modifiedAt
-        ]
+        return result
       } catch let error as CKError where error.code == .unknownItem {
         return nil
       }
@@ -135,16 +104,9 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
   // MARK: - Delete Record
   
-  public func deleteRecord(params: [String: Any]) throws -> Promise<Bool> {
-    guard let recordType = params["recordType"] as? String,
-          let recordID = params["recordID"] as? String else {
-      throw CloudKitModuleError.invalidParameters("recordType and recordID are required")
-    }
-    
-    let deleteParams = DeleteRecordParams(recordType: recordType, recordID: recordID)
-    
+  public func deleteRecord(params: DeleteRecordParams) throws -> Promise<Bool> {
     return Promise.async {
-      let ckRecordID = CKRecord.ID(recordName: deleteParams.recordID)
+      let ckRecordID = CKRecord.ID(recordName: params.recordID)
       
       do {
         _ = try await self.database.deleteRecord(withID: ckRecordID)
@@ -158,16 +120,9 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
   // MARK: - Record Exists
   
-  public func recordExists(params: [String: Any]) throws -> Promise<Bool> {
-    guard let recordType = params["recordType"] as? String,
-          let recordID = params["recordID"] as? String else {
-      throw CloudKitModuleError.invalidParameters("recordType and recordID are required")
-    }
-    
-    let existsParams = RecordExistsParams(recordType: recordType, recordID: recordID)
-    
+  public func recordExists(params: RecordExistsParams) throws -> Promise<Bool> {
     return Promise.async {
-      let ckRecordID = CKRecord.ID(recordName: existsParams.recordID)
+      let ckRecordID = CKRecord.ID(recordName: params.recordID)
       
       do {
         _ = try await self.database.record(for: ckRecordID)
@@ -180,16 +135,10 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
   // MARK: - Query Records
   
-  public func queryRecords(params: [String: Any]) throws -> Promise<[String: Any]> {
-    guard let recordType = params["recordType"] as? String else {
-      throw CloudKitModuleError.invalidParameters("recordType is required")
-    }
-    
-    let queryParams = QueryRecordsParams(recordType: recordType)
-    
+  public func queryRecords(params: QueryRecordsParams) throws -> Promise<QueryRecordsResult> {
     return Promise.async {
       let predicate = NSPredicate(value: true)
-      let query = CKQuery(recordType: queryParams.recordType, predicate: predicate)
+      let query = CKQuery(recordType: params.recordType, predicate: predicate)
 
       // Use CKQueryOperation with desiredKeys to fetch only meta (exclude large data field)
       return try await withCheckedThrowingContinuation { continuation in
@@ -209,8 +158,8 @@ class CloudKitModule: HybridCloudKitModuleSpec {
               recordType: record.recordType,
               data: "",
               meta: meta,
-              createdAt: createdAt,
-              modifiedAt: modifiedAt
+              createdAt: Double(createdAt),
+              modifiedAt: Double(modifiedAt)
             )
             results.append(rr)
           case .failure:
@@ -224,17 +173,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
             // Sort by modification time descending to return latest first
             let sorted = results.sorted { $0.modifiedAt > $1.modifiedAt }
             let queryResult = QueryRecordsResult(records: sorted)
-            let dictResults = queryResult.records.map { record in
-              [
-                "recordID": record.recordID,
-                "recordType": record.recordType,
-                "data": record.data,
-                "meta": record.meta,
-                "createdAt": record.createdAt,
-                "modifiedAt": record.modifiedAt
-              ]
-            }
-            continuation.resume(returning: ["records": dictResults])
+            continuation.resume(returning: queryResult)
           case .failure(let error):
             continuation.resume(throwing: error)
           }
