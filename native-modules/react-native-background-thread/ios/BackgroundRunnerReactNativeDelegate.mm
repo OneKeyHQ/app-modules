@@ -257,16 +257,16 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
         }
 
         const jsi::Value &messageArg = args[0];
-        if (!messageArg.isObject()) {
-          throw jsi::JSError(rt, "Expected an object as the first argument");
+        if (!messageArg.isString()) {
+          throw jsi::JSError(rt, "Expected an string as the first argument");
         }
-        jsi::Object jsonObject = rt.global().getPropertyAsObject(rt, "JSON");
-        jsi::Function jsonStringify = jsonObject.getPropertyAsFunction(rt, "stringify");
-        jsi::Value jsonResult = jsonStringify.call(rt, messageArg);
-        std::string messageJson = jsonResult.getString(rt).utf8(rt);
+//        jsi::Object jsonObject = rt.global().getPropertyAsObject(rt, "JSON");
+//        jsi::Function jsonStringify = jsonObject.getPropertyAsFunction(rt, "stringify");
+//        jsi::Value jsonResult = jsonStringify.call(rt, messageArg);
+        std::string messageJson = messageArg.getString(rt).utf8(rt);
         NSString *messageNS = [NSString stringWithUTF8String:messageJson.c_str()];
         if (self.onMessageCallback) {
-          self.onMessageCallback(messageNS);
+            self.onMessageCallback(messageNS);
         }
         return jsi::Value::undefined();
       });

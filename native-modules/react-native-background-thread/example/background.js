@@ -1,4 +1,6 @@
+import ReactNative from 'react-native';
 
+let waitMessages = [];
 const callbacks  = new Set();
 const onMessageCallback = (message) => {
   callbacks.forEach((callback) => callback(message));
@@ -45,7 +47,7 @@ export const nativeBGBridge = {
       waitMessages.push(message);
       return;
     }
-    globalThis.postHostMessage(message);
+    globalThis.postHostMessage(JSON.stringify(message));
   },
   onHostMessage: (callback) => {
     checkThread();

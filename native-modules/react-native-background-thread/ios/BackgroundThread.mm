@@ -74,7 +74,7 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
                                                                initialProperties:initialProperties
                                                                    launchOptions:launchOptions];
       [sharedInstance.reactNativeFactoryDelegate setOnMessageCallback:^(NSString *message) {
-        [self emitOnMessage:message];
+          [self emitOnMessage:@{@"message": message}];
       }];
     });
 }

@@ -2,7 +2,9 @@ import { TurboModuleRegistry } from 'react-native';
 
 import type { CodegenTypes, TurboModule } from 'react-native';
 export interface Spec extends TurboModule {
-  readonly onMessage: CodegenTypes.EventEmitter<string>;
+  readonly onMessage: CodegenTypes.EventEmitter<{
+    message: string;
+  }>;
   postMessage(message: string): void;
 }
 
