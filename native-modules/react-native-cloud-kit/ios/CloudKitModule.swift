@@ -1,77 +1,8 @@
 import Foundation
+import CloudKit
 import NitroModules
 
-// MARK: - Constants
-
-struct CloudKitConstants {
-  static let recordDataField = "data"
-  static let recordMetaField = "meta"
-}
-
-// MARK: - Parameter Models
-
-struct SaveRecordParams: Codable {
-  let recordType: String
-  let recordID: String
-  let data: String
-  let meta: String
-}
-
-struct FetchRecordParams: Codable {
-  let recordType: String
-  let recordID: String
-}
-
-struct DeleteRecordParams: Codable {
-  let recordType: String
-  let recordID: String
-}
-
-struct RecordExistsParams: Codable {
-  let recordType: String
-  let recordID: String
-}
-
-struct QueryRecordsParams: Codable {
-  let recordType: String
-}
-
-// MARK: - Result Models
-
-struct SaveRecordResult: Codable {
-  let recordID: String
-  let createdAt: Int64
-}
-
-struct RecordResult: Codable {
-  let recordID: String
-  let recordType: String
-  let data: String
-  let meta: String
-  let createdAt: Int64
-  let modifiedAt: Int64
-}
-
-struct QueryRecordsResult: Codable {
-  let records: [RecordResult]
-}
-
-struct AccountInfoResult: Codable {
-  let status: Int
-  let statusName: String
-  let containerUserId: String?
-}
-
-// MARK: - Error Types
-
-enum CloudKitModuleError: Error {
-  case invalidParameters(String)
-  case operationFailed(String)
-  case recordNotFound
-  case noRecordReturned
-}
-
-class CloudKit: HybridCloudKitSpec {
+class CloudKitModule: HybridCloudKitSpec {
     
   // MARK: - Properties
   private let container = CKContainer.default()
