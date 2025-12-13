@@ -14,7 +14,6 @@ class KeychainModule: HybridKeychainModuleSpec {
             case .encodingFailed:
               return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to encode value"]))
             case .operationFailed(let status):
-              let nsError = NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil)
               return Promise.rejected(withError: NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil))
             default:
               return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item"]))
@@ -24,21 +23,24 @@ class KeychainModule: HybridKeychainModuleSpec {
           }
     }
     
-    public func getItem(params: GetItemParams) throws -> Promise<Variant_NullType_GetItemResult> {
-        return Promise.async {
-            do {
-              let result = try self.moduleCore.getItem(params: params)
-              return (result != nil) ? Variant_NullType_GetItemResult.second(result!) : Variant_NullType_GetItemResult.first(NullType.null)
-            } catch let error as KeychainModuleError {
-                switch error {
-                case .operationFailed(let status):
-                    throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [NSLocalizedDescriptionKey: "Failed to get keychain item: \(status)"])
-                default:
-                    throw NSError(domain: "keychain_get_error", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get keychain item"])
-                }
-            } catch {
-                throw NSError(domain: "keychain_get_error", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get keychain item", NSUnderlyingErrorKey: error])
+  public func getItem(params : GetItemParams) throws -> Promise<Variant_NullType_GetItemResult> {
+        let typedParams = params
+        do {
+            if let result = try moduleCore.getItem(params: typedParams) {
+                return Promise.resolved(withResult: Variant_NullType_GetItemResult.second(result))
+            } else {
+                return Promise.resolved(withResult: Variant_NullType_GetItemResult.first(NullType.null))
             }
+        } catch let error as KeychainModuleError {
+        switch error {
+            case .operationFailed(let status):
+                let nsError = NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil)
+                return Promise.rejected(withError: NSError(domain: "keychain_get_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to get keychain item: \(status)", NSUnderlyingErrorKey: nsError]))
+            default:
+            return Promise.rejected(withError: NSError(domain: "keychain_get_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to get keychain item", NSUnderlyingErrorKey: error as NSError]))
+            }
+        } catch {
+            return Promise.rejected(withError: NSError(domain: "keychain_get_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to get keychain item", NSUnderlyingErrorKey: error]))
         }
     }
     
