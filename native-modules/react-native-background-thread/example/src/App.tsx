@@ -9,14 +9,12 @@ export default function App() {
 
 
   const handleTestBackgroundThread = () => {
-    try {
-      // Test background thread functionality
-      BackgroundThread.postMessage(JSON.stringify({ type: 'test' }));
-      setResult('Testing background thread...');
-      // Add your test logic here
-    } catch (error) {
-      setResult(`Error: ${error}`);
-    }
+    const message = { type: 'test1' };
+    BackgroundThread.onMessage((event) => {
+      setResult(`Message received from background thread: ${event}`);
+    });
+    BackgroundThread.postMessage(JSON.stringify(message));
+    setResult(`Message sent to background thread: ${JSON.stringify(message)}`);
   };
 
   return (

@@ -9,7 +9,25 @@
 
 #import <React/RCTBridge.h>
 #import <React/RCTBundleURLProvider.h>
-#import <React/RCTFollyConvert.h>
+
+#if __has_include(<react/utils/FollyConvert.h>)
+  // static libs / header maps (no use_frameworks!)
+  #import <react/utils/FollyConvert.h>
+#elif __has_include("FollyConvert.h")
+  /// `use_frameworks! :linkage => :static` users will need to import FollyConvert this way
+#import "FollyConvert.h"
+#elif __has_include("RCTFollyConvert.h")
+  #import "RCTFollyConvert.h"
+#else
+  #error "FollyConvert.h not found. Ensure React-utils & RCT-Folly pods are installed."
+#endif
+
+#if __has_include(<React-RCTAppDelegate/RCTDefaultReactNativeFactoryDelegate.h>)
+#import <React-RCTAppDelegate/RCTDefaultReactNativeFactoryDelegate.h>
+#elif __has_include(<React_RCTAppDelegate/RCTDefaultReactNativeFactoryDelegate.h>)
+#import React_RCTAppDelegate/RCTDefaultReactNativeFactoryDelegate.h
+#endif
+
 #import <ReactAppDependencyProvider/RCTAppDependencyProvider.h>
 #import <ReactCommon/RCTTurboModule.h>
 
