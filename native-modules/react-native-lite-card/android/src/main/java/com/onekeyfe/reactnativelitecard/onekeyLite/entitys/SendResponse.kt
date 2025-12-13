@@ -1,6 +1,6 @@
-package so.onekey.app.wallet.lite.onekeyLite.entitys
+package com.onekeyfe.reactnativelitecard.onekeyLite.entitys
 
-import so.onekey.app.wallet.lite.utils.HexUtils
+import com.onekeyfe.reactnativelitecard.utils.HexUtils
 
 data class SendResponse(
     // Original return result

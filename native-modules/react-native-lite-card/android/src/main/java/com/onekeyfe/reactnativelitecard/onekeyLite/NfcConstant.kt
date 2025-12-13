@@ -1,7 +1,7 @@
-package so.onekey.app.wallet.lite.onekeyLite
+package com.onekeyfe.reactnativelitecard.onekeyLite
 
 import android.nfc.tech.IsoDep
-import so.onekey.app.wallet.lite.utils.HexUtils
+import com.onekeyfe.reactnativelitecard.utils.HexUtils
 import java.io.IOException
 
 

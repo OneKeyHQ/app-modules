@@ -1,20 +1,20 @@
-package so.onekey.app.wallet.lite.onekeyLite.nfc
+package com.onekeyfe.reactnativelitecard.onekeyLite.nfc
 
 import android.nfc.TagLostException
 import android.nfc.tech.IsoDep
 import org.haobtc.onekey.card.gpchannel.GPChannelNatives
 import org.haobtc.onekey.card.gpchannel.GPChannelNatives.nativeGPCFinalize
-import so.onekey.app.wallet.lite.keys.KeysNativeProvider
-import so.onekey.app.wallet.lite.nfc.NFCExceptions
-import so.onekey.app.wallet.lite.onekeyLite.NfcConstant
-import so.onekey.app.wallet.lite.onekeyLite.entitys.*
-import so.onekey.app.wallet.lite.onekeyLite.nfc.GPCAPDUGenerator.buildGPCAPDU
-import so.onekey.app.wallet.lite.onekeyLite.nfc.GPCAPDUGenerator.combCommand
-import so.onekey.app.wallet.lite.utils.HexUtils
-import so.onekey.app.wallet.lite.utils.HexUtils.byteArr2HexStr
-import so.onekey.app.wallet.lite.utils.HexUtils.hexString2Bytes
-import so.onekey.app.wallet.lite.utils.LogUtil.printLog
-import so.onekey.app.wallet.lite.utils.Utils
+import com.onekeyfe.reactnativelitecard.keys.KeysNativeProvider
+import com.onekeyfe.reactnativelitecard.nfc.NFCExceptions
+import com.onekeyfe.reactnativelitecard.onekeyLite.NfcConstant
+import com.onekeyfe.reactnativelitecard.onekeyLite.entitys.*
+import com.onekeyfe.reactnativelitecard.onekeyLite.nfc.GPCAPDUGenerator.buildGPCAPDU
+import com.onekeyfe.reactnativelitecard.onekeyLite.nfc.GPCAPDUGenerator.combCommand
+import com.onekeyfe.reactnativelitecard.utils.HexUtils
+import com.onekeyfe.reactnativelitecard.utils.HexUtils.byteArr2HexStr
+import com.onekeyfe.reactnativelitecard.utils.HexUtils.hexString2Bytes
+import com.onekeyfe.reactnativelitecard.utils.LogUtil.printLog
+import com.onekeyfe.reactnativelitecard.utils.Utils
 import java.io.IOException
 
 class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGenerator) {

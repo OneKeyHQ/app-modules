@@ -1,4 +1,4 @@
-package so.onekey.app.wallet.lite.nfc
+package com.onekeyfe.reactnativelitecard.nfc
 
 sealed class NFCExceptions(val code: Int, override val message: String? = null) : Exception(message) {
     fun toJson(): String {

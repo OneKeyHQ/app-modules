@@ -28,7 +28,7 @@ char *getInitParams() {
 #ifdef __ANDROID__
 
 JNIEXPORT jstring JNICALL
-Java_so_onekey_app_wallet_lite_keys_KeysNativeProvider_getLiteSecureChannelInitParams(JNIEnv *env,
+Java_com_onekeyfe_reactnativelitecard_keys_KeysNativeProvider_getLiteSecureChannelInitParams(JNIEnv *env,
                                                                                  jobject this,
                                                                                  jobject context) {
     char *result = getInitParams();

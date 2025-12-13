@@ -14,7 +14,7 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/OneKeyHQ/app-modules/onekeyfe-react-native-lite-card.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm,swift,cpp}", "keys/**/*.{h,c,m,mm,swift,cpp}"
-  s.vendored_framework = "ios/GPChannelSDKCore.xcframework"
+  s.vendored_framework = "framework/GPChannelSDKCore.xcframework"
   s.private_header_files = "ios/**/*.h"
 
 

@@ -1,14 +1,14 @@
-package so.onekey.app.wallet.lite.onekeyLite.nfc
+package com.onekeyfe.reactnativelitecard.onekeyLite.nfc
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import org.haobtc.onekey.card.gpchannel.GPChannelNatives.nativeGPCParseAPDUResponse
 import org.haobtc.onekey.card.gpchannel.GPChannelNatives.nativeGPCParseSafeAPDUResponse
-import so.onekey.app.wallet.lite.nfc.NFCExceptions
-import so.onekey.app.wallet.lite.onekeyLite.entitys.APDUParam
-import so.onekey.app.wallet.lite.onekeyLite.entitys.CardResponse
-import so.onekey.app.wallet.lite.onekeyLite.entitys.SendResponse
-import so.onekey.app.wallet.lite.utils.Utils
+import com.onekeyfe.reactnativelitecard.nfc.NFCExceptions
+import com.onekeyfe.reactnativelitecard.onekeyLite.entitys.APDUParam
+import com.onekeyfe.reactnativelitecard.onekeyLite.entitys.CardResponse
+import com.onekeyfe.reactnativelitecard.onekeyLite.entitys.SendResponse
+import com.onekeyfe.reactnativelitecard.utils.Utils
 
 enum class AppleCardType(val aid: String, val prefixSN: String) {
     V1("D156000132834001", "OKLFT"),

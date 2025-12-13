@@ -1,4 +1,4 @@
-package so.onekey.app.wallet.lite.utils
+package com.onekeyfe.reactnativelitecard.utils
 
 import android.app.AppOpsManager
 import android.content.Context
@@ -9,10 +9,10 @@ import android.provider.Settings
 import android.util.Log
 import androidx.annotation.IntDef
 import androidx.annotation.RequiresApi
-import so.onekey.app.wallet.lite.utils.MiUtil.PermissionResult.Companion.PERMISSION_ASK
-import so.onekey.app.wallet.lite.utils.MiUtil.PermissionResult.Companion.PERMISSION_DENIED
-import so.onekey.app.wallet.lite.utils.MiUtil.PermissionResult.Companion.PERMISSION_GRANTED
-import so.onekey.app.wallet.lite.utils.MiUtil.PermissionResult.Companion.PERMISSION_UNKNOWN
+import com.onekeyfe.reactnativelitecard.utils.MiUtil.PermissionResult.Companion.PERMISSION_ASK
+import com.onekeyfe.reactnativelitecard.utils.MiUtil.PermissionResult.Companion.PERMISSION_DENIED
+import com.onekeyfe.reactnativelitecard.utils.MiUtil.PermissionResult.Companion.PERMISSION_GRANTED
+import com.onekeyfe.reactnativelitecard.utils.MiUtil.PermissionResult.Companion.PERMISSION_UNKNOWN
 
 object MiUtil {
     val TAG = MiUtil::class.simpleName

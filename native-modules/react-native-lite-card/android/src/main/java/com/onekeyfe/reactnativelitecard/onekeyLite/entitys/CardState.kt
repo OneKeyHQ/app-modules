@@ -1,4 +1,4 @@
-package so.onekey.app.wallet.lite.onekeyLite.entitys
+package com.onekeyfe.reactnativelitecard.onekeyLite.entitys
 
 import android.nfc.tech.IsoDep
 

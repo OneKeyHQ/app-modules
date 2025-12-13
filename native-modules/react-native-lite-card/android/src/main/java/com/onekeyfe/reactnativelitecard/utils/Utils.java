@@ -1,4 +1,4 @@
-package so.onekey.app.wallet.lite.utils;
+package com.onekeyfe.reactnativelitecard.utils;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;

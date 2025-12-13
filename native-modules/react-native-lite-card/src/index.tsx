@@ -92,3 +92,4 @@ class OnekeyLite {
 const onekeyLite = new OnekeyLite();
 export default onekeyLite;
 export type * from './NativeReactNativeLiteCard';
+export { CardErrors } from './NativeReactNativeLiteCard';

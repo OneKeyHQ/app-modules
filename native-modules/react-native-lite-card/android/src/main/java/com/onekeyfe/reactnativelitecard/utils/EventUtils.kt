@@ -1,4 +1,4 @@
-package so.onekey.app.wallet.lite.utils
+package com.onekeyfe.reactnativelitecard.utils
 
 import com.facebook.react.bridge.ReactContext
 import com.facebook.react.modules.core.DeviceEventManagerModule
