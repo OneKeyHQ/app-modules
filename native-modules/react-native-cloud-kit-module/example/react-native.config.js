@@ -1,12 +1,9 @@
 const path = require('path');
 const pkg = require('../package.json');
+const baseConfig = require('../../../react-native.base.config');
 
 module.exports = {
-  project: {
-    ios: {
-      automaticPodsInstallation: true,
-    },
-  },
+  ...baseConfig,
   dependencies: {
     [pkg.name]: {
       root: path.join(__dirname, '..'),
