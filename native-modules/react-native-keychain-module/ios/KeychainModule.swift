@@ -5,23 +5,26 @@ class KeychainModule: HybridKeychainModuleSpec {
     private let moduleCore = KeychainModuleCore()
     
     public func setItem(params: SetItemParams) throws -> Promise<Bool> {
-        return Promise.async {
-            do {
-                try self.moduleCore.setItem(params: params)
-                return true
-            } catch let error as KeychainModuleError {
-                switch error {
-                case .encodingFailed:
-                    throw NSError(domain: "keychain_set_error", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to encode value"])
-                case .operationFailed(let status):
-                    throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item: \(status)"])
-                default:
-                    throw NSError(domain: "keychain_set_error", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item"])
-                }
-            } catch {
-                throw NSError(domain: "keychain_set_error", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item", NSUnderlyingErrorKey: error])
+          guard let typedParams = SetItemParams(from: params) else {
+            return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Invalid parameters: key and value"]))
+          }
+
+          do {
+            try moduleCore.setItem(params: typedParams)
+            return Promise.resolved(withResult: true)
+          } catch let error as KeychainModuleError {
+            switch error {
+            case .encodingFailed:
+              return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to encode value"]))
+            case .operationFailed(let status):
+              let nsError = NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil)
+              return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item: \(status)"]))
+            default:
+              return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item"]))
             }
-        }
+          } catch {
+            return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item", NSUnderlyingErrorKey: error]))
+          }
     }
     
     public func getItem(params: GetItemParams) throws -> Promise<Variant_NullType_GetItemResult> {
