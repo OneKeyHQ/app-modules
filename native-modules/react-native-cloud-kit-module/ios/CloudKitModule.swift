@@ -2,7 +2,7 @@ import Foundation
 import CloudKit
 import NitroModules
 
-class CloudKitModule: HybridCloudKitSpec {
+class CloudKitModule: HybridCloudKitModuleSpec {
     
   // MARK: - Properties
   private let container = CKContainer.default()

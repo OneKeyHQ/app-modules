@@ -54,7 +54,6 @@ export interface QueryRecordsResult {
 
 export interface CloudKitModule
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
-  multiply(a: number, b: number): number;
   isAvailable(): Promise<boolean>;
   getAccountInfo(): Promise<AccountInfoResult>;
   saveRecord(params: SaveRecordParams): Promise<SaveRecordResult>;
