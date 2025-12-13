@@ -1,5 +1,5 @@
 import { Button, ScrollView , Text, StyleSheet } from 'react-native';
-import { CloudKit } from 'react-native-cloud-kit';
+import { CloudKit } from 'react-native-cloud-kit-module';
 import { useEffect, useState } from 'react';
 
 export default function App() {
@@ -91,10 +91,7 @@ export default function App() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text>Result: {result}</Text>
-    </View>
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>CloudKit Test App</Text>
       
       <Text style={styles.section}>Status:</Text>
