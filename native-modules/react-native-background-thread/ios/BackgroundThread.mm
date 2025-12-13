@@ -55,7 +55,7 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
       [self.reactNativeFactory.rootViewFactory viewWithModuleName:MODULE_NAME
                                                                initialProperties:initialProperties
                                                                    launchOptions:launchOptions];
-      __weak typeof(self) weakSelf = self;
+      __weak __typeof__(self) weakSelf = self;
       [self.reactNativeFactoryDelegate setOnMessageCallback:^(NSString *message) {
           [weakSelf emitOnBackgroundMessage:message];
       }];
