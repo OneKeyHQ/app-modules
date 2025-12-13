@@ -28,26 +28,6 @@ static BOOL isStarted = NO;
 static NSString *const MODULE_NAME = @"background";
 static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/background.bundle?platform=ios&dev=true&lazy=false&minify=false&inlineSourceMap=false&modulesOnly=false&runModule=true&excludeSource=true&sourcePaths=url-server&app=so.onekey.wallet&transform.routerRoot=app&transform.engine=hermes&transform.bytecode=1&unstable_transformProfile=hermes-stable";
 
-
-+ (instancetype)sharedInstance {
-  static dispatch_once_t onceToken;
-  dispatch_once(&onceToken, ^{
-    sharedInstance = [[self alloc] init];
-    sharedInstance.reactNativeFactoryDelegate = [[BackgroundReactNativeDelegate alloc] init];
-    sharedInstance.reactNativeFactory = [[RCTReactNativeFactory alloc] initWithDelegate:sharedInstance.reactNativeFactoryDelegate];
-  });
-  return sharedInstance;
-}
-
-- (instancetype)init {
-    if (self = [super init]) {
-        if (!sharedInstance) {
-            sharedInstance = self;
-        }
-    }
-    return self;
-}
-
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
 {
@@ -55,7 +35,7 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 }
 
 - (void)startBackgroundRunner {
-  [sharedInstance startBackgroundRunnerWithEntryURL:MODULE_DEBUG_URL];
+  [self startBackgroundRunnerWithEntryURL:MODULE_DEBUG_URL];
 }
 
 - (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL {
@@ -67,23 +47,25 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
     dispatch_async(dispatch_get_main_queue(), ^{
       NSDictionary *initialProperties = @{};
       NSDictionary *launchOptions = @{};
+      self.reactNativeFactoryDelegate = [[BackgroundReactNativeDelegate alloc] init];
+      self.reactNativeFactory = [[RCTReactNativeFactory alloc] initWithDelegate:self.reactNativeFactoryDelegate];
       #if DEBUG
-        [sharedInstance.reactNativeFactoryDelegate setJsBundleSource:std::string([entryURL UTF8String])];
+        [self.reactNativeFactoryDelegate setJsBundleSource:std::string([entryURL UTF8String])];
       #endif
-      [sharedInstance.reactNativeFactory.rootViewFactory viewWithModuleName:MODULE_NAME
+      [self.reactNativeFactory.rootViewFactory viewWithModuleName:MODULE_NAME
                                                                initialProperties:initialProperties
                                                                    launchOptions:launchOptions];
-      [sharedInstance.reactNativeFactoryDelegate setOnMessageCallback:^(NSString *message) {
-          [sharedInstance emitOnBackgroundMessage:message];
+      [self.reactNativeFactoryDelegate setOnMessageCallback:^(NSString *message) {
+          [self emitOnBackgroundMessage:message];
       }];
     });
 }
 
 - (void)postBackgroundMessage:(nonnull NSString *)message {
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-    [sharedInstance emitOnBackgroundMessage:@"2221"];
-  });
-//  [sharedInstance.reactNativeFactoryDelegate postMessage:std::string([message UTF8String])];
+//  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+//    [self emitOnBackgroundMessage:@"2221"];
+//  });
+  [self.reactNativeFactoryDelegate postMessage:std::string([message UTF8String])];
 }
 
 + (NSString *)moduleName

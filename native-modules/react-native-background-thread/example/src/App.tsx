@@ -4,6 +4,7 @@ import { BackgroundThread } from 'react-native-background-thread';
 import { useState } from 'react';
 import { Button } from 'react-native';
 
+BackgroundThread.startBackgroundRunnerWithEntryURL('http://localhost:8082/background.bundle?platform=ios&dev=true&lazy=true&minify=false&inlineSourceMap=false&modulesOnly=false&runModule=true&excludeSource=true&sourcePaths=url-server&app=backgroundthread.example');
 export default function App() {
   const [result, setResult] = useState<string>('');
 

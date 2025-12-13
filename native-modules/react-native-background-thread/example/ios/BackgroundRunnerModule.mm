@@ -13,7 +13,7 @@ NS_ASSUME_NONNULL_BEGIN
 @implementation BackgroundRunnerModule
 
 + (void)startBackgroundRunner {
-  [BackgroundThread.sharedInstance startBackgroundRunnerWithEntryURL:@"http://localhost:8082/background.bundle?platform=ios&dev=true&lazy=true&minify=false&inlineSourceMap=false&modulesOnly=false&runModule=true&excludeSource=true&sourcePaths=url-server&app=backgroundthread.example"];
+//  [BackgroundThread startBackgroundRunnerWithEntryURL:@"http://localhost:8082/background.bundle?platform=ios&dev=true&lazy=true&minify=false&inlineSourceMap=false&modulesOnly=false&runModule=true&excludeSource=true&sourcePaths=url-server&app=backgroundthread.example"];
 }
 @end
 
