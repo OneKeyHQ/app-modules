@@ -265,7 +265,7 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
 //        jsi::Value jsonResult = jsonStringify.call(rt, messageArg);
         std::string messageJson = messageArg.getString(rt).utf8(rt);
         NSString *messageNS = [NSString stringWithUTF8String:messageJson.c_str()];
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_global_queue(0, 0), ^{
+            dispatch_async(dispatch_get_main_queue(), ^{
               if (self.onMessageCallback) {
                 self.onMessageCallback(messageNS);
               }

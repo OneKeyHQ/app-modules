@@ -55,16 +55,14 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
       [self.reactNativeFactory.rootViewFactory viewWithModuleName:MODULE_NAME
                                                                initialProperties:initialProperties
                                                                    launchOptions:launchOptions];
+      __weak typeof(self) weakSelf = self;
       [self.reactNativeFactoryDelegate setOnMessageCallback:^(NSString *message) {
-          [self emitOnBackgroundMessage:message];
+          [weakSelf emitOnBackgroundMessage:message];
       }];
     });
 }
 
 - (void)postBackgroundMessage:(nonnull NSString *)message {
-//  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-//    [self emitOnBackgroundMessage:@"2221"];
-//  });
   [self.reactNativeFactoryDelegate postMessage:std::string([message UTF8String])];
 }
 
