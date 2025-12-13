@@ -2,20 +2,20 @@
 
 /**
  * React Native Nitro Module Setup Script
- * 根据 README.md 的描述自动配置 Nitro Module
+ * Automatically configure Nitro Module based on README.md instructions
  *
- * 用法: node setup-nitro-module.js <module-directory>
- * 示例: node setup-nitro-module.js native-modules/react-native-cloud-kit
+ * Usage: node setup-nitro-module.js <module-directory>
+ * Example: node setup-nitro-module.js native-modules/react-native-cloud-kit
  */
 
 const fs = require('fs');
 const path = require('path');
 
-// 检查参数
+// Check arguments
 if (process.argv.length < 3) {
-    console.log("错误: 请提供模块目录路径");
-    console.log(`用法: ${path.basename(process.argv[1])} <module-directory>`);
-    console.log(`示例: ${path.basename(process.argv[1])} native-modules/react-native-cloud-kit`);
+    console.log("Error: Please provide module directory path");
+    console.log(`Usage: ${path.basename(process.argv[1])} <module-directory>`);
+    console.log(`Example: ${path.basename(process.argv[1])} native-modules/react-native-cloud-kit`);
     process.exit(1);
 }
 
@@ -23,13 +23,13 @@ const moduleDir = process.argv[2];
 const scriptDir = __dirname;
 const workspaceRoot = path.dirname(scriptDir);
 
-// 检查模块目录是否存在
+// Check if module directory exists
 if (!fs.existsSync(moduleDir)) {
-    console.log(`错误: 目录 '${moduleDir}' 不存在`);
+    console.log(`Error: Directory '${moduleDir}' does not exist`);
     process.exit(1);
 }
 
-// 转换为绝对路径
+// Convert to absolute path
 let absModuleDir;
 if (path.isAbsolute(moduleDir)) {
     absModuleDir = moduleDir;
@@ -37,9 +37,9 @@ if (path.isAbsolute(moduleDir)) {
     absModuleDir = path.join(workspaceRoot, moduleDir);
 }
 
-console.log(`正在设置 Nitro Module: ${absModuleDir}`);
+console.log(`Setting up Nitro Module: ${absModuleDir}`);
 
-// 辅助函数：检查文件内容是否包含指定字符串
+// Helper function: Check if file contains specified string
 function fileContains(filePath, searchString) {
     try {
         const content = fs.readFileSync(filePath, 'utf8');
@@ -49,40 +49,40 @@ function fileContains(filePath, searchString) {
     }
 }
 
-// 辅助函数：备份文件
+// Helper function: Backup file
 function backupFile(filePath) {
     try {
         fs.copyFileSync(filePath, `${filePath}.backup`);
     } catch (error) {
-        console.log(`  - 警告: 无法备份文件 ${filePath}: ${error.message}`);
+        console.log(`  - Warning: Unable to backup file ${filePath}: ${error.message}`);
     }
 }
 
-// 步骤 1: 检查并删除 package.json 中的 packageManager 字段
-console.log("步骤 1: 检查 package.json 中的 packageManager 字段...");
+// Step 1: Check and remove packageManager field from package.json
+console.log("Step 1: Checking packageManager field in package.json...");
 const packageJsonPath = path.join(absModuleDir, 'package.json');
 
 if (fs.existsSync(packageJsonPath)) {
     if (fileContains(packageJsonPath, '"packageManager"')) {
-        console.log("  - 发现 packageManager 字段，建议手动删除以避免冲突");
-        console.log(`  - 位置: ${packageJsonPath}`);
-        console.log("  - 请删除类似这样的行: \"packageManager\": \"yarn@x.x.x\",");
+        console.log("  - Found packageManager field, recommend manual removal to avoid conflicts");
+        console.log(`  - Location: ${packageJsonPath}`);
+        console.log("  - Please remove lines like: \"packageManager\": \"yarn@x.x.x\",");
     } else {
-        console.log("  - ✓ 未发现 packageManager 字段");
+        console.log("  - ✓ No packageManager field found");
     }
 } else {
-    console.log("  - 警告: 未找到 package.json 文件");
+    console.log("  - Warning: package.json file not found");
 }
 
-// 步骤 2: 修改 react-native.config.js
-console.log("步骤 2: 配置 react-native.config.js...");
+// Step 2: Modify react-native.config.js
+console.log("Step 2: Configuring react-native.config.js...");
 const rnConfigFile = path.join(absModuleDir, 'example', 'react-native.config.js');
 
 if (fs.existsSync(rnConfigFile)) {
     if (fileContains(rnConfigFile, 'react-native.base.config')) {
-        console.log("  - ✓ react-native.config.js 已包含 baseConfig 配置");
+        console.log("  - ✓ react-native.config.js already contains baseConfig configuration");
     } else {
-        console.log("  - 更新 react-native.config.js...");
+        console.log("  - Updating react-native.config.js...");
         backupFile(rnConfigFile);
         
         const newConfig = `const path = require('path');
@@ -105,21 +105,21 @@ module.exports = {
 };
 `;
         fs.writeFileSync(rnConfigFile, newConfig);
-        console.log("  - ✓ react-native.config.js 已更新");
+        console.log("  - ✓ react-native.config.js updated");
     }
 } else {
-    console.log("  - 警告: 未找到 react-native.config.js 文件");
+    console.log("  - Warning: react-native.config.js file not found");
 }
 
-// 步骤 3: 修改 metro.config.js
-console.log("步骤 3: 配置 metro.config.js...");
+// Step 3: Modify metro.config.js
+console.log("Step 3: Configuring metro.config.js...");
 const metroConfigFile = path.join(absModuleDir, 'example', 'metro.config.js');
 
 if (fs.existsSync(metroConfigFile)) {
     if (fileContains(metroConfigFile, 'workspaceRoot')) {
-        console.log("  - ✓ metro.config.js 已包含 monorepo 配置");
+        console.log("  - ✓ metro.config.js already contains monorepo configuration");
     } else {
-        console.log("  - 更新 metro.config.js...");
+        console.log("  - Updating metro.config.js...");
         backupFile(metroConfigFile);
         
         const newMetroConfig = `const path = require('path');
@@ -150,25 +150,25 @@ metroConfig.resolver.nodeModulesPaths = [
 module.exports = metroConfig;
 `;
         fs.writeFileSync(metroConfigFile, newMetroConfig);
-        console.log("  - ✓ metro.config.js 已更新");
+        console.log("  - ✓ metro.config.js updated");
     }
 } else {
-    console.log("  - 警告: 未找到 metro.config.js 文件");
+    console.log("  - Warning: metro.config.js file not found");
 }
 
-// 步骤 4: 修改 Android settings.gradle
-console.log("步骤 4: 配置 Android settings.gradle...");
+// Step 4: Modify Android settings.gradle
+console.log("Step 4: Configuring Android settings.gradle...");
 const androidSettingsFile = path.join(absModuleDir, 'example', 'android', 'settings.gradle');
 
 if (fs.existsSync(androidSettingsFile)) {
     const settingsContent = fs.readFileSync(androidSettingsFile, 'utf8');
     if (settingsContent.includes('pluginManagement') && settingsContent.includes('commandLine.*node.*--print')) {
-        console.log("  - ✓ Android settings.gradle 已包含正确配置");
+        console.log("  - ✓ Android settings.gradle already contains correct configuration");
     } else {
-        console.log("  - 更新 Android settings.gradle...");
+        console.log("  - Updating Android settings.gradle...");
         backupFile(androidSettingsFile);
         
-        // 获取项目名称
+        // Get project name
         let projectName = 'example';
         const projectNameMatch = settingsContent.match(/rootProject\.name\s*=\s*['"](.*)['"]/);
         if (projectNameMatch) {
@@ -198,26 +198,26 @@ providers.exec {
 includeBuild(reactNativeGradlePlugin)
 `;
         fs.writeFileSync(androidSettingsFile, newSettingsConfig);
-        console.log("  - ✓ Android settings.gradle 已更新");
+        console.log("  - ✓ Android settings.gradle updated");
     }
 } else {
-    console.log("  - 警告: 未找到 Android settings.gradle 文件");
+    console.log("  - Warning: Android settings.gradle file not found");
 }
 
-// 步骤 5: 修改 Android app/build.gradle
-console.log("步骤 5: 配置 Android app/build.gradle...");
+// Step 5: Modify Android app/build.gradle
+console.log("Step 5: Configuring Android app/build.gradle...");
 const androidBuildFile = path.join(absModuleDir, 'example', 'android', 'app', 'build.gradle');
 
 if (fs.existsSync(androidBuildFile)) {
     if (fileContains(androidBuildFile, 'reactNativeDir.*node.*--print')) {
-        console.log("  - ✓ Android app/build.gradle 已包含正确的 react 配置");
+        console.log("  - ✓ Android app/build.gradle already contains correct react configuration");
     } else {
-        console.log("  - 更新 Android app/build.gradle...");
+        console.log("  - Updating Android app/build.gradle...");
         backupFile(androidBuildFile);
         
         let buildContent = fs.readFileSync(androidBuildFile, 'utf8');
         
-        // 在 react { 块中添加配置
+        // Add configuration to react { block
         const reactBlockRegex = /(react\s*\{)/;
         const additionalConfig = `    reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
     hermesCommand = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/sdks/hermesc/%OS-BIN%/hermesc"
@@ -228,35 +228,35 @@ if (fs.existsSync(androidBuildFile)) {
         if (reactBlockRegex.test(buildContent)) {
             buildContent = buildContent.replace(reactBlockRegex, `$1\n${additionalConfig}`);
             fs.writeFileSync(androidBuildFile, buildContent);
-            console.log("  - ✓ Android app/build.gradle 已更新");
+            console.log("  - ✓ Android app/build.gradle updated");
         } else {
-            console.log("  - 警告: 未找到 react 配置块");
+            console.log("  - Warning: react configuration block not found");
         }
     }
 } else {
-    console.log("  - 警告: 未找到 Android app/build.gradle 文件");
+    console.log("  - Warning: Android app/build.gradle file not found");
 }
 
-// 步骤 6: 更新 package.json 中的 release 脚本
-console.log("步骤 6: 配置 release 脚本...");
+// Step 6: Update release script in package.json
+console.log("Step 6: Configuring release script...");
 if (fs.existsSync(packageJsonPath)) {
     if (fileContains(packageJsonPath, '"release".*nitrogen')) {
-        console.log("  - ✓ release 脚本已包含 nitrogen 命令");
+        console.log("  - ✓ release script already contains nitrogen command");
     } else {
-        console.log("  - 建议手动更新 package.json 中的 release 脚本：");
+        console.log("  - Recommend manually updating release script in package.json:");
         console.log("    \"release\": \"yarn nitrogen && yarn prepare && release-it --only-version\"");
-        console.log(`  - 位置: ${packageJsonPath}`);
+        console.log(`  - Location: ${packageJsonPath}`);
     }
 }
 
 console.log("");
-console.log("🎉 Nitro Module 配置完成！");
+console.log("🎉 Nitro Module configuration completed!");
 console.log("");
-console.log("接下来的步骤：");
-console.log("1. 运行 'yarn' 安装依赖");
-console.log(`2. 在 ${absModuleDir} 目录运行 'yarn nitrogen' 生成必要文件`);
-console.log(`3. 在 ${absModuleDir}/example/ios 目录运行 'pod install'`);
-console.log(`4. 启动 Metro 服务器: cd ${absModuleDir}/example && yarn start`);
-console.log("5. 构建并运行 iOS/Android 应用进行测试");
+console.log("Next steps:");
+console.log("1. Run 'yarn' to install dependencies");
+console.log(`2. Run 'yarn nitrogen' in ${absModuleDir} directory to generate necessary files`);
+console.log(`3. Run 'pod install' in ${absModuleDir}/example/ios directory`);
+console.log(`4. Start Metro server: cd ${absModuleDir}/example && yarn start`);
+console.log("5. Build and run iOS/Android app for testing");
 console.log("");
-console.log("备份文件已保存为 *.backup，如有问题可以恢复");
+console.log("Backup files saved as *.backup, can be restored if needed");
