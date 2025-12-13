@@ -2520,7 +2520,7 @@ DEPENDENCIES:
   - fmt (from `../../../../node_modules/react-native/third-party-podspecs/fmt.podspec`)
   - glog (from `../../../../node_modules/react-native/third-party-podspecs/glog.podspec`)
   - hermes-engine (from `../../../../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
-  - NitroModules (from `../node_modules/react-native-nitro-modules`)
+  - NitroModules (from `../../../../node_modules/react-native-nitro-modules`)
   - RCT-Folly (from `../../../../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec`)
   - RCTDeprecation (from `../../../../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
   - RCTRequired (from `../../../../node_modules/react-native/Libraries/Required`)
@@ -2617,7 +2617,7 @@ EXTERNAL SOURCES:
     :podspec: "../../../../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec"
     :tag: hermes-v0.14.0
   NitroModules:
-    :path: "../node_modules/react-native-nitro-modules"
+    :path: "../../../../node_modules/react-native-nitro-modules"
   RCT-Folly:
     :podspec: "../../../../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec"
   RCTDeprecation:
