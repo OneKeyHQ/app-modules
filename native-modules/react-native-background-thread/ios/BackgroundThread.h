@@ -1,5 +1,8 @@
 #import <BackgroundThreadSpec/BackgroundThreadSpec.h>
 
-@interface BackgroundThread : NSObject <NativeBackgroundThreadSpec>
+@interface BackgroundThread : NativeBackgroundThreadSpecBase <NativeBackgroundThreadSpec>
+
++ (instancetype)sharedInstance;
+- (void)startBackgroundRunner;
 
 @end
