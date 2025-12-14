@@ -6,14 +6,14 @@
 //
 
 #import "BackgroundRunnerModule.h"
-#import <BackgroundThread/BackgroundThread.h>
+#import <BackgroundThread/BackgroundThreadManager.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
 @implementation BackgroundRunnerModule
 
 + (void)startBackgroundRunner {
-//  [BackgroundThread startBackgroundRunnerWithEntryURL:@"http://localhost:8082/background.bundle?platform=ios&dev=true&lazy=true&minify=false&inlineSourceMap=false&modulesOnly=false&runModule=true&excludeSource=true&sourcePaths=url-server&app=backgroundthread.example"];
+  [BackgroundThreadManager.sharedInstance startBackgroundRunnerWithEntryURL:@"http://localhost:8082/background.bundle?platform=ios&dev=true&lazy=true&minify=false&inlineSourceMap=false&modulesOnly=false&runModule=true&excludeSource=true&sourcePaths=url-server&app=backgroundthread.example"];
 }
 @end
 
