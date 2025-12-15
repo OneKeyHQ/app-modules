@@ -6,16 +6,16 @@ import com.margelo.nitro.core.Promise
 
 @DoNotStrip
 class KeychainModule : HybridKeychainModuleSpec() {
-  override fun setItem(params: SetItemParams): Promise<Boolean> {
-    return Promise.resolved(false)
+  override fun setItem(params: SetItemParams): Promise<Unit> {
+    return Promise.resolved(Unit)
   }
 
   override fun getItem(params: GetItemParams): Promise<Variant_NullType_GetItemResult> {
     return Promise.resolved(Variant_NullType_GetItemResult.First(NullType.NULL))
   }
 
-  override fun removeItem(params: RemoveItemParams): Promise<Boolean> {
-    return Promise.resolved(false)
+  override fun removeItem(params: RemoveItemParams): Promise<Unit> {
+    return Promise.resolved(Unit)
   }
 
   override fun hasItem(params: HasItemParams): Promise<Boolean> {

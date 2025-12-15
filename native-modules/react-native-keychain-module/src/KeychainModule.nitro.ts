@@ -27,9 +27,9 @@ export interface GetItemResult {
 
 export interface KeychainModule
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
-  setItem(params: SetItemParams): Promise<boolean>;
+  setItem(params: SetItemParams): Promise<void>;
   getItem(params: GetItemParams): Promise<GetItemResult | null>;
-  removeItem(params: RemoveItemParams): Promise<boolean>;
+  removeItem(params: RemoveItemParams): Promise<void>;
   hasItem(params: HasItemParams): Promise<boolean>;
   isICloudSyncEnabled(): Promise<boolean>;
 }

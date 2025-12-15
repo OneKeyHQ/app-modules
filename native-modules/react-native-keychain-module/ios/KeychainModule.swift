@@ -4,11 +4,11 @@ class KeychainModule: HybridKeychainModuleSpec {
     
     private let moduleCore = KeychainModuleCore()
     
-    public func setItem(params: SetItemParams) throws -> Promise<Bool> {
+    public func setItem(params: SetItemParams) throws -> Promise<Void> {
           let typedParams = params
           do {
             try moduleCore.setItem(params: typedParams)
-            return Promise.resolved(withResult: true)
+            return Promise.resolved(withResult: Void())
           } catch let error as KeychainModuleError {
             switch error {
             case .encodingFailed:
@@ -43,11 +43,11 @@ class KeychainModule: HybridKeychainModuleSpec {
         }
     }
     
-    public func removeItem(params: RemoveItemParams) throws -> Promise<Bool> {
+    public func removeItem(params: RemoveItemParams) throws -> Promise<Void> {
         let typedParams = params
         do {
             try moduleCore.removeItem(params: typedParams)
-            return Promise.resolved(withResult: true)
+            return Promise.resolved(withResult: Void())
         } catch let error as KeychainModuleError {
         switch error {
             case .operationFailed(let status):
