@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-cloud-kit-module",
-  "version": "1.1.8",
+  "version": "1.1.9",
   "description": "react-native-cloud-kit-module",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
