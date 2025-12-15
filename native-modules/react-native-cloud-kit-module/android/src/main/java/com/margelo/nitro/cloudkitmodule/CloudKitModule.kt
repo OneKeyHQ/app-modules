@@ -33,8 +33,8 @@ class CloudKitModule : HybridCloudKitModuleSpec() {
     return Promise.resolved(null)
   }
 
-  override fun deleteRecord(params: DeleteRecordParams): Promise<Void> {
-    return Promise.resolved(Void())
+  override fun deleteRecord(params: DeleteRecordParams): Promise<Unit> {
+    return Promise.resolved(Unit)
   }
 
   override fun recordExists(params: RecordExistsParams): Promise<Boolean> {
