@@ -1,6 +1,6 @@
 PODS:
   - boost (1.84.0)
-  - CloudKitModule (1.1.5):
+  - CloudKitModule (1.1.7):
     - boost
     - DoubleConversion
     - fast_float
@@ -2761,7 +2761,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   boost: 7e761d76ca2ce687f7cc98e698152abd03a18f90
-  CloudKitModule: c0cd648d4ac860b842c6a200c44319a2edd7bd85
+  CloudKitModule: 1a5db8bd34d877b643a0ab02be7e89219f10fda2
   DoubleConversion: cb417026b2400c8f53ae97020b2be961b59470cb
   fast_float: b32c788ed9c6a8c584d114d0047beda9664e7cc6
   FBLazyVector: a293a88992c4c33f0aee184acab0b64a08ff9458

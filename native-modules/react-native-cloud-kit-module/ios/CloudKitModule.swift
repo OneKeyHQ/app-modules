@@ -104,16 +104,16 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
   // MARK: - Delete Record
   
-  public func deleteRecord(params: DeleteRecordParams) throws -> Promise<Bool> {
+  public func deleteRecord(params: DeleteRecordParams) throws -> Promise<Void> {
     return Promise.async {
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
       
       do {
         _ = try await self.database.deleteRecord(withID: ckRecordID)
-        return true
+        return Void()
       } catch let error as CKError where error.code == .unknownItem {
         // Item not found is considered success for delete
-        return true
+        return Void()
       }
     }
   }

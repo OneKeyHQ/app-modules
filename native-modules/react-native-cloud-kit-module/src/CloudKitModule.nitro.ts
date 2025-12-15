@@ -58,7 +58,7 @@ export interface CloudKitModule
   getAccountInfo(): Promise<AccountInfoResult>;
   saveRecord(params: SaveRecordParams): Promise<SaveRecordResult>;
   fetchRecord(params: FetchRecordParams): Promise<RecordResult | null>;
-  deleteRecord(params: DeleteRecordParams): Promise<boolean>;
+  deleteRecord(params: DeleteRecordParams): Promise<void>;
   recordExists(params: RecordExistsParams): Promise<boolean>;
   queryRecords(params: QueryRecordsParams): Promise<QueryRecordsResult>;
 }
