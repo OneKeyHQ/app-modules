@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["cloudkitmodule"],
+  "ios": {
+    "iosModuleName": "CloudKitModule"
+  },
+  "android": {
+    "androidNamespace": ["cloudkitmodule"],
+    "androidCxxLibName": "cloudkitmodule"
+  },
+  "autolinking": {
+    "CloudKitModule": {
+      "swift": "CloudKitModule",
+      "kotlin": "CloudKitModule"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

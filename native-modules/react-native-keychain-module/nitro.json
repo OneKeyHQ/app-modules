@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["keychainmodule"],
+  "ios": {
+    "iosModuleName": "KeychainModule"
+  },
+  "android": {
+    "androidNamespace": ["keychainmodule"],
+    "androidCxxLibName": "keychainmodule"
+  },
+  "autolinking": {
+    "KeychainModule": {
+      "swift": "KeychainModule",
+      "kotlin": "KeychainModule"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
