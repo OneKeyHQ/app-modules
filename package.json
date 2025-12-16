@@ -2,11 +2,11 @@
   "name": "@onekeyfe/app-modules",
   "private": true,
   "packageManager": "yarn@4.1.0",
-  "version": "1.1.10",
+  "version": "0.0.0",
   "scripts": {
     "module:create": "node scripts/create-nitro-module.js",
     "package:setup": "node scripts/setup-nitro-module.js",
-    "version:patch:update": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --topological version --deferred patch",
+    "version:patch:update": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules --topological version --deferred patch",
     "version:patch:apply": "yarn version apply --all",
     "version:publish": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example run release",
     "version:patch": "yarn version:patch:update && yarn version:patch:apply"
