@@ -11,6 +11,10 @@ class BackgroundThreadModule(reactContext: ReactApplicationContext) :
     return NAME
   }
 
+  override fun initBackgroundThread() {
+    // TODO: Implement initBackgroundThread
+  }
+
   override fun postBackgroundMessage(message: String) {
     // TODO: Implement postBackgroundMessage
   }
