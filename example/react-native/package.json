@@ -16,6 +16,7 @@
     "@onekeyfe/react-native-cloud-kit-module": "*",
     "@onekeyfe/react-native-keychain-module": "*",
     "@onekeyfe/react-native-lite-card": "*",
+    "@onekeyfe/react-native-get-random-values": "*",
     "@react-native/new-app-screen": "0.83.0",
     "react": "19.2.0",
     "react-native": "0.83.0",
