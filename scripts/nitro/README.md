@@ -6,13 +6,13 @@ This directory contains templates for creating React Native Nitro Modules using 
 
 ```
 template/
+├── .gitignore               # Git ignore rules
 ├── package.json              # npm package configuration
 ├── nitro.json               # Nitro module configuration  
 ├── ModuleName.podspec       # iOS CocoaPods specification
 ├── src/                     # TypeScript source files
 │   ├── index.tsx            # Main entry point
-│   ├── ModuleName.nitro.ts  # Nitro interface definitions
-│   └── __tests__/           # Test files
+│   └── ModuleName.nitro.ts  # Nitro interface definitions
 ├── ios/                     # iOS native implementation
 │   └── ModuleName.swift     # Swift implementation
 ├── android/                 # Android native implementation
@@ -72,6 +72,7 @@ To modify the generated modules:
 ## Template Files
 
 ### Core Files
+- `.gitignore` - Git ignore rules for build artifacts and dependencies
 - `package.json` - npm package configuration with scripts, dependencies
 - `nitro.json` - Nitro module configuration for iOS/Android autolinking
 
