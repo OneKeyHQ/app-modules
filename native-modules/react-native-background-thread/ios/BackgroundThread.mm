@@ -20,6 +20,8 @@
     [manager startBackgroundRunnerWithEntryURL:entryURL];
 }
 
+// Force register event callback during initialization
+// This is mainly to handle the scenario of restarting in development environment
 - (void)initBackgroundThread {
   [self bindMessageCallback];
 }
