@@ -15,7 +15,6 @@
     "@onekeyfe/react-native-check-biometric-auth-changed": "*",
     "@onekeyfe/react-native-cloud-kit-module": "*",
     "@onekeyfe/react-native-get-random-values": "*",
-    "@onekeyfe/react-native-get-aaa-random-values": "*",
     "@onekeyfe/react-native-keychain-module": "*",
     "@onekeyfe/react-native-lite-card": "*",
     "@react-native/new-app-screen": "0.83.0",

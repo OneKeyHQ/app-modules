@@ -23,7 +23,4 @@ config.resolver.extraNodeModules = {
   'expo-crypto': path.resolve(projectRoot, 'mocks/expo-crypto.js'),
 }
 
-
-console.log('config', config)
-
 module.exports = config
