@@ -221,6 +221,13 @@ writeFileFromTemplate(
 // Step 8: Create other configuration files
 console.log("Step 8: Creating configuration files...");
 
+// .gitignore
+writeFileFromTemplate(
+    path.join(templateDir, '.gitignore'),
+    path.join(moduleDir, '.gitignore'),
+    templateVars
+);
+
 // babel.config.js
 writeFileFromTemplate(
     path.join(templateDir, 'config', 'babel.config.js'),
