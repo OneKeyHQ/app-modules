@@ -20,7 +20,9 @@ config.resolver.nodeModulesPaths = [
 
 config.resolver.extraNodeModules = {
   modules: workspaceRoot,
+  'expo-crypto': path.resolve(projectRoot, 'mocks/expo-crypto.js'),
 }
+
 
 console.log('config', config)
 

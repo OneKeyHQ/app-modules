@@ -20,12 +20,7 @@
     "@onekeyfe/react-native-lite-card": "*",
     "@react-native/new-app-screen": "0.83.0",
     "fast-base64-decode": "*",
-    "react": "19.2.0",
-    "expo": "*",
-    "expo-modules-core": "*",
-    "expo-crypto": "~14.0.0",
-    "react-native": "0.83.0",
-    "react-native-safe-area-context": "^5.5.2"
+    "react": "19.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
