@@ -5,6 +5,7 @@ import { BiometricAuthTestPage } from './pages/BiometricAuthTestPage';
 import { CloudKitTestPage } from './pages/CloudKitTestPage';
 import { KeychainTestPage } from './pages/KeychainTestPage';
 import { LiteCardTestPage } from './pages/LiteCardTestPage';
+import { GetRandomValuesTestPage } from './pages/GetRandomValuesTestPage';
 
 export type RouteScreen = 
   | 'home'
@@ -12,7 +13,8 @@ export type RouteScreen =
   | 'biometric-auth'
   | 'cloud-kit'
   | 'keychain'
-  | 'lite-card';
+  | 'lite-card'
+  | 'get-random-values';
 
 interface RouterProps {
   safeAreaInsets: any;
@@ -43,6 +45,11 @@ const modules = [
     id: 'lite-card' as RouteScreen,
     name: 'Lite Card',
     description: 'Test NFC card operations and management',
+  },
+  {
+    id: 'get-random-values' as RouteScreen,
+    name: 'Get Random Values',
+    description: 'Generate cryptographically secure random values',
   },
 ];
 
@@ -94,6 +101,8 @@ export function Router({ safeAreaInsets }: RouterProps) {
         return <KeychainTestPage {...commonProps} />;
       case 'lite-card':
         return <LiteCardTestPage {...commonProps} />;
+      case 'get-random-values':
+        return <GetRandomValuesTestPage {...commonProps} />;
       default:
         return renderHomeScreen();
     }
