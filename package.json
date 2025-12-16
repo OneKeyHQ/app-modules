@@ -14,7 +14,7 @@
   "workspaces": [
     "native-modules/*",
     "native-components/*",
-    "example"
+    "example/*"
   ],
   "engines": {
     "node": ">=20"
@@ -41,7 +41,7 @@
     "react": "19.2.0",
     "react-native": "0.83.0",
     "react-native-builder-bob": "^0.40.13",
-    "react-native-nitro-modules": "^0.29.8",
+    "react-native-nitro-modules": "^0.31.10",
     "release-it": "^19.0.4",
     "turbo": "^2.5.6",
     "typescript": "^5.9.2"
@@ -49,6 +49,6 @@
   "peerDependencies": {
     "react": "*",
     "react-native": "*",
-    "react-native-nitro-modules": "^0.29.8"
+    "react-native-nitro-modules": "^0.31.10"
   }
 }

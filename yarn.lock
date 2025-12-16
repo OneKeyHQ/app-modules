@@ -2737,6 +2737,41 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@onekeyfe/app-modules-example@workspace:example/react-native":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/app-modules-example@workspace:example/react-native"
+  dependencies:
+    "@babel/core": "npm:^7.25.2"
+    "@babel/preset-env": "npm:^7.25.3"
+    "@babel/runtime": "npm:^7.25.0"
+    "@onekeyfe/react-native-background-thread": "npm:*"
+    "@onekeyfe/react-native-check-biometric-auth-changed": "npm:*"
+    "@onekeyfe/react-native-cloud-kit-module": "npm:*"
+    "@onekeyfe/react-native-keychain-module": "npm:*"
+    "@onekeyfe/react-native-lite-card": "npm:*"
+    "@react-native-community/cli": "npm:20.0.0"
+    "@react-native-community/cli-platform-android": "npm:20.0.0"
+    "@react-native-community/cli-platform-ios": "npm:20.0.0"
+    "@react-native/babel-preset": "npm:0.83.0"
+    "@react-native/eslint-config": "npm:0.83.0"
+    "@react-native/metro-config": "npm:0.83.0"
+    "@react-native/new-app-screen": "npm:0.83.0"
+    "@react-native/typescript-config": "npm:0.83.0"
+    "@types/jest": "npm:^29.5.13"
+    "@types/react": "npm:^19.2.0"
+    "@types/react-test-renderer": "npm:^19.1.0"
+    eslint: "npm:^8.19.0"
+    jest: "npm:^29.6.3"
+    prettier: "npm:2.8.8"
+    react: "npm:19.2.0"
+    react-native: "npm:0.83.0"
+    react-native-nitro-modules: "npm:^0.31.10"
+    react-native-safe-area-context: "npm:^5.5.2"
+    react-test-renderer: "npm:19.2.0"
+    typescript: "npm:^5.8.3"
+  languageName: unknown
+  linkType: soft
+
 "@onekeyfe/app-modules@workspace:.":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/app-modules@workspace:."
@@ -2762,14 +2797,14 @@ __metadata:
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:^0.29.8"
+    react-native-nitro-modules: "npm:^0.31.10"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: ^0.29.8
+    react-native-nitro-modules: ^0.31.10
   languageName: unknown
   linkType: soft
 
@@ -2867,14 +2902,14 @@ __metadata:
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:^0.29.8"
+    react-native-nitro-modules: "npm:^0.31.10"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: ^0.29.8
+    react-native-nitro-modules: ^0.31.10
   languageName: unknown
   linkType: soft
 
@@ -6272,40 +6307,6 @@ __metadata:
   checksum: 10/49ff46c3a7facbad3decb31f597063e761785d7fdb3920d4989d7b08c97a61c2f51183e2f3a03130c9088df88d4b489b1b79ab632219901f184f85158508f4c8
   languageName: node
   linkType: hard
-
-"example@workspace:example":
-  version: 0.0.0-use.local
-  resolution: "example@workspace:example"
-  dependencies:
-    "@babel/core": "npm:^7.25.2"
-    "@babel/preset-env": "npm:^7.25.3"
-    "@babel/runtime": "npm:^7.25.0"
-    "@onekeyfe/react-native-background-thread": "npm:*"
-    "@onekeyfe/react-native-check-biometric-auth-changed": "npm:*"
-    "@onekeyfe/react-native-cloud-kit-module": "npm:*"
-    "@onekeyfe/react-native-keychain-module": "npm:*"
-    "@onekeyfe/react-native-lite-card": "npm:*"
-    "@react-native-community/cli": "npm:20.0.0"
-    "@react-native-community/cli-platform-android": "npm:20.0.0"
-    "@react-native-community/cli-platform-ios": "npm:20.0.0"
-    "@react-native/babel-preset": "npm:0.83.0"
-    "@react-native/eslint-config": "npm:0.83.0"
-    "@react-native/metro-config": "npm:0.83.0"
-    "@react-native/new-app-screen": "npm:0.83.0"
-    "@react-native/typescript-config": "npm:0.83.0"
-    "@types/jest": "npm:^29.5.13"
-    "@types/react": "npm:^19.2.0"
-    "@types/react-test-renderer": "npm:^19.1.0"
-    eslint: "npm:^8.19.0"
-    jest: "npm:^29.6.3"
-    prettier: "npm:2.8.8"
-    react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
-    react-native-safe-area-context: "npm:^5.5.2"
-    react-test-renderer: "npm:19.2.0"
-    typescript: "npm:^5.8.3"
-  languageName: unknown
-  linkType: soft
 
 "execa@npm:^4.0.3":
   version: 4.1.0
