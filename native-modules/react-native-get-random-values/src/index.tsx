@@ -1,6 +1,6 @@
 const base64Decode = require('fast-base64-decode')
 const ExpoCrypto = require('expo-crypto');
-const ReactNativeGetRandomValues = require('./module').ReactNativeGetRandomValues;
+const NativeReactNativeGetRandomValues = require('./module').ReactNativeGetRandomValues;
 
 class TypeMismatchError extends Error {}
 class QuotaExceededError extends Error {}
@@ -27,7 +27,7 @@ function markNativeGetRandomValuesCall(message: string, isCallNativeModule: bool
     console.log('------------ call crypto.getRandomValues(): ' + message);
   }
   if(isCallNativeModule){
-    (global as any).$$onekeyCryptoGetRandomValuesCalls = ((global as any).$$onekeyCryptoGetRandomValuesCalls || 0) + 1);
+    (global as any).$$onekeyCryptoGetRandomValuesCalls = ((global as any).$$onekeyCryptoGetRandomValuesCalls || 0) + 1;
     (global as any).$$onekeyCryptoGetRandomValuesCallsLastMessage = message;
   }
 }
@@ -37,9 +37,9 @@ function markNativeGetRandomValuesCall(message: string, isCallNativeModule: bool
  * @returns {string}
  */
 function getRandomBase64 (byteLength: number) {
-  if (ReactNativeGetRandomValues.getRandomBase64) {
+  if (NativeReactNativeGetRandomValues.getRandomBase64) {
     markNativeGetRandomValuesCall('NativeModules.RNGetRandomValues.getRandomBase64(byteLength)', true);
-    return ReactNativeGetRandomValues.getRandomBase64(byteLength)
+    return NativeReactNativeGetRandomValues.getRandomBase64(byteLength)
   } else {
     markNativeGetRandomValuesCall('throw new Error("Native module not found")', false);
     throw new Error('Native module not found')
@@ -90,3 +90,6 @@ if (typeof global.crypto !== 'object') {
 if (typeof global.crypto.getRandomValues !== 'function') {
   (global as any).crypto.getRandomValues = getRandomValues
 }
+
+
+export { ReactNativeGetRandomValues } from './module';
