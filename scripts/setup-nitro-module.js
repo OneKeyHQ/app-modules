@@ -45,7 +45,7 @@ function fileContains(filePath, searchString) {
 
 // Step 0: Sync version from react-native-lite-card
 console.log("Step 0: Syncing version from react-native-lite-card...");
-const liteCardPackageJsonPath = path.join(workspaceRoot, 'example', 'react-native-lite-card', 'package.json');
+const liteCardPackageJsonPath = path.join(workspaceRoot, 'example', 'react-native', 'package.json');
 const packageJsonPath = path.join(absModuleDir, 'package.json');
 
 if (fs.existsSync(liteCardPackageJsonPath) && fs.existsSync(packageJsonPath)) {
@@ -89,7 +89,7 @@ if (fs.existsSync(packageJsonPath)) {
 
 // Step 2: Modify react-native.config.js
 console.log("Step 2: Configuring react-native.config.js...");
-const rnConfigFile = path.join(absModuleDir, 'example', 'react-native.config.js');
+const rnConfigFile = path.join(absModuleDir, 'react-native', 'react-native.config.js');
 
 if (fs.existsSync(rnConfigFile)) {
     if (fileContains(rnConfigFile, 'react-native.base.config')) {
@@ -125,7 +125,7 @@ module.exports = {
 
 // Step 3: Modify metro.config.js
 console.log("Step 3: Configuring metro.config.js...");
-const metroConfigFile = path.join(absModuleDir, 'example', 'metro.config.js');
+const metroConfigFile = path.join(absModuleDir, 'react-native', 'metro.config.js');
 
 if (fs.existsSync(metroConfigFile)) {
     if (fileContains(metroConfigFile, 'workspaceRoot')) {
@@ -169,7 +169,7 @@ module.exports = metroConfig;
 
 // Step 4: Modify Android settings.gradle
 console.log("Step 4: Configuring Android settings.gradle...");
-const androidSettingsFile = path.join(absModuleDir, 'example', 'android', 'settings.gradle');
+const androidSettingsFile = path.join(absModuleDir, 'react-native', 'android', 'settings.gradle');
 
 if (fs.existsSync(androidSettingsFile)) {
     const settingsContent = fs.readFileSync(androidSettingsFile, 'utf8');
@@ -179,7 +179,7 @@ if (fs.existsSync(androidSettingsFile)) {
         console.log("  - Updating Android settings.gradle...");
         
         // Get project name
-        let projectName = 'example';
+        let projectName = 'react-native';
         const projectNameMatch = settingsContent.match(/rootProject\.name\s*=\s*['"](.*)['"]/);
         if (projectNameMatch) {
             projectName = projectNameMatch[1];
@@ -216,7 +216,7 @@ includeBuild(reactNativeGradlePlugin)
 
 // Step 5: Modify Android app/build.gradle
 console.log("Step 5: Configuring Android app/build.gradle...");
-const androidBuildFile = path.join(absModuleDir, 'example', 'android', 'app', 'build.gradle');
+const androidBuildFile = path.join(absModuleDir, 'react-native', 'android', 'app', 'build.gradle');
 
 if (fs.existsSync(androidBuildFile)) {
     if (fileContains(androidBuildFile, 'reactNativeDir.*node.*--print')) {
@@ -264,6 +264,6 @@ console.log("");
 console.log("Next steps:");
 console.log("1. Run 'yarn' to install dependencies");
 console.log(`2. Run 'yarn nitrogen' in ${absModuleDir} directory to generate necessary files`);
-console.log(`3. Run 'pod install' in ${absModuleDir}/example/ios directory`);
-console.log(`4. Start Metro server: cd ${absModuleDir}/example && yarn start`);
+console.log(`3. Run 'pod install' in ${absModuleDir}/react-native/ios directory`);
+console.log(`4. Start Metro server: cd ${absModuleDir}/react-native && yarn start`);
 console.log("5. Build and run iOS/Android app for testing");
