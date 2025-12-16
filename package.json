@@ -5,11 +5,11 @@
   "version": "1.0.0",
   "scripts": {
     "package:setup": "node scripts/setup-nitro-module.js",
-    "version:bump": "yarn workspaces foreach --all  --no-private --topological version --deferred patch",
-    "version:apply": "yarn version apply --all",
+    "version:bump": "yarn workspaces foreach --all --no-private --topological --exclude example version --deferred patch",
+    "version:apply": "yarn version apply --all --exclude example",
     "version:commit": "git commit -am 'chore: release ${version}'",
     "version:push": "git push",
-    "version:publish": "yarn workspaces foreach --all run release"
+    "version:publish": "yarn workspaces foreach --all --exclude example run release"
   },
   "workspaces": [
     "native-modules/*",

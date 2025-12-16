@@ -87,9 +87,6 @@
     "react": "*",
     "react-native": "*"
   },
-  "workspaces": [
-    "example"
-  ],
   "packageManager": "yarn@4.11.0",
   "react-native-builder-bob": {
     "source": "src",
