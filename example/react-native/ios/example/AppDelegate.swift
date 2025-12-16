@@ -15,7 +15,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     DispatchQueue.global(qos: .userInitiated).async {
-        BackgroundRunnerModule.startBackgroundRunner()
+        // BackgroundRunnerModule.startBackgroundRunner()
     }
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
