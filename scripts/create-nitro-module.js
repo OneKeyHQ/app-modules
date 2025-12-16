@@ -24,7 +24,7 @@ const scriptDir = __dirname;
 const workspaceRoot = path.dirname(scriptDir);
 const templateDir = path.join(scriptDir, 'nitro', 'template');
 const moduleName = process.argv[2];
-const moduleDirectory = `react-native-${moduleName}`;
+const moduleDirectory = `${moduleName}`;
 const moduleDir = path.join(workspaceRoot, 'native-modules', moduleDirectory);
 
 // Check if module directory already exists
@@ -266,26 +266,12 @@ writeFileFromTemplate(
     templateVars
 );
 
-// CODE_OF_CONDUCT.md
-writeFileFromTemplate(
-    path.join(templateDir, 'docs', 'CODE_OF_CONDUCT.md'),
-    path.join(moduleDir, 'CODE_OF_CONDUCT.md'),
-    templateVars
-);
-
-// CONTRIBUTING.md
-writeFileFromTemplate(
-    path.join(templateDir, 'docs', 'CONTRIBUTING.md'),
-    path.join(moduleDir, 'CONTRIBUTING.md'),
-    templateVars
-);
-
 console.log("");
 console.log("🎉 Nitro Module created successfully!");
 console.log("");
 console.log("Next steps:");
 console.log(`1. cd ${path.relative(workspaceRoot, moduleDir)}`);
-console.log("2. yarn install");
+console.log("2. yarn");
 console.log("3. yarn nitrogen");
 console.log("4. Start implementing your module logic in the iOS and Android files");
 console.log("");
