@@ -2914,27 +2914,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-lite-card-example@workspace:native-modules/react-native-lite-card/example":
-  version: 0.0.0-use.local
-  resolution: "@onekeyfe/react-native-lite-card-example@workspace:native-modules/react-native-lite-card/example"
-  dependencies:
-    "@babel/core": "npm:^7.25.2"
-    "@babel/preset-env": "npm:^7.25.3"
-    "@babel/runtime": "npm:^7.25.0"
-    "@react-native-community/cli": "npm:20.0.0"
-    "@react-native-community/cli-platform-android": "npm:20.0.0"
-    "@react-native-community/cli-platform-ios": "npm:20.0.0"
-    "@react-native/babel-preset": "npm:0.83.0"
-    "@react-native/metro-config": "npm:0.83.0"
-    "@react-native/typescript-config": "npm:0.83.0"
-    "@types/react": "npm:^19.2.0"
-    react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
-    react-native-builder-bob: "npm:^0.40.13"
-    react-native-monorepo-config: "npm:^0.3.1"
-  languageName: unknown
-  linkType: soft
-
 "@onekeyfe/react-native-lite-card@npm:*, @onekeyfe/react-native-lite-card@workspace:native-modules/react-native-lite-card":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-lite-card@workspace:native-modules/react-native-lite-card"
@@ -10587,50 +10566,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-cloud-kit-module-example@workspace:native-modules/react-native-cloud-kit-module/example":
-  version: 0.0.0-use.local
-  resolution: "react-native-cloud-kit-module-example@workspace:native-modules/react-native-cloud-kit-module/example"
-  dependencies:
-    "@babel/core": "npm:^7.25.2"
-    "@babel/preset-env": "npm:^7.25.3"
-    "@babel/runtime": "npm:^7.25.0"
-    "@react-native-community/cli": "npm:20.0.0"
-    "@react-native-community/cli-platform-android": "npm:20.0.0"
-    "@react-native-community/cli-platform-ios": "npm:20.0.0"
-    "@react-native/babel-preset": "npm:0.83.0"
-    "@react-native/metro-config": "npm:0.83.0"
-    "@react-native/typescript-config": "npm:0.83.0"
-    "@types/react": "npm:^19.2.0"
-    react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
-    react-native-builder-bob: "npm:^0.40.13"
-    react-native-monorepo-config: "npm:^0.3.1"
-    react-native-nitro-modules: "npm:^0.29.8"
-  languageName: unknown
-  linkType: soft
-
-"react-native-keychain-module-example@workspace:native-modules/react-native-keychain-module/example":
-  version: 0.0.0-use.local
-  resolution: "react-native-keychain-module-example@workspace:native-modules/react-native-keychain-module/example"
-  dependencies:
-    "@babel/core": "npm:^7.25.2"
-    "@babel/preset-env": "npm:^7.25.3"
-    "@babel/runtime": "npm:^7.25.0"
-    "@react-native-community/cli": "npm:20.0.0"
-    "@react-native-community/cli-platform-android": "npm:20.0.0"
-    "@react-native-community/cli-platform-ios": "npm:20.0.0"
-    "@react-native/babel-preset": "npm:0.83.0"
-    "@react-native/metro-config": "npm:0.83.0"
-    "@react-native/typescript-config": "npm:0.83.0"
-    "@types/react": "npm:^19.2.0"
-    react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
-    react-native-builder-bob: "npm:^0.40.13"
-    react-native-monorepo-config: "npm:^0.3.1"
-    react-native-nitro-modules: "npm:^0.31.10"
-  languageName: unknown
-  linkType: soft
-
 "react-native-monorepo-config@npm:^0.3.1":
   version: 0.3.1
   resolution: "react-native-monorepo-config@npm:0.3.1"
@@ -12106,11 +12041,11 @@ __metadata:
 
 "typescript@patch:typescript@npm%3A^5.8.3#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.9.2#optional!builtin<compat/typescript>":
   version: 5.9.3
-  resolution: "typescript@patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"
+  resolution: "typescript@patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=d69c25"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
-  checksum: 10/696e1b017bc2635f4e0c94eb4435357701008e2f272f553d06e35b494b8ddc60aa221145e286c28ace0c89ee32827a28c2040e3a69bdc108b1a5dc8fb40b72e3
+  checksum: 10/5d416ad4f2ea564f515a3f919e901edbfa4b497cc17dd325c5726046c3eef7ed22d1f59c787267d478311f6f0a265ff790f8a6c7e9df3ea3471458f5ec81e8b7
   languageName: node
   linkType: hard
 
