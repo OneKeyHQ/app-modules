@@ -1,5 +1,5 @@
 #include <jni.h>
-#include "Hybrid{{modulePascalCase}}SpecSwift.hpp"
+#include "{{cxxNamespace}}OnLoad.hpp"
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   return margelo::nitro::{{cxxNamespace}}::initialize(vm);

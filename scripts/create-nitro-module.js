@@ -215,6 +215,13 @@ writeFileFromTemplate(
     templateVars
 );
 
+// android/src/main/java/com/margelo/nitro/modulename/ModuleNamePackage.kt
+writeFileFromTemplate(
+    path.join(templateDir, 'android', 'src', 'main', 'java', 'com', 'margelo', 'nitro', 'modulename', 'ModuleNamePackage.kt'),
+    path.join(moduleDir, 'android', 'src', 'main', 'java', 'com', 'margelo', 'nitro', cxxNamespace, `${modulePascalCase}Package.kt`),
+    templateVars
+);
+
 // Step 7: Create TypeScript configuration files
 console.log("Step 7: Creating TypeScript configuration files...");
 
