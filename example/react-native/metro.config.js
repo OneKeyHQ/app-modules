@@ -1,6 +1,9 @@
 /**
  * @type {import('expo/metro-config')}
  */
+
+// https://github.com/facebook/react-native/issues/27712#issuecomment-1518279571
+
 const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
 const path = require('path')
 
