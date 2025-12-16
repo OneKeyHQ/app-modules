@@ -93,7 +93,6 @@
     "react-native": "*",
     "react-native-nitro-modules": "^0.31.10"
   },
-  "packageManager": "yarn@4.11.0",
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",

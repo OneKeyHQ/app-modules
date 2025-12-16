@@ -87,7 +87,6 @@
     "react": "*",
     "react-native": "*"
   },
-  "packageManager": "yarn@4.11.0",
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",
