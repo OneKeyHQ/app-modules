@@ -140,13 +140,6 @@ writeFileFromTemplate(
     templateVars
 );
 
-// src/__tests__/index.test.tsx
-writeFileFromTemplate(
-    path.join(templateDir, 'src', '__tests__', 'index.test.tsx'),
-    path.join(moduleDir, 'src', '__tests__', 'index.test.tsx'),
-    templateVars
-);
-
 // Step 4: Create podspec
 console.log("Step 4: Creating podspec...");
 writeFileFromTemplate(
