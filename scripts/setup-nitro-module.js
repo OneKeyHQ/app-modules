@@ -5,7 +5,7 @@
  * Automatically configure Nitro Module based on README.md instructions
  *
  * Usage: node setup-nitro-module.js <module-directory>
- * Example: node setup-nitro-module.js native-modules/react-native-cloud-kit
+ * Example: node setup-nitro-module.js example/react-native-cloud-kit
  */
 
 const fs = require('fs');
@@ -21,7 +21,7 @@ if (process.argv.length < 3) {
 
 const scriptDir = __dirname;
 const workspaceRoot = path.dirname(scriptDir);
-const moduleDir = path.join(workspaceRoot, 'native-modules', process.argv[2]);
+const moduleDir = path.join(workspaceRoot, 'example', process.argv[2]);
 
 // Check if module directory exists
 if (!fs.existsSync(moduleDir)) {
@@ -45,7 +45,7 @@ function fileContains(filePath, searchString) {
 
 // Step 0: Sync version from react-native-lite-card
 console.log("Step 0: Syncing version from react-native-lite-card...");
-const liteCardPackageJsonPath = path.join(workspaceRoot, 'native-modules', 'react-native-lite-card', 'package.json');
+const liteCardPackageJsonPath = path.join(workspaceRoot, 'example', 'react-native-lite-card', 'package.json');
 const packageJsonPath = path.join(absModuleDir, 'package.json');
 
 if (fs.existsSync(liteCardPackageJsonPath) && fs.existsSync(packageJsonPath)) {
