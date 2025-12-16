@@ -1,48 +1,24 @@
+project(reactnativegetrandomvalues)
 cmake_minimum_required(VERSION 3.9.0)
 
-set(PACKAGE_NAME "reactnativegetrandomvalues")
-set(LIB_NAME "reactnativegetrandomvalues")
-set(LIB_LITERAL reactnativegetrandomvalues)
+set(PACKAGE_NAME reactnativegetrandomvalues)
+set(CMAKE_VERBOSE_MAKEFILE ON)
+set(CMAKE_CXX_STANDARD 20)
 
-# Resolve react-native-nitro-modules package location
-execute_process(
-  COMMAND node --print "require('react-native-nitro-modules/package.json').main"
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  OUTPUT_VARIABLE RNNITROMODULES_MAIN_FILE
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-get_filename_component(RNNITROMODULES_ROOT_DIR "${RNNITROMODULES_MAIN_FILE}" DIRECTORY)
-set(RNNITROMODULES_ANDROID_DIR "${RNNITROMODULES_ROOT_DIR}/cpp/android")
+# Define C++ library and add all sources
+add_library(${PACKAGE_NAME} SHARED src/main/cpp/cpp-adapter.cpp)
 
-# Include Nitro Modules
-include("${RNNITROMODULES_ANDROID_DIR}/CMakeLists.txt")
+# Add Nitrogen specs :)
+include(${CMAKE_SOURCE_DIR}/../nitrogen/generated/android/reactnativegetrandomvalues+autolinking.cmake)
 
-# Set up library
-add_library(
-  ${LIB_NAME}
-  SHARED
-  ${GENERATED_CXX_FILES}
-  ${RNNITROMODULES_GENERATED_CXX_FILES}
-  "../cpp/cpp-adapter.cpp"
-)
+# Set up local includes
+include_directories("src/main/cpp" "../cpp")
 
-target_include_directories(
-  ${LIB_NAME}
-  PRIVATE
-  "../cpp"
-  ${RNNITROMODULES_INCLUDES}
-)
+find_library(LOG_LIB log)
 
-# Link libraries
-find_package(fbjni REQUIRED CONFIG)
-find_package(ReactAndroid REQUIRED CONFIG)
-
+# Link all libraries together
 target_link_libraries(
-  ${LIB_NAME}
-  ${RNNITROMODULES_LIBS}
-  ReactAndroid::jsi
-  ReactAndroid::reactnativejni
-  fbjni::fbjni
-  android
-  log
+        ${PACKAGE_NAME}
+        ${LOG_LIB}
+        android # <-- Android core
 )
