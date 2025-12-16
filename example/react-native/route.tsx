@@ -100,7 +100,7 @@ export function Router({ safeAreaInsets }: RouterProps) {
   };
 
   return (
-    <View style={[styles.wrapper, { paddingTop: safeAreaInsets.top }]}>
+    <View style={styles.wrapper}>
       {currentScreen === 'home' ? renderHomeScreen() : renderTestScreen()}
     </View>
   );
