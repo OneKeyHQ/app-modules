@@ -25,6 +25,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// @param callback The callback block to handle messages
 - (void)setOnMessageCallback:(void (^)(NSString *message))callback;
 
+/// Check if message callback is set
+/// @return YES if message callback is set, NO otherwise
+- (BOOL)checkMessageCallback;
+
 /// Check if background runner is started
 @property (nonatomic, readonly) BOOL isStarted;
 

@@ -16,19 +16,20 @@
 }
 
 - (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL {
-    BackgroundThreadManager *manager = [BackgroundThreadManager sharedInstance];
-    
-    // Set up message callback to bridge it back through this instance
-    __weak __typeof__(self) weakSelf = self;
-    [manager setOnMessageCallback:^(NSString *message) {
-        [weakSelf emitOnBackgroundMessage:message];
-    }];
-    
+    BackgroundThreadManager *manager = [BackgroundThreadManager sharedInstance];    
     [manager startBackgroundRunnerWithEntryURL:entryURL];
 }
 
 - (void)postBackgroundMessage:(nonnull NSString *)message {
-    [[BackgroundThreadManager sharedInstance] postBackgroundMessage:message];
+  BackgroundThreadManager *manager = [BackgroundThreadManager
+                                      sharedInstance];
+  if (!manager.checkMessageCallback) {
+    __weak __typeof__(self) weakSelf = self;
+    [manager setOnMessageCallback:^(NSString *message) {
+        [weakSelf emitOnBackgroundMessage:message];
+    }];
+  }
+  [[BackgroundThreadManager sharedInstance] postBackgroundMessage:message];
 }
 
 + (NSString *)moduleName

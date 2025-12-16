@@ -89,7 +89,14 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 }
 
 - (void)setOnMessageCallback:(void (^)(NSString *message))callback {
-    self.onMessageCallback = callback;
+    _onMessageCallback = callback;
+}
+
+- (BOOL)checkMessageCallback {
+    if (self.onMessageCallback) {
+        return YES;
+    }
+    return NO;
 }
 
 @end

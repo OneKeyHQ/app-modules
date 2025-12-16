@@ -15,6 +15,7 @@ export function BackgroundThreadTestPage({ onGoHome, safeAreaInsets }: Backgroun
   const handlePostMessage = () => {
     const message = { type: 'test1' };
     BackgroundThread.onBackgroundMessage((event) => {
+      alert(`1111`);
       setResult(`Message received from background thread: ${event}`);
     });
     BackgroundThread.postBackgroundMessage(JSON.stringify(message));
