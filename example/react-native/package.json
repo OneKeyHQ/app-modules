@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "android": "react-native run-android",
+    "background": "react-native start --port 8082",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
