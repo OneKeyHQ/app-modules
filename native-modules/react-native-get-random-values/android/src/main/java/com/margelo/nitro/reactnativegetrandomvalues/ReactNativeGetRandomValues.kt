@@ -1,7 +1,6 @@
 package com.margelo.nitro.reactnativegetrandomvalues
 
 import com.facebook.proguard.annotations.DoNotStrip
-import com.margelo.nitro.core.Promise
 
 @DoNotStrip
 class ReactNativeGetRandomValues : HybridReactNativeGetRandomValuesSpec() {
