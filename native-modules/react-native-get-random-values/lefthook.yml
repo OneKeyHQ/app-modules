@@ -1,0 +1,10 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.{js,ts,tsx}"
+      run: yarn lint {staged_files}
+    typecheck:
+      files: git diff --cached --name-only --diff-filter=ACMRTUXB
+      glob: "*.{js,ts,tsx}"
+      run: yarn typecheck
