@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/{{moduleDirectory}}",
-  "version": "1.0.0",
+  "version": "{{moduleVersion}}",
   "description": "{{moduleDirectory}}",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

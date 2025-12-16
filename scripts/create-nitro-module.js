@@ -87,6 +87,18 @@ const moduleCamelCase = toCamelCase(moduleName);
 const moduleKebabCase = toKebabCase(moduleName);
 const cxxNamespace = moduleKebabCase.replace(/-/g, '');
 
+// Read version from keychain-module
+const keychainPackageJsonPath = path.join(workspaceRoot, 'native-modules', 'react-native-keychain-module', 'package.json');
+let moduleVersion = '1.0.0'; // Default version
+if (fs.existsSync(keychainPackageJsonPath)) {
+    try {
+        const keychainPackageJson = JSON.parse(fs.readFileSync(keychainPackageJsonPath, 'utf8'));
+        moduleVersion = keychainPackageJson.version || '1.0.0';
+    } catch (error) {
+        console.warn(`Warning: Could not read version from keychain-module package.json: ${error.message}`);
+    }
+}
+
 // Template variables
 const templateVars = {
     moduleName,
@@ -94,7 +106,8 @@ const templateVars = {
     modulePascalCase,
     moduleCamelCase,
     moduleKebabCase,
-    cxxNamespace
+    cxxNamespace,
+    moduleVersion
 };
 
 console.log(`Module names:`);
@@ -103,6 +116,7 @@ console.log(`  - PascalCase: ${modulePascalCase}`);
 console.log(`  - camelCase: ${moduleCamelCase}`);
 console.log(`  - kebab-case: ${moduleKebabCase}`);
 console.log(`  - cxxNamespace: ${cxxNamespace}`);
+console.log(`  - version: ${moduleVersion}`);
 
 // Create main directory
 ensureDirectoryExists(moduleDir);
