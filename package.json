@@ -1,6 +1,7 @@
 {
   "name": "@onekeyfe/app-modules",
   "private": true,
+  "packageManager": "yarn@4.1.0",
   "version": "1.0.0",
   "scripts": {
     "module:create": "node scripts/create-nitro-module.js",
