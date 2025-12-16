@@ -20,14 +20,19 @@
     [manager startBackgroundRunnerWithEntryURL:entryURL];
 }
 
-- (void)postBackgroundMessage:(nonnull NSString *)message {
-  BackgroundThreadManager *manager = [BackgroundThreadManager
-                                      sharedInstance];
-  if (!manager.checkMessageCallback) {
+- (void)bindMessageCallback {
+    BackgroundThreadManager *manager = [BackgroundThreadManager sharedInstance];
     __weak __typeof__(self) weakSelf = self;
     [manager setOnMessageCallback:^(NSString *message) {
         [weakSelf emitOnBackgroundMessage:message];
     }];
+}
+
+- (void)postBackgroundMessage:(nonnull NSString *)message {
+  BackgroundThreadManager *manager = [BackgroundThreadManager
+                                      sharedInstance];
+  if (!manager.checkMessageCallback) {
+   [self bindMessageCallback];
   }
   [[BackgroundThreadManager sharedInstance] postBackgroundMessage:message];
 }
