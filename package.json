@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
+    "module:nitro:create": "node scripts/create-nitro-module.js",
     "package:setup": "node scripts/setup-nitro-module.js",
     "version:bump": "yarn workspaces foreach --all --no-private --topological --exclude example version --deferred patch",
     "version:apply": "yarn version apply --all --exclude example",
