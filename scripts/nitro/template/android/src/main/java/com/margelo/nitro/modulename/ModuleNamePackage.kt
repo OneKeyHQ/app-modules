@@ -20,3 +20,4 @@ class {{modulePascalCase}}Package : BaseReactPackage() {
         }
     }
 }
+
