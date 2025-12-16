@@ -20,6 +20,10 @@
     [manager startBackgroundRunnerWithEntryURL:entryURL];
 }
 
+- (void)initBackgroundThread {
+  [self bindMessageCallback];
+}
+
 - (void)bindMessageCallback {
     BackgroundThreadManager *manager = [BackgroundThreadManager sharedInstance];
     __weak __typeof__(self) weakSelf = self;

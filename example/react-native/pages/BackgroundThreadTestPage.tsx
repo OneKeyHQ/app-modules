@@ -8,6 +8,8 @@ interface BackgroundThreadTestPageProps {
   safeAreaInsets: any;
 }
 
+BackgroundThread.initBackgroundThread();
+
 export function BackgroundThreadTestPage({ onGoHome, safeAreaInsets }: BackgroundThreadTestPageProps) {
   const [result, setResult] = useState<string>('');
 
