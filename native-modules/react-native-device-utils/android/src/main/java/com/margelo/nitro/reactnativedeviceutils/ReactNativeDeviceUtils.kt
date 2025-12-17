@@ -20,6 +20,7 @@ import androidx.window.layout.WindowLayoutInfo
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
+import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,13 +36,20 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   private var windowInfoTracker: WindowInfoTracker? = null
   private var spanningChangedListeners: MutableList<(Boolean) -> Unit> = mutableListOf()
 
-  companion object {
+   companion object {
     private var reactContext: ReactApplicationContext? = null
     
     fun setReactContext(context: ReactApplicationContext) {
       reactContext = context
     }
-  }
+   }
+
+    init {
+        NitroModules.applicationContext?.let { ctx ->
+            ctx.addLifecycleEventListener(this)
+        } ?: run {
+        }
+    }
 
   private fun getContext(): Context? {
     return reactContext ?: getCurrentActivity()
