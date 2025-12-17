@@ -35,6 +35,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   private var layoutInfoConsumer: Consumer<WindowLayoutInfo>? = null
   private var windowInfoTracker: WindowInfoTracker? = null
   private var spanningChangedListeners: MutableList<(Boolean) -> Unit> = mutableListOf()
+  private var isObservingLayoutChanges = false
 
    companion object {
     private var reactContext: ReactApplicationContext? = null
@@ -46,8 +47,9 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
 
     init {
         NitroModules.applicationContext?.let { ctx ->
-            ctx.addLifecycleEventListener(this)
+           startObservingLayoutChanges()
         } ?: run {
+
         }
     }
 
@@ -225,6 +227,10 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   }
 
   private fun startObservingLayoutChanges() {
+    if (isObservingLayoutChanges) {
+      return
+    }
+    isObservingLayoutChanges = true
     val activity = getCurrentActivity() ?: return
     
     // Window Manager library requires API 24+, but full foldable support is API 30+
@@ -255,6 +261,10 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   }
   
   private fun stopObservingLayoutChanges() {
+    if (!isObservingLayoutChanges) {
+      return
+    }
+    isObservingLayoutChanges = false
     if (windowInfoTracker != null && layoutInfoConsumer != null) {
       try {
         // The listener will be cleaned up when the activity is destroyed
