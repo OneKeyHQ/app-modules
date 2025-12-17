@@ -29,15 +29,12 @@ import java.util.concurrent.Executor
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
   
-  private var spanningCallback: ((Boolean) -> Unit)? = null
-  private var lastSpanningState = false
-  private val coroutineScope = CoroutineScope(Dispatchers.Main)
   private var windowLayoutInfo: WindowLayoutInfo? = null
   private var isSpanning = false
   private var layoutInfoConsumer: Consumer<WindowLayoutInfo>? = null
   private var windowInfoTracker: WindowInfoTracker? = null
   private var spanningChangedListeners: MutableList<(Boolean) -> Unit> = mutableListOf()
-  
+
   companion object {
     private var reactContext: ReactApplicationContext? = null
     
@@ -45,7 +42,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       reactContext = context
     }
   }
-  
+
   private fun getContext(): Context? {
     return reactContext ?: getCurrentActivity()
   }
