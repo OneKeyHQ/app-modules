@@ -224,10 +224,10 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
           onWindowLayoutInfoChanged(layoutInfo)
         }
         
-        // Use Java-friendly callback approach
-        val mainExecutor: Executor = activity.mainExecutor
+        // Use main executor for callbacks
+        val mainExecutor: Executor = ContextCompat.getMainExecutor(activity)
         
-        // Subscribe to window layout changes
+        // Subscribe to window layout changes using the Java adapter
         val callbackAdapter = androidx.window.java.layout.WindowInfoTrackerCallbackAdapter(windowInfoTracker!!)
         
         callbackAdapter.addWindowLayoutInfoListener(

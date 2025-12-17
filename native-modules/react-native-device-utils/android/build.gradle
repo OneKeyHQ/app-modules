@@ -125,4 +125,8 @@ dependencies {
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
   implementation project(":react-native-nitro-modules")
+  
+  // WindowManager library for foldable device detection
+  implementation "androidx.window:window:1.2.0"
+  implementation "androidx.window:window-java:1.2.0"
 }

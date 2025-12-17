@@ -2744,13 +2744,13 @@ __metadata:
     "@babel/core": "npm:^7.25.2"
     "@babel/preset-env": "npm:^7.25.3"
     "@babel/runtime": "npm:^7.25.0"
-    "@onekeyfe/react-native-background-thread": "npm:*"
-    "@onekeyfe/react-native-check-biometric-auth-changed": "npm:*"
-    "@onekeyfe/react-native-cloud-kit-module": "npm:*"
-    "@onekeyfe/react-native-device-utils": "npm:*"
-    "@onekeyfe/react-native-get-random-values": "npm:*"
-    "@onekeyfe/react-native-keychain-module": "npm:*"
-    "@onekeyfe/react-native-lite-card": "npm:*"
+    "@onekeyfe/react-native-background-thread": "workspace:*"
+    "@onekeyfe/react-native-check-biometric-auth-changed": "workspace:*"
+    "@onekeyfe/react-native-cloud-kit-module": "workspace:*"
+    "@onekeyfe/react-native-device-utils": "workspace:*"
+    "@onekeyfe/react-native-get-random-values": "workspace:*"
+    "@onekeyfe/react-native-keychain-module": "workspace:*"
+    "@onekeyfe/react-native-lite-card": "workspace:*"
     "@react-native-community/cli": "npm:20.0.0"
     "@react-native-community/cli-platform-android": "npm:20.0.0"
     "@react-native-community/cli-platform-ios": "npm:20.0.0"
@@ -2812,7 +2812,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-background-thread@npm:*, @onekeyfe/react-native-background-thread@workspace:native-modules/react-native-background-thread":
+"@onekeyfe/react-native-background-thread@workspace:*, @onekeyfe/react-native-background-thread@workspace:native-modules/react-native-background-thread":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-background-thread@workspace:native-modules/react-native-background-thread"
   dependencies:
@@ -2845,7 +2845,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-check-biometric-auth-changed@npm:*, @onekeyfe/react-native-check-biometric-auth-changed@workspace:native-modules/react-native-check-biometric-auth-changed":
+"@onekeyfe/react-native-check-biometric-auth-changed@workspace:*, @onekeyfe/react-native-check-biometric-auth-changed@workspace:native-modules/react-native-check-biometric-auth-changed":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-check-biometric-auth-changed@workspace:native-modules/react-native-check-biometric-auth-changed"
   dependencies:
@@ -2881,7 +2881,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-cloud-kit-module@npm:*, @onekeyfe/react-native-cloud-kit-module@workspace:native-modules/react-native-cloud-kit-module":
+"@onekeyfe/react-native-cloud-kit-module@workspace:*, @onekeyfe/react-native-cloud-kit-module@workspace:native-modules/react-native-cloud-kit-module":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-cloud-kit-module@workspace:native-modules/react-native-cloud-kit-module"
   dependencies:
@@ -2917,7 +2917,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-device-utils@npm:*, @onekeyfe/react-native-device-utils@workspace:native-modules/react-native-device-utils":
+"@onekeyfe/react-native-device-utils@workspace:*, @onekeyfe/react-native-device-utils@workspace:native-modules/react-native-device-utils":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-device-utils@workspace:native-modules/react-native-device-utils"
   dependencies:
@@ -2953,7 +2953,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-get-random-values@npm:*, @onekeyfe/react-native-get-random-values@workspace:native-modules/react-native-get-random-values":
+"@onekeyfe/react-native-get-random-values@workspace:*, @onekeyfe/react-native-get-random-values@workspace:native-modules/react-native-get-random-values":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-get-random-values@workspace:native-modules/react-native-get-random-values"
   dependencies:
@@ -2989,7 +2989,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-keychain-module@npm:*, @onekeyfe/react-native-keychain-module@workspace:native-modules/react-native-keychain-module":
+"@onekeyfe/react-native-keychain-module@workspace:*, @onekeyfe/react-native-keychain-module@workspace:native-modules/react-native-keychain-module":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-keychain-module@workspace:native-modules/react-native-keychain-module"
   dependencies:
@@ -3025,7 +3025,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-lite-card@npm:*, @onekeyfe/react-native-lite-card@workspace:native-modules/react-native-lite-card":
+"@onekeyfe/react-native-lite-card@workspace:*, @onekeyfe/react-native-lite-card@workspace:native-modules/react-native-lite-card":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-lite-card@workspace:native-modules/react-native-lite-card"
   dependencies:
