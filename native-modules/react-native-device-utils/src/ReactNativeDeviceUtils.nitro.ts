@@ -1,0 +1,19 @@
+import type { HybridObject } from 'react-native-nitro-modules';
+
+
+export interface DualScreenInfoRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ReactNativeDeviceUtils
+  extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
+  isDualScreenDevice(): boolean;
+  isSpanning(): boolean;
+  getWindowRects(): Promise<DualScreenInfoRect[]>;
+  getHingeBounds(): Promise<DualScreenInfoRect>;
+  onSpanningChanged(callback: (isSpanning: boolean) => void): void;
+  changeBackgroundColor(color: string): void;
+}

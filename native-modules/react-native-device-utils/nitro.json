@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativedeviceutils"],
+  "ios": {
+    "iosModuleName": "ReactNativeDeviceUtils"
+  },
+  "android": {
+    "androidNamespace": ["reactnativedeviceutils"],
+    "androidCxxLibName": "reactnativedeviceutils"
+  },
+  "autolinking": {
+    "ReactNativeDeviceUtils": {
+      "swift": "ReactNativeDeviceUtils",
+      "kotlin": "ReactNativeDeviceUtils"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

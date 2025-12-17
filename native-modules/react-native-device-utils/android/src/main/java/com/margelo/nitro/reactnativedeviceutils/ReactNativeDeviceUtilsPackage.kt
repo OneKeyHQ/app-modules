@@ -1,11 +1,11 @@
-package com.margelo.nitro.{{cxxNamespace}}
+package com.margelo.nitro.reactnativedeviceutils
 
 import com.facebook.react.BaseReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.model.ReactModuleInfoProvider
 
-class {{modulePascalCase}}Package : BaseReactPackage() {
+class ReactNativeDeviceUtilsPackage : BaseReactPackage() {
     override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
         return null
     }
@@ -16,7 +16,7 @@ class {{modulePascalCase}}Package : BaseReactPackage() {
 
     companion object {
         init {
-            System.loadLibrary("{{cxxNamespace}}")
+            System.loadLibrary("reactnativedeviceutils")
         }
     }
 }
