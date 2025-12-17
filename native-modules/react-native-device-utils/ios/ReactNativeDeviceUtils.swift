@@ -3,8 +3,6 @@ import UIKit
 
 class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     
-    private var spanningCallback: ((Bool) -> Void)?
-    
     public func isDualScreenDevice() throws -> Bool {
         return false
     }
@@ -19,6 +17,9 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     
     public func getHingeBounds() throws -> Promise<DualScreenInfoRect> {
         return Promise.resolved(withResult: DualScreenInfoRect(x: 0, y: 0, width: 0, height: 0))
+    }
+
+    public func addSpanningChangedListener(callback: @escaping (Bool) -> Void) throws -> Void {
     }
     
     public func changeBackgroundColor(r: Double, g: Double, b: Double, a: Double) throws -> Void {
