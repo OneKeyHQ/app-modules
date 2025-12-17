@@ -39,6 +39,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   private var spanningChangedListeners: MutableList<Listener> = mutableListOf()
   private var isObservingLayoutChanges = false
   private var nextListenerId = 0.0
+  private var isDualScreenDeviceDetected: Boolean? = null
 
   companion object {
     private var reactContext: ReactApplicationContext? = null
@@ -67,12 +68,16 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     // MARK: - Dual Screen Detection
   
   override fun isDualScreenDevice(): Boolean {
-    val activity = getCurrentActivity() ?: return false
-    
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      return hasFoldingFeature(activity)
+    if (isDualScreenDeviceDetected != null) {
+      return isDualScreenDeviceDetected!!
     }
-    return false
+    val activity = getCurrentActivity() ?: return false
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      isDualScreenDeviceDetected = hasFoldingFeature(activity)
+      return isDualScreenDeviceDetected!!
+    }
+    isDualScreenDeviceDetected = false
+    return isDualScreenDeviceDetected!!
   }
   
   @RequiresApi(Build.VERSION_CODES.R)
@@ -91,9 +96,25 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
           }
         }
       }
-      // Even if no folding feature is currently detected, the device might still be foldable
-      // Return true if WindowInfoTracker is available (indicates foldable support)
-      return true
+      // Check device model name to determine if it's a foldable device
+      val deviceModel = Build.MODEL.lowercase()
+      val deviceManufacturer = Build.MANUFACTURER.lowercase()
+      
+      // Common foldable device patterns
+      val foldablePatterns = listOf(
+        "fold", "flip", "duo", "surface duo", "galaxy z",
+        "mate x", "mix fold", "find n", "magic v",
+        "pixel fold", "honor magic v", "vivo x fold",
+        "xiaomi mix fold", "oppo find n"
+      )
+      
+      for (pattern in foldablePatterns) {
+        if (deviceModel.contains(pattern) || 
+            (deviceManufacturer + " " + deviceModel).contains(pattern)) {
+          return true
+        }
+      }
+      return false
     } catch (e: Exception) {
       // WindowManager library not available or device doesn't support foldables
       return false
