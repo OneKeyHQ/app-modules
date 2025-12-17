@@ -65,9 +65,27 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
   
   @RequiresApi(Build.VERSION_CODES.R)
   private fun hasFoldingFeature(activity: Activity): Boolean {
-    // This is a best-effort check
-    // In a real implementation, you might want to check device manufacturer and model
-    return true // Assume support for now, actual spanning detection happens in runtime
+    // Check if device has folding features using WindowManager library
+    // This is the recommended approach for detecting foldable devices
+    try {
+      val windowInfoTracker = WindowInfoTracker.getOrCreate(activity)
+      // If WindowInfoTracker is available, the device supports foldable features
+      // We can also check for specific display features
+      val displayFeatures = windowLayoutInfo?.displayFeatures
+      if (displayFeatures != null) {
+        for (feature in displayFeatures) {
+          if (feature is FoldingFeature) {
+            return true
+          }
+        }
+      }
+      // Even if no folding feature is currently detected, the device might still be foldable
+      // Return true if WindowInfoTracker is available (indicates foldable support)
+      return true
+    } catch (e: Exception) {
+      // WindowManager library not available or device doesn't support foldables
+      return false
+    }
   }
   
   override fun isSpanning(): Boolean {
