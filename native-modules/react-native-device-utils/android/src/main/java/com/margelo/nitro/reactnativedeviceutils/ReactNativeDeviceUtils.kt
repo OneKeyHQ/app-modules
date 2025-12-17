@@ -22,9 +22,6 @@ import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import java.util.concurrent.Executor
 
 @DoNotStrip
@@ -47,6 +44,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
 
     init {
         NitroModules.applicationContext?.let { ctx ->
+            ctx.addLifecycleEventListener(this)
            startObservingLayoutChanges()
         } ?: run {
 
