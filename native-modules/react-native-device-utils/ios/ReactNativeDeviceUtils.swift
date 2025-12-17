@@ -27,7 +27,7 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     public func changeBackgroundColor(r: Double, g: Double, b: Double, a: Double) throws -> Void {
         DispatchQueue.main.async {
             let color = UIColor(red: r/255, green: g/255, blue: b/255, alpha: a/255)
-            let rootViewController = UIApplication.shared.delegate?.window?.rootViewController
+            let rootViewController = UIApplication.shared.delegate?.window??.rootViewController
             rootViewController?.view.backgroundColor = color
         }
     }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, KeyboardTypeOptions } from 'react-native';
 
 interface TestPageBaseProps {
   title: string;
@@ -60,18 +60,21 @@ interface TestInputProps {
   onChangeText: (text: string) => void;
   secureTextEntry?: boolean;
   multiline?: boolean;
+  keyboardType?: KeyboardTypeOptions;
+  style?: any;
 }
 
-export function TestInput({ placeholder, value, onChangeText, secureTextEntry = false, multiline = false }: TestInputProps) {
+export function TestInput({ placeholder, value, onChangeText, secureTextEntry = false, multiline = false, keyboardType = 'default', style }: TestInputProps) {
   return (
     <TextInput
-      style={[styles.testInput, multiline && styles.testInputMultiline]}
+      style={[styles.testInput, multiline && styles.testInputMultiline, style]}
       placeholder={placeholder}
       placeholderTextColor="#999"
       value={value}
       onChangeText={onChangeText}
       secureTextEntry={secureTextEntry}
       multiline={multiline}
+      keyboardType={keyboardType}
     />
   );
 }

@@ -1,26 +1,66 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase';
-import { NitroModules } from 'react-native-nitro-modules';
+import  { ReactNativeDeviceUtils } from '@onekeyfe/react-native-device-utils';
 
 interface DeviceUtilsTestPageProps {
   onGoHome: () => void;
   safeAreaInsets: any;
 }
+const deviceUtils = ReactNativeDeviceUtils
 
 export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTestPageProps) {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [backgroundColor, setBackgroundColor] = useState('#ffffff');
+  const [colorR, setColorR] = useState('255');
+  const [colorG, setColorG] = useState('255');
+  const [colorB, setColorB] = useState('255');
+  const [colorA, setColorA] = useState('255');
   const [isSpanning, setIsSpanning] = useState(false);
   const [spanningCallbackActive, setSpanningCallbackActive] = useState(false);
 
-  const deviceUtils = NitroModules.createHybridObject('ReactNativeDeviceUtils');
 
   // Clear previous results
   const clearResults = () => {
     setResult(null);
     setError(null);
+  };
+
+  // Helper function to parse color string to RGBA
+  const parseColorToRGBA = (color: string): { r: number; g: number; b: number; a: number } => {
+    // Handle hex colors
+    if (color.startsWith('#')) {
+      const hex = color.replace('#', '');
+      let r = 0, g = 0, b = 0, a = 255;
+      
+      if (hex.length === 6) {
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+      } else if (hex.length === 8) {
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+        a = parseInt(hex.substring(6, 8), 16);
+      } else if (hex.length === 3) {
+        r = parseInt(hex[0] + hex[0], 16);
+        g = parseInt(hex[1] + hex[1], 16);
+        b = parseInt(hex[2] + hex[2], 16);
+      }
+      
+      return { r, g, b, a };
+    }
+    
+    // Handle named colors
+    const namedColors: { [key: string]: { r: number; g: number; b: number; a: number } } = {
+      'red': { r: 255, g: 0, b: 0, a: 255 },
+      'green': { r: 0, g: 255, b: 0, a: 255 },
+      'blue': { r: 0, g: 0, b: 255, a: 255 },
+      'white': { r: 255, g: 255, b: 255, a: 255 },
+      'black': { r: 0, g: 0, b: 0, a: 255 },
+    };
+    
+    return namedColors[color.toLowerCase()] || { r: 255, g: 255, b: 255, a: 255 };
   };
 
   // Test isDualScreenDevice
@@ -95,10 +135,21 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
   const testChangeBackgroundColor = () => {
     clearResults();
     try {
-      deviceUtils.changeBackgroundColor(backgroundColor);
+      const r = parseInt(colorR) || 0;
+      const g = parseInt(colorG) || 0;
+      const b = parseInt(colorB) || 0;
+      const a = parseInt(colorA) || 255;
+      
+      // Validate values are in range 0-255
+      if (r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255 || a < 0 || a > 255) {
+        setError('All color values must be between 0 and 255');
+        return;
+      }
+      
+      deviceUtils.changeBackgroundColor(r, g, b, a);
       setResult({ 
         backgroundColorChanged: true, 
-        color: backgroundColor 
+        rgba: { r, g, b, a }
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -109,10 +160,16 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
   const testPredefinedColor = (color: string) => {
     clearResults();
     try {
-      deviceUtils.changeBackgroundColor(color);
+      const rgba = parseColorToRGBA(color);
+      setColorR(rgba.r.toString());
+      setColorG(rgba.g.toString());
+      setColorB(rgba.b.toString());
+      setColorA(rgba.a.toString());
+      deviceUtils.changeBackgroundColor(rgba.r, rgba.g, rgba.b, rgba.a);
       setResult({ 
         backgroundColorChanged: true, 
-        color: color 
+        color: color,
+        rgba: rgba
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -204,11 +261,48 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Background Color</Text>
         
-        <TestInput
-          placeholder="Enter color (hex like #FF0000 or name like 'red')"
-          value={backgroundColor}
-          onChangeText={setBackgroundColor}
-        />
+        <View style={styles.colorInputsContainer}>
+          <View style={styles.colorInputWrapper}>
+            <Text style={styles.colorInputLabel}>R (0-255):</Text>
+            <TestInput
+              placeholder="R"
+              value={colorR}
+              onChangeText={setColorR}
+              keyboardType="numeric"
+              style={styles.colorInput}
+            />
+          </View>
+          <View style={styles.colorInputWrapper}>
+            <Text style={styles.colorInputLabel}>G (0-255):</Text>
+            <TestInput
+              placeholder="G"
+              value={colorG}
+              onChangeText={setColorG}
+              keyboardType="numeric"
+              style={styles.colorInput}
+            />
+          </View>
+          <View style={styles.colorInputWrapper}>
+            <Text style={styles.colorInputLabel}>B (0-255):</Text>
+            <TestInput
+              placeholder="B"
+              value={colorB}
+              onChangeText={setColorB}
+              keyboardType="numeric"
+              style={styles.colorInput}
+            />
+          </View>
+          <View style={styles.colorInputWrapper}>
+            <Text style={styles.colorInputLabel}>A (0-255):</Text>
+            <TestInput
+              placeholder="A"
+              value={colorA}
+              onChangeText={setColorA}
+              keyboardType="numeric"
+              style={styles.colorInput}
+            />
+          </View>
+        </View>
         
         <TestButton
           title="Change Background Color"
@@ -276,6 +370,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1976d2',
     fontWeight: '500',
+  },
+  colorInputsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 10,
+  },
+  colorInputWrapper: {
+    flex: 1,
+    minWidth: 70,
+  },
+  colorInputLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  colorInput: {
+    minWidth: 60,
   },
   colorButtonsContainer: {
     flexDirection: 'row',
