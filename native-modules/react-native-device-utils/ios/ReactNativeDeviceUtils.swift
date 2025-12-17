@@ -22,8 +22,14 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         return Promise.resolved(withResult: DualScreenInfoRect(x: 0, y: 0, width: 0, height: 0))
     }
 
-    public func addSpanningChangedListener(callback: @escaping (Bool) -> Void) throws -> Void {
+   
+    func addSpanningChangedListener(callback: @escaping (Bool) -> Void) throws -> Double {
+        return 0
     }
+
+    func removeSpanningChangedListener(id: Double) throws -> Void {
+    }
+    
     
     public func changeBackgroundColor(r: Double, g: Double, b: Double, a: Double) throws -> Void {
         DispatchQueue.main.async {

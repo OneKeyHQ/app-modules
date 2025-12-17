@@ -24,6 +24,11 @@ import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
 import java.util.concurrent.Executor
 
+data class Listener(
+  val id: Long,
+  val callback: (Boolean) -> Unit
+)
+
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
   
@@ -31,8 +36,9 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   private var isSpanning = false
   private var layoutInfoConsumer: Consumer<WindowLayoutInfo>? = null
   private var windowInfoTracker: WindowInfoTracker? = null
-  private var spanningChangedListeners: MutableList<(Boolean) -> Unit> = mutableListOf()
+  private var spanningChangedListeners: MutableList<Listener> = mutableListOf()
   private var isObservingLayoutChanges = false
+  private var nextListenerId = 0L
 
   companion object {
     private var reactContext: ReactApplicationContext? = null
@@ -212,15 +218,20 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
 
   fun callSpanningChangedListeners(isSpanning: Boolean) {
     for (listener in spanningChangedListeners) {
-      listener(isSpanning)
+      listener.callback(isSpanning)
     }
   }
 
-  override fun addSpanningChangedListener(callback: (isSpanning: Boolean) -> Unit): () -> Unit {
-    spanningChangedListeners.add(callback)
-    return {
-      spanningChangedListeners.remove(callback)
-    }
+  override fun addSpanningChangedListener(callback: (isSpanning: Boolean) -> Unit): Double {
+    var id = nextListenerId
+    nextListenerId++
+    val listener = Listener(id, callback)
+    spanningChangedListeners.add(listener)
+    return id.toDouble()
+  }
+
+  override fun removeSpanningChangedListener(id: Long) {
+    spanningChangedListeners.removeIf { it.id == id }
   }
 
   private fun startObservingLayoutChanges() {

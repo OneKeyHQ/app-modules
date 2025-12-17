@@ -16,5 +16,6 @@ export interface ReactNativeDeviceUtils
   getWindowRects(): Promise<DualScreenInfoRect[]>;
   getHingeBounds(): Promise<DualScreenInfoRect>;
   changeBackgroundColor(r: number, g: number, b: number, a: number): void;
-  addSpanningChangedListener(callback: (isSpanning: boolean) => void): () => void;
+  addSpanningChangedListener(callback: (isSpanning: boolean) => void): number;
+  removeSpanningChangedListener(id: number): void;
 }
