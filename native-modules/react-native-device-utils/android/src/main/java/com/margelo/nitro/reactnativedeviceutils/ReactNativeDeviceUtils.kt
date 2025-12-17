@@ -35,6 +35,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
   private var isSpanning = false
   private var layoutInfoConsumer: Consumer<WindowLayoutInfo>? = null
   private var windowInfoTracker: WindowInfoTracker? = null
+  private var spanningChangedListener: ((Boolean) -> Unit)? = null
   
   companion object {
     private var reactContext: ReactApplicationContext? = null
@@ -203,14 +204,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
       }
     }
   }
-  
-  // MARK: - Spanning Change Callback
-  
-  override fun onSpanningChanged(callback: (Boolean) -> Unit) {
-    this.spanningCallback = callback
-    startObservingLayoutChanges()
-  }
-  
+
   private fun startObservingLayoutChanges() {
     val activity = getCurrentActivity() ?: return
     
@@ -262,6 +256,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
     // Emit event if spanning state changed
     if (wasSpanning != this.isSpanning) {
       spanningCallback?.invoke(this.isSpanning)
+        onSpanningChanged(this.isSpanning)
     }
   }
   
