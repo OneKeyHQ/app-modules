@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-cloud-kit-module",
-  "version": "1.1.9",
+  "version": "1.1.10",
   "description": "react-native-cloud-kit-module",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -83,7 +83,7 @@
     "react": "19.2.0",
     "react-native": "0.83.0",
     "react-native-builder-bob": "^0.40.13",
-    "react-native-nitro-modules": "^0.29.8",
+    "react-native-nitro-modules": "^0.31.10",
     "release-it": "^19.0.4",
     "turbo": "^2.5.6",
     "typescript": "^5.9.2"
@@ -91,12 +91,8 @@
   "peerDependencies": {
     "react": "*",
     "react-native": "*",
-    "react-native-nitro-modules": "^0.29.8"
+    "react-native-nitro-modules": "^0.31.10"
   },
-  "workspaces": [
-    "example"
-  ],
-  "packageManager": "yarn@4.11.0",
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",

@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativegetrandomvalues"],
+  "ios": {
+    "iosModuleName": "ReactNativeGetRandomValues"
+  },
+  "android": {
+    "androidNamespace": ["reactnativegetrandomvalues"],
+    "androidCxxLibName": "reactnativegetrandomvalues"
+  },
+  "autolinking": {
+    "ReactNativeGetRandomValues": {
+      "swift": "ReactNativeGetRandomValues",
+      "kotlin": "ReactNativeGetRandomValues"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

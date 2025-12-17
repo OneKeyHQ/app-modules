@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["{{cxxNamespace}}"],
+  "ios": {
+    "iosModuleName": "{{modulePascalCase}}"
+  },
+  "android": {
+    "androidNamespace": ["{{cxxNamespace}}"],
+    "androidCxxLibName": "{{cxxNamespace}}"
+  },
+  "autolinking": {
+    "{{modulePascalCase}}": {
+      "swift": "{{modulePascalCase}}",
+      "kotlin": "{{modulePascalCase}}"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
