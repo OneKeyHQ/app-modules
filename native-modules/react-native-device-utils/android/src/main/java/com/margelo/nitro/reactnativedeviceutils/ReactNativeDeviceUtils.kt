@@ -34,7 +34,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   private var spanningChangedListeners: MutableList<(Boolean) -> Unit> = mutableListOf()
   private var isObservingLayoutChanges = false
 
-   companion object {
+  companion object {
     private var reactContext: ReactApplicationContext? = null
     
     fun setReactContext(context: ReactApplicationContext) {
@@ -42,24 +42,23 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     }
    }
 
-    init {
-        NitroModules.applicationContext?.let { ctx ->
-            ctx.addLifecycleEventListener(this)
-           startObservingLayoutChanges()
-        } ?: run {
+  init {
+      NitroModules.applicationContext?.let { ctx ->
+          ctx.addLifecycleEventListener(this)
+      } ?: run {
 
-        }
-    }
-
-  private fun getContext(): Context? {
-    return reactContext ?: getCurrentActivity()
+      }
   }
   
   private fun getCurrentActivity(): Activity? {
-    return reactContext?.currentActivity
+    return NitroModules.applicationContext?.currentActivity
   }
-  
-  // MARK: - Dual Screen Detection
+
+  override fun initEventListeners() {
+    startObservingLayoutChanges()
+  }
+
+    // MARK: - Dual Screen Detection
   
   override fun isDualScreenDevice(): Boolean {
     val activity = getCurrentActivity() ?: return false

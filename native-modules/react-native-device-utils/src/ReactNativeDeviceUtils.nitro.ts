@@ -10,6 +10,7 @@ export interface DualScreenInfoRect {
 
 export interface ReactNativeDeviceUtils
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
+  initEventListeners(): void;
   isDualScreenDevice(): boolean;
   isSpanning(): boolean;
   getWindowRects(): Promise<DualScreenInfoRect[]>;

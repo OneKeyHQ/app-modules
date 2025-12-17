@@ -6,6 +6,9 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     public func isDualScreenDevice() throws -> Bool {
         return false
     }
+
+    public func initEventListeners() throws -> Void {
+    }
     
     public func isSpanning() throws -> Bool {
         return false

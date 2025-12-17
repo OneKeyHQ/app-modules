@@ -9,6 +9,8 @@ interface DeviceUtilsTestPageProps {
 }
 const deviceUtils = ReactNativeDeviceUtils
 
+deviceUtils.initEventListeners();
+
 export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTestPageProps) {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
