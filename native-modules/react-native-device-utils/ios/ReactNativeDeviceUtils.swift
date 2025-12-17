@@ -24,21 +24,11 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     public func onSpanningChanged(callback: @escaping (Bool) -> Void) throws -> Void {
     }
     
-    public func changeBackgroundColor(color: String) throws -> Void {
+    public func changeBackgroundColor(r: Double, g: Double, b: Double, a: Double) throws -> Void {
         DispatchQueue.main.async {
-            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                  let window = windowScene.windows.first else {
-                return
-            }
-            
-            // Parse color string (supports hex colors like "#FF0000" or named colors)
-            let uiColor = self.parseColor(color)
-            window.backgroundColor = uiColor
-            
-            // Also set the root view controller's view background if available
-            if let rootViewController = window.rootViewController {
-                rootViewController.view.backgroundColor = uiColor
-            }
+            let color = UIColor(red: r/255, green: g/255, blue: b/255, alpha: a/255)
+            let rootViewController = UIApplication.shared.delegate?.window?.rootViewController
+            rootViewController?.view.backgroundColor = color
         }
     }
 }
