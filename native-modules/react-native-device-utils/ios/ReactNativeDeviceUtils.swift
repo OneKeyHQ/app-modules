@@ -21,9 +21,6 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         return Promise.resolved(withResult: DualScreenInfoRect(x: 0, y: 0, width: 0, height: 0))
     }
     
-    public func onSpanningChanged(callback: @escaping (Bool) -> Void) throws -> Void {
-    }
-    
     public func changeBackgroundColor(r: Double, g: Double, b: Double, a: Double) throws -> Void {
         DispatchQueue.main.async {
             let color = UIColor(red: r/255, green: g/255, blue: b/255, alpha: a/255)
