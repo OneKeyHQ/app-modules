@@ -18,6 +18,7 @@ import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 import androidx.window.layout.WindowLayoutInfo
 import com.facebook.proguard.annotations.DoNotStrip
+import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
 import com.margelo.nitro.core.Promise
 import kotlinx.coroutines.CoroutineScope
@@ -26,7 +27,7 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.Executor
 
 @DoNotStrip
-class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
+class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
   
   private var spanningCallback: ((Boolean) -> Unit)? = null
   private var lastSpanningState = false
@@ -212,15 +213,9 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
   }
 
   override fun addSpanningChangedListener(callback: (isSpanning: Boolean) -> Unit): () -> Unit {
-    if (spanningChangedListeners.isEmpty()) {
-      startObservingLayoutChanges()
-    }
     spanningChangedListeners.add(callback)
     return {
       spanningChangedListeners.remove(callback)
-      if (spanningChangedListeners.isEmpty()) {
-        stopObservingLayoutChanges()
-      }
     }
   }
 
@@ -291,4 +286,16 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
       }
     }
   }
+
+    override fun onHostResume() {
+        startObservingLayoutChanges()
+    }
+
+    override fun onHostPause() {
+        stopObservingLayoutChanges()
+    }
+
+    override fun onHostDestroy() {
+        stopObservingLayoutChanges()
+    }
 }
