@@ -226,52 +226,15 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
   
   // MARK: - Background Color
   
-  override fun changeBackgroundColor(color: String) {
+  override fun changeBackgroundColor(r: Double, g: Double, b: Double, a: Double) {
     val activity = getCurrentActivity() ?: return
-    
     activity.runOnUiThread {
       try {
-        val parsedColor = parseColor(color)
-        val window = activity.window
-        window.statusBarColor = parsedColor
-        window.navigationBarColor = parsedColor
-        
-        // Also set the content view background
-        val contentView = window.decorView.findViewById<android.view.View>(android.R.id.content)
-        contentView?.setBackgroundColor(parsedColor)
+        val rootView = activity.window.decorView
+        rootView.rootView.setBackgroundColor(Color.rgb(r.toInt(), g.toInt(), b.toInt()))
       } catch (e: Exception) {
-        // Handle error silently
+        e.printStackTrace()
       }
-    }
-  }
-  
-  private fun parseColor(colorString: String): Int {
-    val trimmedColor = colorString.trim()
-    
-    return try {
-      when {
-        trimmedColor.startsWith("#") -> {
-          Color.parseColor(trimmedColor)
-        }
-        else -> {
-          // Handle named colors
-          when (trimmedColor.lowercase()) {
-            "red" -> Color.RED
-            "green" -> Color.GREEN
-            "blue" -> Color.BLUE
-            "yellow" -> Color.YELLOW
-            "orange" -> Color.rgb(255, 165, 0)
-            "purple" -> Color.rgb(128, 0, 128)
-            "black" -> Color.BLACK
-            "white" -> Color.WHITE
-            "gray", "grey" -> Color.GRAY
-            "transparent", "clear" -> Color.TRANSPARENT
-            else -> Color.WHITE
-          }
-        }
-      }
-    } catch (e: Exception) {
-      Color.WHITE
     }
   }
 }
