@@ -25,7 +25,7 @@ import com.margelo.nitro.core.Promise
 import java.util.concurrent.Executor
 
 data class Listener(
-  val id: Long,
+  val id: Double,
   val callback: (Boolean) -> Unit
 )
 
@@ -38,7 +38,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   private var windowInfoTracker: WindowInfoTracker? = null
   private var spanningChangedListeners: MutableList<Listener> = mutableListOf()
   private var isObservingLayoutChanges = false
-  private var nextListenerId = 0L
+  private var nextListenerId = 0.0
 
   companion object {
     private var reactContext: ReactApplicationContext? = null
@@ -230,9 +230,9 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     return id.toDouble()
   }
 
-  override fun removeSpanningChangedListener(id: Long) {
-    spanningChangedListeners.removeIf { it.id == id }
-  }
+    override fun removeSpanningChangedListener(id: Double) {
+        spanningChangedListeners.removeIf { it.id == id }
+    }
 
   private fun startObservingLayoutChanges() {
     if (isObservingLayoutChanges) {
