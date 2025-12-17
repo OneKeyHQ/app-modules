@@ -2683,6 +2683,36 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - ReactNativeDeviceUtils (1.1.10):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - NitroModules
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
   - ReactNativeGetRandomValues (1.1.10):
     - boost
     - DoubleConversion
@@ -2828,6 +2858,7 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios/ReactCodegen`)
   - ReactCommon/turbomodule/core (from `../../../node_modules/react-native/ReactCommon`)
   - "ReactNativeCheckBiometricAuthChanged (from `../../../node_modules/@onekeyfe/react-native-check-biometric-auth-changed`)"
+  - "ReactNativeDeviceUtils (from `../../../node_modules/@onekeyfe/react-native-device-utils`)"
   - "ReactNativeGetRandomValues (from `../../../node_modules/@onekeyfe/react-native-get-random-values`)"
   - "ReactNativeLiteCard (from `../../../node_modules/@onekeyfe/react-native-lite-card`)"
   - SocketRocket (~> 0.7.1)
@@ -3003,6 +3034,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native/ReactCommon"
   ReactNativeCheckBiometricAuthChanged:
     :path: "../../../node_modules/@onekeyfe/react-native-check-biometric-auth-changed"
+  ReactNativeDeviceUtils:
+    :path: "../../../node_modules/@onekeyfe/react-native-device-utils"
   ReactNativeGetRandomValues:
     :path: "../../../node_modules/@onekeyfe/react-native-get-random-values"
   ReactNativeLiteCard:
@@ -3093,6 +3126,7 @@ SPEC CHECKSUMS:
   ReactCodegen: 554b421c45b7df35ac791da1b734335470b55fcc
   ReactCommon: 424cc34cf5055d69a3dcf02f3436481afb8b0f6f
   ReactNativeCheckBiometricAuthChanged: 6285af88bf1217c3803688620daae817b2d51d43
+  ReactNativeDeviceUtils: 313047c9caeea3d2a0a41fa169ba4c82e3a3bc55
   ReactNativeGetRandomValues: 497e64311f3651182e4e4c9e4f52a441325a722e
   ReactNativeLiteCard: be90ba1510425295e13621f088404ad850c2b239
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748

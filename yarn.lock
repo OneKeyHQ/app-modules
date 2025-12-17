@@ -2747,6 +2747,7 @@ __metadata:
     "@onekeyfe/react-native-background-thread": "npm:*"
     "@onekeyfe/react-native-check-biometric-auth-changed": "npm:*"
     "@onekeyfe/react-native-cloud-kit-module": "npm:*"
+    "@onekeyfe/react-native-device-utils": "npm:*"
     "@onekeyfe/react-native-get-random-values": "npm:*"
     "@onekeyfe/react-native-keychain-module": "npm:*"
     "@onekeyfe/react-native-lite-card": "npm:*"
@@ -2916,7 +2917,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-device-utils@workspace:native-modules/react-native-device-utils":
+"@onekeyfe/react-native-device-utils@npm:*, @onekeyfe/react-native-device-utils@workspace:native-modules/react-native-device-utils":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-device-utils@workspace:native-modules/react-native-device-utils"
   dependencies:

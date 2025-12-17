@@ -14,6 +14,7 @@
     "@onekeyfe/react-native-background-thread": "*",
     "@onekeyfe/react-native-check-biometric-auth-changed": "*",
     "@onekeyfe/react-native-cloud-kit-module": "*",
+    "@onekeyfe/react-native-device-utils": "*",
     "@onekeyfe/react-native-get-random-values": "*",
     "@onekeyfe/react-native-keychain-module": "*",
     "@onekeyfe/react-native-lite-card": "*",
