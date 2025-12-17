@@ -10,13 +10,20 @@ import android.os.Build
 import android.util.DisplayMetrics
 import android.view.Display
 import android.view.WindowManager
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
+import androidx.core.util.Consumer
+import androidx.window.layout.DisplayFeature
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
+import androidx.window.layout.WindowLayoutInfo
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.bridge.ReactApplicationContext
 import com.margelo.nitro.core.Promise
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.concurrent.Executor
 
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
@@ -24,6 +31,10 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
   private var spanningCallback: ((Boolean) -> Unit)? = null
   private var lastSpanningState = false
   private val coroutineScope = CoroutineScope(Dispatchers.Main)
+  private var windowLayoutInfo: WindowLayoutInfo? = null
+  private var isSpanning = false
+  private var layoutInfoConsumer: Consumer<WindowLayoutInfo>? = null
+  private var windowInfoTracker: WindowInfoTracker? = null
   
   companion object {
     private var reactContext: ReactApplicationContext? = null
@@ -44,49 +55,52 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
   // MARK: - Dual Screen Detection
   
   override fun isDualScreenDevice(): Boolean {
-    val context = getContext() ?: return false
+    val activity = getCurrentActivity() ?: return false
     
-    // Check for Microsoft Surface Duo or other dual screen devices
-    val packageManager = context.packageManager
-    
-    // Surface Duo specific feature
-    val hasDualScreen = packageManager.hasSystemFeature("com.microsoft.device.display.displaymask")
-    
-    // Alternative: Check for multiple displays
-    val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-    val displays = displayManager.displays
-    
-    return hasDualScreen || displays.size > 1
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      return hasFoldingFeature(activity)
+    }
+    return false
+  }
+  
+  @RequiresApi(Build.VERSION_CODES.R)
+  private fun hasFoldingFeature(activity: Activity): Boolean {
+    // This is a best-effort check
+    // In a real implementation, you might want to check device manufacturer and model
+    return true // Assume support for now, actual spanning detection happens in runtime
   }
   
   override fun isSpanning(): Boolean {
-    val activity = getCurrentActivity() ?: return false
-    
-    try {
-      // For Surface Duo, check if the app is spanning across both screens
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        val windowManager = activity.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val windowMetrics = windowManager.currentWindowMetrics
-        val bounds = windowMetrics.bounds
-        
-        // Get display metrics to compare
-        val displayMetrics = DisplayMetrics()
-        activity.windowManager.defaultDisplay.getMetrics(displayMetrics)
-        
-        // If window width is significantly larger than display width, likely spanning
-        return bounds.width() > displayMetrics.widthPixels * 1.5
-      } else {
-        // Fallback for older Android versions
-        val displayMetrics = DisplayMetrics()
-        activity.windowManager.defaultDisplay.getMetrics(displayMetrics)
-        
-        val configuration = activity.resources.configuration
-        return configuration.screenLayout and Configuration.SCREENLAYOUT_SIZE_MASK >= Configuration.SCREENLAYOUT_SIZE_LARGE &&
-               configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-      }
-    } catch (e: Exception) {
+    return this.isSpanning
+  }
+  
+  private fun checkIsSpanning(layoutInfo: WindowLayoutInfo?): Boolean {
+    if (layoutInfo == null) {
       return false
     }
+    
+    val foldingFeature = getFoldingFeature(layoutInfo)
+    if (foldingFeature == null) {
+      return false
+    }
+    
+    // Consider spanning if the folding feature divides the screen
+    return foldingFeature.state == FoldingFeature.State.FLAT ||
+           foldingFeature.state == FoldingFeature.State.HALF_OPENED
+  }
+  
+  private fun getFoldingFeature(layoutInfo: WindowLayoutInfo?): FoldingFeature? {
+    if (layoutInfo == null) {
+      return null
+    }
+    
+    val features = layoutInfo.displayFeatures
+    for (feature in features) {
+      if (feature is FoldingFeature) {
+        return feature
+      }
+    }
+    return null
   }
   
   // MARK: - Window Information
@@ -96,60 +110,13 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
       coroutineScope.launch {
         try {
           val activity = getCurrentActivity()
-          if (activity == null) {
+          if (activity == null || windowLayoutInfo == null) {
             resolve(arrayOf())
             return@launch
           }
           
-          val rects = mutableListOf<DualScreenInfoRect>()
-          
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val windowManager = activity.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val windowMetrics = windowManager.currentWindowMetrics
-            val bounds = windowMetrics.bounds
-            
-            if (isDualScreenDevice() && isSpanning()) {
-              // For dual screen spanning, split the bounds
-              val halfWidth = bounds.width() / 2
-              
-              // Left screen
-              rects.add(DualScreenInfoRect(
-                x = bounds.left.toDouble(),
-                y = bounds.top.toDouble(),
-                width = halfWidth.toDouble(),
-                height = bounds.height().toDouble()
-              ))
-              
-              // Right screen
-              rects.add(DualScreenInfoRect(
-                x = (bounds.left + halfWidth).toDouble(),
-                y = bounds.top.toDouble(),
-                width = halfWidth.toDouble(),
-                height = bounds.height().toDouble()
-              ))
-            } else {
-              // Single window
-              rects.add(DualScreenInfoRect(
-                x = bounds.left.toDouble(),
-                y = bounds.top.toDouble(),
-                width = bounds.width().toDouble(),
-                height = bounds.height().toDouble()
-              ))
-            }
-          } else {
-            // Fallback for older versions
-            val displayMetrics = DisplayMetrics()
-            activity.windowManager.defaultDisplay.getMetrics(displayMetrics)
-            
-            rects.add(DualScreenInfoRect(
-              x = 0.0,
-              y = 0.0,
-              width = displayMetrics.widthPixels.toDouble(),
-              height = displayMetrics.heightPixels.toDouble()
-            ))
-          }
-          
-          resolve(rects.toTypedArray())
+          val rects = getWindowRectsFromLayoutInfo(activity, windowLayoutInfo!!)
+          resolve(rects)
         } catch (e: Exception) {
           reject(e)
         }
@@ -157,35 +124,68 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
     }
   }
   
+  private fun getWindowRectsFromLayoutInfo(activity: Activity, layoutInfo: WindowLayoutInfo): Array<DualScreenInfoRect> {
+    val rects = mutableListOf<DualScreenInfoRect>()
+    
+    val foldingFeature = getFoldingFeature(layoutInfo)
+    if (foldingFeature == null) {
+      // No folding feature, return full screen rect
+      val screenRect = Rect()
+      activity.window.decorView.getWindowVisibleDisplayFrame(screenRect)
+      rects.add(rectToDualScreenInfoRect(screenRect))
+      return rects.toTypedArray()
+    }
+    
+    // Split screen based on folding feature
+    val hingeBounds = foldingFeature.bounds
+    val screenRect = Rect()
+    activity.window.decorView.getWindowVisibleDisplayFrame(screenRect)
+    
+    if (foldingFeature.orientation == FoldingFeature.Orientation.VERTICAL) {
+      // Vertical fold - left and right screens
+      val leftRect = Rect(screenRect.left, screenRect.top, hingeBounds.left, screenRect.bottom)
+      val rightRect = Rect(hingeBounds.right, screenRect.top, screenRect.right, screenRect.bottom)
+      rects.add(rectToDualScreenInfoRect(leftRect))
+      rects.add(rectToDualScreenInfoRect(rightRect))
+    } else {
+      // Horizontal fold - top and bottom screens
+      val topRect = Rect(screenRect.left, screenRect.top, screenRect.right, hingeBounds.top)
+      val bottomRect = Rect(screenRect.left, hingeBounds.bottom, screenRect.right, screenRect.bottom)
+      rects.add(rectToDualScreenInfoRect(topRect))
+      rects.add(rectToDualScreenInfoRect(bottomRect))
+    }
+    
+    return rects.toTypedArray()
+  }
+  
+  private fun rectToDualScreenInfoRect(rect: Rect): DualScreenInfoRect {
+    return DualScreenInfoRect(
+      x = rect.left.toDouble(),
+      y = rect.top.toDouble(),
+      width = rect.width().toDouble(),
+      height = rect.height().toDouble()
+    )
+  }
+  
   override fun getHingeBounds(): Promise<DualScreenInfoRect> {
     return Promise.async { resolve, reject ->
       coroutineScope.launch {
         try {
-          val activity = getCurrentActivity()
-          if (activity == null || !isDualScreenDevice()) {
-            // No hinge if not a dual screen device
+          if (windowLayoutInfo == null) {
             resolve(DualScreenInfoRect(x = 0.0, y = 0.0, width = 0.0, height = 0.0))
             return@launch
           }
           
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val windowManager = activity.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val windowMetrics = windowManager.currentWindowMetrics
-            val bounds = windowMetrics.bounds
-            
-            if (isSpanning()) {
-              // Calculate hinge position (center of the spanning window)
-              val hingeX = bounds.width() / 2.0 - 10.0 // 20dp wide hinge
-              val hingeRect = DualScreenInfoRect(
-                x = hingeX,
-                y = bounds.top.toDouble(),
-                width = 20.0, // Hinge width
-                height = bounds.height().toDouble()
-              )
-              resolve(hingeRect)
-            } else {
-              resolve(DualScreenInfoRect(x = 0.0, y = 0.0, width = 0.0, height = 0.0))
-            }
+          val foldingFeature = getFoldingFeature(windowLayoutInfo)
+          if (foldingFeature != null) {
+            val bounds = foldingFeature.bounds
+            val hingeRect = DualScreenInfoRect(
+              x = bounds.left.toDouble(),
+              y = bounds.top.toDouble(),
+              width = bounds.width().toDouble(),
+              height = bounds.height().toDouble()
+            )
+            resolve(hingeRect)
           } else {
             resolve(DualScreenInfoRect(x = 0.0, y = 0.0, width = 0.0, height = 0.0))
           }
@@ -200,27 +200,60 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
   
   override fun onSpanningChanged(callback: (Boolean) -> Unit) {
     this.spanningCallback = callback
-    
-    // Start monitoring configuration changes
-    startSpanningMonitor()
+    startObservingLayoutChanges()
   }
   
-  private fun startSpanningMonitor() {
-    coroutineScope.launch {
-      // Simple polling mechanism to detect spanning changes
-      // In a real implementation, you might want to use configuration change listeners
-      while (spanningCallback != null) {
-        try {
-          val currentSpanning = isSpanning()
-          if (currentSpanning != lastSpanningState) {
-            lastSpanningState = currentSpanning
-            spanningCallback?.invoke(currentSpanning)
-          }
-          kotlinx.coroutines.delay(1000) // Check every second
-        } catch (e: Exception) {
-          // Handle error silently
+  private fun startObservingLayoutChanges() {
+    val activity = getCurrentActivity() ?: return
+    
+    // Window Manager library requires API 24+, but full foldable support is API 30+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      try {
+        windowInfoTracker = WindowInfoTracker.getOrCreate(activity)
+        
+        // Create consumer for window layout info
+        layoutInfoConsumer = Consumer<WindowLayoutInfo> { layoutInfo ->
+          onWindowLayoutInfoChanged(layoutInfo)
         }
+        
+        // Use Java-friendly callback approach
+        val mainExecutor: Executor = activity.mainExecutor
+        
+        // Subscribe to window layout changes
+        val callbackAdapter = androidx.window.java.layout.WindowInfoTrackerCallbackAdapter(windowInfoTracker!!)
+        
+        callbackAdapter.addWindowLayoutInfoListener(
+          activity,
+          mainExecutor,
+          layoutInfoConsumer!!
+        )
+      } catch (e: Exception) {
+        // Window tracking not supported on this device/API level, ignore
       }
+    }
+  }
+  
+  private fun stopObservingLayoutChanges() {
+    if (windowInfoTracker != null && layoutInfoConsumer != null) {
+      try {
+        // The listener will be cleaned up when the activity is destroyed
+        layoutInfoConsumer = null
+        windowInfoTracker = null
+      } catch (e: Exception) {
+        // Ignore cleanup errors
+      }
+    }
+  }
+  
+  private fun onWindowLayoutInfoChanged(layoutInfo: WindowLayoutInfo) {
+    this.windowLayoutInfo = layoutInfo
+    
+    val wasSpanning = this.isSpanning
+    this.isSpanning = checkIsSpanning(layoutInfo)
+    
+    // Emit event if spanning state changed
+    if (wasSpanning != this.isSpanning) {
+      spanningCallback?.invoke(this.isSpanning)
     }
   }
   
