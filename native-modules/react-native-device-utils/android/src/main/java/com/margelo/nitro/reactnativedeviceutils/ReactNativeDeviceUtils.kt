@@ -1,19 +1,11 @@
 package com.margelo.nitro.reactnativedeviceutils
 
 import android.app.Activity
-import android.content.Context
-import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Rect
-import android.hardware.display.DisplayManager
 import android.os.Build
-import android.util.DisplayMetrics
-import android.view.Display
-import android.view.WindowManager
-import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import androidx.core.util.Consumer
-import androidx.window.layout.DisplayFeature
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 import androidx.window.layout.WindowLayoutInfo
@@ -79,9 +71,32 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     isDualScreenDeviceDetected = false
     return isDualScreenDeviceDetected!!
   }
+  private fun isFoldableDeviceByName(): Boolean {
+    val deviceModel = Build.MODEL.lowercase()
+    val deviceManufacturer = Build.MANUFACTURER.lowercase()
+    
+    // Common foldable device patterns
+    val foldablePatterns = listOf(
+      "fold", "flip", "duo", "surface duo", "galaxy z",
+      "mate x", "mix fold", "find n", "magic v",
+      "pixel fold", "honor magic v", "vivo x fold",
+      "xiaomi mix fold", "oppo find n"
+    )
+    
+    for (pattern in foldablePatterns) {
+      if (deviceModel.contains(pattern) || 
+          (deviceManufacturer + " " + deviceModel).contains(pattern)) {
+        return true
+      }
+    }
+    return false
+  }
   
-  @RequiresApi(Build.VERSION_CODES.R)
   private fun hasFoldingFeature(activity: Activity): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+      return isFoldableDeviceByName()
+    }
+    
     // Check if device has folding features using WindowManager library
     // This is the recommended approach for detecting foldable devices
     try {
@@ -97,30 +112,13 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         }
       }
       // Check device model name to determine if it's a foldable device
-      val deviceModel = Build.MODEL.lowercase()
-      val deviceManufacturer = Build.MANUFACTURER.lowercase()
-      
-      // Common foldable device patterns
-      val foldablePatterns = listOf(
-        "fold", "flip", "duo", "surface duo", "galaxy z",
-        "mate x", "mix fold", "find n", "magic v",
-        "pixel fold", "honor magic v", "vivo x fold",
-        "xiaomi mix fold", "oppo find n"
-      )
-      
-      for (pattern in foldablePatterns) {
-        if (deviceModel.contains(pattern) || 
-            (deviceManufacturer + " " + deviceModel).contains(pattern)) {
-          return true
-        }
-      }
-      return false
+      return isFoldableDeviceByName()
     } catch (e: Exception) {
       // WindowManager library not available or device doesn't support foldables
       return false
     }
   }
-  
+
   override fun isSpanning(): Boolean {
     return this.isSpanning
   }
@@ -248,7 +246,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     nextListenerId++
     val listener = Listener(id, callback)
     spanningChangedListeners.add(listener)
-    return id.toDouble()
+    return id
   }
 
     override fun removeSpanningChangedListener(id: Double) {
