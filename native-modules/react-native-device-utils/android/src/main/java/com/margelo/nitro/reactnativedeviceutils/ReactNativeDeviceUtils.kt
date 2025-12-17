@@ -124,20 +124,17 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
   // MARK: - Window Information
   
   override fun getWindowRects(): Promise<Array<DualScreenInfoRect>> {
-    return Promise.async { resolve, reject ->
-      coroutineScope.launch {
-        try {
-          val activity = getCurrentActivity()
-          if (activity == null || windowLayoutInfo == null) {
-            resolve(arrayOf())
-            return@launch
-          }
-          
-          val rects = getWindowRectsFromLayoutInfo(activity, windowLayoutInfo!!)
-          resolve(rects)
-        } catch (e: Exception) {
-          reject(e)
-        }
+    return Promise.async {
+      val activity = getCurrentActivity()
+      if (activity == null || windowLayoutInfo == null) {
+        return@async arrayOf()
+      }
+      
+      val layoutInfo = windowLayoutInfo
+      if (layoutInfo != null) {
+        getWindowRectsFromLayoutInfo(activity, layoutInfo)
+      } else {
+        arrayOf()
       }
     }
   }
@@ -186,30 +183,23 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec() {
   }
   
   override fun getHingeBounds(): Promise<DualScreenInfoRect> {
-    return Promise.async { resolve, reject ->
-      coroutineScope.launch {
-        try {
-          if (windowLayoutInfo == null) {
-            resolve(DualScreenInfoRect(x = 0.0, y = 0.0, width = 0.0, height = 0.0))
-            return@launch
-          }
-          
-          val foldingFeature = getFoldingFeature(windowLayoutInfo)
-          if (foldingFeature != null) {
-            val bounds = foldingFeature.bounds
-            val hingeRect = DualScreenInfoRect(
-              x = bounds.left.toDouble(),
-              y = bounds.top.toDouble(),
-              width = bounds.width().toDouble(),
-              height = bounds.height().toDouble()
-            )
-            resolve(hingeRect)
-          } else {
-            resolve(DualScreenInfoRect(x = 0.0, y = 0.0, width = 0.0, height = 0.0))
-          }
-        } catch (e: Exception) {
-          reject(e)
-        }
+    return Promise.async {
+      val layoutInfo = windowLayoutInfo
+      if (layoutInfo == null) {
+        return@async DualScreenInfoRect(x = 0.0, y = 0.0, width = 0.0, height = 0.0)
+      }
+      
+      val foldingFeature = getFoldingFeature(layoutInfo)
+      if (foldingFeature != null) {
+        val bounds = foldingFeature.bounds
+        DualScreenInfoRect(
+          x = bounds.left.toDouble(),
+          y = bounds.top.toDouble(),
+          width = bounds.width().toDouble(),
+          height = bounds.height().toDouble()
+        )
+      } else {
+        DualScreenInfoRect(x = 0.0, y = 0.0, width = 0.0, height = 0.0)
       }
     }
   }
