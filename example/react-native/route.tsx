@@ -6,6 +6,7 @@ import { CloudKitTestPage } from './pages/CloudKitTestPage';
 import { KeychainTestPage } from './pages/KeychainTestPage';
 import { LiteCardTestPage } from './pages/LiteCardTestPage';
 import { GetRandomValuesTestPage } from './pages/GetRandomValuesTestPage';
+import { DeviceUtilsTestPage } from './pages/DeviceUtilsTestPage';
 
 export type RouteScreen = 
   | 'home'
@@ -14,7 +15,8 @@ export type RouteScreen =
   | 'cloud-kit'
   | 'keychain'
   | 'lite-card'
-  | 'get-random-values';
+  | 'get-random-values'
+  | 'device-utils';
 
 interface RouterProps {
   safeAreaInsets: any;
@@ -35,6 +37,11 @@ const modules = [
     id: 'cloud-kit' as RouteScreen,
     name: 'CloudKit Module',
     description: 'Test iCloud storage operations and sync',
+  },
+  {
+    id: 'device-utils' as RouteScreen,
+    name: 'Device Utils',
+    description: 'Test dual screen detection, spanning, and device utilities',
   },
   {
     id: 'keychain' as RouteScreen,
@@ -97,6 +104,8 @@ export function Router({ safeAreaInsets }: RouterProps) {
         return <BiometricAuthTestPage {...commonProps} />;
       case 'cloud-kit':
         return <CloudKitTestPage {...commonProps} />;
+      case 'device-utils':
+        return <DeviceUtilsTestPage {...commonProps} />;
       case 'keychain':
         return <KeychainTestPage {...commonProps} />;
       case 'lite-card':
