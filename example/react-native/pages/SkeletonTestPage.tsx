@@ -28,7 +28,7 @@ export function SkeletonTestPage({ onGoHome, safeAreaInsets }: SkeletonTestPageP
       safeAreaInsets={safeAreaInsets}
     >
       <View style={styles.section}>
-         <SkeletonView style={styles.skeleton} shimmerSpeed={1.0}  shimmerGradientColors={[baseColors.light.primary,baseColors.light.secondary]} />
+         <SkeletonView style={styles.skeleton} shimmerSpeed={2.0}  shimmerGradientColors={[baseColors.light.primary,baseColors.light.secondary]} />
          <SkeletonView style={styles.skeleton} shimmerGradientColors={[baseColors.dark.primary,baseColors.dark.secondary]} />
       </View>
     </TestPageBase>
