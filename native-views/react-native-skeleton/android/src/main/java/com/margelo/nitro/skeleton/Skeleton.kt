@@ -56,24 +56,6 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
     }
   }
 
-  // Props
-  private var _color: String? = null
-  override var color: String?
-    get() = _color
-    set(value) {
-      _color = value
-      val uiColor = if (value != null) {
-        try {
-          value.toColorInt()
-        } catch (e: Exception) {
-          DEFAULT_GRADIENT_COLORS[0]
-        }
-      } else {
-        DEFAULT_GRADIENT_COLORS[0]
-      }
-      view.setBackgroundColor(uiColor)
-    }
-
   override var shimmerSpeed: Double?
     get() = animationSpeed.toDouble() / 1000.0
     set(value) {
@@ -86,6 +68,7 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
     set(value) {
       if (value != null) {
         customGradientColors = value.map { hexStringToColor(it) }.toIntArray()
+        restartShimmer()
       }
     }
 

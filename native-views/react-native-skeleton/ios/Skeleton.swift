@@ -23,20 +23,10 @@ class HybridSkeleton : HybridSkeletonSpec {
   
   // UIView
   var view: UIView = UIView()
-  
-  var animationSpeed: TimeInterval = 3.0 {
-    didSet {
-      Task {
-        await MainActor.run {
-          restartShimmer()
-        }
-      }
-    }
-  }
 
   var shimmerSpeed: Double? {
     didSet {
-      animationSpeed = TimeInterval(shimmerSpeed ?? 3.0)
+      restartShimmer()
     }
   }
   
@@ -91,7 +81,7 @@ class HybridSkeleton : HybridSkeletonSpec {
     
     let width = view.bounds.width
     let animation = CABasicAnimation(keyPath: "transform.translation.x")
-    animation.duration = animationSpeed
+    animation.duration = shimmerSpeed ?? 3
     animation.fromValue = -width
     animation.toValue = width
     animation.repeatCount = .infinity
@@ -132,5 +122,5 @@ class HybridSkeleton : HybridSkeletonSpec {
     let b = CGFloat(Int(color) & 0x000000FF)
 
     return UIColor(red: r / 255.0, green: g / 255.0, blue: b / 255.0, alpha: 1)
-  }  
+  }
 }
