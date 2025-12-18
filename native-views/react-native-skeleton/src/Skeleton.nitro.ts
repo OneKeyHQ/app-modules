@@ -6,6 +6,8 @@ import type {
 
 export interface SkeletonProps extends HybridViewProps {
   color: string;
+  shimmerSpeed: number;
+  gradientColors: string[];
 }
 export interface SkeletonMethods extends HybridViewMethods {}
 
