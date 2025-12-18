@@ -6,6 +6,12 @@ let DEFAULT_GRADIENT_COLORS: [UIColor] = [UIColor(red: 210.0/255.0, green: 210.0
 
 class HybridSkeleton : HybridSkeletonSpec {
   
+  // Shimmer layer
+  private var shimmerLayer: CAGradientLayer?
+  
+  // Animation properties
+  private var customGradientColors: [UIColor]?
+  
   var shimmerGradientColors: [String]? {
     didSet {
       if let shimmerGradientColors = shimmerGradientColors {
@@ -17,13 +23,7 @@ class HybridSkeleton : HybridSkeletonSpec {
   // UIView
   var view: UIView = UIView()
   
-  // Shimmer layer
-  private var shimmerLayer: CAGradientLayer?
-  
-  // Animation properties
-  private var customGradientColors: [UIColor]?
-  
-  var animationSpeed: TimeInterval = 1.25 {
+  var animationSpeed: TimeInterval = 3.0 {
     didSet {
       restartShimmer()
     }
@@ -39,7 +39,7 @@ class HybridSkeleton : HybridSkeletonSpec {
   
   var shimmerSpeed: Double? {
     didSet {
-      animationSpeed = TimeInterval(shimmerSpeed ?? 1.25)
+      animationSpeed = TimeInterval(shimmerSpeed ?? 3.0)
     }
   }
   
@@ -68,39 +68,40 @@ class HybridSkeleton : HybridSkeletonSpec {
       return
     }
     
-    let light: CGColor
-    let transparent: CGColor
+    let colors = customGradientColors ?? DEFAULT_GRADIENT_COLORS
+    let backgroundColor = colors[0].cgColor
+    let highlightColor = colors[1].cgColor
     
-    if let customColors = customGradientColors, customColors.count >= 2 {
-      transparent = customColors[0].cgColor
-      light = customColors[1].cgColor
-    } else {
-      light = UIColor.white.withAlphaComponent(0.4).cgColor
-      transparent = UIColor.white.withAlphaComponent(0.1).cgColor
-    }
+    let skeletonLayer = CALayer()
+    skeletonLayer.backgroundColor = backgroundColor
+    skeletonLayer.name = "SkeletonLayer"
+    skeletonLayer.anchorPoint = .zero
+    skeletonLayer.frame = view.bounds
     
-    // Gradient layer
-    let gradient = CAGradientLayer()
-    gradient.colors = [transparent, light, transparent]
-    gradient.startPoint = CGPoint(x: 0.0, y: 0.4)
-    gradient.endPoint = CGPoint(x: 1.0, y: 0.6)
-    gradient.locations = [0.4, 0.5, 0.6]
-    gradient.frame = CGRect(x: -view.bounds.width,
-                            y: 0,
-                            width: 2 * view.bounds.width,
-                            height: view.bounds.height)
-    gradient.name = "ShimmerLayer"
-    view.layer.addSublayer(gradient)
+    let gradientLayer = CAGradientLayer()
+    gradientLayer.colors = [backgroundColor, highlightColor, backgroundColor]
+    gradientLayer.startPoint = CGPoint(x: 0.0, y: 0.5)
+    gradientLayer.endPoint = CGPoint(x: 1.0, y: 0.5)
+    gradientLayer.frame = view.bounds
+    gradientLayer.name = "ShimmerLayer"
     
-    shimmerLayer = gradient
+    view.layer.mask = skeletonLayer
+    view.layer.addSublayer(skeletonLayer)
+    view.layer.addSublayer(gradientLayer)
+    view.clipsToBounds = true
     
-    // Animation
-    let animation = CABasicAnimation(keyPath: "locations")
-    animation.fromValue = [0.0, 0.1, 0.2]
-    animation.toValue = [1.0, 1.1, 1.2]
+    shimmerLayer = gradientLayer
+    
+    let width = view.bounds.width
+    let animation = CABasicAnimation(keyPath: "transform.translation.x")
     animation.duration = animationSpeed
+    animation.fromValue = -width
+    animation.toValue = width
     animation.repeatCount = .infinity
-    gradient.add(animation, forKey: "shimmerAnimation")
+    animation.autoreverses = false
+    animation.fillMode = CAMediaTimingFillMode.forwards
+    
+    gradientLayer.add(animation, forKey: "shimmerAnimation")
   }
   
   func stopShimmer() {
