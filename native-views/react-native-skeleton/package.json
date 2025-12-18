@@ -35,12 +35,12 @@
   ],
   "scripts": {
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
-    "prepare": "bob build && cp -r nitrogen lib/nitrogen",
+    "prepare": "rm -rf lib && bob build && cp -r nitrogen lib/nitrogen",
     "nitrogen": "nitrogen",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
-    "release": "release-it --only-version"
+    "release": "yarn nitrogen && yarn prepare && npm whoami && npm publish --access public"
   },
   "keywords": [
     "react-native",
