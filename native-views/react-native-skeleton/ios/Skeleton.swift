@@ -106,8 +106,15 @@ final class AnimationGradient: AnimationBase {
 }
 
 class HybridSkeleton : HybridSkeletonSpec, SkeletonAnimatableDelegate {
-  var shimmerGradientColors: [String] = []
-
+  
+  var shimmerGradientColors: [String]? {
+    didSet {
+      if let shimmerGradientColors = shimmerGradientColors {
+        gradientColors = shimmerGradientColors.map { hexStringToUIColor(hexColor: $0) }
+      }
+    }
+  }
+  
   // UIView
   var view: UIView = UIView()
   
@@ -132,9 +139,9 @@ class HybridSkeleton : HybridSkeletonSpec, SkeletonAnimatableDelegate {
   }
 
   // props
-  var color: String = "#000" {
+  var color: String? {
     didSet {
-      let uiColor = hexStringToUIColor(hexColor: color)
+      let uiColor = hexStringToUIColor(hexColor: color ?? "#000")
       view.backgroundColor = uiColor
       
       // Update gradient colors based on the base color if not explicitly set
@@ -146,9 +153,9 @@ class HybridSkeleton : HybridSkeletonSpec, SkeletonAnimatableDelegate {
     }
   }
   
-  var shimmerSpeed: Double = 1.0 {
+  var shimmerSpeed: Double? {
     didSet {
-      animationSpeed = TimeInterval(shimmerSpeed)
+      animationSpeed = TimeInterval(shimmerSpeed ?? 1.0)
     }
   }
   
