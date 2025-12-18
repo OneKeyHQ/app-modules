@@ -9,7 +9,4 @@ export interface SkeletonProps extends HybridViewProps {
 }
 export interface SkeletonMethods extends HybridViewMethods {}
 
-export type Skeleton = HybridView<
-  SkeletonProps,
-  SkeletonMethods
->;
+export type Skeleton = HybridView<SkeletonProps, SkeletonMethods>;
