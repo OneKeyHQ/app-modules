@@ -8,13 +8,31 @@ class HybridSkeleton : HybridSkeletonSpec {
   
   // Shimmer layer
   private var shimmerLayer: CAGradientLayer?
+  private var customGradientColors: [UIColor]?
   
-  var shimmerGradientColors: [String]?
+  var shimmerGradientColors: [String]? {
+    didSet {
+      Task {
+        customGradientColors = shimmerGradientColors?.map { hexStringToUIColor(hexColor: $0) }
+        await MainActor.run {
+          restartShimmer()
+        }
+      }
+    }
+  }
   
   // UIView
   var view: UIView = UIView()
   
-  var animationSpeed: TimeInterval = 3.0
+  var animationSpeed: TimeInterval = 3.0 {
+    didSet {
+      Task {
+        await MainActor.run {
+          restartShimmer()
+        }
+      }
+    }
+  }
 
   // props
   var color: String? {
@@ -55,12 +73,7 @@ class HybridSkeleton : HybridSkeletonSpec {
       return
     }
     
-    let colors: [UIColor]
-    if let gradientColors = shimmerGradientColors {
-      colors = gradientColors.map { hexStringToUIColor(hexColor: $0) }
-    } else {
-      colors = DEFAULT_GRADIENT_COLORS
-    }
+    let colors: [UIColor] = customGradientColors ?? DEFAULT_GRADIENT_COLORS
     let backgroundColor = colors[0].cgColor
     let highlightColor = colors[1].cgColor
     
