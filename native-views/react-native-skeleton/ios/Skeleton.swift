@@ -110,14 +110,13 @@ class HybridSkeleton : HybridSkeletonSpec {
     shimmerLayer = nil
   }
   
+  func afterUpdate() {
+    restartShimmer()
+  }
+  
   func restartShimmer() {
     stopShimmer()
     startShimmer()
-  }
-  
-  // Called when view layout changes
-  func updateLayout() {
-    restartShimmer()
   }
   
   func hexStringToUIColor(hexColor: String) -> UIColor {
