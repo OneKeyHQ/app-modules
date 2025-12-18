@@ -34,7 +34,6 @@
     "!**/.*"
   ],
   "scripts": {
-    "example": "yarn workspace @onekeyfe/react-native-lite-card-example",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
     "typecheck": "tsc",
