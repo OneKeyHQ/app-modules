@@ -26,6 +26,7 @@ export function SkeletonTestPage({ onGoHome, safeAreaInsets }: SkeletonTestPageP
 const styles = StyleSheet.create({
   section: {
     marginBottom: 25,
+    gap: 24,
   },
   skeleton: {
     width: 100,

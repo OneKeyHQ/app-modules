@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput } from 'react-native';
 import { BackgroundThreadTestPage } from './pages/BackgroundThreadTestPage';
 import { BiometricAuthTestPage } from './pages/BiometricAuthTestPage';
