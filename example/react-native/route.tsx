@@ -7,6 +7,7 @@ import { KeychainTestPage } from './pages/KeychainTestPage';
 import { LiteCardTestPage } from './pages/LiteCardTestPage';
 import { GetRandomValuesTestPage } from './pages/GetRandomValuesTestPage';
 import { DeviceUtilsTestPage } from './pages/DeviceUtilsTestPage';
+import { SkeletonTestPage } from './pages/SkeletonTestPage';
 
 export type RouteScreen = 
   | 'home'
@@ -16,7 +17,8 @@ export type RouteScreen =
   | 'keychain'
   | 'lite-card'
   | 'get-random-values'
-  | 'device-utils';
+  | 'device-utils'
+  | 'skeleton';
 
 interface RouterProps {
   safeAreaInsets: any;
@@ -57,6 +59,11 @@ const modules = [
     id: 'get-random-values' as RouteScreen,
     name: 'Get Random Values',
     description: 'Generate cryptographically secure random values',
+  },
+  {
+    id: 'skeleton' as RouteScreen,
+    name: 'Skeleton View',
+    description: 'Animated skeleton loading components for better UX',
   },
 ];
 
@@ -112,6 +119,8 @@ export function Router({ safeAreaInsets }: RouterProps) {
         return <LiteCardTestPage {...commonProps} />;
       case 'get-random-values':
         return <GetRandomValuesTestPage {...commonProps} />;
+      case 'skeleton':
+        return <SkeletonTestPage {...commonProps} />;
       default:
         return renderHomeScreen();
     }

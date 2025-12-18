@@ -13,7 +13,7 @@
   },
   "workspaces": [
     "native-modules/*",
-    "native-components/*",
+    "native-views/*",
     "example/*"
   ],
   "engines": {
