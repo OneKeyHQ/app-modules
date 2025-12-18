@@ -117,6 +117,7 @@ final class AnimationGradient: AnimationBase {
 }
 
 class HybridSkeleton : HybridSkeletonSpec, SkeletonAnimatableDelegate {
+  var shimmerGradientColors: [String] = []
 
   // UIView
   var view: UIView = UIView()
