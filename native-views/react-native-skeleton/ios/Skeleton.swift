@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 
 // Animation constants
-let DEFAULT_GRADIENT_COLORS: [UIColor] = [UIColor.lightGray, UIColor.white]
+let DEFAULT_GRADIENT_COLORS: [UIColor] = [UIColor(red: 210.0/255.0, green: 210.0/255.0, blue: 210.0/255.0, alpha: 1.0), UIColor(red: 235.0/255.0, green: 235.0/255.0, blue: 235.0/255.0, alpha: 1.0)]
 private let ANIMATION_NAME = "skeletonGradientAnimation"
 
 // Animation protocols
@@ -141,7 +141,7 @@ class HybridSkeleton : HybridSkeletonSpec, SkeletonAnimatableDelegate {
   // props
   var color: String? {
     didSet {
-      let uiColor = hexStringToUIColor(hexColor: color ?? "#000")
+      let uiColor = (color != nil) ? hexStringToUIColor(hexColor: color ?? "#000") : UIColor(cgColor: DEFAULT_GRADIENT_COLORS[0].cgColor)
       view.backgroundColor = uiColor
       
       // Update gradient colors based on the base color if not explicitly set
