@@ -30,6 +30,6 @@ const styles = StyleSheet.create({
   },
   skeleton: {
     width: 300,
-    height: 60,
+    height: 48,
   },
 });
