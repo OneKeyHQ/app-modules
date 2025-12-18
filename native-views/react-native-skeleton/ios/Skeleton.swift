@@ -3,114 +3,13 @@ import UIKit
 
 // Animation constants
 let DEFAULT_GRADIENT_COLORS: [UIColor] = [UIColor(red: 210.0/255.0, green: 210.0/255.0, blue: 210.0/255.0, alpha: 1.0), UIColor(red: 235.0/255.0, green: 235.0/255.0, blue: 235.0/255.0, alpha: 1.0)]
-private let ANIMATION_NAME = "skeletonGradientAnimation"
 
-// Animation protocols
-protocol SkeletonAnimatableDelegate: AnyObject {
-  var mainLayer: CAShapeLayer { get }
-  var gradientColors: [UIColor] { get }
-}
-
-protocol SkeletonAnimatable {
-  var delegate: SkeletonAnimatableDelegate? { get set }
-  var duration: TimeInterval { get set }
-  func start()
-  func stop()
-  func restart()
-  func updateBounds(bounds: CGRect)
-}
-
-// Base animation class
-class AnimationBase: SkeletonAnimatable {
-  weak var delegate: SkeletonAnimatableDelegate?
-  var isAnimating = false
-
-  var animatedLayer: CALayer? {
-    fatalError("Subclasses must override `animatedLayer`")
-  }
-
-  var duration: TimeInterval = 1.0 {
-    didSet {
-      restart()
-    }
-  }
-
-  func start() {
-    // Override in subclasses
-  }
-
-  func stop() {
-    animatedLayer?.removeAllAnimations()
-  }
-
-  func restart() {
-    stop()
-    start()
-  }
-
-  func updateBounds(bounds: CGRect) {}
-}
-
-// Gradient animation implementation
-final class AnimationGradient: AnimationBase {
-
-  override var animatedLayer: CALayer? { gradientLayer }
-
-  private let gradientLayer: CAGradientLayer = {
-    let layer = CAGradientLayer()
-    layer.startPoint = CGPoint(x: 0.0, y: 0.5)
-    layer.endPoint = CGPoint(x: 1.0, y: 0.5)
-    return layer
-  }()
-
-  override func start() {
-    if gradientLayer.animation(forKey: ANIMATION_NAME) != nil {
-      super.stop()
-    }
-
-    gradientLayer.frame = delegate?.mainLayer.bounds ?? .zero
-
-    let colors = delegate?.gradientColors ?? DEFAULT_GRADIENT_COLORS
-    
-    gradientLayer.colors = [
-      colors[0].cgColor,
-      colors[1].cgColor,
-      colors[0].cgColor,
-    ]
-
-    let width = gradientLayer.frame.width
-    
-    let animation = CABasicAnimation(keyPath: "transform.translation.x")
-    animation.duration = duration
-    animation.fromValue = -width
-    animation.toValue = width
-    animation.repeatCount = .infinity
-    animation.autoreverses = false
-    animation.fillMode = CAMediaTimingFillMode.forwards
-
-    gradientLayer.add(animation, forKey: ANIMATION_NAME)
-
-    if gradientLayer.superlayer == nil {
-      delegate?.mainLayer.addSublayer(gradientLayer)
-    }
-  }
-
-  override func updateBounds(bounds: CGRect) {
-    gradientLayer.frame = bounds
-  }
-
-  deinit {
-    gradientLayer.removeAnimation(forKey: ANIMATION_NAME)
-    gradientLayer.removeFromSuperlayer()
-  }
-}
-
-class HybridSkeleton : HybridSkeletonSpec, SkeletonAnimatableDelegate {
+class HybridSkeleton : HybridSkeletonSpec {
   
   var shimmerGradientColors: [String]? {
     didSet {
       if let shimmerGradientColors = shimmerGradientColors {
-        gradientColors = shimmerGradientColors.map { hexStringToUIColor(hexColor: $0) }
+        customGradientColors = shimmerGradientColors.map { hexStringToUIColor(hexColor: $0) }
       }
     }
   }
@@ -118,23 +17,15 @@ class HybridSkeleton : HybridSkeletonSpec, SkeletonAnimatableDelegate {
   // UIView
   var view: UIView = UIView()
   
-  // Main layer for skeleton animation
-  var mainLayer = CAShapeLayer()
-  
-  // Animation
-  private var animator: SkeletonAnimatable = AnimationGradient()
+  // Shimmer layer
+  private var shimmerLayer: CAGradientLayer?
   
   // Animation properties
-  var gradientColors: [UIColor] = DEFAULT_GRADIENT_COLORS {
-    didSet {
-      guard let animator = animator as? AnimationGradient else { return }
-      animator.restart()
-    }
-  }
+  private var customGradientColors: [UIColor]?
   
-  var animationSpeed: TimeInterval = 1.0 {
+  var animationSpeed: TimeInterval = 1.25 {
     didSet {
-      animator.duration = animationSpeed
+      restartShimmer()
     }
   }
 
@@ -143,73 +34,89 @@ class HybridSkeleton : HybridSkeletonSpec, SkeletonAnimatableDelegate {
     didSet {
       let uiColor = (color != nil) ? hexStringToUIColor(hexColor: color ?? "#000") : UIColor(cgColor: DEFAULT_GRADIENT_COLORS[0].cgColor)
       view.backgroundColor = uiColor
-      
-      // Update gradient colors based on the base color if not explicitly set
-      if !hasExplicitGradientColors {
-        let lighterColor = uiColor.withAlphaComponent(0.3)
-        let darkerColor = uiColor.withAlphaComponent(0.8)
-        gradientColors = [lighterColor, darkerColor]
-      }
     }
   }
   
   var shimmerSpeed: Double? {
     didSet {
-      animationSpeed = TimeInterval(shimmerSpeed ?? 1.0)
+      animationSpeed = TimeInterval(shimmerSpeed ?? 1.25)
     }
-  }
-  
-  private var hasExplicitGradientColors: Bool = false
-  
-  func setGradientColors(_ colors: [String]) {
-    hasExplicitGradientColors = true
-    gradientColors = colors.map { hexStringToUIColor(hexColor: $0) }
   }
   
   override init() {
     super.init()
-    setupAnimation()
+    setupView()
   }
   
-  private func setupAnimation() {
-    // Setup main layer
-    view.layer.addSublayer(mainLayer)
-    mainLayer.backgroundColor = UIColor.lightGray.cgColor
-
-    // Clip layers to view bounds
+  private func setupView() {
     view.clipsToBounds = true
-    mainLayer.masksToBounds = true
-    
-    // Setup animator
-    animator.delegate = self
-    animator.duration = animationSpeed
     
     // Start animation when view is ready
     DispatchQueue.main.async {
-      self.startAnimation()
+      self.startShimmer()
     }
   }
   
-  private func startAnimation() {
-    // Only start animation if view has proper bounds
+  func startShimmer() {
+    stopShimmer()
+    
     guard !view.bounds.isEmpty else {
       // Retry after a short delay if bounds are not ready
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-        self.startAnimation()
+        self.startShimmer()
       }
       return
     }
     
-    // Update main layer frame to match view bounds
-    mainLayer.frame = view.bounds
-    animator.updateBounds(bounds: view.bounds)
-    animator.start()
+    let light: CGColor
+    let transparent: CGColor
+    
+    if let customColors = customGradientColors, customColors.count >= 2 {
+      transparent = customColors[0].cgColor
+      light = customColors[1].cgColor
+    } else {
+      light = UIColor.white.withAlphaComponent(0.4).cgColor
+      transparent = UIColor.white.withAlphaComponent(0.1).cgColor
+    }
+    
+    // Gradient layer
+    let gradient = CAGradientLayer()
+    gradient.colors = [transparent, light, transparent]
+    gradient.startPoint = CGPoint(x: 0.0, y: 0.4)
+    gradient.endPoint = CGPoint(x: 1.0, y: 0.6)
+    gradient.locations = [0.4, 0.5, 0.6]
+    gradient.frame = CGRect(x: -view.bounds.width,
+                            y: 0,
+                            width: 2 * view.bounds.width,
+                            height: view.bounds.height)
+    gradient.name = "ShimmerLayer"
+    view.layer.addSublayer(gradient)
+    
+    shimmerLayer = gradient
+    
+    // Animation
+    let animation = CABasicAnimation(keyPath: "locations")
+    animation.fromValue = [0.0, 0.1, 0.2]
+    animation.toValue = [1.0, 1.1, 1.2]
+    animation.duration = animationSpeed
+    animation.repeatCount = .infinity
+    gradient.add(animation, forKey: "shimmerAnimation")
+  }
+  
+  func stopShimmer() {
+    shimmerLayer?.removeAnimation(forKey: "shimmerAnimation")
+    shimmerLayer?.removeFromSuperlayer()
+    shimmerLayer = nil
+  }
+  
+  func restartShimmer() {
+    stopShimmer()
+    startShimmer()
   }
   
   // Called when view layout changes
   func updateLayout() {
-    mainLayer.frame = view.bounds
-    animator.updateBounds(bounds: view.bounds)
+    restartShimmer()
   }
   
   func hexStringToUIColor(hexColor: String) -> UIColor {
