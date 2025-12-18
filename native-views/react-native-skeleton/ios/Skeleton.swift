@@ -111,6 +111,7 @@ class HybridSkeleton : HybridSkeletonSpec {
   }
   
   func afterUpdate() {
+    super.afterUpdate()
     restartShimmer()
   }
   
