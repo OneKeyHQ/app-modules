@@ -7,6 +7,18 @@ interface SkeletonTestPageProps {
   safeAreaInsets: any;
 }
 
+
+const baseColors = {
+  dark: {
+    primary: '#111111',
+    secondary: '#333333',
+  },
+  light: {
+    primary: '#fafafa',
+    secondary: '#cdcdcd',
+  },
+};
+
 export function SkeletonTestPage({ onGoHome, safeAreaInsets }: SkeletonTestPageProps) {
 
   return (
@@ -16,8 +28,8 @@ export function SkeletonTestPage({ onGoHome, safeAreaInsets }: SkeletonTestPageP
       safeAreaInsets={safeAreaInsets}
     >
       <View style={styles.section}>
-         <SkeletonView style={styles.skeleton} />
-         <SkeletonView style={styles.skeleton}  />
+         <SkeletonView style={styles.skeleton} shimmerGradientColors={[baseColors.light.primary,baseColors.light.secondary]} />
+         <SkeletonView style={styles.skeleton} shimmerGradientColors={[baseColors.dark.primary,baseColors.dark.secondary]} />
       </View>
     </TestPageBase>
   );
