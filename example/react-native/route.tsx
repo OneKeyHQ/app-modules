@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput } from 'react-native';
 import { BackgroundThreadTestPage } from './pages/BackgroundThreadTestPage';
 import { BiometricAuthTestPage } from './pages/BiometricAuthTestPage';
 import { CloudKitTestPage } from './pages/CloudKitTestPage';
@@ -69,10 +69,19 @@ const modules = [
 
 export function Router({ safeAreaInsets }: RouterProps) {
   const [currentScreen, setCurrentScreen] = useState<RouteScreen>('home');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   const navigateTo = (screen: RouteScreen) => {
     setCurrentScreen(screen);
   };
+
+  const filteredModules = modules.filter((module) => {
+    const query = searchQuery.toLowerCase();
+    return (
+      module.name.toLowerCase().includes(query) ||
+      module.description.toLowerCase().includes(query)
+    );
+  });
 
   const renderHomeScreen = () => (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -81,19 +90,38 @@ export function Router({ safeAreaInsets }: RouterProps) {
         <Text style={styles.subtitle}>Test all available native modules and their APIs</Text>
       </View>
       
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search modules..."
+          placeholderTextColor="#999"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
+
       <View style={styles.moduleList}>
-        {modules.map((module) => (
-          <TouchableOpacity
-            key={module.id}
-            style={styles.moduleCard}
-            onPress={() => navigateTo(module.id)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.moduleName}>{module.name}</Text>
-            <Text style={styles.moduleDescription}>{module.description}</Text>
-            <Text style={styles.tapHint}>Tap to test →</Text>
-          </TouchableOpacity>
-        ))}
+        {filteredModules.length > 0 ? (
+          filteredModules.map((module) => (
+            <TouchableOpacity
+              key={module.id}
+              style={styles.moduleCard}
+              onPress={() => navigateTo(module.id)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.moduleName}>{module.name}</Text>
+              <Text style={styles.moduleDescription}>{module.description}</Text>
+              <Text style={styles.tapHint}>Tap to test →</Text>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <View style={styles.noResultsContainer}>
+            <Text style={styles.noResultsText}>No modules found</Text>
+            <Text style={styles.noResultsSubtext}>Try a different search term</Text>
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -159,6 +187,25 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
+  searchContainer: {
+    marginBottom: 20,
+  },
+  searchInput: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    fontSize: 16,
+    color: '#333',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
   moduleList: {
     gap: 15,
   },
@@ -191,5 +238,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#007AFF',
     fontWeight: '500',
+  },
+  noResultsContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  noResultsText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  noResultsSubtext: {
+    fontSize: 14,
+    color: '#666',
   },
 });
