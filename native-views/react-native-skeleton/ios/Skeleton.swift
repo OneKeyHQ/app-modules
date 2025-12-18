@@ -175,6 +175,10 @@ class HybridSkeleton : HybridSkeletonSpec, SkeletonAnimatableDelegate {
     // Setup main layer
     view.layer.addSublayer(mainLayer)
     mainLayer.backgroundColor = UIColor.lightGray.cgColor
+
+    // Clip layers to view bounds
+    view.clipsToBounds = true
+    mainLayer.masksToBounds = true
     
     // Setup animator
     animator.delegate = self
