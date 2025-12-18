@@ -34,14 +34,6 @@ class HybridSkeleton : HybridSkeletonSpec {
     }
   }
 
-  // props
-  var color: String? {
-    didSet {
-      let uiColor = (color != nil) ? hexStringToUIColor(hexColor: color ?? "#000") : UIColor(cgColor: DEFAULT_GRADIENT_COLORS[0].cgColor)
-      view.backgroundColor = uiColor
-    }
-  }
-  
   var shimmerSpeed: Double? {
     didSet {
       animationSpeed = TimeInterval(shimmerSpeed ?? 3.0)

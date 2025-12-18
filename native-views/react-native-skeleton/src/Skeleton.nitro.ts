@@ -5,7 +5,6 @@ import type {
 } from 'react-native-nitro-modules';
 
 export interface SkeletonProps extends HybridViewProps {
-  color?: string;
   shimmerSpeed?: number;
   shimmerGradientColors?: string[];
 }
