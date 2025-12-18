@@ -16,8 +16,8 @@ export function SkeletonTestPage({ onGoHome, safeAreaInsets }: SkeletonTestPageP
       safeAreaInsets={safeAreaInsets}
     >
       <View style={styles.section}>
-         <SkeletonView style={styles.skeleton} color="#E1E9EE" />
-         <SkeletonView style={styles.skeleton} color="#000000" />
+         <SkeletonView style={styles.skeleton} />
+         <SkeletonView style={styles.skeleton}  />
       </View>
     </TestPageBase>
   );
@@ -29,7 +29,7 @@ const styles = StyleSheet.create({
     gap: 24,
   },
   skeleton: {
-    width: 100,
-    height: 100,
+    width: 300,
+    height: 60,
   },
 });
