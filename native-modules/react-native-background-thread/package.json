@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-background-thread",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "react-native-background-thread",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -32,7 +32,6 @@
     "!**/.*"
   ],
   "scripts": {
-    "example": "yarn workspace react-native-background-thread-example",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
     "typecheck": "tsc",

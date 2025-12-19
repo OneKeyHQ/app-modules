@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["skeleton"],
+  "ios": {
+    "iosModuleName": "Skeleton"
+  },
+  "android": {
+    "androidNamespace": ["skeleton"],
+    "androidCxxLibName": "skeleton"
+  },
+  "autolinking": {
+    "Skeleton": {
+      "swift": "HybridSkeleton",
+      "kotlin": "HybridSkeleton"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

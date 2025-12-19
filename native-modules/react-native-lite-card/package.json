@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-lite-card",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "lite card",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -34,7 +34,6 @@
     "!**/.*"
   ],
   "scripts": {
-    "example": "yarn workspace @onekeyfe/react-native-lite-card-example",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
     "typecheck": "tsc",

@@ -4,16 +4,16 @@
   "packageManager": "yarn@4.1.0",
   "version": "0.0.0",
   "scripts": {
-    "module:create": "node scripts/create-nitro-module.js",
-    "package:setup": "node scripts/setup-nitro-module.js",
+    "create:module": "node scripts/create-nitro-module.js",
+    "create:view": "node scripts/create-nitro-view.js",
     "version:patch:update": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules --topological version --deferred patch",
     "version:patch:apply": "yarn version apply --all",
-    "version:publish": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules run release",
-    "version:patch": "yarn version:patch:update && yarn version:patch:apply"
+    "version:patch": "yarn version:patch:update && yarn version:patch:apply",
+    "version:publish": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules run release"
   },
   "workspaces": [
     "native-modules/*",
-    "native-components/*",
+    "native-views/*",
     "example/*"
   ],
   "engines": {
@@ -37,12 +37,12 @@
     "eslint-plugin-prettier": "^5.5.4",
     "jest": "^29.7.0",
     "lefthook": "^2.0.3",
-    "nitrogen": "^0.29.8",
+    "nitrogen": "0.31.10",
     "prettier": "^2.8.8",
     "react": "19.2.0",
     "react-native": "0.83.0",
     "react-native-builder-bob": "^0.40.13",
-    "react-native-nitro-modules": "^0.31.10",
+    "react-native-nitro-modules": "0.31.10",
     "release-it": "^19.0.4",
     "turbo": "^2.5.6",
     "typescript": "^5.9.2"

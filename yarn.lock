@@ -2744,12 +2744,14 @@ __metadata:
     "@babel/core": "npm:^7.25.2"
     "@babel/preset-env": "npm:^7.25.3"
     "@babel/runtime": "npm:^7.25.0"
-    "@onekeyfe/react-native-background-thread": "npm:*"
-    "@onekeyfe/react-native-check-biometric-auth-changed": "npm:*"
-    "@onekeyfe/react-native-cloud-kit-module": "npm:*"
-    "@onekeyfe/react-native-get-random-values": "npm:*"
-    "@onekeyfe/react-native-keychain-module": "npm:*"
-    "@onekeyfe/react-native-lite-card": "npm:*"
+    "@onekeyfe/react-native-background-thread": "workspace:*"
+    "@onekeyfe/react-native-check-biometric-auth-changed": "workspace:*"
+    "@onekeyfe/react-native-cloud-kit-module": "workspace:*"
+    "@onekeyfe/react-native-device-utils": "workspace:*"
+    "@onekeyfe/react-native-get-random-values": "workspace:*"
+    "@onekeyfe/react-native-keychain-module": "workspace:*"
+    "@onekeyfe/react-native-lite-card": "workspace:*"
+    "@onekeyfe/react-native-skeleton": "workspace:*"
     "@react-native-community/cli": "npm:20.0.0"
     "@react-native-community/cli-platform-android": "npm:20.0.0"
     "@react-native-community/cli-platform-ios": "npm:20.0.0"
@@ -2767,7 +2769,7 @@ __metadata:
     prettier: "npm:2.8.8"
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
-    react-native-nitro-modules: "npm:^0.31.10"
+    react-native-nitro-modules: "npm:0.31.10"
     react-native-safe-area-context: "npm:^5.5.2"
     react-test-renderer: "npm:19.2.0"
     typescript: "npm:^5.8.3"
@@ -2795,12 +2797,12 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:^0.29.8"
+    nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:^0.31.10"
+    react-native-nitro-modules: "npm:0.31.10"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
@@ -2811,7 +2813,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-background-thread@npm:*, @onekeyfe/react-native-background-thread@workspace:native-modules/react-native-background-thread":
+"@onekeyfe/react-native-background-thread@workspace:*, @onekeyfe/react-native-background-thread@workspace:native-modules/react-native-background-thread":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-background-thread@workspace:native-modules/react-native-background-thread"
   dependencies:
@@ -2844,7 +2846,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-check-biometric-auth-changed@npm:*, @onekeyfe/react-native-check-biometric-auth-changed@workspace:native-modules/react-native-check-biometric-auth-changed":
+"@onekeyfe/react-native-check-biometric-auth-changed@workspace:*, @onekeyfe/react-native-check-biometric-auth-changed@workspace:native-modules/react-native-check-biometric-auth-changed":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-check-biometric-auth-changed@workspace:native-modules/react-native-check-biometric-auth-changed"
   dependencies:
@@ -2864,12 +2866,12 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:^0.31.10"
+    nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:^0.31.10"
+    react-native-nitro-modules: "npm:0.31.10"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
@@ -2880,7 +2882,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-cloud-kit-module@npm:*, @onekeyfe/react-native-cloud-kit-module@workspace:native-modules/react-native-cloud-kit-module":
+"@onekeyfe/react-native-cloud-kit-module@workspace:*, @onekeyfe/react-native-cloud-kit-module@workspace:native-modules/react-native-cloud-kit-module":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-cloud-kit-module@workspace:native-modules/react-native-cloud-kit-module"
   dependencies:
@@ -2900,12 +2902,12 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:^0.29.8"
+    nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:^0.31.10"
+    react-native-nitro-modules: "npm:0.31.10"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
@@ -2916,7 +2918,43 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-get-random-values@npm:*, @onekeyfe/react-native-get-random-values@workspace:native-modules/react-native-get-random-values":
+"@onekeyfe/react-native-device-utils@workspace:*, @onekeyfe/react-native-device-utils@workspace:native-modules/react-native-device-utils":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-device-utils@workspace:native-modules/react-native-device-utils"
+  dependencies:
+    "@commitlint/config-conventional": "npm:^19.8.1"
+    "@eslint/compat": "npm:^1.3.2"
+    "@eslint/eslintrc": "npm:^3.3.1"
+    "@eslint/js": "npm:^9.35.0"
+    "@react-native/babel-preset": "npm:0.83.0"
+    "@react-native/eslint-config": "npm:0.83.0"
+    "@release-it/conventional-changelog": "npm:^10.0.1"
+    "@types/jest": "npm:^29.5.14"
+    "@types/react": "npm:^19.2.0"
+    commitlint: "npm:^19.8.1"
+    del-cli: "npm:^6.0.0"
+    eslint: "npm:^9.35.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-prettier: "npm:^5.5.4"
+    jest: "npm:^29.7.0"
+    lefthook: "npm:^2.0.3"
+    nitrogen: "npm:0.31.10"
+    prettier: "npm:^2.8.8"
+    react: "npm:19.2.0"
+    react-native: "npm:0.83.0"
+    react-native-builder-bob: "npm:^0.40.13"
+    react-native-nitro-modules: "npm:0.31.10"
+    release-it: "npm:^19.0.4"
+    turbo: "npm:^2.5.6"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+    react-native-nitro-modules: ^0.31.10
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-get-random-values@workspace:*, @onekeyfe/react-native-get-random-values@workspace:native-modules/react-native-get-random-values":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-get-random-values@workspace:native-modules/react-native-get-random-values"
   dependencies:
@@ -2936,12 +2974,12 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:^0.31.10"
+    nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:^0.31.10"
+    react-native-nitro-modules: "npm:0.31.10"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
@@ -2952,7 +2990,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-keychain-module@npm:*, @onekeyfe/react-native-keychain-module@workspace:native-modules/react-native-keychain-module":
+"@onekeyfe/react-native-keychain-module@workspace:*, @onekeyfe/react-native-keychain-module@workspace:native-modules/react-native-keychain-module":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-keychain-module@workspace:native-modules/react-native-keychain-module"
   dependencies:
@@ -2972,12 +3010,12 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:^0.31.10"
+    nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:^0.31.10"
+    react-native-nitro-modules: "npm:0.31.10"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
@@ -2988,7 +3026,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-lite-card@npm:*, @onekeyfe/react-native-lite-card@workspace:native-modules/react-native-lite-card":
+"@onekeyfe/react-native-lite-card@workspace:*, @onekeyfe/react-native-lite-card@workspace:native-modules/react-native-lite-card":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-lite-card@workspace:native-modules/react-native-lite-card"
   dependencies:
@@ -3018,6 +3056,42 @@ __metadata:
   peerDependencies:
     react: "*"
     react-native: "*"
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-skeleton@workspace:*, @onekeyfe/react-native-skeleton@workspace:native-views/react-native-skeleton":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-skeleton@workspace:native-views/react-native-skeleton"
+  dependencies:
+    "@commitlint/config-conventional": "npm:^19.8.1"
+    "@eslint/compat": "npm:^1.3.2"
+    "@eslint/eslintrc": "npm:^3.3.1"
+    "@eslint/js": "npm:^9.35.0"
+    "@react-native/babel-preset": "npm:0.83.0"
+    "@react-native/eslint-config": "npm:0.83.0"
+    "@release-it/conventional-changelog": "npm:^10.0.1"
+    "@types/jest": "npm:^29.5.14"
+    "@types/react": "npm:^19.2.0"
+    commitlint: "npm:^19.8.1"
+    del-cli: "npm:^6.0.0"
+    eslint: "npm:^9.35.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-prettier: "npm:^5.5.4"
+    jest: "npm:^29.7.0"
+    lefthook: "npm:^2.0.3"
+    nitrogen: "npm:0.31.10"
+    prettier: "npm:^2.8.8"
+    react: "npm:19.2.0"
+    react-native: "npm:0.83.0"
+    react-native-builder-bob: "npm:^0.40.13"
+    react-native-nitro-modules: "npm:0.31.10"
+    release-it: "npm:^19.0.4"
+    turbo: "npm:^2.5.6"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+    react-native-nitro-modules: 0.31.10
   languageName: unknown
   linkType: soft
 
@@ -9620,22 +9694,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nitrogen@npm:^0.29.8":
-  version: 0.29.8
-  resolution: "nitrogen@npm:0.29.8"
-  dependencies:
-    chalk: "npm:^5.3.0"
-    react-native-nitro-modules: "npm:^0.29.8"
-    ts-morph: "npm:^27.0.0"
-    yargs: "npm:^17.7.2"
-    zod: "npm:^4.0.5"
-  bin:
-    nitrogen: lib/index.js
-  checksum: 10/5b9b1b999398a62fa30a7d2f596140f8d69cb58d0f236817a18aa588868d9c3360d49632a25b6957f34d79c12966e4205310125035c3ec612287e57ef6c7fa87
-  languageName: node
-  linkType: hard
-
-"nitrogen@npm:^0.31.10":
+"nitrogen@npm:0.31.10":
   version: 0.31.10
   resolution: "nitrogen@npm:0.31.10"
   dependencies:
@@ -10602,17 +10661,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-nitro-modules@npm:^0.29.8":
-  version: 0.29.8
-  resolution: "react-native-nitro-modules@npm:0.29.8"
-  peerDependencies:
-    react: "*"
-    react-native: "*"
-  checksum: 10/23f5097c6561ac43e96d8899e0153c8f87c34ffa634da83525543d4889c01791f5f3822825529323d339b3e990596d49b78ec56fe56d3261a4897c9a020095cc
-  languageName: node
-  linkType: hard
-
-"react-native-nitro-modules@npm:^0.31.10":
+"react-native-nitro-modules@npm:0.31.10, react-native-nitro-modules@npm:^0.31.10":
   version: 0.31.10
   resolution: "react-native-nitro-modules@npm:0.31.10"
   peerDependencies:
@@ -12060,11 +12109,11 @@ __metadata:
 
 "typescript@patch:typescript@npm%3A^5.8.3#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.9.2#optional!builtin<compat/typescript>":
   version: 5.9.3
-  resolution: "typescript@patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=d69c25"
+  resolution: "typescript@patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
-  checksum: 10/5d416ad4f2ea564f515a3f919e901edbfa4b497cc17dd325c5726046c3eef7ed22d1f59c787267d478311f6f0a265ff790f8a6c7e9df3ea3471458f5ec81e8b7
+  checksum: 10/696e1b017bc2635f4e0c94eb4435357701008e2f272f553d06e35b494b8ddc60aa221145e286c28ace0c89ee32827a28c2040e3a69bdc108b1a5dc8fb40b72e3
   languageName: node
   linkType: hard
 
@@ -12620,7 +12669,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"yargs@npm:^17.0.0, yargs@npm:^17.3.1, yargs@npm:^17.5.1, yargs@npm:^17.6.2, yargs@npm:^17.7.2":
+"yargs@npm:^17.0.0, yargs@npm:^17.3.1, yargs@npm:^17.5.1, yargs@npm:^17.6.2":
   version: 17.7.2
   resolution: "yargs@npm:17.7.2"
   dependencies:

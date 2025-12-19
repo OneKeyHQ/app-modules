@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-check-biometric-auth-changed",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "react-native-check-biometric-auth-changed",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -34,7 +34,6 @@
     "!**/.*"
   ],
   "scripts": {
-    "example": "yarn workspace @onekeyfe/react-native-check-biometric-auth-changed-example",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
     "nitrogen": "nitrogen",
@@ -78,12 +77,12 @@
     "eslint-plugin-prettier": "^5.5.4",
     "jest": "^29.7.0",
     "lefthook": "^2.0.3",
-    "nitrogen": "^0.31.10",
+    "nitrogen": "0.31.10",
     "prettier": "^2.8.8",
     "react": "19.2.0",
     "react-native": "0.83.0",
     "react-native-builder-bob": "^0.40.13",
-    "react-native-nitro-modules": "^0.31.10",
+    "react-native-nitro-modules": "0.31.10",
     "release-it": "^19.0.4",
     "turbo": "^2.5.6",
     "typescript": "^5.9.2"

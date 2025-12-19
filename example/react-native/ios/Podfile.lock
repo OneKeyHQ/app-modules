@@ -1,5 +1,5 @@
 PODS:
-  - BackgroundThread (1.1.10):
+  - BackgroundThread (1.1.11):
     - boost
     - DoubleConversion
     - fast_float
@@ -28,7 +28,7 @@ PODS:
     - SocketRocket
     - Yoga
   - boost (1.84.0)
-  - CloudKitModule (1.1.10):
+  - CloudKitModule (1.1.11):
     - boost
     - DoubleConversion
     - fast_float
@@ -66,7 +66,7 @@ PODS:
   - hermes-engine (0.14.0):
     - hermes-engine/Pre-built (= 0.14.0)
   - hermes-engine/Pre-built (0.14.0)
-  - KeychainModule (1.1.10):
+  - KeychainModule (1.1.11):
     - boost
     - DoubleConversion
     - fast_float
@@ -2653,7 +2653,7 @@ PODS:
     - React-perflogger (= 0.83.0)
     - React-utils (= 0.83.0)
     - SocketRocket
-  - ReactNativeCheckBiometricAuthChanged (1.1.10):
+  - ReactNativeCheckBiometricAuthChanged (1.1.11):
     - boost
     - DoubleConversion
     - fast_float
@@ -2683,7 +2683,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - ReactNativeGetRandomValues (1.1.10):
+  - ReactNativeDeviceUtils (1.1.11):
     - boost
     - DoubleConversion
     - fast_float
@@ -2713,7 +2713,37 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - ReactNativeLiteCard (1.1.10):
+  - ReactNativeGetRandomValues (1.1.11):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - NitroModules
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
+  - ReactNativeLiteCard (1.1.11):
     - boost
     - DoubleConversion
     - fast_float
@@ -2724,6 +2754,36 @@ PODS:
     - RCT-Folly/Fabric
     - RCTRequired
     - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
+  - Skeleton (1.1.11):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - NitroModules
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
     - React-Core
     - React-debug
     - React-Fabric
@@ -2828,8 +2888,10 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios/ReactCodegen`)
   - ReactCommon/turbomodule/core (from `../../../node_modules/react-native/ReactCommon`)
   - "ReactNativeCheckBiometricAuthChanged (from `../../../node_modules/@onekeyfe/react-native-check-biometric-auth-changed`)"
+  - "ReactNativeDeviceUtils (from `../../../node_modules/@onekeyfe/react-native-device-utils`)"
   - "ReactNativeGetRandomValues (from `../../../node_modules/@onekeyfe/react-native-get-random-values`)"
   - "ReactNativeLiteCard (from `../../../node_modules/@onekeyfe/react-native-lite-card`)"
+  - "Skeleton (from `../../../node_modules/@onekeyfe/react-native-skeleton`)"
   - SocketRocket (~> 0.7.1)
   - Yoga (from `../../../node_modules/react-native/ReactCommon/yoga`)
 
@@ -3003,24 +3065,28 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native/ReactCommon"
   ReactNativeCheckBiometricAuthChanged:
     :path: "../../../node_modules/@onekeyfe/react-native-check-biometric-auth-changed"
+  ReactNativeDeviceUtils:
+    :path: "../../../node_modules/@onekeyfe/react-native-device-utils"
   ReactNativeGetRandomValues:
     :path: "../../../node_modules/@onekeyfe/react-native-get-random-values"
   ReactNativeLiteCard:
     :path: "../../../node_modules/@onekeyfe/react-native-lite-card"
+  Skeleton:
+    :path: "../../../node_modules/@onekeyfe/react-native-skeleton"
   Yoga:
     :path: "../../../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  BackgroundThread: 46bb4e0dd4c74a75dd9120159a4f3a95f167bb45
+  BackgroundThread: d6bedf61338886caa616744dc1e4aa77656dc285
   boost: 7e761d76ca2ce687f7cc98e698152abd03a18f90
-  CloudKitModule: 15b752f012c9faac0914c856a3b6b118063b58c7
+  CloudKitModule: febc66c8e919ad7f2f6e789af621dfaa0655e103
   DoubleConversion: cb417026b2400c8f53ae97020b2be961b59470cb
   fast_float: b32c788ed9c6a8c584d114d0047beda9664e7cc6
   FBLazyVector: a293a88992c4c33f0aee184acab0b64a08ff9458
   fmt: a40bb5bd0294ea969aaaba240a927bd33d878cdd
   glog: 5683914934d5b6e4240e497e0f4a3b42d1854183
   hermes-engine: 70fdc9d0bb0d8532e0411dcb21e53ce5a160960a
-  KeychainModule: 5de3db936ff5786dc044a1af6313517aed5871fd
+  KeychainModule: 014ea2c49f4faa006a6e08b0ec6671875e830654
   NitroModules: 5bc319d441f4983894ea66b1d392c519536e6d23
   RCT-Folly: 846fda9475e61ec7bcbf8a3fe81edfcaeb090669
   RCTDeprecation: 2b70c6e3abe00396cefd8913efbf6a2db01a2b36
@@ -3092,9 +3158,11 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: ebcf3a78dc1bcdf054c9e8d309244bade6b31568
   ReactCodegen: 554b421c45b7df35ac791da1b734335470b55fcc
   ReactCommon: 424cc34cf5055d69a3dcf02f3436481afb8b0f6f
-  ReactNativeCheckBiometricAuthChanged: 6285af88bf1217c3803688620daae817b2d51d43
-  ReactNativeGetRandomValues: 497e64311f3651182e4e4c9e4f52a441325a722e
-  ReactNativeLiteCard: be90ba1510425295e13621f088404ad850c2b239
+  ReactNativeCheckBiometricAuthChanged: 39255aa18891d558cb015483cc76bd7a4dc85df8
+  ReactNativeDeviceUtils: adf7b3b1acc437360f7e2e13bcf5b6b74d8da0f8
+  ReactNativeGetRandomValues: 1f4deca887951794a2cd3e85276c18bb944ec315
+  ReactNativeLiteCard: 9b360619d69533b5e9aec940d3cdfb0d0c157f3a
+  Skeleton: b63a360c1f9f0c60e7938399d99bf25e151d6a46
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Yoga: 6ca93c8c13f56baeec55eb608577619b17a4d64e
 

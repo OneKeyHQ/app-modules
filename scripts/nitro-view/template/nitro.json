@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["{{cxxNamespace}}"],
+  "ios": {
+    "iosModuleName": "{{viewPascalCase}}"
+  },
+  "android": {
+    "androidNamespace": ["{{cxxNamespace}}"],
+    "androidCxxLibName": "{{cxxNamespace}}"
+  },
+  "autolinking": {
+    "{{viewPascalCase}}": {
+      "swift": "Hybrid{{viewPascalCase}}",
+      "kotlin": "Hybrid{{viewPascalCase}}"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
