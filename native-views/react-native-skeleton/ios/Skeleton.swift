@@ -11,6 +11,8 @@ class HybridSkeleton : HybridSkeletonSpec {
   private var skeletonLayer: CALayer?
   private var customGradientColors: [UIColor]?
   private var isActive: Bool = true
+  private var retryCount: Int = 0
+  private let maxRetryCount: Int = 10
   
   var shimmerGradientColors: [String]? {
     didSet {
@@ -56,15 +58,27 @@ class HybridSkeleton : HybridSkeletonSpec {
   }
   
   func startShimmer() {
+    retryCount = 0 // Reset retry count when starting new shimmer
+    startShimmerInternal()
+  }
+  
+  private func startShimmerInternal() {
     guard isActive else { return }
     
     stopShimmer()
     
     guard !view.bounds.isEmpty else {
+      // Check if we have exceeded max retry count
+      guard retryCount < maxRetryCount else {
+        print("⚠️ Skeleton shimmer: Max retry count reached. View bounds are still empty.")
+        return
+      }
+      
+      retryCount += 1
       // Retry after a short delay if bounds are not ready
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
         guard let self = self, self.isActive else { return }
-        self.startShimmer()
+        self.startShimmerInternal()
       }
       return
     }
@@ -132,7 +146,8 @@ class HybridSkeleton : HybridSkeletonSpec {
   func restartShimmer() {
     guard isActive else { return }
     stopShimmer()
-    startShimmer()
+    retryCount = 0 // Reset retry count on restart
+    startShimmerInternal()
   }
   
   func hexStringToUIColor(hexColor: String) -> UIColor {
