@@ -132,4 +132,8 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
       DEFAULT_GRADIENT_COLORS[0]
     }
   }
+
+  override fun dispose() {
+    stopShimmer()
+  }
 }
