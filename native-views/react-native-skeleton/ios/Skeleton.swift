@@ -13,6 +13,7 @@ class HybridSkeleton : HybridSkeletonSpec {
   private var isActive: Bool = true
   private var retryCount: Int = 0
   private let maxRetryCount: Int = 10
+  private var viewObserver: NSKeyValueObservation?
   
   var shimmerGradientColors: [String]? {
     didSet {
@@ -44,15 +45,45 @@ class HybridSkeleton : HybridSkeletonSpec {
   }
   
   deinit {
+    // Mark as inactive to prevent any new operations
     isActive = false
-    stopShimmer()
+    
+    // Clean up observer
+    viewObserver?.invalidate()
+    viewObserver = nil
+    
+    // Ensure all cleanup happens on main thread synchronously
+    if Thread.isMainThread {
+      stopShimmer()
+    } else {
+      DispatchQueue.main.sync {
+        self.stopShimmer()
+      }
+    }
+    
+    // Clear view reference and ensure no dangling animations
+    view.layer.removeAllAnimations()
+    view.layer.sublayers?.removeAll()
+    view.layer.mask = nil
   }
   
   private func setupView() {
     view.clipsToBounds = true
     
+    // Observe view hierarchy changes for cleanup
+    viewObserver = view.observe(\.superview, options: [.new]) { [weak self] view, change in
+      guard let self = self else { return }
+      if change.newValue == nil {
+        // View was removed from hierarchy, clean up
+        DispatchQueue.main.async { [weak self] in
+          self?.stopShimmer()
+        }
+      }
+    }
+    
     // Start animation when view is ready
-    DispatchQueue.main.async {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, self.isActive else { return }
       self.startShimmer()
     }
   }
@@ -120,18 +151,32 @@ class HybridSkeleton : HybridSkeletonSpec {
     animation.repeatCount = .infinity
     animation.autoreverses = false
     animation.fillMode = CAMediaTimingFillMode.forwards
+    animation.isRemovedOnCompletion = false // Keep animation when completed
     
+    // Use weak self pattern for potential future animation delegates/completion handlers
     gradientLayer.add(animation, forKey: "shimmerAnimation")
   }
   
   func stopShimmer() {
-    // Remove animation and shimmer layer
-    shimmerLayer?.removeAnimation(forKey: "shimmerAnimation")
+    // Remove animation from shimmer layer
+    shimmerLayer?.removeAllAnimations()  // Remove all animations, more comprehensive
     shimmerLayer?.removeFromSuperlayer()
-    shimmerLayer = nil
     
-    // Clear mask and skeleton layer
-    view.layer.mask = nil
+    // Clear mask reference before setting to nil
+    if view.layer.mask === skeletonLayer {
+      view.layer.mask = nil
+    }
+    
+    // Clean up all sublayers that might be shimmer layers
+    view.layer.sublayers?.forEach { layer in
+      if layer.name == "ShimmerLayer" {
+        layer.removeAllAnimations()
+        layer.removeFromSuperlayer()
+      }
+    }
+    
+    // Nil out references
+    shimmerLayer = nil
     skeletonLayer = nil
   }
   
