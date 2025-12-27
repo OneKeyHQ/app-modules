@@ -6,17 +6,19 @@ let DEFAULT_GRADIENT_COLORS: [UIColor] = [UIColor(red: 210.0/255.0, green: 210.0
 
 class HybridSkeleton : HybridSkeletonSpec {
   
-  // Shimmer layer
+  // Shimmer layers
   private var shimmerLayer: CAGradientLayer?
+  private var skeletonLayer: CALayer?
   private var customGradientColors: [UIColor]?
+  private var isActive: Bool = true
   
   var shimmerGradientColors: [String]? {
     didSet {
-      Task {
-        customGradientColors = shimmerGradientColors?.map { hexStringToUIColor(hexColor: $0) }
-        await MainActor.run {
-          restartShimmer()
-        }
+      guard isActive else { return }
+      DispatchQueue.main.async { [weak self] in
+        guard let self = self, self.isActive else { return }
+        self.customGradientColors = shimmerGradientColors?.map { self.hexStringToUIColor(hexColor: $0) }
+        self.restartShimmer()
       }
     }
   }
@@ -26,13 +28,22 @@ class HybridSkeleton : HybridSkeletonSpec {
 
   var shimmerSpeed: Double? {
     didSet {
-      restartShimmer()
+      guard isActive else { return }
+      DispatchQueue.main.async { [weak self] in
+        guard let self = self, self.isActive else { return }
+        self.restartShimmer()
+      }
     }
   }
   
   override init() {
     super.init()
     setupView()
+  }
+  
+  deinit {
+    isActive = false
+    stopShimmer()
   }
   
   private func setupView() {
@@ -45,11 +56,14 @@ class HybridSkeleton : HybridSkeletonSpec {
   }
   
   func startShimmer() {
+    guard isActive else { return }
+    
     stopShimmer()
     
     guard !view.bounds.isEmpty else {
       // Retry after a short delay if bounds are not ready
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+        guard let self = self, self.isActive else { return }
         self.startShimmer()
       }
       return
@@ -59,12 +73,14 @@ class HybridSkeleton : HybridSkeletonSpec {
     let backgroundColor = colors[0].cgColor
     let highlightColor = colors[1].cgColor
     
-    let skeletonLayer = CALayer()
-    skeletonLayer.backgroundColor = backgroundColor
-    skeletonLayer.name = "SkeletonLayer"
-    skeletonLayer.anchorPoint = .zero
-    skeletonLayer.frame = view.bounds
+    // Create skeleton layer for masking
+    let newSkeletonLayer = CALayer()
+    newSkeletonLayer.backgroundColor = backgroundColor
+    newSkeletonLayer.name = "SkeletonLayer"
+    newSkeletonLayer.anchorPoint = .zero
+    newSkeletonLayer.frame = view.bounds
     
+    // Create gradient layer for animation
     let gradientLayer = CAGradientLayer()
     gradientLayer.colors = [backgroundColor, highlightColor, backgroundColor]
     gradientLayer.startPoint = CGPoint(x: 0.0, y: 0.5)
@@ -72,13 +88,16 @@ class HybridSkeleton : HybridSkeletonSpec {
     gradientLayer.frame = view.bounds
     gradientLayer.name = "ShimmerLayer"
     
-    view.layer.mask = skeletonLayer
-    view.layer.addSublayer(skeletonLayer)
+    // Set mask and add gradient layer (don't add skeleton layer as sublayer)
+    view.layer.mask = newSkeletonLayer
     view.layer.addSublayer(gradientLayer)
     view.clipsToBounds = true
     
+    // Store references
+    skeletonLayer = newSkeletonLayer
     shimmerLayer = gradientLayer
     
+    // Create animation
     let width = view.bounds.width
     let animation = CABasicAnimation(keyPath: "transform.translation.x")
     animation.duration = shimmerSpeed ?? 3
@@ -92,16 +111,26 @@ class HybridSkeleton : HybridSkeletonSpec {
   }
   
   func stopShimmer() {
+    // Remove animation and shimmer layer
     shimmerLayer?.removeAnimation(forKey: "shimmerAnimation")
     shimmerLayer?.removeFromSuperlayer()
     shimmerLayer = nil
+    
+    // Clear mask and skeleton layer
+    view.layer.mask = nil
+    skeletonLayer = nil
   }
   
   func afterUpdate() {
-    restartShimmer()
+    guard isActive else { return }
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, self.isActive else { return }
+      self.restartShimmer()
+    }
   }
   
   func restartShimmer() {
+    guard isActive else { return }
     stopShimmer()
     startShimmer()
   }
