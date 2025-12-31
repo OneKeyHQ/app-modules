@@ -15,6 +15,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
 import java.util.concurrent.Executor
+import java.util.concurrent.CopyOnWriteArrayList
 
 data class Listener(
   val id: Double,
@@ -28,7 +29,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   private var isSpanning = false
   private var layoutInfoConsumer: Consumer<WindowLayoutInfo>? = null
   private var windowInfoTracker: WindowInfoTracker? = null
-  private var spanningChangedListeners: MutableList<Listener> = mutableListOf()
+  private var spanningChangedListeners: MutableList<Listener> = CopyOnWriteArrayList()
   private var isObservingLayoutChanges = false
   private var nextListenerId = 0.0
   private var isDualScreenDeviceDetected: Boolean? = null
