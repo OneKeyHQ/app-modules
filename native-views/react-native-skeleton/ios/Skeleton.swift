@@ -47,24 +47,30 @@ class HybridSkeleton : HybridSkeletonSpec {
   deinit {
     // Mark as inactive to prevent any new operations
     isActive = false
-    
+
     // Clean up observer
     viewObserver?.invalidate()
     viewObserver = nil
-    
-    // Ensure all cleanup happens on main thread synchronously
+
+    // Cleanup must happen on main thread, but avoid deadlock
+    // Use async if not on main thread to prevent blocking
     if Thread.isMainThread {
       stopShimmer()
+      // Clear view reference and ensure no dangling animations
+      view.layer.removeAllAnimations()
+      view.layer.sublayers?.removeAll()
+      view.layer.mask = nil
     } else {
-      DispatchQueue.main.sync {
-        self.stopShimmer()
+      // Use async to avoid potential deadlock with sync
+      DispatchQueue.main.async { [weak view = self.view] in
+        guard let view = view else { return }
+        view.layer.removeAllAnimations()
+        view.layer.sublayers?.removeAll()
+        view.layer.mask = nil
       }
+      // Stop shimmer synchronously if possible (layers should be thread-safe for this)
+      stopShimmer()
     }
-    
-    // Clear view reference and ensure no dangling animations
-    view.layer.removeAllAnimations()
-    view.layer.sublayers?.removeAll()
-    view.layer.mask = nil
   }
   
   private func setupView() {
