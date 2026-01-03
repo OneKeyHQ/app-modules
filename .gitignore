@@ -77,3 +77,4 @@ test-report.html
 
 # Ignore tamagui config file 
 .tamagui
+scripts/nitro-view/template/android/.gradle
