@@ -9,6 +9,7 @@ import androidx.core.util.Consumer
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 import androidx.window.layout.WindowLayoutInfo
+import androidx.window.java.layout.WindowInfoTrackerCallbackAdapter
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
@@ -29,24 +30,15 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   private var isSpanning = false
   private var layoutInfoConsumer: Consumer<WindowLayoutInfo>? = null
   private var windowInfoTracker: WindowInfoTracker? = null
+  private var callbackAdapter: WindowInfoTrackerCallbackAdapter? = null
   private var spanningChangedListeners: MutableList<Listener> = CopyOnWriteArrayList()
   private var isObservingLayoutChanges = false
   private var nextListenerId = 0.0
   private var isDualScreenDeviceDetected: Boolean? = null
 
-  companion object {
-    private var reactContext: ReactApplicationContext? = null
-    
-    fun setReactContext(context: ReactApplicationContext) {
-      reactContext = context
-    }
-   }
-
   init {
       NitroModules.applicationContext?.let { ctx ->
           ctx.addLifecycleEventListener(this)
-      } ?: run {
-
       }
   }
   
@@ -242,12 +234,12 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     }
   }
 
-  override fun addSpanningChangedListener(callback: (isSpanning: Boolean) -> Unit): Double {
-    var id = nextListenerId
+  override fun addSpanningChangedListener(callback: (isSpanning: Boolean) -> Unit): Double = synchronized(this) {
+    val id = nextListenerId
     nextListenerId++
     val listener = Listener(id, callback)
     spanningChangedListeners.add(listener)
-    return id
+    return@synchronized id
   }
 
     override fun removeSpanningChangedListener(id: Double) {
@@ -273,11 +265,14 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         
         // Use main executor for callbacks
         val mainExecutor: Executor = ContextCompat.getMainExecutor(activity)
-        
+
         // Subscribe to window layout changes using the Java adapter
-        val callbackAdapter = androidx.window.java.layout.WindowInfoTrackerCallbackAdapter(windowInfoTracker!!)
+        callbackAdapter = WindowInfoTrackerCallbackAdapter(windowInfoTracker!!)
         
-        callbackAdapter.addWindowLayoutInfoListener(
+        if (callbackAdapter == null) {
+          return
+        }
+        callbackAdapter!!.addWindowLayoutInfoListener(
           activity,
           mainExecutor,
           layoutInfoConsumer!!
@@ -293,14 +288,18 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       return
     }
     isObservingLayoutChanges = false
-    if (windowInfoTracker != null && layoutInfoConsumer != null) {
-      try {
-        // The listener will be cleaned up when the activity is destroyed
-        layoutInfoConsumer = null
-        windowInfoTracker = null
-      } catch (e: Exception) {
-        // Ignore cleanup errors
+
+    // Properly clean up window layout listener
+    try {
+      if (callbackAdapter != null && layoutInfoConsumer != null) {
+        callbackAdapter!!.removeWindowLayoutInfoListener(layoutInfoConsumer!!)
       }
+    } catch (e: Exception) {
+      // Ignore cleanup errors
+    } finally {
+      callbackAdapter = null
+      layoutInfoConsumer = null
+      windowInfoTracker = null
     }
   }
   
@@ -322,8 +321,14 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     val activity = getCurrentActivity() ?: return
     activity.runOnUiThread {
       try {
+        // Clamp color values to valid range [0, 255]
+        val red = Math.max(0, Math.min(255, r.toInt()))
+        val green = Math.max(0, Math.min(255, g.toInt()))
+        val blue = Math.max(0, Math.min(255, b.toInt()))
+        val alpha = Math.max(0, Math.min(255, a.toInt()))
+
         val rootView = activity.window.decorView
-        rootView.rootView.setBackgroundColor(Color.rgb(r.toInt(), g.toInt(), b.toInt()))
+        rootView.rootView.setBackgroundColor(Color.argb(alpha, red, green, blue))
       } catch (e: Exception) {
         e.printStackTrace()
       }
