@@ -43,7 +43,6 @@ Or with options:
   - `chore`: Changes to the build process, tools, etc.
 - **Present tense, imperative mood**: Write commit messages as commands (e.g., "add feature" not "added feature")
 - **Concise first line**: Keep the first line under 72 characters
-- **Emoji**: Each commit type is paired with an appropriate emoji:
   - ✨ `feat`: New feature
   - 🐛 `fix`: Bug fix
   - 📝 `docs`: Documentation
