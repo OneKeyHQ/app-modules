@@ -8,7 +8,6 @@ import com.facebook.react.module.model.ReactModuleInfoProvider
 class ReactNativeDeviceUtilsPackage : BaseReactPackage() {
     override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
         // Set the React context for the DeviceUtils module
-        ReactNativeDeviceUtils.setReactContext(reactContext)
         return null
     }
 

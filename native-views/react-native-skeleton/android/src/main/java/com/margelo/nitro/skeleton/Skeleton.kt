@@ -30,6 +30,12 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
   private var customGradientColors: IntArray? = null
   private var animationSpeed: Long = 3000L
 
+  // Memory safety flags
+  private var isDisposed: Boolean = false
+  private var retryCount: Int = 0
+  private val maxRetryCount: Int = 10
+  private var pendingStartRunnable: Runnable? = null
+
   // View with shimmer effect
   override val view: View = object : View(context) {
     override fun onDraw(canvas: Canvas) {
@@ -59,6 +65,7 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
   override var shimmerSpeed: Double?
     get() = animationSpeed.toDouble() / 1000.0
     set(value) {
+      if (isDisposed) return
       animationSpeed = ((value ?: 3.0) * 1000).toLong()
       restartShimmer()
     }
@@ -66,6 +73,7 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
   override var shimmerGradientColors: Array<String>?
     get() = customGradientColors?.map { String.format("#%06X", 0xFFFFFF and it) }?.toTypedArray()
     set(value) {
+      if (isDisposed) return
       if (value != null) {
         customGradientColors = value.map { hexStringToColor(it) }.toIntArray()
         restartShimmer()
@@ -83,10 +91,35 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
   }
 
   private fun startShimmer() {
+    if (isDisposed) return
+
     stopShimmer()
+    retryCount = 0 // Reset retry count
+    startShimmerInternal()
+  }
+
+  private fun startShimmerInternal() {
+    if (isDisposed) return
 
     if (view.width == 0 || view.height == 0) {
-      view.postDelayed({ startShimmer() }, 100)
+      // Check if we have exceeded max retry count
+      if (retryCount >= maxRetryCount) {
+        android.util.Log.w("HybridSkeleton", "Max retry count reached. View bounds are still empty.")
+        return
+      }
+
+      retryCount++
+      // Clean up previous pending runnable
+      pendingStartRunnable?.let { view.removeCallbacks(it) }
+
+      // Create new runnable and schedule
+      val runnable = Runnable {
+        if (!isDisposed) {
+          startShimmerInternal()
+        }
+      }
+      pendingStartRunnable = runnable
+      view.postDelayed(runnable, 100)
       return
     }
 
@@ -97,26 +130,42 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
       repeatCount = ValueAnimator.INFINITE
       interpolator = LinearInterpolator()
       addUpdateListener { animation ->
-        translateX = animation.animatedValue as Float
-        view.invalidate()
+        if (!isDisposed) {
+          translateX = animation.animatedValue as Float
+          view.invalidate()
+        }
       }
       start()
     }
   }
 
   private fun stopShimmer() {
-    shimmerAnimator?.cancel()
+    // Clean up pending runnable
+    pendingStartRunnable?.let {
+      view.removeCallbacks(it)
+      pendingStartRunnable = null
+    }
+
+    // Clean up animator and its listeners
+    shimmerAnimator?.apply {
+      removeAllUpdateListeners()
+      cancel()
+    }
     shimmerAnimator = null
   }
 
   override fun afterUpdate() {
     super.afterUpdate()
-    restartShimmer()
+    if (!isDisposed) {
+      restartShimmer()
+    }
   }
 
   private fun restartShimmer() {
+    if (isDisposed) return
     stopShimmer()
-    startShimmer()
+    retryCount = 0 // Reset retry count on restart
+    startShimmerInternal()
   }
 
   private fun hexStringToColor(hexColor: String): Int {
@@ -134,6 +183,13 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
   }
 
   override fun dispose() {
+    // Mark as disposed to prevent any new operations
+    isDisposed = true
+
+    // Stop all animations and clean up
     stopShimmer()
+
+    // Clear view references to prevent memory leaks
+    view.invalidate()
   }
 }
