@@ -62,14 +62,24 @@ class HybridSkeleton : HybridSkeletonSpec {
       view.layer.mask = nil
     } else {
       // Use async to avoid potential deadlock with sync
+      // All CALayer operations must happen on main thread
+      let shimmer = self.shimmerLayer
+      let skeleton = self.skeletonLayer
       DispatchQueue.main.async { [weak view = self.view] in
         guard let view = view else { return }
+        // Stop shimmer animations
+        shimmer?.removeAllAnimations()
+        shimmer?.removeFromSuperlayer()
+
+        // Clear mask reference
+        if view.layer.mask === skeleton {
+          view.layer.mask = nil
+        }
+
+        // Clean up remaining animations and sublayers
         view.layer.removeAllAnimations()
         view.layer.sublayers?.removeAll()
-        view.layer.mask = nil
       }
-      // Stop shimmer synchronously if possible (layers should be thread-safe for this)
-      stopShimmer()
     }
   }
 
