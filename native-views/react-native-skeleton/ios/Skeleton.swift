@@ -153,6 +153,7 @@ class HybridSkeleton : HybridSkeletonSpec {
     view.layer.mask = newSkeletonLayer
     view.layer.addSublayer(gradientLayer)
     view.clipsToBounds = true
+    view.backgroundColor = UIColor(cgColor: backgroundColor)
 
     // Store references
     skeletonLayer = newSkeletonLayer
