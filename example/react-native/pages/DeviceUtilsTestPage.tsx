@@ -115,7 +115,7 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
     clearResults();
     try {
       if (!spanningCallbackActive) {
-        deviceUtils.onSpanningChanged((spanning: boolean) => {
+        deviceUtils.addSpanningChangedListener((spanning: boolean) => {
           setIsSpanning(spanning);
           setResult({ 
             spanningCallbackTriggered: true, 
