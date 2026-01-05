@@ -3,12 +3,13 @@ import CloudKit
 import NitroModules
 
 class CloudKitModule: HybridCloudKitModuleSpec {
+
   // MARK: - Properties
   private let container = CKContainer.default()
   private lazy var database = container.privateCloudDatabase
 
   // MARK: - Check Availability
-  
+
   public func isAvailable() throws -> Promise<Bool> {
     return Promise.async {
       let status = try await self.container.accountStatus()
@@ -17,7 +18,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   }
 
   // MARK: - Get Account Info
-  
+
   public func getAccountInfo() throws -> Promise<AccountInfoResult> {
     return Promise.async {
       let status = try await self.container.accountStatus()
@@ -47,7 +48,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   }
 
   // MARK: - Save Record
-  
+
   public func saveRecord(params: SaveRecordParams) throws -> Promise<SaveRecordResult> {
     return Promise.async {
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
@@ -74,40 +75,41 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   }
 
   // MARK: - Fetch Record
-  
-  public func fetchRecord(params: FetchRecordParams) throws -> Promise<RecordResult?> {
+
+  public func fetchRecord(params: FetchRecordParams) throws -> NitroModules.Promise<Variant_NullType_RecordResult> {
     return Promise.async {
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
-      
+
       do {
         let record = try await self.database.record(for: ckRecordID)
-        
+
         let data = record[CloudKitConstants.recordDataField] as? String ?? ""
         let meta = record[CloudKitConstants.recordMetaField] as? String ?? ""
         let createdAt = Int64((record.creationDate?.timeIntervalSince1970 ?? 0) * 1000)
         let modifiedAt = Int64((record.modificationDate?.timeIntervalSince1970 ?? 0) * 1000)
-        
-        let result = RecordResult(
-          recordID: record.recordID.recordName,
-          recordType: record.recordType,
-          data: data,
-          meta: meta,
-          createdAt: Double(createdAt),
-          modifiedAt: Double(modifiedAt)
+
+      let result = Variant_NullType_RecordResult.second(
+        RecordResult(
+            recordID: record.recordID.recordName,
+            recordType: record.recordType,
+            data: data,
+            meta: meta,
+            createdAt: Double(createdAt),
+            modifiedAt: Double(modifiedAt))
         )
         return result
       } catch let error as CKError where error.code == .unknownItem {
-        return nil
+          return Variant_NullType_RecordResult.first(NullType.null)
       }
     }
   }
 
   // MARK: - Delete Record
-  
+
   public func deleteRecord(params: DeleteRecordParams) throws -> Promise<Void> {
     return Promise.async {
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
-      
+
       do {
         _ = try await self.database.deleteRecord(withID: ckRecordID)
         return Void()
@@ -119,11 +121,11 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   }
 
   // MARK: - Record Exists
-  
+
   public func recordExists(params: RecordExistsParams) throws -> Promise<Bool> {
     return Promise.async {
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
-      
+
       do {
         _ = try await self.database.record(for: ckRecordID)
         return true
@@ -134,7 +136,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   }
 
   // MARK: - Query Records
-  
+
   public func queryRecords(params: QueryRecordsParams) throws -> Promise<QueryRecordsResult> {
     return Promise.async {
       let predicate = NSPredicate(value: true)
