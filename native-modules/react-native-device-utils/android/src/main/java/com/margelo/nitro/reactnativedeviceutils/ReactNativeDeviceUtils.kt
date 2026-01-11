@@ -229,7 +229,8 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   }
 
   fun callSpanningChangedListeners(isSpanning: Boolean) {
-    for (listener in spanningChangedListeners) {
+    // Create a snapshot to avoid ConcurrentModificationException when listeners modify the list during callbacks
+    for (listener in spanningChangedListeners.toList()) {
       listener.callback(isSpanning)
     }
   }
