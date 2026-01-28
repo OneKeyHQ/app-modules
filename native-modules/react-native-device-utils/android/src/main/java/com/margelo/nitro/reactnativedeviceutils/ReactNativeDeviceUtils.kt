@@ -29,6 +29,10 @@ data class Listener(
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
 
+  /**
+   * Foldable device model constants for various manufacturers.
+   * Reference: https://storage.googleapis.com/play_public/supported_devices.html
+   */
   companion object {
     private const val PREF_KEY_FOLDABLE = "1k_fold"
 
@@ -66,66 +70,146 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
 
     // Vivo foldable models
     private val VIVO_FOLDABLE_MODELS = setOf(
-      "V2337A",  // X Fold3
+      "V2337A",  // X Fold3 Pro
       "V2330",   // X Fold3 Pro
       "V2178A",  // X Fold
       "V2229A",  // X Fold+
-      "V2266A",  // X Flip
-      "V2303A",  // X Fold2
-      "V2256A"   // X Fold S
+      "V2266A",  // vivo X Fold2
+      "V2303A",  // vivo X Fold3
+      "V2256A",  // X Flip
+      "V2436A",  // X Fold5
+      "V2429"    // X Fold5
     )
 
     // OPPO foldable models
     private val OPPO_FOLDABLE_MODELS = setOf(
-      "PKH110", "CPH2671",  // Find N3
-      "PKH120",             // Find N3 Flip
-      "CPH2499",            // Find N2
-      "PHN110", "PEUM00",   // Find N2 Flip
-      "CPH2519",            // Find N
-      "PHT110", "PGT110",   // Find N3 series
-      "CPH2437"             // Find N Flip
+      // Find N5
+      "PKH110", "CPH2671",
+      // Find N5 卫星通信版
+      "PKH120",
+      // Find N3
+      "PHN110", "CPH2499",
+      // Find N3 Flip
+      "PHT110", "CPH2519",
+      // Find N2 Flip
+      "CPH2437", "PGT110",
+      // Find N
+      "PEUM00"
     )
 
-    // Samsung foldable models (Japan carrier models)
+    // Samsung foldable models
     private val SAMSUNG_FOLDABLE_MODELS = setOf(
-      // Galaxy Z Fold series (Japan)
-      "SCV47", "SCG04", "SC-54B",   // Z Fold2
-      "SCG12", "SC-54C",            // Z Fold3
-      "SCG17", "SC-54D",            // Z Fold4
-      "SCG23", "SC-54E",            // Z Fold5
-      "SCG29",                      // Z Fold6
-      // Galaxy Z Flip series (Japan)
-      "SC-55B", "SCG11",            // Z Flip3
-      "SC-55C", "SCG16",            // Z Flip4
-      "SC-55D", "SCG22",            // Z Flip5
-      "SC-55E", "SCG28"             // Z Flip6
+      // Galaxy Fold
+      "SCV44", "SM-F9000", "SM-F900F", "SM-F900U", "SM-F900U1", "SM-F900W",
+      // Galaxy Fold 5G
+      "SM-F907B", "SM-F907N",
+      // Galaxy Z Fold2 5G
+      "SM-F9160", "SM-F916B", "SM-F916N", "SM-F916Q", "SM-F916U", "SM-F916U1", "SM-F916W",
+      // Galaxy Z Fold3 5G
+      "SC-55B", "SCG11", "SM-F9260", "SM-F926B", "SM-F926N", "SM-F926U", "SM-F926U1", "SM-F926W",
+      // Galaxy Z Fold4
+      "SC-55C", "SCG16", "SM-F9360", "SM-F936B", "SM-F936N", "SM-F936U", "SM-F936U1", "SM-F936W",
+      // Galaxy Z Fold5
+      "SC-55D", "SCG22", "SM-F9460", "SM-F946B", "SM-F946N", "SM-F946Q", "SM-F946U", "SM-F946U1", "SM-F946W",
+      // Galaxy Z Fold6
+      "SC-55E", "SCG28", "SM-F9560", "SM-F956B", "SM-F956N", "SM-F956Q", "SM-F956U", "SM-F956U1", "SM-F956W",
+      // Galaxy Z Fold7
+      "SC-56F", "SCG34", "SM-F9660", "SM-F966B", "SM-F966N", "SM-F966Q", "SM-F966U", "SM-F966U1", "SM-F966W", "SM-F966Z",
+      // Galaxy Z Fold Special Edition
+      "SM-F958N",
+      // Galaxy Z TriFold
+      "SM-F9680", "SM-F968B", "SM-F968N", "SM-F968U1",
+      // Galaxy Z Flip
+      "SCV47", "SM-F7000", "SM-F700F", "SM-F700N", "SM-F700U", "SM-F700U1", "SM-F700W",
+      // Galaxy Z Flip 5G
+      "SCG04", "SM-F7070", "SM-F707B", "SM-F707N", "SM-F707U", "SM-F707U1", "SM-F707W",
+      // Galaxy Z Flip3 5G
+      "SC-54B", "SCG12", "SM-F7110", "SM-F711B", "SM-F711N", "SM-F711U", "SM-F711U1", "SM-F711W",
+      // Galaxy Z Flip4
+      "SC-54C", "SCG17", "SM-F7210", "SM-F721B", "SM-F721C", "SM-F721N", "SM-F721U", "SM-F721U1", "SM-F721W",
+      // Galaxy Z Flip5
+      "SC-54D", "SCG23", "SM-F7310", "SM-F731B", "SM-F731N", "SM-F731Q", "SM-F731U", "SM-F731U1", "SM-F731W",
+      // Galaxy Z Flip6
+      "SC-54E", "SCG29", "SM-F7410", "SM-F741B", "SM-F741N", "SM-F741Q", "SM-F741U", "SM-F741U1", "SM-F741W",
+      // Galaxy Z Flip7
+      "SC-55F", "SCG35", "SM-F7660", "SM-F766B", "SM-F766N", "SM-F766Q", "SM-F766U", "SM-F766U1", "SM-F766W", "SM-F766Z",
+      // Galaxy Z Flip7 FE
+      "SM-F7610", "SM-F761B", "SM-F761N", "SM-F761U", "SM-F761U1",
+      // 心系天下 W23/W25 Flip
+      "SM-W7023", "SM-W7025"
     )
 
     // Samsung foldable model prefixes
     private val SAMSUNG_FOLDABLE_PREFIXES = listOf(
       "SM-F9",  // Galaxy Z Fold series
-      "SM-F7"   // Galaxy Z Flip series
+      "SM-F7",  // Galaxy Z Flip series
+      "SM-W70"  // 心系天下 W series Flip
     )
 
     // Google foldable models
     private val GOOGLE_FOLDABLE_MODELS = setOf(
       "Pixel Fold",
-      "Pixel 9 Pro Fold"
+      "Pixel 9 Pro Fold",
+      "Pixel 10 Pro Fold"
     )
 
     // Motorola foldable models
     private val MOTOROLA_FOLDABLE_MODELS = setOf(
-      "XT2323-3",  // razr 40 Ultra
-      "XT2321-2",  // razr 40
-      "XT2451-4",  // razr+ 2024
-      "XT2251-1",  // razr 2022
-      "XT2451-3"   // razr 2024
+      // razr 40 series
+      "XT2323-3",  // moto razr 40
+      "XT2321-2",  // moto razr 40 Ultra
+      // razr 50 series
+      "XT2451-4",  // moto razr 50
+      "XT2453-2",  // motorola razr 50
+      // razr 60 series
+      "XT2551-3",  // motorola razr 60 ultra
+      // razr 2022
+      "XT2251-1",
+      // razr Japan models
+      "M-51E",     // motorola razr 50d
+      "M-51F"      // motorola razr 60d
     )
 
     // ZTE/Nubia foldable models
     private val ZTE_FOLDABLE_MODELS = setOf(
-      "NX732J",  // nubia Flip 5G
-      "NX724J"   // nubia Flip
+      "NX732J",   // nubia Flip 2 5G
+      "NX724J",   // nubia Flip 5G
+      "Z9900S",   // nubia Fold
+      "A502ZT",   // nubia Fold (carrier)
+      "A304ZT",   // Libero Flip
+      "Z8900CA"   // nubia Flip 2 5G
+    )
+
+    // Tecno foldable models
+    private val TECNO_FOLDABLE_MODELS = setOf(
+      "TECNO-AD10", "TECNO AD10",  // PHANTOM V Fold
+      "TECNO-AE10", "TECNO AE10",  // PHANTOM V Fold2 5G
+      "TECNO-AD11", "TECNO AD11",  // PHANTOM V Flip 5G
+      "TECNO-AE11", "TECNO AE11"   // PHANTOM V Flip2 5G
+    )
+
+    // Infinix foldable models
+    private val INFINIX_FOLDABLE_MODELS = setOf(
+      "Infinix-X6962", "Infinix X6962"  // ZERO Flip
+    )
+
+    // Royole foldable models
+    private val ROYOLE_FOLDABLE_MODELS = setOf(
+      "RY1205"  // VERTU Ayxta Fold 3
+    )
+
+    // Honor foldable models
+    private val HONOR_FOLDABLE_MODELS = setOf(
+      "VER-N49",    // HONOR Magic V2
+      "VER-N49DP",  // PORSCHE DESIGN HONOR Magic V2 RSR
+      "FCP-N49",    // HONOR Magic V3
+      "MBH-N49",    // HONOR Magic V5
+      "FRI-NX9"     // HONOR Magic Vs
+    )
+
+    // Vertu foldable models
+    private val VERTU_FOLDABLE_MODELS = setOf(
+      "VTL-202302"  // METAFLIP
     )
   }
 
@@ -339,6 +423,61 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   }
 
   /**
+   * Check if the device is a Tecno foldable
+   */
+  private fun isTecnoFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "TECNO") return false
+
+    val model = Build.MODEL.uppercase()
+    return TECNO_FOLDABLE_MODELS.any { model.contains(it.uppercase()) }
+  }
+
+  /**
+   * Check if the device is an Infinix foldable
+   */
+  private fun isInfinixFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "INFINIX") return false
+
+    val model = Build.MODEL.uppercase()
+    return INFINIX_FOLDABLE_MODELS.any { model.contains(it.uppercase()) }
+  }
+
+  /**
+   * Check if the device is a Royole foldable
+   */
+  private fun isRoyoleFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "ROYOLE") return false
+
+    val model = Build.MODEL.uppercase()
+    return ROYOLE_FOLDABLE_MODELS.contains(model)
+  }
+
+  /**
+   * Check if the device is an Honor foldable
+   */
+  private fun isHonorFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "HONOR") return false
+
+    val model = Build.MODEL.uppercase()
+    return HONOR_FOLDABLE_MODELS.contains(model)
+  }
+
+  /**
+   * Check if the device is a Vertu foldable
+   */
+  private fun isVertuFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "VERTU") return false
+
+    val model = Build.MODEL.uppercase()
+    return VERTU_FOLDABLE_MODELS.contains(model)
+  }
+
+  /**
    * Get cached foldable status from PreferenceManager
    */
   private fun getCachedFoldableStatus(): Boolean? {
@@ -378,7 +517,12 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
                      isSamsungFoldable() ||
                      isGoogleFoldable() ||
                      isMotorolaFoldable() ||
-                     isZteFoldable()
+                     isZteFoldable() ||
+                     isTecnoFoldable() ||
+                     isInfinixFoldable() ||
+                     isRoyoleFoldable() ||
+                     isHonorFoldable() ||
+                     isVertuFoldable()
 
     // Cache the result
     return isFoldable
