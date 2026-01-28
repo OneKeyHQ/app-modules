@@ -1,9 +1,12 @@
 package com.margelo.nitro.reactnativedeviceutils
 
 import android.app.Activity
+import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.Build
+import android.preference.PreferenceManager
 import androidx.core.content.ContextCompat
 import androidx.core.util.Consumer
 import androidx.window.layout.FoldingFeature
@@ -25,7 +28,107 @@ data class Listener(
 
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
-  
+
+  companion object {
+    private const val PREF_KEY_FOLDABLE = "1k_fold"
+
+    // Xiaomi foldable models
+    private val XIAOMI_FOLDABLE_MODELS = setOf(
+      "M2011J18C",   // Mi MIX FOLD
+      "22061218C",   // MIX FOLD 2
+      "2308CPXD0C",  // MIX FOLD 3
+      "24072PX77C",  // MIX FOLD 4
+      "2405CPX3DC",  // MIX FLIP
+      "2405CPX3DG"   // MIX FLIP
+    )
+
+    // Huawei foldable models
+    private val HUAWEI_FOLDABLE_MODELS = setOf(
+      "TAH-AN00", "TAH-AN00m", "TAH-N29m",  // Mate X
+      "GRL-AL10",                            // Mate X3
+      "TET-AN50",                            // Mate Xs
+      "PAL-AL00", "PAL-LX9",                 // Mate Xs 2
+      "ICL-AL20", "ICL-AL10",                // Pocket S
+      "BAL-AL00", "BAL-L49", "BAL-AL60",     // Pocket 2
+      "PSD-AL00",                            // Mate X5
+      "LEM-AL00",                            // Mate X6
+      "ALT-AL10", "ALT-AL00", "ALT-L29",     // Pocket
+      "TGW-AL00", "TGW-L29",                 // Mate X5
+      "TWH-AL10",                            // Mate X3
+      "DHF-AL00", "DHF-LX9",                 // Mate Xs 3
+      "RHA-AN00m"                            // Magic V series
+    )
+
+    // Huawei foldable device codes
+    private val HUAWEI_FOLDABLE_DEVICES = setOf(
+      "HWTAH", "HWMRX", "HWTET", "HWPAL", "MateX"
+    )
+
+    // Vivo foldable models
+    private val VIVO_FOLDABLE_MODELS = setOf(
+      "V2337A",  // X Fold3
+      "V2330",   // X Fold3 Pro
+      "V2178A",  // X Fold
+      "V2229A",  // X Fold+
+      "V2266A",  // X Flip
+      "V2303A",  // X Fold2
+      "V2256A"   // X Fold S
+    )
+
+    // OPPO foldable models
+    private val OPPO_FOLDABLE_MODELS = setOf(
+      "PKH110", "CPH2671",  // Find N3
+      "PKH120",             // Find N3 Flip
+      "CPH2499",            // Find N2
+      "PHN110", "PEUM00",   // Find N2 Flip
+      "CPH2519",            // Find N
+      "PHT110", "PGT110",   // Find N3 series
+      "CPH2437"             // Find N Flip
+    )
+
+    // Samsung foldable models (Japan carrier models)
+    private val SAMSUNG_FOLDABLE_MODELS = setOf(
+      // Galaxy Z Fold series (Japan)
+      "SCV47", "SCG04", "SC-54B",   // Z Fold2
+      "SCG12", "SC-54C",            // Z Fold3
+      "SCG17", "SC-54D",            // Z Fold4
+      "SCG23", "SC-54E",            // Z Fold5
+      "SCG29",                      // Z Fold6
+      // Galaxy Z Flip series (Japan)
+      "SC-55B", "SCG11",            // Z Flip3
+      "SC-55C", "SCG16",            // Z Flip4
+      "SC-55D", "SCG22",            // Z Flip5
+      "SC-55E", "SCG28"             // Z Flip6
+    )
+
+    // Samsung foldable model prefixes
+    private val SAMSUNG_FOLDABLE_PREFIXES = listOf(
+      "SM-F9",  // Galaxy Z Fold series
+      "SM-F7"   // Galaxy Z Flip series
+    )
+
+    // Google foldable models
+    private val GOOGLE_FOLDABLE_MODELS = setOf(
+      "Pixel Fold",
+      "Pixel 9 Pro Fold"
+    )
+
+    // Motorola foldable models
+    private val MOTOROLA_FOLDABLE_MODELS = setOf(
+      "XT2323-3",  // razr 40 Ultra
+      "XT2321-2",  // razr 40
+      "XT2451-4",  // razr+ 2024
+      "XT2251-1",  // razr 2022
+      "XT2451-3"   // razr 2024
+    )
+
+    // ZTE/Nubia foldable models
+    private val ZTE_FOLDABLE_MODELS = setOf(
+      "NX732J",  // nubia Flip 5G
+      "NX724J"   // nubia Flip
+    )
+  }
+
   private var windowLayoutInfo: WindowLayoutInfo? = null
   private var isSpanning = false
   private var layoutInfoConsumer: Consumer<WindowLayoutInfo>? = null
@@ -53,36 +156,236 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     // MARK: - Dual Screen Detection
   
   override fun isDualScreenDevice(): Boolean {
+    // Check cached value from PreferenceManager first
+    val cached = getCachedFoldableStatus()
+    if (cached == true) {
+      isDualScreenDeviceDetected = true
+      return true
+    }
+
     if (isDualScreenDeviceDetected != null) {
       return isDualScreenDeviceDetected!!
     }
+
     val activity = getCurrentActivity() ?: return false
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      isDualScreenDeviceDetected = hasFoldingFeature(activity)
+      val hasFolding = hasFoldingFeature(activity)
+      if (hasFolding) {
+        saveFoldableStatus(true)
+      }
+      isDualScreenDeviceDetected = hasFolding
       return isDualScreenDeviceDetected!!
     }
     isDualScreenDeviceDetected = false
     return isDualScreenDeviceDetected!!
   }
-  private fun isFoldableDeviceByName(): Boolean {
-    val deviceModel = Build.MODEL.lowercase()
-    val deviceManufacturer = Build.MANUFACTURER.lowercase()
-    
-    // Common foldable device patterns
-    val foldablePatterns = listOf(
-      "fold", "flip", "duo", "surface duo", "galaxy z",
-      "mate x", "mix fold", "find n", "magic v",
-      "pixel fold", "honor magic v", "vivo x fold",
-      "xiaomi mix fold", "oppo find n"
-    )
-    
-    for (pattern in foldablePatterns) {
-      if (deviceModel.contains(pattern) || 
-          (deviceManufacturer + " " + deviceModel).contains(pattern)) {
-        return true
-      }
+  // MARK: - Manufacturer-specific Foldable Detection
+
+  /**
+   * Check if the device is a Xiaomi foldable
+   * Detection: Model list matching + system property check
+   */
+  private fun isXiaomiFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "XIAOMI") return false
+
+    val model = Build.MODEL.uppercase()
+    if (XIAOMI_FOLDABLE_MODELS.contains(model)) return true
+
+    // Fallback: Check system property for foldable type
+    try {
+      val clazz = Class.forName("android.os.SystemProperties")
+      val method = clazz.getMethod("get", String::class.java)
+      val value = method.invoke(null, "persist.sys.muiltdisplay_type") as? String
+      if (value == "2") return true
+    } catch (e: Exception) {
+      // Ignore reflection errors
     }
     return false
+  }
+
+  /**
+   * Check if the device is a Huawei foldable
+   * Detection: Model list + device code + system feature check
+   */
+  private fun isHuaweiFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "HUAWEI") return false
+
+    val model = Build.MODEL.uppercase()
+    val device = Build.DEVICE.uppercase()
+
+    // Check model list
+    if (HUAWEI_FOLDABLE_MODELS.any { model.contains(it.uppercase()) }) return true
+
+    // Check device codes
+    if (HUAWEI_FOLDABLE_DEVICES.any { device.contains(it.uppercase()) }) return true
+
+    // Fallback: Check system feature for posture sensor
+    try {
+      val context = NitroModules.applicationContext
+      if (context != null) {
+        val pm = context.packageManager
+        if (pm.hasSystemFeature("com.huawei.hardware.sensor.posture")) {
+          return true
+        }
+      }
+    } catch (e: Exception) {
+      // Ignore
+    }
+    return false
+  }
+
+  /**
+   * Check if the device is a Vivo foldable
+   * Detection: Model list + private API check
+   */
+  private fun isVivoFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "VIVO") return false
+
+    val model = Build.MODEL.uppercase()
+    if (VIVO_FOLDABLE_MODELS.contains(model)) return true
+
+    // Fallback: Check using FtDeviceInfo API
+    try {
+      val clazz = Class.forName("android.util.FtDeviceInfo")
+      val method = clazz.getMethod("getDeviceType")
+      val deviceType = method.invoke(null) as? String
+      if (deviceType?.lowercase() == "foldable") return true
+    } catch (e: Exception) {
+      // Ignore reflection errors
+    }
+    return false
+  }
+
+  /**
+   * Check if the device is an OPPO foldable
+   * Detection: Model list + feature config check
+   */
+  private fun isOppoFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "OPPO") return false
+
+    val model = Build.MODEL.uppercase()
+    if (OPPO_FOLDABLE_MODELS.contains(model)) return true
+
+    // Fallback: Check using OplusFeatureConfigManager
+    try {
+      val clazz = Class.forName("com.oplus.content.OplusFeatureConfigManager")
+      val getInstanceMethod = clazz.getMethod("getInstance")
+      val instance = getInstanceMethod.invoke(null)
+      val hasFeatureMethod = clazz.getMethod("hasFeature", String::class.java)
+      val hasFeature = hasFeatureMethod.invoke(instance, "oplus.hardware.type.fold") as? Boolean
+      if (hasFeature == true) return true
+    } catch (e: Exception) {
+      // Ignore reflection errors
+    }
+    return false
+  }
+
+  /**
+   * Check if the device is a Samsung foldable
+   * Detection: Model prefix matching + model list
+   */
+  private fun isSamsungFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "SAMSUNG") return false
+
+    val model = Build.MODEL.uppercase()
+
+    // Check model prefixes (SM-F9xxx for Fold, SM-F7xxx for Flip)
+    for (prefix in SAMSUNG_FOLDABLE_PREFIXES) {
+      if (model.startsWith(prefix.uppercase())) return true
+    }
+
+    // Check Japan carrier model list
+    if (SAMSUNG_FOLDABLE_MODELS.contains(model)) return true
+
+    return false
+  }
+
+  /**
+   * Check if the device is a Google foldable
+   */
+  private fun isGoogleFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "GOOGLE") return false
+
+    val model = Build.MODEL.uppercase()
+    return GOOGLE_FOLDABLE_MODELS.any { model.contains(it.uppercase()) }
+  }
+
+  /**
+   * Check if the device is a Motorola foldable
+   */
+  private fun isMotorolaFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "MOTOROLA") return false
+
+    val model = Build.MODEL.uppercase()
+    return MOTOROLA_FOLDABLE_MODELS.contains(model)
+  }
+
+  /**
+   * Check if the device is a ZTE/Nubia foldable
+   */
+  private fun isZteFoldable(): Boolean {
+    val manufacturer = Build.MANUFACTURER.uppercase()
+    if (manufacturer != "ZTE" && manufacturer != "NUBIA") return false
+
+    val model = Build.MODEL.uppercase()
+    return ZTE_FOLDABLE_MODELS.contains(model)
+  }
+
+  /**
+   * Get cached foldable status from PreferenceManager
+   */
+  private fun getCachedFoldableStatus(): Boolean? {
+    try {
+      val context = NitroModules.applicationContext ?: return null
+      val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+      if (!prefs.contains(PREF_KEY_FOLDABLE)) return null
+      return prefs.getBoolean(PREF_KEY_FOLDABLE, false)
+    } catch (e: Exception) {
+      return null
+    }
+  }
+
+  /**
+   * Save foldable status to PreferenceManager
+   */
+  private fun saveFoldableStatus(isFoldable: Boolean) {
+    try {
+      val context = NitroModules.applicationContext ?: return
+      val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+      prefs.edit().putBoolean(PREF_KEY_FOLDABLE, isFoldable).apply()
+    } catch (e: Exception) {
+      // Ignore save errors
+    }
+  }
+
+  /**
+   * Detect if device is foldable by checking manufacturer-specific methods
+   * Results are cached in PreferenceManager with key "1k_fold"
+   */
+  private fun isFoldableDeviceByName(): Boolean {
+    // Check cached value first
+    val cached = getCachedFoldableStatus()
+    if (cached != null) return cached
+
+    // Check each manufacturer
+    val isFoldable = isXiaomiFoldable() ||
+                     isHuaweiFoldable() ||
+                     isVivoFoldable() ||
+                     isOppoFoldable() ||
+                     isSamsungFoldable() ||
+                     isGoogleFoldable() ||
+                     isMotorolaFoldable() ||
+                     isZteFoldable()
+
+    // Cache the result
+    return isFoldable
   }
   
   private fun hasFoldingFeature(activity: Activity): Boolean {
