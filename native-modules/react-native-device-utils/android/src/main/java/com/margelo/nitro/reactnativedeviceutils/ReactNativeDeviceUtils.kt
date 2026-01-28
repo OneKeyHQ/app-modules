@@ -370,10 +370,6 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
    * Results are cached in PreferenceManager with key "1k_fold"
    */
   private fun isFoldableDeviceByName(): Boolean {
-    // Check cached value first
-    val cached = getCachedFoldableStatus()
-    if (cached != null) return cached
-
     // Check each manufacturer
     val isFoldable = isXiaomiFoldable() ||
                      isHuaweiFoldable() ||
