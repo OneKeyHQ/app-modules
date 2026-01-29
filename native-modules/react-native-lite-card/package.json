@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-lite-card",
-  "version": "1.1.14",
+  "version": "1.1.16",
   "description": "lite card",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

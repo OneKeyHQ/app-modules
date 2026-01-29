@@ -2769,7 +2769,7 @@ __metadata:
     prettier: "npm:2.8.8"
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
-    react-native-nitro-modules: "npm:0.31.10"
+    react-native-nitro-modules: "npm:0.33.2"
     react-native-safe-area-context: "npm:^5.5.2"
     react-test-renderer: "npm:19.2.0"
     typescript: "npm:^5.8.3"
@@ -2802,14 +2802,14 @@ __metadata:
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.31.10"
+    react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: ^0.31.10
+    react-native-nitro-modules: 0.33.2
   languageName: unknown
   linkType: soft
 
@@ -2871,14 +2871,14 @@ __metadata:
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.31.10"
+    react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: ^0.31.10
+    react-native-nitro-modules: 0.33.2
   languageName: unknown
   linkType: soft
 
@@ -2907,14 +2907,14 @@ __metadata:
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.31.10"
+    react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: ^0.31.10
+    react-native-nitro-modules: 0.33.2
   languageName: unknown
   linkType: soft
 
@@ -2943,14 +2943,14 @@ __metadata:
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.31.10"
+    react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: ^0.31.10
+    react-native-nitro-modules: 0.33.2
   languageName: unknown
   linkType: soft
 
@@ -2979,14 +2979,14 @@ __metadata:
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.31.10"
+    react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: ^0.31.10
+    react-native-nitro-modules: 0.33.2
   languageName: unknown
   linkType: soft
 
@@ -3015,14 +3015,14 @@ __metadata:
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.31.10"
+    react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: ^0.31.10
+    react-native-nitro-modules: 0.33.2
   languageName: unknown
   linkType: soft
 
@@ -3084,14 +3084,14 @@ __metadata:
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.31.10"
+    react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.31.10
+    react-native-nitro-modules: 0.33.2
   languageName: unknown
   linkType: soft
 
@@ -10661,7 +10661,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-nitro-modules@npm:0.31.10, react-native-nitro-modules@npm:^0.31.10":
+"react-native-nitro-modules@npm:0.33.2":
+  version: 0.33.2
+  resolution: "react-native-nitro-modules@npm:0.33.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  checksum: 10/fece339c9f69b256d4e18e6fbf29bc52a16e2e8ea7e70551d8265dbaf455402a67fd8ca9f4e8abe5b6e6d3e33bf6c598d4e980dbbed00a3b791f6fa49c98be17
+  languageName: node
+  linkType: hard
+
+"react-native-nitro-modules@npm:^0.31.10":
   version: 0.31.10
   resolution: "react-native-nitro-modules@npm:0.31.10"
   peerDependencies:
