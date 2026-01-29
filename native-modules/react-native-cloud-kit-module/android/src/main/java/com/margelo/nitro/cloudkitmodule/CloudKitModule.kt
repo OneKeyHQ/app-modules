@@ -1,7 +1,6 @@
 package com.margelo.nitro.cloudkitmodule
 
 import com.facebook.proguard.annotations.DoNotStrip
-import com.margelo.nitro.core.NullType
 import com.margelo.nitro.core.Promise
 
 @DoNotStrip
@@ -30,8 +29,8 @@ class CloudKitModule : HybridCloudKitModuleSpec() {
     )
   }
 
-  override fun fetchRecord(params: FetchRecordParams): Promise<Variant_NullType_RecordResult> {
-      return Promise.resolved(Variant_NullType_RecordResult.First(NullType.NULL))
+  override fun fetchRecord(params: FetchRecordParams): Promise<RecordResult?> {
+      return Promise.resolved(null)
   }
 
   override fun deleteRecord(params: DeleteRecordParams): Promise<Unit> {
