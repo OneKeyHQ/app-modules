@@ -76,7 +76,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
   // MARK: - Fetch Record
 
-  public func fetchRecord(params: FetchRecordParams) throws -> Promise<RecordResult?> {
+  public func fetchRecord(params: FetchRecordParams) throws -> Promise<Variant_NullType_RecordResult> {
     return Promise.async {
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
 
@@ -88,16 +88,16 @@ class CloudKitModule: HybridCloudKitModuleSpec {
         let createdAt = Int64((record.creationDate?.timeIntervalSince1970 ?? 0) * 1000)
         let modifiedAt = Int64((record.modificationDate?.timeIntervalSince1970 ?? 0) * 1000)
 
-        return RecordResult(
+        return Variant_NullType_RecordResult.second(RecordResult(
           recordID: record.recordID.recordName,
           recordType: record.recordType,
           data: data,
           meta: meta,
           createdAt: Double(createdAt),
           modifiedAt: Double(modifiedAt)
-        )
+        ))
       } catch let error as CKError where error.code == .unknownItem {
-        return nil
+        return Variant_NullType_RecordResult.first(NullType.null)
       }
     }
   }
