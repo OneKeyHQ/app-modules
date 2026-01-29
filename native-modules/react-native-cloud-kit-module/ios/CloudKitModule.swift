@@ -76,7 +76,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
   // MARK: - Fetch Record
 
-  public func fetchRecord(params: FetchRecordParams) throws -> NitroModules.Promise<Variant_NullType_RecordResult> {
+  public func fetchRecord(params: FetchRecordParams) throws -> Promise<RecordResult?> {
     return Promise.async {
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
 
@@ -88,18 +88,16 @@ class CloudKitModule: HybridCloudKitModuleSpec {
         let createdAt = Int64((record.creationDate?.timeIntervalSince1970 ?? 0) * 1000)
         let modifiedAt = Int64((record.modificationDate?.timeIntervalSince1970 ?? 0) * 1000)
 
-      let result = Variant_NullType_RecordResult.second(
-        RecordResult(
-            recordID: record.recordID.recordName,
-            recordType: record.recordType,
-            data: data,
-            meta: meta,
-            createdAt: Double(createdAt),
-            modifiedAt: Double(modifiedAt))
+        return RecordResult(
+          recordID: record.recordID.recordName,
+          recordType: record.recordType,
+          data: data,
+          meta: meta,
+          createdAt: Double(createdAt),
+          modifiedAt: Double(modifiedAt)
         )
-        return result
       } catch let error as CKError where error.code == .unknownItem {
-          return Variant_NullType_RecordResult.first(NullType.null)
+        return nil
       }
     }
   }
