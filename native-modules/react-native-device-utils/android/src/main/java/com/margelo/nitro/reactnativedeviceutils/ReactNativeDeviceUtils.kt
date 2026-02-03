@@ -13,6 +13,7 @@ import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 import androidx.window.layout.WindowLayoutInfo
 import androidx.window.java.layout.WindowInfoTrackerCallbackAdapter
+import androidx.appcompat.app.AppCompatDelegate
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.ReactApplicationContext
@@ -35,6 +36,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
    */
   companion object {
     private const val PREF_KEY_FOLDABLE = "1k_fold"
+    private const val PREF_KEY_UI_STYLE = "1k_user_interface_style"
 
     // Xiaomi foldable models
     private val XIAOMI_FOLDABLE_MODELS = setOf(
@@ -227,6 +229,27 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       NitroModules.applicationContext?.let { ctx ->
           ctx.addLifecycleEventListener(this)
       }
+      restoreUserInterfaceStyle()
+  }
+
+  private fun restoreUserInterfaceStyle() {
+    try {
+      val context = NitroModules.applicationContext ?: return
+      val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+      val style = prefs.getString(PREF_KEY_UI_STYLE, null) ?: return
+      applyUserInterfaceStyle(style)
+    } catch (e: Exception) {
+      // Ignore restore errors
+    }
+  }
+
+  private fun applyUserInterfaceStyle(style: String) {
+    val mode = when (style) {
+      "light" -> AppCompatDelegate.MODE_NIGHT_NO
+      "dark" -> AppCompatDelegate.MODE_NIGHT_YES
+      else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+    }
+    AppCompatDelegate.setDefaultNightMode(mode)
   }
   
   private fun getCurrentActivity(): Activity? {
@@ -759,6 +782,21 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     }
   }
   
+  // MARK: - User Interface Style
+
+  override fun setUserInterfaceStyle(style: String) {
+    try {
+      val context = NitroModules.applicationContext
+      if (context != null) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        prefs.edit().putString(PREF_KEY_UI_STYLE, style).apply()
+      }
+    } catch (e: Exception) {
+      // Ignore save errors
+    }
+    applyUserInterfaceStyle(style)
+  }
+
   // MARK: - Background Color
   
   override fun changeBackgroundColor(r: Double, g: Double, b: Double, a: Double) {

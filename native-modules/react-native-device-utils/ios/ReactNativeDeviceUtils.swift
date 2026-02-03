@@ -2,7 +2,35 @@ import NitroModules
 import UIKit
 
 class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
-    
+
+    private static let userInterfaceStyleKey = "1k_user_interface_style"
+
+    override init() {
+        super.init()
+        restoreUserInterfaceStyle()
+    }
+
+    private func restoreUserInterfaceStyle() {
+        guard let style = UserDefaults.standard.string(forKey: ReactNativeDeviceUtils.userInterfaceStyleKey) else {
+            return
+        }
+        applyUserInterfaceStyle(style)
+    }
+
+    private func applyUserInterfaceStyle(_ style: String) {
+        DispatchQueue.main.async {
+            var uiStyle: UIUserInterfaceStyle = .unspecified
+            if style == "light" {
+                uiStyle = .light
+            } else if style == "dark" {
+                uiStyle = .dark
+            }
+            for window in UIApplication.shared.windows {
+                window.overrideUserInterfaceStyle = uiStyle
+            }
+        }
+    }
+
     public func isDualScreenDevice() throws -> Bool {
         return false
     }
@@ -31,6 +59,11 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     }
     
     
+    public func setUserInterfaceStyle(style: String) throws -> Void {
+        UserDefaults.standard.set(style, forKey: ReactNativeDeviceUtils.userInterfaceStyleKey)
+        applyUserInterfaceStyle(style)
+    }
+
     public func changeBackgroundColor(r: Double, g: Double, b: Double, a: Double) throws -> Void {
         DispatchQueue.main.async {
             // Clamp color values to valid range [0, 255]

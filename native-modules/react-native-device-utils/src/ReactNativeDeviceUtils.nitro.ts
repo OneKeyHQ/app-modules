@@ -18,4 +18,5 @@ export interface ReactNativeDeviceUtils
   changeBackgroundColor(r: number, g: number, b: number, a: number): void;
   addSpanningChangedListener(callback: (isSpanning: boolean) => void): number;
   removeSpanningChangedListener(id: number): void;
+  setUserInterfaceStyle(style: string): void;
 }

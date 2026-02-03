@@ -178,6 +178,20 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
     }
   };
 
+  // Test setUserInterfaceStyle
+  const testSetUserInterfaceStyle = (style: string) => {
+    clearResults();
+    try {
+      deviceUtils.setUserInterfaceStyle(style);
+      setResult({
+        userInterfaceStyleChanged: true,
+        style: style,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
   // Get all device info at once
   const getAllDeviceInfo = async () => {
     clearResults();
@@ -331,6 +345,29 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
             title="Reset"
             onPress={() => testPredefinedColor('white')}
             style={[styles.colorButton, { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#ccc' }]}
+          />
+        </View>
+      </View>
+
+      {/* User Interface Style Tests */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>User Interface Style</Text>
+
+        <View style={styles.colorButtonsContainer}>
+          <TestButton
+            title="Light"
+            onPress={() => testSetUserInterfaceStyle('light')}
+            style={styles.colorButton}
+          />
+          <TestButton
+            title="Dark"
+            onPress={() => testSetUserInterfaceStyle('dark')}
+            style={styles.colorButton}
+          />
+          <TestButton
+            title="System"
+            onPress={() => testSetUserInterfaceStyle('unspecified')}
+            style={styles.colorButton}
           />
         </View>
       </View>
