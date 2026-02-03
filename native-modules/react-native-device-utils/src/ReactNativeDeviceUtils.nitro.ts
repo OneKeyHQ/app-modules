@@ -1,6 +1,8 @@
 import type { HybridObject } from 'react-native-nitro-modules';
 
 
+export type UserInterfaceStyle = 'light' | 'dark' | 'unspecified';
+
 export interface DualScreenInfoRect {
   x: number;
   y: number;
@@ -18,5 +20,5 @@ export interface ReactNativeDeviceUtils
   changeBackgroundColor(r: number, g: number, b: number, a: number): void;
   addSpanningChangedListener(callback: (isSpanning: boolean) => void): number;
   removeSpanningChangedListener(id: number): void;
-  setUserInterfaceStyle(style: 'light' | 'dark' | 'unspecified'): void;
+  setUserInterfaceStyle(style: UserInterfaceStyle): void;
 }
