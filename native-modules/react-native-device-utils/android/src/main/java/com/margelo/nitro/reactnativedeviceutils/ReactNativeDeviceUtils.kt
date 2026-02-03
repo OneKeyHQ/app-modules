@@ -6,7 +6,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.Build
-import android.preference.PreferenceManager
+import androidx.preference.PreferenceManager
 import androidx.core.content.ContextCompat
 import androidx.core.util.Consumer
 import androidx.window.layout.FoldingFeature
@@ -249,7 +249,14 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       "dark" -> AppCompatDelegate.MODE_NIGHT_YES
       else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
     }
-    AppCompatDelegate.setDefaultNightMode(mode)
+    val activity = getCurrentActivity()
+    if (activity != null) {
+      activity.runOnUiThread {
+        AppCompatDelegate.setDefaultNightMode(mode)
+      }
+    } else {
+      AppCompatDelegate.setDefaultNightMode(mode)
+    }
   }
   
   private fun getCurrentActivity(): Activity? {

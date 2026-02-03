@@ -14,7 +14,10 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         guard let style = UserDefaults.standard.string(forKey: ReactNativeDeviceUtils.userInterfaceStyleKey) else {
             return
         }
-        applyUserInterfaceStyle(style)
+        // Dispatch to next runloop to ensure windows are initialized
+        DispatchQueue.main.async { [weak self] in
+            self?.applyUserInterfaceStyle(style)
+        }
     }
 
     private func applyUserInterfaceStyle(_ style: String) {
@@ -25,8 +28,18 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
             } else if style == "dark" {
                 uiStyle = .dark
             }
-            for window in UIApplication.shared.windows {
-                window.overrideUserInterfaceStyle = uiStyle
+            if #available(iOS 15.0, *) {
+                for scene in UIApplication.shared.connectedScenes {
+                    if let windowScene = scene as? UIWindowScene {
+                        for window in windowScene.windows {
+                            window.overrideUserInterfaceStyle = uiStyle
+                        }
+                    }
+                }
+            } else {
+                for window in UIApplication.shared.windows {
+                    window.overrideUserInterfaceStyle = uiStyle
+                }
             }
         }
     }

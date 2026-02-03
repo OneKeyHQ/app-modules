@@ -179,7 +179,7 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
   };
 
   // Test setUserInterfaceStyle
-  const testSetUserInterfaceStyle = (style: string) => {
+  const testSetUserInterfaceStyle = (style: 'light' | 'dark' | 'unspecified') => {
     clearResults();
     try {
       deviceUtils.setUserInterfaceStyle(style);
