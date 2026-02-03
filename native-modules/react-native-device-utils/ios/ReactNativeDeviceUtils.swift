@@ -69,9 +69,9 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     }
     
     
-    public func setUserInterfaceStyle(style: String) throws -> Void {
-        UserDefaults.standard.set(style, forKey: ReactNativeDeviceUtils.userInterfaceStyleKey)
-        applyUserInterfaceStyle(style)
+    public func setUserInterfaceStyle(style: UserInterfaceStyle) throws -> Void {
+        UserDefaults.standard.set(style.stringValue, forKey: ReactNativeDeviceUtils.userInterfaceStyleKey)
+        applyUserInterfaceStyle(style.stringValue)
     }
 
     public func changeBackgroundColor(r: Double, g: Double, b: Double, a: Double) throws -> Void {

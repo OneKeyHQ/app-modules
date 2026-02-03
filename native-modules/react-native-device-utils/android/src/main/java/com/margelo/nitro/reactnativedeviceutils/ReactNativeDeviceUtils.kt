@@ -786,17 +786,22 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   
   // MARK: - User Interface Style
 
-  override fun setUserInterfaceStyle(style: String) {
+  override fun setUserInterfaceStyle(style: UserInterfaceStyle) {
+    val styleString = when (style) {
+      UserInterfaceStyle.LIGHT -> "light"
+      UserInterfaceStyle.DARK -> "dark"
+      UserInterfaceStyle.UNSPECIFIED -> "unspecified"
+    }
     try {
       val context = NitroModules.applicationContext
       if (context != null) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        prefs.edit().putString(PREF_KEY_UI_STYLE, style).apply()
+        prefs.edit().putString(PREF_KEY_UI_STYLE, styleString).apply()
       }
     } catch (e: Exception) {
       // Ignore save errors
     }
-    applyUserInterfaceStyle(style)
+    applyUserInterfaceStyle(styleString)
   }
 
   // MARK: - Background Color
