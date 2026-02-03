@@ -14,10 +14,7 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         guard let style = UserDefaults.standard.string(forKey: ReactNativeDeviceUtils.userInterfaceStyleKey) else {
             return
         }
-        // Dispatch to next runloop to ensure windows are initialized
-        DispatchQueue.main.async { [weak self] in
-            self?.applyUserInterfaceStyle(style)
-        }
+        applyUserInterfaceStyle(style)
     }
 
     private func applyUserInterfaceStyle(_ style: String) {

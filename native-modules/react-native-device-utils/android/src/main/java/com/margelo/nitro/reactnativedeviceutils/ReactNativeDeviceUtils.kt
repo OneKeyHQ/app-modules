@@ -249,12 +249,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       "dark" -> AppCompatDelegate.MODE_NIGHT_YES
       else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
     }
-    val activity = getCurrentActivity()
-    if (activity != null) {
-      activity.runOnUiThread {
-        AppCompatDelegate.setDefaultNightMode(mode)
-      }
-    } else {
+    android.os.Handler(android.os.Looper.getMainLooper()).post {
       AppCompatDelegate.setDefaultNightMode(mode)
     }
   }
