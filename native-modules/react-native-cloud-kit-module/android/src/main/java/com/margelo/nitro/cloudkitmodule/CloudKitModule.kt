@@ -31,7 +31,7 @@ class CloudKitModule : HybridCloudKitModuleSpec() {
   }
 
   override fun fetchRecord(params: FetchRecordParams): Promise<Variant_NullType_RecordResult> {
-      return Promise.resolved(Variant_NullType_RecordResult.First(NullType.NULL))
+      return Promise.resolved(Variant_NullType_RecordResult.create(NullType.NULL))
   }
 
   override fun deleteRecord(params: DeleteRecordParams): Promise<Unit> {
