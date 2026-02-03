@@ -130,7 +130,7 @@ dependencies {
   implementation "androidx.window:window:1.5.1"
   implementation "androidx.window:window-java:1.5.1"
   // AppCompat for night mode support
-  implementation "androidx.appcompat:appcompat:1.7.0"
+  implementation "androidx.appcompat:appcompat:1.7.1"
   // AndroidX Preference for PreferenceManager
   implementation "androidx.preference:preference-ktx:1.2.1"
 }
