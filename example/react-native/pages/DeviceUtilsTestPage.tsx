@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase';
 import  { ReactNativeDeviceUtils } from '@onekeyfe/react-native-device-utils';
@@ -20,6 +20,15 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
   const [colorA, setColorA] = useState('255');
   const [isSpanning, setIsSpanning] = useState(false);
   const [spanningCallbackActive, setSpanningCallbackActive] = useState(false);
+  const spanningListenerIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (spanningListenerIdRef.current !== null) {
+        deviceUtils.removeSpanningChangedListener(spanningListenerIdRef.current);
+      }
+    };
+  }, []);
 
 
   // Clear previous results
@@ -115,7 +124,7 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
     clearResults();
     try {
       if (!spanningCallbackActive) {
-        deviceUtils.addSpanningChangedListener((spanning: boolean) => {
+        const listenerId = deviceUtils.addSpanningChangedListener((spanning: boolean) => {
           setIsSpanning(spanning);
           setResult({ 
             spanningCallbackTriggered: true, 
@@ -123,6 +132,7 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
             timestamp: new Date().toLocaleTimeString()
           });
         });
+        spanningListenerIdRef.current = listenerId;
         setSpanningCallbackActive(true);
         Alert.alert('Success', 'Spanning callback registered! Try rotating your device or connecting/disconnecting external displays.');
       } else {
@@ -172,6 +182,20 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
         backgroundColorChanged: true, 
         color: color,
         rgba: rgba
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
+  // Test setUserInterfaceStyle
+  const testSetUserInterfaceStyle = (style: 'light' | 'dark' | 'unspecified') => {
+    clearResults();
+    try {
+      deviceUtils.setUserInterfaceStyle(style);
+      setResult({
+        userInterfaceStyleChanged: true,
+        style: style,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -331,6 +355,29 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
             title="Reset"
             onPress={() => testPredefinedColor('white')}
             style={[styles.colorButton, { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#ccc' }]}
+          />
+        </View>
+      </View>
+
+      {/* User Interface Style Tests */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>User Interface Style</Text>
+
+        <View style={styles.colorButtonsContainer}>
+          <TestButton
+            title="Light"
+            onPress={() => testSetUserInterfaceStyle('light')}
+            style={styles.colorButton}
+          />
+          <TestButton
+            title="Dark"
+            onPress={() => testSetUserInterfaceStyle('dark')}
+            style={styles.colorButton}
+          />
+          <TestButton
+            title="System"
+            onPress={() => testSetUserInterfaceStyle('unspecified')}
+            style={styles.colorButton}
           />
         </View>
       </View>
