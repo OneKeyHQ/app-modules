@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.Build
+import android.util.Log
 import androidx.preference.PreferenceManager
 import androidx.core.content.ContextCompat
 import androidx.core.util.Consumer
@@ -220,7 +221,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   private var layoutInfoConsumer: Consumer<WindowLayoutInfo>? = null
   private var windowInfoTracker: WindowInfoTracker? = null
   private var callbackAdapter: WindowInfoTrackerCallbackAdapter? = null
-  private var spanningChangedListeners: MutableList<Listener> = CopyOnWriteArrayList()
+  private val spanningChangedListeners: CopyOnWriteArrayList<Listener> = CopyOnWriteArrayList()
   private var isObservingLayoutChanges = false
   private var nextListenerId = 0.0
   private var isDualScreenDeviceDetected: Boolean? = null
@@ -697,9 +698,15 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   }
 
   fun callSpanningChangedListeners(isSpanning: Boolean) {
-    // Create a snapshot to avoid ConcurrentModificationException when listeners modify the list during callbacks
-    for (listener in spanningChangedListeners.toList()) {
-      listener.callback(isSpanning)
+    // CopyOnWriteArrayList provides snapshot-based iteration that never throws
+    // ConcurrentModificationException, even if listeners are added/removed during iteration.
+    // Do NOT call .toList() here as it creates a regular ArrayList that is not thread-safe.
+    for (listener in spanningChangedListeners) {
+      try {
+        listener.callback(isSpanning)
+      } catch (e: Exception) {
+        Log.e("OneKey", "Error in spanning listener callback", e)
+      }
     }
   }
 
