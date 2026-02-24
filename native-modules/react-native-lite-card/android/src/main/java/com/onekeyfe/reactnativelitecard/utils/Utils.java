@@ -270,11 +270,15 @@ public final class Utils {
         private int mConfigCount = 0;
 
         void addListener(final Object object, final OnAppStatusChangedListener listener) {
-            mStatusListenerMap.put(object, listener);
+            synchronized (mStatusListenerMap) {
+                mStatusListenerMap.put(object, listener);
+            }
         }
 
         void removeListener(final Object object) {
-            mStatusListenerMap.remove(object);
+            synchronized (mStatusListenerMap) {
+                mStatusListenerMap.remove(object);
+            }
         }
 
         @Override
@@ -330,18 +334,20 @@ public final class Utils {
         }
 
         private void postStatus(final boolean isForeground) {
-            if (mStatusListenerMap.isEmpty()) {
-                return;
-            }
-            for (OnAppStatusChangedListener onAppStatusChangedListener :
-                    mStatusListenerMap.values()) {
-                if (onAppStatusChangedListener == null) {
+            synchronized (mStatusListenerMap) {
+                if (mStatusListenerMap.isEmpty()) {
                     return;
                 }
-                if (isForeground) {
-                    onAppStatusChangedListener.onForeground();
-                } else {
-                    onAppStatusChangedListener.onBackground();
+                for (OnAppStatusChangedListener onAppStatusChangedListener :
+                        mStatusListenerMap.values()) {
+                    if (onAppStatusChangedListener == null) {
+                        return;
+                    }
+                    if (isForeground) {
+                        onAppStatusChangedListener.onForeground();
+                    } else {
+                        onAppStatusChangedListener.onBackground();
+                    }
                 }
             }
         }
@@ -368,10 +374,12 @@ public final class Utils {
 
         @Nullable
         Activity getTopActivity() {
-            if (!mActivityList.isEmpty()) {
-                final Activity topActivity = mActivityList.getLast();
-                if (topActivity != null) {
-                    return topActivity;
+            synchronized (mActivityList) {
+                if (!mActivityList.isEmpty()) {
+                    final Activity topActivity = mActivityList.getLast();
+                    if (topActivity != null) {
+                        return topActivity;
+                    }
                 }
             }
             // using reflect to get top activity
