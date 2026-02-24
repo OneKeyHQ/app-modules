@@ -324,7 +324,9 @@ public final class Utils {
 
         @Override
         public void onActivityDestroyed(Activity activity) {
-            mActivityList.remove(activity);
+            synchronized (mActivityList) {
+                mActivityList.remove(activity);
+            }
         }
 
         private void postStatus(final boolean isForeground) {
@@ -348,14 +350,19 @@ public final class Utils {
             if (activity == null || mActivityList == null) {
                 return;
             }
-            if (mActivityList.contains(activity)) {
-                Activity lastActivity = mActivityList.getLast();
-                if (lastActivity != null && !lastActivity.equals(activity)) {
-                    mActivityList.remove(activity);
-                    mActivityList.addLast(activity);
+            try {
+                synchronized (mActivityList) {
+                    if (mActivityList.contains(activity)) {
+                        if (!mActivityList.isEmpty() && !activity.equals(mActivityList.getLast())) {
+                            mActivityList.remove(activity);
+                            mActivityList.addLast(activity);
+                        }
+                    } else {
+                        mActivityList.addLast(activity);
+                    }
                 }
-            } else {
-                mActivityList.addLast(activity);
+            } catch (Exception e) {
+                android.util.Log.w("OneKey", "setTopActivity error: " + e.getMessage());
             }
         }
 
