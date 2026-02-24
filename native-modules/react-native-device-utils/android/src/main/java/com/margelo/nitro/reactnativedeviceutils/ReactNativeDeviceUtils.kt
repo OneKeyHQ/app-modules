@@ -6,6 +6,9 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import androidx.preference.PreferenceManager
 import androidx.core.content.ContextCompat
 import androidx.core.util.Consumer
@@ -35,6 +38,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
    * Reference: https://storage.googleapis.com/play_public/supported_devices.html
    */
   companion object {
+    private const val TAG = "ReactNativeDeviceUtils"
     private const val PREF_KEY_FOLDABLE = "1k_fold"
     private const val PREF_KEY_UI_STYLE = "1k_user_interface_style"
 
@@ -239,7 +243,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       val style = prefs.getString(PREF_KEY_UI_STYLE, null) ?: return
       applyUserInterfaceStyle(style)
     } catch (e: Exception) {
-      // Ignore restore errors
+      Log.w(TAG, "Failed to restore user interface style", e)
     }
   }
 
@@ -249,7 +253,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       "dark" -> AppCompatDelegate.MODE_NIGHT_YES
       else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
     }
-    android.os.Handler(android.os.Looper.getMainLooper()).post {
+    Handler(Looper.getMainLooper()).post {
       AppCompatDelegate.setDefaultNightMode(mode)
     }
   }
@@ -799,7 +803,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         prefs.edit().putString(PREF_KEY_UI_STYLE, styleString).apply()
       }
     } catch (e: Exception) {
-      // Ignore save errors
+      Log.w(TAG, "Failed to persist user interface style", e)
     }
     applyUserInterfaceStyle(styleString)
   }

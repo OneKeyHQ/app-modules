@@ -18,25 +18,38 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     }
 
     private func applyUserInterfaceStyle(_ style: String) {
-        DispatchQueue.main.async {
-            var uiStyle: UIUserInterfaceStyle = .unspecified
-            if style == "light" {
-                uiStyle = .light
-            } else if style == "dark" {
-                uiStyle = .dark
-            }
-            if #available(iOS 15.0, *) {
-                for scene in UIApplication.shared.connectedScenes {
-                    if let windowScene = scene as? UIWindowScene {
-                        for window in windowScene.windows {
-                            window.overrideUserInterfaceStyle = uiStyle
-                        }
+        let uiStyle: UIUserInterfaceStyle
+        switch style {
+        case "light":
+            uiStyle = .light
+        case "dark":
+            uiStyle = .dark
+        default:
+            uiStyle = .unspecified
+        }
+
+        let apply = {
+            for scene in UIApplication.shared.connectedScenes {
+                if let windowScene = scene as? UIWindowScene {
+                    for window in windowScene.windows {
+                        window.overrideUserInterfaceStyle = uiStyle
                     }
                 }
-            } else {
-                for window in UIApplication.shared.windows {
-                    window.overrideUserInterfaceStyle = uiStyle
+            }
+        }
+
+        DispatchQueue.main.async {
+            if UIApplication.shared.connectedScenes.isEmpty {
+                NotificationCenter.default.addObserver(
+                    forName: UIScene.didActivateNotification,
+                    object: nil,
+                    queue: .main
+                ) { notification in
+                    NotificationCenter.default.removeObserver(notification, name: UIScene.didActivateNotification, object: nil)
+                    apply()
                 }
+            } else {
+                apply()
             }
         }
     }
