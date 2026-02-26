@@ -1,5 +1,4 @@
 import NitroModules
-import CocoaLumberjack
 
 class NativeLogger: HybridNativeLoggerSpec {
 

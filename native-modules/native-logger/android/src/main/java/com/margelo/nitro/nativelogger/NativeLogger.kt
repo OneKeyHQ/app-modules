@@ -13,6 +13,7 @@ class NativeLogger : HybridNativeLoggerSpec() {
             1 -> OneKeyLog.info("JS", msg)
             2 -> OneKeyLog.warn("JS", msg)
             3 -> OneKeyLog.error("JS", msg)
+            else -> OneKeyLog.info("JS", msg)
         }
     }
 
@@ -20,6 +21,7 @@ class NativeLogger : HybridNativeLoggerSpec() {
         return Promise.async {
             val dir = OneKeyLog.logsDirectory
             File(dir).listFiles { _, name -> name.endsWith(".log") }
+                ?.sortedBy { it.name }
                 ?.map { it.absolutePath }?.toTypedArray() ?: arrayOf()
         }
     }

@@ -43,10 +43,7 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
 @objc public class OneKeyLog: NSObject {
 
     private static let configured: Bool = {
-        let cacheDir = NSSearchPathForDirectoriesInDomains(
-            .cachesDirectory, .userDomainMask, true
-        ).first!
-        let logsDir = cacheDir + "/logs"
+        let logsDir = logsDirectory
 
         // Ensure logs directory exists (matches Android's File(dir).mkdirs())
         try? FileManager.default.createDirectory(

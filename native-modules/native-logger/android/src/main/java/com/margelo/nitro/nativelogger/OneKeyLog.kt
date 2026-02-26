@@ -63,10 +63,8 @@ object OneKeyLog {
             Logger.ROOT_LOGGER_NAME
         ) as ch.qos.logback.classic.Logger
         root.level = Level.DEBUG
-        root.getAppender(APPENDER_NAME)?.let {
-            it.stop()
-            root.detachAppender(APPENDER_NAME)
-        }
+        // Remove all existing appenders (including default console) to avoid duplicate logcat output
+        root.detachAndStopAllAppenders()
         root.addAppender(appender)
 
         LoggerFactory.getLogger("OneKey")
