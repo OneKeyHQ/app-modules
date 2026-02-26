@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["nativelogger"],
+  "ios": {
+    "iosModuleName": "ReactNativeNativeLogger"
+  },
+  "android": {
+    "androidNamespace": ["nativelogger"],
+    "androidCxxLibName": "nativelogger"
+  },
+  "autolinking": {
+    "NativeLogger": {
+      "swift": "NativeLogger",
+      "kotlin": "NativeLogger"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
