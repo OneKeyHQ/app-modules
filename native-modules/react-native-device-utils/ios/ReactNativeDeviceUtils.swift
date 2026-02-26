@@ -1,5 +1,6 @@
 import NitroModules
 import UIKit
+import ReactNativeNativeLogger
 
 class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
@@ -12,8 +13,10 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
     private func restoreUserInterfaceStyle() {
         guard let style = UserDefaults.standard.string(forKey: ReactNativeDeviceUtils.userInterfaceStyleKey) else {
+            OneKeyLog.debug("DeviceUtils", "No saved UI style found")
             return
         }
+        OneKeyLog.info("DeviceUtils", "Restored UI style: \(style)")
         applyUserInterfaceStyle(style)
     }
 
@@ -70,6 +73,7 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     
     
     public func setUserInterfaceStyle(style: UserInterfaceStyle) throws -> Void {
+        OneKeyLog.info("DeviceUtils", "Set UI style: \(style.stringValue)")
         UserDefaults.standard.set(style.stringValue, forKey: ReactNativeDeviceUtils.userInterfaceStyleKey)
         applyUserInterfaceStyle(style.stringValue)
     }

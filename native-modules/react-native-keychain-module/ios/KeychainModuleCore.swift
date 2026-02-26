@@ -8,6 +8,7 @@
 
 import Foundation
 import Security
+import ReactNativeNativeLogger
 
 // MARK: - Constants
 
@@ -33,6 +34,7 @@ class KeychainModuleCore {
 
   func setItem(params: SetItemParams) throws {
     guard let valueData = params.value.data(using: .utf8) else {
+      OneKeyLog.error("Keychain", "Failed to encode value for key: \(params.key)")
       throw KeychainModuleError.encodingFailed
     }
 
@@ -64,8 +66,10 @@ class KeychainModuleCore {
     let status = SecItemAdd(query as CFDictionary, nil)
 
     guard status == errSecSuccess else {
+      OneKeyLog.error("Keychain", "Failed to set item for key: \(params.key), OSStatus: \(status)")
       throw KeychainModuleError.operationFailed(status)
     }
+    OneKeyLog.info("Keychain", "Item set successfully for key: \(params.key)")
   }
 
   // MARK: - Get Item
@@ -86,12 +90,15 @@ class KeychainModuleCore {
     if status == errSecSuccess {
       if let valueData = result as? Data,
          let value = String(data: valueData, encoding: .utf8) {
+        OneKeyLog.debug("Keychain", "Item found for key: \(params.key)")
         return GetItemResult(key: params.key, value: value)
       }
       return nil
     } else if status == errSecItemNotFound {
+      OneKeyLog.debug("Keychain", "Item not found for key: \(params.key)")
       return nil
     } else {
+      OneKeyLog.error("Keychain", "Failed to get item for key: \(params.key), OSStatus: \(status)")
       throw KeychainModuleError.operationFailed(status)
     }
   }
@@ -110,8 +117,10 @@ class KeychainModuleCore {
 
     // Both success and item not found are acceptable for delete
     guard status == errSecSuccess || status == errSecItemNotFound else {
+      OneKeyLog.error("Keychain", "Failed to remove item for key: \(params.key), OSStatus: \(status)")
       throw KeychainModuleError.operationFailed(status)
     }
+    OneKeyLog.info("Keychain", "Item removed for key: \(params.key)")
   }
 
   // MARK: - Check Item Existence
@@ -126,6 +135,7 @@ class KeychainModuleCore {
     ]
 
     let status = SecItemCopyMatching(query as CFDictionary, nil)
+    OneKeyLog.debug("Keychain", "Has item check for key: \(params.key), result: \(status == errSecSuccess)")
     return status == errSecSuccess
   }
 
@@ -169,6 +179,8 @@ class KeychainModuleCore {
     // Common error codes:
     // errSecMissingEntitlement (-34018): Missing iCloud Keychain entitlement
     // errSecNotAvailable (-25291): iCloud Keychain not available/signed out
-    return addStatus == errSecSuccess
+    let enabled = addStatus == errSecSuccess
+    OneKeyLog.info("Keychain", "iCloud sync check result: \(enabled)")
+    return enabled
   }
 }

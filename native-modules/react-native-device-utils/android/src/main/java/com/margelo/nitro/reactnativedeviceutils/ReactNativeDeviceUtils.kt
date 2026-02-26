@@ -6,7 +6,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.Build
-import android.util.Log
+import com.margelo.nitro.nativelogger.OneKeyLog
 import androidx.preference.PreferenceManager
 import androidx.core.content.ContextCompat
 import androidx.core.util.Consumer
@@ -237,10 +237,14 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     try {
       val context = NitroModules.applicationContext ?: return
       val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-      val style = prefs.getString(PREF_KEY_UI_STYLE, null) ?: return
+      val style = prefs.getString(PREF_KEY_UI_STYLE, null) ?: run {
+        OneKeyLog.debug("DeviceUtils", "No saved UI style found")
+        return
+      }
+      OneKeyLog.info("DeviceUtils", "Restored UI style: $style")
       applyUserInterfaceStyle(style)
     } catch (e: Exception) {
-      // Ignore restore errors
+      OneKeyLog.warn("DeviceUtils", "Failed to restore UI style: ${e.message}")
     }
   }
 
@@ -284,6 +288,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         saveFoldableStatus(true)
       }
       isDualScreenDeviceDetected = hasFolding
+      OneKeyLog.info("DeviceUtils", "Foldable detected: $hasFolding (${Build.MANUFACTURER} ${Build.MODEL})")
       return isDualScreenDeviceDetected!!
     }
     isDualScreenDeviceDetected = false
@@ -576,7 +581,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       // Check device model name to determine if it's a foldable device
       return isFoldableDeviceByName()
     } catch (e: Exception) {
-      // WindowManager library not available or device doesn't support foldables
+      OneKeyLog.warn("DeviceUtils", "Foldable detection failed: ${e.message}")
       return false
     }
   }
@@ -705,7 +710,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       try {
         listener.callback(isSpanning)
       } catch (e: Exception) {
-        Log.e("OneKey", "Error in spanning listener callback", e)
+        OneKeyLog.error("DeviceUtils", "Error in spanning listener callback: ${e.message}")
       }
     }
   }
@@ -754,7 +759,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
           layoutInfoConsumer!!
         )
       } catch (e: Exception) {
-        // Window tracking not supported on this device/API level, ignore
+        OneKeyLog.warn("DeviceUtils", "Window tracking setup failed: ${e.message}")
       }
     }
   }
@@ -787,6 +792,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     
     // Emit event if spanning state changed
     if (wasSpanning != this.isSpanning) {
+      OneKeyLog.info("DeviceUtils", "Spanning state changed: $wasSpanning -> ${this.isSpanning}")
       this.callSpanningChangedListeners(this.isSpanning)
     }
   }
@@ -799,6 +805,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       UserInterfaceStyle.DARK -> "dark"
       UserInterfaceStyle.UNSPECIFIED -> "unspecified"
     }
+    OneKeyLog.info("DeviceUtils", "Set UI style: $styleString")
     try {
       val context = NitroModules.applicationContext
       if (context != null) {
@@ -826,7 +833,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         val rootView = activity.window.decorView
         rootView.rootView.setBackgroundColor(Color.argb(alpha, red, green, blue))
       } catch (e: Exception) {
-        e.printStackTrace()
+        OneKeyLog.error("DeviceUtils", "Failed to change background color: ${e.message}")
       }
     }
   }

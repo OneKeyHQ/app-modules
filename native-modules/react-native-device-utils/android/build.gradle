@@ -133,4 +133,6 @@ dependencies {
   implementation "androidx.appcompat:appcompat:1.7.1"
   // AndroidX Preference for PreferenceManager
   implementation "androidx.preference:preference-ktx:1.2.1"
+
+  compileOnly project(":react-native-native-logger")
 }

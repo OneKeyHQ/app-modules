@@ -1,6 +1,7 @@
 import Foundation
 import CloudKit
 import NitroModules
+import ReactNativeNativeLogger
 
 class CloudKitModule: HybridCloudKitModuleSpec {
 
@@ -13,6 +14,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   public func isAvailable() throws -> Promise<Bool> {
     return Promise.async {
       let status = try await self.container.accountStatus()
+      OneKeyLog.info("CloudKit", "Account status: \(status.rawValue), available: \(status == .available)")
       return status == .available
     }
   }
@@ -28,6 +30,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
           let userRecordID = try await self.container.userRecordID()
           userId = userRecordID.recordName
         } catch {
+          OneKeyLog.warn("CloudKit", "Failed to get user record ID: \(error)")
           userId = nil
         }
       }
@@ -51,6 +54,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
   public func saveRecord(params: SaveRecordParams) throws -> Promise<SaveRecordResult> {
     return Promise.async {
+      OneKeyLog.info("CloudKit", "Saving record: \(params.recordID), type: \(params.recordType)")
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
       let recordToSave: CKRecord
       do {
@@ -65,6 +69,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
       recordToSave[CloudKitConstants.recordDataField] = params.data as CKRecordValue
       recordToSave[CloudKitConstants.recordMetaField] = params.meta as CKRecordValue
       let savedRecord = try await self.database.save(recordToSave)
+      OneKeyLog.info("CloudKit", "Record saved: \(savedRecord.recordID.recordName)")
       let createdAt = Int64((savedRecord.creationDate?.timeIntervalSince1970 ?? 0) * 1000)
       let result = SaveRecordResult(
         recordID: savedRecord.recordID.recordName,
@@ -82,6 +87,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
       do {
         let record = try await self.database.record(for: ckRecordID)
+        OneKeyLog.debug("CloudKit", "Record fetched: \(params.recordID)")
 
         let data = record[CloudKitConstants.recordDataField] as? String ?? ""
         let meta = record[CloudKitConstants.recordMetaField] as? String ?? ""
@@ -97,6 +103,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
           modifiedAt: Double(modifiedAt)
         ))
       } catch let error as CKError where error.code == .unknownItem {
+        OneKeyLog.debug("CloudKit", "Record not found: \(params.recordID)")
         return Variant_NullType_RecordResult.first(NullType.null)
       }
     }
@@ -110,9 +117,10 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
       do {
         _ = try await self.database.deleteRecord(withID: ckRecordID)
+        OneKeyLog.info("CloudKit", "Record deleted: \(params.recordID)")
         return Void()
       } catch let error as CKError where error.code == .unknownItem {
-        // Item not found is considered success for delete
+        OneKeyLog.debug("CloudKit", "Record not found for delete (OK): \(params.recordID)")
         return Void()
       }
     }
@@ -172,9 +180,11 @@ class CloudKitModule: HybridCloudKitModuleSpec {
           case .success:
             // Sort by modification time descending to return latest first
             let sorted = results.sorted { $0.modifiedAt > $1.modifiedAt }
+            OneKeyLog.info("CloudKit", "Query returned \(sorted.count) records for type: \(params.recordType)")
             let queryResult = QueryRecordsResult(records: sorted)
             continuation.resume(returning: queryResult)
           case .failure(let error):
+            OneKeyLog.error("CloudKit", "Query failed for type \(params.recordType): \(error)")
             continuation.resume(throwing: error)
           }
         }

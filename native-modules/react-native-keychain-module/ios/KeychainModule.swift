@@ -1,4 +1,5 @@
 import NitroModules
+import ReactNativeNativeLogger
 
 class KeychainModule: HybridKeychainModuleSpec {
     
@@ -10,6 +11,7 @@ class KeychainModule: HybridKeychainModuleSpec {
             try moduleCore.setItem(params: typedParams)
             return Promise.resolved(withResult: Void())
           } catch let error as KeychainModuleError {
+            OneKeyLog.error("Keychain", "setItem failed: \(error)")
             switch error {
             case .encodingFailed:
               return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to encode value"]))
@@ -19,6 +21,7 @@ class KeychainModule: HybridKeychainModuleSpec {
               return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item"]))
             }
           } catch {
+            OneKeyLog.error("Keychain", "setItem unexpected error: \(error)")
             return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item", NSUnderlyingErrorKey: error]))
           }
     }
@@ -32,6 +35,7 @@ class KeychainModule: HybridKeychainModuleSpec {
                 return Promise.resolved(withResult: Variant_NullType_GetItemResult.first(NullType.null))
             }
         } catch let error as KeychainModuleError {
+            OneKeyLog.error("Keychain", "getItem failed: \(error)")
             switch error {
                 case .operationFailed(let status):
                     return Promise.rejected(withError: NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [NSLocalizedDescriptionKey: "Failed to get keychain item: \(status)"]))
@@ -39,6 +43,7 @@ class KeychainModule: HybridKeychainModuleSpec {
                     return Promise.rejected(withError: NSError(domain: "keychain_get_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to get keychain item", NSUnderlyingErrorKey: error as NSError]))
             }
         } catch {
+            OneKeyLog.error("Keychain", "getItem unexpected error: \(error)")
             return Promise.rejected(withError: NSError(domain: "keychain_get_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to get keychain item", NSUnderlyingErrorKey: error]))
         }
     }
@@ -49,6 +54,7 @@ class KeychainModule: HybridKeychainModuleSpec {
             try moduleCore.removeItem(params: typedParams)
             return Promise.resolved(withResult: Void())
         } catch let error as KeychainModuleError {
+        OneKeyLog.error("Keychain", "removeItem failed: \(error)")
         switch error {
             case .operationFailed(let status):
                 return Promise.rejected(withError: NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [NSLocalizedDescriptionKey: "Failed to remove keychain item: \(status)"]))
@@ -56,6 +62,7 @@ class KeychainModule: HybridKeychainModuleSpec {
                 return Promise.rejected(withError: NSError(domain: "keychain_remove_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to remove keychain item", NSUnderlyingErrorKey: error as NSError]))
             }
         } catch {
+            OneKeyLog.error("Keychain", "removeItem unexpected error: \(error)")
             return Promise.rejected(withError: NSError(domain: "keychain_remove_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to remove keychain item", NSUnderlyingErrorKey: error]))
         }
     }
