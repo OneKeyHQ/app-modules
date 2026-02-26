@@ -8,8 +8,9 @@ import { LiteCardTestPage } from './pages/LiteCardTestPage';
 import { GetRandomValuesTestPage } from './pages/GetRandomValuesTestPage';
 import { DeviceUtilsTestPage } from './pages/DeviceUtilsTestPage';
 import { SkeletonTestPage } from './pages/SkeletonTestPage';
+import { NativeLoggerTestPage } from './pages/NativeLoggerTestPage';
 
-export type RouteScreen = 
+export type RouteScreen =
   | 'home'
   | 'background-thread'
   | 'biometric-auth'
@@ -18,6 +19,7 @@ export type RouteScreen =
   | 'lite-card'
   | 'get-random-values'
   | 'device-utils'
+  | 'native-logger'
   | 'skeleton';
 
 interface RouterProps {
@@ -59,6 +61,11 @@ const modules = [
     id: 'get-random-values' as RouteScreen,
     name: 'Get Random Values',
     description: 'Generate cryptographically secure random values',
+  },
+  {
+    id: 'native-logger' as RouteScreen,
+    name: 'Native Logger',
+    description: 'File-based logging with log directory viewer',
   },
   {
     id: 'skeleton' as RouteScreen,
@@ -147,6 +154,8 @@ export function Router({ safeAreaInsets }: RouterProps) {
         return <LiteCardTestPage {...commonProps} />;
       case 'get-random-values':
         return <GetRandomValuesTestPage {...commonProps} />;
+      case 'native-logger':
+        return <NativeLoggerTestPage {...commonProps} />;
       case 'skeleton':
         return <SkeletonTestPage {...commonProps} />;
       default:
