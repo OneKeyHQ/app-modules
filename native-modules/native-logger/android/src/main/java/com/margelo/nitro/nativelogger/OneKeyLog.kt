@@ -21,65 +21,79 @@ object OneKeyLog {
     private const val MAX_HISTORY = 6
     private const val TOTAL_SIZE_CAP = MAX_FILE_SIZE * MAX_HISTORY
 
-    val logsDirectory: String by lazy {
-        val context = NitroModules.applicationContext
-        if (context == null) {
-            android.util.Log.e("OneKeyLog", "NitroModules.applicationContext is null, file logging disabled")
-            ""
-        } else {
-            "${context.cacheDir.absolutePath}/logs"
-        }
-    }
+    // Cached value; empty string means context was not yet available (will retry)
+    @Volatile
+    private var cachedLogsDir: String? = null
 
-    // Nullable: null when applicationContext is unavailable (file logging disabled)
-    private val logger: Logger? by lazy {
-        val dir = logsDirectory
-        if (dir.isEmpty()) {
-            android.util.Log.w("OneKeyLog", "File logging disabled: no valid logs directory")
-            return@lazy null
-        }
-
-        File(dir).mkdirs()
-
-        val loggerContext = LoggerFactory.getILoggerFactory() as LoggerContext
-
-        val appender = RollingFileAppender<ILoggingEvent>().apply {
-            context = loggerContext
-            name = APPENDER_NAME
-            file = "$dir/$LOG_PREFIX-latest.log"
+    val logsDirectory: String
+        get() {
+            cachedLogsDir?.let { return it }
+            val context = NitroModules.applicationContext
+            if (context == null) {
+                android.util.Log.w("OneKeyLog", "applicationContext not yet available")
+                return ""  // Don't cache — allow retry on next access
+            }
+            val dir = "${context.cacheDir.absolutePath}/logs"
+            cachedLogsDir = dir
+            return dir
         }
 
-        SizeAndTimeBasedRollingPolicy<ILoggingEvent>().apply {
-            context = loggerContext
-            fileNamePattern = "$dir/$LOG_PREFIX-%d{yyyy-MM-dd}.%i.log"
-            setMaxFileSize(FileSize(MAX_FILE_SIZE))
-            maxHistory = MAX_HISTORY
-            setTotalSizeCap(FileSize(TOTAL_SIZE_CAP))
-            setParent(appender)
-            start()
-            appender.rollingPolicy = this
+    // Cached logger; null means not yet initialized (will retry).
+    // Once successfully initialized, stays non-null.
+    @Volatile
+    private var cachedLogger: Logger? = null
+
+    private val logger: Logger?
+        get() {
+            cachedLogger?.let { return it }
+            return synchronized(this) {
+                cachedLogger?.let { return@synchronized it }
+                val dir = logsDirectory
+                if (dir.isEmpty()) return@synchronized null
+
+                File(dir).mkdirs()
+
+                val loggerContext = LoggerFactory.getILoggerFactory() as LoggerContext
+
+                val appender = RollingFileAppender<ILoggingEvent>().apply {
+                    context = loggerContext
+                    name = APPENDER_NAME
+                    file = "$dir/$LOG_PREFIX-latest.log"
+                }
+
+                SizeAndTimeBasedRollingPolicy<ILoggingEvent>().apply {
+                    context = loggerContext
+                    fileNamePattern = "$dir/$LOG_PREFIX-%d{yyyy-MM-dd}.%i.log"
+                    setMaxFileSize(FileSize(MAX_FILE_SIZE))
+                    maxHistory = MAX_HISTORY
+                    setTotalSizeCap(FileSize(TOTAL_SIZE_CAP))
+                    setParent(appender)
+                    start()
+                    appender.rollingPolicy = this
+                }
+
+                PatternLayoutEncoder().apply {
+                    context = loggerContext
+                    charset = Charset.forName("UTF-8")
+                    pattern = "%msg%n"
+                    start()
+                    appender.encoder = this
+                }
+
+                appender.start()
+
+                // Attach appender to a dedicated named logger only (not ROOT)
+                // to avoid capturing third-party library SLF4J output
+                val onekeyLogger = loggerContext.getLogger("OneKey")
+                onekeyLogger.level = Level.DEBUG
+                onekeyLogger.detachAppender(APPENDER_NAME)
+                onekeyLogger.addAppender(appender)
+                onekeyLogger.isAdditive = false  // Do not propagate to ROOT logger
+
+                cachedLogger = onekeyLogger
+                onekeyLogger
+            }
         }
-
-        PatternLayoutEncoder().apply {
-            context = loggerContext
-            charset = Charset.forName("UTF-8")
-            pattern = "%msg%n"
-            start()
-            appender.encoder = this
-        }
-
-        appender.start()
-
-        // Attach appender to a dedicated named logger only (not ROOT)
-        // to avoid capturing third-party library SLF4J output
-        val onekeyLogger = loggerContext.getLogger("OneKey")
-        onekeyLogger.level = Level.DEBUG
-        onekeyLogger.detachAppender(APPENDER_NAME)
-        onekeyLogger.addAppender(appender)
-        onekeyLogger.isAdditive = false  // Do not propagate to ROOT logger
-
-        onekeyLogger
-    }
 
     private fun truncate(message: String): String {
         return if (message.length > MAX_MESSAGE_LENGTH) {

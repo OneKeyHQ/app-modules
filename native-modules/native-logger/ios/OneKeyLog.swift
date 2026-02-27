@@ -45,6 +45,9 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
                     index += 1
                 }
             }
+            if !moved {
+                NSLog("[OneKeyLog] Failed to archive log file after 1000 attempts: %@", logFilePath)
+            }
         }
         super.didArchiveLogFile(atPath: logFilePath, wasRolled: wasRolled)
     }
@@ -116,9 +119,9 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
             .cachesDirectory, .userDomainMask, true
         ).first else {
             // Fallback to tmp directory if Caches is somehow unavailable
-            return NSTemporaryDirectory() + "logs"
+            return (NSTemporaryDirectory() as NSString).appendingPathComponent("logs")
         }
-        return cacheDir + "/logs"
+        return (cacheDir as NSString).appendingPathComponent("logs")
     }
 }
 

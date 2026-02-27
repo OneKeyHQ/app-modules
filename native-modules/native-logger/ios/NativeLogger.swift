@@ -41,7 +41,8 @@ class NativeLogger: HybridNativeLoggerSpec {
                 OneKeyLog.warn("NativeLogger", "Failed to list log directory for deletion: \(error.localizedDescription)")
                 return
             }
-            for file in files where file.hasSuffix(".log") {
+            // Skip the active log file to avoid breaking CocoaLumberjack's open file handle
+            for file in files where file.hasSuffix(".log") && file != "app-latest.log" {
                 do {
                     try fm.removeItem(atPath: "\(dir)/\(file)")
                 } catch {

@@ -38,7 +38,8 @@ class NativeLogger : HybridNativeLoggerSpec() {
                 OneKeyLog.warn("NativeLogger", "Failed to list log directory for deletion: $dir")
                 return@async
             }
-            files.forEach { file ->
+            // Skip the active log file to avoid breaking logback's open file handle
+            files.filter { it.name != "app-latest.log" }.forEach { file ->
                 if (!file.delete()) {
                     OneKeyLog.warn("NativeLogger", "Failed to delete log file: ${file.name}")
                 }
