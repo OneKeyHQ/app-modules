@@ -16,6 +16,7 @@ import java.nio.charset.Charset
 object OneKeyLog {
     private const val APPENDER_NAME = "OneKeyFileAppender"
     private const val LOG_PREFIX = "app"
+    private const val MAX_MESSAGE_LENGTH = 4096
     private const val MAX_FILE_SIZE = 20L * 1024 * 1024       // 20 MB
     private const val MAX_HISTORY = 6
     private const val TOTAL_SIZE_CAP = MAX_FILE_SIZE * MAX_HISTORY
@@ -23,15 +24,21 @@ object OneKeyLog {
     val logsDirectory: String by lazy {
         val context = NitroModules.applicationContext
         if (context == null) {
-            android.util.Log.e("OneKeyLog", "NitroModules.applicationContext is null, falling back to /tmp/logs")
-            "/tmp/logs"
+            android.util.Log.e("OneKeyLog", "NitroModules.applicationContext is null, file logging disabled")
+            ""
         } else {
             "${context.cacheDir.absolutePath}/logs"
         }
     }
 
-    private val logger: Logger by lazy {
+    // Nullable: null when applicationContext is unavailable (file logging disabled)
+    private val logger: Logger? by lazy {
         val dir = logsDirectory
+        if (dir.isEmpty()) {
+            android.util.Log.w("OneKeyLog", "File logging disabled: no valid logs directory")
+            return@lazy null
+        }
+
         File(dir).mkdirs()
 
         val loggerContext = LoggerFactory.getILoggerFactory() as LoggerContext
@@ -63,26 +70,34 @@ object OneKeyLog {
 
         appender.start()
 
-        val root = LoggerFactory.getLogger(
-            Logger.ROOT_LOGGER_NAME
-        ) as ch.qos.logback.classic.Logger
-        root.level = Level.DEBUG
-        // Only detach our own appender if re-initializing, then add it fresh
-        root.detachAppender(APPENDER_NAME)
-        root.addAppender(appender)
+        // Attach appender to a dedicated named logger only (not ROOT)
+        // to avoid capturing third-party library SLF4J output
+        val onekeyLogger = loggerContext.getLogger("OneKey")
+        onekeyLogger.level = Level.DEBUG
+        onekeyLogger.detachAppender(APPENDER_NAME)
+        onekeyLogger.addAppender(appender)
+        onekeyLogger.isAdditive = false  // Do not propagate to ROOT logger
 
-        LoggerFactory.getLogger("OneKey")
+        onekeyLogger
+    }
+
+    private fun truncate(message: String): String {
+        return if (message.length > MAX_MESSAGE_LENGTH) {
+            message.substring(0, MAX_MESSAGE_LENGTH) + "...(truncated)"
+        } else {
+            message
+        }
     }
 
     @JvmStatic
-    fun debug(tag: String, message: String) = logger.debug("[$tag] $message")
+    fun debug(tag: String, message: String) { logger?.debug(truncate("[$tag] $message")) }
 
     @JvmStatic
-    fun info(tag: String, message: String) = logger.info("[$tag] $message")
+    fun info(tag: String, message: String) { logger?.info(truncate("[$tag] $message")) }
 
     @JvmStatic
-    fun warn(tag: String, message: String) = logger.warn("[$tag] $message")
+    fun warn(tag: String, message: String) { logger?.warn(truncate("[$tag] $message")) }
 
     @JvmStatic
-    fun error(tag: String, message: String) = logger.error("[$tag] $message")
+    fun error(tag: String, message: String) { logger?.error(truncate("[$tag] $message")) }
 }

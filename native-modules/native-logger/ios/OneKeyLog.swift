@@ -28,13 +28,23 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
             let dateStr = Self.dateFormatter.string(from: Date())
             let fm = FileManager.default
 
-            // Find next available index for this date
+            // Find next available index, retry on move failure to handle TOCTOU race
             var index = 0
-            while fm.fileExists(atPath: "\(dir)/\(Self.logPrefix)-\(dateStr).\(index).log") {
-                index += 1
+            var moved = false
+            while !moved && index < 1000 {
+                let archivedPath = "\(dir)/\(Self.logPrefix)-\(dateStr).\(index).log"
+                if fm.fileExists(atPath: archivedPath) {
+                    index += 1
+                    continue
+                }
+                do {
+                    try fm.moveItem(atPath: logFilePath, toPath: archivedPath)
+                    moved = true
+                } catch {
+                    // Another thread may have created this file; try next index
+                    index += 1
+                }
             }
-            let archivedPath = "\(dir)/\(Self.logPrefix)-\(dateStr).\(index).log"
-            try? fm.moveItem(atPath: logFilePath, toPath: archivedPath)
         }
         super.didArchiveLogFile(atPath: logFilePath, wasRolled: wasRolled)
     }
@@ -42,12 +52,20 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
 
 @objc public class OneKeyLog: NSObject {
 
+    private static let maxMessageLength = 4096
+
     private static let configured: Bool = {
         let logsDir = logsDirectory
 
         // Ensure logs directory exists (matches Android's File(dir).mkdirs())
         try? FileManager.default.createDirectory(
             atPath: logsDir, withIntermediateDirectories: true
+        )
+
+        // Apply file protection: files inaccessible while device is locked before first unlock
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+            ofItemAtPath: logsDir
         )
 
         let fileManager = OneKeyLogFileManager(logsDirectory: logsDir)
@@ -65,24 +83,31 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         return true
     }()
 
+    private static func truncate(_ message: String) -> String {
+        if message.count > maxMessageLength {
+            return String(message.prefix(maxMessageLength)) + "...(truncated)"
+        }
+        return message
+    }
+
     @objc public static func debug(_ tag: String, _ message: String) {
         _ = configured
-        DDLogDebug("[\(tag)] \(message)")
+        DDLogDebug(truncate("[\(tag)] \(message)"))
     }
 
     @objc public static func info(_ tag: String, _ message: String) {
         _ = configured
-        DDLogInfo("[\(tag)] \(message)")
+        DDLogInfo(truncate("[\(tag)] \(message)"))
     }
 
     @objc public static func warn(_ tag: String, _ message: String) {
         _ = configured
-        DDLogWarn("[\(tag)] \(message)")
+        DDLogWarn(truncate("[\(tag)] \(message)"))
     }
 
     @objc public static func error(_ tag: String, _ message: String) {
         _ = configured
-        DDLogError("[\(tag)] \(message)")
+        DDLogError(truncate("[\(tag)] \(message)"))
     }
 
     /// Returns the logs directory path (for getLogFilePaths / deleteLogFiles)

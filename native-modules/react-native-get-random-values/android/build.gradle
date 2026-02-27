@@ -126,5 +126,5 @@ dependencies {
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
   implementation project(":react-native-nitro-modules")
 
-  compileOnly project(":react-native-native-logger")
+  implementation project(":react-native-native-logger")
 }
