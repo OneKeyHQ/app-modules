@@ -1,4 +1,5 @@
 import NitroModules
+import ReactNativeNativeLogger
 
 class {{modulePascalCase}}: Hybrid{{modulePascalCase}}Spec {
     

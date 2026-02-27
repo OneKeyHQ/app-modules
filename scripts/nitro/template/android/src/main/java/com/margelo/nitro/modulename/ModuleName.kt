@@ -2,6 +2,7 @@ package com.margelo.nitro.{{cxxNamespace}}
 
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.Promise
+import com.margelo.nitro.nativelogger.OneKeyLog
 
 @DoNotStrip
 class {{modulePascalCase}} : Hybrid{{modulePascalCase}}Spec() {
