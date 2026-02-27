@@ -86,9 +86,12 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
 
     /// Returns the logs directory path (for getLogFilePaths / deleteLogFiles)
     static var logsDirectory: String {
-        let cacheDir = NSSearchPathForDirectoriesInDomains(
+        guard let cacheDir = NSSearchPathForDirectoriesInDomains(
             .cachesDirectory, .userDomainMask, true
-        ).first!
+        ).first else {
+            // Fallback to tmp directory if Caches is somehow unavailable
+            return NSTemporaryDirectory() + "logs"
+        }
         return cacheDir + "/logs"
     }
 }

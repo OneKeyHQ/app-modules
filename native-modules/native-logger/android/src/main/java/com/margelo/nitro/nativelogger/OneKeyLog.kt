@@ -22,8 +22,12 @@ object OneKeyLog {
 
     val logsDirectory: String by lazy {
         val context = NitroModules.applicationContext
-            ?: throw IllegalStateException("NitroModules.applicationContext is null")
-        "${context.cacheDir.absolutePath}/logs"
+        if (context == null) {
+            android.util.Log.e("OneKeyLog", "NitroModules.applicationContext is null, falling back to /tmp/logs")
+            "/tmp/logs"
+        } else {
+            "${context.cacheDir.absolutePath}/logs"
+        }
     }
 
     private val logger: Logger by lazy {
@@ -63,8 +67,8 @@ object OneKeyLog {
             Logger.ROOT_LOGGER_NAME
         ) as ch.qos.logback.classic.Logger
         root.level = Level.DEBUG
-        // Remove all existing appenders (including default console) to avoid duplicate logcat output
-        root.detachAndStopAllAppenders()
+        // Only detach our own appender if re-initializing, then add it fresh
+        root.detachAppender(APPENDER_NAME)
         root.addAppender(appender)
 
         LoggerFactory.getLogger("OneKey")

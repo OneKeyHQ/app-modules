@@ -56,32 +56,32 @@ export function NativeLoggerTestPage({ onGoHome, safeAreaInsets }: NativeLoggerT
     }
   };
 
-  const writeAllLevels = () => {
+  const writeAllLevels = async () => {
     NativeLogger.write(LogLevel.DEBUG, '[Test] Debug message');
     NativeLogger.write(LogLevel.INFO, '[Test] Info message');
     NativeLogger.write(LogLevel.WARN, '[Test] Warning message');
     NativeLogger.write(LogLevel.ERROR, '[Test] Error message');
     setResult('Wrote 4 log messages (debug, info, warn, error)');
-    setTimeout(() => refreshLogFiles(), 500);
+    await refreshLogFiles();
   };
 
-  const writeCustomMessage = () => {
+  const writeCustomMessage = async () => {
     if (!customMessage.trim()) {
       Alert.alert('Error', 'Please enter a message');
       return;
     }
     NativeLogger.write(LogLevel.INFO, customMessage);
     setResult(`Wrote: ${customMessage}`);
-    setTimeout(() => refreshLogFiles(), 500);
+    await refreshLogFiles();
   };
 
-  const writeBatchLogs = () => {
+  const writeBatchLogs = async () => {
     const count = 50;
     for (let i = 0; i < count; i++) {
       NativeLogger.write(LogLevel.INFO, `[Batch] Message ${i + 1}/${count}`);
     }
     setResult(`Wrote ${count} batch log messages`);
-    setTimeout(() => refreshLogFiles(), 500);
+    await refreshLogFiles();
   };
 
   const getLogFilePaths = () => {

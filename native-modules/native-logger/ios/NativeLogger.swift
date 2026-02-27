@@ -16,7 +16,11 @@ class NativeLogger: HybridNativeLoggerSpec {
         return Promise.async {
             let dir = OneKeyLog.logsDirectory
             let fm = FileManager.default
-            guard let files = try? fm.contentsOfDirectory(atPath: dir) else {
+            let files: [String]
+            do {
+                files = try fm.contentsOfDirectory(atPath: dir)
+            } catch {
+                OneKeyLog.warn("NativeLogger", "Failed to list log directory: \(error.localizedDescription)")
                 return []
             }
             return files
@@ -30,9 +34,19 @@ class NativeLogger: HybridNativeLoggerSpec {
         return Promise.async {
             let dir = OneKeyLog.logsDirectory
             let fm = FileManager.default
-            guard let files = try? fm.contentsOfDirectory(atPath: dir) else { return }
+            let files: [String]
+            do {
+                files = try fm.contentsOfDirectory(atPath: dir)
+            } catch {
+                OneKeyLog.warn("NativeLogger", "Failed to list log directory for deletion: \(error.localizedDescription)")
+                return
+            }
             for file in files where file.hasSuffix(".log") {
-                try? fm.removeItem(atPath: "\(dir)/\(file)")
+                do {
+                    try fm.removeItem(atPath: "\(dir)/\(file)")
+                } catch {
+                    OneKeyLog.warn("NativeLogger", "Failed to delete log file \(file): \(error.localizedDescription)")
+                }
             }
         }
     }
