@@ -51,8 +51,9 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         )
 
         let fileManager = OneKeyLogFileManager(logsDirectory: logsDir)
-        // DDFileLogger counts active file (app-latest.log) in this limit,
-        // so set to 7 to keep 6 archived files (matching Android MAX_HISTORY=6)
+        // NOTE: DDLogFileManagerDefault.maximumNumberOfLogFiles counts ALL log files
+        // including the current active file (app-latest.log).
+        // Set to 7 = 1 active + 6 archived, matching Android MAX_HISTORY=6.
         fileManager.maximumNumberOfLogFiles = 7
 
         let logger = DDFileLogger(logFileManager: fileManager)

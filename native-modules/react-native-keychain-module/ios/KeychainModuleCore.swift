@@ -30,17 +30,11 @@ enum KeychainModuleError: Error {
 
 class KeychainModuleCore {
 
-  /// Redact key name for logging: show only last 4 characters
-  private func redactKey(_ key: String) -> String {
-    if key.count <= 4 { return "***" }
-    return "***\(key.suffix(4))"
-  }
-
   // MARK: - Set Item
 
   func setItem(params: SetItemParams) throws {
     guard let valueData = params.value.data(using: .utf8) else {
-      OneKeyLog.error("Keychain", "Failed to encode value for key: \(redactKey(params.key))")
+      OneKeyLog.error("Keychain", "setItem: failed to encode value")
       throw KeychainModuleError.encodingFailed
     }
 
@@ -72,10 +66,10 @@ class KeychainModuleCore {
     let status = SecItemAdd(query as CFDictionary, nil)
 
     guard status == errSecSuccess else {
-      OneKeyLog.error("Keychain", "Failed to set item for key: \(redactKey(params.key)), OSStatus: \(status)")
+      OneKeyLog.error("Keychain", "setItem: failed, OSStatus: \(status)")
       throw KeychainModuleError.operationFailed(status)
     }
-    OneKeyLog.info("Keychain", "Item set successfully for key: \(redactKey(params.key))")
+    OneKeyLog.info("Keychain", "setItem: success")
   }
 
   // MARK: - Get Item
@@ -96,15 +90,15 @@ class KeychainModuleCore {
     if status == errSecSuccess {
       if let valueData = result as? Data,
          let value = String(data: valueData, encoding: .utf8) {
-        OneKeyLog.debug("Keychain", "Item found for key: \(redactKey(params.key))")
+        OneKeyLog.debug("Keychain", "getItem: found")
         return GetItemResult(key: params.key, value: value)
       }
       return nil
     } else if status == errSecItemNotFound {
-      OneKeyLog.debug("Keychain", "Item not found for key: \(redactKey(params.key))")
+      OneKeyLog.debug("Keychain", "getItem: not found")
       return nil
     } else {
-      OneKeyLog.error("Keychain", "Failed to get item for key: \(redactKey(params.key)), OSStatus: \(status)")
+      OneKeyLog.error("Keychain", "getItem: failed, OSStatus: \(status)")
       throw KeychainModuleError.operationFailed(status)
     }
   }
@@ -123,10 +117,10 @@ class KeychainModuleCore {
 
     // Both success and item not found are acceptable for delete
     guard status == errSecSuccess || status == errSecItemNotFound else {
-      OneKeyLog.error("Keychain", "Failed to remove item for key: \(redactKey(params.key)), OSStatus: \(status)")
+      OneKeyLog.error("Keychain", "removeItem: failed, OSStatus: \(status)")
       throw KeychainModuleError.operationFailed(status)
     }
-    OneKeyLog.info("Keychain", "Item removed for key: \(redactKey(params.key))")
+    OneKeyLog.info("Keychain", "removeItem: success")
   }
 
   // MARK: - Check Item Existence
@@ -141,7 +135,7 @@ class KeychainModuleCore {
     ]
 
     let status = SecItemCopyMatching(query as CFDictionary, nil)
-    OneKeyLog.debug("Keychain", "Has item check for key: \(redactKey(params.key)), result: \(status == errSecSuccess)")
+    OneKeyLog.debug("Keychain", "hasItem: \(status == errSecSuccess)")
     return status == errSecSuccess
   }
 
