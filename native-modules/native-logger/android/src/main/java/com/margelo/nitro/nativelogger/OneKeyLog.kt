@@ -28,6 +28,18 @@ object OneKeyLog {
     @Volatile
     private var cachedLogsDir: String? = null
 
+    /**
+     * Initialise OneKeyLog with an Android Context before NitroModules is ready.
+     * Call this early in Application.onCreate() so that logs emitted before
+     * React Native loads are not silently dropped.
+     */
+    @JvmStatic
+    fun init(context: android.content.Context) {
+        if (cachedLogsDir == null) {
+            cachedLogsDir = "${context.cacheDir.absolutePath}/logs"
+        }
+    }
+
     val logsDirectory: String
         get() {
             cachedLogsDir?.let { return it }
