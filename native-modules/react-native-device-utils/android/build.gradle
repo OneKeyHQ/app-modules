@@ -134,5 +134,5 @@ dependencies {
   // AndroidX Preference for PreferenceManager
   implementation "androidx.preference:preference-ktx:1.2.1"
 
-  implementation project(":react-native-native-logger")
+  implementation project(":onekeyfe_react-native-native-logger")
 }
