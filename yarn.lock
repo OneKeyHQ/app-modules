@@ -2751,6 +2751,7 @@ __metadata:
     "@onekeyfe/react-native-get-random-values": "workspace:*"
     "@onekeyfe/react-native-keychain-module": "workspace:*"
     "@onekeyfe/react-native-lite-card": "workspace:*"
+    "@onekeyfe/react-native-native-logger": "workspace:*"
     "@onekeyfe/react-native-skeleton": "workspace:*"
     "@react-native-community/cli": "npm:20.0.0"
     "@react-native-community/cli-platform-android": "npm:20.0.0"
@@ -3059,7 +3060,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-native-logger@workspace:native-modules/native-logger":
+"@onekeyfe/react-native-native-logger@workspace:*, @onekeyfe/react-native-native-logger@workspace:native-modules/native-logger":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-native-logger@workspace:native-modules/native-logger"
   dependencies:

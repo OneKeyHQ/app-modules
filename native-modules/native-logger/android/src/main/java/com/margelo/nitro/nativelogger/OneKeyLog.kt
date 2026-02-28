@@ -12,6 +12,9 @@ import ch.qos.logback.core.util.FileSize
 import com.margelo.nitro.NitroModules
 import java.io.File
 import java.nio.charset.Charset
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 object OneKeyLog {
     private const val APPENDER_NAME = "OneKeyFileAppender"
@@ -96,6 +99,8 @@ object OneKeyLog {
             }
         }
 
+    private val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.US)
+
     private fun truncate(message: String): String {
         return if (message.length > MAX_MESSAGE_LENGTH) {
             message.substring(0, MAX_MESSAGE_LENGTH) + "...(truncated)"
@@ -104,15 +109,23 @@ object OneKeyLog {
         }
     }
 
-    @JvmStatic
-    fun debug(tag: String, message: String) { logger?.debug(truncate("[$tag] $message")) }
+    private fun formatMessage(tag: String, level: String, message: String): String {
+        if (tag == "JS") {
+            return truncate(message)
+        }
+        val time = timeFormatter.format(Date())
+        return truncate("$time | $level : [$tag] $message")
+    }
 
     @JvmStatic
-    fun info(tag: String, message: String) { logger?.info(truncate("[$tag] $message")) }
+    fun debug(tag: String, message: String) { logger?.debug(formatMessage(tag, "DEBUG", message)) }
 
     @JvmStatic
-    fun warn(tag: String, message: String) { logger?.warn(truncate("[$tag] $message")) }
+    fun info(tag: String, message: String) { logger?.info(formatMessage(tag, "INFO", message)) }
 
     @JvmStatic
-    fun error(tag: String, message: String) { logger?.error(truncate("[$tag] $message")) }
+    fun warn(tag: String, message: String) { logger?.warn(formatMessage(tag, "WARN", message)) }
+
+    @JvmStatic
+    fun error(tag: String, message: String) { logger?.error(formatMessage(tag, "ERROR", message)) }
 }

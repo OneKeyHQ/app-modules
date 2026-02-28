@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, Alert, StyleSheet } from 'react-native';
+import { View, Text, Alert, StyleSheet, Clipboard, TouchableOpacity } from 'react-native';
 import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase';
 import { NativeLogger } from '@onekeyfe/react-native-native-logger';
 
@@ -122,7 +122,20 @@ export function NativeLoggerTestPage({ onGoHome, safeAreaInsets }: NativeLoggerT
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Log Directory</Text>
         <View style={styles.dirBox}>
-          <Text style={styles.dirLabel}>Path:</Text>
+          <View style={styles.dirHeader}>
+            <Text style={styles.dirLabel}>Path:</Text>
+            {logDir ? (
+              <TouchableOpacity
+                onPress={() => {
+                  Clipboard.setString(logDir);
+                  Alert.alert('Copied', 'Log directory path copied to clipboard');
+                }}
+                style={styles.copyButton}
+              >
+                <Text style={styles.copyButtonText}>Copy</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
           <Text style={styles.dirPath} selectable>
             {logDir || 'Loading...'}
           </Text>
@@ -228,11 +241,27 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
   },
+  dirHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   dirLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 4,
+  },
+  copyButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  copyButtonText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
   },
   dirPath: {
     fontSize: 12,

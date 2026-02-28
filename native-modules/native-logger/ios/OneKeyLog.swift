@@ -86,6 +86,13 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         return true
     }()
 
+    private static let timeFormatter: DateFormatter = {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm:ss"
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        return fmt
+    }()
+
     private static func truncate(_ message: String) -> String {
         if message.count > maxMessageLength {
             return String(message.prefix(maxMessageLength)) + "...(truncated)"
@@ -93,24 +100,32 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         return message
     }
 
+    private static func formatMessage(_ tag: String, _ level: String, _ message: String) -> String {
+        if tag == "JS" {
+            return truncate(message)
+        }
+        let time = timeFormatter.string(from: Date())
+        return truncate("\(time) | \(level) : [\(tag)] \(message)")
+    }
+
     @objc public static func debug(_ tag: String, _ message: String) {
         _ = configured
-        DDLogDebug(truncate("[\(tag)] \(message)"))
+        DDLogDebug(formatMessage(tag, "DEBUG", message))
     }
 
     @objc public static func info(_ tag: String, _ message: String) {
         _ = configured
-        DDLogInfo(truncate("[\(tag)] \(message)"))
+        DDLogInfo(formatMessage(tag, "INFO", message))
     }
 
     @objc public static func warn(_ tag: String, _ message: String) {
         _ = configured
-        DDLogWarn(truncate("[\(tag)] \(message)"))
+        DDLogWarn(formatMessage(tag, "WARN", message))
     }
 
     @objc public static func error(_ tag: String, _ message: String) {
         _ = configured
-        DDLogError(truncate("[\(tag)] \(message)"))
+        DDLogError(formatMessage(tag, "ERROR", message))
     }
 
     /// Returns the logs directory path (for getLogFilePaths / deleteLogFiles)
