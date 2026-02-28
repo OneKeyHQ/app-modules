@@ -30,7 +30,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
           let userRecordID = try await self.container.userRecordID()
           userId = userRecordID.recordName
         } catch {
-          OneKeyLog.warn("CloudKit", "Failed to get user record ID: \(error)")
+          OneKeyLog.warn("CloudKit", "Failed to get user record ID: \(error.localizedDescription)")
           userId = nil
         }
       }
@@ -184,7 +184,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
             let queryResult = QueryRecordsResult(records: sorted)
             continuation.resume(returning: queryResult)
           case .failure(let error):
-            OneKeyLog.error("CloudKit", "Query failed for type \(params.recordType): \(error)")
+            OneKeyLog.error("CloudKit", "Query failed for type \(params.recordType): \(error.localizedDescription)")
             continuation.resume(throwing: error)
           }
         }

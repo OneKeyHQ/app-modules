@@ -18,9 +18,8 @@ class ReactNativeCheckBiometricAuthChanged: HybridReactNativeCheckBiometricAuthC
           OneKeyLog.info("Biometric", "No previous biometric state stored, saving initial state")
       }
       defaults.set(domainState, forKey: "biometricAuthState")
-      defaults.synchronize()
       if changed {
-          OneKeyLog.warn("Biometric", "Biometric auth change detected")
+          OneKeyLog.info("Biometric", "Biometric auth change detected")
       }
       return changed
     }

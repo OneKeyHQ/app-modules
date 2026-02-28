@@ -216,7 +216,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     )
   }
 
-  private var windowLayoutInfo: WindowLayoutInfo? = null
+  @Volatile private var windowLayoutInfo: WindowLayoutInfo? = null
   private var isSpanning = false
   private var layoutInfoConsumer: Consumer<WindowLayoutInfo>? = null
   private var windowInfoTracker: WindowInfoTracker? = null
