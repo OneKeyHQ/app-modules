@@ -86,6 +86,7 @@ object OneKeyLog {
                 // to avoid capturing third-party library SLF4J output
                 val onekeyLogger = loggerContext.getLogger("OneKey")
                 onekeyLogger.level = Level.DEBUG
+                onekeyLogger.getAppender(APPENDER_NAME)?.stop()
                 onekeyLogger.detachAppender(APPENDER_NAME)
                 onekeyLogger.addAppender(appender)
                 onekeyLogger.isAdditive = false  // Do not propagate to ROOT logger

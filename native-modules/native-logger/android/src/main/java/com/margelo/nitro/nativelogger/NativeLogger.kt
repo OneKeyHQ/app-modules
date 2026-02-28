@@ -20,6 +20,7 @@ class NativeLogger : HybridNativeLoggerSpec() {
     override fun getLogFilePaths(): Promise<Array<String>> {
         return Promise.async {
             val dir = OneKeyLog.logsDirectory
+            if (dir.isEmpty()) return@async arrayOf<String>()
             val files = File(dir).listFiles { _, name -> name.endsWith(".log") }
             if (files == null) {
                 OneKeyLog.warn("NativeLogger", "Failed to list log directory: $dir")
@@ -33,6 +34,7 @@ class NativeLogger : HybridNativeLoggerSpec() {
     override fun deleteLogFiles(): Promise<Unit> {
         return Promise.async {
             val dir = OneKeyLog.logsDirectory
+            if (dir.isEmpty()) return@async
             val files = File(dir).listFiles { _, name -> name.endsWith(".log") }
             if (files == null) {
                 OneKeyLog.warn("NativeLogger", "Failed to list log directory for deletion: $dir")
