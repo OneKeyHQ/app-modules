@@ -14,6 +14,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    OneKeyLogBridge.info("App", message: "Application started")
+
     DispatchQueue.global(qos: .userInitiated).async {
         // BackgroundRunnerModule.startBackgroundRunner()
     }
