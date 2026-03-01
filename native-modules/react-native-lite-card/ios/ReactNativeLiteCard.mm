@@ -3,6 +3,7 @@
 #import "NFCConfig.h"
 #import "OKNFCManager.h"
 #import "OKLiteV1.h"
+#import "LCLogger.h"
 
 typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
   NFCLiteExceptionsInitChannel = 1000,// 初始化异常
@@ -34,6 +35,7 @@ typedef NS_ENUM(NSInteger, NFCLiteExceptions) {
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
 {
+    [LCLogger info:@"ReactNativeLiteCard module initialized"];
     return std::make_shared<facebook::react::NativeReactNativeLiteCardSpecJSI>(params);
 }
 
