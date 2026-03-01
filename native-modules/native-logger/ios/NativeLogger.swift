@@ -1,4 +1,5 @@
 import NitroModules
+import CocoaLumberjack
 
 class NativeLogger: HybridNativeLoggerSpec {
 
@@ -14,6 +15,8 @@ class NativeLogger: HybridNativeLoggerSpec {
 
     func getLogFilePaths() throws -> Promise<[String]> {
         return Promise.async {
+            // Flush buffered log data so the active file reflects all written logs
+            DDLog.flushLog()
             let dir = OneKeyLog.logsDirectory
             let fm = FileManager.default
             let files: [String]

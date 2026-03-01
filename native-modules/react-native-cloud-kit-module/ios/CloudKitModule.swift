@@ -54,7 +54,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
   public func saveRecord(params: SaveRecordParams) throws -> Promise<SaveRecordResult> {
     return Promise.async {
-      OneKeyLog.info("CloudKit", "Saving record: \(params.recordID), type: \(params.recordType)")
+      OneKeyLog.debug("CloudKit", "Saving record: \(params.recordID), type: \(params.recordType)")
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
       let recordToSave: CKRecord
       do {
@@ -69,7 +69,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
       recordToSave[CloudKitConstants.recordDataField] = params.data as CKRecordValue
       recordToSave[CloudKitConstants.recordMetaField] = params.meta as CKRecordValue
       let savedRecord = try await self.database.save(recordToSave)
-      OneKeyLog.info("CloudKit", "Record saved: \(savedRecord.recordID.recordName)")
+      OneKeyLog.debug("CloudKit", "Record saved: \(savedRecord.recordID.recordName)")
       let createdAt = Int64((savedRecord.creationDate?.timeIntervalSince1970 ?? 0) * 1000)
       let result = SaveRecordResult(
         recordID: savedRecord.recordID.recordName,
@@ -117,7 +117,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
 
       do {
         _ = try await self.database.deleteRecord(withID: ckRecordID)
-        OneKeyLog.info("CloudKit", "Record deleted: \(params.recordID)")
+        OneKeyLog.debug("CloudKit", "Record deleted: \(params.recordID)")
         return Void()
       } catch let error as CKError where error.code == .unknownItem {
         OneKeyLog.debug("CloudKit", "Record not found for delete (OK): \(params.recordID)")

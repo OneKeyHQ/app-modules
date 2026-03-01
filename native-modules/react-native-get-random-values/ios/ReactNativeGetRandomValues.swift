@@ -13,6 +13,6 @@ class ReactNativeGetRandomValues: HybridReactNativeGetRandomValuesSpec {
             OneKeyLog.error("RandomValues", "SecRandomCopyBytes failed with status: \(result)")
             throw NSError(domain: "ReactNativeGetRandomValues", code: Int(result), userInfo: nil)
         }
-        return data.base64EncodedString(options: .lineLength64Characters)
+        return data.base64EncodedString(options: [])
     }
 }

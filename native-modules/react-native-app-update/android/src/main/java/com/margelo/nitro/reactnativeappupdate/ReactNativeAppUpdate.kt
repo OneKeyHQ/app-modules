@@ -426,6 +426,18 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     override fun clearCache(): Promise<Void> {
         return Promise.async {
             isDownloading.set(false)
+            // Clean up downloaded APK and ASC files from cache directory
+            val context = NitroModules.applicationContext
+            if (context != null) {
+                val cacheDir = context.cacheDir
+                cacheDir.listFiles()?.filter { file ->
+                    file.name.endsWith(".apk") || file.name.endsWith(".asc")
+                }?.forEach { file ->
+                    if (file.delete()) {
+                        OneKeyLog.debug("AppUpdate", "Cleared cached file: ${file.name}")
+                    }
+                }
+            }
         }
     }
 }

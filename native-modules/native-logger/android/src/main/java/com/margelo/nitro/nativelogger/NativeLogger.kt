@@ -19,6 +19,8 @@ class NativeLogger : HybridNativeLoggerSpec() {
 
     override fun getLogFilePaths(): Promise<Array<String>> {
         return Promise.async {
+            // Flush buffered log data so the active file reflects all written logs
+            OneKeyLog.flush()
             val dir = OneKeyLog.logsDirectory
             if (dir.isEmpty()) return@async arrayOf<String>()
             val files = File(dir).listFiles { _, name -> name.endsWith(".log") }

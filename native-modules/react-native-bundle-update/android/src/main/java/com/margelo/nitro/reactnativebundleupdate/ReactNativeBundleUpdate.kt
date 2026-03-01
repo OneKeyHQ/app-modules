@@ -375,15 +375,7 @@ object BundleUpdateStoreAndroid {
     }
 
     fun readFileContent(file: File): String {
-        val sb = StringBuilder()
-        BufferedInputStream(FileInputStream(file)).use { bis ->
-            val buffer = ByteArray(1024)
-            var bytesRead: Int
-            while (bis.read(buffer).also { bytesRead = it } != -1) {
-                sb.append(String(buffer, 0, bytesRead, Charsets.UTF_8))
-            }
-        }
-        return sb.toString()
+        return file.readText(Charsets.UTF_8)
     }
 
     fun getFallbackUpdateBundleDataFile(context: Context): File {
@@ -429,8 +421,15 @@ object BundleUpdateStoreAndroid {
             arr.put(obj)
         }
         try {
-            FileOutputStream(file).use { fos ->
+            // Atomic write: write to temp file then rename to avoid partial writes
+            val tmpFile = File(file.parent, "${file.name}.tmp")
+            FileOutputStream(tmpFile).use { fos ->
                 fos.write(arr.toString().toByteArray(Charsets.UTF_8))
+                fos.fd.sync()
+            }
+            if (!tmpFile.renameTo(file)) {
+                tmpFile.delete()
+                throw Exception("Failed to rename temp file to ${file.name}")
             }
         } catch (e: Exception) {
             OneKeyLog.error("BundleUpdate", "writeFallbackUpdateBundleDataFile: ${e.message}")

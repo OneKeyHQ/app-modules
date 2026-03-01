@@ -475,15 +475,18 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     private var listeners: [BundleListener] = []
     private var nextListenerId: Double = 1
     private var isDownloading = false
-    private var downloadTask: URLSessionDownloadTask?
     private var urlSession: URLSession?
     private var downloadFilePath: String?
     private var downloadSha256: String?
 
-    init() {
+    private func createURLSession() -> URLSession {
         let config = URLSessionConfiguration.default
         config.tlsMinimumSupportedProtocolVersion = .TLSv12
-        urlSession = URLSession(configuration: config)
+        return URLSession(configuration: config)
+    }
+
+    init() {
+        urlSession = createURLSession()
     }
 
     private func sendEvent(type: String, progress: Int = 0, message: String = "") {
@@ -790,8 +793,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             if FileManager.default.fileExists(atPath: downloadDir) {
                 try FileManager.default.removeItem(atPath: downloadDir)
             }
-            self?.downloadTask?.cancel()
-            self?.downloadTask = nil
+            // Cancel all in-flight downloads by invalidating the session
+            self?.urlSession?.invalidateAndCancel()
+            self?.urlSession = self?.createURLSession()
             self?.isDownloading = false
         }
     }

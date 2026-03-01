@@ -146,6 +146,26 @@ object OneKeyLog {
         }
     }
 
+    /**
+     * Flush all buffered log data to disk.
+     * Call before reading log files to ensure the active file is up-to-date.
+     */
+    @JvmStatic
+    fun flush() {
+        val loggerContext = LoggerFactory.getILoggerFactory()
+        if (loggerContext is LoggerContext) {
+            val appender = loggerContext.getLogger("OneKey")
+                ?.getAppender(APPENDER_NAME)
+            if (appender is RollingFileAppender<*>) {
+                try {
+                    appender.outputStream?.flush()
+                } catch (_: Exception) {
+                    // Ignore flush errors
+                }
+            }
+        }
+    }
+
     @JvmStatic
     fun debug(tag: String, message: String) { log(tag, "DEBUG", message, android.util.Log.DEBUG) }
 
