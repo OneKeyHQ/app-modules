@@ -470,6 +470,8 @@ private struct BundleListener {
 
 class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
+    // Serial queue protects mutable state (listeners, nextListenerId, isDownloading)
+    private let stateQueue = DispatchQueue(label: "so.onekey.bundleupdate.state")
     private var listeners: [BundleListener] = []
     private var nextListenerId: Double = 1
     private var isDownloading = false
@@ -486,7 +488,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     private func sendEvent(type: String, progress: Int = 0, message: String = "") {
         let event = BundleDownloadEvent(type: type, progress: Double(progress), message: message)
-        for listener in listeners {
+        let currentListeners = stateQueue.sync { self.listeners }
+        for listener in currentListeners {
             do {
                 listener.callback(event)
             } catch {
@@ -496,25 +499,33 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     func addDownloadListener(callback: @escaping (BundleDownloadEvent) -> Void) throws -> Double {
-        let id = nextListenerId
-        nextListenerId += 1
-        listeners.append(BundleListener(id: id, callback: callback))
-        return id
+        return stateQueue.sync {
+            let id = nextListenerId
+            nextListenerId += 1
+            listeners.append(BundleListener(id: id, callback: callback))
+            return id
+        }
     }
 
     func removeDownloadListener(id: Double) throws {
-        listeners.removeAll { $0.id == id }
+        stateQueue.sync {
+            listeners.removeAll { $0.id == id }
+        }
     }
 
     func downloadBundle(params: BundleDownloadParams) throws -> Promise<BundleDownloadResult> {
         return Promise.async { [weak self] in
             guard let self = self else { throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Module deallocated"]) }
 
-            guard !self.isDownloading else {
+            let alreadyDownloading = self.stateQueue.sync { () -> Bool in
+                if self.isDownloading { return true }
+                self.isDownloading = true
+                return false
+            }
+            guard !alreadyDownloading else {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Already downloading"])
             }
-            self.isDownloading = true
-            defer { self.isDownloading = false }
+            defer { self.stateQueue.sync { self.isDownloading = false } }
 
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion

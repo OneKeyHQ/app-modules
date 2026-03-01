@@ -162,6 +162,10 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
     func exitApp() throws {
         OneKeyLog.info("DeviceUtils", "exitApp called")
-        exit(0)
+        // Avoid exit(0) which Apple explicitly prohibits and causes App Store rejection.
+        // Use suspend selector as a graceful alternative.
+        DispatchQueue.main.async {
+            UIApplication.shared.perform(NSSelectorFromString("suspend"))
+        }
     }
 }

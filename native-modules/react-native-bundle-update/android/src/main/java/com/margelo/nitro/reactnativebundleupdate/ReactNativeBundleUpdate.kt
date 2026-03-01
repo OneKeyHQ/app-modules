@@ -13,6 +13,7 @@ import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.security.MessageDigest
@@ -527,6 +528,11 @@ object BundleUpdateStoreAndroid {
                         while (zipIn.read(buffer).also { length = it } > 0) {
                             fos.write(buffer, 0, length)
                         }
+                    }
+                    // Validate no symlink was created (zip slip via symlink attack)
+                    if (Files.isSymbolicLink(outFile.toPath())) {
+                        outFile.delete()
+                        throw java.io.IOException("Symlink detected in zip entry: ${entry.name}")
                     }
                 } else {
                     outFile.mkdirs()

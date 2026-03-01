@@ -5,12 +5,19 @@ private let ddLogLevel: DDLogLevel = .debug
 private class OneKeyLogFileManager: DDLogFileManagerDefault {
     private static let logPrefix = "app"
     private static let latestFileName = "\(logPrefix)-latest.log"
-    private static let dateFormatter: DateFormatter = {
+    private static let dateFormatterLock = NSLock()
+    private static let _dateFormatter: DateFormatter = {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         fmt.locale = Locale(identifier: "en_US_POSIX")
         return fmt
     }()
+
+    private static func formattedDate(_ date: Date) -> String {
+        dateFormatterLock.lock()
+        defer { dateFormatterLock.unlock() }
+        return _dateFormatter.string(from: date)
+    }
 
     /// Always write to app-latest.log (matches Android behavior)
     override var newLogFileName: String {
@@ -25,7 +32,7 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
     override func didArchiveLogFile(atPath logFilePath: String, wasRolled: Bool) {
         if wasRolled {
             let dir = (logFilePath as NSString).deletingLastPathComponent
-            let dateStr = Self.dateFormatter.string(from: Date())
+            let dateStr = Self.formattedDate(Date())
             let fm = FileManager.default
 
             // Find next available index, retry on move failure to handle TOCTOU race
@@ -86,12 +93,20 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         return true
     }()
 
-    private static let timeFormatter: DateFormatter = {
+    // Use a lock to protect DateFormatter (not thread-safe per Apple docs)
+    private static let timeFormatterLock = NSLock()
+    private static let _timeFormatter: DateFormatter = {
         let fmt = DateFormatter()
         fmt.dateFormat = "HH:mm:ss"
         fmt.locale = Locale(identifier: "en_US_POSIX")
         return fmt
     }()
+
+    private static func formattedTime(_ date: Date) -> String {
+        timeFormatterLock.lock()
+        defer { timeFormatterLock.unlock() }
+        return _timeFormatter.string(from: date)
+    }
 
     private static func truncate(_ message: String) -> String {
         if message.count > maxMessageLength {
@@ -104,7 +119,7 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         if tag == "JS" {
             return truncate(message)
         }
-        let time = timeFormatter.string(from: Date())
+        let time = formattedTime(Date())
         return truncate("\(time) | \(level) : [\(tag)] \(message)")
     }
 

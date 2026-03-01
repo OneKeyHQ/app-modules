@@ -12,8 +12,8 @@ import ch.qos.logback.core.util.FileSize
 import com.margelo.nitro.NitroModules
 import java.io.File
 import java.nio.charset.Charset
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 object OneKeyLog {
@@ -111,7 +111,8 @@ object OneKeyLog {
             }
         }
 
-    private val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.US)
+    // DateTimeFormatter is immutable and thread-safe (unlike SimpleDateFormat)
+    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
 
     private fun truncate(message: String): String {
         return if (message.length > MAX_MESSAGE_LENGTH) {
@@ -125,19 +126,35 @@ object OneKeyLog {
         if (tag == "JS") {
             return truncate(message)
         }
-        val time = timeFormatter.format(Date())
+        val time = LocalTime.now().format(timeFormatter)
         return truncate("$time | $level : [$tag] $message")
     }
 
-    @JvmStatic
-    fun debug(tag: String, message: String) { logger?.debug(formatMessage(tag, "DEBUG", message)) }
+    private fun log(tag: String, level: String, message: String, androidLogLevel: Int) {
+        val formatted = formatMessage(tag, level, message)
+        val l = logger
+        if (l != null) {
+            when (androidLogLevel) {
+                android.util.Log.DEBUG -> l.debug(formatted)
+                android.util.Log.INFO -> l.info(formatted)
+                android.util.Log.WARN -> l.warn(formatted)
+                android.util.Log.ERROR -> l.error(formatted)
+            }
+        } else {
+            // Fallback to android.util.Log when file logger is unavailable
+            android.util.Log.println(androidLogLevel, "OneKey/$tag", message)
+        }
+    }
 
     @JvmStatic
-    fun info(tag: String, message: String) { logger?.info(formatMessage(tag, "INFO", message)) }
+    fun debug(tag: String, message: String) { log(tag, "DEBUG", message, android.util.Log.DEBUG) }
 
     @JvmStatic
-    fun warn(tag: String, message: String) { logger?.warn(formatMessage(tag, "WARN", message)) }
+    fun info(tag: String, message: String) { log(tag, "INFO", message, android.util.Log.INFO) }
 
     @JvmStatic
-    fun error(tag: String, message: String) { logger?.error(formatMessage(tag, "ERROR", message)) }
+    fun warn(tag: String, message: String) { log(tag, "WARN", message, android.util.Log.WARN) }
+
+    @JvmStatic
+    fun error(tag: String, message: String) { log(tag, "ERROR", message, android.util.Log.ERROR) }
 }

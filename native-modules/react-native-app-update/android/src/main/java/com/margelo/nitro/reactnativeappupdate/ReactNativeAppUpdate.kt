@@ -130,7 +130,24 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     }
 
     private fun buildFile(path: String): File {
-        return File(path.replace("file:///", "/"))
+        val file = File(path.replace("file:///", "/"))
+        // Validate the resolved path is within the app's cache or files directory
+        val context = NitroModules.applicationContext
+        if (context != null) {
+            val canonicalPath = file.canonicalPath
+            val cacheDir = context.cacheDir.canonicalPath
+            val filesDir = context.filesDir.canonicalPath
+            val externalCacheDir = context.externalCacheDir?.canonicalPath
+            val externalFilesDir = context.getExternalFilesDir(null)?.canonicalPath
+            val allowed = canonicalPath.startsWith(cacheDir) ||
+                    canonicalPath.startsWith(filesDir) ||
+                    (externalCacheDir != null && canonicalPath.startsWith(externalCacheDir)) ||
+                    (externalFilesDir != null && canonicalPath.startsWith(externalFilesDir))
+            if (!allowed) {
+                throw SecurityException("Path traversal blocked: $canonicalPath is outside allowed directories")
+            }
+        }
+        return file
     }
 
     private fun bytesToHex(bytes: ByteArray): String {
