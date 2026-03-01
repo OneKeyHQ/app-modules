@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativewebviewchecker"],
+  "ios": {
+    "iosModuleName": "ReactNativeWebviewChecker"
+  },
+  "android": {
+    "androidNamespace": ["reactnativewebviewchecker"],
+    "androidCxxLibName": "reactnativewebviewchecker"
+  },
+  "autolinking": {
+    "ReactNativeWebviewChecker": {
+      "swift": "ReactNativeWebviewChecker",
+      "kotlin": "ReactNativeWebviewChecker"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

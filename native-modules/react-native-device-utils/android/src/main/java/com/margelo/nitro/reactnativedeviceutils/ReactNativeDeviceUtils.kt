@@ -39,6 +39,14 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     private const val PREF_KEY_FOLDABLE = "1k_fold"
     private const val PREF_KEY_UI_STYLE = "1k_user_interface_style"
 
+    @JvmStatic
+    var staticStartupTime: Long? = null
+
+    @JvmStatic
+    fun saveStartupTimeStatic(startupTime: Long) {
+      staticStartupTime = startupTime
+    }
+
     // Xiaomi foldable models
     private val XIAOMI_FOLDABLE_MODELS = setOf(
       "M2011J18C",   // Mi MIX FOLD
@@ -848,5 +856,42 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
 
     override fun onHostDestroy() {
         stopObservingLayoutChanges()
+    }
+
+    // MARK: - LaunchOptionsManager
+
+    override fun getLaunchOptions(): Promise<LaunchOptions> {
+        return Promise.async {
+            OneKeyLog.debug("DeviceUtils", "getLaunchOptions")
+            LaunchOptions(launchType = "normal")
+        }
+    }
+
+    override fun clearLaunchOptions(): Promise<Boolean> {
+        return Promise.async {
+            OneKeyLog.info("DeviceUtils", "clearLaunchOptions")
+            true
+        }
+    }
+
+    override fun getDeviceToken(): Promise<String> {
+        return Promise.async { "" }
+    }
+
+    override fun registerDeviceToken(): Promise<Boolean> {
+        return Promise.async { true }
+    }
+
+    override fun getStartupTime(): Promise<Double> {
+        return Promise.async {
+            (staticStartupTime ?: 0L).toDouble()
+        }
+    }
+
+    // MARK: - ExitModule
+
+    override fun exitApp() {
+        OneKeyLog.info("DeviceUtils", "exitApp")
+        android.os.Process.killProcess(android.os.Process.myPid())
     }
 }

@@ -2,6 +2,19 @@ import NitroModules
 import UIKit
 import ReactNativeNativeLogger
 
+public class LaunchOptionsStore {
+    public static let shared = LaunchOptionsStore()
+
+    public var launchOptions: [AnyHashable: Any]?
+    public var deviceToken: Data?
+    public var startupTime: TimeInterval = 0
+
+    public func getDeviceTokenString() -> String {
+        guard let token = deviceToken else { return "" }
+        return token.map { String(format: "%02.2hhx", $0) }.joined()
+    }
+}
+
 class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
     private static let userInterfaceStyleKey = "1k_user_interface_style"
@@ -94,5 +107,61 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
                 rootViewController.view.backgroundColor = color
             }
         }
+    }
+
+    // MARK: - LaunchOptionsManager
+
+    func getLaunchOptions() throws -> Promise<LaunchOptions> {
+        return Promise.async {
+            let store = LaunchOptionsStore.shared
+            guard let opts = store.launchOptions else {
+                OneKeyLog.debug("DeviceUtils", "getLaunchOptions: no launch options")
+                return LaunchOptions(launchType: "normal")
+            }
+
+            if opts[UIApplication.LaunchOptionsKey.remoteNotification] != nil {
+                return LaunchOptions(launchType: "remoteNotification")
+            }
+
+            if opts[UIApplication.LaunchOptionsKey.localNotification] != nil {
+                return LaunchOptions(launchType: "localNotification")
+            }
+
+            return LaunchOptions(launchType: "normal")
+        }
+    }
+
+    func clearLaunchOptions() throws -> Promise<Bool> {
+        return Promise.async {
+            LaunchOptionsStore.shared.launchOptions = nil
+            OneKeyLog.info("DeviceUtils", "Cleared launch options")
+            return true
+        }
+    }
+
+    func getDeviceToken() throws -> Promise<String> {
+        return Promise.async {
+            return LaunchOptionsStore.shared.getDeviceTokenString()
+        }
+    }
+
+    func registerDeviceToken() throws -> Promise<Bool> {
+        return Promise.async {
+            OneKeyLog.info("DeviceUtils", "registerDeviceToken")
+            return true
+        }
+    }
+
+    func getStartupTime() throws -> Promise<Double> {
+        return Promise.async {
+            return LaunchOptionsStore.shared.startupTime * 1000.0
+        }
+    }
+
+    // MARK: - ExitModule
+
+    func exitApp() throws {
+        OneKeyLog.info("DeviceUtils", "exitApp called")
+        exit(0)
     }
 }

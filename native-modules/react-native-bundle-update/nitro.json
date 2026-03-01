@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativebundleupdate"],
+  "ios": {
+    "iosModuleName": "ReactNativeBundleUpdate"
+  },
+  "android": {
+    "androidNamespace": ["reactnativebundleupdate"],
+    "androidCxxLibName": "reactnativebundleupdate"
+  },
+  "autolinking": {
+    "ReactNativeBundleUpdate": {
+      "swift": "ReactNativeBundleUpdate",
+      "kotlin": "ReactNativeBundleUpdate"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

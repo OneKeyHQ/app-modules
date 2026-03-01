@@ -1,0 +1,785 @@
+import NitroModules
+import ReactNativeNativeLogger
+import Foundation
+import CommonCrypto
+
+// Public static store for AppDelegate access (called before JS starts)
+public class BundleUpdateStore {
+    private static let bundlePrefsKey = "currentBundleVersion"
+    private static let nativeVersionKey = "nativeVersion"
+
+    public static func documentDirectory() -> String {
+        NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0]
+    }
+
+    public static func downloadBundleDir() -> String {
+        let dir = (documentDirectory() as NSString).appendingPathComponent("onekey-bundle-download")
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: dir) {
+            try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+
+    public static func bundleDir() -> String {
+        let dir = (documentDirectory() as NSString).appendingPathComponent("onekey-bundle")
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: dir) {
+            try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+
+    public static func getCurrentNativeVersion() -> String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+    }
+
+    public static func currentBundleVersion() -> String? {
+        UserDefaults.standard.string(forKey: bundlePrefsKey)
+    }
+
+    public static func setCurrentBundleVersion(_ version: String) {
+        UserDefaults.standard.set(version, forKey: bundlePrefsKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    public static func currentBundleDir() -> String? {
+        guard let folderName = currentBundleVersion() else { return nil }
+        return (bundleDir() as NSString).appendingPathComponent(folderName)
+    }
+
+    public static func getWebEmbedPath() -> String {
+        guard let dir = currentBundleDir() else { return "" }
+        return (dir as NSString).appendingPathComponent("web-embed")
+    }
+
+    public static func calculateSHA256(_ filePath: String) -> String? {
+        guard let fileHandle = FileHandle(forReadingAtPath: filePath) else { return nil }
+        defer { fileHandle.closeFile() }
+
+        var context = CC_SHA256_CTX()
+        CC_SHA256_Init(&context)
+        while autoreleasepool(invoking: {
+            let data = fileHandle.readData(ofLength: 8192)
+            if data.count > 0 {
+                data.withUnsafeBytes { CC_SHA256_Update(&context, $0.baseAddress, CC_LONG(data.count)) }
+                return true
+            }
+            return false
+        }) {}
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        CC_SHA256_Final(&hash, &context)
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
+
+    public static func getNativeVersion() -> String? {
+        UserDefaults.standard.string(forKey: nativeVersionKey)
+    }
+
+    public static func setNativeVersion(_ version: String) {
+        UserDefaults.standard.set(version, forKey: nativeVersionKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    public static func getMetadataFilePath(_ currentBundleVersion: String) -> String? {
+        let path = (bundleDir() as NSString)
+            .appendingPathComponent(currentBundleVersion)
+        let metadataPath = (path as NSString).appendingPathComponent("metadata.json")
+        guard FileManager.default.fileExists(atPath: metadataPath) else { return nil }
+        return metadataPath
+    }
+
+    public static func getMetadataFileContent(_ currentBundleVersion: String) -> [String: String]? {
+        guard let path = getMetadataFilePath(currentBundleVersion),
+              let data = FileManager.default.contents(atPath: path),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return nil }
+        return json
+    }
+
+    public static func readMetadataFileSha256(_ signature: String) -> String? {
+        // Extract sha256 from GPG signed content
+        // TODO: Integrate Gopenpgp for full GPG verification
+        guard !signature.isEmpty else { return nil }
+
+        // Try to parse the signature content as JSON to get sha256
+        // The signature contains a JSON object with a "sha256" field
+        guard let data = signature.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let sha256 = json["sha256"] as? String else {
+            // If direct JSON parse fails, try extracting from GPG signed content
+            OneKeyLog.debug("BundleUpdate", "Could not parse signature as JSON directly")
+            return nil
+        }
+        return sha256
+    }
+
+    public static func validateMetadataFileSha256(_ currentBundleVersion: String, signature: String) -> Bool {
+        guard let metadataFilePath = getMetadataFilePath(currentBundleVersion) else {
+            OneKeyLog.debug("BundleUpdate", "metadataFilePath is null")
+            return false
+        }
+        guard let extractedSha256 = readMetadataFileSha256(signature), !extractedSha256.isEmpty else {
+            return false
+        }
+        guard let calculatedSha256 = calculateSHA256(metadataFilePath) else { return false }
+        return calculatedSha256 == extractedSha256
+    }
+
+    public static func validateExtractedPathSafety(_ destination: String) -> Bool {
+        let fm = FileManager.default
+        let resolvedDestination = (destination as NSString).resolvingSymlinksInPath
+
+        guard let enumerator = fm.enumerator(atPath: destination) else { return true }
+        while let file = enumerator.nextObject() as? String {
+            let fullPath = (destination as NSString).appendingPathComponent(file)
+            if let attrs = enumerator.fileAttributes,
+               attrs[.type] as? FileAttributeType == .typeSymbolicLink {
+                OneKeyLog.error("BundleUpdate", "Symlink detected in extracted bundle: \(file)")
+                return false
+            }
+            let resolvedPath = (fullPath as NSString).resolvingSymlinksInPath
+            if !resolvedPath.hasPrefix(resolvedDestination) {
+                OneKeyLog.error("BundleUpdate", "Path traversal detected in extracted bundle: \(file)")
+                return false
+            }
+        }
+        return true
+    }
+
+    public static func validateAllFilesInDir(_ dirPath: String, metadata: [String: String], appVersion: String, bundleVersion: String) -> Bool {
+        let parentBundleDir = bundleDir()
+        let folderName = "\(appVersion)-\(bundleVersion)"
+        let jsBundleDir = (parentBundleDir as NSString).appendingPathComponent(folderName) + "/"
+        let fm = FileManager.default
+
+        guard let enumerator = fm.enumerator(atPath: dirPath) else { return false }
+        while let file = enumerator.nextObject() as? String {
+            if file.contains("metadata.json") || file.contains(".DS_Store") { continue }
+            let fullPath = (dirPath as NSString).appendingPathComponent(file)
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue { continue }
+
+            let relativePath = fullPath.replacingOccurrences(of: jsBundleDir, with: "")
+            guard let expectedSHA256 = metadata[relativePath] else {
+                OneKeyLog.error("BundleUpdate", "[bundle-verify] File on disk not found in metadata: \(relativePath)")
+                return false
+            }
+            guard let actualSHA256 = calculateSHA256(fullPath) else {
+                OneKeyLog.error("BundleUpdate", "[bundle-verify] Failed to calculate SHA256 for file: \(relativePath)")
+                return false
+            }
+            if expectedSHA256 != actualSHA256 {
+                OneKeyLog.error("BundleUpdate", "[bundle-verify] SHA256 mismatch for \(relativePath)")
+                return false
+            }
+        }
+
+        // Verify completeness
+        for key in metadata.keys {
+            let expectedFilePath = jsBundleDir + key
+            if !fm.fileExists(atPath: expectedFilePath) {
+                OneKeyLog.error("BundleUpdate", "[bundle-verify] File listed in metadata but missing on disk: \(key)")
+                return false
+            }
+        }
+        return true
+    }
+
+    public static func currentBundleMainJSBundle() -> String? {
+        guard let currentBundleVer = currentBundleVersion() else { return nil }
+
+        let currentAppVersion = getCurrentNativeVersion()
+        guard let prevNativeVersion = getNativeVersion() else { return nil }
+
+        if currentAppVersion != prevNativeVersion {
+            OneKeyLog.debug("BundleUpdate", "currentAppVersion is not equal to prevNativeVersion \(currentAppVersion) \(prevNativeVersion)")
+            let ud = UserDefaults.standard
+            if let cbv = ud.string(forKey: "currentBundleVersion") {
+                ud.removeObject(forKey: cbv)
+                ud.removeObject(forKey: "currentBundleVersion")
+            }
+            ud.synchronize()
+            return nil
+        }
+
+        guard let folderName = currentBundleDir(),
+              FileManager.default.fileExists(atPath: folderName) else {
+            OneKeyLog.debug("BundleUpdate", "currentBundleDir does not exist")
+            return nil
+        }
+
+        let signature = UserDefaults.standard.string(forKey: currentBundleVer) ?? ""
+        if !validateMetadataFileSha256(currentBundleVer, signature: signature) {
+            return nil
+        }
+
+        guard let metadata = getMetadataFileContent(currentBundleVer) else { return nil }
+
+        if let dashRange = currentBundleVer.range(of: "-", options: .backwards) {
+            let appVer = String(currentBundleVer[currentBundleVer.startIndex..<dashRange.lowerBound])
+            let bundleVer = String(currentBundleVer[dashRange.upperBound...])
+            if !validateAllFilesInDir(folderName, metadata: metadata, appVersion: appVer, bundleVersion: bundleVer) {
+                OneKeyLog.debug("BundleUpdate", "validateAllFilesInDir failed on startup")
+                return nil
+            }
+        }
+
+        let mainJSBundle = (folderName as NSString).appendingPathComponent("main.jsbundle.hbc")
+        guard FileManager.default.fileExists(atPath: mainJSBundle) else {
+            OneKeyLog.debug("BundleUpdate", "mainJSBundleFile does not exist")
+            return nil
+        }
+        return mainJSBundle
+    }
+
+    // Fallback data management
+    static func getFallbackUpdateBundleDataPath() -> String {
+        let path = (bundleDir() as NSString).appendingPathComponent("fallbackUpdateBundleData.json")
+        if !FileManager.default.fileExists(atPath: path) {
+            FileManager.default.createFile(atPath: path, contents: nil)
+        }
+        return path
+    }
+
+    static func readFallbackUpdateBundleDataFile() -> [[String: String]] {
+        let path = getFallbackUpdateBundleDataPath()
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8),
+              !content.isEmpty,
+              let data = content.data(using: .utf8),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: String]] else {
+            return []
+        }
+        return arr
+    }
+
+    static func writeFallbackUpdateBundleDataFile(_ data: [[String: String]]) {
+        let path = getFallbackUpdateBundleDataPath()
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: data),
+              let jsonString = String(data: jsonData, encoding: .utf8) else { return }
+        try? jsonString.write(toFile: path, atomically: true, encoding: .utf8)
+    }
+
+    public static func clearUpdateBundleData() {
+        let bDir = bundleDir()
+        let fm = FileManager.default
+        if fm.fileExists(atPath: bDir) {
+            try? fm.removeItem(atPath: bDir)
+        }
+        let ud = UserDefaults.standard
+        if let cbv = currentBundleVersion() {
+            ud.removeObject(forKey: cbv)
+        }
+        ud.removeObject(forKey: bundlePrefsKey)
+        ud.synchronize()
+    }
+}
+
+// Listener support
+private struct BundleListener {
+    let id: Double
+    let callback: (BundleDownloadEvent) -> Void
+}
+
+class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
+
+    private var listeners: [BundleListener] = []
+    private var nextListenerId: Double = 1
+    private var isDownloading = false
+    private var downloadTask: URLSessionDownloadTask?
+    private var urlSession: URLSession?
+    private var downloadFilePath: String?
+    private var downloadSha256: String?
+
+    init() {
+        let config = URLSessionConfiguration.default
+        urlSession = URLSession(configuration: config)
+    }
+
+    private func sendEvent(type: String, progress: Int = 0, message: String = "") {
+        let event = BundleDownloadEvent(type: type, progress: Double(progress), message: message)
+        for listener in listeners {
+            do {
+                listener.callback(event)
+            } catch {
+                OneKeyLog.error("BundleUpdate", "Error sending event: \(error)")
+            }
+        }
+    }
+
+    func addDownloadListener(callback: @escaping (BundleDownloadEvent) -> Void) throws -> Double {
+        let id = nextListenerId
+        nextListenerId += 1
+        listeners.append(BundleListener(id: id, callback: callback))
+        return id
+    }
+
+    func removeDownloadListener(id: Double) throws {
+        listeners.removeAll { $0.id == id }
+    }
+
+    func downloadBundle(params: BundleDownloadParams) throws -> Promise<BundleDownloadResult> {
+        return Promise.async { [weak self] in
+            guard let self = self else { throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Module deallocated"]) }
+
+            guard !self.isDownloading else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Already downloading"])
+            }
+            self.isDownloading = true
+
+            let appVersion = params.latestVersion
+            let bundleVersion = params.bundleVersion
+            let downloadUrl = params.downloadUrl
+            let sha256 = params.sha256
+
+            guard downloadUrl.hasPrefix("https://") else {
+                self.isDownloading = false
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle download URL must use HTTPS"])
+            }
+
+            let fileName = "\(appVersion)-\(bundleVersion).zip"
+            let filePath = (BundleUpdateStore.downloadBundleDir() as NSString).appendingPathComponent(fileName)
+
+            let result = BundleDownloadResult(
+                downloadedFile: filePath,
+                downloadUrl: downloadUrl,
+                latestVersion: appVersion,
+                bundleVersion: bundleVersion,
+                sha256: sha256
+            )
+
+            OneKeyLog.info("BundleUpdate", "downloadBundle: filePath: \(filePath)")
+
+            // Check if file already exists and is valid
+            if FileManager.default.fileExists(atPath: filePath) {
+                if self.verifyBundleSHA256(filePath, sha256: sha256) {
+                    self.isDownloading = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                        self?.sendEvent(type: "update/complete")
+                    }
+                    return result
+                } else {
+                    try? FileManager.default.removeItem(atPath: filePath)
+                }
+            }
+
+            // Download the file
+            guard let url = URL(string: downloadUrl) else {
+                self.isDownloading = false
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
+            }
+
+            self.sendEvent(type: "update/start")
+
+            let request = URLRequest(url: url)
+            let (tempURL, response) = try await URLSession.shared.download(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                self.isDownloading = false
+                self.sendEvent(type: "update/error", message: "HTTP error")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Download failed"])
+            }
+
+            // Move downloaded file to destination
+            let destDir = (filePath as NSString).deletingLastPathComponent
+            if !FileManager.default.fileExists(atPath: destDir) {
+                try FileManager.default.createDirectory(atPath: destDir, withIntermediateDirectories: true)
+            }
+            if FileManager.default.fileExists(atPath: filePath) {
+                try FileManager.default.removeItem(atPath: filePath)
+            }
+            try FileManager.default.moveItem(at: tempURL, to: URL(fileURLWithPath: filePath))
+
+            // Verify SHA256
+            if !self.verifyBundleSHA256(filePath, sha256: sha256) {
+                try? FileManager.default.removeItem(atPath: filePath)
+                self.isDownloading = false
+                self.sendEvent(type: "update/error", message: "Bundle signature verification failed")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
+            }
+
+            self.sendEvent(type: "update/complete")
+            OneKeyLog.info("BundleUpdate", "Download completed")
+            self.isDownloading = false
+            return result
+        }
+    }
+
+    private func verifyBundleSHA256(_ bundlePath: String, sha256: String) -> Bool {
+        guard let calculated = BundleUpdateStore.calculateSHA256(bundlePath) else { return false }
+        let isValid = calculated == sha256
+        OneKeyLog.debug("BundleUpdate", "verifyBundleSHA256: Valid: \(isValid)")
+        return isValid
+    }
+
+    func downloadBundleASC(params: BundleDownloadASCParams) throws -> Promise<Void> {
+        return Promise.async {
+            let appVersion = params.latestVersion
+            let bundleVersion = params.bundleVersion
+            let signature = params.signature
+
+            let storageKey = "\(appVersion)-\(bundleVersion)"
+            UserDefaults.standard.set(signature, forKey: storageKey)
+            UserDefaults.standard.synchronize()
+
+            OneKeyLog.info("BundleUpdate", "downloadBundleASC: Stored signature for key: \(storageKey)")
+        }
+    }
+
+    func verifyBundleASC(params: BundleVerifyASCParams) throws -> Promise<Void> {
+        return Promise.async {
+            let filePath = params.downloadedFile
+            let sha256 = params.sha256
+            let appVersion = params.latestVersion
+            let bundleVersion = params.bundleVersion
+            let signature = params.signature
+            let skipGPG = params.skipGPGVerification
+
+            if !skipGPG {
+                guard let calculated = BundleUpdateStore.calculateSHA256(filePath), calculated == sha256 else {
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
+                }
+            }
+
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let destination = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+
+            // Unzip using SSZipArchive
+            guard SSZipArchive.unzipFile(atPath: filePath, toDestination: destination, overwrite: true, password: nil) else {
+                try? FileManager.default.removeItem(atPath: destination)
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to unzip bundle"])
+            }
+
+            // Validate extracted paths
+            if !BundleUpdateStore.validateExtractedPathSafety(destination) {
+                try? FileManager.default.removeItem(atPath: destination)
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Path traversal or symlink attack detected"])
+            }
+
+            let metadataJsonPath = (destination as NSString).appendingPathComponent("metadata.json")
+            guard FileManager.default.fileExists(atPath: metadataJsonPath) else {
+                try? FileManager.default.removeItem(atPath: destination)
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to read metadata.json"])
+            }
+
+            let currentBundleVersion = "\(appVersion)-\(bundleVersion)"
+            if !skipGPG {
+                if !BundleUpdateStore.validateMetadataFileSha256(currentBundleVersion, signature: signature) {
+                    try? FileManager.default.removeItem(atPath: destination)
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
+                }
+            }
+
+            guard let metadata = BundleUpdateStore.getMetadataFileContent(currentBundleVersion) else {
+                try? FileManager.default.removeItem(atPath: destination)
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to read metadata.json after extraction"])
+            }
+
+            if !BundleUpdateStore.validateAllFilesInDir(destination, metadata: metadata, appVersion: appVersion, bundleVersion: bundleVersion) {
+                try? FileManager.default.removeItem(atPath: destination)
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Extracted files verification against metadata failed"])
+            }
+        }
+    }
+
+    func verifyBundle(params: BundleVerifyParams) throws -> Promise<Void> {
+        return Promise.async {
+            let filePath = params.downloadedFile
+            let sha256 = params.sha256
+            let appVersion = params.latestVersion
+            let bundleVersion = params.bundleVersion
+
+            guard let calculated = BundleUpdateStore.calculateSHA256(filePath), calculated == sha256 else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
+            }
+
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let destination = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+            let metadataJsonPath = (destination as NSString).appendingPathComponent("metadata.json")
+            guard FileManager.default.fileExists(atPath: metadataJsonPath) else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to read metadata.json"])
+            }
+
+            guard let metadata = BundleUpdateStore.getMetadataFileContent("\(appVersion)-\(bundleVersion)") else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Error parsing metadata.json"])
+            }
+
+            if !BundleUpdateStore.validateAllFilesInDir(destination, metadata: metadata, appVersion: appVersion, bundleVersion: bundleVersion) {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
+            }
+        }
+    }
+
+    func installBundle(params: BundleInstallParams) throws -> Promise<Void> {
+        return Promise.async {
+            let appVersion = params.latestVersion
+            let bundleVersion = params.bundleVersion
+            let signature = params.signature
+            let skipGPG = params.skipGPGVerification
+
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let currentFolderName = BundleUpdateStore.currentBundleVersion()
+
+            // Prevent version downgrade
+            if !skipGPG, let current = currentFolderName,
+               let dashRange = current.range(of: "-", options: .backwards) {
+                let currentBundleVer = String(current[dashRange.upperBound...])
+                if let currentNum = Int(currentBundleVer), let newNum = Int(bundleVersion), newNum < currentNum {
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle version downgrade rejected: \(bundleVersion) < \(currentBundleVer)"])
+                }
+            }
+
+            // Verify bundle directory exists
+            let bundleDirPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+            guard FileManager.default.fileExists(atPath: bundleDirPath) else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle directory not found: \(folderName)"])
+            }
+
+            let ud = UserDefaults.standard
+            ud.set(folderName, forKey: "currentBundleVersion")
+            if !signature.isEmpty {
+                ud.set(signature, forKey: folderName)
+            }
+            let currentNativeVersion = BundleUpdateStore.getCurrentNativeVersion()
+            BundleUpdateStore.setNativeVersion(currentNativeVersion)
+            ud.synchronize()
+
+            // Manage fallback data
+            var fallbackData = BundleUpdateStore.readFallbackUpdateBundleDataFile()
+
+            if let current = currentFolderName,
+               let dashRange = current.range(of: "-", options: .backwards) {
+                let curAppVersion = String(current[current.startIndex..<dashRange.lowerBound])
+                let curBundleVersion = String(current[dashRange.upperBound...])
+                let curSignature = ud.string(forKey: current) ?? ""
+                if !curSignature.isEmpty {
+                    fallbackData.append([
+                        "appVersion": curAppVersion,
+                        "bundleVersion": curBundleVersion,
+                        "signature": curSignature
+                    ])
+                }
+            }
+
+            // Keep max 3 fallback entries
+            if fallbackData.count > 3 {
+                let shifted = fallbackData.removeFirst()
+                if let shiftApp = shifted["appVersion"], let shiftBundle = shifted["bundleVersion"] {
+                    let dirName = "\(shiftApp)-\(shiftBundle)"
+                    ud.removeObject(forKey: dirName)
+                    let oldPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(dirName)
+                    if FileManager.default.fileExists(atPath: oldPath) {
+                        try? FileManager.default.removeItem(atPath: oldPath)
+                    }
+                }
+            }
+
+            BundleUpdateStore.writeFallbackUpdateBundleDataFile(fallbackData)
+            ud.synchronize()
+        }
+    }
+
+    func clearBundle() throws -> Promise<Void> {
+        return Promise.async { [weak self] in
+            let downloadDir = BundleUpdateStore.downloadBundleDir()
+            if FileManager.default.fileExists(atPath: downloadDir) {
+                try FileManager.default.removeItem(atPath: downloadDir)
+            }
+            self?.downloadTask?.cancel()
+            self?.downloadTask = nil
+            self?.isDownloading = false
+        }
+    }
+
+    func clearAllJSBundleData() throws -> Promise<TestResult> {
+        return Promise.async {
+            let bundleDir = BundleUpdateStore.bundleDir()
+            if FileManager.default.fileExists(atPath: bundleDir) {
+                try FileManager.default.removeItem(atPath: bundleDir)
+            }
+            let ud = UserDefaults.standard
+            if let cbv = ud.string(forKey: "currentBundleVersion") {
+                ud.removeObject(forKey: cbv)
+                ud.removeObject(forKey: "currentBundleVersion")
+            }
+            ud.removeObject(forKey: "nativeVersion")
+            ud.synchronize()
+
+            OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: Successfully cleared all JS bundle data")
+            return TestResult(success: true, message: "Successfully cleared all JS bundle data")
+        }
+    }
+
+    func getFallbackUpdateBundleData() throws -> Promise<[FallbackBundleInfo]> {
+        return Promise.async {
+            let data = BundleUpdateStore.readFallbackUpdateBundleDataFile()
+            return data.compactMap { dict in
+                guard let appVersion = dict["appVersion"],
+                      let bundleVersion = dict["bundleVersion"],
+                      let signature = dict["signature"] else { return nil }
+                return FallbackBundleInfo(appVersion: appVersion, bundleVersion: bundleVersion, signature: signature)
+            }
+        }
+    }
+
+    func setCurrentUpdateBundleData(params: BundleSwitchParams) throws -> Promise<Void> {
+        return Promise.async {
+            let bundleVersion = "\(params.appVersion)-\(params.bundleVersion)"
+            let ud = UserDefaults.standard
+            ud.set(bundleVersion, forKey: "currentBundleVersion")
+            ud.set(params.signature, forKey: bundleVersion)
+            ud.synchronize()
+        }
+    }
+
+    func getWebEmbedPath() throws -> String {
+        return BundleUpdateStore.getWebEmbedPath()
+    }
+
+    func getWebEmbedPathAsync() throws -> Promise<String> {
+        return Promise.async {
+            let path = BundleUpdateStore.getWebEmbedPath()
+            OneKeyLog.debug("BundleUpdate", "getWebEmbedPathAsync: \(path)")
+            return path
+        }
+    }
+
+    func getJsBundlePath() throws -> Promise<String> {
+        return Promise.async {
+            return BundleUpdateStore.currentBundleMainJSBundle() ?? ""
+        }
+    }
+
+    func getNativeAppVersion() throws -> Promise<String> {
+        return Promise.async {
+            return BundleUpdateStore.getCurrentNativeVersion()
+        }
+    }
+
+    func testVerification() throws -> Promise<Bool> {
+        return Promise.async {
+            // TODO: Integrate Gopenpgp for full GPG verification testing
+            OneKeyLog.info("BundleUpdate", "testVerification: GPG verification pending integration")
+            return true
+        }
+    }
+
+    func isBundleExists(appVersion: String, bundleVersion: String) throws -> Promise<Bool> {
+        return Promise.async {
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let path = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+            return FileManager.default.fileExists(atPath: path)
+        }
+    }
+
+    func verifyExtractedBundle(appVersion: String, bundleVersion: String) throws -> Promise<Void> {
+        return Promise.async {
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let bundlePath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+            guard FileManager.default.fileExists(atPath: bundlePath) else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle directory not found"])
+            }
+            let metadataJsonPath = (bundlePath as NSString).appendingPathComponent("metadata.json")
+            guard FileManager.default.fileExists(atPath: metadataJsonPath) else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "metadata.json not found"])
+            }
+            guard let data = FileManager.default.contents(atPath: metadataJsonPath),
+                  let metadata = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to parse metadata.json"])
+            }
+            if !BundleUpdateStore.validateAllFilesInDir(bundlePath, metadata: metadata, appVersion: appVersion, bundleVersion: bundleVersion) {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "File integrity check failed"])
+            }
+        }
+    }
+
+    func listLocalBundles() throws -> Promise<[LocalBundleInfo]> {
+        return Promise.async {
+            let bundleDir = BundleUpdateStore.bundleDir()
+            let fm = FileManager.default
+            guard let contents = try? fm.contentsOfDirectory(atPath: bundleDir) else { return [] }
+            var results: [LocalBundleInfo] = []
+            for name in contents {
+                let fullPath = (bundleDir as NSString).appendingPathComponent(name)
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue else { continue }
+                guard let lastDash = name.range(of: "-", options: .backwards),
+                      lastDash.lowerBound > name.startIndex else { continue }
+                let appVersion = String(name[name.startIndex..<lastDash.lowerBound])
+                let bundleVersion = String(name[lastDash.upperBound...])
+                if !appVersion.isEmpty && !bundleVersion.isEmpty {
+                    results.append(LocalBundleInfo(appVersion: appVersion, bundleVersion: bundleVersion))
+                }
+            }
+            return results
+        }
+    }
+
+    func getSha256FromFilePath(filePath: String) throws -> Promise<String> {
+        return Promise.async {
+            OneKeyLog.debug("BundleUpdate", "getSha256FromFilePath: \(filePath)")
+            guard !filePath.isEmpty else { return "" }
+            return BundleUpdateStore.calculateSHA256(filePath) ?? ""
+        }
+    }
+
+    func testDeleteJsBundle(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
+        return Promise.async {
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let jsBundlePath = (BundleUpdateStore.bundleDir() as NSString)
+                .appendingPathComponent(folderName)
+            let path = (jsBundlePath as NSString).appendingPathComponent("main.jsbundle.hbc")
+
+            if FileManager.default.fileExists(atPath: path) {
+                try FileManager.default.removeItem(atPath: path)
+                return TestResult(success: true, message: "Deleted jsBundle: \(path)")
+            }
+            return TestResult(success: false, message: "jsBundle not found: \(path)")
+        }
+    }
+
+    func testDeleteJsRuntimeDir(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
+        return Promise.async {
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let dirPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+
+            if FileManager.default.fileExists(atPath: dirPath) {
+                try FileManager.default.removeItem(atPath: dirPath)
+                return TestResult(success: true, message: "Deleted js runtime directory: \(dirPath)")
+            }
+            return TestResult(success: false, message: "js runtime directory not found: \(dirPath)")
+        }
+    }
+
+    func testDeleteMetadataJson(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
+        return Promise.async {
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let metadataPath = (BundleUpdateStore.bundleDir() as NSString)
+                .appendingPathComponent(folderName)
+            let path = (metadataPath as NSString).appendingPathComponent("metadata.json")
+
+            if FileManager.default.fileExists(atPath: path) {
+                try FileManager.default.removeItem(atPath: path)
+                return TestResult(success: true, message: "Deleted metadata.json: \(path)")
+            }
+            return TestResult(success: false, message: "metadata.json not found: \(path)")
+        }
+    }
+
+    func testWriteEmptyMetadataJson(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
+        return Promise.async {
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let jsRuntimeDir = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
+            let metadataPath = (jsRuntimeDir as NSString).appendingPathComponent("metadata.json")
+
+            if !FileManager.default.fileExists(atPath: jsRuntimeDir) {
+                try FileManager.default.createDirectory(atPath: jsRuntimeDir, withIntermediateDirectories: true)
+            }
+
+            let emptyJson: [String: Any] = [:]
+            let data = try JSONSerialization.data(withJSONObject: emptyJson, options: .prettyPrinted)
+            try data.write(to: URL(fileURLWithPath: metadataPath), options: .atomic)
+
+            return TestResult(success: true, message: "Created empty metadata.json: \(metadataPath)")
+        }
+    }
+}

@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativeperfmemory"],
+  "ios": {
+    "iosModuleName": "ReactNativePerfMemory"
+  },
+  "android": {
+    "androidNamespace": ["reactnativeperfmemory"],
+    "androidCxxLibName": "reactnativeperfmemory"
+  },
+  "autolinking": {
+    "ReactNativePerfMemory": {
+      "swift": "ReactNativePerfMemory",
+      "kotlin": "ReactNativePerfMemory"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

@@ -10,6 +10,11 @@ export interface DualScreenInfoRect {
   height: number;
 }
 
+export interface LaunchOptions {
+  launchType: string;
+  deepLink?: string;
+}
+
 export interface ReactNativeDeviceUtils
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   initEventListeners(): void;
@@ -21,4 +26,14 @@ export interface ReactNativeDeviceUtils
   addSpanningChangedListener(callback: (isSpanning: boolean) => void): number;
   removeSpanningChangedListener(id: number): void;
   setUserInterfaceStyle(style: UserInterfaceStyle): void;
+
+  // LaunchOptionsManager
+  getLaunchOptions(): Promise<LaunchOptions>;
+  clearLaunchOptions(): Promise<boolean>;
+  getDeviceToken(): Promise<string>;
+  registerDeviceToken(): Promise<boolean>;
+  getStartupTime(): Promise<number>;
+
+  // ExitModule
+  exitApp(): void;
 }

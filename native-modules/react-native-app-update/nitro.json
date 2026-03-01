@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativeappupdate"],
+  "ios": {
+    "iosModuleName": "ReactNativeAppUpdate"
+  },
+  "android": {
+    "androidNamespace": ["reactnativeappupdate"],
+    "androidCxxLibName": "reactnativeappupdate"
+  },
+  "autolinking": {
+    "ReactNativeAppUpdate": {
+      "swift": "ReactNativeAppUpdate",
+      "kotlin": "ReactNativeAppUpdate"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
