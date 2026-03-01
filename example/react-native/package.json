@@ -11,7 +11,9 @@
     "test": "jest"
   },
   "dependencies": {
+    "@onekeyfe/react-native-app-update": "workspace:*",
     "@onekeyfe/react-native-background-thread": "workspace:*",
+    "@onekeyfe/react-native-bundle-update": "workspace:*",
     "@onekeyfe/react-native-check-biometric-auth-changed": "workspace:*",
     "@onekeyfe/react-native-cloud-kit-module": "workspace:*",
     "@onekeyfe/react-native-device-utils": "workspace:*",
@@ -23,8 +25,6 @@
     "@onekeyfe/react-native-skeleton": "workspace:*",
     "@onekeyfe/react-native-splash-screen": "workspace:*",
     "@onekeyfe/react-native-webview-checker": "workspace:*",
-    "@onekeyfe/react-native-bundle-update": "workspace:*",
-    "@onekeyfe/react-native-app-update": "workspace:*",
     "@react-native/new-app-screen": "0.83.0",
     "fast-base64-decode": "*",
     "react": "19.2.0",
