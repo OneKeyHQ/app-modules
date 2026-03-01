@@ -116,18 +116,19 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
             let store = LaunchOptionsStore.shared
             guard let opts = store.launchOptions else {
                 OneKeyLog.debug("DeviceUtils", "getLaunchOptions: no launch options")
-                return LaunchOptions(launchType: "normal")
+                return LaunchOptions(launchType: "normal", deepLink: nil)
             }
 
             if opts[UIApplication.LaunchOptionsKey.remoteNotification] != nil {
-                return LaunchOptions(launchType: "remoteNotification")
+                return LaunchOptions(launchType: "remoteNotification", deepLink: nil)
             }
 
             if opts[UIApplication.LaunchOptionsKey.localNotification] != nil {
-                return LaunchOptions(launchType: "localNotification")
+                return LaunchOptions(launchType: "localNotification", deepLink: nil)
             }
 
-            return LaunchOptions(launchType: "normal")
+            let deepLink = (opts[UIApplication.LaunchOptionsKey.url] as? URL)?.absoluteString
+            return LaunchOptions(launchType: "normal", deepLink: deepLink)
         }
     }
 
