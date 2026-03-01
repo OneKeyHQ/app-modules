@@ -129,4 +129,7 @@ dependencies {
   implementation project(":onekeyfe_react-native-native-logger")
 
   implementation "com.squareup.okhttp3:okhttp:4.12.0"
+
+  // BouncyCastle for GPG/PGP signature verification
+  implementation "org.bouncycastle:bcpg-jdk15to18:1.78.1"
 }

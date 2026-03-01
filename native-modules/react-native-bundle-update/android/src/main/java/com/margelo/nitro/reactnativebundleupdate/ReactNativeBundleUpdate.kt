@@ -21,6 +21,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
+import org.bouncycastle.openpgp.PGPPublicKeyRingCollection
+import org.bouncycastle.openpgp.PGPUtil
+import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory
+import org.bouncycastle.openpgp.operator.jcajce.JcaKeyFingerprintCalculator
+import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentVerifierBuilderProvider
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -28,6 +33,60 @@ private data class BundleListener(
     val id: Double,
     val callback: (BundleDownloadEvent) -> Unit
 )
+
+// OneKey GPG public key for signature verification
+private const val GPG_PUBLIC_KEY = """-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+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
+P2Q5dClenjjjVA==
+=F0np
+-----END PGP PUBLIC KEY BLOCK-----"""
 
 // Public static store for CustomReactNativeHost access (called before JS starts)
 object BundleUpdateStoreAndroid {
@@ -146,12 +205,111 @@ object BundleUpdateStoreAndroid {
 
     fun readMetadataFileSha256(signature: String?): String? {
         if (signature.isNullOrEmpty()) return null
+
+        // Try GPG cleartext signature verification first
+        val gpgResult = verifyGPGAndExtractSha256(signature)
+        if (gpgResult != null) return gpgResult
+
+        // Fallback: try plain JSON parse (for backward compat with non-signed content)
         return try {
             val json = JSONObject(signature)
             val sha256 = json.optString("sha256", "")
-            if (sha256.isEmpty()) null else sha256
+            if (sha256.isEmpty()) {
+                null
+            } else {
+                OneKeyLog.warn("BundleUpdate", "readMetadataFileSha256: Fell back to plain JSON parse (no GPG verification)")
+                sha256
+            }
         } catch (e: Exception) {
             OneKeyLog.debug("BundleUpdate", "readMetadataFileSha256: Error extracting SHA256: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Verify a PGP cleartext-signed message using BouncyCastle and extract the sha256.
+     * Returns null if verification fails or the signature is not a PGP cleartext message.
+     */
+    fun verifyGPGAndExtractSha256(signature: String): String? {
+        if (!signature.contains("-----BEGIN PGP SIGNED MESSAGE-----")) return null
+
+        return try {
+            // Parse the cleartext signed message
+            val inputStream = signature.byteInputStream()
+            val pgpFactory = JcaPGPObjectFactory(PGPUtil.getDecoderStream(inputStream))
+
+            // Parse the public key
+            val pubKeyStream = PGPUtil.getDecoderStream(GPG_PUBLIC_KEY.byteInputStream())
+            val pgpPubKeyRingCollection = PGPPublicKeyRingCollection(pubKeyStream, JcaKeyFingerprintCalculator())
+
+            // Extract cleartext and signature from the PGP signed message manually
+            // BouncyCastle's cleartext handling requires manual parsing
+            val lines = signature.lines()
+            val hashHeaderIdx = lines.indexOfFirst { it.startsWith("Hash:") }
+            val sigStartIdx = lines.indexOfFirst { it == "-----BEGIN PGP SIGNATURE-----" }
+            val sigEndIdx = lines.indexOfFirst { it == "-----END PGP SIGNATURE-----" }
+
+            if (hashHeaderIdx < 0 || sigStartIdx < 0 || sigEndIdx < 0) {
+                OneKeyLog.error("BundleUpdate", "Invalid PGP cleartext signed message format")
+                return null
+            }
+
+            // The cleartext body is between the Hash header blank line and the PGP SIGNATURE block
+            val bodyStartIdx = hashHeaderIdx + 2 // skip Hash: line and the blank line after it
+            val bodyLines = lines.subList(bodyStartIdx, sigStartIdx)
+            // Remove trailing empty line that PGP adds
+            val cleartextBody = bodyLines.joinToString("\r\n").trimEnd()
+
+            // The signature block
+            val sigBlock = lines.subList(sigStartIdx, sigEndIdx + 1).joinToString("\n")
+
+            // Decode the signature
+            val sigInputStream = PGPUtil.getDecoderStream(sigBlock.byteInputStream())
+            val sigFactory = JcaPGPObjectFactory(sigInputStream)
+            val signatureList = sigFactory.nextObject()
+
+            if (signatureList !is org.bouncycastle.openpgp.PGPSignatureList || signatureList.isEmpty) {
+                OneKeyLog.error("BundleUpdate", "No PGP signature found in message")
+                return null
+            }
+
+            val pgpSignature = signatureList[0]
+            val keyId = pgpSignature.keyID
+
+            // Find the public key
+            val publicKey = pgpPubKeyRingCollection.getPublicKey(keyId)
+            if (publicKey == null) {
+                OneKeyLog.error("BundleUpdate", "Public key not found for keyId: ${java.lang.Long.toHexString(keyId)}")
+                return null
+            }
+
+            // Verify the signature
+            pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider("BC"), publicKey)
+
+            // Dash-unescape the cleartext per RFC 4880 Section 7.1
+            val unescapedLines = cleartextBody.lines().map { line ->
+                if (line.startsWith("- ")) line.substring(2) else line
+            }
+            val dataToVerify = unescapedLines.joinToString("\r\n").toByteArray(Charsets.UTF_8)
+            pgpSignature.update(dataToVerify)
+
+            if (!pgpSignature.verify()) {
+                OneKeyLog.error("BundleUpdate", "GPG signature verification failed")
+                return null
+            }
+
+            // Signature verified, parse the cleartext JSON
+            val json = JSONObject(cleartextBody.trim())
+            val sha256 = json.optString("sha256", "")
+            if (sha256.isEmpty()) {
+                OneKeyLog.error("BundleUpdate", "No sha256 field in signed cleartext JSON")
+                return null
+            }
+
+            OneKeyLog.info("BundleUpdate", "GPG verification succeeded, sha256: $sha256")
+            sha256
+        } catch (e: Exception) {
+            OneKeyLog.error("BundleUpdate", "GPG verification error: ${e.message}")
             null
         }
     }
@@ -778,10 +936,36 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     override fun testVerification(): Promise<Boolean> {
         return Promise.async {
-            // GPG verification is not yet implemented -- return false to indicate
-            // verification cannot be performed, preventing callers from assuming security.
-            OneKeyLog.warn("BundleUpdate", "testVerification: GPG verification not yet implemented, returning false")
-            false
+            val testSignature = """-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+{
+  "fileName": "metadata.json",
+  "sha256": "2ada9c871104fc40649fa3de67a7d8e33faadc18e9abd587e8bb85be0a003eba",
+  "size": 158590,
+  "generatedAt": "2025-09-19T07:49:13.000Z"
+}
+-----BEGIN PGP SIGNATURE-----
+
+iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmjNJ1IOHGRldkBvbmVr
+ZXkuc28ACgkQs2mmepC/OHs6Rw/9FKHl5aNsE7V0IsFf/l+h16BYKFwVsL69alMk
+CFLna8oUn0+tyECF6wKBKw5pHo5YR27o2pJfYbAER6dygDF6WTZ1lZdf5QcBMjGA
+LCeXC0hzUBzSSOH4bKBTa3fHp//HdSV1F2OnkymbXqYN7WXvuQPLZ0nV6aU88hCk
+HgFifcvkXAnWKoosUtj0Bban/YBRyvmQ5C2akxUPEkr4Yck1QXwzJeNRd7wMXHjH
+JFK6lJcuABiB8wpJDXJkFzKs29pvHIK2B2vdOjU2rQzKOUwaKHofDi5C4+JitT2b
+2pSeYP3PAxXYw6XDOmKTOiC7fPnfLjtcPjNYNFCezVKZT6LKvZW9obnW8Q9LNJ4W
+okMPgHObkabv3OqUaTA9QNVfI/X9nvggzlPnaKDUrDWTf7n3vlrdexugkLtV/tJA
+uguPlI5hY7Ue5OW7ckWP46hfmq1+UaIdeUY7dEO+rPZDz6KcArpaRwBiLPBhneIr
+/X3KuMzS272YbPbavgCZGN9xJR5kZsEQE5HhPCbr6Nf0qDnh+X8mg0tAB/U6F+ZE
+o90sJL1ssIaYvST+VWVaGRr4V5nMDcgHzWSF9Q/wm22zxe4alDaBdvOlUseW0iaM
+n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
+91Js0rQ=
+=A/Ii
+-----END PGP SIGNATURE-----"""
+            val result = BundleUpdateStoreAndroid.verifyGPGAndExtractSha256(testSignature)
+            val isValid = result == "2ada9c871104fc40649fa3de67a7d8e33faadc18e9abd587e8bb85be0a003eba"
+            OneKeyLog.info("BundleUpdate", "testVerification: GPG verification result: $isValid")
+            isValid
         }
     }
 
