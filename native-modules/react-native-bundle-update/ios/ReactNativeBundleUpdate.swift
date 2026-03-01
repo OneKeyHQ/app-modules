@@ -3,6 +3,7 @@ import ReactNativeNativeLogger
 import Foundation
 import CommonCrypto
 import Gopenpgp
+import SSZipArchive
 
 // OneKey GPG public key for signature verification
 private let GPG_PUBLIC_KEY = """
@@ -203,9 +204,11 @@ public class BundleUpdateStore {
             return nil
         }
 
-        var newError: NSError?
-        guard let verifyHandle = builderWithKey.new(&newError) else {
-            OneKeyLog.error("BundleUpdate", "Failed to create verify handle: \(newError?.localizedDescription ?? "unknown")")
+        let verifyHandle: CryptoPGPVerify
+        do {
+            verifyHandle = try builderWithKey.new()
+        } catch {
+            OneKeyLog.error("BundleUpdate", "Failed to create verify handle: \(error.localizedDescription)")
             return nil
         }
 
@@ -214,17 +217,19 @@ public class BundleUpdateStore {
             return nil
         }
 
-        var verifyError: NSError?
-        guard let cleartextResult = verifyHandle.verifyCleartext(signatureData, error: &verifyError) else {
-            OneKeyLog.error("BundleUpdate", "GPG verification error: \(verifyError?.localizedDescription ?? "unknown")")
+        let cleartextResult: CryptoVerifyCleartextResult
+        do {
+            cleartextResult = try verifyHandle.verifyCleartext(signatureData)
+        } catch {
+            OneKeyLog.error("BundleUpdate", "GPG verification error: \(error.localizedDescription)")
             return nil
         }
 
         // 5. Check signature error
-        var sigError: NSError?
-        _ = cleartextResult.signatureError(&sigError)
-        if let sigErr = sigError {
-            OneKeyLog.error("BundleUpdate", "GPG signature invalid: \(sigErr.localizedDescription)")
+        do {
+            try cleartextResult.signatureError()
+        } catch {
+            OneKeyLog.error("BundleUpdate", "GPG signature invalid: \(error.localizedDescription)")
             return nil
         }
 
