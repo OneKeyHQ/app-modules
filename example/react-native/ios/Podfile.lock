@@ -25,6 +25,7 @@ PODS:
     - ReactCodegen
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
+    - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
   - boost (1.84.0)
@@ -2777,6 +2778,7 @@ PODS:
     - ReactCodegen
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
+    - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
   - ReactNativeNativeLogger (1.1.20):
@@ -2808,6 +2810,37 @@ PODS:
     - ReactCodegen
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
+  - ReactNativePerfMemory (1.1.20):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - NitroModules
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
   - Skeleton (1.1.20):
@@ -2931,6 +2964,7 @@ DEPENDENCIES:
   - "ReactNativeGetRandomValues (from `../../../node_modules/@onekeyfe/react-native-get-random-values`)"
   - "ReactNativeLiteCard (from `../../../node_modules/@onekeyfe/react-native-lite-card`)"
   - "ReactNativeNativeLogger (from `../../../node_modules/@onekeyfe/react-native-native-logger`)"
+  - "ReactNativePerfMemory (from `../../../node_modules/@onekeyfe/react-native-perf-memory`)"
   - "Skeleton (from `../../../node_modules/@onekeyfe/react-native-skeleton`)"
   - SocketRocket (~> 0.7.1)
   - Yoga (from `../../../node_modules/react-native/ReactCommon/yoga`)
@@ -3114,13 +3148,15 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/@onekeyfe/react-native-lite-card"
   ReactNativeNativeLogger:
     :path: "../../../node_modules/@onekeyfe/react-native-native-logger"
+  ReactNativePerfMemory:
+    :path: "../../../node_modules/@onekeyfe/react-native-perf-memory"
   Skeleton:
     :path: "../../../node_modules/@onekeyfe/react-native-skeleton"
   Yoga:
     :path: "../../../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  BackgroundThread: 6e18a3ab117f62e0ab785a231e5b1422175ad8f7
+  BackgroundThread: 8cbcad859f0f96472e4ec6bdb18cd70f82803587
   boost: 7e761d76ca2ce687f7cc98e698152abd03a18f90
   CloudKitModule: daf5566c07054aeef0ad9afdd78741818c59c887
   CocoaLumberjack: 5644158777912b7de7469fa881f8a3f259c2512a
@@ -3205,8 +3241,9 @@ SPEC CHECKSUMS:
   ReactNativeCheckBiometricAuthChanged: c9178c09dc6287be146498abeaa848047c656332
   ReactNativeDeviceUtils: 1944b3333d9e4dd69e9543d70cefe65cbe72ffac
   ReactNativeGetRandomValues: 0761be2650cb8a8c03748de6df08d5f357c79c76
-  ReactNativeLiteCard: fd4a88f928865cb84f6e88eebfaacc72e3d16e4a
+  ReactNativeLiteCard: 7797a61baef64ed2e53ef3a887d14e9828996cd0
   ReactNativeNativeLogger: d50e4a91f06c6f4c40dea427fb0b67a41af30b9f
+  ReactNativePerfMemory: 2bc1a4540e6a987565b79a5e4bb6e74ed0b9a7cc
   Skeleton: dc21a02c4c9a8f3c95faf331144a42a4ed586d0f
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Yoga: 6ca93c8c13f56baeec55eb608577619b17a4d64e
