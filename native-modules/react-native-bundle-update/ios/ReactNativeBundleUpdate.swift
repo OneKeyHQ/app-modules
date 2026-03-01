@@ -204,7 +204,7 @@ public class BundleUpdateStore {
             return nil
         }
 
-        let verifyHandle: CryptoPGPVerify
+        let verifyHandle: any CryptoPGPVerifyProtocol
         do {
             verifyHandle = try builderWithKey.new()
         } catch {
@@ -608,9 +608,11 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let destination = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
 
             // Unzip using SSZipArchive
-            guard SSZipArchive.unzipFile(atPath: filePath, toDestination: destination, overwrite: true, password: nil) else {
+            do {
+                try SSZipArchive.unzipFile(atPath: filePath, toDestination: destination, overwrite: true, password: nil)
+            } catch {
                 try? FileManager.default.removeItem(atPath: destination)
-                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to unzip bundle"])
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to unzip bundle: \(error.localizedDescription)"])
             }
 
             // Validate extracted paths
