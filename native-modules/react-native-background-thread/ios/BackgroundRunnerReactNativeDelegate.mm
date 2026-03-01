@@ -1,4 +1,5 @@
 #import "BackgroundRunnerReactNativeDelegate.h"
+@import ReactNativeNativeLogger;
 
 #include <jsi/JSIDynamic.h>
 #include <jsi/decorator.h>
@@ -168,7 +169,7 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
     //     self.eventEmitter->onError(errorEvent);
     //   }
     } catch (...) {
-      NSLog(@"[BackgroundReactNativeDelegate] Runtime invalid during postMessage for sandbox %s", _origin.c_str());
+      [OneKeyLog error:@"BackgroundThread" :[NSString stringWithFormat:@"Runtime invalid during postMessage for sandbox %s", _origin.c_str()]];
     }
   }];
 }
