@@ -223,6 +223,75 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
     }
   };
 
+  // LaunchOptionsManager methods
+  const testGetLaunchOptions = async () => {
+    clearResults();
+    try {
+      const options = await deviceUtils.getLaunchOptions();
+      setResult({ launchOptions: options });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
+  const testClearLaunchOptions = async () => {
+    clearResults();
+    try {
+      const ok = await deviceUtils.clearLaunchOptions();
+      setResult({ clearLaunchOptions: ok });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
+  const testGetDeviceToken = async () => {
+    clearResults();
+    try {
+      const token = await deviceUtils.getDeviceToken();
+      setResult({ deviceToken: token || '(empty)' });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
+  const testRegisterDeviceToken = async () => {
+    clearResults();
+    try {
+      const ok = await deviceUtils.registerDeviceToken();
+      setResult({ registerDeviceToken: ok });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
+  const testGetStartupTime = async () => {
+    clearResults();
+    try {
+      const time = await deviceUtils.getStartupTime();
+      setResult({ startupTime: time, startupTimeMs: `${time} ms` });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
+  // ExitModule
+  const testExitApp = () => {
+    Alert.alert(
+      'Confirm',
+      'This will terminate the app. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Exit',
+          style: 'destructive',
+          onPress: () => {
+            deviceUtils.exitApp();
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <TestPageBase
       title="Device Utils Test"
@@ -382,9 +451,49 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
         </View>
       </View>
 
+      {/* Launch Options */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Launch Options</Text>
+
+        <TestButton
+          title="Get Launch Options"
+          onPress={testGetLaunchOptions}
+        />
+
+        <TestButton
+          title="Clear Launch Options"
+          onPress={testClearLaunchOptions}
+        />
+
+        <TestButton
+          title="Get Device Token"
+          onPress={testGetDeviceToken}
+        />
+
+        <TestButton
+          title="Register Device Token"
+          onPress={testRegisterDeviceToken}
+        />
+
+        <TestButton
+          title="Get Startup Time"
+          onPress={testGetStartupTime}
+        />
+      </View>
+
+      {/* Exit App */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Exit App</Text>
+
+        <TestButton
+          title="Exit App"
+          onPress={testExitApp}
+        />
+      </View>
+
       {/* Results */}
       <TestResult result={result} error={error} />
-      
+
       {/* Instructions */}
       <View style={styles.instructionsContainer}>
         <Text style={styles.instructionsTitle}>Instructions:</Text>
@@ -392,7 +501,10 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
           • Dual Screen: Works best on Surface Duo or devices with external displays{'\n'}
           • Spanning: Try rotating device or connecting external display{'\n'}
           • Callback: Register once, then test spanning changes{'\n'}
-          • Background: Changes system UI colors (status bar, navigation bar)
+          • Background: Changes system UI colors (status bar, navigation bar){'\n'}
+          • Launch Options: Shows how the app was launched (notification, deep link, etc.){'\n'}
+          • Startup Time: Time in ms from native app start{'\n'}
+          • Exit App: Terminates the app process (with confirmation)
         </Text>
       </View>
     </TestPageBase>
