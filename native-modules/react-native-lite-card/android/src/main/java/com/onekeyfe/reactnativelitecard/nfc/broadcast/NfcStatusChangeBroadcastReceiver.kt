@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.nfc.NfcAdapter
-import android.util.Log
+import com.margelo.nitro.nativelogger.OneKeyLog
 
 open class NfcStatusChangeBroadcastReceiver : BroadcastReceiver() {
 
@@ -15,7 +15,7 @@ open class NfcStatusChangeBroadcastReceiver : BroadcastReceiver() {
             val state =
                     intent.getIntExtra(NfcAdapter.EXTRA_ADAPTER_STATE, NfcAdapter.STATE_OFF)
 
-            Log.e(TAG, "nfc state broadcast receiver, state is $state")
+            OneKeyLog.debug("LiteCard", "nfc state broadcast receiver, state is $state")
             when (state) {
                 NfcAdapter.STATE_OFF -> onNfcOff()
                 NfcAdapter.STATE_ON -> onNfcOn()

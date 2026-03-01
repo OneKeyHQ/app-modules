@@ -6,8 +6,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.util.Log
 import androidx.annotation.IntDef
+import com.margelo.nitro.nativelogger.OneKeyLog
 import androidx.annotation.RequiresApi
 import com.onekeyfe.reactnativelitecard.utils.MiUtil.PermissionResult.Companion.PERMISSION_ASK
 import com.onekeyfe.reactnativelitecard.utils.MiUtil.PermissionResult.Companion.PERMISSION_DENIED
@@ -59,13 +59,13 @@ object MiUtil {
             //the ops of NFC is 10016,check /data/system/appops/xxx.xml
             val invoke = checkOpNoThrowMethod.invoke(mAppOps, 10016, uid, pkg)
             if (invoke == null) {
-                Log.d(TAG,
+                OneKeyLog.debug("LiteCard",
                         "MIUI check permission checkOpNoThrowMethod(AppOpsManager) invoke result is null"
                 )
                 return PERMISSION_UNKNOWN
             }
             val result = invoke.toString()
-            Log.d(TAG,
+            OneKeyLog.debug("LiteCard",
                     "MIUI check permission checkOpNoThrowMethod(AppOpsManager) invoke result = $result"
             )
             when (result) {
@@ -74,7 +74,7 @@ object MiUtil {
                 "5" -> return PERMISSION_ASK
             }
         } catch (e: Exception) {
-            Log.d(TAG, "check nfc permission fail ${e.message}", e)
+            OneKeyLog.debug("LiteCard", "check nfc permission fail: ${e.message}")
         }
         return PERMISSION_UNKNOWN
     }
@@ -86,7 +86,7 @@ object MiUtil {
             context.startActivity(intent)
             true
         } catch (e: Exception) {
-            Log.d(TAG, "open app setting fail ${e.message}", e)
+            OneKeyLog.debug("LiteCard", "open app setting fail: ${e.message}")
             false
         }
     }

@@ -8,6 +8,7 @@
 #import "OKLiteV1.h"
 #import "OKNFCUtility.h"
 #import "OKLiteCommandModal.h"
+@import ReactNativeNativeLogger;
 
 @interface OKLiteV1()
 
@@ -450,19 +451,19 @@
     isVerificationPass = YES;
 
     if (sw1 != OKNFC_SW1_OK) {
-      NSLog(@"OKNFC: 获取证书失败");
+      [OneKeyLog error:@"LiteCard" :@"获取证书失败"];
       isVerificationPass = NO;
       dispatch_semaphore_signal(sema);
       return;
     }
 
     if (![OKNFCBridge verifySN:self.SN withCert:certData]) {
-      NSLog(@"OKNFC: 验证证书失败");
+      [OneKeyLog error:@"LiteCard" :@"验证证书失败"];
       isVerificationPass = NO;
     }
 
     if (![OKNFCBridge JUB_GPC_Initialize:certData]) {
-      NSLog(@"OKNFC: 初始化安全通道失败");
+      [OneKeyLog error:@"LiteCard" :@"初始化安全通道失败"];
       isVerificationPass = NO;
     }
 
@@ -486,12 +487,12 @@
                                   modal:modal
                       completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
     if (sw1 != OKNFC_SW1_OK) {
-      NSLog(@"OKNFC: 获取 PIN 状态失败");
+      [OneKeyLog error:@"LiteCard" :@"获取 PIN 状态失败"];
       dispatch_semaphore_signal(sema);
       return;
     }
     if (responseData.toHexString.intValue == 2) {
-      NSLog(@"OKNFC: 未设置 PIN");
+      [OneKeyLog debug:@"LiteCard" :@"未设置 PIN"];
       pinStatus = OKNFC_PIN_UNSET;
       dispatch_semaphore_signal(sema);
       return;
@@ -568,7 +569,7 @@
       return;
     }
     success = YES;
-    NSLog(@"OKNFC: 成功设置 PIN = %@", pin);
+    [OneKeyLog debug:@"LiteCard" :@"成功设置 PIN"];
     dispatch_semaphore_signal(sema);
   }];
 
@@ -597,7 +598,7 @@
       return;
     }
     result = OKNFCLiteChangePinResultPass;
-    NSLog(@"OKNFC: 成功修改 PIN = %@", newPin);
+    [OneKeyLog debug:@"LiteCard" :@"成功修改 PIN"];
     dispatch_semaphore_signal(sema);
   }];
 

@@ -2,8 +2,8 @@ package com.onekeyfe.reactnativelitecard.onekeyLite
 
 import android.app.Activity
 import android.nfc.tech.IsoDep
-import android.util.Log
 import androidx.fragment.app.FragmentActivity
+import com.margelo.nitro.nativelogger.OneKeyLog
 import androidx.lifecycle.Lifecycle
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
@@ -52,7 +52,7 @@ object OneKeyLiteCard {
                 callback?.invoke(true)
                 return@withContext
             }
-            Log.e(TAG, "startNfc Not NFC permission")
+            OneKeyLog.error("LiteCard","startNfc Not NFC permission")
             callback?.invoke(false)
         }
 
@@ -110,7 +110,7 @@ object OneKeyLiteCard {
     ): Boolean {
         if (cardState == null) throw NFCExceptions.ConnectionFailException()
 
-        printLog(TAG, "--> setMnemonic: cardState:${Gson().toJson(cardState)}")
+        printLog(TAG, "--> setMnemonic: isNewCard:${cardState?.isNewCard}, hasBackup:${cardState?.hasBackup}")
 
         if (!overwrite) {
             // 不是覆写要验证是否已经已经存有备份

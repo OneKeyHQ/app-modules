@@ -140,7 +140,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
 
         printLog(TAG, "0. ---> getDeviceCertificate begin")
         val certInfo = getDeviceCertificate() ?: return false
-        printLog(TAG, "0. <--- getDeviceCertificate end: ${certInfo.subjectID}")
+        printLog(TAG, "0. <--- getDeviceCertificate end")
 
         printLog(TAG, "1. ---> nativeGPCInitialize begin")
         val param = SecureChanelParam.objectFromData(
