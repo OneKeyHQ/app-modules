@@ -292,6 +292,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     init() {
         let config = URLSessionConfiguration.default
+        config.tlsMinimumSupportedProtocolVersion = .TLSv12
         urlSession = URLSession(configuration: config)
     }
 
@@ -325,6 +326,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Already downloading"])
             }
             self.isDownloading = true
+            defer { self.isDownloading = false }
 
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
@@ -332,7 +334,6 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let sha256 = params.sha256
 
             guard downloadUrl.hasPrefix("https://") else {
-                self.isDownloading = false
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle download URL must use HTTPS"])
             }
 
@@ -352,7 +353,6 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             // Check if file already exists and is valid
             if FileManager.default.fileExists(atPath: filePath) {
                 if self.verifyBundleSHA256(filePath, sha256: sha256) {
-                    self.isDownloading = false
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                         self?.sendEvent(type: "update/complete")
                     }
@@ -364,17 +364,26 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             // Download the file
             guard let url = URL(string: downloadUrl) else {
-                self.isDownloading = false
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
+            }
+
+            guard let session = self.urlSession else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "URLSession not initialized"])
             }
 
             self.sendEvent(type: "update/start")
 
             let request = URLRequest(url: url)
-            let (tempURL, response) = try await URLSession.shared.download(for: request)
+            let (tempURL, response) = try await session.download(for: request)
+
+            // Verify HTTPS was maintained (no HTTP redirect)
+            if let httpResponse = response as? HTTPURLResponse,
+               let responseUrl = httpResponse.url,
+               responseUrl.scheme?.lowercased() != "https" {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Download was redirected to non-HTTPS URL"])
+            }
 
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                self.isDownloading = false
                 self.sendEvent(type: "update/error", message: "HTTP error")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Download failed"])
             }
@@ -392,14 +401,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             // Verify SHA256
             if !self.verifyBundleSHA256(filePath, sha256: sha256) {
                 try? FileManager.default.removeItem(atPath: filePath)
-                self.isDownloading = false
                 self.sendEvent(type: "update/error", message: "Bundle signature verification failed")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
             }
 
             self.sendEvent(type: "update/complete")
             OneKeyLog.info("BundleUpdate", "Download completed")
-            self.isDownloading = false
             return result
         }
     }
@@ -657,9 +664,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     func testVerification() throws -> Promise<Bool> {
         return Promise.async {
-            // TODO: Integrate Gopenpgp for full GPG verification testing
-            OneKeyLog.info("BundleUpdate", "testVerification: GPG verification pending integration")
-            return true
+            // GPG verification is not yet implemented -- return false to indicate
+            // verification cannot be performed, preventing callers from assuming security.
+            OneKeyLog.warn("BundleUpdate", "testVerification: GPG verification not yet implemented, returning false")
+            return false
         }
     }
 

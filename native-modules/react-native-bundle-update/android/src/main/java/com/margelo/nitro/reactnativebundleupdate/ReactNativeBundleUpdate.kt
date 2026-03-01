@@ -778,9 +778,10 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     override fun testVerification(): Promise<Boolean> {
         return Promise.async {
-            // TODO: Integrate Gopenpgp for full GPG verification testing
-            OneKeyLog.info("BundleUpdate", "testVerification: GPG verification pending integration")
-            true
+            // GPG verification is not yet implemented -- return false to indicate
+            // verification cannot be performed, preventing callers from assuming security.
+            OneKeyLog.warn("BundleUpdate", "testVerification: GPG verification not yet implemented, returning false")
+            false
         }
     }
 

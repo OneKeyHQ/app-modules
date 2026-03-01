@@ -24,7 +24,6 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStreamReader
-import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -46,7 +45,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     private val listeners = CopyOnWriteArrayList<Listener>()
     private val nextListenerId = AtomicLong(1)
     private val isDownloading = AtomicBoolean(false)
-    private var downloadThread: Thread? = null
+    // downloadThread removed: downloads use coroutine-based Promise.async, not raw threads
 
     private fun sendEvent(type: String, progress: Int = 0, message: String = "") {
         val event = DownloadEvent(type = type, progress = progress.toDouble(), message = message)
@@ -81,97 +80,100 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         return Promise.async {
             if (isDownloading.getAndSet(true)) return@async
 
-            val url = params.downloadUrl
-            val filePath = params.filePath
-            val notificationTitle = params.notificationTitle
-            val fileSize = params.fileSize.toLong()
-
-            val context = NitroModules.applicationContext
-                ?: throw Exception("Application context unavailable")
-
-            val notifyManager = NotificationManagerCompat.from(context)
-            val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setContentTitle(notificationTitle)
-                .setContentText("")
-                .setOngoing(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setSmallIcon(android.R.drawable.stat_sys_download)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    CHANNEL_ID, "updateApp", NotificationManager.IMPORTANCE_DEFAULT
-                )
-                notifyManager.createNotificationChannel(channel)
-            }
-
-            val downloadedFile = buildFile(filePath)
-            if (downloadedFile.exists()) downloadedFile.delete()
-
-            val client = OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .build()
-            val request = Request.Builder().url(url).build()
-            val response = client.newCall(request).execute()
-
-            if (!response.isSuccessful) {
-                isDownloading.set(false)
-                sendEvent("error", message = response.code.toString())
-                throw Exception(response.code.toString())
-            }
-
-            val body = response.body ?: throw Exception("Empty response body")
-            val contentLength = if (fileSize > 0) fileSize else body.contentLength()
-            val source = body.source()
-            val sink = downloadedFile.sink().buffer()
-            val sinkBuffer = sink.buffer
-
-            var totalBytesRead = 0L
-            val bufferSize = 8 * 1024L
-            sendEvent("start")
-            var prevProgress = 0
-
             try {
-                while (true) {
-                    val bytesRead = source.read(sinkBuffer, bufferSize)
-                    if (bytesRead == -1L) break
-                    sink.emit()
-                    totalBytesRead += bytesRead
-                    if (contentLength > 0) {
-                        val progress = ((totalBytesRead * 100) / contentLength).toInt()
-                        if (prevProgress != progress) {
-                            sendEvent("downloading", progress = progress)
-                            OneKeyLog.info("AppUpdate", "download progress: $progress%")
-                            builder.setProgress(100, progress, false)
-                            if (ActivityCompat.checkSelfPermission(
-                                    context, android.Manifest.permission.POST_NOTIFICATIONS
-                                ) == PackageManager.PERMISSION_GRANTED
-                            ) {
-                                notifyManager.notify(NOTIFICATION_ID, builder.build())
+                val url = params.downloadUrl
+                val filePath = params.filePath
+                val notificationTitle = params.notificationTitle
+                val fileSize = params.fileSize.toLong()
+
+                val context = NitroModules.applicationContext
+                    ?: throw Exception("Application context unavailable")
+
+                val notifyManager = NotificationManagerCompat.from(context)
+                val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+                    .setContentTitle(notificationTitle)
+                    .setContentText("")
+                    .setOngoing(true)
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                    .setSmallIcon(android.R.drawable.stat_sys_download)
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val channel = NotificationChannel(
+                        CHANNEL_ID, "updateApp", NotificationManager.IMPORTANCE_DEFAULT
+                    )
+                    notifyManager.createNotificationChannel(channel)
+                }
+
+                val downloadedFile = buildFile(filePath)
+                if (downloadedFile.exists()) downloadedFile.delete()
+
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(10, TimeUnit.SECONDS)
+                    .readTimeout(60, TimeUnit.SECONDS)
+                    .build()
+                val request = Request.Builder().url(url).build()
+                val response = client.newCall(request).execute()
+
+                if (!response.isSuccessful) {
+                    sendEvent("error", message = response.code.toString())
+                    throw Exception(response.code.toString())
+                }
+
+                val body = response.body ?: throw Exception("Empty response body")
+                val contentLength = if (fileSize > 0) fileSize else body.contentLength()
+                val source = body.source()
+                val sink = downloadedFile.sink().buffer()
+                val sinkBuffer = sink.buffer
+
+                var totalBytesRead = 0L
+                val bufferSize = 8 * 1024L
+                sendEvent("start")
+                var prevProgress = 0
+
+                try {
+                    while (true) {
+                        val bytesRead = source.read(sinkBuffer, bufferSize)
+                        if (bytesRead == -1L) break
+                        sink.emit()
+                        totalBytesRead += bytesRead
+                        if (contentLength > 0) {
+                            val progress = ((totalBytesRead * 100) / contentLength).toInt()
+                            if (prevProgress != progress) {
+                                sendEvent("downloading", progress = progress)
+                                OneKeyLog.info("AppUpdate", "download progress: $progress%")
+                                builder.setProgress(100, progress, false)
+                                if (ActivityCompat.checkSelfPermission(
+                                        context, android.Manifest.permission.POST_NOTIFICATIONS
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notifyManager.notify(NOTIFICATION_ID, builder.build())
+                                }
+                                prevProgress = progress
                             }
-                            prevProgress = progress
                         }
                     }
+                } finally {
+                    sink.flush()
+                    sink.close()
+                    source.close()
+                }
+
+                OneKeyLog.info("AppUpdate", "Download completed")
+                sendEvent("downloaded")
+
+                notifyManager.cancel(NOTIFICATION_ID)
+                builder.setContentText("")
+                    .setProgress(0, 0, false)
+                    .setOngoing(false)
+                    .setAutoCancel(true)
+                if (ActivityCompat.checkSelfPermission(
+                        context, android.Manifest.permission.POST_NOTIFICATIONS
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
+                    notifyManager.notify(NOTIFICATION_ID, builder.build())
                 }
             } finally {
-                sink.flush()
-                sink.close()
-                source.close()
-            }
-
-            OneKeyLog.info("AppUpdate", "Download completed")
-            sendEvent("downloaded")
-            isDownloading.set(false)
-
-            notifyManager.cancel(NOTIFICATION_ID)
-            builder.setContentText("")
-                .setProgress(0, 0, false)
-                .setOngoing(false)
-                .setAutoCancel(true)
-            if (ActivityCompat.checkSelfPermission(
-                    context, android.Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                notifyManager.notify(NOTIFICATION_ID, builder.build())
+                isDownloading.set(false)
             }
         }
     }
@@ -192,7 +194,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             }
 
             val content = StringBuilder()
-            BufferedReader(InputStreamReader(response.body!!.byteStream())).use { reader ->
+            val body = response.body ?: throw Exception("Empty ASC response body")
+            BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
                 var line: String?
                 while (reader.readLine().also { line = it } != null) {
                     content.append(line).append("\n")
@@ -214,8 +217,9 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     override fun verifyASC(params: AppUpdateFileParams): Promise<Void> {
         return Promise.async {
-            // TODO: Integrate Gopenpgp for GPG signature verification
-            OneKeyLog.info("AppUpdate", "verifyASC: GPG verification pending integration")
+            // GPG signature verification is not yet implemented.
+            // Reject to prevent silently accepting unverified APKs.
+            throw Exception("GPG signature verification is not yet implemented. Cannot verify ASC for: ${params.filePath}")
         }
     }
 
@@ -264,7 +268,6 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     override fun clearCache(): Promise<Void> {
         return Promise.async {
-            downloadThread?.interrupt()
             isDownloading.set(false)
         }
     }
