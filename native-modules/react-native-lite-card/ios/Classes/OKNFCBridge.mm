@@ -17,7 +17,7 @@
 
 
 #import "OKNFCBridge.h"
-@import ReactNativeNativeLogger;
+#import "LCLogger.h"
 
 @implementation OKNFCBridge
 
@@ -140,10 +140,10 @@
 
     rv = JUB_GPC_OpenSecureChannel(authResp);
     if (JUBR_OK != rv) {
-        [OneKeyLog error:@"LiteCard" :@"JUB_GPC_OpenSecureChannel failed"];
+        [LCLogger error:@"JUB_GPC_OpenSecureChannel failed"];
         return NO;
     }
-    [OneKeyLog debug:@"LiteCard" :@"openChannel success"];
+    [LCLogger debug:@"openChannel success"];
     return YES;
 }
 
@@ -165,7 +165,7 @@
         return NO;
     }
 
-    [OneKeyLog debug:@"LiteCard" :@"subjectID parsed"];
+    [LCLogger debug:@"subjectID parsed"];
     GPC_SCP11_SHAREDINFO shareInfo;
     shareInfo.scpID = (char *)"1107";
     shareInfo.keyUsage = (char *)"3C";
@@ -183,7 +183,7 @@
         return NO;
     }
 
-    [OneKeyLog debug:@"LiteCard" :@"JUB_GPC_Initialize OK"];
+    [LCLogger debug:@"JUB_GPC_Initialize OK"];
     return YES;
 }
 
@@ -213,7 +213,7 @@
 
     BOOL identical = [certSN isEqualToString:cardSN];
 
-    [OneKeyLog debug:@"LiteCard" :[NSString stringWithFormat:@"certSN verification: %@", identical ? @"PASS" : @"FAIL"]];
+    [LCLogger debug:[NSString stringWithFormat:@"certSN verification: %@", identical ? @"PASS" : @"FAIL"]];
     return identical;
 }
 

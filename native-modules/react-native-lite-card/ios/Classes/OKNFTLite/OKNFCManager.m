@@ -9,7 +9,7 @@
 #import "OKNFCBridge.h"
 #import "OKNFCUtility.h"
 #import <CoreNFC/CoreNFC.h>
-@import ReactNativeNativeLogger;
+#import "LCLogger.h"
 //#import "OKNFCHintViewController.h"
 //#import "OKMnemonic.h"
 #import "NSString+OKAdd.h"
@@ -83,7 +83,7 @@
 #pragma mark - NFCTagReaderSessionDelegate
 
 - (void)tagReaderSession:(NFCTagReaderSession *)session didDetectTags:(NSArray<__kindof id<NFCTag>> *)tags {
-    [OneKeyLog debug:@"LiteCard" :@"tagReaderSession didDetectTags"];
+    [LCLogger debug:@"tagReaderSession didDetectTags"];
 
     id<NFCISO7816Tag> tag = [tags.firstObject asNFCISO7816Tag];
     if (!tag) { return; }
@@ -91,7 +91,7 @@
     [session connectToTag:tag completionHandler:^(NSError * _Nullable error) {
         if (error) {
             NSString *errMsg = [NSString stringWithFormat:@"connectToTag error: %@", error.localizedDescription];
-            [OneKeyLog error:@"LiteCard" :errMsg];
+            [LCLogger error:errMsg];
             //            [kTools debugTipMessage:errMsg];
             [self endNFCSessionWithError:YES];
             return;
@@ -101,7 +101,7 @@
 }
 
 - (void)tagReaderSession:(NFCTagReaderSession *)session didInvalidateWithError:(NSError *)error {
-    [OneKeyLog debug:@"LiteCard" :[NSString stringWithFormat:@"tagReaderSession didInvalidateWithError: %@", error.localizedDescription]];
+    [LCLogger debug:[NSString stringWithFormat:@"tagReaderSession didInvalidateWithError: %@", error.localizedDescription]];
     if (error.code == 200 || error.code == 6) {
         switch (self.sessionType) {
             case OKNFCLiteSessionTypeGetInfo:
@@ -145,7 +145,7 @@
 }
 
 - (void)tagReaderSessionDidBecomeActive:(NFCTagReaderSession *)session {
-    [OneKeyLog debug:@"LiteCard" :@"tagReaderSessionDidBecomeActive"];
+    [LCLogger debug:@"tagReaderSessionDidBecomeActive"];
 }
 
 #pragma mark - Tasks

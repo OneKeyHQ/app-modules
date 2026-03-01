@@ -6,7 +6,7 @@
 //
 
 #import "OKNFCUtility.h"
-@import ReactNativeNativeLogger;
+#import "LCLogger.h"
 
 @implementation OKNFCUtility
 
@@ -14,9 +14,9 @@
     BOOL ok = sw1 == OKNFC_SW1_OK;
     NSString *msg = [NSString stringWithFormat:@"APDU %@: %@ sw1:%d(%x) sw2:%d(%x)", name, ok ? @"OK" : @"FAIL", sw1, sw1, sw2, sw2];
     if (ok) {
-        [OneKeyLog debug:@"LiteCard" :msg];
+        [LCLogger debug:msg];
     } else {
-        [OneKeyLog error:@"LiteCard" :msg];
+        [LCLogger error:msg];
     }
 }
 
