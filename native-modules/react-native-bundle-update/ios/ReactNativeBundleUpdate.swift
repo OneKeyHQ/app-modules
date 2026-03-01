@@ -434,7 +434,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         return URLSession(configuration: config)
     }
 
-    init() {
+    override init() {
+        super.init()
         urlSession = createURLSession()
     }
 
