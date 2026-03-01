@@ -2,6 +2,7 @@ import NitroModules
 import ReactNativeNativeLogger
 import Foundation
 import CommonCrypto
+import Gopenpgp
 
 // OneKey GPG public key for signature verification
 private let GPG_PUBLIC_KEY = """
@@ -172,133 +173,81 @@ public class BundleUpdateStore {
     }
 
     /// Verify a PGP cleartext-signed message and extract the sha256 from the signed JSON body.
-    /// Uses Gopenpgp framework (must be linked by the host app).
-    /// Returns nil if verification fails or Gopenpgp is not available.
+    /// Uses Gopenpgp framework (vendored xcframework).
+    /// Returns nil if verification fails.
     public static func verifyGPGAndExtractSha256(_ signature: String) -> String? {
         // Check if this looks like a PGP signed message
         guard signature.contains("-----BEGIN PGP SIGNED MESSAGE-----") else {
             return nil
         }
 
-        guard let CryptoPGPClass = NSClassFromString("CryptoPGPHandle") as? NSObject.Type else {
-            OneKeyLog.warn("BundleUpdate", "Gopenpgp framework not available, skipping GPG verification")
+        // 1. Load public key
+        guard let pubKey = CryptoKey(fromArmored: GPG_PUBLIC_KEY) else {
+            OneKeyLog.error("BundleUpdate", "Failed to parse GPG public key")
             return nil
         }
 
-        do {
-            // 1. Load public key: CryptoNewKeyFromArmored(armoredKey)
-            guard let newKeyFromArmored = NSClassFromString("CryptoKey")?.perform(
-                NSSelectorFromString("alloc")
-            )?.takeUnretainedValue() else {
-                OneKeyLog.error("BundleUpdate", "Failed to create CryptoKey")
-                return nil
-            }
-
-            let publicKey = (newKeyFromArmored as AnyObject).perform(
-                NSSelectorFromString("initFromArmored:"),
-                with: GPG_PUBLIC_KEY
-            )?.takeUnretainedValue()
-
-            guard let pubKey = publicKey else {
-                OneKeyLog.error("BundleUpdate", "Failed to parse GPG public key")
-                return nil
-            }
-
-            // 2. Get PGP handle: CryptoPGP()
-            let pgpHandle = (NSClassFromString("CryptoPGPHandle") as AnyObject).perform(
-                NSSelectorFromString("alloc")
-            )?.takeUnretainedValue()
-            guard let pgp = (pgpHandle as AnyObject).perform(NSSelectorFromString("init"))?.takeUnretainedValue() else {
-                OneKeyLog.error("BundleUpdate", "Failed to create PGPHandle")
-                return nil
-            }
-
-            // 3. Build verify handle: pgp.verify().verificationKey(pubKey).new()
-            guard let verifyBuilder = (pgp as AnyObject).perform(NSSelectorFromString("verify"))?.takeUnretainedValue() else {
-                OneKeyLog.error("BundleUpdate", "Failed to get verify builder")
-                return nil
-            }
-            guard let builderWithKey = (verifyBuilder as AnyObject).perform(
-                NSSelectorFromString("verificationKey:"),
-                with: pubKey
-            )?.takeUnretainedValue() else {
-                OneKeyLog.error("BundleUpdate", "Failed to set verification key")
-                return nil
-            }
-
-            var newError: NSError?
-            let verifyHandle = (builderWithKey as AnyObject).perform(
-                NSSelectorFromString("new:"),
-                with: &newError
-            )?.takeUnretainedValue()
-
-            if let error = newError {
-                OneKeyLog.error("BundleUpdate", "Failed to create verify handle: \(error)")
-                return nil
-            }
-            guard let handle = verifyHandle else {
-                OneKeyLog.error("BundleUpdate", "Verify handle is nil")
-                return nil
-            }
-
-            // 4. Verify cleartext: handle.verifyCleartext(signatureData)
-            guard let signatureData = signature.data(using: .utf8) else {
-                return nil
-            }
-
-            var verifyError: NSError?
-            let result = (handle as AnyObject).perform(
-                NSSelectorFromString("verifyCleartext:error:"),
-                with: signatureData,
-                with: &verifyError
-            )?.takeUnretainedValue()
-
-            if let error = verifyError {
-                OneKeyLog.error("BundleUpdate", "GPG verification error: \(error)")
-                return nil
-            }
-            guard let cleartextResult = result else {
-                OneKeyLog.error("BundleUpdate", "GPG verification returned nil result")
-                return nil
-            }
-
-            // 5. Check signature: hasSignatureError()
-            let hasError = (cleartextResult as AnyObject).perform(NSSelectorFromString("hasSignatureError"))
-            // hasSignatureError returns BOOL -- if non-nil perform result, check it
-            // For Gopenpgp, signature error is checked via signatureError()
-            var sigError: NSError?
-            (cleartextResult as AnyObject).perform(
-                NSSelectorFromString("signatureError:"),
-                with: &sigError
-            )
-            if let sigErr = sigError {
-                OneKeyLog.error("BundleUpdate", "GPG signature invalid: \(sigErr)")
-                return nil
-            }
-
-            // 6. Get cleartext
-            guard let cleartextData = (cleartextResult as AnyObject).perform(
-                NSSelectorFromString("cleartext")
-            )?.takeUnretainedValue() as? Data else {
-                OneKeyLog.error("BundleUpdate", "Failed to extract cleartext from GPG result")
-                return nil
-            }
-
-            guard let text = String(data: cleartextData, encoding: .utf8) else {
-                return nil
-            }
-
-            // 7. Parse JSON and extract sha256
-            guard let jsonData = text.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                  let sha256 = json["sha256"] as? String else {
-                OneKeyLog.error("BundleUpdate", "Failed to parse cleartext JSON")
-                return nil
-            }
-
-            OneKeyLog.info("BundleUpdate", "GPG verification succeeded, sha256: \(sha256)")
-            return sha256
+        // 2. Get PGP handle
+        guard let pgp = CryptoPGP() else {
+            OneKeyLog.error("BundleUpdate", "Failed to create PGPHandle")
+            return nil
         }
+
+        // 3. Build verify handle: pgp.verify().verificationKey(pubKey).new()
+        guard let verifyBuilder = pgp.verify() else {
+            OneKeyLog.error("BundleUpdate", "Failed to get verify builder")
+            return nil
+        }
+        guard let builderWithKey = verifyBuilder.verificationKey(pubKey) else {
+            OneKeyLog.error("BundleUpdate", "Failed to set verification key")
+            return nil
+        }
+
+        var newError: NSError?
+        guard let verifyHandle = builderWithKey.new(&newError) else {
+            OneKeyLog.error("BundleUpdate", "Failed to create verify handle: \(newError?.localizedDescription ?? "unknown")")
+            return nil
+        }
+
+        // 4. Verify cleartext
+        guard let signatureData = signature.data(using: .utf8) else {
+            return nil
+        }
+
+        var verifyError: NSError?
+        guard let cleartextResult = verifyHandle.verifyCleartext(signatureData, error: &verifyError) else {
+            OneKeyLog.error("BundleUpdate", "GPG verification error: \(verifyError?.localizedDescription ?? "unknown")")
+            return nil
+        }
+
+        // 5. Check signature error
+        var sigError: NSError?
+        _ = cleartextResult.signatureError(&sigError)
+        if let sigErr = sigError {
+            OneKeyLog.error("BundleUpdate", "GPG signature invalid: \(sigErr.localizedDescription)")
+            return nil
+        }
+
+        // 6. Get cleartext
+        guard let cleartextData = cleartextResult.cleartext() else {
+            OneKeyLog.error("BundleUpdate", "Failed to extract cleartext from GPG result")
+            return nil
+        }
+
+        guard let text = String(data: cleartextData, encoding: .utf8) else {
+            return nil
+        }
+
+        // 7. Parse JSON and extract sha256
+        guard let jsonData = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let sha256 = json["sha256"] as? String else {
+            OneKeyLog.error("BundleUpdate", "Failed to parse cleartext JSON")
+            return nil
+        }
+
+        OneKeyLog.info("BundleUpdate", "GPG verification succeeded, sha256: \(sha256)")
+        return sha256
     }
 
     public static func validateMetadataFileSha256(_ currentBundleVersion: String, signature: String) -> Bool {

@@ -19,6 +19,8 @@ Pod::Spec.new do |s|
     "cpp/**/*.{hpp,cpp}",
   ]
 
+  s.vendored_frameworks = 'ios/Frameworks/Gopenpgp.xcframework'
+
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
   s.dependency 'ReactNativeNativeLogger'
