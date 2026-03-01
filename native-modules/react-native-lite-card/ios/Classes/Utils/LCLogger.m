@@ -23,7 +23,10 @@ static NSString *const kTag = @"LiteCard";
 #pragma mark - Private
 
 + (void)_log:(NSString *)selectorName message:(NSString *)message {
-    Class logClass = NSClassFromString(@"OneKeyLog");
+    Class logClass = NSClassFromString(@"ReactNativeNativeLogger.OneKeyLog");
+    if (!logClass) {
+        logClass = NSClassFromString(@"OneKeyLog");
+    }
     if (!logClass) {
         return;
     }
@@ -31,10 +34,9 @@ static NSString *const kTag = @"LiteCard";
     if (![logClass respondsToSelector:sel]) {
         return;
     }
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-    [logClass performSelector:sel withObject:kTag withObject:message];
-#pragma clang diagnostic pop
+    typedef void (*LogFunc)(id, SEL, NSString *, NSString *);
+    LogFunc func = (LogFunc)[logClass methodForSelector:sel];
+    func(logClass, sel, kTag, message);
 }
 
 @end
