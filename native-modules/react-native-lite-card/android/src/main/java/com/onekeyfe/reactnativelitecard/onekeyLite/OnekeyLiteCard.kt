@@ -23,6 +23,7 @@ object OneKeyLiteCard {
     private val mCommandGenerator by lazy {
         CommandGenerator()
     }
+    @Volatile
     private var mCardConnection: Connection? = null
 
     suspend fun startNfc(activity: FragmentActivity, callback: ((Boolean) -> Unit)? = null) =

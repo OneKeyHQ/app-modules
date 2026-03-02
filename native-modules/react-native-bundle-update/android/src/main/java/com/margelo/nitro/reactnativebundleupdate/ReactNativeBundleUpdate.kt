@@ -199,7 +199,11 @@ object BundleUpdateStoreAndroid {
                 metadata[key] = obj.getString(key)
             }
         } catch (e: Exception) {
-            OneKeyLog.error("BundleUpdate", "Error parsing JSON: ${e.message}")
+            OneKeyLog.error("BundleUpdate", "Error parsing metadata JSON: ${e.message}")
+            throw Exception("Failed to parse metadata.json: ${e.message}")
+        }
+        if (metadata.isEmpty()) {
+            throw Exception("metadata.json is empty or contains no file entries")
         }
         return metadata
     }
@@ -796,15 +800,16 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             if (!currentFolderName.isNullOrEmpty()) {
                 val dashIndex = currentFolderName.lastIndexOf("-")
                 if (dashIndex > 0) {
-                    try {
-                        val currentBundleVer = currentFolderName.substring(dashIndex + 1)
-                        val currentVerNum = currentBundleVer.toLong()
-                        val newVerNum = bundleVersion.toLong()
+                    val currentBundleVer = currentFolderName.substring(dashIndex + 1)
+                    val currentVerNum = currentBundleVer.toLongOrNull()
+                    val newVerNum = bundleVersion.toLongOrNull()
+                    if (currentVerNum != null && newVerNum != null) {
                         if (newVerNum < currentVerNum) {
                             throw Exception("Bundle version downgrade rejected: $bundleVersion < $currentBundleVer")
                         }
-                    } catch (e: NumberFormatException) {
-                        OneKeyLog.warn("BundleUpdate", "Could not parse bundle versions for downgrade check")
+                    } else if (currentVerNum != null && newVerNum == null) {
+                        // New version is non-numeric but current is numeric — reject to prevent bypass
+                        throw Exception("Bundle version format invalid: cannot compare '$bundleVersion' with '$currentBundleVer'")
                     }
                 }
             }

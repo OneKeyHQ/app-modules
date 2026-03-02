@@ -723,8 +723,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             if let current = currentFolderName,
                let dashRange = current.range(of: "-", options: .backwards) {
                 let currentBundleVer = String(current[dashRange.upperBound...])
-                if let currentNum = Int(currentBundleVer), let newNum = Int(bundleVersion), newNum < currentNum {
+                let currentNum = Int(currentBundleVer)
+                let newNum = Int(bundleVersion)
+                if let cn = currentNum, let nn = newNum, nn < cn {
                     throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle version downgrade rejected: \(bundleVersion) < \(currentBundleVer)"])
+                } else if currentNum != nil && newNum == nil {
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle version format invalid: cannot compare '\(bundleVersion)' with '\(currentBundleVer)'"])
                 }
             }
 

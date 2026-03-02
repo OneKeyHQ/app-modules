@@ -372,8 +372,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             }
 
             // Extract SHA256 from cleartext (format: "<sha256hash>  <filename>\n" or just "<sha256hash>")
-            val sha256 = cleartextBody.trim().split("\\s+".toRegex())[0]
-            if (sha256.length != 64) {
+            val sha256 = cleartextBody.trim().split("\\s+".toRegex())[0].lowercase()
+            if (sha256.length != 64 || !sha256.all { it in '0'..'9' || it in 'a'..'f' }) {
                 throw Exception("Invalid SHA256 hash format in ASC file")
             }
 
