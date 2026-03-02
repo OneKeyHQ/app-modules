@@ -30,33 +30,40 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
 
     /// When rolled, rename app-latest.log → app-{yyyy-MM-dd}.{i}.log (matches Android pattern)
     override func didArchiveLogFile(atPath logFilePath: String, wasRolled: Bool) {
-        if wasRolled {
-            let dir = (logFilePath as NSString).deletingLastPathComponent
-            let dateStr = Self.formattedDate(Date())
-            let fm = FileManager.default
+        guard wasRolled else {
+            super.didArchiveLogFile(atPath: logFilePath, wasRolled: wasRolled)
+            return
+        }
 
-            // Find next available index, retry on move failure to handle TOCTOU race
-            var index = 0
-            var moved = false
-            while !moved && index < 1000 {
-                let archivedPath = "\(dir)/\(Self.logPrefix)-\(dateStr).\(index).log"
-                if fm.fileExists(atPath: archivedPath) {
-                    index += 1
-                    continue
-                }
-                do {
-                    try fm.moveItem(atPath: logFilePath, toPath: archivedPath)
-                    moved = true
-                } catch {
-                    // Another thread may have created this file; try next index
-                    index += 1
-                }
+        let dir = (logFilePath as NSString).deletingLastPathComponent
+        let dateStr = Self.formattedDate(Date())
+        let fm = FileManager.default
+
+        // Find next available index, retry on move failure to handle TOCTOU race
+        var index = 0
+        var archivedPath = logFilePath
+        var moved = false
+        while !moved && index < 1000 {
+            archivedPath = "\(dir)/\(Self.logPrefix)-\(dateStr).\(index).log"
+            if fm.fileExists(atPath: archivedPath) {
+                index += 1
+                continue
             }
-            if !moved {
-                NSLog("[OneKeyLog] Failed to archive log file after 1000 attempts: %@", logFilePath)
+            do {
+                try fm.moveItem(atPath: logFilePath, toPath: archivedPath)
+                moved = true
+            } catch {
+                // Another thread may have created this file; try next index
+                index += 1
             }
         }
-        super.didArchiveLogFile(atPath: logFilePath, wasRolled: wasRolled)
+        if !moved {
+            NSLog("[OneKeyLog] Failed to archive log file after 1000 attempts: %@", logFilePath)
+            super.didArchiveLogFile(atPath: logFilePath, wasRolled: wasRolled)
+        } else {
+            // Pass the new path so the super class can find the file for cleanup
+            super.didArchiveLogFile(atPath: archivedPath, wasRolled: wasRolled)
+        }
     }
 }
 
