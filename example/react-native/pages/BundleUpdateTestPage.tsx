@@ -1,48 +1,306 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, Switch, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Alert,
+  Switch,
+  Platform,
+  TouchableOpacity,
+  Animated,
+  ActivityIndicator,
+} from 'react-native';
 import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase';
 import { ReactNativeBundleUpdate } from '@onekeyfe/react-native-bundle-update';
+import type {
+  BundleDownloadEvent,
+  BundleDownloadResult,
+} from '@onekeyfe/react-native-bundle-update';
 import { createMMKV } from 'react-native-mmkv';
 
 const devSettingsMmkv = createMMKV({ id: 'onekey-app-setting' });
 const KEY_DEV_MODE = 'onekey_developer_mode_enabled';
 const KEY_SKIP_GPG = 'onekey_bundle_skip_gpg_verification';
 
+// --- Types ---
+
+type StepStatus = 'pending' | 'active' | 'completed' | 'error';
+
+interface StepState {
+  status: StepStatus;
+  errorMessage?: string;
+}
+
+interface WorkflowState {
+  download: StepState;
+  verify: StepState;
+  install: StepState;
+  downloadProgress: number;
+  downloadResult: BundleDownloadResult | null;
+  isIndeterminate: boolean;
+}
+
+type StepId = 'download' | 'verify' | 'install';
+
+// --- Color Palette ---
+
+const C = {
+  cardBg: '#1c1c1e',
+  cardBgElevated: '#2c2c2e',
+  surfaceBg: '#0a0a0a',
+  accentCyan: '#00d4aa',
+  accentCyanDim: 'rgba(0, 212, 170, 0.15)',
+  accentBlue: '#007AFF',
+  errorRed: '#ff453a',
+  textPrimary: '#ffffff',
+  textSecondary: '#8e8e93',
+  textTertiary: '#636366',
+  border: '#38383a',
+};
+
+const mono = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
+
+// --- Sub-components ---
+
+function StepRow({
+  stepNumber,
+  label,
+  status,
+  errorMessage,
+  onAction,
+  actionLabel,
+  disabled,
+  children,
+}: {
+  stepNumber: number;
+  label: string;
+  status: StepStatus;
+  errorMessage?: string;
+  onAction: () => void;
+  actionLabel: string;
+  disabled: boolean;
+  children?: React.ReactNode;
+}) {
+  const btnLabel =
+    status === 'active' ? '...' : status === 'error' ? 'Retry' : actionLabel;
+
+  return (
+    <View style={s.stepRow}>
+      <View style={s.stepHeader}>
+        <View
+          style={[
+            s.stepCircle,
+            status === 'active' && s.stepCircleActive,
+            status === 'completed' && s.stepCircleCompleted,
+            status === 'error' && s.stepCircleError,
+          ]}
+        >
+          {status === 'completed' ? (
+            <Text style={s.stepCheck}>{'✓'}</Text>
+          ) : status === 'error' ? (
+            <Text style={s.stepBang}>!</Text>
+          ) : status === 'active' ? (
+            <ActivityIndicator size="small" color={C.accentCyan} />
+          ) : (
+            <Text style={s.stepNum}>{stepNumber}</Text>
+          )}
+        </View>
+
+        <View style={s.stepInfo}>
+          <Text
+            style={[s.stepLabel, status === 'pending' && s.stepLabelDim]}
+          >
+            {label}
+          </Text>
+          {status === 'active' && (
+            <Text style={s.stepSub}>In progress...</Text>
+          )}
+          {status === 'completed' && (
+            <Text style={[s.stepSub, { color: C.accentCyan }]}>
+              Completed
+            </Text>
+          )}
+          {status === 'error' && errorMessage && (
+            <Text style={[s.stepSub, { color: C.errorRed }]} numberOfLines={2}>
+              {errorMessage}
+            </Text>
+          )}
+        </View>
+
+        <TouchableOpacity
+          style={[
+            s.stepBtn,
+            disabled && s.stepBtnDisabled,
+            status === 'completed' && s.stepBtnDone,
+          ]}
+          onPress={onAction}
+          disabled={disabled || status === 'completed'}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[s.stepBtnText, disabled && s.stepBtnTextDisabled]}
+          >
+            {btnLabel}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function StepConnector({ active }: { active: boolean }) {
+  return (
+    <View style={s.connectorWrap}>
+      <View style={[s.connectorLine, active && s.connectorLineActive]} />
+    </View>
+  );
+}
+
+function ProgressBar({
+  progress,
+  percentage,
+  isIndeterminate,
+}: {
+  progress: Animated.Value;
+  percentage: number;
+  isIndeterminate: boolean;
+}) {
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isIndeterminate) {
+      const anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulse, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: false,
+          }),
+          Animated.timing(pulse, {
+            toValue: 0,
+            duration: 1000,
+            useNativeDriver: false,
+          }),
+        ]),
+      );
+      anim.start();
+      return () => anim.stop();
+    }
+    return undefined;
+  }, [isIndeterminate, pulse]);
+
+  const barWidth = isIndeterminate
+    ? pulse.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['30%', '70%'],
+      })
+    : progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['0%', '100%'],
+      });
+
+  return (
+    <View style={s.progressWrap}>
+      <View style={s.progressTrack}>
+        <Animated.View
+          style={[
+            s.progressFill,
+            { width: barWidth },
+            isIndeterminate && { opacity: 0.7 },
+          ]}
+        />
+      </View>
+      <Text style={s.progressText}>
+        {isIndeterminate ? 'Downloading...' : `${Math.round(percentage)}%`}
+      </Text>
+    </View>
+  );
+}
+
+function ToggleRow({
+  label,
+  subLabel,
+  value,
+  onToggle,
+}: {
+  label: string;
+  subLabel: string;
+  value: boolean;
+  onToggle: (v: boolean) => void;
+}) {
+  return (
+    <View style={s.toggleRow}>
+      <View style={s.toggleInfo}>
+        <Text style={s.toggleLabel}>{label}</Text>
+        <Text style={s.toggleKey}>{subLabel}</Text>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onToggle}
+        trackColor={{ false: '#3a3a3c', true: C.accentCyan }}
+        thumbColor={value ? '#ffffff' : '#8e8e93'}
+      />
+    </View>
+  );
+}
+
+// --- Main Component ---
+
 interface BundleUpdateTestPageProps {
   onGoHome: () => void;
   safeAreaInsets: any;
 }
 
-export function BundleUpdateTestPage({ onGoHome, safeAreaInsets }: BundleUpdateTestPageProps) {
-  const [result, setResult] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [appVersion, setAppVersion] = useState('');
-  const [bundleVersion, setBundleVersion] = useState('');
+const INITIAL_WORKFLOW: WorkflowState = {
+  download: { status: 'pending' },
+  verify: { status: 'pending' },
+  install: { status: 'pending' },
+  downloadProgress: 0,
+  downloadResult: null,
+  isIndeterminate: false,
+};
+
+export function BundleUpdateTestPage({
+  onGoHome,
+  safeAreaInsets,
+}: BundleUpdateTestPageProps) {
+  // --- Workflow state ---
+  const [workflow, setWorkflow] = useState<WorkflowState>(INITIAL_WORKFLOW);
+  const progressAnim = useRef(new Animated.Value(0)).current;
   const listenerIdRef = useRef<number | null>(null);
 
-  const defaultDownloadUrl = Platform.select({
-    ios: 'https://uni-test.onekey-asset.com/dashboard/version-update/5016000/upload_1761581017500.0.842474996421545.0.zip',
-    android: 'https://uni.onekey-asset.com/dashboard/version-update/5019002/upload_1767687090638.0.6528223946398171.0.zip',
-  }) ?? '';
-  const [downloadUrl, setDownloadUrl] = useState(defaultDownloadUrl);
+  // --- Input state ---
+  const defaultUrl =
+    Platform.select({
+      ios: 'https://uni-test.onekey-asset.com/dashboard/version-update/5016000/upload_1761581017500.0.842474996421545.0.zip',
+      android:
+        'https://uni.onekey-asset.com/dashboard/version-update/5019002/upload_1767687090638.0.6528223946398171.0.zip',
+    }) ?? '';
+  const [downloadUrl, setDownloadUrl] = useState(defaultUrl);
 
+  // --- Dev settings ---
   const [devModeEnabled, setDevModeEnabled] = useState(
     () => devSettingsMmkv.getBoolean(KEY_DEV_MODE) ?? false,
   );
   const [skipGPGEnabled, setSkipGPGEnabled] = useState(
     () => devSettingsMmkv.getBoolean(KEY_SKIP_GPG) ?? false,
   );
-
-  const toggleDevMode = useCallback((value: boolean) => {
-    devSettingsMmkv.set(KEY_DEV_MODE, value);
-    setDevModeEnabled(value);
+  const toggleDevMode = useCallback((v: boolean) => {
+    devSettingsMmkv.set(KEY_DEV_MODE, v);
+    setDevModeEnabled(v);
+  }, []);
+  const toggleSkipGPG = useCallback((v: boolean) => {
+    devSettingsMmkv.set(KEY_SKIP_GPG, v);
+    setSkipGPGEnabled(v);
   }, []);
 
-  const toggleSkipGPG = useCallback((value: boolean) => {
-    devSettingsMmkv.set(KEY_SKIP_GPG, value);
-    setSkipGPGEnabled(value);
-  }, []);
+  // --- Utility state ---
+  const [utilExpanded, setUtilExpanded] = useState(false);
+  const [utilResult, setUtilResult] = useState<any>(null);
+  const [utilError, setUtilError] = useState<string | null>(null);
 
+  // --- Cleanup listener on unmount ---
   useEffect(() => {
     return () => {
       if (listenerIdRef.current !== null) {
@@ -51,179 +309,224 @@ export function BundleUpdateTestPage({ onGoHome, safeAreaInsets }: BundleUpdateT
     };
   }, []);
 
-  const clearResults = () => {
-    setResult(null);
-    setError(null);
+  // --- Helpers ---
+  const updateStep = useCallback(
+    (step: StepId, update: Partial<StepState>) => {
+      setWorkflow((prev) => ({
+        ...prev,
+        [step]: { ...prev[step], ...update },
+      }));
+    },
+    [],
+  );
+
+  const resetWorkflow = useCallback(() => {
+    setWorkflow(INITIAL_WORKFLOW);
+    progressAnim.setValue(0);
+  }, [progressAnim]);
+
+  const clearUtil = () => {
+    setUtilResult(null);
+    setUtilError(null);
   };
 
-  const testGetWebEmbedPath = () => {
-    clearResults();
-    try {
-      const path = ReactNativeBundleUpdate.getWebEmbedPath();
-      setResult({ webEmbedPath: path || '(empty)' });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
+  // --- Step Handlers ---
 
-  const testGetWebEmbedPathAsync = async () => {
-    clearResults();
-    try {
-      const path = await ReactNativeBundleUpdate.getWebEmbedPathAsync();
-      setResult({ webEmbedPathAsync: path || '(empty)' });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  const testGetJsBundlePath = async () => {
-    clearResults();
-    try {
-      const path = await ReactNativeBundleUpdate.getJsBundlePath();
-      setResult({ jsBundlePath: path || '(empty)' });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  const testGetNativeAppVersion = async () => {
-    clearResults();
-    try {
-      const version = await ReactNativeBundleUpdate.getNativeAppVersion();
-      setResult({ nativeAppVersion: version });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  const testGetFallbackBundleData = async () => {
-    clearResults();
-    try {
-      const data = await ReactNativeBundleUpdate.getFallbackUpdateBundleData();
-      setResult({ fallbackBundleData: data });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  const testListLocalBundles = async () => {
-    clearResults();
-    try {
-      const bundles = await ReactNativeBundleUpdate.listLocalBundles();
-      setResult({ localBundles: bundles });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  const testIsBundleExists = async () => {
-    clearResults();
-    if (!appVersion || !bundleVersion) {
-      setError('Please enter both app version and bundle version');
-      return;
-    }
-    try {
-      const exists = await ReactNativeBundleUpdate.isBundleExists(appVersion, bundleVersion);
-      setResult({ bundleExists: exists, appVersion, bundleVersion });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  const testVerification = async () => {
-    clearResults();
-    try {
-      const ok = await ReactNativeBundleUpdate.testVerification();
-      setResult({ verificationTest: ok });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  const testClearBundle = async () => {
-    clearResults();
-    try {
-      await ReactNativeBundleUpdate.clearBundle();
-      setResult({ cleared: true });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  const testClearAllJSBundleData = async () => {
-    Alert.alert(
-      'Confirm',
-      'This will clear ALL JS bundle data. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear All',
-          style: 'destructive',
-          onPress: async () => {
-            clearResults();
-            try {
-              const r = await ReactNativeBundleUpdate.clearAllJSBundleData();
-              setResult({ clearAll: r });
-            } catch (err) {
-              setError(err instanceof Error ? err.message : 'Unknown error');
-            }
-          },
-        },
-      ],
-    );
-  };
-
-  const testDownloadBundle = async () => {
-    clearResults();
+  const handleDownload = useCallback(async () => {
     if (!downloadUrl) {
-      setError('Please enter a download URL');
+      updateStep('download', {
+        status: 'error',
+        errorMessage: 'Please enter a download URL',
+      });
       return;
     }
+
+    // Reset all
+    setWorkflow({
+      ...INITIAL_WORKFLOW,
+      download: { status: 'active' },
+      isIndeterminate: Platform.OS === 'ios',
+    });
+    progressAnim.setValue(0);
+
+    // Register listener for progress
+    const lid = ReactNativeBundleUpdate.addDownloadListener(
+      (event: BundleDownloadEvent) => {
+        if (event.type === 'update/downloading') {
+          setWorkflow((prev) => ({
+            ...prev,
+            downloadProgress: event.progress,
+            isIndeterminate: false,
+          }));
+          Animated.timing(progressAnim, {
+            toValue: event.progress / 100,
+            duration: 200,
+            useNativeDriver: false,
+          }).start();
+        }
+      },
+    );
+    listenerIdRef.current = lid;
+
     try {
-      const r = await ReactNativeBundleUpdate.downloadBundle({
+      const result = await ReactNativeBundleUpdate.downloadBundle({
         downloadUrl,
         latestVersion: '0.0.0',
         bundleVersion: '0',
         fileSize: 0,
         sha256: '',
       });
-      setResult({ downloadResult: r });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
 
-  const testAddDownloadListener = () => {
-    clearResults();
-    try {
-      if (listenerIdRef.current !== null) {
-        Alert.alert('Info', 'Listener already registered');
-        return;
-      }
-      const id = ReactNativeBundleUpdate.addDownloadListener((event) => {
-        setResult({
-          downloadEvent: event,
-          timestamp: new Date().toLocaleTimeString(),
-        });
+      setWorkflow((prev) => ({
+        ...prev,
+        download: { status: 'completed' },
+        downloadProgress: 100,
+        downloadResult: result,
+        isIndeterminate: false,
+      }));
+      Animated.timing(progressAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
+    } catch (err) {
+      updateStep('download', {
+        status: 'error',
+        errorMessage: err instanceof Error ? err.message : 'Download failed',
       });
-      listenerIdRef.current = id;
-      setResult({ listenerRegistered: true, listenerId: id });
+      setWorkflow((prev) => ({ ...prev, isIndeterminate: false }));
+    } finally {
+      if (listenerIdRef.current !== null) {
+        ReactNativeBundleUpdate.removeDownloadListener(listenerIdRef.current);
+        listenerIdRef.current = null;
+      }
+    }
+  }, [downloadUrl, progressAnim, updateStep]);
+
+  const handleVerify = useCallback(async () => {
+    const dr = workflow.downloadResult;
+    if (!dr) return;
+    updateStep('verify', { status: 'active' });
+    try {
+      await ReactNativeBundleUpdate.verifyBundle({
+        downloadedFile: dr.downloadedFile,
+        sha256: dr.sha256,
+        latestVersion: dr.latestVersion,
+        bundleVersion: dr.bundleVersion,
+      });
+      updateStep('verify', { status: 'completed' });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      updateStep('verify', {
+        status: 'error',
+        errorMessage:
+          err instanceof Error ? err.message : 'Verification failed',
+      });
+    }
+  }, [workflow.downloadResult, updateStep]);
+
+  const handleInstall = useCallback(async () => {
+    const dr = workflow.downloadResult;
+    if (!dr) return;
+    updateStep('install', { status: 'active' });
+    try {
+      await ReactNativeBundleUpdate.installBundle({
+        downloadedFile: dr.downloadedFile,
+        latestVersion: dr.latestVersion,
+        bundleVersion: dr.bundleVersion,
+        signature: '',
+      });
+      updateStep('install', { status: 'completed' });
+    } catch (err) {
+      updateStep('install', {
+        status: 'error',
+        errorMessage:
+          err instanceof Error ? err.message : 'Installation failed',
+      });
+    }
+  }, [workflow.downloadResult, updateStep]);
+
+  // --- Utility handlers ---
+
+  const utilGetWebEmbedPath = () => {
+    clearUtil();
+    try {
+      setUtilResult({ webEmbedPath: ReactNativeBundleUpdate.getWebEmbedPath() || '(empty)' });
+    } catch (err) {
+      setUtilError(err instanceof Error ? err.message : 'Unknown error');
     }
   };
-
-  // DevSettings + skip-GPG: verify all local bundles to exercise the GPG check path.
-  // Native code logs: "GPG check: devSettings=X, skipGPGToggle=Y, skipGPG=Z"
-  // To enable skip: set both MMKV keys to true in instance "onekey-app-setting":
-  //   onekey_developer_mode_enabled = true
-  //   onekey_bundle_skip_gpg_verification = true
-  const testVerifyAllLocalBundles = async () => {
-    clearResults();
+  const utilGetJsBundlePath = async () => {
+    clearUtil();
+    try {
+      setUtilResult({ jsBundlePath: (await ReactNativeBundleUpdate.getJsBundlePath()) || '(empty)' });
+    } catch (err) {
+      setUtilError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+  const utilGetNativeAppVersion = async () => {
+    clearUtil();
+    try {
+      setUtilResult({ nativeAppVersion: await ReactNativeBundleUpdate.getNativeAppVersion() });
+    } catch (err) {
+      setUtilError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+  const utilGetFallbackData = async () => {
+    clearUtil();
+    try {
+      setUtilResult({ fallbackBundleData: await ReactNativeBundleUpdate.getFallbackUpdateBundleData() });
+    } catch (err) {
+      setUtilError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+  const utilListLocal = async () => {
+    clearUtil();
+    try {
+      setUtilResult({ localBundles: await ReactNativeBundleUpdate.listLocalBundles() });
+    } catch (err) {
+      setUtilError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+  const utilTestVerification = async () => {
+    clearUtil();
+    try {
+      setUtilResult({ verificationTest: await ReactNativeBundleUpdate.testVerification() });
+    } catch (err) {
+      setUtilError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+  const utilClearBundle = async () => {
+    clearUtil();
+    try {
+      await ReactNativeBundleUpdate.clearBundle();
+      setUtilResult({ cleared: true });
+    } catch (err) {
+      setUtilError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+  const utilClearAll = () => {
+    Alert.alert('Confirm', 'Clear ALL JS bundle data?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear All',
+        style: 'destructive',
+        onPress: async () => {
+          clearUtil();
+          try {
+            setUtilResult({ clearAll: await ReactNativeBundleUpdate.clearAllJSBundleData() });
+          } catch (err) {
+            setUtilError(err instanceof Error ? err.message : 'Unknown error');
+          }
+        },
+      },
+    ]);
+  };
+  const utilVerifyAllLocal = async () => {
+    clearUtil();
     try {
       const bundles = await ReactNativeBundleUpdate.listLocalBundles();
       if (bundles.length === 0) {
-        setResult({ message: 'No local bundles found', bundles: [] });
+        setUtilResult({ message: 'No local bundles found', bundles: [] });
         return;
       }
       const results: Record<string, string> = {};
@@ -236,136 +539,347 @@ export function BundleUpdateTestPage({ onGoHome, safeAreaInsets }: BundleUpdateT
             err instanceof Error ? err.message : 'error';
         }
       }
-      setResult({ verifyResults: results });
+      setUtilResult({ verifyResults: results });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setUtilError(err instanceof Error ? err.message : 'Unknown error');
     }
   };
 
+  // --- Render ---
+
+  const showProgress =
+    workflow.download.status === 'active' ||
+    workflow.download.status === 'completed';
+
   return (
     <TestPageBase
-      title="Bundle Update Test"
+      title="Bundle Update"
       onGoHome={onGoHome}
       safeAreaInsets={safeAreaInsets}
     >
-      {/* Path & Version Info */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Paths & Info</Text>
-        <TestButton title="Get Web Embed Path (sync)" onPress={testGetWebEmbedPath} />
-        <TestButton title="Get Web Embed Path (async)" onPress={testGetWebEmbedPathAsync} />
-        <TestButton title="Get JS Bundle Path" onPress={testGetJsBundlePath} />
-        <TestButton title="Get Native App Version" onPress={testGetNativeAppVersion} />
-      </View>
-
-      {/* Bundle Data */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Bundle Data</Text>
-        <TestButton title="Get Fallback Bundle Data" onPress={testGetFallbackBundleData} />
-        <TestButton title="List Local Bundles" onPress={testListLocalBundles} />
-      </View>
-
-      {/* Bundle Exists Check */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Check Bundle Exists</Text>
-        <TestInput placeholder="App Version" value={appVersion} onChangeText={setAppVersion} />
-        <TestInput placeholder="Bundle Version" value={bundleVersion} onChangeText={setBundleVersion} />
-        <TestButton title="Check Bundle Exists" onPress={testIsBundleExists} />
-      </View>
-
-      {/* Verification & Cleanup */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Verification & Cleanup</Text>
-        <TestButton title="Test Verification" onPress={testVerification} />
-        <TestButton title="Clear Bundle" onPress={testClearBundle} />
-        <TestButton title="Clear All JS Bundle Data" onPress={testClearAllJSBundleData} />
-      </View>
-
-      {/* DevSettings Skip-GPG Test */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>DevSettings Skip-GPG Test</Text>
-        <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>
-            {'Developer Mode\n'}
-            <Text style={styles.toggleKey}>{KEY_DEV_MODE}</Text>
-          </Text>
-          <Switch value={devModeEnabled} onValueChange={toggleDevMode} />
-        </View>
-        <View style={styles.toggleRow}>
-          <Text style={styles.toggleLabel}>
-            {'Skip GPG Verification\n'}
-            <Text style={styles.toggleKey}>{KEY_SKIP_GPG}</Text>
-          </Text>
-          <Switch value={skipGPGEnabled} onValueChange={toggleSkipGPG} />
-        </View>
-        <Text style={styles.infoText}>
-          {`Both switches must be ON to skip GPG.\nCheck native logs for:\n  GPG check: devSettings=X, skipGPGToggle=Y, skipGPG=Z`}
-        </Text>
-        <TestButton
-          title="Verify All Local Bundles (triggers GPG check)"
-          onPress={testVerifyAllLocalBundles}
-        />
-        <TestButton title="Test Verification (GPG self-test)" onPress={testVerification} />
-      </View>
-
-      {/* Download Bundle */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Download Bundle</Text>
+      {/* URL Input */}
+      <View style={s.card}>
+        <Text style={s.cardTitle}>BUNDLE URL</Text>
         <TestInput
           placeholder="Download URL"
           value={downloadUrl}
           onChangeText={setDownloadUrl}
         />
-        <TestButton title="Download Bundle" onPress={testDownloadBundle} />
       </View>
 
-      {/* Events */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Download Events</Text>
-        <TestButton title="Register Download Listener" onPress={testAddDownloadListener} />
+      {/* Pipeline */}
+      <View style={s.card}>
+        <Text style={s.cardTitle}>UPDATE PIPELINE</Text>
+
+        <StepRow
+          stepNumber={1}
+          label="Download Bundle"
+          status={workflow.download.status}
+          errorMessage={workflow.download.errorMessage}
+          onAction={handleDownload}
+          actionLabel="Download"
+          disabled={workflow.download.status === 'active'}
+        >
+          {showProgress && (
+            <ProgressBar
+              progress={progressAnim}
+              percentage={workflow.downloadProgress}
+              isIndeterminate={workflow.isIndeterminate}
+            />
+          )}
+        </StepRow>
+
+        <StepConnector active={workflow.download.status === 'completed'} />
+
+        <StepRow
+          stepNumber={2}
+          label="Verify Integrity"
+          status={workflow.verify.status}
+          errorMessage={workflow.verify.errorMessage}
+          onAction={handleVerify}
+          actionLabel="Verify"
+          disabled={
+            workflow.download.status !== 'completed' ||
+            workflow.verify.status === 'active'
+          }
+        />
+
+        <StepConnector active={workflow.verify.status === 'completed'} />
+
+        <StepRow
+          stepNumber={3}
+          label="Install Bundle"
+          status={workflow.install.status}
+          errorMessage={workflow.install.errorMessage}
+          onAction={handleInstall}
+          actionLabel="Install"
+          disabled={
+            workflow.verify.status !== 'completed' ||
+            workflow.install.status === 'active'
+          }
+        />
       </View>
 
-      <TestResult result={result} error={error} />
+      {/* Reset */}
+      <TouchableOpacity style={s.resetBtn} onPress={resetWorkflow}>
+        <Text style={s.resetBtnText}>Reset Pipeline</Text>
+      </TouchableOpacity>
+
+      {/* Dev Settings */}
+      <View style={s.card}>
+        <Text style={s.cardTitle}>DEVELOPER SETTINGS</Text>
+        <ToggleRow
+          label="Developer Mode"
+          subLabel={KEY_DEV_MODE}
+          value={devModeEnabled}
+          onToggle={toggleDevMode}
+        />
+        <ToggleRow
+          label="Skip GPG Verification"
+          subLabel={KEY_SKIP_GPG}
+          value={skipGPGEnabled}
+          onToggle={toggleSkipGPG}
+        />
+        <Text style={s.infoText}>
+          Both switches must be ON to skip GPG.{'\n'}Check native logs for:{'\n'}
+          {'  '}GPG check: devSettings=X, skipGPGToggle=Y, skipGPG=Z
+        </Text>
+      </View>
+
+      {/* Utilities */}
+      <TouchableOpacity
+        style={[s.card, s.utilHeader]}
+        onPress={() => setUtilExpanded(!utilExpanded)}
+        activeOpacity={0.7}
+      >
+        <Text style={s.cardTitle}>UTILITIES & DEBUG</Text>
+        <Text style={s.chevron}>{utilExpanded ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+      {utilExpanded && (
+        <View style={[s.card, { borderTopLeftRadius: 0, borderTopRightRadius: 0, marginTop: -12 }]}>
+          <TestButton title="Get Web Embed Path" onPress={utilGetWebEmbedPath} />
+          <TestButton title="Get JS Bundle Path" onPress={utilGetJsBundlePath} />
+          <TestButton title="Get Native App Version" onPress={utilGetNativeAppVersion} />
+          <TestButton title="Get Fallback Bundle Data" onPress={utilGetFallbackData} />
+          <TestButton title="List Local Bundles" onPress={utilListLocal} />
+          <TestButton title="Test Verification" onPress={utilTestVerification} />
+          <TestButton title="Verify All Local Bundles" onPress={utilVerifyAllLocal} />
+          <TestButton title="Clear Bundle" onPress={utilClearBundle} />
+          <TestButton title="Clear All JS Bundle Data" onPress={utilClearAll} />
+          <TestResult result={utilResult} error={utilError} />
+        </View>
+      )}
     </TestPageBase>
   );
 }
 
-const styles = StyleSheet.create({
-  section: {
-    marginBottom: 20,
+// --- Styles ---
+
+const s = StyleSheet.create({
+  // Card
+  card: {
+    backgroundColor: C.cardBg,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  sectionTitle: {
-    fontSize: 18,
+  cardTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.textSecondary,
+    letterSpacing: 1.5,
+    marginBottom: 12,
+  },
+
+  // Steps
+  stepRow: {
+    marginBottom: 4,
+  },
+  stepHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: C.cardBgElevated,
+    borderWidth: 2,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepCircleActive: {
+    borderColor: C.accentCyan,
+    backgroundColor: C.accentCyanDim,
+  },
+  stepCircleCompleted: {
+    borderColor: C.accentCyan,
+    backgroundColor: C.accentCyan,
+  },
+  stepCircleError: {
+    borderColor: C.errorRed,
+    backgroundColor: 'rgba(255,69,58,0.15)',
+  },
+  stepNum: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.textTertiary,
+  },
+  stepCheck: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+  },
+  stepBang: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: C.errorRed,
+  },
+  stepInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  stepLabel: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
+    color: C.textPrimary,
   },
-  infoText: {
+  stepLabelDim: {
+    color: C.textTertiary,
+  },
+  stepSub: {
     fontSize: 12,
-    color: '#666',
-    fontFamily: 'monospace',
-    backgroundColor: '#f5f5f5',
-    padding: 8,
-    borderRadius: 4,
-    marginBottom: 8,
+    color: C.accentCyan,
+    marginTop: 2,
   },
+  stepBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: C.accentBlue,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  stepBtnDisabled: {
+    backgroundColor: C.cardBgElevated,
+  },
+  stepBtnDone: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: C.accentCyan,
+  },
+  stepBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  stepBtnTextDisabled: {
+    color: C.textTertiary,
+  },
+
+  // Connector
+  connectorWrap: {
+    paddingLeft: 15,
+    height: 24,
+    justifyContent: 'center',
+  },
+  connectorLine: {
+    width: 2,
+    height: '100%',
+    backgroundColor: C.border,
+  },
+  connectorLineActive: {
+    backgroundColor: C.accentCyan,
+  },
+
+  // Progress
+  progressWrap: {
+    marginTop: 10,
+    marginLeft: 44,
+  },
+  progressTrack: {
+    height: 6,
+    backgroundColor: C.surfaceBg,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: C.accentCyan,
+    borderRadius: 3,
+  },
+  progressText: {
+    fontSize: 11,
+    color: C.textSecondary,
+    marginTop: 4,
+    fontFamily: mono,
+  },
+
+  // Reset
+  resetBtn: {
+    alignSelf: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.border,
+    marginBottom: 14,
+  },
+  resetBtnText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: C.textSecondary,
+  },
+
+  // Toggle
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e0e0e0',
-    marginBottom: 8,
+    borderBottomColor: C.border,
   },
-  toggleLabel: {
-    fontSize: 14,
-    color: '#333',
+  toggleInfo: {
     flex: 1,
     marginRight: 12,
   },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: C.textPrimary,
+  },
   toggleKey: {
+    fontSize: 10,
+    color: C.textTertiary,
+    fontFamily: mono,
+    marginTop: 2,
+  },
+
+  // Info text
+  infoText: {
     fontSize: 11,
-    color: '#888',
-    fontFamily: 'monospace',
+    color: C.textTertiary,
+    fontFamily: mono,
+    backgroundColor: C.cardBgElevated,
+    padding: 10,
+    borderRadius: 6,
+    marginTop: 10,
+    lineHeight: 16,
+  },
+
+  // Utilities
+  utilHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  chevron: {
+    fontSize: 12,
+    color: C.textSecondary,
   },
 });
