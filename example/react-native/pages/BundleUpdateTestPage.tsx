@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, Switch } from 'react-native';
+import { View, Text, StyleSheet, Alert, Switch, Platform } from 'react-native';
 import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase';
 import { ReactNativeBundleUpdate } from '@onekeyfe/react-native-bundle-update';
 import { createMMKV } from 'react-native-mmkv';
@@ -19,6 +19,12 @@ export function BundleUpdateTestPage({ onGoHome, safeAreaInsets }: BundleUpdateT
   const [appVersion, setAppVersion] = useState('');
   const [bundleVersion, setBundleVersion] = useState('');
   const listenerIdRef = useRef<number | null>(null);
+
+  const defaultDownloadUrl = Platform.select({
+    ios: 'https://uni-test.onekey-asset.com/dashboard/version-update/5016000/upload_1761581017500.0.842474996421545.0.zip',
+    android: 'https://uni.onekey-asset.com/dashboard/version-update/5019002/upload_1767687090638.0.6528223946398171.0.zip',
+  }) ?? '';
+  const [downloadUrl, setDownloadUrl] = useState(defaultDownloadUrl);
 
   const [devModeEnabled, setDevModeEnabled] = useState(
     () => devSettingsMmkv.getBoolean(KEY_DEV_MODE) ?? false,
@@ -167,6 +173,26 @@ export function BundleUpdateTestPage({ onGoHome, safeAreaInsets }: BundleUpdateT
     );
   };
 
+  const testDownloadBundle = async () => {
+    clearResults();
+    if (!downloadUrl) {
+      setError('Please enter a download URL');
+      return;
+    }
+    try {
+      const r = await ReactNativeBundleUpdate.downloadBundle({
+        downloadUrl,
+        latestVersion: '0.0.0',
+        bundleVersion: '0',
+        fileSize: 0,
+        sha256: '',
+      });
+      setResult({ downloadResult: r });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
   const testAddDownloadListener = () => {
     clearResults();
     try {
@@ -279,6 +305,17 @@ export function BundleUpdateTestPage({ onGoHome, safeAreaInsets }: BundleUpdateT
           onPress={testVerifyAllLocalBundles}
         />
         <TestButton title="Test Verification (GPG self-test)" onPress={testVerification} />
+      </View>
+
+      {/* Download Bundle */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Download Bundle</Text>
+        <TestInput
+          placeholder="Download URL"
+          value={downloadUrl}
+          onChangeText={setDownloadUrl}
+        />
+        <TestButton title="Download Bundle" onPress={testDownloadBundle} />
       </View>
 
       {/* Events */}
