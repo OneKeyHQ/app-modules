@@ -8,6 +8,7 @@ class ReactNativeGetRandomValues: HybridReactNativeGetRandomValuesSpec {
         let length = Int(byteLength)
         guard length > 0, length <= ReactNativeGetRandomValues.maxByteLength,
               let data = NSMutableData(length: length) else {
+            OneKeyLog.warn("RandomValues", "Invalid byteLength: \(byteLength), must be 1...\(ReactNativeGetRandomValues.maxByteLength)")
             throw NSError(domain: "ReactNativeGetRandomValues", code: -1,
                           userInfo: [NSLocalizedDescriptionKey: "Invalid byteLength: must be 1...\(ReactNativeGetRandomValues.maxByteLength)"])
         }

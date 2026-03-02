@@ -12,6 +12,7 @@ class ReactNativeGetRandomValues : HybridReactNativeGetRandomValuesSpec() {
   override fun getRandomBase64(byteLength: Double): String {
     val length = byteLength.toInt()
     if (length <= 0 || length > MAX_BYTE_LENGTH) {
+      OneKeyLog.warn("RandomValues", "Invalid byteLength: $byteLength, must be 1..$MAX_BYTE_LENGTH")
       throw IllegalArgumentException("Invalid byteLength: must be 1...$MAX_BYTE_LENGTH")
     }
     try {
