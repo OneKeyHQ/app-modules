@@ -674,12 +674,6 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Zip file exceeds maximum allowed size"])
             }
 
-            // Validate payload size before extraction (decompression bomb protection)
-            let payloadSize = (try? SSZipArchive.payloadSize(forArchiveAtPath: filePath))?.int64Value ?? 0
-            if payloadSize > Int64(maxZipFileSize) {
-                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Zip payload exceeds maximum allowed size (decompression bomb protection)"])
-            }
-
             // Unzip using SSZipArchive
             do {
                 try SSZipArchive.unzipFile(atPath: filePath, toDestination: destination, overwrite: true, password: nil)
