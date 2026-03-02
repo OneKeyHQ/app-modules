@@ -332,33 +332,6 @@ export function BundleUpdateTestPage({
         bundleVersion: '200',
         fileSize: 51617503,
         sha256: 'c0beb980fc113bc21ea510b778933ed488dc685c2216105bd146df8e9f791a3d',
-        signature: `
-        -----BEGIN PGP SIGNED MESSAGE-----
-Hash: SHA256
-
-{
-  "fileName": "metadata.json",
-  "sha256": "8c71473ccb1c590e8c13642559600eb0c8e2649c9567236e2ac27e79e919a12c",
-  "size": 23123,
-  "generatedAt": "2025-10-22T09:50:50.446Z"
-}
------BEGIN PGP SIGNATURE-----
-
-iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmj/ZF0OHGRldkBvbmVr
-ZXkuc28ACgkQs2mmepC/OHuVZhAArMmwReTpiw+XoKTw7bwlVrz0OWHfAkdh6lFY
-xQpGj+AsY38NKJImrK7IQLhcnTJIwycY0a5eh8Wnqs0sxtmmwwyWQs+RHSwIdlTJ
-CLpTUGxowNiD0ldz0LVLjPFqZz3/fYKkpGW1+ejkMdRXBbUrFGTa+XsEd0k3TWj2
-bxFrhy128SpQ1NJ8AXXWRzZaenFAADa5ZEJUMV4Q8sjV+C8OXtVKeW1IDXAvWEzx
-x9SWU4HD4ciKYT6yRZ6RuHJ3YXFdIDPMrPXDSPTjcZUnhsadT0qFoRck6ya4uyQP
-SNvEge9W9Kcup0XfKkK5SnIRyZeKgW5Zn39W8C5equqmrGy581E6R28KS3KHsE66
-Pf6WmVE/XuAKt5F++TmC6RBZ9PISPdOVhWcPZ74ySsFOUQ0nswMg1GLQ/kfixXIl
-8ejFGhzhCRDmxYZ1aEJeMAAQhBuXM5TKtY79TIT9lNlttM0J/hl3rTTVxt9xSsMW
-MCduz+A1mdO8T/DPqvpJksOO/YOT4gzHT9OSXNsYdte1QJKHmQdeAfzi/m66Z2/L
-1qqTvwH3byXreUAjXwAWZLIbAQJ6zeeIrVKiut7DCJOHE+kGS2vdQiM2NmRFE0hP
-qxdzLH784DPCWB36Xd3VZfbUxKOc06+bHlFCEXyylWD3schXV9c8Amz4DoriYIdi
-Ni3q+jg=
-=BVQy
------END PGP SIGNATURE-----`
       });
 
       setWorkflow((prev) => ({
@@ -391,11 +364,37 @@ Ni3q+jg=
     if (!dr) return;
     updateStep('verify', { status: 'active' });
     try {
-      await ReactNativeBundleUpdate.verifyBundle({
+      await ReactNativeBundleUpdate.verifyBundleASC({
         downloadedFile: dr.downloadedFile,
         sha256: dr.sha256,
         latestVersion: dr.latestVersion,
         bundleVersion: dr.bundleVersion,
+        signature: `-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+{
+  "fileName": "metadata.json",
+  "sha256": "8c71473ccb1c590e8c13642559600eb0c8e2649c9567236e2ac27e79e919a12c",
+  "size": 23123,
+  "generatedAt": "2025-10-22T09:50:50.446Z"
+}
+-----BEGIN PGP SIGNATURE-----
+
+iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmj/ZF0OHGRldkBvbmVr
+ZXkuc28ACgkQs2mmepC/OHuVZhAArMmwReTpiw+XoKTw7bwlVrz0OWHfAkdh6lFY
+xQpGj+AsY38NKJImrK7IQLhcnTJIwycY0a5eh8Wnqs0sxtmmwwyWQs+RHSwIdlTJ
+CLpTUGxowNiD0ldz0LVLjPFqZz3/fYKkpGW1+ejkMdRXBbUrFGTa+XsEd0k3TWj2
+bxFrhy128SpQ1NJ8AXXWRzZaenFAADa5ZEJUMV4Q8sjV+C8OXtVKeW1IDXAvWEzx
+x9SWU4HD4ciKYT6yRZ6RuHJ3YXFdIDPMrPXDSPTjcZUnhsadT0qFoRck6ya4uyQP
+SNvEge9W9Kcup0XfKkK5SnIRyZeKgW5Zn39W8C5equqmrGy581E6R28KS3KHsE66
+Pf6WmVE/XuAKt5F++TmC6RBZ9PISPdOVhWcPZ74ySsFOUQ0nswMg1GLQ/kfixXIl
+8ejFGhzhCRDmxYZ1aEJeMAAQhBuXM5TKtY79TIT9lNlttM0J/hl3rTTVxt9xSsMW
+MCduz+A1mdO8T/DPqvpJksOO/YOT4gzHT9OSXNsYdte1QJKHmQdeAfzi/m66Z2/L
+1qqTvwH3byXreUAjXwAWZLIbAQJ6zeeIrVKiut7DCJOHE+kGS2vdQiM2NmRFE0hP
+qxdzLH784DPCWB36Xd3VZfbUxKOc06+bHlFCEXyylWD3schXV9c8Amz4DoriYIdi
+Ni3q+jg=
+=BVQy
+-----END PGP SIGNATURE-----`
       });
       updateStep('verify', { status: 'completed' });
     } catch (err) {
