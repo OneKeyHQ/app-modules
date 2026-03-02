@@ -159,7 +159,7 @@ public class BundleUpdateStore {
     /// Reads the persisted value from MMKV storage written by the JS ServiceDevSetting layer.
     public static func isDevSettingsEnabled() -> Bool {
         // Ensure MMKV is initialized (safe to call multiple times)
-        MMKV.initializeMMKV(nil)
+        MMKV.initialize(rootDir: nil)
         guard let mmkv = MMKV(mmapID: "onekey-app-setting") else { return false }
         return mmkv.bool(forKey: "onekey_developer_mode_enabled", defaultValue: false)
     }
@@ -168,7 +168,7 @@ public class BundleUpdateStore {
     /// Reads the persisted value from MMKV storage (key: onekey_bundle_skip_gpg_verification,
     /// instance: onekey-app-setting).
     public static func isSkipGPGEnabled() -> Bool {
-        MMKV.initializeMMKV(nil)
+        MMKV.initialize(rootDir: nil)
         guard let mmkv = MMKV(mmapID: "onekey-app-setting") else { return false }
         return mmkv.bool(forKey: "onekey_bundle_skip_gpg_verification", defaultValue: false)
     }
@@ -674,9 +674,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Zip file exceeds maximum allowed size"])
             }
 
-            // Validate paths before extraction using SSZipArchive entry enumeration
-            let zipEntries = SSZipArchive.payloadSize(forArchiveAtPath: filePath)
-            if zipEntries > Int64(maxZipFileSize) {
+            // Validate payload size before extraction (decompression bomb protection)
+            let payloadSize = (try? SSZipArchive.payloadSize(forArchiveAtPath: filePath))?.int64Value ?? 0
+            if payloadSize > Int64(maxZipFileSize) {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Zip payload exceeds maximum allowed size (decompression bomb protection)"])
             }
 
