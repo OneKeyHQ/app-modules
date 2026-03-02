@@ -274,6 +274,27 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
     }
   };
 
+  // WebView & Play Services
+  const testGetWebViewPackageInfo = async () => {
+    clearResults();
+    try {
+      const info = await deviceUtils.getCurrentWebViewPackageInfo();
+      setResult({ webViewPackageInfo: info });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
+  const testIsGooglePlayServicesAvailable = async () => {
+    clearResults();
+    try {
+      const status = await deviceUtils.isGooglePlayServicesAvailable();
+      setResult({ googlePlayServices: status });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
   // ExitModule
   const testExitApp = () => {
     Alert.alert(
@@ -481,6 +502,21 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
         />
       </View>
 
+      {/* WebView & Play Services */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>WebView & Play Services</Text>
+
+        <TestButton
+          title="Get WebView Package Info"
+          onPress={testGetWebViewPackageInfo}
+        />
+
+        <TestButton
+          title="Check Google Play Services"
+          onPress={testIsGooglePlayServicesAvailable}
+        />
+      </View>
+
       {/* Exit App */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Exit App</Text>
@@ -504,6 +540,8 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
           • Background: Changes system UI colors (status bar, navigation bar){'\n'}
           • Launch Options: Shows how the app was launched (notification, deep link, etc.){'\n'}
           • Startup Time: Time in ms from native app start{'\n'}
+          • WebView: Shows installed WebView package info (Android){'\n'}
+          • Play Services: Checks Google Play Services availability (Android){'\n'}
           • Exit App: Terminates the app process (with confirmation)
         </Text>
       </View>
