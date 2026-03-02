@@ -25,6 +25,7 @@ Pod::Spec.new do |s|
   s.dependency 'React-callinvoker'
   s.dependency 'ReactNativeNativeLogger'
   s.dependency 'SSZipArchive', '~> 2.4'
+  s.dependency 'MMKV', '~> 2.2'
 
   load 'nitrogen/generated/ios/ReactNativeBundleUpdate+autolinking.rb'
   add_nitrogen_files(s)

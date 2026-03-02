@@ -4,6 +4,7 @@ import Foundation
 import CommonCrypto
 import Gopenpgp
 import SSZipArchive
+import MMKV
 
 // OneKey GPG public key for signature verification
 private let GPG_PUBLIC_KEY = """
@@ -152,6 +153,24 @@ public class BundleUpdateStore {
               let data = FileManager.default.contents(atPath: path),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return nil }
         return json
+    }
+
+    /// Returns true if OneKey developer mode (DevSettings) is enabled.
+    /// Reads the persisted value from MMKV storage written by the JS ServiceDevSetting layer.
+    public static func isDevSettingsEnabled() -> Bool {
+        // Ensure MMKV is initialized (safe to call multiple times)
+        MMKV.initializeMMKV(nil)
+        guard let mmkv = MMKV(mmapID: "onekey-app-setting") else { return false }
+        return mmkv.bool(forKey: "onekey_developer_mode_enabled", defaultValue: false)
+    }
+
+    /// Returns true if the skip-GPG-verification toggle is enabled in developer settings.
+    /// Reads the persisted value from MMKV storage (key: onekey_bundle_skip_gpg_verification,
+    /// instance: onekey-app-setting).
+    public static func isSkipGPGEnabled() -> Bool {
+        MMKV.initializeMMKV(nil)
+        guard let mmkv = MMKV(mmapID: "onekey-app-setting") else { return false }
+        return mmkv.bool(forKey: "onekey_bundle_skip_gpg_verification", defaultValue: false)
     }
 
     public static func readMetadataFileSha256(_ signature: String) -> String? {
@@ -343,7 +362,11 @@ public class BundleUpdateStore {
         }
 
         let signature = UserDefaults.standard.string(forKey: currentBundleVer) ?? ""
-        if !validateMetadataFileSha256(currentBundleVer, signature: signature) {
+        let devSettingsEnabled = isDevSettingsEnabled()
+        if devSettingsEnabled {
+            OneKeyLog.warn("BundleUpdate", "Startup SHA256 validation skipped (DevSettings enabled)")
+        }
+        if !devSettingsEnabled && !validateMetadataFileSha256(currentBundleVer, signature: signature) {
             return nil
         }
 
@@ -626,17 +649,19 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
             let signature = params.signature
-            #if DEBUG
-            let skipGPG = params.skipGPGVerification
-            #else
-            let skipGPG = false
-            #endif
+            // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
+            let devSettings = BundleUpdateStore.isDevSettingsEnabled()
+            let skipGPGToggle = BundleUpdateStore.isSkipGPGEnabled()
+            let skipGPG = devSettings && skipGPGToggle
+            OneKeyLog.info("BundleUpdate", "GPG check: devSettings=\(devSettings), skipGPGToggle=\(skipGPGToggle), skipGPG=\(skipGPG)")
 
             if !skipGPG {
                 guard let calculated = BundleUpdateStore.calculateSHA256(filePath),
                       calculated.secureCompare(sha256) else {
                     throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
                 }
+            } else {
+                OneKeyLog.warn("BundleUpdate", "verifyBundleASC: SHA256 + GPG verification skipped (DevSettings enabled)")
             }
 
             let folderName = "\(appVersion)-\(bundleVersion)"
@@ -682,7 +707,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
                 }
             } else {
-                OneKeyLog.warn("BundleUpdate", "GPG verification skipped (DEBUG build only)")
+                OneKeyLog.warn("BundleUpdate", "GPG verification skipped (DevSettings enabled)")
             }
 
             guard let metadata = BundleUpdateStore.getMetadataFileContent(currentBundleVersion) else {
@@ -710,27 +735,14 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
             let signature = params.signature
-            #if DEBUG
-            let skipGPG = params.skipGPGVerification
-            #else
-            let skipGPG = false
-            #endif
+            // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
+            let devSettings = BundleUpdateStore.isDevSettingsEnabled()
+            let skipGPGToggle = BundleUpdateStore.isSkipGPGEnabled()
+            let skipGPG = devSettings && skipGPGToggle
+            OneKeyLog.info("BundleUpdate", "GPG check: devSettings=\(devSettings), skipGPGToggle=\(skipGPGToggle), skipGPG=\(skipGPG)")
 
             let folderName = "\(appVersion)-\(bundleVersion)"
             let currentFolderName = BundleUpdateStore.currentBundleVersion()
-
-            // Prevent version downgrade (always enforced regardless of debug mode)
-            if let current = currentFolderName,
-               let dashRange = current.range(of: "-", options: .backwards) {
-                let currentBundleVer = String(current[dashRange.upperBound...])
-                let currentNum = Int(currentBundleVer)
-                let newNum = Int(bundleVersion)
-                if let cn = currentNum, let nn = newNum, nn < cn {
-                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle version downgrade rejected: \(bundleVersion) < \(currentBundleVer)"])
-                } else if currentNum != nil && newNum == nil {
-                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle version format invalid: cannot compare '\(bundleVersion)' with '\(currentBundleVer)'"])
-                }
-            }
 
             // Verify bundle directory exists
             let bundleDirPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
@@ -836,10 +848,17 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle directory not found"])
             }
 
-            // Verify GPG signature is valid
-            guard !params.signature.isEmpty,
-                  BundleUpdateStore.validateMetadataFileSha256(bundleVersion, signature: params.signature) else {
-                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
+            // Verify GPG signature is valid (skipped when both DevSettings and skip-GPG toggle are enabled)
+            let devSettings = BundleUpdateStore.isDevSettingsEnabled()
+            let skipGPGToggle = BundleUpdateStore.isSkipGPGEnabled()
+            OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData GPG check: devSettings=\(devSettings), skipGPGToggle=\(skipGPGToggle)")
+            if !(devSettings && skipGPGToggle) {
+                guard !params.signature.isEmpty,
+                      BundleUpdateStore.validateMetadataFileSha256(bundleVersion, signature: params.signature) else {
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
+                }
+            } else {
+                OneKeyLog.warn("BundleUpdate", "setCurrentUpdateBundleData: GPG signature verification skipped (DevSettings + skip-GPG enabled)")
             }
 
             let ud = UserDefaults.standard

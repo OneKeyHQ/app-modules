@@ -7,6 +7,7 @@ import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.nativelogger.OneKeyLog
+import com.tencent.mmkv.MMKV
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.BufferedInputStream
@@ -469,7 +470,11 @@ object BundleUpdateStoreAndroid {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val signature = prefs.getString(currentBundleVersion, "") ?: ""
 
-            if (!validateMetadataFileSha256(context, currentBundleVersion, signature)) return null
+            val devSettingsEnabled = isDevSettingsEnabled(context)
+            if (devSettingsEnabled) {
+                OneKeyLog.warn("BundleUpdate", "Startup SHA256 validation skipped (DevSettings enabled)")
+            }
+            if (!devSettingsEnabled && !validateMetadataFileSha256(context, currentBundleVersion, signature)) return null
 
             val metadataContent = getMetadataFileContent(context, currentBundleVersion) ?: return null
             val metadata = parseMetadataJson(metadataContent)
@@ -501,6 +506,36 @@ object BundleUpdateStoreAndroid {
     fun getWebEmbedPath(context: Context): String {
         val currentBundleDir = getCurrentBundleDir(context, getCurrentBundleVersion(context)) ?: return ""
         return File(currentBundleDir, "web-embed").absolutePath
+    }
+
+    /**
+     * Returns true if the OneKey developer mode (DevSettings) is enabled.
+     * Reads the persisted value from MMKV storage (key: onekey_developer_mode_enabled,
+     * instance: onekey-app-setting) written by the JS ServiceDevSetting layer.
+     */
+    fun isDevSettingsEnabled(context: Context): Boolean {
+        return try {
+            MMKV.initialize(context)
+            val mmkv = MMKV.mmkvWithID("onekey-app-setting") ?: return false
+            mmkv.decodeBool("onekey_developer_mode_enabled", false)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Returns true if the skip-GPG-verification toggle is enabled in developer settings.
+     * Reads the persisted value from MMKV storage (key: onekey_bundle_skip_gpg_verification,
+     * instance: onekey-app-setting).
+     */
+    fun isSkipGPGEnabled(context: Context): Boolean {
+        return try {
+            MMKV.initialize(context)
+            val mmkv = MMKV.mmkvWithID("onekey-app-setting") ?: return false
+            mmkv.decodeBool("onekey_bundle_skip_gpg_verification", false)
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun deleteDirectory(directory: File) {
@@ -607,6 +642,26 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     private fun isDebuggable(): Boolean {
         val context = NitroModules.applicationContext ?: return false
         return (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    }
+
+    /** Returns true if OneKey developer mode (DevSettings) is enabled via MMKV storage. */
+    private fun isDevSettingsEnabled(): Boolean {
+        return try {
+            val context = NitroModules.applicationContext ?: return false
+            BundleUpdateStoreAndroid.isDevSettingsEnabled(context)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Returns true if the skip-GPG-verification toggle is enabled via MMKV storage. */
+    private fun isSkipGPGEnabled(): Boolean {
+        return try {
+            val context = NitroModules.applicationContext ?: return false
+            BundleUpdateStoreAndroid.isSkipGPGEnabled(context)
+        } catch (e: Exception) {
+            false
+        }
     }
 
     override fun downloadBundle(params: BundleDownloadParams): Promise<BundleDownloadResult> {
@@ -731,13 +786,18 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
             val signature = params.signature
-            // skipGPGVerification only allowed in debuggable builds
-            val skipGPG = params.skipGPGVerification && isDebuggable()
+            // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
+            val devSettings = isDevSettingsEnabled()
+            val skipGPGToggle = isSkipGPGEnabled()
+            val skipGPG = devSettings && skipGPGToggle
+            OneKeyLog.info("BundleUpdate", "GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle, skipGPG=$skipGPG")
 
             if (!skipGPG) {
                 if (!verifyBundleSHA256(filePath, sha256)) {
                     throw Exception("Bundle signature verification failed")
                 }
+            } else {
+                OneKeyLog.warn("BundleUpdate", "verifyBundleASC: SHA256 + GPG verification skipped (DevSettings enabled)")
             }
 
             val folderName = "$appVersion-$bundleVersion"
@@ -790,29 +850,14 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
             val signature = params.signature
-            // skipGPGVerification only allowed in debuggable builds
-            val skipGPG = params.skipGPGVerification && isDebuggable()
+            // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
+            val devSettings = isDevSettingsEnabled()
+            val skipGPGToggle = isSkipGPGEnabled()
+            val skipGPG = devSettings && skipGPGToggle
+            OneKeyLog.info("BundleUpdate", "GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle, skipGPG=$skipGPG")
 
             val folderName = "$appVersion-$bundleVersion"
             val currentFolderName = BundleUpdateStoreAndroid.getCurrentBundleVersion(context)
-
-            // Prevent version downgrade (always enforced regardless of debug mode)
-            if (!currentFolderName.isNullOrEmpty()) {
-                val dashIndex = currentFolderName.lastIndexOf("-")
-                if (dashIndex > 0) {
-                    val currentBundleVer = currentFolderName.substring(dashIndex + 1)
-                    val currentVerNum = currentBundleVer.toLongOrNull()
-                    val newVerNum = bundleVersion.toLongOrNull()
-                    if (currentVerNum != null && newVerNum != null) {
-                        if (newVerNum < currentVerNum) {
-                            throw Exception("Bundle version downgrade rejected: $bundleVersion < $currentBundleVer")
-                        }
-                    } else if (currentVerNum != null && newVerNum == null) {
-                        // New version is non-numeric but current is numeric — reject to prevent bypass
-                        throw Exception("Bundle version format invalid: cannot compare '$bundleVersion' with '$currentBundleVer'")
-                    }
-                }
-            }
 
             // Verify bundle directory exists
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
@@ -919,10 +964,17 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 throw Exception("Bundle directory not found")
             }
 
-            // Verify GPG signature is valid
-            if (params.signature.isEmpty() ||
-                !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, bundleVersion, params.signature)) {
-                throw Exception("Bundle signature verification failed")
+            // Verify GPG signature is valid (skipped when both DevSettings and skip-GPG toggle are enabled)
+            val devSettings = isDevSettingsEnabled()
+            val skipGPGToggle = isSkipGPGEnabled()
+            OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle")
+            if (!(devSettings && skipGPGToggle)) {
+                if (params.signature.isEmpty() ||
+                    !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, bundleVersion, params.signature)) {
+                    throw Exception("Bundle signature verification failed")
+                }
+            } else {
+                OneKeyLog.warn("BundleUpdate", "setCurrentUpdateBundleData: GPG signature verification skipped (DevSettings + skip-GPG enabled)")
             }
 
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

@@ -134,4 +134,7 @@ dependencies {
 
   // BouncyCastle for GPG/PGP signature verification
   implementation "org.bouncycastle:bcpg-jdk15to18:1.78.1"
+
+  // MMKV for reading DevSettings (compileOnly: provided by the host app via react-native-mmkv)
+  compileOnly "io.github.zhongwuzw:mmkv:2.2.4"
 }

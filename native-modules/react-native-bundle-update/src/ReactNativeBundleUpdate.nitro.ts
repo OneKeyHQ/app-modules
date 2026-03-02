@@ -29,7 +29,6 @@ export interface BundleVerifyASCParams {
   latestVersion: string;
   bundleVersion: string;
   signature: string;
-  skipGPGVerification: boolean;
 }
 
 export interface BundleDownloadASCParams {
@@ -46,7 +45,6 @@ export interface BundleInstallParams {
   latestVersion: string;
   bundleVersion: string;
   signature: string;
-  skipGPGVerification: boolean;
 }
 
 export interface BundleSwitchParams {

@@ -14,6 +14,7 @@ import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.nativelogger.OneKeyLog
+import com.tencent.mmkv.MMKV
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okio.buffer
@@ -151,6 +152,18 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     private fun bytesToHex(bytes: ByteArray): String {
         return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    /** Returns true if OneKey developer mode (DevSettings) is enabled via MMKV storage. */
+    private fun isDevSettingsEnabled(): Boolean {
+        return try {
+            val context = NitroModules.applicationContext ?: return false
+            MMKV.initialize(context)
+            val mmkv = MMKV.mmkvWithID("onekey-app-setting") ?: return false
+            mmkv.decodeBool("onekey_developer_mode_enabled", false)
+        } catch (e: Exception) {
+            false
+        }
     }
 
     override fun downloadAPK(params: AppUpdateDownloadParams): Promise<Void> {
@@ -314,6 +327,12 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     override fun verifyASC(params: AppUpdateFileParams): Promise<Void> {
         return Promise.async {
+            // Skip GPG verification when DevSettings (developer mode) is enabled
+            if (isDevSettingsEnabled()) {
+                OneKeyLog.warn("AppUpdate", "GPG verification skipped (DevSettings enabled)")
+                return@async
+            }
+
             val filePath = params.filePath
             val ascFilePath = "$filePath.SHA256SUMS.asc"
             val ascFile = buildFile(ascFilePath)
