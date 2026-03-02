@@ -5,10 +5,10 @@ import {
   StyleSheet,
   Alert,
   Switch,
-  Platform,
   TouchableOpacity,
   Animated,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase';
 import { ReactNativeBundleUpdate } from '@onekeyfe/react-native-bundle-update';
@@ -37,7 +37,6 @@ interface WorkflowState {
   install: StepState;
   downloadProgress: number;
   downloadResult: BundleDownloadResult | null;
-  isIndeterminate: boolean;
 }
 
 type StepId = 'download' | 'verify' | 'install';
@@ -160,60 +159,21 @@ function StepConnector({ active }: { active: boolean }) {
 function ProgressBar({
   progress,
   percentage,
-  isIndeterminate,
 }: {
   progress: Animated.Value;
   percentage: number;
-  isIndeterminate: boolean;
 }) {
-  const pulse = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (isIndeterminate) {
-      const anim = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulse, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: false,
-          }),
-          Animated.timing(pulse, {
-            toValue: 0,
-            duration: 1000,
-            useNativeDriver: false,
-          }),
-        ]),
-      );
-      anim.start();
-      return () => anim.stop();
-    }
-    return undefined;
-  }, [isIndeterminate, pulse]);
-
-  const barWidth = isIndeterminate
-    ? pulse.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['30%', '70%'],
-      })
-    : progress.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['0%', '100%'],
-      });
+  const barWidth = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
 
   return (
     <View style={s.progressWrap}>
       <View style={s.progressTrack}>
-        <Animated.View
-          style={[
-            s.progressFill,
-            { width: barWidth },
-            isIndeterminate && { opacity: 0.7 },
-          ]}
-        />
+        <Animated.View style={[s.progressFill, { width: barWidth }]} />
       </View>
-      <Text style={s.progressText}>
-        {isIndeterminate ? 'Downloading...' : `${Math.round(percentage)}%`}
-      </Text>
+      <Text style={s.progressText}>{`${Math.round(percentage)}%`}</Text>
     </View>
   );
 }
@@ -258,7 +218,6 @@ const INITIAL_WORKFLOW: WorkflowState = {
   install: { status: 'pending' },
   downloadProgress: 0,
   downloadResult: null,
-  isIndeterminate: false,
 };
 
 export function BundleUpdateTestPage({
@@ -345,7 +304,6 @@ export function BundleUpdateTestPage({
     setWorkflow({
       ...INITIAL_WORKFLOW,
       download: { status: 'active' },
-      isIndeterminate: Platform.OS === 'ios',
     });
     progressAnim.setValue(0);
 
@@ -356,7 +314,6 @@ export function BundleUpdateTestPage({
           setWorkflow((prev) => ({
             ...prev,
             downloadProgress: event.progress,
-            isIndeterminate: false,
           }));
           Animated.timing(progressAnim, {
             toValue: event.progress / 100,
@@ -371,10 +328,37 @@ export function BundleUpdateTestPage({
     try {
       const result = await ReactNativeBundleUpdate.downloadBundle({
         downloadUrl,
-        latestVersion: '0.0.0',
-        bundleVersion: '0',
-        fileSize: 0,
-        sha256: '',
+        latestVersion: '5.16.0',
+        bundleVersion: '200',
+        fileSize: 51617503,
+        sha256: 'c0beb980fc113bc21ea510b778933ed488dc685c2216105bd146df8e9f791a3d',
+        signature: `
+        -----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+{
+  "fileName": "metadata.json",
+  "sha256": "8c71473ccb1c590e8c13642559600eb0c8e2649c9567236e2ac27e79e919a12c",
+  "size": 23123,
+  "generatedAt": "2025-10-22T09:50:50.446Z"
+}
+-----BEGIN PGP SIGNATURE-----
+
+iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmj/ZF0OHGRldkBvbmVr
+ZXkuc28ACgkQs2mmepC/OHuVZhAArMmwReTpiw+XoKTw7bwlVrz0OWHfAkdh6lFY
+xQpGj+AsY38NKJImrK7IQLhcnTJIwycY0a5eh8Wnqs0sxtmmwwyWQs+RHSwIdlTJ
+CLpTUGxowNiD0ldz0LVLjPFqZz3/fYKkpGW1+ejkMdRXBbUrFGTa+XsEd0k3TWj2
+bxFrhy128SpQ1NJ8AXXWRzZaenFAADa5ZEJUMV4Q8sjV+C8OXtVKeW1IDXAvWEzx
+x9SWU4HD4ciKYT6yRZ6RuHJ3YXFdIDPMrPXDSPTjcZUnhsadT0qFoRck6ya4uyQP
+SNvEge9W9Kcup0XfKkK5SnIRyZeKgW5Zn39W8C5equqmrGy581E6R28KS3KHsE66
+Pf6WmVE/XuAKt5F++TmC6RBZ9PISPdOVhWcPZ74ySsFOUQ0nswMg1GLQ/kfixXIl
+8ejFGhzhCRDmxYZ1aEJeMAAQhBuXM5TKtY79TIT9lNlttM0J/hl3rTTVxt9xSsMW
+MCduz+A1mdO8T/DPqvpJksOO/YOT4gzHT9OSXNsYdte1QJKHmQdeAfzi/m66Z2/L
+1qqTvwH3byXreUAjXwAWZLIbAQJ6zeeIrVKiut7DCJOHE+kGS2vdQiM2NmRFE0hP
+qxdzLH784DPCWB36Xd3VZfbUxKOc06+bHlFCEXyylWD3schXV9c8Amz4DoriYIdi
+Ni3q+jg=
+=BVQy
+-----END PGP SIGNATURE-----`
       });
 
       setWorkflow((prev) => ({
@@ -382,7 +366,6 @@ export function BundleUpdateTestPage({
         download: { status: 'completed' },
         downloadProgress: 100,
         downloadResult: result,
-        isIndeterminate: false,
       }));
       Animated.timing(progressAnim, {
         toValue: 1,
@@ -394,7 +377,7 @@ export function BundleUpdateTestPage({
         status: 'error',
         errorMessage: err instanceof Error ? err.message : 'Download failed',
       });
-      setWorkflow((prev) => ({ ...prev, isIndeterminate: false }));
+      setWorkflow((prev) => ({ ...prev, downloadProgress: 0 }));
     } finally {
       if (listenerIdRef.current !== null) {
         ReactNativeBundleUpdate.removeDownloadListener(listenerIdRef.current);
@@ -584,7 +567,6 @@ export function BundleUpdateTestPage({
             <ProgressBar
               progress={progressAnim}
               percentage={workflow.downloadProgress}
-              isIndeterminate={workflow.isIndeterminate}
             />
           )}
         </StepRow>

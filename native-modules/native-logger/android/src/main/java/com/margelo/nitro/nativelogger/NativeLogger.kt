@@ -65,6 +65,10 @@ class NativeLogger : HybridNativeLoggerSpec() {
         }
     }
 
+    override fun getLogDirectory(): String {
+        return OneKeyLog.logsDirectory
+    }
+
     override fun getLogFilePaths(): Promise<Array<String>> {
         return Promise.async {
             // Flush buffered log data so the active file reflects all written logs

@@ -27,9 +27,6 @@ export function NativeLoggerTestPage({ onGoHome, safeAreaInsets }: NativeLoggerT
     try {
       const paths = await NativeLogger.getLogFilePaths();
       setLogFiles(paths);
-      if (paths.length > 0) {
-        setLogDir(paths[0].substring(0, paths[0].lastIndexOf('/')));
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
@@ -37,6 +34,11 @@ export function NativeLoggerTestPage({ onGoHome, safeAreaInsets }: NativeLoggerT
   }, []);
 
   useEffect(() => {
+    try {
+      setLogDir(NativeLogger.getLogDirectory());
+    } catch (_) {
+      // ignore
+    }
     refreshLogFiles();
   }, [refreshLogFiles]);
 
@@ -88,13 +90,10 @@ export function NativeLoggerTestPage({ onGoHome, safeAreaInsets }: NativeLoggerT
     executeOperation(async () => {
       const paths = await NativeLogger.getLogFilePaths();
       setLogFiles(paths);
-      if (paths.length > 0) {
-        setLogDir(paths[0].substring(0, paths[0].lastIndexOf('/')));
-      }
       return {
         count: paths.length,
-        directory: paths.length > 0 ? paths[0].substring(0, paths[0].lastIndexOf('/')) : 'N/A',
-        files: paths.map(p => p.substring(p.lastIndexOf('/') + 1)),
+        directory: logDir || 'N/A',
+        files: paths,
       };
     }, 'Get Log File Paths');
   };
@@ -147,9 +146,9 @@ export function NativeLoggerTestPage({ onGoHome, safeAreaInsets }: NativeLoggerT
           {logFiles.length === 0 ? (
             <Text style={styles.noFiles}>No log files yet</Text>
           ) : (
-            logFiles.map((path, index) => (
+            logFiles.map((name, index) => (
               <Text key={index} style={styles.fileName} selectable>
-                {path.substring(path.lastIndexOf('/') + 1)}
+                {name}
               </Text>
             ))
           )}

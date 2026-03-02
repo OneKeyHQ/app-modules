@@ -453,8 +453,60 @@ private extension String {
     }
 }
 
-// URLSession delegate that rejects any redirect to non-HTTPS
-private class HTTPSRedirectValidator: NSObject, URLSessionTaskDelegate {
+/// URLSession delegate that handles download progress and HTTPS redirect validation
+private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
+    /// Called with progress percentage (0-100) during download
+    var onProgress: ((Int) -> Void)?
+
+    /// Continuation to bridge delegate callbacks → async/await
+    private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
+    private var tempFileURL: URL?
+    private let lock = NSLock()
+
+    func setContinuation(_ cont: CheckedContinuation<(URL, URLResponse), Error>) {
+        lock.lock()
+        continuation = cont
+        lock.unlock()
+    }
+
+    // MARK: - URLSessionDownloadDelegate
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        guard totalBytesExpectedToWrite > 0 else { return }
+        let progress = Int((totalBytesWritten * 100) / totalBytesExpectedToWrite)
+        onProgress?(progress)
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        // Copy to a temp location because the file at `location` is deleted after this method returns
+        let tempPath = NSTemporaryDirectory() + UUID().uuidString
+        let dest = URL(fileURLWithPath: tempPath)
+        do {
+            try FileManager.default.copyItem(at: location, to: dest)
+            tempFileURL = dest
+        } catch {
+            OneKeyLog.error("BundleUpdate", "Failed to copy downloaded file: \(error)")
+        }
+    }
+
+    // MARK: - URLSessionTaskDelegate
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        lock.lock()
+        let cont = continuation
+        continuation = nil
+        lock.unlock()
+
+        if let error = error {
+            cont?.resume(throwing: error)
+        } else if let tempURL = tempFileURL, let response = task.response {
+            cont?.resume(returning: (tempURL, response))
+        } else {
+            cont?.resume(throwing: NSError(domain: "BundleUpdate", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Download completed without file"]))
+        }
+    }
+
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         if request.url?.scheme?.lowercased() != "https" {
             OneKeyLog.error("BundleUpdate", "Blocked redirect to non-HTTPS URL")
@@ -462,6 +514,15 @@ private class HTTPSRedirectValidator: NSObject, URLSessionTaskDelegate {
         } else {
             completionHandler(request)
         }
+    }
+
+    /// Reset state for reuse
+    func reset() {
+        lock.lock()
+        continuation = nil
+        lock.unlock()
+        tempFileURL = nil
+        onProgress = nil
     }
 }
 
@@ -479,13 +540,16 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     private var nextListenerId: Double = 1
     private var isDownloading = false
     private var urlSession: URLSession?
+    private var downloadDelegate: DownloadDelegate?
     private var downloadFilePath: String?
     private var downloadSha256: String?
 
     private func createURLSession() -> URLSession {
         let config = URLSessionConfiguration.default
         config.tlsMinimumSupportedProtocolVersion = .TLSv12
-        return URLSession(configuration: config, delegate: HTTPSRedirectValidator(), delegateQueue: nil)
+        let delegate = DownloadDelegate()
+        self.downloadDelegate = delegate
+        return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }
 
     override init() {
@@ -584,7 +648,21 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             self.sendEvent(type: "update/start")
 
             let request = URLRequest(url: url)
-            let (tempURL, response) = try await session.download(for: request)
+
+            // Use delegate-based download for real progress reporting
+            guard let delegate = self.downloadDelegate else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Download delegate not initialized"])
+            }
+            delegate.reset()
+            delegate.onProgress = { [weak self] progress in
+                self?.sendEvent(type: "update/downloading", progress: progress)
+            }
+
+            let (tempURL, response) = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, URLResponse), Error>) in
+                delegate.setContinuation(continuation)
+                let task = session.downloadTask(with: request)
+                task.resume()
+            }
 
             // Verify HTTPS was maintained (no HTTP redirect)
             if let httpResponse = response as? HTTPURLResponse,
