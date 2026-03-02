@@ -183,4 +183,21 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     func exitApp() throws {
         // No-op on iOS: Apple prohibits programmatic app termination (App Store guideline 2.4.5).
     }
+
+    // MARK: - WebView & Play Services
+
+    func getCurrentWebViewPackageInfo() throws -> Promise<WebViewPackageInfo> {
+        return Promise.resolved(withResult: WebViewPackageInfo(
+            packageName: "com.apple.WebKit",
+            versionName: UIDevice.current.systemVersion,
+            versionCode: 0
+        ))
+    }
+
+    func isGooglePlayServicesAvailable() throws -> Promise<GooglePlayServicesStatus> {
+        return Promise.resolved(withResult: GooglePlayServicesStatus(
+            status: -1,
+            isAvailable: false
+        ))
+    }
 }

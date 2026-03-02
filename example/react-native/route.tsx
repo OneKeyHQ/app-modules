@@ -13,7 +13,6 @@ import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
 import { BundleUpdateTestPage } from './pages/BundleUpdateTestPage';
 import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
 import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
-import { WebViewCheckerTestPage } from './pages/WebViewCheckerTestPage';
 
 export type RouteScreen =
   | 'home'
@@ -29,8 +28,7 @@ export type RouteScreen =
   | 'native-logger'
   | 'perf-memory'
   | 'skeleton'
-  | 'splash-screen'
-  | 'webview-checker';
+  | 'splash-screen';
 
 interface RouterProps {
   safeAreaInsets: any;
@@ -101,11 +99,6 @@ const modules = [
     id: 'splash-screen' as RouteScreen,
     name: 'Splash Screen',
     description: 'Legacy splash screen for Android < 12',
-  },
-  {
-    id: 'webview-checker' as RouteScreen,
-    name: 'WebView Checker',
-    description: 'Check WebView package info and Google Play Services (Android)',
   },
 ];
 
@@ -201,8 +194,6 @@ export function Router({ safeAreaInsets }: RouterProps) {
         return <SkeletonTestPage {...commonProps} />;
       case 'splash-screen':
         return <SplashScreenTestPage {...commonProps} />;
-      case 'webview-checker':
-        return <WebViewCheckerTestPage {...commonProps} />;
       default:
         return renderHomeScreen();
     }

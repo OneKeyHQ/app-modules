@@ -15,6 +15,17 @@ export interface LaunchOptions {
   deepLink?: string;
 }
 
+export interface WebViewPackageInfo {
+  packageName: string;
+  versionName: string;
+  versionCode: number;
+}
+
+export interface GooglePlayServicesStatus {
+  status: number;
+  isAvailable: boolean;
+}
+
 export interface ReactNativeDeviceUtils
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   initEventListeners(): void;
@@ -37,4 +48,8 @@ export interface ReactNativeDeviceUtils
 
   // ExitModule
   exitApp(): void;
+
+  // WebView & Play Services
+  getCurrentWebViewPackageInfo(): Promise<WebViewPackageInfo>;
+  isGooglePlayServicesAvailable(): Promise<GooglePlayServicesStatus>;
 }

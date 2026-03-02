@@ -910,4 +910,81 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         OneKeyLog.info("DeviceUtils", "exitApp")
         android.os.Process.killProcess(android.os.Process.myPid())
     }
+
+    // MARK: - WebView & Play Services
+
+    override fun getCurrentWebViewPackageInfo(): Promise<WebViewPackageInfo> {
+        return Promise.async {
+            val context = NitroModules.applicationContext
+                ?: throw Exception("Application context unavailable")
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val webViewPackage = android.webkit.WebView.getCurrentWebViewPackage()
+                if (webViewPackage != null) {
+                    OneKeyLog.info(
+                        "DeviceUtils",
+                        "WebView: ${webViewPackage.packageName} ${webViewPackage.versionName} ${webViewPackage.versionCode}"
+                    )
+                    return@async WebViewPackageInfo(
+                        packageName = webViewPackage.packageName,
+                        versionName = webViewPackage.versionName ?: "",
+                        versionCode = webViewPackage.versionCode.toLong().toDouble()
+                    )
+                }
+            }
+
+            // Fallback for API < 26: try common WebView package names
+            val pm = context.packageManager
+            val candidates = listOf(
+                "com.google.android.webview",
+                "com.android.webview",
+                "com.android.chrome"
+            )
+            for (candidate in candidates) {
+                try {
+                    val pInfo = pm.getPackageInfo(candidate, 0)
+                    OneKeyLog.info(
+                        "DeviceUtils",
+                        "WebView (fallback): ${pInfo.packageName} ${pInfo.versionName} ${pInfo.versionCode}"
+                    )
+                    return@async WebViewPackageInfo(
+                        packageName = pInfo.packageName,
+                        versionName = pInfo.versionName ?: "",
+                        versionCode = pInfo.versionCode.toDouble()
+                    )
+                } catch (_: Exception) {
+                    // Try next candidate
+                }
+            }
+            throw Exception("No WebView package found")
+        }
+    }
+
+    override fun isGooglePlayServicesAvailable(): Promise<GooglePlayServicesStatus> {
+        return Promise.async {
+            val context = NitroModules.applicationContext
+                ?: throw Exception("Application context unavailable")
+            try {
+                val googleApiAvailability =
+                    com.google.android.gms.common.GoogleApiAvailability.getInstance()
+                val status = googleApiAvailability.isGooglePlayServicesAvailable(context)
+                val isSuccess =
+                    status == com.google.android.gms.common.ConnectionResult.SUCCESS
+                OneKeyLog.info(
+                    "DeviceUtils",
+                    "Play Services status=$status isAvailable=$isSuccess"
+                )
+                GooglePlayServicesStatus(
+                    status = status.toDouble(),
+                    isAvailable = isSuccess
+                )
+            } catch (e: Exception) {
+                OneKeyLog.error(
+                    "DeviceUtils",
+                    "Play Services check failed: ${e.message}"
+                )
+                GooglePlayServicesStatus(status = -1.0, isAvailable = false)
+            }
+        }
+    }
 }

@@ -24,7 +24,6 @@
     "@onekeyfe/react-native-perf-memory": "workspace:*",
     "@onekeyfe/react-native-skeleton": "workspace:*",
     "@onekeyfe/react-native-splash-screen": "workspace:*",
-    "@onekeyfe/react-native-webview-checker": "workspace:*",
     "@react-native/new-app-screen": "0.83.0",
     "fast-base64-decode": "*",
     "react": "19.2.0",
