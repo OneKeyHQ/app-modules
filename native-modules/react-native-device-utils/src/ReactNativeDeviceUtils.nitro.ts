@@ -31,6 +31,7 @@ export interface ReactNativeDeviceUtils
   getLaunchOptions(): Promise<LaunchOptions>;
   clearLaunchOptions(): Promise<boolean>;
   getDeviceToken(): Promise<string>;
+  saveDeviceToken(token: string): Promise<void>;
   registerDeviceToken(): Promise<boolean>;
   getStartupTime(): Promise<number>;
 

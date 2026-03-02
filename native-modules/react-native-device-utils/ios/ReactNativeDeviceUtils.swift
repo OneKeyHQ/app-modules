@@ -2,16 +2,28 @@ import NitroModules
 import UIKit
 import ReactNativeNativeLogger
 
-public class LaunchOptionsStore {
+@objcMembers
+public class LaunchOptionsStore: NSObject {
     public static let shared = LaunchOptionsStore()
 
     public var launchOptions: [AnyHashable: Any]?
     public var deviceToken: Data?
     public var startupTime: TimeInterval = 0
 
+    private static let deviceTokenKey = "1k_device_token"
+
     public func getDeviceTokenString() -> String {
+        // Prefer the JS-saved token (persisted across launches)
+        if let saved = UserDefaults.standard.string(forKey: LaunchOptionsStore.deviceTokenKey), !saved.isEmpty {
+            return saved
+        }
+        // Fall back to the native APNs token set by AppDelegate
         guard let token = deviceToken else { return "" }
         return token.map { String(format: "%02.2hhx", $0) }.joined()
+    }
+
+    public func saveDeviceToken(_ token: String) {
+        UserDefaults.standard.set(token, forKey: LaunchOptionsStore.deviceTokenKey)
     }
 }
 
@@ -146,6 +158,13 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         }
     }
 
+    func saveDeviceToken(token: String) throws -> Promise<Void> {
+        return Promise.async {
+            LaunchOptionsStore.shared.saveDeviceToken(token)
+            OneKeyLog.info("DeviceUtils", "saveDeviceToken: token saved")
+        }
+    }
+
     func registerDeviceToken() throws -> Promise<Bool> {
         return Promise.async {
             OneKeyLog.info("DeviceUtils", "registerDeviceToken")
@@ -162,11 +181,6 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     // MARK: - ExitModule
 
     func exitApp() throws {
-        OneKeyLog.info("DeviceUtils", "exitApp called")
-        // Avoid exit(0) which Apple explicitly prohibits and causes App Store rejection.
-        // Use suspend selector as a graceful alternative.
-        DispatchQueue.main.async {
-            UIApplication.shared.perform(NSSelectorFromString("suspend"))
-        }
+        // No-op on iOS: Apple prohibits programmatic app termination (App Store guideline 2.4.5).
     }
 }

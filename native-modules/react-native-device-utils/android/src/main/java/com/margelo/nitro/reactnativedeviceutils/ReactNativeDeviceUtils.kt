@@ -38,6 +38,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   companion object {
     private const val PREF_KEY_FOLDABLE = "1k_fold"
     private const val PREF_KEY_UI_STYLE = "1k_user_interface_style"
+    private const val PREF_KEY_DEVICE_TOKEN = "1k_device_token"
 
     @JvmStatic
     var staticStartupTime: Long? = null
@@ -875,7 +876,22 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     }
 
     override fun getDeviceToken(): Promise<String> {
-        return Promise.async { "" }
+        return Promise.async {
+            val context = NitroModules.applicationContext ?: return@async ""
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            prefs.getString(PREF_KEY_DEVICE_TOKEN, "") ?: ""
+        }
+    }
+
+    override fun saveDeviceToken(token: String): Promise<Unit> {
+        return Promise.async {
+            val context = NitroModules.applicationContext
+            if (context != null) {
+                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                prefs.edit().putString(PREF_KEY_DEVICE_TOKEN, token).apply()
+            }
+            OneKeyLog.info("DeviceUtils", "saveDeviceToken: token saved")
+        }
     }
 
     override fun registerDeviceToken(): Promise<Boolean> {
