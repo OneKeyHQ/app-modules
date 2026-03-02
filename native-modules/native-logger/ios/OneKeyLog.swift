@@ -115,12 +115,18 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         return message
     }
 
+    private static func sanitizeForLog(_ str: String) -> String {
+        return str.replacingOccurrences(of: "\n", with: " ")
+                  .replacingOccurrences(of: "\r", with: " ")
+    }
+
     private static func formatMessage(_ tag: String, _ level: String, _ message: String) -> String {
+        let safeMessage = sanitizeForLog(message)
         if tag == "JS" {
-            return truncate(message)
+            return truncate(safeMessage)
         }
         let time = formattedTime(Date())
-        return truncate("\(time) | \(level) : [\(tag)] \(message)")
+        return truncate("\(time) | \(level) : [\(tag)] \(safeMessage)")
     }
 
     @objc public static func debug(_ tag: String, _ message: String) {

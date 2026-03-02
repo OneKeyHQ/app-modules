@@ -130,22 +130,21 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     }
 
     private fun buildFile(path: String): File {
-        val file = File(path.replace("file:///", "/"))
+        val file = File(path.removePrefix("file:///").let { if (it.startsWith("/")) it else "/$it" })
         // Validate the resolved path is within the app's cache or files directory
         val context = NitroModules.applicationContext
-        if (context != null) {
-            val canonicalPath = file.canonicalPath
-            val cacheDir = context.cacheDir.canonicalPath
-            val filesDir = context.filesDir.canonicalPath
-            val externalCacheDir = context.externalCacheDir?.canonicalPath
-            val externalFilesDir = context.getExternalFilesDir(null)?.canonicalPath
-            val allowed = canonicalPath.startsWith(cacheDir) ||
-                    canonicalPath.startsWith(filesDir) ||
-                    (externalCacheDir != null && canonicalPath.startsWith(externalCacheDir)) ||
-                    (externalFilesDir != null && canonicalPath.startsWith(externalFilesDir))
-            if (!allowed) {
-                throw SecurityException("Path traversal blocked: $canonicalPath is outside allowed directories")
-            }
+            ?: throw SecurityException("Application context unavailable, cannot validate file path")
+        val canonicalPath = file.canonicalPath
+        val cacheDir = context.cacheDir.canonicalPath
+        val filesDir = context.filesDir.canonicalPath
+        val externalCacheDir = context.externalCacheDir?.canonicalPath
+        val externalFilesDir = context.getExternalFilesDir(null)?.canonicalPath
+        val allowed = canonicalPath.startsWith(cacheDir) ||
+                canonicalPath.startsWith(filesDir) ||
+                (externalCacheDir != null && canonicalPath.startsWith(externalCacheDir)) ||
+                (externalFilesDir != null && canonicalPath.startsWith(externalFilesDir))
+        if (!allowed) {
+            throw SecurityException("Path outside allowed directories")
         }
         return file
     }
@@ -180,6 +179,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         CHANNEL_ID, "updateApp", NotificationManager.IMPORTANCE_DEFAULT
                     )
                     notifyManager.createNotificationChannel(channel)
+                }
+
+                if (!url.startsWith("https://")) {
+                    throw Exception("Download URL must use HTTPS")
                 }
 
                 val downloadedFile = buildFile(filePath)
@@ -260,10 +263,18 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         return Promise.async {
             val url = params.downloadUrl
             val filePath = params.filePath
+
+            if (!url.startsWith("https://")) {
+                throw Exception("Download URL must use HTTPS")
+            }
+
             val ascFileUrl = "$url.SHA256SUMS.asc"
             val ascFilePath = "$filePath.SHA256SUMS.asc"
 
-            val client = OkHttpClient()
+            val client = OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .build()
             val request = Request.Builder().url(ascFileUrl).build()
             val response = client.newCall(request).execute()
 
@@ -298,7 +309,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val filePath = params.filePath
             val ascFilePath = "$filePath.SHA256SUMS.asc"
             val ascFile = buildFile(ascFilePath)
-            if (!ascFile.exists()) throw Exception("ASC file not found: $ascFilePath")
+            if (!ascFile.exists()) throw Exception("ASC file not found")
 
             val ascContent = ascFile.readText()
             if (!ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----")) {
@@ -337,7 +348,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val pubKeyStream = PGPUtil.getDecoderStream(GPG_PUBLIC_KEY.byteInputStream())
             val pgpPubKeyRingCollection = PGPPublicKeyRingCollection(pubKeyStream, JcaKeyFingerprintCalculator())
             val publicKey = pgpPubKeyRingCollection.getPublicKey(keyId)
-                ?: throw Exception("Public key not found for keyId: ${java.lang.Long.toHexString(keyId)}")
+                ?: throw Exception("GPG public key not found for signature verification")
 
             // Verify signature
             pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider("BC"), publicKey)
@@ -355,7 +366,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             // Extract SHA256 from cleartext (format: "<sha256hash>  <filename>\n" or just "<sha256hash>")
             val sha256 = cleartextBody.trim().split("\\s+".toRegex())[0]
             if (sha256.length != 64) {
-                throw Exception("Invalid SHA256 hash in ASC file: $sha256")
+                throw Exception("Invalid SHA256 hash format in ASC file")
             }
 
             // Verify APK file SHA256
@@ -373,13 +384,17 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val fileSha256 = bytesToHex(digest.digest())
 
             if (fileSha256 != sha256) {
-                throw Exception("SHA256 mismatch: expected $sha256, got $fileSha256")
+                throw Exception("SHA256 mismatch for APK file")
             }
 
             OneKeyLog.info("AppUpdate", "GPG signature and SHA256 verification passed for APK")
         }
     }
 
+    // Track verified file paths to ensure verification before installation
+    private val verifiedFiles = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    @Suppress("DEPRECATION")
     override fun verifyAPK(params: AppUpdateFileParams): Promise<Void> {
         return Promise.async {
             val file = buildFile(params.filePath)
@@ -388,6 +403,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val context = NitroModules.applicationContext
                 ?: throw Exception("Application context unavailable")
             val pm = context.packageManager
+
+            // Check package name
             val info = pm.getPackageArchiveInfo(file.absolutePath, 0)
             if (info?.packageName == null) {
                 throw Exception("INVALID_PACKAGE")
@@ -395,6 +412,20 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             if (info.packageName != context.packageName) {
                 throw Exception("PACKAGE_NAME_MISMATCH")
             }
+
+            // Verify APK signing certificate matches the installed app
+            val apkInfo = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNATURES)
+            val installedInfo = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
+            if (apkInfo?.signatures == null || installedInfo?.signatures == null) {
+                throw Exception("SIGNATURE_UNAVAILABLE")
+            }
+            val apkSig = apkInfo.signatures.firstOrNull()
+            val installedSig = installedInfo.signatures.firstOrNull()
+            if (apkSig == null || installedSig == null || apkSig != installedSig) {
+                throw Exception("SIGNATURE_MISMATCH")
+            }
+
+            verifiedFiles.add(file.canonicalPath)
             OneKeyLog.info("AppUpdate", "APK verified: ${info.packageName}")
         }
     }
@@ -405,6 +436,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 ?: throw Exception("Application context unavailable")
             val file = buildFile(params.filePath)
             if (!file.exists()) throw Exception("NOT_FOUND_PACKAGE")
+
+            // Ensure verifyAPK was called before installation
+            if (!verifiedFiles.contains(file.canonicalPath)) {
+                throw Exception("APK must be verified before installation")
+            }
 
             val intent = Intent(Intent.ACTION_VIEW)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK

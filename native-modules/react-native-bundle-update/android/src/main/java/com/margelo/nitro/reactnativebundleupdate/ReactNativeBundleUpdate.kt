@@ -207,24 +207,28 @@ object BundleUpdateStoreAndroid {
     fun readMetadataFileSha256(signature: String?): String? {
         if (signature.isNullOrEmpty()) return null
 
-        // Try GPG cleartext signature verification first
+        // GPG cleartext signature verification is required
         val gpgResult = verifyGPGAndExtractSha256(signature)
         if (gpgResult != null) return gpgResult
 
-        // Fallback: try plain JSON parse (for backward compat with non-signed content)
-        return try {
-            val json = JSONObject(signature)
-            val sha256 = json.optString("sha256", "")
-            if (sha256.isEmpty()) {
-                null
-            } else {
-                OneKeyLog.warn("BundleUpdate", "readMetadataFileSha256: Fell back to plain JSON parse (no GPG verification)")
-                sha256
-            }
-        } catch (e: Exception) {
-            OneKeyLog.debug("BundleUpdate", "readMetadataFileSha256: Error extracting SHA256: ${e.message}")
-            null
+        OneKeyLog.error("BundleUpdate", "readMetadataFileSha256: GPG verification failed, rejecting unsigned content")
+        return null
+    }
+
+    /** Constant-time comparison to prevent timing attacks on hash values */
+    fun secureCompare(a: String, b: String): Boolean {
+        val aBytes = a.toByteArray(Charsets.UTF_8)
+        val bBytes = b.toByteArray(Charsets.UTF_8)
+        if (aBytes.size != bBytes.size) return false
+        var result = 0
+        for (i in aBytes.indices) {
+            result = result or (aBytes[i].toInt() xor bBytes[i].toInt())
         }
+        return result == 0
+    }
+
+    fun isSafeVersionString(version: String): Boolean {
+        return version.isNotEmpty() && version.all { it.isLetterOrDigit() || it == '.' || it == '-' || it == '_' }
     }
 
     /**
@@ -323,7 +327,7 @@ object BundleUpdateStoreAndroid {
         val extractedSha256 = readMetadataFileSha256(signature)
         if (extractedSha256.isNullOrEmpty()) return false
         val calculated = calculateSHA256(metadataFilePath) ?: return false
-        return calculated == extractedSha256
+        return secureCompare(calculated, extractedSha256)
     }
 
     fun validateAllFilesInDir(context: Context, dirPath: String, metadata: Map<String, String>, appVersion: String, bundleVersion: String): Boolean {
@@ -365,7 +369,7 @@ object BundleUpdateStoreAndroid {
                     OneKeyLog.error("BundleUpdate", "[bundle-verify] Failed to calculate SHA256 for file: $relativePath")
                     return false
                 }
-                if (expectedSHA256 != actualSHA256) {
+                if (!secureCompare(expectedSHA256, actualSHA256)) {
                     OneKeyLog.error("BundleUpdate", "[bundle-verify] SHA256 mismatch for $relativePath")
                     return false
                 }
@@ -506,11 +510,14 @@ object BundleUpdateStoreAndroid {
 
     fun deleteDir(dir: File) = deleteDirectory(dir)
 
+    private const val MAX_UNZIPPED_SIZE = 512L * 1024 * 1024  // 512 MB limit
+
     fun unzipFile(zipFilePath: String, destDirectory: String) {
         val destDir = File(destDirectory)
         if (!destDir.exists()) destDir.mkdirs()
 
         val destDirPath: Path = Paths.get(destDir.canonicalPath)
+        var totalBytesWritten = 0L
         ZipInputStream(FileInputStream(zipFilePath)).use { zipIn ->
             var entry: ZipEntry? = zipIn.nextEntry
             while (entry != null) {
@@ -522,9 +529,13 @@ object BundleUpdateStoreAndroid {
                 if (!entry.isDirectory) {
                     outFile.parentFile?.mkdirs()
                     FileOutputStream(outFile).use { fos ->
-                        val buffer = ByteArray(1024)
+                        val buffer = ByteArray(8192)
                         var length: Int
                         while (zipIn.read(buffer).also { length = it } > 0) {
+                            totalBytesWritten += length
+                            if (totalBytesWritten > MAX_UNZIPPED_SIZE) {
+                                throw java.io.IOException("Decompression bomb detected: extracted size exceeds ${MAX_UNZIPPED_SIZE / 1024 / 1024} MB")
+                            }
                             fos.write(buffer, 0, length)
                         }
                     }
@@ -589,20 +600,30 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             ?: throw Exception("Application context unavailable")
     }
 
+    private fun isDebuggable(): Boolean {
+        val context = NitroModules.applicationContext ?: return false
+        return (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    }
+
     override fun downloadBundle(params: BundleDownloadParams): Promise<BundleDownloadResult> {
         return Promise.async {
             if (isDownloading.getAndSet(true)) {
                 throw Exception("Already downloading")
             }
 
+            try {
             val context = getContext()
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
             val downloadUrl = params.downloadUrl
             val sha256 = params.sha256
 
+            if (!BundleUpdateStoreAndroid.isSafeVersionString(appVersion) ||
+                !BundleUpdateStoreAndroid.isSafeVersionString(bundleVersion)) {
+                throw Exception("Invalid version string format")
+            }
+
             if (!downloadUrl.startsWith("https://")) {
-                isDownloading.set(false)
                 throw Exception("Bundle download URL must use HTTPS")
             }
 
@@ -637,7 +658,6 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val response = httpClient.newCall(request).execute()
 
             if (!response.isSuccessful) {
-                isDownloading.set(false)
                 sendEvent("update/error", message = response.code.toString())
                 throw Exception("HTTP ${response.code}")
             }
@@ -664,21 +684,22 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
             if (!verifyBundleSHA256(filePath, sha256)) {
                 File(filePath).delete()
-                isDownloading.set(false)
                 sendEvent("update/error", message = "Bundle signature verification failed")
                 throw Exception("Bundle signature verification failed")
             }
 
             sendEvent("update/complete")
             OneKeyLog.info("BundleUpdate", "Download completed")
-            isDownloading.set(false)
             result
+            } finally {
+                isDownloading.set(false)
+            }
         }
     }
 
     private fun verifyBundleSHA256(bundlePath: String, sha256: String): Boolean {
         val calculated = BundleUpdateStoreAndroid.calculateSHA256(bundlePath) ?: return false
-        val isValid = calculated == sha256
+        val isValid = BundleUpdateStoreAndroid.secureCompare(calculated, sha256)
         OneKeyLog.debug("BundleUpdate", "verifyBundleSHA256: Valid: $isValid")
         return isValid
     }
@@ -706,7 +727,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
             val signature = params.signature
-            val skipGPG = params.skipGPGVerification
+            // skipGPGVerification only allowed in debuggable builds
+            val skipGPG = params.skipGPGVerification && isDebuggable()
 
             if (!skipGPG) {
                 if (!verifyBundleSHA256(filePath, sha256)) {
@@ -783,12 +805,13 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
             val signature = params.signature
-            val skipGPG = params.skipGPGVerification
+            // skipGPGVerification only allowed in debuggable builds
+            val skipGPG = params.skipGPGVerification && isDebuggable()
 
             val folderName = "$appVersion-$bundleVersion"
             val currentFolderName = BundleUpdateStoreAndroid.getCurrentBundleVersion(context)
 
-            // Prevent version downgrade
+            // Prevent version downgrade (always enforced in release builds)
             if (!skipGPG && !currentFolderName.isNullOrEmpty()) {
                 val dashIndex = currentFolderName.lastIndexOf("-")
                 if (dashIndex > 0) {
@@ -903,6 +926,19 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         return Promise.async {
             val context = getContext()
             val bundleVersion = "${params.appVersion}-${params.bundleVersion}"
+
+            // Verify the bundle directory actually exists
+            val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), bundleVersion)
+            if (!bundleDirPath.exists()) {
+                throw Exception("Bundle directory not found")
+            }
+
+            // Verify GPG signature is valid
+            if (params.signature.isEmpty() ||
+                !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, bundleVersion, params.signature)) {
+                throw Exception("Bundle signature verification failed")
+            }
+
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             prefs.edit()
                 .putString("currentBundleVersion", bundleVersion)
@@ -1024,8 +1060,17 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
     override fun getSha256FromFilePath(filePath: String): Promise<String> {
         return Promise.async {
-            OneKeyLog.debug("BundleUpdate", "getSha256FromFilePath: $filePath")
             if (filePath.isEmpty()) return@async ""
+
+            // Restrict to bundle-related directories only
+            val context = getContext()
+            val resolvedPath = File(filePath).canonicalPath
+            val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
+            val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context)).canonicalPath
+            if (!resolvedPath.startsWith(bundleDir) && !resolvedPath.startsWith(downloadDir)) {
+                throw Exception("File path outside allowed bundle directories")
+            }
+
             BundleUpdateStoreAndroid.calculateSHA256(filePath) ?: ""
         }
     }

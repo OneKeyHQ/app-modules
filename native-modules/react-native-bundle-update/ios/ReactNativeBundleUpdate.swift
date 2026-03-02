@@ -157,19 +157,11 @@ public class BundleUpdateStore {
     public static func readMetadataFileSha256(_ signature: String) -> String? {
         guard !signature.isEmpty else { return nil }
 
-        // Try GPG cleartext signature verification first
-        if let sha256 = verifyGPGAndExtractSha256(signature) {
-            return sha256
-        }
-
-        // Fallback: try plain JSON parse (for backward compat with non-signed content)
-        guard let data = signature.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sha256 = json["sha256"] as? String else {
-            OneKeyLog.debug("BundleUpdate", "Could not parse signature as JSON directly")
+        // GPG cleartext signature verification is required
+        guard let sha256 = verifyGPGAndExtractSha256(signature) else {
+            OneKeyLog.error("BundleUpdate", "readMetadataFileSha256: GPG verification failed, rejecting unsigned content")
             return nil
         }
-        OneKeyLog.warn("BundleUpdate", "readMetadataFileSha256: Fell back to plain JSON parse (no GPG verification)")
         return sha256
     }
 
@@ -264,7 +256,7 @@ public class BundleUpdateStore {
             return false
         }
         guard let calculatedSha256 = calculateSHA256(metadataFilePath) else { return false }
-        return calculatedSha256 == extractedSha256
+        return calculatedSha256.secureCompare(extractedSha256)
     }
 
     public static func validateExtractedPathSafety(_ destination: String) -> Bool {
@@ -310,7 +302,7 @@ public class BundleUpdateStore {
                 OneKeyLog.error("BundleUpdate", "[bundle-verify] Failed to calculate SHA256 for file: \(relativePath)")
                 return false
             }
-            if expectedSHA256 != actualSHA256 {
+            if !expectedSHA256.secureCompare(actualSHA256) {
                 OneKeyLog.error("BundleUpdate", "[bundle-verify] SHA256 mismatch for \(relativePath)")
                 return false
             }
@@ -416,6 +408,40 @@ public class BundleUpdateStore {
     }
 }
 
+// Constant-time string comparison to prevent timing attacks on hash comparisons
+private extension String {
+    func secureCompare(_ other: String) -> Bool {
+        let lhs = Array(self.utf8)
+        let rhs = Array(other.utf8)
+        guard lhs.count == rhs.count else { return false }
+        var result: UInt8 = 0
+        for i in 0..<lhs.count {
+            result |= lhs[i] ^ rhs[i]
+        }
+        return result == 0
+    }
+}
+
+// Version string sanitization
+private extension String {
+    var isSafeVersionString: Bool {
+        let allowedChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
+        return !self.isEmpty && self.unicodeScalars.allSatisfy { allowedChars.contains($0) }
+    }
+}
+
+// URLSession delegate that rejects any redirect to non-HTTPS
+private class HTTPSRedirectValidator: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        if request.url?.scheme?.lowercased() != "https" {
+            OneKeyLog.error("BundleUpdate", "Blocked redirect to non-HTTPS URL")
+            completionHandler(nil)
+        } else {
+            completionHandler(request)
+        }
+    }
+}
+
 // Listener support
 private struct BundleListener {
     let id: Double
@@ -436,7 +462,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     private func createURLSession() -> URLSession {
         let config = URLSessionConfiguration.default
         config.tlsMinimumSupportedProtocolVersion = .TLSv12
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: HTTPSRedirectValidator(), delegateQueue: nil)
     }
 
     override init() {
@@ -489,6 +515,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let bundleVersion = params.bundleVersion
             let downloadUrl = params.downloadUrl
             let sha256 = params.sha256
+
+            guard appVersion.isSafeVersionString, bundleVersion.isSafeVersionString else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid version string format"])
+            }
 
             guard downloadUrl.hasPrefix("https://") else {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle download URL must use HTTPS"])
@@ -570,7 +600,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     private func verifyBundleSHA256(_ bundlePath: String, sha256: String) -> Bool {
         guard let calculated = BundleUpdateStore.calculateSHA256(bundlePath) else { return false }
-        let isValid = calculated == sha256
+        let isValid = calculated.secureCompare(sha256)
         OneKeyLog.debug("BundleUpdate", "verifyBundleSHA256: Valid: \(isValid)")
         return isValid
     }
@@ -596,10 +626,15 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
             let signature = params.signature
+            #if DEBUG
             let skipGPG = params.skipGPGVerification
+            #else
+            let skipGPG = false
+            #endif
 
             if !skipGPG {
-                guard let calculated = BundleUpdateStore.calculateSHA256(filePath), calculated == sha256 else {
+                guard let calculated = BundleUpdateStore.calculateSHA256(filePath),
+                      calculated.secureCompare(sha256) else {
                     throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
                 }
             }
@@ -633,6 +668,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     try? FileManager.default.removeItem(atPath: destination)
                     throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
                 }
+            } else {
+                OneKeyLog.warn("BundleUpdate", "GPG verification skipped (DEBUG build only)")
             }
 
             guard let metadata = BundleUpdateStore.getMetadataFileContent(currentBundleVersion) else {
@@ -680,12 +717,16 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
             let signature = params.signature
+            #if DEBUG
             let skipGPG = params.skipGPGVerification
+            #else
+            let skipGPG = false
+            #endif
 
             let folderName = "\(appVersion)-\(bundleVersion)"
             let currentFolderName = BundleUpdateStore.currentBundleVersion()
 
-            // Prevent version downgrade
+            // Prevent version downgrade (always enforced in release builds)
             if !skipGPG, let current = currentFolderName,
                let dashRange = current.range(of: "-", options: .backwards) {
                 let currentBundleVer = String(current[dashRange.upperBound...])
@@ -753,7 +794,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             // Cancel all in-flight downloads by invalidating the session
             self?.urlSession?.invalidateAndCancel()
             self?.urlSession = self?.createURLSession()
-            self?.isDownloading = false
+            self?.stateQueue.sync { self?.isDownloading = false }
         }
     }
 
@@ -791,6 +832,19 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     func setCurrentUpdateBundleData(params: BundleSwitchParams) throws -> Promise<Void> {
         return Promise.async {
             let bundleVersion = "\(params.appVersion)-\(params.bundleVersion)"
+
+            // Verify the bundle directory actually exists
+            let bundleDirPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(bundleVersion)
+            guard FileManager.default.fileExists(atPath: bundleDirPath) else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle directory not found"])
+            }
+
+            // Verify GPG signature is valid
+            guard !params.signature.isEmpty,
+                  BundleUpdateStore.validateMetadataFileSha256(bundleVersion, signature: params.signature) else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
+            }
+
             let ud = UserDefaults.standard
             ud.set(bundleVersion, forKey: "currentBundleVersion")
             ud.set(params.signature, forKey: bundleVersion)
@@ -912,8 +966,16 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     func getSha256FromFilePath(filePath: String) throws -> Promise<String> {
         return Promise.async {
-            OneKeyLog.debug("BundleUpdate", "getSha256FromFilePath: \(filePath)")
             guard !filePath.isEmpty else { return "" }
+
+            // Restrict to bundle-related directories only
+            let resolvedPath = (filePath as NSString).resolvingSymlinksInPath
+            let bundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
+            let downloadDir = (BundleUpdateStore.downloadBundleDir() as NSString).resolvingSymlinksInPath
+            guard resolvedPath.hasPrefix(bundleDir) || resolvedPath.hasPrefix(downloadDir) else {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "File path outside allowed bundle directories"])
+            }
+
             return BundleUpdateStore.calculateSHA256(filePath) ?? ""
         }
     }

@@ -122,12 +122,17 @@ object OneKeyLog {
         }
     }
 
+    private fun sanitizeForLog(str: String): String {
+        return str.replace("\n", " ").replace("\r", " ")
+    }
+
     private fun formatMessage(tag: String, level: String, message: String): String {
+        val safeMessage = sanitizeForLog(message)
         if (tag == "JS") {
-            return truncate(message)
+            return truncate(safeMessage)
         }
         val time = LocalTime.now().format(timeFormatter)
-        return truncate("$time | $level : [$tag] $message")
+        return truncate("$time | $level : [$tag] $safeMessage")
     }
 
     private fun log(tag: String, level: String, message: String, androidLogLevel: Int) {
