@@ -59,17 +59,41 @@ class KeychainModuleCore {
       query[kSecAttrDescription as String] = description
     }
 
-    // Delete existing item if it exists
-    SecItemDelete(query as CFDictionary)
-
-    // Add new item
+    // Try to add new item first; if it already exists, update it
     let status = SecItemAdd(query as CFDictionary, nil)
 
-    guard status == errSecSuccess else {
-      OneKeyLog.error("Keychain", "setItem: failed, OSStatus: \(status)")
-      throw KeychainModuleError.operationFailed(status)
+    if status == errSecDuplicateItem {
+      // Item exists - update it instead of delete+add (avoids race condition window)
+      let searchQuery: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: KeychainConstants.serviceIdentifier ?? "",
+        kSecAttrAccount as String: params.key,
+        kSecAttrSynchronizable as String: kSecAttrSynchronizableAny
+      ]
+      var updateAttrs: [String: Any] = [
+        kSecValueData as String: valueData,
+        kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
+        kSecAttrSynchronizable as String: enableSync
+      ]
+      if let label = params.label {
+        updateAttrs[kSecAttrLabel as String] = label
+      }
+      if let description = params.description {
+        updateAttrs[kSecAttrDescription as String] = description
+      }
+      let updateStatus = SecItemUpdate(searchQuery as CFDictionary, updateAttrs as CFDictionary)
+      guard updateStatus == errSecSuccess else {
+        OneKeyLog.error("Keychain", "setItem update: failed, OSStatus: \(updateStatus)")
+        throw KeychainModuleError.operationFailed(updateStatus)
+      }
+      OneKeyLog.info("Keychain", "setItem: updated existing")
+    } else {
+      guard status == errSecSuccess else {
+        OneKeyLog.error("Keychain", "setItem: failed, OSStatus: \(status)")
+        throw KeychainModuleError.operationFailed(status)
+      }
+      OneKeyLog.info("Keychain", "setItem: success")
     }
-    OneKeyLog.info("Keychain", "setItem: success")
   }
 
   // MARK: - Get Item

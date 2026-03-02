@@ -642,6 +642,19 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let folderName = "\(appVersion)-\(bundleVersion)"
             let destination = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
 
+            // Check zip file size before extraction (decompression bomb protection)
+            let maxZipFileSize: UInt64 = 512 * 1024 * 1024 // 512 MB
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: filePath),
+               let fileSize = attrs[.size] as? UInt64, fileSize > maxZipFileSize {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Zip file exceeds maximum allowed size"])
+            }
+
+            // Validate paths before extraction using SSZipArchive entry enumeration
+            let zipEntries = SSZipArchive.payloadSize(forArchiveAtPath: filePath)
+            if zipEntries > Int64(maxZipFileSize) {
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Zip payload exceeds maximum allowed size (decompression bomb protection)"])
+            }
+
             // Unzip using SSZipArchive
             do {
                 try SSZipArchive.unzipFile(atPath: filePath, toDestination: destination, overwrite: true, password: nil)
@@ -650,7 +663,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to unzip bundle: \(error.localizedDescription)"])
             }
 
-            // Validate extracted paths
+            // Validate extracted paths (symlinks, path traversal)
             if !BundleUpdateStore.validateExtractedPathSafety(destination) {
                 try? FileManager.default.removeItem(atPath: destination)
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Path traversal or symlink attack detected"])
@@ -686,29 +699,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     func verifyBundle(params: BundleVerifyParams) throws -> Promise<Void> {
         return Promise.async {
-            let filePath = params.downloadedFile
-            let sha256 = params.sha256
-            let appVersion = params.latestVersion
-            let bundleVersion = params.bundleVersion
-
-            guard let calculated = BundleUpdateStore.calculateSHA256(filePath), calculated == sha256 else {
-                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
-            }
-
-            let folderName = "\(appVersion)-\(bundleVersion)"
-            let destination = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
-            let metadataJsonPath = (destination as NSString).appendingPathComponent("metadata.json")
-            guard FileManager.default.fileExists(atPath: metadataJsonPath) else {
-                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to read metadata.json"])
-            }
-
-            guard let metadata = BundleUpdateStore.getMetadataFileContent("\(appVersion)-\(bundleVersion)") else {
-                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Error parsing metadata.json"])
-            }
-
-            if !BundleUpdateStore.validateAllFilesInDir(destination, metadata: metadata, appVersion: appVersion, bundleVersion: bundleVersion) {
-                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
-            }
+            // verifyBundle without GPG signature is not allowed in production.
+            // All bundle verification must go through verifyBundleASC which includes GPG signature validation.
+            throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "verifyBundle without GPG signature is not supported. Use verifyBundleASC instead."])
         }
     }
 
@@ -726,8 +719,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let folderName = "\(appVersion)-\(bundleVersion)"
             let currentFolderName = BundleUpdateStore.currentBundleVersion()
 
-            // Prevent version downgrade (always enforced in release builds)
-            if !skipGPG, let current = currentFolderName,
+            // Prevent version downgrade (always enforced regardless of debug mode)
+            if let current = currentFolderName,
                let dashRange = current.range(of: "-", options: .backwards) {
                 let currentBundleVer = String(current[dashRange.upperBound...])
                 if let currentNum = Int(currentBundleVer), let newNum = Int(bundleVersion), newNum < currentNum {

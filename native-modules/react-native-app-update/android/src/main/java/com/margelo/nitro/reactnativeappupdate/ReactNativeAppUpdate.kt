@@ -139,10 +139,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         val filesDir = context.filesDir.canonicalPath
         val externalCacheDir = context.externalCacheDir?.canonicalPath
         val externalFilesDir = context.getExternalFilesDir(null)?.canonicalPath
-        val allowed = canonicalPath.startsWith(cacheDir) ||
-                canonicalPath.startsWith(filesDir) ||
-                (externalCacheDir != null && canonicalPath.startsWith(externalCacheDir)) ||
-                (externalFilesDir != null && canonicalPath.startsWith(externalFilesDir))
+        val allowed = canonicalPath.startsWith(cacheDir + File.separator) || canonicalPath == cacheDir ||
+                canonicalPath.startsWith(filesDir + File.separator) || canonicalPath == filesDir ||
+                (externalCacheDir != null && (canonicalPath.startsWith(externalCacheDir + File.separator) || canonicalPath == externalCacheDir)) ||
+                (externalFilesDir != null && (canonicalPath.startsWith(externalFilesDir + File.separator) || canonicalPath == externalFilesDir))
         if (!allowed) {
             throw SecurityException("Path outside allowed directories")
         }
@@ -191,6 +191,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val client = OkHttpClient.Builder()
                     .connectTimeout(10, TimeUnit.SECONDS)
                     .readTimeout(60, TimeUnit.SECONDS)
+                    .followRedirects(false)
+                    .followSslRedirects(false)
                     .build()
                 val request = Request.Builder().url(url).build()
                 val response = client.newCall(request).execute()
@@ -274,6 +276,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val client = OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
+                .followRedirects(false)
+                .followSslRedirects(false)
                 .build()
             val request = Request.Builder().url(ascFileUrl).build()
             val response = client.newCall(request).execute()
@@ -283,11 +287,15 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             }
 
             val content = StringBuilder()
+            val maxAscSize = 10 * 1024 // 10 KB max for ASC files
             val body = response.body ?: throw Exception("Empty ASC response body")
             BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
                 var line: String?
                 while (reader.readLine().also { line = it } != null) {
                     content.append(line).append("\n")
+                    if (content.length > maxAscSize) {
+                        throw Exception("ASC file exceeds maximum allowed size")
+                    }
                 }
             }
 
@@ -391,10 +399,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         }
     }
 
-    // Track verified file paths to ensure verification before installation
-    private val verifiedFiles = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    // Track verified files with their SHA-256 hash to prevent TOCTOU attacks
+    private data class VerifiedFile(val canonicalPath: String, val sha256: String)
+    private val verifiedFiles = java.util.Collections.synchronizedMap(mutableMapOf<String, String>())
 
-    @Suppress("DEPRECATION")
     override fun verifyAPK(params: AppUpdateFileParams): Promise<Void> {
         return Promise.async {
             val file = buildFile(params.filePath)
@@ -414,19 +422,45 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             }
 
             // Verify APK signing certificate matches the installed app
-            val apkInfo = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNATURES)
-            val installedInfo = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
-            if (apkInfo?.signatures == null || installedInfo?.signatures == null) {
-                throw Exception("SIGNATURE_UNAVAILABLE")
-            }
-            val apkSig = apkInfo.signatures.firstOrNull()
-            val installedSig = installedInfo.signatures.firstOrNull()
-            if (apkSig == null || installedSig == null || apkSig != installedSig) {
-                throw Exception("SIGNATURE_MISMATCH")
+            // Use modern API on Android 9+ (API 28+), fallback to legacy on older versions
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val apkInfo = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
+                val installedInfo = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                val apkSigners = apkInfo?.signingInfo?.apkContentsSigners
+                val installedSigners = installedInfo?.signingInfo?.apkContentsSigners
+                if (apkSigners == null || installedSigners == null) {
+                    throw Exception("SIGNATURE_UNAVAILABLE")
+                }
+                // Compare all signers: sets must match exactly (no extra or missing signers)
+                if (apkSigners.toSet() != installedSigners.toSet()) {
+                    throw Exception("SIGNATURE_MISMATCH")
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val apkInfo = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNATURES)
+                @Suppress("DEPRECATION")
+                val installedInfo = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
+                if (apkInfo?.signatures == null || installedInfo?.signatures == null) {
+                    throw Exception("SIGNATURE_UNAVAILABLE")
+                }
+                // Compare all signatures, not just the first
+                if (apkInfo.signatures.toSet() != installedInfo.signatures.toSet()) {
+                    throw Exception("SIGNATURE_MISMATCH")
+                }
             }
 
-            verifiedFiles.add(file.canonicalPath)
-            OneKeyLog.info("AppUpdate", "APK verified: ${info.packageName}")
+            // Compute SHA-256 hash of the verified file for TOCTOU protection
+            val digest = MessageDigest.getInstance("SHA-256")
+            BufferedInputStream(FileInputStream(file)).use { bis ->
+                val buffer = ByteArray(8192)
+                var count: Int
+                while (bis.read(buffer).also { count = it } > 0) {
+                    digest.update(buffer, 0, count)
+                }
+            }
+            val fileHash = bytesToHex(digest.digest())
+            verifiedFiles[file.canonicalPath] = fileHash
+            OneKeyLog.info("AppUpdate", "APK verified successfully")
         }
     }
 
@@ -438,8 +472,21 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             if (!file.exists()) throw Exception("NOT_FOUND_PACKAGE")
 
             // Ensure verifyAPK was called before installation
-            if (!verifiedFiles.contains(file.canonicalPath)) {
-                throw Exception("APK must be verified before installation")
+            val expectedHash = verifiedFiles.remove(file.canonicalPath)
+                ?: throw Exception("APK must be verified before installation")
+
+            // Re-verify file hash to prevent TOCTOU attacks (file swapped after verification)
+            val digest = MessageDigest.getInstance("SHA-256")
+            BufferedInputStream(FileInputStream(file)).use { bis ->
+                val buffer = ByteArray(8192)
+                var count: Int
+                while (bis.read(buffer).also { count = it } > 0) {
+                    digest.update(buffer, 0, count)
+                }
+            }
+            val currentHash = bytesToHex(digest.digest())
+            if (currentHash != expectedHash) {
+                throw Exception("APK file was modified after verification")
             }
 
             val intent = Intent(Intent.ACTION_VIEW)
@@ -462,6 +509,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     override fun clearCache(): Promise<Void> {
         return Promise.async {
             isDownloading.set(false)
+            verifiedFiles.clear()
             // Clean up downloaded APK and ASC files from cache directory
             val context = NitroModules.applicationContext
             if (context != null) {

@@ -215,7 +215,7 @@
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return success;
 }
 
@@ -345,7 +345,7 @@
       selectSuccess = sw1 == OKNFC_SW1_OK;
       dispatch_semaphore_signal(sema);
     }];
-    dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
     if (selectSuccess) {
       self.selectNFCApp = app;
     } else {
@@ -372,7 +372,7 @@
       dispatch_semaphore_signal(sema);
     }];
   }];
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return success;
 }
 
@@ -390,7 +390,7 @@
     SN = [[NSString alloc] initWithData:responseData encoding:NSUTF8StringEncoding];
     dispatch_semaphore_signal(sema);
   }];
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return SN;
 }
 
@@ -426,7 +426,7 @@
     result = OKNFCLitePINVerifyResultPass;
     dispatch_semaphore_signal(sema);
   }];
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return result;
 }
 
@@ -470,7 +470,7 @@
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   self.certVerified = isVerificationPass;
 
   return isVerificationPass;
@@ -510,7 +510,7 @@
     }
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return pinStatus;
 }
 
@@ -528,7 +528,7 @@
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return success;
 }
 
@@ -552,7 +552,7 @@
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return mnc;
 }
 
@@ -573,7 +573,7 @@
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return success;
 }
 
@@ -602,7 +602,7 @@
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return result;
 }
 

@@ -126,13 +126,32 @@ object OneKeyLog {
         return str.replace("\n", " ").replace("\r", " ")
     }
 
+    /** Sanitize sensitive data from all log messages (native and JS) */
+    private val nativeSensitivePatterns = listOf(
+        Regex("(?:0x)?[0-9a-fA-F]{64}"),
+        Regex("\\b[5KL][1-9A-HJ-NP-Za-km-z]{50,51}\\b"),
+        Regex("\\b[xyzXYZ](?:prv|pub)[1-9A-HJ-NP-Za-km-z]{107,108}\\b"),
+        Regex("(?:\\b[a-z]{3,8}\\b[\\s,]+){11,}\\b[a-z]{3,8}\\b"),
+        Regex("(?:Bearer|token[=:]?)\\s*[A-Za-z0-9_.\\-+/=]{20,}"),
+        Regex("(?:eyJ|AAAA)[A-Za-z0-9+/=]{40,}"),
+    )
+
+    private fun sanitizeSensitive(message: String): String {
+        var result = message
+        for (pattern in nativeSensitivePatterns) {
+            result = pattern.replace(result, "[REDACTED]")
+        }
+        return result
+    }
+
     private fun formatMessage(tag: String, level: String, message: String): String {
-        val safeMessage = sanitizeForLog(message)
-        if (tag == "JS") {
+        val safeTag = sanitizeForLog(tag.take(64))
+        val safeMessage = sanitizeSensitive(sanitizeForLog(message))
+        if (safeTag == "JS") {
             return truncate(safeMessage)
         }
         val time = LocalTime.now().format(timeFormatter)
-        return truncate("$time | $level : [$tag] $safeMessage")
+        return truncate("$time | $level : [$safeTag] $safeMessage")
     }
 
     private fun log(tag: String, level: String, message: String, androidLogLevel: Int) {
@@ -147,7 +166,8 @@ object OneKeyLog {
             }
         } else {
             // Fallback to android.util.Log when file logger is unavailable
-            android.util.Log.println(androidLogLevel, "OneKey/$tag", message)
+            // Use formatted (sanitized) message, not raw message
+            android.util.Log.println(androidLogLevel, "OneKey/${tag.take(64)}", formatted)
         }
     }
 

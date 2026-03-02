@@ -51,7 +51,12 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 #pragma mark - Public Methods
 
 - (void)startBackgroundRunner {
+#if DEBUG
     [self startBackgroundRunnerWithEntryURL:MODULE_DEBUG_URL];
+#else
+    // In production, use the bundled background.bundle (not the debug HTTP URL)
+    [self startBackgroundRunnerWithEntryURL:@"background.bundle"];
+#endif
 }
 
 - (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL {

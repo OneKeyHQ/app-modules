@@ -10,13 +10,37 @@ class NativeLogger : HybridNativeLoggerSpec() {
     companion object {
         /** Patterns that should never be written to log files */
         private val sensitivePatterns = listOf(
-            // Hex-encoded private keys (64 hex chars)
-            Regex("[0-9a-fA-F]{64}"),
-            // BIP39 mnemonic-like sequences (12+ words separated by spaces)
-            Regex("(?:\\b[a-z]{3,8}\\b\\s+){11,}\\b[a-z]{3,8}\\b"),
+            // Hex-encoded private keys (64 hex chars), with optional 0x prefix
+            Regex("(?:0x)?[0-9a-fA-F]{64}"),
+            // WIF private keys (base58, starting with 5, K, or L)
+            Regex("\\b[5KL][1-9A-HJ-NP-Za-km-z]{50,51}\\b"),
+            // Extended keys (xprv/xpub/zprv/zpub/yprv/ypub)
+            Regex("\\b[xyzXYZ](?:prv|pub)[1-9A-HJ-NP-Za-km-z]{107,108}\\b"),
+            // BIP39 mnemonic-like sequences (12+ words of 3-8 lowercase letters)
+            Regex("(?:\\b[a-z]{3,8}\\b[\\s,]+){11,}\\b[a-z]{3,8}\\b"),
+            // Bearer/API tokens
+            Regex("(?:Bearer|token[=:]?)\\s*[A-Za-z0-9_.\\-+/=]{20,}"),
             // Base64 encoded data that looks like keys (44+ chars)
             Regex("(?:eyJ|AAAA)[A-Za-z0-9+/=]{40,}"),
         )
+
+        /** Rate limiting: max messages per second */
+        private const val MAX_MESSAGES_PER_SECOND = 100
+        @Volatile private var messageCount = 0
+        @Volatile private var windowStartMs = System.currentTimeMillis()
+        private val rateLimitLock = Any()
+
+        private fun isRateLimited(): Boolean {
+            synchronized(rateLimitLock) {
+                val now = System.currentTimeMillis()
+                if (now - windowStartMs >= 1000L) {
+                    windowStartMs = now
+                    messageCount = 0
+                }
+                messageCount++
+                return messageCount > MAX_MESSAGES_PER_SECOND
+            }
+        }
 
         fun sanitize(message: String): String {
             var result = message
@@ -30,6 +54,7 @@ class NativeLogger : HybridNativeLoggerSpec() {
     }
 
     override fun write(level: Double, msg: String) {
+        if (isRateLimited()) return
         val sanitized = sanitize(msg)
         when (level.toInt()) {
             0 -> OneKeyLog.debug("JS", sanitized)

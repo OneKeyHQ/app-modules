@@ -303,7 +303,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
             mCardType, CommandType.SETUP_NEW_PIN, hasOpenSafeChannel, "DFFE0B8204080006$pinHex"
         )
         val res = command.send(this)
-        printLog(TAG, "<--- setupNewPin end: ${res.getCode()} ${res.data} area:${mCommandArea}")
+        printLog(TAG, "<--- setupNewPin end: ${res.getCode()} area:${mCommandArea}")
 
         if (!res.isSuccess()) {
             return false
@@ -326,7 +326,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
         )
         val res = command.send(this)
 
-        printLog(TAG, "<--- changePin end: ${res.getCode()} ${res.data} area:${mCommandArea}")
+        printLog(TAG, "<--- changePin end: ${res.getCode()} area:${mCommandArea}")
 
         return if (res.isConnectFailure()) {
             NfcConstant.INTERRUPT_STATUS
@@ -356,7 +356,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
             mCardType, CommandType.VERIFY_PIN, hasOpenSafeChannel, "06$pinHex"
         )
         val res = command.send(this)
-        printLog(TAG, "<--- startVerifyPin end: ${res.getCode()} ${res.data} area:${mCommandArea}")
+        printLog(TAG, "<--- startVerifyPin end: ${res.getCode()} area:${mCommandArea}")
 
         return if (res.isConnectFailure()) {
             NfcConstant.INTERRUPT_STATUS
@@ -385,7 +385,7 @@ class Connection(val isoDep: IsoDep, private val mCommandGenerator: CommandGener
             mCardType, CommandType.BACKUP_DATA, hasOpenSafeChannel, mnemonic
         )
         val res = command.send(this)
-        printLog(TAG, "<--- backupData end: ${res.getCode()} ${res.data} area:${mCommandArea}")
+        printLog(TAG, "<--- backupData end: ${res.getCode()} area:${mCommandArea}")
 
         if (!res.isSuccess()) {
             return false

@@ -9,6 +9,25 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   private let container = CKContainer.default()
   private lazy var database = container.privateCloudDatabase
 
+  // MARK: - Input Validation
+
+  private static let recordIDMaxLength = 255
+  private static let recordTypePattern = try! NSRegularExpression(pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,254}$")
+  private static let queryResultsLimit = 200
+
+  private func validateRecordID(_ recordID: String) throws {
+    guard !recordID.isEmpty, recordID.count <= Self.recordIDMaxLength else {
+      throw NSError(domain: "CloudKitModule", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid record ID"])
+    }
+  }
+
+  private func validateRecordType(_ recordType: String) throws {
+    let range = NSRange(recordType.startIndex..., in: recordType)
+    guard Self.recordTypePattern.firstMatch(in: recordType, range: range) != nil else {
+      throw NSError(domain: "CloudKitModule", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid record type"])
+    }
+  }
+
   // MARK: - Check Availability
 
   public func isAvailable() throws -> Promise<Bool> {
@@ -53,6 +72,8 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   // MARK: - Save Record
 
   public func saveRecord(params: SaveRecordParams) throws -> Promise<SaveRecordResult> {
+    try validateRecordID(params.recordID)
+    try validateRecordType(params.recordType)
     return Promise.async {
       OneKeyLog.debug("CloudKit", "Saving record: \(params.recordID), type: \(params.recordType)")
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
@@ -82,6 +103,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   // MARK: - Fetch Record
 
   public func fetchRecord(params: FetchRecordParams) throws -> Promise<Variant_NullType_RecordResult> {
+    try validateRecordID(params.recordID)
     return Promise.async {
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
 
@@ -112,6 +134,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   // MARK: - Delete Record
 
   public func deleteRecord(params: DeleteRecordParams) throws -> Promise<Void> {
+    try validateRecordID(params.recordID)
     return Promise.async {
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
 
@@ -129,6 +152,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   // MARK: - Record Exists
 
   public func recordExists(params: RecordExistsParams) throws -> Promise<Bool> {
+    try validateRecordID(params.recordID)
     return Promise.async {
       let ckRecordID = CKRecord.ID(recordName: params.recordID)
 
@@ -144,6 +168,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
   // MARK: - Query Records
 
   public func queryRecords(params: QueryRecordsParams) throws -> Promise<QueryRecordsResult> {
+    try validateRecordType(params.recordType)
     return Promise.async {
       let predicate = NSPredicate(value: true)
       let query = CKQuery(recordType: params.recordType, predicate: predicate)
@@ -153,7 +178,7 @@ class CloudKitModule: HybridCloudKitModuleSpec {
         var results: [RecordResult] = []
         let operation = CKQueryOperation(query: query)
         operation.desiredKeys = [CloudKitConstants.recordMetaField]
-        // operation.resultsLimit = 500 // Optional: tune as needed
+        operation.resultsLimit = Self.queryResultsLimit
 
         operation.recordMatchedBlock = { _, result in
           switch result {

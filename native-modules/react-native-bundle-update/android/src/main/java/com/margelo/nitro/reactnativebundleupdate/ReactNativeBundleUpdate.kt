@@ -774,28 +774,9 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     override fun verifyBundle(params: BundleVerifyParams): Promise<Void> {
         return Promise.async {
-            val context = getContext()
-            val filePath = params.downloadedFile
-            val sha256 = params.sha256
-            val appVersion = params.latestVersion
-            val bundleVersion = params.bundleVersion
-
-            if (!verifyBundleSHA256(filePath, sha256)) {
-                throw Exception("Bundle signature verification failed")
-            }
-
-            val folderName = "$appVersion-$bundleVersion"
-            val destination = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName).absolutePath
-            val metadataFile = File(destination, "metadata.json")
-            if (!metadataFile.exists()) {
-                throw Exception("Failed to read metadata.json")
-            }
-
-            val metadataContent = BundleUpdateStoreAndroid.readFileContent(metadataFile)
-            val metadata = BundleUpdateStoreAndroid.parseMetadataJson(metadataContent)
-            if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, destination, metadata, appVersion, bundleVersion)) {
-                throw Exception("Bundle signature verification failed")
-            }
+            // verifyBundle without GPG signature is not allowed in production.
+            // All bundle verification must go through verifyBundleASC which includes GPG signature validation.
+            throw Exception("verifyBundle without GPG signature is not supported. Use verifyBundleASC instead.")
         }
     }
 
@@ -811,8 +792,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val folderName = "$appVersion-$bundleVersion"
             val currentFolderName = BundleUpdateStoreAndroid.getCurrentBundleVersion(context)
 
-            // Prevent version downgrade (always enforced in release builds)
-            if (!skipGPG && !currentFolderName.isNullOrEmpty()) {
+            // Prevent version downgrade (always enforced regardless of debug mode)
+            if (!currentFolderName.isNullOrEmpty()) {
                 val dashIndex = currentFolderName.lastIndexOf("-")
                 if (dashIndex > 0) {
                     try {

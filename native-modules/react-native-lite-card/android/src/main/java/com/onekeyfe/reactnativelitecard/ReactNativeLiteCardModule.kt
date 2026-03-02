@@ -114,7 +114,7 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
               emitOnNFCActiveConnection(dataMap.copy())
             }
           } catch (e: Exception) {
-            e.printStackTrace()
+            OneKeyLog.error("LiteCard", "NFC connection failed: ${e.message}")
             // 未知设备或连接失败
             val dataMap = Arguments.createMap().apply {
               putInt("code", -1)
@@ -291,6 +291,14 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     overwrite: Boolean,
     callback: Callback?
   ) {
+    if (pwd.isNullOrEmpty() || pwd.length != 6 || !pwd.all { it.isDigit() }) {
+      callback?.invoke(NFCExceptions.InputPasswordEmptyException().createArguments(), null, null)
+      return
+    }
+    if (mnemonic.isNullOrEmpty()) {
+      callback?.invoke(NFCExceptions.ExecFailureException().createArguments(), null, null)
+      return
+    }
     launch {
       handleOperation(callback) { isoDep ->
         OneKeyLog.debug("LiteCard","setMnemonic Obtain the device")
@@ -313,6 +321,10 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     pwd: String,
     callback: Callback?
   ) {
+    if (pwd.isEmpty() || pwd.length != 6 || !pwd.all { it.isDigit() }) {
+      callback?.invoke(NFCExceptions.InputPasswordEmptyException().createArguments(), null, null)
+      return
+    }
     launch {
       OneKeyLog.debug("LiteCard","getMnemonicWithPin")
       handleOperation(callback) { isoDep ->

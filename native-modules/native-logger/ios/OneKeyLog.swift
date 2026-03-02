@@ -120,13 +120,39 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
                   .replacingOccurrences(of: "\r", with: " ")
     }
 
+    /// Sanitize sensitive data from native-side log messages
+    private static let nativeSensitivePatterns: [NSRegularExpression] = {
+        let patterns = [
+            "(?:0x)?[0-9a-fA-F]{64}",
+            "\\b[5KL][1-9A-HJ-NP-Za-km-z]{50,51}\\b",
+            "\\b[xyzXYZ](?:prv|pub)[1-9A-HJ-NP-Za-km-z]{107,108}\\b",
+            "(?:\\b[a-z]{3,8}\\b[\\s,]+){11,}\\b[a-z]{3,8}\\b",
+            "(?:Bearer|token[=:]?)\\s*[A-Za-z0-9_.\\-+/=]{20,}",
+            "(?:eyJ|AAAA)[A-Za-z0-9+/=]{40,}",
+        ]
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0) }
+    }()
+
+    private static func sanitizeSensitive(_ message: String) -> String {
+        var result = message
+        for regex in nativeSensitivePatterns {
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: "[REDACTED]"
+            )
+        }
+        return result
+    }
+
     private static func formatMessage(_ tag: String, _ level: String, _ message: String) -> String {
-        let safeMessage = sanitizeForLog(message)
-        if tag == "JS" {
+        let safeTag = sanitizeForLog(String(tag.prefix(64)))
+        let safeMessage = sanitizeSensitive(sanitizeForLog(message))
+        if safeTag == "JS" {
             return truncate(safeMessage)
         }
         let time = formattedTime(Date())
-        return truncate("\(time) | \(level) : [\(tag)] \(safeMessage)")
+        return truncate("\(time) | \(level) : [\(safeTag)] \(safeMessage)")
     }
 
     @objc public static func debug(_ tag: String, _ message: String) {

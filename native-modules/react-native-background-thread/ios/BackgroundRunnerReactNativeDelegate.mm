@@ -157,17 +157,9 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
 
       _onMessageSandbox->call(runtime, {std::move(parsedValue)});
     } catch (const jsi::JSError &e) {
-    //   if (self.eventEmitter && self.hasOnErrorHandler) {
-    //     SandboxReactNativeViewEventEmitter::OnError errorEvent = {
-    //         .isFatal = false, .name = "JSError", .message = e.getMessage(), .stack = e.getStack()};
-    //     self.eventEmitter->onError(errorEvent);
-    //   }
+      [BTLogger error:[NSString stringWithFormat:@"JSError during postMessage: %s", e.getMessage().c_str()]];
     } catch (const std::exception &e) {
-    //   if (self.eventEmitter && self.hasOnErrorHandler) {
-    //     SandboxReactNativeViewEventEmitter::OnError errorEvent = {
-    //         .isFatal = false, .name = "RuntimeError", .message = e.what(), .stack = ""};
-    //     self.eventEmitter->onError(errorEvent);
-    //   }
+      [BTLogger error:[NSString stringWithFormat:@"RuntimeError during postMessage: %s", e.what()]];
     } catch (...) {
       [BTLogger error:[NSString stringWithFormat:@"Runtime invalid during postMessage for sandbox %s", _origin.c_str()]];
     }
@@ -176,26 +168,9 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
 
 - (bool)routeMessage:(const std::string &)message toSandbox:(const std::string &)targetId
 {
-//   auto &registry = SandboxRegistry::getInstance();
-//   auto target = registry.find(targetId);
-//   if (!target) {
-//     return false;
-//   }
-
-//   // Check if the current sandbox is permitted to send messages to the target
-//   if (!registry.isPermittedFrom(_origin, targetId)) {
-//     // if (self.eventEmitter && self.hasOnErrorHandler) {
-//     //   std::string errorMessage =
-//     //       fmt::format("Access denied: Sandbox '{}' is not permitted to send messages to '{}'", _origin, targetId);
-//     //   SandboxReactNativeViewEventEmitter::OnError errorEvent = {
-//     //       .isFatal = false, .name = "AccessDeniedError", .message = errorMessage, .stack = ""};
-//     //   self.eventEmitter->onError(errorEvent);
-//     // }
-//     return false;
-//   }
-
-//  target->postMessage(message);
-  return true;
+  // Sandbox routing is not yet implemented. Deny all cross-sandbox messages by default.
+  [BTLogger warn:@"routeMessage denied: sandbox routing not implemented"];
+  return false;
 }
 
 - (void)hostDidStart:(RCTHost *)host

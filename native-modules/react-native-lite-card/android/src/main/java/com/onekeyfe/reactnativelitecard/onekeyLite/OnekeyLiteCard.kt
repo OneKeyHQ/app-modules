@@ -20,7 +20,7 @@ import com.onekeyfe.reactnativelitecard.utils.NfcPermissionUtils
 object OneKeyLiteCard {
     const val TAG = "OneKeyLiteCard"
 
-    private val mCommandGenerator by lazy(LazyThreadSafetyMode.NONE) {
+    private val mCommandGenerator by lazy {
         CommandGenerator()
     }
     private var mCardConnection: Connection? = null
@@ -146,7 +146,8 @@ object OneKeyLiteCard {
             }
         }
 
-        return mCardConnection?.backupData(mnemonic ?: "") == true
+        if (mnemonic.isNullOrEmpty()) throw NFCExceptions.ExecFailureException()
+        return mCardConnection?.backupData(mnemonic) == true
     }
 
     @Throws(NFCExceptions::class)
