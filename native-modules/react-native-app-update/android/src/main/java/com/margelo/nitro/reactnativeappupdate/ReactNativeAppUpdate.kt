@@ -168,13 +168,18 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     override fun downloadAPK(params: AppUpdateDownloadParams): Promise<Void> {
         return Promise.async {
-            if (isDownloading.getAndSet(true)) return@async
+            if (isDownloading.getAndSet(true)) {
+                OneKeyLog.warn("AppUpdate", "downloadAPK: rejected, already downloading")
+                return@async
+            }
 
             try {
                 val url = params.downloadUrl
                 val filePath = params.filePath
                 val notificationTitle = params.notificationTitle
                 val fileSize = params.fileSize.toLong()
+
+                OneKeyLog.info("AppUpdate", "downloadAPK: url=$url, filePath=$filePath, fileSize=$fileSize")
 
                 val context = NitroModules.applicationContext
                     ?: throw Exception("Application context unavailable")
@@ -195,11 +200,15 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
 
                 if (!url.startsWith("https://")) {
+                    OneKeyLog.error("AppUpdate", "downloadAPK: URL is not HTTPS: $url")
                     throw Exception("Download URL must use HTTPS")
                 }
 
                 val downloadedFile = buildFile(filePath)
-                if (downloadedFile.exists()) downloadedFile.delete()
+                if (downloadedFile.exists()) {
+                    OneKeyLog.info("AppUpdate", "downloadAPK: existing file found, deleting...")
+                    downloadedFile.delete()
+                }
 
                 val client = OkHttpClient.Builder()
                     .connectTimeout(10, TimeUnit.SECONDS)
@@ -211,12 +220,14 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val response = client.newCall(request).execute()
 
                 if (!response.isSuccessful) {
+                    OneKeyLog.error("AppUpdate", "downloadAPK: HTTP error, statusCode=${response.code}")
                     sendEvent("error", message = response.code.toString())
                     throw Exception(response.code.toString())
                 }
 
                 val body = response.body ?: throw Exception("Empty response body")
                 val contentLength = if (fileSize > 0) fileSize else body.contentLength()
+                OneKeyLog.info("AppUpdate", "downloadAPK: HTTP 200, contentLength=$contentLength, starting download...")
                 val source = body.source()
                 val sink = downloadedFile.sink().buffer()
                 val sinkBuffer = sink.buffer
@@ -279,12 +290,16 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val url = params.downloadUrl
             val filePath = params.filePath
 
+            OneKeyLog.info("AppUpdate", "downloadASC: url=$url, filePath=$filePath")
+
             if (!url.startsWith("https://")) {
+                OneKeyLog.error("AppUpdate", "downloadASC: URL is not HTTPS: $url")
                 throw Exception("Download URL must use HTTPS")
             }
 
             val ascFileUrl = "$url.SHA256SUMS.asc"
             val ascFilePath = "$filePath.SHA256SUMS.asc"
+            OneKeyLog.info("AppUpdate", "downloadASC: ascFileUrl=$ascFileUrl")
 
             val client = OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
@@ -296,8 +311,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val response = client.newCall(request).execute()
 
             if (!response.isSuccessful) {
+                OneKeyLog.error("AppUpdate", "downloadASC: HTTP error, statusCode=${response.code}")
                 throw Exception(response.code.toString())
             }
+
+            OneKeyLog.info("AppUpdate", "downloadASC: HTTP 200, reading ASC content...")
 
             val content = StringBuilder()
             val maxAscSize = 10 * 1024 // 10 KB max for ASC files
@@ -307,39 +325,55 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 while (reader.readLine().also { line = it } != null) {
                     content.append(line).append("\n")
                     if (content.length > maxAscSize) {
+                        OneKeyLog.error("AppUpdate", "downloadASC: ASC file exceeds max size ($maxAscSize bytes)")
                         throw Exception("ASC file exceeds maximum allowed size")
                     }
                 }
             }
 
             val ascContent = content.toString()
-            if (ascContent.isEmpty()) throw Exception("Empty ASC file")
+            if (ascContent.isEmpty()) {
+                OneKeyLog.error("AppUpdate", "downloadASC: ASC content is empty")
+                throw Exception("Empty ASC file")
+            }
 
-            OneKeyLog.info("AppUpdate", "Downloaded ASC file")
+            OneKeyLog.info("AppUpdate", "downloadASC: ASC content size=${ascContent.length} bytes")
 
             val ascFile = buildFile(ascFilePath)
-            if (ascFile.exists()) ascFile.delete()
+            if (ascFile.exists()) {
+                OneKeyLog.info("AppUpdate", "downloadASC: existing ASC file found, deleting...")
+                ascFile.delete()
+            }
             FileOutputStream(ascFile).use { fos ->
                 fos.write(ascContent.toByteArray())
             }
+            OneKeyLog.info("AppUpdate", "downloadASC: saved ASC file to $ascFilePath")
         }
     }
 
     override fun verifyASC(params: AppUpdateFileParams): Promise<Void> {
         return Promise.async {
+            val filePath = params.filePath
+            OneKeyLog.info("AppUpdate", "verifyASC: filePath=$filePath")
+
             // Skip GPG verification when DevSettings (developer mode) is enabled
             if (isDevSettingsEnabled()) {
-                OneKeyLog.warn("AppUpdate", "GPG verification skipped (DevSettings enabled)")
+                OneKeyLog.warn("AppUpdate", "verifyASC: GPG verification skipped (DevSettings enabled)")
                 return@async
             }
 
-            val filePath = params.filePath
             val ascFilePath = "$filePath.SHA256SUMS.asc"
             val ascFile = buildFile(ascFilePath)
-            if (!ascFile.exists()) throw Exception("ASC file not found")
+            if (!ascFile.exists()) {
+                OneKeyLog.error("AppUpdate", "verifyASC: ASC file not found at $ascFilePath")
+                throw Exception("ASC file not found")
+            }
 
             val ascContent = ascFile.readText()
+            OneKeyLog.info("AppUpdate", "verifyASC: ASC file loaded, size=${ascContent.length} bytes")
+
             if (!ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----")) {
+                OneKeyLog.error("AppUpdate", "verifyASC: ASC file missing PGP signed message header")
                 throw Exception("ASC file does not contain a PGP signed message")
             }
 
@@ -350,8 +384,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val sigEndIdx = lines.indexOfFirst { it == "-----END PGP SIGNATURE-----" }
 
             if (hashHeaderIdx < 0 || sigStartIdx < 0 || sigEndIdx < 0) {
+                OneKeyLog.error("AppUpdate", "verifyASC: invalid cleartext format (hashHeader=$hashHeaderIdx, sigStart=$sigStartIdx, sigEnd=$sigEndIdx)")
                 throw Exception("Invalid PGP cleartext signed message format")
             }
+
+            OneKeyLog.info("AppUpdate", "verifyASC: parsed cleartext message structure OK")
 
             val bodyStartIdx = hashHeaderIdx + 2
             val bodyLines = lines.subList(bodyStartIdx, sigStartIdx)
@@ -360,22 +397,30 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val sigBlock = lines.subList(sigStartIdx, sigEndIdx + 1).joinToString("\n")
 
             // Parse signature
+            OneKeyLog.info("AppUpdate", "verifyASC: parsing PGP signature...")
             val sigInputStream = PGPUtil.getDecoderStream(sigBlock.byteInputStream())
             val sigFactory = JcaPGPObjectFactory(sigInputStream)
             val signatureList = sigFactory.nextObject()
 
             if (signatureList !is PGPSignatureList || signatureList.isEmpty) {
+                OneKeyLog.error("AppUpdate", "verifyASC: no PGP signature found in ASC file")
                 throw Exception("No PGP signature found in ASC file")
             }
 
             val pgpSignature = signatureList[0]
             val keyId = pgpSignature.keyID
+            OneKeyLog.info("AppUpdate", "verifyASC: signature keyID=${java.lang.Long.toHexString(keyId).uppercase()}")
 
             // Parse public key
+            OneKeyLog.info("AppUpdate", "verifyASC: loading GPG public key...")
             val pubKeyStream = PGPUtil.getDecoderStream(GPG_PUBLIC_KEY.byteInputStream())
             val pgpPubKeyRingCollection = PGPPublicKeyRingCollection(pubKeyStream, JcaKeyFingerprintCalculator())
             val publicKey = pgpPubKeyRingCollection.getPublicKey(keyId)
-                ?: throw Exception("GPG public key not found for signature verification")
+            if (publicKey == null) {
+                OneKeyLog.error("AppUpdate", "verifyASC: GPG public key not found for keyID=${java.lang.Long.toHexString(keyId).uppercase()}")
+                throw Exception("GPG public key not found for signature verification")
+            }
+            OneKeyLog.info("AppUpdate", "verifyASC: public key matched, verifying signature...")
 
             // Verify signature
             pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider("BC"), publicKey)
@@ -387,19 +432,28 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             pgpSignature.update(dataToVerify)
 
             if (!pgpSignature.verify()) {
+                OneKeyLog.error("AppUpdate", "verifyASC: GPG signature verification FAILED")
                 throw Exception("GPG signature verification failed for ASC file")
             }
+            OneKeyLog.info("AppUpdate", "verifyASC: GPG signature verified OK")
 
             // Extract SHA256 from cleartext (format: "<sha256hash>  <filename>\n" or just "<sha256hash>")
             val sha256 = cleartextBody.trim().split("\\s+".toRegex())[0].lowercase()
+            OneKeyLog.info("AppUpdate", "verifyASC: extracted SHA256=${sha256.take(16)}...")
+
             if (sha256.length != 64 || !sha256.all { it in '0'..'9' || it in 'a'..'f' }) {
+                OneKeyLog.error("AppUpdate", "verifyASC: invalid SHA256 hash format (length=${sha256.length})")
                 throw Exception("Invalid SHA256 hash format in ASC file")
             }
 
             // Verify APK file SHA256
             val apkFile = buildFile(filePath)
-            if (!apkFile.exists()) throw Exception("APK file not found: $filePath")
+            if (!apkFile.exists()) {
+                OneKeyLog.error("AppUpdate", "verifyASC: APK file not found at $filePath")
+                throw Exception("APK file not found: $filePath")
+            }
 
+            OneKeyLog.info("AppUpdate", "verifyASC: computing SHA256 of APK file (size=${apkFile.length()} bytes)...")
             val digest = MessageDigest.getInstance("SHA-256")
             BufferedInputStream(FileInputStream(apkFile)).use { bis ->
                 val buffer = ByteArray(8192)
@@ -409,12 +463,14 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
             }
             val fileSha256 = bytesToHex(digest.digest())
+            OneKeyLog.info("AppUpdate", "verifyASC: APK SHA256=${fileSha256.take(16)}...")
 
             if (fileSha256 != sha256) {
+                OneKeyLog.error("AppUpdate", "verifyASC: SHA256 MISMATCH — expected=${sha256.take(16)}..., got=${fileSha256.take(16)}...")
                 throw Exception("SHA256 mismatch for APK file")
             }
 
-            OneKeyLog.info("AppUpdate", "GPG signature and SHA256 verification passed for APK")
+            OneKeyLog.info("AppUpdate", "verifyASC: GPG signature + SHA256 verification passed")
         }
     }
 
@@ -424,34 +480,49 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     override fun verifyAPK(params: AppUpdateFileParams): Promise<Void> {
         return Promise.async {
-            val file = buildFile(params.filePath)
-            if (!file.exists()) throw Exception("NOT_FOUND_PACKAGE")
+            val filePath = params.filePath
+            OneKeyLog.info("AppUpdate", "verifyAPK: filePath=$filePath")
+
+            val file = buildFile(filePath)
+            if (!file.exists()) {
+                OneKeyLog.error("AppUpdate", "verifyAPK: APK file not found at $filePath")
+                throw Exception("NOT_FOUND_PACKAGE")
+            }
+            OneKeyLog.info("AppUpdate", "verifyAPK: APK file found, size=${file.length()} bytes")
 
             val context = NitroModules.applicationContext
                 ?: throw Exception("Application context unavailable")
             val pm = context.packageManager
 
             // Check package name
+            OneKeyLog.info("AppUpdate", "verifyAPK: parsing APK package info...")
             val info = pm.getPackageArchiveInfo(file.absolutePath, 0)
             if (info?.packageName == null) {
+                OneKeyLog.error("AppUpdate", "verifyAPK: failed to parse APK package info (INVALID_PACKAGE)")
                 throw Exception("INVALID_PACKAGE")
             }
+            OneKeyLog.info("AppUpdate", "verifyAPK: APK packageName=${info.packageName}, versionName=${info.versionName}, versionCode=${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode}")
+
             if (info.packageName != context.packageName) {
+                OneKeyLog.error("AppUpdate", "verifyAPK: package name mismatch — APK=${info.packageName}, installed=${context.packageName}")
                 throw Exception("PACKAGE_NAME_MISMATCH")
             }
+            OneKeyLog.info("AppUpdate", "verifyAPK: package name matches installed app")
 
             // Verify APK signing certificate matches the installed app
-            // Use modern API on Android 9+ (API 28+), fallback to legacy on older versions
+            OneKeyLog.info("AppUpdate", "verifyAPK: verifying APK signing certificate (API level=${Build.VERSION.SDK_INT})...")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 val apkInfo = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
                 val installedInfo = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
                 val apkSigners = apkInfo?.signingInfo?.apkContentsSigners
                 val installedSigners = installedInfo?.signingInfo?.apkContentsSigners
                 if (apkSigners == null || installedSigners == null) {
+                    OneKeyLog.error("AppUpdate", "verifyAPK: signing info unavailable (apkSigners=${apkSigners != null}, installedSigners=${installedSigners != null})")
                     throw Exception("SIGNATURE_UNAVAILABLE")
                 }
-                // Compare all signers: sets must match exactly (no extra or missing signers)
+                OneKeyLog.info("AppUpdate", "verifyAPK: APK signers count=${apkSigners.size}, installed signers count=${installedSigners.size}")
                 if (apkSigners.toSet() != installedSigners.toSet()) {
+                    OneKeyLog.error("AppUpdate", "verifyAPK: signing certificate MISMATCH")
                     throw Exception("SIGNATURE_MISMATCH")
                 }
             } else {
@@ -460,15 +531,19 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 @Suppress("DEPRECATION")
                 val installedInfo = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
                 if (apkInfo?.signatures == null || installedInfo?.signatures == null) {
+                    OneKeyLog.error("AppUpdate", "verifyAPK: legacy signatures unavailable")
                     throw Exception("SIGNATURE_UNAVAILABLE")
                 }
-                // Compare all signatures, not just the first
+                OneKeyLog.info("AppUpdate", "verifyAPK: APK signatures count=${apkInfo.signatures.size}, installed signatures count=${installedInfo.signatures.size}")
                 if (apkInfo.signatures.toSet() != installedInfo.signatures.toSet()) {
+                    OneKeyLog.error("AppUpdate", "verifyAPK: legacy signing certificate MISMATCH")
                     throw Exception("SIGNATURE_MISMATCH")
                 }
             }
+            OneKeyLog.info("AppUpdate", "verifyAPK: signing certificate verified OK")
 
             // Compute SHA-256 hash of the verified file for TOCTOU protection
+            OneKeyLog.info("AppUpdate", "verifyAPK: computing SHA-256 hash for TOCTOU protection...")
             val digest = MessageDigest.getInstance("SHA-256")
             BufferedInputStream(FileInputStream(file)).use { bis ->
                 val buffer = ByteArray(8192)
@@ -479,20 +554,31 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             }
             val fileHash = bytesToHex(digest.digest())
             verifiedFiles[file.canonicalPath] = fileHash
-            OneKeyLog.info("AppUpdate", "APK verified successfully")
+            OneKeyLog.info("AppUpdate", "verifyAPK: APK verified successfully, hash=${fileHash.take(16)}..., stored for install verification")
         }
     }
 
     override fun installAPK(params: AppUpdateFileParams): Promise<Void> {
         return Promise.async {
+            val filePath = params.filePath
+            OneKeyLog.info("AppUpdate", "installAPK: filePath=$filePath")
+
             val context = NitroModules.applicationContext
                 ?: throw Exception("Application context unavailable")
-            val file = buildFile(params.filePath)
-            if (!file.exists()) throw Exception("NOT_FOUND_PACKAGE")
+            val file = buildFile(filePath)
+            if (!file.exists()) {
+                OneKeyLog.error("AppUpdate", "installAPK: APK file not found at $filePath")
+                throw Exception("NOT_FOUND_PACKAGE")
+            }
+            OneKeyLog.info("AppUpdate", "installAPK: APK file found, size=${file.length()} bytes")
 
             // Ensure verifyAPK was called before installation
             val expectedHash = verifiedFiles.remove(file.canonicalPath)
-                ?: throw Exception("APK must be verified before installation")
+            if (expectedHash == null) {
+                OneKeyLog.error("AppUpdate", "installAPK: APK was not verified before installation (no hash in verifiedFiles)")
+                throw Exception("APK must be verified before installation")
+            }
+            OneKeyLog.info("AppUpdate", "installAPK: expected hash=${expectedHash.take(16)}..., re-verifying TOCTOU...")
 
             // Re-verify file hash to prevent TOCTOU attacks (file swapped after verification)
             val digest = MessageDigest.getInstance("SHA-256")
@@ -505,9 +591,20 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             }
             val currentHash = bytesToHex(digest.digest())
             if (currentHash != expectedHash) {
+                OneKeyLog.error("AppUpdate", "installAPK: TOCTOU check FAILED — file was modified after verification (current=${currentHash.take(16)}..., expected=${expectedHash.take(16)}...)")
                 throw Exception("APK file was modified after verification")
             }
+            OneKeyLog.info("AppUpdate", "installAPK: TOCTOU check passed, hash matches")
 
+            // Parse APK info for logging
+            val pm = context.packageManager
+            val apkInfo = pm.getPackageArchiveInfo(file.absolutePath, 0)
+            if (apkInfo != null) {
+                val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) apkInfo.longVersionCode else @Suppress("DEPRECATION") apkInfo.versionCode.toLong()
+                OneKeyLog.info("AppUpdate", "installAPK: APK package=${apkInfo.packageName}, versionName=${apkInfo.versionName}, versionCode=$versionCode")
+            }
+
+            OneKeyLog.info("AppUpdate", "installAPK: creating install intent (API level=${Build.VERSION.SDK_INT})...")
             val intent = Intent(Intent.ACTION_VIEW)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -518,28 +615,46 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 )
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 intent.setDataAndType(apkUri, "application/vnd.android.package-archive")
+                OneKeyLog.info("AppUpdate", "installAPK: using FileProvider URI=$apkUri")
             } else {
                 intent.setDataAndType(Uri.fromFile(file), "application/vnd.android.package-archive")
+                OneKeyLog.info("AppUpdate", "installAPK: using file URI")
             }
             context.startActivity(intent)
+            OneKeyLog.info("AppUpdate", "installAPK: install intent launched, awaiting user confirmation")
         }
     }
 
     override fun clearCache(): Promise<Void> {
         return Promise.async {
+            OneKeyLog.info("AppUpdate", "clearCache: starting cleanup...")
             isDownloading.set(false)
+            val verifiedCount = verifiedFiles.size
             verifiedFiles.clear()
+            OneKeyLog.info("AppUpdate", "clearCache: reset download state, cleared $verifiedCount verified file entries")
+
             // Clean up downloaded APK and ASC files from cache directory
             val context = NitroModules.applicationContext
             if (context != null) {
                 val cacheDir = context.cacheDir
-                cacheDir.listFiles()?.filter { file ->
+                val filesToDelete = cacheDir.listFiles()?.filter { file ->
                     file.name.endsWith(".apk") || file.name.endsWith(".asc")
-                }?.forEach { file ->
+                } ?: emptyList()
+
+                OneKeyLog.info("AppUpdate", "clearCache: found ${filesToDelete.size} cached file(s) to delete in ${cacheDir.absolutePath}")
+                var deletedCount = 0
+                filesToDelete.forEach { file ->
+                    val size = file.length()
                     if (file.delete()) {
-                        OneKeyLog.debug("AppUpdate", "Cleared cached file: ${file.name}")
+                        OneKeyLog.debug("AppUpdate", "clearCache: deleted ${file.name} (${size} bytes)")
+                        deletedCount++
+                    } else {
+                        OneKeyLog.warn("AppUpdate", "clearCache: failed to delete ${file.name}")
                     }
                 }
+                OneKeyLog.info("AppUpdate", "clearCache: completed, deleted $deletedCount/${filesToDelete.size} files")
+            } else {
+                OneKeyLog.warn("AppUpdate", "clearCache: application context unavailable, skipping file cleanup")
             }
         }
     }

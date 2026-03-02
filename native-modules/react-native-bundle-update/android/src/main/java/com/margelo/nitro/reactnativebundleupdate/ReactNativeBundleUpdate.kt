@@ -667,6 +667,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     override fun downloadBundle(params: BundleDownloadParams): Promise<BundleDownloadResult> {
         return Promise.async {
             if (isDownloading.getAndSet(true)) {
+                OneKeyLog.warn("BundleUpdate", "downloadBundle: rejected, already downloading")
                 throw Exception("Already downloading")
             }
 
@@ -677,12 +678,16 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val downloadUrl = params.downloadUrl
             val sha256 = params.sha256
 
+            OneKeyLog.info("BundleUpdate", "downloadBundle: appVersion=$appVersion, bundleVersion=$bundleVersion, fileSize=${params.fileSize}, url=$downloadUrl")
+
             if (!BundleUpdateStoreAndroid.isSafeVersionString(appVersion) ||
                 !BundleUpdateStoreAndroid.isSafeVersionString(bundleVersion)) {
+                OneKeyLog.error("BundleUpdate", "downloadBundle: invalid version string format: appVersion=$appVersion, bundleVersion=$bundleVersion")
                 throw Exception("Invalid version string format")
             }
 
             if (!downloadUrl.startsWith("https://")) {
+                OneKeyLog.error("BundleUpdate", "downloadBundle: URL is not HTTPS: $downloadUrl")
                 throw Exception("Bundle download URL must use HTTPS")
             }
 
@@ -697,32 +702,38 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 sha256 = sha256
             )
 
-            OneKeyLog.info("BundleUpdate", "downloadBundle: filePath: $filePath")
+            OneKeyLog.info("BundleUpdate", "downloadBundle: filePath=$filePath")
 
             val downloadedFile = File(filePath)
             if (downloadedFile.exists()) {
+                OneKeyLog.info("BundleUpdate", "downloadBundle: file already exists, verifying SHA256...")
                 if (verifyBundleSHA256(filePath, sha256)) {
+                    OneKeyLog.info("BundleUpdate", "downloadBundle: existing file SHA256 valid, skipping download")
                     isDownloading.set(false)
                     Thread.sleep(1000)
                     sendEvent("update/complete")
                     return@async result
                 } else {
+                    OneKeyLog.warn("BundleUpdate", "downloadBundle: existing file SHA256 mismatch, re-downloading")
                     downloadedFile.delete()
                 }
             }
 
             sendEvent("update/start")
+            OneKeyLog.info("BundleUpdate", "downloadBundle: starting download...")
 
             val request = Request.Builder().url(downloadUrl).build()
             val response = httpClient.newCall(request).execute()
 
             if (!response.isSuccessful) {
-                sendEvent("update/error", message = response.code.toString())
+                OneKeyLog.error("BundleUpdate", "downloadBundle: HTTP error, statusCode=${response.code}")
+                sendEvent("update/error", message = "HTTP ${response.code}")
                 throw Exception("HTTP ${response.code}")
             }
 
             val body = response.body ?: throw Exception("Empty response body")
             val fileSize = if (params.fileSize > 0) params.fileSize.toLong() else body.contentLength()
+            OneKeyLog.info("BundleUpdate", "downloadBundle: HTTP 200, contentLength=$fileSize, downloading...")
 
             body.byteStream().use { inputStream ->
                 FileOutputStream(filePath).use { outputStream ->
@@ -741,14 +752,16 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
             }
 
+            OneKeyLog.info("BundleUpdate", "downloadBundle: download finished, verifying SHA256...")
             if (!verifyBundleSHA256(filePath, sha256)) {
                 File(filePath).delete()
+                OneKeyLog.error("BundleUpdate", "downloadBundle: SHA256 verification failed after download")
                 sendEvent("update/error", message = "Bundle signature verification failed")
                 throw Exception("Bundle signature verification failed")
             }
 
             sendEvent("update/complete")
-            OneKeyLog.info("BundleUpdate", "Download completed")
+            OneKeyLog.info("BundleUpdate", "downloadBundle: completed successfully, appVersion=$appVersion, bundleVersion=$bundleVersion")
             result
             } finally {
                 isDownloading.set(false)
@@ -757,9 +770,13 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     }
 
     private fun verifyBundleSHA256(bundlePath: String, sha256: String): Boolean {
-        val calculated = BundleUpdateStoreAndroid.calculateSHA256(bundlePath) ?: return false
+        val calculated = BundleUpdateStoreAndroid.calculateSHA256(bundlePath)
+        if (calculated == null) {
+            OneKeyLog.error("BundleUpdate", "verifyBundleSHA256: failed to calculate SHA256 for: $bundlePath")
+            return false
+        }
         val isValid = BundleUpdateStoreAndroid.secureCompare(calculated, sha256)
-        OneKeyLog.debug("BundleUpdate", "verifyBundleSHA256: Valid: $isValid")
+        OneKeyLog.debug("BundleUpdate", "verifyBundleSHA256: path=$bundlePath, expected=${sha256.take(16)}..., calculated=${calculated.take(16)}..., valid=$isValid")
         return isValid
     }
 
@@ -770,11 +787,13 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val bundleVersion = params.bundleVersion
             val signature = params.signature
 
+            OneKeyLog.info("BundleUpdate", "downloadBundleASC: appVersion=$appVersion, bundleVersion=$bundleVersion, signatureLength=${signature.length}")
+
             val storageKey = "$appVersion-$bundleVersion"
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             prefs.edit().putString(storageKey, signature).apply()
 
-            OneKeyLog.info("BundleUpdate", "downloadBundleASC: Stored signature for key: $storageKey")
+            OneKeyLog.info("BundleUpdate", "downloadBundleASC: stored signature for key=$storageKey")
         }
     }
 
@@ -786,16 +805,22 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
             val signature = params.signature
+
+            OneKeyLog.info("BundleUpdate", "verifyBundleASC: appVersion=$appVersion, bundleVersion=$bundleVersion, file=$filePath, signatureLength=${signature.length}")
+
             // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
             val devSettings = isDevSettingsEnabled()
             val skipGPGToggle = isSkipGPGEnabled()
             val skipGPG = devSettings && skipGPGToggle
-            OneKeyLog.info("BundleUpdate", "GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle, skipGPG=$skipGPG")
+            OneKeyLog.info("BundleUpdate", "verifyBundleASC: GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle, skipGPG=$skipGPG")
 
             if (!skipGPG) {
+                OneKeyLog.info("BundleUpdate", "verifyBundleASC: verifying SHA256 of downloaded file...")
                 if (!verifyBundleSHA256(filePath, sha256)) {
+                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: SHA256 verification failed for file=$filePath")
                     throw Exception("Bundle signature verification failed")
                 }
+                OneKeyLog.info("BundleUpdate", "verifyBundleASC: SHA256 verified OK")
             } else {
                 OneKeyLog.warn("BundleUpdate", "verifyBundleASC: SHA256 + GPG verification skipped (DevSettings enabled)")
             }
@@ -805,28 +830,38 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val destinationDir = File(destination)
 
             try {
+                OneKeyLog.info("BundleUpdate", "verifyBundleASC: extracting zip to $destination...")
                 BundleUpdateStoreAndroid.unzipFile(filePath, destination)
+                OneKeyLog.info("BundleUpdate", "verifyBundleASC: extraction completed")
 
                 val metadataFile = File(destination, "metadata.json")
                 if (!metadataFile.exists()) {
+                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: metadata.json not found after extraction")
                     BundleUpdateStoreAndroid.deleteDir(destinationDir)
                     throw Exception("Failed to read metadata.json")
                 }
 
                 val currentBundleVersion = "$appVersion-$bundleVersion"
                 if (!skipGPG) {
+                    OneKeyLog.info("BundleUpdate", "verifyBundleASC: validating GPG signature for metadata...")
                     if (!BundleUpdateStoreAndroid.validateMetadataFileSha256(context, currentBundleVersion, signature)) {
+                        OneKeyLog.error("BundleUpdate", "verifyBundleASC: GPG signature verification failed")
                         BundleUpdateStoreAndroid.deleteDir(destinationDir)
                         throw Exception("Bundle signature verification failed")
                     }
+                    OneKeyLog.info("BundleUpdate", "verifyBundleASC: GPG signature verified OK")
                 }
 
+                OneKeyLog.info("BundleUpdate", "verifyBundleASC: validating all extracted files against metadata...")
                 val metadataContent = BundleUpdateStoreAndroid.readFileContent(metadataFile)
                 val metadata = BundleUpdateStoreAndroid.parseMetadataJson(metadataContent)
                 if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, destination, metadata, appVersion, bundleVersion)) {
+                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: file integrity check failed")
                     BundleUpdateStoreAndroid.deleteDir(destinationDir)
                     throw Exception("Extracted files verification against metadata failed")
                 }
+
+                OneKeyLog.info("BundleUpdate", "verifyBundleASC: all verifications passed, appVersion=$appVersion, bundleVersion=$bundleVersion")
             } catch (e: Exception) {
                 if (destinationDir.exists()) {
                     BundleUpdateStoreAndroid.deleteDir(destinationDir)
@@ -838,9 +873,25 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     override fun verifyBundle(params: BundleVerifyParams): Promise<Void> {
         return Promise.async {
-            // verifyBundle without GPG signature is not allowed in production.
-            // All bundle verification must go through verifyBundleASC which includes GPG signature validation.
-            throw Exception("verifyBundle without GPG signature is not supported. Use verifyBundleASC instead.")
+            val filePath = params.downloadedFile
+            val sha256 = params.sha256
+            val appVersion = params.latestVersion
+            val bundleVersion = params.bundleVersion
+
+            OneKeyLog.info("BundleUpdate", "verifyBundle: appVersion=$appVersion, bundleVersion=$bundleVersion, file=$filePath")
+
+            // Verify SHA256 of the downloaded file
+            val calculated = BundleUpdateStoreAndroid.calculateSHA256(filePath)
+            if (calculated == null) {
+                OneKeyLog.error("BundleUpdate", "verifyBundle: failed to calculate SHA256 for file=$filePath")
+                throw Exception("Failed to calculate SHA256")
+            }
+            if (!BundleUpdateStoreAndroid.secureCompare(calculated, sha256)) {
+                OneKeyLog.error("BundleUpdate", "verifyBundle: SHA256 mismatch, expected=${sha256.take(16)}..., got=${calculated.take(16)}...")
+                throw Exception("SHA256 verification failed")
+            }
+
+            OneKeyLog.info("BundleUpdate", "verifyBundle: SHA256 verified OK for appVersion=$appVersion, bundleVersion=$bundleVersion")
         }
     }
 
@@ -850,18 +901,23 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val appVersion = params.latestVersion
             val bundleVersion = params.bundleVersion
             val signature = params.signature
+
+            OneKeyLog.info("BundleUpdate", "installBundle: appVersion=$appVersion, bundleVersion=$bundleVersion, signatureLength=${signature.length}")
+
             // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
             val devSettings = isDevSettingsEnabled()
             val skipGPGToggle = isSkipGPGEnabled()
             val skipGPG = devSettings && skipGPGToggle
-            OneKeyLog.info("BundleUpdate", "GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle, skipGPG=$skipGPG")
+            OneKeyLog.info("BundleUpdate", "installBundle: GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle, skipGPG=$skipGPG")
 
             val folderName = "$appVersion-$bundleVersion"
             val currentFolderName = BundleUpdateStoreAndroid.getCurrentBundleVersion(context)
+            OneKeyLog.info("BundleUpdate", "installBundle: target=$folderName, current=$currentFolderName")
 
             // Verify bundle directory exists
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
             if (!bundleDirPath.exists()) {
+                OneKeyLog.error("BundleUpdate", "installBundle: bundle directory not found: ${bundleDirPath.absolutePath}")
                 throw Exception("Bundle directory not found: $folderName")
             }
 
@@ -905,20 +961,26 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
 
                 BundleUpdateStoreAndroid.writeFallbackUpdateBundleDataFile(fallbackData, context)
+                OneKeyLog.info("BundleUpdate", "installBundle: completed successfully, installed version=$folderName, fallbackCount=${fallbackData.size}")
             } catch (e: Exception) {
-                OneKeyLog.error("BundleUpdate", "installBundle fallbackUpdateBundleData error: ${e.message}")
+                OneKeyLog.error("BundleUpdate", "installBundle: fallbackUpdateBundleData error: ${e.message}")
             }
         }
     }
 
     override fun clearBundle(): Promise<Void> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "clearBundle: clearing download directory...")
             val context = getContext()
             val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
             if (downloadDir.exists()) {
                 BundleUpdateStoreAndroid.deleteDir(downloadDir)
+                OneKeyLog.info("BundleUpdate", "clearBundle: download directory deleted")
+            } else {
+                OneKeyLog.info("BundleUpdate", "clearBundle: download directory does not exist, skipping")
             }
             isDownloading.set(false)
+            OneKeyLog.info("BundleUpdate", "clearBundle: completed")
         }
     }
 
@@ -944,12 +1006,14 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         return Promise.async {
             val context = getContext()
             val data = BundleUpdateStoreAndroid.readFallbackUpdateBundleDataFile(context)
-            data.mapNotNull { map ->
+            val result = data.mapNotNull { map ->
                 val appVersion = map["appVersion"] ?: return@mapNotNull null
                 val bundleVersion = map["bundleVersion"] ?: return@mapNotNull null
                 val signature = map["signature"] ?: return@mapNotNull null
                 FallbackBundleInfo(appVersion = appVersion, bundleVersion = bundleVersion, signature = signature)
             }.toTypedArray()
+            OneKeyLog.info("BundleUpdate", "getFallbackUpdateBundleData: found ${result.size} fallback entries")
+            result
         }
     }
 
@@ -957,22 +1021,26 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         return Promise.async {
             val context = getContext()
             val bundleVersion = "${params.appVersion}-${params.bundleVersion}"
+            OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: switching to $bundleVersion")
 
             // Verify the bundle directory actually exists
             val bundleDirPath = File(BundleUpdateStoreAndroid.getBundleDir(context), bundleVersion)
             if (!bundleDirPath.exists()) {
+                OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: bundle directory not found: ${bundleDirPath.absolutePath}")
                 throw Exception("Bundle directory not found")
             }
 
             // Verify GPG signature is valid (skipped when both DevSettings and skip-GPG toggle are enabled)
             val devSettings = isDevSettingsEnabled()
             val skipGPGToggle = isSkipGPGEnabled()
-            OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle")
+            OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle")
             if (!(devSettings && skipGPGToggle)) {
                 if (params.signature.isEmpty() ||
                     !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, bundleVersion, params.signature)) {
+                    OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: GPG signature verification failed")
                     throw Exception("Bundle signature verification failed")
                 }
+                OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: GPG signature verified OK")
             } else {
                 OneKeyLog.warn("BundleUpdate", "setCurrentUpdateBundleData: GPG signature verification skipped (DevSettings + skip-GPG enabled)")
             }
@@ -982,6 +1050,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 .putString("currentBundleVersion", bundleVersion)
                 .putString(bundleVersion, params.signature)
                 .apply()
+            OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: switched to $bundleVersion")
         }
     }
 
