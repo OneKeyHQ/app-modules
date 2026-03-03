@@ -690,7 +690,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     override fun installAPK(params: AppUpdateFileParams): Promise<Unit> {
         return Promise.async {
-            val filePath = params.filePath
+            val filePath = filePathFromUrl(params.downloadUrl)
             OneKeyLog.info("AppUpdate", "installAPK: filePath=$filePath")
 
             val context = NitroModules.applicationContext
