@@ -110,6 +110,38 @@ object BundleUpdateStoreAndroid {
         return dir.absolutePath
     }
 
+    fun getAscDir(context: Context): String {
+        val dir = File(getBundleDir(context), "asc")
+        if (!dir.exists()) dir.mkdirs()
+        return dir.absolutePath
+    }
+
+    fun getSignatureFilePath(context: Context, version: String): String {
+        return File(getAscDir(context), "$version-signature.asc").absolutePath
+    }
+
+    fun writeSignatureFile(context: Context, version: String, signature: String) {
+        val file = File(getSignatureFilePath(context, version))
+        file.parentFile?.mkdirs()
+        file.writeText(signature, Charsets.UTF_8)
+    }
+
+    fun readSignatureFile(context: Context, version: String): String {
+        val file = File(getSignatureFilePath(context, version))
+        if (!file.exists()) return ""
+        return try {
+            file.readText(Charsets.UTF_8)
+        } catch (e: Exception) {
+            OneKeyLog.error("BundleUpdate", "readSignatureFile: failed to read $version: ${e.message}")
+            ""
+        }
+    }
+
+    fun deleteSignatureFile(context: Context, version: String) {
+        val file = File(getSignatureFilePath(context, version))
+        if (file.exists()) file.delete()
+    }
+
     fun getCurrentBundleVersion(context: Context): String? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getString(CURRENT_BUNDLE_VERSION_KEY, null)
@@ -120,18 +152,26 @@ object BundleUpdateStoreAndroid {
         val currentVersion = prefs.getString(CURRENT_BUNDLE_VERSION_KEY, "")
         val editor = prefs.edit()
         editor.putString(CURRENT_BUNDLE_VERSION_KEY, version)
-        if (signature != null) {
-            editor.putString(version, signature)
-        }
+        // Remove old signature key from prefs (legacy cleanup)
         if (!currentVersion.isNullOrEmpty()) {
             editor.remove(currentVersion)
         }
         editor.apply()
+
+        // Store signature to file
+        if (!signature.isNullOrEmpty()) {
+            writeSignatureFile(context, version, signature)
+        }
     }
 
     fun clearUpdateBundleData(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().clear().apply()
+        // Clear all signature files
+        val ascDir = File(getAscDir(context))
+        if (ascDir.exists()) {
+            ascDir.listFiles()?.forEach { it.delete() }
+        }
     }
 
     fun getCurrentBundleDir(context: Context, currentBundleVersion: String?): String? {
@@ -478,8 +518,7 @@ object BundleUpdateStoreAndroid {
                 return null
             }
 
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val signature = prefs.getString(currentBundleVersion, "") ?: ""
+            val signature = readSignatureFile(context, currentBundleVersion)
             OneKeyLog.debug("BundleUpdate", "getJsBundlePath: signatureLength=${signature.length}")
 
             val devSettingsEnabled = isDevSettingsEnabled(context)
@@ -827,8 +866,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             OneKeyLog.info("BundleUpdate", "downloadBundleASC: appVersion=$appVersion, bundleVersion=$bundleVersion, signatureLength=${signature.length}")
 
             val storageKey = "$appVersion-$bundleVersion"
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            prefs.edit().putString(storageKey, signature).apply()
+            BundleUpdateStoreAndroid.writeSignatureFile(context, storageKey, signature)
 
             OneKeyLog.info("BundleUpdate", "downloadBundleASC: stored signature for key=$storageKey")
         }
@@ -958,8 +996,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 throw Exception("Bundle directory not found: $folderName")
             }
 
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val currentSignature = if (currentFolderName != null) prefs.getString(currentFolderName, "") ?: "" else ""
+            val currentSignature = if (currentFolderName != null) BundleUpdateStoreAndroid.readSignatureFile(context, currentFolderName) else ""
 
             BundleUpdateStoreAndroid.setCurrentBundleVersionAndSignature(context, folderName, signature)
             val nativeVersion = BundleUpdateStoreAndroid.getAppVersion(context) ?: ""
@@ -994,6 +1031,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                         if (oldDir.exists()) {
                             BundleUpdateStoreAndroid.deleteDir(oldDir)
                         }
+                        BundleUpdateStoreAndroid.deleteSignatureFile(context, shiftFolderName)
                     }
                 }
 
@@ -1088,8 +1126,10 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             prefs.edit()
                 .putString("currentBundleVersion", bundleVersion)
-                .putString(bundleVersion, params.signature)
                 .apply()
+            if (params.signature.isNotEmpty()) {
+                BundleUpdateStoreAndroid.writeSignatureFile(context, bundleVersion, params.signature)
+            }
             OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: switched to $bundleVersion")
         }
     }
@@ -1220,6 +1260,23 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
                 }
             }
             OneKeyLog.info("BundleUpdate", "listLocalBundles: found ${results.size} bundles")
+            results.toTypedArray()
+        }
+    }
+
+    override fun listAscFiles(): Promise<Array<AscFileInfo>> {
+        return Promise.async {
+            val context = getContext()
+            val ascDir = File(BundleUpdateStoreAndroid.getAscDir(context))
+            val results = mutableListOf<AscFileInfo>()
+            if (ascDir.exists() && ascDir.isDirectory) {
+                ascDir.listFiles()?.forEach { file ->
+                    if (file.isFile) {
+                        results.add(AscFileInfo(fileName = file.name, fileSize = file.length().toDouble()))
+                    }
+                }
+            }
+            OneKeyLog.info("BundleUpdate", "listAscFiles: found ${results.size} files")
             results.toTypedArray()
         }
     }

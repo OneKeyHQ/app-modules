@@ -89,6 +89,35 @@ public class BundleUpdateStore {
         return dir
     }
 
+    public static func ascDir() -> String {
+        let dir = (bundleDir() as NSString).appendingPathComponent("asc")
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: dir) {
+            try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+
+    public static func signatureFilePath(_ version: String) -> String {
+        return (ascDir() as NSString).appendingPathComponent("\(version)-signature.asc")
+    }
+
+    public static func writeSignatureFile(_ version: String, signature: String) {
+        let path = signatureFilePath(version)
+        try? signature.write(toFile: path, atomically: true, encoding: .utf8)
+    }
+
+    public static func readSignatureFile(_ version: String) -> String {
+        let path = signatureFilePath(version)
+        guard FileManager.default.fileExists(atPath: path) else { return "" }
+        return (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+    }
+
+    public static func deleteSignatureFile(_ version: String) {
+        let path = signatureFilePath(version)
+        try? FileManager.default.removeItem(atPath: path)
+    }
+
     public static func getCurrentNativeVersion() -> String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
     }
@@ -356,7 +385,7 @@ public class BundleUpdateStore {
             OneKeyLog.info("BundleUpdate", "currentAppVersion is not equal to prevNativeVersion \(currentAppVersion) \(prevNativeVersion)")
             let ud = UserDefaults.standard
             if let cbv = ud.string(forKey: "currentBundleVersion") {
-                ud.removeObject(forKey: cbv)
+                deleteSignatureFile(cbv)
                 ud.removeObject(forKey: "currentBundleVersion")
             }
             ud.synchronize()
@@ -369,7 +398,7 @@ public class BundleUpdateStore {
             return nil
         }
 
-        let signature = UserDefaults.standard.string(forKey: currentBundleVer) ?? ""
+        let signature = readSignatureFile(currentBundleVer)
         OneKeyLog.debug("BundleUpdate", "getJsBundlePath: signatureLength=\(signature.count)")
 
         let devSettingsEnabled = isDevSettingsEnabled()
@@ -434,9 +463,11 @@ public class BundleUpdateStore {
         let bDir = bundleDir()
         let fm = FileManager.default
         if fm.fileExists(atPath: bDir) {
+            // This also deletes asc/ directory containing all signature files
             try? fm.removeItem(atPath: bDir)
         }
         let ud = UserDefaults.standard
+        // Legacy cleanup: remove signature from UserDefaults if present
         if let cbv = currentBundleVersion() {
             ud.removeObject(forKey: cbv)
         }
@@ -760,8 +791,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             OneKeyLog.info("BundleUpdate", "downloadBundleASC: appVersion=\(appVersion), bundleVersion=\(bundleVersion), signatureLength=\(signature.count)")
 
             let storageKey = "\(appVersion)-\(bundleVersion)"
-            UserDefaults.standard.set(signature, forKey: storageKey)
-            UserDefaults.standard.synchronize()
+            BundleUpdateStore.writeSignatureFile(storageKey, signature: signature)
 
             OneKeyLog.info("BundleUpdate", "downloadBundleASC: stored signature for key=\(storageKey)")
         }
@@ -916,7 +946,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let ud = UserDefaults.standard
             ud.set(folderName, forKey: "currentBundleVersion")
             if !signature.isEmpty {
-                ud.set(signature, forKey: folderName)
+                BundleUpdateStore.writeSignatureFile(folderName, signature: signature)
             }
             let currentNativeVersion = BundleUpdateStore.getCurrentNativeVersion()
             BundleUpdateStore.setNativeVersion(currentNativeVersion)
@@ -929,7 +959,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                let dashRange = current.range(of: "-", options: .backwards) {
                 let curAppVersion = String(current[current.startIndex..<dashRange.lowerBound])
                 let curBundleVersion = String(current[dashRange.upperBound...])
-                let curSignature = ud.string(forKey: current) ?? ""
+                let curSignature = BundleUpdateStore.readSignatureFile(current)
                 if !curSignature.isEmpty {
                     fallbackData.append([
                         "appVersion": curAppVersion,
@@ -944,7 +974,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 let shifted = fallbackData.removeFirst()
                 if let shiftApp = shifted["appVersion"], let shiftBundle = shifted["bundleVersion"] {
                     let dirName = "\(shiftApp)-\(shiftBundle)"
-                    ud.removeObject(forKey: dirName)
+                    BundleUpdateStore.deleteSignatureFile(dirName)
                     let oldPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(dirName)
                     if FileManager.default.fileExists(atPath: oldPath) {
                         try? FileManager.default.removeItem(atPath: oldPath)
@@ -1042,7 +1072,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             let ud = UserDefaults.standard
             ud.set(bundleVersion, forKey: "currentBundleVersion")
-            ud.set(params.signature, forKey: bundleVersion)
+            if !params.signature.isEmpty {
+                BundleUpdateStore.writeSignatureFile(bundleVersion, signature: params.signature)
+            }
             ud.synchronize()
             OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: switched to \(bundleVersion)")
         }
@@ -1175,6 +1207,28 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 }
             }
             OneKeyLog.info("BundleUpdate", "listLocalBundles: found \(results.count) bundles")
+            return results
+        }
+    }
+
+    func listAscFiles() throws -> Promise<[AscFileInfo]> {
+        return Promise.async {
+            let ascDir = BundleUpdateStore.ascDir()
+            let fm = FileManager.default
+            guard let contents = try? fm.contentsOfDirectory(atPath: ascDir) else {
+                OneKeyLog.info("BundleUpdate", "listAscFiles: asc directory empty or not found")
+                return []
+            }
+            var results: [AscFileInfo] = []
+            for name in contents {
+                let fullPath = (ascDir as NSString).appendingPathComponent(name)
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), !isDir.boolValue else { continue }
+                let attrs = try? fm.attributesOfItem(atPath: fullPath)
+                let fileSize = Double((attrs?[.size] as? UInt64) ?? 0)
+                results.append(AscFileInfo(fileName: name, fileSize: fileSize))
+            }
+            OneKeyLog.info("BundleUpdate", "listAscFiles: found \(results.count) files")
             return results
         }
     }

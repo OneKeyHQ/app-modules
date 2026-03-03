@@ -75,6 +75,11 @@ export interface FallbackBundleInfo {
   signature: string;
 }
 
+export interface AscFileInfo {
+  fileName: string;
+  fileSize: number;
+}
+
 export interface ReactNativeBundleUpdate
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   // Download
@@ -110,6 +115,7 @@ export interface ReactNativeBundleUpdate
     bundleVersion: string,
   ): Promise<void>;
   listLocalBundles(): Promise<LocalBundleInfo[]>;
+  listAscFiles(): Promise<AscFileInfo[]>;
   getSha256FromFilePath(filePath: string): Promise<string>;
 
   // Test/debug methods

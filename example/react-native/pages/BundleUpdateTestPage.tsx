@@ -517,6 +517,14 @@ H3bEFZ8=
       setUtilError(err instanceof Error ? err.message : 'Unknown error');
     }
   };
+  const utilListAscFiles = async () => {
+    clearUtil();
+    try {
+      setUtilResult({ ascFiles: await ReactNativeBundleUpdate.listAscFiles() });
+    } catch (err) {
+      setUtilError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
   const utilTestVerification = async () => {
     clearUtil();
     try {
@@ -691,6 +699,7 @@ H3bEFZ8=
           <TestButton title="Get Native App Version" onPress={utilGetNativeAppVersion} />
           <TestButton title="Get Fallback Bundle Data" onPress={utilGetFallbackData} />
           <TestButton title="List Local Bundles" onPress={utilListLocal} />
+          <TestButton title="List ASC Files" onPress={utilListAscFiles} />
           <TestButton title="Test Verification" onPress={utilTestVerification} />
           <TestButton title="Verify All Local Bundles" onPress={utilVerifyAllLocal} />
           <TestButton title="Clear Bundle" onPress={utilClearBundle} />
