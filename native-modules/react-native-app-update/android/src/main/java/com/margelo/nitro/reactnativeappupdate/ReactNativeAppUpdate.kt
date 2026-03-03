@@ -288,6 +288,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         }
     }
 
+    private fun isDebuggable(): Boolean {
+        val context = NitroModules.applicationContext ?: return false
+        return (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    }
+
     /** Returns true if OneKey developer mode (DevSettings) is enabled via MMKV storage. */
     private fun isDevSettingsEnabled(): Boolean {
         return try {
@@ -639,11 +644,16 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             }
             OneKeyLog.info("AppUpdate", "verifyAPK: APK packageName=${info.packageName}, versionName=${info.versionName}, versionCode=${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode}")
 
+            val debugBuild = isDebuggable()
+
+            // Check package name
             if (info.packageName != context.packageName) {
                 OneKeyLog.error("AppUpdate", "verifyAPK: package name mismatch — APK=${info.packageName}, installed=${context.packageName}")
-                throw Exception("PACKAGE_NAME_MISMATCH")
+                if (!debugBuild) throw Exception("PACKAGE_NAME_MISMATCH")
+                OneKeyLog.warn("AppUpdate", "verifyAPK: DEBUG build — ignoring package name mismatch")
+            } else {
+                OneKeyLog.info("AppUpdate", "verifyAPK: package name matches installed app")
             }
-            OneKeyLog.info("AppUpdate", "verifyAPK: package name matches installed app")
 
             // Verify APK signing certificate matches the installed app
             OneKeyLog.info("AppUpdate", "verifyAPK: verifying APK signing certificate (API level=${Build.VERSION.SDK_INT})...")
@@ -654,12 +664,17 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val installedSigners = installedInfo?.signingInfo?.apkContentsSigners
                 if (apkSigners == null || installedSigners == null) {
                     OneKeyLog.error("AppUpdate", "verifyAPK: signing info unavailable (apkSigners=${apkSigners != null}, installedSigners=${installedSigners != null})")
-                    throw Exception("SIGNATURE_UNAVAILABLE")
-                }
-                OneKeyLog.info("AppUpdate", "verifyAPK: APK signers count=${apkSigners.size}, installed signers count=${installedSigners.size}")
-                if (apkSigners.toSet() != installedSigners.toSet()) {
-                    OneKeyLog.error("AppUpdate", "verifyAPK: signing certificate MISMATCH")
-                    throw Exception("SIGNATURE_MISMATCH")
+                    if (!debugBuild) throw Exception("SIGNATURE_UNAVAILABLE")
+                    OneKeyLog.warn("AppUpdate", "verifyAPK: DEBUG build — ignoring unavailable signatures")
+                } else {
+                    OneKeyLog.info("AppUpdate", "verifyAPK: APK signers count=${apkSigners.size}, installed signers count=${installedSigners.size}")
+                    if (apkSigners.toSet() != installedSigners.toSet()) {
+                        OneKeyLog.error("AppUpdate", "verifyAPK: signing certificate MISMATCH")
+                        if (!debugBuild) throw Exception("SIGNATURE_MISMATCH")
+                        OneKeyLog.warn("AppUpdate", "verifyAPK: DEBUG build — ignoring certificate mismatch")
+                    } else {
+                        OneKeyLog.info("AppUpdate", "verifyAPK: signing certificate verified OK")
+                    }
                 }
             } else {
                 @Suppress("DEPRECATION")
@@ -670,15 +685,19 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val installedSignatures = installedInfo?.signatures
                 if (apkSignatures == null || installedSignatures == null) {
                     OneKeyLog.error("AppUpdate", "verifyAPK: legacy signatures unavailable")
-                    throw Exception("SIGNATURE_UNAVAILABLE")
-                }
-                OneKeyLog.info("AppUpdate", "verifyAPK: APK signatures count=${apkSignatures.size}, installed signatures count=${installedSignatures.size}")
-                if (apkSignatures.toSet() != installedSignatures.toSet()) {
-                    OneKeyLog.error("AppUpdate", "verifyAPK: legacy signing certificate MISMATCH")
-                    throw Exception("SIGNATURE_MISMATCH")
+                    if (!debugBuild) throw Exception("SIGNATURE_UNAVAILABLE")
+                    OneKeyLog.warn("AppUpdate", "verifyAPK: DEBUG build — ignoring unavailable signatures")
+                } else {
+                    OneKeyLog.info("AppUpdate", "verifyAPK: APK signatures count=${apkSignatures.size}, installed signatures count=${installedSignatures.size}")
+                    if (apkSignatures.toSet() != installedSignatures.toSet()) {
+                        OneKeyLog.error("AppUpdate", "verifyAPK: legacy signing certificate MISMATCH")
+                        if (!debugBuild) throw Exception("SIGNATURE_MISMATCH")
+                        OneKeyLog.warn("AppUpdate", "verifyAPK: DEBUG build — ignoring certificate mismatch")
+                    } else {
+                        OneKeyLog.info("AppUpdate", "verifyAPK: signing certificate verified OK")
+                    }
                 }
             }
-            OneKeyLog.info("AppUpdate", "verifyAPK: signing certificate verified OK")
 
             // Compute SHA-256 hash of the verified file for TOCTOU protection
             OneKeyLog.info("AppUpdate", "verifyAPK: computing SHA-256 hash for TOCTOU protection...")
@@ -703,20 +722,26 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             OneKeyLog.info("AppUpdate", "installAPK: APK file found, size=${file.length()} bytes")
 
             // Ensure verifyAPK was called before installation
+            val debugBuild = isDebuggable()
             val expectedHash = verifiedFiles.remove(file.canonicalPath)
             if (expectedHash == null) {
                 OneKeyLog.error("AppUpdate", "installAPK: APK was not verified before installation (no hash in verifiedFiles)")
-                throw Exception("APK must be verified before installation")
+                if (!debugBuild) throw Exception("APK must be verified before installation")
+                OneKeyLog.warn("AppUpdate", "installAPK: DEBUG build — ignoring missing verification")
             }
-            OneKeyLog.info("AppUpdate", "installAPK: expected hash=${expectedHash.take(16)}..., re-verifying TOCTOU...")
 
             // Re-verify file hash to prevent TOCTOU attacks (file swapped after verification)
-            val currentHash = computeSha256(file)
-            if (currentHash != expectedHash) {
-                OneKeyLog.error("AppUpdate", "installAPK: TOCTOU check FAILED — file was modified after verification (current=${currentHash.take(16)}..., expected=${expectedHash.take(16)}...)")
-                throw Exception("APK file was modified after verification")
+            if (expectedHash != null) {
+                OneKeyLog.info("AppUpdate", "installAPK: expected hash=${expectedHash.take(16)}..., re-verifying TOCTOU...")
+                val currentHash = computeSha256(file)
+                if (currentHash != expectedHash) {
+                    OneKeyLog.error("AppUpdate", "installAPK: TOCTOU check FAILED — file was modified after verification (current=${currentHash.take(16)}..., expected=${expectedHash.take(16)}...)")
+                    if (!debugBuild) throw Exception("APK file was modified after verification")
+                    OneKeyLog.warn("AppUpdate", "installAPK: DEBUG build — ignoring TOCTOU mismatch")
+                } else {
+                    OneKeyLog.info("AppUpdate", "installAPK: TOCTOU check passed, hash matches")
+                }
             }
-            OneKeyLog.info("AppUpdate", "installAPK: TOCTOU check passed, hash matches")
 
             // Parse APK info for logging
             val pm = context.packageManager
