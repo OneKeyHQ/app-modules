@@ -198,16 +198,16 @@ public class BundleUpdateStore: NSObject {
     public static func isDevSettingsEnabled() -> Bool {
         // Ensure MMKV is initialized (safe to call multiple times)
         MMKV.initialize(rootDir: nil)
-        guard let mmkv = MMKV(mmapID: "onekey-app-setting") else { return false }
+        guard let mmkv = MMKV(mmapID: "onekey-app-dev-setting") else { return false }
         return mmkv.bool(forKey: "onekey_developer_mode_enabled", defaultValue: false)
     }
 
     /// Returns true if the skip-GPG-verification toggle is enabled in developer settings.
     /// Reads the persisted value from MMKV storage (key: onekey_bundle_skip_gpg_verification,
-    /// instance: onekey-app-setting).
+    /// instance: onekey-app-dev-setting).
     public static func isSkipGPGEnabled() -> Bool {
         MMKV.initialize(rootDir: nil)
-        guard let mmkv = MMKV(mmapID: "onekey-app-setting") else { return false }
+        guard let mmkv = MMKV(mmapID: "onekey-app-dev-setting") else { return false }
         return mmkv.bool(forKey: "onekey_bundle_skip_gpg_verification", defaultValue: false)
     }
 

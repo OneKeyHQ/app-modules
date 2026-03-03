@@ -340,8 +340,20 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         return try {
             val context = NitroModules.applicationContext ?: return false
             MMKV.initialize(context)
-            val mmkv = MMKV.mmkvWithID("onekey-app-setting") ?: return false
+            val mmkv = MMKV.mmkvWithID("onekey-app-dev-setting") ?: return false
             mmkv.decodeBool("onekey_developer_mode_enabled", false)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Returns true if the skip-GPG-verification toggle is enabled via MMKV storage. */
+    private fun isSkipGPGEnabled(): Boolean {
+        return try {
+            val context = NitroModules.applicationContext ?: return false
+            MMKV.initialize(context)
+            val mmkv = MMKV.mmkvWithID("onekey-app-dev-setting") ?: return false
+            mmkv.decodeBool("onekey_bundle_skip_gpg_verification", false)
         } catch (e: Exception) {
             false
         }
@@ -547,9 +559,12 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val filePath = filePathFromUrl(params.downloadUrl)
             OneKeyLog.info("AppUpdate", "verifyASC: filePath=$filePath")
 
-            // Skip GPG verification when DevSettings (developer mode) is enabled
-            if (isDevSettingsEnabled()) {
-                OneKeyLog.warn("AppUpdate", "verifyASC: GPG verification skipped (DevSettings enabled)")
+            // Skip GPG verification only when both DevSettings and skip-GPG toggle are enabled
+            val devSettings = isDevSettingsEnabled()
+            val skipGPGToggle = isSkipGPGEnabled()
+            OneKeyLog.info("AppUpdate", "verifyASC: GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle")
+            if (devSettings && skipGPGToggle) {
+                OneKeyLog.warn("AppUpdate", "verifyASC: GPG verification skipped (DevSettings + skip-GPG enabled)")
                 return@async
             }
 

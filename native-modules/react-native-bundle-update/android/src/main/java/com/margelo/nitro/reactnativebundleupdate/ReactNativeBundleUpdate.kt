@@ -575,12 +575,12 @@ object BundleUpdateStoreAndroid {
     /**
      * Returns true if the OneKey developer mode (DevSettings) is enabled.
      * Reads the persisted value from MMKV storage (key: onekey_developer_mode_enabled,
-     * instance: onekey-app-setting) written by the JS ServiceDevSetting layer.
+     * instance: onekey-app-dev-setting) written by the JS ServiceDevSetting layer.
      */
     fun isDevSettingsEnabled(context: Context): Boolean {
         return try {
             MMKV.initialize(context)
-            val mmkv = MMKV.mmkvWithID("onekey-app-setting") ?: return false
+            val mmkv = MMKV.mmkvWithID("onekey-app-dev-setting") ?: return false
             mmkv.decodeBool("onekey_developer_mode_enabled", false)
         } catch (e: Exception) {
             false
@@ -590,12 +590,12 @@ object BundleUpdateStoreAndroid {
     /**
      * Returns true if the skip-GPG-verification toggle is enabled in developer settings.
      * Reads the persisted value from MMKV storage (key: onekey_bundle_skip_gpg_verification,
-     * instance: onekey-app-setting).
+     * instance: onekey-app-dev-setting).
      */
     fun isSkipGPGEnabled(context: Context): Boolean {
         return try {
             MMKV.initialize(context)
-            val mmkv = MMKV.mmkvWithID("onekey-app-setting") ?: return false
+            val mmkv = MMKV.mmkvWithID("onekey-app-dev-setting") ?: return false
             mmkv.decodeBool("onekey_bundle_skip_gpg_verification", false)
         } catch (e: Exception) {
             false

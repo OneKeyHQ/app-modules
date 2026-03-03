@@ -18,7 +18,7 @@ import type {
 } from '@onekeyfe/react-native-bundle-update';
 import { createMMKV } from 'react-native-mmkv';
 
-const devSettingsMmkv = createMMKV({ id: 'onekey-app-setting' });
+const devSettingsMmkv = createMMKV({ id: 'onekey-app-dev-setting' });
 const KEY_DEV_MODE = 'onekey_developer_mode_enabled';
 const KEY_SKIP_GPG = 'onekey_bundle_skip_gpg_verification';
 
