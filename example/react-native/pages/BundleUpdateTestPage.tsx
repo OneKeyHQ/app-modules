@@ -269,7 +269,7 @@ Ni3q+jg=
         latestVersion: '5.19.0',
         bundleVersion: '2',
         fileSize: 55586119,
-        sha256: 'cece2fccea3c3a43e0da7ab803f44e5a4850a8b06f2df06db3e7f16860080a40',
+        sha256: 'c0beb980fc113bc21ea510b778933ed488dc685c2216105bd146df8e9f791a3d',
         signature: `-----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA256
 
