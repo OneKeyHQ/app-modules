@@ -18,7 +18,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.security.MessageDigest
-import java.security.Security
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -296,7 +295,7 @@ object BundleUpdateStoreAndroid {
             }
 
             // Verify the signature
-            pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider("BC"), publicKey)
+            pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
 
             // Dash-unescape the cleartext per RFC 4880 Section 7.1
             val unescapedLines = cleartextBody.lines().map { line ->
@@ -600,12 +599,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     companion object {
         private const val PREFS_NAME = "BundleUpdatePrefs"
-
-        init {
-            if (Security.getProvider("BC") == null) {
-                Security.addProvider(BouncyCastleProvider())
-            }
-        }
+        // Use our own BouncyCastle provider instance to avoid Android's stripped-down built-in "BC"
+        private val bcProvider = BouncyCastleProvider()
     }
 
     private val listeners = CopyOnWriteArrayList<BundleListener>()

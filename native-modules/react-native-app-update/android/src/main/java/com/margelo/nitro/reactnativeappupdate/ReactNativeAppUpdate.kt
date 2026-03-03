@@ -26,7 +26,6 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.security.MessageDigest
-import java.security.Security
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -104,12 +103,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     companion object {
         private const val CHANNEL_ID = "updateApp"
         private const val NOTIFICATION_ID = 1
-
-        init {
-            if (Security.getProvider("BC") == null) {
-                Security.addProvider(BouncyCastleProvider())
-            }
-        }
+        // Use our own BouncyCastle provider instance to avoid Android's stripped-down built-in "BC"
+        private val bcProvider = BouncyCastleProvider()
     }
 
     private val listeners = CopyOnWriteArrayList<Listener>()
@@ -582,7 +577,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             OneKeyLog.info("AppUpdate", "verifyASC: public key matched, verifying signature...")
 
             // Verify signature
-            pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider("BC"), publicKey)
+            pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
 
             val unescapedLines = cleartextBody.lines().map { line ->
                 if (line.startsWith("- ")) line.substring(2) else line
