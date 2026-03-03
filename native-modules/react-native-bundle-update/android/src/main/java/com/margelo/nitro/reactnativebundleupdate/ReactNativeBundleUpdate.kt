@@ -739,10 +739,17 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val fileSize = if (params.fileSize > 0) params.fileSize.toLong() else body.contentLength()
             OneKeyLog.info("BundleUpdate", "downloadBundle: HTTP 200, contentLength=$fileSize, downloading...")
 
+            // Ensure parent directory exists before writing
+            val parentDir = File(filePath).parentFile
+            if (parentDir != null && !parentDir.exists()) {
+                parentDir.mkdirs()
+                OneKeyLog.info("BundleUpdate", "downloadBundle: created parent directory: ${parentDir.absolutePath}")
+            }
+
+            var totalBytesRead = 0L
             body.byteStream().use { inputStream ->
                 FileOutputStream(filePath).use { outputStream ->
                     val buffer = ByteArray(8192)
-                    var totalBytesRead = 0L
                     var bytesRead: Int
 
                     var prevProgress = 0
@@ -761,7 +768,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
             }
 
-            OneKeyLog.info("BundleUpdate", "downloadBundle: download finished, verifying SHA256...")
+            val downloadedFileAfter = File(filePath)
+            OneKeyLog.info("BundleUpdate", "downloadBundle: download finished, totalBytesRead=$totalBytesRead, fileExists=${downloadedFileAfter.exists()}, fileSize=${if (downloadedFileAfter.exists()) downloadedFileAfter.length() else -1}, verifying SHA256...")
             if (!verifyBundleSHA256(filePath, sha256)) {
                 File(filePath).delete()
                 OneKeyLog.error("BundleUpdate", "downloadBundle: SHA256 verification failed after download")
