@@ -26,6 +26,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.security.MessageDigest
+import java.security.Security
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -36,6 +37,7 @@ import org.bouncycastle.openpgp.PGPUtil
 import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory
 import org.bouncycastle.openpgp.operator.jcajce.JcaKeyFingerprintCalculator
 import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentVerifierBuilderProvider
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 
 // OneKey GPG public key for signature verification
 private const val GPG_PUBLIC_KEY = """-----BEGIN PGP PUBLIC KEY BLOCK-----
@@ -102,6 +104,12 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     companion object {
         private const val CHANNEL_ID = "updateApp"
         private const val NOTIFICATION_ID = 1
+
+        init {
+            if (Security.getProvider("BC") == null) {
+                Security.addProvider(BouncyCastleProvider())
+            }
+        }
     }
 
     private val listeners = CopyOnWriteArrayList<Listener>()
@@ -511,6 +519,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 return@async
             }
 
+            try {
+
             val ascFilePath = "$filePath.SHA256SUMS.asc"
             val ascFile = buildFile(ascFilePath)
             if (!ascFile.exists()) {
@@ -612,6 +622,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             }
 
             OneKeyLog.info("AppUpdate", "verifyASC: GPG signature + SHA256 verification passed")
+
+            } catch (e: Exception) {
+                OneKeyLog.error("AppUpdate", "verifyASC: failed: ${e.javaClass.simpleName}: ${e.message}")
+                throw e
+            }
         }
     }
 
