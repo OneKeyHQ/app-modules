@@ -304,7 +304,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         return Promise.async {
             if (isDownloading.getAndSet(true)) {
                 OneKeyLog.warn("AppUpdate", "downloadAPK: rejected, already downloading")
-                return@async
+                throw Exception("Download already in progress")
             }
 
             try {

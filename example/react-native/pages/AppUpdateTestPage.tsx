@@ -252,7 +252,7 @@ export function AppUpdateTestPage({
     // Register listener for progress
     const lid = ReactNativeAppUpdate.addDownloadListener(
       (event: DownloadEvent) => {
-        if (event.type === 'update/downloading') {
+        if (event.type === 'downloading') {
           setWorkflow((prev) => ({
             ...prev,
             downloadProgress: event.progress,
