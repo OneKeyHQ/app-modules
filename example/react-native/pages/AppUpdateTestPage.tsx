@@ -195,7 +195,6 @@ export function AppUpdateTestPage({
   const [downloadUrl, setDownloadUrl] = useState(
     'https://web.onekey-asset.com/app-monorepo/v6.0.0/OneKey-Wallet-6.0.0-android.apk',
   );
-  const [filePath, setFilePath] = useState('update.apk');
 
   // --- Utility state ---
   const [utilExpanded, setUtilExpanded] = useState(false);
@@ -271,7 +270,6 @@ export function AppUpdateTestPage({
     try {
       await ReactNativeAppUpdate.downloadAPK({
         downloadUrl,
-        filePath: filePath || 'update.apk',
         notificationTitle: 'Downloading Update',
         fileSize: 183670673,
       });
@@ -298,19 +296,19 @@ export function AppUpdateTestPage({
         listenerIdRef.current = null;
       }
     }
-  }, [downloadUrl, filePath, progressAnim, updateStep]);
+  }, [downloadUrl, progressAnim, updateStep]);
 
   const handleVerify = useCallback(async () => {
-    if (!downloadUrl || !filePath) {
+    if (!downloadUrl) {
       updateStep('verify', {
         status: 'error',
-        errorMessage: 'URL and file path required',
+        errorMessage: 'Please enter a download URL',
       });
       return;
     }
     updateStep('verify', { status: 'active' });
     try {
-      await ReactNativeAppUpdate.verifyAPK({ downloadUrl, filePath });
+      await ReactNativeAppUpdate.verifyAPK({ downloadUrl });
       updateStep('verify', { status: 'completed' });
     } catch (err) {
       updateStep('verify', {
@@ -319,19 +317,19 @@ export function AppUpdateTestPage({
           err instanceof Error ? err.message : 'Verification failed',
       });
     }
-  }, [downloadUrl, filePath, updateStep]);
+  }, [downloadUrl, updateStep]);
 
   const handleInstall = useCallback(async () => {
-    if (!downloadUrl || !filePath) {
+    if (!downloadUrl) {
       updateStep('install', {
         status: 'error',
-        errorMessage: 'URL and file path required',
+        errorMessage: 'Please enter a download URL',
       });
       return;
     }
     updateStep('install', { status: 'active' });
     try {
-      await ReactNativeAppUpdate.installAPK({ downloadUrl, filePath });
+      await ReactNativeAppUpdate.installAPK({ downloadUrl });
       updateStep('install', { status: 'completed' });
     } catch (err) {
       updateStep('install', {
@@ -340,18 +338,18 @@ export function AppUpdateTestPage({
           err instanceof Error ? err.message : 'Installation failed',
       });
     }
-  }, [downloadUrl, filePath, updateStep]);
+  }, [downloadUrl, updateStep]);
 
   // --- Utility handlers ---
 
   const utilDownloadASC = async () => {
     clearUtil();
-    if (!downloadUrl || !filePath) {
-      setUtilError('URL and file path required');
+    if (!downloadUrl) {
+      setUtilError('Please enter a download URL');
       return;
     }
     try {
-      await ReactNativeAppUpdate.downloadASC({ downloadUrl, filePath });
+      await ReactNativeAppUpdate.downloadASC({ downloadUrl });
       setUtilResult({ ascDownloaded: true });
     } catch (err) {
       setUtilError(err instanceof Error ? err.message : 'Unknown error');
@@ -360,12 +358,12 @@ export function AppUpdateTestPage({
 
   const utilVerifyASC = async () => {
     clearUtil();
-    if (!downloadUrl || !filePath) {
-      setUtilError('URL and file path required');
+    if (!downloadUrl) {
+      setUtilError('Please enter a download URL');
       return;
     }
     try {
-      await ReactNativeAppUpdate.verifyASC({ downloadUrl, filePath });
+      await ReactNativeAppUpdate.verifyASC({ downloadUrl });
       setUtilResult({ ascVerified: true });
     } catch (err) {
       setUtilError(err instanceof Error ? err.message : 'Unknown error');
@@ -421,12 +419,6 @@ export function AppUpdateTestPage({
           placeholder="Download URL"
           value={downloadUrl}
           onChangeText={setDownloadUrl}
-        />
-        <View style={{ height: 8 }} />
-        <TestInput
-          placeholder="File Path (e.g. update.apk)"
-          value={filePath}
-          onChangeText={setFilePath}
         />
       </View>
 

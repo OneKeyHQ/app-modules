@@ -2,14 +2,12 @@ import type { HybridObject } from 'react-native-nitro-modules';
 
 export interface AppUpdateDownloadParams {
   downloadUrl: string;
-  filePath: string;
   notificationTitle: string;
   fileSize: number;
 }
 
 export interface AppUpdateFileParams {
   downloadUrl: string;
-  filePath: string;
 }
 
 export interface DownloadEvent {

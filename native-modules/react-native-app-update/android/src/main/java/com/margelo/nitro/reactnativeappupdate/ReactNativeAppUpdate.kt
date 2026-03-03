@@ -138,6 +138,18 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         return apkDir
     }
 
+    /**
+     * Derive a local file name from a download URL by extracting the last path segment.
+     * e.g. "https://example.com/path/to/app-1.0.apk" -> "app-1.0.apk"
+     */
+    private fun filePathFromUrl(url: String): String {
+        val path = Uri.parse(url).lastPathSegment
+        if (path.isNullOrBlank()) {
+            throw Exception("Cannot derive file name from URL: $url")
+        }
+        return path
+    }
+
     private fun buildFile(path: String): File {
         val stripped = path.removePrefix("file:///")
         val context = NitroModules.applicationContext
@@ -297,7 +309,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
             try {
                 val url = params.downloadUrl
-                val filePath = params.filePath
+                val filePath = filePathFromUrl(url)
                 val notificationTitle = params.notificationTitle
                 val fileSize = params.fileSize.toLong()
 
@@ -420,7 +432,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     override fun downloadASC(params: AppUpdateFileParams): Promise<Unit> {
         return Promise.async {
             val url = params.downloadUrl
-            val filePath = params.filePath
+            val filePath = filePathFromUrl(url)
 
             OneKeyLog.info("AppUpdate", "downloadASC: url=$url, filePath=$filePath")
 
@@ -485,7 +497,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     override fun verifyASC(params: AppUpdateFileParams): Promise<Unit> {
         return Promise.async {
-            val filePath = params.filePath
+            val filePath = filePathFromUrl(params.downloadUrl)
             OneKeyLog.info("AppUpdate", "verifyASC: filePath=$filePath")
 
             // Skip GPG verification when DevSettings (developer mode) is enabled
@@ -604,7 +616,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     override fun verifyAPK(params: AppUpdateFileParams): Promise<Unit> {
         return Promise.async {
-            val filePath = params.filePath
+            val filePath = filePathFromUrl(params.downloadUrl)
             OneKeyLog.info("AppUpdate", "verifyAPK: filePath=$filePath")
 
             val file = buildFile(filePath)
