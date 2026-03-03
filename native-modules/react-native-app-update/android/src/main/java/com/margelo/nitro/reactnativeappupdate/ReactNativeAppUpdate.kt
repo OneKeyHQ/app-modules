@@ -130,11 +130,27 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         listeners.removeAll { it.id == id }
     }
 
+    private fun getApkCacheDir(): File {
+        val context = NitroModules.applicationContext
+            ?: throw SecurityException("Application context unavailable")
+        val apkDir = File(context.cacheDir, "apks")
+        if (!apkDir.exists()) apkDir.mkdirs()
+        return apkDir
+    }
+
     private fun buildFile(path: String): File {
-        val file = File(path.removePrefix("file:///").let { if (it.startsWith("/")) it else "/$it" })
-        // Validate the resolved path is within the app's cache or files directory
+        val stripped = path.removePrefix("file:///")
         val context = NitroModules.applicationContext
             ?: throw SecurityException("Application context unavailable, cannot validate file path")
+
+        // Resolve relative paths against cacheDir/apk/
+        val file = if (stripped.startsWith("/")) {
+            File(stripped)
+        } else {
+            File(getApkCacheDir(), stripped)
+        }
+
+        // Validate the resolved path is within the app's cache or files directory
         val canonicalPath = file.canonicalPath
         val cacheDir = context.cacheDir.canonicalPath
         val filesDir = context.filesDir.canonicalPath
@@ -145,13 +161,119 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 (externalCacheDir != null && (canonicalPath.startsWith(externalCacheDir + File.separator) || canonicalPath == externalCacheDir)) ||
                 (externalFilesDir != null && (canonicalPath.startsWith(externalFilesDir + File.separator) || canonicalPath == externalFilesDir))
         if (!allowed) {
-            throw SecurityException("Path outside allowed directories")
+            OneKeyLog.error("AppUpdate", "buildFile: path outside allowed directories, " +
+                "input=$path, resolved=$canonicalPath, " +
+                "cacheDir=$cacheDir, filesDir=$filesDir, " +
+                "externalCacheDir=$externalCacheDir, externalFilesDir=$externalFilesDir")
+            throw SecurityException("Path outside allowed directories: $canonicalPath")
         }
+        OneKeyLog.debug("AppUpdate", "buildFile: input=$path, resolved=$canonicalPath")
         return file
     }
 
     private fun bytesToHex(bytes: ByteArray): String {
         return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun computeSha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        BufferedInputStream(FileInputStream(file)).use { bis ->
+            val buffer = ByteArray(8192)
+            var count: Int
+            while (bis.read(buffer).also { count = it } > 0) {
+                digest.update(buffer, 0, count)
+            }
+        }
+        return bytesToHex(digest.digest())
+    }
+
+    /**
+     * Extract SHA256 hash from a PGP cleartext signed ASC file.
+     * Returns null if the file is invalid or cannot be parsed.
+     */
+    private fun extractSha256FromAsc(ascFile: File): String? {
+        val ascContent = ascFile.readText()
+        if (!ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----")) return null
+        val lines = ascContent.lines()
+        val hashHeaderIdx = lines.indexOfFirst { it.startsWith("Hash:") }
+        val sigStartIdx = lines.indexOfFirst { it == "-----BEGIN PGP SIGNATURE-----" }
+        if (hashHeaderIdx < 0 || sigStartIdx < 0) return null
+        val bodyLines = lines.subList(hashHeaderIdx + 2, sigStartIdx)
+        val sha256 = bodyLines.joinToString("\n").trim().split("\\s+".toRegex())[0].lowercase()
+        if (sha256.length != 64 || !sha256.all { it in '0'..'9' || it in 'a'..'f' }) return null
+        return sha256
+    }
+
+    /**
+     * Download ASC file for the given URL and save to the given path.
+     * Returns the saved file, or null on failure.
+     */
+    private fun downloadAscFile(ascUrl: String, ascFile: File): File? {
+        val client = OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+        val request = Request.Builder().url(ascUrl).build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) return null
+        val content = StringBuilder()
+        val maxAscSize = 10 * 1024
+        val body = response.body ?: return null
+        BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                content.append(line).append("\n")
+                if (content.length > maxAscSize) return null
+            }
+        }
+        val ascContent = content.toString()
+        if (ascContent.isEmpty()) return null
+        ascFile.parentFile?.mkdirs()
+        FileOutputStream(ascFile).use { fos -> fos.write(ascContent.toByteArray()) }
+        return ascFile
+    }
+
+    /**
+     * Check if an existing APK is valid by verifying its SHA256 against the ASC file.
+     * Downloads ASC if not present. Returns true if APK is valid.
+     */
+    private fun tryVerifyExistingApk(url: String, filePath: String, apkFile: File): Boolean {
+        return try {
+            val ascFilePath = "$filePath.SHA256SUMS.asc"
+            val ascFile = buildFile(ascFilePath)
+
+            if (!ascFile.exists()) {
+                val ascUrl = "$url.SHA256SUMS.asc"
+                OneKeyLog.info("AppUpdate", "tryVerifyExistingApk: ASC not found, downloading from $ascUrl")
+                if (downloadAscFile(ascUrl, ascFile) == null) {
+                    OneKeyLog.warn("AppUpdate", "tryVerifyExistingApk: ASC download failed")
+                    return false
+                }
+                OneKeyLog.info("AppUpdate", "tryVerifyExistingApk: ASC downloaded to ${ascFile.absolutePath}")
+            }
+
+            val expectedSha256 = extractSha256FromAsc(ascFile)
+            if (expectedSha256 == null) {
+                OneKeyLog.warn("AppUpdate", "tryVerifyExistingApk: failed to extract SHA256 from ASC")
+                return false
+            }
+
+            OneKeyLog.info("AppUpdate", "tryVerifyExistingApk: computing SHA256 of existing APK (size=${apkFile.length()})...")
+            val actualSha256 = computeSha256(apkFile)
+
+            if (actualSha256 == expectedSha256) {
+                OneKeyLog.info("AppUpdate", "tryVerifyExistingApk: SHA256 matches, APK is valid")
+                true
+            } else {
+                OneKeyLog.warn("AppUpdate", "tryVerifyExistingApk: SHA256 mismatch, expected=${expectedSha256.take(16)}..., got=${actualSha256.take(16)}...")
+                false
+            }
+        } catch (e: Exception) {
+            OneKeyLog.warn("AppUpdate", "tryVerifyExistingApk: failed: ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
     }
 
     /** Returns true if OneKey developer mode (DevSettings) is enabled via MMKV storage. */
@@ -206,7 +328,13 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
                 val downloadedFile = buildFile(filePath)
                 if (downloadedFile.exists()) {
-                    OneKeyLog.info("AppUpdate", "downloadAPK: existing file found, deleting...")
+                    OneKeyLog.info("AppUpdate", "downloadAPK: existing APK found (size=${downloadedFile.length()}), verifying...")
+                    if (tryVerifyExistingApk(url, filePath, downloadedFile)) {
+                        OneKeyLog.info("AppUpdate", "downloadAPK: existing APK is valid, skipping download")
+                        sendEvent("downloaded")
+                        return@async
+                    }
+                    OneKeyLog.info("AppUpdate", "downloadAPK: existing APK invalid, deleting and re-downloading...")
                     downloadedFile.delete()
                 }
 
@@ -279,6 +407,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 ) {
                     notifyManager.notify(NOTIFICATION_ID, builder.build())
                 }
+            } catch (e: Exception) {
+                OneKeyLog.error("AppUpdate", "downloadAPK: failed: ${e.javaClass.simpleName}: ${e.message}")
+                sendEvent("error", message = "${e.javaClass.simpleName}: ${e.message}")
+                throw e
             } finally {
                 isDownloading.set(false)
             }
@@ -454,15 +586,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             }
 
             OneKeyLog.info("AppUpdate", "verifyASC: computing SHA256 of APK file (size=${apkFile.length()} bytes)...")
-            val digest = MessageDigest.getInstance("SHA-256")
-            BufferedInputStream(FileInputStream(apkFile)).use { bis ->
-                val buffer = ByteArray(8192)
-                var count: Int
-                while (bis.read(buffer).also { count = it } > 0) {
-                    digest.update(buffer, 0, count)
-                }
-            }
-            val fileSha256 = bytesToHex(digest.digest())
+            val fileSha256 = computeSha256(apkFile)
             OneKeyLog.info("AppUpdate", "verifyASC: APK SHA256=${fileSha256.take(16)}...")
 
             if (fileSha256 != sha256) {
@@ -546,15 +670,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
             // Compute SHA-256 hash of the verified file for TOCTOU protection
             OneKeyLog.info("AppUpdate", "verifyAPK: computing SHA-256 hash for TOCTOU protection...")
-            val digest = MessageDigest.getInstance("SHA-256")
-            BufferedInputStream(FileInputStream(file)).use { bis ->
-                val buffer = ByteArray(8192)
-                var count: Int
-                while (bis.read(buffer).also { count = it } > 0) {
-                    digest.update(buffer, 0, count)
-                }
-            }
-            val fileHash = bytesToHex(digest.digest())
+            val fileHash = computeSha256(file)
             verifiedFiles[file.canonicalPath] = fileHash
             OneKeyLog.info("AppUpdate", "verifyAPK: APK verified successfully, hash=${fileHash.take(16)}..., stored for install verification")
         }
@@ -583,15 +699,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             OneKeyLog.info("AppUpdate", "installAPK: expected hash=${expectedHash.take(16)}..., re-verifying TOCTOU...")
 
             // Re-verify file hash to prevent TOCTOU attacks (file swapped after verification)
-            val digest = MessageDigest.getInstance("SHA-256")
-            BufferedInputStream(FileInputStream(file)).use { bis ->
-                val buffer = ByteArray(8192)
-                var count: Int
-                while (bis.read(buffer).also { count = it } > 0) {
-                    digest.update(buffer, 0, count)
-                }
-            }
-            val currentHash = bytesToHex(digest.digest())
+            val currentHash = computeSha256(file)
             if (currentHash != expectedHash) {
                 OneKeyLog.error("AppUpdate", "installAPK: TOCTOU check FAILED — file was modified after verification (current=${currentHash.take(16)}..., expected=${expectedHash.take(16)}...)")
                 throw Exception("APK file was modified after verification")
@@ -635,26 +743,27 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             verifiedFiles.clear()
             OneKeyLog.info("AppUpdate", "clearCache: reset download state, cleared $verifiedCount verified file entries")
 
-            // Clean up downloaded APK and ASC files from cache directory
+            // Clean up downloaded APK and ASC files from cacheDir/apks/ directory
             val context = NitroModules.applicationContext
             if (context != null) {
-                val cacheDir = context.cacheDir
-                val filesToDelete = cacheDir.listFiles()?.filter { file ->
-                    file.name.endsWith(".apk") || file.name.endsWith(".asc")
-                } ?: emptyList()
-
-                OneKeyLog.info("AppUpdate", "clearCache: found ${filesToDelete.size} cached file(s) to delete in ${cacheDir.absolutePath}")
-                var deletedCount = 0
-                filesToDelete.forEach { file ->
-                    val size = file.length()
-                    if (file.delete()) {
-                        OneKeyLog.debug("AppUpdate", "clearCache: deleted ${file.name} (${size} bytes)")
-                        deletedCount++
-                    } else {
-                        OneKeyLog.warn("AppUpdate", "clearCache: failed to delete ${file.name}")
+                val apkDir = File(context.cacheDir, "apks")
+                if (apkDir.exists()) {
+                    val filesToDelete = apkDir.listFiles() ?: emptyArray()
+                    OneKeyLog.info("AppUpdate", "clearCache: found ${filesToDelete.size} cached file(s) to delete in ${apkDir.absolutePath}")
+                    var deletedCount = 0
+                    filesToDelete.forEach { file ->
+                        val size = file.length()
+                        if (file.delete()) {
+                            OneKeyLog.debug("AppUpdate", "clearCache: deleted ${file.name} (${size} bytes)")
+                            deletedCount++
+                        } else {
+                            OneKeyLog.warn("AppUpdate", "clearCache: failed to delete ${file.name}")
+                        }
                     }
+                    OneKeyLog.info("AppUpdate", "clearCache: completed, deleted $deletedCount/${filesToDelete.size} files")
+                } else {
+                    OneKeyLog.info("AppUpdate", "clearCache: apks cache directory does not exist, nothing to clean")
                 }
-                OneKeyLog.info("AppUpdate", "clearCache: completed, deleted $deletedCount/${filesToDelete.size} files")
             } else {
                 OneKeyLog.warn("AppUpdate", "clearCache: application context unavailable, skipping file cleanup")
             }
