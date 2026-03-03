@@ -230,13 +230,86 @@ export function BundleUpdateTestPage({
   const listenerIdRef = useRef<number | null>(null);
 
   // --- Input state ---
-  const defaultUrl =
-    Platform.select({
-      ios: 'https://uni-test.onekey-asset.com/dashboard/version-update/5016000/upload_1761581017500.0.842474996421545.0.zip',
-      android:
-        'https://uni.onekey-asset.com/dashboard/version-update/5019002/upload_1767687090638.0.6528223946398171.0.zip',
-    }) ?? '';
-  const [downloadUrl, setDownloadUrl] = useState(defaultUrl);
+  const defaultParams = Platform.select({
+      ios: {
+        downloadUrl: 'https://uni-test.onekey-asset.com/dashboard/version-update/5016000/upload_1761581017500.0.842474996421545.0.zip',
+        latestVersion: '5.16.0',
+        bundleVersion: '200',
+        fileSize: 51617503,
+        sha256: 'c0beb980fc113bc21ea510b778933ed488dc685c2216105bd146df8e9f791a3d',
+         signature: `-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+{
+  "fileName": "metadata.json",
+  "sha256": "8c71473ccb1c590e8c13642559600eb0c8e2649c9567236e2ac27e79e919a12c",
+  "size": 23123,
+  "generatedAt": "2025-10-22T09:50:50.446Z"
+}
+-----BEGIN PGP SIGNATURE-----
+
+iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmj/ZF0OHGRldkBvbmVr
+ZXkuc28ACgkQs2mmepC/OHuVZhAArMmwReTpiw+XoKTw7bwlVrz0OWHfAkdh6lFY
+xQpGj+AsY38NKJImrK7IQLhcnTJIwycY0a5eh8Wnqs0sxtmmwwyWQs+RHSwIdlTJ
+CLpTUGxowNiD0ldz0LVLjPFqZz3/fYKkpGW1+ejkMdRXBbUrFGTa+XsEd0k3TWj2
+bxFrhy128SpQ1NJ8AXXWRzZaenFAADa5ZEJUMV4Q8sjV+C8OXtVKeW1IDXAvWEzx
+x9SWU4HD4ciKYT6yRZ6RuHJ3YXFdIDPMrPXDSPTjcZUnhsadT0qFoRck6ya4uyQP
+SNvEge9W9Kcup0XfKkK5SnIRyZeKgW5Zn39W8C5equqmrGy581E6R28KS3KHsE66
+Pf6WmVE/XuAKt5F++TmC6RBZ9PISPdOVhWcPZ74ySsFOUQ0nswMg1GLQ/kfixXIl
+8ejFGhzhCRDmxYZ1aEJeMAAQhBuXM5TKtY79TIT9lNlttM0J/hl3rTTVxt9xSsMW
+MCduz+A1mdO8T/DPqvpJksOO/YOT4gzHT9OSXNsYdte1QJKHmQdeAfzi/m66Z2/L
+1qqTvwH3byXreUAjXwAWZLIbAQJ6zeeIrVKiut7DCJOHE+kGS2vdQiM2NmRFE0hP
+qxdzLH784DPCWB36Xd3VZfbUxKOc06+bHlFCEXyylWD3schXV9c8Amz4DoriYIdi
+Ni3q+jg=
+=BVQy
+-----END PGP SIGNATURE-----`
+      },
+      android: {
+        downloadUrl: 'https://uni.onekey-asset.com/dashboard/version-update/5019002/upload_1767687090638.0.6528223946398171.0.zip',
+        latestVersion: '5.19.0',
+        bundleVersion: '2',
+        fileSize: 55586119,
+        sha256: 'c0beb980fc113bc21ea510b778933ed488dc685c2216105bd146df8e9f791a3d',
+        signature: `-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+{
+  "fileName": "metadata.json",
+  "sha256": "cece2fccea3c3a43e0da7ab803f44e5a4850a8b06f2df06db3e7f16860080a40",
+  "size": 28919,
+  "generatedAt": "2026-01-06T05:42:35.407Z",
+  "appType": "android",
+  "appVersion": "5.19.2",
+  "buildNumber": "2026010644",
+  "bundleVersion": "2"
+}
+-----BEGIN PGP SIGNATURE-----
+
+iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmlcvy8OHGRldkBvbmVr
+ZXkuc28ACgkQs2mmepC/OHtxlA//QEvclfq0X9isJXBHFsRZx+JhfGOao60Sl0rW
+m11AU6utvOAXHwxnhtLENuB2cDhhKkDrN582R2QhsdRJngRqWafwuBaVBJx+ErZV
+KqvAlTj9hcLACXBw/dOyQ4JwDwm2jwloH4H//eiQdFcp1MT/uiGf3Yu9fonEC6ap
+URBiiA7wAPg2o9V6zJchv/CM/xGA9G/I337lR0yAID2Y6Oteu9CftCSGqav4va4O
+C94nW/wWQdt+XllY+i46mXxKOOoaIxUMP5K6q1q5CcjZBNm6Pgkay5YEDmbershP
+/DeSpHwTk2APOIoaw1JVeKP8HrhIg4iGjmrUkveBoHJrGu1x6FjZ0tGqVJkG7b8f
+wuBBHoPlCULbR38eFudv6UBYsJ2Zb2MEwMEC4quBczU6wg4NnOSKFK03kqsStyxG
+0F+HShqAPZZrvGUUOMBMWhyxpDmbslkXtQntPhaMM8+NGqegTMiLZQnWkvzCIdoc
+EYJOSlAICF/VkFzo8+LSuUgCQbqXF5qnFhcsIdzR8rguFKHC9/8/umlVjua5ilnu
+bxULNIeYztMeXB29J8JXpu4efz+v5r9/HsddXlY0wMrmEWNiw+bG+ruT3O9pC9k9
+hGatKzsRToFrdoTaHG6xnKhiVH7MhQHGjvEK5KpyXIvQxy9SCIloAqs0oXrW4Yuz
+H3bEFZ8=
+=ZjEV
+-----END PGP SIGNATURE-----`
+      }
+    }) ?? {
+      downloadUrl: '',
+      latestVersion: '1.0.0',
+      bundleVersion: '1',
+      fileSize: 1,
+      sha256: '',
+      signature: '',
+    };
+  const [downloadUrl, setDownloadUrl] = useState(defaultParams.downloadUrl);
 
   // --- Dev settings ---
   const [devModeEnabled, setDevModeEnabled] = useState(
@@ -327,11 +400,11 @@ export function BundleUpdateTestPage({
 
     try {
       const result = await ReactNativeBundleUpdate.downloadBundle({
-        downloadUrl,
-        latestVersion: '5.16.0',
-        bundleVersion: '200',
-        fileSize: 51617503,
-        sha256: 'c0beb980fc113bc21ea510b778933ed488dc685c2216105bd146df8e9f791a3d',
+        downloadUrl: defaultParams.downloadUrl,
+        latestVersion: defaultParams.latestVersion,
+        bundleVersion: defaultParams.bundleVersion,
+        fileSize: defaultParams.fileSize,
+        sha256: defaultParams.sha256,
       });
 
       setWorkflow((prev) => ({
@@ -357,7 +430,7 @@ export function BundleUpdateTestPage({
         listenerIdRef.current = null;
       }
     }
-  }, [downloadUrl, progressAnim, updateStep]);
+  }, [defaultParams.bundleVersion, defaultParams.downloadUrl, defaultParams.fileSize, defaultParams.latestVersion, defaultParams.sha256, downloadUrl, progressAnim, updateStep]);
 
   const handleVerify = useCallback(async () => {
     const dr = workflow.downloadResult;
@@ -369,32 +442,7 @@ export function BundleUpdateTestPage({
         sha256: dr.sha256,
         latestVersion: dr.latestVersion,
         bundleVersion: dr.bundleVersion,
-        signature: `-----BEGIN PGP SIGNED MESSAGE-----
-Hash: SHA256
-
-{
-  "fileName": "metadata.json",
-  "sha256": "8c71473ccb1c590e8c13642559600eb0c8e2649c9567236e2ac27e79e919a12c",
-  "size": 23123,
-  "generatedAt": "2025-10-22T09:50:50.446Z"
-}
------BEGIN PGP SIGNATURE-----
-
-iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmj/ZF0OHGRldkBvbmVr
-ZXkuc28ACgkQs2mmepC/OHuVZhAArMmwReTpiw+XoKTw7bwlVrz0OWHfAkdh6lFY
-xQpGj+AsY38NKJImrK7IQLhcnTJIwycY0a5eh8Wnqs0sxtmmwwyWQs+RHSwIdlTJ
-CLpTUGxowNiD0ldz0LVLjPFqZz3/fYKkpGW1+ejkMdRXBbUrFGTa+XsEd0k3TWj2
-bxFrhy128SpQ1NJ8AXXWRzZaenFAADa5ZEJUMV4Q8sjV+C8OXtVKeW1IDXAvWEzx
-x9SWU4HD4ciKYT6yRZ6RuHJ3YXFdIDPMrPXDSPTjcZUnhsadT0qFoRck6ya4uyQP
-SNvEge9W9Kcup0XfKkK5SnIRyZeKgW5Zn39W8C5equqmrGy581E6R28KS3KHsE66
-Pf6WmVE/XuAKt5F++TmC6RBZ9PISPdOVhWcPZ74ySsFOUQ0nswMg1GLQ/kfixXIl
-8ejFGhzhCRDmxYZ1aEJeMAAQhBuXM5TKtY79TIT9lNlttM0J/hl3rTTVxt9xSsMW
-MCduz+A1mdO8T/DPqvpJksOO/YOT4gzHT9OSXNsYdte1QJKHmQdeAfzi/m66Z2/L
-1qqTvwH3byXreUAjXwAWZLIbAQJ6zeeIrVKiut7DCJOHE+kGS2vdQiM2NmRFE0hP
-qxdzLH784DPCWB36Xd3VZfbUxKOc06+bHlFCEXyylWD3schXV9c8Amz4DoriYIdi
-Ni3q+jg=
-=BVQy
------END PGP SIGNATURE-----`
+        signature: defaultParams.signature
       });
       updateStep('verify', { status: 'completed' });
     } catch (err) {
@@ -404,7 +452,7 @@ Ni3q+jg=
           err instanceof Error ? err.message : 'Verification failed',
       });
     }
-  }, [workflow.downloadResult, updateStep]);
+  }, [workflow.downloadResult, updateStep, defaultParams.signature]);
 
   const handleInstall = useCallback(async () => {
     const dr = workflow.downloadResult;
