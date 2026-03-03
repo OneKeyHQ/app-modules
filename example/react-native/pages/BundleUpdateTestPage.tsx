@@ -275,7 +275,7 @@ Hash: SHA256
 
 {
   "fileName": "metadata.json",
-  "sha256": "cece2fccea3c3a43e0da7ab803f44e5a4850a8b06f2df06db3e7f16860080a40",
+  "sha256": "cdff9d4b37f2940e5ce73141e384f412e1e4e4bf3046b0cdb4d79b0c974de742",
   "size": 28919,
   "generatedAt": "2026-01-06T05:42:35.407Z",
   "appType": "android",
