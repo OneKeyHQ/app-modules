@@ -104,13 +104,21 @@ public class BundleUpdateStore {
 
     public static func writeSignatureFile(_ version: String, signature: String) {
         let path = signatureFilePath(version)
+        let existed = FileManager.default.fileExists(atPath: path)
         try? signature.write(toFile: path, atomically: true, encoding: .utf8)
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? UInt64) ?? 0
+        OneKeyLog.info("BundleUpdate", "writeSignatureFile: version=\(version), existed=\(existed), size=\(fileSize), path=\(path)")
     }
 
     public static func readSignatureFile(_ version: String) -> String {
         let path = signatureFilePath(version)
-        guard FileManager.default.fileExists(atPath: path) else { return "" }
-        return (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        guard FileManager.default.fileExists(atPath: path) else {
+            OneKeyLog.debug("BundleUpdate", "readSignatureFile: not found for version=\(version)")
+            return ""
+        }
+        let content = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        OneKeyLog.debug("BundleUpdate", "readSignatureFile: version=\(version), size=\(content.count)")
+        return content
     }
 
     public static func deleteSignatureFile(_ version: String) {

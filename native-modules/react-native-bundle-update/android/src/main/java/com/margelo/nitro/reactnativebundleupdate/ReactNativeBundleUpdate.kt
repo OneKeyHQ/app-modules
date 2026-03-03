@@ -122,15 +122,22 @@ object BundleUpdateStoreAndroid {
 
     fun writeSignatureFile(context: Context, version: String, signature: String) {
         val file = File(getSignatureFilePath(context, version))
+        val existed = file.exists()
         file.parentFile?.mkdirs()
         file.writeText(signature, Charsets.UTF_8)
+        OneKeyLog.info("BundleUpdate", "writeSignatureFile: version=$version, existed=$existed, size=${file.length()}, path=${file.absolutePath}")
     }
 
     fun readSignatureFile(context: Context, version: String): String {
         val file = File(getSignatureFilePath(context, version))
-        if (!file.exists()) return ""
+        if (!file.exists()) {
+            OneKeyLog.debug("BundleUpdate", "readSignatureFile: not found for version=$version")
+            return ""
+        }
         return try {
-            file.readText(Charsets.UTF_8)
+            val content = file.readText(Charsets.UTF_8)
+            OneKeyLog.debug("BundleUpdate", "readSignatureFile: version=$version, size=${content.length}")
+            content
         } catch (e: Exception) {
             OneKeyLog.error("BundleUpdate", "readSignatureFile: failed to read $version: ${e.message}")
             ""
