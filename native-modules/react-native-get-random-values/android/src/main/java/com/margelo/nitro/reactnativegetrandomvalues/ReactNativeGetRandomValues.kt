@@ -10,6 +10,10 @@ class ReactNativeGetRandomValues : HybridReactNativeGetRandomValuesSpec() {
   }
 
   override fun getRandomBase64(byteLength: Double): String {
+    if (byteLength.isNaN() || byteLength.isInfinite() || byteLength != kotlin.math.floor(byteLength)) {
+      OneKeyLog.warn("RandomValues", "byteLength must be an integer value, got: $byteLength")
+      throw IllegalArgumentException("byteLength must be an integer value")
+    }
     val length = byteLength.toInt()
     if (length <= 0 || length > MAX_BYTE_LENGTH) {
       OneKeyLog.warn("RandomValues", "Invalid byteLength: $byteLength, must be 1..$MAX_BYTE_LENGTH")

@@ -38,7 +38,7 @@ class KeychainModuleCore {
       throw KeychainModuleError.encodingFailed
     }
 
-    let enableSync = params.enableSync ?? true  // Default to disabled; callers must explicitly opt in to iCloud sync
+    let enableSync = params.enableSync ?? true  // Default to enabled for iCloud sync
 
     var query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,

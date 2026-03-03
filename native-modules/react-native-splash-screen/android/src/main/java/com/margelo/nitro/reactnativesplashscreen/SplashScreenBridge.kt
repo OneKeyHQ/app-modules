@@ -56,14 +56,19 @@ object SplashScreenBridge {
         onSuccess: ((Boolean) -> Unit)?,
         onFailure: ((String) -> Unit)?
     ) {
-        isAlreadyHidden = true
         val controller = controllers[activity]
         if (controller == null) {
             OneKeyLog.warn(TAG, "hide: no controller for activity")
             onFailure?.invoke("No splash screen registered for this activity")
             return
         }
-        controller.hide(onSuccess, onFailure)
+        controller.hide(
+            onSuccess = { result ->
+                isAlreadyHidden = true
+                onSuccess?.invoke(result)
+            },
+            onFailure = onFailure
+        )
     }
 
     private fun createSplashView(activity: Activity): android.view.View? {

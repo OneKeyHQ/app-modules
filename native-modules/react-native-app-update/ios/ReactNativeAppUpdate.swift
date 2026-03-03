@@ -3,6 +3,8 @@ import ReactNativeNativeLogger
 
 class ReactNativeAppUpdate: HybridReactNativeAppUpdateSpec {
 
+    private var nextListenerId: Int64 = 1
+
     func downloadAPK(params: AppUpdateDownloadParams) throws -> Promise<Void> {
         OneKeyLog.debug("AppUpdate", "downloadAPK not available on iOS")
         return Promise.resolved(withResult: ())
@@ -33,7 +35,9 @@ class ReactNativeAppUpdate: HybridReactNativeAppUpdateSpec {
     }
 
     func addDownloadListener(callback: @escaping (DownloadEvent) -> Void) throws -> Double {
-        return 0
+        let id = nextListenerId
+        nextListenerId += 1
+        return Double(id)
     }
 
     func removeDownloadListener(id: Double) throws {

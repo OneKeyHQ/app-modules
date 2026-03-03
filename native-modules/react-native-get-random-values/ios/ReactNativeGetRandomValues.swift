@@ -5,6 +5,11 @@ class ReactNativeGetRandomValues: HybridReactNativeGetRandomValuesSpec {
     private static let maxByteLength = 65536  // 64 KB upper bound
 
     func getRandomBase64(byteLength: Double) throws -> String {
+        guard byteLength.rounded() == byteLength, !byteLength.isNaN, !byteLength.isInfinite else {
+            OneKeyLog.warn("RandomValues", "byteLength must be an integer value, got: \(byteLength)")
+            throw NSError(domain: "ReactNativeGetRandomValues", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "byteLength must be an integer value"])
+        }
         let length = Int(byteLength)
         guard length > 0, length <= ReactNativeGetRandomValues.maxByteLength,
               let data = NSMutableData(length: length) else {

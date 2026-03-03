@@ -32,6 +32,7 @@ internal class SplashViewController(
 
     private var autoHideEnabled = true
     private var splashShown = false
+    private var searchCancelled = false
 
     fun show() {
         val activity = weakActivity.get() ?: return
@@ -64,6 +65,8 @@ internal class SplashViewController(
             onFailure?.invoke("Activity is already destroyed")
             return
         }
+        searchCancelled = true
+        handler.removeCallbacksAndMessages(null)
         Handler(activity.mainLooper).post {
             contentView.removeView(splashView)
             autoHideEnabled = true
@@ -74,6 +77,13 @@ internal class SplashViewController(
     }
 
     private fun searchForRootView() {
+        if (searchCancelled) return
+        val activity = weakActivity.get()
+        if (activity == null || activity.isFinishing || activity.isDestroyed) {
+            OneKeyLog.warn(TAG, "searchForRootView: activity destroyed, stopping search")
+            return
+        }
+        if (!splashShown) return
         val found = findRootView(contentView)
         if (found != null) {
             handleRootView(found)

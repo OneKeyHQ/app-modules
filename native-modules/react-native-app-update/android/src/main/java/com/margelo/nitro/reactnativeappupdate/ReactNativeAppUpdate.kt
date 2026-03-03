@@ -203,23 +203,6 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     }
 
     /**
-     * Extract SHA256 hash from a PGP cleartext signed ASC file.
-     * Returns null if the file is invalid or cannot be parsed.
-     */
-    private fun extractSha256FromAsc(ascFile: File): String? {
-        val ascContent = ascFile.readText()
-        if (!ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----")) return null
-        val lines = ascContent.lines()
-        val hashHeaderIdx = lines.indexOfFirst { it.startsWith("Hash:") }
-        val sigStartIdx = lines.indexOfFirst { it == "-----BEGIN PGP SIGNATURE-----" }
-        if (hashHeaderIdx < 0 || sigStartIdx < 0) return null
-        val bodyLines = lines.subList(hashHeaderIdx + 2, sigStartIdx)
-        val sha256 = bodyLines.joinToString("\n").trim().split("\\s+".toRegex())[0].lowercase()
-        if (sha256.length != 64 || !sha256.all { it in '0'..'9' || it in 'a'..'f' }) return null
-        return sha256
-    }
-
-    /**
      * Download ASC file for the given URL and save to the given path.
      * Returns the saved file, or null on failure.
      */
@@ -251,7 +234,63 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     }
 
     /**
-     * Check if an existing APK is valid by verifying its SHA256 against the ASC file.
+     * Verify GPG signature of an ASC file and extract the SHA256 hash.
+     * Returns the SHA256 hash if signature is valid, null otherwise.
+     */
+    private fun verifyAscAndExtractSha256(ascFile: File): String? {
+        val ascContent = ascFile.readText()
+        if (!ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----")) return null
+
+        val lines = ascContent.lines()
+        val hashHeaderIdx = lines.indexOfFirst { it.startsWith("Hash:") }
+        val sigStartIdx = lines.indexOfFirst { it == "-----BEGIN PGP SIGNATURE-----" }
+        val sigEndIdx = lines.indexOfFirst { it == "-----END PGP SIGNATURE-----" }
+        if (hashHeaderIdx < 0 || sigStartIdx < 0 || sigEndIdx < 0) return null
+
+        val bodyStartIdx = hashHeaderIdx + 2
+        val bodyLines = lines.subList(bodyStartIdx, sigStartIdx)
+        val cleartextBody = bodyLines.joinToString("\r\n").trimEnd()
+        val sigBlock = lines.subList(sigStartIdx, sigEndIdx + 1).joinToString("\n")
+
+        // Verify GPG signature
+        val sigInputStream = PGPUtil.getDecoderStream(sigBlock.byteInputStream())
+        val sigFactory = JcaPGPObjectFactory(sigInputStream)
+        val signatureList = sigFactory.nextObject()
+        if (signatureList !is PGPSignatureList || signatureList.isEmpty) return null
+
+        val pgpSignature = signatureList[0]
+        val pubKeyStream = PGPUtil.getDecoderStream(GPG_PUBLIC_KEY.byteInputStream())
+        val pgpPubKeyRingCollection = PGPPublicKeyRingCollection(pubKeyStream, JcaKeyFingerprintCalculator())
+        val publicKey = pgpPubKeyRingCollection.getPublicKey(pgpSignature.keyID) ?: return null
+
+        pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
+        val unescapedLines = cleartextBody.lines().map { line ->
+            if (line.startsWith("- ")) line.substring(2) else line
+        }
+        val dataToVerify = unescapedLines.joinToString("\r\n").toByteArray(Charsets.UTF_8)
+        pgpSignature.update(dataToVerify)
+        if (!pgpSignature.verify()) return null
+
+        // Extract SHA256 from verified cleartext
+        val sha256 = cleartextBody.trim().split("\\s+".toRegex())[0].lowercase()
+        if (sha256.length != 64 || !sha256.all { it in '0'..'9' || it in 'a'..'f' }) return null
+        return sha256
+    }
+
+    /** Constant-time comparison to prevent timing attacks on hash values */
+    private fun secureCompare(a: String, b: String): Boolean {
+        val aBytes = a.toByteArray(Charsets.UTF_8)
+        val bBytes = b.toByteArray(Charsets.UTF_8)
+        if (aBytes.size != bBytes.size) return false
+        var result = 0
+        for (i in aBytes.indices) {
+            result = result or (aBytes[i].toInt() xor bBytes[i].toInt())
+        }
+        return result == 0
+    }
+
+    /**
+     * Check if an existing APK is valid by verifying GPG signature and SHA256 against the ASC file.
      * Downloads ASC if not present. Returns true if APK is valid.
      */
     private fun tryVerifyExistingApk(url: String, filePath: String, apkFile: File): Boolean {
@@ -269,16 +308,16 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 OneKeyLog.info("AppUpdate", "tryVerifyExistingApk: ASC downloaded to ${ascFile.absolutePath}")
             }
 
-            val expectedSha256 = extractSha256FromAsc(ascFile)
+            val expectedSha256 = verifyAscAndExtractSha256(ascFile)
             if (expectedSha256 == null) {
-                OneKeyLog.warn("AppUpdate", "tryVerifyExistingApk: failed to extract SHA256 from ASC")
+                OneKeyLog.warn("AppUpdate", "tryVerifyExistingApk: GPG verification or SHA256 extraction failed")
                 return false
             }
 
             OneKeyLog.info("AppUpdate", "tryVerifyExistingApk: computing SHA256 of existing APK (size=${apkFile.length()})...")
             val actualSha256 = computeSha256(apkFile)
 
-            if (actualSha256 == expectedSha256) {
+            if (secureCompare(actualSha256, expectedSha256)) {
                 OneKeyLog.info("AppUpdate", "tryVerifyExistingApk: SHA256 matches, APK is valid")
                 true
             } else {
@@ -611,7 +650,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val fileSha256 = computeSha256(apkFile)
             OneKeyLog.info("AppUpdate", "verifyASC: APK SHA256=${fileSha256.take(16)}...")
 
-            if (fileSha256 != sha256) {
+            if (!secureCompare(fileSha256, sha256)) {
                 OneKeyLog.error("AppUpdate", "verifyASC: SHA256 MISMATCH — expected=${sha256.take(16)}..., got=${fileSha256.take(16)}...")
                 throw Exception("SHA256 mismatch for APK file")
             }

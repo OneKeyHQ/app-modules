@@ -47,6 +47,10 @@ class ReactNativeCheckBiometricAuthChanged: HybridReactNativeCheckBiometricAuthC
       let context = LAContext()
       _ = context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil)
       let domainState = context.evaluatedPolicyDomainState
+      if domainState == nil {
+          OneKeyLog.warn("Biometric", "evaluatedPolicyDomainState is nil, cannot determine biometric changes")
+          return false
+      }
       let oldDomainState = Self.loadDomainState()
       if let oldDomainState = oldDomainState {
           changed = oldDomainState != domainState
