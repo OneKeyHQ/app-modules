@@ -627,11 +627,13 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     override fun addDownloadListener(callback: (BundleDownloadEvent) -> Unit): Double {
         val id = nextListenerId.getAndIncrement().toDouble()
         listeners.add(BundleListener(id, callback))
+        OneKeyLog.debug("BundleUpdate", "addDownloadListener: id=$id, totalListeners=${listeners.size}")
         return id
     }
 
     override fun removeDownloadListener(id: Double) {
         listeners.removeAll { it.id == id }
+        OneKeyLog.debug("BundleUpdate", "removeDownloadListener: id=$id, totalListeners=${listeners.size}")
     }
 
     private fun getContext(): Context {
@@ -986,18 +988,21 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     override fun clearAllJSBundleData(): Promise<TestResult> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: starting...")
             val context = getContext()
             val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
             if (downloadDir.exists()) {
                 BundleUpdateStoreAndroid.deleteDir(downloadDir)
+                OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: deleted download dir")
             }
             val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
             if (bundleDir.exists()) {
                 BundleUpdateStoreAndroid.deleteDir(bundleDir)
+                OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: deleted bundle dir")
             }
             BundleUpdateStoreAndroid.clearUpdateBundleData(context)
 
-            OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: Successfully cleared all JS bundle data")
+            OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: completed successfully")
             TestResult(success = true, message = "Successfully cleared all JS bundle data")
         }
     }
@@ -1056,7 +1061,9 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     override fun getWebEmbedPath(): String {
         val context = NitroModules.applicationContext ?: return ""
-        return BundleUpdateStoreAndroid.getWebEmbedPath(context)
+        val path = BundleUpdateStoreAndroid.getWebEmbedPath(context)
+        OneKeyLog.debug("BundleUpdate", "getWebEmbedPath: $path")
+        return path
     }
 
     override fun getWebEmbedPathAsync(): Promise<String> {
@@ -1071,14 +1078,18 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     override fun getJsBundlePath(): Promise<String> {
         return Promise.async {
             val context = getContext()
-            BundleUpdateStoreAndroid.getCurrentBundleMainJSBundle(context) ?: ""
+            val path = BundleUpdateStoreAndroid.getCurrentBundleMainJSBundle(context) ?: ""
+            OneKeyLog.info("BundleUpdate", "getJsBundlePath: ${if (path.isEmpty()) "(empty/no bundle)" else path}")
+            path
         }
     }
 
     override fun getNativeAppVersion(): Promise<String> {
         return Promise.async {
             val context = getContext()
-            BundleUpdateStoreAndroid.getAppVersion(context) ?: ""
+            val version = BundleUpdateStoreAndroid.getAppVersion(context) ?: ""
+            OneKeyLog.info("BundleUpdate", "getNativeAppVersion: $version")
+            version
         }
     }
 
@@ -1122,24 +1133,36 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
             val bundlePath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
-            bundlePath.exists()
+            val exists = bundlePath.exists()
+            OneKeyLog.info("BundleUpdate", "isBundleExists: appVersion=$appVersion, bundleVersion=$bundleVersion, exists=$exists")
+            exists
         }
     }
 
     override fun verifyExtractedBundle(appVersion: String, bundleVersion: String): Promise<Void> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: appVersion=$appVersion, bundleVersion=$bundleVersion")
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
             val bundlePath = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
-            if (!bundlePath.exists()) throw Exception("Bundle directory not found")
+            if (!bundlePath.exists()) {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: bundle directory not found: ${bundlePath.absolutePath}")
+                throw Exception("Bundle directory not found")
+            }
             val metadataFile = File(bundlePath, "metadata.json")
-            if (!metadataFile.exists()) throw Exception("metadata.json not found")
+            if (!metadataFile.exists()) {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: metadata.json not found in ${bundlePath.absolutePath}")
+                throw Exception("metadata.json not found")
+            }
 
+            OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: parsing metadata and validating files...")
             val metadataContent = BundleUpdateStoreAndroid.readFileContent(metadataFile)
             val metadata = BundleUpdateStoreAndroid.parseMetadataJson(metadataContent)
             if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, bundlePath.absolutePath, metadata, appVersion, bundleVersion)) {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: file integrity check failed")
                 throw Exception("File integrity check failed")
             }
+            OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: all files verified OK, fileCount=${metadata.size}")
         }
     }
 
@@ -1161,13 +1184,18 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
                     }
                 }
             }
+            OneKeyLog.info("BundleUpdate", "listLocalBundles: found ${results.size} bundles")
             results.toTypedArray()
         }
     }
 
     override fun getSha256FromFilePath(filePath: String): Promise<String> {
         return Promise.async {
-            if (filePath.isEmpty()) return@async ""
+            OneKeyLog.info("BundleUpdate", "getSha256FromFilePath: filePath=$filePath")
+            if (filePath.isEmpty()) {
+                OneKeyLog.warn("BundleUpdate", "getSha256FromFilePath: empty filePath")
+                return@async ""
+            }
 
             // Restrict to bundle-related directories only
             val context = getContext()
@@ -1175,15 +1203,19 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context)).canonicalPath
             if (!resolvedPath.startsWith(bundleDir) && !resolvedPath.startsWith(downloadDir)) {
+                OneKeyLog.error("BundleUpdate", "getSha256FromFilePath: path outside allowed directories: $resolvedPath")
                 throw Exception("File path outside allowed bundle directories")
             }
 
-            BundleUpdateStoreAndroid.calculateSHA256(filePath) ?: ""
+            val sha256 = BundleUpdateStoreAndroid.calculateSHA256(filePath) ?: ""
+            OneKeyLog.info("BundleUpdate", "getSha256FromFilePath: sha256=${if (sha256.isEmpty()) "(empty)" else sha256.take(16) + "..."}")
+            sha256
         }
     }
 
     override fun testDeleteJsBundle(appVersion: String, bundleVersion: String): Promise<TestResult> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "testDeleteJsBundle: appVersion=$appVersion, bundleVersion=$bundleVersion")
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
             val jsBundlePath = File(File(BundleUpdateStoreAndroid.getBundleDir(context), folderName), "main.jsbundle.hbc")
@@ -1191,11 +1223,14 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             if (jsBundlePath.exists()) {
                 val success = jsBundlePath.delete()
                 if (success) {
+                    OneKeyLog.info("BundleUpdate", "testDeleteJsBundle: deleted ${jsBundlePath.absolutePath}")
                     TestResult(success = true, message = "Deleted jsBundle: ${jsBundlePath.absolutePath}")
                 } else {
+                    OneKeyLog.error("BundleUpdate", "testDeleteJsBundle: failed to delete ${jsBundlePath.absolutePath}")
                     throw Exception("Failed to delete jsBundle: ${jsBundlePath.absolutePath}")
                 }
             } else {
+                OneKeyLog.warn("BundleUpdate", "testDeleteJsBundle: file not found: ${jsBundlePath.absolutePath}")
                 TestResult(success = false, message = "jsBundle not found: ${jsBundlePath.absolutePath}")
             }
         }
@@ -1203,6 +1238,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
     override fun testDeleteJsRuntimeDir(appVersion: String, bundleVersion: String): Promise<TestResult> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "testDeleteJsRuntimeDir: appVersion=$appVersion, bundleVersion=$bundleVersion")
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
             val dir = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
@@ -1210,11 +1246,14 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             if (dir.exists()) {
                 BundleUpdateStoreAndroid.deleteDir(dir)
                 if (!dir.exists()) {
+                    OneKeyLog.info("BundleUpdate", "testDeleteJsRuntimeDir: deleted ${dir.absolutePath}")
                     TestResult(success = true, message = "Deleted js runtime directory: ${dir.absolutePath}")
                 } else {
+                    OneKeyLog.error("BundleUpdate", "testDeleteJsRuntimeDir: failed to delete ${dir.absolutePath}")
                     throw Exception("Failed to delete js runtime directory: ${dir.absolutePath}")
                 }
             } else {
+                OneKeyLog.warn("BundleUpdate", "testDeleteJsRuntimeDir: directory not found: ${dir.absolutePath}")
                 TestResult(success = false, message = "js runtime directory not found: ${dir.absolutePath}")
             }
         }
@@ -1222,6 +1261,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
     override fun testDeleteMetadataJson(appVersion: String, bundleVersion: String): Promise<TestResult> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "testDeleteMetadataJson: appVersion=$appVersion, bundleVersion=$bundleVersion")
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
             val metadataFile = File(File(BundleUpdateStoreAndroid.getBundleDir(context), folderName), "metadata.json")
@@ -1229,11 +1269,14 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             if (metadataFile.exists()) {
                 val success = metadataFile.delete()
                 if (success) {
+                    OneKeyLog.info("BundleUpdate", "testDeleteMetadataJson: deleted ${metadataFile.absolutePath}")
                     TestResult(success = true, message = "Deleted metadata.json: ${metadataFile.absolutePath}")
                 } else {
+                    OneKeyLog.error("BundleUpdate", "testDeleteMetadataJson: failed to delete ${metadataFile.absolutePath}")
                     throw Exception("Failed to delete metadata.json: ${metadataFile.absolutePath}")
                 }
             } else {
+                OneKeyLog.warn("BundleUpdate", "testDeleteMetadataJson: file not found: ${metadataFile.absolutePath}")
                 TestResult(success = false, message = "metadata.json not found: ${metadataFile.absolutePath}")
             }
         }
@@ -1241,6 +1284,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
     override fun testWriteEmptyMetadataJson(appVersion: String, bundleVersion: String): Promise<TestResult> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "testWriteEmptyMetadataJson: appVersion=$appVersion, bundleVersion=$bundleVersion")
             val context = getContext()
             val folderName = "$appVersion-$bundleVersion"
             val jsRuntimeDir = File(BundleUpdateStoreAndroid.getBundleDir(context), folderName)
@@ -1248,6 +1292,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
 
             if (!jsRuntimeDir.exists()) {
                 if (!jsRuntimeDir.mkdirs()) {
+                    OneKeyLog.error("BundleUpdate", "testWriteEmptyMetadataJson: failed to create dir: ${jsRuntimeDir.absolutePath}")
                     throw Exception("Failed to create directory: ${jsRuntimeDir.absolutePath}")
                 }
             }
@@ -1258,6 +1303,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
                 fos.flush()
             }
 
+            OneKeyLog.info("BundleUpdate", "testWriteEmptyMetadataJson: created ${metadataPath.absolutePath}")
             TestResult(success = true, message = "Created empty metadata.json: ${metadataPath.absolutePath}")
         }
     }

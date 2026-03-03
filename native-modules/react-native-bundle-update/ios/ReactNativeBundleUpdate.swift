@@ -574,6 +574,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let id = nextListenerId
             nextListenerId += 1
             listeners.append(BundleListener(id: id, callback: callback))
+            OneKeyLog.debug("BundleUpdate", "addDownloadListener: id=\(id), totalListeners=\(listeners.count)")
             return id
         }
     }
@@ -581,6 +582,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     func removeDownloadListener(id: Double) throws {
         stateQueue.sync {
             listeners.removeAll { $0.id == id }
+            OneKeyLog.debug("BundleUpdate", "removeDownloadListener: id=\(id), totalListeners=\(listeners.count)")
         }
     }
 
@@ -956,19 +958,22 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     func clearAllJSBundleData() throws -> Promise<TestResult> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: starting...")
             let bundleDir = BundleUpdateStore.bundleDir()
             if FileManager.default.fileExists(atPath: bundleDir) {
                 try FileManager.default.removeItem(atPath: bundleDir)
+                OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: deleted bundle dir")
             }
             let ud = UserDefaults.standard
             if let cbv = ud.string(forKey: "currentBundleVersion") {
                 ud.removeObject(forKey: cbv)
                 ud.removeObject(forKey: "currentBundleVersion")
+                OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: removed currentBundleVersion=\(cbv)")
             }
             ud.removeObject(forKey: "nativeVersion")
             ud.synchronize()
 
-            OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: Successfully cleared all JS bundle data")
+            OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: completed successfully")
             return TestResult(success: true, message: "Successfully cleared all JS bundle data")
         }
     }
@@ -1023,7 +1028,9 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     func getWebEmbedPath() throws -> String {
-        return BundleUpdateStore.getWebEmbedPath()
+        let path = BundleUpdateStore.getWebEmbedPath()
+        OneKeyLog.debug("BundleUpdate", "getWebEmbedPath: \(path)")
+        return path
     }
 
     func getWebEmbedPathAsync() throws -> Promise<String> {
@@ -1036,13 +1043,17 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     func getJsBundlePath() throws -> Promise<String> {
         return Promise.async {
-            return BundleUpdateStore.currentBundleMainJSBundle() ?? ""
+            let path = BundleUpdateStore.currentBundleMainJSBundle() ?? ""
+            OneKeyLog.info("BundleUpdate", "getJsBundlePath: \(path.isEmpty ? "(empty/no bundle)" : path)")
+            return path
         }
     }
 
     func getNativeAppVersion() throws -> Promise<String> {
         return Promise.async {
-            return BundleUpdateStore.getCurrentNativeVersion()
+            let version = BundleUpdateStore.getCurrentNativeVersion()
+            OneKeyLog.info("BundleUpdate", "getNativeAppVersion: \(version)")
+            return version
         }
     }
 
@@ -1087,28 +1098,37 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         return Promise.async {
             let folderName = "\(appVersion)-\(bundleVersion)"
             let path = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
-            return FileManager.default.fileExists(atPath: path)
+            let exists = FileManager.default.fileExists(atPath: path)
+            OneKeyLog.info("BundleUpdate", "isBundleExists: appVersion=\(appVersion), bundleVersion=\(bundleVersion), exists=\(exists)")
+            return exists
         }
     }
 
     func verifyExtractedBundle(appVersion: String, bundleVersion: String) throws -> Promise<Void> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
             let folderName = "\(appVersion)-\(bundleVersion)"
             let bundlePath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
             guard FileManager.default.fileExists(atPath: bundlePath) else {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: bundle directory not found: \(bundlePath)")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle directory not found"])
             }
             let metadataJsonPath = (bundlePath as NSString).appendingPathComponent("metadata.json")
             guard FileManager.default.fileExists(atPath: metadataJsonPath) else {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: metadata.json not found in \(bundlePath)")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "metadata.json not found"])
             }
             guard let data = FileManager.default.contents(atPath: metadataJsonPath),
                   let metadata = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: failed to parse metadata.json")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to parse metadata.json"])
             }
+            OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: parsing metadata and validating files...")
             if !BundleUpdateStore.validateAllFilesInDir(bundlePath, metadata: metadata, appVersion: appVersion, bundleVersion: bundleVersion) {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: file integrity check failed")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "File integrity check failed"])
             }
+            OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: all files verified OK, fileCount=\(metadata.count)")
         }
     }
 
@@ -1116,7 +1136,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         return Promise.async {
             let bundleDir = BundleUpdateStore.bundleDir()
             let fm = FileManager.default
-            guard let contents = try? fm.contentsOfDirectory(atPath: bundleDir) else { return [] }
+            guard let contents = try? fm.contentsOfDirectory(atPath: bundleDir) else {
+                OneKeyLog.info("BundleUpdate", "listLocalBundles: bundle directory empty or not found")
+                return []
+            }
             var results: [LocalBundleInfo] = []
             for name in contents {
                 let fullPath = (bundleDir as NSString).appendingPathComponent(name)
@@ -1130,28 +1153,37 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     results.append(LocalBundleInfo(appVersion: appVersion, bundleVersion: bundleVersion))
                 }
             }
+            OneKeyLog.info("BundleUpdate", "listLocalBundles: found \(results.count) bundles")
             return results
         }
     }
 
     func getSha256FromFilePath(filePath: String) throws -> Promise<String> {
         return Promise.async {
-            guard !filePath.isEmpty else { return "" }
+            OneKeyLog.info("BundleUpdate", "getSha256FromFilePath: filePath=\(filePath)")
+            guard !filePath.isEmpty else {
+                OneKeyLog.warn("BundleUpdate", "getSha256FromFilePath: empty filePath")
+                return ""
+            }
 
             // Restrict to bundle-related directories only
             let resolvedPath = (filePath as NSString).resolvingSymlinksInPath
             let bundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
             let downloadDir = (BundleUpdateStore.downloadBundleDir() as NSString).resolvingSymlinksInPath
             guard resolvedPath.hasPrefix(bundleDir) || resolvedPath.hasPrefix(downloadDir) else {
+                OneKeyLog.error("BundleUpdate", "getSha256FromFilePath: path outside allowed directories: \(resolvedPath)")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "File path outside allowed bundle directories"])
             }
 
-            return BundleUpdateStore.calculateSHA256(filePath) ?? ""
+            let sha256 = BundleUpdateStore.calculateSHA256(filePath) ?? ""
+            OneKeyLog.info("BundleUpdate", "getSha256FromFilePath: sha256=\(sha256.isEmpty ? "(empty)" : String(sha256.prefix(16)) + "...")")
+            return sha256
         }
     }
 
     func testDeleteJsBundle(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "testDeleteJsBundle: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
             let folderName = "\(appVersion)-\(bundleVersion)"
             let jsBundlePath = (BundleUpdateStore.bundleDir() as NSString)
                 .appendingPathComponent(folderName)
@@ -1159,27 +1191,33 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             if FileManager.default.fileExists(atPath: path) {
                 try FileManager.default.removeItem(atPath: path)
+                OneKeyLog.info("BundleUpdate", "testDeleteJsBundle: deleted \(path)")
                 return TestResult(success: true, message: "Deleted jsBundle: \(path)")
             }
+            OneKeyLog.warn("BundleUpdate", "testDeleteJsBundle: file not found: \(path)")
             return TestResult(success: false, message: "jsBundle not found: \(path)")
         }
     }
 
     func testDeleteJsRuntimeDir(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "testDeleteJsRuntimeDir: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
             let folderName = "\(appVersion)-\(bundleVersion)"
             let dirPath = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
 
             if FileManager.default.fileExists(atPath: dirPath) {
                 try FileManager.default.removeItem(atPath: dirPath)
+                OneKeyLog.info("BundleUpdate", "testDeleteJsRuntimeDir: deleted \(dirPath)")
                 return TestResult(success: true, message: "Deleted js runtime directory: \(dirPath)")
             }
+            OneKeyLog.warn("BundleUpdate", "testDeleteJsRuntimeDir: directory not found: \(dirPath)")
             return TestResult(success: false, message: "js runtime directory not found: \(dirPath)")
         }
     }
 
     func testDeleteMetadataJson(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "testDeleteMetadataJson: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
             let folderName = "\(appVersion)-\(bundleVersion)"
             let metadataPath = (BundleUpdateStore.bundleDir() as NSString)
                 .appendingPathComponent(folderName)
@@ -1187,14 +1225,17 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             if FileManager.default.fileExists(atPath: path) {
                 try FileManager.default.removeItem(atPath: path)
+                OneKeyLog.info("BundleUpdate", "testDeleteMetadataJson: deleted \(path)")
                 return TestResult(success: true, message: "Deleted metadata.json: \(path)")
             }
+            OneKeyLog.warn("BundleUpdate", "testDeleteMetadataJson: file not found: \(path)")
             return TestResult(success: false, message: "metadata.json not found: \(path)")
         }
     }
 
     func testWriteEmptyMetadataJson(appVersion: String, bundleVersion: String) throws -> Promise<TestResult> {
         return Promise.async {
+            OneKeyLog.info("BundleUpdate", "testWriteEmptyMetadataJson: appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
             let folderName = "\(appVersion)-\(bundleVersion)"
             let jsRuntimeDir = (BundleUpdateStore.bundleDir() as NSString).appendingPathComponent(folderName)
             let metadataPath = (jsRuntimeDir as NSString).appendingPathComponent("metadata.json")
@@ -1207,6 +1248,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let data = try JSONSerialization.data(withJSONObject: emptyJson, options: .prettyPrinted)
             try data.write(to: URL(fileURLWithPath: metadataPath), options: .atomic)
 
+            OneKeyLog.info("BundleUpdate", "testWriteEmptyMetadataJson: created \(metadataPath)")
             return TestResult(success: true, message: "Created empty metadata.json: \(metadataPath)")
         }
     }
