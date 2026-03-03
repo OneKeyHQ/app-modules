@@ -93,6 +93,7 @@ P2Q5dClenjjjVA==
 
 // Public static store for CustomReactNativeHost access (called before JS starts)
 object BundleUpdateStoreAndroid {
+    private val bcProvider = BouncyCastleProvider()
     private const val PREFS_NAME = "BundleUpdatePrefs"
     private const val NATIVE_VERSION_PREFS_NAME = "NativeVersionPrefs"
     private const val CURRENT_BUNDLE_VERSION_KEY = "currentBundleVersion"
@@ -599,8 +600,6 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     companion object {
         private const val PREFS_NAME = "BundleUpdatePrefs"
-        // Use our own BouncyCastle provider instance to avoid Android's stripped-down built-in "BC"
-        private val bcProvider = BouncyCastleProvider()
     }
 
     private val listeners = CopyOnWriteArrayList<BundleListener>()
