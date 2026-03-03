@@ -24,12 +24,14 @@ interface StepState {
 
 interface WorkflowState {
   download: StepState;
+  downloadAsc: StepState;
+  verifyAsc: StepState;
   verify: StepState;
   install: StepState;
   downloadProgress: number;
 }
 
-type StepId = 'download' | 'verify' | 'install';
+type StepId = 'download' | 'downloadAsc' | 'verifyAsc' | 'verify' | 'install';
 
 // --- Color Palette ---
 
@@ -177,6 +179,8 @@ interface AppUpdateTestPageProps {
 
 const INITIAL_WORKFLOW: WorkflowState = {
   download: { status: 'pending' },
+  downloadAsc: { status: 'pending' },
+  verifyAsc: { status: 'pending' },
   verify: { status: 'pending' },
   install: { status: 'pending' },
   downloadProgress: 0,
@@ -252,7 +256,7 @@ export function AppUpdateTestPage({
     // Register listener for progress
     const lid = ReactNativeAppUpdate.addDownloadListener(
       (event: DownloadEvent) => {
-        if (event.type === 'update/downloading') {
+        if (event.type === 'downloading') {
           setWorkflow((prev) => ({
             ...prev,
             downloadProgress: event.progress,
@@ -298,6 +302,48 @@ export function AppUpdateTestPage({
     }
   }, [downloadUrl, progressAnim, updateStep]);
 
+  const handleDownloadAsc = useCallback(async () => {
+    if (!downloadUrl) {
+      updateStep('downloadAsc', {
+        status: 'error',
+        errorMessage: 'Please enter a download URL',
+      });
+      return;
+    }
+    updateStep('downloadAsc', { status: 'active' });
+    try {
+      await ReactNativeAppUpdate.downloadASC({ downloadUrl });
+      updateStep('downloadAsc', { status: 'completed' });
+    } catch (err) {
+      updateStep('downloadAsc', {
+        status: 'error',
+        errorMessage:
+          err instanceof Error ? err.message : 'ASC download failed',
+      });
+    }
+  }, [downloadUrl, updateStep]);
+
+  const handleVerifyAsc = useCallback(async () => {
+    if (!downloadUrl) {
+      updateStep('verifyAsc', {
+        status: 'error',
+        errorMessage: 'Please enter a download URL',
+      });
+      return;
+    }
+    updateStep('verifyAsc', { status: 'active' });
+    try {
+      await ReactNativeAppUpdate.verifyASC({ downloadUrl });
+      updateStep('verifyAsc', { status: 'completed' });
+    } catch (err) {
+      updateStep('verifyAsc', {
+        status: 'error',
+        errorMessage:
+          err instanceof Error ? err.message : 'ASC verification failed',
+      });
+    }
+  }, [downloadUrl, updateStep]);
+
   const handleVerify = useCallback(async () => {
     if (!downloadUrl) {
       updateStep('verify', {
@@ -341,34 +387,6 @@ export function AppUpdateTestPage({
   }, [downloadUrl, updateStep]);
 
   // --- Utility handlers ---
-
-  const utilDownloadASC = async () => {
-    clearUtil();
-    if (!downloadUrl) {
-      setUtilError('Please enter a download URL');
-      return;
-    }
-    try {
-      await ReactNativeAppUpdate.downloadASC({ downloadUrl });
-      setUtilResult({ ascDownloaded: true });
-    } catch (err) {
-      setUtilError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
-
-  const utilVerifyASC = async () => {
-    clearUtil();
-    if (!downloadUrl) {
-      setUtilError('Please enter a download URL');
-      return;
-    }
-    try {
-      await ReactNativeAppUpdate.verifyASC({ downloadUrl });
-      setUtilResult({ ascVerified: true });
-    } catch (err) {
-      setUtilError(err instanceof Error ? err.message : 'Unknown error');
-    }
-  };
 
   const utilClearCache = async () => {
     clearUtil();
@@ -447,13 +465,43 @@ export function AppUpdateTestPage({
 
         <StepRow
           stepNumber={2}
+          label="Download ASC"
+          status={workflow.downloadAsc.status}
+          errorMessage={workflow.downloadAsc.errorMessage}
+          onAction={handleDownloadAsc}
+          actionLabel="Download"
+          disabled={
+            workflow.download.status !== 'completed' ||
+            workflow.downloadAsc.status === 'active'
+          }
+        />
+
+        <StepConnector active={workflow.downloadAsc.status === 'completed'} />
+
+        <StepRow
+          stepNumber={3}
+          label="Verify ASC"
+          status={workflow.verifyAsc.status}
+          errorMessage={workflow.verifyAsc.errorMessage}
+          onAction={handleVerifyAsc}
+          actionLabel="Verify"
+          disabled={
+            workflow.downloadAsc.status !== 'completed' ||
+            workflow.verifyAsc.status === 'active'
+          }
+        />
+
+        <StepConnector active={workflow.verifyAsc.status === 'completed'} />
+
+        <StepRow
+          stepNumber={4}
           label="Verify APK"
           status={workflow.verify.status}
           errorMessage={workflow.verify.errorMessage}
           onAction={handleVerify}
           actionLabel="Verify"
           disabled={
-            workflow.download.status !== 'completed' ||
+            workflow.verifyAsc.status !== 'completed' ||
             workflow.verify.status === 'active'
           }
         />
@@ -461,7 +509,7 @@ export function AppUpdateTestPage({
         <StepConnector active={workflow.verify.status === 'completed'} />
 
         <StepRow
-          stepNumber={3}
+          stepNumber={5}
           label="Install APK"
           status={workflow.install.status}
           errorMessage={workflow.install.errorMessage}
@@ -500,8 +548,6 @@ export function AppUpdateTestPage({
       </TouchableOpacity>
       {utilExpanded && (
         <View style={[s.card, { borderTopLeftRadius: 0, borderTopRightRadius: 0, marginTop: -12 }]}>
-          <TestButton title="Download ASC" onPress={utilDownloadASC} />
-          <TestButton title="Verify ASC" onPress={utilVerifyASC} />
           <TestButton title="Clear Cache" onPress={utilClearCache} />
           <TestButton title="Register Download Listener" onPress={utilRegisterListener} />
           <TestResult result={utilResult} error={utilError} />
