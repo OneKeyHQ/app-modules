@@ -463,7 +463,7 @@ H3bEFZ8=
         downloadedFile: dr.downloadedFile,
         latestVersion: dr.latestVersion,
         bundleVersion: dr.bundleVersion,
-        signature: '',
+        signature: defaultParams.signature,
       });
       updateStep('install', { status: 'completed' });
     } catch (err) {
@@ -473,7 +473,7 @@ H3bEFZ8=
           err instanceof Error ? err.message : 'Installation failed',
       });
     }
-  }, [workflow.downloadResult, updateStep]);
+  }, [workflow.downloadResult, updateStep, defaultParams.signature]);
 
   // --- Utility handlers ---
 
