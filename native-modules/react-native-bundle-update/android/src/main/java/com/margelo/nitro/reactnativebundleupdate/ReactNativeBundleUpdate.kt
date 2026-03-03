@@ -1279,7 +1279,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             if (ascDir.exists() && ascDir.isDirectory) {
                 ascDir.listFiles()?.forEach { file ->
                     if (file.isFile) {
-                        results.add(AscFileInfo(fileName = file.name, fileSize = file.length().toDouble()))
+                        results.add(AscFileInfo(fileName = file.name, filePath = file.absolutePath, fileSize = file.length().toDouble()))
                     }
                 }
             }

@@ -1234,7 +1234,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), !isDir.boolValue else { continue }
                 let attrs = try? fm.attributesOfItem(atPath: fullPath)
                 let fileSize = Double((attrs?[.size] as? UInt64) ?? 0)
-                results.append(AscFileInfo(fileName: name, fileSize: fileSize))
+                results.append(AscFileInfo(fileName: name, filePath: fullPath, fileSize: fileSize))
             }
             OneKeyLog.info("BundleUpdate", "listAscFiles: found \(results.count) files")
             return results

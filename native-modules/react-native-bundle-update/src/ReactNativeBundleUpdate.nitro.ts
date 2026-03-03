@@ -77,6 +77,7 @@ export interface FallbackBundleInfo {
 
 export interface AscFileInfo {
   fileName: string;
+  filePath: string;
   fileSize: number;
 }
 
