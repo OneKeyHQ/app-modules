@@ -339,13 +339,21 @@ public class BundleUpdateStore {
     }
 
     public static func currentBundleMainJSBundle() -> String? {
-        guard let currentBundleVer = currentBundleVersion() else { return nil }
+        guard let currentBundleVer = currentBundleVersion() else {
+            OneKeyLog.warn("BundleUpdate", "getJsBundlePath: no currentBundleVersion stored")
+            return nil
+        }
 
         let currentAppVersion = getCurrentNativeVersion()
-        guard let prevNativeVersion = getNativeVersion() else { return nil }
+        guard let prevNativeVersion = getNativeVersion() else {
+            OneKeyLog.warn("BundleUpdate", "getJsBundlePath: prevNativeVersion is nil")
+            return nil
+        }
+
+        OneKeyLog.info("BundleUpdate", "currentAppVersion: \(currentAppVersion), currentBundleVersion: \(currentBundleVer), prevNativeVersion: \(prevNativeVersion)")
 
         if currentAppVersion != prevNativeVersion {
-            OneKeyLog.debug("BundleUpdate", "currentAppVersion is not equal to prevNativeVersion \(currentAppVersion) \(prevNativeVersion)")
+            OneKeyLog.info("BundleUpdate", "currentAppVersion is not equal to prevNativeVersion \(currentAppVersion) \(prevNativeVersion)")
             let ud = UserDefaults.standard
             if let cbv = ud.string(forKey: "currentBundleVersion") {
                 ud.removeObject(forKey: cbv)
@@ -357,33 +365,39 @@ public class BundleUpdateStore {
 
         guard let folderName = currentBundleDir(),
               FileManager.default.fileExists(atPath: folderName) else {
-            OneKeyLog.debug("BundleUpdate", "currentBundleDir does not exist")
+            OneKeyLog.warn("BundleUpdate", "getJsBundlePath: currentBundleDir does not exist")
             return nil
         }
 
         let signature = UserDefaults.standard.string(forKey: currentBundleVer) ?? ""
+        OneKeyLog.debug("BundleUpdate", "getJsBundlePath: signatureLength=\(signature.count)")
+
         let devSettingsEnabled = isDevSettingsEnabled()
         if devSettingsEnabled {
             OneKeyLog.warn("BundleUpdate", "Startup SHA256 validation skipped (DevSettings enabled)")
         }
         if !devSettingsEnabled && !validateMetadataFileSha256(currentBundleVer, signature: signature) {
+            OneKeyLog.warn("BundleUpdate", "getJsBundlePath: validateMetadataFileSha256 failed, signatureLength=\(signature.count)")
             return nil
         }
 
-        guard let metadata = getMetadataFileContent(currentBundleVer) else { return nil }
+        guard let metadata = getMetadataFileContent(currentBundleVer) else {
+            OneKeyLog.warn("BundleUpdate", "getJsBundlePath: getMetadataFileContent returned nil")
+            return nil
+        }
 
         if let dashRange = currentBundleVer.range(of: "-", options: .backwards) {
             let appVer = String(currentBundleVer[currentBundleVer.startIndex..<dashRange.lowerBound])
             let bundleVer = String(currentBundleVer[dashRange.upperBound...])
             if !validateAllFilesInDir(folderName, metadata: metadata, appVersion: appVer, bundleVersion: bundleVer) {
-                OneKeyLog.debug("BundleUpdate", "validateAllFilesInDir failed on startup")
+                OneKeyLog.info("BundleUpdate", "validateAllFilesInDir failed on startup")
                 return nil
             }
         }
 
         let mainJSBundle = (folderName as NSString).appendingPathComponent("main.jsbundle.hbc")
         guard FileManager.default.fileExists(atPath: mainJSBundle) else {
-            OneKeyLog.debug("BundleUpdate", "mainJSBundleFile does not exist")
+            OneKeyLog.info("BundleUpdate", "mainJSBundleFile does not exist")
             return nil
         }
         return mainJSBundle

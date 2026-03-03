@@ -450,12 +450,18 @@ object BundleUpdateStoreAndroid {
     fun getCurrentBundleMainJSBundle(context: Context): String? {
         return try {
             val currentAppVersion = getAppVersion(context)
-            val currentBundleVersion = getCurrentBundleVersion(context) ?: return null
+            val currentBundleVersion = getCurrentBundleVersion(context) ?: run {
+                OneKeyLog.warn("BundleUpdate", "getJsBundlePath: no currentBundleVersion stored")
+                return null
+            }
 
             OneKeyLog.info("BundleUpdate", "currentAppVersion: $currentAppVersion, currentBundleVersion: $currentBundleVersion")
 
             val prevNativeVersion = getNativeVersion(context)
-            if (prevNativeVersion.isEmpty()) return ""
+            if (prevNativeVersion.isEmpty()) {
+                OneKeyLog.warn("BundleUpdate", "getJsBundlePath: prevNativeVersion is empty")
+                return ""
+            }
 
             if (currentAppVersion != prevNativeVersion) {
                 OneKeyLog.info("BundleUpdate", "currentAppVersion is not equal to prevNativeVersion $currentAppVersion $prevNativeVersion")
@@ -463,22 +469,32 @@ object BundleUpdateStoreAndroid {
                 return null
             }
 
-            val bundleDir = getCurrentBundleDir(context, currentBundleVersion) ?: return null
+            val bundleDir = getCurrentBundleDir(context, currentBundleVersion) ?: run {
+                OneKeyLog.warn("BundleUpdate", "getJsBundlePath: getCurrentBundleDir returned null")
+                return null
+            }
             if (!File(bundleDir).exists()) {
-                OneKeyLog.info("BundleUpdate", "currentBundleDir does not exist")
+                OneKeyLog.info("BundleUpdate", "currentBundleDir does not exist: $bundleDir")
                 return null
             }
 
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val signature = prefs.getString(currentBundleVersion, "") ?: ""
+            OneKeyLog.debug("BundleUpdate", "getJsBundlePath: signatureLength=${signature.length}")
 
             val devSettingsEnabled = isDevSettingsEnabled(context)
             if (devSettingsEnabled) {
                 OneKeyLog.warn("BundleUpdate", "Startup SHA256 validation skipped (DevSettings enabled)")
             }
-            if (!devSettingsEnabled && !validateMetadataFileSha256(context, currentBundleVersion, signature)) return null
+            if (!devSettingsEnabled && !validateMetadataFileSha256(context, currentBundleVersion, signature)) {
+                OneKeyLog.warn("BundleUpdate", "getJsBundlePath: validateMetadataFileSha256 failed, signatureLength=${signature.length}")
+                return null
+            }
 
-            val metadataContent = getMetadataFileContent(context, currentBundleVersion) ?: return null
+            val metadataContent = getMetadataFileContent(context, currentBundleVersion) ?: run {
+                OneKeyLog.warn("BundleUpdate", "getJsBundlePath: getMetadataFileContent returned null")
+                return null
+            }
             val metadata = parseMetadataJson(metadataContent)
 
             val lastDashIndex = currentBundleVersion.lastIndexOf("-")
