@@ -348,7 +348,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     OneKeyLog.info("AppUpdate", "downloadAPK: existing APK found (size=${downloadedFile.length()}), verifying...")
                     if (tryVerifyExistingApk(url, filePath, downloadedFile)) {
                         OneKeyLog.info("AppUpdate", "downloadAPK: existing APK is valid, skipping download")
-                        sendEvent("downloaded")
+                        sendEvent("update/downloaded")
                         return@async
                     }
                     OneKeyLog.info("AppUpdate", "downloadAPK: existing APK invalid, deleting and re-downloading...")
@@ -366,7 +366,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
                 if (!response.isSuccessful) {
                     OneKeyLog.error("AppUpdate", "downloadAPK: HTTP error, statusCode=${response.code}")
-                    sendEvent("error", message = response.code.toString())
+                    sendEvent("update/error", message = response.code.toString())
                     throw Exception(response.code.toString())
                 }
 
@@ -379,7 +379,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
                 var totalBytesRead = 0L
                 val bufferSize = 8 * 1024L
-                sendEvent("start")
+                sendEvent("update/start")
                 var prevProgress = 0
 
                 try {
@@ -391,7 +391,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         if (contentLength > 0) {
                             val progress = ((totalBytesRead * 100) / contentLength).toInt()
                             if (prevProgress != progress) {
-                                sendEvent("downloading", progress = progress)
+                                sendEvent("update/downloading", progress = progress)
                                 OneKeyLog.info("AppUpdate", "download progress: $progress%")
                                 builder.setProgress(100, progress, false)
                                 if (ActivityCompat.checkSelfPermission(
@@ -411,7 +411,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
 
                 OneKeyLog.info("AppUpdate", "Download completed")
-                sendEvent("downloaded")
+                sendEvent("update/downloaded")
 
                 notifyManager.cancel(NOTIFICATION_ID)
                 builder.setContentText("")
@@ -426,7 +426,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
             } catch (e: Exception) {
                 OneKeyLog.error("AppUpdate", "downloadAPK: failed: ${e.javaClass.simpleName}: ${e.message}")
-                sendEvent("error", message = "${e.javaClass.simpleName}: ${e.message}")
+                sendEvent("update/error", message = "${e.javaClass.simpleName}: ${e.message}")
                 throw e
             } finally {
                 isDownloading.set(false)
