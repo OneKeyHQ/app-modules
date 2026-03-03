@@ -864,7 +864,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     override fun getLaunchOptions(): Promise<LaunchOptions> {
         return Promise.async {
             OneKeyLog.debug("DeviceUtils", "getLaunchOptions")
-            LaunchOptions(launchType = "normal")
+            LaunchOptions(launchType = "normal", deepLink = null)
         }
     }
 

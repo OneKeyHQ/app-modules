@@ -782,7 +782,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         return isValid
     }
 
-    override fun downloadBundleASC(params: BundleDownloadASCParams): Promise<Void> {
+    override fun downloadBundleASC(params: BundleDownloadASCParams): Promise<Unit> {
         return Promise.async {
             val context = getContext()
             val appVersion = params.latestVersion
@@ -799,7 +799,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    override fun verifyBundleASC(params: BundleVerifyASCParams): Promise<Void> {
+    override fun verifyBundleASC(params: BundleVerifyASCParams): Promise<Unit> {
         return Promise.async {
             val context = getContext()
             val filePath = params.downloadedFile
@@ -873,7 +873,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    override fun verifyBundle(params: BundleVerifyParams): Promise<Void> {
+    override fun verifyBundle(params: BundleVerifyParams): Promise<Unit> {
         return Promise.async {
             val filePath = params.downloadedFile
             val sha256 = params.sha256
@@ -897,7 +897,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    override fun installBundle(params: BundleInstallParams): Promise<Void> {
+    override fun installBundle(params: BundleInstallParams): Promise<Unit> {
         return Promise.async {
             val context = getContext()
             val appVersion = params.latestVersion
@@ -970,7 +970,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    override fun clearBundle(): Promise<Void> {
+    override fun clearBundle(): Promise<Unit> {
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "clearBundle: clearing download directory...")
             val context = getContext()
@@ -1022,7 +1022,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    override fun setCurrentUpdateBundleData(params: BundleSwitchParams): Promise<Void> {
+    override fun setCurrentUpdateBundleData(params: BundleSwitchParams): Promise<Unit> {
         return Promise.async {
             val context = getContext()
             val bundleVersion = "${params.appVersion}-${params.bundleVersion}"
@@ -1139,7 +1139,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
         }
     }
 
-    override fun verifyExtractedBundle(appVersion: String, bundleVersion: String): Promise<Void> {
+    override fun verifyExtractedBundle(appVersion: String, bundleVersion: String): Promise<Unit> {
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: appVersion=$appVersion, bundleVersion=$bundleVersion")
             val context = getContext()

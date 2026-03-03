@@ -166,7 +166,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         }
     }
 
-    override fun downloadAPK(params: AppUpdateDownloadParams): Promise<Void> {
+    override fun downloadAPK(params: AppUpdateDownloadParams): Promise<Unit> {
         return Promise.async {
             if (isDownloading.getAndSet(true)) {
                 OneKeyLog.warn("AppUpdate", "downloadAPK: rejected, already downloading")
@@ -285,7 +285,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         }
     }
 
-    override fun downloadASC(params: AppUpdateFileParams): Promise<Void> {
+    override fun downloadASC(params: AppUpdateFileParams): Promise<Unit> {
         return Promise.async {
             val url = params.downloadUrl
             val filePath = params.filePath
@@ -351,7 +351,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         }
     }
 
-    override fun verifyASC(params: AppUpdateFileParams): Promise<Void> {
+    override fun verifyASC(params: AppUpdateFileParams): Promise<Unit> {
         return Promise.async {
             val filePath = params.filePath
             OneKeyLog.info("AppUpdate", "verifyASC: filePath=$filePath")
@@ -478,7 +478,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     private data class VerifiedFile(val canonicalPath: String, val sha256: String)
     private val verifiedFiles = java.util.Collections.synchronizedMap(mutableMapOf<String, String>())
 
-    override fun verifyAPK(params: AppUpdateFileParams): Promise<Void> {
+    override fun verifyAPK(params: AppUpdateFileParams): Promise<Unit> {
         return Promise.async {
             val filePath = params.filePath
             OneKeyLog.info("AppUpdate", "verifyAPK: filePath=$filePath")
@@ -530,12 +530,14 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val apkInfo = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNATURES)
                 @Suppress("DEPRECATION")
                 val installedInfo = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
-                if (apkInfo?.signatures == null || installedInfo?.signatures == null) {
+                val apkSignatures = apkInfo?.signatures
+                val installedSignatures = installedInfo?.signatures
+                if (apkSignatures == null || installedSignatures == null) {
                     OneKeyLog.error("AppUpdate", "verifyAPK: legacy signatures unavailable")
                     throw Exception("SIGNATURE_UNAVAILABLE")
                 }
-                OneKeyLog.info("AppUpdate", "verifyAPK: APK signatures count=${apkInfo.signatures.size}, installed signatures count=${installedInfo.signatures.size}")
-                if (apkInfo.signatures.toSet() != installedInfo.signatures.toSet()) {
+                OneKeyLog.info("AppUpdate", "verifyAPK: APK signatures count=${apkSignatures.size}, installed signatures count=${installedSignatures.size}")
+                if (apkSignatures.toSet() != installedSignatures.toSet()) {
                     OneKeyLog.error("AppUpdate", "verifyAPK: legacy signing certificate MISMATCH")
                     throw Exception("SIGNATURE_MISMATCH")
                 }
@@ -558,7 +560,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         }
     }
 
-    override fun installAPK(params: AppUpdateFileParams): Promise<Void> {
+    override fun installAPK(params: AppUpdateFileParams): Promise<Unit> {
         return Promise.async {
             val filePath = params.filePath
             OneKeyLog.info("AppUpdate", "installAPK: filePath=$filePath")
@@ -625,7 +627,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         }
     }
 
-    override fun clearCache(): Promise<Void> {
+    override fun clearCache(): Promise<Unit> {
         return Promise.async {
             OneKeyLog.info("AppUpdate", "clearCache: starting cleanup...")
             isDownloading.set(false)
