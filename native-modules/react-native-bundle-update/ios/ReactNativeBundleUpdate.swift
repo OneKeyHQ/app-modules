@@ -471,10 +471,16 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
 
     // MARK: - URLSessionDownloadDelegate
 
+    private var prevProgress: Int = -1
+
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard totalBytesExpectedToWrite > 0 else { return }
         let progress = Int((totalBytesWritten * 100) / totalBytesExpectedToWrite)
-        onProgress?(progress)
+        if progress != prevProgress {
+            OneKeyLog.info("BundleUpdate", "download progress: \(progress)% (\(totalBytesWritten)/\(totalBytesExpectedToWrite))")
+            prevProgress = progress
+            onProgress?(progress)
+        }
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
@@ -523,6 +529,7 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
         lock.unlock()
         tempFileURL = nil
         onProgress = nil
+        prevProgress = -1
     }
 }
 
