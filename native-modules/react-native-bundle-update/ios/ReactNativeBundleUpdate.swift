@@ -63,7 +63,8 @@ P2Q5dClenjjjVA==
 """
 
 // Public static store for AppDelegate access (called before JS starts)
-public class BundleUpdateStore {
+@objcMembers
+public class BundleUpdateStore: NSObject {
     private static let bundlePrefsKey = "currentBundleVersion"
     private static let nativeVersionKey = "nativeVersion"
 
