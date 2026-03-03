@@ -745,12 +745,17 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     var totalBytesRead = 0L
                     var bytesRead: Int
 
+                    var prevProgress = 0
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         outputStream.write(buffer, 0, bytesRead)
                         totalBytesRead += bytesRead
                         if (fileSize > 0) {
                             val progress = ((totalBytesRead * 100) / fileSize).toInt()
-                            sendEvent("update/downloading", progress = progress)
+                            if (progress != prevProgress) {
+                                sendEvent("update/downloading", progress = progress)
+                                OneKeyLog.info("BundleUpdate", "download progress: $progress% ($totalBytesRead/$fileSize)")
+                                prevProgress = progress
+                            }
                         }
                     }
                 }
@@ -767,6 +772,10 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             sendEvent("update/complete")
             OneKeyLog.info("BundleUpdate", "downloadBundle: completed successfully, appVersion=$appVersion, bundleVersion=$bundleVersion")
             result
+            } catch (e: Exception) {
+                OneKeyLog.error("BundleUpdate", "downloadBundle: failed: ${e.javaClass.simpleName}: ${e.message}")
+                sendEvent("update/error", message = "${e.javaClass.simpleName}: ${e.message}")
+                throw e
             } finally {
                 isDownloading.set(false)
             }
