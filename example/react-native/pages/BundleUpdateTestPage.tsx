@@ -488,7 +488,7 @@ H3bEFZ8=
   const utilGetJsBundlePath = async () => {
     clearUtil();
     try {
-      setUtilResult({ jsBundlePath: (await ReactNativeBundleUpdate.getJsBundlePath()) || '(empty)' });
+      setUtilResult({ jsBundlePath: (await ReactNativeBundleUpdate.getJsBundlePathAsync()) || '(empty)' });
     } catch (err) {
       setUtilError(err instanceof Error ? err.message : 'Unknown error');
     }
