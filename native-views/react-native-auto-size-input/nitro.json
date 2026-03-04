@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["autosizeinput"],
+  "ios": {
+    "iosModuleName": "AutoSizeInput"
+  },
+  "android": {
+    "androidNamespace": ["autosizeinput"],
+    "androidCxxLibName": "autosizeinput"
+  },
+  "autolinking": {
+    "AutoSizeInput": {
+      "swift": "HybridAutoSizeInput",
+      "kotlin": "HybridAutoSizeInput"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
