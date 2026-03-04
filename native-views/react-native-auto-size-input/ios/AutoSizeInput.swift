@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-class HybridAutoSizeInput: HybridAutoSizeInputSpec, UITextFieldDelegate, UITextViewDelegate {
+class HybridAutoSizeInput: HybridAutoSizeInputSpec {
 
   // MARK: - Subviews
   private let prefixLabel = UILabel()
@@ -13,6 +13,7 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec, UITextFieldDelegate, UITextV
   private var isUpdatingFromJS = false
   private var isRecalculating = false
   private var currentFontSize: CGFloat = 48
+  private var inputDelegate: InputDelegate?
 
   // MARK: - HybridView
   var view: UIView = UIView()
@@ -213,13 +214,17 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec, UITextFieldDelegate, UITextV
     suffixLabel.setContentHuggingPriority(.required, for: .horizontal)
     suffixLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
+    // Configure delegate helper
+    let delegate = InputDelegate(owner: self)
+    self.inputDelegate = delegate
+
     // Configure single-line input
     singleLineInput.borderStyle = .none
-    singleLineInput.delegate = self
-    singleLineInput.addTarget(self, action: #selector(textFieldDidChange(_:)), for: .editingChanged)
+    singleLineInput.delegate = delegate
+    singleLineInput.addTarget(delegate, action: #selector(InputDelegate.textFieldDidChange(_:)), for: .editingChanged)
 
     // Configure multi-line input
-    multiLineInput.delegate = self
+    multiLineInput.delegate = delegate
     multiLineInput.textContainerInset = .zero
     multiLineInput.textContainer.lineFragmentPadding = 0
     multiLineInput.backgroundColor = .clear
@@ -463,35 +468,25 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec, UITextFieldDelegate, UITextV
     }
   }
 
-  // MARK: - UITextField Delegate & Events
+  // MARK: - Delegate callbacks (called by InputDelegate)
 
-  @objc private func textFieldDidChange(_ textField: UITextField) {
+  fileprivate func handleTextFieldChange(_ textField: UITextField) {
     guard !isUpdatingFromJS else { return }
     recalculateFontSize()
     onChangeText?(textField.text ?? "")
   }
 
-  func textFieldDidBeginEditing(_ textField: UITextField) {
-    onFocus?()
-  }
-
-  func textFieldDidEndEditing(_ textField: UITextField) {
-    onBlur?()
-  }
-
-  // MARK: - UITextView Delegate
-
-  func textViewDidChange(_ textView: UITextView) {
+  fileprivate func handleTextViewChange(_ textView: UITextView) {
     guard !isUpdatingFromJS else { return }
     recalculateFontSize()
     onChangeText?(textView.text ?? "")
   }
 
-  func textViewDidBeginEditing(_ textView: UITextView) {
+  fileprivate func handleFocus() {
     onFocus?()
   }
 
-  func textViewDidEndEditing(_ textView: UITextView) {
+  fileprivate func handleBlur() {
     onBlur?()
   }
 
@@ -575,6 +570,41 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec, UITextFieldDelegate, UITextV
     case "black": return .black
     default: return .regular
     }
+  }
+}
+
+// MARK: - NSObject-based delegate for UITextField/UITextView
+
+private class InputDelegate: NSObject, UITextFieldDelegate, UITextViewDelegate {
+  private weak var owner: HybridAutoSizeInput?
+
+  init(owner: HybridAutoSizeInput) {
+    self.owner = owner
+    super.init()
+  }
+
+  @objc func textFieldDidChange(_ textField: UITextField) {
+    owner?.handleTextFieldChange(textField)
+  }
+
+  func textFieldDidBeginEditing(_ textField: UITextField) {
+    owner?.handleFocus()
+  }
+
+  func textFieldDidEndEditing(_ textField: UITextField) {
+    owner?.handleBlur()
+  }
+
+  func textViewDidChange(_ textView: UITextView) {
+    owner?.handleTextViewChange(textView)
+  }
+
+  func textViewDidBeginEditing(_ textView: UITextView) {
+    owner?.handleFocus()
+  }
+
+  func textViewDidEndEditing(_ textView: UITextView) {
+    owner?.handleBlur()
   }
 }
 
