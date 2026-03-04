@@ -74,7 +74,7 @@ object MiUtil {
                 "5" -> return PERMISSION_ASK
             }
         } catch (e: Exception) {
-            OneKeyLog.debug("LiteCard", "check nfc permission fail: ${e.message}")
+            OneKeyLog.debug("LiteCard", "check nfc permission fail: ${e.message}\n${e.stackTraceToString()}")
         }
         return PERMISSION_UNKNOWN
     }
@@ -86,7 +86,7 @@ object MiUtil {
             context.startActivity(intent)
             true
         } catch (e: Exception) {
-            OneKeyLog.debug("LiteCard", "open app setting fail: ${e.message}")
+            OneKeyLog.debug("LiteCard", "open app setting fail: ${e.message}\n${e.stackTraceToString()}")
             false
         }
     }

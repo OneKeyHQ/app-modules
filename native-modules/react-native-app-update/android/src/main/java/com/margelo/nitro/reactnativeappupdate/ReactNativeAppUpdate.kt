@@ -821,7 +821,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 val apkUri = FileProvider.getUriForFile(
                     context,
-                    "${context.packageName}.fileprovider",
+                    "${context.packageName}.appupdate.fileprovider",
                     file
                 )
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

@@ -24,7 +24,7 @@ class ReactNativeGetRandomValues : HybridReactNativeGetRandomValuesSpec() {
       java.security.SecureRandom().nextBytes(data)
       return android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP)
     } catch (e: Exception) {
-      OneKeyLog.error("RandomValues", "SecureRandom failed")
+      OneKeyLog.error("RandomValues", "SecureRandom failed: ${e.message}\n${e.stackTraceToString()}")
       throw e
     }
   }

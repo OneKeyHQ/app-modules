@@ -1,4 +1,5 @@
 import NitroModules
+import Security
 import ReactNativeNativeLogger
 
 class ReactNativeGetRandomValues: HybridReactNativeGetRandomValuesSpec {
