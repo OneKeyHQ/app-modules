@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@onekeyfe/react-native-app-update": "workspace:*",
+    "@onekeyfe/react-native-auto-size-input": "workspace:*",
     "@onekeyfe/react-native-background-thread": "workspace:*",
     "@onekeyfe/react-native-bundle-update": "workspace:*",
     "@onekeyfe/react-native-check-biometric-auth-changed": "workspace:*",

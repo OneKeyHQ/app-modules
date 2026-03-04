@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { AutoSizeInputTestPage } from './pages/AutoSizeInputTestPage';
 import { BackgroundThreadTestPage } from './pages/BackgroundThreadTestPage';
 import { BiometricAuthTestPage } from './pages/BiometricAuthTestPage';
 import { CloudKitTestPage } from './pages/CloudKitTestPage';
@@ -16,6 +17,7 @@ import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
 
 export type RouteScreen =
   | 'home'
+  | 'auto-size-input'
   | 'app-update'
   | 'background-thread'
   | 'biometric-auth'
@@ -35,6 +37,11 @@ interface RouterProps {
 }
 
 const modules = [
+  {
+    id: 'auto-size-input' as RouteScreen,
+    name: 'Auto Size Input',
+    description: 'Input with auto-shrinking font size, prefix/suffix, single & multi-line',
+  },
   {
     id: 'app-update' as RouteScreen,
     name: 'App Update',
@@ -168,6 +175,8 @@ export function Router({ safeAreaInsets }: RouterProps) {
     };
 
     switch (currentScreen) {
+      case 'auto-size-input':
+        return <AutoSizeInputTestPage {...commonProps} />;
       case 'app-update':
         return <AppUpdateTestPage {...commonProps} />;
       case 'background-thread':

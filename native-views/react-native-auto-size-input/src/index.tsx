@@ -5,6 +5,8 @@ import type {
   AutoSizeInputProps,
 } from './AutoSizeInput.nitro';
 
+export type { AutoSizeInputMethods, AutoSizeInputProps };
+
 export const AutoSizeInputView = getHostComponent<
   AutoSizeInputProps,
   AutoSizeInputMethods
