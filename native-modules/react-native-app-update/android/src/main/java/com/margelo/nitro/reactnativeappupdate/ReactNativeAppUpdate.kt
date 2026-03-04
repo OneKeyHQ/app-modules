@@ -237,8 +237,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
      * Verify GPG signature of an ASC file and extract the SHA256 hash.
      * Returns the SHA256 hash if signature is valid, null otherwise.
      */
-    private fun verifyAscAndExtractSha256(ascFile: File): String? {
-        val ascContent = ascFile.readText()
+    /**
+     * Verify GPG signature of ASC content string and extract the SHA256 hash.
+     * Returns the SHA256 hash if signature is valid, null otherwise.
+     */
+    private fun verifyAscContentAndExtractSha256(ascContent: String): String? {
         if (!ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----")) return null
 
         val lines = ascContent.lines()
@@ -275,6 +278,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         val sha256 = cleartextBody.trim().split("\\s+".toRegex())[0].lowercase()
         if (sha256.length != 64 || !sha256.all { it in '0'..'9' || it in 'a'..'f' }) return null
         return sha256
+    }
+
+    private fun verifyAscAndExtractSha256(ascFile: File): String? {
+        return verifyAscContentAndExtractSha256(ascFile.readText())
     }
 
     /** Constant-time comparison to prevent timing attacks on hash values */
@@ -834,6 +841,53 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             }
             context.startActivity(intent)
             OneKeyLog.info("AppUpdate", "installAPK: install intent launched, awaiting user confirmation")
+        }
+    }
+
+    override fun testVerification(): Promise<Boolean> {
+        return Promise.async {
+            val testSignature = """-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+{
+  "fileName": "metadata.json",
+  "sha256": "2ada9c871104fc40649fa3de67a7d8e33faadc18e9abd587e8bb85be0a003eba",
+  "size": 158590,
+  "generatedAt": "2025-09-19T07:49:13.000Z"
+}
+-----BEGIN PGP SIGNATURE-----
+
+iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmjNJ1IOHGRldkBvbmVr
+ZXkuc28ACgkQs2mmepC/OHs6Rw/9FKHl5aNsE7V0IsFf/l+h16BYKFwVsL69alMk
+CFLna8oUn0+tyECF6wKBKw5pHo5YR27o2pJfYbAER6dygDF6WTZ1lZdf5QcBMjGA
+LCeXC0hzUBzSSOH4bKBTa3fHp//HdSV1F2OnkymbXqYN7WXvuQPLZ0nV6aU88hCk
+HgFifcvkXAnWKoosUtj0Bban/YBRyvmQ5C2akxUPEkr4Yck1QXwzJeNRd7wMXHjH
+JFK6lJcuABiB8wpJDXJkFzKs29pvHIK2B2vdOjU2rQzKOUwaKHofDi5C4+JitT2b
+2pSeYP3PAxXYw6XDOmKTOiC7fPnfLjtcPjNYNFCezVKZT6LKvZW9obnW8Q9LNJ4W
+okMPgHObkabv3OqUaTA9QNVfI/X9nvggzlPnaKDUrDWTf7n3vlrdexugkLtV/tJA
+uguPlI5hY7Ue5OW7ckWP46hfmq1+UaIdeUY7dEO+rPZDz6KcArpaRwBiLPBhneIr
+/X3KuMzS272YbPbavgCZGN9xJR5kZsEQE5HhPCbr6Nf0qDnh+X8mg0tAB/U6F+ZE
+o90sJL1ssIaYvST+VWVaGRr4V5nMDcgHzWSF9Q/wm22zxe4alDaBdvOlUseW0iaM
+n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
+91Js0rQ=
+=A/Ii
+-----END PGP SIGNATURE-----"""
+            val result = verifyAscContentAndExtractSha256(testSignature)
+            val isValid = result == "2ada9c871104fc40649fa3de67a7d8e33faadc18e9abd587e8bb85be0a003eba"
+            OneKeyLog.info("AppUpdate", "testVerification: GPG verification result: $isValid")
+            isValid
+        }
+    }
+
+    override fun testSkipVerification(): Promise<Boolean> {
+        return Promise.async {
+            val result = if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) {
+                isDevSettingsEnabled() && isSkipGPGEnabled()
+            } else {
+                false
+            }
+            OneKeyLog.info("AppUpdate", "testSkipVerification: result=$result")
+            result
         }
     }
 

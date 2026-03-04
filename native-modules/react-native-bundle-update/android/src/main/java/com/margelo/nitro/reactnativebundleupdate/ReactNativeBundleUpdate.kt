@@ -1216,6 +1216,18 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
         }
     }
 
+    override fun testSkipVerification(): Promise<Boolean> {
+        return Promise.async {
+            val result = if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) {
+                isDevSettingsEnabled() && isSkipGPGEnabled()
+            } else {
+                false
+            }
+            OneKeyLog.info("BundleUpdate", "testSkipVerification: result=$result")
+            result
+        }
+    }
+
     override fun isBundleExists(appVersion: String, bundleVersion: String): Promise<Boolean> {
         return Promise.async {
             val context = getContext()

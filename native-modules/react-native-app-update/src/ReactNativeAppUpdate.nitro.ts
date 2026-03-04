@@ -25,6 +25,10 @@ export interface ReactNativeAppUpdate
   installAPK(params: AppUpdateFileParams): Promise<void>;
   clearCache(): Promise<void>;
 
+  // Verification & testing
+  testVerification(): Promise<boolean>;
+  testSkipVerification(): Promise<boolean>;
+
   addDownloadListener(callback: (event: DownloadEvent) => void): number;
   removeDownloadListener(id: number): void;
 }

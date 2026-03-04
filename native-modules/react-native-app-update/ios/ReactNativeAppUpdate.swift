@@ -30,6 +30,16 @@ class ReactNativeAppUpdate: HybridReactNativeAppUpdateSpec {
         return Promise.resolved(withResult: ())
     }
 
+    func testVerification() throws -> Promise<Bool> {
+        OneKeyLog.debug("AppUpdate", "testVerification not available on iOS")
+        return Promise.resolved(withResult: true)
+    }
+
+    func testSkipVerification() throws -> Promise<Bool> {
+        OneKeyLog.debug("AppUpdate", "testSkipVerification not available on iOS")
+        return Promise.resolved(withResult: false)
+    }
+
     func clearCache() throws -> Promise<Void> {
         return Promise.resolved(withResult: ())
     }
