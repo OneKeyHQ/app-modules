@@ -528,7 +528,7 @@ object BundleUpdateStoreAndroid {
             val signature = readSignatureFile(context, currentBundleVersion)
             OneKeyLog.debug("BundleUpdate", "getJsBundlePath: signatureLength=${signature.length}")
 
-            val devSettingsEnabled = isDevSettingsEnabled(context)
+            val devSettingsEnabled = if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) isDevSettingsEnabled(context) else false
             if (devSettingsEnabled) {
                 OneKeyLog.warn("BundleUpdate", "Startup SHA256 validation skipped (DevSettings enabled)")
             }
@@ -591,8 +591,10 @@ object BundleUpdateStoreAndroid {
      * Returns true if the skip-GPG-verification toggle is enabled in developer settings.
      * Reads the persisted value from MMKV storage (key: onekey_bundle_skip_gpg_verification,
      * instance: onekey-app-dev-setting).
+     * Gated by BuildConfig.ALLOW_SKIP_GPG_VERIFICATION — always returns false in production builds.
      */
     fun isSkipGPGEnabled(context: Context): Boolean {
+        if (!BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) return false
         return try {
             MMKV.initialize(context)
             val mmkv = MMKV.mmkvWithID("onekey-app-dev-setting") ?: return false
@@ -720,8 +722,10 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    /** Returns true if the skip-GPG-verification toggle is enabled via MMKV storage. */
+    /** Returns true if the skip-GPG-verification toggle is enabled via MMKV storage.
+     *  Gated by BuildConfig.ALLOW_SKIP_GPG_VERIFICATION — always returns false in production builds. */
     private fun isSkipGPGEnabled(): Boolean {
+        if (!BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) return false
         return try {
             val context = NitroModules.applicationContext ?: return false
             BundleUpdateStoreAndroid.isSkipGPGEnabled(context)
@@ -891,10 +895,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             OneKeyLog.info("BundleUpdate", "verifyBundleASC: appVersion=$appVersion, bundleVersion=$bundleVersion, file=$filePath, signatureLength=${signature.length}")
 
             // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
-            val devSettings = isDevSettingsEnabled()
-            val skipGPGToggle = isSkipGPGEnabled()
-            val skipGPG = devSettings && skipGPGToggle
-            OneKeyLog.info("BundleUpdate", "verifyBundleASC: GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle, skipGPG=$skipGPG")
+            val skipGPG = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled() && isSkipGPGEnabled()
+            OneKeyLog.info("BundleUpdate", "verifyBundleASC: GPG check: skipGPG=$skipGPG")
 
             if (!skipGPG) {
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: verifying SHA256 of downloaded file...")
@@ -987,10 +989,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             OneKeyLog.info("BundleUpdate", "installBundle: appVersion=$appVersion, bundleVersion=$bundleVersion, signatureLength=${signature.length}")
 
             // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
-            val devSettings = isDevSettingsEnabled()
-            val skipGPGToggle = isSkipGPGEnabled()
-            val skipGPG = devSettings && skipGPGToggle
-            OneKeyLog.info("BundleUpdate", "installBundle: GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle, skipGPG=$skipGPG")
+            val skipGPG = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled() && isSkipGPGEnabled()
+            OneKeyLog.info("BundleUpdate", "installBundle: GPG check: skipGPG=$skipGPG")
 
             val folderName = "$appVersion-$bundleVersion"
             val currentFolderName = BundleUpdateStoreAndroid.getCurrentBundleVersion(context)
@@ -1116,10 +1116,9 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
 
             // Verify GPG signature is valid (skipped when both DevSettings and skip-GPG toggle are enabled)
-            val devSettings = isDevSettingsEnabled()
-            val skipGPGToggle = isSkipGPGEnabled()
-            OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle")
-            if (!(devSettings && skipGPGToggle)) {
+            val skipGPGSwitch = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && isDevSettingsEnabled() && isSkipGPGEnabled()
+            OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: GPG check: skipGPG=$skipGPGSwitch")
+            if (!skipGPGSwitch) {
                 if (params.signature.isEmpty() ||
                     !BundleUpdateStoreAndroid.validateMetadataFileSha256(context, bundleVersion, params.signature)) {
                     OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: GPG signature verification failed")
@@ -1157,11 +1156,18 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    override fun getJsBundlePath(): Promise<String> {
+    override fun getJsBundlePath(): String {
+        val context = NitroModules.applicationContext ?: return ""
+        val path = BundleUpdateStoreAndroid.getCurrentBundleMainJSBundle(context) ?: ""
+        OneKeyLog.debug("BundleUpdate", "getJsBundlePath: ${if (path.isEmpty()) "(empty/no bundle)" else path}")
+        return path
+    }
+
+    override fun getJsBundlePathAsync(): Promise<String> {
         return Promise.async {
             val context = getContext()
             val path = BundleUpdateStoreAndroid.getCurrentBundleMainJSBundle(context) ?: ""
-            OneKeyLog.info("BundleUpdate", "getJsBundlePath: ${if (path.isEmpty()) "(empty/no bundle)" else path}")
+            OneKeyLog.info("BundleUpdate", "getJsBundlePathAsync: ${if (path.isEmpty()) "(empty/no bundle)" else path}")
             path
         }
     }

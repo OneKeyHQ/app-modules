@@ -349,6 +349,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
     /** Returns true if the skip-GPG-verification toggle is enabled via MMKV storage. */
     private fun isSkipGPGEnabled(): Boolean {
+        if (!BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) return false
         return try {
             val context = NitroModules.applicationContext ?: return false
             MMKV.initialize(context)
@@ -559,11 +560,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val filePath = filePathFromUrl(params.downloadUrl)
             OneKeyLog.info("AppUpdate", "verifyASC: filePath=$filePath")
 
-            // Skip GPG verification only when both DevSettings and skip-GPG toggle are enabled
-            val devSettings = isDevSettingsEnabled()
-            val skipGPGToggle = isSkipGPGEnabled()
+            // Skip GPG verification only when BuildConfig allows it AND both DevSettings and skip-GPG toggle are enabled
+            val devSettings = if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) isDevSettingsEnabled() else false
+            val skipGPGToggle = if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION) isSkipGPGEnabled() else false
             OneKeyLog.info("AppUpdate", "verifyASC: GPG check: devSettings=$devSettings, skipGPGToggle=$skipGPGToggle")
-            if (devSettings && skipGPGToggle) {
+            if (BuildConfig.ALLOW_SKIP_GPG_VERIFICATION && devSettings && skipGPGToggle) {
                 OneKeyLog.warn("AppUpdate", "verifyASC: GPG verification skipped (DevSettings + skip-GPG enabled)")
                 return@async
             }

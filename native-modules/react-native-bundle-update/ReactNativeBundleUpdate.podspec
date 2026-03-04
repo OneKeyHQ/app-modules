@@ -21,6 +21,15 @@ Pod::Spec.new do |s|
 
   s.vendored_frameworks = 'ios/Frameworks/Gopenpgp.xcframework'
 
+  # When ONEKEY_ALLOW_SKIP_GPG_VERIFICATION env var is set to a non-empty, non-'false' value,
+  # enable the ALLOW_SKIP_GPG_VERIFICATION Swift compilation condition.
+  # Without this flag, all skip-GPG code paths are compiled out (dead code elimination).
+  if ENV['ONEKEY_ALLOW_SKIP_GPG_VERIFICATION'] && ENV['ONEKEY_ALLOW_SKIP_GPG_VERIFICATION'] != '' && ENV['ONEKEY_ALLOW_SKIP_GPG_VERIFICATION'] != 'false'
+    s.pod_target_xcconfig = {
+      'SWIFT_ACTIVE_COMPILATION_CONDITIONS' => '$(inherited) ALLOW_SKIP_GPG_VERIFICATION'
+    }
+  end
+
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
   s.dependency 'ReactNativeNativeLogger'

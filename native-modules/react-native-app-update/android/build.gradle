@@ -39,6 +39,14 @@ android {
     minSdkVersion getExtOrIntegerDefault("minSdkVersion")
     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
 
+    // When ONEKEY_ALLOW_SKIP_GPG_VERIFICATION env var is set to a non-empty, non-'false' value,
+    // enable the skip-GPG code paths. Without this flag, BuildConfig.ALLOW_SKIP_GPG_VERIFICATION
+    // is false and all skip-GPG logic is gated behind an immutable compile-time constant.
+    def allowSkipGPG = System.getenv('ONEKEY_ALLOW_SKIP_GPG_VERIFICATION') != null &&
+                       System.getenv('ONEKEY_ALLOW_SKIP_GPG_VERIFICATION') != '' &&
+                       System.getenv('ONEKEY_ALLOW_SKIP_GPG_VERIFICATION') != 'false'
+    buildConfigField("boolean", "ALLOW_SKIP_GPG_VERIFICATION", allowSkipGPG.toString())
+
     externalNativeBuild {
       cmake {
         cppFlags "-frtti -fexceptions -Wall -fstack-protector-all"
