@@ -205,10 +205,15 @@ public class BundleUpdateStore: NSObject {
     /// Returns true if the skip-GPG-verification toggle is enabled in developer settings.
     /// Reads the persisted value from MMKV storage (key: onekey_bundle_skip_gpg_verification,
     /// instance: onekey-app-dev-setting).
+    /// Gated by ALLOW_SKIP_GPG_VERIFICATION compile flag — always returns false in production builds.
     public static func isSkipGPGEnabled() -> Bool {
+        #if ALLOW_SKIP_GPG_VERIFICATION
         MMKV.initialize(rootDir: nil)
         guard let mmkv = MMKV(mmapID: "onekey-app-dev-setting") else { return false }
         return mmkv.bool(forKey: "onekey_bundle_skip_gpg_verification", defaultValue: false)
+        #else
+        return false
+        #endif
     }
 
     public static func readMetadataFileSha256(_ signature: String) -> String? {
@@ -410,10 +415,14 @@ public class BundleUpdateStore: NSObject {
         let signature = readSignatureFile(currentBundleVer)
         OneKeyLog.debug("BundleUpdate", "getJsBundlePath: signatureLength=\(signature.count)")
 
+        #if ALLOW_SKIP_GPG_VERIFICATION
         let devSettingsEnabled = isDevSettingsEnabled()
         if devSettingsEnabled {
             OneKeyLog.warn("BundleUpdate", "Startup SHA256 validation skipped (DevSettings enabled)")
         }
+        #else
+        let devSettingsEnabled = false
+        #endif
         if !devSettingsEnabled && !validateMetadataFileSha256(currentBundleVer, signature: signature) {
             OneKeyLog.warn("BundleUpdate", "getJsBundlePath: validateMetadataFileSha256 failed, signatureLength=\(signature.count)")
             return nil
@@ -817,10 +826,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             OneKeyLog.info("BundleUpdate", "verifyBundleASC: appVersion=\(appVersion), bundleVersion=\(bundleVersion), file=\(filePath), signatureLength=\(signature.count)")
 
             // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
-            let devSettings = BundleUpdateStore.isDevSettingsEnabled()
-            let skipGPGToggle = BundleUpdateStore.isSkipGPGEnabled()
-            let skipGPG = devSettings && skipGPGToggle
-            OneKeyLog.info("BundleUpdate", "verifyBundleASC: GPG check: devSettings=\(devSettings), skipGPGToggle=\(skipGPGToggle), skipGPG=\(skipGPG)")
+            #if ALLOW_SKIP_GPG_VERIFICATION
+            let skipGPG = BundleUpdateStore.isDevSettingsEnabled() && BundleUpdateStore.isSkipGPGEnabled()
+            #else
+            let skipGPG = false
+            #endif
+            OneKeyLog.info("BundleUpdate", "verifyBundleASC: GPG check: skipGPG=\(skipGPG)")
 
             if !skipGPG {
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: verifying SHA256 of downloaded file...")
@@ -936,10 +947,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             OneKeyLog.info("BundleUpdate", "installBundle: appVersion=\(appVersion), bundleVersion=\(bundleVersion), signatureLength=\(signature.count)")
 
             // GPG verification skipped only when both DevSettings and skip-GPG toggle are enabled
-            let devSettings = BundleUpdateStore.isDevSettingsEnabled()
-            let skipGPGToggle = BundleUpdateStore.isSkipGPGEnabled()
-            let skipGPG = devSettings && skipGPGToggle
-            OneKeyLog.info("BundleUpdate", "installBundle: GPG check: devSettings=\(devSettings), skipGPGToggle=\(skipGPGToggle), skipGPG=\(skipGPG)")
+            #if ALLOW_SKIP_GPG_VERIFICATION
+            let skipGPG = BundleUpdateStore.isDevSettingsEnabled() && BundleUpdateStore.isSkipGPGEnabled()
+            #else
+            let skipGPG = false
+            #endif
+            OneKeyLog.info("BundleUpdate", "installBundle: GPG check: skipGPG=\(skipGPG)")
 
             let folderName = "\(appVersion)-\(bundleVersion)"
             let currentFolderName = BundleUpdateStore.currentBundleVersion()
@@ -1065,10 +1078,13 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
 
             // Verify GPG signature is valid (skipped when both DevSettings and skip-GPG toggle are enabled)
-            let devSettings = BundleUpdateStore.isDevSettingsEnabled()
-            let skipGPGToggle = BundleUpdateStore.isSkipGPGEnabled()
-            OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: GPG check: devSettings=\(devSettings), skipGPGToggle=\(skipGPGToggle)")
-            if !(devSettings && skipGPGToggle) {
+            #if ALLOW_SKIP_GPG_VERIFICATION
+            let skipGPGSwitch = BundleUpdateStore.isDevSettingsEnabled() && BundleUpdateStore.isSkipGPGEnabled()
+            #else
+            let skipGPGSwitch = false
+            #endif
+            OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: GPG check: skipGPG=\(skipGPGSwitch)")
+            if !skipGPGSwitch {
                 guard !params.signature.isEmpty,
                       BundleUpdateStore.validateMetadataFileSha256(bundleVersion, signature: params.signature) else {
                     OneKeyLog.error("BundleUpdate", "setCurrentUpdateBundleData: GPG signature verification failed")
