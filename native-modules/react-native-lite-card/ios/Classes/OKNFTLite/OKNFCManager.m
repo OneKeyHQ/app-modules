@@ -9,6 +9,7 @@
 #import "OKNFCBridge.h"
 #import "OKNFCUtility.h"
 #import <CoreNFC/CoreNFC.h>
+#import "LCLogger.h"
 //#import "OKNFCHintViewController.h"
 //#import "OKMnemonic.h"
 #import "NSString+OKAdd.h"
@@ -82,15 +83,15 @@
 #pragma mark - NFCTagReaderSessionDelegate
 
 - (void)tagReaderSession:(NFCTagReaderSession *)session didDetectTags:(NSArray<__kindof id<NFCTag>> *)tags {
-    NSLog(@"OKNFC tagReaderSession didDetectTags %@", tags);
+    [LCLogger debug:@"tagReaderSession didDetectTags"];
 
     id<NFCISO7816Tag> tag = [tags.firstObject asNFCISO7816Tag];
     if (!tag) { return; }
 
     [session connectToTag:tag completionHandler:^(NSError * _Nullable error) {
         if (error) {
-            NSString *errMsg = [NSString stringWithFormat:@"OKNFC connectToTag %@", error];
-            NSLog(@"%@", errMsg);
+            NSString *errMsg = [NSString stringWithFormat:@"connectToTag error: %@", error.localizedDescription];
+            [LCLogger error:errMsg];
             //            [kTools debugTipMessage:errMsg];
             [self endNFCSessionWithError:YES];
             return;
@@ -100,7 +101,7 @@
 }
 
 - (void)tagReaderSession:(NFCTagReaderSession *)session didInvalidateWithError:(NSError *)error {
-    NSLog(@"OKNFC tagReaderSession didInvalidateWithError %@", error);
+    [LCLogger debug:[NSString stringWithFormat:@"tagReaderSession didInvalidateWithError: %@", error.localizedDescription]];
     if (error.code == 200 || error.code == 6) {
         switch (self.sessionType) {
             case OKNFCLiteSessionTypeGetInfo:
@@ -144,7 +145,7 @@
 }
 
 - (void)tagReaderSessionDidBecomeActive:(NFCTagReaderSession *)session {
-    NSLog(@"OKNFC tagReaderSessionDidBecomeActive %@", session);
+    [LCLogger debug:@"tagReaderSessionDidBecomeActive"];
 }
 
 #pragma mark - Tasks
@@ -237,7 +238,12 @@
 
 - (void)_setMnemonic:(BOOL)force {
     SetMnemonicCallback callback = [_completionBlocks objectForKey:kSetMnemonicBlock];
-    [self.lite setMnemonic:self.exportMnemonic withPin:self.pin overwrite:force complete:callback];
+    NSString *mnemonic = self.exportMnemonic;
+    NSString *pin = self.pin;
+    // Clear sensitive data from properties immediately
+    self.exportMnemonic = nil;
+    self.pin = nil;
+    [self.lite setMnemonic:mnemonic withPin:pin overwrite:force complete:callback];
 }
 
 #pragma mark - getMnemonic
@@ -254,7 +260,10 @@
 
 - (void)_getMnemonic {
     GetMnemonicCallback callback = [_completionBlocks objectForKey:kGetMnemonicBlock];
-    [self.lite getMnemonicWithPin:self.pin complete:callback];
+    NSString *pin = self.pin;
+    // Clear sensitive data from property immediately
+    self.pin = nil;
+    [self.lite getMnemonicWithPin:pin complete:callback];
 }
 
 #pragma mark - changePin
@@ -269,7 +278,12 @@
 
 - (void)_changePin {
     ChangePinCallback callback = [_completionBlocks objectForKey:kChangePinBlock];
-    [self.lite changePin:self.pin to:self.neoPin complete:callback];
+    NSString *oldPin = self.pin;
+    NSString *newPin = self.neoPin;
+    // Clear sensitive data from properties immediately
+    self.pin = nil;
+    self.neoPin = nil;
+    [self.lite changePin:oldPin to:newPin complete:callback];
 }
 
 #pragma mark - reset
@@ -306,7 +320,7 @@
 
         dispatch_semaphore_signal(sema);
     }];
-    dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
 
     if(success) {
         self.lite = [[OKLiteV1 alloc] initWithDelegate:self];
@@ -317,7 +331,7 @@
             success = sw1 == OKNFC_SW1_OK;
             dispatch_semaphore_signal(sema);
         }];
-        dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+        dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
         if (success) {
             self.lite = [[OKLiteV2 alloc] initWithDelegate:self];
         }

@@ -11,18 +11,24 @@
     "test": "jest"
   },
   "dependencies": {
+    "@onekeyfe/react-native-app-update": "workspace:*",
     "@onekeyfe/react-native-background-thread": "workspace:*",
+    "@onekeyfe/react-native-bundle-update": "workspace:*",
     "@onekeyfe/react-native-check-biometric-auth-changed": "workspace:*",
     "@onekeyfe/react-native-cloud-kit-module": "workspace:*",
     "@onekeyfe/react-native-device-utils": "workspace:*",
     "@onekeyfe/react-native-get-random-values": "workspace:*",
     "@onekeyfe/react-native-keychain-module": "workspace:*",
     "@onekeyfe/react-native-lite-card": "workspace:*",
+    "@onekeyfe/react-native-native-logger": "workspace:*",
+    "@onekeyfe/react-native-perf-memory": "workspace:*",
     "@onekeyfe/react-native-skeleton": "workspace:*",
+    "@onekeyfe/react-native-splash-screen": "workspace:*",
     "@react-native/new-app-screen": "0.83.0",
     "fast-base64-decode": "*",
     "react": "19.2.0",
     "react-native": "0.83.0",
+    "react-native-mmkv": "^4.1.2",
     "react-native-safe-area-context": "^5.5.2"
   },
   "devDependencies": {

@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativesplashscreen"],
+  "ios": {
+    "iosModuleName": "ReactNativeSplashScreen"
+  },
+  "android": {
+    "androidNamespace": ["reactnativesplashscreen"],
+    "androidCxxLibName": "reactnativesplashscreen"
+  },
+  "autolinking": {
+    "ReactNativeSplashScreen": {
+      "swift": "ReactNativeSplashScreen",
+      "kotlin": "ReactNativeSplashScreen"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

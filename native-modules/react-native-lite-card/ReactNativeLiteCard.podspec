@@ -18,5 +18,7 @@ Pod::Spec.new do |s|
   s.private_header_files = "ios/**/*.h"
 
 
+  s.dependency 'ReactNativeNativeLogger'
+
   install_modules_dependencies(s)
 end

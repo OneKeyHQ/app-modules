@@ -17,6 +17,7 @@
 
 
 #import "OKNFCBridge.h"
+#import "LCLogger.h"
 
 @implementation OKNFCBridge
 
@@ -44,6 +45,7 @@
     }
 
     NSString *hexStr = [NSString stringWithCString:c_apdu encoding:NSUTF8StringEncoding];
+    JUB_FreeMemory(c_apdu);
     NSData *APDUData = [hexStr dataFromHexString];
     NFCISO7816APDU *apdu = [[NFCISO7816APDU alloc] initWithData:APDUData];
     return apdu;
@@ -83,6 +85,8 @@
     if (JUBR_OK != rv) {
         return NO;
     }
+
+    JUB_FreeMemory(value);
 
     JUB_UINT16 wRet = 0;
     JUB_CHAR_PTR pDecResp = nullptr;
@@ -130,7 +134,9 @@
         return nil;
     }
 
-    return [NSString stringWithFormat:@"%s", mutualAuthData];
+    NSString *result = [NSString stringWithFormat:@"%s", mutualAuthData];
+    JUB_FreeMemory(mutualAuthData);
+    return result;
 }
 
 + (BOOL)openChannel:(NSData *)authRes {
@@ -139,10 +145,10 @@
 
     rv = JUB_GPC_OpenSecureChannel(authResp);
     if (JUBR_OK != rv) {
-        NSLog(@"error: JUB_GPC_OpenSecureChannel");
+        [LCLogger error:@"JUB_GPC_OpenSecureChannel failed"];
         return NO;
     }
-    NSLog(@"OKNFC: openChannel success.");
+    [LCLogger debug:@"openChannel success"];
     return YES;
 }
 
@@ -161,10 +167,11 @@
     JUB_CHAR_PTR subjectID = nullptr;
     rv = JUB_GPC_ParseCertificate(value, &sn, &subjectID);
     if (JUBR_OK != rv) {
+        JUB_FreeMemory(value);
         return NO;
     }
 
-    NSLog(@"OKNFC: subjectID: %s",subjectID);
+    [LCLogger debug:@"subjectID parsed"];
     GPC_SCP11_SHAREDINFO shareInfo;
     shareInfo.scpID = (char *)"1107";
     shareInfo.keyUsage = (char *)"3C";
@@ -178,11 +185,15 @@
 
     rv = JUB_GPC_Initialize(shareInfo, [NFCConfig envFor:@"crt"].UTF8String, sk);
 
+    JUB_FreeMemory(value);
+    JUB_FreeMemory(sn);
+    JUB_FreeMemory(subjectID);
+
     if (JUBR_OK != rv) {
         return NO;
     }
 
-    NSLog(@"OKNFC: JUB_GPC_Initialize OK.");
+    [LCLogger debug:@"JUB_GPC_Initialize OK"];
     return YES;
 }
 
@@ -205,6 +216,7 @@
     JUB_CHAR_PTR subjectID = nullptr;
     rv = JUB_GPC_ParseCertificate(value, &sn, &subjectID);
     if (JUBR_OK != rv) {
+        JUB_FreeMemory(value);
         return NO;
     }
 
@@ -212,7 +224,11 @@
 
     BOOL identical = [certSN isEqualToString:cardSN];
 
-    NSLog(@"OKNFC: certSN: %@; cardSN: %@; identical: %@",certSN, cardSN, identical ? @"YES✅" : @"NO❌");
+    JUB_FreeMemory(value);
+    JUB_FreeMemory(sn);
+    JUB_FreeMemory(subjectID);
+
+    [LCLogger debug:[NSString stringWithFormat:@"certSN verification: %@", identical ? @"PASS" : @"FAIL"]];
     return identical;
 }
 

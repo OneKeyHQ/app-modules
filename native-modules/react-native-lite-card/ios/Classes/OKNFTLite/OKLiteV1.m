@@ -8,6 +8,7 @@
 #import "OKLiteV1.h"
 #import "OKNFCUtility.h"
 #import "OKLiteCommandModal.h"
+#import "LCLogger.h"
 
 @interface OKLiteV1()
 
@@ -214,7 +215,7 @@
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return success;
 }
 
@@ -344,7 +345,7 @@
       selectSuccess = sw1 == OKNFC_SW1_OK;
       dispatch_semaphore_signal(sema);
     }];
-    dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
     if (selectSuccess) {
       self.selectNFCApp = app;
     } else {
@@ -371,7 +372,7 @@
       dispatch_semaphore_signal(sema);
     }];
   }];
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return success;
 }
 
@@ -389,7 +390,7 @@
     SN = [[NSString alloc] initWithData:responseData encoding:NSUTF8StringEncoding];
     dispatch_semaphore_signal(sema);
   }];
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return SN;
 }
 
@@ -425,7 +426,7 @@
     result = OKNFCLitePINVerifyResultPass;
     dispatch_semaphore_signal(sema);
   }];
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return result;
 }
 
@@ -450,26 +451,26 @@
     isVerificationPass = YES;
 
     if (sw1 != OKNFC_SW1_OK) {
-      NSLog(@"OKNFC: 获取证书失败");
+      [LCLogger error:@"获取证书失败"];
       isVerificationPass = NO;
       dispatch_semaphore_signal(sema);
       return;
     }
 
     if (![OKNFCBridge verifySN:self.SN withCert:certData]) {
-      NSLog(@"OKNFC: 验证证书失败");
+      [LCLogger error:@"验证证书失败"];
       isVerificationPass = NO;
     }
 
     if (![OKNFCBridge JUB_GPC_Initialize:certData]) {
-      NSLog(@"OKNFC: 初始化安全通道失败");
+      [LCLogger error:@"初始化安全通道失败"];
       isVerificationPass = NO;
     }
 
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   self.certVerified = isVerificationPass;
 
   return isVerificationPass;
@@ -486,12 +487,12 @@
                                   modal:modal
                       completionHandler:^(NSData * _Nonnull responseData, uint8_t sw1, uint8_t sw2, NSError * _Nullable error, NSString * _Nonnull parseRespon) {
     if (sw1 != OKNFC_SW1_OK) {
-      NSLog(@"OKNFC: 获取 PIN 状态失败");
+      [LCLogger error:@"获取 PIN 状态失败"];
       dispatch_semaphore_signal(sema);
       return;
     }
     if (responseData.toHexString.intValue == 2) {
-      NSLog(@"OKNFC: 未设置 PIN");
+      [LCLogger debug:@"未设置 PIN"];
       pinStatus = OKNFC_PIN_UNSET;
       dispatch_semaphore_signal(sema);
       return;
@@ -509,7 +510,7 @@
     }
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return pinStatus;
 }
 
@@ -527,7 +528,7 @@
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return success;
 }
 
@@ -551,7 +552,7 @@
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return mnc;
 }
 
@@ -568,11 +569,11 @@
       return;
     }
     success = YES;
-    NSLog(@"OKNFC: 成功设置 PIN = %@", pin);
+    [LCLogger debug:@"成功设置 PIN"];
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return success;
 }
 
@@ -597,11 +598,11 @@
       return;
     }
     result = OKNFCLiteChangePinResultPass;
-    NSLog(@"OKNFC: 成功修改 PIN = %@", newPin);
+    [LCLogger debug:@"成功修改 PIN"];
     dispatch_semaphore_signal(sema);
   }];
 
-  dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+  dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
   return result;
 }
 

@@ -4,7 +4,7 @@ import android.content.Intent
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.IsoDep
-import android.util.Log
+import com.margelo.nitro.nativelogger.OneKeyLog
 import androidx.annotation.IntDef
 import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.*
@@ -90,18 +90,18 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
             putString("type", "unknown")
           }
           emitOnNFCActiveConnection(dataMap.copy())
-          Log.d(TAG, "Unknown device")
+          OneKeyLog.debug("LiteCard","Unknown device")
           return
         }
 
-        Log.d(TAG, isoDep.toString())
+        OneKeyLog.debug("LiteCard",isoDep.toString())
         launch(Dispatchers.IO) {
           mNFCConnectedChannel.trySend(isoDep)
           try {
             // 处理主动触发 NFC
             delay(100)
             if (!mNFCConnectedChannel.isEmpty) {
-              Log.e(TAG, "There is no way to use NFC")
+              OneKeyLog.error("LiteCard","There is no way to use NFC")
 //                            mNFCConnectedChannel.receive()
               val startRequest = OneKeyLiteCard.initRequest(isoDep)
               val dataMap = Arguments.createMap().apply {
@@ -114,7 +114,7 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
               emitOnNFCActiveConnection(dataMap.copy())
             }
           } catch (e: Exception) {
-            e.printStackTrace()
+            OneKeyLog.error("LiteCard", "NFC connection failed: ${e.message}")
             // 未知设备或连接失败
             val dataMap = Arguments.createMap().apply {
               putInt("code", -1)
@@ -208,12 +208,12 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     val topActivity = Utils.getTopActivity() ?: return
     NfcPermissionUtils.checkPermission(topActivity) {
       try {
-        Log.d(TAG, "NFC permission check success")
+        OneKeyLog.debug("LiteCard","NFC permission check success")
         val isoDep = acquireDevice() ?: return
         val executeResult = execute(isoDep)
         callback?.invoke(null, executeResult, mCurrentCardState.createArguments())
       } catch (e: NFCExceptions) {
-        Log.e(TAG, "NFC device execute error", e)
+        OneKeyLog.error("LiteCard", "NFC device execute error: ${e.message}")
         callback?.invoke(e.createArguments(), null, mCurrentCardState.createArguments())
       } finally {
         releaseDevice()
@@ -221,7 +221,7 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
       return
     }
     // 没有 NFC 使用权限
-    Log.d(TAG, "NFC device not permission")
+    OneKeyLog.debug("LiteCard","NFC device not permission")
     callback?.invoke(NFCExceptions.NotNFCPermission().createArguments(), null, null)
   }
 
@@ -245,11 +245,11 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
 
   override fun getLiteInfo(callback: Callback?) {
     launch {
-      Log.d(TAG, "getLiteInfo")
+      OneKeyLog.debug("LiteCard","getLiteInfo")
       handleOperation<Any>(callback) { isoDep ->
-        Log.e(TAG, "getLiteInfo Obtain the device")
+        OneKeyLog.debug("LiteCard","getLiteInfo Obtain the device")
         val cardInfo = OneKeyLiteCard.getCardInfo(isoDep)
-        Log.e(TAG, "getLiteInfo result $cardInfo")
+        OneKeyLog.debug("LiteCard","getLiteInfo result obtained")
         cardInfo.createArguments()
       }
     }
@@ -264,7 +264,7 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     val isNfcExists = NfcUtils.isNfcExits(topActivity)
     if (!isNfcExists) {
       // 没有 NFC 设备
-      Log.d(TAG, "NFC device not found")
+      OneKeyLog.debug("LiteCard","NFC device not found")
       callback?.invoke(NFCExceptions.NotExistsNFC().createArguments(), null, null)
       return
     }
@@ -272,7 +272,7 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     val isNfcEnable = NfcUtils.isNfcEnable(topActivity)
     if (!isNfcEnable) {
       // 没有打开 NFC 开关
-      Log.d(TAG, "NFC device not enable")
+      OneKeyLog.debug("LiteCard","NFC device not enable")
       callback?.invoke(NFCExceptions.NotEnableNFC().createArguments(), null, null)
       return
     }
@@ -281,7 +281,7 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
       return
     }
     // 没有 NFC 使用权限
-    Log.d(TAG, "NFC device not permission")
+    OneKeyLog.debug("LiteCard","NFC device not permission")
     callback?.invoke(NFCExceptions.NotNFCPermission().createArguments(), null, null)
   }
 
@@ -291,9 +291,17 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     overwrite: Boolean,
     callback: Callback?
   ) {
+    if (pwd.isNullOrEmpty() || pwd.length != 6 || !pwd.all { it.isDigit() }) {
+      callback?.invoke(NFCExceptions.InputPasswordEmptyException().createArguments(), null, null)
+      return
+    }
+    if (mnemonic.isNullOrEmpty()) {
+      callback?.invoke(NFCExceptions.ExecFailureException().createArguments(), null, null)
+      return
+    }
     launch {
       handleOperation(callback) { isoDep ->
-        Log.e(TAG, "setMnemonic Obtain the device")
+        OneKeyLog.debug("LiteCard","setMnemonic Obtain the device")
         val isSuccess =
           OneKeyLiteCard.setMnemonic(
             mCurrentCardState,
@@ -303,7 +311,7 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
             overwrite
           )
         if (!isSuccess) throw NFCExceptions.ExecFailureException()
-        Log.e(TAG, "setMnemonic result success")
+        OneKeyLog.debug("LiteCard","setMnemonic result success")
         true
       }
     }
@@ -313,10 +321,14 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     pwd: String,
     callback: Callback?
   ) {
+    if (pwd.isEmpty() || pwd.length != 6 || !pwd.all { it.isDigit() }) {
+      callback?.invoke(NFCExceptions.InputPasswordEmptyException().createArguments(), null, null)
+      return
+    }
     launch {
-      Log.d(TAG, "getMnemonicWithPin")
+      OneKeyLog.debug("LiteCard","getMnemonicWithPin")
       handleOperation(callback) { isoDep ->
-        Log.e(TAG, "getMnemonicWithPin Obtain the device")
+        OneKeyLog.debug("LiteCard","getMnemonicWithPin Obtain the device")
         OneKeyLiteCard.getMnemonicWithPin(mCurrentCardState, isoDep, pwd)
       }
     }
@@ -328,9 +340,9 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
     callback: Callback?
   ) {
     launch {
-      Log.d(TAG, "changePin")
+      OneKeyLog.debug("LiteCard","changePin")
       handleOperation(callback) { isoDep ->
-        Log.e(TAG, "changePin Obtain the device")
+        OneKeyLog.debug("LiteCard","changePin Obtain the device")
         OneKeyLiteCard.changPin(mCurrentCardState, isoDep, oldPin, newPin)
       }
     }
@@ -338,12 +350,12 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
 
   override fun reset(callback: Callback?) {
     launch {
-      Log.d(TAG, "reset")
+      OneKeyLog.debug("LiteCard","reset")
       handleOperation(callback) { isoDep ->
-        Log.e(TAG, "reset Obtain the device")
+        OneKeyLog.debug("LiteCard","reset Obtain the device")
         val isSuccess = OneKeyLiteCard.reset(isoDep)
         if (!isSuccess) throw NFCExceptions.ExecFailureException()
-        Log.e(TAG, "reset result success")
+        OneKeyLog.debug("LiteCard","reset result success")
         true
       }
     }
@@ -357,7 +369,7 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
 
   override fun intoSetting() {
     launch {
-      Log.d(TAG, "intoSetting")
+      OneKeyLog.debug("LiteCard","intoSetting")
       Utils.getTopActivity()?.let {
         NfcUtils.intentToNfcSetting(it)
       }
@@ -401,10 +413,10 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
         try {
           OneKeyLiteCard.startNfc(it) {
             mNFCState.set(NFCState.Started)
-            Log.d(TAG, "NFC starting success")
+            OneKeyLog.debug("LiteCard","NFC starting success")
           }
         } catch (e: Exception) {
-          Log.e(TAG, "startNfc failed", e)
+          OneKeyLog.error("LiteCard", "startNfc failed: ${e.message}")
         }
       }
     }
@@ -416,9 +428,9 @@ class ReactNativeLiteCardModule(val reactContext: ReactApplicationContext) :
         try {
           OneKeyLiteCard.stopNfc(it as FragmentActivity)
           mNFCState.set(NFCState.Dead)
-          Log.d(TAG, "NFC 已关闭")
+          OneKeyLog.debug("LiteCard","NFC 已关闭")
         } catch (e: Exception) {
-          Log.e(TAG, "stopNfc failed", e)
+          OneKeyLog.error("LiteCard", "stopNfc failed: ${e.message}")
         }
       }
     }

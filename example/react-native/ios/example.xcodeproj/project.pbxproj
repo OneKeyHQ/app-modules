@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		074590982EF13928004098A9 /* BackgroundRunnerModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 074590972EF13928004098A9 /* BackgroundRunnerModule.m */; };
+		0773E5D82F53404600E76F7A /* OneKeyLogBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 0773E5D72F53404600E76F7A /* OneKeyLogBridge.m */; };
 		07F464D79E31412F737D9E2F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		0C80B921A6F3F58F76C31292 /* libPods-example.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-example.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
@@ -19,6 +20,8 @@
 		074590942EF1390B004098A9 /* Example-Bridging-header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Example-Bridging-header.h"; sourceTree = "<group>"; };
 		074590962EF13928004098A9 /* BackgroundRunnerModule.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BackgroundRunnerModule.h; sourceTree = "<group>"; };
 		074590972EF13928004098A9 /* BackgroundRunnerModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BackgroundRunnerModule.m; sourceTree = "<group>"; };
+		0773E5D62F53404600E76F7A /* OneKeyLogBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OneKeyLogBridge.h; sourceTree = "<group>"; };
+		0773E5D72F53404600E76F7A /* OneKeyLogBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = OneKeyLogBridge.m; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* example.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = example.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = example/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = example/Info.plist; sourceTree = "<group>"; };
@@ -54,6 +57,8 @@
 				074590942EF1390B004098A9 /* Example-Bridging-header.h */,
 				074590962EF13928004098A9 /* BackgroundRunnerModule.h */,
 				074590972EF13928004098A9 /* BackgroundRunnerModule.m */,
+				0773E5D62F53404600E76F7A /* OneKeyLogBridge.h */,
+				0773E5D72F53404600E76F7A /* OneKeyLogBridge.m */,
 			);
 			name = example;
 			sourceTree = "<group>";
@@ -255,6 +260,7 @@
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
 				074590982EF13928004098A9 /* BackgroundRunnerModule.m in Sources */,
+				0773E5D82F53404600E76F7A /* OneKeyLogBridge.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

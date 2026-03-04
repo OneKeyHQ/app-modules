@@ -8,23 +8,38 @@ import { LiteCardTestPage } from './pages/LiteCardTestPage';
 import { GetRandomValuesTestPage } from './pages/GetRandomValuesTestPage';
 import { DeviceUtilsTestPage } from './pages/DeviceUtilsTestPage';
 import { SkeletonTestPage } from './pages/SkeletonTestPage';
+import { NativeLoggerTestPage } from './pages/NativeLoggerTestPage';
+import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
+import { BundleUpdateTestPage } from './pages/BundleUpdateTestPage';
+import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
+import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
 
-export type RouteScreen = 
+export type RouteScreen =
   | 'home'
+  | 'app-update'
   | 'background-thread'
   | 'biometric-auth'
+  | 'bundle-update'
   | 'cloud-kit'
   | 'keychain'
   | 'lite-card'
   | 'get-random-values'
   | 'device-utils'
-  | 'skeleton';
+  | 'native-logger'
+  | 'perf-memory'
+  | 'skeleton'
+  | 'splash-screen';
 
 interface RouterProps {
   safeAreaInsets: any;
 }
 
 const modules = [
+  {
+    id: 'app-update' as RouteScreen,
+    name: 'App Update',
+    description: 'APK download, verification, and installation (Android)',
+  },
   {
     id: 'background-thread' as RouteScreen,
     name: 'Background Thread',
@@ -34,6 +49,11 @@ const modules = [
     id: 'biometric-auth' as RouteScreen,
     name: 'Biometric Auth Changed',
     description: 'Check if biometric authentication has changed',
+  },
+  {
+    id: 'bundle-update' as RouteScreen,
+    name: 'Bundle Update',
+    description: 'JS bundle download, verification, install, and path management',
   },
   {
     id: 'cloud-kit' as RouteScreen,
@@ -61,9 +81,24 @@ const modules = [
     description: 'Generate cryptographically secure random values',
   },
   {
+    id: 'native-logger' as RouteScreen,
+    name: 'Native Logger',
+    description: 'File-based logging with log directory viewer',
+  },
+  {
+    id: 'perf-memory' as RouteScreen,
+    name: 'Perf Memory',
+    description: 'Read process memory usage (RSS) for performance monitoring',
+  },
+  {
     id: 'skeleton' as RouteScreen,
     name: 'Skeleton View',
     description: 'Animated skeleton loading components for better UX',
+  },
+  {
+    id: 'splash-screen' as RouteScreen,
+    name: 'Splash Screen',
+    description: 'Legacy splash screen for Android < 12',
   },
 ];
 
@@ -133,10 +168,14 @@ export function Router({ safeAreaInsets }: RouterProps) {
     };
 
     switch (currentScreen) {
+      case 'app-update':
+        return <AppUpdateTestPage {...commonProps} />;
       case 'background-thread':
         return <BackgroundThreadTestPage {...commonProps} />;
       case 'biometric-auth':
         return <BiometricAuthTestPage {...commonProps} />;
+      case 'bundle-update':
+        return <BundleUpdateTestPage {...commonProps} />;
       case 'cloud-kit':
         return <CloudKitTestPage {...commonProps} />;
       case 'device-utils':
@@ -147,8 +186,14 @@ export function Router({ safeAreaInsets }: RouterProps) {
         return <LiteCardTestPage {...commonProps} />;
       case 'get-random-values':
         return <GetRandomValuesTestPage {...commonProps} />;
+      case 'native-logger':
+        return <NativeLoggerTestPage {...commonProps} />;
+      case 'perf-memory':
+        return <PerfMemoryTestPage {...commonProps} />;
       case 'skeleton':
         return <SkeletonTestPage {...commonProps} />;
+      case 'splash-screen':
+        return <SplashScreenTestPage {...commonProps} />;
       default:
         return renderHomeScreen();
     }

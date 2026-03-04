@@ -6,7 +6,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.Build
-import android.util.Log
+import com.margelo.nitro.nativelogger.OneKeyLog
 import androidx.preference.PreferenceManager
 import androidx.core.content.ContextCompat
 import androidx.core.util.Consumer
@@ -38,6 +38,15 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   companion object {
     private const val PREF_KEY_FOLDABLE = "1k_fold"
     private const val PREF_KEY_UI_STYLE = "1k_user_interface_style"
+    private const val PREF_KEY_DEVICE_TOKEN = "1k_device_token"
+
+    @JvmStatic
+    var staticStartupTime: Long? = null
+
+    @JvmStatic
+    fun saveStartupTimeStatic(startupTime: Long) {
+      staticStartupTime = startupTime
+    }
 
     // Xiaomi foldable models
     private val XIAOMI_FOLDABLE_MODELS = setOf(
@@ -216,7 +225,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     )
   }
 
-  private var windowLayoutInfo: WindowLayoutInfo? = null
+  @Volatile private var windowLayoutInfo: WindowLayoutInfo? = null
   private var isSpanning = false
   private var layoutInfoConsumer: Consumer<WindowLayoutInfo>? = null
   private var windowInfoTracker: WindowInfoTracker? = null
@@ -237,10 +246,14 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     try {
       val context = NitroModules.applicationContext ?: return
       val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-      val style = prefs.getString(PREF_KEY_UI_STYLE, null) ?: return
+      val style = prefs.getString(PREF_KEY_UI_STYLE, null) ?: run {
+        OneKeyLog.debug("DeviceUtils", "No saved UI style found")
+        return
+      }
+      OneKeyLog.info("DeviceUtils", "Restored UI style: $style")
       applyUserInterfaceStyle(style)
     } catch (e: Exception) {
-      // Ignore restore errors
+      OneKeyLog.warn("DeviceUtils", "Failed to restore UI style: ${e.message}")
     }
   }
 
@@ -284,6 +297,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         saveFoldableStatus(true)
       }
       isDualScreenDeviceDetected = hasFolding
+      OneKeyLog.info("DeviceUtils", "Foldable detected: $hasFolding (${Build.MANUFACTURER} ${Build.MODEL})")
       return isDualScreenDeviceDetected!!
     }
     isDualScreenDeviceDetected = false
@@ -576,7 +590,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       // Check device model name to determine if it's a foldable device
       return isFoldableDeviceByName()
     } catch (e: Exception) {
-      // WindowManager library not available or device doesn't support foldables
+      OneKeyLog.warn("DeviceUtils", "Foldable detection failed: ${e.message}")
       return false
     }
   }
@@ -705,7 +719,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       try {
         listener.callback(isSpanning)
       } catch (e: Exception) {
-        Log.e("OneKey", "Error in spanning listener callback", e)
+        OneKeyLog.error("DeviceUtils", "Error in spanning listener callback: ${e.message}")
       }
     }
   }
@@ -754,7 +768,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
           layoutInfoConsumer!!
         )
       } catch (e: Exception) {
-        // Window tracking not supported on this device/API level, ignore
+        OneKeyLog.warn("DeviceUtils", "Window tracking setup failed: ${e.message}")
       }
     }
   }
@@ -787,6 +801,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     
     // Emit event if spanning state changed
     if (wasSpanning != this.isSpanning) {
+      OneKeyLog.info("DeviceUtils", "Spanning state changed: $wasSpanning -> ${this.isSpanning}")
       this.callSpanningChangedListeners(this.isSpanning)
     }
   }
@@ -799,6 +814,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
       UserInterfaceStyle.DARK -> "dark"
       UserInterfaceStyle.UNSPECIFIED -> "unspecified"
     }
+    OneKeyLog.info("DeviceUtils", "Set UI style: $styleString")
     try {
       val context = NitroModules.applicationContext
       if (context != null) {
@@ -826,7 +842,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         val rootView = activity.window.decorView
         rootView.rootView.setBackgroundColor(Color.argb(alpha, red, green, blue))
       } catch (e: Exception) {
-        e.printStackTrace()
+        OneKeyLog.error("DeviceUtils", "Failed to change background color: ${e.message}")
       }
     }
   }
@@ -841,5 +857,134 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
 
     override fun onHostDestroy() {
         stopObservingLayoutChanges()
+    }
+
+    // MARK: - LaunchOptionsManager
+
+    override fun getLaunchOptions(): Promise<LaunchOptions> {
+        return Promise.async {
+            OneKeyLog.debug("DeviceUtils", "getLaunchOptions")
+            LaunchOptions(launchType = "normal", deepLink = null)
+        }
+    }
+
+    override fun clearLaunchOptions(): Promise<Boolean> {
+        return Promise.async {
+            OneKeyLog.info("DeviceUtils", "clearLaunchOptions")
+            true
+        }
+    }
+
+    override fun getDeviceToken(): Promise<String> {
+        return Promise.async {
+            val context = NitroModules.applicationContext ?: return@async ""
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            prefs.getString(PREF_KEY_DEVICE_TOKEN, "") ?: ""
+        }
+    }
+
+    override fun saveDeviceToken(token: String): Promise<Unit> {
+        return Promise.async {
+            val context = NitroModules.applicationContext
+            if (context != null) {
+                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                prefs.edit().putString(PREF_KEY_DEVICE_TOKEN, token).apply()
+            }
+            OneKeyLog.info("DeviceUtils", "saveDeviceToken: token saved")
+        }
+    }
+
+    override fun registerDeviceToken(): Promise<Boolean> {
+        return Promise.async { true }
+    }
+
+    override fun getStartupTime(): Promise<Double> {
+        return Promise.async {
+            (staticStartupTime ?: 0L).toDouble()
+        }
+    }
+
+    // MARK: - ExitModule
+
+    override fun exitApp() {
+        OneKeyLog.info("DeviceUtils", "exitApp")
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
+    // MARK: - WebView & Play Services
+
+    override fun getCurrentWebViewPackageInfo(): Promise<WebViewPackageInfo> {
+        return Promise.async {
+            val context = NitroModules.applicationContext
+                ?: throw Exception("Application context unavailable")
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val webViewPackage = android.webkit.WebView.getCurrentWebViewPackage()
+                if (webViewPackage != null) {
+                    OneKeyLog.info(
+                        "DeviceUtils",
+                        "WebView: ${webViewPackage.packageName} ${webViewPackage.versionName} ${webViewPackage.versionCode}"
+                    )
+                    return@async WebViewPackageInfo(
+                        packageName = webViewPackage.packageName,
+                        versionName = webViewPackage.versionName ?: "",
+                        versionCode = webViewPackage.versionCode.toLong().toDouble()
+                    )
+                }
+            }
+
+            // Fallback for API < 26: try common WebView package names
+            val pm = context.packageManager
+            val candidates = listOf(
+                "com.google.android.webview",
+                "com.android.webview",
+                "com.android.chrome"
+            )
+            for (candidate in candidates) {
+                try {
+                    val pInfo = pm.getPackageInfo(candidate, 0)
+                    OneKeyLog.info(
+                        "DeviceUtils",
+                        "WebView (fallback): ${pInfo.packageName} ${pInfo.versionName} ${pInfo.versionCode}"
+                    )
+                    return@async WebViewPackageInfo(
+                        packageName = pInfo.packageName,
+                        versionName = pInfo.versionName ?: "",
+                        versionCode = pInfo.versionCode.toDouble()
+                    )
+                } catch (_: Exception) {
+                    // Try next candidate
+                }
+            }
+            throw Exception("No WebView package found")
+        }
+    }
+
+    override fun isGooglePlayServicesAvailable(): Promise<GooglePlayServicesStatus> {
+        return Promise.async {
+            val context = NitroModules.applicationContext
+                ?: throw Exception("Application context unavailable")
+            try {
+                val googleApiAvailability =
+                    com.google.android.gms.common.GoogleApiAvailability.getInstance()
+                val status = googleApiAvailability.isGooglePlayServicesAvailable(context)
+                val isSuccess =
+                    status == com.google.android.gms.common.ConnectionResult.SUCCESS
+                OneKeyLog.info(
+                    "DeviceUtils",
+                    "Play Services status=$status isAvailable=$isSuccess"
+                )
+                GooglePlayServicesStatus(
+                    status = status.toDouble(),
+                    isAvailable = isSuccess
+                )
+            } catch (e: Exception) {
+                OneKeyLog.error(
+                    "DeviceUtils",
+                    "Play Services check failed: ${e.message}"
+                )
+                GooglePlayServicesStatus(status = -1.0, isAvailable = false)
+            }
+        }
     }
 }

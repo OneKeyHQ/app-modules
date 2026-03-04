@@ -1,9 +1,9 @@
 package com.onekeyfe.reactnativelitecard
 
-import android.util.Log
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.margelo.nitro.nativelogger.OneKeyLog
 import com.onekeyfe.reactnativelitecard.utils.sendEvent
 
 class LoggerManager(private val context: ReactApplicationContext) :
@@ -29,7 +29,7 @@ class LoggerManager(private val context: ReactApplicationContext) :
 
     @ReactMethod
     public fun logInfo(message: String) {
-        Log.d(TAG, message)
+        OneKeyLog.info("LiteCard", message)
         sendEvent(context, LOG_EVENT_INFO, message)
     }
 }

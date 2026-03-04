@@ -13,6 +13,7 @@
 #import "RCTAppDependencyProvider.h"
 #endif
 #import "BackgroundRunnerReactNativeDelegate.h"
+#import "BTLogger.h"
 
 @interface BackgroundThreadManager ()
 @property (nonatomic, strong) BackgroundReactNativeDelegate *reactNativeFactoryDelegate;
@@ -50,7 +51,12 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 #pragma mark - Public Methods
 
 - (void)startBackgroundRunner {
+#if DEBUG
     [self startBackgroundRunnerWithEntryURL:MODULE_DEBUG_URL];
+#else
+    // In production, use the bundled background.bundle (not the debug HTTP URL)
+    [self startBackgroundRunnerWithEntryURL:@"background.bundle"];
+#endif
 }
 
 - (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL {
@@ -58,7 +64,8 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         return;
     }
     self.isStarted = YES;
-    
+    [BTLogger info:[NSString stringWithFormat:@"Starting background runner with entryURL: %@", entryURL]];
+
     dispatch_async(dispatch_get_main_queue(), ^{
         NSDictionary *initialProperties = @{};
         NSDictionary *launchOptions = @{};

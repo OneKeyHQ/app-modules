@@ -1,13 +1,12 @@
 import NitroModules
 
 class KeychainModule: HybridKeychainModuleSpec {
-    
+
     private let moduleCore = KeychainModuleCore()
-    
+
     public func setItem(params: SetItemParams) throws -> Promise<Void> {
-          let typedParams = params
           do {
-            try moduleCore.setItem(params: typedParams)
+            try moduleCore.setItem(params: params)
             return Promise.resolved(withResult: Void())
           } catch let error as KeychainModuleError {
             switch error {
@@ -22,11 +21,10 @@ class KeychainModule: HybridKeychainModuleSpec {
             return Promise.rejected(withError: NSError(domain: "keychain_set_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to set keychain item", NSUnderlyingErrorKey: error]))
           }
     }
-    
+
   public func getItem(params : GetItemParams) throws -> Promise<Variant_NullType_GetItemResult> {
-        let typedParams = params
         do {
-            if let result = try moduleCore.getItem(params: typedParams) {
+            if let result = try moduleCore.getItem(params: params) {
                 return Promise.resolved(withResult: Variant_NullType_GetItemResult.second(result))
             } else {
                 return Promise.resolved(withResult: Variant_NullType_GetItemResult.first(NullType.null))
@@ -42,11 +40,10 @@ class KeychainModule: HybridKeychainModuleSpec {
             return Promise.rejected(withError: NSError(domain: "keychain_get_error", code: -1000, userInfo: [NSLocalizedDescriptionKey: "Failed to get keychain item", NSUnderlyingErrorKey: error]))
         }
     }
-    
+
     public func removeItem(params: RemoveItemParams) throws -> Promise<Void> {
-        let typedParams = params
         do {
-            try moduleCore.removeItem(params: typedParams)
+            try moduleCore.removeItem(params: params)
             return Promise.resolved(withResult: Void())
         } catch let error as KeychainModuleError {
         switch error {

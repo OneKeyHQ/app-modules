@@ -1,5 +1,6 @@
 #import "BackgroundThread.h"
 #import "BackgroundThreadManager.h"
+#import "BTLogger.h"
 
 
 @implementation BackgroundThread
@@ -8,6 +9,7 @@
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
 {
+    [BTLogger info:@"BackgroundThread module initialized"];
     return std::make_shared<facebook::react::NativeBackgroundThreadSpecJSI>(params);
 }
 

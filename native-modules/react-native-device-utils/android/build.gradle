@@ -133,4 +133,9 @@ dependencies {
   implementation "androidx.appcompat:appcompat:1.7.1"
   // AndroidX Preference for PreferenceManager
   implementation "androidx.preference:preference-ktx:1.2.1"
+
+  implementation project(":onekeyfe_react-native-native-logger")
+
+  // Google Play Services for availability check
+  implementation "com.google.android.gms:play-services-base:18.5.0"
 }
