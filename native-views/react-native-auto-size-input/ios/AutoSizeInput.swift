@@ -255,6 +255,10 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     let bounds = view.bounds
     guard bounds.width > 0 && bounds.height > 0 else { return }
 
+    // First, calculate font size (this updates prefix/suffix fonts too)
+    recalculateFontSize()
+
+    // Now measure prefix/suffix with the correct font applied
     let prefixW: CGFloat
     if prefixLabel.isHidden {
       prefixW = 0
@@ -280,8 +284,6 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
 
     let activeInput: UIView = (multiline == true) ? multiLineInput : singleLineInput
     activeInput.frame = CGRect(x: inputX, y: 0, width: max(inputW, 0), height: bounds.height)
-
-    recalculateFontSize()
   }
 
   private func updateInputMode() {
