@@ -1157,11 +1157,18 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    override fun getJsBundlePath(): Promise<String> {
+    override fun getJsBundlePath(): String {
+        val context = NitroModules.applicationContext ?: return ""
+        val path = BundleUpdateStoreAndroid.getCurrentBundleMainJSBundle(context) ?: ""
+        OneKeyLog.debug("BundleUpdate", "getJsBundlePath: ${if (path.isEmpty()) "(empty/no bundle)" else path}")
+        return path
+    }
+
+    override fun getJsBundlePathAsync(): Promise<String> {
         return Promise.async {
             val context = getContext()
             val path = BundleUpdateStoreAndroid.getCurrentBundleMainJSBundle(context) ?: ""
-            OneKeyLog.info("BundleUpdate", "getJsBundlePath: ${if (path.isEmpty()) "(empty/no bundle)" else path}")
+            OneKeyLog.info("BundleUpdate", "getJsBundlePathAsync: ${if (path.isEmpty()) "(empty/no bundle)" else path}")
             path
         }
     }

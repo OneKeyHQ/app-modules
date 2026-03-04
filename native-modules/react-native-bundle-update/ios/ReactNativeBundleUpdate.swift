@@ -1103,10 +1103,16 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         }
     }
 
-    func getJsBundlePath() throws -> Promise<String> {
+    func getJsBundlePath() throws -> String {
+        let path = BundleUpdateStore.currentBundleMainJSBundle() ?? ""
+        OneKeyLog.debug("BundleUpdate", "getJsBundlePath: \(path.isEmpty ? "(empty/no bundle)" : path)")
+        return path
+    }
+
+    func getJsBundlePathAsync() throws -> Promise<String> {
         return Promise.async {
             let path = BundleUpdateStore.currentBundleMainJSBundle() ?? ""
-            OneKeyLog.info("BundleUpdate", "getJsBundlePath: \(path.isEmpty ? "(empty/no bundle)" : path)")
+            OneKeyLog.info("BundleUpdate", "getJsBundlePathAsync: \(path.isEmpty ? "(empty/no bundle)" : path)")
             return path
         }
     }
