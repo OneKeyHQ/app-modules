@@ -415,6 +415,7 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
   }
 
   private func applyFontSize(_ size: CGFloat) {
+    guard abs(currentFontSize - size) > 0.25 else { return }
     currentFontSize = size
     let font = makeFont(size: size)
     singleLineInput.font = font
@@ -422,9 +423,6 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     prefixLabel.font = font
     suffixLabel.font = font
     updatePlaceholder()
-
-    // Re-layout prefix/suffix since their size depends on font
-    view.setNeedsLayout()
   }
 
   private func makeFont(size: CGFloat) -> UIFont {
