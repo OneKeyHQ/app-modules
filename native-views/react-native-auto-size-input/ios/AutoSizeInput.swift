@@ -14,6 +14,7 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
   private var isRecalculating = false
   private var currentFontSize: CGFloat = 48
   private var inputDelegate: InputDelegate?
+  private var containerTapGesture: UITapGestureRecognizer?
 
   // MARK: - HybridView
   var view: UIView = UIView()
@@ -267,6 +268,12 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
       subview.removeFromSuperview()
       view.addSubview(subview)
     }
+
+    // Keep input usable when contentAutoWidth starts from 0 width.
+    let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleContainerTap))
+    tapGesture.cancelsTouchesInView = false
+    view.addGestureRecognizer(tapGesture)
+    containerTapGesture = tapGesture
     updateInputAppearance()
   }
 
@@ -524,6 +531,15 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
 
   fileprivate func handleBlur() {
     onBlur?()
+  }
+
+  @objc private func handleContainerTap() {
+    guard editable != false else { return }
+    if multiline == true {
+      _ = multiLineInput.becomeFirstResponder()
+    } else {
+      _ = singleLineInput.becomeFirstResponder()
+    }
   }
 
   // MARK: - Helpers

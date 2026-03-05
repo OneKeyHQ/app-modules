@@ -307,11 +307,8 @@ const styles = StyleSheet.create({
     minHeight: 100,
   },
   autoWidthContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
     padding: 12,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderWidth: 0,
     width: '100%',
     height: 74,
     justifyContent: 'center',

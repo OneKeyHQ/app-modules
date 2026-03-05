@@ -357,6 +357,17 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       if (hasFocus) onFocus?.invoke() else onBlur?.invoke()
     }
 
+    // Make the whole composed area (prefix + input + suffix) tappable for focus.
+    val focusFromContainer = View.OnClickListener {
+      if (isDisposed || editable == false) return@OnClickListener
+      inputView.requestFocus()
+      val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+      imm?.showSoftInput(inputView, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+    }
+    view.setOnClickListener(focusFromContainer)
+    prefixView.setOnClickListener(focusFromContainer)
+    suffixView.setOnClickListener(focusFromContainer)
+
     // Add to container
     (view as ViewGroup).addView(prefixView)
     (view as ViewGroup).addView(inputView)
