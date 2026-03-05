@@ -23,15 +23,47 @@ object OneKeyLog {
     private const val MAX_FILE_SIZE = 20L * 1024 * 1024       // 20 MB
     private const val MAX_HISTORY = 6
     private const val TOTAL_SIZE_CAP = MAX_FILE_SIZE * MAX_HISTORY
-    private const val MAX_MESSAGES_PER_SECOND = 100
+    private const val DEBUG_INFO_RATE_PER_SECOND = 400.0
+    private const val DEBUG_INFO_BURST = 2000.0
+    private const val WARN_RATE_PER_SECOND = 1000.0
+    private const val WARN_BURST = 2000.0
 
     // Cached value; empty string means context was not yet available (will retry)
     @Volatile
     private var cachedLogsDir: String? = null
+    private data class TokenBucket(
+        val ratePerSecond: Double,
+        val burstCapacity: Double,
+        var tokens: Double,
+        var lastRefillAtMs: Long,
+    ) {
+        fun allow(nowMs: Long): Boolean {
+            val elapsedMs = (nowMs - lastRefillAtMs).coerceAtLeast(0L)
+            if (elapsedMs > 0L) {
+                val refill = (elapsedMs.toDouble() / 1000.0) * ratePerSecond
+                tokens = minOf(burstCapacity, tokens + refill)
+                lastRefillAtMs = nowMs
+            }
+            if (tokens < 1.0) return false
+            tokens -= 1.0
+            return true
+        }
+    }
+
+    private val rateLimitBuckets: MutableMap<String, TokenBucket> = mutableMapOf(
+        "DEBUG" to TokenBucket(
+            DEBUG_INFO_RATE_PER_SECOND, DEBUG_INFO_BURST, DEBUG_INFO_BURST, System.currentTimeMillis()
+        ),
+        "INFO" to TokenBucket(
+            DEBUG_INFO_RATE_PER_SECOND, DEBUG_INFO_BURST, DEBUG_INFO_BURST, System.currentTimeMillis()
+        ),
+        "WARN" to TokenBucket(
+            WARN_RATE_PER_SECOND, WARN_BURST, WARN_BURST, System.currentTimeMillis()
+        ),
+    )
+    private val droppedCounts: MutableMap<String, Int> = mutableMapOf()
     @Volatile
-    private var messageCount = 0
-    @Volatile
-    private var windowStartMs = System.currentTimeMillis()
+    private var lastDropReportMs = System.currentTimeMillis()
     private val rateLimitLock = Any()
 
     /**
@@ -160,20 +192,61 @@ object OneKeyLog {
         return truncate("$time | $level : [$safeTag] $safeMessage")
     }
 
-    private fun isRateLimited(): Boolean {
+    private fun buildDropReportLocked(nowMs: Long): String? {
+        if (nowMs - lastDropReportMs < 1000L) return null
+        if (droppedCounts.isEmpty()) {
+            lastDropReportMs = nowMs
+            return null
+        }
+        val ordered = listOf("DEBUG", "INFO", "WARN")
+        val parts = ordered.mapNotNull { level ->
+            val count = droppedCounts[level] ?: 0
+            if (count > 0) "$level=$count" else null
+        }
+        droppedCounts.clear()
+        lastDropReportMs = nowMs
+        if (parts.isEmpty()) return null
+        return "[OneKeyLog] Rate-limited logs (last 1s): ${parts.joinToString(", ")}"
+    }
+
+    private data class RateLimitDecision(val drop: Boolean, val report: String?)
+
+    private fun evaluateRateLimit(level: String): RateLimitDecision {
         synchronized(rateLimitLock) {
-            val now = System.currentTimeMillis()
-            if (now - windowStartMs >= 1000L) {
-                windowStartMs = now
-                messageCount = 0
+            val nowMs = System.currentTimeMillis()
+            var report = buildDropReportLocked(nowMs)
+
+            // Never limit error logs.
+            if (level == "ERROR") {
+                return RateLimitDecision(drop = false, report = report)
             }
-            messageCount++
-            return messageCount > MAX_MESSAGES_PER_SECOND
+
+            val bucket = rateLimitBuckets[level]
+            if (bucket == null) {
+                return RateLimitDecision(drop = false, report = report)
+            }
+            if (bucket.allow(nowMs)) {
+                return RateLimitDecision(drop = false, report = report)
+            }
+            droppedCounts[level] = (droppedCounts[level] ?: 0) + 1
+            report = buildDropReportLocked(nowMs) ?: report
+            return RateLimitDecision(drop = true, report = report)
+        }
+    }
+
+    private fun emitRateLimitReport(report: String) {
+        val l = logger
+        if (l != null) {
+            l.warn(report)
+        } else {
+            android.util.Log.w("OneKeyLog", report)
         }
     }
 
     private fun log(tag: String, level: String, message: String, androidLogLevel: Int) {
-        if (isRateLimited()) return
+        val decision = evaluateRateLimit(level)
+        decision.report?.let { emitRateLimitReport(it) }
+        if (decision.drop) return
         val formatted = formatMessage(tag, level, message)
         val l = logger
         if (l != null) {

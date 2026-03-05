@@ -95,9 +95,55 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
 @objc public class OneKeyLog: NSObject {
 
     private static let maxMessageLength = 4096
-    private static let maxMessagesPerSecond = 100
-    private static var messageCount = 0
-    private static var windowStart = Date()
+
+    private struct TokenBucket {
+        let ratePerSecond: Double
+        let burstCapacity: Double
+        var tokens: Double
+        var lastRefillAt: TimeInterval
+
+        mutating func allow(at now: TimeInterval) -> Bool {
+            let elapsed = max(0, now - lastRefillAt)
+            if elapsed > 0 {
+                tokens = min(burstCapacity, tokens + elapsed * ratePerSecond)
+                lastRefillAt = now
+            }
+            guard tokens >= 1 else { return false }
+            tokens -= 1
+            return true
+        }
+    }
+
+    private static let debugInfoRatePerSecond = 400.0
+    private static let debugInfoBurst = 2000.0
+    private static let warnRatePerSecond = 1000.0
+    private static let warnBurst = 2000.0
+
+    private static var rateLimitBuckets: [String: TokenBucket] = {
+        let now = Date().timeIntervalSinceReferenceDate
+        return [
+            "DEBUG": TokenBucket(
+                ratePerSecond: debugInfoRatePerSecond,
+                burstCapacity: debugInfoBurst,
+                tokens: debugInfoBurst,
+                lastRefillAt: now
+            ),
+            "INFO": TokenBucket(
+                ratePerSecond: debugInfoRatePerSecond,
+                burstCapacity: debugInfoBurst,
+                tokens: debugInfoBurst,
+                lastRefillAt: now
+            ),
+            "WARN": TokenBucket(
+                ratePerSecond: warnRatePerSecond,
+                burstCapacity: warnBurst,
+                tokens: warnBurst,
+                lastRefillAt: now
+            ),
+        ]
+    }()
+    private static var droppedCounts: [String: Int] = [:]
+    private static var lastDropReportAt = Date().timeIntervalSinceReferenceDate
     private static let rateLimitLock = NSLock()
 
     private static let configured: Bool = {
@@ -144,16 +190,61 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         return _timeFormatter.string(from: date)
     }
 
-    private static func isRateLimited() -> Bool {
+    private static func rateLimitReportLocked(now: TimeInterval) -> String? {
+        guard now - lastDropReportAt >= 1.0 else { return nil }
+        guard !droppedCounts.isEmpty else {
+            lastDropReportAt = now
+            return nil
+        }
+        let ordered = ["DEBUG", "INFO", "WARN"]
+        let parts = ordered.compactMap { level -> String? in
+            guard let count = droppedCounts[level], count > 0 else { return nil }
+            return "\(level)=\(count)"
+        }
+        droppedCounts.removeAll()
+        lastDropReportAt = now
+        guard !parts.isEmpty else { return nil }
+        return "[OneKeyLog] Rate-limited logs (last 1s): \(parts.joined(separator: ", "))"
+    }
+
+    private static func evaluateRateLimit(for level: String) -> (drop: Bool, report: String?) {
         rateLimitLock.lock()
         defer { rateLimitLock.unlock() }
-        let now = Date()
-        if now.timeIntervalSince(windowStart) >= 1.0 {
-            windowStart = now
-            messageCount = 0
+
+        let now = Date().timeIntervalSinceReferenceDate
+        var report = rateLimitReportLocked(now: now)
+
+        // Never limit error logs.
+        if level == "ERROR" {
+            return (false, report)
         }
-        messageCount += 1
-        return messageCount > maxMessagesPerSecond
+
+        guard var bucket = rateLimitBuckets[level] else {
+            return (false, report)
+        }
+        let allowed = bucket.allow(at: now)
+        rateLimitBuckets[level] = bucket
+        if allowed {
+            return (false, report)
+        }
+        droppedCounts[level, default: 0] += 1
+        report = rateLimitReportLocked(now: now) ?? report
+        return (true, report)
+    }
+
+    private static func log(
+        _ level: String,
+        _ tag: String,
+        _ message: String,
+        writer: (String) -> Void
+    ) {
+        _ = configured
+        let decision = evaluateRateLimit(for: level)
+        if let report = decision.report {
+            DDLogWarn(report)
+        }
+        if decision.drop { return }
+        writer(formatMessage(tag, level, message))
     }
 
     private static func truncate(_ message: String) -> String {
@@ -204,27 +295,19 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
     }
 
     @objc public static func debug(_ tag: String, _ message: String) {
-        _ = configured
-        if isRateLimited() { return }
-        DDLogDebug(formatMessage(tag, "DEBUG", message))
+        log("DEBUG", tag, message) { DDLogDebug($0) }
     }
 
     @objc public static func info(_ tag: String, _ message: String) {
-        _ = configured
-        if isRateLimited() { return }
-        DDLogInfo(formatMessage(tag, "INFO", message))
+        log("INFO", tag, message) { DDLogInfo($0) }
     }
 
     @objc public static func warn(_ tag: String, _ message: String) {
-        _ = configured
-        if isRateLimited() { return }
-        DDLogWarn(formatMessage(tag, "WARN", message))
+        log("WARN", tag, message) { DDLogWarn($0) }
     }
 
     @objc public static func error(_ tag: String, _ message: String) {
-        _ = configured
-        if isRateLimited() { return }
-        DDLogError(formatMessage(tag, "ERROR", message))
+        log("ERROR", tag, message) { DDLogError($0) }
     }
 
     /// Returns the logs directory path (for getLogFilePaths / deleteLogFiles)
