@@ -3,6 +3,7 @@ package com.margelo.nitro.nativelogger
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.Promise
 import java.io.File
+import java.io.RandomAccessFile
 
 @DoNotStrip
 class NativeLogger : HybridNativeLoggerSpec() {
@@ -24,24 +25,6 @@ class NativeLogger : HybridNativeLoggerSpec() {
             Regex("(?:eyJ|AAAA)[A-Za-z0-9+/=]{40,}"),
         )
 
-        /** Rate limiting: max messages per second */
-        private const val MAX_MESSAGES_PER_SECOND = 100
-        @Volatile private var messageCount = 0
-        @Volatile private var windowStartMs = System.currentTimeMillis()
-        private val rateLimitLock = Any()
-
-        private fun isRateLimited(): Boolean {
-            synchronized(rateLimitLock) {
-                val now = System.currentTimeMillis()
-                if (now - windowStartMs >= 1000L) {
-                    windowStartMs = now
-                    messageCount = 0
-                }
-                messageCount++
-                return messageCount > MAX_MESSAGES_PER_SECOND
-            }
-        }
-
         fun sanitize(message: String): String {
             var result = message
             for (pattern in sensitivePatterns) {
@@ -54,7 +37,6 @@ class NativeLogger : HybridNativeLoggerSpec() {
     }
 
     override fun write(level: Double, msg: String) {
-        if (isRateLimited()) return
         val sanitized = sanitize(msg)
         when (level.toInt()) {
             0 -> OneKeyLog.debug("JS", sanitized)
@@ -88,6 +70,7 @@ class NativeLogger : HybridNativeLoggerSpec() {
 
     override fun deleteLogFiles(): Promise<Unit> {
         return Promise.async {
+            OneKeyLog.flush()
             val dir = OneKeyLog.logsDirectory
             if (dir.isEmpty()) return@async
             val files = File(dir).listFiles { _, name -> name.endsWith(".log") }
@@ -95,9 +78,16 @@ class NativeLogger : HybridNativeLoggerSpec() {
                 OneKeyLog.warn("NativeLogger", "Failed to list log directory for deletion")
                 return@async
             }
-            // Skip the active log file to avoid breaking logback's open file handle
-            files.filter { it.name != "app-latest.log" }.forEach { file ->
-                if (!file.delete()) {
+            files.forEach { file ->
+                try {
+                    if (file.name == "app-latest.log") {
+                        RandomAccessFile(file, "rw").use { raf ->
+                            raf.setLength(0L)
+                        }
+                    } else if (!file.delete()) {
+                        OneKeyLog.warn("NativeLogger", "Failed to delete log file")
+                    }
+                } catch (_: Exception) {
                     OneKeyLog.warn("NativeLogger", "Failed to delete log file")
                 }
             }

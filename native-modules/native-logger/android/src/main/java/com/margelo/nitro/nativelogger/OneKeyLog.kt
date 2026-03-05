@@ -23,10 +23,16 @@ object OneKeyLog {
     private const val MAX_FILE_SIZE = 20L * 1024 * 1024       // 20 MB
     private const val MAX_HISTORY = 6
     private const val TOTAL_SIZE_CAP = MAX_FILE_SIZE * MAX_HISTORY
+    private const val MAX_MESSAGES_PER_SECOND = 100
 
     // Cached value; empty string means context was not yet available (will retry)
     @Volatile
     private var cachedLogsDir: String? = null
+    @Volatile
+    private var messageCount = 0
+    @Volatile
+    private var windowStartMs = System.currentTimeMillis()
+    private val rateLimitLock = Any()
 
     /**
      * Initialise OneKeyLog with an Android Context before NitroModules is ready.
@@ -154,7 +160,20 @@ object OneKeyLog {
         return truncate("$time | $level : [$safeTag] $safeMessage")
     }
 
+    private fun isRateLimited(): Boolean {
+        synchronized(rateLimitLock) {
+            val now = System.currentTimeMillis()
+            if (now - windowStartMs >= 1000L) {
+                windowStartMs = now
+                messageCount = 0
+            }
+            messageCount++
+            return messageCount > MAX_MESSAGES_PER_SECOND
+        }
+    }
+
     private fun log(tag: String, level: String, message: String, androidLogLevel: Int) {
+        if (isRateLimited()) return
         val formatted = formatMessage(tag, level, message)
         val l = logger
         if (l != null) {

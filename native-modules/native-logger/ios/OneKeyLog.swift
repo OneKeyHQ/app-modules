@@ -6,6 +6,7 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
     private static let logPrefix = "app"
     private static let latestFileName = "\(logPrefix)-latest.log"
     private static let dateFormatterLock = NSLock()
+    private static let archiveLock = NSLock()
     private static let _dateFormatter: DateFormatter = {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
@@ -30,8 +31,11 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
 
     /// When rolled, rename app-latest.log → app-{yyyy-MM-dd}.{i}.log (matches Android pattern)
     override func didArchiveLogFile(atPath logFilePath: String, wasRolled: Bool) {
+        Self.archiveLock.lock()
+        defer { Self.archiveLock.unlock() }
+
         guard wasRolled else {
-            super.didArchiveLogFile(atPath: logFilePath, wasRolled: wasRolled)
+            runCleanup()
             return
         }
 
@@ -53,16 +57,37 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
                 try fm.moveItem(atPath: logFilePath, toPath: archivedPath)
                 moved = true
             } catch {
-                // Another thread may have created this file; try next index
-                index += 1
+                // Another callback may have already moved the source file.
+                if !fm.fileExists(atPath: logFilePath) {
+                    break
+                }
+                let nsError = error as NSError
+                // Retry only for recoverable "target exists" collisions.
+                if nsError.domain == NSCocoaErrorDomain &&
+                    nsError.code == NSFileWriteFileExistsError {
+                    index += 1
+                    continue
+                }
+                NSLog(
+                    "[OneKeyLog] Failed to archive log file move (%@:%ld): %@",
+                    nsError.domain,
+                    nsError.code,
+                    nsError.localizedDescription
+                )
+                break
             }
         }
         if !moved {
             NSLog("[OneKeyLog] Failed to archive log file after 1000 attempts: %@", logFilePath)
-            super.didArchiveLogFile(atPath: logFilePath, wasRolled: wasRolled)
-        } else {
-            // Pass the new path so the super class can find the file for cleanup
-            super.didArchiveLogFile(atPath: archivedPath, wasRolled: wasRolled)
+        }
+        runCleanup()
+    }
+
+    private func runCleanup() {
+        var cleanupError: NSError?
+        let cleaned = cleanupLogFiles(withError: &cleanupError)
+        if !cleaned {
+            NSLog("[OneKeyLog] Failed to cleanup log files: %@", cleanupError?.localizedDescription ?? "unknown")
         }
     }
 }
@@ -70,6 +95,10 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
 @objc public class OneKeyLog: NSObject {
 
     private static let maxMessageLength = 4096
+    private static let maxMessagesPerSecond = 100
+    private static var messageCount = 0
+    private static var windowStart = Date()
+    private static let rateLimitLock = NSLock()
 
     private static let configured: Bool = {
         let logsDir = logsDirectory
@@ -113,6 +142,18 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         timeFormatterLock.lock()
         defer { timeFormatterLock.unlock() }
         return _timeFormatter.string(from: date)
+    }
+
+    private static func isRateLimited() -> Bool {
+        rateLimitLock.lock()
+        defer { rateLimitLock.unlock() }
+        let now = Date()
+        if now.timeIntervalSince(windowStart) >= 1.0 {
+            windowStart = now
+            messageCount = 0
+        }
+        messageCount += 1
+        return messageCount > maxMessagesPerSecond
     }
 
     private static func truncate(_ message: String) -> String {
@@ -164,21 +205,25 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
 
     @objc public static func debug(_ tag: String, _ message: String) {
         _ = configured
+        if isRateLimited() { return }
         DDLogDebug(formatMessage(tag, "DEBUG", message))
     }
 
     @objc public static func info(_ tag: String, _ message: String) {
         _ = configured
+        if isRateLimited() { return }
         DDLogInfo(formatMessage(tag, "INFO", message))
     }
 
     @objc public static func warn(_ tag: String, _ message: String) {
         _ = configured
+        if isRateLimited() { return }
         DDLogWarn(formatMessage(tag, "WARN", message))
     }
 
     @objc public static func error(_ tag: String, _ message: String) {
         _ = configured
+        if isRateLimited() { return }
         DDLogError(formatMessage(tag, "ERROR", message))
     }
 
