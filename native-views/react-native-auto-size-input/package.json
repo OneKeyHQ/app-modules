@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-auto-size-input",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Auto-sizing text input with font scaling, prefix and suffix support",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
