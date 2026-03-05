@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { TestPageBase, TestButton } from './TestPageBase';
 import { AutoSizeInputView } from '@onekeyfe/react-native-auto-size-input';
 import type { AutoSizeInputMethods } from '@onekeyfe/react-native-auto-size-input';
+import { callback } from 'react-native-nitro-modules';
 
 interface AutoSizeInputTestPageProps {
   onGoHome: () => void;
@@ -37,9 +38,9 @@ export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInpu
           textColor="#333333"
           placeholderColor="#AAAAAA"
           selectionColor="#007AFF"
-          onChangeText={useCallback((text: string) => setSingleLineText(text), [])}
-          onFocus={useCallback(() => setFocusStatus('Single line focused'), [])}
-          onBlur={useCallback(() => setFocusStatus('Single line blurred'), [])}
+          onChangeText={callback(useCallback((text: string) => setSingleLineText(text), []))}
+          onFocus={callback(useCallback(() => setFocusStatus('Single line focused'), []))}
+          onBlur={callback(useCallback(() => setFocusStatus('Single line blurred'), []))}
         />
       </View>
       <Text style={styles.statusText}>Status: {focusStatus || 'idle'}</Text>
@@ -65,7 +66,7 @@ export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInpu
           keyboardType="decimalPad"
           textAlign="center"
           selectionColor="#007AFF"
-          onChangeText={useCallback(() => {}, [])}
+          onChangeText={callback(useCallback((text: string) => {console.log(text)}, []))}
         />
       </View>
 
@@ -83,7 +84,7 @@ export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInpu
           textColor="#FF3B30"
           placeholderColor="#FFAAAA"
           selectionColor="#FF3B30"
-          onChangeText={useCallback(() => {}, [])}
+          onChangeText={callback(useCallback(() => {}, []))}
         />
       </View>
 
@@ -102,9 +103,9 @@ export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInpu
           textColor="#333333"
           placeholderColor="#AAAAAA"
           selectionColor="#34C759"
-          onChangeText={useCallback((text: string) => setMultiLineText(text), [])}
-          onFocus={useCallback(() => setFocusStatus('Multi line focused'), [])}
-          onBlur={useCallback(() => setFocusStatus('Multi line blurred'), [])}
+          onChangeText={callback(useCallback((text: string) => setMultiLineText(text), []))}
+          onFocus={callback(useCallback(() => setFocusStatus('Multi line focused'), []))}
+          onBlur={callback(useCallback(() => setFocusStatus('Multi line blurred'), []))}
         />
       </View>
 
@@ -128,7 +129,7 @@ export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInpu
           prefixMarginRight={8}
           suffixMarginLeft={4}
           selectionColor="#FF9500"
-          onChangeText={useCallback(() => {}, [])}
+          onChangeText={callback(useCallback(() => {}, []))}
         />
       </View>
 
@@ -148,7 +149,7 @@ export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInpu
           textColor="#333333"
           placeholderColor="#AAAAAA"
           selectionColor="#5856D6"
-          onChangeText={useCallback(() => {}, [])}
+          onChangeText={callback(useCallback(() => {}, []))}
         />
       </View>
 
@@ -167,7 +168,7 @@ export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInpu
           textColor="#333333"
           placeholderColor="#AAAAAA"
           selectionColor="#007AFF"
-          onChangeText={useCallback(() => {}, [])}
+          onChangeText={callback(useCallback(() => {}, []))}
         />
       </View>
 
@@ -182,7 +183,7 @@ export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInpu
           minFontSize={12}
           textColor={editable ? '#333333' : '#999999'}
           selectionColor="#007AFF"
-          onChangeText={useCallback(() => {}, [])}
+          onChangeText={callback(useCallback(() => {}, []))}
         />
       </View>
       <TestButton
