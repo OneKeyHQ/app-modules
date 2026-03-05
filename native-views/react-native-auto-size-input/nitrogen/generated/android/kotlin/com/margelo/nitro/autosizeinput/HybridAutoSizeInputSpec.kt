@@ -180,6 +180,24 @@ abstract class HybridAutoSizeInputSpec: HybridView() {
   @set:Keep
   abstract var suffixMarginLeft: Double?
   
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var showBorder: Boolean?
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var inputBackgroundColor: String?
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var contentAutoWidth: Boolean?
+  
   abstract var onChangeText: ((text: String) -> Unit)?
   
   private var onChangeText_cxx: Func_void_std__string?

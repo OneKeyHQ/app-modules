@@ -128,6 +128,18 @@ void JHybridAutoSizeInputStateUpdater::updateViewProps(jni::alias_ref<jni::JClas
     view->setSuffixMarginLeft(props.suffixMarginLeft.value);
     // TODO: Set isDirty = false
   }
+  if (props.showBorder.isDirty) {
+    view->setShowBorder(props.showBorder.value);
+    // TODO: Set isDirty = false
+  }
+  if (props.inputBackgroundColor.isDirty) {
+    view->setInputBackgroundColor(props.inputBackgroundColor.value);
+    // TODO: Set isDirty = false
+  }
+  if (props.contentAutoWidth.isDirty) {
+    view->setContentAutoWidth(props.contentAutoWidth.value);
+    // TODO: Set isDirty = false
+  }
   if (props.onChangeText.isDirty) {
     view->setOnChangeText(props.onChangeText.value);
     // TODO: Set isDirty = false

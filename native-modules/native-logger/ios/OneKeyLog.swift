@@ -84,10 +84,10 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
     }
 
     private func runCleanup() {
-        var cleanupError: NSError?
-        let cleaned = cleanupLogFiles(withError: &cleanupError)
-        if !cleaned {
-            NSLog("[OneKeyLog] Failed to cleanup log files: %@", cleanupError?.localizedDescription ?? "unknown")
+        do {
+            try cleanupLogFiles()
+        } catch {
+            NSLog("[OneKeyLog] Failed to cleanup log files: %@", (error as NSError).localizedDescription)
         }
     }
 }

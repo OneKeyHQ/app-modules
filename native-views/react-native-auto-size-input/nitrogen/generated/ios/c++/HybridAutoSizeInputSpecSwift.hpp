@@ -219,6 +219,27 @@ namespace margelo::nitro::autosizeinput {
     inline void setSuffixMarginLeft(std::optional<double> suffixMarginLeft) noexcept override {
       _swiftPart.setSuffixMarginLeft(suffixMarginLeft);
     }
+    inline std::optional<bool> getShowBorder() noexcept override {
+      auto __result = _swiftPart.getShowBorder();
+      return __result;
+    }
+    inline void setShowBorder(std::optional<bool> showBorder) noexcept override {
+      _swiftPart.setShowBorder(showBorder);
+    }
+    inline std::optional<std::string> getInputBackgroundColor() noexcept override {
+      auto __result = _swiftPart.getInputBackgroundColor();
+      return __result;
+    }
+    inline void setInputBackgroundColor(const std::optional<std::string>& inputBackgroundColor) noexcept override {
+      _swiftPart.setInputBackgroundColor(inputBackgroundColor);
+    }
+    inline std::optional<bool> getContentAutoWidth() noexcept override {
+      auto __result = _swiftPart.getContentAutoWidth();
+      return __result;
+    }
+    inline void setContentAutoWidth(std::optional<bool> contentAutoWidth) noexcept override {
+      _swiftPart.setContentAutoWidth(contentAutoWidth);
+    }
     inline std::optional<std::function<void(const std::string& /* text */)>> getOnChangeText() noexcept override {
       auto __result = _swiftPart.getOnChangeText();
       return __result;

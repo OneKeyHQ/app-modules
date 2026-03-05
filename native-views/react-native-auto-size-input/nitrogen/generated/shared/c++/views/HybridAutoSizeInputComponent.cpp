@@ -255,6 +255,36 @@ namespace margelo::nitro::autosizeinput::views {
         throw std::runtime_error(std::string("AutoSizeInput.suffixMarginLeft: ") + exc.what());
       }
     }()),
+    showBorder([&]() -> CachedProp<std::optional<bool>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("showBorder", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.showBorder;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.showBorder);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("AutoSizeInput.showBorder: ") + exc.what());
+      }
+    }()),
+    inputBackgroundColor([&]() -> CachedProp<std::optional<std::string>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("inputBackgroundColor", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.inputBackgroundColor;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<std::string>>::fromRawValue(*runtime, value, sourceProps.inputBackgroundColor);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("AutoSizeInput.inputBackgroundColor: ") + exc.what());
+      }
+    }()),
+    contentAutoWidth([&]() -> CachedProp<std::optional<bool>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("contentAutoWidth", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.contentAutoWidth;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.contentAutoWidth);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("AutoSizeInput.contentAutoWidth: ") + exc.what());
+      }
+    }()),
     onChangeText([&]() -> CachedProp<std::optional<std::function<void(const std::string& /* text */)>>> {
       try {
         const react::RawValue* rawValue = rawProps.at("onChangeText", nullptr, nullptr);
@@ -321,6 +351,9 @@ namespace margelo::nitro::autosizeinput::views {
     selectionColor(other.selectionColor),
     prefixMarginRight(other.prefixMarginRight),
     suffixMarginLeft(other.suffixMarginLeft),
+    showBorder(other.showBorder),
+    inputBackgroundColor(other.inputBackgroundColor),
+    contentAutoWidth(other.contentAutoWidth),
     onChangeText(other.onChangeText),
     onFocus(other.onFocus),
     onBlur(other.onBlur),
@@ -351,6 +384,9 @@ namespace margelo::nitro::autosizeinput::views {
       case hashString("selectionColor"): return true;
       case hashString("prefixMarginRight"): return true;
       case hashString("suffixMarginLeft"): return true;
+      case hashString("showBorder"): return true;
+      case hashString("inputBackgroundColor"): return true;
+      case hashString("contentAutoWidth"): return true;
       case hashString("onChangeText"): return true;
       case hashString("onFocus"): return true;
       case hashString("onBlur"): return true;

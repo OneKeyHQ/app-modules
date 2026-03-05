@@ -96,6 +96,12 @@ namespace margelo::nitro::autosizeinput {
     void setPrefixMarginRight(std::optional<double> prefixMarginRight) override;
     std::optional<double> getSuffixMarginLeft() override;
     void setSuffixMarginLeft(std::optional<double> suffixMarginLeft) override;
+    std::optional<bool> getShowBorder() override;
+    void setShowBorder(std::optional<bool> showBorder) override;
+    std::optional<std::string> getInputBackgroundColor() override;
+    void setInputBackgroundColor(const std::optional<std::string>& inputBackgroundColor) override;
+    std::optional<bool> getContentAutoWidth() override;
+    void setContentAutoWidth(std::optional<bool> contentAutoWidth) override;
     std::optional<std::function<void(const std::string& /* text */)>> getOnChangeText() override;
     void setOnChangeText(const std::optional<std::function<void(const std::string& /* text */)>>& onChangeText) override;
     std::optional<std::function<void()>> getOnFocus() override;

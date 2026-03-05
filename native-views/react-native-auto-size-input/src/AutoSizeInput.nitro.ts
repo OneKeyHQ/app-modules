@@ -42,6 +42,13 @@ export interface AutoSizeInputProps extends HybridViewProps {
   prefixMarginRight?: number;
   suffixMarginLeft?: number;
 
+  // Input box appearance
+  showBorder?: boolean;
+  inputBackgroundColor?: string;
+
+  // Let input width grow with content and push suffix to the right
+  contentAutoWidth?: boolean;
+
   // Event callbacks
   onChangeText?: (text: string) => void;
   onFocus?: () => void;

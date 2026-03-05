@@ -3,6 +3,7 @@ package com.margelo.nitro.autosizeinput
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.text.Editable
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
@@ -302,6 +303,30 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       view.requestLayout()
     }
 
+  override var showBorder: Boolean?
+    get() = field
+    set(value) {
+      if (isDisposed) return
+      field = value
+      updateInputAppearance()
+    }
+
+  override var inputBackgroundColor: String?
+    get() = field
+    set(value) {
+      if (isDisposed) return
+      field = value
+      updateInputAppearance()
+    }
+
+  override var contentAutoWidth: Boolean?
+    get() = field
+    set(value) {
+      if (isDisposed) return
+      field = value
+      view.requestLayout()
+    }
+
   override var onChangeText: ((String) -> Unit)? = null
   override var onFocus: (() -> Unit)? = null
   override var onBlur: (() -> Unit)? = null
@@ -336,6 +361,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     (view as ViewGroup).addView(prefixView)
     (view as ViewGroup).addView(inputView)
     (view as ViewGroup).addView(suffixView)
+    updateInputAppearance()
   }
 
   private fun updateInputMode() {
@@ -379,7 +405,22 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     val suffixGap = if (suffixView.visibility == View.VISIBLE) ((suffixMarginLeft ?: 0.0) * density).toInt() else 0
 
     val inputX = prefixW + prefixGap
-    val inputW = maxOf(width - inputX - suffixW - suffixGap, 0)
+    val isContentAutoWidthEnabled = contentAutoWidth == true && multiline != true
+    val inputW: Int
+    val suffixX: Int
+
+    if (isContentAutoWidthEnabled) {
+      val typedText = inputView.text?.toString() ?: ""
+      val desiredInputWidth = measureSingleLineTextWidthPx(typedText)
+      val suffixSegment = if (suffixView.visibility == View.VISIBLE) suffixGap + suffixW else 0
+      val maxInputWidth = maxOf(width - inputX - suffixSegment, 0)
+      inputW = minOf(desiredInputWidth, maxInputWidth)
+      val desiredSuffixX = if (suffixView.visibility == View.VISIBLE) inputX + inputW + suffixGap else width
+      suffixX = minOf(desiredSuffixX, width - suffixW)
+    } else {
+      inputW = maxOf(width - inputX - suffixW - suffixGap, 0)
+      suffixX = width - suffixW
+    }
 
     // Layout prefix
     prefixView.layout(0, 0, prefixW, height)
@@ -392,7 +433,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     inputView.layout(inputX, 0, inputX + inputW, height)
 
     // Layout suffix
-    suffixView.layout(width - suffixW, 0, width, height)
+    suffixView.layout(suffixX, 0, suffixX + suffixW, height)
   }
 
   // MARK: - Font Size Calculation
@@ -400,42 +441,43 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
   private fun recalculateFontSize() {
     if (isDisposed || isRecalculating) return
     isRecalculating = true
+    try {
+      val width = view.width
+      val height = view.height
+      if (width <= 0 || height <= 0) {
+        return
+      }
 
-    val width = view.width
-    val height = view.height
-    if (width <= 0 || height <= 0) {
+      val density = context.resources.displayMetrics.density
+      val maxSize = (maxFontSizeProp ?: 48.0).toFloat()
+      val minSize = (minFontSizeProp ?: 16.0).toFloat()
+
+      val prefixText = prefix ?: ""
+      val suffixText = suffix ?: ""
+      val inputText = inputView.text?.toString() ?: ""
+      val displayText = if (inputText.isEmpty()) (placeholder ?: "") else inputText
+      val fullText = prefixText + displayText + suffixText
+
+      if (fullText.isEmpty()) {
+        applyFontSize(maxSize)
+        return
+      }
+
+      val prefixGap = if (prefixView.visibility == View.VISIBLE) ((prefixMarginRight ?: 0.0) * density) else 0.0
+      val suffixGap = if (suffixView.visibility == View.VISIBLE) ((suffixMarginLeft ?: 0.0) * density) else 0.0
+      val availableWidth = width - prefixGap.toFloat() - suffixGap.toFloat()
+
+      val optimalSize = if (multiline == true) {
+        val maxLines = (maxNumberOfLines ?: 1.0).toInt()
+        findOptimalFontSizeMultiline(fullText, availableWidth, height.toFloat(), maxLines, minSize, maxSize)
+      } else {
+        findOptimalFontSizeSingleLine(fullText, availableWidth, minSize, maxSize)
+      }
+
+      applyFontSize(optimalSize)
+    } finally {
       isRecalculating = false
-      return
     }
-
-    val density = context.resources.displayMetrics.density
-    val maxSize = (maxFontSizeProp ?: 48.0).toFloat()
-    val minSize = (minFontSizeProp ?: 16.0).toFloat()
-
-    val prefixText = prefix ?: ""
-    val suffixText = suffix ?: ""
-    val inputText = inputView.text?.toString() ?: ""
-    val displayText = if (inputText.isEmpty()) (placeholder ?: "") else inputText
-    val fullText = prefixText + displayText + suffixText
-
-    if (fullText.isEmpty()) {
-      applyFontSize(maxSize)
-      return
-    }
-
-    val prefixGap = if (prefixView.visibility == View.VISIBLE) ((prefixMarginRight ?: 0.0) * density) else 0.0
-    val suffixGap = if (suffixView.visibility == View.VISIBLE) ((suffixMarginLeft ?: 0.0) * density) else 0.0
-    val availableWidth = width - prefixGap.toFloat() - suffixGap.toFloat()
-
-    val optimalSize = if (multiline == true) {
-      val maxLines = (maxNumberOfLines ?: 1.0).toInt()
-      findOptimalFontSizeMultiline(fullText, availableWidth, height.toFloat(), maxLines, minSize, maxSize)
-    } else {
-      findOptimalFontSizeSingleLine(fullText, availableWidth, minSize, maxSize)
-    }
-
-    applyFontSize(optimalSize)
-    isRecalculating = false
   }
 
   private fun findOptimalFontSizeSingleLine(
@@ -548,6 +590,26 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     } catch (e: Exception) {
       null
     }
+  }
+
+  private fun updateInputAppearance() {
+    val drawable = GradientDrawable()
+    drawable.setColor(parseColor(inputBackgroundColor) ?: Color.TRANSPARENT)
+    if (showBorder == true) {
+      val borderWidthPx = context.resources.displayMetrics.density.toInt().coerceAtLeast(1)
+      drawable.setStroke(borderWidthPx, parseColor(textColor) ?: Color.parseColor("#D1D5DB"))
+    } else {
+      drawable.setStroke(0, Color.TRANSPARENT)
+    }
+    inputView.background = drawable
+  }
+
+  private fun measureSingleLineTextWidthPx(text: String): Int {
+    if (text.isEmpty()) return 0
+    val paint = TextPaint(Paint.ANTI_ALIAS_FLAG)
+    paint.textSize = currentFontSize * context.resources.displayMetrics.scaledDensity
+    paint.typeface = makeTypeface()
+    return kotlin.math.ceil(paint.measureText(text).toDouble()).toInt()
   }
 
   override fun afterUpdate() {

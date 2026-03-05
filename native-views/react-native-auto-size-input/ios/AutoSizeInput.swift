@@ -29,6 +29,7 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
         singleLineInput.text = text ?? ""
       }
       isUpdatingFromJS = false
+      view.setNeedsLayout()
       recalculateFontSize()
     }
   }
@@ -190,6 +191,24 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     }
   }
 
+  var showBorder: Bool? {
+    didSet {
+      updateInputAppearance()
+    }
+  }
+
+  var inputBackgroundColor: String? {
+    didSet {
+      updateInputAppearance()
+    }
+  }
+
+  var contentAutoWidth: Bool? {
+    didSet {
+      view.setNeedsLayout()
+    }
+  }
+
   var onChangeText: ((String) -> Void)?
   var onFocus: (() -> Void)?
   var onBlur: (() -> Void)?
@@ -227,7 +246,6 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     multiLineInput.delegate = delegate
     multiLineInput.textContainerInset = .zero
     multiLineInput.textContainer.lineFragmentPadding = 0
-    multiLineInput.backgroundColor = .clear
     multiLineInput.isScrollEnabled = false
     multiLineInput.isHidden = true
 
@@ -249,6 +267,7 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
       subview.removeFromSuperview()
       view.addSubview(subview)
     }
+    updateInputAppearance()
   }
 
   private func performLayout() {
@@ -277,13 +296,28 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     let suffixGap = suffixLabel.isHidden ? 0 : CGFloat(suffixMarginLeft ?? 0)
 
     let inputX = prefixW + prefixGap
-    let inputW = bounds.width - inputX - suffixW - suffixGap
+    let isContentAutoWidthEnabled = contentAutoWidth == true && multiline != true
+    let inputW: CGFloat
+    let suffixX: CGFloat
+
+    if isContentAutoWidthEnabled {
+      let typedText = singleLineInput.text ?? ""
+      let desiredInputWidth = measuredSingleLineTextWidth(typedText, font: singleLineInput.font)
+      let suffixSegment = suffixLabel.isHidden ? 0 : (suffixGap + suffixW)
+      let maxInputWidth = max(bounds.width - inputX - suffixSegment, 0)
+      inputW = min(desiredInputWidth, maxInputWidth)
+      let desiredSuffixX = suffixLabel.isHidden ? bounds.width : (inputX + inputW + suffixGap)
+      suffixX = min(desiredSuffixX, bounds.width - suffixW)
+    } else {
+      inputW = max(bounds.width - inputX - suffixW - suffixGap, 0)
+      suffixX = bounds.width - suffixW
+    }
 
     prefixLabel.frame = CGRect(x: 0, y: 0, width: prefixW, height: bounds.height)
-    suffixLabel.frame = CGRect(x: bounds.width - suffixW, y: 0, width: suffixW, height: bounds.height)
+    suffixLabel.frame = CGRect(x: suffixX, y: 0, width: suffixW, height: bounds.height)
 
     let activeInput: UIView = (multiline == true) ? multiLineInput : singleLineInput
-    activeInput.frame = CGRect(x: inputX, y: 0, width: max(inputW, 0), height: bounds.height)
+    activeInput.frame = CGRect(x: inputX, y: 0, width: inputW, height: bounds.height)
   }
 
   private func updateInputMode() {
@@ -472,12 +506,14 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
 
   fileprivate func handleTextFieldChange(_ textField: UITextField) {
     guard !isUpdatingFromJS else { return }
+    view.setNeedsLayout()
     recalculateFontSize()
     onChangeText?(textField.text ?? "")
   }
 
   fileprivate func handleTextViewChange(_ textView: UITextView) {
     guard !isUpdatingFromJS else { return }
+    view.setNeedsLayout()
     recalculateFontSize()
     onChangeText?(textView.text ?? "")
   }
@@ -516,6 +552,25 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
       let b = CGFloat(color & 0xFF) / 255.0
       return UIColor(red: r, green: g, blue: b, alpha: 1.0)
     }
+  }
+
+  private func updateInputAppearance() {
+    let borderWidth: CGFloat = (showBorder == true) ? 1 : 0
+    let backgroundColor = colorFromHex(inputBackgroundColor) ?? UIColor.clear
+
+    singleLineInput.layer.borderWidth = borderWidth
+    singleLineInput.layer.borderColor = UIColor.separator.cgColor
+    singleLineInput.backgroundColor = backgroundColor
+
+    multiLineInput.layer.borderWidth = borderWidth
+    multiLineInput.layer.borderColor = UIColor.separator.cgColor
+    multiLineInput.backgroundColor = backgroundColor
+  }
+
+  private func measuredSingleLineTextWidth(_ text: String, font: UIFont?) -> CGFloat {
+    guard !text.isEmpty else { return 0 }
+    let effectiveFont = font ?? makeFont(size: currentFontSize)
+    return (text as NSString).size(withAttributes: [.font: effectiveFont]).width
   }
 
   private func textAlignmentFrom(_ align: String?) -> NSTextAlignment {

@@ -186,6 +186,21 @@ using namespace margelo::nitro::autosizeinput::views;
     swiftPart.setSuffixMarginLeft(newViewProps.suffixMarginLeft.value);
     newViewProps.suffixMarginLeft.isDirty = false;
   }
+  // showBorder: optional
+  if (newViewProps.showBorder.isDirty) {
+    swiftPart.setShowBorder(newViewProps.showBorder.value);
+    newViewProps.showBorder.isDirty = false;
+  }
+  // inputBackgroundColor: optional
+  if (newViewProps.inputBackgroundColor.isDirty) {
+    swiftPart.setInputBackgroundColor(newViewProps.inputBackgroundColor.value);
+    newViewProps.inputBackgroundColor.isDirty = false;
+  }
+  // contentAutoWidth: optional
+  if (newViewProps.contentAutoWidth.isDirty) {
+    swiftPart.setContentAutoWidth(newViewProps.contentAutoWidth.value);
+    newViewProps.contentAutoWidth.isDirty = false;
+  }
   // onChangeText: optional
   if (newViewProps.onChangeText.isDirty) {
     swiftPart.setOnChangeText(newViewProps.onChangeText.value);

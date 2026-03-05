@@ -34,6 +34,9 @@ public protocol HybridAutoSizeInputSpec_protocol: HybridObject, HybridView {
   var selectionColor: String? { get set }
   var prefixMarginRight: Double? { get set }
   var suffixMarginLeft: Double? { get set }
+  var showBorder: Bool? { get set }
+  var inputBackgroundColor: String? { get set }
+  var contentAutoWidth: Bool? { get set }
   var onChangeText: ((_ text: String) -> Void)? { get set }
   var onFocus: (() -> Void)? { get set }
   var onBlur: (() -> Void)? { get set }

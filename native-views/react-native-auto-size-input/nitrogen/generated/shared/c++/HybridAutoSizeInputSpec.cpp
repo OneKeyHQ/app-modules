@@ -60,6 +60,12 @@ namespace margelo::nitro::autosizeinput {
       prototype.registerHybridSetter("prefixMarginRight", &HybridAutoSizeInputSpec::setPrefixMarginRight);
       prototype.registerHybridGetter("suffixMarginLeft", &HybridAutoSizeInputSpec::getSuffixMarginLeft);
       prototype.registerHybridSetter("suffixMarginLeft", &HybridAutoSizeInputSpec::setSuffixMarginLeft);
+      prototype.registerHybridGetter("showBorder", &HybridAutoSizeInputSpec::getShowBorder);
+      prototype.registerHybridSetter("showBorder", &HybridAutoSizeInputSpec::setShowBorder);
+      prototype.registerHybridGetter("inputBackgroundColor", &HybridAutoSizeInputSpec::getInputBackgroundColor);
+      prototype.registerHybridSetter("inputBackgroundColor", &HybridAutoSizeInputSpec::setInputBackgroundColor);
+      prototype.registerHybridGetter("contentAutoWidth", &HybridAutoSizeInputSpec::getContentAutoWidth);
+      prototype.registerHybridSetter("contentAutoWidth", &HybridAutoSizeInputSpec::setContentAutoWidth);
       prototype.registerHybridGetter("onChangeText", &HybridAutoSizeInputSpec::getOnChangeText);
       prototype.registerHybridSetter("onChangeText", &HybridAutoSizeInputSpec::setOnChangeText);
       prototype.registerHybridGetter("onFocus", &HybridAutoSizeInputSpec::getOnFocus);

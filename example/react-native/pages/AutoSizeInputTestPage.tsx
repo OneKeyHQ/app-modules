@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { TestPageBase, TestButton } from './TestPageBase';
 import { AutoSizeInputView } from '@onekeyfe/react-native-auto-size-input';
 import type { AutoSizeInputMethods } from '@onekeyfe/react-native-auto-size-input';
@@ -13,6 +13,7 @@ interface AutoSizeInputTestPageProps {
 export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInputTestPageProps) {
   const [singleLineText, setSingleLineText] = useState('');
   const [multiLineText, setMultiLineText] = useState('');
+  const [autoWidthText, setAutoWidthText] = useState('');
   const [focusStatus, setFocusStatus] = useState('');
   const [editable, setEditable] = useState(true);
 
@@ -45,6 +46,72 @@ export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInpu
       </View>
       <Text style={styles.statusText}>Status: {focusStatus || 'idle'}</Text>
       <Text style={styles.statusText}>Text: "{singleLineText}"</Text>
+
+      {/* Section: New Prop - showBorder */}
+      <Text style={styles.sectionTitle}>New Prop - showBorder (default: no border)</Text>
+      <View style={styles.inputContainer}>
+        <AutoSizeInputView
+          style={styles.input}
+          text=""
+          placeholder="Default is no border"
+          fontSize={28}
+          minFontSize={12}
+          textColor="#333333"
+          placeholderColor="#AAAAAA"
+          onChangeText={callback(useCallback(() => {}, []))}
+        />
+      </View>
+      <View style={styles.inputContainer}>
+        <AutoSizeInputView
+          style={styles.input}
+          text=""
+          showBorder={true}
+          placeholder="showBorder=true"
+          fontSize={28}
+          minFontSize={12}
+          textColor="#333333"
+          placeholderColor="#AAAAAA"
+          onChangeText={callback(useCallback(() => {}, []))}
+        />
+      </View>
+
+      {/* Section: New Prop - inputBackgroundColor */}
+      <Text style={styles.sectionTitle}>New Prop - inputBackgroundColor (default: transparent)</Text>
+      <View style={styles.inputContainer}>
+        <AutoSizeInputView
+          style={styles.input}
+          text=""
+          inputBackgroundColor="#E8F4FF"
+          placeholder="Custom background color"
+          fontSize={28}
+          minFontSize={12}
+          textColor="#333333"
+          placeholderColor="#7A8796"
+          onChangeText={callback(useCallback(() => {}, []))}
+        />
+      </View>
+
+      {/* Section: New Prop - contentAutoWidth */}
+      <Text style={styles.sectionTitle}>New Prop - contentAutoWidth (suffix follows text)</Text>
+      <View style={styles.autoWidthContainer}>
+        <AutoSizeInputView
+          style={styles.autoWidthInput}
+          text={autoWidthText}
+          contentAutoWidth={true}
+          prefix="$"
+          suffix="USD"
+          placeholder=""
+          fontSize={34}
+          minFontSize={14}
+          textColor="#333333"
+          prefixColor="#007AFF"
+          suffixColor="#999999"
+          prefixMarginRight={4}
+          suffixMarginLeft={8}
+          keyboardType="decimalPad"
+          onChangeText={callback(useCallback((text: string) => setAutoWidthText(text), []))}
+        />
+      </View>
 
       {/* Section: With Prefix & Suffix */}
       <Text style={styles.sectionTitle}>Single Line - Prefix & Suffix</Text>
@@ -239,8 +306,21 @@ const styles = StyleSheet.create({
   multiLineContainer: {
     minHeight: 100,
   },
+  autoWidthContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    width: '100%',
+    height: 74,
+    justifyContent: 'center',
+  },
   input: {
     width: '100%',
+    height: 50,
+  },
+  autoWidthInput: {
     height: 50,
   },
   multiLineInput: {
