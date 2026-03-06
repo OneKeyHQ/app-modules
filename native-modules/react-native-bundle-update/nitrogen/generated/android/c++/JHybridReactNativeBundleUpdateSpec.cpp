@@ -333,6 +333,11 @@ namespace margelo::nitro::reactnativebundleupdate {
       return __promise;
     }();
   }
+  bool JHybridReactNativeBundleUpdateSpec::isSkipGpgVerificationAllowed() {
+    static const auto method = javaClassStatic()->getMethod<jboolean()>("isSkipGpgVerificationAllowed");
+    auto __result = method(_javaPart);
+    return static_cast<bool>(__result);
+  }
   std::shared_ptr<Promise<bool>> JHybridReactNativeBundleUpdateSpec::isBundleExists(const std::string& appVersion, const std::string& bundleVersion) {
     static const auto method = javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>(jni::alias_ref<jni::JString> /* appVersion */, jni::alias_ref<jni::JString> /* bundleVersion */)>("isBundleExists");
     auto __result = method(_javaPart, jni::make_jstring(appVersion), jni::make_jstring(bundleVersion));

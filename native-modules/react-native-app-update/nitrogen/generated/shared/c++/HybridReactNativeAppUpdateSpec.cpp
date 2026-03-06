@@ -22,6 +22,7 @@ namespace margelo::nitro::reactnativeappupdate {
       prototype.registerHybridMethod("clearCache", &HybridReactNativeAppUpdateSpec::clearCache);
       prototype.registerHybridMethod("testVerification", &HybridReactNativeAppUpdateSpec::testVerification);
       prototype.registerHybridMethod("testSkipVerification", &HybridReactNativeAppUpdateSpec::testSkipVerification);
+      prototype.registerHybridMethod("isSkipGpgVerificationAllowed", &HybridReactNativeAppUpdateSpec::isSkipGpgVerificationAllowed);
       prototype.registerHybridMethod("addDownloadListener", &HybridReactNativeAppUpdateSpec::addDownloadListener);
       prototype.registerHybridMethod("removeDownloadListener", &HybridReactNativeAppUpdateSpec::removeDownloadListener);
     });

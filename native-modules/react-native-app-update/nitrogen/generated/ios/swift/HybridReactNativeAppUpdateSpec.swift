@@ -22,6 +22,7 @@ public protocol HybridReactNativeAppUpdateSpec_protocol: HybridObject {
   func clearCache() throws -> Promise<Void>
   func testVerification() throws -> Promise<Bool>
   func testSkipVerification() throws -> Promise<Bool>
+  func isSkipGpgVerificationAllowed() throws -> Bool
   func addDownloadListener(callback: @escaping (_ event: DownloadEvent) -> Void) throws -> Double
   func removeDownloadListener(id: Double) throws -> Void
 }

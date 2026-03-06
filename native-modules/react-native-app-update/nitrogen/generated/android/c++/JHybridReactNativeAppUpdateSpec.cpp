@@ -181,6 +181,11 @@ namespace margelo::nitro::reactnativeappupdate {
       return __promise;
     }();
   }
+  bool JHybridReactNativeAppUpdateSpec::isSkipGpgVerificationAllowed() {
+    static const auto method = javaClassStatic()->getMethod<jboolean()>("isSkipGpgVerificationAllowed");
+    auto __result = method(_javaPart);
+    return static_cast<bool>(__result);
+  }
   double JHybridReactNativeAppUpdateSpec::addDownloadListener(const std::function<void(const DownloadEvent& /* event */)>& callback) {
     static const auto method = javaClassStatic()->getMethod<double(jni::alias_ref<JFunc_void_DownloadEvent::javaobject> /* callback */)>("addDownloadListener_cxx");
     auto __result = method(_javaPart, JFunc_void_DownloadEvent_cxx::fromCpp(callback));

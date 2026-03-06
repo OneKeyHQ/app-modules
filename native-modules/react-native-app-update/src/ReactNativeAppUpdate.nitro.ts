@@ -28,6 +28,7 @@ export interface ReactNativeAppUpdate
   // Verification & testing
   testVerification(): Promise<boolean>;
   testSkipVerification(): Promise<boolean>;
+  isSkipGpgVerificationAllowed(): boolean;
 
   addDownloadListener(callback: (event: DownloadEvent) => void): number;
   removeDownloadListener(id: number): void;
