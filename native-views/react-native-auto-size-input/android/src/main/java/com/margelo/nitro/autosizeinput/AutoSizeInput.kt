@@ -12,7 +12,6 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextWatcher
 import android.util.TypedValue
-import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -57,13 +56,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
     override fun afterTextChanged(s: Editable?) {
       if (isUpdatingFromJS || isDisposed) return
-      if (shouldLogDebug() && contentAutoWidth == true && multiline != true) {
-        val textValue = s?.toString().orEmpty()
-        Log.d(
-          "AutoSizeInput",
-          "auto-width input-change text='$textValue' len=${textValue.length} viewW=${view.width} viewH=${view.height}"
-        )
-      }
       recalculateFontSize()
       onChangeText?.invoke(s?.toString() ?: "")
     }
@@ -80,13 +72,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       inputView.setSelection(inputView.text?.length ?: 0)
       inputView.addTextChangedListener(textWatcher)
       isUpdatingFromJS = false
-      if (shouldLogDebug() && contentAutoWidth == true && multiline != true) {
-        val textValue = value.orEmpty()
-        Log.d(
-          "AutoSizeInput",
-          "auto-width text-prop-update text='$textValue' len=${textValue.length} viewW=${view.width} viewH=${view.height}"
-        )
-      }
       recalculateFontSize()
     }
 
@@ -451,12 +436,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       inputW = minOf(desiredInputWidth, maxInputWidth)
       val desiredSuffixX = if (suffixView.visibility == View.VISIBLE) inputX + inputW + suffixGap else width - edgeInset
       suffixX = minOf(desiredSuffixX, width - edgeInset - suffixW)
-      if (shouldLogDebug()) {
-        Log.d(
-          "AutoSizeInput",
-          "auto-width layout text='$typedText' desired=$desiredInputWidth min=$minInputWidth max=$maxInputWidth final=$inputW textSize=${inputView.textSize} prefixW=$prefixW suffixW=$suffixW"
-        )
-      }
     } else {
       inputW = maxOf(width - edgeInset - inputX - suffixW - suffixGap, 0)
       suffixX = width - edgeInset - suffixW
@@ -646,12 +625,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     suffixView.typeface = typeface
     resetSingleLineVerticalOffset()
     if (contentAutoWidth == true && multiline != true && view.width > 0 && view.height > 0) {
-      if (shouldLogDebug()) {
-        Log.d(
-          "AutoSizeInput",
-          "auto-width force-layout text='${inputView.text}' viewW=${view.width} viewH=${view.height}"
-        )
-      }
       performLayout(view.width, view.height)
     } else {
       view.requestLayout()
@@ -751,11 +724,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       inputView.scrollTo(inputView.scrollX, 0)
     }
   }
-
-  private fun shouldLogDebug(): Boolean {
-    return BuildConfig.DEBUG
-  }
-
 
   override fun afterUpdate() {
     super.afterUpdate()
