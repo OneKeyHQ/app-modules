@@ -22,24 +22,6 @@ class NativeLogger: HybridNativeLoggerSpec {
         return patterns.compactMap { try? NSRegularExpression(pattern: $0) }
     }()
 
-    /// Rate limiting: max messages per second
-    private static let maxMessagesPerSecond = 100
-    private static var messageCount = 0
-    private static var windowStart = Date()
-    private static let rateLimitLock = NSLock()
-
-    private static func isRateLimited() -> Bool {
-        rateLimitLock.lock()
-        defer { rateLimitLock.unlock() }
-        let now = Date()
-        if now.timeIntervalSince(windowStart) >= 1.0 {
-            windowStart = now
-            messageCount = 0
-        }
-        messageCount += 1
-        return messageCount > maxMessagesPerSecond
-    }
-
     private static func sanitize(_ message: String) -> String {
         var result = message
         for regex in sensitivePatterns {
@@ -55,8 +37,24 @@ class NativeLogger: HybridNativeLoggerSpec {
         return result
     }
 
+    private static func truncateFile(atPath path: String) throws {
+        guard FileManager.default.fileExists(atPath: path) else { return }
+        let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        defer {
+            if #available(iOS 13.0, *) {
+                try? handle.close()
+            } else {
+                handle.closeFile()
+            }
+        }
+        if #available(iOS 13.0, *) {
+            try handle.truncate(atOffset: 0)
+        } else {
+            handle.truncateFile(atOffset: 0)
+        }
+    }
+
     func write(level: Double, msg: String) {
-        if NativeLogger.isRateLimited() { return }
         let sanitized = NativeLogger.sanitize(msg)
         switch Int(level) {
         case 0: OneKeyLog.debug("JS", sanitized)
@@ -93,6 +91,7 @@ class NativeLogger: HybridNativeLoggerSpec {
 
     func deleteLogFiles() throws -> Promise<Void> {
         return Promise.async {
+            DDLog.flushLog()
             let dir = OneKeyLog.logsDirectory
             let fm = FileManager.default
             let files: [String]
@@ -102,10 +101,14 @@ class NativeLogger: HybridNativeLoggerSpec {
                 OneKeyLog.warn("NativeLogger", "Failed to list log directory for deletion")
                 return
             }
-            // Skip the active log file to avoid breaking CocoaLumberjack's open file handle
-            for file in files where file.hasSuffix(".log") && file != "app-latest.log" {
+            for file in files where file.hasSuffix(".log") {
+                let path = "\(dir)/\(file)"
                 do {
-                    try fm.removeItem(atPath: "\(dir)/\(file)")
+                    if file == "app-latest.log" {
+                        try NativeLogger.truncateFile(atPath: path)
+                    } else {
+                        try fm.removeItem(atPath: path)
+                    }
                 } catch {
                     OneKeyLog.warn("NativeLogger", "Failed to delete log file")
                 }

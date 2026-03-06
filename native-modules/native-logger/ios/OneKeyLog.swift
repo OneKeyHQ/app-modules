@@ -6,6 +6,7 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
     private static let logPrefix = "app"
     private static let latestFileName = "\(logPrefix)-latest.log"
     private static let dateFormatterLock = NSLock()
+    private static let archiveLock = NSLock()
     private static let _dateFormatter: DateFormatter = {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
@@ -30,8 +31,11 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
 
     /// When rolled, rename app-latest.log → app-{yyyy-MM-dd}.{i}.log (matches Android pattern)
     override func didArchiveLogFile(atPath logFilePath: String, wasRolled: Bool) {
+        Self.archiveLock.lock()
+        defer { Self.archiveLock.unlock() }
+
         guard wasRolled else {
-            super.didArchiveLogFile(atPath: logFilePath, wasRolled: wasRolled)
+            runCleanup()
             return
         }
 
@@ -53,16 +57,37 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
                 try fm.moveItem(atPath: logFilePath, toPath: archivedPath)
                 moved = true
             } catch {
-                // Another thread may have created this file; try next index
-                index += 1
+                // Another callback may have already moved the source file.
+                if !fm.fileExists(atPath: logFilePath) {
+                    break
+                }
+                let nsError = error as NSError
+                // Retry only for recoverable "target exists" collisions.
+                if nsError.domain == NSCocoaErrorDomain &&
+                    nsError.code == NSFileWriteFileExistsError {
+                    index += 1
+                    continue
+                }
+                NSLog(
+                    "[OneKeyLog] Failed to archive log file move (%@:%ld): %@",
+                    nsError.domain,
+                    nsError.code,
+                    nsError.localizedDescription
+                )
+                break
             }
         }
         if !moved {
             NSLog("[OneKeyLog] Failed to archive log file after 1000 attempts: %@", logFilePath)
-            super.didArchiveLogFile(atPath: logFilePath, wasRolled: wasRolled)
-        } else {
-            // Pass the new path so the super class can find the file for cleanup
-            super.didArchiveLogFile(atPath: archivedPath, wasRolled: wasRolled)
+        }
+        runCleanup()
+    }
+
+    private func runCleanup() {
+        do {
+            try cleanupLogFiles()
+        } catch {
+            NSLog("[OneKeyLog] Failed to cleanup log files: %@", (error as NSError).localizedDescription)
         }
     }
 }
@@ -70,6 +95,56 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
 @objc public class OneKeyLog: NSObject {
 
     private static let maxMessageLength = 4096
+
+    private struct TokenBucket {
+        let ratePerSecond: Double
+        let burstCapacity: Double
+        var tokens: Double
+        var lastRefillAt: TimeInterval
+
+        mutating func allow(at now: TimeInterval) -> Bool {
+            let elapsed = max(0, now - lastRefillAt)
+            if elapsed > 0 {
+                tokens = min(burstCapacity, tokens + elapsed * ratePerSecond)
+                lastRefillAt = now
+            }
+            guard tokens >= 1 else { return false }
+            tokens -= 1
+            return true
+        }
+    }
+
+    private static let debugInfoRatePerSecond = 400.0
+    private static let debugInfoBurst = 2000.0
+    private static let warnRatePerSecond = 1000.0
+    private static let warnBurst = 2000.0
+
+    private static var rateLimitBuckets: [String: TokenBucket] = {
+        let now = Date().timeIntervalSinceReferenceDate
+        return [
+            "DEBUG": TokenBucket(
+                ratePerSecond: debugInfoRatePerSecond,
+                burstCapacity: debugInfoBurst,
+                tokens: debugInfoBurst,
+                lastRefillAt: now
+            ),
+            "INFO": TokenBucket(
+                ratePerSecond: debugInfoRatePerSecond,
+                burstCapacity: debugInfoBurst,
+                tokens: debugInfoBurst,
+                lastRefillAt: now
+            ),
+            "WARN": TokenBucket(
+                ratePerSecond: warnRatePerSecond,
+                burstCapacity: warnBurst,
+                tokens: warnBurst,
+                lastRefillAt: now
+            ),
+        ]
+    }()
+    private static var droppedCounts: [String: Int] = [:]
+    private static var lastDropReportAt = Date().timeIntervalSinceReferenceDate
+    private static let rateLimitLock = NSLock()
 
     private static let configured: Bool = {
         let logsDir = logsDirectory
@@ -113,6 +188,63 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         timeFormatterLock.lock()
         defer { timeFormatterLock.unlock() }
         return _timeFormatter.string(from: date)
+    }
+
+    private static func rateLimitReportLocked(now: TimeInterval) -> String? {
+        guard now - lastDropReportAt >= 1.0 else { return nil }
+        guard !droppedCounts.isEmpty else {
+            lastDropReportAt = now
+            return nil
+        }
+        let ordered = ["DEBUG", "INFO", "WARN"]
+        let parts = ordered.compactMap { level -> String? in
+            guard let count = droppedCounts[level], count > 0 else { return nil }
+            return "\(level)=\(count)"
+        }
+        droppedCounts.removeAll()
+        lastDropReportAt = now
+        guard !parts.isEmpty else { return nil }
+        return "[OneKeyLog] Rate-limited logs (last 1s): \(parts.joined(separator: ", "))"
+    }
+
+    private static func evaluateRateLimit(for level: String) -> (drop: Bool, report: String?) {
+        rateLimitLock.lock()
+        defer { rateLimitLock.unlock() }
+
+        let now = Date().timeIntervalSinceReferenceDate
+        var report = rateLimitReportLocked(now: now)
+
+        // Never limit error logs.
+        if level == "ERROR" {
+            return (false, report)
+        }
+
+        guard var bucket = rateLimitBuckets[level] else {
+            return (false, report)
+        }
+        let allowed = bucket.allow(at: now)
+        rateLimitBuckets[level] = bucket
+        if allowed {
+            return (false, report)
+        }
+        droppedCounts[level, default: 0] += 1
+        report = rateLimitReportLocked(now: now) ?? report
+        return (true, report)
+    }
+
+    private static func log(
+        _ level: String,
+        _ tag: String,
+        _ message: String,
+        writer: (String) -> Void
+    ) {
+        _ = configured
+        let decision = evaluateRateLimit(for: level)
+        if let report = decision.report {
+            DDLogWarn(report)
+        }
+        if decision.drop { return }
+        writer(formatMessage(tag, level, message))
     }
 
     private static func truncate(_ message: String) -> String {
@@ -163,23 +295,19 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
     }
 
     @objc public static func debug(_ tag: String, _ message: String) {
-        _ = configured
-        DDLogDebug(formatMessage(tag, "DEBUG", message))
+        log("DEBUG", tag, message) { DDLogDebug($0) }
     }
 
     @objc public static func info(_ tag: String, _ message: String) {
-        _ = configured
-        DDLogInfo(formatMessage(tag, "INFO", message))
+        log("INFO", tag, message) { DDLogInfo($0) }
     }
 
     @objc public static func warn(_ tag: String, _ message: String) {
-        _ = configured
-        DDLogWarn(formatMessage(tag, "WARN", message))
+        log("WARN", tag, message) { DDLogWarn($0) }
     }
 
     @objc public static func error(_ tag: String, _ message: String) {
-        _ = configured
-        DDLogError(formatMessage(tag, "ERROR", message))
+        log("ERROR", tag, message) { DDLogError($0) }
     }
 
     /// Returns the logs directory path (for getLogFilePaths / deleteLogFiles)

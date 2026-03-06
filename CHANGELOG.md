@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.29] - 2026-03-06
+
+### Bug Fixes
+- **auto-size-input**: Re-layout immediately in `contentAutoWidth` mode as text changes, and shrink font when max width is reached so content stays visible
+
+## [1.1.28] - 2026-03-05
+
+### Features
+- **auto-size-input**: Add new `@onekeyfe/react-native-auto-size-input` native view module with font auto-scaling, prefix/suffix support, multiline support, and example page
+- **auto-size-input**: Add `showBorder`, `inputBackgroundColor`, and `contentAutoWidth` props; make composed prefix/input/suffix area tappable to focus input
+- **bundle-update / app-update**: Add `testVerification` and `testSkipVerification` testing APIs
+- **native-logger**: Add level-based token bucket rate limiting for log writes
+
+### Bug Fixes
+- **auto-size-input**: Fix iOS build issue (delegate/`NSObjectProtocol` conformance), fix layout-loop behavior, and align callback typing on test page
+- **native-logger**: Harden log rolling behavior and move rate limiting to low-level logger implementation
+
 ## [1.1.27] - 2026-03-04
 
 ### Features

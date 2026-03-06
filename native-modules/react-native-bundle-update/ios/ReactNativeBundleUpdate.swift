@@ -1178,6 +1178,18 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         }
     }
 
+    func testSkipVerification() throws -> Promise<Bool> {
+        return Promise.async {
+            #if ALLOW_SKIP_GPG_VERIFICATION
+            let result = BundleUpdateStore.isDevSettingsEnabled() && BundleUpdateStore.isSkipGPGEnabled()
+            #else
+            let result = false
+            #endif
+            OneKeyLog.info("BundleUpdate", "testSkipVerification: result=\(result)")
+            return result
+        }
+    }
+
     func isBundleExists(appVersion: String, bundleVersion: String) throws -> Promise<Bool> {
         return Promise.async {
             let folderName = "\(appVersion)-\(bundleVersion)"
