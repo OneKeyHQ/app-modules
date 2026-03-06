@@ -13,9 +13,11 @@ All notable changes to this project will be documented in this file.
 - **auto-size-input**: Add new `@onekeyfe/react-native-auto-size-input` native view module with font auto-scaling, prefix/suffix support, multiline support, and example page
 - **auto-size-input**: Add `showBorder`, `inputBackgroundColor`, and `contentAutoWidth` props; make composed prefix/input/suffix area tappable to focus input
 - **bundle-update / app-update**: Add `testVerification` and `testSkipVerification` testing APIs
+- **native-logger**: Add level-based token bucket rate limiting for log writes
 
 ### Bug Fixes
 - **auto-size-input**: Fix iOS build issue (delegate/`NSObjectProtocol` conformance), fix layout-loop behavior, and align callback typing on test page
+- **native-logger**: Harden log rolling behavior and move rate limiting to low-level logger implementation
 
 ## [1.1.27] - 2026-03-04
 
