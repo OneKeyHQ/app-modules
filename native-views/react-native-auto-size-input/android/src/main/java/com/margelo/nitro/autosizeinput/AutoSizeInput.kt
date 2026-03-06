@@ -23,7 +23,6 @@ import com.facebook.react.uimanager.ThemedReactContext
 
 @DoNotStrip
 class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInputSpec() {
-  private val debugLayout = BuildConfig.DEBUG
 
   // Subviews
   private val prefixView = TextView(context)
@@ -331,6 +330,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       view.requestLayout()
     }
 
+
   override var onChangeText: ((String) -> Unit)? = null
   override var onFocus: (() -> Unit)? = null
   override var onBlur: (() -> Unit)? = null
@@ -481,7 +481,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     // Layout suffix
     suffixView.layout(suffixX, suffixTop, suffixX + suffixW, suffixTop + suffixView.measuredHeight)
 
-    if (debugLayout) {
+    if (shouldLogDebug()) {
       Log.d(
         "AutoSizeInput",
         "layout w=$width h=$height edge=$edgeInset prefixW=$prefixW suffixW=$suffixW inputX=$inputX inputW=$inputW inputTop=$inputTop inputH=$inputH suffixX=$suffixX inputBaseline=${inputView.baseline} prefixTop=$prefixTop suffixTop=$suffixTop text='${inputView.text}' prefix='${prefixView.text}' suffix='${suffixView.text}'"
@@ -498,10 +498,17 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     try {
       val maxSize = (maxFontSizeProp ?: 48.0).toFloat()
       val minSize = (minFontSizeProp ?: 16.0).toFloat()
+      val isContentAutoWidthEnabled = contentAutoWidth == true && multiline != true
       val width = view.width
       val height = view.height
       if (width <= 0 || height <= 0) {
         // Keep text size in sync even before first valid layout pass.
+        applyFontSize(maxSize)
+        return
+      }
+
+      // In contentAutoWidth mode, prioritize width expansion instead of shrinking text.
+      if (isContentAutoWidthEnabled) {
         applyFontSize(maxSize)
         return
       }
@@ -684,7 +691,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     // Keep extra room for side bearings/kerning to avoid clipping on some glyphs/fonts.
     val safetyPadding = maxOf((4f * density).toInt(), kotlin.math.ceil(textView.textSize * 0.5f).toInt())
     val measured = maxOf(maxOf(advanceWidth, glyphWidth), desiredWidth) + safetyPadding
-    if (debugLayout) {
+    if (shouldLogDebug()) {
       Log.d(
         "AutoSizeInput",
         "measure text='${content}' textSize=${textView.textSize} adv=$advanceWidth glyph=$glyphWidth desired=$desiredWidth safety=$safetyPadding final=$measured"
@@ -707,7 +714,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
   }
 
   private fun logInputTextPosition(source: String) {
-    if (!debugLayout) return
+    if (!shouldLogDebug()) return
     val layout = inputView.layout
     val lineCount = layout?.lineCount ?: 0
     val lineTop = if (layout != null && lineCount > 0) layout.getLineTop(0) else -1
@@ -717,6 +724,10 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       "AutoSizeInput",
       "text-pos source=$source text='${inputView.text}' textSize=${inputView.textSize} inputTop=${inputView.top} inputBottom=${inputView.bottom} inputH=${inputView.height} measuredH=${inputView.measuredHeight} baseline=${inputView.baseline} gravity=${inputView.gravity} padTop=${inputView.paddingTop} padBottom=${inputView.paddingBottom} cpTop=${inputView.compoundPaddingTop} cpBottom=${inputView.compoundPaddingBottom} lineCount=$lineCount lineTop=$lineTop lineBottom=$lineBottom lineBaseline=$lineBaseline scrollY=${inputView.scrollY}"
     )
+  }
+
+  private fun shouldLogDebug(): Boolean {
+    return BuildConfig.DEBUG
   }
 
 
