@@ -7,8 +7,14 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 - **auto-size-input**: Re-layout immediately in `contentAutoWidth` mode as text changes, and shrink font when max width is reached so content stays visible
 
-### Chores
-- Bump all package versions (`1.1.28 -> 1.1.29`, root `0.0.0 -> 0.0.1`, example `0.0.1 -> 0.0.2`)
+## [1.1.28] - 2026-03-06
+
+### Features
+- **auto-size-input**: Add new `@onekeyfe/react-native-auto-size-input` native view module with font auto-scaling, prefix/suffix support, multiline support, and example page
+- **auto-size-input**: Add `showBorder`, `inputBackgroundColor`, and `contentAutoWidth` props; make composed prefix/input/suffix area tappable to focus input
+
+### Bug Fixes
+- **auto-size-input**: Fix iOS build issue (delegate/`NSObjectProtocol` conformance), fix layout-loop behavior, and align callback typing on test page
 
 ## [1.1.27] - 2026-03-04
 
