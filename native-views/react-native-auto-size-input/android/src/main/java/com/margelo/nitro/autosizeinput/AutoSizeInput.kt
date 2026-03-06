@@ -454,7 +454,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       if (shouldLogDebug()) {
         Log.d(
           "AutoSizeInput",
-          "auto-width layout text='$typedText' desired=$desiredInputWidth min=$minInputWidth max=$maxInputWidth final=$inputW prefixW=$prefixW suffixW=$suffixW"
+          "auto-width layout text='$typedText' desired=$desiredInputWidth min=$minInputWidth max=$maxInputWidth final=$inputW textSize=${inputView.textSize} prefixW=$prefixW suffixW=$suffixW"
         )
       }
     } else {
@@ -513,6 +513,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       val isContentAutoWidthEnabled = contentAutoWidth == true && multiline != true
       val width = view.width
       val height = view.height
+      val inputText = inputView.text?.toString() ?: ""
       if (width <= 0 || height <= 0) {
         // Keep text size in sync even before first valid layout pass.
         applyFontSize(maxSize)
@@ -521,7 +522,31 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
 
       // In contentAutoWidth mode, prioritize width expansion instead of shrinking text.
       if (isContentAutoWidthEnabled) {
-        applyFontSize(maxSize)
+        val density = context.resources.displayMetrics.density
+        val edgeInset = (2f * density).toInt()
+        val prefixW = if (prefixView.visibility == View.VISIBLE) measureTextViewWidthPx(prefixView) else 0
+        val suffixW = if (suffixView.visibility == View.VISIBLE) measureTextViewWidthPx(suffixView) else 0
+        val prefixGap = if (prefixView.visibility == View.VISIBLE) ((prefixMarginRight ?: 0.0) * density).toInt() else 0
+        val suffixGap = if (suffixView.visibility == View.VISIBLE) ((suffixMarginLeft ?: 0.0) * density).toInt() else 0
+        val inputX = edgeInset + prefixW + prefixGap
+        val suffixSegment = if (suffixView.visibility == View.VISIBLE) suffixGap + suffixW else 0
+        val maxInputWidth = maxOf(width - edgeInset - inputX - suffixSegment, 0)
+        val textForSizing = if (inputText.isEmpty()) (placeholder ?: "") else inputText
+
+        // Expand width first; once width hits max, shrink font to keep full text visible.
+        val targetSize = if (maxInputWidth <= 0) {
+          minSize
+        } else if (textForSizing.isEmpty()) {
+          maxSize
+        } else {
+          findOptimalFontSizeSingleLine(
+            fullText = textForSizing,
+            availableWidth = maxInputWidth.toFloat(),
+            minSize = minSize,
+            maxSize = maxSize
+          )
+        }
+        applyFontSize(targetSize)
         return
       }
 
@@ -529,7 +554,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
 
       val prefixText = prefix ?: ""
       val suffixText = suffix ?: ""
-      val inputText = inputView.text?.toString() ?: ""
       val displayText = if (inputText.isEmpty()) (placeholder ?: "") else inputText
       val fullText = prefixText + displayText + suffixText
 
@@ -621,7 +645,17 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     suffixView.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
     suffixView.typeface = typeface
     resetSingleLineVerticalOffset()
-    view.requestLayout()
+    if (contentAutoWidth == true && multiline != true && view.width > 0 && view.height > 0) {
+      if (shouldLogDebug()) {
+        Log.d(
+          "AutoSizeInput",
+          "auto-width force-layout text='${inputView.text}' viewW=${view.width} viewH=${view.height}"
+        )
+      }
+      performLayout(view.width, view.height)
+    } else {
+      view.requestLayout()
+    }
   }
 
   private fun makeTypeface(): Typeface {
