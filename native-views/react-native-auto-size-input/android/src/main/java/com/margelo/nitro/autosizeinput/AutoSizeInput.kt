@@ -58,7 +58,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     override fun afterTextChanged(s: Editable?) {
       if (isUpdatingFromJS || isDisposed) return
       recalculateFontSize()
-      logInputTextPosition("afterTextChanged")
       onChangeText?.invoke(s?.toString() ?: "")
     }
   }
@@ -486,7 +485,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
         "AutoSizeInput",
         "layout w=$width h=$height edge=$edgeInset prefixW=$prefixW suffixW=$suffixW inputX=$inputX inputW=$inputW inputTop=$inputTop inputH=$inputH suffixX=$suffixX inputBaseline=${inputView.baseline} prefixTop=$prefixTop suffixTop=$suffixTop text='${inputView.text}' prefix='${prefixView.text}' suffix='${suffixView.text}'"
       )
-      logInputTextPosition("performLayout")
     }
   }
 
@@ -610,7 +608,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     suffixView.typeface = typeface
     resetSingleLineVerticalOffset()
     view.requestLayout()
-    logInputTextPosition("applyFontSize")
   }
 
   private fun makeTypeface(): Typeface {
@@ -711,19 +708,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     if (inputView.scrollY != 0) {
       inputView.scrollTo(inputView.scrollX, 0)
     }
-  }
-
-  private fun logInputTextPosition(source: String) {
-    if (!shouldLogDebug()) return
-    val layout = inputView.layout
-    val lineCount = layout?.lineCount ?: 0
-    val lineTop = if (layout != null && lineCount > 0) layout.getLineTop(0) else -1
-    val lineBottom = if (layout != null && lineCount > 0) layout.getLineBottom(0) else -1
-    val lineBaseline = if (layout != null && lineCount > 0) layout.getLineBaseline(0) else -1
-    Log.d(
-      "AutoSizeInput",
-      "text-pos source=$source text='${inputView.text}' textSize=${inputView.textSize} inputTop=${inputView.top} inputBottom=${inputView.bottom} inputH=${inputView.height} measuredH=${inputView.measuredHeight} baseline=${inputView.baseline} gravity=${inputView.gravity} padTop=${inputView.paddingTop} padBottom=${inputView.paddingBottom} cpTop=${inputView.compoundPaddingTop} cpBottom=${inputView.compoundPaddingBottom} lineCount=$lineCount lineTop=$lineTop lineBottom=$lineBottom lineBaseline=$lineBaseline scrollY=${inputView.scrollY}"
-    )
   }
 
   private fun shouldLogDebug(): Boolean {
