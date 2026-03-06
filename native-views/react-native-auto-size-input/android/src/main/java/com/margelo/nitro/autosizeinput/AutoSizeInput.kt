@@ -57,6 +57,13 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
     override fun afterTextChanged(s: Editable?) {
       if (isUpdatingFromJS || isDisposed) return
+      if (shouldLogDebug() && contentAutoWidth == true && multiline != true) {
+        val textValue = s?.toString().orEmpty()
+        Log.d(
+          "AutoSizeInput",
+          "auto-width input-change text='$textValue' len=${textValue.length} viewW=${view.width} viewH=${view.height}"
+        )
+      }
       recalculateFontSize()
       onChangeText?.invoke(s?.toString() ?: "")
     }
@@ -73,6 +80,13 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       inputView.setSelection(inputView.text?.length ?: 0)
       inputView.addTextChangedListener(textWatcher)
       isUpdatingFromJS = false
+      if (shouldLogDebug() && contentAutoWidth == true && multiline != true) {
+        val textValue = value.orEmpty()
+        Log.d(
+          "AutoSizeInput",
+          "auto-width text-prop-update text='$textValue' len=${textValue.length} viewW=${view.width} viewH=${view.height}"
+        )
+      }
       recalculateFontSize()
     }
 
@@ -437,6 +451,12 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       inputW = minOf(desiredInputWidth, maxInputWidth)
       val desiredSuffixX = if (suffixView.visibility == View.VISIBLE) inputX + inputW + suffixGap else width - edgeInset
       suffixX = minOf(desiredSuffixX, width - edgeInset - suffixW)
+      if (shouldLogDebug()) {
+        Log.d(
+          "AutoSizeInput",
+          "auto-width layout text='$typedText' desired=$desiredInputWidth min=$minInputWidth max=$maxInputWidth final=$inputW prefixW=$prefixW suffixW=$suffixW"
+        )
+      }
     } else {
       inputW = maxOf(width - edgeInset - inputX - suffixW - suffixGap, 0)
       suffixX = width - edgeInset - suffixW
@@ -480,12 +500,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     // Layout suffix
     suffixView.layout(suffixX, suffixTop, suffixX + suffixW, suffixTop + suffixView.measuredHeight)
 
-    if (shouldLogDebug()) {
-      Log.d(
-        "AutoSizeInput",
-        "layout w=$width h=$height edge=$edgeInset prefixW=$prefixW suffixW=$suffixW inputX=$inputX inputW=$inputW inputTop=$inputTop inputH=$inputH suffixX=$suffixX inputBaseline=${inputView.baseline} prefixTop=$prefixTop suffixTop=$suffixTop text='${inputView.text}' prefix='${prefixView.text}' suffix='${suffixView.text}'"
-      )
-    }
   }
 
   // MARK: - Font Size Calculation
@@ -688,12 +702,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     // Keep extra room for side bearings/kerning to avoid clipping on some glyphs/fonts.
     val safetyPadding = maxOf((4f * density).toInt(), kotlin.math.ceil(textView.textSize * 0.5f).toInt())
     val measured = maxOf(maxOf(advanceWidth, glyphWidth), desiredWidth) + safetyPadding
-    if (shouldLogDebug()) {
-      Log.d(
-        "AutoSizeInput",
-        "measure text='${content}' textSize=${textView.textSize} adv=$advanceWidth glyph=$glyphWidth desired=$desiredWidth safety=$safetyPadding final=$measured"
-      )
-    }
     return measured
   }
 
