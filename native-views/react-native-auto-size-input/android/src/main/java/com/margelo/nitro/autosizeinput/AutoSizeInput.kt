@@ -117,7 +117,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       recalculateFontSize()
     }
 
-  override var multiline: Boolean?
+  override var multiline: Boolean? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -125,7 +125,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       updateInputMode()
     }
 
-  override var maxNumberOfLines: Double?
+  override var maxNumberOfLines: Double? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -133,7 +133,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       recalculateFontSize()
     }
 
-  override var textColor: String?
+  override var textColor: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -144,7 +144,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       if (suffixColor == null) suffixView.setTextColor(color)
     }
 
-  override var prefixColor: String?
+  override var prefixColor: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -152,7 +152,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       prefixView.setTextColor(parseColor(value) ?: parseColor(textColor) ?: Color.BLACK)
     }
 
-  override var suffixColor: String?
+  override var suffixColor: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -160,7 +160,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       suffixView.setTextColor(parseColor(value) ?: parseColor(textColor) ?: Color.BLACK)
     }
 
-  override var placeholderColor: String?
+  override var placeholderColor: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -168,7 +168,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       inputView.setHintTextColor(parseColor(value) ?: Color.GRAY)
     }
 
-  override var textAlign: String?
+  override var textAlign: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -181,7 +181,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       inputView.gravity = gravity
     }
 
-  override var fontFamily: String?
+  override var fontFamily: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -189,7 +189,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       recalculateFontSize()
     }
 
-  override var fontWeight: String?
+  override var fontWeight: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -197,7 +197,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       recalculateFontSize()
     }
 
-  override var editable: Boolean?
+  override var editable: Boolean? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -208,7 +208,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       inputView.isCursorVisible = isEditable
     }
 
-  override var keyboardType: String?
+  override var keyboardType: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -222,7 +222,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       }
     }
 
-  override var returnKeyType: String?
+  override var returnKeyType: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -237,7 +237,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       }
     }
 
-  override var autoCorrect: Boolean?
+  override var autoCorrect: Boolean? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -250,7 +250,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       }
     }
 
-  override var autoCapitalize: String?
+  override var autoCapitalize: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -270,7 +270,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       inputView.inputType = cleared or capFlag
     }
 
-  override var selectionColor: String?
+  override var selectionColor: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -287,7 +287,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       }
     }
 
-  override var prefixMarginRight: Double?
+  override var prefixMarginRight: Double? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -295,7 +295,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       view.requestLayout()
     }
 
-  override var suffixMarginLeft: Double?
+  override var suffixMarginLeft: Double? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -303,7 +303,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       view.requestLayout()
     }
 
-  override var showBorder: Boolean?
+  override var showBorder: Boolean? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -311,7 +311,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       updateInputAppearance()
     }
 
-  override var inputBackgroundColor: String?
+  override var inputBackgroundColor: String? = null
     get() = field
     set(value) {
       if (isDisposed) return
@@ -319,7 +319,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       updateInputAppearance()
     }
 
-  override var contentAutoWidth: Boolean?
+  override var contentAutoWidth: Boolean? = null
     get() = field
     set(value) {
       if (isDisposed) return
