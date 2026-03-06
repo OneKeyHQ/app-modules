@@ -2,6 +2,7 @@ package com.margelo.nitro.autosizeinput
 
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.Editable
@@ -11,6 +12,7 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextWatcher
 import android.util.TypedValue
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -21,6 +23,7 @@ import com.facebook.react.uimanager.ThemedReactContext
 
 @DoNotStrip
 class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInputSpec() {
+  private val debugLayout = BuildConfig.DEBUG
 
   // Subviews
   private val prefixView = TextView(context)
@@ -56,6 +59,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     override fun afterTextChanged(s: Editable?) {
       if (isUpdatingFromJS || isDisposed) return
       recalculateFontSize()
+      logInputTextPosition("afterTextChanged")
       onChangeText?.invoke(s?.toString() ?: "")
     }
   }
@@ -339,10 +343,18 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     // Configure prefix
     prefixView.visibility = View.GONE
     prefixView.includeFontPadding = false
+    prefixView.isSingleLine = true
+    prefixView.maxLines = 1
+    prefixView.setHorizontallyScrolling(true)
+    prefixView.gravity = Gravity.CENTER_VERTICAL
 
     // Configure suffix
     suffixView.visibility = View.GONE
     suffixView.includeFontPadding = false
+    suffixView.isSingleLine = true
+    suffixView.maxLines = 1
+    suffixView.setHorizontallyScrolling(true)
+    suffixView.gravity = Gravity.CENTER_VERTICAL
 
     // Configure input
     inputView.background = null
@@ -350,6 +362,10 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     inputView.includeFontPadding = false
     inputView.isSingleLine = true
     inputView.maxLines = 1
+    inputView.setHorizontallyScrolling(true)
+    inputView.isVerticalScrollBarEnabled = false
+    inputView.overScrollMode = View.OVER_SCROLL_NEVER
+    inputView.gravity = Gravity.CENTER_VERTICAL or Gravity.START
     inputView.addTextChangedListener(textWatcher)
 
     inputView.setOnFocusChangeListener { _, hasFocus ->
@@ -360,12 +376,12 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     // Make the whole composed area (prefix + input + suffix) tappable for focus.
     val focusFromContainer = View.OnClickListener {
       if (isDisposed || editable == false) return@OnClickListener
-      inputView.requestFocus()
-      val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-      imm?.showSoftInput(inputView, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+      requestInputFocus()
     }
+    view.isClickable = true
     view.setOnClickListener(focusFromContainer)
     prefixView.setOnClickListener(focusFromContainer)
+    inputView.setOnClickListener(focusFromContainer)
     suffixView.setOnClickListener(focusFromContainer)
 
     // Add to container
@@ -393,58 +409,85 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     if (width <= 0 || height <= 0) return
 
     val density = context.resources.displayMetrics.density
+    val edgeInset = (2f * density).toInt()
 
     // Measure prefix
     val prefixW = if (prefixView.visibility == View.VISIBLE) {
-      prefixView.measure(
-        View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.AT_MOST),
-        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
-      )
-      prefixView.measuredWidth
+      measureTextViewWidthPx(prefixView)
     } else 0
 
     // Measure suffix
     val suffixW = if (suffixView.visibility == View.VISIBLE) {
-      suffixView.measure(
-        View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.AT_MOST),
-        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
-      )
-      suffixView.measuredWidth
+      measureTextViewWidthPx(suffixView)
     } else 0
 
     val prefixGap = if (prefixView.visibility == View.VISIBLE) ((prefixMarginRight ?: 0.0) * density).toInt() else 0
     val suffixGap = if (suffixView.visibility == View.VISIBLE) ((suffixMarginLeft ?: 0.0) * density).toInt() else 0
 
-    val inputX = prefixW + prefixGap
+    val inputX = edgeInset + prefixW + prefixGap
     val isContentAutoWidthEnabled = contentAutoWidth == true && multiline != true
     val inputW: Int
     val suffixX: Int
 
     if (isContentAutoWidthEnabled) {
       val typedText = inputView.text?.toString() ?: ""
-      val desiredInputWidth = measureSingleLineTextWidthPx(typedText)
+      val minInputWidth = (24f * density).toInt()
+      val desiredInputWidth = maxOf(measureSingleLineTextWidthPx(typedText), minInputWidth)
       val suffixSegment = if (suffixView.visibility == View.VISIBLE) suffixGap + suffixW else 0
-      val maxInputWidth = maxOf(width - inputX - suffixSegment, 0)
+      val maxInputWidth = maxOf(width - edgeInset - inputX - suffixSegment, 0)
       inputW = minOf(desiredInputWidth, maxInputWidth)
-      val desiredSuffixX = if (suffixView.visibility == View.VISIBLE) inputX + inputW + suffixGap else width
-      suffixX = minOf(desiredSuffixX, width - suffixW)
+      val desiredSuffixX = if (suffixView.visibility == View.VISIBLE) inputX + inputW + suffixGap else width - edgeInset
+      suffixX = minOf(desiredSuffixX, width - edgeInset - suffixW)
     } else {
-      inputW = maxOf(width - inputX - suffixW - suffixGap, 0)
-      suffixX = width - suffixW
+      inputW = maxOf(width - edgeInset - inputX - suffixW - suffixGap, 0)
+      suffixX = width - edgeInset - suffixW
     }
 
-    // Layout prefix
-    prefixView.layout(0, 0, prefixW, height)
+    // Re-measure with the exact final slot size before layout.
+    if (prefixView.visibility == View.VISIBLE) {
+      prefixView.measure(
+        View.MeasureSpec.makeMeasureSpec(prefixW, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST)
+      )
+    }
+    if (suffixView.visibility == View.VISIBLE) {
+      suffixView.measure(
+        View.MeasureSpec.makeMeasureSpec(suffixW, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST)
+      )
+    }
 
     // Layout input
+    val inputHeightSpec = if (multiline == true) {
+      View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+    } else {
+      View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST)
+    }
     inputView.measure(
       View.MeasureSpec.makeMeasureSpec(inputW, View.MeasureSpec.EXACTLY),
-      View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+      inputHeightSpec
     )
-    inputView.layout(inputX, 0, inputX + inputW, height)
+    val inputH = if (multiline == true) height else inputView.measuredHeight.coerceAtMost(height)
+    val inputTop = if (multiline == true) 0 else ((height - inputH) / 2).coerceAtLeast(0)
+    inputView.layout(inputX, inputTop, inputX + inputW, inputTop + inputH)
+    resetSingleLineVerticalOffset()
+
+    val prefixTop = ((height - prefixView.measuredHeight) / 2).coerceAtLeast(0)
+    val suffixTop = ((height - suffixView.measuredHeight) / 2).coerceAtLeast(0)
+
+    // Layout prefix
+    prefixView.layout(edgeInset, prefixTop, edgeInset + prefixW, prefixTop + prefixView.measuredHeight)
 
     // Layout suffix
-    suffixView.layout(suffixX, 0, suffixX + suffixW, height)
+    suffixView.layout(suffixX, suffixTop, suffixX + suffixW, suffixTop + suffixView.measuredHeight)
+
+    if (debugLayout) {
+      Log.d(
+        "AutoSizeInput",
+        "layout w=$width h=$height edge=$edgeInset prefixW=$prefixW suffixW=$suffixW inputX=$inputX inputW=$inputW inputTop=$inputTop inputH=$inputH suffixX=$suffixX inputBaseline=${inputView.baseline} prefixTop=$prefixTop suffixTop=$suffixTop text='${inputView.text}' prefix='${prefixView.text}' suffix='${suffixView.text}'"
+      )
+      logInputTextPosition("performLayout")
+    }
   }
 
   // MARK: - Font Size Calculation
@@ -453,15 +496,17 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     if (isDisposed || isRecalculating) return
     isRecalculating = true
     try {
+      val maxSize = (maxFontSizeProp ?: 48.0).toFloat()
+      val minSize = (minFontSizeProp ?: 16.0).toFloat()
       val width = view.width
       val height = view.height
       if (width <= 0 || height <= 0) {
+        // Keep text size in sync even before first valid layout pass.
+        applyFontSize(maxSize)
         return
       }
 
       val density = context.resources.displayMetrics.density
-      val maxSize = (maxFontSizeProp ?: 48.0).toFloat()
-      val minSize = (minFontSizeProp ?: 16.0).toFloat()
 
       val prefixText = prefix ?: ""
       val suffixText = suffix ?: ""
@@ -556,7 +601,9 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     prefixView.typeface = typeface
     suffixView.setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
     suffixView.typeface = typeface
+    resetSingleLineVerticalOffset()
     view.requestLayout()
+    logInputTextPosition("applyFontSize")
   }
 
   private fun makeTypeface(): Typeface {
@@ -580,9 +627,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
 
   override fun focus() {
     if (isDisposed) return
-    inputView.requestFocus()
-    val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-    imm?.showSoftInput(inputView, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+    requestInputFocus()
   }
 
   override fun blur() {
@@ -622,6 +667,58 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     paint.typeface = makeTypeface()
     return kotlin.math.ceil(paint.measureText(text).toDouble()).toInt()
   }
+
+  private fun measureTextViewWidthPx(textView: TextView): Int {
+    val content = textView.text?.toString().orEmpty()
+    if (content.isEmpty()) return 0
+    val bounds = Rect()
+    textView.paint.getTextBounds(content, 0, content.length, bounds)
+    val advanceWidth = kotlin.math.ceil(textView.paint.measureText(content).toDouble()).toInt()
+    val glyphWidth = bounds.width()
+    textView.measure(
+      View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+      View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+    )
+    val desiredWidth = textView.measuredWidth
+    val density = context.resources.displayMetrics.density
+    // Keep extra room for side bearings/kerning to avoid clipping on some glyphs/fonts.
+    val safetyPadding = maxOf((4f * density).toInt(), kotlin.math.ceil(textView.textSize * 0.5f).toInt())
+    val measured = maxOf(maxOf(advanceWidth, glyphWidth), desiredWidth) + safetyPadding
+    if (debugLayout) {
+      Log.d(
+        "AutoSizeInput",
+        "measure text='${content}' textSize=${textView.textSize} adv=$advanceWidth glyph=$glyphWidth desired=$desiredWidth safety=$safetyPadding final=$measured"
+      )
+    }
+    return measured
+  }
+
+  private fun requestInputFocus() {
+    inputView.requestFocus()
+    val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+    imm?.showSoftInput(inputView, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+  }
+
+  private fun resetSingleLineVerticalOffset() {
+    if (multiline == true) return
+    if (inputView.scrollY != 0) {
+      inputView.scrollTo(inputView.scrollX, 0)
+    }
+  }
+
+  private fun logInputTextPosition(source: String) {
+    if (!debugLayout) return
+    val layout = inputView.layout
+    val lineCount = layout?.lineCount ?: 0
+    val lineTop = if (layout != null && lineCount > 0) layout.getLineTop(0) else -1
+    val lineBottom = if (layout != null && lineCount > 0) layout.getLineBottom(0) else -1
+    val lineBaseline = if (layout != null && lineCount > 0) layout.getLineBaseline(0) else -1
+    Log.d(
+      "AutoSizeInput",
+      "text-pos source=$source text='${inputView.text}' textSize=${inputView.textSize} inputTop=${inputView.top} inputBottom=${inputView.bottom} inputH=${inputView.height} measuredH=${inputView.measuredHeight} baseline=${inputView.baseline} gravity=${inputView.gravity} padTop=${inputView.paddingTop} padBottom=${inputView.paddingBottom} cpTop=${inputView.compoundPaddingTop} cpBottom=${inputView.compoundPaddingBottom} lineCount=$lineCount lineTop=$lineTop lineBottom=$lineBottom lineBaseline=$lineBaseline scrollY=${inputView.scrollY}"
+    )
+  }
+
 
   override fun afterUpdate() {
     super.afterUpdate()
