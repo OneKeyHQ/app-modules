@@ -2,7 +2,7 @@
   "name": "@onekeyfe/app-modules",
   "private": true,
   "packageManager": "yarn@4.1.0",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "scripts": {
     "create:module": "node scripts/create-nitro-module.js",
     "create:view": "node scripts/create-nitro-view.js",

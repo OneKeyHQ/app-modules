@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.29] - 2026-03-06
+
+### Bug Fixes
+- **auto-size-input**: Re-layout immediately in `contentAutoWidth` mode as text changes, and shrink font when max width is reached so content stays visible
+
+### Chores
+- Bump all package versions (`1.1.28 -> 1.1.29`, root `0.0.0 -> 0.0.1`, example `0.0.1 -> 0.0.2`)
+
 ## [1.1.27] - 2026-03-04
 
 ### Features
