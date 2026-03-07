@@ -218,11 +218,12 @@ const TabView = <Route extends BaseRoute>({
   tabBarStyle,
   tabLabelStyle,
   renderBottomAccessoryView,
+  activeIndicatorColor,
   ...props
 }: Props<Route>) => {
   // @ts-ignore
   const focusedKey = navigationState.routes[navigationState.index].key;
-  const customTabBarWrapperRef = useRef<View>(null);
+  const customTabBarWrapperRef = useRef<View>(null) as React.RefObject<any>;
   const [tabBarHeight, setTabBarHeight] = React.useState<number | undefined>(0);
   const [measuredDimensions, setMeasuredDimensions] = React.useState<
     { width: DimensionValue; height: DimensionValue } | undefined
@@ -309,7 +310,7 @@ const TabView = <Route extends BaseRoute>({
     () =>
       icons.map((icon) => {
         if (icon && !isAppleSymbol(icon)) {
-          // @ts-expect-error
+          // @ts-ignore - resolveAssetSource accepts ImageSourcePropType
           const resolved = Image.resolveAssetSource(icon);
           return {
             uri: resolved?.uri ?? '',
@@ -360,7 +361,7 @@ const TabView = <Route extends BaseRoute>({
 
   useLayoutEffect(() => {
     if (renderCustomTabBar && customTabBarWrapperRef.current) {
-      customTabBarWrapperRef.current.measure((_x, _y, _width, height) => {
+      customTabBarWrapperRef.current.measure((_x: number, _y: number, _width: number, height: number) => {
         setTabBarHeight(height);
       });
     }
@@ -386,15 +387,16 @@ const TabView = <Route extends BaseRoute>({
         icons={renderCustomTabBar ? undefined : resolvedIconAssets}
         selectedPage={focusedKey}
         tabBarHidden={props.tabBarHidden ?? !!renderCustomTabBar}
-        onTabLongPress={handleTabLongPress}
-        onPageSelected={handlePageSelected}
-        onTabBarMeasured={handleTabBarMeasured}
-        onNativeLayout={handleNativeLayout}
+        onTabLongPress={{ f: handleTabLongPress }}
+        onPageSelected={{ f: handlePageSelected }}
+        onTabBarMeasured={{ f: handleTabBarMeasured }}
+        onNativeLayout={{ f: handleNativeLayout }}
         hapticFeedbackEnabled={hapticFeedbackEnabled}
         activeTintColor={colorToString(activeTintColor)}
         inactiveTintColor={colorToString(inactiveTintColor)}
         barTintColor={colorToString(tabBarStyle?.backgroundColor)}
         rippleColor={colorToString(rippleColor)}
+        activeIndicatorColor={colorToString(activeIndicatorColor)}
         labeled={labeled}
       >
         {trimmedRoutes.map((route) => {

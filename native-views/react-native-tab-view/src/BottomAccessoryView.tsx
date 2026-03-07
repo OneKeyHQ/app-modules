@@ -48,8 +48,8 @@ export const BottomAccessoryView = (props: BottomAccessoryViewProps) => {
   return (
     <BottomAccessoryViewNativeComponent
       style={[defaultStyle, bottomAccessoryDimensions]}
-      onNativeLayout={handleNativeLayout}
-      onPlacementChanged={handlePlacementChanged}
+      onNativeLayout={{ f: handleNativeLayout }}
+      onPlacementChanged={{ f: handlePlacementChanged }}
     >
       {renderBottomAccessoryView({ placement })}
     </BottomAccessoryViewNativeComponent>
