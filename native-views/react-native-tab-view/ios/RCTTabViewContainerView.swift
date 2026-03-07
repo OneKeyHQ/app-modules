@@ -1,32 +1,54 @@
 import Foundation
 import UIKit
-import NitroModules
 import React
 
-// HybridTabView conforms to the nitrogen-generated HybridTabViewSpec protocol.
-// Since nitrogen hasn't been run yet, we define the conformance against the
-// protocol that WILL be generated. The protocol will look like:
-//
-//   protocol HybridTabViewSpec: HybridObject, HybridView {
-//     var items: [TabItemStruct]? { get set }
-//     var selectedPage: String? { get set }
-//     var icons: [IconSourceStruct]? { get set }
-//     ... (all other props)
-//     var onPageSelected: ((String) -> Void)? { get set }
-//     var onTabLongPress: ((String) -> Void)? { get set }
-//     var onTabBarMeasured: ((Double) -> Void)? { get set }
-//     var onNativeLayout: ((Double, Double) -> Void)? { get set }
-//     func insertChild(tag: Double, index: Double) throws
-//     func removeChild(tag: Double, index: Double) throws
-//   }
-//
-// For now we write the class so it will compile once nitrogen generates the spec.
+// MARK: - Data types for props from JS
 
-class HybridTabView: HybridTabViewSpec {
+struct TabItem {
+  let key: String
+  let title: String
+  let sfSymbol: String?
+  let badge: String?
+  let badgeBackgroundColor: Int?
+  let badgeTextColor: Int?
+  let activeTintColor: Int?
+  let hidden: Bool
+  let testID: String?
+  let role: String?
+  let preventsDefault: Bool
 
-  // MARK: - HybridView
+  init(dict: NSDictionary) {
+    self.key = dict["key"] as? String ?? ""
+    self.title = dict["title"] as? String ?? ""
+    self.sfSymbol = dict["sfSymbol"] as? String
+    self.badge = dict["badge"] as? String
+    self.badgeBackgroundColor = dict["badgeBackgroundColor"] as? Int
+    self.badgeTextColor = dict["badgeTextColor"] as? Int
+    self.activeTintColor = dict["activeTintColor"] as? Int
+    self.hidden = dict["hidden"] as? Bool ?? false
+    self.testID = dict["testID"] as? String
+    self.role = dict["role"] as? String
+    self.preventsDefault = dict["preventsDefault"] as? Bool ?? false
+  }
+}
 
-  var view: UIView
+struct IconSource {
+  let uri: String
+  let width: Double
+  let height: Double
+  let scale: Double
+
+  init(dict: NSDictionary) {
+    self.uri = dict["uri"] as? String ?? ""
+    self.width = dict["width"] as? Double ?? 0
+    self.height = dict["height"] as? Double ?? 0
+    self.scale = dict["scale"] as? Double ?? 1
+  }
+}
+
+// MARK: - RCTTabViewContainerView
+
+class RCTTabViewContainerView: UIView {
 
   // MARK: - Internal State
 
@@ -38,211 +60,167 @@ class HybridTabView: HybridTabViewSpec {
   private let iconSize = CGSize(width: 27, height: 27)
   private var longPressHandler: LongPressGestureHandler?
 
-  // MARK: - Props
+  // MARK: - Props (set by ViewManager via RCT_EXPORT_VIEW_PROPERTY)
 
-  var items: [TabItemStruct]? {
+  @objc var items: [NSDictionary]? {
     didSet { rebuildViewControllers() }
   }
 
-  var selectedPage: String? {
+  @objc var selectedPage: String? {
     didSet { updateSelectedTab() }
   }
 
-  var icons: [IconSourceStruct]? {
+  @objc var icons: [NSDictionary]? {
     didSet { loadIconsFromSources() }
   }
 
-  var labeled: Bool? {
+  @objc var labeled: NSNumber? {
     didSet { rebuildViewControllers() }
   }
 
-  var sidebarAdaptable: Bool? {
+  @objc var sidebarAdaptable: Bool = false {
     didSet { updateSidebarAdaptable() }
   }
 
-  var disablePageAnimations: Bool? {
-    didSet {}
-  }
+  @objc var disablePageAnimations: Bool = false
 
-  var hapticFeedbackEnabled: Bool? {
-    didSet {}
-  }
+  @objc var hapticFeedbackEnabled: Bool = false
 
-  var scrollEdgeAppearance: String? {
+  @objc var scrollEdgeAppearance: String? {
     didSet { updateTabBarAppearance() }
   }
 
-  var minimizeBehavior: String? {
+  @objc var minimizeBehavior: String? {
     didSet { updateMinimizeBehavior() }
   }
 
-  var tabBarHidden: Bool? {
+  @objc var tabBarHidden: Bool = false {
     didSet { updateTabBarHidden() }
   }
 
-  var translucent: Bool? {
+  @objc var translucent: NSNumber? {
     didSet { updateTabBarAppearance() }
   }
 
-  var barTintColor: String? {
+  @objc var barTintColor: String? {
     didSet { updateTabBarAppearance() }
   }
 
-  var activeTintColor: String? {
+  @objc var activeTintColor: String? {
     didSet { updateTintColors() }
   }
 
-  var inactiveTintColor: String? {
+  @objc var inactiveTintColor: String? {
     didSet { updateTabBarAppearance() }
   }
 
-  var rippleColor: String? {
-    didSet {} // Android only
-  }
+  @objc var rippleColor: String? // Android only
 
-  var activeIndicatorColor: String? {
-    didSet {} // Android only
-  }
+  @objc var activeIndicatorColor: String? // Android only
 
-  var fontFamily: String? {
+  @objc var fontFamily: String? {
     didSet { updateTabBarAppearance() }
   }
 
-  var fontWeight: String? {
+  @objc var fontWeight: String? {
     didSet { updateTabBarAppearance() }
   }
 
-  var fontSize: Double? {
+  @objc var fontSize: NSNumber? {
     didSet { updateTabBarAppearance() }
   }
 
-  // MARK: - Events
+  // MARK: - Events (RCTDirectEventBlock)
 
-  var onPageSelected: ((_ key: String) -> Void)?
-  var onTabLongPress: ((_ key: String) -> Void)?
-  var onTabBarMeasured: ((_ height: Double) -> Void)?
-  var onNativeLayout: ((_ width: Double, _ height: Double) -> Void)?
+  @objc var onPageSelected: RCTDirectEventBlock?
+  @objc var onTabLongPress: RCTDirectEventBlock?
+  @objc var onTabBarMeasured: RCTDirectEventBlock?
+  @objc var onNativeLayout: RCTDirectEventBlock?
 
   // MARK: - Init
 
-  override init() {
-    self.view = TabViewLayoutView()
-    super.init()
-    (self.view as? TabViewLayoutView)?.layoutCallback = { [weak self] in
-      self?.handleLayout()
-    }
+  override init(frame: CGRect) {
+    super.init(frame: frame)
   }
 
-  // MARK: - Methods (called from custom component view for child management)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
 
-  func insertChild(tag: Double, index: Double) throws {
-    // The custom component view's mountChildComponentView calls this.
-    // index == -1 signals a bottom accessory view.
-    let indexInt = Int(index)
+  // MARK: - Layout
 
-    // Find the child view in our view's subviews by tag
-    let childView = findChildView(tag: Int(tag))
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    handleLayout()
+  }
 
-    if indexInt == -1 {
-      // Bottom accessory view
-      if let accessoryView = childView {
-        self.bottomAccessoryView = accessoryView
-        attachBottomAccessory()
-      }
+  // MARK: - React subview management
+
+  override func insertReactSubview(_ subview: UIView!, at atIndex: Int) {
+    super.insertReactSubview(subview, at: atIndex)
+
+    // Check if this is a BottomAccessoryView (last child, identified by nativeID or index)
+    // We use a convention: if the subview is a RCTBottomAccessoryContainerView, treat it as accessory
+    if subview is RCTBottomAccessoryContainerView {
+      self.bottomAccessoryView = subview
+      attachBottomAccessory()
       return
     }
 
-    guard let childView else { return }
-    guard indexInt >= 0 && indexInt <= childViews.count else { return }
-    childViews.insert(childView, at: indexInt)
+    guard atIndex >= 0 && atIndex <= childViews.count else { return }
+    childViews.insert(subview, at: atIndex)
     rebuildViewControllers()
   }
 
-  func removeChild(tag: Double, index: Double) throws {
-    let indexInt = Int(index)
+  override func removeReactSubview(_ subview: UIView!) {
+    super.removeReactSubview(subview)
 
-    if indexInt == -1 {
-      // Remove bottom accessory view
+    if subview is RCTBottomAccessoryContainerView {
       detachBottomAccessory()
       self.bottomAccessoryView = nil
       return
     }
 
-    guard indexInt >= 0 && indexInt < childViews.count else { return }
-    childViews.remove(at: indexInt)
-    rebuildViewControllers()
-  }
-
-  private func findChildView(tag: Int) -> UIView? {
-    // The child was already added to contentView (our view) by the .mm
-    for subview in view.subviews {
-      if subview.reactTag?.intValue == tag {
-        return subview
-      }
+    if let index = childViews.firstIndex(of: subview) {
+      childViews.remove(at: index)
+      rebuildViewControllers()
     }
-    // Also check recursively in the tab bar controller's view
-    if let tbcView = tabBarController?.view {
-      for subview in tbcView.subviews {
-        if subview.reactTag?.intValue == tag {
-          return subview
-        }
-      }
-    }
-    return nil
   }
 
   // MARK: - Bottom Accessory (iOS 26+)
 
   private func attachBottomAccessory() {
     // TODO: Re-enable when UITabBar.bottomAccessoryView is available in the SDK
-    // #if compiler(>=6.2)
-    // if #available(iOS 26.0, *) {
-    //   guard let tbc = tabBarController,
-    //         let accessoryView = bottomAccessoryView else { return }
-    //   accessoryView.removeFromSuperview()
-    //   let container = UIView()
-    //   container.addSubview(accessoryView)
-    //   accessoryView.translatesAutoresizingMaskIntoConstraints = false
-    //   accessoryView.pinEdges(to: container)
-    //   tbc.tabBar.bottomAccessoryView = container
-    // }
-    // #endif
   }
 
   private func detachBottomAccessory() {
     // TODO: Re-enable when UITabBar.bottomAccessoryView is available in the SDK
-    // #if compiler(>=6.2)
-    // if #available(iOS 26.0, *) {
-    //   guard let tbc = tabBarController else { return }
-    //   tbc.tabBar.bottomAccessoryView = nil
-    // }
-    // #endif
   }
 
   // MARK: - Lifecycle
 
   private func handleLayout() {
-    let bounds = view.bounds
+    let bounds = self.bounds
     guard bounds.width > 0 && bounds.height > 0 else { return }
 
     setupTabBarControllerIfNeeded()
     tabBarController?.view.frame = bounds
 
-    onNativeLayout?(Double(bounds.width), Double(bounds.height))
+    onNativeLayout?(["width": Double(bounds.width), "height": Double(bounds.height)])
   }
 
   private func setupTabBarControllerIfNeeded() {
     guard tabBarController == nil else { return }
-    guard let parentVC = view.reactViewController() else { return }
+    guard let parentVC = self.reactViewController() else { return }
 
     let tbc = UITabBarController()
-    tbc.delegate = DelegateProxy.shared
-    DelegateProxy.shared.register(self, for: tbc)
+    tbc.delegate = TabViewDelegateProxy.shared
+    TabViewDelegateProxy.shared.register(self, for: tbc)
     tbc.view.backgroundColor = .clear
 
     parentVC.addChild(tbc)
-    view.addSubview(tbc.view)
-    tbc.view.frame = view.bounds
+    self.addSubview(tbc.view)
+    tbc.view.frame = self.bounds
     tbc.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     tbc.didMove(toParent: parentVC)
 
@@ -259,7 +237,7 @@ class HybridTabView: HybridTabViewSpec {
     DispatchQueue.main.async { [weak self] in
       guard let self, let tbc = self.tabBarController else { return }
       if !tbc.tabBar.isHidden {
-        self.onTabBarMeasured?(Double(tbc.tabBar.frame.size.height))
+        self.onTabBarMeasured?(["height": Double(tbc.tabBar.frame.size.height)])
       }
     }
   }
@@ -279,7 +257,7 @@ class HybridTabView: HybridTabViewSpec {
       guard let self else { return }
       let filtered = self.filteredItems
       guard let tabData = filtered[safe: index] else { return }
-      self.onTabLongPress?(tabData.key)
+      self.onTabLongPress?(["key": tabData.key])
       self.emitHapticFeedback(longPress: true)
     }
 
@@ -291,15 +269,19 @@ class HybridTabView: HybridTabViewSpec {
 
   // MARK: - Tab management
 
-  private var filteredItems: [TabItemStruct] {
-    (items ?? []).filter { !($0.hidden ?? false) || $0.key == selectedPage }
+  private var parsedItems: [TabItem] {
+    (items ?? []).map { TabItem(dict: $0) }
+  }
+
+  private var filteredItems: [TabItem] {
+    parsedItems.filter { !$0.hidden || $0.key == selectedPage }
   }
 
   private func rebuildViewControllers() {
     guard let tbc = tabBarController else { return }
 
     let filtered = filteredItems
-    let allItems = items ?? []
+    let allItems = parsedItems
     var viewControllers: [UIViewController] = []
 
     for (_, tabData) in filtered.enumerated() {
@@ -326,7 +308,7 @@ class HybridTabView: HybridTabViewSpec {
         tabImage = UIImage(systemName: sfSymbol)
       }
 
-      let isLabeled = labeled ?? true
+      let isLabeled = labeled?.boolValue ?? true
       let title = isLabeled ? tabData.title : nil
       vc.tabBarItem = UITabBarItem(title: title, image: tabImage, tag: originalIndex)
       vc.tabBarItem.badgeValue = tabData.badge
@@ -334,19 +316,19 @@ class HybridTabView: HybridTabViewSpec {
 
       // Badge colors (iOS 16+)
       if let badgeBgColor = tabData.badgeBackgroundColor {
-        vc.tabBarItem.badgeColor = UIColor(rgb: Int(badgeBgColor))
+        vc.tabBarItem.badgeColor = UIColor(rgb: badgeBgColor)
       }
       if #available(iOS 16.0, *), let badgeTxtColor = tabData.badgeTextColor {
         let badge = vc.tabBarItem
         badge?.setBadgeTextAttributes(
-          [.foregroundColor: UIColor(rgb: Int(badgeTxtColor))],
+          [.foregroundColor: UIColor(rgb: badgeTxtColor)],
           for: .normal
         )
       }
 
       let inactiveColor = colorFromHex(inactiveTintColor)
       let attributes = TabBarFontSize.createNormalStateAttributes(
-        fontSize: fontSize.map { Int($0) },
+        fontSize: fontSize?.intValue,
         fontFamily: fontFamily,
         fontWeight: fontWeight,
         inactiveColor: inactiveColor
@@ -356,13 +338,12 @@ class HybridTabView: HybridTabViewSpec {
       viewControllers.append(vc)
     }
 
-    let animated = !(disablePageAnimations ?? false)
-    if animated {
-      tbc.setViewControllers(viewControllers, animated: false)
-    } else {
+    if disablePageAnimations {
       UIView.performWithoutAnimation {
         tbc.setViewControllers(viewControllers, animated: false)
       }
+    } else {
+      tbc.setViewControllers(viewControllers, animated: false)
     }
 
     updateSelectedTab()
@@ -377,7 +358,7 @@ class HybridTabView: HybridTabViewSpec {
     let filtered = filteredItems
     guard let index = filtered.firstIndex(where: { $0.key == selectedPage }) else { return }
 
-    if disablePageAnimations ?? false {
+    if disablePageAnimations {
       UIView.performWithoutAnimation {
         tbc.selectedIndex = index
       }
@@ -404,13 +385,13 @@ class HybridTabView: HybridTabViewSpec {
 
   private func configureTransparentAppearance(tabBar: UITabBar) {
     tabBar.barTintColor = colorFromHex(barTintColor)
-    tabBar.isTranslucent = translucent ?? true
+    tabBar.isTranslucent = translucent?.boolValue ?? true
     tabBar.unselectedItemTintColor = colorFromHex(inactiveTintColor)
 
     guard let tabBarItems = tabBar.items else { return }
 
     let attributes = TabBarFontSize.createNormalStateAttributes(
-      fontSize: fontSize.map { Int($0) },
+      fontSize: fontSize?.intValue,
       fontFamily: fontFamily,
       fontWeight: fontWeight,
       inactiveColor: nil
@@ -431,7 +412,7 @@ class HybridTabView: HybridTabViewSpec {
       appearance.configureWithDefaultBackground()
     }
 
-    if translucent == false {
+    if translucent?.boolValue == false {
       appearance.configureWithOpaqueBackground()
     }
 
@@ -443,7 +424,7 @@ class HybridTabView: HybridTabViewSpec {
     let inactiveColor = colorFromHex(inactiveTintColor)
 
     let attributes = TabBarFontSize.createNormalStateAttributes(
-      fontSize: fontSize.map { Int($0) },
+      fontSize: fontSize?.intValue,
       fontFamily: fontFamily,
       fontWeight: fontWeight,
       inactiveColor: inactiveColor
@@ -468,9 +449,9 @@ class HybridTabView: HybridTabViewSpec {
 
     var tintColor = colorFromHex(activeTintColor)
     if let selectedPage,
-       let tabData = (items ?? []).findByKey(selectedPage),
+       let tabData = parsedItems.first(where: { $0.key == selectedPage }),
        let perTabColor = tabData.activeTintColor {
-      tintColor = UIColor(rgb: Int(perTabColor))
+      tintColor = UIColor(rgb: perTabColor)
     }
 
     if let tintColor {
@@ -480,12 +461,11 @@ class HybridTabView: HybridTabViewSpec {
 
   private func updateTabBarHidden() {
     guard let tbc = tabBarController else { return }
-    let hidden = tabBarHidden ?? false
-    tbc.tabBar.isHidden = hidden
-    tbc.tabBar.isUserInteractionEnabled = !hidden
+    tbc.tabBar.isHidden = tabBarHidden
+    tbc.tabBar.isUserInteractionEnabled = !tabBarHidden
 
-    if !hidden {
-      onTabBarMeasured?(Double(tbc.tabBar.frame.size.height))
+    if !tabBarHidden {
+      onTabBarMeasured?(["height": Double(tbc.tabBar.frame.size.height)])
     }
   }
 
@@ -493,7 +473,7 @@ class HybridTabView: HybridTabViewSpec {
     guard let tbc = tabBarController else { return }
     if #available(iOS 18.0, *) {
       #if compiler(>=6.0)
-      tbc.mode = (sidebarAdaptable ?? false) ? .tabSidebar : .tabBar
+      tbc.mode = sidebarAdaptable ? .tabSidebar : .tabBar
       #endif
     }
   }
@@ -522,7 +502,7 @@ class HybridTabView: HybridTabViewSpec {
   // MARK: - Haptic feedback
 
   private func emitHapticFeedback(longPress: Bool = false) {
-    guard hapticFeedbackEnabled ?? false else { return }
+    guard hapticFeedbackEnabled else { return }
 
     if longPress {
       UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -539,7 +519,9 @@ class HybridTabView: HybridTabViewSpec {
   }
 
   private func loadIconsFromSources() {
-    guard let imageLoader, let iconSources = icons else { return }
+    guard let imageLoader, let iconDicts = icons else { return }
+
+    let iconSources = iconDicts.map { IconSource(dict: $0) }
 
     for (index, source) in iconSources.enumerated() {
       guard !source.uri.isEmpty else { continue }
@@ -570,12 +552,12 @@ class HybridTabView: HybridTabViewSpec {
     }
   }
 
-  // MARK: - Tab delegate callback
+  // MARK: - Tab delegate callbacks
 
   func handleTabSelected(at index: Int) {
     let filtered = filteredItems
     guard let tabData = filtered[safe: index] else { return }
-    onPageSelected?(tabData.key)
+    onPageSelected?(["key": tabData.key])
     emitHapticFeedback()
   }
 
@@ -584,30 +566,20 @@ class HybridTabView: HybridTabViewSpec {
     guard let tabData = filtered[safe: index] else { return false }
 
     if isReselection {
-      onPageSelected?(tabData.key)
+      onPageSelected?(["key": tabData.key])
       emitHapticFeedback()
       return false
     }
 
-    onPageSelected?(tabData.key)
+    onPageSelected?(["key": tabData.key])
     emitHapticFeedback()
-    return !(tabData.preventsDefault ?? false)
+    return !tabData.preventsDefault
   }
 
   // MARK: - Bottom accessory placement
 
   func handlePlacementChanged(_ placement: String) {
-    // Find the HybridBottomAccessoryView component in the bottom accessory view hierarchy
-    // and notify it of the placement change
-    guard let accessoryView = bottomAccessoryView else { return }
-    notifyPlacementChanged(in: accessoryView, placement: placement)
-  }
-
-  private func notifyPlacementChanged(in view: UIView, placement: String) {
-    // The BottomAccessoryView's component view has a HybridBottomAccessoryView
-    // whose onPlacementChanged callback we need to invoke.
-    // Since the HybridBottomAccessoryView is managed by Nitro, the callback
-    // is set via props. We look for a well-known notification pattern.
+    guard bottomAccessoryView != nil else { return }
     NotificationCenter.default.post(
       name: .bottomAccessoryPlacementChanged,
       object: nil,
@@ -642,39 +614,14 @@ class HybridTabView: HybridTabViewSpec {
   }
 }
 
-// MARK: - UIColor from int
-
-extension UIColor {
-  convenience init(rgb: Int) {
-    self.init(
-      red: CGFloat((rgb >> 16) & 0xFF) / 255.0,
-      green: CGFloat((rgb >> 8) & 0xFF) / 255.0,
-      blue: CGFloat(rgb & 0xFF) / 255.0,
-      alpha: CGFloat((rgb >> 24) & 0xFF) / 255.0
-    )
-  }
-}
-
-// MARK: - TabItemStruct findByKey extension
-
-extension Collection where Element == TabItemStruct {
-  func findByKey(_ key: String?) -> Element? {
-    guard let key else { return nil }
-    return first { $0.key == key }
-  }
-}
-
 // MARK: - UITabBarControllerDelegate proxy
 
-// We use a shared proxy because HybridTabView is not an NSObject subclass
-// (it extends HybridTabViewSpec_base from Nitro) and cannot directly conform
-// to UITabBarControllerDelegate.
-class DelegateProxy: NSObject, UITabBarControllerDelegate {
-  static let shared = DelegateProxy()
-  private var mapping: [ObjectIdentifier: HybridTabView] = [:]
+class TabViewDelegateProxy: NSObject, UITabBarControllerDelegate {
+  static let shared = TabViewDelegateProxy()
+  private var mapping: [ObjectIdentifier: RCTTabViewContainerView] = [:]
 
-  func register(_ hybridView: HybridTabView, for controller: UITabBarController) {
-    mapping[ObjectIdentifier(controller)] = hybridView
+  func register(_ view: RCTTabViewContainerView, for controller: UITabBarController) {
+    mapping[ObjectIdentifier(controller)] = view
   }
 
   func unregister(for controller: UITabBarController) {
@@ -682,47 +629,14 @@ class DelegateProxy: NSObject, UITabBarControllerDelegate {
   }
 
   func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
-    guard let hybridView = mapping[ObjectIdentifier(tabBarController)] else { return false }
+    guard let containerView = mapping[ObjectIdentifier(tabBarController)] else { return false }
     let isReselection = tabBarController.selectedViewController == viewController
 
     if let index = tabBarController.viewControllers?.firstIndex(of: viewController) {
-      return hybridView.shouldSelectTab(at: index, isReselection: isReselection)
+      return containerView.shouldSelectTab(at: index, isReselection: isReselection)
     }
 
     return false
-  }
-
-  // iOS 26: Bottom accessory placement change
-  // TODO: Re-enable when UITabBarController.BottomAccessoryPlacement is available in the SDK
-  // #if compiler(>=6.2)
-  // @available(iOS 26.0, *)
-  // func tabBarController(
-  //   _ tabBarController: UITabBarController,
-  //   placementDidChange placement: UITabBarController.BottomAccessoryPlacement,
-  //   forBottomAccessoryView accessoryView: UIView
-  // ) {
-  //   guard let hybridView = mapping[ObjectIdentifier(tabBarController)] else { return }
-  //
-  //   var placementString = "none"
-  //   if placement == .inline {
-  //     placementString = "inline"
-  //   } else if placement == .expanded {
-  //     placementString = "expanded"
-  //   }
-  //
-  //   hybridView.handlePlacementChanged(placementString)
-  // }
-  // #endif
-}
-
-// MARK: - Layout-aware UIView
-
-private class TabViewLayoutView: UIView {
-  var layoutCallback: (() -> Void)?
-
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    layoutCallback?()
   }
 }
 

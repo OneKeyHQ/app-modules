@@ -6,7 +6,7 @@ extension Collection {
   }
 }
 
-extension Collection where Element == TabInfo {
+extension Collection where Element == TabItem {
   func findByKey(_ key: String?) -> Element? {
     guard let key else { return nil }
     guard !isEmpty else { return nil }
@@ -31,5 +31,16 @@ extension UIImage {
     return renderer.image { _ in
       self.draw(in: CGRect(origin: .zero, size: size))
     }
+  }
+}
+
+extension UIColor {
+  convenience init(rgb: Int) {
+    self.init(
+      red: CGFloat((rgb >> 16) & 0xFF) / 255.0,
+      green: CGFloat((rgb >> 8) & 0xFF) / 255.0,
+      blue: CGFloat(rgb & 0xFF) / 255.0,
+      alpha: CGFloat((rgb >> 24) & 0xFF) / 255.0
+    )
   }
 }

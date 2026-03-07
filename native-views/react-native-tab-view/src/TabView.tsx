@@ -1,6 +1,9 @@
 import React, { useLayoutEffect, useRef } from 'react';
-import type { TabViewProps as NativeTabViewProps } from './TabView.nitro';
-import type { TabItemStruct, IconSourceStruct } from './TabView.nitro';
+import type {
+  TabItemStruct,
+  IconSourceStruct,
+} from './TabViewNativeComponent';
+import type { NativeSyntheticEvent } from 'react-native';
 import {
   type ColorValue,
   type DimensionValue,
@@ -329,9 +332,9 @@ const TabView = <Route extends BaseRoute>({
     onIndexChange(index);
   });
 
-  // Nitro events use direct callbacks instead of {nativeEvent} wrappers
   const handleTabLongPress = React.useCallback(
-    (key: string) => {
+    (event: NativeSyntheticEvent<{ key: string }>) => {
+      const { key } = event.nativeEvent;
       const index = trimmedRoutes.findIndex((route) => route.key === key);
       onTabLongPress?.(index);
     },
@@ -339,21 +342,23 @@ const TabView = <Route extends BaseRoute>({
   );
 
   const handlePageSelected = React.useCallback(
-    (key: string) => {
+    (event: NativeSyntheticEvent<{ key: string }>) => {
+      const { key } = event.nativeEvent;
       jumpTo(key);
     },
     [jumpTo]
   );
 
   const handleTabBarMeasured = React.useCallback(
-    (height: number) => {
-      setTabBarHeight(height);
+    (event: NativeSyntheticEvent<{ height: number }>) => {
+      setTabBarHeight(event.nativeEvent.height);
     },
     [setTabBarHeight]
   );
 
   const handleNativeLayout = React.useCallback(
-    (width: number, height: number) => {
+    (event: NativeSyntheticEvent<{ width: number; height: number }>) => {
+      const { width, height } = event.nativeEvent;
       setMeasuredDimensions({ width, height });
     },
     [setMeasuredDimensions]
@@ -367,7 +372,6 @@ const TabView = <Route extends BaseRoute>({
     }
   }, [renderCustomTabBar]);
 
-  // Convert ColorValue to string for Nitro props
   const colorToString = (color: ColorValue | undefined): string | undefined => {
     if (color === undefined || color === null) return undefined;
     const processed = processColor(color);
@@ -387,10 +391,10 @@ const TabView = <Route extends BaseRoute>({
         icons={renderCustomTabBar ? undefined : resolvedIconAssets}
         selectedPage={focusedKey}
         tabBarHidden={props.tabBarHidden ?? !!renderCustomTabBar}
-        onTabLongPress={{ f: handleTabLongPress }}
-        onPageSelected={{ f: handlePageSelected }}
-        onTabBarMeasured={{ f: handleTabBarMeasured }}
-        onNativeLayout={{ f: handleNativeLayout }}
+        onTabLongPress={handleTabLongPress}
+        onPageSelected={handlePageSelected}
+        onTabBarMeasured={handleTabBarMeasured}
+        onNativeLayout={handleNativeLayout}
         hapticFeedbackEnabled={hapticFeedbackEnabled}
         activeTintColor={colorToString(activeTintColor)}
         inactiveTintColor={colorToString(inactiveTintColor)}

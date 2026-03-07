@@ -19,8 +19,6 @@
     "lib",
     "android",
     "ios",
-    "nitrogen",
-    "nitro.json",
     "react-native.config.js",
     "*.podspec",
     "!ios/build",
@@ -36,8 +34,7 @@
   ],
   "scripts": {
     "clean": "del-cli lib",
-    "prepare": "rm -rf lib && bob build && cp -r nitrogen lib/nitrogen",
-    "nitrogen": "nitrogen && bash scripts/post-nitrogen.sh",
+    "prepare": "rm -rf lib && bob build",
     "typecheck": "tsc -b",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest"
@@ -61,17 +58,14 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
-    "nitrogen": "0.31.10",
     "react": "19.2.0",
     "react-native": "0.83.0",
     "react-native-builder-bob": "^0.40.13",
-    "react-native-nitro-modules": "0.33.2",
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
     "react": "*",
-    "react-native": "*",
-    "react-native-nitro-modules": "0.33.2"
+    "react-native": "*"
   },
   "react-native-builder-bob": {
     "source": "src",

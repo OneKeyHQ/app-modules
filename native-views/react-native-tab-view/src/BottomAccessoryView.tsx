@@ -1,5 +1,5 @@
 import React from 'react';
-import type { DimensionValue, ViewStyle } from 'react-native';
+import type { DimensionValue, NativeSyntheticEvent, ViewStyle } from 'react-native';
 import BottomAccessoryViewNativeComponent from './BottomAccessoryViewNativeComponent';
 
 const defaultStyle: ViewStyle = {
@@ -24,16 +24,17 @@ export const BottomAccessoryView = (props: BottomAccessoryViewProps) => {
     'inline' | 'expanded' | 'none'
   >('none');
 
-  // Nitro events use direct callbacks
   const handleNativeLayout = React.useCallback(
-    (width: number, height: number) => {
+    (event: NativeSyntheticEvent<{ width: number; height: number }>) => {
+      const { width, height } = event.nativeEvent;
       setBottomAccessoryDimensions({ width, height });
     },
     [setBottomAccessoryDimensions]
   );
 
   const handlePlacementChanged = React.useCallback(
-    (newPlacement: string) => {
+    (event: NativeSyntheticEvent<{ placement: string }>) => {
+      const newPlacement = event.nativeEvent.placement;
       if (
         newPlacement === 'inline' ||
         newPlacement === 'expanded' ||
@@ -48,8 +49,8 @@ export const BottomAccessoryView = (props: BottomAccessoryViewProps) => {
   return (
     <BottomAccessoryViewNativeComponent
       style={[defaultStyle, bottomAccessoryDimensions]}
-      onNativeLayout={{ f: handleNativeLayout }}
-      onPlacementChanged={{ f: handlePlacementChanged }}
+      onNativeLayout={handleNativeLayout}
+      onPlacementChanged={handlePlacementChanged}
     >
       {renderBottomAccessoryView({ placement })}
     </BottomAccessoryViewNativeComponent>

@@ -20,17 +20,11 @@ Pod::Spec.new do |s|
     "ios/**/*.{h,m,mm}",
   ]
 
-  s.dependency 'React-jsi'
-  s.dependency 'React-callinvoker'
-
   s.pod_target_xcconfig = {
     'PRODUCT_MODULE_NAME' => 'TabViewModule',
-    # Workaround: Xcode 26 explicit modules + RN C++ headers cause __construct_at errors
-    'SWIFT_ENABLE_EXPLICIT_MODULES' => 'NO'
+    'DEFINES_MODULE' => 'YES',
+    'SWIFT_OBJC_BRIDGING_HEADER' => '$(PODS_TARGET_SRCROOT)/ios/react-native-tab-view-Bridging-Header.h'
   }
-
-  load 'nitrogen/generated/ios/TabViewModule+autolinking.rb'
-  add_nitrogen_files(s)
 
   install_modules_dependencies(s)
 end

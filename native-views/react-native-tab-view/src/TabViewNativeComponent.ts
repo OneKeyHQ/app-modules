@@ -1,13 +1,70 @@
-import { getHostComponent } from 'react-native-nitro-modules';
-import type { TabViewProps, TabViewMethods } from './TabView.nitro';
+import {
+  type HostComponent,
+  type NativeSyntheticEvent,
+  type ViewProps,
+  requireNativeComponent,
+} from 'react-native';
 
-const TabViewConfig = require('../nitrogen/generated/shared/json/TabViewConfig.json');
+export type TabItemStruct = Readonly<{
+  key: string;
+  title: string;
+  sfSymbol?: string;
+  badge?: string;
+  badgeBackgroundColor?: number;
+  badgeTextColor?: number;
+  activeTintColor?: number;
+  hidden?: boolean;
+  testID?: string;
+  role?: string;
+  preventsDefault?: boolean;
+}>;
 
-export type { TabViewProps, TabViewMethods };
+export type IconSourceStruct = Readonly<{
+  uri: string;
+  width: number;
+  height: number;
+  scale: number;
+}>;
 
-const NativeTabView = getHostComponent<TabViewProps, TabViewMethods>(
-  'TabView',
-  () => TabViewConfig
-);
+export interface TabViewNativeProps extends ViewProps {
+  // Tab data
+  items?: ReadonlyArray<TabItemStruct>;
+  selectedPage?: string;
+  icons?: ReadonlyArray<IconSourceStruct>;
 
-export default NativeTabView;
+  // Display settings
+  labeled?: boolean;
+  sidebarAdaptable?: boolean;
+  disablePageAnimations?: boolean;
+  hapticFeedbackEnabled?: boolean;
+  scrollEdgeAppearance?: string;
+  minimizeBehavior?: string;
+  tabBarHidden?: boolean;
+  translucent?: boolean;
+
+  // Colors
+  barTintColor?: string;
+  activeTintColor?: string;
+  inactiveTintColor?: string;
+  rippleColor?: string;
+  activeIndicatorColor?: string;
+
+  // Font
+  fontFamily?: string;
+  fontWeight?: string;
+  fontSize?: number;
+
+  // Events
+  onPageSelected?: (event: NativeSyntheticEvent<{ key: string }>) => void;
+  onTabLongPress?: (event: NativeSyntheticEvent<{ key: string }>) => void;
+  onTabBarMeasured?: (
+    event: NativeSyntheticEvent<{ height: number }>
+  ) => void;
+  onNativeLayout?: (
+    event: NativeSyntheticEvent<{ width: number; height: number }>
+  ) => void;
+}
+
+export default requireNativeComponent<TabViewNativeProps>(
+  'RCTTabView'
+) as HostComponent<TabViewNativeProps>;

@@ -1,14 +1,19 @@
-import { getHostComponent } from 'react-native-nitro-modules';
-import type {
-  BottomAccessoryViewProps,
-  BottomAccessoryViewMethods,
-} from './BottomAccessoryView.nitro';
+import {
+  type HostComponent,
+  type NativeSyntheticEvent,
+  type ViewProps,
+  requireNativeComponent,
+} from 'react-native';
 
-const BottomAccessoryViewConfig = require('../nitrogen/generated/shared/json/BottomAccessoryViewConfig.json');
+export interface BottomAccessoryViewNativeProps extends ViewProps {
+  onNativeLayout?: (
+    event: NativeSyntheticEvent<{ width: number; height: number }>
+  ) => void;
+  onPlacementChanged?: (
+    event: NativeSyntheticEvent<{ placement: string }>
+  ) => void;
+}
 
-export type { BottomAccessoryViewProps, BottomAccessoryViewMethods };
-
-export default getHostComponent<
-  BottomAccessoryViewProps,
-  BottomAccessoryViewMethods
->('BottomAccessoryView', () => BottomAccessoryViewConfig);
+export default requireNativeComponent<BottomAccessoryViewNativeProps>(
+  'RCTBottomAccessoryView'
+) as HostComponent<BottomAccessoryViewNativeProps>;
