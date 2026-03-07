@@ -30,6 +30,7 @@ namespace margelo::nitro::reactnativebundleupdate {
       prototype.registerHybridMethod("getNativeAppVersion", &HybridReactNativeBundleUpdateSpec::getNativeAppVersion);
       prototype.registerHybridMethod("testVerification", &HybridReactNativeBundleUpdateSpec::testVerification);
       prototype.registerHybridMethod("testSkipVerification", &HybridReactNativeBundleUpdateSpec::testSkipVerification);
+      prototype.registerHybridMethod("isSkipGpgVerificationAllowed", &HybridReactNativeBundleUpdateSpec::isSkipGpgVerificationAllowed);
       prototype.registerHybridMethod("isBundleExists", &HybridReactNativeBundleUpdateSpec::isBundleExists);
       prototype.registerHybridMethod("verifyExtractedBundle", &HybridReactNativeBundleUpdateSpec::verifyExtractedBundle);
       prototype.registerHybridMethod("listLocalBundles", &HybridReactNativeBundleUpdateSpec::listLocalBundles);

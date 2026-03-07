@@ -112,6 +112,7 @@ export interface ReactNativeBundleUpdate
   // Verification & testing
   testVerification(): Promise<boolean>;
   testSkipVerification(): Promise<boolean>;
+  isSkipGpgVerificationAllowed(): boolean;
   isBundleExists(appVersion: string, bundleVersion: string): Promise<boolean>;
   verifyExtractedBundle(
     appVersion: string,

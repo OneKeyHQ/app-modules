@@ -134,6 +134,14 @@ namespace margelo::nitro::reactnativeappupdate {
       auto __value = std::move(__result.value());
       return __value;
     }
+    inline bool isSkipGpgVerificationAllowed() override {
+      auto __result = _swiftPart.isSkipGpgVerificationAllowed();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
     inline double addDownloadListener(const std::function<void(const DownloadEvent& /* event */)>& callback) override {
       auto __result = _swiftPart.addDownloadListener(callback);
       if (__result.hasError()) [[unlikely]] {

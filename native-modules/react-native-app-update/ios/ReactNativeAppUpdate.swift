@@ -40,6 +40,16 @@ class ReactNativeAppUpdate: HybridReactNativeAppUpdateSpec {
         return Promise.resolved(withResult: false)
     }
 
+    func isSkipGpgVerificationAllowed() throws -> Bool {
+        #if ALLOW_SKIP_GPG_VERIFICATION
+        let result = true
+        #else
+        let result = false
+        #endif
+        OneKeyLog.info("AppUpdate", "isSkipGpgVerificationAllowed: result=\(result)")
+        return result
+    }
+
     func clearCache() throws -> Promise<Void> {
         return Promise.resolved(withResult: ())
     }
