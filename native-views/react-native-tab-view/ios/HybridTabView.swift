@@ -194,35 +194,29 @@ class HybridTabView: HybridTabViewSpec {
   // MARK: - Bottom Accessory (iOS 26+)
 
   private func attachBottomAccessory() {
-    #if compiler(>=6.2)
-    if #available(iOS 26.0, *) {
-      guard let tbc = tabBarController,
-            let accessoryView = bottomAccessoryView else { return }
-
-      // Remove from current parent (it was added to contentView by .mm)
-      accessoryView.removeFromSuperview()
-
-      // Create a container and set it as the tab bar's bottom accessory
-      let container = UIView()
-      container.addSubview(accessoryView)
-      accessoryView.translatesAutoresizingMaskIntoConstraints = false
-      accessoryView.pinEdges(to: container)
-
-      tbc.tabBar.bottomAccessoryView = container
-
-      // Listen for placement changes
-      // On iOS 26, the delegate receives placement change callbacks
-    }
-    #endif
+    // TODO: Re-enable when UITabBar.bottomAccessoryView is available in the SDK
+    // #if compiler(>=6.2)
+    // if #available(iOS 26.0, *) {
+    //   guard let tbc = tabBarController,
+    //         let accessoryView = bottomAccessoryView else { return }
+    //   accessoryView.removeFromSuperview()
+    //   let container = UIView()
+    //   container.addSubview(accessoryView)
+    //   accessoryView.translatesAutoresizingMaskIntoConstraints = false
+    //   accessoryView.pinEdges(to: container)
+    //   tbc.tabBar.bottomAccessoryView = container
+    // }
+    // #endif
   }
 
   private func detachBottomAccessory() {
-    #if compiler(>=6.2)
-    if #available(iOS 26.0, *) {
-      guard let tbc = tabBarController else { return }
-      tbc.tabBar.bottomAccessoryView = nil
-    }
-    #endif
+    // TODO: Re-enable when UITabBar.bottomAccessoryView is available in the SDK
+    // #if compiler(>=6.2)
+    // if #available(iOS 26.0, *) {
+    //   guard let tbc = tabBarController else { return }
+    //   tbc.tabBar.bottomAccessoryView = nil
+    // }
+    // #endif
   }
 
   // MARK: - Lifecycle
@@ -677,7 +671,7 @@ extension Collection where Element == TabItemStruct {
 // to UITabBarControllerDelegate.
 class DelegateProxy: NSObject, UITabBarControllerDelegate {
   static let shared = DelegateProxy()
-  private var mapping: [ObjectIdentifier: HybridTabView] = []
+  private var mapping: [ObjectIdentifier: HybridTabView] = [:]
 
   func register(_ hybridView: HybridTabView, for controller: UITabBarController) {
     mapping[ObjectIdentifier(controller)] = hybridView
@@ -699,25 +693,26 @@ class DelegateProxy: NSObject, UITabBarControllerDelegate {
   }
 
   // iOS 26: Bottom accessory placement change
-  #if compiler(>=6.2)
-  @available(iOS 26.0, *)
-  func tabBarController(
-    _ tabBarController: UITabBarController,
-    placementDidChange placement: UITabBarController.BottomAccessoryPlacement,
-    forBottomAccessoryView accessoryView: UIView
-  ) {
-    guard let hybridView = mapping[ObjectIdentifier(tabBarController)] else { return }
-
-    var placementString = "none"
-    if placement == .inline {
-      placementString = "inline"
-    } else if placement == .expanded {
-      placementString = "expanded"
-    }
-
-    hybridView.handlePlacementChanged(placementString)
-  }
-  #endif
+  // TODO: Re-enable when UITabBarController.BottomAccessoryPlacement is available in the SDK
+  // #if compiler(>=6.2)
+  // @available(iOS 26.0, *)
+  // func tabBarController(
+  //   _ tabBarController: UITabBarController,
+  //   placementDidChange placement: UITabBarController.BottomAccessoryPlacement,
+  //   forBottomAccessoryView accessoryView: UIView
+  // ) {
+  //   guard let hybridView = mapping[ObjectIdentifier(tabBarController)] else { return }
+  //
+  //   var placementString = "none"
+  //   if placement == .inline {
+  //     placementString = "inline"
+  //   } else if placement == .expanded {
+  //     placementString = "expanded"
+  //   }
+  //
+  //   hybridView.handlePlacementChanged(placementString)
+  // }
+  // #endif
 }
 
 // MARK: - Layout-aware UIView

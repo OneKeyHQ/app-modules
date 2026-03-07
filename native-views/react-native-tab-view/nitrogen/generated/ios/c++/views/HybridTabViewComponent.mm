@@ -42,7 +42,7 @@ using namespace margelo::nitro::tabview::views;
 
 - (instancetype) init {
   if (self = [super init]) {
-    std::shared_ptr<HybridTabViewSpec> hybridView = TabView::TabViewAutolinking::createTabView();
+    std::shared_ptr<HybridTabViewSpec> hybridView = TabViewModule::TabViewModuleAutolinking::createTabView();
     _hybridView = std::dynamic_pointer_cast<HybridTabViewSpecSwift>(hybridView);
     [self updateView];
   }
@@ -51,7 +51,7 @@ using namespace margelo::nitro::tabview::views;
 
 - (void) updateView {
   // 1. Get Swift part
-  TabView::HybridTabViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
+  TabViewModule::HybridTabViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
 
   // 2. Get UIView*
   void* viewUnsafe = swiftPart.getView();
@@ -72,7 +72,7 @@ static BOOL isBottomAccessoryView(UIView *view) {
   // Add the child view to our content view
   [self.contentView insertSubview:childComponentView atIndex:index];
 
-  TabView::HybridTabViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
+  TabViewModule::HybridTabViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
 
   if (isBottomAccessoryView(childComponentView)) {
     // Bottom accessory view - pass index -1 to signal special handling
@@ -88,7 +88,7 @@ static BOOL isBottomAccessoryView(UIView *view) {
 }
 
 - (void)unmountChildComponentView:(UIView<RCTComponentViewProtocol> *)childComponentView index:(NSInteger)index {
-  TabView::HybridTabViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
+  TabViewModule::HybridTabViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
 
   if (isBottomAccessoryView(childComponentView)) {
     try {
@@ -110,7 +110,7 @@ static BOOL isBottomAccessoryView(UIView *view) {
   // 1. Downcast props
   const auto& newViewPropsConst = *std::static_pointer_cast<HybridTabViewProps const>(props);
   auto& newViewProps = const_cast<HybridTabViewProps&>(newViewPropsConst);
-  TabView::HybridTabViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
+  TabViewModule::HybridTabViewSpec_cxx& swiftPart = _hybridView->getSwiftPart();
 
   // 2. Update each prop individually
   swiftPart.beforeUpdate();

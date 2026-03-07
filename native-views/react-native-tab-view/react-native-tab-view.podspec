@@ -11,6 +11,7 @@ Pod::Spec.new do |s|
   s.authors      = package["author"]
 
   s.ios.deployment_target = "15.1"
+  s.module_name  = "TabViewModule"
 
   s.source       = { :git => "https://github.com/nicholasxuu/app-modules.git", :tag => "#{s.version}" }
 
@@ -22,13 +23,14 @@ Pod::Spec.new do |s|
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
 
+  s.pod_target_xcconfig = {
+    'PRODUCT_MODULE_NAME' => 'TabViewModule',
+    # Workaround: Xcode 26 explicit modules + RN C++ headers cause __construct_at errors
+    'SWIFT_ENABLE_EXPLICIT_MODULES' => 'NO'
+  }
+
   load 'nitrogen/generated/ios/TabViewModule+autolinking.rb'
   add_nitrogen_files(s)
-
-  s.pod_target_xcconfig = {
-    'DEFINES_MODULE' => 'YES',
-    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++20'
-  }
 
   install_modules_dependencies(s)
 end

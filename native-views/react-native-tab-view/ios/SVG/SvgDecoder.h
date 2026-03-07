@@ -1,9 +1,9 @@
 #ifdef __cplusplus
 
-#import <RNCTabView/RNCTabView.h>
 #import <React/RCTImageDataDecoder.h>
+#import <React/RCTBridgeModule.h>
 
-@interface SvgDecoder : NSObject <RCTImageDataDecoder, NativeSVGDecoderSpec>
+@interface SvgDecoder : NSObject <RCTImageDataDecoder>
 
 @end
 
