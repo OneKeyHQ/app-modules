@@ -13,15 +13,19 @@
 #import <React/RCTBridge+Private.h>
 #import <react/utils/ManagedObjectWrapper.h>
 
-#if __has_include("TabViewModule/TabViewModule-Swift.h")
+#if __has_include(<TabViewModule/TabViewModule-Swift.h>)
+#import <TabViewModule/TabViewModule-Swift.h>
+#elif __has_include("TabViewModule/TabViewModule-Swift.h")
 #import "TabViewModule/TabViewModule-Swift.h"
-#else
+#elif __has_include("TabViewModule-Swift.h")
 #import "TabViewModule-Swift.h"
+#else
+#import "react_native_tab_view-Swift.h"
 #endif
 
 using namespace facebook::react;
 
-static inline NSString* _Nullable RCTNSStringFromStringNilIfEmpty(const std::string &string) {
+static inline NSString* _Nullable NSStringFromStdStringNilIfEmpty(const std::string &string) {
   return string.empty() ? nil : [NSString stringWithUTF8String:string.c_str()];
 }
 
@@ -99,7 +103,7 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
 @end
 
 @implementation RCTTabViewComponentView {
-  RCTTabViewContainerView *_containerView;
+  UIView *_containerView;
 }
 
 + (ComponentDescriptorProvider)componentDescriptorProvider
@@ -113,7 +117,11 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
     static const auto defaultProps = std::make_shared<const RNCTabViewProps>();
     _props = defaultProps;
 
-    _containerView = [[RCTTabViewContainerView alloc] init];
+    Class containerClass = NSClassFromString(@"TabViewModule.RCTTabViewContainerView");
+    if (!containerClass) {
+      containerClass = NSClassFromString(@"RCTTabViewContainerView");
+    }
+    _containerView = [[containerClass alloc] init];
     self.contentView = _containerView;
   }
 
@@ -126,11 +134,29 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
 }
 
 - (void)mountChildComponentView:(UIView<RCTComponentViewProtocol> *)childComponentView index:(NSInteger)index {
-  [_containerView insertChild:childComponentView atIndex:index];
+  SEL sel = @selector(insertChild:atIndex:);
+  if ([_containerView respondsToSelector:sel]) {
+    NSMethodSignature *sig = [_containerView methodSignatureForSelector:sel];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    [inv setSelector:sel];
+    [inv setTarget:_containerView];
+    UIView *child = childComponentView;
+    [inv setArgument:&child atIndex:2];
+    [inv setArgument:&index atIndex:3];
+    [inv invoke];
+  }
 }
 
 - (void)unmountChildComponentView:(UIView<RCTComponentViewProtocol> *)childComponentView index:(NSInteger)index {
-  [_containerView removeChildAtIndex:index];
+  SEL sel = @selector(removeChildAtIndex:);
+  if ([_containerView respondsToSelector:sel]) {
+    NSMethodSignature *sig = [_containerView methodSignatureForSelector:sel];
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    [inv setSelector:sel];
+    [inv setTarget:_containerView];
+    [inv setArgument:&index atIndex:2];
+    [inv invoke];
+  }
   [childComponentView removeFromSuperview];
 }
 
@@ -139,12 +165,17 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
   const auto &oldViewProps = *std::static_pointer_cast<RNCTabViewProps const>(_props);
   const auto &newViewProps = *std::static_pointer_cast<RNCTabViewProps const>(props);
 
+#define SET_PROP(prop, value) \
+  if ([_containerView respondsToSelector:@selector(setProp:)]) { \
+    [_containerView setValue:value forKey:@#prop]; \
+  }
+
   if (oldViewProps.items != newViewProps.items) {
-    _containerView.items = convertItemsToArray(newViewProps.items);
+    [_containerView setValue:convertItemsToArray(newViewProps.items) forKey:@"items"];
   }
 
   if (oldViewProps.translucent != newViewProps.translucent) {
-    _containerView.translucent = @(newViewProps.translucent);
+    [_containerView setValue:@(newViewProps.translucent) forKey:@"translucent"];
   }
 
   if (oldViewProps.icons != newViewProps.icons) {
@@ -157,64 +188,66 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
       iconDict[@"scale"] = @(source.scale);
       [iconsArray addObject:iconDict];
     }
-    _containerView.icons = iconsArray;
+    [_containerView setValue:iconsArray forKey:@"icons"];
   }
 
   if (oldViewProps.sidebarAdaptable != newViewProps.sidebarAdaptable) {
-    _containerView.sidebarAdaptable = newViewProps.sidebarAdaptable;
+    [_containerView setValue:@(newViewProps.sidebarAdaptable) forKey:@"sidebarAdaptable"];
   }
 
   if (oldViewProps.minimizeBehavior != newViewProps.minimizeBehavior) {
-    _containerView.minimizeBehavior = RCTNSStringFromStringNilIfEmpty(newViewProps.minimizeBehavior);
+    [_containerView setValue:NSStringFromStdStringNilIfEmpty(newViewProps.minimizeBehavior) forKey:@"minimizeBehavior"];
   }
 
   if (oldViewProps.disablePageAnimations != newViewProps.disablePageAnimations) {
-    _containerView.disablePageAnimations = newViewProps.disablePageAnimations;
+    [_containerView setValue:@(newViewProps.disablePageAnimations) forKey:@"disablePageAnimations"];
   }
 
   if (oldViewProps.labeled != newViewProps.labeled) {
-    _containerView.labeled = @(newViewProps.labeled);
+    [_containerView setValue:@(newViewProps.labeled) forKey:@"labeled"];
   }
 
   if (oldViewProps.selectedPage != newViewProps.selectedPage) {
-    _containerView.selectedPage = [NSString stringWithUTF8String:newViewProps.selectedPage.c_str()];
+    [_containerView setValue:[NSString stringWithUTF8String:newViewProps.selectedPage.c_str()] forKey:@"selectedPage"];
   }
 
   if (oldViewProps.scrollEdgeAppearance != newViewProps.scrollEdgeAppearance) {
-    _containerView.scrollEdgeAppearance = RCTNSStringFromStringNilIfEmpty(newViewProps.scrollEdgeAppearance);
+    [_containerView setValue:NSStringFromStdStringNilIfEmpty(newViewProps.scrollEdgeAppearance) forKey:@"scrollEdgeAppearance"];
   }
 
   if (oldViewProps.barTintColor != newViewProps.barTintColor) {
-    _containerView.barTintColor = RCTUIColorFromSharedColor(newViewProps.barTintColor);
+    [_containerView setValue:RCTUIColorFromSharedColor(newViewProps.barTintColor) forKey:@"barTintColor"];
   }
 
   if (oldViewProps.activeTintColor != newViewProps.activeTintColor) {
-    _containerView.activeTintColor = RCTUIColorFromSharedColor(newViewProps.activeTintColor);
+    [_containerView setValue:RCTUIColorFromSharedColor(newViewProps.activeTintColor) forKey:@"activeTintColor"];
   }
 
   if (oldViewProps.inactiveTintColor != newViewProps.inactiveTintColor) {
-    _containerView.inactiveTintColor = RCTUIColorFromSharedColor(newViewProps.inactiveTintColor);
+    [_containerView setValue:RCTUIColorFromSharedColor(newViewProps.inactiveTintColor) forKey:@"inactiveTintColor"];
   }
 
   if (oldViewProps.hapticFeedbackEnabled != newViewProps.hapticFeedbackEnabled) {
-    _containerView.hapticFeedbackEnabled = newViewProps.hapticFeedbackEnabled;
+    [_containerView setValue:@(newViewProps.hapticFeedbackEnabled) forKey:@"hapticFeedbackEnabled"];
   }
 
   if (oldViewProps.fontSize != newViewProps.fontSize) {
-    _containerView.fontSize = @(newViewProps.fontSize);
+    [_containerView setValue:@(newViewProps.fontSize) forKey:@"fontSize"];
   }
 
   if (oldViewProps.fontWeight != newViewProps.fontWeight) {
-    _containerView.fontWeight = RCTNSStringFromStringNilIfEmpty(newViewProps.fontWeight);
+    [_containerView setValue:NSStringFromStdStringNilIfEmpty(newViewProps.fontWeight) forKey:@"fontWeight"];
   }
 
   if (oldViewProps.fontFamily != newViewProps.fontFamily) {
-    _containerView.fontFamily = RCTNSStringFromStringNilIfEmpty(newViewProps.fontFamily);
+    [_containerView setValue:NSStringFromStdStringNilIfEmpty(newViewProps.fontFamily) forKey:@"fontFamily"];
   }
 
   if (oldViewProps.tabBarHidden != newViewProps.tabBarHidden) {
-    _containerView.tabBarHidden = newViewProps.tabBarHidden;
+    [_containerView setValue:@(newViewProps.tabBarHidden) forKey:@"tabBarHidden"];
   }
+
+#undef SET_PROP
 
   [super updateProps:props oldProps:oldProps];
 }
@@ -224,7 +257,10 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
   auto _state = std::static_pointer_cast<RNCTabViewShadowNode::ConcreteState const>(state);
   auto data = _state->getData();
   if (auto imgLoaderPtr = _state.get()->getData().getImageLoader().lock()) {
-    [_containerView setImageLoader:unwrapManagedObject(imgLoaderPtr)];
+    id imageLoader = unwrapManagedObject(imgLoaderPtr);
+    if ([_containerView respondsToSelector:@selector(setImageLoader:)]) {
+      [_containerView performSelector:@selector(setImageLoader:) withObject:imageLoader];
+    }
   }
 }
 
