@@ -14,6 +14,7 @@ import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
 import { BundleUpdateTestPage } from './pages/BundleUpdateTestPage';
 import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
 import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
+import { TabViewTestPage } from './pages/TabViewTestPage';
 
 export type RouteScreen =
   | 'home'
@@ -30,7 +31,8 @@ export type RouteScreen =
   | 'native-logger'
   | 'perf-memory'
   | 'skeleton'
-  | 'splash-screen';
+  | 'splash-screen'
+  | 'tab-view';
 
 interface RouterProps {
   safeAreaInsets: any;
@@ -106,6 +108,11 @@ const modules = [
     id: 'splash-screen' as RouteScreen,
     name: 'Splash Screen',
     description: 'Legacy splash screen for Android < 12',
+  },
+  {
+    id: 'tab-view' as RouteScreen,
+    name: 'Tab View',
+    description: 'Native tab bar with UIKit (iOS) / Material (Android), badges, icons, liquid glass',
   },
 ];
 
@@ -203,6 +210,8 @@ export function Router({ safeAreaInsets }: RouterProps) {
         return <SkeletonTestPage {...commonProps} />;
       case 'splash-screen':
         return <SplashScreenTestPage {...commonProps} />;
+      case 'tab-view':
+        return <TabViewTestPage {...commonProps} />;
       default:
         return renderHomeScreen();
     }
