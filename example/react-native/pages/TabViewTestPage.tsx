@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Switch, Platform } from 'react-native';
-import TabView, { SceneMap, useBottomTabBarHeight } from '@anthropic/react-native-tab-view';
-import type { BaseRoute, NavigationState } from '@anthropic/react-native-tab-view/src/types';
+import TabView, { SceneMap, useBottomTabBarHeight } from '@onekeyfe/react-native-tab-view';
+import type { BaseRoute, NavigationState } from '@onekeyfe/react-native-tab-view/src/types';
 
 interface TabViewTestPageProps {
   onGoHome: () => void;
