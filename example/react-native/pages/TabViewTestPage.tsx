@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Switch, Platform, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TabView, { SceneMap, useBottomTabBarHeight } from '@onekeyfe/react-native-tab-view';
 import type { BaseRoute, NavigationState } from '@onekeyfe/react-native-tab-view/src/types';
 
@@ -84,7 +83,6 @@ type Route = BaseRoute & {
 
 export function TabViewTestPage() {
   const navigation = useNavigation();
-  const safeAreaInsets = useSafeAreaInsets();
   const [index, setIndex] = useState(0);
   const [routes] = useState<Route[]>([
     {
@@ -123,6 +121,18 @@ export function TabViewTestPage() {
   const [hapticFeedback, setHapticFeedback] = useState(false);
   const [showControls, setShowControls] = useState(false);
 
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={() => setShowControls(v => !v)}>
+          <Text style={styles.headerRightText}>
+            {showControls ? 'Hide' : 'Controls'}
+          </Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, showControls]);
+
   const navigationState: NavigationState<Route> = {
     index,
     routes,
@@ -130,24 +140,9 @@ export function TabViewTestPage() {
 
   return (
     <View style={styles.container}>
-      {/* Back button overlay */}
-      <View style={[styles.backButtonContainer, { top: safeAreaInsets.top + 4 }]}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>← Back</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.controlsToggle}
-          onPress={() => setShowControls(!showControls)}
-        >
-          <Text style={styles.controlsToggleText}>
-            {showControls ? 'Hide Controls' : 'Controls'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
       {/* Controls panel */}
       {showControls && (
-        <View style={[styles.controlsPanel, { top: safeAreaInsets.top + 44 }]}>
+        <View style={styles.controlsPanel}>
           <ToggleRow label="Show Badge" value={showBadge} onToggle={setShowBadge} />
           <ToggleRow label="Labeled" value={labeled} onToggle={setLabeled} />
           <ToggleRow label="Translucent" value={translucent} onToggle={setTranslucent} />
@@ -263,50 +258,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  backButtonContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    zIndex: 100,
-  },
-  backButton: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  backButtonText: {
+  headerRightText: {
     fontSize: 16,
     color: '#007AFF',
     fontWeight: '500',
   },
-  controlsToggle: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  controlsToggleText: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '500',
-  },
   controlsPanel: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
     backgroundColor: 'rgba(255,255,255,0.95)',
-    borderRadius: 12,
     padding: 16,
-    zIndex: 99,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
   },
   toggleRow: {
     flexDirection: 'row',
