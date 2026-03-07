@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Platform, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import TabView, { SceneMap, useBottomTabBarHeight } from '@onekeyfe/react-native-tab-view';
 import type { BaseRoute, NavigationState } from '@onekeyfe/react-native-tab-view/src/types';
@@ -119,19 +119,29 @@ export function TabViewTestPage() {
   const [tabBarHidden, setTabBarHidden] = useState(false);
   const [sidebarAdaptable, setSidebarAdaptable] = useState(false);
   const [hapticFeedback, setHapticFeedback] = useState(false);
-  const [showControls, setShowControls] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity onPress={() => setShowControls(v => !v)}>
-          <Text style={styles.headerRightText}>
-            {showControls ? 'Hide' : 'Controls'}
-          </Text>
-        </TouchableOpacity>
-      ),
+      unstable_headerRightItems: () => [
+        {
+          type: 'menu',
+          label: 'Controls',
+          icon: { type: 'sfSymbol', name: 'slider.horizontal.3' },
+          menu: {
+            title: 'Controls',
+            items: [
+              { type: 'action', label: 'Show Badge', state: showBadge ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setShowBadge(v => !v) },
+              { type: 'action', label: 'Labeled', state: labeled ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setLabeled(v => !v) },
+              { type: 'action', label: 'Translucent', state: translucent ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setTranslucent(v => !v) },
+              { type: 'action', label: 'Tab Bar Hidden', state: tabBarHidden ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setTabBarHidden(v => !v) },
+              { type: 'action', label: 'Sidebar Adaptable', state: sidebarAdaptable ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setSidebarAdaptable(v => !v) },
+              { type: 'action', label: 'Haptic Feedback', state: hapticFeedback ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setHapticFeedback(v => !v) },
+            ],
+          },
+        },
+      ],
     });
-  }, [navigation, showControls]);
+  }, [navigation, showBadge, labeled, translucent, tabBarHidden, sidebarAdaptable, hapticFeedback]);
 
   const navigationState: NavigationState<Route> = {
     index,
@@ -140,19 +150,6 @@ export function TabViewTestPage() {
 
   return (
     <View style={styles.container}>
-      {/* Controls panel */}
-      {showControls && (
-        <View style={styles.controlsPanel}>
-          <ToggleRow label="Show Badge" value={showBadge} onToggle={setShowBadge} />
-          <ToggleRow label="Labeled" value={labeled} onToggle={setLabeled} />
-          <ToggleRow label="Translucent" value={translucent} onToggle={setTranslucent} />
-          <ToggleRow label="Tab Bar Hidden" value={tabBarHidden} onToggle={setTabBarHidden} />
-          <ToggleRow label="Sidebar Adaptable" value={sidebarAdaptable} onToggle={setSidebarAdaptable} />
-          <ToggleRow label="Haptic Feedback" value={hapticFeedback} onToggle={setHapticFeedback} />
-        </View>
-      )}
-
-      {/* TabView */}
       <TabView
         navigationState={navigationState}
         renderScene={renderScene}
@@ -182,23 +179,6 @@ export function TabViewTestPage() {
           return undefined;
         }}
       />
-    </View>
-  );
-}
-
-function ToggleRow({
-  label,
-  value,
-  onToggle,
-}: {
-  label: string;
-  value: boolean;
-  onToggle: (v: boolean) => void;
-}) {
-  return (
-    <View style={styles.toggleRow}>
-      <Text style={styles.toggleLabel}>{label}</Text>
-      <Switch value={value} onValueChange={onToggle} />
     </View>
   );
 }
@@ -257,26 +237,5 @@ const sceneStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  headerRightText: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '500',
-  },
-  controlsPanel: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    padding: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e0e0e0',
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  toggleLabel: {
-    fontSize: 15,
-    color: '#333',
   },
 });
