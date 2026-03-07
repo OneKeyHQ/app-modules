@@ -18,6 +18,16 @@ import { BundleUpdateTestPage } from './pages/BundleUpdateTestPage';
 import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
 import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
 import { TabViewTestPage } from './pages/TabViewTestPage';
+import { TabViewSettingsPage } from './pages/TabViewSettingsPage';
+
+export type TabViewSettingsState = {
+  showBadge: boolean;
+  labeled: boolean;
+  translucent: boolean;
+  tabBarHidden: boolean;
+  sidebarAdaptable: boolean;
+  hapticFeedback: boolean;
+};
 
 export type RootStackParamList = {
   Home: undefined;
@@ -36,6 +46,7 @@ export type RootStackParamList = {
   Skeleton: undefined;
   SplashScreen: undefined;
   TabView: undefined;
+  TabViewSettings: undefined;
 };
 
 export type RootStackNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -306,7 +317,7 @@ function HomeScreen() {
 
 export function AppNavigator() {
   return (
-    <Stack.Navigator>
+    <Stack.Navigator screenOptions={{ statusBarTranslucent: true }}>
       <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Native Modules Test Suite' }} />
       <Stack.Screen name="AutoSizeInput" component={AutoSizeInputTestPage} options={{ title: 'Auto Size Input' }} />
       <Stack.Screen name="AppUpdate" component={AppUpdateTestPage} options={{ title: 'App Update' }} />
@@ -323,6 +334,7 @@ export function AppNavigator() {
       <Stack.Screen name="Skeleton" component={SkeletonTestPage} options={{ title: 'Skeleton' }} />
       <Stack.Screen name="SplashScreen" component={SplashScreenTestPage} options={{ title: 'Splash Screen' }} />
       <Stack.Screen name="TabView" component={TabViewTestPage} options={{ title: 'Tab View' }} />
+      <Stack.Screen name="TabViewSettings" component={TabViewSettingsPage} options={{ title: 'Tab View Settings' }} />
     </Stack.Navigator>
   );
 }

@@ -1,8 +1,10 @@
-import React, { useLayoutEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform, ScrollView } from 'react-native';
+import React, { useLayoutEffect, useSyncExternalStore, useState } from 'react';
+import { View, Text, StyleSheet, Platform, ScrollView, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import TabView, { SceneMap, useBottomTabBarHeight } from '@onekeyfe/react-native-tab-view';
 import type { BaseRoute, NavigationState } from '@onekeyfe/react-native-tab-view/src/types';
+import type { RootStackNavigationProp } from '../route';
+import { getTabViewSettings, setTabViewSettings, subscribeTabViewSettings } from './tabViewSettingsStore';
 
 // --- Tab content scenes ---
 
@@ -82,7 +84,9 @@ type Route = BaseRoute & {
 };
 
 export function TabViewTestPage() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<RootStackNavigationProp>();
+  const settings = useSyncExternalStore(subscribeTabViewSettings, getTabViewSettings);
+  const { showBadge, labeled, translucent, tabBarHidden, sidebarAdaptable, hapticFeedback } = settings;
   const [index, setIndex] = useState(0);
   const [routes] = useState<Route[]>([
     {
@@ -112,36 +116,42 @@ export function TabViewTestPage() {
     },
   ]);
 
-  // Toggle states for testing various props
-  const [showBadge, setShowBadge] = useState(true);
-  const [labeled, setLabeled] = useState(true);
-  const [translucent, setTranslucent] = useState(true);
-  const [tabBarHidden, setTabBarHidden] = useState(false);
-  const [sidebarAdaptable, setSidebarAdaptable] = useState(false);
-  const [hapticFeedback, setHapticFeedback] = useState(false);
+  const navigateToSettings = React.useCallback(() => {
+    navigation.navigate('TabViewSettings');
+  }, [navigation]);
 
   useLayoutEffect(() => {
-    navigation.setOptions({
-      unstable_headerRightItems: () => [
-        {
-          type: 'menu',
-          label: 'Controls',
-          icon: { type: 'sfSymbol', name: 'slider.horizontal.3' },
-          menu: {
-            title: 'Controls',
-            items: [
-              { type: 'action', label: 'Show Badge', state: showBadge ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setShowBadge(v => !v) },
-              { type: 'action', label: 'Labeled', state: labeled ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setLabeled(v => !v) },
-              { type: 'action', label: 'Translucent', state: translucent ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setTranslucent(v => !v) },
-              { type: 'action', label: 'Tab Bar Hidden', state: tabBarHidden ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setTabBarHidden(v => !v) },
-              { type: 'action', label: 'Sidebar Adaptable', state: sidebarAdaptable ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setSidebarAdaptable(v => !v) },
-              { type: 'action', label: 'Haptic Feedback', state: hapticFeedback ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setHapticFeedback(v => !v) },
-            ],
+    if (Platform.OS === 'ios') {
+      navigation.setOptions({
+        unstable_headerRightItems: () => [
+          {
+            type: 'menu',
+            label: 'Controls',
+            icon: { type: 'sfSymbol', name: 'slider.horizontal.3' },
+            menu: {
+              title: 'Controls',
+              items: [
+                { type: 'action', label: 'Show Badge', state: showBadge ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setTabViewSettings({ showBadge: !showBadge }) },
+                { type: 'action', label: 'Labeled', state: labeled ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setTabViewSettings({ labeled: !labeled }) },
+                { type: 'action', label: 'Translucent', state: translucent ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setTabViewSettings({ translucent: !translucent }) },
+                { type: 'action', label: 'Tab Bar Hidden', state: tabBarHidden ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setTabViewSettings({ tabBarHidden: !tabBarHidden }) },
+                { type: 'action', label: 'Sidebar Adaptable', state: sidebarAdaptable ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setTabViewSettings({ sidebarAdaptable: !sidebarAdaptable }) },
+                { type: 'action', label: 'Haptic Feedback', state: hapticFeedback ? 'on' : 'off', keepsMenuPresented: true, onPress: () => setTabViewSettings({ hapticFeedback: !hapticFeedback }) },
+              ],
+            },
           },
-        },
-      ],
-    });
-  }, [navigation, showBadge, labeled, translucent, tabBarHidden, sidebarAdaptable, hapticFeedback]);
+        ],
+      });
+    } else {
+      navigation.setOptions({
+        headerRight: () => (
+          <TouchableOpacity onPress={navigateToSettings} style={{ paddingHorizontal: 12 }}>
+            <Text style={{ fontSize: 16, color: '#007AFF' }}>Settings</Text>
+          </TouchableOpacity>
+        ),
+      });
+    }
+  }, [navigation, navigateToSettings, showBadge, labeled, translucent, tabBarHidden, sidebarAdaptable, hapticFeedback]);
 
   const navigationState: NavigationState<Route> = {
     index,
