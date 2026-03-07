@@ -1,4 +1,3 @@
-#ifdef RCT_NEW_ARCH_ENABLED
 #import "RCTBottomAccessoryComponentView.h"
 
 #import <react/renderer/components/RNCTabView/ComponentDescriptors.h>
@@ -66,5 +65,3 @@ Class<RCTComponentViewProtocol> BottomAccessoryViewCls(void)
 {
   return RCTBottomAccessoryComponentView.class;
 }
-
-#endif // RCT_NEW_ARCH_ENABLED

@@ -74,7 +74,7 @@ class RCTTabViewContainerView: UIView {
   /// Cached view controllers keyed by tab key to avoid unnecessary reparenting
   private var cachedViewControllers: [String: UIViewController] = [:]
 
-  // MARK: - Props (set by ViewManager via RCT_EXPORT_VIEW_PROPERTY)
+  // MARK: - Props (set by Fabric ComponentView via KVC)
 
   @objc var items: [NSDictionary]? {
     didSet {
@@ -170,24 +170,6 @@ class RCTTabViewContainerView: UIView {
     fatalError("init(coder:) has not been implemented")
   }
 
-  // MARK: - Fabric subview management override
-
-  // Fabric's `didUpdateReactSubviews` (called from RCTLegacyViewManagerInteropComponentView
-  // finalizeUpdates:) re-adds all React children as direct subviews of this container via
-  // insertSubview:atIndex:. This steals our childViews from their VC views, breaking touch
-  // delivery and scroll. Override to keep childViews in VC views and only add non-managed
-  // subviews (like bottomAccessoryView) normally.
-  override func didUpdateReactSubviews() {
-    // Do NOT call super — super would re-insert all reactSubviews as direct children of self,
-    // undoing our placement into UITabBarController's VC views.
-    log("didUpdateReactSubviews: suppressed Fabric re-mount (childViews=\(childViews.count))")
-
-    // Ensure childViews are in VC views (they may have just been inserted via insertReactSubview)
-    if tabBarController != nil {
-      rebuildViewControllers()
-    }
-  }
-
   override func didAddSubview(_ subview: UIView) {
     super.didAddSubview(subview)
     if let tbcView = tabBarController?.view, subview !== tbcView {
@@ -203,39 +185,6 @@ class RCTTabViewContainerView: UIView {
       log("layoutSubviews: bounds=\(bounds), tabBar.isHidden=\(tbc.tabBar.isHidden), tabBar.frame=\(tbc.tabBar.frame), tabBar.alpha=\(tbc.tabBar.alpha)")
     }
     handleLayout()
-  }
-
-  // MARK: - React subview management
-
-  override func insertReactSubview(_ subview: UIView!, at atIndex: Int) {
-    super.insertReactSubview(subview, at: atIndex)
-    log("insertReactSubview at index \(atIndex), subview type: \(type(of: subview as Any)), total childViews: \(childViews.count)")
-
-    if subview is RCTBottomAccessoryContainerView {
-      self.bottomAccessoryView = subview
-      attachBottomAccessory()
-      return
-    }
-
-    guard atIndex >= 0 && atIndex <= childViews.count else { return }
-    childViews.insert(subview, at: atIndex)
-    rebuildViewControllers()
-  }
-
-  override func removeReactSubview(_ subview: UIView!) {
-    super.removeReactSubview(subview)
-    log("removeReactSubview, subview type: \(type(of: subview as Any)), remaining childViews: \(childViews.count)")
-
-    if subview is RCTBottomAccessoryContainerView {
-      detachBottomAccessory()
-      self.bottomAccessoryView = nil
-      return
-    }
-
-    if let index = childViews.firstIndex(of: subview) {
-      childViews.remove(at: index)
-      rebuildViewControllers()
-    }
   }
 
   // MARK: - Bottom Accessory (iOS 26+)

@@ -1,4 +1,3 @@
-#ifdef RCT_NEW_ARCH_ENABLED
 #import "RCTTabViewComponentView.h"
 
 #import <react/renderer/components/RNCTabView/RNCTabViewComponentDescriptor.h>
@@ -324,5 +323,3 @@ Class<RCTComponentViewProtocol> RNCTabViewCls(void)
 {
   return RCTTabViewComponentView.class;
 }
-
-#endif // RCT_NEW_ARCH_ENABLED
