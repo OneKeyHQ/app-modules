@@ -8,16 +8,20 @@
 
 #import <React/RCTFabricComponentsPlugins.h>
 
-#if __has_include("TabViewModule/TabViewModule-Swift.h")
+#if __has_include(<TabViewModule/TabViewModule-Swift.h>)
+#import <TabViewModule/TabViewModule-Swift.h>
+#elif __has_include("TabViewModule/TabViewModule-Swift.h")
 #import "TabViewModule/TabViewModule-Swift.h"
-#else
+#elif __has_include("TabViewModule-Swift.h")
 #import "TabViewModule-Swift.h"
+#else
+#import "react_native_tab_view-Swift.h"
 #endif
 
 using namespace facebook::react;
 
 @implementation RCTBottomAccessoryComponentView {
-  RCTBottomAccessoryContainerView *_accessoryView;
+  UIView *_accessoryView;
 }
 
 + (ComponentDescriptorProvider)componentDescriptorProvider
@@ -31,7 +35,11 @@ using namespace facebook::react;
     static const auto defaultProps = std::make_shared<const BottomAccessoryViewProps>();
     _props = defaultProps;
 
-    _accessoryView = [[RCTBottomAccessoryContainerView alloc] init];
+    Class containerClass = NSClassFromString(@"TabViewModule.RCTBottomAccessoryContainerView");
+    if (!containerClass) {
+      containerClass = NSClassFromString(@"RCTBottomAccessoryContainerView");
+    }
+    _accessoryView = [[containerClass alloc] init];
     self.contentView = _accessoryView;
   }
 
