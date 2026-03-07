@@ -52,6 +52,8 @@
     "url": "git+https://github.com/nicholasxuu/app-modules.git",
     "directory": "native-views/react-native-tab-view"
   },
+  "author": "OneKey",
+  "homepage": "https://github.com/nicholasxuu/app-modules#readme",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",

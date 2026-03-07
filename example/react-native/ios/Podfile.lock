@@ -2166,6 +2166,36 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - react-native-tab-view (1.1.30):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - NitroModules
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
   - React-NativeModulesApple (0.83.0):
     - boost
     - DoubleConversion
@@ -3088,6 +3118,7 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../../../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-safe-area-context (from `../../../node_modules/react-native-safe-area-context`)
+  - "react-native-tab-view (from `../../../node_modules/@onekeyfe/react-native-tab-view`)"
   - React-NativeModulesApple (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
   - React-networking (from `../../../node_modules/react-native/ReactCommon/react/networking`)
   - React-oscompat (from `../../../node_modules/react-native/ReactCommon/oscompat`)
@@ -3244,6 +3275,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   react-native-safe-area-context:
     :path: "../../../node_modules/react-native-safe-area-context"
+  react-native-tab-view:
+    :path: "../../../node_modules/@onekeyfe/react-native-tab-view"
   React-NativeModulesApple:
     :path: "../../../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios"
   React-networking:
@@ -3387,6 +3420,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 20046c0447efaa7aace0b76085aa9bb35b0e8105
   React-microtasksnativemodule: 0e837de56519c92d8a2e3097717df9497feb33cb
   react-native-safe-area-context: c00143b4823773bba23f2f19f85663ae89ceb460
+  react-native-tab-view: 1e47a08ce32ab1d0901652db2adcf18431e4bc88
   React-NativeModulesApple: 1a378198515f8e825c5931a7613e98da69320cee
   React-networking: bfd1695ada5a57023006ce05823ac5391c3ce072
   React-oscompat: aedc0afbded67280de6bb6bfac8cfde0389e2b33

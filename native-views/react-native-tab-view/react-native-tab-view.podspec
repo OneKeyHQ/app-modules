@@ -22,7 +22,7 @@ Pod::Spec.new do |s|
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
 
-  load 'nitrogen/generated/ios/react-native-tab-view+autolinking.rb'
+  load 'nitrogen/generated/ios/TabViewModule+autolinking.rb'
   add_nitrogen_files(s)
 
   s.pod_target_xcconfig = {
