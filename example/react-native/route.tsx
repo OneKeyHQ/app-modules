@@ -42,81 +42,96 @@ export type RootStackNavigationProp = NativeStackNavigationProp<RootStackParamLi
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-const modules: { screen: keyof RootStackParamList; name: string; description: string }[] = [
+const modules: { screen: keyof RootStackParamList; name: string; description: string; icon: string }[] = [
   {
     screen: 'AutoSizeInput',
     name: 'Auto Size Input',
     description: 'Input with auto-shrinking font size, prefix/suffix, single & multi-line',
+    icon: '⌨️',
   },
   {
     screen: 'AppUpdate',
     name: 'App Update',
     description: 'APK download, verification, and installation (Android)',
+    icon: '📦',
   },
   {
     screen: 'BackgroundThread',
     name: 'Background Thread',
     description: 'Test background thread messaging and processing',
+    icon: '⚙️',
   },
   {
     screen: 'BiometricAuth',
     name: 'Biometric Auth Changed',
     description: 'Check if biometric authentication has changed',
+    icon: '🔐',
   },
   {
     screen: 'BundleUpdate',
     name: 'Bundle Update',
     description: 'JS bundle download, verification, install, and path management',
+    icon: '📥',
   },
   {
     screen: 'CloudKit',
     name: 'CloudKit Module',
     description: 'Test iCloud storage operations and sync',
+    icon: '☁️',
   },
   {
     screen: 'DeviceUtils',
     name: 'Device Utils',
     description: 'Test dual screen detection, spanning, and device utilities',
+    icon: '📱',
   },
   {
     screen: 'Keychain',
     name: 'Keychain Module',
     description: 'Test secure storage operations',
+    icon: '🔑',
   },
   {
     screen: 'LiteCard',
     name: 'Lite Card',
     description: 'Test NFC card operations and management',
+    icon: '💳',
   },
   {
     screen: 'GetRandomValues',
     name: 'Get Random Values',
     description: 'Generate cryptographically secure random values',
+    icon: '🎲',
   },
   {
     screen: 'NativeLogger',
     name: 'Native Logger',
     description: 'File-based logging with log directory viewer',
+    icon: '📝',
   },
   {
     screen: 'PerfMemory',
     name: 'Perf Memory',
     description: 'Read process memory usage (RSS) for performance monitoring',
+    icon: '📊',
   },
   {
     screen: 'Skeleton',
     name: 'Skeleton View',
     description: 'Animated skeleton loading components for better UX',
+    icon: '💀',
   },
   {
     screen: 'SplashScreen',
     name: 'Splash Screen',
     description: 'Legacy splash screen for Android < 12',
+    icon: '🚀',
   },
   {
     screen: 'TabView',
     name: 'Tab View',
     description: 'Native tab bar with UIKit (iOS) / Material (Android), badges, icons, liquid glass',
+    icon: '📑',
   },
 ];
 
@@ -241,6 +256,7 @@ function HomeScreen() {
                     onPress={() => navigation.navigate(module.screen)}
                     activeOpacity={0.7}
                   >
+                    <Text style={styles.moduleIcon}>{module.icon}</Text>
                     <View style={styles.moduleRowContent}>
                       <Text style={styles.moduleName}>{module.name}</Text>
                       <Text style={styles.moduleDescription}>{module.description}</Text>
@@ -365,6 +381,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E5E5EA',
+  },
+  moduleIcon: {
+    fontSize: 24,
+    marginRight: 12,
   },
   moduleRowContent: {
     flex: 1,
