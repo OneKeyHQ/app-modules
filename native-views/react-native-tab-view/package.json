@@ -1,0 +1,104 @@
+{
+  "name": "@onekeyfe/react-native-tab-view",
+  "version": "1.1.30",
+  "description": "Native Bottom Tabs for React Native (UIKit implementation)",
+  "source": "./src/index.tsx",
+  "main": "./lib/module/index.js",
+  "types": "./lib/typescript/src/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "source": "./src/index.tsx",
+      "types": "./lib/typescript/src/index.d.ts",
+      "default": "./lib/module/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "android",
+    "ios",
+    "nitrogen",
+    "nitro.json",
+    "react-native.config.js",
+    "*.podspec",
+    "!ios/build",
+    "!android/build",
+    "!android/gradle",
+    "!android/gradlew",
+    "!android/gradlew.bat",
+    "!android/local.properties",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*"
+  ],
+  "scripts": {
+    "clean": "del-cli lib",
+    "prepare": "rm -rf lib && bob build && cp -r nitrogen lib/nitrogen",
+    "nitrogen": "nitrogen && bash scripts/post-nitrogen.sh",
+    "typecheck": "tsc -b",
+    "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "test": "jest"
+  },
+  "keywords": [
+    "react-native",
+    "ios",
+    "android"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicholasxuu/app-modules.git",
+    "directory": "native-views/react-native-tab-view"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.44",
+    "nitrogen": "0.31.10",
+    "react": "^19.1.0",
+    "react-native": "0.83.0",
+    "react-native-builder-bob": "^0.40.13",
+    "react-native-nitro-modules": "0.33.2",
+    "typescript": "^5.9.2"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*",
+    "react-native-nitro-modules": "0.33.2"
+  },
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "custom",
+        {
+          "script": "nitrogen && bash scripts/post-nitrogen.sh",
+          "clean": "nitrogen/"
+        }
+      ],
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
+  },
+  "dependencies": {
+    "react-freeze": "^1.0.0",
+    "sf-symbols-typescript": "^2.0.0",
+    "use-latest-callback": "^0.2.1"
+  }
+}

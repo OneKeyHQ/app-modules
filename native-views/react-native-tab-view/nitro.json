@@ -1,0 +1,21 @@
+{
+  "cxxNamespace": ["tabview"],
+  "ios": {
+    "iosModuleName": "TabViewModule"
+  },
+  "android": {
+    "androidNamespace": ["tabview"],
+    "androidCxxLibName": "tabview"
+  },
+  "autolinking": {
+    "TabView": {
+      "swift": "HybridTabView",
+      "kotlin": "HybridTabView"
+    },
+    "BottomAccessoryView": {
+      "swift": "HybridBottomAccessoryView",
+      "kotlin": "HybridBottomAccessoryView"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
