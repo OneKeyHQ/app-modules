@@ -22,8 +22,7 @@ Pod::Spec.new do |s|
 
   s.pod_target_xcconfig = {
     'PRODUCT_MODULE_NAME' => 'TabViewModule',
-    'DEFINES_MODULE' => 'YES',
-    'SWIFT_OBJC_BRIDGING_HEADER' => '$(PODS_TARGET_SRCROOT)/ios/react-native-tab-view-Bridging-Header.h'
+    'DEFINES_MODULE' => 'YES'
   }
 
   install_modules_dependencies(s)
