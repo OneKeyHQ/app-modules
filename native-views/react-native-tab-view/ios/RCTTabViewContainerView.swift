@@ -404,8 +404,11 @@ class RCTTabViewContainerView: UIView {
         if childView.superview !== vc.view {
           childView.removeFromSuperview()
           vc.view.addSubview(childView)
-          childView.translatesAutoresizingMaskIntoConstraints = false
-          childView.pinEdges(to: vc.view)
+          // Use autoresizingMask instead of Auto Layout constraints — Fabric sets
+          // frames directly and constraints conflict with that on subsequent mounts.
+          childView.translatesAutoresizingMaskIntoConstraints = true
+          childView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+          childView.frame = vc.view.bounds
           log("rebuildViewControllers: tab[\(tabData.key)] MOVED childView to vc.view (was \(superviewType))")
         }
       }

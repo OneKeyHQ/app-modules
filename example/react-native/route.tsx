@@ -134,11 +134,6 @@ function HomeScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Native Modules Test Suite</Text>
-        <Text style={styles.subtitle}>Test all available native modules and their APIs</Text>
-      </View>
-
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.searchInput}
@@ -178,23 +173,23 @@ function HomeScreen() {
 
 export function AppNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Home" component={HomeScreen} />
-      <Stack.Screen name="AutoSizeInput" component={AutoSizeInputTestPage} />
-      <Stack.Screen name="AppUpdate" component={AppUpdateTestPage} />
-      <Stack.Screen name="BackgroundThread" component={BackgroundThreadTestPage} />
-      <Stack.Screen name="BiometricAuth" component={BiometricAuthTestPage} />
-      <Stack.Screen name="BundleUpdate" component={BundleUpdateTestPage} />
-      <Stack.Screen name="CloudKit" component={CloudKitTestPage} />
-      <Stack.Screen name="DeviceUtils" component={DeviceUtilsTestPage} />
-      <Stack.Screen name="Keychain" component={KeychainTestPage} />
-      <Stack.Screen name="LiteCard" component={LiteCardTestPage} />
-      <Stack.Screen name="GetRandomValues" component={GetRandomValuesTestPage} />
-      <Stack.Screen name="NativeLogger" component={NativeLoggerTestPage} />
-      <Stack.Screen name="PerfMemory" component={PerfMemoryTestPage} />
-      <Stack.Screen name="Skeleton" component={SkeletonTestPage} />
-      <Stack.Screen name="SplashScreen" component={SplashScreenTestPage} />
-      <Stack.Screen name="TabView" component={TabViewTestPage} />
+    <Stack.Navigator>
+      <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Native Modules Test Suite' }} />
+      <Stack.Screen name="AutoSizeInput" component={AutoSizeInputTestPage} options={{ title: 'Auto Size Input' }} />
+      <Stack.Screen name="AppUpdate" component={AppUpdateTestPage} options={{ title: 'App Update' }} />
+      <Stack.Screen name="BackgroundThread" component={BackgroundThreadTestPage} options={{ title: 'Background Thread' }} />
+      <Stack.Screen name="BiometricAuth" component={BiometricAuthTestPage} options={{ title: 'Biometric Auth' }} />
+      <Stack.Screen name="BundleUpdate" component={BundleUpdateTestPage} options={{ title: 'Bundle Update' }} />
+      <Stack.Screen name="CloudKit" component={CloudKitTestPage} options={{ title: 'CloudKit' }} />
+      <Stack.Screen name="DeviceUtils" component={DeviceUtilsTestPage} options={{ title: 'Device Utils' }} />
+      <Stack.Screen name="Keychain" component={KeychainTestPage} options={{ title: 'Keychain' }} />
+      <Stack.Screen name="LiteCard" component={LiteCardTestPage} options={{ title: 'Lite Card' }} />
+      <Stack.Screen name="GetRandomValues" component={GetRandomValuesTestPage} options={{ title: 'Get Random Values' }} />
+      <Stack.Screen name="NativeLogger" component={NativeLoggerTestPage} options={{ title: 'Native Logger' }} />
+      <Stack.Screen name="PerfMemory" component={PerfMemoryTestPage} options={{ title: 'Perf Memory' }} />
+      <Stack.Screen name="Skeleton" component={SkeletonTestPage} options={{ title: 'Skeleton' }} />
+      <Stack.Screen name="SplashScreen" component={SplashScreenTestPage} options={{ title: 'Splash Screen' }} />
+      <Stack.Screen name="TabView" component={TabViewTestPage} options={{ title: 'Tab View' }} />
     </Stack.Navigator>
   );
 }
@@ -206,21 +201,6 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 20,
-  },
-  header: {
-    marginBottom: 30,
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
   },
   searchContainer: {
     marginBottom: 20,
