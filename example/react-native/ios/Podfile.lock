@@ -2192,6 +2192,7 @@ PODS:
     - ReactCodegen
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
+    - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
   - React-NativeModulesApple (0.83.0):
@@ -3418,7 +3419,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 20046c0447efaa7aace0b76085aa9bb35b0e8105
   React-microtasksnativemodule: 0e837de56519c92d8a2e3097717df9497feb33cb
   react-native-safe-area-context: c00143b4823773bba23f2f19f85663ae89ceb460
-  react-native-tab-view: a10da14f9253678f9099885556501b3f897997ee
+  react-native-tab-view: e0c5bba7fdf255630301bc0c847341e14277f8b1
   React-NativeModulesApple: 1a378198515f8e825c5931a7613e98da69320cee
   React-networking: bfd1695ada5a57023006ce05823ac5391c3ce072
   React-oscompat: aedc0afbded67280de6bb6bfac8cfde0389e2b33
