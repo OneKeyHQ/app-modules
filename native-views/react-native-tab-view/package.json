@@ -76,13 +76,6 @@
     "output": "lib",
     "targets": [
       [
-        "custom",
-        {
-          "script": "nitrogen && bash scripts/post-nitrogen.sh",
-          "clean": "nitrogen/"
-        }
-      ],
-      [
         "module",
         {
           "esm": true
