@@ -230,6 +230,12 @@ class RCTTabViewContainerView: UIView {
     setupTabBarControllerIfNeeded()
     tabBarController?.view.frame = bounds
 
+    // Log container's direct subviews to check for overlapping views
+    if let tbc = tabBarController {
+      let directSubviews = self.subviews.map { "\(type(of: $0)):\(String(format: "%.0f,%.0f,%.0fx%.0f", $0.frame.origin.x, $0.frame.origin.y, $0.frame.width, $0.frame.height))" }
+      log("handleLayout: self.subviews(\(self.subviews.count))=\(directSubviews), tbc.tabBar.superview=\(tbc.tabBar.superview.map { String(describing: type(of: $0)) } ?? "nil")")
+    }
+
     onNativeLayout?(["width": Double(bounds.width), "height": Double(bounds.height)])
   }
 
@@ -344,12 +350,14 @@ class RCTTabViewContainerView: UIView {
 
       let vc = UIViewController()
       vc.view.backgroundColor = .clear
+      vc.view.clipsToBounds = true
 
       if originalIndex < childViews.count {
         let childView = childViews[originalIndex]
         vc.view.addSubview(childView)
         childView.translatesAutoresizingMaskIntoConstraints = false
         childView.pinEdges(to: vc.view)
+        log("rebuildViewControllers: tab[\(tabData.key)] vc.view.frame=\(vc.view.frame), childView.frame=\(childView.frame), childView.superview=\(String(describing: childView.superview))")
       }
 
       // Configure tab bar item
@@ -399,6 +407,12 @@ class RCTTabViewContainerView: UIView {
       }
     } else {
       tbc.setViewControllers(viewControllers, animated: false)
+    }
+
+    // Log the view hierarchy after setting VCs
+    log("rebuildViewControllers: tbc.view.subviews=\(tbc.view.subviews.map { "\(type(of: $0)):\(String(format: "%.0f", $0.frame.width))x\(String(format: "%.0f", $0.frame.height))" })")
+    if let selectedVC = tbc.selectedViewController {
+      log("rebuildViewControllers: selectedVC.view.frame=\(selectedVC.view.frame), subviews=\(selectedVC.view.subviews.count)")
     }
 
     updateSelectedTab()
