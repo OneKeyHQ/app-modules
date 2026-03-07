@@ -71,6 +71,8 @@ class RCTTabViewContainerView: UIView {
   private var tabBarHiddenObservation: NSKeyValueObservation?
   private var tabBarAlphaObservation: NSKeyValueObservation?
   private var tabBarFrameObservation: NSKeyValueObservation?
+  /// Cached view controllers keyed by tab key to avoid unnecessary reparenting
+  private var cachedViewControllers: [String: UIViewController] = [:]
 
   // MARK: - Props (set by ViewManager via RCT_EXPORT_VIEW_PROPERTY)
 
@@ -357,20 +359,35 @@ class RCTTabViewContainerView: UIView {
     let filtered = filteredItems
     let allItems = parsedItems
     var viewControllers: [UIViewController] = []
+    var usedKeys = Set<String>()
 
     for (_, tabData) in filtered.enumerated() {
       guard let originalIndex = allItems.firstIndex(where: { $0.key == tabData.key }) else { continue }
+      usedKeys.insert(tabData.key)
 
-      let vc = UIViewController()
-      vc.view.backgroundColor = .clear
-      vc.view.clipsToBounds = true
+      // Reuse cached VC or create a new one
+      let vc: UIViewController
+      if let cached = cachedViewControllers[tabData.key] {
+        vc = cached
+        log("rebuildViewControllers: reusing cached VC for tab[\(tabData.key)]")
+      } else {
+        vc = UIViewController()
+        vc.view.backgroundColor = .clear
+        vc.view.clipsToBounds = true
+        cachedViewControllers[tabData.key] = vc
+        log("rebuildViewControllers: created new VC for tab[\(tabData.key)]")
+      }
 
+      // Attach child view if not already attached to this VC
       if originalIndex < childViews.count {
         let childView = childViews[originalIndex]
-        vc.view.addSubview(childView)
-        childView.translatesAutoresizingMaskIntoConstraints = false
-        childView.pinEdges(to: vc.view)
-        log("rebuildViewControllers: tab[\(tabData.key)] vc.view.frame=\(vc.view.frame), childView.frame=\(childView.frame), childView.superview=\(String(describing: childView.superview))")
+        if childView.superview !== vc.view {
+          childView.removeFromSuperview()
+          vc.view.addSubview(childView)
+          childView.translatesAutoresizingMaskIntoConstraints = false
+          childView.pinEdges(to: vc.view)
+          log("rebuildViewControllers: tab[\(tabData.key)] attached childView to vc.view")
+        }
       }
 
       // Configure tab bar item
@@ -414,12 +431,24 @@ class RCTTabViewContainerView: UIView {
       viewControllers.append(vc)
     }
 
-    if disablePageAnimations {
-      UIView.performWithoutAnimation {
+    // Clean up cached VCs for removed tabs
+    for key in cachedViewControllers.keys where !usedKeys.contains(key) {
+      cachedViewControllers.removeValue(forKey: key)
+    }
+
+    // Only call setViewControllers if the VC list actually changed
+    let currentVCs = tbc.viewControllers ?? []
+    if currentVCs.count != viewControllers.count || !zip(currentVCs, viewControllers).allSatisfy({ $0 === $1 }) {
+      log("rebuildViewControllers: updating VCs (old=\(currentVCs.count), new=\(viewControllers.count))")
+      if disablePageAnimations {
+        UIView.performWithoutAnimation {
+          tbc.setViewControllers(viewControllers, animated: false)
+        }
+      } else {
         tbc.setViewControllers(viewControllers, animated: false)
       }
     } else {
-      tbc.setViewControllers(viewControllers, animated: false)
+      log("rebuildViewControllers: VCs unchanged, skipping setViewControllers")
     }
 
     // Log the view hierarchy after setting VCs
