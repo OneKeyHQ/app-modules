@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
 import android.content.res.Configuration
+import androidx.appcompat.view.ContextThemeWrapper
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
@@ -37,7 +38,11 @@ import com.google.android.material.navigation.NavigationBarView.LABEL_VISIBILITY
 import com.google.android.material.navigation.NavigationBarView.LABEL_VISIBILITY_UNLABELED
 import com.google.android.material.transition.platform.MaterialFadeThrough
 
-class ExtendedBottomNavigationView(context: Context) : BottomNavigationView(context) {
+private fun getMaterialContext(context: Context): Context {
+  return ContextThemeWrapper(context, com.google.android.material.R.style.Theme_MaterialComponents_DayNight)
+}
+
+class ExtendedBottomNavigationView(context: Context) : BottomNavigationView(getMaterialContext(context)) {
   init {
     // Disable automatic window insets handling to prevent extra padding
     // when using 3-button navigation (navigation bar visible)
