@@ -3324,7 +3324,7 @@ __metadata:
   dependencies:
     "@types/react": "npm:^18.2.44"
     nitrogen: "npm:0.31.10"
-    react: "npm:^19.1.0"
+    react: "npm:19.2.0"
     react-freeze: "npm:^1.0.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
@@ -11046,13 +11046,6 @@ __metadata:
   version: 19.2.0
   resolution: "react@npm:19.2.0"
   checksum: 10/e13bcdb8e994c3cfa922743cb75ca8deb60531bf02f584d2d8dab940a8132ce8a2e6ef16f8ed7f372b4072e7a7eeff589b2812dabbedfa73e6e46201dac8a9d0
-  languageName: node
-  linkType: hard
-
-"react@npm:^19.1.0":
-  version: 19.2.4
-  resolution: "react@npm:19.2.4"
-  checksum: 10/18179fe217f67eb2d0bc61cd04e7ad3c282ea09a1dface7eacd71816f62609f4bbf566c447c704335284deb8397b00bca084e0cd60e6f437279a7498e2d0bfe0
   languageName: node
   linkType: hard
 

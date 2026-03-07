@@ -60,7 +60,7 @@
   "devDependencies": {
     "@types/react": "^18.2.44",
     "nitrogen": "0.31.10",
-    "react": "^19.1.0",
+    "react": "19.2.0",
     "react-native": "0.83.0",
     "react-native-builder-bob": "^0.40.13",
     "react-native-nitro-modules": "0.33.2",
