@@ -124,10 +124,13 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
     _containerView = [[containerClass alloc] init];
     self.contentView = _containerView;
 
-    // Set up event forwarding from Swift container (RCTDirectEventBlock) to Fabric EventEmitter
+    // Set up event forwarding from Swift container to Fabric EventEmitter.
+    // Swift container uses RCTDirectEventBlock (void (^)(NSDictionary *)) for events,
+    // but in Fabric mode we need to forward them through the C++ EventEmitter.
+    typedef void (^EventBlock)(NSDictionary *);
     __weak auto weakSelf = self;
 
-    RCTDirectEventBlock onPageSelected = ^(NSDictionary *body) {
+    EventBlock onPageSelected = ^(NSDictionary *body) {
       auto strongSelf = weakSelf;
       if (!strongSelf) return;
       auto emitter = std::static_pointer_cast<const RNCTabViewEventEmitter>(strongSelf->_eventEmitter);
@@ -137,7 +140,7 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
     };
     [_containerView setValue:onPageSelected forKey:@"onPageSelected"];
 
-    RCTDirectEventBlock onTabLongPress = ^(NSDictionary *body) {
+    EventBlock onTabLongPress = ^(NSDictionary *body) {
       auto strongSelf = weakSelf;
       if (!strongSelf) return;
       auto emitter = std::static_pointer_cast<const RNCTabViewEventEmitter>(strongSelf->_eventEmitter);
@@ -147,7 +150,7 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
     };
     [_containerView setValue:onTabLongPress forKey:@"onTabLongPress"];
 
-    RCTDirectEventBlock onTabBarMeasured = ^(NSDictionary *body) {
+    EventBlock onTabBarMeasured = ^(NSDictionary *body) {
       auto strongSelf = weakSelf;
       if (!strongSelf) return;
       auto emitter = std::static_pointer_cast<const RNCTabViewEventEmitter>(strongSelf->_eventEmitter);
@@ -157,7 +160,7 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
     };
     [_containerView setValue:onTabBarMeasured forKey:@"onTabBarMeasured"];
 
-    RCTDirectEventBlock onNativeLayout = ^(NSDictionary *body) {
+    EventBlock onNativeLayout = ^(NSDictionary *body) {
       auto strongSelf = weakSelf;
       if (!strongSelf) return;
       auto emitter = std::static_pointer_cast<const RNCTabViewEventEmitter>(strongSelf->_eventEmitter);
