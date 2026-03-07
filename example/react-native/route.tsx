@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, PanResponder, type LayoutChangeEvent } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
@@ -120,45 +120,134 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
   },
 ];
 
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
 function HomeScreen() {
   const navigation = useNavigation<RootStackNavigationProp>();
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const scrollViewRef = useRef<ScrollView>(null);
+  const sectionYRef = useRef<Record<string, number>>({});
+  const sidebarRef = useRef<View>(null);
+  const sidebarLayoutRef = useRef({ y: 0, height: 0 });
+  const [activeLetterState, setActiveLetterState] = useState<string | null>(null);
 
-  const filteredModules = modules.filter((module) => {
+  const filteredModules = useMemo(() => {
+    const sorted = [...modules].sort((a, b) => a.name.localeCompare(b.name));
+    if (!searchQuery) return sorted;
     const query = searchQuery.toLowerCase();
-    return (
-      module.name.toLowerCase().includes(query) ||
-      module.description.toLowerCase().includes(query)
+    return sorted.filter(
+      (m) => m.name.toLowerCase().includes(query) || m.description.toLowerCase().includes(query),
     );
-  });
+  }, [searchQuery]);
+
+  const grouped = useMemo(() => {
+    const map: Record<string, typeof modules> = {};
+    for (const m of filteredModules) {
+      const letter = m.name[0]!.toUpperCase();
+      if (!map[letter]) map[letter] = [];
+      map[letter]!.push(m);
+    }
+    return map;
+  }, [filteredModules]);
+
+  const activeLetters = useMemo(() => new Set(Object.keys(grouped)), [grouped]);
+
+  const scrollToLetter = useCallback(
+    (letter: string) => {
+      const y = sectionYRef.current[letter];
+      if (y != null && scrollViewRef.current) {
+        scrollViewRef.current.scrollTo({ y, animated: true });
+      }
+    },
+    [],
+  );
+
+  const getLetterFromTouch = useCallback((pageY: number) => {
+    const { y, height } = sidebarLayoutRef.current;
+    const relativeY = pageY - y;
+    const idx = Math.floor((relativeY / height) * ALPHABET.length);
+    return ALPHABET[Math.max(0, Math.min(idx, ALPHABET.length - 1))];
+  }, []);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (evt) => {
+          const letter = getLetterFromTouch(evt.nativeEvent.pageY);
+          if (letter && activeLetters.has(letter)) {
+            setActiveLetterState(letter);
+            scrollToLetter(letter);
+          }
+        },
+        onPanResponderMove: (evt) => {
+          const letter = getLetterFromTouch(evt.nativeEvent.pageY);
+          if (letter && activeLetters.has(letter)) {
+            setActiveLetterState(letter);
+            scrollToLetter(letter);
+          }
+        },
+        onPanResponderRelease: () => {
+          setActiveLetterState(null);
+        },
+      }),
+    [activeLetters, getLetterFromTouch, scrollToLetter],
+  );
+
+  const handleSectionLayout = useCallback((letter: string, event: LayoutChangeEvent) => {
+    sectionYRef.current[letter] = event.nativeEvent.layout.y;
+  }, []);
+
+  const handleSidebarLayout = useCallback(() => {
+    sidebarRef.current?.measureInWindow((_x, y, _w, height) => {
+      sidebarLayoutRef.current = { y, height };
+    });
+  }, []);
+
+  const sections = Object.keys(grouped).sort();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search modules..."
-          placeholderTextColor="#999"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </View>
+    <View style={styles.outerContainer}>
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
+      >
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search modules..."
+            placeholderTextColor="#999"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
 
-      <View style={styles.moduleList}>
-        {filteredModules.length > 0 ? (
-          filteredModules.map((module) => (
-            <TouchableOpacity
-              key={module.screen}
-              style={styles.moduleCard}
-              onPress={() => navigation.navigate(module.screen)}
-              activeOpacity={0.7}
+        {sections.length > 0 ? (
+          sections.map((letter) => (
+            <View
+              key={letter}
+              onLayout={(e) => handleSectionLayout(letter, e)}
             >
-              <Text style={styles.moduleName}>{module.name}</Text>
-              <Text style={styles.moduleDescription}>{module.description}</Text>
-              <Text style={styles.tapHint}>Tap to test →</Text>
-            </TouchableOpacity>
+              <Text style={styles.sectionHeader}>{letter}</Text>
+              <View style={styles.moduleList}>
+                {grouped[letter]!.map((module) => (
+                  <TouchableOpacity
+                    key={module.screen}
+                    style={styles.moduleCard}
+                    onPress={() => navigation.navigate(module.screen)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.moduleName}>{module.name}</Text>
+                    <Text style={styles.moduleDescription}>{module.description}</Text>
+                    <Text style={styles.tapHint}>Tap to test →</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
           ))
         ) : (
           <View style={styles.noResultsContainer}>
@@ -166,8 +255,34 @@ function HomeScreen() {
             <Text style={styles.noResultsSubtext}>Try a different search term</Text>
           </View>
         )}
+      </ScrollView>
+
+      {/* Floating alphabet sidebar */}
+      <View
+        ref={sidebarRef}
+        style={styles.sidebar}
+        onLayout={handleSidebarLayout}
+        {...panResponder.panHandlers}
+      >
+        {ALPHABET.map((letter) => {
+          const isActive = activeLetters.has(letter);
+          const isHighlighted = activeLetterState === letter;
+          return (
+            <View key={letter} style={styles.sidebarLetterContainer}>
+              <Text
+                style={[
+                  styles.sidebarLetter,
+                  !isActive && styles.sidebarLetterDisabled,
+                  isHighlighted && styles.sidebarLetterHighlighted,
+                ]}
+              >
+                {letter}
+              </Text>
+            </View>
+          );
+        })}
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -195,15 +310,30 @@ export function AppNavigator() {
 }
 
 const styles = StyleSheet.create({
+  outerContainer: {
+    flex: 1,
+    flexDirection: 'row',
+  },
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
   contentContainer: {
-    padding: 20,
+    paddingLeft: 20,
+    paddingRight: 36,
+    paddingTop: 20,
+    paddingBottom: 20,
   },
   searchContainer: {
     marginBottom: 20,
+  },
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8E8E93',
+    marginTop: 16,
+    marginBottom: 8,
+    marginLeft: 4,
   },
   searchInput: {
     backgroundColor: '#fff',
@@ -267,5 +397,39 @@ const styles = StyleSheet.create({
   noResultsSubtext: {
     fontSize: 14,
     color: '#666',
+  },
+  sidebar: {
+    position: 'absolute',
+    right: 2,
+    top: 0,
+    bottom: 0,
+    width: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  sidebarLetterContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 28,
+  },
+  sidebarLetter: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+  sidebarLetterDisabled: {
+    color: '#C7C7CC',
+  },
+  sidebarLetterHighlighted: {
+    color: '#fff',
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    textAlign: 'center',
+    lineHeight: 16,
+    overflow: 'hidden',
   },
 });
