@@ -168,6 +168,19 @@ class RCTTabViewContainerView: UIView {
     fatalError("init(coder:) has not been implemented")
   }
 
+  // MARK: - Subview z-order management
+
+  // Fabric's `super.insertReactSubview` adds React children as direct subviews of this container.
+  // Even after we move them into UITabBarController's tab VCs, Fabric may re-add them.
+  // These stray subviews sit on top of UILayoutContainerView, covering the tab bar.
+  // Fix: always keep the UITabBarController's view as the frontmost subview.
+  override func didAddSubview(_ subview: UIView) {
+    super.didAddSubview(subview)
+    if let tbcView = tabBarController?.view, subview !== tbcView {
+      bringSubviewToFront(tbcView)
+    }
+  }
+
   // MARK: - Layout
 
   override func layoutSubviews() {
