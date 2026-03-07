@@ -41,6 +41,8 @@ export interface TabViewNativeProps extends ViewProps {
   minimizeBehavior?: string;
   tabBarHidden?: boolean;
   translucent?: boolean;
+  /** Android only: ignore bottom system insets (navigation bar) */
+  ignoreBottomInsets?: boolean;
 
   // Colors
   barTintColor?: string;

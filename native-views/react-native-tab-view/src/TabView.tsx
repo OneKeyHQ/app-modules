@@ -184,6 +184,10 @@ interface Props<Route extends BaseRoute> {
    * Whether the tab bar is hidden.
    */
   tabBarHidden?: boolean;
+  /**
+   * Whether to ignore bottom system insets (navigation bar). Android only.
+   */
+  ignoreBottomInsets?: boolean;
 }
 
 const ANDROID_MAX_TABS = 100;

@@ -43,10 +43,15 @@ private fun getMaterialContext(context: Context): Context {
 }
 
 class ExtendedBottomNavigationView(context: Context) : BottomNavigationView(getMaterialContext(context)) {
-  init {
-    // Disable automatic window insets handling to prevent extra padding
-    // when using 3-button navigation (navigation bar visible)
-    setOnApplyWindowInsetsListener(null)
+
+  fun setIgnoreBottomInsets(ignore: Boolean) {
+    if (ignore) {
+      setOnApplyWindowInsetsListener { v, insets -> insets }
+      setPadding(paddingLeft, paddingTop, paddingRight, 0)
+    } else {
+      setOnApplyWindowInsetsListener(null)
+      requestApplyInsets()
+    }
   }
 
   override fun getMaxItemCount(): Int {
@@ -230,6 +235,10 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
       onTabLongPressedListener?.invoke(longPressedItem.key)
       emitHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
     }
+  }
+
+  fun setIgnoreBottomInsets(ignore: Boolean) {
+    bottomNavigation.setIgnoreBottomInsets(ignore)
   }
 
   fun setTabBarHidden(isHidden: Boolean) {

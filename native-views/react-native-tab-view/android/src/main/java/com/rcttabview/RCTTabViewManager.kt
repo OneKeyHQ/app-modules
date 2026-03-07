@@ -122,6 +122,11 @@ class RCTTabViewManager : ViewGroupManager<ReactBottomNavigationView>() {
     view.setTabBarHidden(hidden)
   }
 
+  @ReactProp(name = "ignoreBottomInsets")
+  fun setIgnoreBottomInsets(view: ReactBottomNavigationView, ignore: Boolean) {
+    view.setIgnoreBottomInsets(ignore)
+  }
+
   @ReactProp(name = "barTintColor")
   fun setBarTintColor(view: ReactBottomNavigationView, color: String?) {
     color?.let { view.setBarTintColor(parseColor(it)) }
@@ -193,7 +198,7 @@ class RCTTabViewManager : ViewGroupManager<ReactBottomNavigationView>() {
   // MARK: - Child view management
 
   override fun addView(parent: ReactBottomNavigationView, child: View, index: Int) {
-    parent.layoutHolder.addView(child, index)
+    parent.addView(child, index)
   }
 
   override fun getChildCount(parent: ReactBottomNavigationView): Int {
@@ -201,10 +206,19 @@ class RCTTabViewManager : ViewGroupManager<ReactBottomNavigationView>() {
   }
 
   override fun getChildAt(parent: ReactBottomNavigationView, index: Int): View? {
-    return parent.layoutHolder.getChildAt(index)
+    val container = parent.layoutHolder.getChildAt(index) as? ViewGroup
+    return container?.getChildAt(0) ?: parent.layoutHolder.getChildAt(index)
   }
 
   override fun removeView(parent: ReactBottomNavigationView, view: View) {
+    // Find the container that wraps this view
+    for (i in 0 until parent.layoutHolder.childCount) {
+      val container = parent.layoutHolder.getChildAt(i) as? ViewGroup
+      if (container != null && container.childCount > 0 && container.getChildAt(0) === view) {
+        parent.layoutHolder.removeViewAt(i)
+        return
+      }
+    }
     parent.layoutHolder.removeView(view)
   }
 
