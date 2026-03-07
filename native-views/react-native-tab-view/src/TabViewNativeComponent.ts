@@ -5,7 +5,9 @@ const TabViewConfig = require('../nitrogen/generated/shared/json/TabViewConfig.j
 
 export type { TabViewProps, TabViewMethods };
 
-export default getHostComponent<TabViewProps, TabViewMethods>(
+const NativeTabView = getHostComponent<TabViewProps, TabViewMethods>(
   'TabView',
   () => TabViewConfig
 );
+
+export default NativeTabView;

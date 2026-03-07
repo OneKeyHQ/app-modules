@@ -2758,6 +2758,7 @@ __metadata:
     "@onekeyfe/react-native-perf-memory": "workspace:*"
     "@onekeyfe/react-native-skeleton": "workspace:*"
     "@onekeyfe/react-native-splash-screen": "workspace:*"
+    "@onekeyfe/react-native-tab-view": "workspace:*"
     "@react-native-community/cli": "npm:20.0.0"
     "@react-native-community/cli-platform-android": "npm:20.0.0"
     "@react-native-community/cli-platform-ios": "npm:20.0.0"
@@ -3318,11 +3319,11 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-tab-view@workspace:native-views/react-native-tab-view":
+"@onekeyfe/react-native-tab-view@workspace:*, @onekeyfe/react-native-tab-view@workspace:native-views/react-native-tab-view":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-tab-view@workspace:native-views/react-native-tab-view"
   dependencies:
-    "@types/react": "npm:^18.2.44"
+    "@types/react": "npm:^19.2.0"
     nitrogen: "npm:0.31.10"
     react: "npm:19.2.0"
     react-freeze: "npm:^1.0.0"
@@ -4053,13 +4054,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/prop-types@npm:*":
-  version: 15.7.15
-  resolution: "@types/prop-types@npm:15.7.15"
-  checksum: 10/31aa2f59b28f24da6fb4f1d70807dae2aedfce090ec63eaf9ea01727a9533ef6eaf017de5bff99fbccad7d1c9e644f52c6c2ba30869465dd22b1a7221c29f356
-  languageName: node
-  linkType: hard
-
 "@types/react-test-renderer@npm:^19.1.0":
   version: 19.1.0
   resolution: "@types/react-test-renderer@npm:19.1.0"
@@ -4075,16 +4069,6 @@ __metadata:
   dependencies:
     csstype: "npm:^3.2.2"
   checksum: 10/dc0b756eee2c9782d282ae47eaa8d537b2a569eb889a6808c4b172d70fb690b2b1d8fe6239db451aa1c90d2a947cc21c9b537ce177ba9e6121468e403e4079c5
-  languageName: node
-  linkType: hard
-
-"@types/react@npm:^18.2.44":
-  version: 18.3.28
-  resolution: "@types/react@npm:18.3.28"
-  dependencies:
-    "@types/prop-types": "npm:*"
-    csstype: "npm:^3.2.2"
-  checksum: 10/6db7bb7f19957ee9f530baa7d143527f8befedad1585b064eb80777be0d84621157de75aba4f499ff429b10c5ef0c7d13e89be6bca3296ef71c80472894ff0eb
   languageName: node
   linkType: hard
 
