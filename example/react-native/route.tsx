@@ -237,13 +237,15 @@ function HomeScreen() {
                 {grouped[letter]!.map((module) => (
                   <TouchableOpacity
                     key={module.screen}
-                    style={styles.moduleCard}
+                    style={styles.moduleRow}
                     onPress={() => navigation.navigate(module.screen)}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.moduleName}>{module.name}</Text>
-                    <Text style={styles.moduleDescription}>{module.description}</Text>
-                    <Text style={styles.tapHint}>Tap to test →</Text>
+                    <View style={styles.moduleRowContent}>
+                      <Text style={styles.moduleName}>{module.name}</Text>
+                      <Text style={styles.moduleDescription}>{module.description}</Text>
+                    </View>
+                    <Text style={styles.chevron}>›</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -352,37 +354,35 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   moduleList: {
-    gap: 15,
-  },
-  moduleCard: {
     backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  moduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E5EA',
+  },
+  moduleRowContent: {
+    flex: 1,
   },
   moduleName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#000',
   },
   moduleDescription: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-    marginBottom: 12,
+    fontSize: 13,
+    color: '#8E8E93',
+    marginTop: 2,
   },
-  tapHint: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '500',
+  chevron: {
+    fontSize: 22,
+    color: '#C7C7CC',
+    marginLeft: 8,
   },
   noResultsContainer: {
     alignItems: 'center',
