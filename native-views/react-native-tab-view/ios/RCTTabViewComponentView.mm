@@ -123,6 +123,52 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
     }
     _containerView = [[containerClass alloc] init];
     self.contentView = _containerView;
+
+    // Set up event forwarding from Swift container (RCTDirectEventBlock) to Fabric EventEmitter
+    __weak auto weakSelf = self;
+
+    RCTDirectEventBlock onPageSelected = ^(NSDictionary *body) {
+      auto strongSelf = weakSelf;
+      if (!strongSelf) return;
+      auto emitter = std::static_pointer_cast<const RNCTabViewEventEmitter>(strongSelf->_eventEmitter);
+      if (emitter) {
+        emitter->onPageSelected({.key = std::string([[body objectForKey:@"key"] UTF8String] ?: "")});
+      }
+    };
+    [_containerView setValue:onPageSelected forKey:@"onPageSelected"];
+
+    RCTDirectEventBlock onTabLongPress = ^(NSDictionary *body) {
+      auto strongSelf = weakSelf;
+      if (!strongSelf) return;
+      auto emitter = std::static_pointer_cast<const RNCTabViewEventEmitter>(strongSelf->_eventEmitter);
+      if (emitter) {
+        emitter->onTabLongPress({.key = std::string([[body objectForKey:@"key"] UTF8String] ?: "")});
+      }
+    };
+    [_containerView setValue:onTabLongPress forKey:@"onTabLongPress"];
+
+    RCTDirectEventBlock onTabBarMeasured = ^(NSDictionary *body) {
+      auto strongSelf = weakSelf;
+      if (!strongSelf) return;
+      auto emitter = std::static_pointer_cast<const RNCTabViewEventEmitter>(strongSelf->_eventEmitter);
+      if (emitter) {
+        emitter->onTabBarMeasured({.height = [[body objectForKey:@"height"] intValue]});
+      }
+    };
+    [_containerView setValue:onTabBarMeasured forKey:@"onTabBarMeasured"];
+
+    RCTDirectEventBlock onNativeLayout = ^(NSDictionary *body) {
+      auto strongSelf = weakSelf;
+      if (!strongSelf) return;
+      auto emitter = std::static_pointer_cast<const RNCTabViewEventEmitter>(strongSelf->_eventEmitter);
+      if (emitter) {
+        emitter->onNativeLayout({
+          .width = [[body objectForKey:@"width"] doubleValue],
+          .height = [[body objectForKey:@"height"] doubleValue]
+        });
+      }
+    };
+    [_containerView setValue:onNativeLayout forKey:@"onNativeLayout"];
   }
 
   return self;
