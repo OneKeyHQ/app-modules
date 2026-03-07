@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Switch, Platform, ScrollView } from 'react-native';
 import TabView, { SceneMap, useBottomTabBarHeight } from '@onekeyfe/react-native-tab-view';
 import type { BaseRoute, NavigationState } from '@onekeyfe/react-native-tab-view/src/types';
 
@@ -10,44 +10,57 @@ interface TabViewTestPageProps {
 
 // --- Tab content scenes ---
 
-function HomeScene() {
+const COLOR_STRIPS = [
+  ['#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55'],
+  ['#30D158', '#64D2FF', '#BF5AF2', '#FFD60A', '#FF453A', '#0A84FF', '#32D74B', '#FF6482'],
+  ['#5E5CE6', '#FF375F', '#AC8E68', '#00C7BE', '#FF9F0A', '#30B0C7', '#FF6482', '#FFD426'],
+  ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'],
+];
+
+function ColorfulScene({ title, colorIndex }: { title: string; colorIndex: number }) {
+  const colors = COLOR_STRIPS[colorIndex % COLOR_STRIPS.length]!;
   return (
-    <View style={sceneStyles.container}>
-      <Text style={sceneStyles.title}>Home Tab</Text>
-      <Text style={sceneStyles.body}>This is the home tab content.</Text>
-      <TabBarHeightDisplay />
-    </View>
+    <ScrollView style={sceneStyles.scrollContainer} contentContainerStyle={sceneStyles.scrollContent}>
+      <View style={sceneStyles.topSection}>
+        <Text style={sceneStyles.title}>{title}</Text>
+        <Text style={sceneStyles.body}>Scroll down to see colors behind the tab bar</Text>
+        <TabBarHeightDisplay />
+      </View>
+      {/* Colorful blocks that extend to the bottom, behind the translucent tab bar */}
+      {colors.map((color, i) => (
+        <View key={i} style={[sceneStyles.colorBlock, { backgroundColor: color }]}>
+          <Text style={sceneStyles.colorLabel}>{color}</Text>
+        </View>
+      ))}
+      {/* Extra vibrant gradient blocks at the very bottom */}
+      <View style={sceneStyles.gradientRow}>
+        {colors.slice(0, 4).map((color, i) => (
+          <View key={i} style={[sceneStyles.gradientCell, { backgroundColor: color }]} />
+        ))}
+      </View>
+      <View style={sceneStyles.gradientRow}>
+        {colors.slice(4).map((color, i) => (
+          <View key={i} style={[sceneStyles.gradientCell, { backgroundColor: color }]} />
+        ))}
+      </View>
+    </ScrollView>
   );
+}
+
+function HomeScene() {
+  return <ColorfulScene title="Home Tab" colorIndex={0} />;
 }
 
 function SearchScene() {
-  return (
-    <View style={sceneStyles.container}>
-      <Text style={sceneStyles.title}>Search Tab</Text>
-      <Text style={sceneStyles.body}>This is the search tab content.</Text>
-      <TabBarHeightDisplay />
-    </View>
-  );
+  return <ColorfulScene title="Search Tab" colorIndex={1} />;
 }
 
 function SettingsScene() {
-  return (
-    <View style={sceneStyles.container}>
-      <Text style={sceneStyles.title}>Settings Tab</Text>
-      <Text style={sceneStyles.body}>This is the settings tab content.</Text>
-      <TabBarHeightDisplay />
-    </View>
-  );
+  return <ColorfulScene title="Settings Tab" colorIndex={2} />;
 }
 
 function ProfileScene() {
-  return (
-    <View style={sceneStyles.container}>
-      <Text style={sceneStyles.title}>Profile Tab</Text>
-      <Text style={sceneStyles.body}>This is the profile tab content.</Text>
-      <TabBarHeightDisplay />
-    </View>
-  );
+  return <ColorfulScene title="Profile Tab" colorIndex={3} />;
 }
 
 function TabBarHeightDisplay() {
@@ -197,11 +210,17 @@ function ToggleRow({
 }
 
 const sceneStyles = StyleSheet.create({
-  container: {
+  scrollContainer: {
     flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  scrollContent: {
+    paddingBottom: 0,
+  },
+  topSection: {
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    paddingVertical: 60,
   },
   title: {
     fontSize: 24,
@@ -218,6 +237,26 @@ const sceneStyles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     marginTop: 8,
+  },
+  colorBlock: {
+    height: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  colorLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.9)',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  gradientRow: {
+    flexDirection: 'row',
+    height: 60,
+  },
+  gradientCell: {
+    flex: 1,
   },
 });
 
