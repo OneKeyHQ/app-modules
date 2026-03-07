@@ -16,6 +16,16 @@ import com.facebook.react.uimanager.annotations.ReactProp
 import com.facebook.react.uimanager.events.Event
 import com.facebook.react.uimanager.events.EventDispatcher
 
+class TabEvent(
+  private val surfId: Int,
+  private val viewId: Int,
+  private val name: String,
+  private val data: WritableMap
+) : Event<TabEvent>(surfId, viewId) {
+  override fun getEventName(): String = name
+  override fun getEventData(): WritableMap = data
+}
+
 class RCTTabViewManager : ViewGroupManager<ReactBottomNavigationView>() {
 
   override fun getName(): String = "RCTTabView"
@@ -50,10 +60,7 @@ class RCTTabViewManager : ViewGroupManager<ReactBottomNavigationView>() {
 
   private fun sendEvent(context: ThemedReactContext, view: View, eventName: String, params: WritableMap) {
     val dispatcher = UIManagerHelper.getEventDispatcherForReactTag(context, view.id)
-    dispatcher?.dispatchEvent(object : Event<Event<*>>(UIManagerHelper.getSurfaceId(context), view.id) {
-      override fun getEventName(): String = eventName
-      override fun getEventData(): WritableMap = params
-    })
+    dispatcher?.dispatchEvent(TabEvent(UIManagerHelper.getSurfaceId(context), view.id, eventName, params))
   }
 
   override fun onDropViewInstance(view: ReactBottomNavigationView) {
@@ -68,7 +75,7 @@ class RCTTabViewManager : ViewGroupManager<ReactBottomNavigationView>() {
     items ?: return
     val tabItems = mutableListOf<TabInfo>()
     for (i in 0 until items.size()) {
-      val map = items.getMap(i)
+      val map = items.getMap(i) ?: continue
       tabItems.add(
         TabInfo(
           key = map.getString("key") ?: "",
