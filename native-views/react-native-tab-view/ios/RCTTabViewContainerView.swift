@@ -178,9 +178,40 @@ class RCTTabViewContainerView: UIView {
   // Fix: always keep the UITabBarController's view as the frontmost subview.
   override func didAddSubview(_ subview: UIView) {
     super.didAddSubview(subview)
+    let isChildView = childViews.contains(where: { $0 === subview })
+    let isBottomAccessory = subview is RCTBottomAccessoryContainerView
+    let isTbcView = subview === tabBarController?.view
+    log("didAddSubview: type=\(type(of: subview)), isChildView=\(isChildView), isBottomAccessory=\(isBottomAccessory), isTbcView=\(isTbcView), self.subviews.count=\(self.subviews.count)")
+    if isChildView {
+      log("⚠️ didAddSubview: A childView was re-added to self! superview=\(subview.superview.map { String(describing: type(of: $0)) } ?? "nil"), userInteraction=\(subview.isUserInteractionEnabled)")
+      Thread.callStackSymbols.prefix(10).forEach { log("  \($0)") }
+    }
     if let tbcView = tabBarController?.view, subview !== tbcView {
       bringSubviewToFront(tbcView)
     }
+  }
+
+  // MARK: - Hit testing debug
+
+  private var hitTestLogThrottle: Date = .distantPast
+
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    let result = super.hitTest(point, with: event)
+    // Throttle to avoid log spam - log at most once per second
+    let now = Date()
+    if now.timeIntervalSince(hitTestLogThrottle) > 1.0 {
+      hitTestLogThrottle = now
+      let resultType = result.map { String(describing: type(of: $0)) } ?? "nil"
+      let resultSuperview = result?.superview.map { String(describing: type(of: $0)) } ?? "nil"
+      log("hitTest: point=\(point), result=\(resultType), result.superview=\(resultSuperview), result.userInteraction=\(result?.isUserInteractionEnabled ?? false)")
+      // Check if the hit view is inside the tbc's selected VC or a stray child
+      if let result, let tbc = tabBarController {
+        let isInTbc = result.isDescendant(of: tbc.view)
+        let isDirectChild = result.superview === self
+        log("hitTest: isInTbcView=\(isInTbc), isDirectChildOfSelf=\(isDirectChild)")
+      }
+    }
+    return result
   }
 
   // MARK: - Layout
@@ -190,6 +221,16 @@ class RCTTabViewContainerView: UIView {
     if let tbc = tabBarController {
       log("layoutSubviews: bounds=\(bounds), tabBar.isHidden=\(tbc.tabBar.isHidden), tabBar.frame=\(tbc.tabBar.frame), tabBar.alpha=\(tbc.tabBar.alpha)")
     }
+    // Check if any childView has been reparented to self (Fabric re-adding)
+    for (i, childView) in childViews.enumerated() {
+      let superviewType = childView.superview.map { String(describing: type(of: $0)) } ?? "nil"
+      let isSelfChild = childView.superview === self
+      if isSelfChild {
+        log("⚠️ layoutSubviews: childViews[\(i)] superview is SELF (should be vc.view)! type=\(type(of: childView)), frame=\(childView.frame)")
+      } else {
+        log("layoutSubviews: childViews[\(i)] superview=\(superviewType), frame=\(childView.frame), userInteraction=\(childView.isUserInteractionEnabled)")
+      }
+    }
     handleLayout()
   }
 
@@ -197,7 +238,9 @@ class RCTTabViewContainerView: UIView {
 
   override func insertReactSubview(_ subview: UIView!, at atIndex: Int) {
     super.insertReactSubview(subview, at: atIndex)
-    log("insertReactSubview at index \(atIndex), subview type: \(type(of: subview as Any)), total childViews: \(childViews.count)")
+    let subviewSuperview = subview?.superview.map { String(describing: type(of: $0)) } ?? "nil"
+    log("insertReactSubview at index \(atIndex), subview type: \(type(of: subview as Any)), superview after super call: \(subviewSuperview), self.subviews.count=\(self.subviews.count), total childViews: \(childViews.count)")
+    Thread.callStackSymbols.prefix(8).forEach { log("  \($0)") }
 
     if subview is RCTBottomAccessoryContainerView {
       self.bottomAccessoryView = subview
@@ -247,8 +290,20 @@ class RCTTabViewContainerView: UIView {
 
     // Log container's direct subviews to check for overlapping views
     if let tbc = tabBarController {
-      let directSubviews = self.subviews.map { "\(type(of: $0)):\(String(format: "%.0f,%.0f,%.0fx%.0f", $0.frame.origin.x, $0.frame.origin.y, $0.frame.width, $0.frame.height))" }
-      log("handleLayout: self.subviews(\(self.subviews.count))=\(directSubviews), tbc.tabBar.superview=\(tbc.tabBar.superview.map { String(describing: type(of: $0)) } ?? "nil")")
+      let directSubviews = self.subviews.map { sv -> String in
+        let isTbc = sv === tbc.view
+        let isChild = childViews.contains(where: { $0 === sv })
+        let tag = isTbc ? "[TBC]" : isChild ? "[CHILD-STRAY!]" : "[?]"
+        return "\(tag)\(type(of: sv)):\(String(format: "%.0f,%.0f,%.0fx%.0f", sv.frame.origin.x, sv.frame.origin.y, sv.frame.width, sv.frame.height)):userInteraction=\(sv.isUserInteractionEnabled)"
+      }
+      log("handleLayout: self.subviews(\(self.subviews.count))=\(directSubviews)")
+
+      // Log selected VC's content
+      if let selectedVC = tbc.selectedViewController {
+        let vcSubviews = selectedVC.view.subviews.map { "\(type(of: $0)):\(String(format: "%.0f,%.0f,%.0fx%.0f", $0.frame.origin.x, $0.frame.origin.y, $0.frame.width, $0.frame.height)):userInteraction=\($0.isUserInteractionEnabled)" }
+        log("handleLayout: selectedVC.view.subviews(\(selectedVC.view.subviews.count))=\(vcSubviews)")
+        log("handleLayout: selectedVC.view.userInteraction=\(selectedVC.view.isUserInteractionEnabled), selectedVC.view.isHidden=\(selectedVC.view.isHidden)")
+      }
     }
 
     onNativeLayout?(["width": Double(bounds.width), "height": Double(bounds.height)])
@@ -381,12 +436,17 @@ class RCTTabViewContainerView: UIView {
       // Attach child view if not already attached to this VC
       if originalIndex < childViews.count {
         let childView = childViews[originalIndex]
+        let currentSuperview = childView.superview
+        let superviewType = currentSuperview.map { String(describing: type(of: $0)) } ?? "nil"
+        let isSelf = currentSuperview === self
+        let isVcView = currentSuperview === vc.view
+        log("rebuildViewControllers: tab[\(tabData.key)] childView superview=\(superviewType), isSelf=\(isSelf), isVcView=\(isVcView), userInteraction=\(childView.isUserInteractionEnabled)")
         if childView.superview !== vc.view {
           childView.removeFromSuperview()
           vc.view.addSubview(childView)
           childView.translatesAutoresizingMaskIntoConstraints = false
           childView.pinEdges(to: vc.view)
-          log("rebuildViewControllers: tab[\(tabData.key)] attached childView to vc.view")
+          log("rebuildViewControllers: tab[\(tabData.key)] MOVED childView to vc.view (was \(superviewType))")
         }
       }
 
