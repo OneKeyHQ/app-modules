@@ -208,8 +208,6 @@ function ToggleRow({
 // --- Main Component ---
 
 interface BundleUpdateTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
 }
 
 const INITIAL_WORKFLOW: WorkflowState = {
@@ -221,8 +219,6 @@ const INITIAL_WORKFLOW: WorkflowState = {
 };
 
 export function BundleUpdateTestPage({
-  onGoHome,
-  safeAreaInsets,
 }: BundleUpdateTestPageProps) {
   // --- Workflow state ---
   const [workflow, setWorkflow] = useState<WorkflowState>(INITIAL_WORKFLOW);
@@ -592,8 +588,6 @@ H3bEFZ8=
   return (
     <TestPageBase
       title="Bundle Update"
-      onGoHome={onGoHome}
-      safeAreaInsets={safeAreaInsets}
     >
       {/* URL Input */}
       <View style={s.card}>

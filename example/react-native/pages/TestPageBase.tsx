@@ -1,18 +1,21 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, KeyboardTypeOptions } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface TestPageBaseProps {
   title: string;
-  onGoHome: () => void;
-  safeAreaInsets: any;
   children: React.ReactNode;
 }
 
-export function TestPageBase({ title, onGoHome, safeAreaInsets, children }: TestPageBaseProps) {
+export function TestPageBase({ title, children }: TestPageBaseProps) {
+  const navigation = useNavigation();
+  const safeAreaInsets = useSafeAreaInsets();
+
   return (
     <View style={[styles.container, { paddingTop: safeAreaInsets.top + 10 }]}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={onGoHome}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Text style={styles.backButtonText}>← Back to Home</Text>
         </TouchableOpacity>
         <Text style={styles.title}>{title}</Text>

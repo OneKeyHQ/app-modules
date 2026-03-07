@@ -3,12 +3,7 @@ import { View, Text, Alert, Switch } from 'react-native';
 import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase';
 import onekeyLite, { CardErrors, type NfcConnectUiState } from '@onekeyfe/react-native-lite-card';
 
-interface LiteCardTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
-
-export function LiteCardTestPage({ onGoHome, safeAreaInsets }: LiteCardTestPageProps) {
+export function LiteCardTestPage() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -157,7 +152,7 @@ export function LiteCardTestPage({ onGoHome, safeAreaInsets }: LiteCardTestPageP
   };
 
   return (
-    <TestPageBase title="Lite Card Test" onGoHome={onGoHome} safeAreaInsets={safeAreaInsets}>
+    <TestPageBase title="Lite Card Test">
       {/* NFC Status and Permissions */}
       <View>
         <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 10, color: '#333' }}>

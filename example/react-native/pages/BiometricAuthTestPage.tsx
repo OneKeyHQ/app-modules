@@ -3,12 +3,7 @@ import { View, Text, Alert } from 'react-native';
 import { TestPageBase, TestButton, TestResult } from './TestPageBase';
 import { checkBiometricAuthChanged } from '@onekeyfe/react-native-check-biometric-auth-changed';
 
-interface BiometricAuthTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
-
-export function BiometricAuthTestPage({ onGoHome, safeAreaInsets }: BiometricAuthTestPageProps) {
+export function BiometricAuthTestPage() {
   const [result, setResult] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -47,7 +42,7 @@ export function BiometricAuthTestPage({ onGoHome, safeAreaInsets }: BiometricAut
   };
 
   return (
-    <TestPageBase title="Biometric Auth Changed Test" onGoHome={onGoHome} safeAreaInsets={safeAreaInsets}>
+    <TestPageBase title="Biometric Auth Changed Test">
       <View>
         <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 15, color: '#333' }}>
           Check Biometric Authentication Status

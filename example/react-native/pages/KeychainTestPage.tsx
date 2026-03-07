@@ -4,12 +4,7 @@ import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase'
 import { KeychainModule } from '@onekeyfe/react-native-keychain-module';
 import type { SetItemParams, GetItemParams, RemoveItemParams, HasItemParams } from '@onekeyfe/react-native-keychain-module';
 
-interface KeychainTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
-
-export function KeychainTestPage({ onGoHome, safeAreaInsets }: KeychainTestPageProps) {
+export function KeychainTestPage() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -110,7 +105,7 @@ export function KeychainTestPage({ onGoHome, safeAreaInsets }: KeychainTestPageP
   };
 
   return (
-    <TestPageBase title="Keychain Module Test" onGoHome={onGoHome} safeAreaInsets={safeAreaInsets}>
+    <TestPageBase title="Keychain Module Test">
       {/* iCloud Sync Status */}
       <View>
         <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 10, color: '#333' }}>

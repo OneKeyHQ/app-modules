@@ -173,8 +173,6 @@ function ProgressBar({
 // --- Main Component ---
 
 interface AppUpdateTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
 }
 
 const INITIAL_WORKFLOW: WorkflowState = {
@@ -187,8 +185,6 @@ const INITIAL_WORKFLOW: WorkflowState = {
 };
 
 export function AppUpdateTestPage({
-  onGoHome,
-  safeAreaInsets,
 }: AppUpdateTestPageProps) {
   // --- Workflow state ---
   const [workflow, setWorkflow] = useState<WorkflowState>(INITIAL_WORKFLOW);
@@ -427,8 +423,6 @@ export function AppUpdateTestPage({
   return (
     <TestPageBase
       title="App Update"
-      onGoHome={onGoHome}
-      safeAreaInsets={safeAreaInsets}
     >
       {/* URL Input */}
       <View style={s.card}>

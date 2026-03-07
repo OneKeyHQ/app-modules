@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput } from 'react-native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
 import { AutoSizeInputTestPage } from './pages/AutoSizeInputTestPage';
 import { BackgroundThreadTestPage } from './pages/BackgroundThreadTestPage';
 import { BiometricAuthTestPage } from './pages/BiometricAuthTestPage';
@@ -16,113 +19,110 @@ import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
 import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
 import { TabViewTestPage } from './pages/TabViewTestPage';
 
-export type RouteScreen =
-  | 'home'
-  | 'auto-size-input'
-  | 'app-update'
-  | 'background-thread'
-  | 'biometric-auth'
-  | 'bundle-update'
-  | 'cloud-kit'
-  | 'keychain'
-  | 'lite-card'
-  | 'get-random-values'
-  | 'device-utils'
-  | 'native-logger'
-  | 'perf-memory'
-  | 'skeleton'
-  | 'splash-screen'
-  | 'tab-view';
+export type RootStackParamList = {
+  Home: undefined;
+  AutoSizeInput: undefined;
+  AppUpdate: undefined;
+  BackgroundThread: undefined;
+  BiometricAuth: undefined;
+  BundleUpdate: undefined;
+  CloudKit: undefined;
+  DeviceUtils: undefined;
+  Keychain: undefined;
+  LiteCard: undefined;
+  GetRandomValues: undefined;
+  NativeLogger: undefined;
+  PerfMemory: undefined;
+  Skeleton: undefined;
+  SplashScreen: undefined;
+  TabView: undefined;
+};
 
-interface RouterProps {
-  safeAreaInsets: any;
-}
+export type RootStackNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-const modules = [
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
+const modules: { screen: keyof RootStackParamList; name: string; description: string }[] = [
   {
-    id: 'auto-size-input' as RouteScreen,
+    screen: 'AutoSizeInput',
     name: 'Auto Size Input',
     description: 'Input with auto-shrinking font size, prefix/suffix, single & multi-line',
   },
   {
-    id: 'app-update' as RouteScreen,
+    screen: 'AppUpdate',
     name: 'App Update',
     description: 'APK download, verification, and installation (Android)',
   },
   {
-    id: 'background-thread' as RouteScreen,
+    screen: 'BackgroundThread',
     name: 'Background Thread',
     description: 'Test background thread messaging and processing',
   },
   {
-    id: 'biometric-auth' as RouteScreen,
+    screen: 'BiometricAuth',
     name: 'Biometric Auth Changed',
     description: 'Check if biometric authentication has changed',
   },
   {
-    id: 'bundle-update' as RouteScreen,
+    screen: 'BundleUpdate',
     name: 'Bundle Update',
     description: 'JS bundle download, verification, install, and path management',
   },
   {
-    id: 'cloud-kit' as RouteScreen,
+    screen: 'CloudKit',
     name: 'CloudKit Module',
     description: 'Test iCloud storage operations and sync',
   },
   {
-    id: 'device-utils' as RouteScreen,
+    screen: 'DeviceUtils',
     name: 'Device Utils',
     description: 'Test dual screen detection, spanning, and device utilities',
   },
   {
-    id: 'keychain' as RouteScreen,
+    screen: 'Keychain',
     name: 'Keychain Module',
     description: 'Test secure storage operations',
   },
   {
-    id: 'lite-card' as RouteScreen,
+    screen: 'LiteCard',
     name: 'Lite Card',
     description: 'Test NFC card operations and management',
   },
   {
-    id: 'get-random-values' as RouteScreen,
+    screen: 'GetRandomValues',
     name: 'Get Random Values',
     description: 'Generate cryptographically secure random values',
   },
   {
-    id: 'native-logger' as RouteScreen,
+    screen: 'NativeLogger',
     name: 'Native Logger',
     description: 'File-based logging with log directory viewer',
   },
   {
-    id: 'perf-memory' as RouteScreen,
+    screen: 'PerfMemory',
     name: 'Perf Memory',
     description: 'Read process memory usage (RSS) for performance monitoring',
   },
   {
-    id: 'skeleton' as RouteScreen,
+    screen: 'Skeleton',
     name: 'Skeleton View',
     description: 'Animated skeleton loading components for better UX',
   },
   {
-    id: 'splash-screen' as RouteScreen,
+    screen: 'SplashScreen',
     name: 'Splash Screen',
     description: 'Legacy splash screen for Android < 12',
   },
   {
-    id: 'tab-view' as RouteScreen,
+    screen: 'TabView',
     name: 'Tab View',
     description: 'Native tab bar with UIKit (iOS) / Material (Android), badges, icons, liquid glass',
   },
 ];
 
-export function Router({ safeAreaInsets }: RouterProps) {
-  const [currentScreen, setCurrentScreen] = useState<RouteScreen>('home');
+function HomeScreen() {
+  const navigation = useNavigation<RootStackNavigationProp>();
   const [searchQuery, setSearchQuery] = useState<string>('');
-
-  const navigateTo = (screen: RouteScreen) => {
-    setCurrentScreen(screen);
-  };
 
   const filteredModules = modules.filter((module) => {
     const query = searchQuery.toLowerCase();
@@ -132,13 +132,13 @@ export function Router({ safeAreaInsets }: RouterProps) {
     );
   });
 
-  const renderHomeScreen = () => (
+  return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <View style={styles.header}>
         <Text style={styles.title}>Native Modules Test Suite</Text>
         <Text style={styles.subtitle}>Test all available native modules and their APIs</Text>
       </View>
-      
+
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.searchInput}
@@ -155,9 +155,9 @@ export function Router({ safeAreaInsets }: RouterProps) {
         {filteredModules.length > 0 ? (
           filteredModules.map((module) => (
             <TouchableOpacity
-              key={module.id}
+              key={module.screen}
               style={styles.moduleCard}
-              onPress={() => navigateTo(module.id)}
+              onPress={() => navigation.navigate(module.screen)}
               activeOpacity={0.7}
             >
               <Text style={styles.moduleName}>{module.name}</Text>
@@ -174,63 +174,35 @@ export function Router({ safeAreaInsets }: RouterProps) {
       </View>
     </ScrollView>
   );
+}
 
-  const renderTestScreen = () => {
-    const commonProps = { 
-      onGoHome: () => navigateTo('home'),
-      safeAreaInsets 
-    };
-
-    switch (currentScreen) {
-      case 'auto-size-input':
-        return <AutoSizeInputTestPage {...commonProps} />;
-      case 'app-update':
-        return <AppUpdateTestPage {...commonProps} />;
-      case 'background-thread':
-        return <BackgroundThreadTestPage {...commonProps} />;
-      case 'biometric-auth':
-        return <BiometricAuthTestPage {...commonProps} />;
-      case 'bundle-update':
-        return <BundleUpdateTestPage {...commonProps} />;
-      case 'cloud-kit':
-        return <CloudKitTestPage {...commonProps} />;
-      case 'device-utils':
-        return <DeviceUtilsTestPage {...commonProps} />;
-      case 'keychain':
-        return <KeychainTestPage {...commonProps} />;
-      case 'lite-card':
-        return <LiteCardTestPage {...commonProps} />;
-      case 'get-random-values':
-        return <GetRandomValuesTestPage {...commonProps} />;
-      case 'native-logger':
-        return <NativeLoggerTestPage {...commonProps} />;
-      case 'perf-memory':
-        return <PerfMemoryTestPage {...commonProps} />;
-      case 'skeleton':
-        return <SkeletonTestPage {...commonProps} />;
-      case 'splash-screen':
-        return <SplashScreenTestPage {...commonProps} />;
-      case 'tab-view':
-        return <TabViewTestPage {...commonProps} />;
-      default:
-        return renderHomeScreen();
-    }
-  };
-
+export function AppNavigator() {
   return (
-    <View style={styles.wrapper}>
-      {currentScreen === 'home' ? renderHomeScreen() : renderTestScreen()}
-    </View>
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="AutoSizeInput" component={AutoSizeInputTestPage} />
+      <Stack.Screen name="AppUpdate" component={AppUpdateTestPage} />
+      <Stack.Screen name="BackgroundThread" component={BackgroundThreadTestPage} />
+      <Stack.Screen name="BiometricAuth" component={BiometricAuthTestPage} />
+      <Stack.Screen name="BundleUpdate" component={BundleUpdateTestPage} />
+      <Stack.Screen name="CloudKit" component={CloudKitTestPage} />
+      <Stack.Screen name="DeviceUtils" component={DeviceUtilsTestPage} />
+      <Stack.Screen name="Keychain" component={KeychainTestPage} />
+      <Stack.Screen name="LiteCard" component={LiteCardTestPage} />
+      <Stack.Screen name="GetRandomValues" component={GetRandomValuesTestPage} />
+      <Stack.Screen name="NativeLogger" component={NativeLoggerTestPage} />
+      <Stack.Screen name="PerfMemory" component={PerfMemoryTestPage} />
+      <Stack.Screen name="Skeleton" component={SkeletonTestPage} />
+      <Stack.Screen name="SplashScreen" component={SplashScreenTestPage} />
+      <Stack.Screen name="TabView" component={TabViewTestPage} />
+    </Stack.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
   container: {
     flex: 1,
+    backgroundColor: '#f5f5f5',
   },
   contentContainer: {
     padding: 20,

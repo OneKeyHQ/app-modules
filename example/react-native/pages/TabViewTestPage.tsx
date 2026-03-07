@@ -1,12 +1,9 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Switch, Platform, ScrollView } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import TabView, { SceneMap, useBottomTabBarHeight } from '@onekeyfe/react-native-tab-view';
 import type { BaseRoute, NavigationState } from '@onekeyfe/react-native-tab-view/src/types';
-
-interface TabViewTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
 
 // --- Tab content scenes ---
 
@@ -85,7 +82,9 @@ type Route = BaseRoute & {
   title: string;
 };
 
-export function TabViewTestPage({ onGoHome, safeAreaInsets }: TabViewTestPageProps) {
+export function TabViewTestPage() {
+  const navigation = useNavigation();
+  const safeAreaInsets = useSafeAreaInsets();
   const [index, setIndex] = useState(0);
   const [routes] = useState<Route[]>([
     {
@@ -133,7 +132,7 @@ export function TabViewTestPage({ onGoHome, safeAreaInsets }: TabViewTestPagePro
     <View style={styles.container}>
       {/* Back button overlay */}
       <View style={[styles.backButtonContainer, { top: safeAreaInsets.top + 4 }]}>
-        <TouchableOpacity style={styles.backButton} onPress={onGoHome}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
         <TouchableOpacity

@@ -4,12 +4,7 @@ import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase'
 import { CloudKit } from '@onekeyfe/react-native-cloud-kit-module';
 import type { SaveRecordParams, FetchRecordParams, DeleteRecordParams, RecordExistsParams, QueryRecordsParams } from '@onekeyfe/react-native-cloud-kit-module';
 
-interface CloudKitTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
-
-export function CloudKitTestPage({ onGoHome, safeAreaInsets }: CloudKitTestPageProps) {
+export function CloudKitTestPage() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -127,7 +122,7 @@ export function CloudKitTestPage({ onGoHome, safeAreaInsets }: CloudKitTestPageP
   };
 
   return (
-    <TestPageBase title="CloudKit Module Test" onGoHome={onGoHome} safeAreaInsets={safeAreaInsets}>
+    <TestPageBase title="CloudKit Module Test">
       {/* Availability and Account */}
       <View>
         <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 10, color: '#333' }}>
