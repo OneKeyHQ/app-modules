@@ -1,30 +1,32 @@
 #import "RCTTabViewLog.h"
 
+static NSString *const kTag = @"RCTTabView";
+
 @implementation RCTTabViewLog
 
 + (void)debug:(NSString *)tag message:(NSString *)message {
-  // Call OneKeyLog.debug(tag, message) via runtime to avoid importing
-  // ReactNativeNativeLogger module (which has C++ headers incompatible with Xcode 26).
+  [self _log:@"debug::" tag:tag message:message];
+}
+
+#pragma mark - Private
+
++ (void)_log:(NSString *)selectorName tag:(NSString *)tag message:(NSString *)message {
   Class logClass = NSClassFromString(@"ReactNativeNativeLogger.OneKeyLog");
   if (!logClass) {
     logClass = NSClassFromString(@"OneKeyLog");
   }
-  if (logClass) {
-    // OneKeyLog.debug(_ tag: String, _ message: String) → ObjC selector "debug::"
-    SEL sel = NSSelectorFromString(@"debug::");
-    if (!sel || ![logClass respondsToSelector:sel]) {
-      sel = NSSelectorFromString(@"debugWithTag:message:");
-    }
-    if (sel && [logClass respondsToSelector:sel]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-      [logClass performSelector:sel withObject:tag withObject:message];
-#pragma clang diagnostic pop
-      return;
-    }
+  if (!logClass) {
+    NSLog(@"[%@] %@", tag, message);
+    return;
   }
-  // Fallback to NSLog if OneKeyLog is not available
-  NSLog(@"[%@] %@", tag, message);
+  SEL sel = NSSelectorFromString(selectorName);
+  if (!sel || ![logClass respondsToSelector:sel]) {
+    NSLog(@"[%@] %@", tag, message);
+    return;
+  }
+  typedef void (*LogFunc)(id, SEL, NSString *, NSString *);
+  LogFunc func = (LogFunc)[logClass methodForSelector:sel];
+  func(logClass, sel, tag, message);
 }
 
 @end
