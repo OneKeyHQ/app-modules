@@ -7,7 +7,7 @@
 
 @implementation RCTTabViewManager
 
-RCT_EXPORT_MODULE(RCTTabView)
+RCT_EXPORT_MODULE(RNCTabView)
 
 - (UIView *)view
 {
@@ -42,12 +42,12 @@ RCT_EXPORT_VIEW_PROPERTY(minimizeBehavior, NSString)
 RCT_EXPORT_VIEW_PROPERTY(tabBarHidden, BOOL)
 RCT_EXPORT_VIEW_PROPERTY(translucent, NSNumber)
 
-// Colors
-RCT_EXPORT_VIEW_PROPERTY(barTintColor, NSString)
-RCT_EXPORT_VIEW_PROPERTY(activeTintColor, NSString)
-RCT_EXPORT_VIEW_PROPERTY(inactiveTintColor, NSString)
-RCT_EXPORT_VIEW_PROPERTY(rippleColor, NSString)
-RCT_EXPORT_VIEW_PROPERTY(activeIndicatorColor, NSString)
+// Colors (UIColor for Paper compatibility with processColor)
+RCT_EXPORT_VIEW_PROPERTY(barTintColor, UIColor)
+RCT_EXPORT_VIEW_PROPERTY(activeTintColor, UIColor)
+RCT_EXPORT_VIEW_PROPERTY(inactiveTintColor, UIColor)
+RCT_EXPORT_VIEW_PROPERTY(rippleColor, UIColor)
+RCT_EXPORT_VIEW_PROPERTY(activeIndicatorColor, UIColor)
 
 // Font
 RCT_EXPORT_VIEW_PROPERTY(fontFamily, NSString)

@@ -19,6 +19,7 @@
     "lib",
     "android",
     "ios",
+    "common",
     "react-native.config.js",
     "*.podspec",
     "!ios/build",
@@ -89,5 +90,24 @@
     "react-freeze": "^1.0.0",
     "sf-symbols-typescript": "^2.0.0",
     "use-latest-callback": "^0.2.1"
+  },
+  "codegenConfig": {
+    "name": "RNCTabView",
+    "type": "all",
+    "jsSrcsDir": "./src",
+    "android": {
+      "javaPackageName": "com.rcttabview"
+    },
+    "ios": {
+      "componentProvider": {
+        "RNCTabView": "RCTTabViewComponentView",
+        "BottomAccessoryView": "RCTBottomAccessoryComponentView"
+      },
+      "modulesConformingToProtocol": {
+        "RCTImageDataDecoder": [
+          "SvgDecoder"
+        ]
+      }
+    }
   }
 }

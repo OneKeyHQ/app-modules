@@ -1,19 +1,27 @@
-import {
-  type HostComponent,
-  type NativeSyntheticEvent,
-  type ViewProps,
-  requireNativeComponent,
-} from 'react-native';
+import { codegenNativeComponent } from 'react-native';
+import type { ViewProps } from 'react-native';
+import type {
+  DirectEventHandler,
+  Double,
+} from 'react-native/Libraries/Types/CodegenTypes';
+
+export type OnNativeLayout = Readonly<{
+  width: Double;
+  height: Double;
+}>;
+
+export type OnPlacementChanged = Readonly<{
+  placement: string;
+}>;
 
 export interface BottomAccessoryViewNativeProps extends ViewProps {
-  onNativeLayout?: (
-    event: NativeSyntheticEvent<{ width: number; height: number }>
-  ) => void;
-  onPlacementChanged?: (
-    event: NativeSyntheticEvent<{ placement: string }>
-  ) => void;
+  onNativeLayout?: DirectEventHandler<OnNativeLayout>;
+  onPlacementChanged?: DirectEventHandler<OnPlacementChanged>;
 }
 
-export default requireNativeComponent<BottomAccessoryViewNativeProps>(
-  'RCTBottomAccessoryView'
-) as HostComponent<BottomAccessoryViewNativeProps>;
+export default codegenNativeComponent<BottomAccessoryViewNativeProps>(
+  'BottomAccessoryView',
+  {
+    excludedPlatforms: ['android'],
+  }
+);

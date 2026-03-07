@@ -17,8 +17,15 @@ Pod::Spec.new do |s|
 
   s.source_files = [
     "ios/**/*.{swift}",
-    "ios/**/*.{h,m,mm}",
+    "ios/**/*.{h,m,mm,cpp}",
   ]
+
+  s.static_framework = true
+
+  s.subspec "common" do |ss|
+    ss.source_files         = "common/cpp/**/*.{cpp,h}"
+    ss.pod_target_xcconfig  = { "HEADER_SEARCH_PATHS" => "\"$(PODS_TARGET_SRCROOT)/common/cpp\"" }
+  end
 
   s.pod_target_xcconfig = {
     'PRODUCT_MODULE_NAME' => 'TabViewModule',

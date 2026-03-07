@@ -1,8 +1,4 @@
 import React, { useLayoutEffect, useRef } from 'react';
-import type {
-  TabItemStruct,
-  IconSourceStruct,
-} from './TabViewNativeComponent';
 import type { NativeSyntheticEvent } from 'react-native';
 import {
   type ColorValue,
@@ -19,7 +15,9 @@ import { BottomTabBarHeightContext } from './utils/BottomTabBarHeightContext';
 
 // eslint-disable-next-line @react-native/no-deep-imports
 import type { ImageSource } from 'react-native/Libraries/Image/ImageSource';
-import NativeTabView from './TabViewNativeComponent';
+import NativeTabView, {
+  type TabViewItems,
+} from './TabViewNativeComponent';
 import useLatestCallback from 'use-latest-callback';
 import type { AppleIcon, BaseRoute, NavigationState, TabRole } from './types';
 import DelayedFreeze from './DelayedFreeze';
@@ -266,7 +264,7 @@ const TabView = <Route extends BaseRoute>({
     [focusedKey, getIcon, trimmedRoutes]
   );
 
-  const items: TabItemStruct[] = React.useMemo(
+  const items: TabViewItems[number][] = React.useMemo(
     () =>
       trimmedRoutes.map((route, index) => {
         const icon = icons[index];
@@ -313,7 +311,7 @@ const TabView = <Route extends BaseRoute>({
     ]
   );
 
-  const resolvedIconAssets: IconSourceStruct[] = React.useMemo(
+  const resolvedIconAssets = React.useMemo(
     () =>
       icons.map((icon) => {
         if (icon && !isAppleSymbol(icon)) {
@@ -376,15 +374,6 @@ const TabView = <Route extends BaseRoute>({
     }
   }, [renderCustomTabBar]);
 
-  const colorToString = (color: ColorValue | undefined): string | undefined => {
-    if (color === undefined || color === null) return undefined;
-    const processed = processColor(color);
-    if (typeof processed === 'number') {
-      return `#${(processed >>> 0).toString(16).padStart(8, '0')}`;
-    }
-    return typeof color === 'string' ? color : undefined;
-  };
-
   return (
     <BottomTabBarHeightContext.Provider value={tabBarHeight}>
       <NativeTabView
@@ -400,11 +389,11 @@ const TabView = <Route extends BaseRoute>({
         onTabBarMeasured={handleTabBarMeasured}
         onNativeLayout={handleNativeLayout}
         hapticFeedbackEnabled={hapticFeedbackEnabled}
-        activeTintColor={colorToString(activeTintColor)}
-        inactiveTintColor={colorToString(inactiveTintColor)}
-        barTintColor={colorToString(tabBarStyle?.backgroundColor)}
-        rippleColor={colorToString(rippleColor)}
-        activeIndicatorColor={colorToString(activeIndicatorColor)}
+        activeTintColor={activeTintColor}
+        inactiveTintColor={inactiveTintColor}
+        barTintColor={tabBarStyle?.backgroundColor}
+        rippleColor={rippleColor}
+        activeIndicatorColor={activeIndicatorColor}
         labeled={labeled}
       >
         {trimmedRoutes.map((route) => {

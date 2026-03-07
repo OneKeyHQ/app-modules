@@ -5,7 +5,7 @@
 
 @implementation RCTBottomAccessoryViewManager
 
-RCT_EXPORT_MODULE(RCTBottomAccessoryView)
+RCT_EXPORT_MODULE(BottomAccessoryView)
 
 - (UIView *)view
 {

@@ -125,21 +125,21 @@ class RCTTabViewContainerView: UIView {
     didSet { updateTabBarAppearance() }
   }
 
-  @objc var barTintColor: String? {
+  @objc var barTintColor: UIColor? {
     didSet { updateTabBarAppearance() }
   }
 
-  @objc var activeTintColor: String? {
+  @objc var activeTintColor: UIColor? {
     didSet { updateTintColors() }
   }
 
-  @objc var inactiveTintColor: String? {
+  @objc var inactiveTintColor: UIColor? {
     didSet { updateTabBarAppearance() }
   }
 
-  @objc var rippleColor: String? // Android only
+  @objc var rippleColor: UIColor? // Android only
 
-  @objc var activeIndicatorColor: String? // Android only
+  @objc var activeIndicatorColor: UIColor? // Android only
 
   @objc var fontFamily: String? {
     didSet { updateTabBarAppearance() }
@@ -442,7 +442,7 @@ class RCTTabViewContainerView: UIView {
         )
       }
 
-      let inactiveColor = colorFromHex(inactiveTintColor)
+      let inactiveColor = inactiveTintColor
       let attributes = TabBarFontSize.createNormalStateAttributes(
         fontSize: fontSize?.intValue,
         fontFamily: fontFamily,
@@ -522,9 +522,9 @@ class RCTTabViewContainerView: UIView {
   }
 
   private func configureTransparentAppearance(tabBar: UITabBar) {
-    tabBar.barTintColor = colorFromHex(barTintColor)
+    tabBar.barTintColor = barTintColor
     tabBar.isTranslucent = translucent?.boolValue ?? true
-    tabBar.unselectedItemTintColor = colorFromHex(inactiveTintColor)
+    tabBar.unselectedItemTintColor = inactiveTintColor
 
     guard let tabBarItems = tabBar.items else { return }
 
@@ -554,12 +554,12 @@ class RCTTabViewContainerView: UIView {
       appearance.configureWithOpaqueBackground()
     }
 
-    if let bgColor = colorFromHex(barTintColor) {
+    if let bgColor = barTintColor {
       appearance.backgroundColor = bgColor
     }
 
     let itemAppearance = UITabBarItemAppearance()
-    let inactiveColor = colorFromHex(inactiveTintColor)
+    let inactiveColor = inactiveTintColor
 
     let attributes = TabBarFontSize.createNormalStateAttributes(
       fontSize: fontSize?.intValue,
@@ -585,7 +585,7 @@ class RCTTabViewContainerView: UIView {
   private func updateTintColors() {
     guard let tbc = tabBarController else { return }
 
-    var tintColor = colorFromHex(activeTintColor)
+    var tintColor = activeTintColor
     if let selectedPage,
        let tabData = parsedItems.first(where: { $0.key == selectedPage }),
        let perTabColor = tabData.activeTintColor {
@@ -729,30 +729,29 @@ class RCTTabViewContainerView: UIView {
     )
   }
 
-  // MARK: - Color helpers
+  // MARK: - Fabric child management
 
-  private func colorFromHex(_ hex: String?) -> UIColor? {
-    guard let hex, !hex.isEmpty else { return nil }
-    var sanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-    if sanitized.hasPrefix("#") {
-      sanitized.remove(at: sanitized.startIndex)
+  @objc func insertChild(_ child: UIView, atIndex index: Int) {
+    if child is RCTBottomAccessoryContainerView {
+      self.bottomAccessoryView = child
+      attachBottomAccessory()
+      return
     }
+    guard index >= 0 && index <= childViews.count else { return }
+    childViews.insert(child, at: index)
+    rebuildViewControllers()
+  }
 
-    var color: UInt64 = 0
-    Scanner(string: sanitized).scanHexInt64(&color)
-
-    if sanitized.count == 8 {
-      let a = CGFloat((color >> 24) & 0xFF) / 255.0
-      let r = CGFloat((color >> 16) & 0xFF) / 255.0
-      let g = CGFloat((color >> 8) & 0xFF) / 255.0
-      let b = CGFloat(color & 0xFF) / 255.0
-      return UIColor(red: r, green: g, blue: b, alpha: a)
-    } else {
-      let r = CGFloat((color >> 16) & 0xFF) / 255.0
-      let g = CGFloat((color >> 8) & 0xFF) / 255.0
-      let b = CGFloat(color & 0xFF) / 255.0
-      return UIColor(red: r, green: g, blue: b, alpha: 1.0)
+  @objc func removeChild(atIndex index: Int) {
+    guard index >= 0 && index < childViews.count else { return }
+    let child = childViews[index]
+    if child is RCTBottomAccessoryContainerView {
+      detachBottomAccessory()
+      self.bottomAccessoryView = nil
+      return
     }
+    childViews.remove(at: index)
+    rebuildViewControllers()
   }
 }
 

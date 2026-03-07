@@ -16,6 +16,10 @@ buildscript {
   }
 }
 
+def isNewArchitectureEnabled() {
+  return true
+}
+
 def reactNativeArchitectures() {
   def value = rootProject.getProperties().get("reactNativeArchitectures")
   return value ? value.split(",") : ["armeabi-v7a", "x86", "x86_64", "arm64-v8a"]
@@ -24,7 +28,9 @@ def reactNativeArchitectures() {
 apply plugin: "com.android.library"
 apply plugin: "kotlin-android"
 
-apply plugin: "com.facebook.react"
+if (isNewArchitectureEnabled()) {
+  apply plugin: "com.facebook.react"
+}
 
 def getExtOrIntegerDefault(name) {
   return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.properties["RCTTabView_" + name]).toInteger()
@@ -53,6 +59,7 @@ android {
   defaultConfig {
     minSdkVersion getExtOrIntegerDefault("minSdkVersion")
     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
+    buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", isNewArchitectureEnabled().toString()
   }
 
   buildFeatures {
@@ -73,6 +80,16 @@ android {
     sourceCompatibility JavaVersion.VERSION_1_8
     targetCompatibility JavaVersion.VERSION_1_8
   }
+
+  sourceSets {
+    main {
+      java.srcDirs += [
+        // Codegen specs
+        "generated/java",
+        "generated/jni"
+      ]
+    }
+  }
 }
 
 repositories {
@@ -91,4 +108,12 @@ dependencies {
   implementation("io.coil-kt.coil3:coil:${COIL_VERSION}")
   implementation("io.coil-kt.coil3:coil-network-okhttp:${COIL_VERSION}")
   implementation("io.coil-kt.coil3:coil-svg:${COIL_VERSION}")
+}
+
+if (isNewArchitectureEnabled()) {
+  react {
+    jsRootDir = file("../src/")
+    libraryName = "RNCTabView"
+    codegenJavaPackageName = "com.rcttabview"
+  }
 }

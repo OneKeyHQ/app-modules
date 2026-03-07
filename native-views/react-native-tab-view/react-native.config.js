@@ -2,7 +2,7 @@ module.exports = {
   dependency: {
     platforms: {
       android: {
-        componentDescriptors: ['RCTTabViewComponentDescriptor'],
+        componentDescriptors: ['RNCTabViewComponentDescriptor'],
         cmakeListsPath: undefined,
         packageImportPath:
           'import com.rcttabview.RCTTabViewPackage;',
