@@ -604,7 +604,7 @@ class RCTTabViewContainerView: UIView {
 
   // MARK: - Icon loading
 
-  func setImageLoader(_ loader: RCTImageLoaderProtocol) {
+  @objc func setImageLoader(_ loader: RCTImageLoaderProtocol) {
     self.imageLoader = loader
     loadIconsFromSources()
   }
