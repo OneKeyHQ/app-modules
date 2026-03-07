@@ -474,6 +474,15 @@ namespace margelo::nitro::reactnativebundleupdate::bridge::swift {
     return Result<std::shared_ptr<Promise<bool>>>::withError(error);
   }
   
+  // pragma MARK: Result<bool>
+  using Result_bool_ = Result<bool>;
+  inline Result_bool_ create_Result_bool_(bool value) noexcept {
+    return Result<bool>::withValue(std::move(value));
+  }
+  inline Result_bool_ create_Result_bool_(const std::exception_ptr& error) noexcept {
+    return Result<bool>::withError(error);
+  }
+  
   // pragma MARK: Result<std::shared_ptr<Promise<std::vector<LocalBundleInfo>>>>
   using Result_std__shared_ptr_Promise_std__vector_LocalBundleInfo____ = Result<std::shared_ptr<Promise<std::vector<LocalBundleInfo>>>>;
   inline Result_std__shared_ptr_Promise_std__vector_LocalBundleInfo____ create_Result_std__shared_ptr_Promise_std__vector_LocalBundleInfo____(const std::shared_ptr<Promise<std::vector<LocalBundleInfo>>>& value) noexcept {

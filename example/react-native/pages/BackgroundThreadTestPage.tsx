@@ -3,14 +3,9 @@ import { View, Text } from 'react-native';
 import { TestPageBase, TestButton } from './TestPageBase';
 import { BackgroundThread } from '@onekeyfe/react-native-background-thread';
 
-interface BackgroundThreadTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
-
 BackgroundThread.initBackgroundThread();
 
-export function BackgroundThreadTestPage({ onGoHome, safeAreaInsets }: BackgroundThreadTestPageProps) {
+export function BackgroundThreadTestPage() {
   const [result, setResult] = useState<string>('');
 
 
@@ -24,7 +19,7 @@ export function BackgroundThreadTestPage({ onGoHome, safeAreaInsets }: Backgroun
   };
 
   return (
-    <TestPageBase title="Background Thread Test" onGoHome={onGoHome} safeAreaInsets={safeAreaInsets}>
+    <TestPageBase title="Background Thread Test">
       <View>
       <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 10, color: '#333' }}>Result: {result}</Text>
         <TestButton

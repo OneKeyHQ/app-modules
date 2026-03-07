@@ -414,6 +414,18 @@ open class HybridReactNativeBundleUpdateSpec_cxx {
   }
   
   @inline(__always)
+  public final func isSkipGpgVerificationAllowed() -> bridge.Result_bool_ {
+    do {
+      let __result = try self.__implementation.isSkipGpgVerificationAllowed()
+      let __resultCpp = __result
+      return bridge.create_Result_bool_(__resultCpp)
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_bool_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
   public final func isBundleExists(appVersion: std.string, bundleVersion: std.string) -> bridge.Result_std__shared_ptr_Promise_bool___ {
     do {
       let __result = try self.__implementation.isBundleExists(appVersion: String(appVersion), bundleVersion: String(bundleVersion))

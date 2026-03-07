@@ -3,12 +3,7 @@ import { View, Text, Alert, ScrollView } from 'react-native';
 import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase';
 import { ReactNativeGetRandomValues } from '@onekeyfe/react-native-get-random-values';
 
-interface GetRandomValuesTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
-
-export function GetRandomValuesTestPage({ onGoHome, safeAreaInsets }: GetRandomValuesTestPageProps) {
+export function GetRandomValuesTestPage() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -169,7 +164,7 @@ export function GetRandomValuesTestPage({ onGoHome, safeAreaInsets }: GetRandomV
   };
 
   return (
-    <TestPageBase title="Get Random Values Test" onGoHome={onGoHome} safeAreaInsets={safeAreaInsets}>
+    <TestPageBase title="Get Random Values Test">
       {/* Basic Random Value Generation */}
       <View>
         <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 10, color: '#333' }}>

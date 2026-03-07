@@ -3,15 +3,11 @@ import { View, Text, StyleSheet, Alert } from 'react-native';
 import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase';
 import  { ReactNativeDeviceUtils } from '@onekeyfe/react-native-device-utils';
 
-interface DeviceUtilsTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
 const deviceUtils = ReactNativeDeviceUtils
 
 deviceUtils.initEventListeners();
 
-export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTestPageProps) {
+export function DeviceUtilsTestPage() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [colorR, setColorR] = useState('255');
@@ -316,8 +312,6 @@ export function DeviceUtilsTestPage({ onGoHome, safeAreaInsets }: DeviceUtilsTes
   return (
     <TestPageBase
       title="Device Utils Test"
-      onGoHome={onGoHome}
-      safeAreaInsets={safeAreaInsets}
     >
       {/* Device Detection Tests */}
       <View style={styles.section}>

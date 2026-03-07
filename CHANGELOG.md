@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.30] - 2026-03-06
+
+### Features
+- **bundle-update / app-update**: Add synchronous `isSkipGpgVerificationAllowed` API to expose whether build-time skip-GPG capability is enabled
+
 ## [1.1.29] - 2026-03-06
 
 ### Bug Fixes

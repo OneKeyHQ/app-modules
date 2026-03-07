@@ -3,12 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { TestPageBase, TestButton, TestResult } from './TestPageBase';
 import { ReactNativeSplashScreen } from '@onekeyfe/react-native-splash-screen';
 
-interface SplashScreenTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
-
-export function SplashScreenTestPage({ onGoHome, safeAreaInsets }: SplashScreenTestPageProps) {
+export function SplashScreenTestPage() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,8 +35,6 @@ export function SplashScreenTestPage({ onGoHome, safeAreaInsets }: SplashScreenT
   return (
     <TestPageBase
       title="Splash Screen Test"
-      onGoHome={onGoHome}
-      safeAreaInsets={safeAreaInsets}
     >
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Legacy Splash Screen (Android &lt; 12)</Text>

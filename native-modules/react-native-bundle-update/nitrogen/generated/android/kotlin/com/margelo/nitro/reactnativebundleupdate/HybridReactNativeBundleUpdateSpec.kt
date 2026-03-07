@@ -112,6 +112,10 @@ abstract class HybridReactNativeBundleUpdateSpec: HybridObject() {
   
   @DoNotStrip
   @Keep
+  abstract fun isSkipGpgVerificationAllowed(): Boolean
+  
+  @DoNotStrip
+  @Keep
   abstract fun isBundleExists(appVersion: String, bundleVersion: String): Promise<Boolean>
   
   @DoNotStrip

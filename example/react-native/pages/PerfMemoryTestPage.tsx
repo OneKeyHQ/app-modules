@@ -3,12 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { TestPageBase, TestButton, TestResult } from './TestPageBase';
 import { ReactNativePerfMemory } from '@onekeyfe/react-native-perf-memory';
 
-interface PerfMemoryTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
-
-export function PerfMemoryTestPage({ onGoHome, safeAreaInsets }: PerfMemoryTestPageProps) {
+export function PerfMemoryTestPage() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
@@ -69,8 +64,6 @@ export function PerfMemoryTestPage({ onGoHome, safeAreaInsets }: PerfMemoryTestP
   return (
     <TestPageBase
       title="Perf Memory Test"
-      onGoHome={onGoHome}
-      safeAreaInsets={safeAreaInsets}
     >
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Memory Usage</Text>

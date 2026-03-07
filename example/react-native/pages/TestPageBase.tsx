@@ -2,22 +2,13 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, KeyboardTypeOptions } from 'react-native';
 
 interface TestPageBaseProps {
-  title: string;
-  onGoHome: () => void;
-  safeAreaInsets: any;
+  title?: string;
   children: React.ReactNode;
 }
 
-export function TestPageBase({ title, onGoHome, safeAreaInsets, children }: TestPageBaseProps) {
+export function TestPageBase({ children }: TestPageBaseProps) {
   return (
-    <View style={[styles.container, { paddingTop: safeAreaInsets.top + 10 }]}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={onGoHome}>
-          <Text style={styles.backButtonText}>← Back to Home</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>{title}</Text>
-      </View>
-      
+    <View style={styles.container}>
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         {children}
       </ScrollView>
@@ -112,27 +103,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    backgroundColor: '#fff',
-  },
-  backButton: {
-    paddingVertical: 10,
-    marginBottom: 10,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '500',
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
   },
   content: {
     flex: 1,
