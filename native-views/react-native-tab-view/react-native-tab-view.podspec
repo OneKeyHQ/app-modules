@@ -25,7 +25,5 @@ Pod::Spec.new do |s|
     'DEFINES_MODULE' => 'YES'
   }
 
-  s.dependency 'ReactNativeNativeLogger'
-
   install_modules_dependencies(s)
 end

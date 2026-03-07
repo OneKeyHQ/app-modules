@@ -1,7 +1,6 @@
 import Foundation
 import UIKit
 import React
-import ReactNativeNativeLogger
 
 // MARK: - Data types for props from JS
 
@@ -57,7 +56,7 @@ class RCTTabViewContainerView: UIView {
 
   private func log(_ message: String, function: String = #function) {
     guard Self.debugLog else { return }
-    OneKeyLog.debug("RCTTabView", "[\(function)] \(message)")
+    RCTTabViewLog.debug("RCTTabView", message: "[\(function)] \(message)")
   }
 
   // MARK: - Internal State
@@ -694,15 +693,15 @@ class TabViewDelegateProxy: NSObject, UITabBarControllerDelegate {
 
   func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
     guard let containerView = mapping[ObjectIdentifier(tabBarController)] else {
-      OneKeyLog.debug("RCTTabView", "[DelegateProxy] shouldSelect: no container view found!")
+      RCTTabViewLog.debug("RCTTabView", message: "[DelegateProxy] shouldSelect: no container view found!")
       return false
     }
     let isReselection = tabBarController.selectedViewController == viewController
-    OneKeyLog.debug("RCTTabView", "[DelegateProxy] shouldSelect: isReselection=\(isReselection), tabBar.isHidden=\(tabBarController.tabBar.isHidden)")
+    RCTTabViewLog.debug("RCTTabView", message: "[DelegateProxy] shouldSelect: isReselection=\(isReselection), tabBar.isHidden=\(tabBarController.tabBar.isHidden)")
 
     if let index = tabBarController.viewControllers?.firstIndex(of: viewController) {
       let result = containerView.shouldSelectTab(at: index, isReselection: isReselection)
-      OneKeyLog.debug("RCTTabView", "[DelegateProxy] shouldSelect result=\(result)")
+      RCTTabViewLog.debug("RCTTabView", message: "[DelegateProxy] shouldSelect result=\(result)")
       return result
     }
 
