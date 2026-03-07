@@ -2173,12 +2173,10 @@ PODS:
     - fmt
     - glog
     - hermes-engine
-    - NitroModules
     - RCT-Folly
     - RCT-Folly/Fabric
     - RCTRequired
     - RCTTypeSafety
-    - React-callinvoker
     - React-Core
     - React-debug
     - React-Fabric
@@ -3420,7 +3418,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 20046c0447efaa7aace0b76085aa9bb35b0e8105
   React-microtasksnativemodule: 0e837de56519c92d8a2e3097717df9497feb33cb
   react-native-safe-area-context: c00143b4823773bba23f2f19f85663ae89ceb460
-  react-native-tab-view: a44f257f4e00043142f8a4476030d9d646d50b88
+  react-native-tab-view: ab42ea161a48550fcd116cb2dd5e4b618053d856
   React-NativeModulesApple: 1a378198515f8e825c5931a7613e98da69320cee
   React-networking: bfd1695ada5a57023006ce05823ac5391c3ce072
   React-oscompat: aedc0afbded67280de6bb6bfac8cfde0389e2b33
