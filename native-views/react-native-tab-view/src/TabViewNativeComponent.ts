@@ -63,6 +63,4 @@ export interface TabViewProps extends ViewProps {
   ignoreBottomInsets?: boolean;
 }
 
-export default codegenNativeComponent<TabViewProps>('RNCTabView', {
-  interfaceOnly: true,
-});
+export default codegenNativeComponent<TabViewProps>('RNCTabView');
