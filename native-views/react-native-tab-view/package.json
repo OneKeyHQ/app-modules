@@ -38,7 +38,8 @@
     "prepare": "rm -rf lib && bob build",
     "typecheck": "tsc -b",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "test": "jest"
+    "test": "jest",
+    "release": "yarn prepare && npm whoami && npm publish --access public"
   },
   "keywords": [
     "react-native",
