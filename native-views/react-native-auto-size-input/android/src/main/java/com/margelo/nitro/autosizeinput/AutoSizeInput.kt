@@ -214,13 +214,16 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     set(value) {
       if (isDisposed) return
       field = value
-      inputView.inputType = when (value) {
+      // Use setRawInputType so the IME shows the correct keyboard layout
+      // without restricting which characters the EditText accepts.
+      // JS-side sanitization handles character filtering.
+      inputView.setRawInputType(when (value) {
         "numberPad" -> InputType.TYPE_CLASS_NUMBER
         "decimalPad" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         "emailAddress" -> InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         "phonePad" -> InputType.TYPE_CLASS_PHONE
         else -> InputType.TYPE_CLASS_TEXT
-      }
+      })
     }
 
   override var returnKeyType: String? = null
@@ -243,6 +246,11 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     set(value) {
       if (isDisposed) return
       field = value
+      // autoCorrect only applies to text-class inputs. Modifying inputType on
+      // number/phone classes would install a restrictive KeyListener and
+      // override the raw input type set by keyboardType.
+      val inputClass = inputView.inputType and InputType.TYPE_MASK_CLASS
+      if (inputClass != InputType.TYPE_CLASS_TEXT) return
       val currentType = inputView.inputType
       inputView.inputType = if (value == true) {
         currentType or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
@@ -256,7 +264,13 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     set(value) {
       if (isDisposed) return
       field = value
-      val baseType = inputView.inputType and InputType.TYPE_MASK_CLASS
+      // Cap flags share bit positions with number flags
+      // (TYPE_TEXT_FLAG_CAP_WORDS=0x2000 == TYPE_NUMBER_FLAG_DECIMAL=0x2000,
+      //  TYPE_TEXT_FLAG_CAP_CHARACTERS=0x1000 == TYPE_NUMBER_FLAG_SIGNED=0x1000).
+      // Modifying inputType on number/phone classes would strip decimal/signed
+      // flags and install a restrictive KeyListener. Skip for non-text classes.
+      val inputClass = inputView.inputType and InputType.TYPE_MASK_CLASS
+      if (inputClass != InputType.TYPE_CLASS_TEXT) return
       val capFlag = when (value) {
         "characters" -> InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         "words" -> InputType.TYPE_TEXT_FLAG_CAP_WORDS
