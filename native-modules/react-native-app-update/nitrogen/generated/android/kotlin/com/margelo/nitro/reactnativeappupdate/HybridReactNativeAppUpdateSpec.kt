@@ -78,6 +78,10 @@ abstract class HybridReactNativeAppUpdateSpec: HybridObject() {
   @Keep
   abstract fun testSkipVerification(): Promise<Boolean>
   
+  @DoNotStrip
+  @Keep
+  abstract fun isSkipGpgVerificationAllowed(): Boolean
+  
   abstract fun addDownloadListener(callback: (event: DownloadEvent) -> Unit): Double
   
   @DoNotStrip

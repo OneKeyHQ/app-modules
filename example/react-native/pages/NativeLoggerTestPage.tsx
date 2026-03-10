@@ -3,11 +3,6 @@ import { View, Text, Alert, StyleSheet, Clipboard, TouchableOpacity } from 'reac
 import { TestPageBase, TestButton, TestInput, TestResult } from './TestPageBase';
 import { NativeLogger } from '@onekeyfe/react-native-native-logger';
 
-interface NativeLoggerTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
-
 const LogLevel = {
   DEBUG: 0,
   INFO: 1,
@@ -15,7 +10,7 @@ const LogLevel = {
   ERROR: 3,
 } as const;
 
-export function NativeLoggerTestPage({ onGoHome, safeAreaInsets }: NativeLoggerTestPageProps) {
+export function NativeLoggerTestPage() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -116,7 +111,7 @@ export function NativeLoggerTestPage({ onGoHome, safeAreaInsets }: NativeLoggerT
   };
 
   return (
-    <TestPageBase title="Native Logger Test" onGoHome={onGoHome} safeAreaInsets={safeAreaInsets}>
+    <TestPageBase title="Native Logger Test">
       {/* Log Directory */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Log Directory</Text>

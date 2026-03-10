@@ -891,6 +891,12 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
         }
     }
 
+    override fun isSkipGpgVerificationAllowed(): Boolean {
+        val result = BuildConfig.ALLOW_SKIP_GPG_VERIFICATION
+        OneKeyLog.info("AppUpdate", "isSkipGpgVerificationAllowed: result=$result")
+        return result
+    }
+
     override fun clearCache(): Promise<Unit> {
         return Promise.async {
             OneKeyLog.info("AppUpdate", "clearCache: starting cleanup...")

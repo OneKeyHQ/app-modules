@@ -2,12 +2,6 @@ import { View, StyleSheet } from 'react-native';
 import { TestPageBase } from './TestPageBase';
 import { SkeletonView } from '@onekeyfe/react-native-skeleton';
 
-interface SkeletonTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
-
-
 const baseColors = {
   dark: {
     primary: '#111111',
@@ -19,13 +13,11 @@ const baseColors = {
   },
 };
 
-export function SkeletonTestPage({ onGoHome, safeAreaInsets }: SkeletonTestPageProps) {
+export function SkeletonTestPage() {
 
   return (
     <TestPageBase
       title="Skeleton Test"
-      onGoHome={onGoHome}
-      safeAreaInsets={safeAreaInsets}
     >
       <View style={styles.section}>
          <SkeletonView style={styles.skeleton} shimmerSpeed={3.0}  shimmerGradientColors={[baseColors.light.primary,baseColors.light.secondary]} />

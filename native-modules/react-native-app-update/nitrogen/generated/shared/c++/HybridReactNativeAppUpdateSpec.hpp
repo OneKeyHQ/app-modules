@@ -65,6 +65,7 @@ namespace margelo::nitro::reactnativeappupdate {
       virtual std::shared_ptr<Promise<void>> clearCache() = 0;
       virtual std::shared_ptr<Promise<bool>> testVerification() = 0;
       virtual std::shared_ptr<Promise<bool>> testSkipVerification() = 0;
+      virtual bool isSkipGpgVerificationAllowed() = 0;
       virtual double addDownloadListener(const std::function<void(const DownloadEvent& /* event */)>& callback) = 0;
       virtual void removeDownloadListener(double id) = 0;
 

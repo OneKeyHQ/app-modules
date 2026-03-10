@@ -30,6 +30,7 @@ public protocol HybridReactNativeBundleUpdateSpec_protocol: HybridObject {
   func getNativeAppVersion() throws -> Promise<String>
   func testVerification() throws -> Promise<Bool>
   func testSkipVerification() throws -> Promise<Bool>
+  func isSkipGpgVerificationAllowed() throws -> Bool
   func isBundleExists(appVersion: String, bundleVersion: String) throws -> Promise<Bool>
   func verifyExtractedBundle(appVersion: String, bundleVersion: String) throws -> Promise<Void>
   func listLocalBundles() throws -> Promise<[LocalBundleInfo]>

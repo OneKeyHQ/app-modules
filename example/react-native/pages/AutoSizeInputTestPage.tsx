@@ -5,12 +5,7 @@ import { AutoSizeInputView } from '@onekeyfe/react-native-auto-size-input';
 import type { AutoSizeInputMethods } from '@onekeyfe/react-native-auto-size-input';
 import { callback } from 'react-native-nitro-modules';
 
-interface AutoSizeInputTestPageProps {
-  onGoHome: () => void;
-  safeAreaInsets: any;
-}
-
-export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInputTestPageProps) {
+export function AutoSizeInputTestPage() {
   const [singleLineText, setSingleLineText] = useState('');
   const [multiLineText, setMultiLineText] = useState('');
   const [autoWidthText, setAutoWidthText] = useState('');
@@ -23,8 +18,6 @@ export function AutoSizeInputTestPage({ onGoHome, safeAreaInsets }: AutoSizeInpu
   return (
     <TestPageBase
       title="Auto Size Input Test"
-      onGoHome={onGoHome}
-      safeAreaInsets={safeAreaInsets}
     >
       {/* Section: Basic Single Line */}
       <Text style={styles.sectionTitle}>Single Line - Basic</Text>

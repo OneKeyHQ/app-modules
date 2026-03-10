@@ -70,6 +70,7 @@ namespace margelo::nitro::reactnativebundleupdate {
     std::shared_ptr<Promise<std::string>> getNativeAppVersion() override;
     std::shared_ptr<Promise<bool>> testVerification() override;
     std::shared_ptr<Promise<bool>> testSkipVerification() override;
+    bool isSkipGpgVerificationAllowed() override;
     std::shared_ptr<Promise<bool>> isBundleExists(const std::string& appVersion, const std::string& bundleVersion) override;
     std::shared_ptr<Promise<void>> verifyExtractedBundle(const std::string& appVersion, const std::string& bundleVersion) override;
     std::shared_ptr<Promise<std::vector<LocalBundleInfo>>> listLocalBundles() override;

@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.34] - 2026-03-09
+
+### Bug Fixes
+- **auto-size-input**: Use `setRawInputType` on Android so the IME shows the correct keyboard layout without restricting accepted characters; JS-side sanitization handles character filtering
+- **auto-size-input**: Skip `autoCorrect` and `autoCapitalize` mutations on number/phone input classes to avoid stripping decimal/signed flags and installing a restrictive KeyListener
+
+## [1.1.33] - 2026-03-09
+
+### Bug Fixes
+- **tab-view**: Remove `interfaceOnly` option from `codegenNativeComponent` to fix Fabric component registration
+
+## [1.1.32] - 2026-03-09
+
+### Features
+- **tab-view**: Add new `@onekeyfe/react-native-tab-view` Fabric Native Component with native iOS tab bar (UITabBarController) and Android bottom navigation (BottomNavigationView)
+- **tab-view**: Add `ignoreBottomInsets` prop for controlling safe-area inset behavior
+- **tab-view**: Add TabView settings page for Android with shared store
+- **tab-view**: Add OneKeyLog debug logging for tab bar visibility debugging
+- **tab-view**: Migrate to Fabric Native Component (New Architecture), remove Paper (old arch) code on iOS
+- **example**: Add TabView test page and migrate example app routing to `@react-navigation/native`
+- **example**: Add floating A-Z alphabet sidebar, emoji icons, and compact iOS Settings-style module list to home screen
+
+### Bug Fixes
+- **tab-view**: Prevent React child views from covering tab bar
+- **tab-view**: Prevent Fabric from stealing tab childViews, fix scroll and layout issues
+- **tab-view**: Forward events from Swift container to Fabric EventEmitter on iOS
+- **tab-view**: Resolve Kotlin compilation errors in RCTTabViewManager
+- **tab-view**: Wrap BottomNavigationView context with MaterialComponents theme
+- **tab-view**: Remove bridging header for framework target compatibility
+- **tab-view**: Use ObjC runtime bridge to call OneKeyLog, avoid Nitro C++ header import
+- **tab-view**: Resolve iOS Fabric ComponentView build errors
+- **tab-view**: Restore `#ifdef RCT_NEW_ARCH_ENABLED` in .h files for Swift module compatibility
+
+### Refactors
+- **tab-view**: Migrate from Nitro HybridView to Fabric ViewManager, then to Fabric Native Component
+
+### Chores
+- Bump all native modules and views to 1.1.32
+
+## [1.1.30] - 2026-03-06
+
+### Features
+- **bundle-update / app-update**: Add synchronous `isSkipGpgVerificationAllowed` API to expose whether build-time skip-GPG capability is enabled
+
 ## [1.1.29] - 2026-03-06
 
 ### Bug Fixes
