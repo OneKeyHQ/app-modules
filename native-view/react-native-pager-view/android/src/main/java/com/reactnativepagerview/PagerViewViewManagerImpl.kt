@@ -4,8 +4,6 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.viewpager2.widget.ViewPager2
 import com.facebook.react.uimanager.PixelUtil
-import android.os.Handler
-import android.os.Looper
 import android.view.Choreographer
 import android.util.Log
 import androidx.recyclerview.widget.RecyclerView
@@ -14,8 +12,6 @@ import java.util.WeakHashMap
 object PagerViewViewManagerImpl {
     private const val TAG = "PagerView"
     const val NAME = "RNCViewPager"
-
-    private var refreshFrameCallback: Choreographer.FrameCallback? = null
 
     fun getViewPager(view: NestedScrollableHost): ViewPager2 {
         if (view.getChildAt(0) is ViewPager2) {
@@ -89,6 +85,7 @@ object PagerViewViewManagerImpl {
     }
 
     fun removeAllViews(parent: NestedScrollableHost) {
+        clearPendingRefreshViewChildrenLayout(parent)
         val pager = getViewPager(parent)
         pager.isUserInputEnabled = false
         val adapter = pager.adapter as ViewPagerAdapter?
@@ -107,7 +104,7 @@ object PagerViewViewManagerImpl {
 
         adapter?.removeChildAt(index)
 
-        debouncedRefreshViewChildrenLayout(pager)
+        debouncedRefreshViewChildrenLayout(parent)
     }
 
     fun needsCustomLayoutForChildren(): Boolean {
@@ -203,20 +200,29 @@ object PagerViewViewManagerImpl {
         }
     }
 
-    private fun debouncedRefreshViewChildrenLayout(view: View) {
-        // Fixes https://github.com/callstack/react-native-pager-view/issues/946
-        refreshFrameCallback?.let { Choreographer.getInstance().removeFrameCallback(it) }
+    private fun clearPendingRefreshViewChildrenLayout(host: NestedScrollableHost) {
+        host.pendingRefreshFrameCallback?.let { callback ->
+            Choreographer.getInstance().removeFrameCallback(callback)
+            host.pendingRefreshFrameCallback = null
+        }
+    }
 
+    private fun debouncedRefreshViewChildrenLayout(host: NestedScrollableHost) {
+        clearPendingRefreshViewChildrenLayout(host)
+        val view = getViewPager(host)
+
+        // Fixes https://github.com/callstack/react-native-pager-view/issues/946
         val adapter = (view as? ViewPager2)?.adapter as? ViewPagerAdapter
         if (adapter == null || adapter.itemCount == 0) {
             // Do not call refreshViewChildrenLayout on pager unmount
             return
         }
 
-        refreshFrameCallback = Choreographer.FrameCallback {
+        val callback = Choreographer.FrameCallback {
             refreshViewChildrenLayout(view)
-            refreshFrameCallback = null
+            host.pendingRefreshFrameCallback = null
         }
-        Choreographer.getInstance().postFrameCallback(refreshFrameCallback)
+        host.pendingRefreshFrameCallback = callback
+        Choreographer.getInstance().postFrameCallback(callback)
     }
 }

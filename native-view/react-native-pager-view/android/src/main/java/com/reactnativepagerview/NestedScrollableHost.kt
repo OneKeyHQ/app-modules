@@ -2,6 +2,7 @@ package com.reactnativepagerview
 
 import android.content.Context
 import android.util.AttributeSet
+import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -25,6 +26,7 @@ class NestedScrollableHost : FrameLayout {
   constructor(context: Context, attrs: AttributeSet?) : super(context, attrs)
   public var initialIndex: Int? = null
   public var didSetInitialIndex = false
+  public var pendingRefreshFrameCallback: Choreographer.FrameCallback? = null
   private var touchSlop = 0
   private var initialX = 0f
   private var initialY = 0f
@@ -134,5 +136,13 @@ class NestedScrollableHost : FrameLayout {
       }
     }
     return super.onTouchEvent(e)
+  }
+
+  override fun onDetachedFromWindow() {
+    pendingRefreshFrameCallback?.let { callback ->
+      Choreographer.getInstance().removeFrameCallback(callback)
+      pendingRefreshFrameCallback = null
+    }
+    super.onDetachedFromWindow()
   }
 }
