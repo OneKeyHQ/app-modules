@@ -162,7 +162,16 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
 
   fun setSelectedItem(value: String) {
     selectedItem = value
-    setSelectedIndex(items.indexOfFirst { it.key == value })
+    syncSelectedItem()
+  }
+
+  private fun syncSelectedItem() {
+    val selectedKey = selectedItem ?: return
+    val selectedIndex = items.indexOfFirst { it.key == selectedKey }
+    if (selectedIndex == -1 || selectedIndex >= layoutHolder.childCount) {
+      return
+    }
+    setSelectedIndex(selectedIndex)
   }
 
   override fun addView(child: View, index: Int, params: ViewGroup.LayoutParams?) {
@@ -175,9 +184,8 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     container.addView(child, params)
     layoutHolder.addView(container, index)
 
-    val itemKey = items[index].key
-    if (selectedItem == itemKey) {
-      setSelectedIndex(index)
+    if (index in items.indices && selectedItem == items[index].key) {
+      syncSelectedItem()
       refreshLayout()
     }
   }
@@ -268,7 +276,7 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     this.items = items
     items.forEachIndexed { index, item ->
       val menuItem = getOrCreateItem(index, item.title)
-      if (item.title !== menuItem.title) {
+      if (item.title != menuItem.title) {
         menuItem.title = item.title
       }
 
@@ -313,6 +321,9 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
         }
       }
     }
+
+    syncSelectedItem()
+
     // Update tint colors and text appearance after updating all items.
     post {
       updateTextAppearance()
