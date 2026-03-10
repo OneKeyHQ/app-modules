@@ -3215,9 +3215,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-pager-view@workspace:*, @onekeyfe/react-native-pager-view@workspace:native-view/react-native-pager-view":
+"@onekeyfe/react-native-pager-view@workspace:*, @onekeyfe/react-native-pager-view@workspace:native-views/react-native-pager-view":
   version: 0.0.0-use.local
-  resolution: "@onekeyfe/react-native-pager-view@workspace:native-view/react-native-pager-view"
+  resolution: "@onekeyfe/react-native-pager-view@workspace:native-views/react-native-pager-view"
   dependencies:
     "@types/react": "npm:^19.2.0"
     react: "npm:19.2.0"

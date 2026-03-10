@@ -47,7 +47,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nicholasxuu/app-modules.git",
-    "directory": "native-view/react-native-pager-view"
+    "directory": "native-views/react-native-pager-view"
   },
   "author": "OneKey",
   "homepage": "https://github.com/nicholasxuu/app-modules#readme",
