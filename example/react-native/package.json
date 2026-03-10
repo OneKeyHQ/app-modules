@@ -22,6 +22,7 @@
     "@onekeyfe/react-native-keychain-module": "workspace:*",
     "@onekeyfe/react-native-lite-card": "workspace:*",
     "@onekeyfe/react-native-native-logger": "workspace:*",
+    "@onekeyfe/react-native-pager-view": "workspace:*",
     "@onekeyfe/react-native-perf-memory": "workspace:*",
     "@onekeyfe/react-native-skeleton": "workspace:*",
     "@onekeyfe/react-native-splash-screen": "workspace:*",

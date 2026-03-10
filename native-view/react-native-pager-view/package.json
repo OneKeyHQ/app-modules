@@ -1,7 +1,7 @@
 {
-  "name": "@onekeyfe/react-native-tab-view",
+  "name": "@onekeyfe/react-native-pager-view",
   "version": "1.1.35",
-  "description": "Native Bottom Tabs for React Native (UIKit implementation)",
+  "description": "React Native wrapper for Android and iOS ViewPager",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -19,9 +19,7 @@
     "lib",
     "android",
     "ios",
-    "common",
-    "react-native.config.js",
-    "*.podspec",
+    "react-native-pager-view.podspec",
     "!ios/build",
     "!android/build",
     "!android/gradle",
@@ -49,7 +47,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nicholasxuu/app-modules.git",
-    "directory": "native-views/react-native-tab-view"
+    "directory": "native-view/react-native-pager-view"
   },
   "author": "OneKey",
   "homepage": "https://github.com/nicholasxuu/app-modules#readme",
@@ -87,27 +85,16 @@
       ]
     ]
   },
-  "dependencies": {
-    "react-freeze": "^1.0.0",
-    "sf-symbols-typescript": "^2.0.0",
-    "use-latest-callback": "^0.2.1"
-  },
   "codegenConfig": {
-    "name": "RNCTabView",
-    "type": "all",
-    "jsSrcsDir": "./src",
+    "name": "pagerview",
+    "type": "components",
+    "jsSrcsDir": "src",
     "android": {
-      "javaPackageName": "com.rcttabview"
+      "javaPackageName": "com.reactnativepagerview"
     },
     "ios": {
       "componentProvider": {
-        "RNCTabView": "RCTTabViewComponentView",
-        "BottomAccessoryView": "RCTBottomAccessoryComponentView"
-      },
-      "modulesConformingToProtocol": {
-        "RCTImageDataDecoder": [
-          "SvgDecoder"
-        ]
+        "RNCViewPager": "RNCPagerViewComponentView"
       }
     }
   }

@@ -13,6 +13,7 @@
   },
   "workspaces": [
     "native-modules/*",
+    "native-view/*",
     "native-views/*",
     "example/*"
   ],

@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "rootDir": ".",
+    "paths": {
+      "@onekeyfe/react-native-pager-view": ["./src/index"]
+    },
+    "strict": true,
+    "noEmit": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "customConditions": ["react-native-strict-api"],
+    "jsx": "react-jsx",
+    "skipLibCheck": true
+  },
+  "exclude": ["lib", "node_modules"]
+}
