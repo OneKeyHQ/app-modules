@@ -450,15 +450,15 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     val suffixSegment = if (suffixView.visibility == View.VISIBLE) suffixGap + suffixW else 0
     val availableTrackWidth = maxOf(width - (edgeInset * 2), 0)
     val maxInputWidth = maxOf(availableTrackWidth - prefixSegment - suffixSegment, 0)
+    val rawInputText = inputView.text?.toString() ?: ""
+    val displayInputText = if (rawInputText.isEmpty()) (placeholder ?: "") else rawInputText
     val inputW: Int
 
     if (isContentAutoWidthEnabled) {
-      val typedText = inputView.text?.toString() ?: ""
-      val displayText = if (typedText.isEmpty()) (placeholder ?: "") else typedText
       val minInputWidth = (24f * density).toInt()
       val singleLineWidthPadding = contentAutoWidthPaddingPx()
       val desiredInputWidth = maxOf(
-        measureSingleLineTextWidthPx(displayText) + singleLineWidthPadding,
+        measureSingleLineTextWidthPx(displayInputText) + singleLineWidthPadding,
         minInputWidth
       )
       inputW = minOf(desiredInputWidth, maxInputWidth)
@@ -798,9 +798,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
   }
 
   private fun centeredBaselineY(containerHeight: Int): Int {
-    val paint = TextPaint(Paint.ANTI_ALIAS_FLAG)
-    paint.textSize = currentFontSize * context.resources.displayMetrics.scaledDensity
-    paint.typeface = makeTypeface()
+    val paint = inputView.paint
     return kotlin.math.round(
       (containerHeight / 2f) - ((paint.descent() + paint.ascent()) / 2f)
     ).toInt()
