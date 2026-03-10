@@ -13,6 +13,7 @@ import { GetRandomValuesTestPage } from './pages/GetRandomValuesTestPage';
 import { DeviceUtilsTestPage } from './pages/DeviceUtilsTestPage';
 import { SkeletonTestPage } from './pages/SkeletonTestPage';
 import { NativeLoggerTestPage } from './pages/NativeLoggerTestPage';
+import { PagerViewTestPage } from './pages/PagerViewTestPage';
 import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
 import { BundleUpdateTestPage } from './pages/BundleUpdateTestPage';
 import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
@@ -42,6 +43,7 @@ export type RootStackParamList = {
   LiteCard: undefined;
   GetRandomValues: undefined;
   NativeLogger: undefined;
+  PagerView: undefined;
   PerfMemory: undefined;
   Skeleton: undefined;
   SplashScreen: undefined;
@@ -119,6 +121,12 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
     name: 'Native Logger',
     description: 'File-based logging with log directory viewer',
     icon: '📝',
+  },
+  {
+    screen: 'PagerView',
+    name: 'Pager View',
+    description: 'Native page container with swipe navigation and imperative controls',
+    icon: '📄',
   },
   {
     screen: 'PerfMemory',
@@ -330,6 +338,7 @@ export function AppNavigator() {
       <Stack.Screen name="LiteCard" component={LiteCardTestPage} options={{ title: 'Lite Card' }} />
       <Stack.Screen name="GetRandomValues" component={GetRandomValuesTestPage} options={{ title: 'Get Random Values' }} />
       <Stack.Screen name="NativeLogger" component={NativeLoggerTestPage} options={{ title: 'Native Logger' }} />
+      <Stack.Screen name="PagerView" component={PagerViewTestPage} options={{ title: 'Pager View' }} />
       <Stack.Screen name="PerfMemory" component={PerfMemoryTestPage} options={{ title: 'Perf Memory' }} />
       <Stack.Screen name="Skeleton" component={SkeletonTestPage} options={{ title: 'Skeleton' }} />
       <Stack.Screen name="SplashScreen" component={SplashScreenTestPage} options={{ title: 'Splash Screen' }} />

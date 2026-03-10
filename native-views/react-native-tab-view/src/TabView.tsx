@@ -331,6 +331,9 @@ const TabView = <Route extends BaseRoute>({
 
   const jumpTo = useLatestCallback((key: string) => {
     const index = trimmedRoutes.findIndex((route) => route.key === key);
+    if (index === -1) {
+      return;
+    }
     onIndexChange(index);
   });
 
@@ -338,7 +341,9 @@ const TabView = <Route extends BaseRoute>({
     (event: NativeSyntheticEvent<{ key: string }>) => {
       const { key } = event.nativeEvent;
       const index = trimmedRoutes.findIndex((route) => route.key === key);
-      onTabLongPress?.(index);
+      if (index !== -1) {
+        onTabLongPress?.(index);
+      }
     },
     [trimmedRoutes, onTabLongPress]
   );
