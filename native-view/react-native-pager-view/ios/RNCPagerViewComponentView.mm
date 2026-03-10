@@ -151,7 +151,7 @@ using namespace facebook::react;
       return;
     }
   
-    [super updateLayoutMetrics:layoutMetrics oldLayoutMetrics:_layoutMetrics];
+    [super updateLayoutMetrics:layoutMetrics oldLayoutMetrics:_oldLayoutMetrics];
 }
 
 
