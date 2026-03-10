@@ -577,21 +577,31 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
         val availableTrackWidth = maxOf(width - (edgeInset * 2), 0)
         val maxInputWidth = maxOf(availableTrackWidth - prefixSegment - suffixSegment, 0)
         val maxTextWidth = maxOf(maxInputWidth - singleLineWidthPadding, 0)
+        val maxTextHeight = maxOf(height - inputView.paddingTop - inputView.paddingBottom, 0)
         val textForSizing = if (inputText.isEmpty()) (placeholder ?: "") else inputText
+        val probeText = if (textForSizing.isEmpty()) "0" else textForSizing
 
-        // Expand width first; once width hits max, shrink font to keep full text visible.
-        val targetSize = if (maxTextWidth <= 0) {
+        // Keep both width and line-height within the input slot.
+        val widthFitSize = if (maxTextWidth <= 0) {
           minSize
-        } else if (textForSizing.isEmpty()) {
-          maxSize
         } else {
           findOptimalFontSizeSingleLine(
-            fullText = textForSizing,
+            fullText = probeText,
             availableWidth = maxTextWidth.toFloat(),
             minSize = minSize,
             maxSize = maxSize
           )
         }
+        val heightFitSize = if (maxTextHeight <= 0) {
+          minSize
+        } else {
+          findOptimalFontSizeForSingleLineHeight(
+            availableHeight = maxTextHeight.toFloat(),
+            minSize = minSize,
+            maxSize = maxSize
+          )
+        }
+        val targetSize = minOf(widthFitSize, heightFitSize).coerceIn(minSize, maxSize)
         applyFontSize(targetSize)
         return
       }
@@ -672,6 +682,32 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
         .build()
 
       if (layout.lineCount <= maxLines && layout.height <= availableHeight) {
+        low = mid
+      } else {
+        high = mid
+      }
+    }
+
+    return low
+  }
+
+  private fun findOptimalFontSizeForSingleLineHeight(
+    availableHeight: Float,
+    minSize: Float,
+    maxSize: Float
+  ): Float {
+    if (availableHeight <= 0f) return minSize
+    var low = minSize
+    var high = maxSize
+    val paint = TextPaint(Paint.ANTI_ALIAS_FLAG)
+    paint.typeface = makeTypeface()
+
+    while (high - low > 0.5f) {
+      val mid = (low + high) / 2f
+      paint.textSize = mid * context.resources.displayMetrics.scaledDensity
+      val fm = paint.fontMetrics
+      val lineHeight = kotlin.math.ceil((fm.descent - fm.ascent).toDouble()).toFloat()
+      if (lineHeight <= availableHeight) {
         low = mid
       } else {
         high = mid
