@@ -503,29 +503,28 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     } else {
       inputView.measuredHeight.coerceAtMost(height)
     }
+    val targetBaseline: Int = if (multiline == true) {
+      0
+    } else {
+      centeredBaselineY(height)
+    }
     val inputTop = if (multiline == true) {
       0
     } else {
-      ((height - inputH) / 2).coerceAtLeast(0)
+      topForBaseline(inputView, targetBaseline, height)
     }
     inputView.layout(inputX, inputTop, inputX + inputW, inputTop + inputH)
     resetSingleLineVerticalOffset()
-    val inputBaselineY = if (multiline == true) {
-      0
-    } else {
-      val baseline = inputView.baseline
-      if (baseline >= 0) inputTop + baseline else inputTop + (inputH / 2)
-    }
 
     val prefixTop = if (multiline == true) {
       ((height - prefixView.measuredHeight) / 2).coerceAtLeast(0)
     } else {
-      topForBaseline(prefixView, inputBaselineY, height)
+      topForBaseline(prefixView, targetBaseline, height)
     }
     val suffixTop = if (multiline == true) {
       ((height - suffixView.measuredHeight) / 2).coerceAtLeast(0)
     } else {
-      topForBaseline(suffixView, inputBaselineY, height)
+      topForBaseline(suffixView, targetBaseline, height)
     }
 
     // Layout prefix
@@ -796,6 +795,15 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
   private fun contentAutoWidthPaddingPx(): Int {
     val density = context.resources.displayMetrics.density
     return (8f * density).toInt()
+  }
+
+  private fun centeredBaselineY(containerHeight: Int): Int {
+    val paint = TextPaint(Paint.ANTI_ALIAS_FLAG)
+    paint.textSize = currentFontSize * context.resources.displayMetrics.scaledDensity
+    paint.typeface = makeTypeface()
+    return kotlin.math.round(
+      (containerHeight / 2f) - ((paint.descent() + paint.ascent()) / 2f)
+    ).toInt()
   }
 
   private fun topForBaseline(textView: TextView, targetBaseline: Int, containerHeight: Int): Int {
