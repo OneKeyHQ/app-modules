@@ -178,6 +178,7 @@ using namespace facebook::react;
     _currentIndex = -1;
     _scrollEnabled = YES;
     _pendingGoToIndex = -1;
+    _nestedScrollEnabled = NO;
     _isBeingRecycled = NO;
 }
 

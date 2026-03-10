@@ -51,7 +51,7 @@ if(shouldUseNameSpace){
         )
     }
 }
-manifestContent.replaceAll("  ", " ")
+manifestContent = manifestContent.replaceAll("  ", " ")
 manifestOutFile.write(manifestContent)
 
 import groovy.json.JsonSlurper
