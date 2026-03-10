@@ -317,7 +317,12 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
 
     if isContentAutoWidthEnabled {
       let typedText = singleLineInput.text ?? ""
-      let desiredInputWidth = measuredSingleLineTextWidth(typedText, font: singleLineInput.font)
+      let displayText = typedText.isEmpty ? (placeholder ?? "") : typedText
+      let minInputWidth: CGFloat = 24
+      let desiredInputWidth = max(
+        measuredSingleLineTextWidth(displayText, font: singleLineInput.font) + contentAutoWidthPadding(),
+        minInputWidth
+      )
       inputW = min(desiredInputWidth, maxInputWidth)
     } else {
       inputW = maxInputWidth
@@ -598,6 +603,10 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     guard !text.isEmpty else { return 0 }
     let effectiveFont = font ?? makeFont(size: currentFontSize)
     return (text as NSString).size(withAttributes: [.font: effectiveFont]).width
+  }
+
+  private func contentAutoWidthPadding() -> CGFloat {
+    return 8
   }
 
   private func textAlignmentFrom(_ align: String?) -> NSTextAlignment {
