@@ -279,6 +279,15 @@ namespace margelo::nitro::autosizeinput {
     static const auto method = javaClassStatic()->getMethod<void(jni::alias_ref<jni::JBoolean> /* contentAutoWidth */)>("setContentAutoWidth");
     method(_javaPart, contentAutoWidth.has_value() ? jni::JBoolean::valueOf(contentAutoWidth.value()) : nullptr);
   }
+  std::optional<bool> JHybridAutoSizeInputSpec::getContentCentered() {
+    static const auto method = javaClassStatic()->getMethod<jni::local_ref<jni::JBoolean>()>("getContentCentered");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(static_cast<bool>(__result->value())) : std::nullopt;
+  }
+  void JHybridAutoSizeInputSpec::setContentCentered(std::optional<bool> contentCentered) {
+    static const auto method = javaClassStatic()->getMethod<void(jni::alias_ref<jni::JBoolean> /* contentCentered */)>("setContentCentered");
+    method(_javaPart, contentCentered.has_value() ? jni::JBoolean::valueOf(contentCentered.value()) : nullptr);
+  }
   std::optional<std::function<void(const std::string& /* text */)>> JHybridAutoSizeInputSpec::getOnChangeText() {
     static const auto method = javaClassStatic()->getMethod<jni::local_ref<JFunc_void_std__string::javaobject>()>("getOnChangeText_cxx");
     auto __result = method(_javaPart);

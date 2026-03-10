@@ -66,6 +66,8 @@ namespace margelo::nitro::autosizeinput {
       prototype.registerHybridSetter("inputBackgroundColor", &HybridAutoSizeInputSpec::setInputBackgroundColor);
       prototype.registerHybridGetter("contentAutoWidth", &HybridAutoSizeInputSpec::getContentAutoWidth);
       prototype.registerHybridSetter("contentAutoWidth", &HybridAutoSizeInputSpec::setContentAutoWidth);
+      prototype.registerHybridGetter("contentCentered", &HybridAutoSizeInputSpec::getContentCentered);
+      prototype.registerHybridSetter("contentCentered", &HybridAutoSizeInputSpec::setContentCentered);
       prototype.registerHybridGetter("onChangeText", &HybridAutoSizeInputSpec::getOnChangeText);
       prototype.registerHybridSetter("onChangeText", &HybridAutoSizeInputSpec::setOnChangeText);
       prototype.registerHybridGetter("onFocus", &HybridAutoSizeInputSpec::getOnFocus);

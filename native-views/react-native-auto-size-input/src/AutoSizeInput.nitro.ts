@@ -49,6 +49,9 @@ export interface AutoSizeInputProps extends HybridViewProps {
   // Let input width grow with content and push suffix to the right
   contentAutoWidth?: boolean;
 
+  // Keep prefix + input + suffix centered as a whole inside the container
+  contentCentered?: boolean;
+
   // Event callbacks
   onChangeText?: (text: string) => void;
   onFocus?: () => void;
@@ -60,4 +63,7 @@ export interface AutoSizeInputMethods extends HybridViewMethods {
   blur(): void;
 }
 
-export type AutoSizeInput = HybridView<AutoSizeInputProps, AutoSizeInputMethods>;
+export type AutoSizeInput = HybridView<
+  AutoSizeInputProps,
+  AutoSizeInputMethods
+>;

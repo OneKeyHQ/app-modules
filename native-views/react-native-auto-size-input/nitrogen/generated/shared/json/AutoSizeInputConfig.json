@@ -30,6 +30,7 @@
     "showBorder": true,
     "inputBackgroundColor": true,
     "contentAutoWidth": true,
+    "contentCentered": true,
     "onChangeText": true,
     "onFocus": true,
     "onBlur": true,

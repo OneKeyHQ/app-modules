@@ -285,6 +285,16 @@ namespace margelo::nitro::autosizeinput::views {
         throw std::runtime_error(std::string("AutoSizeInput.contentAutoWidth: ") + exc.what());
       }
     }()),
+    contentCentered([&]() -> CachedProp<std::optional<bool>> {
+      try {
+        const react::RawValue* rawValue = rawProps.at("contentCentered", nullptr, nullptr);
+        if (rawValue == nullptr) return sourceProps.contentCentered;
+        const auto& [runtime, value] = (std::pair<jsi::Runtime*, jsi::Value>)*rawValue;
+        return CachedProp<std::optional<bool>>::fromRawValue(*runtime, value, sourceProps.contentCentered);
+      } catch (const std::exception& exc) {
+        throw std::runtime_error(std::string("AutoSizeInput.contentCentered: ") + exc.what());
+      }
+    }()),
     onChangeText([&]() -> CachedProp<std::optional<std::function<void(const std::string& /* text */)>>> {
       try {
         const react::RawValue* rawValue = rawProps.at("onChangeText", nullptr, nullptr);
@@ -354,6 +364,7 @@ namespace margelo::nitro::autosizeinput::views {
     showBorder(other.showBorder),
     inputBackgroundColor(other.inputBackgroundColor),
     contentAutoWidth(other.contentAutoWidth),
+    contentCentered(other.contentCentered),
     onChangeText(other.onChangeText),
     onFocus(other.onFocus),
     onBlur(other.onBlur),
@@ -387,6 +398,7 @@ namespace margelo::nitro::autosizeinput::views {
       case hashString("showBorder"): return true;
       case hashString("inputBackgroundColor"): return true;
       case hashString("contentAutoWidth"): return true;
+      case hashString("contentCentered"): return true;
       case hashString("onChangeText"): return true;
       case hashString("onFocus"): return true;
       case hashString("onBlur"): return true;

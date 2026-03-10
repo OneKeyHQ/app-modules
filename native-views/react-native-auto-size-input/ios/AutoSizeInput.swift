@@ -210,6 +210,12 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     }
   }
 
+  var contentCentered: Bool? {
+    didSet {
+      view.setNeedsLayout()
+    }
+  }
+
   var onChangeText: ((String) -> Void)?
   var onFocus: (() -> Void)?
   var onBlur: (() -> Void)?
@@ -302,25 +308,30 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     let prefixGap = prefixLabel.isHidden ? 0 : CGFloat(prefixMarginRight ?? 0)
     let suffixGap = suffixLabel.isHidden ? 0 : CGFloat(suffixMarginLeft ?? 0)
 
-    let inputX = prefixW + prefixGap
     let isContentAutoWidthEnabled = contentAutoWidth == true && multiline != true
+    let isContentCenteredEnabled = contentCentered == true && multiline != true
+    let prefixSegment = prefixW + prefixGap
+    let suffixSegment = suffixLabel.isHidden ? 0 : (suffixGap + suffixW)
+    let maxInputWidth = max(bounds.width - prefixSegment - suffixSegment, 0)
     let inputW: CGFloat
-    let suffixX: CGFloat
 
     if isContentAutoWidthEnabled {
       let typedText = singleLineInput.text ?? ""
       let desiredInputWidth = measuredSingleLineTextWidth(typedText, font: singleLineInput.font)
-      let suffixSegment = suffixLabel.isHidden ? 0 : (suffixGap + suffixW)
-      let maxInputWidth = max(bounds.width - inputX - suffixSegment, 0)
       inputW = min(desiredInputWidth, maxInputWidth)
-      let desiredSuffixX = suffixLabel.isHidden ? bounds.width : (inputX + inputW + suffixGap)
-      suffixX = min(desiredSuffixX, bounds.width - suffixW)
     } else {
-      inputW = max(bounds.width - inputX - suffixW - suffixGap, 0)
-      suffixX = bounds.width - suffixW
+      inputW = maxInputWidth
     }
 
-    prefixLabel.frame = CGRect(x: 0, y: 0, width: prefixW, height: bounds.height)
+    let groupWidth = prefixSegment + inputW + suffixSegment
+    let groupStartX = isContentCenteredEnabled
+      ? max((bounds.width - groupWidth) / 2, 0)
+      : 0
+    let prefixX = groupStartX
+    let inputX = prefixX + prefixSegment
+    let suffixX = inputX + inputW + (suffixLabel.isHidden ? 0 : suffixGap)
+
+    prefixLabel.frame = CGRect(x: prefixX, y: 0, width: prefixW, height: bounds.height)
     suffixLabel.frame = CGRect(x: suffixX, y: 0, width: suffixW, height: bounds.height)
 
     let activeInput: UIView = (multiline == true) ? multiLineInput : singleLineInput

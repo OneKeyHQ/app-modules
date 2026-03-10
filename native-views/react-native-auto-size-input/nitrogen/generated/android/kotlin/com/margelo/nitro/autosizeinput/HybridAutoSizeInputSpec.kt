@@ -198,6 +198,12 @@ abstract class HybridAutoSizeInputSpec: HybridView() {
   @set:Keep
   abstract var contentAutoWidth: Boolean?
   
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var contentCentered: Boolean?
+  
   abstract var onChangeText: ((text: String) -> Unit)?
   
   private var onChangeText_cxx: Func_void_std__string?

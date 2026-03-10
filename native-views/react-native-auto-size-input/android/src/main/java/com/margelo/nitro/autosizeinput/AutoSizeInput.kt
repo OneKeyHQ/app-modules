@@ -342,6 +342,14 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       view.requestLayout()
     }
 
+  override var contentCentered: Boolean? = null
+    get() = field
+    set(value) {
+      if (isDisposed) return
+      field = value
+      view.requestLayout()
+    }
+
 
   override var onChangeText: ((String) -> Unit)? = null
   override var onFocus: (() -> Unit)? = null
@@ -436,24 +444,36 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     val prefixGap = if (prefixView.visibility == View.VISIBLE) ((prefixMarginRight ?: 0.0) * density).toInt() else 0
     val suffixGap = if (suffixView.visibility == View.VISIBLE) ((suffixMarginLeft ?: 0.0) * density).toInt() else 0
 
-    val inputX = edgeInset + prefixW + prefixGap
     val isContentAutoWidthEnabled = contentAutoWidth == true && multiline != true
+    val isContentCenteredEnabled = contentCentered == true && multiline != true
+    val prefixSegment = prefixW + prefixGap
+    val suffixSegment = if (suffixView.visibility == View.VISIBLE) suffixGap + suffixW else 0
+    val availableTrackWidth = maxOf(width - (edgeInset * 2), 0)
+    val maxInputWidth = maxOf(availableTrackWidth - prefixSegment - suffixSegment, 0)
     val inputW: Int
-    val suffixX: Int
 
     if (isContentAutoWidthEnabled) {
       val typedText = inputView.text?.toString() ?: ""
+      val displayText = if (typedText.isEmpty()) (placeholder ?: "") else typedText
       val minInputWidth = (24f * density).toInt()
-      val desiredInputWidth = maxOf(measureSingleLineTextWidthPx(typedText), minInputWidth)
-      val suffixSegment = if (suffixView.visibility == View.VISIBLE) suffixGap + suffixW else 0
-      val maxInputWidth = maxOf(width - edgeInset - inputX - suffixSegment, 0)
+      val singleLineWidthPadding = contentAutoWidthPaddingPx()
+      val desiredInputWidth = maxOf(
+        measureSingleLineTextWidthPx(displayText) + singleLineWidthPadding,
+        minInputWidth
+      )
       inputW = minOf(desiredInputWidth, maxInputWidth)
-      val desiredSuffixX = if (suffixView.visibility == View.VISIBLE) inputX + inputW + suffixGap else width - edgeInset
-      suffixX = minOf(desiredSuffixX, width - edgeInset - suffixW)
     } else {
-      inputW = maxOf(width - edgeInset - inputX - suffixW - suffixGap, 0)
-      suffixX = width - edgeInset - suffixW
+      inputW = maxInputWidth
     }
+
+    val groupWidth = prefixSegment + inputW + suffixSegment
+    val groupStartX = if (isContentCenteredEnabled) {
+      edgeInset + maxOf((availableTrackWidth - groupWidth) / 2, 0)
+    } else {
+      edgeInset
+    }
+    val inputX = groupStartX + prefixSegment
+    val suffixX = inputX + inputW + if (suffixView.visibility == View.VISIBLE) suffixGap else 0
 
     // Re-measure with the exact final slot size before layout.
     if (prefixView.visibility == View.VISIBLE) {
@@ -469,7 +489,6 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       )
     }
 
-    // Layout input
     val inputHeightSpec = if (multiline == true) {
       View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
     } else {
@@ -479,19 +498,51 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       View.MeasureSpec.makeMeasureSpec(inputW, View.MeasureSpec.EXACTLY),
       inputHeightSpec
     )
-    val inputH = if (multiline == true) height else inputView.measuredHeight.coerceAtMost(height)
-    val inputTop = if (multiline == true) 0 else ((height - inputH) / 2).coerceAtLeast(0)
+    val inputH = if (multiline == true) {
+      height
+    } else {
+      inputView.measuredHeight.coerceAtMost(height)
+    }
+    val inputTop = if (multiline == true) {
+      0
+    } else {
+      ((height - inputH) / 2).coerceAtLeast(0)
+    }
     inputView.layout(inputX, inputTop, inputX + inputW, inputTop + inputH)
     resetSingleLineVerticalOffset()
+    val inputBaselineY = if (multiline == true) {
+      0
+    } else {
+      val baseline = inputView.baseline
+      if (baseline >= 0) inputTop + baseline else inputTop + (inputH / 2)
+    }
 
-    val prefixTop = ((height - prefixView.measuredHeight) / 2).coerceAtLeast(0)
-    val suffixTop = ((height - suffixView.measuredHeight) / 2).coerceAtLeast(0)
+    val prefixTop = if (multiline == true) {
+      ((height - prefixView.measuredHeight) / 2).coerceAtLeast(0)
+    } else {
+      topForBaseline(prefixView, inputBaselineY, height)
+    }
+    val suffixTop = if (multiline == true) {
+      ((height - suffixView.measuredHeight) / 2).coerceAtLeast(0)
+    } else {
+      topForBaseline(suffixView, inputBaselineY, height)
+    }
 
     // Layout prefix
-    prefixView.layout(edgeInset, prefixTop, edgeInset + prefixW, prefixTop + prefixView.measuredHeight)
+    prefixView.layout(
+      groupStartX,
+      prefixTop,
+      groupStartX + prefixW,
+      prefixTop + prefixView.measuredHeight
+    )
 
     // Layout suffix
-    suffixView.layout(suffixX, suffixTop, suffixX + suffixW, suffixTop + suffixView.measuredHeight)
+    suffixView.layout(
+      suffixX,
+      suffixTop,
+      suffixX + suffixW,
+      suffixTop + suffixView.measuredHeight
+    )
 
   }
 
@@ -517,24 +568,27 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       if (isContentAutoWidthEnabled) {
         val density = context.resources.displayMetrics.density
         val edgeInset = (2f * density).toInt()
+        val singleLineWidthPadding = contentAutoWidthPaddingPx()
         val prefixW = if (prefixView.visibility == View.VISIBLE) measureTextViewWidthPx(prefixView) else 0
         val suffixW = if (suffixView.visibility == View.VISIBLE) measureTextViewWidthPx(suffixView) else 0
         val prefixGap = if (prefixView.visibility == View.VISIBLE) ((prefixMarginRight ?: 0.0) * density).toInt() else 0
         val suffixGap = if (suffixView.visibility == View.VISIBLE) ((suffixMarginLeft ?: 0.0) * density).toInt() else 0
-        val inputX = edgeInset + prefixW + prefixGap
+        val prefixSegment = prefixW + prefixGap
         val suffixSegment = if (suffixView.visibility == View.VISIBLE) suffixGap + suffixW else 0
-        val maxInputWidth = maxOf(width - edgeInset - inputX - suffixSegment, 0)
+        val availableTrackWidth = maxOf(width - (edgeInset * 2), 0)
+        val maxInputWidth = maxOf(availableTrackWidth - prefixSegment - suffixSegment, 0)
+        val maxTextWidth = maxOf(maxInputWidth - singleLineWidthPadding, 0)
         val textForSizing = if (inputText.isEmpty()) (placeholder ?: "") else inputText
 
         // Expand width first; once width hits max, shrink font to keep full text visible.
-        val targetSize = if (maxInputWidth <= 0) {
+        val targetSize = if (maxTextWidth <= 0) {
           minSize
         } else if (textForSizing.isEmpty()) {
           maxSize
         } else {
           findOptimalFontSizeSingleLine(
             fullText = textForSizing,
-            availableWidth = maxInputWidth.toFloat(),
+            availableWidth = maxTextWidth.toFloat(),
             minSize = minSize,
             maxSize = maxSize
           )
@@ -737,6 +791,22 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     if (inputView.scrollY != 0) {
       inputView.scrollTo(inputView.scrollX, 0)
     }
+  }
+
+  private fun contentAutoWidthPaddingPx(): Int {
+    val density = context.resources.displayMetrics.density
+    return (8f * density).toInt()
+  }
+
+  private fun topForBaseline(textView: TextView, targetBaseline: Int, containerHeight: Int): Int {
+    val measuredHeight = textView.measuredHeight
+    if (measuredHeight <= 0) return 0
+    val baseline = textView.baseline
+    val fallback = ((containerHeight - measuredHeight) / 2).coerceAtLeast(0)
+    if (baseline < 0) return fallback
+    val rawTop = targetBaseline - baseline
+    val maxTop = maxOf(containerHeight - measuredHeight, 0)
+    return rawTop.coerceIn(0, maxTop)
   }
 
   override fun afterUpdate() {
