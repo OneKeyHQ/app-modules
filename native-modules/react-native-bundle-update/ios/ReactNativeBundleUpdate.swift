@@ -1029,6 +1029,22 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         }
     }
 
+    func resetToBuiltInBundle() throws -> Promise<Void> {
+        return Promise.async {
+            OneKeyLog.info("BundleUpdate", "resetToBuiltInBundle: clearing currentBundleVersion preference...")
+            let ud = UserDefaults.standard
+            if let cbv = ud.string(forKey: "currentBundleVersion") {
+                ud.removeObject(forKey: cbv)
+                ud.removeObject(forKey: "currentBundleVersion")
+                OneKeyLog.info("BundleUpdate", "resetToBuiltInBundle: removed currentBundleVersion=\(cbv)")
+            } else {
+                OneKeyLog.info("BundleUpdate", "resetToBuiltInBundle: no currentBundleVersion set, already using built-in bundle")
+            }
+            ud.synchronize()
+            OneKeyLog.info("BundleUpdate", "resetToBuiltInBundle: completed, app will use built-in bundle on next restart")
+        }
+    }
+
     func clearAllJSBundleData() throws -> Promise<TestResult> {
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: starting...")

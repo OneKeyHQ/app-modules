@@ -76,6 +76,10 @@ abstract class HybridReactNativeBundleUpdateSpec: HybridObject() {
   
   @DoNotStrip
   @Keep
+  abstract fun resetToBuiltInBundle(): Promise<Unit>
+  
+  @DoNotStrip
+  @Keep
   abstract fun getFallbackUpdateBundleData(): Promise<Array<FallbackBundleInfo>>
   
   @DoNotStrip

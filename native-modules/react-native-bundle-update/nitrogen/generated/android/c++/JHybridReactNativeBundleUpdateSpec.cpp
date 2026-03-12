@@ -203,6 +203,21 @@ namespace margelo::nitro::reactnativebundleupdate {
       return __promise;
     }();
   }
+  std::shared_ptr<Promise<void>> JHybridReactNativeBundleUpdateSpec::resetToBuiltInBundle() {
+    static const auto method = javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>()>("resetToBuiltInBundle");
+    auto __result = method(_javaPart);
+    return [&]() {
+      auto __promise = Promise<void>::create();
+      __result->cthis()->addOnResolvedListener([=](const jni::alias_ref<jni::JObject>& /* unit */) {
+        __promise->resolve();
+      });
+      __result->cthis()->addOnRejectedListener([=](const jni::alias_ref<jni::JThrowable>& __throwable) {
+        jni::JniException __jniError(__throwable);
+        __promise->reject(std::make_exception_ptr(__jniError));
+      });
+      return __promise;
+    }();
+  }
   std::shared_ptr<Promise<std::vector<FallbackBundleInfo>>> JHybridReactNativeBundleUpdateSpec::getFallbackUpdateBundleData() {
     static const auto method = javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>()>("getFallbackUpdateBundleData");
     auto __result = method(_javaPart);

@@ -1066,6 +1066,22 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
+    override fun resetToBuiltInBundle(): Promise<Unit> {
+        return Promise.async {
+            OneKeyLog.info("BundleUpdate", "resetToBuiltInBundle: clearing currentBundleVersion preference...")
+            val context = getContext()
+            val prefs = context.getSharedPreferences("BundleUpdatePrefs", Context.MODE_PRIVATE)
+            val currentVersion = prefs.getString("currentBundleVersion", null)
+            if (currentVersion != null) {
+                prefs.edit().remove("currentBundleVersion").apply()
+                OneKeyLog.info("BundleUpdate", "resetToBuiltInBundle: removed currentBundleVersion=$currentVersion")
+            } else {
+                OneKeyLog.info("BundleUpdate", "resetToBuiltInBundle: no currentBundleVersion set, already using built-in bundle")
+            }
+            OneKeyLog.info("BundleUpdate", "resetToBuiltInBundle: completed, app will use built-in bundle on next restart")
+        }
+    }
+
     override fun clearAllJSBundleData(): Promise<TestResult> {
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: starting...")

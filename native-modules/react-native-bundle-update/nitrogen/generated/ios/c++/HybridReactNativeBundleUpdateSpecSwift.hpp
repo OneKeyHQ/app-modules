@@ -154,6 +154,14 @@ namespace margelo::nitro::reactnativebundleupdate {
       auto __value = std::move(__result.value());
       return __value;
     }
+    inline std::shared_ptr<Promise<void>> resetToBuiltInBundle() override {
+      auto __result = _swiftPart.resetToBuiltInBundle();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
     inline std::shared_ptr<Promise<std::vector<FallbackBundleInfo>>> getFallbackUpdateBundleData() override {
       auto __result = _swiftPart.getFallbackUpdateBundleData();
       if (__result.hasError()) [[unlikely]] {

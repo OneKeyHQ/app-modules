@@ -93,6 +93,7 @@ namespace margelo::nitro::reactnativebundleupdate {
       virtual std::shared_ptr<Promise<void>> installBundle(const BundleInstallParams& params) = 0;
       virtual std::shared_ptr<Promise<void>> clearBundle() = 0;
       virtual std::shared_ptr<Promise<TestResult>> clearAllJSBundleData() = 0;
+      virtual std::shared_ptr<Promise<void>> resetToBuiltInBundle() = 0;
       virtual std::shared_ptr<Promise<std::vector<FallbackBundleInfo>>> getFallbackUpdateBundleData() = 0;
       virtual std::shared_ptr<Promise<void>> setCurrentUpdateBundleData(const BundleSwitchParams& params) = 0;
       virtual std::string getWebEmbedPath() = 0;

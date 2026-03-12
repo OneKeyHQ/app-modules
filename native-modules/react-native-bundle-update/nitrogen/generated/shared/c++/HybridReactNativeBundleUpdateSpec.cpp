@@ -21,6 +21,7 @@ namespace margelo::nitro::reactnativebundleupdate {
       prototype.registerHybridMethod("installBundle", &HybridReactNativeBundleUpdateSpec::installBundle);
       prototype.registerHybridMethod("clearBundle", &HybridReactNativeBundleUpdateSpec::clearBundle);
       prototype.registerHybridMethod("clearAllJSBundleData", &HybridReactNativeBundleUpdateSpec::clearAllJSBundleData);
+      prototype.registerHybridMethod("resetToBuiltInBundle", &HybridReactNativeBundleUpdateSpec::resetToBuiltInBundle);
       prototype.registerHybridMethod("getFallbackUpdateBundleData", &HybridReactNativeBundleUpdateSpec::getFallbackUpdateBundleData);
       prototype.registerHybridMethod("setCurrentUpdateBundleData", &HybridReactNativeBundleUpdateSpec::setCurrentUpdateBundleData);
       prototype.registerHybridMethod("getWebEmbedPath", &HybridReactNativeBundleUpdateSpec::getWebEmbedPath);

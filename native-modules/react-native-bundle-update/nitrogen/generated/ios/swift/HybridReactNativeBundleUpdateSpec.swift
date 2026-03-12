@@ -21,6 +21,7 @@ public protocol HybridReactNativeBundleUpdateSpec_protocol: HybridObject {
   func installBundle(params: BundleInstallParams) throws -> Promise<Void>
   func clearBundle() throws -> Promise<Void>
   func clearAllJSBundleData() throws -> Promise<TestResult>
+  func resetToBuiltInBundle() throws -> Promise<Void>
   func getFallbackUpdateBundleData() throws -> Promise<[FallbackBundleInfo]>
   func setCurrentUpdateBundleData(params: BundleSwitchParams) throws -> Promise<Void>
   func getWebEmbedPath() throws -> String
