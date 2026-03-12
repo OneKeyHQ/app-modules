@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.37] - 2026-03-12
+
+### Features
+- **bundle-update**: Add `resetToBuiltInBundle()` API to clear the current bundle version preference, reverting to built-in JS bundle on next restart
+
+### Chores
+- Bump all native modules and views to 1.1.37
+
 ## [1.1.36] - 2026-03-10
 
 ### Features
