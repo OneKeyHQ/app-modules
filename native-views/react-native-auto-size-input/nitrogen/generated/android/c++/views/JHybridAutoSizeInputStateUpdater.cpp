@@ -140,6 +140,10 @@ void JHybridAutoSizeInputStateUpdater::updateViewProps(jni::alias_ref<jni::JClas
     view->setContentAutoWidth(props.contentAutoWidth.value);
     // TODO: Set isDirty = false
   }
+  if (props.contentCentered.isDirty) {
+    view->setContentCentered(props.contentCentered.value);
+    // TODO: Set isDirty = false
+  }
   if (props.onChangeText.isDirty) {
     view->setOnChangeText(props.onChangeText.value);
     // TODO: Set isDirty = false

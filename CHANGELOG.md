@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.36] - 2026-03-10
+
+### Features
+- **auto-size-input**: Add `contentCentered` prop to center prefix/input/suffix as one visual group in single-line mode
+
+### Bug Fixes
+- **auto-size-input (Android)**: Improve baseline centering and centered-layout width calculations for single-line input
+- **auto-size-input (iOS)**: Align auto-width sizing behavior with Android so content width and suffix positioning stay consistent
+
+### Chores
+- Bump all native modules and views to 1.1.36
+
+## [1.1.35] - 2026-03-10
+
+### Features
+- **pager-view**: Add local `@onekeyfe/react-native-pager-view` package in `native-views` with iOS and Android support
+- **example**: Add PagerView test page and route integration, including nested pager demos
+
+### Bug Fixes
+- **pager-view**: Fix layout metrics/child-view guards and scope refresh-layout callback to the host instance
+- **tab-view**: Guard invalid route keys in tab press/long-press callbacks and safely resync selected tab on Android
+
+### Chores
+- Bump all native modules and views to 1.1.35
+
 ## [1.1.34] - 2026-03-09
 
 ### Bug Fixes

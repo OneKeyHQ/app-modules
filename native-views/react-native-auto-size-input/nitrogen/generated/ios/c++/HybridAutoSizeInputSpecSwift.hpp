@@ -240,6 +240,13 @@ namespace margelo::nitro::autosizeinput {
     inline void setContentAutoWidth(std::optional<bool> contentAutoWidth) noexcept override {
       _swiftPart.setContentAutoWidth(contentAutoWidth);
     }
+    inline std::optional<bool> getContentCentered() noexcept override {
+      auto __result = _swiftPart.getContentCentered();
+      return __result;
+    }
+    inline void setContentCentered(std::optional<bool> contentCentered) noexcept override {
+      _swiftPart.setContentCentered(contentCentered);
+    }
     inline std::optional<std::function<void(const std::string& /* text */)>> getOnChangeText() noexcept override {
       auto __result = _swiftPart.getOnChangeText();
       return __result;

@@ -69,6 +69,7 @@ namespace margelo::nitro::autosizeinput::views {
     CachedProp<std::optional<bool>> showBorder;
     CachedProp<std::optional<std::string>> inputBackgroundColor;
     CachedProp<std::optional<bool>> contentAutoWidth;
+    CachedProp<std::optional<bool>> contentCentered;
     CachedProp<std::optional<std::function<void(const std::string& /* text */)>>> onChangeText;
     CachedProp<std::optional<std::function<void()>>> onFocus;
     CachedProp<std::optional<std::function<void()>>> onBlur;

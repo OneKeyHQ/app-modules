@@ -201,6 +201,11 @@ using namespace margelo::nitro::autosizeinput::views;
     swiftPart.setContentAutoWidth(newViewProps.contentAutoWidth.value);
     newViewProps.contentAutoWidth.isDirty = false;
   }
+  // contentCentered: optional
+  if (newViewProps.contentCentered.isDirty) {
+    swiftPart.setContentCentered(newViewProps.contentCentered.value);
+    newViewProps.contentCentered.isDirty = false;
+  }
   // onChangeText: optional
   if (newViewProps.onChangeText.isDirty) {
     swiftPart.setOnChangeText(newViewProps.onChangeText.value);
