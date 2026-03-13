@@ -14,6 +14,7 @@ import { DeviceUtilsTestPage } from './pages/DeviceUtilsTestPage';
 import { SkeletonTestPage } from './pages/SkeletonTestPage';
 import { NativeLoggerTestPage } from './pages/NativeLoggerTestPage';
 import { PagerViewTestPage } from './pages/PagerViewTestPage';
+import { ScrollGuardTestPage } from './pages/ScrollGuardTestPage';
 import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
 import { BundleUpdateTestPage } from './pages/BundleUpdateTestPage';
 import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
@@ -45,6 +46,7 @@ export type RootStackParamList = {
   NativeLogger: undefined;
   PagerView: undefined;
   PerfMemory: undefined;
+  ScrollGuard: undefined;
   Skeleton: undefined;
   SplashScreen: undefined;
   TabView: undefined;
@@ -133,6 +135,12 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
     name: 'Perf Memory',
     description: 'Read process memory usage (RSS) for performance monitoring',
     icon: '📊',
+  },
+  {
+    screen: 'ScrollGuard',
+    name: 'Scroll Guard',
+    description: 'Prevent parent PagerView from intercepting child ScrollView gestures',
+    icon: '🛡️',
   },
   {
     screen: 'Skeleton',
@@ -340,6 +348,7 @@ export function AppNavigator() {
       <Stack.Screen name="NativeLogger" component={NativeLoggerTestPage} options={{ title: 'Native Logger' }} />
       <Stack.Screen name="PagerView" component={PagerViewTestPage} options={{ title: 'Pager View' }} />
       <Stack.Screen name="PerfMemory" component={PerfMemoryTestPage} options={{ title: 'Perf Memory' }} />
+      <Stack.Screen name="ScrollGuard" component={ScrollGuardTestPage} options={{ title: 'Scroll Guard' }} />
       <Stack.Screen name="Skeleton" component={SkeletonTestPage} options={{ title: 'Skeleton' }} />
       <Stack.Screen name="SplashScreen" component={SplashScreenTestPage} options={{ title: 'Splash Screen' }} />
       <Stack.Screen name="TabView" component={TabViewTestPage} options={{ title: 'Tab View' }} />

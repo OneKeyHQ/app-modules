@@ -97,6 +97,7 @@ export interface ReactNativeBundleUpdate
   // Clear
   clearBundle(): Promise<void>;
   clearAllJSBundleData(): Promise<TestResult>;
+  resetToBuiltInBundle(): Promise<void>;
 
   // Bundle data
   getFallbackUpdateBundleData(): Promise<FallbackBundleInfo[]>;
