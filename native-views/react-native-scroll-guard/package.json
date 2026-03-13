@@ -48,6 +48,7 @@
     "scroll",
     "pager"
   ],
+  "homepage": "https://github.com/OneKeyHQ/app-modules#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/OneKeyHQ/app-modules.git"
