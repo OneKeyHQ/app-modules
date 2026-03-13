@@ -147,8 +147,6 @@ class ScrollGuardView: UIView, UIGestureRecognizerDelegate {
     connectedPager = pagerSV
     connectedChild = childSV
     pagerScrollEnabledOriginal = pagerSV.isScrollEnabled
-
-    print("[ScrollGuard] setup OK - child=\(type(of: childSV)), pager gestures blocked: \(pagerSV.gestureRecognizers?.count ?? 0)")
   }
 
   // MARK: - Touch detector handler
