@@ -31,6 +31,7 @@ function HorizontalBanner({ guarded }: { guarded: boolean }) {
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      bounces={false}
       contentContainerStyle={styles.bannerContainer}
     >
       {BANNER_ITEMS.map((item) => (
