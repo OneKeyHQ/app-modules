@@ -6,8 +6,6 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.model.ReactModuleInfoProvider
 import com.facebook.react.uimanager.ViewManager
 
-import com.margelo.nitro.scrollguard.views.HybridScrollGuardManager
-
 class ScrollGuardPackage : BaseReactPackage() {
     override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
         return null
@@ -18,7 +16,7 @@ class ScrollGuardPackage : BaseReactPackage() {
     }
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
-        return listOf(HybridScrollGuardManager())
+        return listOf(ScrollGuardViewGroupManager())
     }
 
     companion object {
