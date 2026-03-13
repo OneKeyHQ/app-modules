@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.38] - 2026-03-14
+
+### Features
+- **scroll-guard**: Add new `@onekeyfe/react-native-scroll-guard` native view module that prevents parent scrollable containers (PagerView/ViewPager2) from intercepting child scroll gestures
+- **scroll-guard**: Support `direction` prop with horizontal, vertical, and both modes
+
+### Bug Fixes
+- **scroll-guard (Android)**: Use `ViewGroupManager` instead of nitrogen-generated `SimpleViewManager` to properly support child views (fixes `IViewGroupManager` ClassCastException)
+- **scroll-guard (iOS)**: Improve gesture blocking reliability
+
+### Chores
+- Add `nitrogen/` to `.gitignore` and remove tracked nitrogen files
+- Bump all native modules and views to 1.1.38
+
 ## [1.1.37] - 2026-03-12
 
 ### Features
