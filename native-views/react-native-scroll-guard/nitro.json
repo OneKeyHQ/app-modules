@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["scrollguard"],
+  "ios": {
+    "iosModuleName": "ScrollGuard"
+  },
+  "android": {
+    "androidNamespace": ["scrollguard"],
+    "androidCxxLibName": "scrollguard"
+  },
+  "autolinking": {
+    "ScrollGuard": {
+      "swift": "HybridScrollGuard",
+      "kotlin": "HybridScrollGuard"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

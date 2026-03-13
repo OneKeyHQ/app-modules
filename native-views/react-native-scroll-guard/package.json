@@ -1,0 +1,105 @@
+{
+  "name": "@onekeyfe/react-native-scroll-guard",
+  "version": "0.1.0",
+  "description": "A native view wrapper that prevents parent scrollable containers (PagerView/ViewPager2) from intercepting child scroll gestures",
+  "main": "./lib/module/index.js",
+  "types": "./lib/typescript/src/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.tsx",
+      "types": "./lib/typescript/src/index.d.ts",
+      "default": "./lib/module/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "android",
+    "ios",
+    "cpp",
+    "nitrogen",
+    "nitro.json",
+    "*.podspec",
+    "react-native.config.js",
+    "!ios/build",
+    "!android/build",
+    "!android/gradle",
+    "!android/gradlew",
+    "!android/gradlew.bat",
+    "!android/local.properties",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*"
+  ],
+  "scripts": {
+    "clean": "del-cli android/build lib",
+    "prepare": "rm -rf lib && bob build && cp -r nitrogen lib/nitrogen",
+    "nitrogen": "nitrogen",
+    "typecheck": "tsc",
+    "release": "yarn nitrogen && yarn prepare && npm whoami && npm publish --access public"
+  },
+  "keywords": [
+    "react-native",
+    "ios",
+    "android",
+    "gesture",
+    "scroll",
+    "pager"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git"
+  },
+  "author": "@onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "@react-native/babel-preset": "0.83.0",
+    "del-cli": "^6.0.0",
+    "nitrogen": "0.31.10",
+    "react": "19.2.0",
+    "react-native": "0.83.0",
+    "react-native-builder-bob": "^0.40.13",
+    "react-native-nitro-modules": "0.33.2",
+    "typescript": "^5.9.2"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*",
+    "react-native-nitro-modules": "0.33.2"
+  },
+  "packageManager": "yarn@4.11.0",
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "custom",
+        {
+          "script": "nitrogen",
+          "clean": "nitrogen/"
+        }
+      ],
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
+  },
+  "create-react-native-library": {
+    "type": "nitro-view",
+    "languages": "kotlin-swift"
+  }
+}

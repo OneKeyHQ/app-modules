@@ -1,0 +1,10 @@
+{
+  "uiViewClassName": "ScrollGuard",
+  "supportsRawText": false,
+  "bubblingEventTypes": {},
+  "directEventTypes": {},
+  "validAttributes": {
+    "direction": true,
+    "hybridRef": true
+  }
+}
