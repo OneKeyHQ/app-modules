@@ -291,6 +291,57 @@ export function DeviceUtilsTestPage() {
     }
   };
 
+  // Boot Recovery
+  const testMarkBootSuccess = () => {
+    clearResults();
+    try {
+      deviceUtils.markBootSuccess();
+      setResult({ markBootSuccess: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
+  const testGetConsecutiveBootFailCount = async () => {
+    clearResults();
+    try {
+      const count = await deviceUtils.getConsecutiveBootFailCount();
+      setResult({ consecutiveBootFailCount: count });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
+  const testIncrementConsecutiveBootFailCount = () => {
+    clearResults();
+    try {
+      deviceUtils.incrementConsecutiveBootFailCount();
+      setResult({ incrementConsecutiveBootFailCount: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
+  const testSetConsecutiveBootFailCount = () => {
+    clearResults();
+    try {
+      deviceUtils.setConsecutiveBootFailCount(3);
+      setResult({ setConsecutiveBootFailCount: 3 });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
+  const testGetAndClearRecoveryAction = async () => {
+    clearResults();
+    try {
+      const action = await deviceUtils.getAndClearRecoveryAction();
+      setResult({ recoveryAction: action || '(empty)' });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+
   // ExitModule
   const testExitApp = () => {
     Alert.alert(
@@ -511,6 +562,36 @@ export function DeviceUtilsTestPage() {
         />
       </View>
 
+      {/* Boot Recovery */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Boot Recovery</Text>
+
+        <TestButton
+          title="Get Consecutive Boot Fail Count"
+          onPress={testGetConsecutiveBootFailCount}
+        />
+
+        <TestButton
+          title="Increment Boot Fail Count"
+          onPress={testIncrementConsecutiveBootFailCount}
+        />
+
+        <TestButton
+          title="Set Boot Fail Count to 3"
+          onPress={testSetConsecutiveBootFailCount}
+        />
+
+        <TestButton
+          title="Mark Boot Success (reset to 0)"
+          onPress={testMarkBootSuccess}
+        />
+
+        <TestButton
+          title="Get & Clear Recovery Action"
+          onPress={testGetAndClearRecoveryAction}
+        />
+      </View>
+
       {/* Exit App */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Exit App</Text>
@@ -536,6 +617,7 @@ export function DeviceUtilsTestPage() {
           • Startup Time: Time in ms from native app start{'\n'}
           • WebView: Shows installed WebView package info (Android){'\n'}
           • Play Services: Checks Google Play Services availability (Android){'\n'}
+          • Boot Recovery: Test boot fail counting and recovery action persistence{'\n'}
           • Exit App: Terminates the app process (with confirmation)
         </Text>
       </View>
