@@ -52,4 +52,11 @@ export interface ReactNativeDeviceUtils
   // WebView & Play Services
   getCurrentWebViewPackageInfo(): Promise<WebViewPackageInfo>;
   isGooglePlayServicesAvailable(): Promise<GooglePlayServicesStatus>;
+
+  // Boot Recovery
+  markBootSuccess(): void;
+  getConsecutiveBootFailCount(): Promise<number>;
+  incrementConsecutiveBootFailCount(): void;
+  setConsecutiveBootFailCount(count: number): void;
+  getAndClearRecoveryAction(): Promise<string>;
 }

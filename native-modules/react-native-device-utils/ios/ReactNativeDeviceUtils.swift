@@ -200,4 +200,40 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
             isAvailable: false
         ))
     }
+
+    // MARK: - Boot Recovery
+
+    private static let bootFailCountKey = "onekey_consecutive_boot_fail_count"
+    private static let recoveryActionKey = "onekey_recovery_action"
+
+    func markBootSuccess() throws -> Void {
+        UserDefaults.standard.set(0, forKey: ReactNativeDeviceUtils.bootFailCountKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    func getConsecutiveBootFailCount() throws -> Promise<Double> {
+        return Promise.resolved(withResult:
+            Double(UserDefaults.standard.integer(forKey: ReactNativeDeviceUtils.bootFailCountKey))
+        )
+    }
+
+    func incrementConsecutiveBootFailCount() throws -> Void {
+        let current = UserDefaults.standard.integer(forKey: ReactNativeDeviceUtils.bootFailCountKey)
+        UserDefaults.standard.set(current + 1, forKey: ReactNativeDeviceUtils.bootFailCountKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    func setConsecutiveBootFailCount(count: Double) throws -> Void {
+        UserDefaults.standard.set(Int(count), forKey: ReactNativeDeviceUtils.bootFailCountKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    func getAndClearRecoveryAction() throws -> Promise<String> {
+        let action = UserDefaults.standard.string(forKey: ReactNativeDeviceUtils.recoveryActionKey) ?? ""
+        if !action.isEmpty {
+            UserDefaults.standard.removeObject(forKey: ReactNativeDeviceUtils.recoveryActionKey)
+            UserDefaults.standard.synchronize()
+        }
+        return Promise.resolved(withResult: action)
+    }
 }

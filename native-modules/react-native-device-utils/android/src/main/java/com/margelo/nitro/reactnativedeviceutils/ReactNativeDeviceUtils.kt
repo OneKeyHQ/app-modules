@@ -39,6 +39,9 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     private const val PREF_KEY_FOLDABLE = "1k_fold"
     private const val PREF_KEY_UI_STYLE = "1k_user_interface_style"
     private const val PREF_KEY_DEVICE_TOKEN = "1k_device_token"
+    private const val RECOVERY_PREFS_NAME = "onekey_recovery"
+    private const val BOOT_FAIL_COUNT_KEY = "consecutive_boot_fail_count"
+    private const val RECOVERY_ACTION_KEY = "recovery_action"
 
     @JvmStatic
     var staticStartupTime: Long? = null
@@ -986,5 +989,42 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
                 GooglePlayServicesStatus(status = -1.0, isAvailable = false)
             }
         }
+    }
+
+    // MARK: - Boot Recovery
+
+    private fun getRecoveryPrefs(): android.content.SharedPreferences {
+        val context = NitroModules.applicationContext
+            ?: throw Exception("Application context unavailable")
+        return context.getSharedPreferences(RECOVERY_PREFS_NAME, Context.MODE_PRIVATE)
+    }
+
+    override fun markBootSuccess() {
+        getRecoveryPrefs().edit().putInt(BOOT_FAIL_COUNT_KEY, 0).commit()
+    }
+
+    override fun getConsecutiveBootFailCount(): Promise<Double> {
+        return Promise.resolved(
+            getRecoveryPrefs().getInt(BOOT_FAIL_COUNT_KEY, 0).toDouble()
+        )
+    }
+
+    override fun incrementConsecutiveBootFailCount() {
+        val prefs = getRecoveryPrefs()
+        val current = prefs.getInt(BOOT_FAIL_COUNT_KEY, 0)
+        prefs.edit().putInt(BOOT_FAIL_COUNT_KEY, current + 1).commit()
+    }
+
+    override fun setConsecutiveBootFailCount(count: Double) {
+        getRecoveryPrefs().edit().putInt(BOOT_FAIL_COUNT_KEY, count.toInt()).commit()
+    }
+
+    override fun getAndClearRecoveryAction(): Promise<String> {
+        val prefs = getRecoveryPrefs()
+        val action = prefs.getString(RECOVERY_ACTION_KEY, "") ?: ""
+        if (action.isNotEmpty()) {
+            prefs.edit().remove(RECOVERY_ACTION_KEY).commit()
+        }
+        return Promise.resolved(action)
     }
 }

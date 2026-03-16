@@ -173,7 +173,7 @@ object BundleUpdateStoreAndroid {
 
     fun clearUpdateBundleData(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().clear().apply()
+        prefs.edit().clear().commit()
         // Clear all signature files
         val ascDir = File(getAscDir(context))
         if (ascDir.exists()) {
