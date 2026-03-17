@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.41] - 2026-03-17
+
+### Features
+- **bundle-update**: Add buildNumber change detection in `getJsBundlePath()` — clears hot-update bundle data and falls back to builtin JS bundle when native buildNumber changes
+- **bundle-update**: Add `getNativeBuildNumber()` and `getBuiltinBundleVersion()` APIs on both iOS and Android
+
+### Bug Fixes
+- **bundle-update (iOS)**: Guard against empty stored buildNumber to match Android behavior in build number change detection
+- **bundle-update (Android)**: Use `get().toString()` instead of `getString()` in `getBuiltinBundleVersion()` to handle numeric meta-data values that AAPT2 stores as Integer
+
+### Chores
+- Bump all native modules and views to 1.1.41
+
 ## [1.1.39] - 2026-03-17
 
 ### Features
