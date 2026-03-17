@@ -298,15 +298,36 @@ object BundleUpdateStoreAndroid {
             val signature = payload.optString("signature")
             if (appVersion.isEmpty() || bundleVersion.isEmpty()) return
 
-            // 5. Verify bundle directory exists
+            // 5. Verify bundle directory and entry file exist
             val folderName = "$appVersion-$bundleVersion"
             val bundleDirPath = File(getBundleDir(context), folderName)
             if (!bundleDirPath.exists()) return
+            val entryFile = File(bundleDirPath, "main.jsbundle.hbc")
+            if (!entryFile.exists()) {
+                OneKeyLog.warn("BundleUpdate", "processPreLaunchPendingTask: bundle dir exists but entry file missing: ${entryFile.absolutePath}")
+                return
+            }
 
-            // 6. Apply (same as installBundle)
-            setCurrentBundleVersionAndSignature(context, folderName, signature)
-            setNativeVersion(context, currentAppVersion)
-            setNativeBuildNumber(context, getBuildNumber(context))
+            // 6. Apply (same as installBundle) — use commit() for synchronous writes
+            //    to ensure all prefs are persisted atomically before proceeding.
+            val bundlePrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val versionPrefs = context.getSharedPreferences(NATIVE_VERSION_PREFS_NAME, Context.MODE_PRIVATE)
+            val currentVersion = bundlePrefs.getString(CURRENT_BUNDLE_VERSION_KEY, "")
+            bundlePrefs.edit()
+                .putString(CURRENT_BUNDLE_VERSION_KEY, folderName)
+                .apply {
+                    if (!currentVersion.isNullOrEmpty()) {
+                        remove(currentVersion) // legacy signature key cleanup
+                    }
+                }
+                .commit()
+            if (!signature.isNullOrEmpty()) {
+                writeSignatureFile(context, folderName, signature)
+            }
+            versionPrefs.edit()
+                .putString("nativeVersion", currentAppVersion)
+                .putString("nativeBuildNumber", getBuildNumber(context))
+                .commit()
 
             // 7. Update MMKV task status → applied_waiting_verify
             // Do NOT set runningStartedAt — a falsy value lets JS skip the

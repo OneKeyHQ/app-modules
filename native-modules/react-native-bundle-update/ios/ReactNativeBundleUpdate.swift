@@ -257,10 +257,15 @@ public class BundleUpdateStore: NSObject {
                   !appVersion.isEmpty, !bundleVersion.isEmpty
             else { return }
 
-            // 5. Verify bundle directory exists
+            // 5. Verify bundle directory and entry file exist
             let folderName = "\(appVersion)-\(bundleVersion)"
             let bundleDirPath = (bundleDir() as NSString).appendingPathComponent(folderName)
             guard FileManager.default.fileExists(atPath: bundleDirPath) else { return }
+            let entryFilePath = (bundleDirPath as NSString).appendingPathComponent("main.jsbundle.hbc")
+            guard FileManager.default.fileExists(atPath: entryFilePath) else {
+                OneKeyLog.warn("BundleUpdate", "processPreLaunchPendingTask: bundle dir exists but entry file missing: \(entryFilePath)")
+                return
+            }
 
             // 6. Apply: set currentBundleVersion (same as installBundle)
             let ud = UserDefaults.standard
