@@ -241,7 +241,7 @@ object BundleUpdateStoreAndroid {
     fun getBuiltinBundleVersion(context: Context): String {
         return try {
             val appInfo = context.packageManager.getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA)
-            appInfo.metaData?.getString("BUNDLE_VERSION") ?: ""
+            appInfo.metaData?.get("BUNDLE_VERSION")?.toString() ?: ""
         } catch (e: Exception) {
             OneKeyLog.error("BundleUpdate", "Error getting builtin bundle version: ${e.message}")
             ""
