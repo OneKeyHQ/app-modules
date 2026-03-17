@@ -2757,6 +2757,7 @@ __metadata:
     "@onekeyfe/react-native-native-logger": "workspace:*"
     "@onekeyfe/react-native-pager-view": "workspace:*"
     "@onekeyfe/react-native-perf-memory": "workspace:*"
+    "@onekeyfe/react-native-scroll-guard": "workspace:*"
     "@onekeyfe/react-native-skeleton": "workspace:*"
     "@onekeyfe/react-native-splash-screen": "workspace:*"
     "@onekeyfe/react-native-tab-view": "workspace:*"
@@ -3258,6 +3259,25 @@ __metadata:
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+    react-native-nitro-modules: 0.33.2
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-scroll-guard@workspace:*, @onekeyfe/react-native-scroll-guard@workspace:native-views/react-native-scroll-guard":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-scroll-guard@workspace:native-views/react-native-scroll-guard"
+  dependencies:
+    "@react-native/babel-preset": "npm:0.83.0"
+    del-cli: "npm:^6.0.0"
+    nitrogen: "npm:0.31.10"
+    react: "npm:19.2.0"
+    react-native: "npm:0.83.0"
+    react-native-builder-bob: "npm:^0.40.13"
+    react-native-nitro-modules: "npm:0.33.2"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
