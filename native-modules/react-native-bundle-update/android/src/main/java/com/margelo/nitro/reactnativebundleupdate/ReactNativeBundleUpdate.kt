@@ -248,6 +248,79 @@ object BundleUpdateStoreAndroid {
         }
     }
 
+    // Pre-launch pending task processing
+
+    @Volatile
+    private var didProcessPreLaunchTask = false
+
+    /**
+     * Checks MMKV for a pending bundle-switch task and applies it before JS runtime starts.
+     * Only handles the happy path (status=pending, bundle exists, env matches).
+     * All complex logic (retry, download, error handling) remains in JS layer.
+     */
+    fun processPreLaunchPendingTask(context: Context) {
+        if (didProcessPreLaunchTask) return
+        didProcessPreLaunchTask = true
+        try {
+            // 1. Read MMKV
+            MMKV.initialize(context)
+            val mmkv = MMKV.mmkvWithID("onekey-app-setting") ?: return
+            val taskJson = mmkv.decodeString("onekey_pending_install_task") ?: return
+            val taskObj = JSONObject(taskJson)
+
+            // 2. Validate task fields
+            if (taskObj.optString("status") != "pending") return
+            if (taskObj.optString("action") != "switch-bundle") return
+            if (taskObj.optString("type") != "jsbundle-switch") return
+
+            val now = System.currentTimeMillis()
+            if (taskObj.optLong("expiresAt", 0) <= now) return
+            val nextRetryAt = taskObj.optLong("nextRetryAt", 0)
+            if (nextRetryAt > 0 && nextRetryAt > now) return
+
+            // 3. Verify scheduledEnv matches current state
+            val currentAppVersion = getAppVersion(context) ?: return
+            if (taskObj.optString("scheduledEnvAppVersion") != currentAppVersion) return
+
+            val currentBV = getCurrentBundleVersion(context)
+            val currentBundleVersionStr = if (currentBV != null) {
+                val idx = currentBV.lastIndexOf("-")
+                if (idx > 0) currentBV.substring(idx + 1) else getBuiltinBundleVersion(context)
+            } else {
+                getBuiltinBundleVersion(context)
+            }
+            if (taskObj.optString("scheduledEnvBundleVersion") != currentBundleVersionStr) return
+
+            // 4. Extract payload
+            val payload = taskObj.optJSONObject("payload") ?: return
+            val appVersion = payload.optString("appVersion")
+            val bundleVersion = payload.optString("bundleVersion")
+            val signature = payload.optString("signature")
+            if (appVersion.isEmpty() || bundleVersion.isEmpty()) return
+
+            // 5. Verify bundle directory exists
+            val folderName = "$appVersion-$bundleVersion"
+            val bundleDirPath = File(getBundleDir(context), folderName)
+            if (!bundleDirPath.exists()) return
+
+            // 6. Apply (same as installBundle)
+            setCurrentBundleVersionAndSignature(context, folderName, signature)
+            setNativeVersion(context, currentAppVersion)
+            setNativeBuildNumber(context, getBuildNumber(context))
+
+            // 7. Update MMKV task status → applied_waiting_verify
+            // Do NOT set runningStartedAt — a falsy value lets JS skip the
+            // 10-minute grace period and verify alignment immediately on boot.
+            taskObj.put("status", "applied_waiting_verify")
+            taskObj.remove("runningStartedAt")
+            mmkv.encode("onekey_pending_install_task", taskObj.toString())
+
+            OneKeyLog.info("BundleUpdate", "processPreLaunchPendingTask: switched to $folderName")
+        } catch (e: Exception) {
+            OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask failed: ${e.message}")
+        }
+    }
+
     fun calculateSHA256(filePath: String): String? {
         return try {
             val digest = MessageDigest.getInstance("SHA-256")
@@ -536,6 +609,7 @@ object BundleUpdateStoreAndroid {
     }
 
     fun getCurrentBundleMainJSBundle(context: Context): String? {
+        processPreLaunchPendingTask(context)
         return try {
             val currentAppVersion = getAppVersion(context)
             val currentBundleVersion = getCurrentBundleVersion(context) ?: run {

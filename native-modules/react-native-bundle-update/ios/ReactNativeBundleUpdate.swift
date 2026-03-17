@@ -202,6 +202,93 @@ public class BundleUpdateStore: NSObject {
         Bundle.main.infoDictionary?["BUNDLE_VERSION"] as? String ?? ""
     }
 
+    // MARK: - Pre-launch pending task processing
+
+    private static var didProcessPreLaunchTask = false
+
+    /// Checks MMKV for a pending bundle-switch task and applies it before JS runtime starts.
+    /// Only handles the happy path (status=pending, bundle exists, env matches).
+    /// All complex logic (retry, download, error handling) remains in JS layer.
+    public static func processPreLaunchPendingTask() {
+        guard !didProcessPreLaunchTask else { return }
+        didProcessPreLaunchTask = true
+
+        do {
+            // 1. Read MMKV (same pattern as isDevSettingsEnabled)
+            MMKV.initialize(rootDir: nil)
+            guard let mmkv = MMKV(mmapID: "onekey-app-setting"),
+                  let taskJson = mmkv.string(forKey: "onekey_pending_install_task"),
+                  let data = taskJson.data(using: .utf8),
+                  let taskDict = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return }
+
+            // 2. Validate task fields
+            guard taskDict["status"] as? String == "pending",
+                  taskDict["action"] as? String == "switch-bundle",
+                  taskDict["type"] as? String == "jsbundle-switch"
+            else { return }
+
+            let now = Int64(Date().timeIntervalSince1970 * 1000)
+            guard let expiresAtNum = taskDict["expiresAt"] as? NSNumber else { return }
+            let expiresAt = expiresAtNum.int64Value
+            guard expiresAt > now else { return }
+            if let nextRetryAtNum = taskDict["nextRetryAt"] as? NSNumber {
+                if nextRetryAtNum.int64Value > now { return }
+            }
+
+            // 3. Verify scheduledEnv matches current state
+            let currentAppVersion = getCurrentNativeVersion()
+            guard taskDict["scheduledEnvAppVersion"] as? String == currentAppVersion else { return }
+
+            let currentBundleVersionStr: String
+            if let cbv = currentBundleVersion(),
+               let dashRange = cbv.range(of: "-", options: .backwards) {
+                currentBundleVersionStr = String(cbv[dashRange.upperBound...])
+            } else {
+                currentBundleVersionStr = getBuiltinBundleVersion()
+            }
+            guard taskDict["scheduledEnvBundleVersion"] as? String == currentBundleVersionStr else { return }
+
+            // 4. Extract payload
+            guard let payload = taskDict["payload"] as? [String: Any],
+                  let appVersion = payload["appVersion"] as? String,
+                  let bundleVersion = payload["bundleVersion"] as? String,
+                  let signature = payload["signature"] as? String,
+                  !appVersion.isEmpty, !bundleVersion.isEmpty
+            else { return }
+
+            // 5. Verify bundle directory exists
+            let folderName = "\(appVersion)-\(bundleVersion)"
+            let bundleDirPath = (bundleDir() as NSString).appendingPathComponent(folderName)
+            guard FileManager.default.fileExists(atPath: bundleDirPath) else { return }
+
+            // 6. Apply: set currentBundleVersion (same as installBundle)
+            let ud = UserDefaults.standard
+            ud.set(folderName, forKey: bundlePrefsKey)
+            if !signature.isEmpty {
+                writeSignatureFile(folderName, signature: signature)
+            }
+            setNativeVersion(currentAppVersion)
+            setNativeBuildNumber(getCurrentNativeBuildNumber())
+            ud.synchronize()
+
+            // 7. Update MMKV task status → applied_waiting_verify
+            // Do NOT set runningStartedAt — a falsy value lets JS skip the
+            // 10-minute grace period and verify alignment immediately on boot.
+            var updatedTask = taskDict
+            updatedTask["status"] = "applied_waiting_verify"
+            updatedTask.removeValue(forKey: "runningStartedAt")
+            let jsonData = try JSONSerialization.data(withJSONObject: updatedTask)
+            if let jsonStr = String(data: jsonData, encoding: .utf8) {
+                mmkv.set(jsonStr, forKey: "onekey_pending_install_task")
+            }
+
+            OneKeyLog.info("BundleUpdate", "processPreLaunchPendingTask: switched to \(folderName)")
+        } catch {
+            OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask failed: \(error)")
+        }
+    }
+
     public static func getMetadataFilePath(_ currentBundleVersion: String) -> String? {
         let path = (bundleDir() as NSString)
             .appendingPathComponent(currentBundleVersion)
@@ -406,6 +493,7 @@ public class BundleUpdateStore: NSObject {
     }
 
     public static func currentBundleMainJSBundle() -> String? {
+        processPreLaunchPendingTask()
         guard let currentBundleVer = currentBundleVersion() else {
             OneKeyLog.warn("BundleUpdate", "getJsBundlePath: no currentBundleVersion stored")
             return nil
