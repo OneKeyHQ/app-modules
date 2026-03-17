@@ -433,8 +433,8 @@ public class BundleUpdateStore: NSObject {
 
         let currentBuildNumber = getCurrentNativeBuildNumber()
         let prevBuildNumber = getNativeBuildNumber()
-        if !currentBuildNumber.isEmpty && prevBuildNumber != nil && currentBuildNumber != prevBuildNumber {
-            OneKeyLog.info("BundleUpdate", "buildNumber changed from \(prevBuildNumber ?? "") to \(currentBuildNumber), clearing bundle data")
+        if !currentBuildNumber.isEmpty, let prev = prevBuildNumber, !prev.isEmpty, currentBuildNumber != prev {
+            OneKeyLog.info("BundleUpdate", "buildNumber changed from \(prev) to \(currentBuildNumber), clearing bundle data")
             let ud = UserDefaults.standard
             if let cbv = ud.string(forKey: "currentBundleVersion") {
                 deleteSignatureFile(cbv)
