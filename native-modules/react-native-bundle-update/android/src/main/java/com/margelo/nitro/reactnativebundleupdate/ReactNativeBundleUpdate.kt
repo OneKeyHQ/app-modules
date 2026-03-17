@@ -1103,16 +1103,37 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    override fun clearBundle(): Promise<Unit> {
+    override fun clearDownload(): Promise<Unit> {
         return Promise.async {
-            OneKeyLog.info("BundleUpdate", "clearBundle: clearing download directory...")
+            OneKeyLog.info("BundleUpdate", "clearDownload: clearing download directory...")
             val context = getContext()
             val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
             if (downloadDir.exists()) {
                 BundleUpdateStoreAndroid.deleteDir(downloadDir)
-                OneKeyLog.info("BundleUpdate", "clearBundle: download directory deleted")
+                OneKeyLog.info("BundleUpdate", "clearDownload: download directory deleted")
             } else {
-                OneKeyLog.info("BundleUpdate", "clearBundle: download directory does not exist, skipping")
+                OneKeyLog.info("BundleUpdate", "clearDownload: download directory does not exist, skipping")
+            }
+            isDownloading.set(false)
+            OneKeyLog.info("BundleUpdate", "clearDownload: completed")
+        }
+    }
+
+    override fun clearBundle(): Promise<Unit> {
+        return Promise.async {
+            OneKeyLog.info("BundleUpdate", "clearBundle: clearing download and bundle directories...")
+            val context = getContext()
+            // Clear download directory
+            val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
+            if (downloadDir.exists()) {
+                BundleUpdateStoreAndroid.deleteDir(downloadDir)
+                OneKeyLog.info("BundleUpdate", "clearBundle: download directory deleted")
+            }
+            // Clear installed bundle directory
+            val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
+            if (bundleDir.exists()) {
+                BundleUpdateStoreAndroid.deleteDir(bundleDir)
+                OneKeyLog.info("BundleUpdate", "clearBundle: bundle directory deleted")
             }
             isDownloading.set(false)
             OneKeyLog.info("BundleUpdate", "clearBundle: completed")

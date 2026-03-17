@@ -1052,15 +1052,38 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         }
     }
 
+    func clearDownload() throws -> Promise<Void> {
+        return Promise.async { [weak self] in
+            OneKeyLog.info("BundleUpdate", "clearDownload: clearing download directory and cancelling downloads...")
+            let downloadDir = BundleUpdateStore.downloadBundleDir()
+            if FileManager.default.fileExists(atPath: downloadDir) {
+                try FileManager.default.removeItem(atPath: downloadDir)
+                OneKeyLog.info("BundleUpdate", "clearDownload: download directory deleted")
+            } else {
+                OneKeyLog.info("BundleUpdate", "clearDownload: download directory does not exist, skipping")
+            }
+            // Cancel all in-flight downloads by invalidating the session
+            self?.urlSession?.invalidateAndCancel()
+            self?.urlSession = self?.createURLSession()
+            self?.stateQueue.sync { self?.isDownloading = false }
+            OneKeyLog.info("BundleUpdate", "clearDownload: completed")
+        }
+    }
+
     func clearBundle() throws -> Promise<Void> {
         return Promise.async { [weak self] in
-            OneKeyLog.info("BundleUpdate", "clearBundle: clearing download directory and cancelling downloads...")
+            OneKeyLog.info("BundleUpdate", "clearBundle: clearing download and bundle directories...")
+            // Clear download directory
             let downloadDir = BundleUpdateStore.downloadBundleDir()
             if FileManager.default.fileExists(atPath: downloadDir) {
                 try FileManager.default.removeItem(atPath: downloadDir)
                 OneKeyLog.info("BundleUpdate", "clearBundle: download directory deleted")
-            } else {
-                OneKeyLog.info("BundleUpdate", "clearBundle: download directory does not exist, skipping")
+            }
+            // Clear installed bundle directory
+            let bundleDir = BundleUpdateStore.bundleDir()
+            if FileManager.default.fileExists(atPath: bundleDir) {
+                try FileManager.default.removeItem(atPath: bundleDir)
+                OneKeyLog.info("BundleUpdate", "clearBundle: bundle directory deleted")
             }
             // Cancel all in-flight downloads by invalidating the session
             self?.urlSession?.invalidateAndCancel()
