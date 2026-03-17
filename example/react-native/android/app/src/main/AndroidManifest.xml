@@ -11,6 +11,9 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+      <meta-data
+        android:name="BUNDLE_VERSION"
+        android:value="${BUNDLE_VERSION}" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

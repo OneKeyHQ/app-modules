@@ -67,6 +67,7 @@ P2Q5dClenjjjVA==
 public class BundleUpdateStore: NSObject {
     private static let bundlePrefsKey = "currentBundleVersion"
     private static let nativeVersionKey = "nativeVersion"
+    private static let nativeBuildNumberKey = "nativeBuildNumber"
 
     public static func documentDirectory() -> String {
         NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0]
@@ -176,6 +177,29 @@ public class BundleUpdateStore: NSObject {
     public static func setNativeVersion(_ version: String) {
         UserDefaults.standard.set(version, forKey: nativeVersionKey)
         UserDefaults.standard.synchronize()
+    }
+
+    public static func getCurrentNativeBuildNumber() -> String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+    }
+
+    public static func getNativeBuildNumber() -> String? {
+        UserDefaults.standard.string(forKey: nativeBuildNumberKey)
+    }
+
+    public static func setNativeBuildNumber(_ buildNumber: String) {
+        UserDefaults.standard.set(buildNumber, forKey: nativeBuildNumberKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    public static func clearNativeVersionPrefs() {
+        let ud = UserDefaults.standard
+        ud.removeObject(forKey: nativeVersionKey)
+        ud.removeObject(forKey: nativeBuildNumberKey)
+    }
+
+    public static func getBuiltinBundleVersion() -> String {
+        Bundle.main.infoDictionary?["BUNDLE_VERSION"] as? String ?? ""
     }
 
     public static func getMetadataFilePath(_ currentBundleVersion: String) -> String? {
@@ -402,6 +426,21 @@ public class BundleUpdateStore: NSObject {
                 deleteSignatureFile(cbv)
                 ud.removeObject(forKey: "currentBundleVersion")
             }
+            clearNativeVersionPrefs()
+            ud.synchronize()
+            return nil
+        }
+
+        let currentBuildNumber = getCurrentNativeBuildNumber()
+        let prevBuildNumber = getNativeBuildNumber()
+        if !currentBuildNumber.isEmpty && prevBuildNumber != nil && currentBuildNumber != prevBuildNumber {
+            OneKeyLog.info("BundleUpdate", "buildNumber changed from \(prevBuildNumber ?? "") to \(currentBuildNumber), clearing bundle data")
+            let ud = UserDefaults.standard
+            if let cbv = ud.string(forKey: "currentBundleVersion") {
+                deleteSignatureFile(cbv)
+                ud.removeObject(forKey: "currentBundleVersion")
+            }
+            clearNativeVersionPrefs()
             ud.synchronize()
             return nil
         }
@@ -972,6 +1011,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             }
             let currentNativeVersion = BundleUpdateStore.getCurrentNativeVersion()
             BundleUpdateStore.setNativeVersion(currentNativeVersion)
+            let currentBuildNumber = BundleUpdateStore.getCurrentNativeBuildNumber()
+            BundleUpdateStore.setNativeBuildNumber(currentBuildNumber)
             ud.synchronize()
 
             // Manage fallback data
@@ -1059,7 +1100,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 ud.removeObject(forKey: "currentBundleVersion")
                 OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: removed currentBundleVersion=\(cbv)")
             }
-            ud.removeObject(forKey: "nativeVersion")
+            BundleUpdateStore.clearNativeVersionPrefs()
             ud.synchronize()
 
             OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: completed successfully")
@@ -1153,6 +1194,22 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         return Promise.async {
             let version = BundleUpdateStore.getCurrentNativeVersion()
             OneKeyLog.info("BundleUpdate", "getNativeAppVersion: \(version)")
+            return version
+        }
+    }
+
+    func getNativeBuildNumber() throws -> Promise<String> {
+        return Promise.async {
+            let buildNumber = BundleUpdateStore.getCurrentNativeBuildNumber()
+            OneKeyLog.info("BundleUpdate", "getNativeBuildNumber: \(buildNumber)")
+            return buildNumber
+        }
+    }
+
+    func getBuiltinBundleVersion() throws -> Promise<String> {
+        return Promise.async {
+            let version = BundleUpdateStore.getBuiltinBundleVersion()
+            OneKeyLog.info("BundleUpdate", "getBuiltinBundleVersion: \(version)")
             return version
         }
     }

@@ -497,6 +497,22 @@ H3bEFZ8=
       setUtilError(err instanceof Error ? err.message : 'Unknown error');
     }
   };
+  const utilGetNativeBuildNumber = async () => {
+    clearUtil();
+    try {
+      setUtilResult({ nativeBuildNumber: await ReactNativeBundleUpdate.getNativeBuildNumber() });
+    } catch (err) {
+      setUtilError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
+  const utilGetBuiltinBundleVersion = async () => {
+    clearUtil();
+    try {
+      setUtilResult({ builtinBundleVersion: await ReactNativeBundleUpdate.getBuiltinBundleVersion() });
+    } catch (err) {
+      setUtilError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  };
   const utilGetFallbackData = async () => {
     clearUtil();
     try {
@@ -691,6 +707,8 @@ H3bEFZ8=
           <TestButton title="Get Web Embed Path" onPress={utilGetWebEmbedPath} />
           <TestButton title="Get JS Bundle Path" onPress={utilGetJsBundlePath} />
           <TestButton title="Get Native App Version" onPress={utilGetNativeAppVersion} />
+          <TestButton title="Get Native Build Number" onPress={utilGetNativeBuildNumber} />
+          <TestButton title="Get Builtin Bundle Version" onPress={utilGetBuiltinBundleVersion} />
           <TestButton title="Get Fallback Bundle Data" onPress={utilGetFallbackData} />
           <TestButton title="List Local Bundles" onPress={utilListLocal} />
           <TestButton title="List ASC Files" onPress={utilListAscFiles} />

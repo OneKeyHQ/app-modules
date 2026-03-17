@@ -95,7 +95,7 @@ P2Q5dClenjjjVA==
 object BundleUpdateStoreAndroid {
     private val bcProvider = BouncyCastleProvider()
     private const val PREFS_NAME = "BundleUpdatePrefs"
-    private const val NATIVE_VERSION_PREFS_NAME = "NativeVersionPrefs"
+    internal const val NATIVE_VERSION_PREFS_NAME = "NativeVersionPrefs"
     private const val CURRENT_BUNDLE_VERSION_KEY = "currentBundleVersion"
 
     fun getDownloadBundleDir(context: Context): String {
@@ -205,6 +205,47 @@ object BundleUpdateStoreAndroid {
     fun setNativeVersion(context: Context, nativeVersion: String) {
         val prefs = context.getSharedPreferences(NATIVE_VERSION_PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString("nativeVersion", nativeVersion).apply()
+    }
+
+    fun getBuildNumber(context: Context): String {
+        return try {
+            val pm = context.packageManager
+            val pi = pm.getPackageInfo(context.packageName, 0)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                pi.longVersionCode.toString()
+            } else {
+                @Suppress("DEPRECATION")
+                pi.versionCode.toString()
+            }
+        } catch (e: Exception) {
+            OneKeyLog.error("BundleUpdate", "Error getting build number: ${e.message}")
+            ""
+        }
+    }
+
+    fun getNativeBuildNumber(context: Context): String {
+        val prefs = context.getSharedPreferences(NATIVE_VERSION_PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString("nativeBuildNumber", "") ?: ""
+    }
+
+    fun setNativeBuildNumber(context: Context, buildNumber: String) {
+        val prefs = context.getSharedPreferences(NATIVE_VERSION_PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString("nativeBuildNumber", buildNumber).apply()
+    }
+
+    fun clearNativeVersionPrefs(context: Context) {
+        val prefs = context.getSharedPreferences(NATIVE_VERSION_PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().remove("nativeVersion").remove("nativeBuildNumber").apply()
+    }
+
+    fun getBuiltinBundleVersion(context: Context): String {
+        return try {
+            val appInfo = context.packageManager.getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA)
+            appInfo.metaData?.getString("BUNDLE_VERSION") ?: ""
+        } catch (e: Exception) {
+            OneKeyLog.error("BundleUpdate", "Error getting builtin bundle version: ${e.message}")
+            ""
+        }
     }
 
     fun calculateSHA256(filePath: String): String? {
@@ -513,6 +554,16 @@ object BundleUpdateStoreAndroid {
             if (currentAppVersion != prevNativeVersion) {
                 OneKeyLog.info("BundleUpdate", "currentAppVersion is not equal to prevNativeVersion $currentAppVersion $prevNativeVersion")
                 clearUpdateBundleData(context)
+                clearNativeVersionPrefs(context)
+                return null
+            }
+
+            val currentBuildNumber = getBuildNumber(context)
+            val prevBuildNumber = getNativeBuildNumber(context)
+            if (currentBuildNumber.isNotEmpty() && prevBuildNumber.isNotEmpty() && currentBuildNumber != prevBuildNumber) {
+                OneKeyLog.info("BundleUpdate", "buildNumber changed from $prevBuildNumber to $currentBuildNumber, clearing bundle data")
+                clearUpdateBundleData(context)
+                clearNativeVersionPrefs(context)
                 return null
             }
 
@@ -1008,6 +1059,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             BundleUpdateStoreAndroid.setCurrentBundleVersionAndSignature(context, folderName, signature)
             val nativeVersion = BundleUpdateStoreAndroid.getAppVersion(context) ?: ""
             BundleUpdateStoreAndroid.setNativeVersion(context, nativeVersion)
+            val buildNumber = BundleUpdateStoreAndroid.getBuildNumber(context)
+            BundleUpdateStoreAndroid.setNativeBuildNumber(context, buildNumber)
 
             // Manage fallback data
             try {
@@ -1097,6 +1150,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: deleted bundle dir")
             }
             BundleUpdateStoreAndroid.clearUpdateBundleData(context)
+            BundleUpdateStoreAndroid.clearNativeVersionPrefs(context)
 
             OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: completed successfully")
             TestResult(success = true, message = "Successfully cleared all JS bundle data")
@@ -1193,6 +1247,24 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             val context = getContext()
             val version = BundleUpdateStoreAndroid.getAppVersion(context) ?: ""
             OneKeyLog.info("BundleUpdate", "getNativeAppVersion: $version")
+            version
+        }
+    }
+
+    override fun getNativeBuildNumber(): Promise<String> {
+        return Promise.async {
+            val context = getContext()
+            val buildNumber = BundleUpdateStoreAndroid.getBuildNumber(context)
+            OneKeyLog.info("BundleUpdate", "getNativeBuildNumber: $buildNumber")
+            buildNumber
+        }
+    }
+
+    override fun getBuiltinBundleVersion(): Promise<String> {
+        return Promise.async {
+            val context = getContext()
+            val version = BundleUpdateStoreAndroid.getBuiltinBundleVersion(context)
+            OneKeyLog.info("BundleUpdate", "getBuiltinBundleVersion: $version")
             version
         }
     }
