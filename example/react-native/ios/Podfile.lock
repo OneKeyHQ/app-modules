@@ -2839,7 +2839,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - ReactNativeBundleUpdate (1.1.39):
+  - ReactNativeBundleUpdate (1.1.40):
     - boost
     - DoubleConversion
     - fast_float
@@ -3609,7 +3609,7 @@ SPEC CHECKSUMS:
   ReactCodegen: 554b421c45b7df35ac791da1b734335470b55fcc
   ReactCommon: 424cc34cf5055d69a3dcf02f3436481afb8b0f6f
   ReactNativeAppUpdate: 07053378aecfdaaa23877f75c9c067fef7d58415
-  ReactNativeBundleUpdate: 752f40fd03fa3a6701318ab83de69f420d550053
+  ReactNativeBundleUpdate: 6b4bccc4975bd20ad6b2dfbca1f21da62d2b2e8d
   ReactNativeCheckBiometricAuthChanged: 3fbd6bdc758ccc059ad2feaf3214b871c0ccf31e
   ReactNativeDeviceUtils: cb1fa6e62e1ab4743fd9654f0124b23637ba62c5
   ReactNativeGetRandomValues: 7b24b5b17f6a676724bb673d76a8f9b0871aa4c7

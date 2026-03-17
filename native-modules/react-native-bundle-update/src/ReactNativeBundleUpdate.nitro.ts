@@ -109,6 +109,8 @@ export interface ReactNativeBundleUpdate
   getJsBundlePath(): string;
   getJsBundlePathAsync(): Promise<string>;
   getNativeAppVersion(): Promise<string>;
+  getNativeBuildNumber(): Promise<string>;
+  getBuiltinBundleVersion(): Promise<string>;
 
   // Verification & testing
   testVerification(): Promise<boolean>;
