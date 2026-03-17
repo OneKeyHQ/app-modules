@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.39] - 2026-03-17
+
+### Features
+- **device-utils**: Add boot recovery APIs and test buttons to DeviceUtilsTestPage
+
+### Documentation
+- Add acknowledgment READMEs for forked upstream projects: react-native-tab-view, TOCropViewController, react-native-get-random-values
+
+### Chores
+- Bump all native modules and views to 1.1.39
+
 ## [1.1.38] - 2026-03-14
 
 ### Features
