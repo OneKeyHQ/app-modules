@@ -254,7 +254,8 @@ public class BundleUpdateStore: NSObject {
                   let appVersion = payload["appVersion"] as? String,
                   let bundleVersion = payload["bundleVersion"] as? String,
                   let signature = payload["signature"] as? String,
-                  !appVersion.isEmpty, !bundleVersion.isEmpty
+                  !appVersion.isEmpty, !bundleVersion.isEmpty, !signature.isEmpty,
+                  appVersion.isSafeVersionString, bundleVersion.isSafeVersionString
             else { return }
 
             // 5. Verify bundle directory and entry file exist

@@ -296,7 +296,8 @@ object BundleUpdateStoreAndroid {
             val appVersion = payload.optString("appVersion")
             val bundleVersion = payload.optString("bundleVersion")
             val signature = payload.optString("signature")
-            if (appVersion.isEmpty() || bundleVersion.isEmpty()) return
+            if (appVersion.isEmpty() || bundleVersion.isEmpty() || signature.isEmpty()) return
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) return
 
             // 5. Verify bundle directory and entry file exist
             val folderName = "$appVersion-$bundleVersion"
