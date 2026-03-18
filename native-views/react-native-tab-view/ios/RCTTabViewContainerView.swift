@@ -476,6 +476,10 @@ class RCTTabViewContainerView: UIView {
       #if compiler(>=6.0)
       if sidebarAdaptable {
         tbc.mode = .tabSidebar
+        // Remove compact override so sidebar can use the natural size class
+        if UIDevice.current.userInterfaceIdiom == .pad {
+          tbc.traitOverrides.remove(UITraitHorizontalSizeClass.self)
+        }
       } else {
         tbc.mode = .tabBar
         // Force compact horizontal size class on iPad to keep TabBar at bottom
