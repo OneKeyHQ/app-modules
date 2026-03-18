@@ -95,6 +95,7 @@ export interface ReactNativeBundleUpdate
   installBundle(params: BundleInstallParams): Promise<void>;
 
   // Clear
+  clearDownload(): Promise<void>;
   clearBundle(): Promise<void>;
   clearAllJSBundleData(): Promise<TestResult>;
   resetToBuiltInBundle(): Promise<void>;

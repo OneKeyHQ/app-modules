@@ -248,6 +248,101 @@ object BundleUpdateStoreAndroid {
         }
     }
 
+    // Pre-launch pending task processing
+
+    @Volatile
+    private var didProcessPreLaunchTask = false
+
+    /**
+     * Checks MMKV for a pending bundle-switch task and applies it before JS runtime starts.
+     * Only handles the happy path (status=pending, bundle exists, env matches).
+     * All complex logic (retry, download, error handling) remains in JS layer.
+     */
+    fun processPreLaunchPendingTask(context: Context) {
+        if (didProcessPreLaunchTask) return
+        didProcessPreLaunchTask = true
+        try {
+            // 1. Read MMKV
+            MMKV.initialize(context)
+            val mmkv = MMKV.mmkvWithID("onekey-app-setting") ?: return
+            val taskJson = mmkv.decodeString("onekey_pending_install_task") ?: return
+            val taskObj = JSONObject(taskJson)
+
+            // 2. Validate task fields
+            if (taskObj.optString("status") != "pending") return
+            if (taskObj.optString("action") != "switch-bundle") return
+            if (taskObj.optString("type") != "jsbundle-switch") return
+
+            val now = System.currentTimeMillis()
+            if (taskObj.optLong("expiresAt", 0) <= now) return
+            val nextRetryAt = taskObj.optLong("nextRetryAt", 0)
+            if (nextRetryAt > 0 && nextRetryAt > now) return
+
+            // 3. Verify scheduledEnv matches current state
+            val currentAppVersion = getAppVersion(context) ?: return
+            if (taskObj.optString("scheduledEnvAppVersion") != currentAppVersion) return
+
+            val currentBV = getCurrentBundleVersion(context)
+            val currentBundleVersionStr = if (currentBV != null) {
+                val idx = currentBV.lastIndexOf("-")
+                if (idx > 0) currentBV.substring(idx + 1) else getBuiltinBundleVersion(context)
+            } else {
+                getBuiltinBundleVersion(context)
+            }
+            if (taskObj.optString("scheduledEnvBundleVersion") != currentBundleVersionStr) return
+
+            // 4. Extract payload
+            val payload = taskObj.optJSONObject("payload") ?: return
+            val appVersion = payload.optString("appVersion")
+            val bundleVersion = payload.optString("bundleVersion")
+            val signature = payload.optString("signature")
+            if (appVersion.isEmpty() || bundleVersion.isEmpty() || signature.isEmpty()) return
+            if (!isSafeVersionString(appVersion) || !isSafeVersionString(bundleVersion)) return
+
+            // 5. Verify bundle directory and entry file exist
+            val folderName = "$appVersion-$bundleVersion"
+            val bundleDirPath = File(getBundleDir(context), folderName)
+            if (!bundleDirPath.exists()) return
+            val entryFile = File(bundleDirPath, "main.jsbundle.hbc")
+            if (!entryFile.exists()) {
+                OneKeyLog.warn("BundleUpdate", "processPreLaunchPendingTask: bundle dir exists but entry file missing: ${entryFile.absolutePath}")
+                return
+            }
+
+            // 6. Apply (same as installBundle) — use commit() for synchronous writes
+            //    to ensure all prefs are persisted atomically before proceeding.
+            val bundlePrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val versionPrefs = context.getSharedPreferences(NATIVE_VERSION_PREFS_NAME, Context.MODE_PRIVATE)
+            val currentVersion = bundlePrefs.getString(CURRENT_BUNDLE_VERSION_KEY, "")
+            bundlePrefs.edit()
+                .putString(CURRENT_BUNDLE_VERSION_KEY, folderName)
+                .apply {
+                    if (!currentVersion.isNullOrEmpty()) {
+                        remove(currentVersion) // legacy signature key cleanup
+                    }
+                }
+                .commit()
+            if (!signature.isNullOrEmpty()) {
+                writeSignatureFile(context, folderName, signature)
+            }
+            versionPrefs.edit()
+                .putString("nativeVersion", currentAppVersion)
+                .putString("nativeBuildNumber", getBuildNumber(context))
+                .commit()
+
+            // 7. Update MMKV task status → applied_waiting_verify
+            // Do NOT set runningStartedAt — a falsy value lets JS skip the
+            // 10-minute grace period and verify alignment immediately on boot.
+            taskObj.put("status", "applied_waiting_verify")
+            taskObj.remove("runningStartedAt")
+            mmkv.encode("onekey_pending_install_task", taskObj.toString())
+
+            OneKeyLog.info("BundleUpdate", "processPreLaunchPendingTask: switched to $folderName")
+        } catch (e: Exception) {
+            OneKeyLog.error("BundleUpdate", "processPreLaunchPendingTask failed: ${e.message}")
+        }
+    }
+
     fun calculateSHA256(filePath: String): String? {
         return try {
             val digest = MessageDigest.getInstance("SHA-256")
@@ -536,6 +631,7 @@ object BundleUpdateStoreAndroid {
     }
 
     fun getCurrentBundleMainJSBundle(context: Context): String? {
+        processPreLaunchPendingTask(context)
         return try {
             val currentAppVersion = getAppVersion(context)
             val currentBundleVersion = getCurrentBundleVersion(context) ?: run {
@@ -1103,16 +1199,37 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
-    override fun clearBundle(): Promise<Unit> {
+    override fun clearDownload(): Promise<Unit> {
         return Promise.async {
-            OneKeyLog.info("BundleUpdate", "clearBundle: clearing download directory...")
+            OneKeyLog.info("BundleUpdate", "clearDownload: clearing download directory...")
             val context = getContext()
             val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
             if (downloadDir.exists()) {
                 BundleUpdateStoreAndroid.deleteDir(downloadDir)
-                OneKeyLog.info("BundleUpdate", "clearBundle: download directory deleted")
+                OneKeyLog.info("BundleUpdate", "clearDownload: download directory deleted")
             } else {
-                OneKeyLog.info("BundleUpdate", "clearBundle: download directory does not exist, skipping")
+                OneKeyLog.info("BundleUpdate", "clearDownload: download directory does not exist, skipping")
+            }
+            isDownloading.set(false)
+            OneKeyLog.info("BundleUpdate", "clearDownload: completed")
+        }
+    }
+
+    override fun clearBundle(): Promise<Unit> {
+        return Promise.async {
+            OneKeyLog.info("BundleUpdate", "clearBundle: clearing download and bundle directories...")
+            val context = getContext()
+            // Clear download directory
+            val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
+            if (downloadDir.exists()) {
+                BundleUpdateStoreAndroid.deleteDir(downloadDir)
+                OneKeyLog.info("BundleUpdate", "clearBundle: download directory deleted")
+            }
+            // Clear installed bundle directory
+            val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
+            if (bundleDir.exists()) {
+                BundleUpdateStoreAndroid.deleteDir(bundleDir)
+                OneKeyLog.info("BundleUpdate", "clearBundle: bundle directory deleted")
             }
             isDownloading.set(false)
             OneKeyLog.info("BundleUpdate", "clearBundle: completed")
