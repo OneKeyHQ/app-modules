@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.44] - 2026-03-19
+
+### Bug Fixes
+- **react-native-tab-view (iOS)**: Force iPad tab bar to bottom by overriding `horizontalSizeClass` to `.compact` on iPad (iOS 18+), preventing `UITabBarController` from placing tabs at the top
+
+### Chores
+- **react-native-tab-view (iOS)**: Remove verbose debug logging (KVO observers, prop change logs, layout logs, delegate proxy logs)
+- Bump all native modules and views to 1.1.44
+
+## [1.1.43] - 2026-03-18
+
+### Features
+- **bundle-update**: Add native-layer pre-launch pending task processing for iOS/Android — process pending bundle-switch tasks before JS runtime starts
+
+### Bug Fixes
+- **bundle-update**: Harden pre-launch pending task with entry file existence check and synchronous writes (commit instead of apply on Android)
+
+### Chores
+- Bump all native modules and views to 1.1.43
+
+## [1.1.42] - 2026-03-18
+
+### Features
+- **bundle-update**: Add `clearDownload()` method that only clears the download cache directory
+- **bundle-update**: Fix `clearBundle()` to also clear the installed bundle directory, aligning behavior across desktop/iOS/Android
+
+### Chores
+- Bump all native modules and views to 1.1.42
+
 ## [1.1.41] - 2026-03-17
 
 ### Features
