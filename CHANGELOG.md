@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.45] - 2026-03-19
+
+### Bug Fixes
+- **bundle-update**: Use `scheduledEnvBuildNumber` from task instead of stored `getNativeBuildNumber()` for buildNumber change detection in pre-launch pending task processing, so the check works even without a prior successful bundle install
+- **react-native-tab-view**: Add `delayedFreeze` prop to control freeze/unfreeze delay on tab switch; defaults to immediate freeze for better iPad sidebar switching
+
+### Chores
+- Bump all native modules and views to 1.1.45
+
 ## [1.1.44] - 2026-03-19
 
 ### Bug Fixes
