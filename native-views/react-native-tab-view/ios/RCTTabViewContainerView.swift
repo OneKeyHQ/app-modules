@@ -50,15 +50,6 @@ struct IconSource {
 
 class RCTTabViewContainerView: UIView {
 
-  // MARK: - Debug logging
-
-  private static let debugLog = true
-
-  private func log(_ message: String, function: String = #function) {
-    guard Self.debugLog else { return }
-    RCTTabViewLog.debug("RCTTabView", message: "[\(function)] \(message)")
-  }
-
   // MARK: - Internal State
 
   private var tabBarController: UITabBarController?
@@ -68,26 +59,17 @@ class RCTTabViewContainerView: UIView {
   private var imageLoader: RCTImageLoaderProtocol?
   private let iconSize = CGSize(width: 27, height: 27)
   private var longPressHandler: LongPressGestureHandler?
-  private var tabBarHiddenObservation: NSKeyValueObservation?
-  private var tabBarAlphaObservation: NSKeyValueObservation?
-  private var tabBarFrameObservation: NSKeyValueObservation?
   /// Cached view controllers keyed by tab key to avoid unnecessary reparenting
   private var cachedViewControllers: [String: UIViewController] = [:]
 
   // MARK: - Props (set by Fabric ComponentView via KVC)
 
   @objc var items: [NSDictionary]? {
-    didSet {
-      log("items prop changed: \(oldValue?.count ?? 0) -> \(items?.count ?? 0) items")
-      rebuildViewControllers()
-    }
+    didSet { rebuildViewControllers() }
   }
 
   @objc var selectedPage: String? {
-    didSet {
-      log("selectedPage prop changed: \(oldValue ?? "nil") -> \(selectedPage ?? "nil")")
-      updateSelectedTab()
-    }
+    didSet { updateSelectedTab() }
   }
 
   @objc var icons: [NSDictionary]? {
@@ -115,10 +97,7 @@ class RCTTabViewContainerView: UIView {
   }
 
   @objc var tabBarHidden: Bool = false {
-    didSet {
-      log("tabBarHidden prop changed: \(oldValue) -> \(tabBarHidden)")
-      updateTabBarHidden()
-    }
+    didSet { updateTabBarHidden() }
   }
 
   @objc var translucent: NSNumber? {
@@ -181,9 +160,6 @@ class RCTTabViewContainerView: UIView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    if let tbc = tabBarController {
-      log("layoutSubviews: bounds=\(bounds), tabBar.isHidden=\(tbc.tabBar.isHidden), tabBar.frame=\(tbc.tabBar.frame), tabBar.alpha=\(tbc.tabBar.alpha)")
-    }
     handleLayout()
   }
 
@@ -205,26 +181,12 @@ class RCTTabViewContainerView: UIView {
 
     setupTabBarControllerIfNeeded()
     tabBarController?.view.frame = bounds
-
-    // Log container's direct subviews
-    if let tbc = tabBarController {
-      let strayCount = self.subviews.filter { sv in sv !== tbc.view && childViews.contains(where: { $0 === sv }) }.count
-      if strayCount > 0 {
-        log("⚠️ handleLayout: \(strayCount) stray childViews found as direct subviews of self!")
-      }
-      log("handleLayout: self.subviews=\(self.subviews.count), strayChildren=\(strayCount)")
-    }
-
     onNativeLayout?(["width": Double(bounds.width), "height": Double(bounds.height)])
   }
 
   private func setupTabBarControllerIfNeeded() {
     guard tabBarController == nil else { return }
-    guard let parentVC = self.reactViewController() else {
-      log("setupTabBarControllerIfNeeded: no parent view controller found")
-      return
-    }
-    log("setupTabBarControllerIfNeeded: creating UITabBarController, parentVC=\(type(of: parentVC))")
+    guard let parentVC = self.reactViewController() else { return }
 
     let tbc = UITabBarController()
     tbc.delegate = TabViewDelegateProxy.shared
@@ -238,29 +200,6 @@ class RCTTabViewContainerView: UIView {
     tbc.didMove(toParent: parentVC)
 
     self.tabBarController = tbc
-
-    // KVO observers to detect external changes to tab bar visibility
-    if Self.debugLog {
-      tabBarHiddenObservation = tbc.tabBar.observe(\.isHidden, options: [.old, .new]) { [weak self] tabBar, change in
-        self?.log("KVO tabBar.isHidden changed: \(change.oldValue ?? false) -> \(change.newValue ?? false), frame=\(tabBar.frame)")
-        if change.newValue == true && self?.tabBarHidden == false {
-          self?.log("⚠️ TAB BAR WAS HIDDEN EXTERNALLY! tabBarHidden prop is false but isHidden became true")
-          Thread.callStackSymbols.prefix(15).forEach { self?.log("  \($0)") }
-        }
-      }
-      tabBarAlphaObservation = tbc.tabBar.observe(\.alpha, options: [.old, .new]) { [weak self] tabBar, change in
-        if change.oldValue != change.newValue {
-          self?.log("KVO tabBar.alpha changed: \(change.oldValue ?? 0) -> \(change.newValue ?? 0), frame=\(tabBar.frame)")
-        }
-      }
-      tabBarFrameObservation = tbc.tabBar.observe(\.frame, options: [.old, .new]) { [weak self] tabBar, change in
-        let oldFrame = change.oldValue ?? .zero
-        let newFrame = change.newValue ?? .zero
-        if oldFrame != newFrame {
-          self?.log("KVO tabBar.frame changed: \(oldFrame) -> \(newFrame), isHidden=\(tabBar.isHidden), alpha=\(tabBar.alpha)")
-        }
-      }
-    }
 
     setupLongPressGesture()
     rebuildViewControllers()
@@ -314,11 +253,7 @@ class RCTTabViewContainerView: UIView {
   }
 
   private func rebuildViewControllers() {
-    guard let tbc = tabBarController else {
-      log("rebuildViewControllers: no tabBarController yet")
-      return
-    }
-    log("rebuildViewControllers: tabBar.isHidden=\(tbc.tabBar.isHidden), tabBarHidden=\(tabBarHidden), items=\(parsedItems.count), childViews=\(childViews.count)")
+    guard let tbc = tabBarController else { return }
 
     let filtered = filteredItems
     let allItems = parsedItems
@@ -333,23 +268,16 @@ class RCTTabViewContainerView: UIView {
       let vc: UIViewController
       if let cached = cachedViewControllers[tabData.key] {
         vc = cached
-        log("rebuildViewControllers: reusing cached VC for tab[\(tabData.key)]")
       } else {
         vc = UIViewController()
         vc.view.backgroundColor = .clear
         vc.view.clipsToBounds = true
         cachedViewControllers[tabData.key] = vc
-        log("rebuildViewControllers: created new VC for tab[\(tabData.key)]")
       }
 
       // Attach child view if not already attached to this VC
       if originalIndex < childViews.count {
         let childView = childViews[originalIndex]
-        let currentSuperview = childView.superview
-        let superviewType = currentSuperview.map { String(describing: type(of: $0)) } ?? "nil"
-        let isSelf = currentSuperview === self
-        let isVcView = currentSuperview === vc.view
-        log("rebuildViewControllers: tab[\(tabData.key)] childView superview=\(superviewType), isSelf=\(isSelf), isVcView=\(isVcView), userInteraction=\(childView.isUserInteractionEnabled)")
         if childView.superview !== vc.view {
           childView.removeFromSuperview()
           vc.view.addSubview(childView)
@@ -358,7 +286,6 @@ class RCTTabViewContainerView: UIView {
           childView.translatesAutoresizingMaskIntoConstraints = true
           childView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
           childView.frame = vc.view.bounds
-          log("rebuildViewControllers: tab[\(tabData.key)] MOVED childView to vc.view (was \(superviewType))")
         }
       }
 
@@ -411,7 +338,6 @@ class RCTTabViewContainerView: UIView {
     // Only call setViewControllers if the VC list actually changed
     let currentVCs = tbc.viewControllers ?? []
     if currentVCs.count != viewControllers.count || !zip(currentVCs, viewControllers).allSatisfy({ $0 === $1 }) {
-      log("rebuildViewControllers: updating VCs (old=\(currentVCs.count), new=\(viewControllers.count))")
       if disablePageAnimations {
         UIView.performWithoutAnimation {
           tbc.setViewControllers(viewControllers, animated: false)
@@ -419,14 +345,6 @@ class RCTTabViewContainerView: UIView {
       } else {
         tbc.setViewControllers(viewControllers, animated: false)
       }
-    } else {
-      log("rebuildViewControllers: VCs unchanged, skipping setViewControllers")
-    }
-
-    // Log the view hierarchy after setting VCs
-    log("rebuildViewControllers: tbc.view.subviews=\(tbc.view.subviews.map { "\(type(of: $0)):\(String(format: "%.0f", $0.frame.width))x\(String(format: "%.0f", $0.frame.height))" })")
-    if let selectedVC = tbc.selectedViewController {
-      log("rebuildViewControllers: selectedVC.view.frame=\(selectedVC.view.frame), subviews=\(selectedVC.view.subviews.count)")
     }
 
     updateSelectedTab()
@@ -436,11 +354,7 @@ class RCTTabViewContainerView: UIView {
 
   private func updateSelectedTab() {
     guard let tbc = tabBarController,
-          let selectedPage else {
-      log("updateSelectedTab: skipped (tbc=\(tabBarController != nil), selectedPage=\(selectedPage ?? "nil"))")
-      return
-    }
-    log("updateSelectedTab: selectedPage=\(selectedPage), tabBar.isHidden=\(tbc.tabBar.isHidden)")
+          let selectedPage else { return }
 
     let filtered = filteredItems
     guard let index = filtered.firstIndex(where: { $0.key == selectedPage }) else { return }
@@ -547,11 +461,7 @@ class RCTTabViewContainerView: UIView {
   }
 
   private func updateTabBarHidden() {
-    guard let tbc = tabBarController else {
-      log("updateTabBarHidden: no tabBarController yet")
-      return
-    }
-    log("updateTabBarHidden: setting tabBar.isHidden=\(tabBarHidden), current tabBar.isHidden=\(tbc.tabBar.isHidden), tabBar.frame=\(tbc.tabBar.frame)")
+    guard let tbc = tabBarController else { return }
     tbc.tabBar.isHidden = tabBarHidden
     tbc.tabBar.isUserInteractionEnabled = !tabBarHidden
 
@@ -564,7 +474,20 @@ class RCTTabViewContainerView: UIView {
     guard let tbc = tabBarController else { return }
     if #available(iOS 18.0, *) {
       #if compiler(>=6.0)
-      tbc.mode = sidebarAdaptable ? .tabSidebar : .tabBar
+      if sidebarAdaptable {
+        tbc.mode = .tabSidebar
+        // Remove compact override so sidebar can use the natural size class
+        if UIDevice.current.userInterfaceIdiom == .pad {
+          tbc.traitOverrides.remove(UITraitHorizontalSizeClass.self)
+        }
+      } else {
+        tbc.mode = .tabBar
+        // Force compact horizontal size class on iPad to keep TabBar at bottom
+        // iPad defaults to .regular which causes iOS 18+ to show tabs at top
+        if UIDevice.current.userInterfaceIdiom == .pad {
+          tbc.traitOverrides.horizontalSizeClass = .compact
+        }
+      }
       #endif
     }
   }
@@ -720,16 +643,12 @@ class TabViewDelegateProxy: NSObject, UITabBarControllerDelegate {
 
   func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
     guard let containerView = mapping[ObjectIdentifier(tabBarController)] else {
-      RCTTabViewLog.debug("RCTTabView", message: "[DelegateProxy] shouldSelect: no container view found!")
       return false
     }
     let isReselection = tabBarController.selectedViewController == viewController
-    RCTTabViewLog.debug("RCTTabView", message: "[DelegateProxy] shouldSelect: isReselection=\(isReselection), tabBar.isHidden=\(tabBarController.tabBar.isHidden)")
 
     if let index = tabBarController.viewControllers?.firstIndex(of: viewController) {
-      let result = containerView.shouldSelectTab(at: index, isReselection: isReselection)
-      RCTTabViewLog.debug("RCTTabView", message: "[DelegateProxy] shouldSelect result=\(result)")
-      return result
+      return containerView.shouldSelectTab(at: index, isReselection: isReselection)
     }
 
     return false
