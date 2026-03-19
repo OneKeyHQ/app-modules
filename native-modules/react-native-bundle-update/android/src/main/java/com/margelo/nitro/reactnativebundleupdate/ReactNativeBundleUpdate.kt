@@ -278,9 +278,16 @@ object BundleUpdateStoreAndroid {
             val nextRetryAt = taskObj.optLong("nextRetryAt", 0)
             if (nextRetryAt > 0 && nextRetryAt > now) return
 
-            // 3. Verify scheduledEnv matches current state
+            // 3. Verify scheduledEnv matches current state (including buildNumber)
             val currentAppVersion = getAppVersion(context) ?: return
             if (taskObj.optString("scheduledEnvAppVersion") != currentAppVersion) return
+
+            val prevBuildNumber = getNativeBuildNumber(context)
+            val currentBuildNumber = getBuildNumber(context)
+            if (prevBuildNumber.isNotEmpty() && currentBuildNumber.isNotEmpty() && prevBuildNumber != currentBuildNumber) {
+                OneKeyLog.info("BundleUpdate", "processPreLaunchPendingTask: buildNumber changed from $prevBuildNumber to $currentBuildNumber, skipping stale task")
+                return
+            }
 
             val currentBV = getCurrentBundleVersion(context)
             val currentBundleVersionStr = if (currentBV != null) {
