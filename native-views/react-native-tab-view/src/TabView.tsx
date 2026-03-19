@@ -186,6 +186,12 @@ interface Props<Route extends BaseRoute> {
    * Whether to ignore bottom system insets (navigation bar). Android only.
    */
   ignoreBottomInsets?: boolean;
+  /**
+   * Whether to delay freeze/unfreeze by 200ms on tab switch.
+   * Defaults to false (immediate freeze). Set to true to restore the
+   * original delayed behavior.
+   */
+  delayedFreeze?: boolean;
 }
 
 const ANDROID_MAX_TABS = 100;
@@ -224,6 +230,7 @@ const TabView = <Route extends BaseRoute>({
   tabLabelStyle,
   renderBottomAccessoryView,
   activeIndicatorColor,
+  delayedFreeze = false,
   ...props
 }: Props<Route>) => {
   // @ts-ignore
@@ -432,7 +439,7 @@ const TabView = <Route extends BaseRoute>({
                 focused ? 'auto' : 'no-hide-descendants'
               }
             >
-              <DelayedFreeze freeze={!!freeze}>
+              <DelayedFreeze freeze={!!freeze} delayedFreeze={delayedFreeze}>
                 {renderScene({
                   route,
                   jumpTo,

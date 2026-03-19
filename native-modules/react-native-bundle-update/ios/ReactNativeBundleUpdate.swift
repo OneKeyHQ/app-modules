@@ -236,9 +236,16 @@ public class BundleUpdateStore: NSObject {
                 if nextRetryAtNum.int64Value > now { return }
             }
 
-            // 3. Verify scheduledEnv matches current state
+            // 3. Verify scheduledEnv matches current state (including buildNumber)
             let currentAppVersion = getCurrentNativeVersion()
             guard taskDict["scheduledEnvAppVersion"] as? String == currentAppVersion else { return }
+
+            let scheduledBuildNumber = taskDict["scheduledEnvBuildNumber"] as? String ?? ""
+            let currentBuildNumber = getCurrentNativeBuildNumber()
+            if !scheduledBuildNumber.isEmpty && !currentBuildNumber.isEmpty && scheduledBuildNumber != currentBuildNumber {
+                OneKeyLog.info("BundleUpdate", "processPreLaunchPendingTask: buildNumber changed from \(scheduledBuildNumber) to \(currentBuildNumber), skipping stale task")
+                return
+            }
 
             let currentBundleVersionStr: String
             if let cbv = currentBundleVersion(),

@@ -1,17 +1,21 @@
 import React from 'react';
 import { Freeze } from 'react-freeze';
 
+const ANIMATION_DELAY = 200;
+
 interface FreezeWrapperProps {
   freeze: boolean;
+  delayedFreeze?: boolean;
   children: React.ReactNode;
 }
 
-const ANIMATION_DELAY = 200;
-
-function DelayedFreeze({ freeze, children }: FreezeWrapperProps) {
+function DelayedFreeze({ freeze, delayedFreeze, children }: FreezeWrapperProps) {
   const [freezeState, setFreezeState] = React.useState(false);
 
   React.useEffect(() => {
+    if (!delayedFreeze) {
+      return;
+    }
     const id = setTimeout(() => {
       setFreezeState(freeze);
     }, ANIMATION_DELAY);
@@ -19,9 +23,11 @@ function DelayedFreeze({ freeze, children }: FreezeWrapperProps) {
     return () => {
       clearTimeout(id);
     };
-  }, [freeze]);
+  }, [freeze, delayedFreeze]);
 
-  return <Freeze freeze={freeze ? freezeState : false}>{children}</Freeze>;
+  const shouldFreeze = delayedFreeze ? (freeze ? freezeState : false) : freeze;
+
+  return <Freeze freeze={shouldFreeze}>{children}</Freeze>;
 }
 
 export default DelayedFreeze;
