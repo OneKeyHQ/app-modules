@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.46] - 2026-03-19
+
+### Bug Fixes
+- **bundle-update**: Use `scheduledEnvBuildNumber` from task instead of stored `getNativeBuildNumber()` for buildNumber change detection in pre-launch pending task processing
+
+### Chores
+- Bump all native modules and views to 1.1.46
+
 ## [1.1.45] - 2026-03-19
 
 ### Bug Fixes
