@@ -1,0 +1,1 @@
+{"version":3,"file":"ethers.d.ts","sourceRoot":"","sources":["../../src/ethers.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,mBAAmB,EAAE,MAAM,6BAA6B,CAAC;AAClE,OAAO,EAAE,iBAAiB,EAAE,MAAM,2BAA2B,CAAC;AAC9D,OAAO,EAAE,eAAe,EAAE,MAAM,yBAAyB,CAAC;AAC1D,YAAY,EAAE,oBAAoB,EAAE,MAAM,yBAAyB,CAAC;AACpE,mBAAmB,yBAAyB,CAAC"}

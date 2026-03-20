@@ -1,0 +1,1 @@
+{"version":3,"names":["EthersConstantsUtil","WALLET_ID","ERROR_CODE_UNRECOGNIZED_CHAIN_ID","ERROR_CODE_DEFAULT"],"sourceRoot":"../../../src","sources":["utils/EthersConstantsUtil.ts"],"mappings":"AAAA,OAAO,MAAMA,mBAAmB,GAAG;EACjCC,SAAS,EAAE,gBAAgB;EAC3BC,gCAAgC,EAAE,IAAI;EACtCC,kBAAkB,EAAE;AACtB,CAAC"}
