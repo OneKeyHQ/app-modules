@@ -1,0 +1,1 @@
+{"version":3,"names":["StyleSheet","create","container","justifyContent","alignItems"],"sourceRoot":"../../../../src","sources":["views/w3m-wallet-receive-view/styles.ts"],"mappings":"AAAA,SAASA,UAAU,QAAQ,cAAc;AAEzC,eAAeA,UAAU,CAACC,MAAM,CAAC;EAC/BC,SAAS,EAAE;IACTC,cAAc,EAAE,QAAQ;IACxBC,UAAU,EAAE;EACd;AACF,CAAC,CAAC"}

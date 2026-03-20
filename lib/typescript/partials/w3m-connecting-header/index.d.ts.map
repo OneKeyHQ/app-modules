@@ -1,0 +1,1 @@
+{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../../src/partials/w3m-connecting-header/index.tsx"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,QAAQ,EAAE,MAAM,iCAAiC,CAAC;AAIhE,MAAM,WAAW,qBAAqB;IACpC,SAAS,EAAE,QAAQ,EAAE,CAAC;IACtB,gBAAgB,EAAE,CAAC,QAAQ,EAAE,QAAQ,KAAK,IAAI,CAAC;CAChD;AAQD,wBAAgB,gBAAgB,CAAC,EAAE,SAAS,EAAE,gBAAgB,EAAE,EAAE,qBAAqB,2CA+BtF"}

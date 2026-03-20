@@ -1,0 +1,1 @@
+{"version":3,"names":["StyleSheet","create","iconPlaceholder","height","width"],"sourceRoot":"../../../../src","sources":["partials/w3m-header/styles.ts"],"mappings":"AAAA,SAASA,UAAU,QAAQ,cAAc;AAEzC,eAAeA,UAAU,CAACC,MAAM,CAAC;EAC/BC,eAAe,EAAE;IACfC,MAAM,EAAE,EAAE;IACVC,KAAK,EAAE;EACT;AACF,CAAC,CAAC"}

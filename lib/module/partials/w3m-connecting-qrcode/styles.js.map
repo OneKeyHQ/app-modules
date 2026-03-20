@@ -1,0 +1,1 @@
+{"version":3,"names":["Spacing","StyleSheet","create","copyButton","marginTop","m"],"sourceRoot":"../../../../src","sources":["partials/w3m-connecting-qrcode/styles.ts"],"mappings":"AAAA,SAASA,OAAO,QAAQ,+BAA+B;AACvD,SAASC,UAAU,QAAQ,cAAc;AAEzC,eAAeA,UAAU,CAACC,MAAM,CAAC;EAC/BC,UAAU,EAAE;IACVC,SAAS,EAAEJ,OAAO,CAACK;EACrB;AACF,CAAC,CAAC"}
