@@ -2,6 +2,7 @@ import UIKit
 import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
+import BackgroundThread
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -49,5 +50,11 @@ class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
 #else
     Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif
+  }
+
+  override func hostDidStart(_ host: RCTHost) {
+    super.hostDidStart(host)
+    // Install SharedBridge HostObject into the main runtime
+    BackgroundThreadManager.installSharedBridge(inMainRuntime: host)
   }
 }

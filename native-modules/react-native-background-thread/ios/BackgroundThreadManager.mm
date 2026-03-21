@@ -15,6 +15,10 @@
 #import "BackgroundRunnerReactNativeDelegate.h"
 #import "BTLogger.h"
 
+#include "SharedBridge.h"
+#import <React/RCTHost.h>
+#import <objc/runtime.h>
+
 @interface BackgroundThreadManager ()
 @property (nonatomic, strong) BackgroundReactNativeDelegate *reactNativeFactoryDelegate;
 @property (nonatomic, strong) RCTReactNativeFactory *reactNativeFactory;
@@ -46,6 +50,28 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         _hasListeners = NO;
     }
     return self;
+}
+
+#pragma mark - SharedBridge
+
++ (void)installSharedBridgeInMainRuntime:(RCTHost *)host {
+    if (!host) {
+        [BTLogger error:@"Cannot install SharedBridge: RCTHost is nil"];
+        return;
+    }
+
+    Ivar ivar = class_getInstanceVariable([host class], "_instance");
+    id instance = object_getIvar(host, ivar);
+
+    if (!instance) {
+        [BTLogger error:@"Cannot install SharedBridge: RCTInstance is nil"];
+        return;
+    }
+
+    [instance callFunctionOnBufferedRuntimeExecutor:^(facebook::jsi::Runtime &runtime) {
+        SharedBridge::install(runtime, /* isMain */ true);
+        [BTLogger info:@"SharedBridge installed in main runtime"];
+    }];
 }
 
 #pragma mark - Public Methods

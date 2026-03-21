@@ -70,3 +70,28 @@ nativeBGBridge.onHostMessage((message) => {
     }, 3000);
   }
 });
+
+// SharedBridge pull-model: drain messages from the main runtime
+function drainSharedBridge() {
+  if (globalThis.sharedBridge) {
+    if (globalThis.sharedBridge.hasMessages) {
+      const messages = globalThis.sharedBridge.drain();
+      messages.forEach((raw) => {
+        try {
+          const msg = JSON.parse(raw);
+          console.log('[SharedBridge BG] received:', msg);
+          if (msg.type === 'ping') {
+            // Echo back with pong via SharedBridge
+            globalThis.sharedBridge.send(
+              JSON.stringify({ type: 'pong', ts: Date.now() }),
+            );
+          }
+        } catch (e) {
+          console.warn('[SharedBridge BG] parse error:', e);
+        }
+      });
+    }
+  }
+  setTimeout(drainSharedBridge, 16); // ~60fps check cadence
+}
+drainSharedBridge();

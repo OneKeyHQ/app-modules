@@ -8,6 +8,8 @@
 #include <memory>
 #include <mutex>
 
+#include "SharedBridge.h"
+
 #import <React/RCTBridge.h>
 #import <React/RCTBundleURLProvider.h>
 
@@ -198,6 +200,10 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
     facebook::react::defineReadOnlyGlobal(runtime, "postHostMessage", [self createPostMessageFunction:runtime]);
     facebook::react::defineReadOnlyGlobal(runtime, "onHostMessage", [self createSetOnMessageFunction:runtime]);
     [self setupErrorHandler:runtime];
+
+    // Install SharedBridge HostObject into background runtime
+    SharedBridge::install(runtime, /* isMain */ false);
+    [BTLogger info:@"SharedBridge installed in background runtime"];
   }];
 }
 
