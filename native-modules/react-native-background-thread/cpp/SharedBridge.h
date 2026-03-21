@@ -22,8 +22,9 @@ public:
   /// Reset all queues and flags. Call when tearing down.
   static void reset();
 
-private:
   explicit SharedBridge(bool isMain) : isMain_(isMain) {}
+
+private:
 
   bool isMain_;
 
