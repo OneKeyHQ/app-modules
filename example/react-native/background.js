@@ -71,27 +71,27 @@ nativeBGBridge.onHostMessage((message) => {
   }
 });
 
-// SharedBridge pull-model: drain messages from the main runtime
-function drainSharedBridge() {
-  if (globalThis.sharedBridge) {
-    if (globalThis.sharedBridge.hasMessages) {
-      const messages = globalThis.sharedBridge.drain();
-      messages.forEach((raw) => {
-        try {
-          const msg = JSON.parse(raw);
-          console.log('[SharedBridge BG] received:', msg);
-          if (msg.type === 'ping') {
-            // Echo back with pong via SharedBridge
-            globalThis.sharedBridge.send(
-              JSON.stringify({ type: 'pong', ts: Date.now() }),
-            );
-          }
-        } catch (e) {
-          console.warn('[SharedBridge BG] parse error:', e);
-        }
-      });
+// SharedStore: read config values set by main runtime
+function checkSharedStore() {
+  if (globalThis.sharedStore) {
+    const locale = globalThis.sharedStore.get('locale');
+    if (locale) {
+      console.log('[SharedStore BG] locale =', locale);
     }
   }
-  setTimeout(drainSharedBridge, 16); // ~60fps check cadence
+  setTimeout(checkSharedStore, 1000);
 }
-drainSharedBridge();
+checkSharedStore();
+
+// SharedRPC: handle RPC calls from main runtime via onHostMessage
+nativeBGBridge.onHostMessage((message) => {
+  if (message.type === 'rpc' && message.callId) {
+    const params = globalThis.sharedRPC?.read(message.callId);
+    if (params !== undefined) {
+      console.log('[SharedRPC BG] received call:', message.callId, params);
+      // Echo back the params as the result
+      globalThis.sharedRPC?.write(message.callId, 'echo: ' + params);
+      nativeBGBridge.postHostMessage({ type: 'rpc_response', callId: message.callId });
+    }
+  }
+});

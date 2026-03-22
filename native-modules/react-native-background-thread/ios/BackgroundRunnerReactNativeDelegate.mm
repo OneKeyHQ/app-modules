@@ -8,7 +8,8 @@
 #include <memory>
 #include <mutex>
 
-#include "SharedBridge.h"
+#include "SharedStore.h"
+#include "SharedRPC.h"
 
 #import <React/RCTBridge.h>
 #import <React/RCTBundleURLProvider.h>
@@ -201,9 +202,10 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
     facebook::react::defineReadOnlyGlobal(runtime, "onHostMessage", [self createSetOnMessageFunction:runtime]);
     [self setupErrorHandler:runtime];
 
-    // Install SharedBridge HostObject into background runtime
-    SharedBridge::install(runtime, /* isMain */ false);
-    [BTLogger info:@"SharedBridge installed in background runtime"];
+    // Install SharedStore and SharedRPC into background runtime
+    SharedStore::install(runtime);
+    SharedRPC::install(runtime);
+    [BTLogger info:@"SharedStore and SharedRPC installed in background runtime"];
   }];
 }
 

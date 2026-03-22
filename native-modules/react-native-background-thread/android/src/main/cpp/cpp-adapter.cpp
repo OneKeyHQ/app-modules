@@ -5,7 +5,8 @@
 #include <mutex>
 #include <string>
 
-#include "SharedBridge.h"
+#include "SharedStore.h"
+#include "SharedRPC.h"
 
 #define LOG_TAG "BackgroundThread"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -154,7 +155,7 @@ Java_com_backgroundthread_BackgroundThreadManager_nativePostToBackground(
 }
 
 // ── nativeInstallSharedBridge ───────────────────────────────────────────
-// Install SharedBridge HostObject into a runtime.
+// Install SharedStore and SharedRPC into a runtime.
 extern "C" JNIEXPORT void JNICALL
 Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
     JNIEnv *env, jobject thiz, jlong runtimePtr, jboolean isMain) {
@@ -162,8 +163,9 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
     auto *rt = reinterpret_cast<jsi::Runtime *>(runtimePtr);
     if (!rt) return;
 
-    SharedBridge::install(*rt, static_cast<bool>(isMain));
-    LOGI("SharedBridge installed (isMain=%d)", static_cast<int>(isMain));
+    SharedStore::install(*rt);
+    SharedRPC::install(*rt);
+    LOGI("SharedStore and SharedRPC installed (isMain=%d)", static_cast<int>(isMain));
 }
 
 // ── nativeSetupErrorHandler ─────────────────────────────────────────────

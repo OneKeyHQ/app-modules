@@ -15,7 +15,8 @@
 #import "BackgroundRunnerReactNativeDelegate.h"
 #import "BTLogger.h"
 
-#include "SharedBridge.h"
+#include "SharedStore.h"
+#include "SharedRPC.h"
 #import <React/RCTHost.h>
 #import <objc/runtime.h>
 
@@ -69,8 +70,9 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
     }
 
     [instance callFunctionOnBufferedRuntimeExecutor:^(facebook::jsi::Runtime &runtime) {
-        SharedBridge::install(runtime, /* isMain */ true);
-        [BTLogger info:@"SharedBridge installed in main runtime"];
+        SharedStore::install(runtime);
+        SharedRPC::install(runtime);
+        [BTLogger info:@"SharedStore and SharedRPC installed in main runtime"];
     }];
 }
 

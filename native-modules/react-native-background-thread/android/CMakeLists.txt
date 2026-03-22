@@ -9,7 +9,8 @@ find_package(ReactAndroid REQUIRED CONFIG)
 
 add_library(${PROJECT_NAME} SHARED
     src/main/cpp/cpp-adapter.cpp
-    ../cpp/SharedBridge.cpp
+    ../cpp/SharedStore.cpp
+    ../cpp/SharedRPC.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE

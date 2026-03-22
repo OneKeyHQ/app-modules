@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { TestPageBase, TestButton, TestResult } from './TestPageBase';
 import { BackgroundThread } from '@onekeyfe/react-native-background-thread';
@@ -7,101 +7,123 @@ BackgroundThread.initBackgroundThread();
 
 export function BackgroundThreadTestPage() {
   const [pushResult, setPushResult] = useState<string>('');
-  const [bridgeResult, setBridgeResult] = useState<string>('');
-  const [bridgeAvailable, setBridgeAvailable] = useState(false);
-  const drainTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [storeResult, setStoreResult] = useState<string>('');
+  const [rpcResult, setRpcResult] = useState<string>('');
+  const [storeAvailable, setStoreAvailable] = useState(false);
 
-  // Check SharedBridge availability and start draining
   useEffect(() => {
     const check = setInterval(() => {
-      if (globalThis.sharedBridge) {
-        setBridgeAvailable(true);
+      if (globalThis.sharedStore && globalThis.sharedRPC) {
+        setStoreAvailable(true);
         clearInterval(check);
       }
     }, 100);
-
-    // Drain loop: pull messages from background via SharedBridge
-    drainTimer.current = setInterval(() => {
-      if (globalThis.sharedBridge?.hasMessages) {
-        const messages = globalThis.sharedBridge.drain();
-        messages.forEach((raw) => {
-          try {
-            const msg = JSON.parse(raw);
-            setBridgeResult(
-              (prev) =>
-                `${prev}\n[${new Date().toLocaleTimeString()}] Received: ${JSON.stringify(msg)}`,
-            );
-          } catch {
-            setBridgeResult((prev) => `${prev}\nParse error: ${raw}`);
-          }
-        });
-      }
-    }, 16);
-
-    return () => {
-      clearInterval(check);
-      if (drainTimer.current) clearInterval(drainTimer.current);
-    };
+    return () => clearInterval(check);
   }, []);
 
-  // Push model: existing postBackgroundMessage / onBackgroundMessage
+  // Listen for RPC responses from background
+  useEffect(() => {
+    const sub = BackgroundThread.onBackgroundMessage((msg) => {
+      try {
+        const parsed = JSON.parse(msg);
+        if (parsed.type === 'rpc_response' && parsed.callId) {
+          const result = globalThis.sharedRPC?.read(parsed.callId);
+          setRpcResult(
+            (prev) =>
+              `${prev}\n[${new Date().toLocaleTimeString()}] Response: ${result}`,
+          );
+        } else {
+          setPushResult(`Received: ${msg}`);
+        }
+      } catch {
+        setPushResult(`Received: ${msg}`);
+      }
+    });
+    return sub;
+  }, []);
+
+  // Push model
   const handlePushMessage = () => {
     const message = { type: 'test1' };
-    BackgroundThread.onBackgroundMessage((event) => {
-      setPushResult(`Received from background: ${event}`);
-    });
     BackgroundThread.postBackgroundMessage(JSON.stringify(message));
     setPushResult(`Sent: ${JSON.stringify(message)}`);
   };
 
-  // Pull model: SharedBridge send + drain
-  const handleSharedBridgePing = () => {
-    if (!globalThis.sharedBridge) {
-      setBridgeResult('SharedBridge not available yet');
+  // SharedStore test
+  const handleStoreTest = () => {
+    if (!globalThis.sharedStore) {
+      setStoreResult('SharedStore not available');
       return;
     }
-    const msg = { type: 'ping', ts: Date.now() };
-    globalThis.sharedBridge.send(JSON.stringify(msg));
-    setBridgeResult(
-      (prev) =>
-        `${prev}\n[${new Date().toLocaleTimeString()}] Sent: ${JSON.stringify(msg)}`,
-    );
+    globalThis.sharedStore.set('locale', 'zh-CN');
+    globalThis.sharedStore.set('networkId', 42);
+    globalThis.sharedStore.set('devMode', true);
+    const keys = globalThis.sharedStore.keys();
+    const values = keys
+      .map((k) => `${k}=${globalThis.sharedStore?.get(k)}`)
+      .join(', ');
+    setStoreResult(`Set 3 values. Current: ${values} | size=${globalThis.sharedStore.size}`);
   };
 
-  const handleClearBridgeLog = () => {
-    setBridgeResult('');
+  // SharedRPC test
+  const handleRpcTest = () => {
+    if (!globalThis.sharedRPC) {
+      setRpcResult('SharedRPC not available');
+      return;
+    }
+    const callId = `rpc_${Date.now()}`;
+    globalThis.sharedRPC.write(
+      callId,
+      JSON.stringify({ method: 'echo', params: { ts: Date.now() } }),
+    );
+    BackgroundThread.postBackgroundMessage(
+      JSON.stringify({ type: 'rpc', callId }),
+    );
+    setRpcResult(
+      (prev) =>
+        `${prev}\n[${new Date().toLocaleTimeString()}] Sent RPC: ${callId}`,
+    );
   };
 
   return (
     <TestPageBase title="Background Thread Test">
-      {/* Push Model (existing) */}
+      {/* Push Model */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Push Model (postBackgroundMessage)</Text>
         <TestButton title="Send Message" onPress={handlePushMessage} />
         <TestResult result={pushResult || null} />
       </View>
 
-      {/* Pull Model (SharedBridge) */}
+      {/* SharedStore */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Pull Model (SharedBridge HostObject)</Text>
+        <Text style={styles.sectionTitle}>SharedStore (persistent key-value)</Text>
         <Text style={styles.statusText}>
-          SharedBridge: {bridgeAvailable ? 'Available' : 'Waiting...'}
-          {bridgeAvailable &&
-            ` | isMain: ${globalThis.sharedBridge?.isMain}`}
+          Available: {storeAvailable ? 'Yes' : 'Waiting...'}
         </Text>
         <TestButton
-          title="Send Ping via SharedBridge"
-          onPress={handleSharedBridgePing}
-          disabled={!bridgeAvailable}
+          title="Set & Read Values"
+          onPress={handleStoreTest}
+          disabled={!storeAvailable}
+        />
+        <TestResult result={storeResult || null} />
+      </View>
+
+      {/* SharedRPC */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>SharedRPC (temporary read-and-delete)</Text>
+        <TestButton
+          title="Send RPC Call"
+          onPress={handleRpcTest}
+          disabled={!storeAvailable}
         />
         <TestButton
           title="Clear Log"
-          onPress={handleClearBridgeLog}
+          onPress={() => setRpcResult('')}
           style={styles.clearButton}
         />
-        {bridgeResult ? (
+        {rpcResult ? (
           <View style={styles.logContainer}>
-            <Text style={styles.logText}>{bridgeResult.trim()}</Text>
+            <Text style={styles.logText}>{rpcResult.trim()}</Text>
           </View>
         ) : null}
       </View>
