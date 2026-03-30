@@ -35,6 +35,7 @@ class MainApplication : Application(), ReactApplication {
       override fun onReactContextInitialized(context: ReactContext) {
         val manager = BackgroundThreadManager.getInstance()
         val reactAppContext = context as com.facebook.react.bridge.ReactApplicationContext
+        manager.setReactPackages(PackageList(this@MainApplication).packages)
         manager.installSharedBridgeInMainRuntime(reactAppContext)
 
         val bgURL = if (BuildConfig.DEBUG) {

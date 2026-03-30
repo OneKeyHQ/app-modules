@@ -42,6 +42,22 @@ static void stubJsiFunction(jsi::Runtime &runtime, jsi::Object &object, const ch
             }));
 }
 
+static void invokeOptionalGlobalFunction(jsi::Runtime &runtime, const char *name) {
+    try {
+        auto fnValue = runtime.global().getProperty(runtime, name);
+        if (!fnValue.isObject() || !fnValue.asObject(runtime).isFunction(runtime)) {
+            return;
+        }
+
+        auto fn = fnValue.asObject(runtime).asFunction(runtime);
+        fn.call(runtime);
+    } catch (const jsi::JSError &e) {
+        LOGE("JSError calling global function %s: %s", name, e.getMessage().c_str());
+    } catch (const std::exception &e) {
+        LOGE("Error calling global function %s: %s", name, e.what());
+    }
+}
+
 // ── Pending work map for cross-runtime executor ───────────────────────
 static std::mutex gWorkMutex;
 static std::unordered_map<int64_t, std::function<void(jsi::Runtime &)>> gPendingWork;
@@ -124,6 +140,9 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
     std::string runtimeId = isMain ? "main" : "background";
     SharedRPC::install(*rt, std::move(executor), runtimeId);
     LOGI("SharedStore and SharedRPC installed (isMain=%d)", static_cast<int>(isMain));
+    if (!capturedIsMain) {
+        invokeOptionalGlobalFunction(*rt, "__setupBackgroundRPCHandler");
+    }
 }
 
 // ── nativeSetupErrorHandler ─────────────────────────────────────────────

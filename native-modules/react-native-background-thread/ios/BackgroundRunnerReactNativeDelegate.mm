@@ -54,6 +54,23 @@ static void stubJsiFunction(jsi::Runtime &runtime, jsi::Object &object, const ch
           }));
 }
 
+static void invokeOptionalGlobalFunction(jsi::Runtime &runtime, const char *name)
+{
+  try {
+    jsi::Value fnValue = runtime.global().getProperty(runtime, name);
+    if (!fnValue.isObject() || !fnValue.asObject(runtime).isFunction(runtime)) {
+      return;
+    }
+
+    jsi::Function fn = fnValue.asObject(runtime).asFunction(runtime);
+    fn.call(runtime);
+  } catch (const jsi::JSError &e) {
+    [BTLogger error:[NSString stringWithFormat:@"JSError calling global function %s: %s", name, e.getMessage().c_str()]];
+  } catch (const std::exception &e) {
+    [BTLogger error:[NSString stringWithFormat:@"Error calling global function %s: %s", name, e.what()]];
+  }
+}
+
 @interface BackgroundReactNativeDelegate () {
   RCTInstance *_rctInstance;
   std::string _origin;
@@ -154,6 +171,7 @@ static void stubJsiFunction(jsi::Runtime &runtime, jsi::Object &object, const ch
     };
     SharedRPC::install(runtime, std::move(bgExecutor), "background");
     [BTLogger info:@"SharedStore and SharedRPC installed in background runtime"];
+    invokeOptionalGlobalFunction(runtime, "__setupBackgroundRPCHandler");
   }];
 }
 

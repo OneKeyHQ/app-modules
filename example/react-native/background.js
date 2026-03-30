@@ -4,21 +4,11 @@ import ReactNative from 'react-native';
 // Background runtime listens for writes from main runtime,
 // processes the RPC call, and writes the result back.
 
-function waitForSharedRPC(times = 0) {
-  if (globalThis.$$isNativeUiThread) return;
-  if (globalThis.sharedRPC) {
-    setupRPCHandler();
-    return;
-  }
-  if (times > 5000) {
-    console.error('[BG] sharedRPC not available after timeout');
-    return;
-  }
-  setTimeout(() => waitForSharedRPC(times + 1), 10);
-}
+let hasRegisteredRPCHandler = false;
 
 function setupRPCHandler() {
-  console.log('[BG] sharedRPC ready, registering onWrite listener');
+  if (hasRegisteredRPCHandler || !globalThis.sharedRPC) return false;
+  hasRegisteredRPCHandler = true;
 
   globalThis.sharedRPC.onWrite((callId) => {
     // Skip result writes (those are our own responses)
@@ -26,8 +16,6 @@ function setupRPCHandler() {
 
     const raw = globalThis.sharedRPC.read(callId);
     if (raw === undefined) return;
-
-    console.log('[BG] RPC call received:', callId, raw);
 
     let params;
     try {
@@ -44,8 +32,9 @@ function setupRPCHandler() {
       callId + ':result',
       typeof result === 'string' ? result : JSON.stringify(result),
     );
-    console.log('[BG] RPC result written:', callId + ':result');
   });
+
+  return true;
 }
 
 function handleRPC(params) {
@@ -63,17 +52,15 @@ function handleRPC(params) {
   }
 }
 
-waitForSharedRPC();
+globalThis.__setupBackgroundRPCHandler = setupRPCHandler;
+setupRPCHandler();
 
 // ── SharedStore demo ───────────────────────────────────────────────────
 // Periodically read config values set by the main runtime.
 
 function pollSharedStore() {
   if (globalThis.sharedStore) {
-    const locale = globalThis.sharedStore.get('locale');
-    if (locale) {
-      console.log('[BG SharedStore] locale =', locale);
-    }
+    globalThis.sharedStore.get('locale');
   }
   setTimeout(pollSharedStore, 3000);
 }

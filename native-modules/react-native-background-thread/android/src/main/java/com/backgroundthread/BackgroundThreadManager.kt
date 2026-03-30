@@ -1,5 +1,6 @@
 package com.backgroundthread
 
+import com.facebook.react.ReactPackage
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.ReactInstanceEventListener
 import com.facebook.react.bridge.JSBundleLoader
@@ -12,6 +13,7 @@ import com.facebook.react.defaults.DefaultTurboModuleManagerDelegate
 import com.facebook.react.fabric.ComponentFactory
 import com.facebook.react.runtime.ReactHostImpl
 import com.facebook.react.runtime.hermes.HermesInstance
+import com.facebook.react.shell.MainReactPackage
 
 /**
  * Singleton manager for the background React Native runtime.
@@ -25,6 +27,7 @@ import com.facebook.react.runtime.hermes.HermesInstance
 class BackgroundThreadManager private constructor() {
 
     private var bgReactHost: ReactHostImpl? = null
+    private var reactPackages: List<ReactPackage> = emptyList()
 
     @Volatile
     private var bgRuntimePtr: Long = 0
@@ -65,6 +68,10 @@ class BackgroundThreadManager private constructor() {
      * Install SharedBridge HostObject into the main (UI) runtime.
      * Call this from installSharedBridge().
      */
+    fun setReactPackages(packages: List<ReactPackage>) {
+        reactPackages = packages.toList()
+    }
+
     fun installSharedBridgeInMainRuntime(context: ReactApplicationContext) {
         mainReactContext = context
         context.runOnJSQueueThread {
@@ -95,6 +102,13 @@ class BackgroundThreadManager private constructor() {
         BTLogger.info("Starting background runner with entryURL: $entryURL")
 
         val appContext = context.applicationContext
+        val packages =
+            if (reactPackages.isNotEmpty()) {
+                reactPackages
+            } else {
+                BTLogger.warn("No ReactPackages registered for background runtime; falling back to MainReactPackage only")
+                listOf(MainReactPackage())
+            }
 
         val bundleLoader = if (entryURL.startsWith("http")) {
             // Dev server: download bundle to temp file first, then load from file.
@@ -124,7 +138,7 @@ class BackgroundThreadManager private constructor() {
         val delegate = DefaultReactHostDelegate(
             jsMainModulePath = MODULE_NAME,
             jsBundleLoader = bundleLoader,
-            reactPackages = emptyList(),
+            reactPackages = packages,
             jsRuntimeFactory = HermesInstance(),
             turboModuleManagerDelegateBuilder = DefaultTurboModuleManagerDelegate.Builder(),
         )
