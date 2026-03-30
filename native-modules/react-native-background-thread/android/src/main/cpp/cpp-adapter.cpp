@@ -51,6 +51,7 @@ static int64_t gNextWorkId = 0;
 extern "C" JNIEXPORT void JNICALL
 Java_com_backgroundthread_BackgroundThreadManager_nativeExecuteWork(
     JNIEnv *env, jobject thiz, jlong runtimePtr, jlong workId) {
+    LOGI("nativeExecuteWork: runtimePtr=%ld, workId=%ld", (long)runtimePtr, (long)workId);
     auto *rt = reinterpret_cast<jsi::Runtime *>(runtimePtr);
     if (!rt) return;
 
@@ -88,7 +89,10 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
 
     RPCRuntimeExecutor executor = [ref, capturedIsMain](std::function<void(jsi::Runtime &)> work) {
         JNIEnv *env = getJNIEnv();
-        if (!env || !ref) return;
+        if (!env || !ref) {
+            LOGE("executor: env=%p, ref=%p — aborting", env, ref);
+            return;
+        }
 
         int64_t workId;
         {
@@ -100,7 +104,19 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
         jclass cls = env->GetObjectClass(ref);
         jmethodID mid = env->GetMethodID(cls, "scheduleOnJSThread", "(ZJ)V");
         if (mid) {
+            LOGI("executor: calling scheduleOnJSThread(isMain=%d, workId=%ld)", capturedIsMain, (long)workId);
             env->CallVoidMethod(ref, mid, static_cast<jboolean>(capturedIsMain), static_cast<jlong>(workId));
+            if (env->ExceptionCheck()) {
+                LOGE("executor: JNI exception after scheduleOnJSThread");
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+            }
+        } else {
+            LOGE("executor: scheduleOnJSThread method not found!");
+            if (env->ExceptionCheck()) {
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+            }
         }
         env->DeleteLocalRef(cls);
     };

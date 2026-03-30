@@ -1,10 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { TestPageBase, TestButton, TestResult } from './TestPageBase';
-import { BackgroundThread } from '@onekeyfe/react-native-background-thread';
-
-// Install SharedStore & SharedRPC into main runtime (no-op on iOS, needed on Android)
-BackgroundThread.installSharedBridge();
 
 export function BackgroundThreadTestPage() {
   const [storeResult, setStoreResult] = useState<string>('');

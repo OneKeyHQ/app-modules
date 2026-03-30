@@ -1,5 +1,12 @@
 #include "SharedRPC.h"
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#define RPC_LOG(...) __android_log_print(ANDROID_LOG_INFO, "SharedRPC", __VA_ARGS__)
+#else
+#define RPC_LOG(...)
+#endif
+
 std::mutex SharedRPC::mutex_;
 std::unordered_map<std::string, RPCValue> SharedRPC::slots_;
 std::vector<RuntimeListener> SharedRPC::listeners_;
@@ -48,22 +55,30 @@ void SharedRPC::notifyOtherRuntime(jsi::Runtime &callerRt, const std::string &ca
   std::vector<std::pair<RPCRuntimeExecutor, std::shared_ptr<jsi::Function>>> toNotify;
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    RPC_LOG("notifyOtherRuntime: callId=%s, listeners=%zu, callerRt=%p",
+            callId.c_str(), listeners_.size(), &callerRt);
     for (auto &listener : listeners_) {
+      RPC_LOG("  listener: id=%s, rt=%p, hasCallback=%d",
+              listener.runtimeId.c_str(), listener.runtime, listener.callback != nullptr);
       if (listener.runtime == &callerRt) continue;
       if (!listener.callback) continue;
       toNotify.emplace_back(listener.executor, listener.callback);
     }
+    RPC_LOG("  toNotify count: %zu", toNotify.size());
   }
 
   for (auto &[executor, cb] : toNotify) {
     auto id = callId;
+    RPC_LOG("  invoking executor for callId=%s", id.c_str());
     executor([cb, id](jsi::Runtime &rt) {
+      RPC_LOG("  executor work running for callId=%s", id.c_str());
       try {
         cb->call(rt, jsi::String::createFromUtf8(rt, id));
-      } catch (const jsi::JSError &) {
-        // Swallow — listener threw, not our problem
+        RPC_LOG("  cb->call succeeded for callId=%s", id.c_str());
+      } catch (const jsi::JSError &e) {
+        RPC_LOG("  JSError in cb->call: %s", e.getMessage().c_str());
       } catch (...) {
-        // Runtime may be torn down
+        RPC_LOG("  Unknown error in cb->call");
       }
     });
   }

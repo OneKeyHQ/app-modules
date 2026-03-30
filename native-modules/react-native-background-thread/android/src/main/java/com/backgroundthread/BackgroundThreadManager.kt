@@ -97,9 +97,23 @@ class BackgroundThreadManager private constructor() {
         val appContext = context.applicationContext
 
         val bundleLoader = if (entryURL.startsWith("http")) {
+            // Dev server: download bundle to temp file first, then load from file.
+            // loadScriptFromFile only accepts local file paths, not HTTP URLs.
             object : JSBundleLoader() {
                 override fun loadScript(delegate: com.facebook.react.bridge.JSBundleLoaderDelegate): String {
-                    delegate.loadScriptFromFile(entryURL, entryURL, false)
+                    val tempFile = java.io.File(appContext.cacheDir, "background.bundle")
+                    try {
+                        java.net.URL(entryURL).openStream().use { input ->
+                            tempFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        BTLogger.info("Background bundle downloaded to ${tempFile.absolutePath}")
+                    } catch (e: Exception) {
+                        BTLogger.error("Failed to download background bundle: ${e.message}")
+                        throw RuntimeException("Failed to download background bundle from $entryURL", e)
+                    }
+                    delegate.loadScriptFromFile(tempFile.absolutePath, entryURL, false)
                     return entryURL
                 }
             }
@@ -158,16 +172,23 @@ class BackgroundThreadManager private constructor() {
     @DoNotStrip
     fun scheduleOnJSThread(isMain: Boolean, workId: Long) {
         val context = if (isMain) mainReactContext else bgReactHost?.currentReactContext
+        BTLogger.info("scheduleOnJSThread: isMain=$isMain, workId=$workId, context=${context != null}")
+        if (context == null) {
+            BTLogger.error("scheduleOnJSThread: context is null! isMain=$isMain, mainCtx=${mainReactContext != null}, bgHost=${bgReactHost != null}, bgCtx=${bgReactHost?.currentReactContext != null}")
+        }
         context?.runOnJSQueueThread {
             // Re-read ptr inside the block — if a reload happened between
             // scheduling and execution, the old ptr may be stale.
             val ptr = if (isMain) mainRuntimePtr else bgRuntimePtr
+            BTLogger.info("scheduleOnJSThread runOnJSQueueThread: isMain=$isMain, workId=$workId, ptr=$ptr")
             if (ptr != 0L) {
                 try {
                     nativeExecuteWork(ptr, workId)
                 } catch (e: Exception) {
                     BTLogger.error("Error executing work on JS thread: ${e.message}")
                 }
+            } else {
+                BTLogger.error("scheduleOnJSThread: ptr is 0! isMain=$isMain")
             }
         }
     }
