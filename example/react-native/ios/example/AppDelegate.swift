@@ -38,23 +38,3 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     return true
   }
 }
-
-class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
-  override func sourceURL(for bridge: RCTBridge) -> URL? {
-    self.bundleURL()
-  }
-
-  override func bundleURL() -> URL? {
-#if DEBUG
-    RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index")
-#else
-    Bundle.main.url(forResource: "main", withExtension: "jsbundle")
-#endif
-  }
-
-  override func hostDidStart(_ host: RCTHost) {
-    super.hostDidStart(host)
-    // Install SharedBridge HostObject into the main runtime
-    BackgroundThreadManager.installSharedBridge(inMainRuntime: host)
-  }
-}

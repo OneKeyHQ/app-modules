@@ -14,8 +14,9 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/OneKeyHQ/app-modules/react-native-background-thread.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm,swift,cpp}", "cpp/**/*.{h,cpp}"
-  s.public_header_files = "ios/**/*.h"
-  s.pod_target_xcconfig = { 'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/cpp"' }
+  s.public_header_files = "ios/BackgroundThreadManager.h", "ios/BTLogger.h"
+  s.pod_target_xcconfig = { 'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/cpp"', 'DEFINES_MODULE' => 'YES' }
+  s.user_target_xcconfig = { 'SWIFT_INCLUDE_PATHS' => '"$(PODS_ROOT)/Headers/Public/BackgroundThread"' }
 
   s.dependency 'ReactNativeNativeLogger'
 

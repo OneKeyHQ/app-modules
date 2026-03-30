@@ -17,7 +17,7 @@
 
 #include "SharedStore.h"
 #include "SharedRPC.h"
-#import <React/RCTHost.h>
+#import <ReactCommon/RCTHost.h>
 #import <objc/runtime.h>
 
 @interface BackgroundThreadManager ()

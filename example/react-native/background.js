@@ -1,10 +1,19 @@
 
 import ReactNative from 'react-native';
 
+let isReady = false;
 let waitMessages = [];
 const callbacks  = new Set();
 const onMessageCallback = (message) => {
-  callbacks.forEach((callback) => callback(message));
+  let parsed = message;
+  if (typeof message === 'string') {
+    try {
+      parsed = JSON.parse(message);
+    } catch {
+      // keep as raw string
+    }
+  }
+  callbacks.forEach((callback) => callback(parsed));
 };
 
 function checkReady(times = 0) {
@@ -36,7 +45,7 @@ const checkThread = () => {
   if (globalThis.$$isNativeUiThread) {
     // eslint-disable-next-line no-restricted-syntax
     throw new Error(
-      'this function is not available in native background thread',
+      'this function is not available in native UI thread',
     );
   }
 };
@@ -44,11 +53,12 @@ const checkThread = () => {
 export const nativeBGBridge = {
   postHostMessage: (message) => {
     checkThread();
+    const str = typeof message === 'string' ? message : JSON.stringify(message);
     if (!isReady) {
-      waitMessages.push(message);
+      waitMessages.push(str);
       return;
     }
-    globalThis.postHostMessage(JSON.stringify(message));
+    globalThis.postHostMessage(str);
   },
   onHostMessage: (callback) => {
     checkThread();
@@ -63,9 +73,9 @@ export const nativeBGBridge = {
 nativeBGBridge.onHostMessage((message) => {
   console.log('message', message);
   if (message.type === 'test1') {
-    alert(`${JSON.stringify(message)} in background, wait 3 seconds`);
+    console.log(`[BG] Received test1: ${JSON.stringify(message)}, will reply in 3s`);
     setTimeout(() => {
-      alert('post message from background thread');
+      console.log('[BG] Sending test2 response');
       nativeBGBridge.postHostMessage({ type: 'test2' });
     }, 3000);
   }

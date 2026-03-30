@@ -78,7 +78,7 @@
     "lefthook": "^2.0.3",
     "prettier": "^2.8.8",
     "react": "19.2.0",
-    "react-native": "0.83.0",
+    "react-native": "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch",
     "react-native-builder-bob": "^0.40.13",
     "release-it": "^19.0.4",
     "turbo": "^2.5.6",
