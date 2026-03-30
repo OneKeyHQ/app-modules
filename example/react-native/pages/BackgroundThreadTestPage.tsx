@@ -1,49 +1,51 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { TestPageBase, TestButton, TestResult } from './TestPageBase';
 import { BackgroundThread } from '@onekeyfe/react-native-background-thread';
 
+// Install SharedStore & SharedRPC into main runtime (no-op on iOS, needed on Android)
 BackgroundThread.installSharedBridge();
 
 export function BackgroundThreadTestPage() {
   const [storeResult, setStoreResult] = useState<string>('');
-  const [rpcResult, setRpcResult] = useState<string>('');
-  const [storeAvailable, setStoreAvailable] = useState(false);
+  const [rpcLog, setRpcLog] = useState<string>('');
+  const [ready, setReady] = useState(false);
 
+  // Wait for sharedStore & sharedRPC to be available
   useEffect(() => {
-    const check = setInterval(() => {
+    const timer = setInterval(() => {
       if (globalThis.sharedStore && globalThis.sharedRPC) {
-        setStoreAvailable(true);
-        clearInterval(check);
+        setReady(true);
+        clearInterval(timer);
       }
     }, 100);
-    return () => clearInterval(check);
+    return () => clearInterval(timer);
   }, []);
 
-  // Listen for RPC responses from background via SharedRPC.onWrite
+  // Register onWrite listener for RPC responses from background
   useEffect(() => {
-    if (!globalThis.sharedRPC) return;
-
-    globalThis.sharedRPC.onWrite((callId: string) => {
-      // Only handle result callbacks
+    if (!ready) return;
+    globalThis.sharedRPC!.onWrite((callId: string) => {
       if (!callId.endsWith(':result')) return;
-
-      const result = globalThis.sharedRPC?.read(callId);
-      if (result !== undefined) {
-        setRpcResult(
-          (prev) =>
-            `${prev}\n[${new Date().toLocaleTimeString()}] Response: ${result}`,
-        );
-      }
+      const raw = globalThis.sharedRPC?.read(callId);
+      if (raw === undefined) return;
+      const time = new Date().toLocaleTimeString();
+      setRpcLog((prev) => `${prev}[${time}] ← ${raw}\n`);
     });
-  }, [storeAvailable]);
+  }, [ready]);
 
-  // SharedStore test
-  const handleStoreTest = () => {
-    if (!globalThis.sharedStore) {
-      setStoreResult('SharedStore not available');
-      return;
-    }
+  const appendLog = useCallback(
+    (msg: string) => {
+      const time = new Date().toLocaleTimeString();
+      setRpcLog((prev) => `${prev}[${time}] → ${msg}\n`);
+    },
+    [],
+  );
+
+  // ── SharedStore tests ────────────────────────────────────────────────
+
+  const handleStoreWrite = () => {
+    if (!globalThis.sharedStore) return;
     globalThis.sharedStore.set('locale', 'zh-CN');
     globalThis.sharedStore.set('networkId', 42);
     globalThis.sharedStore.set('devMode', true);
@@ -51,58 +53,68 @@ export function BackgroundThreadTestPage() {
     const values = keys
       .map((k: string) => `${k}=${globalThis.sharedStore?.get(k)}`)
       .join(', ');
-    setStoreResult(`Set 3 values. Current: ${values} | size=${globalThis.sharedStore.size}`);
+    setStoreResult(`Wrote 3 values → ${values} (size=${globalThis.sharedStore.size})`);
   };
 
-  // SharedRPC test — write params, background onWrite fires, background writes result, main onWrite fires
-  const handleRpcTest = () => {
-    if (!globalThis.sharedRPC) {
-      setRpcResult('SharedRPC not available');
-      return;
-    }
+  // ── SharedRPC tests ──────────────────────────────────────────────────
+
+  const sendRPC = (method: string, params: Record<string, unknown>) => {
+    if (!globalThis.sharedRPC) return;
     const callId = `rpc_${Date.now()}`;
-    globalThis.sharedRPC.write(
-      callId,
-      JSON.stringify({ method: 'echo', params: { ts: Date.now() } }),
-    );
-    setRpcResult(
-      (prev) =>
-        `${prev}\n[${new Date().toLocaleTimeString()}] Sent RPC: ${callId}`,
-    );
+    const payload = JSON.stringify({ method, params });
+    globalThis.sharedRPC.write(callId, payload);
+    appendLog(`${method}(${JSON.stringify(params)})  id=${callId}`);
   };
 
   return (
     <TestPageBase title="Background Thread Test">
+      {/* Status */}
+      <Text style={styles.statusText}>
+        SharedStore / SharedRPC: {ready ? 'Ready' : 'Waiting…'}
+      </Text>
+
       {/* SharedStore */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>SharedStore (persistent key-value)</Text>
-        <Text style={styles.statusText}>
-          Available: {storeAvailable ? 'Yes' : 'Waiting...'}
-        </Text>
+        <Text style={styles.sectionTitle}>SharedStore</Text>
         <TestButton
-          title="Set & Read Values"
-          onPress={handleStoreTest}
-          disabled={!storeAvailable}
+          title="Set locale / networkId / devMode"
+          onPress={handleStoreWrite}
+          disabled={!ready}
         />
         <TestResult result={storeResult || null} />
       </View>
 
       {/* SharedRPC */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>SharedRPC (onWrite cross-runtime)</Text>
-        <TestButton
-          title="Send RPC Call"
-          onPress={handleRpcTest}
-          disabled={!storeAvailable}
-        />
+        <Text style={styles.sectionTitle}>SharedRPC (onWrite)</Text>
+        <View style={styles.buttonRow}>
+          <TestButton
+            title="echo"
+            onPress={() => sendRPC('echo', { msg: 'hello', ts: Date.now() })}
+            disabled={!ready}
+            style={styles.rowButton}
+          />
+          <TestButton
+            title="add(3,7)"
+            onPress={() => sendRPC('add', { a: 3, b: 7 })}
+            disabled={!ready}
+            style={styles.rowButton}
+          />
+          <TestButton
+            title="unknown"
+            onPress={() => sendRPC('foo', {})}
+            disabled={!ready}
+            style={[styles.rowButton, styles.warnButton]}
+          />
+        </View>
         <TestButton
           title="Clear Log"
-          onPress={() => setRpcResult('')}
+          onPress={() => setRpcLog('')}
           style={styles.clearButton}
         />
-        {rpcResult ? (
+        {rpcLog ? (
           <View style={styles.logContainer}>
-            <Text style={styles.logText}>{rpcResult.trim()}</Text>
+            <Text style={styles.logText}>{rpcLog.trimEnd()}</Text>
           </View>
         ) : null}
       </View>
@@ -124,6 +136,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#666',
     fontFamily: 'Courier New',
+    marginBottom: 4,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  rowButton: {
+    flex: 1,
+  },
+  warnButton: {
+    backgroundColor: '#FF9500',
   },
   clearButton: {
     backgroundColor: '#8E8E93',

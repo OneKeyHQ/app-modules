@@ -147,7 +147,7 @@ static void stubJsiFunction(jsi::Runtime &runtime, jsi::Object &object, const ch
 
     // Install SharedRPC with executor for cross-runtime notifications
     RCTInstance *bgInstance = _rctInstance;
-    RuntimeExecutor bgExecutor = [bgInstance](std::function<void(jsi::Runtime &)> work) {
+    RPCRuntimeExecutor bgExecutor = [bgInstance](std::function<void(jsi::Runtime &)> work) {
         [bgInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
             work(rt);
         }];

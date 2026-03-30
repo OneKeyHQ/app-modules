@@ -15,11 +15,11 @@ using RPCValue = std::variant<bool, double, std::string>;
 
 // Executes a callback on a specific runtime's JS thread.
 // The implementation is platform-specific (iOS vs Android).
-using RuntimeExecutor = std::function<void(std::function<void(jsi::Runtime &)>)>;
+using RPCRuntimeExecutor = std::function<void(std::function<void(jsi::Runtime &)>)>;
 
 struct RuntimeListener {
   jsi::Runtime *runtime;
-  RuntimeExecutor executor;
+  RPCRuntimeExecutor executor;
   std::shared_ptr<jsi::Function> callback; // JS onWrite callback
 };
 
@@ -32,7 +32,7 @@ public:
   static void install(jsi::Runtime &rt);
 
   /// Install with executor — enables cross-runtime write notifications
-  static void install(jsi::Runtime &rt, RuntimeExecutor executor);
+  static void install(jsi::Runtime &rt, RPCRuntimeExecutor executor);
 
   static void reset();
 

@@ -72,8 +72,8 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         SharedStore::install(runtime);
 
         // Install SharedRPC with executor for cross-runtime notifications
-        __block id capturedInstance = instance;
-        RuntimeExecutor mainExecutor = [capturedInstance](std::function<void(jsi::Runtime &)> work) {
+        id capturedInstance = instance;
+        RPCRuntimeExecutor mainExecutor = [capturedInstance](std::function<void(jsi::Runtime &)> work) {
             [capturedInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
                 work(rt);
             }];

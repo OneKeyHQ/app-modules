@@ -10,7 +10,7 @@ void SharedRPC::install(jsi::Runtime &rt) {
   rt.global().setProperty(rt, "sharedRPC", std::move(obj));
 }
 
-void SharedRPC::install(jsi::Runtime &rt, RuntimeExecutor executor) {
+void SharedRPC::install(jsi::Runtime &rt, RPCRuntimeExecutor executor) {
   auto rpc = std::make_shared<SharedRPC>();
   auto obj = jsi::Object::createFromHostObject(rt, rpc);
   rt.global().setProperty(rt, "sharedRPC", std::move(obj));
@@ -33,7 +33,7 @@ void SharedRPC::reset() {
 void SharedRPC::notifyOtherRuntime(jsi::Runtime &callerRt, const std::string &callId) {
   // Collect executors and callbacks under lock, then invoke outside lock
   // to avoid deadlock (executor may schedule work that also acquires mutex_).
-  std::vector<std::pair<RuntimeExecutor, std::shared_ptr<jsi::Function>>> toNotify;
+  std::vector<std::pair<RPCRuntimeExecutor, std::shared_ptr<jsi::Function>>> toNotify;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     for (auto &listener : listeners_) {

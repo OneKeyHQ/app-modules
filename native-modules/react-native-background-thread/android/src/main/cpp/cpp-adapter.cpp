@@ -86,7 +86,7 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
     jobject ref = env->NewGlobalRef(thiz);
     bool capturedIsMain = static_cast<bool>(isMain);
 
-    RuntimeExecutor executor = [ref, capturedIsMain](std::function<void(jsi::Runtime &)> work) {
+    RPCRuntimeExecutor executor = [ref, capturedIsMain](std::function<void(jsi::Runtime &)> work) {
         JNIEnv *env = getJNIEnv();
         if (!env || !ref) return;
 
