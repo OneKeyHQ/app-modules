@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 
 #include "SharedStore.h"
 #include "SharedRPC.h"
@@ -15,9 +16,6 @@
 namespace jsi = facebook::jsi;
 
 static JavaVM *gJavaVM = nullptr;
-static jobject gManagerRef = nullptr;
-static std::mutex gCallbackMutex;
-static std::shared_ptr<jsi::Function> gBgOnMessageCallback;
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
     gJavaVM = vm;
@@ -44,113 +42,32 @@ static void stubJsiFunction(jsi::Runtime &runtime, jsi::Object &object, const ch
             }));
 }
 
-// ── nativeInstallBgBindings ─────────────────────────────────────────────
-// Install postHostMessage / onHostMessage JSI globals into the background runtime.
-// Also stores a global ref to the Java manager for callbacks.
+// ── Pending work map for cross-runtime executor ───────────────────────
+static std::mutex gWorkMutex;
+static std::unordered_map<int64_t, std::function<void(jsi::Runtime &)>> gPendingWork;
+static int64_t gNextWorkId = 0;
+
+// Called from Kotlin after runOnJSQueueThread dispatches to the correct thread.
 extern "C" JNIEXPORT void JNICALL
-Java_com_backgroundthread_BackgroundThreadManager_nativeInstallBgBindings(
-    JNIEnv *env, jobject thiz, jlong runtimePtr) {
+Java_com_backgroundthread_BackgroundThreadManager_nativeExecuteWork(
+    JNIEnv *env, jobject thiz, jlong runtimePtr, jlong workId) {
+    auto *rt = reinterpret_cast<jsi::Runtime *>(runtimePtr);
+    if (!rt) return;
 
-    auto *runtime = reinterpret_cast<jsi::Runtime *>(runtimePtr);
-    if (!runtime) return;
-
-    // Store global ref to manager for JNI callbacks
-    if (gManagerRef) {
-        env->DeleteGlobalRef(gManagerRef);
-    }
-    gManagerRef = env->NewGlobalRef(thiz);
-
-    // Reset previous callback
+    std::function<void(jsi::Runtime &)> work;
     {
-        std::lock_guard<std::mutex> lock(gCallbackMutex);
-        gBgOnMessageCallback.reset();
+        std::lock_guard<std::mutex> lock(gWorkMutex);
+        auto it = gPendingWork.find(workId);
+        if (it == gPendingWork.end()) return;
+        work = std::move(it->second);
+        gPendingWork.erase(it);
     }
-
-    // postHostMessage(message: string) — background JS calls this to send to main
-    auto postHostMessage = jsi::Function::createFromHostFunction(
-        *runtime,
-        jsi::PropNameID::forAscii(*runtime, "postHostMessage"),
-        1,
-        [](jsi::Runtime &rt, const jsi::Value &,
-           const jsi::Value *args, size_t count) -> jsi::Value {
-            if (count < 1 || !args[0].isString()) {
-                throw jsi::JSError(rt, "postHostMessage expects a string argument");
-            }
-            std::string msg = args[0].getString(rt).utf8(rt);
-
-            JNIEnv *env = getJNIEnv();
-            if (env && gManagerRef) {
-                jclass cls = env->GetObjectClass(gManagerRef);
-                jmethodID mid = env->GetMethodID(
-                    cls, "onBgMessage", "(Ljava/lang/String;)V");
-                if (mid) {
-                    jstring jmsg = env->NewStringUTF(msg.c_str());
-                    env->CallVoidMethod(gManagerRef, mid, jmsg);
-                    env->DeleteLocalRef(jmsg);
-                }
-                env->DeleteLocalRef(cls);
-            }
-            return jsi::Value::undefined();
-        });
-
-    runtime->global().setProperty(
-        *runtime, "postHostMessage", std::move(postHostMessage));
-
-    // onHostMessage(callback: function) — background JS registers a message handler
-    auto onHostMessage = jsi::Function::createFromHostFunction(
-        *runtime,
-        jsi::PropNameID::forAscii(*runtime, "onHostMessage"),
-        1,
-        [](jsi::Runtime &rt, const jsi::Value &,
-           const jsi::Value *args, size_t count) -> jsi::Value {
-            if (count < 1 || !args[0].isObject() ||
-                !args[0].asObject(rt).isFunction(rt)) {
-                throw jsi::JSError(rt, "onHostMessage expects a function");
-            }
-            {
-                std::lock_guard<std::mutex> lock(gCallbackMutex);
-                gBgOnMessageCallback = std::make_shared<jsi::Function>(
-                    args[0].asObject(rt).asFunction(rt));
-            }
-            return jsi::Value::undefined();
-        });
-
-    runtime->global().setProperty(
-        *runtime, "onHostMessage", std::move(onHostMessage));
-
-    LOGI("JSI bindings (postHostMessage/onHostMessage) installed in background runtime");
-}
-
-// ── nativePostToBackground ──────────────────────────────────────────────
-// Post a message from main to background JS.
-// Must be called on the background JS thread.
-extern "C" JNIEXPORT void JNICALL
-Java_com_backgroundthread_BackgroundThreadManager_nativePostToBackground(
-    JNIEnv *env, jobject thiz, jlong runtimePtr, jstring message) {
-
-    std::shared_ptr<jsi::Function> callback;
-    {
-        std::lock_guard<std::mutex> lock(gCallbackMutex);
-        callback = gBgOnMessageCallback;
-    }
-    if (!callback || runtimePtr == 0) return;
-
-    auto *runtime = reinterpret_cast<jsi::Runtime *>(runtimePtr);
-    const char *msgChars = env->GetStringUTFChars(message, nullptr);
-    std::string msg(msgChars);
-    env->ReleaseStringUTFChars(message, msgChars);
-
     try {
-        auto parsedValue = runtime->global()
-            .getPropertyAsObject(*runtime, "JSON")
-            .getPropertyAsFunction(*runtime, "parse")
-            .call(*runtime, jsi::String::createFromUtf8(*runtime, msg));
-
-        callback->call(*runtime, {std::move(parsedValue)});
+        work(*rt);
     } catch (const jsi::JSError &e) {
-        LOGE("JSError in postToBackground: %s", e.getMessage().c_str());
+        LOGE("JSError in nativeExecuteWork: %s", e.getMessage().c_str());
     } catch (const std::exception &e) {
-        LOGE("Error in postToBackground: %s", e.what());
+        LOGE("Error in nativeExecuteWork: %s", e.what());
     }
 }
 
@@ -164,7 +81,31 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
     if (!rt) return;
 
     SharedStore::install(*rt);
-    SharedRPC::install(*rt);
+
+    // Create executor that schedules work on this runtime's JS thread via Kotlin
+    jobject ref = env->NewGlobalRef(thiz);
+    bool capturedIsMain = static_cast<bool>(isMain);
+
+    RuntimeExecutor executor = [ref, capturedIsMain](std::function<void(jsi::Runtime &)> work) {
+        JNIEnv *env = getJNIEnv();
+        if (!env || !ref) return;
+
+        int64_t workId;
+        {
+            std::lock_guard<std::mutex> lock(gWorkMutex);
+            workId = gNextWorkId++;
+            gPendingWork[workId] = std::move(work);
+        }
+
+        jclass cls = env->GetObjectClass(ref);
+        jmethodID mid = env->GetMethodID(cls, "scheduleOnJSThread", "(ZJ)V");
+        if (mid) {
+            env->CallVoidMethod(ref, mid, static_cast<jboolean>(capturedIsMain), static_cast<jlong>(workId));
+        }
+        env->DeleteLocalRef(cls);
+    };
+
+    SharedRPC::install(*rt, std::move(executor));
     LOGI("SharedStore and SharedRPC installed (isMain=%d)", static_cast<int>(isMain));
 }
 
@@ -233,21 +174,13 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeSetupErrorHandler(
 }
 
 // ── nativeDestroy ───────────────────────────────────────────────────────
-// Clean up JNI global references and callbacks.
+// Clean up native resources.
 // Called from BackgroundThreadManager.destroy().
 extern "C" JNIEXPORT void JNICALL
 Java_com_backgroundthread_BackgroundThreadManager_nativeDestroy(
     JNIEnv *env, jobject thiz) {
 
-    {
-        std::lock_guard<std::mutex> lock(gCallbackMutex);
-        gBgOnMessageCallback.reset();
-    }
-
-    if (gManagerRef) {
-        env->DeleteGlobalRef(gManagerRef);
-        gManagerRef = nullptr;
-    }
+    SharedRPC::reset();
 
     LOGI("Native resources cleaned up");
 }

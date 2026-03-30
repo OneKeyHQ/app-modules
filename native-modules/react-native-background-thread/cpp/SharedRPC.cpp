@@ -1,8 +1,8 @@
 #include "SharedRPC.h"
 
-// Static member definitions
 std::mutex SharedRPC::mutex_;
 std::unordered_map<std::string, RPCValue> SharedRPC::slots_;
+std::vector<RuntimeListener> SharedRPC::listeners_;
 
 void SharedRPC::install(jsi::Runtime &rt) {
   auto rpc = std::make_shared<SharedRPC>();
@@ -10,9 +10,51 @@ void SharedRPC::install(jsi::Runtime &rt) {
   rt.global().setProperty(rt, "sharedRPC", std::move(obj));
 }
 
+void SharedRPC::install(jsi::Runtime &rt, RuntimeExecutor executor) {
+  auto rpc = std::make_shared<SharedRPC>();
+  auto obj = jsi::Object::createFromHostObject(rt, rpc);
+  rt.global().setProperty(rt, "sharedRPC", std::move(obj));
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  // Remove any existing listener for this runtime (reload scenario)
+  listeners_.erase(
+      std::remove_if(listeners_.begin(), listeners_.end(),
+                     [&rt](const RuntimeListener &l) { return l.runtime == &rt; }),
+      listeners_.end());
+  listeners_.push_back({&rt, std::move(executor), nullptr});
+}
+
 void SharedRPC::reset() {
   std::lock_guard<std::mutex> lock(mutex_);
   slots_.clear();
+  listeners_.clear();
+}
+
+void SharedRPC::notifyOtherRuntime(jsi::Runtime &callerRt, const std::string &callId) {
+  // Collect executors and callbacks under lock, then invoke outside lock
+  // to avoid deadlock (executor may schedule work that also acquires mutex_).
+  std::vector<std::pair<RuntimeExecutor, std::shared_ptr<jsi::Function>>> toNotify;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto &listener : listeners_) {
+      if (listener.runtime == &callerRt) continue;
+      if (!listener.callback) continue;
+      toNotify.emplace_back(listener.executor, listener.callback);
+    }
+  }
+
+  for (auto &[executor, cb] : toNotify) {
+    auto id = callId;
+    executor([cb, id](jsi::Runtime &rt) {
+      try {
+        cb->call(rt, jsi::String::createFromUtf8(rt, id));
+      } catch (const jsi::JSError &) {
+        // Swallow — listener threw, not our problem
+      } catch (...) {
+        // Runtime may be torn down
+      }
+    });
+  }
 }
 
 RPCValue SharedRPC::extractValue(jsi::Runtime &rt, const jsi::Value &val) {
@@ -48,8 +90,8 @@ jsi::Value SharedRPC::get(jsi::Runtime &rt, const jsi::PropNameID &name) {
   if (prop == "write") {
     return jsi::Function::createFromHostFunction(
         rt, name, 2,
-        [](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args,
-           size_t count) -> jsi::Value {
+        [this](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args,
+               size_t count) -> jsi::Value {
           if (count < 2 || !args[0].isString()) {
             throw jsi::JSError(
                 rt, "SharedRPC.write expects (callId: string, value)");
@@ -58,8 +100,10 @@ jsi::Value SharedRPC::get(jsi::Runtime &rt, const jsi::PropNameID &name) {
           auto value = extractValue(rt, args[1]);
           {
             std::lock_guard<std::mutex> lock(mutex_);
-            slots_.insert_or_assign(std::move(callId), std::move(value));
+            slots_.insert_or_assign(callId, std::move(value));
           }
+          // Notify OUTSIDE the lock
+          notifyOtherRuntime(rt, callId);
           return jsi::Value::undefined();
         });
   }
@@ -113,6 +157,31 @@ jsi::Value SharedRPC::get(jsi::Runtime &rt, const jsi::PropNameID &name) {
     return jsi::Value(static_cast<double>(slots_.size()));
   }
 
+  // onWrite(callback: (callId: string) => void): void
+  if (prop == "onWrite") {
+    return jsi::Function::createFromHostFunction(
+        rt, name, 1,
+        [](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args,
+           size_t count) -> jsi::Value {
+          if (count < 1 || !args[0].isObject() ||
+              !args[0].asObject(rt).isFunction(rt)) {
+            throw jsi::JSError(rt, "SharedRPC.onWrite expects a function");
+          }
+          auto fn = std::make_shared<jsi::Function>(
+              args[0].asObject(rt).asFunction(rt));
+          {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (auto &listener : listeners_) {
+              if (listener.runtime == &rt) {
+                listener.callback = std::move(fn);
+                break;
+              }
+            }
+          }
+          return jsi::Value::undefined();
+        });
+  }
+
   return jsi::Value::undefined();
 }
 
@@ -122,5 +191,6 @@ std::vector<jsi::PropNameID> SharedRPC::getPropertyNames(jsi::Runtime &rt) {
   props.push_back(jsi::PropNameID::forUtf8(rt, "read"));
   props.push_back(jsi::PropNameID::forUtf8(rt, "has"));
   props.push_back(jsi::PropNameID::forUtf8(rt, "pendingCount"));
+  props.push_back(jsi::PropNameID::forUtf8(rt, "onWrite"));
   return props;
 }

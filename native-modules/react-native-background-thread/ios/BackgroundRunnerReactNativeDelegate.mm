@@ -54,26 +54,13 @@ static void stubJsiFunction(jsi::Runtime &runtime, jsi::Object &object, const ch
           }));
 }
 
-static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &obj, const char *key)
-{
-  if (!obj.hasProperty(rt, key)) {
-    return "";
-  }
-  jsi::Value value = obj.getProperty(rt, key);
-  return value.isString() ? value.getString(rt).utf8(rt) : "";
-}
-
 @interface BackgroundReactNativeDelegate () {
   RCTInstance *_rctInstance;
-  std::shared_ptr<jsi::Function> _onMessageSandbox;
   std::string _origin;
   std::string _jsBundleSource;
 }
 
 - (void)cleanupResources;
-
-- (jsi::Function)createPostMessageFunction:(jsi::Runtime &)runtime;
-- (jsi::Function)createSetOnMessageFunction:(jsi::Runtime &)runtime;
 - (void)setupErrorHandler:(jsi::Runtime &)runtime;
 
 @end
@@ -94,7 +81,6 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
 
 - (void)cleanupResources
 {
-  _onMessageSandbox.reset();
   _rctInstance = nil;
 }
 
@@ -137,55 +123,11 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
   return [[NSBundle mainBundle] URLForResource: @"background" withExtension: @"bundle"];
 }
 
-- (void)postMessage:(const std::string &)message
-{
-  if (!_onMessageSandbox || !_rctInstance) {
-    return;
-  }
-
-  [_rctInstance callFunctionOnBufferedRuntimeExecutor:[=](jsi::Runtime &runtime) {
-    try {
-      // Validate runtime before any JSI operations
-      runtime.global(); // Test if runtime is accessible
-
-      // Double-check the JSI function is still valid
-      if (!_onMessageSandbox) {
-        return;
-      }
-
-      jsi::Value parsedValue = runtime.global()
-                                   .getPropertyAsObject(runtime, "JSON")
-                                   .getPropertyAsFunction(runtime, "parse")
-                                   .call(runtime, jsi::String::createFromUtf8(runtime, message));
-
-      _onMessageSandbox->call(runtime, {std::move(parsedValue)});
-    } catch (const jsi::JSError &e) {
-      [BTLogger error:[NSString stringWithFormat:@"JSError during postMessage: %s", e.getMessage().c_str()]];
-    } catch (const std::exception &e) {
-      [BTLogger error:[NSString stringWithFormat:@"RuntimeError during postMessage: %s", e.what()]];
-    } catch (...) {
-      [BTLogger error:[NSString stringWithFormat:@"Runtime invalid during postMessage for sandbox %s", _origin.c_str()]];
-    }
-  }];
-}
-
-- (bool)routeMessage:(const std::string &)message toSandbox:(const std::string &)targetId
-{
-  // Sandbox routing is not yet implemented. Deny all cross-sandbox messages by default.
-  [BTLogger warn:@"routeMessage denied: sandbox routing not implemented"];
-  return false;
-}
-
 - (void)hostDidStart:(RCTHost *)host
 {
   if (!host) {
     return;
   }
-
-  // Safely clear any existing JSI function and instance before new runtime setup
-  // This prevents crash on reload when old function is tied to invalid runtime
-  _onMessageSandbox.reset();
-  _onMessageSandbox = nullptr;
 
   // Clear old instance reference before setting new one
   _rctInstance = nil;
@@ -198,13 +140,19 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
   }
 
   [_rctInstance callFunctionOnBufferedRuntimeExecutor:[=](jsi::Runtime &runtime) {
-    facebook::react::defineReadOnlyGlobal(runtime, "postHostMessage", [self createPostMessageFunction:runtime]);
-    facebook::react::defineReadOnlyGlobal(runtime, "onHostMessage", [self createSetOnMessageFunction:runtime]);
     [self setupErrorHandler:runtime];
 
-    // Install SharedStore and SharedRPC into background runtime
+    // Install SharedStore into background runtime
     SharedStore::install(runtime);
-    SharedRPC::install(runtime);
+
+    // Install SharedRPC with executor for cross-runtime notifications
+    RCTInstance *bgInstance = _rctInstance;
+    RuntimeExecutor bgExecutor = [bgInstance](std::function<void(jsi::Runtime &)> work) {
+        [bgInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
+            work(rt);
+        }];
+    };
+    SharedRPC::install(runtime, std::move(bgExecutor));
     [BTLogger info:@"SharedStore and SharedRPC installed in background runtime"];
   }];
 }
@@ -220,67 +168,6 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
                                                       jsInvoker:(std::shared_ptr<facebook::react::CallInvoker>)jsInvoker
 {
     return [super getTurboModule:name jsInvoker:jsInvoker];
-}
-
-- (jsi::Function)createPostMessageFunction:(jsi::Runtime &)runtime
-{
-  return jsi::Function::createFromHostFunction(
-      runtime,
-      jsi::PropNameID::forAscii(runtime, "postMessage"),
-      2, // Updated to accept up to 2 arguments
-      [=](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args, size_t count) {
-        // Validate runtime before any JSI operations
-        try {
-          rt.global(); // Test if runtime is accessible
-        } catch (...) {
-          return jsi::Value::undefined();
-        }
-
-        if (count < 1 || count > 2) {
-          throw jsi::JSError(rt, "Expected 1 or 2 arguments: postMessage(message, targetOrigin?)");
-        }
-
-        const jsi::Value &messageArg = args[0];
-        if (!messageArg.isString()) {
-          throw jsi::JSError(rt, "Expected an string as the first argument");
-        }
-//        jsi::Object jsonObject = rt.global().getPropertyAsObject(rt, "JSON");
-//        jsi::Function jsonStringify = jsonObject.getPropertyAsFunction(rt, "stringify");
-//        jsi::Value jsonResult = jsonStringify.call(rt, messageArg);
-        std::string messageJson = messageArg.getString(rt).utf8(rt);
-        NSString *messageNS = [NSString stringWithUTF8String:messageJson.c_str()];
-            dispatch_async(dispatch_get_main_queue(), ^{
-              if (self.onMessageCallback) {
-                self.onMessageCallback(messageNS);
-              }
-            });
-        return jsi::Value::undefined();
-      });
-}
-
-- (jsi::Function)createSetOnMessageFunction:(jsi::Runtime &)runtime
-{
-  return jsi::Function::createFromHostFunction(
-      runtime,
-      jsi::PropNameID::forAscii(runtime, "setOnMessage"),
-      1,
-      [=](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args, size_t count) {
-        if (count != 1) {
-          throw jsi::JSError(rt, "Expected exactly one argument");
-        }
-
-        const jsi::Value &arg = args[0];
-        if (!arg.isObject() || !arg.asObject(rt).isFunction(rt)) {
-          throw jsi::JSError(rt, "Expected a function as the first argument");
-        }
-
-        jsi::Function fn = arg.asObject(rt).asFunction(rt);
-
-        _onMessageSandbox.reset();
-        _onMessageSandbox = std::make_shared<jsi::Function>(std::move(fn));
-
-        return jsi::Value::undefined();
-      });
 }
 
 - (void)setupErrorHandler:(jsi::Runtime &)runtime

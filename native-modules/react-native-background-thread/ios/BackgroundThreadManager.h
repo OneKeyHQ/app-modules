@@ -23,18 +23,6 @@ NS_ASSUME_NONNULL_BEGIN
 /// @param entryURL The custom entry URL for the background runner
 - (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL;
 
-/// Post message to background runner
-/// @param message The message to post
-- (void)postBackgroundMessage:(NSString *)message;
-
-/// Set callback for handling background messages
-/// @param callback The callback block to handle messages
-- (void)setOnMessageCallback:(void (^)(NSString *message))callback;
-
-/// Check if message callback is set
-/// @return YES if message callback is set, NO otherwise
-- (BOOL)checkMessageCallback;
-
 /// Check if background runner is started
 @property (nonatomic, readonly) BOOL isStarted;
 

@@ -18,31 +18,15 @@
 }
 
 - (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL {
-    BackgroundThreadManager *manager = [BackgroundThreadManager sharedInstance];    
+    BackgroundThreadManager *manager = [BackgroundThreadManager sharedInstance];
     [manager startBackgroundRunnerWithEntryURL:entryURL];
 }
 
-// Force register event callback during initialization
-// This is mainly to handle the scenario of restarting in development environment
-- (void)initBackgroundThread {
-  [self bindMessageCallback];
-}
-
-- (void)bindMessageCallback {
-    BackgroundThreadManager *manager = [BackgroundThreadManager sharedInstance];
-    __weak __typeof__(self) weakSelf = self;
-    [manager setOnMessageCallback:^(NSString *message) {
-        [weakSelf emitOnBackgroundMessage:message];
-    }];
-}
-
-- (void)postBackgroundMessage:(nonnull NSString *)message {
-  BackgroundThreadManager *manager = [BackgroundThreadManager
-                                      sharedInstance];
-  if (!manager.checkMessageCallback) {
-   [self bindMessageCallback];
-  }
-  [[BackgroundThreadManager sharedInstance] postBackgroundMessage:message];
+- (void)installSharedBridge {
+    // On iOS, SharedBridge is installed from AppDelegate's hostDidStart: callback
+    // via +[BackgroundThreadManager installSharedBridgeInMainRuntime:].
+    // This is a no-op here — kept for API parity with Android.
+    [BTLogger info:@"installSharedBridge called (no-op on iOS, installed from AppDelegate)"];
 }
 
 + (NSString *)moduleName

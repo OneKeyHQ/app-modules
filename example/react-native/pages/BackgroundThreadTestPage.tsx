@@ -3,10 +3,9 @@ import { View, Text, StyleSheet } from 'react-native';
 import { TestPageBase, TestButton, TestResult } from './TestPageBase';
 import { BackgroundThread } from '@onekeyfe/react-native-background-thread';
 
-BackgroundThread.initBackgroundThread();
+BackgroundThread.installSharedBridge();
 
 export function BackgroundThreadTestPage() {
-  const [pushResult, setPushResult] = useState<string>('');
   const [storeResult, setStoreResult] = useState<string>('');
   const [rpcResult, setRpcResult] = useState<string>('');
   const [storeAvailable, setStoreAvailable] = useState(false);
@@ -21,33 +20,23 @@ export function BackgroundThreadTestPage() {
     return () => clearInterval(check);
   }, []);
 
-  // Listen for RPC responses from background
+  // Listen for RPC responses from background via SharedRPC.onWrite
   useEffect(() => {
-    const sub = BackgroundThread.onBackgroundMessage((msg) => {
-      try {
-        const parsed = JSON.parse(msg);
-        if (parsed.type === 'rpc_response' && parsed.callId) {
-          const result = globalThis.sharedRPC?.read(parsed.callId);
-          setRpcResult(
-            (prev) =>
-              `${prev}\n[${new Date().toLocaleTimeString()}] Response: ${result}`,
-          );
-        } else {
-          setPushResult(`Received: ${msg}`);
-        }
-      } catch {
-        setPushResult(`Received: ${msg}`);
+    if (!globalThis.sharedRPC) return;
+
+    globalThis.sharedRPC.onWrite((callId: string) => {
+      // Only handle result callbacks
+      if (!callId.endsWith(':result')) return;
+
+      const result = globalThis.sharedRPC?.read(callId);
+      if (result !== undefined) {
+        setRpcResult(
+          (prev) =>
+            `${prev}\n[${new Date().toLocaleTimeString()}] Response: ${result}`,
+        );
       }
     });
-    return sub;
-  }, []);
-
-  // Push model
-  const handlePushMessage = () => {
-    const message = { type: 'test1' };
-    BackgroundThread.postBackgroundMessage(JSON.stringify(message));
-    setPushResult(`Sent: ${JSON.stringify(message)}`);
-  };
+  }, [storeAvailable]);
 
   // SharedStore test
   const handleStoreTest = () => {
@@ -60,12 +49,12 @@ export function BackgroundThreadTestPage() {
     globalThis.sharedStore.set('devMode', true);
     const keys = globalThis.sharedStore.keys();
     const values = keys
-      .map((k) => `${k}=${globalThis.sharedStore?.get(k)}`)
+      .map((k: string) => `${k}=${globalThis.sharedStore?.get(k)}`)
       .join(', ');
     setStoreResult(`Set 3 values. Current: ${values} | size=${globalThis.sharedStore.size}`);
   };
 
-  // SharedRPC test
+  // SharedRPC test — write params, background onWrite fires, background writes result, main onWrite fires
   const handleRpcTest = () => {
     if (!globalThis.sharedRPC) {
       setRpcResult('SharedRPC not available');
@@ -76,9 +65,6 @@ export function BackgroundThreadTestPage() {
       callId,
       JSON.stringify({ method: 'echo', params: { ts: Date.now() } }),
     );
-    BackgroundThread.postBackgroundMessage(
-      JSON.stringify({ type: 'rpc', callId }),
-    );
     setRpcResult(
       (prev) =>
         `${prev}\n[${new Date().toLocaleTimeString()}] Sent RPC: ${callId}`,
@@ -87,13 +73,6 @@ export function BackgroundThreadTestPage() {
 
   return (
     <TestPageBase title="Background Thread Test">
-      {/* Push Model */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Push Model (postBackgroundMessage)</Text>
-        <TestButton title="Send Message" onPress={handlePushMessage} />
-        <TestResult result={pushResult || null} />
-      </View>
-
       {/* SharedStore */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>SharedStore (persistent key-value)</Text>
@@ -110,7 +89,7 @@ export function BackgroundThreadTestPage() {
 
       {/* SharedRPC */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>SharedRPC (temporary read-and-delete)</Text>
+        <Text style={styles.sectionTitle}>SharedRPC (onWrite cross-runtime)</Text>
         <TestButton
           title="Send RPC Call"
           onPress={handleRpcTest}

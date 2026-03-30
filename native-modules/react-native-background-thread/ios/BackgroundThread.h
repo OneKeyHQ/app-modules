@@ -4,5 +4,6 @@
 
 - (void)startBackgroundRunner;
 - (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL;
+- (void)installSharedBridge;
 
 @end

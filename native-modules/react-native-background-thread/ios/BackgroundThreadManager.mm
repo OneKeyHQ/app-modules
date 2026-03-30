@@ -25,7 +25,6 @@
 @property (nonatomic, strong) RCTReactNativeFactory *reactNativeFactory;
 @property (nonatomic, assign) BOOL hasListeners;
 @property (nonatomic, assign, readwrite) BOOL isStarted;
-@property (nonatomic, copy) void (^onMessageCallback)(NSString *message);
 @end
 
 @implementation BackgroundThreadManager
@@ -71,7 +70,15 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 
     [instance callFunctionOnBufferedRuntimeExecutor:^(facebook::jsi::Runtime &runtime) {
         SharedStore::install(runtime);
-        SharedRPC::install(runtime);
+
+        // Install SharedRPC with executor for cross-runtime notifications
+        __block id capturedInstance = instance;
+        RuntimeExecutor mainExecutor = [capturedInstance](std::function<void(jsi::Runtime &)> work) {
+            [capturedInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
+                work(rt);
+            }];
+        };
+        SharedRPC::install(runtime, std::move(mainExecutor));
         [BTLogger info:@"SharedStore and SharedRPC installed in main runtime"];
     }];
 }
@@ -99,39 +106,15 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         NSDictionary *launchOptions = @{};
         self.reactNativeFactoryDelegate = [[BackgroundReactNativeDelegate alloc] init];
         self.reactNativeFactory = [[RCTReactNativeFactory alloc] initWithDelegate:self.reactNativeFactoryDelegate];
-        
+
         #if DEBUG
             [self.reactNativeFactoryDelegate setJsBundleSource:std::string([entryURL UTF8String])];
         #endif
-        
+
         [self.reactNativeFactory.rootViewFactory viewWithModuleName:MODULE_NAME
                                                      initialProperties:initialProperties
                                                          launchOptions:launchOptions];
-        
-        __weak __typeof__(self) weakSelf = self;
-        [self.reactNativeFactoryDelegate setOnMessageCallback:^(NSString *message) {
-            if (weakSelf.onMessageCallback) {
-                weakSelf.onMessageCallback(message);
-            }
-        }];
     });
-}
-
-- (void)postBackgroundMessage:(NSString *)message {
-    if (self.reactNativeFactoryDelegate) {
-        [self.reactNativeFactoryDelegate postMessage:std::string([message UTF8String])];
-    }
-}
-
-- (void)setOnMessageCallback:(void (^)(NSString *message))callback {
-    _onMessageCallback = callback;
-}
-
-- (BOOL)checkMessageCallback {
-    if (self.onMessageCallback) {
-        return YES;
-    }
-    return NO;
 }
 
 @end

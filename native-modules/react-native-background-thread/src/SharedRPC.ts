@@ -3,6 +3,7 @@ export interface ISharedRPC {
   read(callId: string): string | number | boolean | undefined;
   has(callId: string): boolean;
   readonly pendingCount: number;
+  onWrite(callback: (callId: string) => void): void;
 }
 
 declare global {

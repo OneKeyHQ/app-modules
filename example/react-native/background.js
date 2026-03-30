@@ -1,85 +1,39 @@
 
 import ReactNative from 'react-native';
 
-let isReady = false;
-let waitMessages = [];
-const callbacks  = new Set();
-const onMessageCallback = (message) => {
-  let parsed = message;
-  if (typeof message === 'string') {
-    try {
-      parsed = JSON.parse(message);
-    } catch {
-      // keep as raw string
-    }
-  }
-  callbacks.forEach((callback) => callback(parsed));
-};
-
-function checkReady(times = 0) {
-  if (globalThis.$$isNativeUiThread || times > 10_000) {
+// Wait for sharedRPC to be available, then set up onWrite listener
+function waitForSharedRPC(times = 0) {
+  if (globalThis.$$isNativeUiThread) {
     return;
   }
-  if (
-    typeof globalThis.postHostMessage === 'function' &&
-    typeof globalThis.onHostMessage === 'function'
-  ) {
-    isReady = true;
-    globalThis.onHostMessage(onMessageCallback);
-    setTimeout(() => {
-      console.log('waitMessages.length', waitMessages.length);
-      waitMessages.forEach((message) => {
-        globalThis.postHostMessage(message);
-      });
-      waitMessages = [];
-    }, 0);
-  } else {
-    console.log('checkReady', times);
-    setTimeout(() => checkReady(times + 1), 10);
+  if (globalThis.sharedRPC) {
+    setupHandlers();
+    return;
   }
+  if (times > 5000) {
+    console.error('[BG] sharedRPC not available after timeout');
+    return;
+  }
+  setTimeout(() => waitForSharedRPC(times + 1), 10);
 }
 
-checkReady();
+function setupHandlers() {
+  console.log('[BG] sharedRPC ready, setting up onWrite listener');
 
-const checkThread = () => {
-  if (globalThis.$$isNativeUiThread) {
-    // eslint-disable-next-line no-restricted-syntax
-    throw new Error(
-      'this function is not available in native UI thread',
-    );
-  }
-};
+  globalThis.sharedRPC.onWrite((callId) => {
+    console.log('[BG] onWrite notification:', callId);
 
-export const nativeBGBridge = {
-  postHostMessage: (message) => {
-    checkThread();
-    const str = typeof message === 'string' ? message : JSON.stringify(message);
-    if (!isReady) {
-      waitMessages.push(str);
-      return;
-    }
-    globalThis.postHostMessage(str);
-  },
-  onHostMessage: (callback) => {
-    checkThread();
-    callbacks.add(callback);
-    return () => {
-      callbacks.delete(callback);
-    };
-  },
-};
+    const params = globalThis.sharedRPC.read(callId);
+    if (params === undefined) return;
 
+    console.log('[BG] received RPC call:', callId, params);
 
-nativeBGBridge.onHostMessage((message) => {
-  console.log('message', message);
-  if (message.type === 'test1') {
-    console.log(`[BG] Received test1: ${JSON.stringify(message)}, will reply in 3s`);
-    setTimeout(() => {
-      console.log('[BG] Sending test2 response');
-      nativeBGBridge.postHostMessage({ type: 'test2' });
-    }, 3000);
-  }
-});
+    // Process and write result back — this will notify main runtime
+    globalThis.sharedRPC.write(callId + ':result', 'echo: ' + params);
+  });
+}
+
+waitForSharedRPC();
 
 // SharedStore: read config values set by main runtime
 function checkSharedStore() {
@@ -92,16 +46,3 @@ function checkSharedStore() {
   setTimeout(checkSharedStore, 1000);
 }
 checkSharedStore();
-
-// SharedRPC: handle RPC calls from main runtime via onHostMessage
-nativeBGBridge.onHostMessage((message) => {
-  if (message.type === 'rpc' && message.callId) {
-    const params = globalThis.sharedRPC?.read(message.callId);
-    if (params !== undefined) {
-      console.log('[SharedRPC BG] received call:', message.callId, params);
-      // Echo back the params as the result
-      globalThis.sharedRPC?.write(message.callId, 'echo: ' + params);
-      nativeBGBridge.postHostMessage({ type: 'rpc_response', callId: message.callId });
-    }
-  }
-});

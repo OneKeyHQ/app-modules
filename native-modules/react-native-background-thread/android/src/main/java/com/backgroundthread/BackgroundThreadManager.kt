@@ -20,7 +20,7 @@ import com.facebook.react.runtime.hermes.HermesInstance
  * Responsibilities:
  * - Manages background ReactHostImpl lifecycle
  * - Installs SharedBridge into main and background runtimes
- * - Routes messages between runtimes via JNI/JSI
+ * - Cross-runtime communication via SharedRPC onWrite notifications
  */
 class BackgroundThreadManager private constructor() {
 
@@ -28,8 +28,11 @@ class BackgroundThreadManager private constructor() {
 
     @Volatile
     private var bgRuntimePtr: Long = 0
+
+    @Volatile
+    private var mainRuntimePtr: Long = 0
+    private var mainReactContext: ReactApplicationContext? = null
     private var isStarted = false
-    private var onMessageCallback: ((String) -> Unit)? = null
 
     companion object {
         private const val MODULE_NAME = "background"
@@ -51,23 +54,24 @@ class BackgroundThreadManager private constructor() {
 
     // ── JNI declarations ────────────────────────────────────────────────────
 
-    private external fun nativeInstallBgBindings(runtimePtr: Long)
-    private external fun nativePostToBackground(runtimePtr: Long, message: String)
     private external fun nativeInstallSharedBridge(runtimePtr: Long, isMain: Boolean)
     private external fun nativeSetupErrorHandler(runtimePtr: Long)
     private external fun nativeDestroy()
+    private external fun nativeExecuteWork(runtimePtr: Long, workId: Long)
 
     // ── SharedBridge ────────────────────────────────────────────────────────
 
     /**
      * Install SharedBridge HostObject into the main (UI) runtime.
-     * Call this from initBackgroundThread().
+     * Call this from installSharedBridge().
      */
     fun installSharedBridgeInMainRuntime(context: ReactApplicationContext) {
+        mainReactContext = context
         context.runOnJSQueueThread {
             try {
                 val ptr = context.javaScriptContextHolder?.get() ?: 0L
                 if (ptr != 0L) {
+                    mainRuntimePtr = ptr
                     nativeInstallSharedBridge(ptr, true)
                     BTLogger.info("SharedBridge installed in main runtime")
                 } else {
@@ -131,10 +135,9 @@ class BackgroundThreadManager private constructor() {
                         val ptr = context.javaScriptContextHolder?.get() ?: 0L
                         if (ptr != 0L) {
                             bgRuntimePtr = ptr
-                            nativeInstallBgBindings(ptr)
                             nativeInstallSharedBridge(ptr, false)
                             nativeSetupErrorHandler(ptr)
-                            BTLogger.info("JSI bindings, SharedBridge, and error handler installed in background runtime")
+                            BTLogger.info("SharedBridge and error handler installed in background runtime")
                         } else {
                             BTLogger.error("Background runtime pointer is 0")
                         }
@@ -148,39 +151,23 @@ class BackgroundThreadManager private constructor() {
         host.start()
     }
 
-    // ── Messaging ───────────────────────────────────────────────────────────
-
-    fun postBackgroundMessage(message: String) {
-        val ptr = bgRuntimePtr
-        if (ptr == 0L) {
-            BTLogger.warn("Cannot post message: background runtime not ready")
-            return
-        }
-
-        bgReactHost?.currentReactContext?.runOnJSQueueThread {
-            try {
-                if (bgRuntimePtr != 0L) {
-                    nativePostToBackground(bgRuntimePtr, message)
-                }
-            } catch (e: Exception) {
-                BTLogger.error("Error posting message to background: ${e.message}")
-            }
-        }
-    }
-
-    fun setOnMessageCallback(callback: (String) -> Unit) {
-        onMessageCallback = callback
-    }
-
-    fun checkMessageCallback(): Boolean = onMessageCallback != null
-
     /**
-     * Called from C++ (via JNI) when background JS calls postHostMessage(message).
-     * Routes the message to the registered callback (which emits to the main JS runtime).
+     * Called from C++ RuntimeExecutor to schedule work on the correct JS thread.
+     * Routes to main or background runtime's JS queue thread, then calls nativeExecuteWork.
      */
     @DoNotStrip
-    fun onBgMessage(message: String) {
-        onMessageCallback?.invoke(message)
+    fun scheduleOnJSThread(isMain: Boolean, workId: Long) {
+        val context = if (isMain) mainReactContext else bgReactHost?.currentReactContext
+        val ptr = if (isMain) mainRuntimePtr else bgRuntimePtr
+        context?.runOnJSQueueThread {
+            if (ptr != 0L) {
+                try {
+                    nativeExecuteWork(ptr, workId)
+                } catch (e: Exception) {
+                    BTLogger.error("Error executing work on JS thread: ${e.message}")
+                }
+            }
+        }
     }
 
     // ── Lifecycle ───────────────────────────────────────────────────────────
@@ -190,9 +177,10 @@ class BackgroundThreadManager private constructor() {
     fun destroy() {
         nativeDestroy()
         bgRuntimePtr = 0
+        mainRuntimePtr = 0
+        mainReactContext = null
         bgReactHost?.destroy("BackgroundThreadManager destroyed", null)
         bgReactHost = null
         isStarted = false
-        onMessageCallback = null
     }
 }
