@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-app-update",
-  "version": "1.1.46",
+  "version": "1.1.47",
   "description": "react-native-app-update",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
