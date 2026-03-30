@@ -17,8 +17,16 @@ void SharedRPC::install(jsi::Runtime &rt, RPCRuntimeExecutor executor,
   rt.global().setProperty(rt, "sharedRPC", std::move(obj));
 
   std::lock_guard<std::mutex> lock(mutex_);
-  // Remove any existing listener with the same runtimeId (reload scenario —
-  // the old jsi::Runtime* may differ from &rt after reload)
+  // Remove any existing listener with the same runtimeId (reload scenario).
+  // IMPORTANT: The old listener's callback is a jsi::Function tied to the old
+  // runtime. On reload, that runtime is already destroyed, so calling
+  // ~jsi::Function() would crash (null deref in Pointer::~Pointer).
+  // We intentionally leak the callback to avoid this.
+  for (auto &listener : listeners_) {
+    if (listener.runtimeId == runtimeId && listener.callback) {
+      new std::shared_ptr<jsi::Function>(std::move(listener.callback));
+    }
+  }
   listeners_.erase(
       std::remove_if(listeners_.begin(), listeners_.end(),
                      [&runtimeId](const RuntimeListener &l) {
