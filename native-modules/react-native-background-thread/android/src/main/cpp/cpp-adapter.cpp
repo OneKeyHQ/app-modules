@@ -105,7 +105,8 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
         env->DeleteLocalRef(cls);
     };
 
-    SharedRPC::install(*rt, std::move(executor));
+    std::string runtimeId = isMain ? "main" : "background";
+    SharedRPC::install(*rt, std::move(executor), runtimeId);
     LOGI("SharedStore and SharedRPC installed (isMain=%d)", static_cast<int>(isMain));
 }
 

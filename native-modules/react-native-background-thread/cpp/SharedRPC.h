@@ -18,6 +18,7 @@ using RPCValue = std::variant<bool, double, std::string>;
 using RPCRuntimeExecutor = std::function<void(std::function<void(jsi::Runtime &)>)>;
 
 struct RuntimeListener {
+  std::string runtimeId;                   // "main" or "background"
   jsi::Runtime *runtime;
   RPCRuntimeExecutor executor;
   std::shared_ptr<jsi::Function> callback; // JS onWrite callback
@@ -32,7 +33,9 @@ public:
   static void install(jsi::Runtime &rt);
 
   /// Install with executor — enables cross-runtime write notifications
-  static void install(jsi::Runtime &rt, RPCRuntimeExecutor executor);
+  /// runtimeId should be "main" or "background" — used for dedup on reload.
+  static void install(jsi::Runtime &rt, RPCRuntimeExecutor executor,
+                      const std::string &runtimeId);
 
   static void reset();
 

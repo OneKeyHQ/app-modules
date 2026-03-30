@@ -158,8 +158,10 @@ class BackgroundThreadManager private constructor() {
     @DoNotStrip
     fun scheduleOnJSThread(isMain: Boolean, workId: Long) {
         val context = if (isMain) mainReactContext else bgReactHost?.currentReactContext
-        val ptr = if (isMain) mainRuntimePtr else bgRuntimePtr
         context?.runOnJSQueueThread {
+            // Re-read ptr inside the block — if a reload happened between
+            // scheduling and execution, the old ptr may be stale.
+            val ptr = if (isMain) mainRuntimePtr else bgRuntimePtr
             if (ptr != 0L) {
                 try {
                     nativeExecuteWork(ptr, workId)

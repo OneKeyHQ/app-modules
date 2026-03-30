@@ -152,7 +152,7 @@ static void stubJsiFunction(jsi::Runtime &runtime, jsi::Object &object, const ch
             work(rt);
         }];
     };
-    SharedRPC::install(runtime, std::move(bgExecutor));
+    SharedRPC::install(runtime, std::move(bgExecutor), "background");
     [BTLogger info:@"SharedStore and SharedRPC installed in background runtime"];
   }];
 }

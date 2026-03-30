@@ -10,18 +10,22 @@ void SharedRPC::install(jsi::Runtime &rt) {
   rt.global().setProperty(rt, "sharedRPC", std::move(obj));
 }
 
-void SharedRPC::install(jsi::Runtime &rt, RPCRuntimeExecutor executor) {
+void SharedRPC::install(jsi::Runtime &rt, RPCRuntimeExecutor executor,
+                        const std::string &runtimeId) {
   auto rpc = std::make_shared<SharedRPC>();
   auto obj = jsi::Object::createFromHostObject(rt, rpc);
   rt.global().setProperty(rt, "sharedRPC", std::move(obj));
 
   std::lock_guard<std::mutex> lock(mutex_);
-  // Remove any existing listener for this runtime (reload scenario)
+  // Remove any existing listener with the same runtimeId (reload scenario —
+  // the old jsi::Runtime* may differ from &rt after reload)
   listeners_.erase(
       std::remove_if(listeners_.begin(), listeners_.end(),
-                     [&rt](const RuntimeListener &l) { return l.runtime == &rt; }),
+                     [&runtimeId](const RuntimeListener &l) {
+                       return l.runtimeId == runtimeId;
+                     }),
       listeners_.end());
-  listeners_.push_back({&rt, std::move(executor), nullptr});
+  listeners_.push_back({runtimeId, &rt, std::move(executor), nullptr});
 }
 
 void SharedRPC::reset() {

@@ -78,7 +78,7 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
                 work(rt);
             }];
         };
-        SharedRPC::install(runtime, std::move(mainExecutor));
+        SharedRPC::install(runtime, std::move(mainExecutor), "main");
         [BTLogger info:@"SharedStore and SharedRPC installed in main runtime"];
     }];
 }
