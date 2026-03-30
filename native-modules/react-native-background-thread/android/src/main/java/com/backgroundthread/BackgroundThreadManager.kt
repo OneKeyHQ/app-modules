@@ -1,5 +1,6 @@
 package com.backgroundthread
 
+import android.net.Uri
 import com.facebook.react.ReactPackage
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.ReactInstanceEventListener
@@ -14,6 +15,7 @@ import com.facebook.react.fabric.ComponentFactory
 import com.facebook.react.runtime.ReactHostImpl
 import com.facebook.react.runtime.hermes.HermesInstance
 import com.facebook.react.shell.MainReactPackage
+import java.io.File
 
 /**
  * Singleton manager for the background React Native runtime.
@@ -92,13 +94,61 @@ class BackgroundThreadManager private constructor() {
 
     // ── Background runner lifecycle ─────────────────────────────────────────
 
+    private fun isRemoteBundleUrl(entryURL: String): Boolean {
+        return entryURL.startsWith("http://") || entryURL.startsWith("https://")
+    }
+
+    private fun resolveLocalBundlePath(entryURL: String): String? {
+        if (entryURL.startsWith("file://")) {
+            return Uri.parse(entryURL).path
+        }
+        if (entryURL.startsWith("/")) {
+            return entryURL
+        }
+        return null
+    }
+
+    private fun createDownloadedBundleLoader(appContext: android.content.Context, entryURL: String): JSBundleLoader {
+        return object : JSBundleLoader() {
+            override fun loadScript(delegate: com.facebook.react.bridge.JSBundleLoaderDelegate): String {
+                val tempFile = File(appContext.cacheDir, "background.bundle")
+                try {
+                    java.net.URL(entryURL).openStream().use { input ->
+                        tempFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    BTLogger.info("Background bundle downloaded to ${tempFile.absolutePath}")
+                } catch (e: Exception) {
+                    BTLogger.error("Failed to download background bundle: ${e.message}")
+                    throw RuntimeException("Failed to download background bundle from $entryURL", e)
+                }
+                delegate.loadScriptFromFile(tempFile.absolutePath, entryURL, false)
+                return entryURL
+            }
+        }
+    }
+
+    private fun createLocalFileBundleLoader(localPath: String, sourceURL: String): JSBundleLoader {
+        return object : JSBundleLoader() {
+            override fun loadScript(delegate: com.facebook.react.bridge.JSBundleLoaderDelegate): String {
+                val bundleFile = File(localPath)
+                if (!bundleFile.exists()) {
+                    BTLogger.error("Background bundle file does not exist: $localPath")
+                    throw RuntimeException("Background bundle file does not exist: $localPath")
+                }
+                delegate.loadScriptFromFile(bundleFile.absolutePath, sourceURL, false)
+                return sourceURL
+            }
+        }
+    }
+
     @OptIn(UnstableReactNativeAPI::class)
     fun startBackgroundRunnerWithEntryURL(context: ReactApplicationContext, entryURL: String) {
         if (isStarted) {
             BTLogger.warn("Background runner already started")
             return
         }
-        isStarted = true
         BTLogger.info("Starting background runner with entryURL: $entryURL")
 
         val appContext = context.applicationContext
@@ -106,34 +156,18 @@ class BackgroundThreadManager private constructor() {
             if (reactPackages.isNotEmpty()) {
                 reactPackages
             } else {
-                BTLogger.warn("No ReactPackages registered for background runtime; falling back to MainReactPackage only")
+                BTLogger.warn("No ReactPackages registered for background runtime; call setReactPackages(...) from host before start. Falling back to MainReactPackage only.")
                 listOf(MainReactPackage())
             }
 
-        val bundleLoader = if (entryURL.startsWith("http")) {
-            // Dev server: download bundle to temp file first, then load from file.
-            // loadScriptFromFile only accepts local file paths, not HTTP URLs.
-            object : JSBundleLoader() {
-                override fun loadScript(delegate: com.facebook.react.bridge.JSBundleLoaderDelegate): String {
-                    val tempFile = java.io.File(appContext.cacheDir, "background.bundle")
-                    try {
-                        java.net.URL(entryURL).openStream().use { input ->
-                            tempFile.outputStream().use { output ->
-                                input.copyTo(output)
-                            }
-                        }
-                        BTLogger.info("Background bundle downloaded to ${tempFile.absolutePath}")
-                    } catch (e: Exception) {
-                        BTLogger.error("Failed to download background bundle: ${e.message}")
-                        throw RuntimeException("Failed to download background bundle from $entryURL", e)
-                    }
-                    delegate.loadScriptFromFile(tempFile.absolutePath, entryURL, false)
-                    return entryURL
-                }
+        val localBundlePath = resolveLocalBundlePath(entryURL)
+        val bundleLoader =
+            when {
+                isRemoteBundleUrl(entryURL) -> createDownloadedBundleLoader(appContext, entryURL)
+                localBundlePath != null -> createLocalFileBundleLoader(localBundlePath, entryURL)
+                entryURL.startsWith("assets://") -> JSBundleLoader.createAssetLoader(appContext, entryURL, true)
+                else -> JSBundleLoader.createAssetLoader(appContext, "assets://$entryURL", true)
             }
-        } else {
-            JSBundleLoader.createAssetLoader(appContext, "assets://$entryURL", true)
-        }
 
         val delegate = DefaultReactHostDelegate(
             jsMainModulePath = MODULE_NAME,
@@ -177,6 +211,7 @@ class BackgroundThreadManager private constructor() {
         })
 
         host.start()
+        isStarted = true
     }
 
     /**

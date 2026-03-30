@@ -97,6 +97,11 @@ object BundleUpdateStoreAndroid {
     private const val PREFS_NAME = "BundleUpdatePrefs"
     internal const val NATIVE_VERSION_PREFS_NAME = "NativeVersionPrefs"
     private const val CURRENT_BUNDLE_VERSION_KEY = "currentBundleVersion"
+    private const val MAIN_JS_BUNDLE_FILE_NAME = "main.jsbundle.hbc"
+    private const val BACKGROUND_BUNDLE_FILE_NAME = "background.bundle"
+    private const val METADATA_REQUIRES_BACKGROUND_BUNDLE_KEY = "requiresBackgroundBundle"
+    private const val METADATA_BACKGROUND_PROTOCOL_VERSION_KEY = "backgroundProtocolVersion"
+    private const val SUPPORTED_BACKGROUND_PROTOCOL_VERSION = "1"
 
     fun getDownloadBundleDir(context: Context): String {
         val dir = File(context.filesDir, "onekey-bundle-download")
@@ -401,6 +406,26 @@ object BundleUpdateStoreAndroid {
         return metadata
     }
 
+    private fun isReservedMetadataKey(key: String): Boolean {
+        return key == METADATA_REQUIRES_BACKGROUND_BUNDLE_KEY ||
+            key == METADATA_BACKGROUND_PROTOCOL_VERSION_KEY
+    }
+
+    private fun getFileMetadataEntries(metadata: Map<String, String>): Map<String, String> {
+        return metadata.filterKeys { key -> !isReservedMetadataKey(key) }
+    }
+
+    private fun metadataRequiresBackgroundBundle(metadata: Map<String, String>): Boolean {
+        return metadata[METADATA_REQUIRES_BACKGROUND_BUNDLE_KEY]
+            ?.lowercase()
+            ?.let { value -> value == "1" || value == "true" || value == "yes" }
+            ?: false
+    }
+
+    private fun metadataBackgroundProtocolVersion(metadata: Map<String, String>): String {
+        return metadata[METADATA_BACKGROUND_PROTOCOL_VERSION_KEY] ?: ""
+    }
+
     fun readMetadataFileSha256(signature: String?): String? {
         if (signature.isNullOrEmpty()) return null
 
@@ -534,11 +559,12 @@ object BundleUpdateStoreAndroid {
         val parentBundleDir = getBundleDir(context)
         val folderName = "$appVersion-$bundleVersion"
         val jsBundleDir = File(parentBundleDir, folderName).absolutePath + "/"
+        val fileEntries = getFileMetadataEntries(metadata)
 
-        if (!validateFilesRecursive(dir, metadata, jsBundleDir)) return false
+        if (!validateFilesRecursive(dir, fileEntries, jsBundleDir)) return false
 
         // Verify completeness
-        for (entry in metadata.entries) {
+        for (entry in fileEntries.entries) {
             val expectedFile = File(jsBundleDir + entry.key)
             if (!expectedFile.exists()) {
                 OneKeyLog.error("BundleUpdate", "[bundle-verify] File listed in metadata but missing on disk: ${entry.key}")
@@ -637,7 +663,48 @@ object BundleUpdateStoreAndroid {
         }
     }
 
-    fun getCurrentBundleMainJSBundle(context: Context): String? {
+    fun validateBundlePairCompatibility(bundleDir: String, metadata: Map<String, String>): Boolean {
+        val mainBundleFile = File(bundleDir, MAIN_JS_BUNDLE_FILE_NAME)
+        if (!mainBundleFile.exists()) {
+            OneKeyLog.error(
+                "BundleUpdate",
+                "bundle pair invalid: main.jsbundle.hbc is missing at ${mainBundleFile.absolutePath}",
+            )
+            return false
+        }
+
+        if (!metadataRequiresBackgroundBundle(metadata)) {
+            return true
+        }
+
+        val protocolVersion = metadataBackgroundProtocolVersion(metadata)
+        if (protocolVersion.isEmpty() || protocolVersion != SUPPORTED_BACKGROUND_PROTOCOL_VERSION) {
+            OneKeyLog.error(
+                "BundleUpdate",
+                "backgroundProtocolVersion mismatch: expected=$SUPPORTED_BACKGROUND_PROTOCOL_VERSION, actual=$protocolVersion",
+            )
+            return false
+        }
+
+        val backgroundBundleFile = File(bundleDir, BACKGROUND_BUNDLE_FILE_NAME)
+        if (!backgroundBundleFile.exists()) {
+            OneKeyLog.error(
+                "BundleUpdate",
+                "requiresBackgroundBundle is true but background.bundle is missing at ${backgroundBundleFile.absolutePath}",
+            )
+            return false
+        }
+
+        return true
+    }
+
+    private data class ValidatedBundleInfo(
+        val bundleDir: String,
+        val currentBundleVersion: String,
+        val metadata: Map<String, String>,
+    )
+
+    private fun getValidatedCurrentBundleInfo(context: Context): ValidatedBundleInfo? {
         processPreLaunchPendingTask(context)
         return try {
             val currentAppVersion = getAppVersion(context)
@@ -651,7 +718,7 @@ object BundleUpdateStoreAndroid {
             val prevNativeVersion = getNativeVersion(context)
             if (prevNativeVersion.isEmpty()) {
                 OneKeyLog.warn("BundleUpdate", "getJsBundlePath: prevNativeVersion is empty")
-                return ""
+                return null
             }
 
             if (currentAppVersion != prevNativeVersion) {
@@ -707,23 +774,42 @@ object BundleUpdateStoreAndroid {
                 }
             }
 
-            val mainJSBundleFile = File(bundleDir, "main.jsbundle.hbc")
-            val mainJSBundlePath = mainJSBundleFile.absolutePath
-            OneKeyLog.info("BundleUpdate", "mainJSBundlePath: $mainJSBundlePath")
-            if (!mainJSBundleFile.exists()) {
-                OneKeyLog.info("BundleUpdate", "mainJSBundleFile does not exist")
+            if (!validateBundlePairCompatibility(bundleDir, metadata)) {
                 return null
             }
-            mainJSBundlePath
+
+            ValidatedBundleInfo(
+                bundleDir = bundleDir,
+                currentBundleVersion = currentBundleVersion,
+                metadata = metadata,
+            )
         } catch (e: Exception) {
             OneKeyLog.error("BundleUpdate", "Error getting bundle: ${e.message}")
             null
         }
     }
 
+    fun getCurrentBundleEntryPath(context: Context, entryFileName: String): String? {
+        val bundleInfo = getValidatedCurrentBundleInfo(context) ?: return null
+        val entryFile = File(bundleInfo.bundleDir, entryFileName)
+        if (!entryFile.exists()) {
+            OneKeyLog.info("BundleUpdate", "$entryFileName does not exist")
+            return null
+        }
+        return entryFile.absolutePath
+    }
+
+    fun getCurrentBundleMainJSBundle(context: Context): String? {
+        return getCurrentBundleEntryPath(context, MAIN_JS_BUNDLE_FILE_NAME)
+    }
+
+    fun getCurrentBundleBackgroundJSBundle(context: Context): String? {
+        return getCurrentBundleEntryPath(context, BACKGROUND_BUNDLE_FILE_NAME)
+    }
+
     fun getWebEmbedPath(context: Context): String {
-        val currentBundleDir = getCurrentBundleDir(context, getCurrentBundleVersion(context)) ?: return ""
-        return File(currentBundleDir, "web-embed").absolutePath
+        val bundleInfo = getValidatedCurrentBundleInfo(context) ?: return ""
+        return File(bundleInfo.bundleDir, "web-embed").absolutePath
     }
 
     /**
@@ -1098,6 +1184,11 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     BundleUpdateStoreAndroid.deleteDir(destinationDir)
                     throw Exception("Extracted files verification against metadata failed")
                 }
+                if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(destination, metadata)) {
+                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: bundle pair compatibility check failed")
+                    BundleUpdateStoreAndroid.deleteDir(destinationDir)
+                    throw Exception("Bundle pair compatibility check failed")
+                }
 
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: all verifications passed, appVersion=$appVersion, bundleVersion=$bundleVersion")
             } catch (e: Exception) {
@@ -1366,6 +1457,22 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
+    override fun getBackgroundJsBundlePath(): String {
+        val context = NitroModules.applicationContext ?: return ""
+        val path = BundleUpdateStoreAndroid.getCurrentBundleBackgroundJSBundle(context) ?: ""
+        OneKeyLog.debug("BundleUpdate", "getBackgroundJsBundlePath: ${if (path.isEmpty()) "(empty/no bundle)" else path}")
+        return path
+    }
+
+    override fun getBackgroundJsBundlePathAsync(): Promise<String> {
+        return Promise.async {
+            val context = getContext()
+            val path = BundleUpdateStoreAndroid.getCurrentBundleBackgroundJSBundle(context) ?: ""
+            OneKeyLog.info("BundleUpdate", "getBackgroundJsBundlePathAsync: ${if (path.isEmpty()) "(empty/no bundle)" else path}")
+            path
+        }
+    }
+
     override fun getNativeAppVersion(): Promise<String> {
         return Promise.async {
             val context = getContext()
@@ -1479,6 +1586,10 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, bundlePath.absolutePath, metadata, appVersion, bundleVersion)) {
                 OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: file integrity check failed")
                 throw Exception("File integrity check failed")
+            }
+            if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(bundlePath.absolutePath, metadata)) {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: bundle pair compatibility check failed")
+                throw Exception("Bundle pair compatibility check failed")
             }
             OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: all files verified OK, fileCount=${metadata.size}")
         }

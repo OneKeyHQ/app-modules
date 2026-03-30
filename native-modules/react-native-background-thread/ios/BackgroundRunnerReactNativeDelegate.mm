@@ -71,6 +71,51 @@ static void invokeOptionalGlobalFunction(jsi::Runtime &runtime, const char *name
   }
 }
 
+static NSURL *resolveMainBundleResourceURL(NSString *resourceName)
+{
+  if (resourceName.length == 0) {
+    return nil;
+  }
+
+  NSURL *directURL = [[NSBundle mainBundle] URLForResource:resourceName withExtension:nil];
+  if (directURL) {
+    return directURL;
+  }
+
+  NSString *normalizedName = [resourceName hasPrefix:@"/"]
+      ? resourceName.lastPathComponent
+      : resourceName;
+  NSString *extension = normalizedName.pathExtension;
+  NSString *baseName = normalizedName.stringByDeletingPathExtension;
+  if (baseName.length == 0) {
+    return nil;
+  }
+
+  return [[NSBundle mainBundle] URLForResource:baseName
+                                 withExtension:extension.length > 0 ? extension : nil];
+}
+
+static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
+{
+  if (jsBundleSourceNS.length == 0) {
+    return nil;
+  }
+
+  NSURL *parsedURL = [NSURL URLWithString:jsBundleSourceNS];
+  if (parsedURL.scheme.length > 0) {
+    if (parsedURL.isFileURL && parsedURL.path.length > 0) {
+      return [NSURL fileURLWithPath:parsedURL.path];
+    }
+    return parsedURL;
+  }
+
+  if ([jsBundleSourceNS hasPrefix:@"/"]) {
+    return [NSURL fileURLWithPath:jsBundleSourceNS];
+  }
+
+  return resolveMainBundleResourceURL(jsBundleSourceNS);
+}
+
 @interface BackgroundReactNativeDelegate () {
   RCTInstance *_rctInstance;
   std::string _origin;
@@ -127,17 +172,19 @@ static void invokeOptionalGlobalFunction(jsi::Runtime &runtime, const char *name
 {
   if (!_jsBundleSource.empty()) {
     NSString *jsBundleSourceNS = [NSString stringWithUTF8String:_jsBundleSource.c_str()];
-    NSURL *url = [NSURL URLWithString:jsBundleSourceNS];
-    if (url && url.scheme) {
-      return url;
+    NSURL *resolvedURL = resolveBundleSourceURL(jsBundleSourceNS);
+    if (resolvedURL) {
+      return resolvedURL;
     }
 
-    if ([jsBundleSourceNS hasSuffix:@".jsbundle"]) {
-      return [[NSBundle mainBundle] URLForResource:jsBundleSourceNS withExtension:nil];
-    }
+    [BTLogger warn:[NSString stringWithFormat:@"Unable to resolve custom jsBundleSource=%@", jsBundleSourceNS]];
   }
 
-  return [[NSBundle mainBundle] URLForResource: @"background" withExtension: @"bundle"];
+  NSURL *defaultBundleURL = resolveMainBundleResourceURL(@"background.bundle");
+  if (defaultBundleURL) {
+    return defaultBundleURL;
+  }
+  return [[NSBundle mainBundle] URLForResource:@"background" withExtension:@"bundle"];
 }
 
 - (void)hostDidStart:(RCTHost *)host

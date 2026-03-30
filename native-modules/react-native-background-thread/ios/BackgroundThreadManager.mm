@@ -107,9 +107,7 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         self.reactNativeFactoryDelegate = [[BackgroundReactNativeDelegate alloc] init];
         self.reactNativeFactory = [[RCTReactNativeFactory alloc] initWithDelegate:self.reactNativeFactoryDelegate];
 
-        #if DEBUG
-            [self.reactNativeFactoryDelegate setJsBundleSource:std::string([entryURL UTF8String])];
-        #endif
+        [self.reactNativeFactoryDelegate setJsBundleSource:std::string([entryURL UTF8String])];
 
         [self.reactNativeFactory.rootViewFactory viewWithModuleName:MODULE_NAME
                                                      initialProperties:initialProperties
