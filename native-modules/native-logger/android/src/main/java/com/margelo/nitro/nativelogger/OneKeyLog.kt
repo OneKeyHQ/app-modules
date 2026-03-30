@@ -308,6 +308,26 @@ object OneKeyLog {
         }
     }
 
+    /**
+     * Flush any pending dedup repeat summary to the log file.
+     * Call before log export to ensure trailing repeated messages are included.
+     */
+    @JvmStatic
+    fun flushPendingRepeat() {
+        synchronized(dedupLock) {
+            val pending = repeatCount
+            repeatCount = 0
+            prevLogMessage = null
+
+            if (pending > 0) {
+                val repeatMsg = "[$pending repeat]"
+                val l = logger
+                if (l != null) l.info(repeatMsg)
+                else android.util.Log.i("OneKeyLog", repeatMsg)
+            }
+        }
+    }
+
     @JvmStatic
     fun debug(tag: String, message: String) { log(tag, "DEBUG", message, android.util.Log.DEBUG) }
 

@@ -54,6 +54,10 @@ class NativeLogger: HybridNativeLoggerSpec {
         }
     }
 
+    func flushPendingRepeat() {
+        OneKeyLog.flushPendingRepeat()
+    }
+
     func write(level: Double, msg: String) {
         let sanitized = NativeLogger.sanitize(msg)
         switch Int(level) {

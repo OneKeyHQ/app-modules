@@ -319,6 +319,20 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         return truncate("\(time) | \(level) : [\(safeTag)] \(safeMessage)")
     }
 
+    /// Flush any pending dedup repeat summary to the log file.
+    /// Call before log export to ensure trailing repeated messages are included.
+    @objc public static func flushPendingRepeat() {
+        dedupLock.lock()
+        let pending = repeatCount
+        repeatCount = 0
+        prevLogMessage = nil
+        dedupLock.unlock()
+
+        if pending > 0 {
+            DDLogInfo("[\(pending) repeat]")
+        }
+    }
+
     @objc public static func debug(_ tag: String, _ message: String) {
         log("DEBUG", tag, message) { DDLogDebug($0) }
     }
