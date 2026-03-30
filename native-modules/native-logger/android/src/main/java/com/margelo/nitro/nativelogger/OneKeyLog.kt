@@ -243,7 +243,32 @@ object OneKeyLog {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Dedup: collapse identical consecutive messages into [N repeat]
+    // -----------------------------------------------------------------------
+    private val dedupLock = Any()
+    @Volatile private var prevLogMessage: String? = null
+    private var repeatCount: Int = 0
+
     private fun log(tag: String, level: String, message: String, androidLogLevel: Int) {
+        // Dedup identical consecutive messages
+        synchronized(dedupLock) {
+            if (message == prevLogMessage) {
+                repeatCount += 1
+                return
+            }
+            val pendingRepeat = repeatCount
+            prevLogMessage = message
+            repeatCount = 0
+
+            if (pendingRepeat > 0) {
+                val repeatMsg = "[$pendingRepeat repeat]"
+                val l = logger
+                if (l != null) l.info(repeatMsg)
+                else android.util.Log.i("OneKeyLog", repeatMsg)
+            }
+        }
+
         val decision = evaluateRateLimit(level)
         decision.report?.let { emitRateLimitReport(it) }
         if (decision.drop) return

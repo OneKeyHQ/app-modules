@@ -232,6 +232,13 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         return (true, report)
     }
 
+    // -----------------------------------------------------------------------
+    // Dedup: collapse identical consecutive messages into [N repeat]
+    // -----------------------------------------------------------------------
+    private static let dedupLock = NSLock()
+    private static var prevLogMessage: String?
+    private static var repeatCount: Int = 0
+
     private static func log(
         _ level: String,
         _ tag: String,
@@ -239,6 +246,24 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         writer: (String) -> Void
     ) {
         _ = configured
+
+        // Dedup identical consecutive messages
+        dedupLock.lock()
+        let isDuplicate = (message == prevLogMessage)
+        if isDuplicate {
+            repeatCount += 1
+            dedupLock.unlock()
+            return
+        }
+        let pendingRepeat = repeatCount
+        prevLogMessage = message
+        repeatCount = 0
+        dedupLock.unlock()
+
+        if pendingRepeat > 0 {
+            DDLogInfo("[\(pendingRepeat) repeat]")
+        }
+
         let decision = evaluateRateLimit(for: level)
         if let report = decision.report {
             DDLogWarn(report)
