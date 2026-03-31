@@ -115,4 +115,40 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
     });
 }
 
+#pragma mark - Segment Registration (Phase 2.5 spike)
+
+- (void)registerSegmentInBackground:(NSNumber *)segmentId
+                               path:(NSString *)path
+                         completion:(void (^)(NSError * _Nullable error))completion
+{
+    if (!self.isStarted || !self.reactNativeFactoryDelegate) {
+        NSError *error = [NSError errorWithDomain:@"BackgroundThread"
+                                             code:1
+                                         userInfo:@{NSLocalizedDescriptionKey: @"Background runtime not started"}];
+        if (completion) completion(error);
+        return;
+    }
+
+    // Verify the file exists
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        NSError *error = [NSError errorWithDomain:@"BackgroundThread"
+                                             code:2
+                                         userInfo:@{NSLocalizedDescriptionKey:
+                                                        [NSString stringWithFormat:@"Segment file not found: %@", path]}];
+        if (completion) completion(error);
+        return;
+    }
+
+    BOOL success = [self.reactNativeFactoryDelegate registerSegmentWithId:segmentId path:path];
+    if (success) {
+        if (completion) completion(nil);
+    } else {
+        NSError *error = [NSError errorWithDomain:@"BackgroundThread"
+                                             code:3
+                                         userInfo:@{NSLocalizedDescriptionKey:
+                                                        @"Failed to register segment in background runtime"}];
+        if (completion) completion(error);
+    }
+}
+
 @end

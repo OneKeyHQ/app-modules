@@ -222,6 +222,34 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   }];
 }
 
+#pragma mark - Segment Registration (Phase 2.5 spike)
+
+- (BOOL)registerSegmentWithId:(NSNumber *)segmentId path:(NSString *)path
+{
+  if (!_rctInstance) {
+    [BTLogger error:@"Cannot register segment: background RCTInstance not available"];
+    return NO;
+  }
+
+  @try {
+    SEL sel = NSSelectorFromString(@"registerSegmentWithId:path:");
+    if ([_rctInstance respondsToSelector:sel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+      [_rctInstance performSelector:sel withObject:segmentId withObject:path];
+#pragma clang diagnostic pop
+      [BTLogger info:[NSString stringWithFormat:@"Segment registered in background runtime: id=%@, path=%@", segmentId, path]];
+      return YES;
+    } else {
+      [BTLogger error:@"RCTInstance does not respond to registerSegmentWithId:path:"];
+      return NO;
+    }
+  } @catch (NSException *exception) {
+    [BTLogger error:[NSString stringWithFormat:@"Failed to register segment: %@", exception.reason]];
+    return NO;
+  }
+}
+
 #pragma mark - RCTTurboModuleManagerDelegate
 
 - (id<RCTModuleProvider>)getModuleProvider:(const char *)name

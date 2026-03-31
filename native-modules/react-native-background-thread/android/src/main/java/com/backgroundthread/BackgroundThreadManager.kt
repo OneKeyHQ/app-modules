@@ -242,6 +242,45 @@ class BackgroundThreadManager private constructor() {
         }
     }
 
+    // ── Segment Registration (Phase 2.5 spike) ─────────────────────────────
+
+    /**
+     * Register a HBC segment in the background runtime.
+     * Uses CatalystInstance.registerSegment() on the background ReactContext.
+     *
+     * @param segmentId The segment ID to register
+     * @param path Absolute file path to the .seg.hbc file
+     * @throws IllegalStateException if background runtime is not started
+     * @throws IllegalArgumentException if segment file does not exist
+     */
+    fun registerSegmentInBackground(segmentId: Int, path: String) {
+        if (!isStarted) {
+            throw IllegalStateException("Background runtime not started")
+        }
+
+        val file = File(path)
+        if (!file.exists()) {
+            throw IllegalArgumentException("Segment file not found: $path")
+        }
+
+        val context = bgReactHost?.currentReactContext
+            ?: throw IllegalStateException("Background ReactContext not available")
+
+        context.runOnJSQueueThread {
+            try {
+                if (context.hasCatalystInstance()) {
+                    context.catalystInstance.registerSegment(segmentId, path)
+                    BTLogger.info("Segment registered in background runtime: id=$segmentId, path=$path")
+                } else {
+                    BTLogger.error("Background CatalystInstance not available for segment registration")
+                }
+            } catch (e: Exception) {
+                BTLogger.error("Failed to register segment in background runtime: ${e.message}")
+                throw e
+            }
+        }
+    }
+
     // ── Lifecycle ───────────────────────────────────────────────────────────
 
     val isBackgroundStarted: Boolean get() = isStarted

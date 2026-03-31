@@ -26,6 +26,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// Check if background runner is started
 @property (nonatomic, readonly) BOOL isStarted;
 
+/// Register a HBC segment in the background runtime (Phase 2.5 spike)
+/// @param segmentId The segment ID to register
+/// @param path Absolute file path to the .seg.hbc file
+/// @param completion Callback with nil error on success, or NSError on failure
+- (void)registerSegmentInBackground:(NSNumber *)segmentId
+                               path:(NSString *)path
+                         completion:(void (^)(NSError * _Nullable error))completion;
+
 @end
 
 NS_ASSUME_NONNULL_END

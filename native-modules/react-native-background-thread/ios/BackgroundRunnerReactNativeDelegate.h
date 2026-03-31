@@ -31,6 +31,13 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (instancetype)init;
 
+/**
+ * Register a HBC segment in the background runtime (Phase 2.5 spike).
+ * Uses RCTInstance's registerSegmentWithId:path: API.
+ * Must be called after hostDidStart: has completed.
+ */
+- (BOOL)registerSegmentWithId:(NSNumber *)segmentId path:(NSString *)path;
+
 @end
 
 NS_ASSUME_NONNULL_END
