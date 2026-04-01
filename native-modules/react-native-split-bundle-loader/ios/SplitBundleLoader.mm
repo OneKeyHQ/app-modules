@@ -66,6 +66,11 @@
 
 /// Registers a segment with the current runtime, supporting both legacy bridge
 /// and bridgeless (RCTHost) architectures (#13).
+///
+/// Thread safety (#57): This method is called from the TurboModule (JS thread).
+/// RCTBridge.registerSegmentWithId:path: internally registers the segment with
+/// the Hermes runtime on the JS thread, which is the correct calling context.
+/// No queue dispatch is needed.
 + (BOOL)registerSegment:(int)segmentId path:(NSString *)path error:(NSError **)outError
 {
     // Try legacy bridge first
@@ -127,6 +132,62 @@
     }
 }
 
+// MARK: - Path resolution helper
+
+/// Resolves a relative segment path to an absolute path, checking OTA then builtin.
+/// Returns nil if the segment file is not found.
++ (nullable NSString *)resolveAbsolutePath:(NSString *)relativePath
+{
+    // 1. Try OTA bundle root first
+    NSString *otaPath = [SplitBundleLoader otaBundlePath];
+    if (otaPath) {
+        NSString *otaRoot = [otaPath stringByDeletingLastPathComponent];
+        NSString *candidate = [[otaRoot stringByAppendingPathComponent:relativePath] stringByStandardizingPath];
+        if ([candidate hasPrefix:otaRoot] &&
+            [[NSFileManager defaultManager] fileExistsAtPath:candidate]) {
+            return candidate;
+        }
+    }
+
+    // 2. Fallback to builtin resource path
+    NSString *builtinRoot = [[NSBundle mainBundle] resourcePath];
+    NSString *candidate = [[builtinRoot stringByAppendingPathComponent:relativePath] stringByStandardizingPath];
+    if ([candidate hasPrefix:builtinRoot] &&
+        [[NSFileManager defaultManager] fileExistsAtPath:candidate]) {
+        return candidate;
+    }
+
+    return nil;
+}
+
+// MARK: - resolveSegmentPath (Phase 3)
+
+- (void)resolveSegmentPath:(NSString *)relativePath
+                    sha256:(NSString *)sha256
+                   resolve:(RCTPromiseResolveBlock)resolve
+                    reject:(RCTPromiseRejectBlock)reject
+{
+    @try {
+        if ([relativePath containsString:@".."]) {
+            reject(@"SPLIT_BUNDLE_INVALID_PATH",
+                   [NSString stringWithFormat:@"Path traversal rejected: %@", relativePath],
+                   nil);
+            return;
+        }
+
+        NSString *absolutePath = [SplitBundleLoader resolveAbsolutePath:relativePath];
+        if (absolutePath) {
+            resolve(absolutePath);
+        } else {
+            reject(@"SPLIT_BUNDLE_NOT_FOUND",
+                   [NSString stringWithFormat:@"Segment file not found: %@", relativePath],
+                   nil);
+        }
+    } @catch (NSException *exception) {
+        reject(@"SPLIT_BUNDLE_RESOLVE_ERROR", exception.reason, nil);
+    }
+}
+
 // MARK: - loadSegment
 
 - (void)loadSegment:(double)segmentId
@@ -138,26 +199,16 @@
 {
     @try {
         int segId = (int)segmentId;
-        NSString *absolutePath = nil;
 
-        // 1. Try OTA bundle root first
-        NSString *otaPath = [SplitBundleLoader otaBundlePath];
-        if (otaPath) {
-            NSString *otaRoot = [otaPath stringByDeletingLastPathComponent];
-            NSString *candidate = [otaRoot stringByAppendingPathComponent:relativePath];
-            if ([[NSFileManager defaultManager] fileExistsAtPath:candidate]) {
-                absolutePath = candidate;
-            }
+        // Path traversal guard (#45)
+        if ([relativePath containsString:@".."]) {
+            reject(@"SPLIT_BUNDLE_INVALID_PATH",
+                   [NSString stringWithFormat:@"Path traversal rejected: %@", relativePath],
+                   nil);
+            return;
         }
 
-        // 2. Fallback to builtin resource path
-        if (!absolutePath) {
-            NSString *builtinRoot = [[NSBundle mainBundle] resourcePath];
-            NSString *candidate = [builtinRoot stringByAppendingPathComponent:relativePath];
-            if ([[NSFileManager defaultManager] fileExistsAtPath:candidate]) {
-                absolutePath = candidate;
-            }
-        }
+        NSString *absolutePath = [SplitBundleLoader resolveAbsolutePath:relativePath];
 
         if (!absolutePath) {
             reject(@"SPLIT_BUNDLE_NOT_FOUND",

@@ -17,6 +17,7 @@ export interface Spec extends TurboModule {
     relativePath: string,
     sha256: string,
   ): Promise<void>;
+  resolveSegmentPath(relativePath: string, sha256: string): Promise<string>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('SplitBundleLoader');

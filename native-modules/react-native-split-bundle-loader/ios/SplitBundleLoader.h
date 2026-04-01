@@ -10,5 +10,9 @@
              sha256:(NSString *)sha256
             resolve:(RCTPromiseResolveBlock)resolve
              reject:(RCTPromiseRejectBlock)reject;
+- (void)resolveSegmentPath:(NSString *)relativePath
+                    sha256:(NSString *)sha256
+                   resolve:(RCTPromiseResolveBlock)resolve
+                    reject:(RCTPromiseRejectBlock)reject;
 
 @end

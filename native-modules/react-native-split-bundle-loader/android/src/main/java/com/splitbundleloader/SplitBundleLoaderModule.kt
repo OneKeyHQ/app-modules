@@ -86,6 +86,26 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
     }
 
     // -----------------------------------------------------------------------
+    // resolveSegmentPath (Phase 3)
+    // -----------------------------------------------------------------------
+
+    override fun resolveSegmentPath(relativePath: String, sha256: String, promise: Promise) {
+        try {
+            val absolutePath = resolveSegmentPath(relativePath, sha256)
+            if (absolutePath != null) {
+                promise.resolve(absolutePath)
+            } else {
+                promise.reject(
+                    "SPLIT_BUNDLE_NOT_FOUND",
+                    "Segment file not found: $relativePath"
+                )
+            }
+        } catch (e: Exception) {
+            promise.reject("SPLIT_BUNDLE_RESOLVE_ERROR", e.message, e)
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // loadSegment
     // -----------------------------------------------------------------------
 
@@ -96,6 +116,10 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
         sha256: String,
         promise: Promise
     ) {
+        // NOTE (#44): sha256 param is not verified at load time by design.
+        // Per §6.4.1, runtime trusts that OTA install has already verified
+        // segment integrity. Builtin segments are signed as part of the APK/IPA.
+        // If runtime SHA-256 verification is needed, add it here.
         try {
             val segId = segmentId.toInt()
 
@@ -157,14 +181,29 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
     // Path resolution helpers
     // -----------------------------------------------------------------------
 
+    /**
+     * Verify resolved path stays within the expected root directory (#45).
+     * Prevents path traversal via ".." components in relativePath.
+     */
+    private fun isPathWithinRoot(root: File, resolved: File): Boolean {
+        return resolved.canonicalPath.startsWith(root.canonicalPath + File.separator) ||
+            resolved.canonicalPath == root.canonicalPath
+    }
+
     private fun resolveSegmentPath(relativePath: String, expectedSha256: String): String? {
+        // Path traversal guard (#45)
+        if (relativePath.contains("..")) {
+            SBLLogger.warn("Path traversal rejected: $relativePath")
+            return null
+        }
+
         // 1. Try OTA bundle directory first
         val otaBundlePath = getOtaBundlePath()
         if (!otaBundlePath.isNullOrEmpty()) {
             val otaRoot = File(otaBundlePath).parentFile
             if (otaRoot != null) {
                 val candidate = File(otaRoot, relativePath)
-                if (candidate.exists()) {
+                if (candidate.exists() && isPathWithinRoot(otaRoot, candidate)) {
                     return candidate.absolutePath
                 }
             }
