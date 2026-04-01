@@ -253,30 +253,45 @@ class BackgroundThreadManager private constructor() {
      * @throws IllegalStateException if background runtime is not started
      * @throws IllegalArgumentException if segment file does not exist
      */
-    fun registerSegmentInBackground(segmentId: Int, path: String) {
+    /**
+     * Register a HBC segment in the background runtime with completion callback.
+     * Dispatches to the background JS queue thread and invokes the callback
+     * only after registerSegment has actually executed.
+     *
+     * @param segmentId The segment ID to register
+     * @param path Absolute file path to the .seg.hbc file
+     * @param onComplete Called with null on success, or an Exception on failure
+     */
+    fun registerSegmentInBackground(segmentId: Int, path: String, onComplete: (Exception?) -> Unit) {
         if (!isStarted) {
-            throw IllegalStateException("Background runtime not started")
+            onComplete(IllegalStateException("Background runtime not started"))
+            return
         }
 
         val file = File(path)
         if (!file.exists()) {
-            throw IllegalArgumentException("Segment file not found: $path")
+            onComplete(IllegalArgumentException("Segment file not found: $path"))
+            return
         }
 
         val context = bgReactHost?.currentReactContext
-            ?: throw IllegalStateException("Background ReactContext not available")
+        if (context == null) {
+            onComplete(IllegalStateException("Background ReactContext not available"))
+            return
+        }
 
         context.runOnJSQueueThread {
             try {
                 if (context.hasCatalystInstance()) {
                     context.catalystInstance.registerSegment(segmentId, path)
                     BTLogger.info("Segment registered in background runtime: id=$segmentId, path=$path")
+                    onComplete(null)
                 } else {
-                    BTLogger.error("Background CatalystInstance not available for segment registration")
+                    onComplete(IllegalStateException("Background CatalystInstance not available for segment registration"))
                 }
             } catch (e: Exception) {
                 BTLogger.error("Failed to register segment in background runtime: ${e.message}")
-                throw e
+                onComplete(e)
             }
         }
     }

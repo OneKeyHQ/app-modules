@@ -29,12 +29,13 @@ class BackgroundThreadModule(reactContext: ReactApplicationContext) :
     }
 
     override fun loadSegmentInBackground(segmentId: Double, path: String, promise: Promise) {
-        try {
-            BackgroundThreadManager.getInstance()
-                .registerSegmentInBackground(segmentId.toInt(), path)
-            promise.resolve(null)
-        } catch (e: Exception) {
-            promise.reject("BG_SEGMENT_LOAD_ERROR", e.message, e)
-        }
+        BackgroundThreadManager.getInstance()
+            .registerSegmentInBackground(segmentId.toInt(), path) { error ->
+                if (error != null) {
+                    promise.reject("BG_SEGMENT_LOAD_ERROR", error.message, error)
+                } else {
+                    promise.resolve(null)
+                }
+            }
     }
 }
