@@ -9,6 +9,7 @@ import com.facebook.react.module.annotations.ReactModule
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.concurrent.Semaphore
 
 /**
  * TurboModule entry point for SplitBundleLoader.
@@ -26,6 +27,9 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
     companion object {
         const val NAME = "SplitBundleLoader"
         private const val BUILTIN_EXTRACT_DIR = "onekey-builtin-segments"
+        // #18: Limit concurrent asset extractions to avoid I/O contention
+        private const val MAX_CONCURRENT_EXTRACTS = 2
+        private val extractSemaphore = Semaphore(MAX_CONCURRENT_EXTRACTS)
     }
 
     override fun getName(): String = NAME
@@ -73,6 +77,9 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
             result.putString("bundleVersion", bundleVersion)
 
             promise.resolve(result)
+
+            // #17: Clean up old version extract directories asynchronously
+            cleanupOldExtractDirs(context, nativeVersion)
         } catch (e: Exception) {
             promise.reject("SPLIT_BUNDLE_CONTEXT_ERROR", e.message, e)
         }
@@ -92,7 +99,7 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
         try {
             val segId = segmentId.toInt()
 
-            val absolutePath = resolveSegmentPath(relativePath)
+            val absolutePath = resolveSegmentPath(relativePath, sha256)
             if (absolutePath == null) {
                 promise.reject(
                     "SPLIT_BUNDLE_NOT_FOUND",
@@ -101,17 +108,25 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
                 return
             }
 
-            // Register segment via CatalystInstance
+            // #19: Try CatalystInstance first (bridge mode), fall back to
+            // ReactHost registerSegment if available (bridgeless / new arch).
             val reactContext = reactApplicationContext
             if (reactContext.hasCatalystInstance()) {
                 reactContext.catalystInstance.registerSegment(segId, absolutePath)
                 SBLLogger.info("Loaded segment $segmentKey (id=$segId)")
                 promise.resolve(null)
             } else {
-                promise.reject(
-                    "SPLIT_BUNDLE_NO_INSTANCE",
-                    "CatalystInstance not available"
-                )
+                // Bridgeless: try ReactHost via reflection
+                val registered = tryRegisterViaBridgeless(segId, absolutePath)
+                if (registered) {
+                    SBLLogger.info("Loaded segment $segmentKey (id=$segId) via bridgeless")
+                    promise.resolve(null)
+                } else {
+                    promise.reject(
+                        "SPLIT_BUNDLE_NO_INSTANCE",
+                        "Neither CatalystInstance nor ReactHost available"
+                    )
+                }
             }
         } catch (e: Exception) {
             promise.reject("SPLIT_BUNDLE_LOAD_ERROR", e.message, e)
@@ -119,10 +134,30 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
     }
 
     // -----------------------------------------------------------------------
+    // Bridgeless support (#19)
+    // -----------------------------------------------------------------------
+
+    private fun tryRegisterViaBridgeless(segmentId: Int, path: String): Boolean {
+        return try {
+            val appContext = reactApplicationContext.applicationContext
+            val appClass = appContext.javaClass
+            val hostMethod = appClass.getMethod("getReactHost")
+            val host = hostMethod.invoke(appContext) ?: return false
+            val registerMethod = host.javaClass.getMethod(
+                "registerSegment", Int::class.java, String::class.java
+            )
+            registerMethod.invoke(host, segmentId, path)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Path resolution helpers
     // -----------------------------------------------------------------------
 
-    private fun resolveSegmentPath(relativePath: String): String? {
+    private fun resolveSegmentPath(relativePath: String, expectedSha256: String): String? {
         // 1. Try OTA bundle directory first
         val otaBundlePath = getOtaBundlePath()
         if (!otaBundlePath.isNullOrEmpty()) {
@@ -136,14 +171,17 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
         }
 
         // 2. Try builtin: extract from assets if needed
-        return extractBuiltinSegmentIfNeeded(relativePath)
+        return extractBuiltinSegmentIfNeeded(relativePath, expectedSha256)
     }
 
     /**
      * For Android builtin segments, APK assets can't be passed directly as file paths.
      * Extract the asset to the extract cache directory on first access.
+     *
+     * #16: Validates extracted file size against the asset to detect truncated extractions.
+     * #18: Uses semaphore to limit concurrent extractions.
      */
-    private fun extractBuiltinSegmentIfNeeded(relativePath: String): String? {
+    private fun extractBuiltinSegmentIfNeeded(relativePath: String, expectedSha256: String): String? {
         val context = reactApplicationContext
         val nativeVersion = try {
             context.packageManager
@@ -155,30 +193,99 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
         val extractDir = File(context.filesDir, "$BUILTIN_EXTRACT_DIR/$nativeVersion")
         val extractedFile = File(extractDir, relativePath)
 
-        // Already extracted
+        // #16: If file exists, verify it's not truncated by checking size against asset
         if (extractedFile.exists()) {
-            return extractedFile.absolutePath
+            val assetSize = getAssetSize(context.assets, relativePath)
+            if (assetSize >= 0 && extractedFile.length() == assetSize) {
+                return extractedFile.absolutePath
+            }
+            // Truncated or size mismatch — delete and re-extract
+            SBLLogger.warn("Extracted file size mismatch for $relativePath, re-extracting")
+            extractedFile.delete()
         }
 
-        // Extract from assets
-        val assets: AssetManager = context.assets
-        return try {
-            assets.open(relativePath).use { input ->
-                extractedFile.parentFile?.let { parent ->
-                    if (!parent.exists()) parent.mkdirs()
+        // #18: Limit concurrent extractions
+        extractSemaphore.acquire()
+        try {
+            // Double-check after acquiring semaphore (another thread may have extracted)
+            if (extractedFile.exists()) {
+                return extractedFile.absolutePath
+            }
+
+            val assets: AssetManager = context.assets
+            return try {
+                // Extract to temp file first, then atomically rename
+                val tempFile = File(extractedFile.parentFile, "${extractedFile.name}.tmp")
+                assets.open(relativePath).use { input ->
+                    extractedFile.parentFile?.let { parent ->
+                        if (!parent.exists()) parent.mkdirs()
+                    }
+                    FileOutputStream(tempFile).use { output ->
+                        val buffer = ByteArray(8192)
+                        var len: Int
+                        while (input.read(buffer).also { len = it } != -1) {
+                            output.write(buffer, 0, len)
+                        }
+                    }
                 }
-                FileOutputStream(extractedFile).use { output ->
+                // Atomic rename prevents partial file observation
+                if (tempFile.renameTo(extractedFile)) {
+                    extractedFile.absolutePath
+                } else {
+                    tempFile.delete()
+                    null
+                }
+            } catch (_: IOException) {
+                null
+            }
+        } finally {
+            extractSemaphore.release()
+        }
+    }
+
+    /**
+     * Returns the size of an asset file, or -1 if it can't be determined.
+     */
+    private fun getAssetSize(assets: AssetManager, assetPath: String): Long {
+        return try {
+            assets.openFd(assetPath).use { it.length }
+        } catch (_: IOException) {
+            // Asset may be compressed; fall back to reading the stream
+            try {
+                assets.open(assetPath).use { input ->
+                    var size = 0L
                     val buffer = ByteArray(8192)
                     var len: Int
                     while (input.read(buffer).also { len = it } != -1) {
-                        output.write(buffer, 0, len)
+                        size += len
+                    }
+                    size
+                }
+            } catch (_: IOException) {
+                -1
+            }
+        }
+    }
+
+    /**
+     * #17: Asynchronously clean up extract directories from previous native versions.
+     */
+    private fun cleanupOldExtractDirs(context: Context, currentVersion: String) {
+        Thread {
+            try {
+                val baseDir = File(context.filesDir, BUILTIN_EXTRACT_DIR)
+                if (!baseDir.exists() || !baseDir.isDirectory) return@Thread
+                val dirs = baseDir.listFiles() ?: return@Thread
+                for (dir in dirs) {
+                    if (dir.isDirectory && dir.name != currentVersion) {
+                        SBLLogger.info("Cleaning up old extract dir: ${dir.name}")
+                        dir.deleteRecursively()
                     }
                 }
+            } catch (e: Exception) {
+                SBLLogger.warn("Failed to cleanup old extract dirs: ${e.message}")
             }
-            extractedFile.absolutePath
-        } catch (_: IOException) {
-            null
-        }
+        }.start()
     }
 
     private fun getOtaBundlePath(): String? {
