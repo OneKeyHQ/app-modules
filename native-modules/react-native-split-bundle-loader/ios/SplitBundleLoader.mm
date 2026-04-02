@@ -1,6 +1,8 @@
 #import "SplitBundleLoader.h"
 #import "SBLLogger.h"
 #import <React/RCTBridge.h>
+#import <objc/runtime.h>
+#include <jsi/jsi.h>
 
 // Bridgeless (New Architecture) support: RCTHost segment registration
 @interface RCTHost (SplitBundle)
@@ -186,6 +188,45 @@
     } @catch (NSException *exception) {
         reject(@"SPLIT_BUNDLE_RESOLVE_ERROR", exception.reason, nil);
     }
+}
+
+// MARK: - loadEntryBundle (common + entry split loading)
+
++ (void)loadEntryBundle:(NSString *)bundlePath inHost:(id)host
+{
+  if (!host || bundlePath.length == 0) {
+    [SBLLogger warn:[NSString stringWithFormat:@"loadEntryBundle: invalid arguments (host=%@, path=%@)", host, bundlePath]];
+    return;
+  }
+
+  Ivar ivar = class_getInstanceVariable([host class], "_instance");
+  if (!ivar) {
+    [SBLLogger warn:[NSString stringWithFormat:@"loadEntryBundle: _instance ivar not found on %@", [host class]]];
+    return;
+  }
+
+  id instance = object_getIvar(host, ivar);
+  if (!instance) {
+    [SBLLogger warn:@"loadEntryBundle: _instance is nil"];
+    return;
+  }
+
+  NSData *data = [NSData dataWithContentsOfFile:bundlePath];
+  if (!data || data.length == 0) {
+    [SBLLogger warn:[NSString stringWithFormat:@"loadEntryBundle: failed to read bundle at %@", bundlePath]];
+    return;
+  }
+
+  NSString *sourceURL = bundlePath.lastPathComponent ?: bundlePath;
+  [SBLLogger info:[NSString stringWithFormat:@"loadEntryBundle: evaluating %@ (%lu bytes)", sourceURL, (unsigned long)data.length]];
+
+  [instance callFunctionOnBufferedRuntimeExecutor:^(facebook::jsi::Runtime &runtime) {
+    @autoreleasepool {
+      auto buffer = std::make_shared<facebook::jsi::StringBuffer>(
+        std::string(static_cast<const char *>(data.bytes), data.length));
+      runtime.evaluateJavaScript(std::move(buffer), [sourceURL UTF8String]);
+    }
+  }];
 }
 
 // MARK: - loadSegment

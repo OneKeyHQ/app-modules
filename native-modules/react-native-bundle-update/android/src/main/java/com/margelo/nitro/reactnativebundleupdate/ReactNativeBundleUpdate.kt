@@ -99,6 +99,7 @@ object BundleUpdateStoreAndroid {
     private const val CURRENT_BUNDLE_VERSION_KEY = "currentBundleVersion"
     private const val MAIN_JS_BUNDLE_FILE_NAME = "main.jsbundle.hbc"
     private const val BACKGROUND_BUNDLE_FILE_NAME = "background.bundle"
+    private const val COMMON_BUNDLE_FILE_NAME = "common.bundle"
     private const val METADATA_REQUIRES_BACKGROUND_BUNDLE_KEY = "requiresBackgroundBundle"
     private const val METADATA_BACKGROUND_PROTOCOL_VERSION_KEY = "backgroundProtocolVersion"
     private const val SUPPORTED_BACKGROUND_PROTOCOL_VERSION = "1"
@@ -805,6 +806,10 @@ object BundleUpdateStoreAndroid {
 
     fun getCurrentBundleBackgroundJSBundle(context: Context): String? {
         return getCurrentBundleEntryPath(context, BACKGROUND_BUNDLE_FILE_NAME)
+    }
+
+    fun getCurrentBundleCommonJSBundle(context: Context): String? {
+        return getCurrentBundleEntryPath(context, COMMON_BUNDLE_FILE_NAME)
     }
 
     fun getWebEmbedPath(context: Context): String {

@@ -170,6 +170,8 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
 
 - (NSURL *)bundleURL
 {
+  // When _jsBundleSource is set (dev mode or explicit override), use it as-is.
+  // This is a single full bundle (not split), so DON'T use common+entry strategy.
   if (!_jsBundleSource.empty()) {
     NSString *jsBundleSourceNS = [NSString stringWithUTF8String:_jsBundleSource.c_str()];
     NSURL *resolvedURL = resolveBundleSourceURL(jsBundleSourceNS);
@@ -180,11 +182,19 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
     [BTLogger warn:[NSString stringWithFormat:@"Unable to resolve custom jsBundleSource=%@", jsBundleSourceNS]];
   }
 
-  NSURL *defaultBundleURL = resolveMainBundleResourceURL(@"background.bundle");
-  if (defaultBundleURL) {
-    return defaultBundleURL;
+  // Default: load common bundle (shared polyfills + modules).
+  // The background entry bundle is loaded later in hostDidStart:.
+  NSURL *commonURL = resolveMainBundleResourceURL(@"common.jsbundle");
+  if (commonURL) {
+    return commonURL;
   }
-  return [[NSBundle mainBundle] URLForResource:@"background" withExtension:@"bundle"];
+  return [[NSBundle mainBundle] URLForResource:@"common" withExtension:@"jsbundle"];
+}
+
+- (NSString *)resolveBackgroundEntryBundlePath
+{
+  NSURL *url = resolveMainBundleResourceURL(@"background.bundle");
+  return url.path;
 }
 
 - (void)hostDidStart:(RCTHost *)host
@@ -203,6 +213,26 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
     return;
   }
 
+  // When _jsBundleSource is set, the bundle loaded in bundleURL was already
+  // a full single bundle (dev mode / explicit override), so skip entry loading.
+  BOOL isSplitBundle = _jsBundleSource.empty();
+
+  // Read the background entry bundle data before entering the executor block
+  // (only needed in split-bundle mode).
+  NSData *bgBundleData = nil;
+  NSString *bgBundleSourceURL = nil;
+  if (isSplitBundle) {
+    NSString *bgBundlePath = [self resolveBackgroundEntryBundlePath];
+    if (bgBundlePath) {
+      bgBundleData = [NSData dataWithContentsOfFile:bgBundlePath];
+      bgBundleSourceURL = bgBundlePath.lastPathComponent ?: @"background.bundle";
+      [BTLogger info:[NSString stringWithFormat:@"Background entry bundle loaded from %@ (%lu bytes)",
+                      bgBundlePath, (unsigned long)bgBundleData.length]];
+    } else {
+      [BTLogger warn:@"Background entry bundle not found, __setupBackgroundRPCHandler may not be defined"];
+    }
+  }
+
   [_rctInstance callFunctionOnBufferedRuntimeExecutor:[=](jsi::Runtime &runtime) {
     [self setupErrorHandler:runtime];
 
@@ -218,6 +248,17 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
     };
     SharedRPC::install(runtime, std::move(bgExecutor), "background");
     [BTLogger info:@"SharedStore and SharedRPC installed in background runtime"];
+
+    // In split-bundle mode, evaluate the background entry bundle now.
+    // This must happen BEFORE invokeOptionalGlobalFunction since the entry
+    // bundle defines __setupBackgroundRPCHandler.
+    if (isSplitBundle && bgBundleData && bgBundleData.length > 0) {
+      auto buffer = std::make_shared<jsi::StringBuffer>(
+        std::string(static_cast<const char *>(bgBundleData.bytes), bgBundleData.length));
+      runtime.evaluateJavaScript(std::move(buffer), [bgBundleSourceURL UTF8String]);
+      [BTLogger info:@"Background entry bundle evaluated in runtime"];
+    }
+
     invokeOptionalGlobalFunction(runtime, "__setupBackgroundRPCHandler");
   }];
 }
