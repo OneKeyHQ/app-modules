@@ -1,13 +1,10 @@
 #import "SplitBundleLoader.h"
 #import "SBLLogger.h"
-#import <React/RCTBridge.h>
+#import <ReactCommon/RCTHost.h>
+#import <ReactCommon/RCTHost+Internal.h>
+#import <ReactCommon/RCTInstance.h>
 #import <objc/runtime.h>
 #include <jsi/jsi.h>
-
-// Bridgeless (New Architecture) support: RCTHost segment registration
-@interface RCTHost (SplitBundle)
-- (void)registerSegmentWithId:(NSNumber *)segmentId path:(NSString *)path;
-@end
 
 @implementation SplitBundleLoader
 
@@ -66,26 +63,16 @@
 
 // MARK: - Segment registration helper
 
-/// Registers a segment with the current runtime, supporting both legacy bridge
-/// and bridgeless (RCTHost) architectures (#13).
+/// Registers a segment with the current runtime via bridgeless (RCTHost) architecture (#13).
 ///
 /// Thread safety (#57): This method is called from the TurboModule (JS thread).
-/// RCTBridge.registerSegmentWithId:path: internally registers the segment with
-/// the Hermes runtime on the JS thread, which is the correct calling context.
 /// No queue dispatch is needed.
 + (BOOL)registerSegment:(int)segmentId path:(NSString *)path error:(NSError **)outError
 {
-    // Try legacy bridge first
-    RCTBridge *bridge = [RCTBridge currentBridge];
-    if (bridge && [bridge respondsToSelector:@selector(registerSegmentWithId:path:)]) {
-        [bridge registerSegmentWithId:@(segmentId) path:path];
-        return YES;
-    }
-
-    // Try bridgeless RCTHost via AppDelegate
+    // Bridgeless (New Architecture): get RCTHost via AppDelegate
     id<UIApplicationDelegate> appDelegate = [UIApplication sharedApplication].delegate;
     if ([appDelegate respondsToSelector:NSSelectorFromString(@"reactHost")]) {
-        id host = [appDelegate performSelector:NSSelectorFromString(@"reactHost")];
+        RCTHost *host = [appDelegate performSelector:NSSelectorFromString(@"reactHost")];
         if (host && [host respondsToSelector:@selector(registerSegmentWithId:path:)]) {
             [host registerSegmentWithId:@(segmentId) path:path];
             return YES;
@@ -95,7 +82,7 @@
     if (outError) {
         *outError = [NSError errorWithDomain:@"SplitBundleLoader"
                                         code:1
-                                    userInfo:@{NSLocalizedDescriptionKey: @"Neither RCTBridge nor RCTHost available for segment registration"}];
+                                    userInfo:@{NSLocalizedDescriptionKey: @"RCTHost not available for segment registration"}];
     }
     return NO;
 }
@@ -205,7 +192,7 @@
     return;
   }
 
-  id instance = object_getIvar(host, ivar);
+  RCTInstance *instance = object_getIvar(host, ivar);
   if (!instance) {
     [SBLLogger warn:@"loadEntryBundle: _instance is nil"];
     return;
