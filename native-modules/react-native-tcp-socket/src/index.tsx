@@ -37,19 +37,19 @@ function createConnection(
       }
     });
 
-  const shim: TcpSocketShim = {
-    on(event: 'error' | 'timeout', handler: (err?: Error) => void) {
+  const shim = {
+    on(event: string, handler: (err?: Error) => void) {
       if (event === 'error') {
         handlers.error = handler as (err: Error) => void;
       } else if (event === 'timeout') {
         handlers.timeout = handler as () => void;
       }
-      return this;
+      return shim as unknown as TcpSocketShim;
     },
     destroy() {
       destroyed = true;
     },
-  };
+  } as unknown as TcpSocketShim;
   return shim;
 }
 
