@@ -120,13 +120,22 @@ class BackgroundThreadManager private constructor() {
     ): JSBundleLoader {
         return object : JSBundleLoader() {
             override fun loadScript(delegate: com.facebook.react.bridge.JSBundleLoaderDelegate): String {
+                val totalStart = System.nanoTime()
+
                 // Step 1: Load common bundle (polyfills + shared modules)
+                val commonStart = System.nanoTime()
                 delegate.loadScriptFromAssets(appContext.assets, "assets://$commonAssetName", false)
-                BTLogger.info("Common bundle loaded from assets: $commonAssetName")
+                val commonMs = (System.nanoTime() - commonStart) / 1_000_000.0
+                BTLogger.info("[SplitBundle] common bundle loaded from assets in ${String.format("%.1f", commonMs)}ms: $commonAssetName")
 
                 // Step 2: Load entry-specific bundle
+                val entryStart = System.nanoTime()
                 delegate.loadScriptFromAssets(appContext.assets, "assets://$entryAssetName", false)
-                BTLogger.info("Entry bundle loaded from assets: $entryAssetName")
+                val entryMs = (System.nanoTime() - entryStart) / 1_000_000.0
+                BTLogger.info("[SplitBundle] entry bundle loaded from assets in ${String.format("%.1f", entryMs)}ms: $entryAssetName")
+
+                val totalMs = (System.nanoTime() - totalStart) / 1_000_000.0
+                BTLogger.info("[SplitBundle] sequential asset load total: ${String.format("%.1f", totalMs)}ms (common=${String.format("%.1f", commonMs)}ms + entry=${String.format("%.1f", entryMs)}ms)")
 
                 return "assets://$entryAssetName"
             }
@@ -144,14 +153,19 @@ class BackgroundThreadManager private constructor() {
     ): JSBundleLoader {
         return object : JSBundleLoader() {
             override fun loadScript(delegate: com.facebook.react.bridge.JSBundleLoaderDelegate): String {
+                val totalStart = System.nanoTime()
+
                 // Step 1: Load common bundle (polyfills + shared modules)
                 val commonFile = File(commonPath)
                 if (!commonFile.exists()) {
                     BTLogger.error("Common bundle file does not exist: $commonPath")
                     throw RuntimeException("Common bundle file does not exist: $commonPath")
                 }
+                BTLogger.info("[SplitBundle] common bundle file: ${commonFile.length() / 1024}KB")
+                val commonStart = System.nanoTime()
                 delegate.loadScriptFromFile(commonFile.absolutePath, "common.bundle", false)
-                BTLogger.info("Common bundle loaded from file: $commonPath")
+                val commonMs = (System.nanoTime() - commonStart) / 1_000_000.0
+                BTLogger.info("[SplitBundle] common bundle loaded from file in ${String.format("%.1f", commonMs)}ms: $commonPath")
 
                 // Step 2: Load entry-specific bundle
                 val entryFile = File(entryPath)
@@ -159,8 +173,14 @@ class BackgroundThreadManager private constructor() {
                     BTLogger.error("Entry bundle file does not exist: $entryPath")
                     throw RuntimeException("Entry bundle file does not exist: $entryPath")
                 }
+                BTLogger.info("[SplitBundle] entry bundle file: ${entryFile.length() / 1024}KB")
+                val entryStart = System.nanoTime()
                 delegate.loadScriptFromFile(entryFile.absolutePath, entrySourceURL, false)
-                BTLogger.info("Entry bundle loaded from file: $entryPath")
+                val entryMs = (System.nanoTime() - entryStart) / 1_000_000.0
+                BTLogger.info("[SplitBundle] entry bundle loaded from file in ${String.format("%.1f", entryMs)}ms: $entryPath")
+
+                val totalMs = (System.nanoTime() - totalStart) / 1_000_000.0
+                BTLogger.info("[SplitBundle] sequential file load total: ${String.format("%.1f", totalMs)}ms (common=${String.format("%.1f", commonMs)}ms + entry=${String.format("%.1f", entryMs)}ms)")
 
                 return entrySourceURL
             }
@@ -231,7 +251,8 @@ class BackgroundThreadManager private constructor() {
             BTLogger.warn("Background runner already started")
             return
         }
-        BTLogger.info("Starting background runner with entryURL: $entryURL")
+        val bgStartTime = System.nanoTime()
+        BTLogger.info("[SplitBundle] background runner starting with entryURL: $entryURL")
 
         val appContext = context.applicationContext
         val packages =
@@ -306,7 +327,8 @@ class BackgroundThreadManager private constructor() {
 
         host.addReactInstanceEventListener(object : ReactInstanceEventListener {
             override fun onReactContextInitialized(context: ReactContext) {
-                BTLogger.info("Background ReactContext initialized")
+                val initMs = (System.nanoTime() - bgStartTime) / 1_000_000.0
+                BTLogger.info("[SplitBundle] background ReactContext initialized in ${String.format("%.1f", initMs)}ms")
                 context.runOnJSQueueThread {
                     try {
                         val ptr = context.javaScriptContextHolder?.get() ?: 0L

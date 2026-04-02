@@ -135,15 +135,18 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
             // #19: Try CatalystInstance first (bridge mode), fall back to
             // ReactHost registerSegment if available (bridgeless / new arch).
             val reactContext = reactApplicationContext
+            val segStart = System.nanoTime()
             if (reactContext.hasCatalystInstance()) {
                 reactContext.catalystInstance.registerSegment(segId, absolutePath)
-                SBLLogger.info("Loaded segment $segmentKey (id=$segId)")
+                val segMs = (System.nanoTime() - segStart) / 1_000_000.0
+                SBLLogger.info("[SplitBundle] segment $segmentKey (id=$segId) registered in ${String.format("%.1f", segMs)}ms")
                 promise.resolve(null)
             } else {
                 // Bridgeless: try ReactHost via reflection
                 val registered = tryRegisterViaBridgeless(segId, absolutePath)
+                val segMs = (System.nanoTime() - segStart) / 1_000_000.0
                 if (registered) {
-                    SBLLogger.info("Loaded segment $segmentKey (id=$segId) via bridgeless")
+                    SBLLogger.info("[SplitBundle] segment $segmentKey (id=$segId) registered via bridgeless in ${String.format("%.1f", segMs)}ms")
                     promise.resolve(null)
                 } else {
                     promise.reject(
