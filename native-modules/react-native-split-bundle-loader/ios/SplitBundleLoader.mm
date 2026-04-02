@@ -218,15 +218,22 @@
   }
 
   NSString *sourceURL = bundlePath.lastPathComponent ?: bundlePath;
-  [SBLLogger info:[NSString stringWithFormat:@"loadEntryBundle: evaluating %@ (%lu bytes)", sourceURL, (unsigned long)data.length]];
+  CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
+  [SBLLogger info:[NSString stringWithFormat:@"[SplitBundle] loadEntryBundle: evaluating %@ (%lu bytes)", sourceURL, (unsigned long)data.length]];
 
   [instance callFunctionOnBufferedRuntimeExecutor:^(facebook::jsi::Runtime &runtime) {
     @autoreleasepool {
+      CFAbsoluteTime evalStart = CFAbsoluteTimeGetCurrent();
       auto buffer = std::make_shared<facebook::jsi::StringBuffer>(
         std::string(static_cast<const char *>(data.bytes), data.length));
       runtime.evaluateJavaScript(std::move(buffer), [sourceURL UTF8String]);
+      double evalMs = (CFAbsoluteTimeGetCurrent() - evalStart) * 1000.0;
+      [SBLLogger info:[NSString stringWithFormat:@"[SplitBundle] loadEntryBundle: %@ evaluated in %.1fms", sourceURL, evalMs]];
     }
   }];
+
+  double totalMs = (CFAbsoluteTimeGetCurrent() - startTime) * 1000.0;
+  [SBLLogger info:[NSString stringWithFormat:@"[SplitBundle] loadEntryBundle: %@ dispatched in %.1fms (eval is async)", sourceURL, totalMs]];
 }
 
 // MARK: - loadSegment
@@ -240,6 +247,7 @@
 {
     @try {
         int segId = (int)segmentId;
+        CFAbsoluteTime segStart = CFAbsoluteTimeGetCurrent();
 
         // Path traversal guard (#45)
         if ([relativePath containsString:@".."]) {
@@ -261,7 +269,8 @@
         // Register segment (#13: supports both bridge and bridgeless)
         NSError *regError = nil;
         if ([SplitBundleLoader registerSegment:segId path:absolutePath error:&regError]) {
-            [SBLLogger info:[NSString stringWithFormat:@"Loaded segment %@ (id=%d)", segmentKey, segId]];
+            double segMs = (CFAbsoluteTimeGetCurrent() - segStart) * 1000.0;
+            [SBLLogger info:[NSString stringWithFormat:@"[SplitBundle] Loaded segment %@ (id=%d) in %.1fms", segmentKey, segId, segMs]];
             resolve(nil);
         } else {
             reject(@"SPLIT_BUNDLE_NO_RUNTIME",

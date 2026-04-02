@@ -233,6 +233,8 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
     }
   }
 
+  CFAbsoluteTime bgStartTime = CFAbsoluteTimeGetCurrent();
+
   [_rctInstance callFunctionOnBufferedRuntimeExecutor:[=](jsi::Runtime &runtime) {
     [self setupErrorHandler:runtime];
 
@@ -253,11 +255,16 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
     // This must happen BEFORE invokeOptionalGlobalFunction since the entry
     // bundle defines __setupBackgroundRPCHandler.
     if (isSplitBundle && bgBundleData && bgBundleData.length > 0) {
+      CFAbsoluteTime bgEvalStart = CFAbsoluteTimeGetCurrent();
       auto buffer = std::make_shared<jsi::StringBuffer>(
         std::string(static_cast<const char *>(bgBundleData.bytes), bgBundleData.length));
       runtime.evaluateJavaScript(std::move(buffer), [bgBundleSourceURL UTF8String]);
-      [BTLogger info:@"Background entry bundle evaluated in runtime"];
+      double bgEvalMs = (CFAbsoluteTimeGetCurrent() - bgEvalStart) * 1000.0;
+      [BTLogger info:[NSString stringWithFormat:@"[SplitBundle] bg entry evaluated in %.1fms", bgEvalMs]];
     }
+
+    double bgTotalMs = (CFAbsoluteTimeGetCurrent() - bgStartTime) * 1000.0;
+    [BTLogger info:[NSString stringWithFormat:@"[SplitBundle] bg hostDidStart total setup in %.1fms", bgTotalMs]];
 
     invokeOptionalGlobalFunction(runtime, "__setupBackgroundRPCHandler");
   }];
