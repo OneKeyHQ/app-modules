@@ -46,11 +46,11 @@
 
             CCKeyDerivationPBKDF(
                 kCCPBKDF2,
-                passwordData.bytes, passwordData.length,
-                saltData.bytes, saltData.length,
+                (const char *)passwordData.bytes, passwordData.length,
+                (const uint8_t *)saltData.bytes, saltData.length,
                 prf,
                 (unsigned int)rounds,
-                derivedKey.mutableBytes, derivedKey.length);
+                (uint8_t *)derivedKey.mutableBytes, derivedKey.length);
 
             resolve([derivedKey base64EncodedStringWithOptions:0]);
         } @catch (NSException *exception) {

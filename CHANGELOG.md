@@ -2,6 +2,132 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.4] - 2026-04-03
+
+### Bug Fixes
+- **split-bundle-loader**: Fix stale reflection class name for `BundleUpdateStore` in Android `getOtaBundlePath()` — updated from `expo.modules.onekeybundleupdate.BundleUpdateStore` to `com.margelo.nitro.reactnativebundleupdate.BundleUpdateStoreAndroid`
+- **native-logger**: Fix dedup logic suppressing error logs — comparison now includes level, tag, and message instead of message-only
+- **background-thread**: Fix JNI GlobalRef leak on each `nativeInstallSharedBridge` call — wrap in `shared_ptr` with custom deleter
+- **background-thread**: Fix `SharedRPC::reset()` crash from destroying `jsi::Function` on wrong thread — use intentional leak pattern
+- **background-thread**: Fix `nativeDestroy` not resetting `SharedStore`, leaving stale data across restarts
+- Correct codegen class names to match TS spec file names
+
+### Chores
+- Align all package versions to 3.x line (cloud-fs cannot use 1.x since npm already has 2.6.5)
+- Bump all packages to 3.0.4
+
+## [1.1.59] - 2026-04-03
+
+### Bug Fixes
+- **tcp-socket**: Correct header import to match codegenConfig name
+
+### Chores
+- Bump all packages to 1.1.59
+
+## [1.1.58] - 2026-04-03
+
+### Bug Fixes
+- **cloud-fs**: Set version to 3.0.0 (npm already has 2.6.5, cannot publish lower)
+
+### Chores
+- Bump all packages to 1.1.58
+
+## [1.1.57] - 2026-04-03
+
+### Bug Fixes
+- Add missing release scripts for cloud-fs, ping, zip-archive
+
+### Chores
+- Bump all packages to 1.1.57
+
+## [1.1.56] - 2026-04-03
+
+### Features
+- **aes-crypto / async-storage / cloud-fs / dns-lookup / network-info / ping / tcp-socket / zip-archive**: Add Android TurboModule implementations for legacy bridge module replacements
+- **tcp-socket**: Fix type definitions
+
+### Chores
+- Bump all packages to 1.1.56
+
+## [1.1.55] - 2026-04-03
+
+### Features
+- **aes-crypto / async-storage / cloud-fs / dns-lookup / network-info / ping / tcp-socket / zip-archive**: Add TurboModule replacements for legacy React Native bridge modules (iOS + JS)
+
+### Chores
+- Bump all packages to 1.1.55
+
+## [1.1.54] - 2026-04-02
+
+### Chores
+- Bump all packages to 1.1.54
+
+## [1.1.53] - 2026-04-02
+
+### Features
+- **split-bundle-loader**: Add split-bundle timing instrumentation and update PGP public key
+- **split-bundle-loader**: Add comprehensive timing logs for three-bundle split verification
+
+### Chores
+- Bump all packages to 1.1.53
+
+## [1.1.52] - 2026-04-02
+
+### Features
+- **background-thread**: Add split-bundle common+entry loading strategy for background runtime
+
+### Chores
+- Bump all packages to 1.1.52
+
+## [1.1.51] - 2026-04-01
+
+### Features
+- **split-bundle-loader**: Add `resolveSegmentPath` API and path traversal protection
+
+### Bug Fixes
+- **split-bundle-loader**: Resolve Android `registerSegmentInBackground` race condition
+- **split-bundle-loader**: Enhance bridgeless support and robustness improvements
+
+### Chores
+- Bump all packages to 1.1.51
+
+## [1.1.49] - 2026-04-01
+
+### Features
+- **split-bundle-loader**: Add `react-native-split-bundle-loader` TurboModule with `getRuntimeBundleContext` and `loadSegment` APIs
+- **split-bundle-loader**: Expose `loadSegmentInBackground` from TurboModule API
+- **bundle-update**: Add `registerSegmentInBackground` for late HBC segment loading
+
+### Chores
+- Bump all packages to 1.1.49
+
+## [1.1.48] - 2026-03-31
+
+### Features
+- **bundle-update**: Support background bundle pair bootstrap — add `getBackgroundJsBundlePath`, metadata validation for `requiresBackgroundBundle` and `backgroundProtocolVersion`, and bundle pair compatibility checks
+
+### Chores
+- Bump all packages to 1.1.48
+
+## [1.1.47] - 2026-03-31
+
+### Features
+- **background-thread**: Add SharedBridge JSI HostObject for cross-runtime data transfer between main and background JS runtimes
+- **background-thread**: Implement Android background runtime with second ReactHost and SharedBridge
+- **background-thread**: Replace SharedBridge with SharedStore + SharedRPC architecture
+- **background-thread**: Add onWrite cross-runtime notification, remove legacy messaging
+- **native-logger**: Add dedup for identical consecutive log messages
+
+### Bug Fixes
+- **background-thread**: Stabilize background thread runtime initialization
+- **background-thread**: Initialize Android shared bridge at app startup
+- **shared-rpc**: Rename `RuntimeExecutor` to `RPCRuntimeExecutor` to avoid React Native conflict
+- **shared-rpc**: Prevent crash on JS reload by deduplicating listeners with runtimeId
+- **shared-rpc**: Leak stale `jsi::Function` callback on reload to prevent crash
+
+### Chores
+- Bump all packages to 1.1.47
+
 ## [1.1.46] - 2026-03-19
 
 ### Bug Fixes

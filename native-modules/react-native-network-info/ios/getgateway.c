@@ -12,14 +12,48 @@
 
 #include "TargetConditionals.h"
 #if TARGET_IPHONE_SIMULATOR
-#include <net/route.h>
 #define TypeEN    "en1"
 #else
-#include <net/route.h>
 #define TypeEN    "en0"
 #endif
 
 #include <net/if.h>
+
+// Inline route.h definitions (not available in iOS SDK)
+#define RTF_GATEWAY   0x2
+#define NET_RT_FLAGS  2
+#define RTAX_MAX      8
+#define RTAX_DST      0
+#define RTAX_GATEWAY  1
+#define RTA_DST       0x1
+#define RTA_GATEWAY   0x2
+
+struct rt_msghdr {
+    u_short rtm_msglen;
+    u_char  rtm_version;
+    u_char  rtm_type;
+    u_short rtm_index;
+    int     rtm_flags;
+    int     rtm_addrs;
+    pid_t   rtm_pid;
+    int     rtm_seq;
+    int     rtm_errno;
+    int     rtm_use;
+    u_long  rtm_inits;
+    struct  rt_metrics {
+        u_long rmx_locks;
+        u_long rmx_mtu;
+        u_long rmx_hopcount;
+        u_long rmx_expire;
+        u_long rmx_recvpipe;
+        u_long rmx_sendpipe;
+        u_long rmx_ssthresh;
+        u_long rmx_rtt;
+        u_long rmx_rttvar;
+        u_long rmx_pksent;
+        u_long rmx_filler[4];
+    } rtm_rmx;
+};
 #include <string.h>
 
 #define CTL_NET         4               /* network, see socket.h */

@@ -14,7 +14,7 @@
 #define IP_ADDR_IPv4    @"ipv4"
 #define IP_ADDR_IPv6    @"ipv6"
 
-@import SystemConfiguration.CaptiveNetwork;
+#import <SystemConfiguration/CaptiveNetwork.h>
 
 @implementation NetworkInfo
 
