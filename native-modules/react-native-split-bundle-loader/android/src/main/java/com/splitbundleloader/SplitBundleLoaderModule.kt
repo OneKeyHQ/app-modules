@@ -333,7 +333,7 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
     private fun getOtaBundlePath(): String? {
         return try {
             val bundleUpdateStore = Class.forName(
-                "expo.modules.onekeybundleupdate.BundleUpdateStore"
+                "com.margelo.nitro.reactnativebundleupdate.BundleUpdateStoreAndroid"
             )
             val method = bundleUpdateStore.getMethod(
                 "getCurrentBundleMainJSBundle",
