@@ -1,1 +1,0 @@
-{"version":3,"names":["NativeDnsLookup","DnsLookup","getIpAddressesForHostname","hostname","getIpAddresses"],"sourceRoot":"../../src","sources":["index.tsx"],"mappings":";;AAAA,OAAOA,eAAe,MAAM,sBAAmB;AAE/C,OAAO,MAAMC,SAAS,GAAGD,eAAe;AACxC,OAAO,MAAME,yBAAyB,GACpCC,QAAgB,IACMH,eAAe,CAACI,cAAc,CAACD,QAAQ,CAAC","ignoreList":[]}

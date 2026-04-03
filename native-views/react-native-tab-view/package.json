@@ -31,7 +31,8 @@
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
-    "!**/.*"
+    "!**/.*",
+    "!**/*.map"
   ],
   "scripts": {
     "clean": "del-cli lib",

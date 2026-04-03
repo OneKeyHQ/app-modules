@@ -22,7 +22,8 @@
     "!**/__fixtures__",
     "!**/__mocks__",
     "!**/.*",
-    "android"
+    "android",
+    "!**/*.map"
   ],
   "scripts": {
     "prepare": "bob build",

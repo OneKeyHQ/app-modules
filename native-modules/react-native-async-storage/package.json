@@ -25,7 +25,8 @@
     "!**/__fixtures__",
     "!**/__mocks__",
     "!**/.*",
-    "android"
+    "android",
+    "!**/*.map"
   ],
   "scripts": {
     "clean": "del-cli ios/build lib",
