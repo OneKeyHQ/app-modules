@@ -87,7 +87,7 @@
 
     for (CFIndex currentIndex = 0; currentIndex < numAddresses; currentIndex++) {
         struct sockaddr *address = (struct sockaddr *)CFDataGetBytePtr(
-            CFArrayGetValueAtIndex(addressesRef, currentIndex));
+            (CFDataRef)CFArrayGetValueAtIndex(addressesRef, currentIndex));
         getnameinfo(address, address->sa_len, ipAddress, INET6_ADDRSTRLEN, nil, 0, NI_NUMERICHOST);
         [addresses addObject:[NSString stringWithCString:ipAddress encoding:NSASCIIStringEncoding]];
     }
