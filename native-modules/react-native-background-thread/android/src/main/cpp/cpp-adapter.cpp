@@ -99,14 +99,21 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
 
     SharedStore::install(*rt);
 
-    // Create executor that schedules work on this runtime's JS thread via Kotlin
-    jobject ref = env->NewGlobalRef(thiz);
+    // Create executor that schedules work on this runtime's JS thread via Kotlin.
+    // Wrap GlobalRef in shared_ptr so it is automatically released when all
+    // copies of the executor lambda are destroyed (e.g. on runtime reload).
+    auto ref = std::shared_ptr<_jobject>(env->NewGlobalRef(thiz), [](jobject r) {
+        if (r) {
+            JNIEnv *e = getJNIEnv();
+            if (e) e->DeleteGlobalRef(r);
+        }
+    });
     bool capturedIsMain = static_cast<bool>(isMain);
 
     RPCRuntimeExecutor executor = [ref, capturedIsMain](std::function<void(jsi::Runtime &)> work) {
         JNIEnv *env = getJNIEnv();
         if (!env || !ref) {
-            LOGE("executor: env=%p, ref=%p — aborting", env, ref);
+            LOGE("executor: env=%p, ref=%p — aborting", env, ref.get());
             return;
         }
 
@@ -117,11 +124,11 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
             gPendingWork[workId] = std::move(work);
         }
 
-        jclass cls = env->GetObjectClass(ref);
+        jclass cls = env->GetObjectClass(ref.get());
         jmethodID mid = env->GetMethodID(cls, "scheduleOnJSThread", "(ZJ)V");
         if (mid) {
             LOGI("executor: calling scheduleOnJSThread(isMain=%d, workId=%ld)", capturedIsMain, (long)workId);
-            env->CallVoidMethod(ref, mid, static_cast<jboolean>(capturedIsMain), static_cast<jlong>(workId));
+            env->CallVoidMethod(ref.get(), mid, static_cast<jboolean>(capturedIsMain), static_cast<jlong>(workId));
             if (env->ExceptionCheck()) {
                 LOGE("executor: JNI exception after scheduleOnJSThread");
                 env->ExceptionDescribe();
@@ -217,6 +224,7 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeDestroy(
     JNIEnv *env, jobject thiz) {
 
     SharedRPC::reset();
+    SharedStore::reset();
 
     LOGI("Native resources cleaned up");
 }

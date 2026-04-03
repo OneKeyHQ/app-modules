@@ -1,4 +1,4 @@
-#import <TcpSocketSpec/TcpSocketSpec.h>
+#import <RNTcpSocketSpec/RNTcpSocketSpec.h>
 
 @interface TcpSocket : NativeRNTcpSocketSpecBase <NativeRNTcpSocketSpec>
 

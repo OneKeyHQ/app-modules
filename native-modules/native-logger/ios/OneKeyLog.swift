@@ -236,7 +236,7 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
     // Dedup: collapse identical consecutive messages into [N repeat]
     // -----------------------------------------------------------------------
     private static let dedupLock = NSLock()
-    private static var prevLogMessage: String?
+    private static var prevLogKey: String?
     private static var repeatCount: Int = 0
 
     private static func log(
@@ -247,16 +247,17 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
     ) {
         _ = configured
 
-        // Dedup identical consecutive messages
+        // Dedup identical consecutive messages (same level + tag + message)
+        let logKey = "\(level):\(tag):\(message)"
         dedupLock.lock()
-        let isDuplicate = (message == prevLogMessage)
+        let isDuplicate = (logKey == prevLogKey)
         if isDuplicate {
             repeatCount += 1
             dedupLock.unlock()
             return
         }
         let pendingRepeat = repeatCount
-        prevLogMessage = message
+        prevLogKey = logKey
         repeatCount = 0
         dedupLock.unlock()
 

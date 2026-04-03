@@ -46,6 +46,13 @@ void SharedRPC::install(jsi::Runtime &rt, RPCRuntimeExecutor executor,
 void SharedRPC::reset() {
   std::lock_guard<std::mutex> lock(mutex_);
   slots_.clear();
+  // Intentionally leak jsi::Function callbacks to avoid destroying them on the
+  // wrong thread (same rationale as the leak in install() for reload scenarios).
+  for (auto &listener : listeners_) {
+    if (listener.callback) {
+      new std::shared_ptr<jsi::Function>(std::move(listener.callback));
+    }
+  }
   listeners_.clear();
 }
 
