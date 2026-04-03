@@ -234,11 +234,11 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
 
             int status = CCKeyDerivationPBKDF(
                 kCCPBKDF2,
-                passwordData.bytes, passwordData.length,
-                saltData.bytes, saltData.length,
+                (const char *)passwordData.bytes, passwordData.length,
+                (const uint8_t *)saltData.bytes, saltData.length,
                 prf,
                 (unsigned int)cost,
-                hashKeyData.mutableBytes, hashKeyData.length);
+                (uint8_t *)hashKeyData.mutableBytes, hashKeyData.length);
 
             if (status == kCCParamError) {
                 reject(@"keygen_fail", @"Key derivation parameter error", nil);
@@ -321,7 +321,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
         @try {
             NSData *inputData = fromHex(text);
             NSMutableData *result = [[NSMutableData alloc] initWithLength:CC_SHA1_DIGEST_LENGTH];
-            CC_SHA1(inputData.bytes, (CC_LONG)inputData.length, result.mutableBytes);
+            CC_SHA1((const void *)inputData.bytes, (CC_LONG)inputData.length, (unsigned char *)result.mutableBytes);
             resolve(toHex(result));
         } @catch (NSException *exception) {
             reject(@"sha1_fail", exception.reason, nil);
@@ -343,7 +343,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                 reject(@"sha256_fail", @"Memory allocation error", nil);
                 return;
             }
-            CC_SHA256(inputData.bytes, (CC_LONG)inputData.length, buffer);
+            CC_SHA256((const void *)inputData.bytes, (CC_LONG)inputData.length, buffer);
             NSData *result = [NSData dataWithBytesNoCopy:buffer
                                                   length:CC_SHA256_DIGEST_LENGTH
                                             freeWhenDone:YES];
@@ -368,7 +368,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                 reject(@"sha512_fail", @"Memory allocation error", nil);
                 return;
             }
-            CC_SHA512(inputData.bytes, (CC_LONG)inputData.length, buffer);
+            CC_SHA512((const void *)inputData.bytes, (CC_LONG)inputData.length, buffer);
             NSData *result = [NSData dataWithBytesNoCopy:buffer
                                                   length:CC_SHA512_DIGEST_LENGTH
                                             freeWhenDone:YES];

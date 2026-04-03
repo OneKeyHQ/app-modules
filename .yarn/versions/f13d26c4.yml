@@ -1,0 +1,32 @@
+releases:
+  "@onekeyfe/react-native-aes-crypto": patch
+  "@onekeyfe/react-native-app-update": patch
+  "@onekeyfe/react-native-async-storage": patch
+  "@onekeyfe/react-native-background-thread": patch
+  "@onekeyfe/react-native-bundle-update": patch
+  "@onekeyfe/react-native-check-biometric-auth-changed": patch
+  "@onekeyfe/react-native-cloud-fs": patch
+  "@onekeyfe/react-native-cloud-kit-module": patch
+  "@onekeyfe/react-native-native-logger": patch
+
+undecided:
+  - "@onekeyfe/app-modules"
+  - "@onekeyfe/app-modules-example"
+  - "@onekeyfe/react-native-device-utils"
+  - "@onekeyfe/react-native-dns-lookup"
+  - "@onekeyfe/react-native-get-random-values"
+  - "@onekeyfe/react-native-keychain-module"
+  - "@onekeyfe/react-native-lite-card"
+  - "@onekeyfe/react-native-network-info"
+  - "@onekeyfe/react-native-pbkdf2"
+  - "@onekeyfe/react-native-perf-memory"
+  - "@onekeyfe/react-native-ping"
+  - "@onekeyfe/react-native-splash-screen"
+  - "@onekeyfe/react-native-split-bundle-loader"
+  - "@onekeyfe/react-native-tcp-socket"
+  - "@onekeyfe/react-native-zip-archive"
+  - "@onekeyfe/react-native-auto-size-input"
+  - "@onekeyfe/react-native-pager-view"
+  - "@onekeyfe/react-native-scroll-guard"
+  - "@onekeyfe/react-native-skeleton"
+  - "@onekeyfe/react-native-tab-view"

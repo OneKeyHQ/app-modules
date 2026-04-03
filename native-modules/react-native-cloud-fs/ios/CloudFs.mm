@@ -1,6 +1,5 @@
 #import "CloudFs.h"
 #import <UIKit/UIKit.h>
-#import <AssetsLibrary/AssetsLibrary.h>
 
 @implementation CloudFs
 
@@ -237,25 +236,7 @@
         sourceUri = [source objectForKey:@"path"];
     }
 
-    if ([sourceUri hasPrefix:@"assets-library"]) {
-        ALAssetsLibrary *library = [[ALAssetsLibrary alloc] init];
-        [library assetForURL:[NSURL URLWithString:sourceUri] resultBlock:^(ALAsset *asset) {
-            ALAssetRepresentation *rep = [asset defaultRepresentation];
-            Byte *buffer = (Byte *)malloc(rep.size);
-            NSUInteger buffered = [rep getBytes:buffer fromOffset:0.0 length:rep.size error:nil];
-            NSData *data = [NSData dataWithBytesNoCopy:buffer length:buffered freeWhenDone:YES];
-            if (data) {
-                NSString *filename = [sourceUri lastPathComponent];
-                NSString *tempFile = [NSTemporaryDirectory() stringByAppendingPathComponent:filename];
-                [data writeToFile:tempFile atomically:YES];
-                [self moveToICloudDirectory:documentsFolder tempFile:tempFile destinationPath:destinationPath resolve:resolve reject:reject];
-            } else {
-                return reject(@"error", [NSString stringWithFormat:@"failed to copy asset '%@'", sourceUri], nil);
-            }
-        } failureBlock:^(NSError *error) {
-            return reject(@"error", error.description, nil);
-        }];
-    } else if ([sourceUri hasPrefix:@"file:/"] || [sourceUri hasPrefix:@"/"]) {
+    if ([sourceUri hasPrefix:@"file:/"] || [sourceUri hasPrefix:@"/"]) {
         NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"^file:/+" options:NSRegularExpressionCaseInsensitive error:nil];
         NSString *modifiedSourceUri = [regex stringByReplacingMatchesInString:sourceUri options:0 range:NSMakeRange(0, [sourceUri length]) withTemplate:@"/"];
 

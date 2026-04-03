@@ -1,5 +1,6 @@
-import NativeAesCrypto from './NativeAesCrypto';
+"use strict";
 
+import NativeAesCrypto from "./NativeAesCrypto.js";
 export const encrypt = NativeAesCrypto.encrypt.bind(NativeAesCrypto);
 export const decrypt = NativeAesCrypto.decrypt.bind(NativeAesCrypto);
 export const pbkdf2 = NativeAesCrypto.pbkdf2.bind(NativeAesCrypto);
@@ -10,6 +11,5 @@ export const sha256 = NativeAesCrypto.sha256.bind(NativeAesCrypto);
 export const sha512 = NativeAesCrypto.sha512.bind(NativeAesCrypto);
 export const randomUuid = NativeAesCrypto.randomUuid.bind(NativeAesCrypto);
 export const randomKey = NativeAesCrypto.randomKey.bind(NativeAesCrypto);
-
 export default NativeAesCrypto;
-export type { Spec as AesCryptoSpec } from './NativeAesCrypto';
+//# sourceMappingURL=index.js.map

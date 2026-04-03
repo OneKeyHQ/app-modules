@@ -326,7 +326,7 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         dedupLock.lock()
         let pending = repeatCount
         repeatCount = 0
-        prevLogMessage = nil
+        prevLogKey = nil
         dedupLock.unlock()
 
         if pending > 0 {

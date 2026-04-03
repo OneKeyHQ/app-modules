@@ -10,6 +10,9 @@
       "types": "./lib/typescript/src/index.d.ts",
       "default": "./lib/module/index.js"
     },
+    "./lib/typescript/types": {
+      "types": "./lib/typescript/src/types.d.ts"
+    },
     "./package.json": "./package.json"
   },
   "files": [

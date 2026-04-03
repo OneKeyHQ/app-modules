@@ -1,0 +1,1 @@
+{"version":3,"names":["NativeZipArchive","ZipArchive","zip","source","target","zipFolder"],"sourceRoot":"../../src","sources":["index.tsx"],"mappings":";;AAAA,OAAOA,gBAAgB,MAAM,uBAAoB;AAEjD,OAAO,MAAMC,UAAU,GAAGD,gBAAgB;AAC1C,OAAO,MAAME,GAAG,GAAGA,CAACC,MAAc,EAAEC,MAAc,KAChDJ,gBAAgB,CAACK,SAAS,CAACF,MAAM,EAAEC,MAAM,CAAC","ignoreList":[]}

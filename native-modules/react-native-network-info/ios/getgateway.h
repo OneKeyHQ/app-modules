@@ -10,6 +10,14 @@
 #include <stdio.h>
 #include <netinet/in.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int getdefaultgateway(in_addr_t *addr);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* getgateway_h */
