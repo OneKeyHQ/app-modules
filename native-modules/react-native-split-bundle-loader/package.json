@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-split-bundle-loader",
-  "version": "3.0.8",
+  "version": "3.0.9",
   "description": "react-native-split-bundle-loader",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
