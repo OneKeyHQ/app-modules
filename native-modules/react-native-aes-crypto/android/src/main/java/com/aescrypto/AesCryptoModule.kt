@@ -9,194 +9,192 @@ import java.security.SecureRandom
 import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.Mac
-import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.IvParameterSpec
-import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
+import org.spongycastle.crypto.Digest
+import org.spongycastle.crypto.digests.SHA1Digest
+import org.spongycastle.crypto.digests.SHA256Digest
+import org.spongycastle.crypto.digests.SHA512Digest
+import org.spongycastle.crypto.generators.PKCS5S2ParametersGenerator
+import org.spongycastle.crypto.params.KeyParameter
+import org.spongycastle.util.encoders.Hex
 
+/**
+ * Ported from upstream react-native-aes-crypto Aes.java.
+ * Adapted to extend NativeAesCryptoSpec (TurboModule).
+ */
 @ReactModule(name = AesCryptoModule.NAME)
 class AesCryptoModule(reactContext: ReactApplicationContext) :
     NativeAesCryptoSpec(reactContext) {
 
     companion object {
         const val NAME = "AesCrypto"
+        private const val CIPHER_CBC_ALGORITHM = "AES/CBC/PKCS7Padding"
+        private const val CIPHER_CTR_ALGORITHM = "AES/CTR/PKCS5Padding"
+        private const val HMAC_SHA_256 = "HmacSHA256"
+        private const val HMAC_SHA_512 = "HmacSHA512"
+        private const val KEY_ALGORITHM = "AES"
+
+        private val emptyIvSpec = IvParameterSpec(ByteArray(16) { 0x00 })
+
+        @JvmStatic
+        fun bytesToHex(bytes: ByteArray): String {
+            val hexArray = "0123456789abcdef".toCharArray()
+            val hexChars = CharArray(bytes.size * 2)
+            for (j in bytes.indices) {
+                val v = bytes[j].toInt() and 0xFF
+                hexChars[j * 2] = hexArray[v ushr 4]
+                hexChars[j * 2 + 1] = hexArray[v and 0x0F]
+            }
+            return String(hexChars)
+        }
     }
 
     override fun getName(): String = NAME
 
-    private fun cipherTransformation(algorithm: String): String {
-        return when (algorithm.lowercase()) {
-            "aes-128-cbc", "aes-192-cbc", "aes-256-cbc" -> "AES/CBC/PKCS5Padding"
-            "aes-128-ecb", "aes-192-ecb", "aes-256-ecb" -> "AES/ECB/PKCS5Padding"
-            else -> "AES/CBC/PKCS5Padding"
-        }
-    }
-
     override fun encrypt(data: String, key: String, iv: String, algorithm: String, promise: Promise) {
-        Thread {
-            try {
-                val keyBytes = hexToBytes(key)
-                val ivBytes = hexToBytes(iv)
-                val transformation = cipherTransformation(algorithm)
-                val cipher = Cipher.getInstance(transformation)
-                val secretKey = SecretKeySpec(keyBytes, "AES")
-                if (transformation.contains("ECB")) {
-                    cipher.init(Cipher.ENCRYPT_MODE, secretKey)
-                } else {
-                    cipher.init(Cipher.ENCRYPT_MODE, secretKey, IvParameterSpec(ivBytes))
-                }
-                val encrypted = cipher.doFinal(data.toByteArray(Charsets.UTF_8))
-                promise.resolve(Base64.encodeToString(encrypted, Base64.NO_WRAP))
-            } catch (e: Exception) {
-                promise.reject("AES_CRYPTO_ERROR", e.message, e)
-            }
-        }.start()
+        try {
+            val cipherAlgorithm = if (algorithm.lowercase().contains("cbc")) CIPHER_CBC_ALGORITHM else CIPHER_CTR_ALGORITHM
+            val result = encryptImpl(data, key, iv, cipherAlgorithm)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
     }
 
     override fun decrypt(base64: String, key: String, iv: String, algorithm: String, promise: Promise) {
-        Thread {
-            try {
-                val keyBytes = hexToBytes(key)
-                val ivBytes = hexToBytes(iv)
-                val transformation = cipherTransformation(algorithm)
-                val cipher = Cipher.getInstance(transformation)
-                val secretKey = SecretKeySpec(keyBytes, "AES")
-                if (transformation.contains("ECB")) {
-                    cipher.init(Cipher.DECRYPT_MODE, secretKey)
-                } else {
-                    cipher.init(Cipher.DECRYPT_MODE, secretKey, IvParameterSpec(ivBytes))
-                }
-                val decrypted = cipher.doFinal(Base64.decode(base64, Base64.NO_WRAP))
-                promise.resolve(String(decrypted, Charsets.UTF_8))
-            } catch (e: Exception) {
-                promise.reject("AES_CRYPTO_ERROR", e.message, e)
-            }
-        }.start()
+        try {
+            val cipherAlgorithm = if (algorithm.lowercase().contains("cbc")) CIPHER_CBC_ALGORITHM else CIPHER_CTR_ALGORITHM
+            val result = decryptImpl(base64, key, iv, cipherAlgorithm)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
     }
 
     override fun pbkdf2(password: String, salt: String, cost: Double, length: Double, algorithm: String, promise: Promise) {
-        Thread {
-            try {
-                val saltBytes = salt.toByteArray(Charsets.UTF_8)
-                val iterationCount = cost.toInt()
-                val keyLength = length.toInt() * 8
-                val hmacAlgorithm = when (algorithm.uppercase()) {
-                    "SHA256", "SHA-256" -> "PBKDF2WithHmacSHA256"
-                    "SHA512", "SHA-512" -> "PBKDF2WithHmacSHA512"
-                    else -> "PBKDF2WithHmacSHA1"
-                }
-                val spec = PBEKeySpec(password.toCharArray(), saltBytes, iterationCount, keyLength)
-                val factory = SecretKeyFactory.getInstance(hmacAlgorithm)
-                val keyBytes = factory.generateSecret(spec).encoded
-                promise.resolve(bytesToHex(keyBytes))
-            } catch (e: Exception) {
-                promise.reject("AES_CRYPTO_ERROR", e.message, e)
-            }
-        }.start()
+        try {
+            val result = pbkdf2Impl(password, salt, cost.toInt(), length.toInt(), algorithm)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
     }
 
-    override fun hmac256(base64: String, key: String, promise: Promise) {
-        Thread {
-            try {
-                val mac = Mac.getInstance("HmacSHA256")
-                val secretKey = SecretKeySpec(hexToBytes(key), "HmacSHA256")
-                mac.init(secretKey)
-                val result = mac.doFinal(Base64.decode(base64, Base64.NO_WRAP))
-                promise.resolve(bytesToHex(result))
-            } catch (e: Exception) {
-                promise.reject("AES_CRYPTO_ERROR", e.message, e)
-            }
-        }.start()
+    override fun hmac256(data: String, key: String, promise: Promise) {
+        try {
+            val result = hmacX(data, key, HMAC_SHA_256)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
     }
 
-    override fun hmac512(base64: String, key: String, promise: Promise) {
-        Thread {
-            try {
-                val mac = Mac.getInstance("HmacSHA512")
-                val secretKey = SecretKeySpec(hexToBytes(key), "HmacSHA512")
-                mac.init(secretKey)
-                val result = mac.doFinal(Base64.decode(base64, Base64.NO_WRAP))
-                promise.resolve(bytesToHex(result))
-            } catch (e: Exception) {
-                promise.reject("AES_CRYPTO_ERROR", e.message, e)
-            }
-        }.start()
+    override fun hmac512(data: String, key: String, promise: Promise) {
+        try {
+            val result = hmacX(data, key, HMAC_SHA_512)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
     }
 
     override fun sha1(text: String, promise: Promise) {
-        Thread {
-            try {
-                val digest = MessageDigest.getInstance("SHA-1")
-                val result = digest.digest(text.toByteArray(Charsets.UTF_8))
-                promise.resolve(bytesToHex(result))
-            } catch (e: Exception) {
-                promise.reject("AES_CRYPTO_ERROR", e.message, e)
-            }
-        }.start()
+        try {
+            val result = shaX(text, "SHA-1")
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
     }
 
     override fun sha256(text: String, promise: Promise) {
-        Thread {
-            try {
-                val digest = MessageDigest.getInstance("SHA-256")
-                val result = digest.digest(text.toByteArray(Charsets.UTF_8))
-                promise.resolve(bytesToHex(result))
-            } catch (e: Exception) {
-                promise.reject("AES_CRYPTO_ERROR", e.message, e)
-            }
-        }.start()
+        try {
+            val result = shaX(text, "SHA-256")
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
     }
 
     override fun sha512(text: String, promise: Promise) {
-        Thread {
-            try {
-                val digest = MessageDigest.getInstance("SHA-512")
-                val result = digest.digest(text.toByteArray(Charsets.UTF_8))
-                promise.resolve(bytesToHex(result))
-            } catch (e: Exception) {
-                promise.reject("AES_CRYPTO_ERROR", e.message, e)
-            }
-        }.start()
+        try {
+            val result = shaX(text, "SHA-512")
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
     }
 
     override fun randomUuid(promise: Promise) {
-        Thread {
-            try {
-                promise.resolve(UUID.randomUUID().toString())
-            } catch (e: Exception) {
-                promise.reject("AES_CRYPTO_ERROR", e.message, e)
-            }
-        }.start()
+        try {
+            promise.resolve(UUID.randomUUID().toString())
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
     }
 
     override fun randomKey(length: Double, promise: Promise) {
-        Thread {
-            try {
-                val bytes = ByteArray(length.toInt())
-                SecureRandom().nextBytes(bytes)
-                promise.resolve(bytesToHex(bytes))
-            } catch (e: Exception) {
-                promise.reject("AES_CRYPTO_ERROR", e.message, e)
-            }
-        }.start()
+        try {
+            val key = ByteArray(length.toInt())
+            SecureRandom().nextBytes(key)
+            promise.resolve(bytesToHex(key))
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
     }
 
-    private fun hexToBytes(hex: String): ByteArray {
-        val len = hex.length
-        val data = ByteArray(len / 2)
-        var i = 0
-        while (i < len) {
-            data[i / 2] = ((Character.digit(hex[i], 16) shl 4) + Character.digit(hex[i + 1], 16)).toByte()
-            i += 2
-        }
-        return data
+    // --- Private helpers (ported from upstream Aes.java) ---
+
+    private fun shaX(data: String, algorithm: String): String {
+        val md = MessageDigest.getInstance(algorithm)
+        md.update(data.toByteArray())
+        return bytesToHex(md.digest())
     }
 
-    private fun bytesToHex(bytes: ByteArray): String {
-        val sb = StringBuilder()
-        for (b in bytes) {
-            sb.append(String.format("%02x", b))
+    private fun pbkdf2Impl(pwd: String, salt: String, cost: Int, length: Int, algorithm: String): String {
+        val algorithmDigest: Digest = when {
+            algorithm.equals("sha1", ignoreCase = true) -> SHA1Digest()
+            algorithm.equals("sha256", ignoreCase = true) -> SHA256Digest()
+            algorithm.equals("sha512", ignoreCase = true) -> SHA512Digest()
+            else -> SHA512Digest()
         }
-        return sb.toString()
+        val gen = PKCS5S2ParametersGenerator(algorithmDigest)
+        gen.init(pwd.toByteArray(Charsets.UTF_8), salt.toByteArray(Charsets.UTF_8), cost)
+        val key = (gen.generateDerivedParameters(length) as KeyParameter).key
+        return bytesToHex(key)
+    }
+
+    private fun hmacX(text: String, key: String, algorithm: String): String {
+        val contentData = text.toByteArray(Charsets.UTF_8)
+        val akHexData = Hex.decode(key)
+        val mac = Mac.getInstance(algorithm)
+        val secretKey = SecretKeySpec(akHexData, algorithm)
+        mac.init(secretKey)
+        return bytesToHex(mac.doFinal(contentData))
+    }
+
+    private fun encryptImpl(text: String, hexKey: String, hexIv: String?, algorithm: String): String? {
+        if (text.isEmpty()) return null
+
+        val key = Hex.decode(hexKey)
+        val secretKey = SecretKeySpec(key, KEY_ALGORITHM)
+        val cipher = Cipher.getInstance(algorithm)
+        val ivSpec = if (hexIv == null || hexIv.isEmpty()) emptyIvSpec else IvParameterSpec(Hex.decode(hexIv))
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey, ivSpec)
+        val encrypted = cipher.doFinal(text.toByteArray(Charsets.UTF_8))
+        return Base64.encodeToString(encrypted, Base64.NO_WRAP)
+    }
+
+    private fun decryptImpl(ciphertext: String, hexKey: String, hexIv: String?, algorithm: String): String? {
+        if (ciphertext.isEmpty()) return null
+
+        val key = Hex.decode(hexKey)
+        val secretKey = SecretKeySpec(key, KEY_ALGORITHM)
+        val cipher = Cipher.getInstance(algorithm)
+        val ivSpec = if (hexIv == null || hexIv.isEmpty()) emptyIvSpec else IvParameterSpec(Hex.decode(hexIv))
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec)
+        val decrypted = cipher.doFinal(Base64.decode(ciphertext, Base64.NO_WRAP))
+        return String(decrypted, Charsets.UTF_8)
     }
 }

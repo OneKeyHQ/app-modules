@@ -11,6 +11,7 @@ export interface Spec extends TurboModule {
   getIPV4Address(): Promise<string>;
   getWIFIIPV4Address(): Promise<string>;
   getSubnet(): Promise<string>;
+  getFrequency(): Promise<number | null>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('RNNetworkInfo');

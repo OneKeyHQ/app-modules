@@ -20,5 +20,7 @@
                     reject:(RCTPromiseRejectBlock)reject;
 - (void)getSubnet:(RCTPromiseResolveBlock)resolve
            reject:(RCTPromiseRejectBlock)reject;
+- (void)getFrequency:(RCTPromiseResolveBlock)resolve
+              reject:(RCTPromiseRejectBlock)reject;
 
 @end

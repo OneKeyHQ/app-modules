@@ -305,6 +305,15 @@
     });
 }
 
+// MARK: - getFrequency
+
+- (void)getFrequency:(RCTPromiseResolveBlock)resolve
+              reject:(RCTPromiseRejectBlock)reject
+{
+    // WiFi frequency is not available on iOS
+    resolve(nil);
+}
+
 // MARK: - getAllIPAddresses helper
 
 - (NSDictionary *)getAllIPAddresses
