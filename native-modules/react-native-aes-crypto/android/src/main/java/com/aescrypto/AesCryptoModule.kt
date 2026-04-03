@@ -148,7 +148,7 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     private fun shaX(data: String, algorithm: String): String {
         val md = MessageDigest.getInstance(algorithm)
-        md.update(data.toByteArray())
+        md.update(Hex.decode(data))
         return bytesToHex(md.digest())
     }
 
@@ -160,13 +160,13 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
             else -> SHA512Digest()
         }
         val gen = PKCS5S2ParametersGenerator(algorithmDigest)
-        gen.init(pwd.toByteArray(Charsets.UTF_8), salt.toByteArray(Charsets.UTF_8), cost)
+        gen.init(Hex.decode(pwd), Hex.decode(salt), cost)
         val key = (gen.generateDerivedParameters(length) as KeyParameter).key
         return bytesToHex(key)
     }
 
     private fun hmacX(text: String, key: String, algorithm: String): String {
-        val contentData = text.toByteArray(Charsets.UTF_8)
+        val contentData = Hex.decode(text)
         val akHexData = Hex.decode(key)
         val mac = Mac.getInstance(algorithm)
         val secretKey = SecretKeySpec(akHexData, algorithm)
@@ -182,8 +182,8 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
         val cipher = Cipher.getInstance(algorithm)
         val ivSpec = if (hexIv == null || hexIv.isEmpty()) emptyIvSpec else IvParameterSpec(Hex.decode(hexIv))
         cipher.init(Cipher.ENCRYPT_MODE, secretKey, ivSpec)
-        val encrypted = cipher.doFinal(text.toByteArray(Charsets.UTF_8))
-        return Base64.encodeToString(encrypted, Base64.NO_WRAP)
+        val encrypted = cipher.doFinal(Hex.decode(text))
+        return bytesToHex(encrypted)
     }
 
     private fun decryptImpl(ciphertext: String, hexKey: String, hexIv: String?, algorithm: String): String? {
@@ -194,7 +194,7 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
         val cipher = Cipher.getInstance(algorithm)
         val ivSpec = if (hexIv == null || hexIv.isEmpty()) emptyIvSpec else IvParameterSpec(Hex.decode(hexIv))
         cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec)
-        val decrypted = cipher.doFinal(Base64.decode(ciphertext, Base64.NO_WRAP))
-        return String(decrypted, Charsets.UTF_8)
+        val decrypted = cipher.doFinal(Hex.decode(ciphertext))
+        return bytesToHex(decrypted)
     }
 }
