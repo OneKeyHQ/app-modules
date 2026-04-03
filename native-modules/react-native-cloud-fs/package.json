@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-cloud-fs",
-  "version": "3.0.11",
+  "version": "3.0.12",
   "description": "react-native-cloud-fs TurboModule for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -83,6 +83,11 @@
     "jsSrcsDir": "src",
     "android": {
       "javaPackageName": "com.rncloudfs"
+    },
+    "ios": {
+      "modulesProvider": {
+        "RNCloudFs": "CloudFs"
+      }
     }
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-lite-card",
-  "version": "3.0.11",
+  "version": "3.0.12",
   "description": "lite card",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -113,6 +113,11 @@
     "jsSrcsDir": "src",
     "android": {
       "javaPackageName": "com.onekeyfe.reactnativelitecard"
+    },
+    "ios": {
+      "modulesProvider": {
+        "ReactNativeLiteCard": "ReactNativeLiteCard"
+      }
     }
   },
   "prettier": {

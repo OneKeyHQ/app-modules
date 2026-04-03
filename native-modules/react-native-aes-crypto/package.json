@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-aes-crypto",
-  "version": "3.0.11",
+  "version": "3.0.12",
   "description": "react-native-aes-crypto",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -104,6 +104,11 @@
     "jsSrcsDir": "src",
     "android": {
       "javaPackageName": "com.aescrypto"
+    },
+    "ios": {
+      "modulesProvider": {
+        "AesCrypto": "AesCrypto"
+      }
     }
   },
   "prettier": {

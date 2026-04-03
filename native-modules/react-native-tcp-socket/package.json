@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-tcp-socket",
-  "version": "3.0.11",
+  "version": "3.0.12",
   "description": "react-native-tcp-socket",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -105,6 +105,11 @@
     "jsSrcsDir": "src",
     "android": {
       "javaPackageName": "com.rntcpsocket"
+    },
+    "ios": {
+      "modulesProvider": {
+        "RNTcpSocket": "TcpSocket"
+      }
     }
   },
   "prettier": {
