@@ -21,7 +21,7 @@
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
 {
-    return std::make_shared<facebook::react::NativeRNNetworkInfoSpecJSI>(params);
+    return std::make_shared<facebook::react::NativeNetworkInfoSpecJSI>(params);
 }
 
 + (NSString *)moduleName

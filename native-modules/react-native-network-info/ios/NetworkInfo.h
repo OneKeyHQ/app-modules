@@ -1,6 +1,6 @@
 #import <RNNetworkInfoSpec/RNNetworkInfoSpec.h>
 
-@interface NetworkInfo : NativeRNNetworkInfoSpecBase <NativeRNNetworkInfoSpec>
+@interface NetworkInfo : NativeNetworkInfoSpecBase <NativeNetworkInfoSpec>
 
 - (void)getSSID:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject;

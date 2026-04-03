@@ -12,7 +12,7 @@
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
 {
-    return std::make_shared<facebook::react::NativeRNReactNativePingSpecJSI>(params);
+    return std::make_shared<facebook::react::NativePingSpecJSI>(params);
 }
 
 + (NSString *)moduleName

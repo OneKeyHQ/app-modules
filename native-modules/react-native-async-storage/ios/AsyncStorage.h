@@ -1,6 +1,6 @@
 #import <AsyncStorageSpec/AsyncStorageSpec.h>
 
-@interface AsyncStorage : NativeRNCAsyncStorageSpecBase <NativeRNCAsyncStorageSpec>
+@interface AsyncStorage : NativeAsyncStorageSpecBase <NativeAsyncStorageSpec>
 
 - (void)multiGet:(NSArray<NSString *> *)keys
          resolve:(RCTPromiseResolveBlock)resolve

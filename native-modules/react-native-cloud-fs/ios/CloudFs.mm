@@ -7,7 +7,7 @@
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
 {
-    return std::make_shared<facebook::react::NativeRNCloudFsSpecJSI>(params);
+    return std::make_shared<facebook::react::NativeCloudFsSpecJSI>(params);
 }
 
 + (NSString *)moduleName

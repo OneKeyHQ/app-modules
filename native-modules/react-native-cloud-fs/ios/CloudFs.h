@@ -1,6 +1,6 @@
 #import <RNCloudFsSpec/RNCloudFsSpec.h>
 
-@interface CloudFs : NativeRNCloudFsSpecBase <NativeRNCloudFsSpec>
+@interface CloudFs : NativeCloudFsSpecBase <NativeCloudFsSpec>
 
 @property (nonatomic, strong) NSMetadataQuery *query;
 

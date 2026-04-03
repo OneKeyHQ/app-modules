@@ -1,7 +1,7 @@
 #import <RNZipArchiveSpec/RNZipArchiveSpec.h>
 #import <SSZipArchive/SSZipArchive.h>
 
-@interface ZipArchive : NativeRNZipArchiveSpecBase <NativeRNZipArchiveSpec, SSZipArchiveDelegate>
+@interface ZipArchive : NativeZipArchiveSpecBase <NativeZipArchiveSpec, SSZipArchiveDelegate>
 
 @property (nonatomic) NSString *processedFilePath;
 @property (nonatomic) float progress;

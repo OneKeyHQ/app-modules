@@ -1,6 +1,6 @@
 #import <RNDnsLookupSpec/RNDnsLookupSpec.h>
 
-@interface DnsLookup : NativeRNDnsLookupSpecBase <NativeRNDnsLookupSpec>
+@interface DnsLookup : NativeDnsLookupSpecBase <NativeDnsLookupSpec>
 
 - (void)getIpAddresses:(NSString *)hostname
                resolve:(RCTPromiseResolveBlock)resolve
