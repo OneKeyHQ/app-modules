@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-pager-view",
-  "version": "3.0.9",
+  "version": "3.0.10",
   "description": "React Native wrapper for Android and iOS ViewPager",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",
