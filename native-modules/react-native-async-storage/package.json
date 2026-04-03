@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-async-storage",
-  "version": "3.0.7",
+  "version": "3.0.8",
   "description": "react-native-async-storage",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
