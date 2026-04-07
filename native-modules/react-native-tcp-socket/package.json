@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-tcp-socket",
-  "version": "3.0.12",
+  "version": "3.0.13",
   "description": "react-native-tcp-socket",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
