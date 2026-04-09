@@ -302,8 +302,35 @@
         for (NSMetadataItem *item in query.results) {
             [self downloadFileIfNotAvailable:item];
         }
-        return resolve(nil);
+        return resolve(@YES);
     }];
+}
+
+// MARK: - Android-only stubs
+
+- (void)loginIfNeeded:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject
+{
+    resolve(@NO);
+}
+
+- (void)logout:(RCTPromiseResolveBlock)resolve
+        reject:(RCTPromiseRejectBlock)reject
+{
+    resolve(@NO);
+}
+
+- (void)getGoogleDriveDocument:(NSString *)fileId
+                       resolve:(RCTPromiseResolveBlock)resolve
+                        reject:(RCTPromiseRejectBlock)reject
+{
+    reject(@"NOT_AVAILABLE", @"Google Drive is not available on iOS", nil);
+}
+
+- (void)getCurrentlySignedInUserData:(RCTPromiseResolveBlock)resolve
+                              reject:(RCTPromiseRejectBlock)reject
+{
+    resolve([NSNull null]);
 }
 
 // MARK: - Private helpers

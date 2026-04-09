@@ -74,4 +74,14 @@ def kotlin_version = getExtOrDefault("kotlinVersion")
 dependencies {
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+
+  // Google Drive / Sign-In
+  implementation "com.google.android.gms:play-services-auth:21.3.0"
+  implementation "com.google.http-client:google-http-client-gson:1.44.1"
+  implementation("com.google.api-client:google-api-client-android:2.7.0") {
+    exclude group: "org.apache.httpcomponents"
+  }
+  implementation("com.google.apis:google-api-services-drive:v3-rev20241027-2.0.0") {
+    exclude group: "org.apache.httpcomponents"
+  }
 }
