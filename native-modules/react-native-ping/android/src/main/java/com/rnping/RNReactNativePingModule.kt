@@ -8,7 +8,7 @@ import java.net.InetAddress
 
 @ReactModule(name = RNReactNativePingModule.NAME)
 class RNReactNativePingModule(reactContext: ReactApplicationContext) :
-    NativeRNReactNativePingSpec(reactContext) {
+    NativePingSpec(reactContext) {
 
     companion object {
         const val NAME = "RNReactNativePing"

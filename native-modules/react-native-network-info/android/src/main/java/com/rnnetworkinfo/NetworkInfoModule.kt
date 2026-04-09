@@ -19,7 +19,7 @@ import java.net.NetworkInterface
  */
 @ReactModule(name = NetworkInfoModule.NAME)
 class NetworkInfoModule(reactContext: ReactApplicationContext) :
-    NativeRNNetworkInfoSpec(reactContext) {
+    NativeNetworkInfoSpec(reactContext) {
 
     companion object {
         const val NAME = "RNNetworkInfo"
