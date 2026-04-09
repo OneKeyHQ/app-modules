@@ -18,7 +18,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
-import com.google.api.client.extensions.android.http.AndroidHttp
+import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
 import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import com.google.api.client.json.gson.GsonFactory
@@ -28,7 +28,7 @@ import java.util.Collections
 
 @ReactModule(name = RNCloudFsModule.NAME)
 class RNCloudFsModule(private val reactContext: ReactApplicationContext) :
-    NativeRNCloudFsSpec(reactContext), LifecycleEventListener, ActivityEventListener {
+    NativeCloudFsSpec(reactContext), LifecycleEventListener, ActivityEventListener {
 
     private var mDriveServiceHelper: DriveServiceHelper? = null
     private var signInPromise: Promise? = null
@@ -86,7 +86,7 @@ class RNCloudFsModule(private val reactContext: ReactApplicationContext) :
                 )
                 credential.selectedAccount = account.account
                 val googleDriveService = Drive.Builder(
-                    AndroidHttp.newCompatibleTransport(),
+                    NetHttpTransport(),
                     GsonFactory(),
                     credential
                 ).build()
@@ -333,7 +333,7 @@ class RNCloudFsModule(private val reactContext: ReactApplicationContext) :
         mPendingOptions = null
     }
 
-    override fun onActivityResult(activity: Activity?, requestCode: Int, resultCode: Int, data: Intent?) {
+    override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
         when (requestCode) {
             REQUEST_CODE_SIGN_IN -> {
                 val task = GoogleSignIn.getSignedInAccountFromIntent(data)
@@ -387,7 +387,7 @@ class RNCloudFsModule(private val reactContext: ReactApplicationContext) :
             )
             credential.selectedAccount = googleAccount.account
             val googleDriveService = Drive.Builder(
-                AndroidHttp.newCompatibleTransport(),
+                NetHttpTransport(),
                 GsonFactory(),
                 credential
             ).build()
@@ -410,7 +410,7 @@ class RNCloudFsModule(private val reactContext: ReactApplicationContext) :
     override fun onHostResume() {}
     override fun onHostPause() {}
     override fun onHostDestroy() {}
-    override fun onNewIntent(intent: Intent?) {}
+    override fun onNewIntent(intent: Intent) {}
 
     // endregion
 

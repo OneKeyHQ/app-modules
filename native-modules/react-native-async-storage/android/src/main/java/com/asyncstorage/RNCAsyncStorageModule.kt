@@ -71,7 +71,7 @@ class RNCAsyncStorageModule(reactContext: ReactApplicationContext) :
                     try {
                         if (cursor.count != keys.size()) {
                             for (keyIndex in keyStart until keyStart + keyCount) {
-                                keysRemaining.add(keys.getString(keyIndex))
+                                keysRemaining.add(keys.getString(keyIndex) ?: "")
                             }
                         }
                         if (cursor.moveToFirst()) {
@@ -304,7 +304,7 @@ class RNCAsyncStorageModule(reactContext: ReactApplicationContext) :
     }
 
     private fun buildKeySelectionArgs(keys: ReadableArray, start: Int, count: Int): Array<String> {
-        return Array(count) { keys.getString(start + it) }
+        return Array(count) { keys.getString(start + it) ?: "" }
     }
 
     private fun getItemImpl(key: String): String? {

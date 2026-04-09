@@ -8,7 +8,7 @@ import java.net.InetAddress
 
 @ReactModule(name = DnsLookupModule.NAME)
 class DnsLookupModule(reactContext: ReactApplicationContext) :
-    NativeRNDnsLookupSpec(reactContext) {
+    NativeDnsLookupSpec(reactContext) {
 
     companion object {
         const val NAME = "RNDnsLookup"
