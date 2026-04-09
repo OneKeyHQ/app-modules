@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-tab-view",
-  "version": "3.0.14",
+  "version": "3.0.15",
   "description": "Native Bottom Tabs for React Native (UIKit implementation)",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",

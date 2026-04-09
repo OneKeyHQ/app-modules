@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-background-thread",
-  "version": "3.0.14",
+  "version": "3.0.15",
   "description": "react-native-background-thread",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
