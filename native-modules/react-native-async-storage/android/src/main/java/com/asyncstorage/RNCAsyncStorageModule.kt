@@ -19,7 +19,7 @@ import java.util.concurrent.Executors
  */
 @ReactModule(name = RNCAsyncStorageModule.NAME)
 class RNCAsyncStorageModule(reactContext: ReactApplicationContext) :
-    NativeRNCAsyncStorageSpec(reactContext) {
+    NativeAsyncStorageSpec(reactContext) {
 
     companion object {
         const val NAME = "RNCAsyncStorage"
