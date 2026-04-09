@@ -16,7 +16,7 @@ import java.util.zip.ZipOutputStream
 
 @ReactModule(name = RNZipArchiveModule.NAME)
 class RNZipArchiveModule(reactContext: ReactApplicationContext) :
-    NativeRNZipArchiveSpec(reactContext) {
+    NativeZipArchiveSpec(reactContext) {
 
     companion object {
         const val NAME = "RNZipArchive"

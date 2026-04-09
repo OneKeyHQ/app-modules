@@ -8,7 +8,7 @@ import java.net.Socket
 
 @ReactModule(name = RNTcpSocketModule.NAME)
 class RNTcpSocketModule(reactContext: ReactApplicationContext) :
-    NativeRNTcpSocketSpec(reactContext) {
+    NativeTcpSocketSpec(reactContext) {
 
     companion object {
         const val NAME = "RNTcpSocket"
