@@ -318,7 +318,7 @@ object OneKeyLog {
         synchronized(dedupLock) {
             val pending = repeatCount
             repeatCount = 0
-            prevLogMessage = null
+            prevLogKey = null
 
             if (pending > 0) {
                 val repeatMsg = "[$pending repeat]"
