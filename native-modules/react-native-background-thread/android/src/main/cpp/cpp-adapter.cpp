@@ -1,10 +1,17 @@
 #include <jni.h>
 #include <jsi/jsi.h>
 #include <android/log.h>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "SharedStore.h"
 #include "SharedRPC.h"
@@ -101,6 +108,322 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeExecuteWork(
     }
 }
 
+// ── Timer support for background runtime ──────────────────────────────
+// The background Hermes runtime does NOT have working setTimeout/setInterval
+// out of the box (RN's timer module only wires into the main runtime). We
+// install our own JSI-level setTimeout/setInterval/clearTimeout/clearInterval
+// backed by a single C++ worker thread that dispatches callbacks back to the
+// background JS queue via the same executor used by SharedRPC.
+
+struct TimerEntry {
+    std::shared_ptr<jsi::Function> callback;
+    long long fireAtMs;      // Absolute time in ms when the timer should fire.
+    long long intervalMs;    // 0 if one-shot, >0 if setInterval period.
+    bool cancelled;
+};
+
+static std::mutex gTimerMutex;
+static std::condition_variable gTimerCv;
+static std::unordered_map<int64_t, TimerEntry> gTimers;
+static std::atomic<int64_t> gNextTimerId{1};
+static std::atomic<bool> gTimerWorkerStarted{false};
+static std::atomic<bool> gTimerWorkerStop{false};
+static RPCRuntimeExecutor gBgTimerExecutor;
+
+static long long nowMs() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(
+        steady_clock::now().time_since_epoch())
+        .count();
+}
+
+static void fireTimerOnJsThread(int64_t timerId, jsi::Runtime &rt) {
+    std::shared_ptr<jsi::Function> cb;
+    long long intervalMs = 0;
+    bool shouldReschedule = false;
+    {
+        std::lock_guard<std::mutex> lock(gTimerMutex);
+        auto it = gTimers.find(timerId);
+        if (it == gTimers.end()) return;
+        if (it->second.cancelled) {
+            gTimers.erase(it);
+            return;
+        }
+        cb = it->second.callback;
+        intervalMs = it->second.intervalMs;
+        shouldReschedule = intervalMs > 0;
+        if (shouldReschedule) {
+            // Schedule next fire
+            it->second.fireAtMs = nowMs() + intervalMs;
+        } else {
+            gTimers.erase(it);
+        }
+    }
+    if (shouldReschedule) {
+        gTimerCv.notify_all();
+    }
+    try {
+        if (cb) cb->call(rt);
+    } catch (const jsi::JSError &e) {
+        LOGE("Timer callback JSError: %s", e.getMessage().c_str());
+    } catch (const std::exception &e) {
+        LOGE("Timer callback error: %s", e.what());
+    }
+}
+
+static void timerWorkerLoop() {
+    while (!gTimerWorkerStop.load()) {
+        std::unique_lock<std::mutex> lock(gTimerMutex);
+        if (gTimers.empty()) {
+            gTimerCv.wait(lock, [] {
+                return gTimerWorkerStop.load() || !gTimers.empty();
+            });
+            if (gTimerWorkerStop.load()) return;
+            continue;
+        }
+
+        // Find the earliest fireAt among non-cancelled timers.
+        long long earliest = LLONG_MAX;
+        for (auto &kv : gTimers) {
+            if (!kv.second.cancelled && kv.second.fireAtMs < earliest) {
+                earliest = kv.second.fireAtMs;
+            }
+        }
+        long long now = nowMs();
+        if (earliest > now) {
+            gTimerCv.wait_for(lock, std::chrono::milliseconds(earliest - now));
+            continue;
+        }
+
+        // Collect timers ready to fire.
+        std::vector<int64_t> toFire;
+        for (auto &kv : gTimers) {
+            if (!kv.second.cancelled && kv.second.fireAtMs <= now) {
+                toFire.push_back(kv.first);
+            }
+        }
+        lock.unlock();
+
+        RPCRuntimeExecutor executor = gBgTimerExecutor;
+        if (!executor) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+        for (auto id : toFire) {
+            executor([id](jsi::Runtime &rt) { fireTimerOnJsThread(id, rt); });
+        }
+    }
+}
+
+static void ensureTimerWorkerStarted() {
+    bool expected = false;
+    if (gTimerWorkerStarted.compare_exchange_strong(expected, true)) {
+        std::thread(timerWorkerLoop).detach();
+        LOGI("Timer worker thread started");
+    }
+}
+
+static int64_t scheduleTimer(
+    std::shared_ptr<jsi::Function> cb,
+    double ms,
+    bool isInterval) {
+    int64_t id = gNextTimerId.fetch_add(1);
+    long long intervalMs = isInterval ? static_cast<long long>(ms) : 0;
+    long long delay = static_cast<long long>(ms);
+    if (delay < 0) delay = 0;
+    {
+        std::lock_guard<std::mutex> lock(gTimerMutex);
+        gTimers[id] = TimerEntry{
+            std::move(cb),
+            nowMs() + delay,
+            intervalMs,
+            false,
+        };
+    }
+    gTimerCv.notify_all();
+    ensureTimerWorkerStarted();
+    return id;
+}
+
+static void cancelTimer(int64_t id) {
+    {
+        std::lock_guard<std::mutex> lock(gTimerMutex);
+        auto it = gTimers.find(id);
+        if (it != gTimers.end()) {
+            it->second.cancelled = true;
+        }
+    }
+    gTimerCv.notify_all();
+}
+
+static void installTimersOnRuntime(jsi::Runtime &rt) {
+    auto makeSetter = [](bool isInterval) {
+        return [isInterval](
+                   jsi::Runtime &rt,
+                   const jsi::Value &,
+                   const jsi::Value *args,
+                   size_t count) -> jsi::Value {
+            if (count < 1 || !args[0].isObject() ||
+                !args[0].getObject(rt).isFunction(rt)) {
+                return jsi::Value::undefined();
+            }
+            auto cb = std::make_shared<jsi::Function>(
+                args[0].getObject(rt).getFunction(rt));
+            double ms = 0;
+            if (count >= 2 && args[1].isNumber()) {
+                ms = args[1].asNumber();
+            }
+            int64_t id = scheduleTimer(std::move(cb), ms, isInterval);
+            return jsi::Value(static_cast<double>(id));
+        };
+    };
+    auto makeCanceller = []() {
+        return [](jsi::Runtime &rt,
+                  const jsi::Value &,
+                  const jsi::Value *args,
+                  size_t count) -> jsi::Value {
+            if (count < 1 || !args[0].isNumber()) {
+                return jsi::Value::undefined();
+            }
+            int64_t id = static_cast<int64_t>(args[0].asNumber());
+            cancelTimer(id);
+            return jsi::Value::undefined();
+        };
+    };
+
+    // requestAnimationFrame(cb): fires after ~16ms (60fps) with high-resolution
+    // timestamp arg, matching the DOM contract. Background runtime has no
+    // rendering concept, so we just approximate via setTimeout(16ms).
+    auto rafFn = [](jsi::Runtime &rt,
+                     const jsi::Value &,
+                     const jsi::Value *args,
+                     size_t count) -> jsi::Value {
+        if (count < 1 || !args[0].isObject() ||
+            !args[0].getObject(rt).isFunction(rt)) {
+            return jsi::Value::undefined();
+        }
+        // Wrap callback so it receives a DOMHighResTimeStamp-like arg.
+        auto userCb = std::make_shared<jsi::Function>(
+            args[0].getObject(rt).getFunction(rt));
+        auto wrapper = jsi::Function::createFromHostFunction(
+            rt,
+            jsi::PropNameID::forAscii(rt, "rafWrapper"),
+            0,
+            [userCb](jsi::Runtime &rt2,
+                     const jsi::Value &,
+                     const jsi::Value *,
+                     size_t) -> jsi::Value {
+                try {
+                    userCb->call(rt2, jsi::Value(static_cast<double>(nowMs())));
+                } catch (const jsi::JSError &e) {
+                    LOGE("rAF callback JSError: %s", e.getMessage().c_str());
+                } catch (const std::exception &e) {
+                    LOGE("rAF callback error: %s", e.what());
+                }
+                return jsi::Value::undefined();
+            });
+        auto wrappedCb = std::make_shared<jsi::Function>(std::move(wrapper));
+        int64_t id = scheduleTimer(std::move(wrappedCb), 16.0, false);
+        return jsi::Value(static_cast<double>(id));
+    };
+
+    // requestIdleCallback(cb, {timeout?}): fires "soon" with an IdleDeadline-ish
+    // object. Background runtime has no render frames to be idle between, so
+    // we approximate via setTimeout(1ms) and provide a deadline stub whose
+    // timeRemaining() always returns 50 (reasonable budget).
+    auto ricFn = [](jsi::Runtime &rt,
+                     const jsi::Value &,
+                     const jsi::Value *args,
+                     size_t count) -> jsi::Value {
+        if (count < 1 || !args[0].isObject() ||
+            !args[0].getObject(rt).isFunction(rt)) {
+            return jsi::Value::undefined();
+        }
+        auto userCb = std::make_shared<jsi::Function>(
+            args[0].getObject(rt).getFunction(rt));
+        auto wrapper = jsi::Function::createFromHostFunction(
+            rt,
+            jsi::PropNameID::forAscii(rt, "ricWrapper"),
+            0,
+            [userCb](jsi::Runtime &rt2,
+                     const jsi::Value &,
+                     const jsi::Value *,
+                     size_t) -> jsi::Value {
+                try {
+                    // Build a minimal IdleDeadline: { didTimeout: false,
+                    // timeRemaining: () => 50 }.
+                    jsi::Object deadline(rt2);
+                    deadline.setProperty(rt2, "didTimeout", jsi::Value(false));
+                    deadline.setProperty(
+                        rt2,
+                        "timeRemaining",
+                        jsi::Function::createFromHostFunction(
+                            rt2,
+                            jsi::PropNameID::forAscii(rt2, "timeRemaining"),
+                            0,
+                            [](jsi::Runtime &,
+                               const jsi::Value &,
+                               const jsi::Value *,
+                               size_t) -> jsi::Value {
+                                return jsi::Value(50.0);
+                            }));
+                    userCb->call(rt2, jsi::Value(rt2, std::move(deadline)));
+                } catch (const jsi::JSError &e) {
+                    LOGE("rIC callback JSError: %s", e.getMessage().c_str());
+                } catch (const std::exception &e) {
+                    LOGE("rIC callback error: %s", e.what());
+                }
+                return jsi::Value::undefined();
+            });
+        auto wrappedCb = std::make_shared<jsi::Function>(std::move(wrapper));
+        int64_t id = scheduleTimer(std::move(wrappedCb), 1.0, false);
+        return jsi::Value(static_cast<double>(id));
+    };
+
+    auto global = rt.global();
+    global.setProperty(
+        rt, "setTimeout",
+        jsi::Function::createFromHostFunction(
+            rt, jsi::PropNameID::forAscii(rt, "setTimeout"), 2,
+            makeSetter(false)));
+    global.setProperty(
+        rt, "setInterval",
+        jsi::Function::createFromHostFunction(
+            rt, jsi::PropNameID::forAscii(rt, "setInterval"), 2,
+            makeSetter(true)));
+    global.setProperty(
+        rt, "clearTimeout",
+        jsi::Function::createFromHostFunction(
+            rt, jsi::PropNameID::forAscii(rt, "clearTimeout"), 1,
+            makeCanceller()));
+    global.setProperty(
+        rt, "clearInterval",
+        jsi::Function::createFromHostFunction(
+            rt, jsi::PropNameID::forAscii(rt, "clearInterval"), 1,
+            makeCanceller()));
+    global.setProperty(
+        rt, "requestAnimationFrame",
+        jsi::Function::createFromHostFunction(
+            rt, jsi::PropNameID::forAscii(rt, "requestAnimationFrame"), 1,
+            rafFn));
+    global.setProperty(
+        rt, "cancelAnimationFrame",
+        jsi::Function::createFromHostFunction(
+            rt, jsi::PropNameID::forAscii(rt, "cancelAnimationFrame"), 1,
+            makeCanceller()));
+    global.setProperty(
+        rt, "requestIdleCallback",
+        jsi::Function::createFromHostFunction(
+            rt, jsi::PropNameID::forAscii(rt, "requestIdleCallback"), 1,
+            ricFn));
+    global.setProperty(
+        rt, "cancelIdleCallback",
+        jsi::Function::createFromHostFunction(
+            rt, jsi::PropNameID::forAscii(rt, "cancelIdleCallback"), 1,
+            makeCanceller()));
+    LOGI("Timer + rAF + rIC polyfills installed on bg runtime");
+}
+
 // ── nativeInstallSharedBridge ───────────────────────────────────────────
 // Install SharedStore and SharedRPC into a runtime.
 extern "C" JNIEXPORT void JNICALL
@@ -158,9 +481,20 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
     };
 
     std::string runtimeId = isMain ? "main" : "background";
+    // Save the bg executor so our custom timer worker can dispatch callbacks
+    // back to the bg JS queue. We must do this BEFORE moving `executor` into
+    // SharedRPC::install (which will std::move it out).
+    if (!capturedIsMain) {
+        gBgTimerExecutor = executor;
+    }
     SharedRPC::install(*rt, std::move(executor), runtimeId);
     LOGI("SharedStore and SharedRPC installed (isMain=%d)", static_cast<int>(isMain));
     if (!capturedIsMain) {
+        // Install setTimeout/setInterval/clearTimeout/clearInterval on the
+        // background runtime. React Native's built-in timer module only wires
+        // into the main runtime, so without this, any `await wait(ms)` or
+        // setTimeout callback in the background thread would never fire.
+        installTimersOnRuntime(*rt);
         invokeOptionalGlobalFunction(*rt, "__setupBackgroundRPCHandler");
     }
 }
