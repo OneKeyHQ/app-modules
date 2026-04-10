@@ -86,6 +86,19 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeExecuteWork(
     } catch (const std::exception &e) {
         LOGE("Error in nativeExecuteWork: %s", e.what());
     }
+
+    // CRITICAL: Drain the Hermes microtask queue. React Native 0.74+ configures
+    // Hermes with an explicit microtask queue, which must be manually drained
+    // after each JS execution. Without this, Promise.then() / async-await
+    // continuations (including already-resolved promises) are never executed,
+    // causing all awaits to hang forever in the background runtime.
+    try {
+        rt->drainMicrotasks();
+    } catch (const jsi::JSError &e) {
+        LOGE("JSError draining microtasks: %s", e.getMessage().c_str());
+    } catch (const std::exception &e) {
+        LOGE("Error draining microtasks: %s", e.what());
+    }
 }
 
 // ── nativeInstallSharedBridge ───────────────────────────────────────────
