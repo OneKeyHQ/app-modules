@@ -137,80 +137,100 @@ static long long nowMs() {
         .count();
 }
 
-static void fireTimerOnJsThread(int64_t timerId, jsi::Runtime &rt) {
-    std::shared_ptr<jsi::Function> cb;
-    long long intervalMs = 0;
-    bool shouldReschedule = false;
-    {
-        std::lock_guard<std::mutex> lock(gTimerMutex);
-        auto it = gTimers.find(timerId);
-        if (it == gTimers.end()) return;
-        if (it->second.cancelled) {
-            gTimers.erase(it);
-            return;
-        }
-        cb = it->second.callback;
-        intervalMs = it->second.intervalMs;
-        shouldReschedule = intervalMs > 0;
-        if (shouldReschedule) {
-            // Schedule next fire
-            it->second.fireAtMs = nowMs() + intervalMs;
-        } else {
-            gTimers.erase(it);
-        }
-    }
-    if (shouldReschedule) {
-        gTimerCv.notify_all();
-    }
+// Called on the bg JS thread. Executes the callback only; the worker has
+// already erased (one-shot) or rescheduled (interval) the timer under lock.
+static void fireTimerOnJsThread(
+    int64_t timerId,
+    std::shared_ptr<jsi::Function> cb,
+    jsi::Runtime &rt) {
+    if (!cb) return;
     try {
-        if (cb) cb->call(rt);
+        cb->call(rt);
     } catch (const jsi::JSError &e) {
-        LOGE("Timer callback JSError: %s", e.getMessage().c_str());
+        LOGE("Timer %lld callback JSError: %s", (long long)timerId,
+             e.getMessage().c_str());
     } catch (const std::exception &e) {
-        LOGE("Timer callback error: %s", e.what());
+        LOGE("Timer %lld callback error: %s", (long long)timerId, e.what());
     }
 }
 
 static void timerWorkerLoop() {
     while (!gTimerWorkerStop.load()) {
-        std::unique_lock<std::mutex> lock(gTimerMutex);
-        if (gTimers.empty()) {
-            gTimerCv.wait(lock, [] {
-                return gTimerWorkerStop.load() || !gTimers.empty();
-            });
-            if (gTimerWorkerStop.load()) return;
-            continue;
-        }
+        // Snapshot of timers that should be dispatched this iteration and
+        // their callbacks. Captured under the lock; callbacks are invoked on
+        // the JS thread (not here).
+        std::vector<std::pair<int64_t, std::shared_ptr<jsi::Function>>> toFire;
+        {
+            std::unique_lock<std::mutex> lock(gTimerMutex);
+            if (gTimers.empty()) {
+                gTimerCv.wait(lock, [] {
+                    return gTimerWorkerStop.load() || !gTimers.empty();
+                });
+                if (gTimerWorkerStop.load()) return;
+                continue;
+            }
 
-        // Find the earliest fireAt among non-cancelled timers.
-        long long earliest = LLONG_MAX;
-        for (auto &kv : gTimers) {
-            if (!kv.second.cancelled && kv.second.fireAtMs < earliest) {
-                earliest = kv.second.fireAtMs;
+            // Find the earliest fireAt among non-cancelled timers.
+            long long earliest = LLONG_MAX;
+            for (auto &kv : gTimers) {
+                if (!kv.second.cancelled && kv.second.fireAtMs < earliest) {
+                    earliest = kv.second.fireAtMs;
+                }
+            }
+            long long now = nowMs();
+            if (earliest == LLONG_MAX) {
+                // Only cancelled timers remain; clean them up.
+                for (auto it = gTimers.begin(); it != gTimers.end();) {
+                    if (it->second.cancelled) it = gTimers.erase(it);
+                    else ++it;
+                }
+                continue;
+            }
+            if (earliest > now) {
+                gTimerCv.wait_for(
+                    lock, std::chrono::milliseconds(earliest - now));
+                continue;
+            }
+
+            // Collect ready timers AND either erase (one-shot) or reschedule
+            // (interval) them RIGHT HERE under the lock. This is critical:
+            // if we wait to erase in fireTimerOnJsThread, the next worker
+            // iteration would immediately find the same timers still
+            // in-queue and re-dispatch them, causing an infinite flood of
+            // `scheduleOnJSThread` calls.
+            for (auto it = gTimers.begin(); it != gTimers.end();) {
+                if (it->second.cancelled) {
+                    it = gTimers.erase(it);
+                    continue;
+                }
+                if (it->second.fireAtMs <= now) {
+                    toFire.emplace_back(it->first, it->second.callback);
+                    if (it->second.intervalMs > 0) {
+                        // Reschedule interval. Use `now + intervalMs` rather
+                        // than `fireAtMs + intervalMs` so a slow fire path
+                        // cannot produce an infinite backlog.
+                        it->second.fireAtMs = now + it->second.intervalMs;
+                        ++it;
+                    } else {
+                        it = gTimers.erase(it);
+                    }
+                } else {
+                    ++it;
+                }
             }
         }
-        long long now = nowMs();
-        if (earliest > now) {
-            gTimerCv.wait_for(lock, std::chrono::milliseconds(earliest - now));
-            continue;
-        }
-
-        // Collect timers ready to fire.
-        std::vector<int64_t> toFire;
-        for (auto &kv : gTimers) {
-            if (!kv.second.cancelled && kv.second.fireAtMs <= now) {
-                toFire.push_back(kv.first);
-            }
-        }
-        lock.unlock();
 
         RPCRuntimeExecutor executor = gBgTimerExecutor;
         if (!executor) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
         }
-        for (auto id : toFire) {
-            executor([id](jsi::Runtime &rt) { fireTimerOnJsThread(id, rt); });
+        for (auto &pair : toFire) {
+            int64_t id = pair.first;
+            std::shared_ptr<jsi::Function> cb = pair.second;
+            executor([id, cb](jsi::Runtime &rt) {
+                fireTimerOnJsThread(id, cb, rt);
+            });
         }
     }
 }
