@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-cloud-fs",
-  "version": "3.0.19",
+  "version": "3.0.20",
   "description": "react-native-cloud-fs TurboModule for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
