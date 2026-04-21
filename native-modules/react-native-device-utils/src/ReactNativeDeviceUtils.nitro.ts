@@ -3,6 +3,20 @@ import type { HybridObject } from 'react-native-nitro-modules';
 
 export type UserInterfaceStyle = 'light' | 'dark' | 'unspecified';
 
+export type AndroidChannel =
+  | 'direct'
+  | 'google'
+  | 'huawei'
+  | 'unknown';
+
+export type InstallerPackageName =
+  | 'appStore'
+  | 'testFlight'
+  | 'other'
+  | 'playStore'
+  | 'huaweiAppGallery'
+  | 'unknown';
+
 export interface DualScreenInfoRect {
   x: number;
   y: number;
@@ -59,4 +73,8 @@ export interface ReactNativeDeviceUtils
   incrementConsecutiveBootFailCount(): void;
   setConsecutiveBootFailCount(count: number): void;
   getAndClearRecoveryAction(): Promise<string>;
+
+  // Android Channel & Installer
+  getAndroidChannel(): AndroidChannel;
+  getInstallerPackageName(): InstallerPackageName;
 }

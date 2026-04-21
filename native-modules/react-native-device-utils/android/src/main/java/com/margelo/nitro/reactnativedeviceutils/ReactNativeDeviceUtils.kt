@@ -1027,4 +1027,106 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         }
         return Promise.resolved(action)
     }
+
+    // MARK: - Android Channel & Installer
+
+    override fun getAndroidChannel(): AndroidChannel {
+        return try {
+            val context = NitroModules.applicationContext
+                ?: return AndroidChannel.DIRECT  // Match gradle default when context unavailable
+            val raw = readAndroidChannelFromBuildConfig(context)
+            when (raw) {
+                "direct" -> AndroidChannel.DIRECT
+                "google" -> AndroidChannel.GOOGLE
+                "huawei" -> AndroidChannel.HUAWEI
+                null -> {
+                    // Reflection found no BuildConfig.ANDROID_CHANNEL — match gradle default.
+                    OneKeyLog.warn("DeviceUtils", "getAndroidChannel: BuildConfig.ANDROID_CHANNEL not found, defaulting to direct")
+                    AndroidChannel.DIRECT
+                }
+                else -> {
+                    // Read a string we don't know how to map — host has a custom channel value.
+                    OneKeyLog.warn("DeviceUtils", "getAndroidChannel unrecognized value: $raw")
+                    AndroidChannel.UNKNOWN
+                }
+            }
+        } catch (e: Exception) {
+            OneKeyLog.warn("DeviceUtils", "getAndroidChannel failed: ${e.message}")
+            AndroidChannel.DIRECT  // Match gradle default on unexpected errors
+        }
+    }
+
+    /**
+     * Reflect the host app's BuildConfig.ANDROID_CHANNEL. BuildConfig is generated at the
+     * module `namespace` package, which is not always the runtime `applicationId`
+     * (AGP's applicationIdSuffix appends to packageName; custom Application classes may live
+     * in a sub-package of the namespace). Strategy:
+     *   1. Try `context.packageName` as-is (matches the common case where namespace == applicationId).
+     *   2. Progressively strip trailing package segments from packageName (covers any
+     *      applicationIdSuffix, including custom ones beyond `.debug`/`.beta`).
+     *   3. Try the Application class's declared package, then walk up its parents (covers
+     *      cases where the Application class is in a sub-package of the namespace).
+     * We pick the first candidate whose BuildConfig exposes an ANDROID_CHANNEL field.
+     */
+    private fun readAndroidChannelFromBuildConfig(context: Context): String? {
+        val candidates = LinkedHashSet<String>()
+        addPackageAndParents(candidates, context.packageName, maxParents = 2)
+        context.applicationContext.javaClass.`package`?.name?.let { parentPkg ->
+            addPackageAndParents(candidates, parentPkg, maxParents = 3)
+        }
+
+        for (candidate in candidates) {
+            try {
+                val cls = Class.forName("$candidate.BuildConfig")
+                val field = cls.getField("ANDROID_CHANNEL")
+                return field.get(null) as? String
+            } catch (_: ClassNotFoundException) {
+                // Candidate has no BuildConfig at this package — try next
+            } catch (_: NoSuchFieldException) {
+                // BuildConfig exists but has no ANDROID_CHANNEL — try next
+            }
+        }
+        return null
+    }
+
+    /** Add the given package name and up to [maxParents] parent packages (strip trailing segments). */
+    private fun addPackageAndParents(
+        out: LinkedHashSet<String>,
+        packageName: String,
+        maxParents: Int,
+    ) {
+        out.add(packageName)
+        var current = packageName
+        for (i in 0 until maxParents) {
+            val lastDot = current.lastIndexOf('.')
+            if (lastDot <= 0) break
+            current = current.substring(0, lastDot)
+            out.add(current)
+        }
+    }
+
+    override fun getInstallerPackageName(): InstallerPackageName {
+        return try {
+            val context = NitroModules.applicationContext ?: return InstallerPackageName.UNKNOWN
+            val packageName = context.packageName
+            val pm = context.packageManager
+            val installer: String? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                pm.getInstallSourceInfo(packageName).installingPackageName
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getInstallerPackageName(packageName)
+            }
+            when (installer) {
+                "com.android.vending" -> InstallerPackageName.PLAYSTORE
+                "com.huawei.appmarket" -> InstallerPackageName.HUAWEIAPPGALLERY
+                null, "" -> InstallerPackageName.UNKNOWN
+                else -> InstallerPackageName.OTHER
+            }
+        } catch (e: PackageManager.NameNotFoundException) {
+            InstallerPackageName.UNKNOWN
+        } catch (e: Exception) {
+            OneKeyLog.warn("DeviceUtils", "getInstallerPackageName failed: ${e.message}")
+            InstallerPackageName.UNKNOWN
+        }
+    }
 }
