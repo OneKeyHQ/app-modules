@@ -2,6 +2,85 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.19] - 2026-04-21
+
+### Features
+- **background-thread / split-bundle-loader**: Inline former `app-monorepo` patches so the packages work out-of-the-box (no `patch-package` required).
+  - **background-thread**: Add selective, allowlist-based Activity lifecycle bridge so an explicit set of TurboModules on the background ReactHost can observe `getCurrentActivity()`, `onActivityResult`, `onNewIntent`, and `onHostResume/Pause/Destroy` without double-dispatching to unrelated listeners. New `addBgActivityBridgeListenerClassPrefix(...)` / `setBgActivityBridgeListenerClassAllowlist(...)` API on `BackgroundThreadManager`; cold-start Activity-resume replay when the background host finishes late.
+  - **background-thread**: Switch `registerSegmentInBackground` to `ReactContext.registerSegment(id, path, callback)` so it works in bridgeless (New Architecture) as well as bridge mode.
+  - **split-bundle-loader (Android)**: Wipe the extract directory when `PackageInfo.lastUpdateTime` changes so APK overwrite installs don't reuse stale HBC segments; double-checked locking gates the wipe once per process.
+  - **split-bundle-loader (Android)**: Remove `tryRegisterViaBridgeless` reflection shim in favor of `ReactContext.registerSegment` (bridge + bridgeless in one call); add diagnostic logs for segment resolution and builtin asset extraction.
+  - **split-bundle-loader (iOS)**: Standardize `otaRoot`/`builtinRoot` via `stringByStandardizingPath` so `hasPrefix` matches after iOS resolves `/private/var` → `/var`; add resolve diagnostics.
+
+### Bug Fixes
+- **background-thread**: Harden runtime lifecycle edges — make the timer worker joinable instead of detached, read the executor under the timer mutex, and in `nativeDestroy` stop+join the worker before tearing down shared state; intentionally leak pending `jsi::Function` callbacks in `gTimers` / `gPendingWork` (same rationale as `SharedRPC::reset`: destroying them on a torn-down runtime would crash).
+- **background-thread (iOS)**: Skip overriding `jsBundleSource` when `entryURL` is the default `"background.bundle"` placeholder so the delegate can fall back to split-bundle mode (common.jsbundle + entry).
+- **cloud-fs (Android)**: Fix inverted mimeType branch in `saveFile` — the old ternary discarded caller-provided `mimeType` and only used `guessMimeType` when it was null; collapsed to `mimeType ?: guessMimeType(uriOrPath)` so caller input is honored.
+
+### Chores
+- Bump all packages to 3.0.19.
+
+## [3.0.18] - 2026-04-10
+
+### Features
+- **background-thread**: Drain the Hermes microtask queue after every `nativeExecuteWork` so `Promise.then` / `async-await` continuations actually run on the background runtime (RN 0.74+ requires explicit `drainMicrotasks()` — without it, all awaits hang in bg).
+- **background-thread**: Add cross-runtime timer primitives in `cpp-adapter.cpp` (timer worker thread, pending work queue, JSI-safe scheduling) underpinning split-bundle + bg-host `setTimeout`/`Promise` behaviour.
+
+### Chores
+- Bump all packages to 3.0.18.
+
+## [3.0.17] - 2026-04-10
+
+### Bug Fixes
+- **tcp-socket / zip-archive / network-info / ping / async-storage / cloud-fs / dns-lookup**: Align Android TurboModule class names with their TS spec filenames so codegen resolves the native modules correctly.
+
+### Chores
+- Bump all packages to 3.0.17.
+
+## [3.0.16] - 2026-04-10
+
+### Bug Fixes
+- **async-storage (Android)**: Correct codegen class name in `RNCAsyncStorageModule.kt`.
+
+### Chores
+- Bump all packages to 3.0.16.
+
+## [3.0.15] - 2026-04-09
+
+### Features
+- **cloud-fs**: Align types and native implementations with the upstream source repo — replace `Object` params with proper TS types across the Spec, port `DriveServiceHelper` and the full `RNCloudFsModule` from Java to a Kotlin TurboModule, add Android Google Drive methods (`loginIfNeeded`, `logout`, `getGoogleDriveDocument`, `getCurrentlySignedInUserData`), add iOS stubs for Android-only methods, fix iOS `syncCloud` to return a boolean, re-add `createFile` to the Spec, and wire the Google Drive dependencies into Android `build.gradle`.
+
+### Bug Fixes
+- **async-storage (web)**: Resolve web type errors by adding `DOM` lib to tsconfig and declaring types for `merge-options`.
+
+### Chores
+- Patch bump workspaces and fix async-storage module files.
+- Bump all packages to 3.0.15.
+
+## [3.0.13] - 2026-04-08
+
+### Features
+- **async-storage**: Add web implementation (`NativeAsyncStorage`) backed by `localStorage`.
+
+### Chores
+- Bump all packages to 3.0.13.
+
+## [3.0.11] - 2026-04-03
+
+### Features
+- **async-storage**: Add `AsyncStorageStatic` compatibility layer for legacy call sites.
+
+### Bug Fixes
+- **ping / pbkdf2 / network-info**: Fix compilation errors.
+- **aes-crypto**: Sync patch changes — use Hex encoding for all I/O.
+- **dns-lookup (iOS)**: Add `CFDataRef` cast in `DnsLookup.mm` to fix compilation.
+- Align Android implementations with upstream originals.
+- iOS compilation fixes verified with local build.
+
+### Chores
+- `gitignore` the `lib/` build output and exclude `.map` files from npm publish.
+- Bump all packages through 3.0.11.
+
 ## [3.0.4] - 2026-04-03
 
 ### Bug Fixes
