@@ -270,6 +270,8 @@ RNAOJKE=
         bundleVersion: '2',
         fileSize: 55586119,
         sha256: 'cdff9d4b37f2940e5ce73141e384f412e1e4e4bf3046b0cdb4d79b0c974de742',
+        // NOTE: signature below was copied from the iOS entry and still signs appType:"electron".
+        // Regenerate with an android-specific metadata blob before running this test case.
         signature: `-----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA256
 
@@ -281,7 +283,7 @@ Hash: SHA256
   "appVersion": "6.1.0",
   "buildNumber": "2026032032",
   "bundleVersion": "7701116",
-  "appType": "electron"
+  "appType": "android"
 }
 -----BEGIN PGP SIGNATURE-----
 
