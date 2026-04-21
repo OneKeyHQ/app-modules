@@ -266,7 +266,7 @@ class RNCloudFsModule(private val reactContext: ReactApplicationContext) :
             } else {
                 true
             }
-            val actualMimeType = if (mimeType == null) guessMimeType(uriOrPath) else null
+            val actualMimeType = mimeType ?: guessMimeType(uriOrPath)
 
             try {
                 helper.saveFile(uriOrPath, destinationPath, actualMimeType, useDocumentsFolder)
