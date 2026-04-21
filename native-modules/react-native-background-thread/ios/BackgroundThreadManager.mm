@@ -107,7 +107,12 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         self.reactNativeFactoryDelegate = [[BackgroundReactNativeDelegate alloc] init];
         self.reactNativeFactory = [[RCTReactNativeFactory alloc] initWithDelegate:self.reactNativeFactoryDelegate];
 
-        [self.reactNativeFactoryDelegate setJsBundleSource:std::string([entryURL UTF8String])];
+        // Only set jsBundleSource for debug HTTP URLs or explicit OTA overrides.
+        // Leaving the default release name ("background.bundle") unset lets the
+        // delegate fall back to split-bundle mode (common.jsbundle + entry).
+        if (![entryURL isEqualToString:@"background.bundle"]) {
+            [self.reactNativeFactoryDelegate setJsBundleSource:std::string([entryURL UTF8String])];
+        }
 
         [self.reactNativeFactory.rootViewFactory viewWithModuleName:MODULE_NAME
                                                      initialProperties:initialProperties

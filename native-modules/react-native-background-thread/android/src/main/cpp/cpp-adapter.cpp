@@ -129,6 +129,7 @@ static std::atomic<int64_t> gNextTimerId{1};
 static std::atomic<bool> gTimerWorkerStarted{false};
 static std::atomic<bool> gTimerWorkerStop{false};
 static RPCRuntimeExecutor gBgTimerExecutor;
+static std::thread gTimerWorkerThread;
 
 static long long nowMs() {
     using namespace std::chrono;
@@ -160,6 +161,7 @@ static void timerWorkerLoop() {
         // their callbacks. Captured under the lock; callbacks are invoked on
         // the JS thread (not here).
         std::vector<std::pair<int64_t, std::shared_ptr<jsi::Function>>> toFire;
+        RPCRuntimeExecutor executor;
         {
             std::unique_lock<std::mutex> lock(gTimerMutex);
             if (gTimers.empty()) {
@@ -218,9 +220,9 @@ static void timerWorkerLoop() {
                     ++it;
                 }
             }
+            executor = gBgTimerExecutor;
         }
 
-        RPCRuntimeExecutor executor = gBgTimerExecutor;
         if (!executor) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
@@ -238,7 +240,8 @@ static void timerWorkerLoop() {
 static void ensureTimerWorkerStarted() {
     bool expected = false;
     if (gTimerWorkerStarted.compare_exchange_strong(expected, true)) {
-        std::thread(timerWorkerLoop).detach();
+        gTimerWorkerStop.store(false);
+        gTimerWorkerThread = std::thread(timerWorkerLoop);
         LOGI("Timer worker thread started");
     }
 }
@@ -592,6 +595,42 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeDestroy(
 
     SharedRPC::reset();
     SharedStore::reset();
+
+    // Stop and join the timer worker before touching any shared state it
+    // reads. Without this, the worker could finish one last dispatch after
+    // we clear gTimers / gBgTimerExecutor and enqueue stale work against
+    // the about-to-be-destroyed runtime.
+    gTimerWorkerStop.store(true);
+    gTimerCv.notify_all();
+    if (gTimerWorkerThread.joinable()) {
+        gTimerWorkerThread.join();
+    }
+    gTimerWorkerStarted.store(false);
+
+    // Intentionally leak remaining jsi::Function callbacks (same rationale
+    // as SharedRPC::reset): destroying them here would run ~jsi::Function
+    // on the torn-down runtime and crash.
+    {
+        std::lock_guard<std::mutex> lock(gTimerMutex);
+        for (auto &entry : gTimers) {
+            if (entry.second.callback) {
+                new std::shared_ptr<jsi::Function>(std::move(entry.second.callback));
+            }
+        }
+        gTimers.clear();
+        gBgTimerExecutor = nullptr;
+    }
+
+    // Drain pending cross-runtime work. Each std::function may capture a
+    // shared_ptr<jsi::Function> tied to the destroyed runtime; leak them
+    // for the same reason as above.
+    {
+        std::lock_guard<std::mutex> lock(gWorkMutex);
+        for (auto &entry : gPendingWork) {
+            new std::function<void(jsi::Runtime &)>(std::move(entry.second));
+        }
+        gPendingWork.clear();
+    }
 
     LOGI("Native resources cleaned up");
 }
