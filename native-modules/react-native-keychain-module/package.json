@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-keychain-module",
-  "version": "3.0.18",
+  "version": "3.0.19",
   "description": "react-native-keychain-module",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
