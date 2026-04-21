@@ -36,6 +36,10 @@ class NativeLogger : HybridNativeLoggerSpec() {
         }
     }
 
+    override fun flushPendingRepeat() {
+        OneKeyLog.flushPendingRepeat()
+    }
+
     override fun write(level: Double, msg: String) {
         val sanitized = sanitize(msg)
         when (level.toInt()) {

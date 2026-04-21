@@ -243,7 +243,33 @@ object OneKeyLog {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Dedup: collapse identical consecutive messages into [N repeat]
+    // -----------------------------------------------------------------------
+    private val dedupLock = Any()
+    @Volatile private var prevLogKey: String? = null
+    private var repeatCount: Int = 0
+
     private fun log(tag: String, level: String, message: String, androidLogLevel: Int) {
+        // Dedup identical consecutive messages (same level + tag + message)
+        val logKey = "$level:$tag:$message"
+        synchronized(dedupLock) {
+            if (logKey == prevLogKey) {
+                repeatCount += 1
+                return
+            }
+            val pendingRepeat = repeatCount
+            prevLogKey = logKey
+            repeatCount = 0
+
+            if (pendingRepeat > 0) {
+                val repeatMsg = "[$pendingRepeat repeat]"
+                val l = logger
+                if (l != null) l.info(repeatMsg)
+                else android.util.Log.i("OneKeyLog", repeatMsg)
+            }
+        }
+
         val decision = evaluateRateLimit(level)
         decision.report?.let { emitRateLimitReport(it) }
         if (decision.drop) return
@@ -279,6 +305,26 @@ object OneKeyLog {
                 } catch (_: Exception) {
                     // Ignore flush errors
                 }
+            }
+        }
+    }
+
+    /**
+     * Flush any pending dedup repeat summary to the log file.
+     * Call before log export to ensure trailing repeated messages are included.
+     */
+    @JvmStatic
+    fun flushPendingRepeat() {
+        synchronized(dedupLock) {
+            val pending = repeatCount
+            repeatCount = 0
+            prevLogKey = null
+
+            if (pending > 0) {
+                val repeatMsg = "[$pending repeat]"
+                val l = logger
+                if (l != null) l.info(repeatMsg)
+                else android.util.Log.i("OneKeyLog", repeatMsg)
             }
         }
     }

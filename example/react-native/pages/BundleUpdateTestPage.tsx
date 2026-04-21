@@ -238,26 +238,30 @@ Hash: SHA256
 
 {
   "fileName": "metadata.json",
-  "sha256": "8c71473ccb1c590e8c13642559600eb0c8e2649c9567236e2ac27e79e919a12c",
-  "size": 23123,
-  "generatedAt": "2025-10-22T09:50:50.446Z"
+  "sha256": "bf3734ac6e59388fe23c40ce2960b6fd197c596af05dd08b3ccc8b201b78c52b",
+  "size": 167265,
+  "generatedAt": "2026-03-31T03:25:05.000Z",
+  "appVersion": "6.1.0",
+  "buildNumber": "2026032032",
+  "bundleVersion": "7701116",
+  "appType": "electron"
 }
 -----BEGIN PGP SIGNATURE-----
 
-iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmj/ZF0OHGRldkBvbmVr
-ZXkuc28ACgkQs2mmepC/OHuVZhAArMmwReTpiw+XoKTw7bwlVrz0OWHfAkdh6lFY
-xQpGj+AsY38NKJImrK7IQLhcnTJIwycY0a5eh8Wnqs0sxtmmwwyWQs+RHSwIdlTJ
-CLpTUGxowNiD0ldz0LVLjPFqZz3/fYKkpGW1+ejkMdRXBbUrFGTa+XsEd0k3TWj2
-bxFrhy128SpQ1NJ8AXXWRzZaenFAADa5ZEJUMV4Q8sjV+C8OXtVKeW1IDXAvWEzx
-x9SWU4HD4ciKYT6yRZ6RuHJ3YXFdIDPMrPXDSPTjcZUnhsadT0qFoRck6ya4uyQP
-SNvEge9W9Kcup0XfKkK5SnIRyZeKgW5Zn39W8C5equqmrGy581E6R28KS3KHsE66
-Pf6WmVE/XuAKt5F++TmC6RBZ9PISPdOVhWcPZ74ySsFOUQ0nswMg1GLQ/kfixXIl
-8ejFGhzhCRDmxYZ1aEJeMAAQhBuXM5TKtY79TIT9lNlttM0J/hl3rTTVxt9xSsMW
-MCduz+A1mdO8T/DPqvpJksOO/YOT4gzHT9OSXNsYdte1QJKHmQdeAfzi/m66Z2/L
-1qqTvwH3byXreUAjXwAWZLIbAQJ6zeeIrVKiut7DCJOHE+kGS2vdQiM2NmRFE0hP
-qxdzLH784DPCWB36Xd3VZfbUxKOc06+bHlFCEXyylWD3schXV9c8Amz4DoriYIdi
-Ni3q+jg=
-=BVQy
+iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmnLXs0OHGRldkBvbmVr
+ZXkuc28ACgkQs2mmepC/OHtUkhAAoMZQc/Z1slPudePNjgO33XZwhWJNQkLeyPRL
+Evz6JowioGdQjk1yJ+2jleSDDHRCceh6BzeqZqCFP58oRqug3MS4x1/7Egvza3l8
+5vW+NeX9Ai8l4PniUDcC9IwBITsVz/wzjQdhOuVbtYcP4y/48JvctBNBj5cG7cG7
+pMvOiXffUWjrBHToAKJec6V1N5L2b/2K3dutp10o3+tkfOznsHaD1vCpwxaeWcMx
+W2I2SsH3uBDRYisY5W5mb5mDPbEuyqL+M+TLxHAGPwRe3+ExeipakPIJFfYsf5zi
+6AnlllUv/QBH+1VZ7KauadPLD1HfMCPSbqQuTsgay56H7fvUe9khp2ysftgQ2tpc
+NzTtQyZqIUeiUwBSTGqUvuLMCRChfGo7OBJE7Ec/VRzUIwGmN4Je+nY1JTYW+iR5
+cRQ9j+aNAhLYLPkdUr9hMXaDjpSdGCBM0YpEoqSOzbuZEVCD92tzdfMUI+bdC6a/
+I5cI5w1KTRKJ8irMfzm/TDcIenoUTvhzwqm+v69vFSR1LqWQMXnRvhONNTa9haov
++s+6KSUKPMH4Pa5AgRu5dkoj3UrbZUwt3tOIao97PXVXaFuSBLNhFEjS5yV+uOgK
+Wfi3u5D2NWfhq0ZaV25yC16xDIe7SOXgHjNnR1vtt5L9ThZ2deidyiBJA6BFHZK6
+RNAOJKE=
+=JKzr
 -----END PGP SIGNATURE-----`
       },
       android: {
@@ -266,35 +270,37 @@ Ni3q+jg=
         bundleVersion: '2',
         fileSize: 55586119,
         sha256: 'cdff9d4b37f2940e5ce73141e384f412e1e4e4bf3046b0cdb4d79b0c974de742',
+        // NOTE: signature below was copied from the iOS entry and still signs appType:"electron".
+        // Regenerate with an android-specific metadata blob before running this test case.
         signature: `-----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA256
 
 {
   "fileName": "metadata.json",
-  "sha256": "cece2fccea3c3a43e0da7ab803f44e5a4850a8b06f2df06db3e7f16860080a40",
-  "size": 28919,
-  "generatedAt": "2026-01-06T05:42:35.407Z",
-  "appType": "android",
-  "appVersion": "5.19.2",
-  "buildNumber": "2026010644",
-  "bundleVersion": "2"
+  "sha256": "bf3734ac6e59388fe23c40ce2960b6fd197c596af05dd08b3ccc8b201b78c52b",
+  "size": 167265,
+  "generatedAt": "2026-03-31T03:25:05.000Z",
+  "appVersion": "6.1.0",
+  "buildNumber": "2026032032",
+  "bundleVersion": "7701116",
+  "appType": "android"
 }
 -----BEGIN PGP SIGNATURE-----
 
-iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmlcvy8OHGRldkBvbmVr
-ZXkuc28ACgkQs2mmepC/OHtxlA//QEvclfq0X9isJXBHFsRZx+JhfGOao60Sl0rW
-m11AU6utvOAXHwxnhtLENuB2cDhhKkDrN582R2QhsdRJngRqWafwuBaVBJx+ErZV
-KqvAlTj9hcLACXBw/dOyQ4JwDwm2jwloH4H//eiQdFcp1MT/uiGf3Yu9fonEC6ap
-URBiiA7wAPg2o9V6zJchv/CM/xGA9G/I337lR0yAID2Y6Oteu9CftCSGqav4va4O
-C94nW/wWQdt+XllY+i46mXxKOOoaIxUMP5K6q1q5CcjZBNm6Pgkay5YEDmbershP
-/DeSpHwTk2APOIoaw1JVeKP8HrhIg4iGjmrUkveBoHJrGu1x6FjZ0tGqVJkG7b8f
-wuBBHoPlCULbR38eFudv6UBYsJ2Zb2MEwMEC4quBczU6wg4NnOSKFK03kqsStyxG
-0F+HShqAPZZrvGUUOMBMWhyxpDmbslkXtQntPhaMM8+NGqegTMiLZQnWkvzCIdoc
-EYJOSlAICF/VkFzo8+LSuUgCQbqXF5qnFhcsIdzR8rguFKHC9/8/umlVjua5ilnu
-bxULNIeYztMeXB29J8JXpu4efz+v5r9/HsddXlY0wMrmEWNiw+bG+ruT3O9pC9k9
-hGatKzsRToFrdoTaHG6xnKhiVH7MhQHGjvEK5KpyXIvQxy9SCIloAqs0oXrW4Yuz
-H3bEFZ8=
-=ZjEV
+iQJCBAEBCAAsFiEE62iuVE8f3YzSZGJPs2mmepC/OHsFAmnLXs0OHGRldkBvbmVr
+ZXkuc28ACgkQs2mmepC/OHtUkhAAoMZQc/Z1slPudePNjgO33XZwhWJNQkLeyPRL
+Evz6JowioGdQjk1yJ+2jleSDDHRCceh6BzeqZqCFP58oRqug3MS4x1/7Egvza3l8
+5vW+NeX9Ai8l4PniUDcC9IwBITsVz/wzjQdhOuVbtYcP4y/48JvctBNBj5cG7cG7
+pMvOiXffUWjrBHToAKJec6V1N5L2b/2K3dutp10o3+tkfOznsHaD1vCpwxaeWcMx
+W2I2SsH3uBDRYisY5W5mb5mDPbEuyqL+M+TLxHAGPwRe3+ExeipakPIJFfYsf5zi
+6AnlllUv/QBH+1VZ7KauadPLD1HfMCPSbqQuTsgay56H7fvUe9khp2ysftgQ2tpc
+NzTtQyZqIUeiUwBSTGqUvuLMCRChfGo7OBJE7Ec/VRzUIwGmN4Je+nY1JTYW+iR5
+cRQ9j+aNAhLYLPkdUr9hMXaDjpSdGCBM0YpEoqSOzbuZEVCD92tzdfMUI+bdC6a/
+I5cI5w1KTRKJ8irMfzm/TDcIenoUTvhzwqm+v69vFSR1LqWQMXnRvhONNTa9haov
++s+6KSUKPMH4Pa5AgRu5dkoj3UrbZUwt3tOIao97PXVXaFuSBLNhFEjS5yV+uOgK
+Wfi3u5D2NWfhq0ZaV25yC16xDIe7SOXgHjNnR1vtt5L9ThZ2deidyiBJA6BFHZK6
+RNAOJKE=
+=JKzr
 -----END PGP SIGNATURE-----`
       }
     }) ?? {

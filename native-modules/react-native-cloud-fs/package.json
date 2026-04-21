@@ -1,0 +1,93 @@
+{
+  "name": "@onekeyfe/react-native-cloud-fs",
+  "version": "3.0.19",
+  "description": "react-native-cloud-fs TurboModule for OneKey",
+  "main": "./lib/module/index.js",
+  "types": "./lib/typescript/src/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.tsx",
+      "types": "./lib/typescript/src/index.d.ts",
+      "default": "./lib/module/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "ios",
+    "*.podspec",
+    "!ios/build",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*",
+    "android",
+    "!**/*.map"
+  ],
+  "scripts": {
+    "prepare": "bob build",
+    "typecheck": "tsc",
+    "release": "yarn prepare && npm whoami && npm publish --access public"
+  },
+  "keywords": [
+    "react-native",
+    "ios",
+    "android"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-cloud-fs.git"
+  },
+  "author": "@onekeyhq <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/OneKeyHQ/app-modules/react-native-cloud-fs/issues"
+  },
+  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-cloud-fs#readme",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  "devDependencies": {
+    "@react-native/babel-preset": "0.83.0",
+    "react": "19.2.0",
+    "react-native": "0.83.0",
+    "react-native-builder-bob": "^0.40.17",
+    "typescript": "^5.9.2"
+  },
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
+  },
+  "codegenConfig": {
+    "name": "RNCloudFsSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "android": {
+      "javaPackageName": "com.rncloudfs"
+    },
+    "ios": {
+      "modulesProvider": {
+        "RNCloudFs": "CloudFs"
+      }
+    }
+  }
+}

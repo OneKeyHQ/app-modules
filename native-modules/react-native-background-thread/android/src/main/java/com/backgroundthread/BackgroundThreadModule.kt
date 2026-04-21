@@ -1,29 +1,41 @@
 package com.backgroundthread
 
+import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.annotations.ReactModule
 
+/**
+ * TurboModule entry point for BackgroundThread.
+ * Delegates all heavy lifting to [BackgroundThreadManager] singleton.
+ *
+ * Mirrors iOS BackgroundThread.mm.
+ */
 @ReactModule(name = BackgroundThreadModule.NAME)
 class BackgroundThreadModule(reactContext: ReactApplicationContext) :
-  NativeBackgroundThreadSpec(reactContext) {
+    NativeBackgroundThreadSpec(reactContext) {
 
-  override fun getName(): String {
-    return NAME
-  }
+    companion object {
+        const val NAME = "BackgroundThread"
+    }
 
-  override fun initBackgroundThread() {
-    // TODO: Implement initBackgroundThread
-  }
+    override fun getName(): String = NAME
 
-  override fun postBackgroundMessage(message: String) {
-    // TODO: Implement postBackgroundMessage
-  }
+    override fun installSharedBridge() {
+        BackgroundThreadManager.getInstance().installSharedBridgeInMainRuntime(reactApplicationContext)
+    }
 
-  override fun startBackgroundRunnerWithEntryURL(entryURL: String) {
-    // TODO: Implement startBackgroundRunnerWithEntryURL
-  }
+    override fun startBackgroundRunnerWithEntryURL(entryURL: String) {
+        BackgroundThreadManager.getInstance().startBackgroundRunnerWithEntryURL(reactApplicationContext, entryURL)
+    }
 
-  companion object {
-    const val NAME = "BackgroundThread"
-  }
+    override fun loadSegmentInBackground(segmentId: Double, path: String, promise: Promise) {
+        BackgroundThreadManager.getInstance()
+            .registerSegmentInBackground(segmentId.toInt(), path) { error ->
+                if (error != null) {
+                    promise.reject("BG_SEGMENT_LOAD_ERROR", error.message, error)
+                } else {
+                    promise.resolve(null)
+                }
+            }
+    }
 }

@@ -232,6 +232,13 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         return (true, report)
     }
 
+    // -----------------------------------------------------------------------
+    // Dedup: collapse identical consecutive messages into [N repeat]
+    // -----------------------------------------------------------------------
+    private static let dedupLock = NSLock()
+    private static var prevLogKey: String?
+    private static var repeatCount: Int = 0
+
     private static func log(
         _ level: String,
         _ tag: String,
@@ -239,6 +246,25 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         writer: (String) -> Void
     ) {
         _ = configured
+
+        // Dedup identical consecutive messages (same level + tag + message)
+        let logKey = "\(level):\(tag):\(message)"
+        dedupLock.lock()
+        let isDuplicate = (logKey == prevLogKey)
+        if isDuplicate {
+            repeatCount += 1
+            dedupLock.unlock()
+            return
+        }
+        let pendingRepeat = repeatCount
+        prevLogKey = logKey
+        repeatCount = 0
+        dedupLock.unlock()
+
+        if pendingRepeat > 0 {
+            DDLogInfo("[\(pendingRepeat) repeat]")
+        }
+
         let decision = evaluateRateLimit(for: level)
         if let report = decision.report {
             DDLogWarn(report)
@@ -292,6 +318,20 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         }
         let time = formattedTime(Date())
         return truncate("\(time) | \(level) : [\(safeTag)] \(safeMessage)")
+    }
+
+    /// Flush any pending dedup repeat summary to the log file.
+    /// Call before log export to ensure trailing repeated messages are included.
+    @objc public static func flushPendingRepeat() {
+        dedupLock.lock()
+        let pending = repeatCount
+        repeatCount = 0
+        prevLogKey = nil
+        dedupLock.unlock()
+
+        if pending > 0 {
+            DDLogInfo("[\(pending) repeat]")
+        }
     }
 
     @objc public static func debug(_ tag: String, _ message: String) {

@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-scroll-guard",
-  "version": "1.1.46",
+  "version": "3.0.19",
   "description": "A native view wrapper that prevents parent scrollable containers (PagerView/ViewPager2) from intercepting child scroll gestures",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -31,7 +31,8 @@
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
-    "!**/.*"
+    "!**/.*",
+    "!**/*.map"
   ],
   "scripts": {
     "clean": "del-cli android/build lib",
@@ -63,7 +64,7 @@
     "del-cli": "^6.0.0",
     "nitrogen": "0.31.10",
     "react": "19.2.0",
-    "react-native": "0.83.0",
+    "react-native": "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch",
     "react-native-builder-bob": "^0.40.13",
     "react-native-nitro-modules": "0.33.2",
     "typescript": "^5.9.2"

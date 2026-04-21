@@ -1,72 +1,67 @@
-
 import ReactNative from 'react-native';
 
-let waitMessages = [];
-const callbacks  = new Set();
-const onMessageCallback = (message) => {
-  callbacks.forEach((callback) => callback(message));
-};
+// ── SharedRPC onWrite handler ──────────────────────────────────────────
+// Background runtime listens for writes from main runtime,
+// processes the RPC call, and writes the result back.
 
-function checkReady(times = 0) {
-  if (globalThis.$$isNativeUiThread || times > 10_000) {
-    return;
-  }
-  if (
-    typeof globalThis.postHostMessage === 'function' &&
-    typeof globalThis.onHostMessage === 'function'
-  ) {
-    isReady = true;
-    globalThis.onHostMessage(onMessageCallback);
-    setTimeout(() => {
-      console.log('waitMessages.length', waitMessages.length);
-      waitMessages.forEach((message) => {
-        globalThis.postHostMessage(message);
-      });
-      waitMessages = [];
-    }, 0);
-  } else {
-    console.log('checkReady', times);
-    setTimeout(() => checkReady(times + 1), 10);
+let hasRegisteredRPCHandler = false;
+
+function setupRPCHandler() {
+  if (hasRegisteredRPCHandler || !globalThis.sharedRPC) return false;
+  hasRegisteredRPCHandler = true;
+
+  globalThis.sharedRPC.onWrite((callId) => {
+    // Skip result writes (those are our own responses)
+    if (callId.endsWith(':result')) return;
+
+    const raw = globalThis.sharedRPC.read(callId);
+    if (raw === undefined) return;
+
+    let params;
+    try {
+      params = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch {
+      params = raw;
+    }
+
+    // Dispatch to handler by method name
+    const result = handleRPC(params);
+
+    // Write result back — triggers main runtime's onWrite
+    globalThis.sharedRPC.write(
+      callId + ':result',
+      typeof result === 'string' ? result : JSON.stringify(result),
+    );
+  });
+
+  return true;
+}
+
+function handleRPC(params) {
+  const method = params?.method;
+  switch (method) {
+    case 'echo':
+      return { method: 'echo', result: params.params, ts: Date.now() };
+    case 'add':
+      return { method: 'add', result: (params.params?.a ?? 0) + (params.params?.b ?? 0) };
+    case 'delay':
+      // Simulate async — but onWrite is synchronous, so just return immediately
+      return { method: 'delay', result: 'done', requestedMs: params.params?.ms };
+    default:
+      return { error: 'unknown method', method };
   }
 }
 
-checkReady();
+globalThis.__setupBackgroundRPCHandler = setupRPCHandler;
+setupRPCHandler();
 
-const checkThread = () => {
-  if (globalThis.$$isNativeUiThread) {
-    // eslint-disable-next-line no-restricted-syntax
-    throw new Error(
-      'this function is not available in native background thread',
-    );
+// ── SharedStore demo ───────────────────────────────────────────────────
+// Periodically read config values set by the main runtime.
+
+function pollSharedStore() {
+  if (globalThis.sharedStore) {
+    globalThis.sharedStore.get('locale');
   }
-};
-
-export const nativeBGBridge = {
-  postHostMessage: (message) => {
-    checkThread();
-    if (!isReady) {
-      waitMessages.push(message);
-      return;
-    }
-    globalThis.postHostMessage(JSON.stringify(message));
-  },
-  onHostMessage: (callback) => {
-    checkThread();
-    callbacks.add(callback);
-    return () => {
-      callbacks.delete(callback);
-    };
-  },
-};
-
-
-nativeBGBridge.onHostMessage((message) => {
-  console.log('message', message);
-  if (message.type === 'test1') {
-    alert(`${JSON.stringify(message)} in background, wait 3 seconds`);
-    setTimeout(() => {
-      alert('post message from background thread');
-      nativeBGBridge.postHostMessage({ type: 'test2' });
-    }, 3000);
-  }
-});
+  setTimeout(pollSharedStore, 3000);
+}
+pollSharedStore();

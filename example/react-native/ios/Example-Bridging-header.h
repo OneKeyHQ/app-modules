@@ -1,2 +1,2 @@
-#import "BackgroundRunnerModule.h"
+#import "example/ReactNativeDelegate.h"
 #import "OneKeyLogBridge.h"

@@ -109,6 +109,8 @@ export interface ReactNativeBundleUpdate
   getWebEmbedPathAsync(): Promise<string>;
   getJsBundlePath(): string;
   getJsBundlePathAsync(): Promise<string>;
+  getBackgroundJsBundlePath(): string;
+  getBackgroundJsBundlePathAsync(): Promise<string>;
   getNativeAppVersion(): Promise<string>;
   getNativeBuildNumber(): Promise<string>;
   getBuiltinBundleVersion(): Promise<string>;

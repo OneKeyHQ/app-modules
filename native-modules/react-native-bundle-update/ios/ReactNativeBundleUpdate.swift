@@ -34,31 +34,43 @@ fpqe0vKYUlT092joT0o6nT2MzmLmHUW0kDqD9p6JEJEZUZpqcSRE84eMTFNyu966
 xy/rjN2SMJTFzkNXPkwXYrMYoahGez1oZfLzV6SQ0+blNc3aATt9aQW6uaCZtMw1
 ibcfWW9neHVpRtTlMYCoa2reGaBGCv0Nd8pMcyFUQkVaes5cQHkh3r5Dba+YrVvp
 l4P8HMbN8/LqAv7eBfj3ylPa/8eEPWVifcum2Y9TqherN1C2JDqWIpH4EsApek3k
-NMK6q0lPxXjZ3Pa5Ag0EYkBMbAEQAM1R4N3bBkwKkHeYwsQASevUkHwY4eg6Ncgp
-f9NbmJHcEioqXTIv0nHCQbos3P2NhXvDowj4JFkK/ZbpP9yo0p7TI4fckseVSWwI
-tiF9l/8OmXvYZMtw3hHcUUZVdJnk0xrqT6ni6hyRFIfbqous6/vpqi0GG7nB/+lU
-E5StGN8696ZWRyAX9MmwoRoods3ShNJP0+GCYHfIcG0XRhEDMJph+7mWPlkQUcza
-4aEjxOQ4Stwwp+ZL1rXSlyJIPk1S9/FIS/Uw5GgqFJXIf5n+SCVtUZ8lGedEWwe4
-wXsoPFxxOc2Gqw5r4TrJFdgA3MptYebXmb2LGMssXQTM1AQS2LdpnWw44+X1CHvQ
-0m4pEw/g2OgeoJPBurVUnu2mU/M+ARZiS4ceAR0pLZN7Yq48p1wr6EOBQdA3Usby
-uc17MORG/IjRmjz4SK/luQLXjN+0jwQSoM1kcIHoRk37B8feHjVufJDKlqtw83H1
-uNu6lGwb8MxDgTuuHloDijCDQsn6m7ZKU1qqLDGtdvCUY2ovzuOUS9vv6MAhR86J
-kqoU3sOBMeQhnBaTNKU0IjT4M+ERCWQ7MewlzXuPHgyb4xow1SKZny+f+fYXPy9+
-hx4/j5xaKrZKdq5zIo+GRGe4lA088l253nGeLgSnXsbSxqADqKK73d7BXLCVEZHx
-f4Sa5JN7ABEBAAGJAjwEGAEIACYWIQTraK5UTx/djNJkYk+zaaZ6kL84ewUCYkBM
-bAIbDAUJB4YfRAAKCRCzaaZ6kL84e0UGD/4mVWyGoQC86TyPoU4Pb5r8mynXWmiH
-ZGKu2ll8qn3l5Q67OophgbA1I0GTBFsYK2f91ahgs7FEsLrmz/25E8ybcdJipITE
-6869nyE1b37jVb3z3BJLYS/4MaNvugNz4VjMHWVAL52glXLN+SJBSNscmWZDKnVn
-Rnrn+kBEvOWZgLbi4MpPiNVwm2PGnrtPzudTcg/NS3HOcmJTfG3mrnwwNJybTVAx
-txlQPoXUpJQqJjtkPPW+CqosolpRdugQ5zpFSg05iL+vN+CMrVPkk85w87dtsidl
-yZl/ZNITrLzym9d2UFVQZY2rRohNdRfx3l4rfXJFLaqQtihRvBIiMKTbUb2V0pd3
-rVLz2Ck3gJqPfPEEmCWS0Nx6rME8m0sOkNyMau3dMUUAs4j2c3pOQmsZRjKo7LAc
-7/GahKFhZ2aBCQzvcTES+gPH1Z5HnivkcnUF2gnQV9x7UOr1Q/euKJsxPl5CCZtM
-N9GFW10cDxFo7cO5Ch+/BkkkfebuI/4Wa1SQTzawsxTx4eikKwcemgfDsyIqRs2W
-62PBrqCzs9Tg19l35sCdmvYsvMadrYFXukHXiUKEpwJMdTLAtjJ+AX84YLwuHi3+
-qZ5okRCqZH+QpSojSScT9H5ze4ZpuP0d8pKycxb8M2RfYdyOtT/eqsZ/1EQPg7kq
-P2Q5dClenjjjVA==
-=F0np
+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
+=HlTQ
 -----END PGP PUBLIC KEY BLOCK-----
 """
 
@@ -68,6 +80,11 @@ public class BundleUpdateStore: NSObject {
     private static let bundlePrefsKey = "currentBundleVersion"
     private static let nativeVersionKey = "nativeVersion"
     private static let nativeBuildNumberKey = "nativeBuildNumber"
+    private static let mainBundleEntryFileName = "main.jsbundle.hbc"
+    private static let backgroundBundleEntryFileName = "background.bundle"
+    private static let metadataRequiresBackgroundBundleKey = "requiresBackgroundBundle"
+    private static let metadataBackgroundProtocolVersionKey = "backgroundProtocolVersion"
+    private static let supportedBackgroundProtocolVersion = "1"
 
     public static func documentDirectory() -> String {
         NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0]
@@ -147,8 +164,8 @@ public class BundleUpdateStore: NSObject {
     }
 
     public static func getWebEmbedPath() -> String {
-        guard let dir = currentBundleDir() else { return "" }
-        return (dir as NSString).appendingPathComponent("web-embed")
+        guard let bundleInfo = validatedCurrentBundleInfo() else { return "" }
+        return (bundleInfo.bundleDirPath as NSString).appendingPathComponent("web-embed")
     }
 
     public static func calculateSHA256(_ filePath: String) -> String? {
@@ -310,11 +327,63 @@ public class BundleUpdateStore: NSObject {
         return metadataPath
     }
 
-    public static func getMetadataFileContent(_ currentBundleVersion: String) -> [String: String]? {
+    public static func getMetadataFileContent(_ currentBundleVersion: String) -> [String: Any]? {
         guard let path = getMetadataFilePath(currentBundleVersion),
               let data = FileManager.default.contents(atPath: path),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return nil }
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return json
+    }
+
+    private static func isReservedMetadataKey(_ key: String) -> Bool {
+        key == metadataRequiresBackgroundBundleKey || key == metadataBackgroundProtocolVersionKey
+    }
+
+    private static func metadataStringValue(
+        _ metadata: [String: Any],
+        key: String,
+    ) -> String? {
+        if let value = metadata[key] as? String {
+            return value
+        }
+        if let value = metadata[key] as? NSNumber {
+            return value.stringValue
+        }
+        if let value = metadata[key] as? Bool {
+            return value ? "true" : "false"
+        }
+        return nil
+    }
+
+    private static func metadataBoolValue(
+        _ metadata: [String: Any],
+        key: String,
+    ) -> Bool {
+        if let value = metadata[key] as? Bool {
+            return value
+        }
+        if let value = metadata[key] as? NSNumber {
+            return value.boolValue
+        }
+        if let value = metadata[key] as? String {
+            return ["1", "true", "yes"].contains(value.lowercased())
+        }
+        return false
+    }
+
+    private static func fileMetadataEntries(
+        from metadata: [String: Any],
+    ) -> [String: String] {
+        var entries: [String: String] = [:]
+        for (key, value) in metadata {
+            if isReservedMetadataKey(key) {
+                continue
+            }
+            guard let hash = value as? String else {
+                continue
+            }
+            entries[key] = hash
+        }
+        return entries
     }
 
     /// Returns true if OneKey developer mode (DevSettings) is enabled.
@@ -466,11 +535,12 @@ public class BundleUpdateStore: NSObject {
         return true
     }
 
-    public static func validateAllFilesInDir(_ dirPath: String, metadata: [String: String], appVersion: String, bundleVersion: String) -> Bool {
+    public static func validateAllFilesInDir(_ dirPath: String, metadata: [String: Any], appVersion: String, bundleVersion: String) -> Bool {
         let parentBundleDir = bundleDir()
         let folderName = "\(appVersion)-\(bundleVersion)"
         let jsBundleDir = (parentBundleDir as NSString).appendingPathComponent(folderName) + "/"
         let fm = FileManager.default
+        let fileEntries = fileMetadataEntries(from: metadata)
 
         guard let enumerator = fm.enumerator(atPath: dirPath) else { return false }
         while let file = enumerator.nextObject() as? String {
@@ -480,7 +550,7 @@ public class BundleUpdateStore: NSObject {
             if fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue { continue }
 
             let relativePath = fullPath.replacingOccurrences(of: jsBundleDir, with: "")
-            guard let expectedSHA256 = metadata[relativePath] else {
+            guard let expectedSHA256 = fileEntries[relativePath] else {
                 OneKeyLog.error("BundleUpdate", "[bundle-verify] File on disk not found in metadata: \(relativePath)")
                 return false
             }
@@ -495,7 +565,7 @@ public class BundleUpdateStore: NSObject {
         }
 
         // Verify completeness
-        for key in metadata.keys {
+        for key in fileEntries.keys {
             let expectedFilePath = jsBundleDir + key
             if !fm.fileExists(atPath: expectedFilePath) {
                 OneKeyLog.error("BundleUpdate", "[bundle-verify] File listed in metadata but missing on disk: \(key)")
@@ -505,7 +575,58 @@ public class BundleUpdateStore: NSObject {
         return true
     }
 
-    public static func currentBundleMainJSBundle() -> String? {
+    static func validateBundlePairCompatibility(
+        bundleDirPath: String,
+        metadata: [String: Any],
+    ) -> Bool {
+        let mainBundlePath = (bundleDirPath as NSString)
+            .appendingPathComponent(mainBundleEntryFileName)
+        guard FileManager.default.fileExists(atPath: mainBundlePath) else {
+            OneKeyLog.error(
+                "BundleUpdate",
+                "bundle pair invalid: main.jsbundle.hbc is missing at \(mainBundlePath)",
+            )
+            return false
+        }
+
+        let requiresBackgroundBundle = metadataBoolValue(
+            metadata,
+            key: metadataRequiresBackgroundBundleKey,
+        )
+        if !requiresBackgroundBundle {
+            return true
+        }
+
+        let protocolVersion = metadataStringValue(
+            metadata,
+            key: metadataBackgroundProtocolVersionKey,
+        ) ?? ""
+        if protocolVersion.isEmpty || protocolVersion != supportedBackgroundProtocolVersion {
+            OneKeyLog.error(
+                "BundleUpdate",
+                "backgroundProtocolVersion mismatch: expected=\(supportedBackgroundProtocolVersion), actual=\(protocolVersion)",
+            )
+            return false
+        }
+
+        let backgroundBundlePath = (bundleDirPath as NSString)
+            .appendingPathComponent(backgroundBundleEntryFileName)
+        guard FileManager.default.fileExists(atPath: backgroundBundlePath) else {
+            OneKeyLog.error(
+                "BundleUpdate",
+                "requiresBackgroundBundle is true but background.bundle is missing at \(backgroundBundlePath)",
+            )
+            return false
+        }
+
+        return true
+    }
+
+    private static func validatedCurrentBundleInfo() -> (
+        bundleDirPath: String,
+        currentBundleVersion: String,
+        metadata: [String: Any]
+    )? {
         processPreLaunchPendingTask()
         guard let currentBundleVer = currentBundleVersion() else {
             OneKeyLog.warn("BundleUpdate", "getJsBundlePath: no currentBundleVersion stored")
@@ -582,12 +703,32 @@ public class BundleUpdateStore: NSObject {
             }
         }
 
-        let mainJSBundle = (folderName as NSString).appendingPathComponent("main.jsbundle.hbc")
-        guard FileManager.default.fileExists(atPath: mainJSBundle) else {
-            OneKeyLog.info("BundleUpdate", "mainJSBundleFile does not exist")
+        if !validateBundlePairCompatibility(bundleDirPath: folderName, metadata: metadata) {
             return nil
         }
-        return mainJSBundle
+
+        return (folderName, currentBundleVer, metadata)
+    }
+
+    private static func currentBundleEntryPath(_ entryFileName: String) -> String? {
+        guard let bundleInfo = validatedCurrentBundleInfo() else {
+            return nil
+        }
+
+        let entryPath = (bundleInfo.bundleDirPath as NSString).appendingPathComponent(entryFileName)
+        guard FileManager.default.fileExists(atPath: entryPath) else {
+            OneKeyLog.info("BundleUpdate", "\(entryFileName) does not exist")
+            return nil
+        }
+        return entryPath
+    }
+
+    public static func currentBundleMainJSBundle() -> String? {
+        currentBundleEntryPath(mainBundleEntryFileName)
+    }
+
+    public static func currentBundleBackgroundJSBundle() -> String? {
+        currentBundleEntryPath(backgroundBundleEntryFileName)
     }
 
     // Fallback data management
@@ -1050,6 +1191,11 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 try? FileManager.default.removeItem(atPath: destination)
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Extracted files verification against metadata failed"])
             }
+            if !BundleUpdateStore.validateBundlePairCompatibility(bundleDirPath: destination, metadata: metadata) {
+                OneKeyLog.error("BundleUpdate", "verifyBundleASC: bundle pair compatibility check failed")
+                try? FileManager.default.removeItem(atPath: destination)
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle pair compatibility check failed"])
+            }
 
             OneKeyLog.info("BundleUpdate", "verifyBundleASC: all verifications passed, appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
         }
@@ -1314,6 +1460,20 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         }
     }
 
+    func getBackgroundJsBundlePath() throws -> String {
+        let path = BundleUpdateStore.currentBundleBackgroundJSBundle() ?? ""
+        OneKeyLog.debug("BundleUpdate", "getBackgroundJsBundlePath: \(path.isEmpty ? "(empty/no bundle)" : path)")
+        return path
+    }
+
+    func getBackgroundJsBundlePathAsync() throws -> Promise<String> {
+        return Promise.async {
+            let path = BundleUpdateStore.currentBundleBackgroundJSBundle() ?? ""
+            OneKeyLog.info("BundleUpdate", "getBackgroundJsBundlePathAsync: \(path.isEmpty ? "(empty/no bundle)" : path)")
+            return path
+        }
+    }
+
     func getNativeAppVersion() throws -> Promise<String> {
         return Promise.async {
             let version = BundleUpdateStore.getCurrentNativeVersion()
@@ -1422,7 +1582,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "metadata.json not found"])
             }
             guard let data = FileManager.default.contents(atPath: metadataJsonPath),
-                  let metadata = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+                  let metadata = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: failed to parse metadata.json")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to parse metadata.json"])
             }
@@ -1430,6 +1590,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             if !BundleUpdateStore.validateAllFilesInDir(bundlePath, metadata: metadata, appVersion: appVersion, bundleVersion: bundleVersion) {
                 OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: file integrity check failed")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "File integrity check failed"])
+            }
+            if !BundleUpdateStore.validateBundlePairCompatibility(bundleDirPath: bundlePath, metadata: metadata) {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: bundle pair compatibility check failed")
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle pair compatibility check failed"])
             }
             OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: all files verified OK, fileCount=\(metadata.count)")
         }

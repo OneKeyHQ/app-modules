@@ -2779,7 +2779,7 @@ __metadata:
     jest: "npm:^29.6.3"
     prettier: "npm:2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-mmkv: "npm:^4.1.2"
     react-native-nitro-modules: "npm:0.33.2"
     react-native-safe-area-context: "npm:^5.5.2"
@@ -2813,7 +2813,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -2823,6 +2823,39 @@ __metadata:
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.33.2
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-aes-crypto@workspace:native-modules/react-native-aes-crypto":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-aes-crypto@workspace:native-modules/react-native-aes-crypto"
+  dependencies:
+    "@commitlint/config-conventional": "npm:^19.8.1"
+    "@eslint/compat": "npm:^1.3.2"
+    "@eslint/eslintrc": "npm:^3.3.1"
+    "@eslint/js": "npm:^9.35.0"
+    "@react-native/babel-preset": "npm:0.83.0"
+    "@react-native/eslint-config": "npm:0.83.0"
+    "@release-it/conventional-changelog": "npm:^10.0.1"
+    "@types/jest": "npm:^29.5.14"
+    "@types/react": "npm:^19.2.0"
+    commitlint: "npm:^19.8.1"
+    del-cli: "npm:^6.0.0"
+    eslint: "npm:^9.35.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-prettier: "npm:^5.5.4"
+    jest: "npm:^29.7.0"
+    lefthook: "npm:^2.0.3"
+    prettier: "npm:^2.8.8"
+    react: "npm:19.2.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
+    react-native-builder-bob: "npm:^0.40.17"
+    release-it: "npm:^19.0.4"
+    turbo: "npm:^2.5.6"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
   languageName: unknown
   linkType: soft
 
@@ -2849,7 +2882,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -2859,6 +2892,40 @@ __metadata:
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.33.2
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-async-storage@workspace:native-modules/react-native-async-storage":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-async-storage@workspace:native-modules/react-native-async-storage"
+  dependencies:
+    "@commitlint/config-conventional": "npm:^19.8.1"
+    "@eslint/compat": "npm:^1.3.2"
+    "@eslint/eslintrc": "npm:^3.3.1"
+    "@eslint/js": "npm:^9.35.0"
+    "@react-native/babel-preset": "npm:0.83.0"
+    "@react-native/eslint-config": "npm:0.83.0"
+    "@release-it/conventional-changelog": "npm:^10.0.1"
+    "@types/jest": "npm:^29.5.14"
+    "@types/react": "npm:^19.2.0"
+    commitlint: "npm:^19.8.1"
+    del-cli: "npm:^6.0.0"
+    eslint: "npm:^9.35.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-prettier: "npm:^5.5.4"
+    jest: "npm:^29.7.0"
+    lefthook: "npm:^2.0.3"
+    merge-options: "npm:^3.0.4"
+    prettier: "npm:^2.8.8"
+    react: "npm:19.2.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
+    react-native-builder-bob: "npm:^0.40.17"
+    release-it: "npm:^19.0.4"
+    turbo: "npm:^2.5.6"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
   languageName: unknown
   linkType: soft
 
@@ -2885,7 +2952,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -2920,7 +2987,7 @@ __metadata:
     lefthook: "npm:^2.0.3"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.17"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
@@ -2954,7 +3021,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -2990,7 +3057,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -3000,6 +3067,21 @@ __metadata:
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.33.2
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-cloud-fs@workspace:native-modules/react-native-cloud-fs":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-cloud-fs@workspace:native-modules/react-native-cloud-fs"
+  dependencies:
+    "@react-native/babel-preset": "npm:0.83.0"
+    react: "npm:19.2.0"
+    react-native: "npm:0.83.0"
+    react-native-builder-bob: "npm:^0.40.17"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
   languageName: unknown
   linkType: soft
 
@@ -3026,7 +3108,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -3062,7 +3144,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -3072,6 +3154,39 @@ __metadata:
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.33.2
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-dns-lookup@workspace:native-modules/react-native-dns-lookup":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-dns-lookup@workspace:native-modules/react-native-dns-lookup"
+  dependencies:
+    "@commitlint/config-conventional": "npm:^19.8.1"
+    "@eslint/compat": "npm:^1.3.2"
+    "@eslint/eslintrc": "npm:^3.3.1"
+    "@eslint/js": "npm:^9.35.0"
+    "@react-native/babel-preset": "npm:0.83.0"
+    "@react-native/eslint-config": "npm:0.83.0"
+    "@release-it/conventional-changelog": "npm:^10.0.1"
+    "@types/jest": "npm:^29.5.14"
+    "@types/react": "npm:^19.2.0"
+    commitlint: "npm:^19.8.1"
+    del-cli: "npm:^6.0.0"
+    eslint: "npm:^9.35.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-prettier: "npm:^5.5.4"
+    jest: "npm:^29.7.0"
+    lefthook: "npm:^2.0.3"
+    prettier: "npm:^2.8.8"
+    react: "npm:19.2.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
+    react-native-builder-bob: "npm:^0.40.17"
+    release-it: "npm:^19.0.4"
+    turbo: "npm:^2.5.6"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
   languageName: unknown
   linkType: soft
 
@@ -3098,7 +3213,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -3134,7 +3249,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -3169,7 +3284,7 @@ __metadata:
     lefthook: "npm:^2.0.3"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
@@ -3203,7 +3318,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -3216,14 +3331,80 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@onekeyfe/react-native-network-info@workspace:native-modules/react-native-network-info":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-network-info@workspace:native-modules/react-native-network-info"
+  dependencies:
+    "@commitlint/config-conventional": "npm:^19.8.1"
+    "@eslint/compat": "npm:^1.3.2"
+    "@eslint/eslintrc": "npm:^3.3.1"
+    "@eslint/js": "npm:^9.35.0"
+    "@react-native/babel-preset": "npm:0.83.0"
+    "@react-native/eslint-config": "npm:0.83.0"
+    "@release-it/conventional-changelog": "npm:^10.0.1"
+    "@types/jest": "npm:^29.5.14"
+    "@types/react": "npm:^19.2.0"
+    commitlint: "npm:^19.8.1"
+    del-cli: "npm:^6.0.0"
+    eslint: "npm:^9.35.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-prettier: "npm:^5.5.4"
+    jest: "npm:^29.7.0"
+    lefthook: "npm:^2.0.3"
+    prettier: "npm:^2.8.8"
+    react: "npm:19.2.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
+    react-native-builder-bob: "npm:^0.40.17"
+    release-it: "npm:^19.0.4"
+    turbo: "npm:^2.5.6"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  languageName: unknown
+  linkType: soft
+
 "@onekeyfe/react-native-pager-view@workspace:*, @onekeyfe/react-native-pager-view@workspace:native-views/react-native-pager-view":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-pager-view@workspace:native-views/react-native-pager-view"
   dependencies:
     "@types/react": "npm:^19.2.0"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-pbkdf2@workspace:native-modules/react-native-pbkdf2":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-pbkdf2@workspace:native-modules/react-native-pbkdf2"
+  dependencies:
+    "@commitlint/config-conventional": "npm:^19.8.1"
+    "@eslint/compat": "npm:^1.3.2"
+    "@eslint/eslintrc": "npm:^3.3.1"
+    "@eslint/js": "npm:^9.35.0"
+    "@react-native/babel-preset": "npm:0.83.0"
+    "@react-native/eslint-config": "npm:0.83.0"
+    "@release-it/conventional-changelog": "npm:^10.0.1"
+    "@types/jest": "npm:^29.5.14"
+    "@types/react": "npm:^19.2.0"
+    commitlint: "npm:^19.8.1"
+    del-cli: "npm:^6.0.0"
+    eslint: "npm:^9.35.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-prettier: "npm:^5.5.4"
+    jest: "npm:^29.7.0"
+    lefthook: "npm:^2.0.3"
+    prettier: "npm:^2.8.8"
+    react: "npm:19.2.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
+    react-native-builder-bob: "npm:^0.40.17"
+    release-it: "npm:^19.0.4"
+    turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
@@ -3254,7 +3435,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -3267,6 +3448,21 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@onekeyfe/react-native-ping@workspace:native-modules/react-native-ping":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-ping@workspace:native-modules/react-native-ping"
+  dependencies:
+    "@react-native/babel-preset": "npm:0.83.0"
+    react: "npm:19.2.0"
+    react-native: "npm:0.83.0"
+    react-native-builder-bob: "npm:^0.40.17"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  languageName: unknown
+  linkType: soft
+
 "@onekeyfe/react-native-scroll-guard@workspace:*, @onekeyfe/react-native-scroll-guard@workspace:native-views/react-native-scroll-guard":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-scroll-guard@workspace:native-views/react-native-scroll-guard"
@@ -3275,7 +3471,7 @@ __metadata:
     del-cli: "npm:^6.0.0"
     nitrogen: "npm:0.31.10"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     typescript: "npm:^5.9.2"
@@ -3309,7 +3505,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -3345,7 +3541,7 @@ __metadata:
     nitrogen: "npm:0.31.10"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     react-native-nitro-modules: "npm:0.33.2"
     release-it: "npm:^19.0.4"
@@ -3358,6 +3554,39 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@onekeyfe/react-native-split-bundle-loader@workspace:native-modules/react-native-split-bundle-loader":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-split-bundle-loader@workspace:native-modules/react-native-split-bundle-loader"
+  dependencies:
+    "@commitlint/config-conventional": "npm:^19.8.1"
+    "@eslint/compat": "npm:^1.3.2"
+    "@eslint/eslintrc": "npm:^3.3.1"
+    "@eslint/js": "npm:^9.35.0"
+    "@react-native/babel-preset": "npm:0.83.0"
+    "@react-native/eslint-config": "npm:0.83.0"
+    "@release-it/conventional-changelog": "npm:^10.0.1"
+    "@types/jest": "npm:^29.5.14"
+    "@types/react": "npm:^19.2.0"
+    commitlint: "npm:^19.8.1"
+    del-cli: "npm:^6.0.0"
+    eslint: "npm:^9.35.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-prettier: "npm:^5.5.4"
+    jest: "npm:^29.7.0"
+    lefthook: "npm:^2.0.3"
+    prettier: "npm:^2.8.8"
+    react: "npm:19.2.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
+    react-native-builder-bob: "npm:^0.40.17"
+    release-it: "npm:^19.0.4"
+    turbo: "npm:^2.5.6"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  languageName: unknown
+  linkType: soft
+
 "@onekeyfe/react-native-tab-view@workspace:*, @onekeyfe/react-native-tab-view@workspace:native-views/react-native-tab-view":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-tab-view@workspace:native-views/react-native-tab-view"
@@ -3365,11 +3594,59 @@ __metadata:
     "@types/react": "npm:^19.2.0"
     react: "npm:19.2.0"
     react-freeze: "npm:^1.0.0"
-    react-native: "npm:0.83.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
     sf-symbols-typescript: "npm:^2.0.0"
     typescript: "npm:^5.9.2"
     use-latest-callback: "npm:^0.2.1"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-tcp-socket@workspace:native-modules/react-native-tcp-socket":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-tcp-socket@workspace:native-modules/react-native-tcp-socket"
+  dependencies:
+    "@commitlint/config-conventional": "npm:^19.8.1"
+    "@eslint/compat": "npm:^1.3.2"
+    "@eslint/eslintrc": "npm:^3.3.1"
+    "@eslint/js": "npm:^9.35.0"
+    "@react-native/babel-preset": "npm:0.83.0"
+    "@react-native/eslint-config": "npm:0.83.0"
+    "@release-it/conventional-changelog": "npm:^10.0.1"
+    "@types/jest": "npm:^29.5.14"
+    "@types/react": "npm:^19.2.0"
+    commitlint: "npm:^19.8.1"
+    del-cli: "npm:^6.0.0"
+    eslint: "npm:^9.35.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-prettier: "npm:^5.5.4"
+    jest: "npm:^29.7.0"
+    lefthook: "npm:^2.0.3"
+    prettier: "npm:^2.8.8"
+    react: "npm:19.2.0"
+    react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
+    react-native-builder-bob: "npm:^0.40.17"
+    release-it: "npm:^19.0.4"
+    turbo: "npm:^2.5.6"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-zip-archive@workspace:native-modules/react-native-zip-archive":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-zip-archive@workspace:native-modules/react-native-zip-archive"
+  dependencies:
+    "@react-native/babel-preset": "npm:0.83.0"
+    react: "npm:19.2.0"
+    react-native: "npm:0.83.0"
+    react-native-builder-bob: "npm:^0.40.17"
+    typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
@@ -8208,6 +8485,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"is-plain-obj@npm:^2.1.0":
+  version: 2.1.0
+  resolution: "is-plain-obj@npm:2.1.0"
+  checksum: 10/cec9100678b0a9fe0248a81743041ed990c2d4c99f893d935545cfbc42876cbe86d207f3b895700c690ad2fa520e568c44afc1605044b535a7820c1d40e38daa
+  languageName: node
+  linkType: hard
+
 "is-regex@npm:^1.2.1":
   version: 1.2.1
   resolution: "is-regex@npm:1.2.1"
@@ -9583,6 +9867,15 @@ __metadata:
   version: 13.2.0
   resolution: "meow@npm:13.2.0"
   checksum: 10/4eff5bc921fed0b8a471ad79069d741a0210036d717547d0c7f36fdaf84ef7a3036225f38b6a53830d84dc9cbf8b944b097fde62381b8b5b215119e735ce1063
+  languageName: node
+  linkType: hard
+
+"merge-options@npm:^3.0.4":
+  version: 3.0.4
+  resolution: "merge-options@npm:3.0.4"
+  dependencies:
+    is-plain-obj: "npm:^2.1.0"
+  checksum: 10/d86ddb3dd6e85d558dbf25dc944f3527b6bacb944db3fdda6e84a3f59c4e4b85231095f58b835758b9a57708342dee0f8de0dffa352974a48221487fe9f4584f
   languageName: node
   linkType: hard
 
@@ -11203,6 +11496,57 @@ __metadata:
   bin:
     react-native: cli.js
   checksum: 10/78454fa89c2f5c8794d8d04c099c6d5f43f569696b6e04afb927181bcdcc73646921e428bd29b32a79c94678d572ec00c5d3355e7a43fa94d58065eed4ba78f2
+  languageName: node
+  linkType: hard
+
+"react-native@patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch":
+  version: 0.83.0
+  resolution: "react-native@patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch::version=0.83.0&hash=f8560f"
+  dependencies:
+    "@jest/create-cache-key-function": "npm:^29.7.0"
+    "@react-native/assets-registry": "npm:0.83.0"
+    "@react-native/codegen": "npm:0.83.0"
+    "@react-native/community-cli-plugin": "npm:0.83.0"
+    "@react-native/gradle-plugin": "npm:0.83.0"
+    "@react-native/js-polyfills": "npm:0.83.0"
+    "@react-native/normalize-colors": "npm:0.83.0"
+    "@react-native/virtualized-lists": "npm:0.83.0"
+    abort-controller: "npm:^3.0.0"
+    anser: "npm:^1.4.9"
+    ansi-regex: "npm:^5.0.0"
+    babel-jest: "npm:^29.7.0"
+    babel-plugin-syntax-hermes-parser: "npm:0.32.0"
+    base64-js: "npm:^1.5.1"
+    commander: "npm:^12.0.0"
+    flow-enums-runtime: "npm:^0.0.6"
+    glob: "npm:^7.1.1"
+    hermes-compiler: "npm:0.14.0"
+    invariant: "npm:^2.2.4"
+    jest-environment-node: "npm:^29.7.0"
+    memoize-one: "npm:^5.0.0"
+    metro-runtime: "npm:^0.83.3"
+    metro-source-map: "npm:^0.83.3"
+    nullthrows: "npm:^1.1.1"
+    pretty-format: "npm:^29.7.0"
+    promise: "npm:^8.3.0"
+    react-devtools-core: "npm:^6.1.5"
+    react-refresh: "npm:^0.14.0"
+    regenerator-runtime: "npm:^0.13.2"
+    scheduler: "npm:0.27.0"
+    semver: "npm:^7.1.3"
+    stacktrace-parser: "npm:^0.1.10"
+    whatwg-fetch: "npm:^3.0.0"
+    ws: "npm:^7.5.10"
+    yargs: "npm:^17.6.2"
+  peerDependencies:
+    "@types/react": ^19.1.1
+    react: ^19.2.0
+  peerDependenciesMeta:
+    "@types/react":
+      optional: true
+  bin:
+    react-native: cli.js
+  checksum: 10/7cbda17babe8957971b509c9ef33af857c8f051d11f03c2636259752355ad64691b52f9af86efa854cf99dd19bf9bdb409ed239a91ed72b6909583ec996cb0d5
   languageName: node
   linkType: hard
 

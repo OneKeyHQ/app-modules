@@ -64,31 +64,43 @@ fpqe0vKYUlT092joT0o6nT2MzmLmHUW0kDqD9p6JEJEZUZpqcSRE84eMTFNyu966
 xy/rjN2SMJTFzkNXPkwXYrMYoahGez1oZfLzV6SQ0+blNc3aATt9aQW6uaCZtMw1
 ibcfWW9neHVpRtTlMYCoa2reGaBGCv0Nd8pMcyFUQkVaes5cQHkh3r5Dba+YrVvp
 l4P8HMbN8/LqAv7eBfj3ylPa/8eEPWVifcum2Y9TqherN1C2JDqWIpH4EsApek3k
-NMK6q0lPxXjZ3Pa5Ag0EYkBMbAEQAM1R4N3bBkwKkHeYwsQASevUkHwY4eg6Ncgp
-f9NbmJHcEioqXTIv0nHCQbos3P2NhXvDowj4JFkK/ZbpP9yo0p7TI4fckseVSWwI
-tiF9l/8OmXvYZMtw3hHcUUZVdJnk0xrqT6ni6hyRFIfbqous6/vpqi0GG7nB/+lU
-E5StGN8696ZWRyAX9MmwoRoods3ShNJP0+GCYHfIcG0XRhEDMJph+7mWPlkQUcza
-4aEjxOQ4Stwwp+ZL1rXSlyJIPk1S9/FIS/Uw5GgqFJXIf5n+SCVtUZ8lGedEWwe4
-wXsoPFxxOc2Gqw5r4TrJFdgA3MptYebXmb2LGMssXQTM1AQS2LdpnWw44+X1CHvQ
-0m4pEw/g2OgeoJPBurVUnu2mU/M+ARZiS4ceAR0pLZN7Yq48p1wr6EOBQdA3Usby
-uc17MORG/IjRmjz4SK/luQLXjN+0jwQSoM1kcIHoRk37B8feHjVufJDKlqtw83H1
-uNu6lGwb8MxDgTuuHloDijCDQsn6m7ZKU1qqLDGtdvCUY2ovzuOUS9vv6MAhR86J
-kqoU3sOBMeQhnBaTNKU0IjT4M+ERCWQ7MewlzXuPHgyb4xow1SKZny+f+fYXPy9+
-hx4/j5xaKrZKdq5zIo+GRGe4lA088l253nGeLgSnXsbSxqADqKK73d7BXLCVEZHx
-f4Sa5JN7ABEBAAGJAjwEGAEIACYWIQTraK5UTx/djNJkYk+zaaZ6kL84ewUCYkBM
-bAIbDAUJB4YfRAAKCRCzaaZ6kL84e0UGD/4mVWyGoQC86TyPoU4Pb5r8mynXWmiH
-ZGKu2ll8qn3l5Q67OophgbA1I0GTBFsYK2f91ahgs7FEsLrmz/25E8ybcdJipITE
-6869nyE1b37jVb3z3BJLYS/4MaNvugNz4VjMHWVAL52glXLN+SJBSNscmWZDKnVn
-Rnrn+kBEvOWZgLbi4MpPiNVwm2PGnrtPzudTcg/NS3HOcmJTfG3mrnwwNJybTVAx
-txlQPoXUpJQqJjtkPPW+CqosolpRdugQ5zpFSg05iL+vN+CMrVPkk85w87dtsidl
-yZl/ZNITrLzym9d2UFVQZY2rRohNdRfx3l4rfXJFLaqQtihRvBIiMKTbUb2V0pd3
-rVLz2Ck3gJqPfPEEmCWS0Nx6rME8m0sOkNyMau3dMUUAs4j2c3pOQmsZRjKo7LAc
-7/GahKFhZ2aBCQzvcTES+gPH1Z5HnivkcnUF2gnQV9x7UOr1Q/euKJsxPl5CCZtM
-N9GFW10cDxFo7cO5Ch+/BkkkfebuI/4Wa1SQTzawsxTx4eikKwcemgfDsyIqRs2W
-62PBrqCzs9Tg19l35sCdmvYsvMadrYFXukHXiUKEpwJMdTLAtjJ+AX84YLwuHi3+
-qZ5okRCqZH+QpSojSScT9H5ze4ZpuP0d8pKycxb8M2RfYdyOtT/eqsZ/1EQPg7kq
-P2Q5dClenjjjVA==
-=F0np
+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
+=HlTQ
 -----END PGP PUBLIC KEY BLOCK-----"""
 
 // Public static store for CustomReactNativeHost access (called before JS starts)
@@ -97,6 +109,12 @@ object BundleUpdateStoreAndroid {
     private const val PREFS_NAME = "BundleUpdatePrefs"
     internal const val NATIVE_VERSION_PREFS_NAME = "NativeVersionPrefs"
     private const val CURRENT_BUNDLE_VERSION_KEY = "currentBundleVersion"
+    private const val MAIN_JS_BUNDLE_FILE_NAME = "main.jsbundle.hbc"
+    private const val BACKGROUND_BUNDLE_FILE_NAME = "background.bundle"
+    private const val COMMON_BUNDLE_FILE_NAME = "common.bundle"
+    private const val METADATA_REQUIRES_BACKGROUND_BUNDLE_KEY = "requiresBackgroundBundle"
+    private const val METADATA_BACKGROUND_PROTOCOL_VERSION_KEY = "backgroundProtocolVersion"
+    private const val SUPPORTED_BACKGROUND_PROTOCOL_VERSION = "1"
 
     fun getDownloadBundleDir(context: Context): String {
         val dir = File(context.filesDir, "onekey-bundle-download")
@@ -401,6 +419,26 @@ object BundleUpdateStoreAndroid {
         return metadata
     }
 
+    private fun isReservedMetadataKey(key: String): Boolean {
+        return key == METADATA_REQUIRES_BACKGROUND_BUNDLE_KEY ||
+            key == METADATA_BACKGROUND_PROTOCOL_VERSION_KEY
+    }
+
+    private fun getFileMetadataEntries(metadata: Map<String, String>): Map<String, String> {
+        return metadata.filterKeys { key -> !isReservedMetadataKey(key) }
+    }
+
+    private fun metadataRequiresBackgroundBundle(metadata: Map<String, String>): Boolean {
+        return metadata[METADATA_REQUIRES_BACKGROUND_BUNDLE_KEY]
+            ?.lowercase()
+            ?.let { value -> value == "1" || value == "true" || value == "yes" }
+            ?: false
+    }
+
+    private fun metadataBackgroundProtocolVersion(metadata: Map<String, String>): String {
+        return metadata[METADATA_BACKGROUND_PROTOCOL_VERSION_KEY] ?: ""
+    }
+
     fun readMetadataFileSha256(signature: String?): String? {
         if (signature.isNullOrEmpty()) return null
 
@@ -534,11 +572,12 @@ object BundleUpdateStoreAndroid {
         val parentBundleDir = getBundleDir(context)
         val folderName = "$appVersion-$bundleVersion"
         val jsBundleDir = File(parentBundleDir, folderName).absolutePath + "/"
+        val fileEntries = getFileMetadataEntries(metadata)
 
-        if (!validateFilesRecursive(dir, metadata, jsBundleDir)) return false
+        if (!validateFilesRecursive(dir, fileEntries, jsBundleDir)) return false
 
         // Verify completeness
-        for (entry in metadata.entries) {
+        for (entry in fileEntries.entries) {
             val expectedFile = File(jsBundleDir + entry.key)
             if (!expectedFile.exists()) {
                 OneKeyLog.error("BundleUpdate", "[bundle-verify] File listed in metadata but missing on disk: ${entry.key}")
@@ -637,7 +676,48 @@ object BundleUpdateStoreAndroid {
         }
     }
 
-    fun getCurrentBundleMainJSBundle(context: Context): String? {
+    fun validateBundlePairCompatibility(bundleDir: String, metadata: Map<String, String>): Boolean {
+        val mainBundleFile = File(bundleDir, MAIN_JS_BUNDLE_FILE_NAME)
+        if (!mainBundleFile.exists()) {
+            OneKeyLog.error(
+                "BundleUpdate",
+                "bundle pair invalid: main.jsbundle.hbc is missing at ${mainBundleFile.absolutePath}",
+            )
+            return false
+        }
+
+        if (!metadataRequiresBackgroundBundle(metadata)) {
+            return true
+        }
+
+        val protocolVersion = metadataBackgroundProtocolVersion(metadata)
+        if (protocolVersion.isEmpty() || protocolVersion != SUPPORTED_BACKGROUND_PROTOCOL_VERSION) {
+            OneKeyLog.error(
+                "BundleUpdate",
+                "backgroundProtocolVersion mismatch: expected=$SUPPORTED_BACKGROUND_PROTOCOL_VERSION, actual=$protocolVersion",
+            )
+            return false
+        }
+
+        val backgroundBundleFile = File(bundleDir, BACKGROUND_BUNDLE_FILE_NAME)
+        if (!backgroundBundleFile.exists()) {
+            OneKeyLog.error(
+                "BundleUpdate",
+                "requiresBackgroundBundle is true but background.bundle is missing at ${backgroundBundleFile.absolutePath}",
+            )
+            return false
+        }
+
+        return true
+    }
+
+    private data class ValidatedBundleInfo(
+        val bundleDir: String,
+        val currentBundleVersion: String,
+        val metadata: Map<String, String>,
+    )
+
+    private fun getValidatedCurrentBundleInfo(context: Context): ValidatedBundleInfo? {
         processPreLaunchPendingTask(context)
         return try {
             val currentAppVersion = getAppVersion(context)
@@ -651,7 +731,7 @@ object BundleUpdateStoreAndroid {
             val prevNativeVersion = getNativeVersion(context)
             if (prevNativeVersion.isEmpty()) {
                 OneKeyLog.warn("BundleUpdate", "getJsBundlePath: prevNativeVersion is empty")
-                return ""
+                return null
             }
 
             if (currentAppVersion != prevNativeVersion) {
@@ -707,23 +787,46 @@ object BundleUpdateStoreAndroid {
                 }
             }
 
-            val mainJSBundleFile = File(bundleDir, "main.jsbundle.hbc")
-            val mainJSBundlePath = mainJSBundleFile.absolutePath
-            OneKeyLog.info("BundleUpdate", "mainJSBundlePath: $mainJSBundlePath")
-            if (!mainJSBundleFile.exists()) {
-                OneKeyLog.info("BundleUpdate", "mainJSBundleFile does not exist")
+            if (!validateBundlePairCompatibility(bundleDir, metadata)) {
                 return null
             }
-            mainJSBundlePath
+
+            ValidatedBundleInfo(
+                bundleDir = bundleDir,
+                currentBundleVersion = currentBundleVersion,
+                metadata = metadata,
+            )
         } catch (e: Exception) {
             OneKeyLog.error("BundleUpdate", "Error getting bundle: ${e.message}")
             null
         }
     }
 
+    fun getCurrentBundleEntryPath(context: Context, entryFileName: String): String? {
+        val bundleInfo = getValidatedCurrentBundleInfo(context) ?: return null
+        val entryFile = File(bundleInfo.bundleDir, entryFileName)
+        if (!entryFile.exists()) {
+            OneKeyLog.info("BundleUpdate", "$entryFileName does not exist")
+            return null
+        }
+        return entryFile.absolutePath
+    }
+
+    fun getCurrentBundleMainJSBundle(context: Context): String? {
+        return getCurrentBundleEntryPath(context, MAIN_JS_BUNDLE_FILE_NAME)
+    }
+
+    fun getCurrentBundleBackgroundJSBundle(context: Context): String? {
+        return getCurrentBundleEntryPath(context, BACKGROUND_BUNDLE_FILE_NAME)
+    }
+
+    fun getCurrentBundleCommonJSBundle(context: Context): String? {
+        return getCurrentBundleEntryPath(context, COMMON_BUNDLE_FILE_NAME)
+    }
+
     fun getWebEmbedPath(context: Context): String {
-        val currentBundleDir = getCurrentBundleDir(context, getCurrentBundleVersion(context)) ?: return ""
-        return File(currentBundleDir, "web-embed").absolutePath
+        val bundleInfo = getValidatedCurrentBundleInfo(context) ?: return ""
+        return File(bundleInfo.bundleDir, "web-embed").absolutePath
     }
 
     /**
@@ -1098,6 +1201,11 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     BundleUpdateStoreAndroid.deleteDir(destinationDir)
                     throw Exception("Extracted files verification against metadata failed")
                 }
+                if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(destination, metadata)) {
+                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: bundle pair compatibility check failed")
+                    BundleUpdateStoreAndroid.deleteDir(destinationDir)
+                    throw Exception("Bundle pair compatibility check failed")
+                }
 
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: all verifications passed, appVersion=$appVersion, bundleVersion=$bundleVersion")
             } catch (e: Exception) {
@@ -1366,6 +1474,22 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
+    override fun getBackgroundJsBundlePath(): String {
+        val context = NitroModules.applicationContext ?: return ""
+        val path = BundleUpdateStoreAndroid.getCurrentBundleBackgroundJSBundle(context) ?: ""
+        OneKeyLog.debug("BundleUpdate", "getBackgroundJsBundlePath: ${if (path.isEmpty()) "(empty/no bundle)" else path}")
+        return path
+    }
+
+    override fun getBackgroundJsBundlePathAsync(): Promise<String> {
+        return Promise.async {
+            val context = getContext()
+            val path = BundleUpdateStoreAndroid.getCurrentBundleBackgroundJSBundle(context) ?: ""
+            OneKeyLog.info("BundleUpdate", "getBackgroundJsBundlePathAsync: ${if (path.isEmpty()) "(empty/no bundle)" else path}")
+            path
+        }
+    }
+
     override fun getNativeAppVersion(): Promise<String> {
         return Promise.async {
             val context = getContext()
@@ -1479,6 +1603,10 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             if (!BundleUpdateStoreAndroid.validateAllFilesInDir(context, bundlePath.absolutePath, metadata, appVersion, bundleVersion)) {
                 OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: file integrity check failed")
                 throw Exception("File integrity check failed")
+            }
+            if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(bundlePath.absolutePath, metadata)) {
+                OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: bundle pair compatibility check failed")
+                throw Exception("Bundle pair compatibility check failed")
             }
             OneKeyLog.info("BundleUpdate", "verifyExtractedBundle: all files verified OK, fileCount=${metadata.size}")
         }

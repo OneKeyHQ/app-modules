@@ -8,6 +8,9 @@
 #include <memory>
 #include <mutex>
 
+#include "SharedStore.h"
+#include "SharedRPC.h"
+
 #import <React/RCTBridge.h>
 #import <React/RCTBundleURLProvider.h>
 
@@ -51,26 +54,75 @@ static void stubJsiFunction(jsi::Runtime &runtime, jsi::Object &object, const ch
           }));
 }
 
-static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &obj, const char *key)
+static void invokeOptionalGlobalFunction(jsi::Runtime &runtime, const char *name)
 {
-  if (!obj.hasProperty(rt, key)) {
-    return "";
+  try {
+    jsi::Value fnValue = runtime.global().getProperty(runtime, name);
+    if (!fnValue.isObject() || !fnValue.asObject(runtime).isFunction(runtime)) {
+      return;
+    }
+
+    jsi::Function fn = fnValue.asObject(runtime).asFunction(runtime);
+    fn.call(runtime);
+  } catch (const jsi::JSError &e) {
+    [BTLogger error:[NSString stringWithFormat:@"JSError calling global function %s: %s", name, e.getMessage().c_str()]];
+  } catch (const std::exception &e) {
+    [BTLogger error:[NSString stringWithFormat:@"Error calling global function %s: %s", name, e.what()]];
   }
-  jsi::Value value = obj.getProperty(rt, key);
-  return value.isString() ? value.getString(rt).utf8(rt) : "";
+}
+
+static NSURL *resolveMainBundleResourceURL(NSString *resourceName)
+{
+  if (resourceName.length == 0) {
+    return nil;
+  }
+
+  NSURL *directURL = [[NSBundle mainBundle] URLForResource:resourceName withExtension:nil];
+  if (directURL) {
+    return directURL;
+  }
+
+  NSString *normalizedName = [resourceName hasPrefix:@"/"]
+      ? resourceName.lastPathComponent
+      : resourceName;
+  NSString *extension = normalizedName.pathExtension;
+  NSString *baseName = normalizedName.stringByDeletingPathExtension;
+  if (baseName.length == 0) {
+    return nil;
+  }
+
+  return [[NSBundle mainBundle] URLForResource:baseName
+                                 withExtension:extension.length > 0 ? extension : nil];
+}
+
+static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
+{
+  if (jsBundleSourceNS.length == 0) {
+    return nil;
+  }
+
+  NSURL *parsedURL = [NSURL URLWithString:jsBundleSourceNS];
+  if (parsedURL.scheme.length > 0) {
+    if (parsedURL.isFileURL && parsedURL.path.length > 0) {
+      return [NSURL fileURLWithPath:parsedURL.path];
+    }
+    return parsedURL;
+  }
+
+  if ([jsBundleSourceNS hasPrefix:@"/"]) {
+    return [NSURL fileURLWithPath:jsBundleSourceNS];
+  }
+
+  return resolveMainBundleResourceURL(jsBundleSourceNS);
 }
 
 @interface BackgroundReactNativeDelegate () {
   RCTInstance *_rctInstance;
-  std::shared_ptr<jsi::Function> _onMessageSandbox;
   std::string _origin;
   std::string _jsBundleSource;
 }
 
 - (void)cleanupResources;
-
-- (jsi::Function)createPostMessageFunction:(jsi::Runtime &)runtime;
-- (jsi::Function)createSetOnMessageFunction:(jsi::Runtime &)runtime;
 - (void)setupErrorHandler:(jsi::Runtime &)runtime;
 
 @end
@@ -91,7 +143,6 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
 
 - (void)cleanupResources
 {
-  _onMessageSandbox.reset();
   _rctInstance = nil;
 }
 
@@ -119,58 +170,31 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
 
 - (NSURL *)bundleURL
 {
+  // When _jsBundleSource is set (dev mode or explicit override), use it as-is.
+  // This is a single full bundle (not split), so DON'T use common+entry strategy.
   if (!_jsBundleSource.empty()) {
     NSString *jsBundleSourceNS = [NSString stringWithUTF8String:_jsBundleSource.c_str()];
-    NSURL *url = [NSURL URLWithString:jsBundleSourceNS];
-    if (url && url.scheme) {
-      return url;
+    NSURL *resolvedURL = resolveBundleSourceURL(jsBundleSourceNS);
+    if (resolvedURL) {
+      return resolvedURL;
     }
 
-    if ([jsBundleSourceNS hasSuffix:@".jsbundle"]) {
-      return [[NSBundle mainBundle] URLForResource:jsBundleSourceNS withExtension:nil];
-    }
+    [BTLogger warn:[NSString stringWithFormat:@"Unable to resolve custom jsBundleSource=%@", jsBundleSourceNS]];
   }
 
-  return [[NSBundle mainBundle] URLForResource: @"background" withExtension: @"bundle"];
-}
-
-- (void)postMessage:(const std::string &)message
-{
-  if (!_onMessageSandbox || !_rctInstance) {
-    return;
+  // Default: load common bundle (shared polyfills + modules).
+  // The background entry bundle is loaded later in hostDidStart:.
+  NSURL *commonURL = resolveMainBundleResourceURL(@"common.jsbundle");
+  if (commonURL) {
+    return commonURL;
   }
-
-  [_rctInstance callFunctionOnBufferedRuntimeExecutor:[=](jsi::Runtime &runtime) {
-    try {
-      // Validate runtime before any JSI operations
-      runtime.global(); // Test if runtime is accessible
-
-      // Double-check the JSI function is still valid
-      if (!_onMessageSandbox) {
-        return;
-      }
-
-      jsi::Value parsedValue = runtime.global()
-                                   .getPropertyAsObject(runtime, "JSON")
-                                   .getPropertyAsFunction(runtime, "parse")
-                                   .call(runtime, jsi::String::createFromUtf8(runtime, message));
-
-      _onMessageSandbox->call(runtime, {std::move(parsedValue)});
-    } catch (const jsi::JSError &e) {
-      [BTLogger error:[NSString stringWithFormat:@"JSError during postMessage: %s", e.getMessage().c_str()]];
-    } catch (const std::exception &e) {
-      [BTLogger error:[NSString stringWithFormat:@"RuntimeError during postMessage: %s", e.what()]];
-    } catch (...) {
-      [BTLogger error:[NSString stringWithFormat:@"Runtime invalid during postMessage for sandbox %s", _origin.c_str()]];
-    }
-  }];
+  return [[NSBundle mainBundle] URLForResource:@"common" withExtension:@"jsbundle"];
 }
 
-- (bool)routeMessage:(const std::string &)message toSandbox:(const std::string &)targetId
+- (NSString *)resolveBackgroundEntryBundlePath
 {
-  // Sandbox routing is not yet implemented. Deny all cross-sandbox messages by default.
-  [BTLogger warn:@"routeMessage denied: sandbox routing not implemented"];
-  return false;
+  NSURL *url = resolveMainBundleResourceURL(@"background.bundle");
+  return url.path;
 }
 
 - (void)hostDidStart:(RCTHost *)host
@@ -178,11 +202,6 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
   if (!host) {
     return;
   }
-
-  // Safely clear any existing JSI function and instance before new runtime setup
-  // This prevents crash on reload when old function is tied to invalid runtime
-  _onMessageSandbox.reset();
-  _onMessageSandbox = nullptr;
 
   // Clear old instance reference before setting new one
   _rctInstance = nil;
@@ -194,11 +213,89 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
     return;
   }
 
+  // When _jsBundleSource is set, the bundle loaded in bundleURL was already
+  // a full single bundle (dev mode / explicit override), so skip entry loading.
+  BOOL isSplitBundle = _jsBundleSource.empty();
+
+  // Read the background entry bundle data before entering the executor block
+  // (only needed in split-bundle mode).
+  NSData *bgBundleData = nil;
+  NSString *bgBundleSourceURL = nil;
+  if (isSplitBundle) {
+    NSString *bgBundlePath = [self resolveBackgroundEntryBundlePath];
+    if (bgBundlePath) {
+      bgBundleData = [NSData dataWithContentsOfFile:bgBundlePath];
+      bgBundleSourceURL = bgBundlePath.lastPathComponent ?: @"background.bundle";
+      [BTLogger info:[NSString stringWithFormat:@"Background entry bundle loaded from %@ (%lu bytes)",
+                      bgBundlePath, (unsigned long)bgBundleData.length]];
+    } else {
+      [BTLogger warn:@"Background entry bundle not found, __setupBackgroundRPCHandler may not be defined"];
+    }
+  }
+
+  CFAbsoluteTime bgStartTime = CFAbsoluteTimeGetCurrent();
+
   [_rctInstance callFunctionOnBufferedRuntimeExecutor:[=](jsi::Runtime &runtime) {
-    facebook::react::defineReadOnlyGlobal(runtime, "postHostMessage", [self createPostMessageFunction:runtime]);
-    facebook::react::defineReadOnlyGlobal(runtime, "onHostMessage", [self createSetOnMessageFunction:runtime]);
     [self setupErrorHandler:runtime];
+
+    // Install SharedStore into background runtime
+    SharedStore::install(runtime);
+
+    // Install SharedRPC with executor for cross-runtime notifications
+    RCTInstance *bgInstance = _rctInstance;
+    RPCRuntimeExecutor bgExecutor = [bgInstance](std::function<void(jsi::Runtime &)> work) {
+        [bgInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
+            work(rt);
+        }];
+    };
+    SharedRPC::install(runtime, std::move(bgExecutor), "background");
+    [BTLogger info:@"SharedStore and SharedRPC installed in background runtime"];
+
+    // In split-bundle mode, evaluate the background entry bundle now.
+    // This must happen BEFORE invokeOptionalGlobalFunction since the entry
+    // bundle defines __setupBackgroundRPCHandler.
+    if (isSplitBundle && bgBundleData && bgBundleData.length > 0) {
+      CFAbsoluteTime bgEvalStart = CFAbsoluteTimeGetCurrent();
+      auto buffer = std::make_shared<jsi::StringBuffer>(
+        std::string(static_cast<const char *>(bgBundleData.bytes), bgBundleData.length));
+      runtime.evaluateJavaScript(std::move(buffer), [bgBundleSourceURL UTF8String]);
+      double bgEvalMs = (CFAbsoluteTimeGetCurrent() - bgEvalStart) * 1000.0;
+      [BTLogger info:[NSString stringWithFormat:@"[SplitBundle] bg entry evaluated in %.1fms", bgEvalMs]];
+    }
+
+    double bgTotalMs = (CFAbsoluteTimeGetCurrent() - bgStartTime) * 1000.0;
+    [BTLogger info:[NSString stringWithFormat:@"[SplitBundle] bg hostDidStart total setup in %.1fms", bgTotalMs]];
+
+    invokeOptionalGlobalFunction(runtime, "__setupBackgroundRPCHandler");
   }];
+}
+
+#pragma mark - Segment Registration (Phase 2.5 spike)
+
+- (BOOL)registerSegmentWithId:(NSNumber *)segmentId path:(NSString *)path
+{
+  if (!_rctInstance) {
+    [BTLogger error:@"Cannot register segment: background RCTInstance not available"];
+    return NO;
+  }
+
+  @try {
+    SEL sel = NSSelectorFromString(@"registerSegmentWithId:path:");
+    if ([_rctInstance respondsToSelector:sel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+      [_rctInstance performSelector:sel withObject:segmentId withObject:path];
+#pragma clang diagnostic pop
+      [BTLogger info:[NSString stringWithFormat:@"Segment registered in background runtime: id=%@, path=%@", segmentId, path]];
+      return YES;
+    } else {
+      [BTLogger error:@"RCTInstance does not respond to registerSegmentWithId:path:"];
+      return NO;
+    }
+  } @catch (NSException *exception) {
+    [BTLogger error:[NSString stringWithFormat:@"Failed to register segment: %@", exception.reason]];
+    return NO;
+  }
 }
 
 #pragma mark - RCTTurboModuleManagerDelegate
@@ -212,67 +309,6 @@ static std::string safeGetStringProperty(jsi::Runtime &rt, const jsi::Object &ob
                                                       jsInvoker:(std::shared_ptr<facebook::react::CallInvoker>)jsInvoker
 {
     return [super getTurboModule:name jsInvoker:jsInvoker];
-}
-
-- (jsi::Function)createPostMessageFunction:(jsi::Runtime &)runtime
-{
-  return jsi::Function::createFromHostFunction(
-      runtime,
-      jsi::PropNameID::forAscii(runtime, "postMessage"),
-      2, // Updated to accept up to 2 arguments
-      [=](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args, size_t count) {
-        // Validate runtime before any JSI operations
-        try {
-          rt.global(); // Test if runtime is accessible
-        } catch (...) {
-          return jsi::Value::undefined();
-        }
-
-        if (count < 1 || count > 2) {
-          throw jsi::JSError(rt, "Expected 1 or 2 arguments: postMessage(message, targetOrigin?)");
-        }
-
-        const jsi::Value &messageArg = args[0];
-        if (!messageArg.isString()) {
-          throw jsi::JSError(rt, "Expected an string as the first argument");
-        }
-//        jsi::Object jsonObject = rt.global().getPropertyAsObject(rt, "JSON");
-//        jsi::Function jsonStringify = jsonObject.getPropertyAsFunction(rt, "stringify");
-//        jsi::Value jsonResult = jsonStringify.call(rt, messageArg);
-        std::string messageJson = messageArg.getString(rt).utf8(rt);
-        NSString *messageNS = [NSString stringWithUTF8String:messageJson.c_str()];
-            dispatch_async(dispatch_get_main_queue(), ^{
-              if (self.onMessageCallback) {
-                self.onMessageCallback(messageNS);
-              }
-            });
-        return jsi::Value::undefined();
-      });
-}
-
-- (jsi::Function)createSetOnMessageFunction:(jsi::Runtime &)runtime
-{
-  return jsi::Function::createFromHostFunction(
-      runtime,
-      jsi::PropNameID::forAscii(runtime, "setOnMessage"),
-      1,
-      [=](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args, size_t count) {
-        if (count != 1) {
-          throw jsi::JSError(rt, "Expected exactly one argument");
-        }
-
-        const jsi::Value &arg = args[0];
-        if (!arg.isObject() || !arg.asObject(rt).isFunction(rt)) {
-          throw jsi::JSError(rt, "Expected a function as the first argument");
-        }
-
-        jsi::Function fn = arg.asObject(rt).asFunction(rt);
-
-        _onMessageSandbox.reset();
-        _onMessageSandbox = std::make_shared<jsi::Function>(std::move(fn));
-
-        return jsi::Value::undefined();
-      });
 }
 
 - (void)setupErrorHandler:(jsi::Runtime &)runtime

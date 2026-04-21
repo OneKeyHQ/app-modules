@@ -18,15 +18,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface BackgroundReactNativeDelegate : RCTDefaultReactNativeFactoryDelegate
 
-//@property (nonatomic) std::shared_ptr<const facebook::react::SandboxReactNativeViewEventEmitter> eventEmitter;
 @property (nonatomic, assign) BOOL hasOnMessageHandler;
 @property (nonatomic, assign) BOOL hasOnErrorHandler;
 
 @property (nonatomic, readwrite) std::string jsBundleSource;
 
 @property (nonatomic, readwrite) std::string origin;
-
-@property (nonatomic, copy) void (^onMessageCallback)(NSString *message);
 
 /**
  * Initializes the delegate.
@@ -35,18 +32,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)init;
 
 /**
- * Posts a message to the JavaScript runtime.
- * @param message C++ string containing the JSON.stringified message
+ * Register a HBC segment in the background runtime (Phase 2.5 spike).
+ * Uses RCTInstance's registerSegmentWithId:path: API.
+ * Must be called after hostDidStart: has completed.
  */
-- (void)postMessage:(const std::string &)message;
-
-/**
- * Routes a message to a specific sandbox delegate.
- * @param message The message to route
- * @param targetId The ID of the target sandbox
- * @return true if the message was successfully routed, false otherwise
- */
-- (bool)routeMessage:(const std::string &)message toSandbox:(const std::string &)targetId;
+- (BOOL)registerSegmentWithId:(NSNumber *)segmentId path:(NSString *)path;
 
 @end
 

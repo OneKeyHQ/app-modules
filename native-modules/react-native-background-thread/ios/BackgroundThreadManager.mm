@@ -15,12 +15,16 @@
 #import "BackgroundRunnerReactNativeDelegate.h"
 #import "BTLogger.h"
 
+#include "SharedStore.h"
+#include "SharedRPC.h"
+#import <ReactCommon/RCTHost.h>
+#import <objc/runtime.h>
+
 @interface BackgroundThreadManager ()
 @property (nonatomic, strong) BackgroundReactNativeDelegate *reactNativeFactoryDelegate;
 @property (nonatomic, strong) RCTReactNativeFactory *reactNativeFactory;
 @property (nonatomic, assign) BOOL hasListeners;
 @property (nonatomic, assign, readwrite) BOOL isStarted;
-@property (nonatomic, copy) void (^onMessageCallback)(NSString *message);
 @end
 
 @implementation BackgroundThreadManager
@@ -48,6 +52,37 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
     return self;
 }
 
+#pragma mark - SharedBridge
+
++ (void)installSharedBridgeInMainRuntime:(RCTHost *)host {
+    if (!host) {
+        [BTLogger error:@"Cannot install SharedBridge: RCTHost is nil"];
+        return;
+    }
+
+    Ivar ivar = class_getInstanceVariable([host class], "_instance");
+    id instance = object_getIvar(host, ivar);
+
+    if (!instance) {
+        [BTLogger error:@"Cannot install SharedBridge: RCTInstance is nil"];
+        return;
+    }
+
+    [instance callFunctionOnBufferedRuntimeExecutor:^(facebook::jsi::Runtime &runtime) {
+        SharedStore::install(runtime);
+
+        // Install SharedRPC with executor for cross-runtime notifications
+        id capturedInstance = instance;
+        RPCRuntimeExecutor mainExecutor = [capturedInstance](std::function<void(jsi::Runtime &)> work) {
+            [capturedInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
+                work(rt);
+            }];
+        };
+        SharedRPC::install(runtime, std::move(mainExecutor), "main");
+        [BTLogger info:@"SharedStore and SharedRPC installed in main runtime"];
+    }];
+}
+
 #pragma mark - Public Methods
 
 - (void)startBackgroundRunner {
@@ -71,39 +106,54 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         NSDictionary *launchOptions = @{};
         self.reactNativeFactoryDelegate = [[BackgroundReactNativeDelegate alloc] init];
         self.reactNativeFactory = [[RCTReactNativeFactory alloc] initWithDelegate:self.reactNativeFactoryDelegate];
-        
-        #if DEBUG
+
+        // Only set jsBundleSource for debug HTTP URLs or explicit OTA overrides.
+        // Leaving the default release name ("background.bundle") unset lets the
+        // delegate fall back to split-bundle mode (common.jsbundle + entry).
+        if (![entryURL isEqualToString:@"background.bundle"]) {
             [self.reactNativeFactoryDelegate setJsBundleSource:std::string([entryURL UTF8String])];
-        #endif
-        
+        }
+
         [self.reactNativeFactory.rootViewFactory viewWithModuleName:MODULE_NAME
                                                      initialProperties:initialProperties
                                                          launchOptions:launchOptions];
-        
-        __weak __typeof__(self) weakSelf = self;
-        [self.reactNativeFactoryDelegate setOnMessageCallback:^(NSString *message) {
-            if (weakSelf.onMessageCallback) {
-                weakSelf.onMessageCallback(message);
-            }
-        }];
     });
 }
 
-- (void)postBackgroundMessage:(NSString *)message {
-    if (self.reactNativeFactoryDelegate) {
-        [self.reactNativeFactoryDelegate postMessage:std::string([message UTF8String])];
-    }
-}
+#pragma mark - Segment Registration (Phase 2.5 spike)
 
-- (void)setOnMessageCallback:(void (^)(NSString *message))callback {
-    _onMessageCallback = callback;
-}
-
-- (BOOL)checkMessageCallback {
-    if (self.onMessageCallback) {
-        return YES;
+- (void)registerSegmentInBackground:(NSNumber *)segmentId
+                               path:(NSString *)path
+                         completion:(void (^)(NSError * _Nullable error))completion
+{
+    if (!self.isStarted || !self.reactNativeFactoryDelegate) {
+        NSError *error = [NSError errorWithDomain:@"BackgroundThread"
+                                             code:1
+                                         userInfo:@{NSLocalizedDescriptionKey: @"Background runtime not started"}];
+        if (completion) completion(error);
+        return;
     }
-    return NO;
+
+    // Verify the file exists
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        NSError *error = [NSError errorWithDomain:@"BackgroundThread"
+                                             code:2
+                                         userInfo:@{NSLocalizedDescriptionKey:
+                                                        [NSString stringWithFormat:@"Segment file not found: %@", path]}];
+        if (completion) completion(error);
+        return;
+    }
+
+    BOOL success = [self.reactNativeFactoryDelegate registerSegmentWithId:segmentId path:path];
+    if (success) {
+        if (completion) completion(nil);
+    } else {
+        NSError *error = [NSError errorWithDomain:@"BackgroundThread"
+                                             code:3
+                                         userInfo:@{NSLocalizedDescriptionKey:
+                                                        @"Failed to register segment in background runtime"}];
+        if (completion) completion(error);
+    }
 }
 
 @end

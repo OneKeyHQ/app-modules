@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-device-utils",
-  "version": "1.1.46",
+  "version": "3.0.19",
   "description": "react-native-device-utils",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -31,7 +31,8 @@
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
-    "!**/.*"
+    "!**/.*",
+    "!**/*.map"
   ],
   "scripts": {
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
@@ -80,7 +81,7 @@
     "nitrogen": "0.31.10",
     "prettier": "^2.8.8",
     "react": "19.2.0",
-    "react-native": "0.83.0",
+    "react-native": "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch",
     "react-native-builder-bob": "^0.40.13",
     "react-native-nitro-modules": "0.33.2",
     "release-it": "^19.0.4",

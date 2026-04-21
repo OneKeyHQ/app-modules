@@ -2,6 +2,213 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.19] - 2026-04-21
+
+### Bug Fixes
+- **split-bundle-loader (iOS)**: Fix all segment loads silently returning "not found" after iOS path canonicalization. `[NSBundle resourcePath]` returns paths rooted at `/var/...` but iOS transparently resolves them to `/private/var/...`; the `hasPrefix` safety check therefore rejected every candidate. Apply `stringByStandardizingPath` to both `otaRoot` and `builtinRoot` so the comparison is apples-to-apples, and add diagnostic logs for each resolution attempt.
+- **split-bundle-loader (Android)**: Fix post-upgrade crashes where an APK overwrite install (`adb install -r`, Play Store update, sideload) reused the previous build's extracted HBC segments even though Metro module IDs had drifted. Now wipe `onekey-builtin-segments/` whenever `PackageInfo.lastUpdateTime` changes, gated by double-checked locking so the wipe runs at most once per process. Called from every segment entry point (`getRuntimeBundleContext`, `resolveSegmentPath`, `loadSegment`, `extractBuiltinSegmentIfNeeded`).
+- **split-bundle-loader (Android, New Architecture)**: Fix segment registration failing with "Neither CatalystInstance nor ReactHost available" on bridgeless. The old code required `hasCatalystInstance()` with a fragile reflection fallback; now uses `ReactContext.registerSegment(id, path, callback)` which RN routes correctly in both bridge and bridgeless modes.
+- **background-thread (Android)**: Fix TurboModules on the background ReactHost never observing Activity state — `getCurrentActivity()` returned null, and `ActivityEventListener.onActivityResult` / `onNewIntent` / `LifecycleEventListener.onHostResume|Pause|Destroy` were never fired. Modules that depend on Activity context (file pickers, intent launchers, keyboard observers, etc.) silently no-op'd on the bg host. Add a reflection-based, allowlist-gated Activity bridge that replays the most recent Activity onto the bg ReactContext and forwards lifecycle / Activity-result events **only** to listeners whose class FQCN matches an entry registered via `BackgroundThreadManager.addBgActivityBridgeListenerClassPrefix(...)`. Non-allowlisted modules keep the pre-existing "never-resumed on bg" baseline, so no double resource registration or `requestCode` collisions with the UI host.
+- **background-thread (Android, New Architecture)**: Fix `registerSegmentInBackground` throwing "Background CatalystInstance not available" in bridgeless mode. Now dispatches via `ReactContext.registerSegment(id, path, callback)` so bridge and bridgeless both work through a single code path.
+- **background-thread**: Fix SIGSEGV on reload / teardown. The timer worker was started detached, so `nativeDestroy` could tear down `gTimers` / `gBgTimerExecutor` while the worker was mid-dispatch, and any pending `jsi::Function` callbacks in `gTimers` / `gPendingWork` were destroyed against the already-torn-down runtime (same failure mode as the original `SharedRPC::reset` crash). Now make the worker joinable, read the executor under the mutex, and in `nativeDestroy` stop + join the worker before clearing shared state; intentionally leak remaining `jsi::Function` / `std::function<void(jsi::Runtime&)>` captures so their destructors don't run on a dead runtime.
+- **background-thread (iOS)**: Fix bg host failing to start in release builds that use split bundles. The delegate's default `entryURL` is the placeholder string `"background.bundle"`; passing that through `setJsBundleSource` prevented the delegate from taking its split-bundle fallback path (common.jsbundle + entry.jsbundle). Skip the override when `entryURL` is the placeholder.
+- **cloud-fs (Android)**: Fix caller-provided `mimeType` being silently discarded by `saveFile`. The previous ternary was inverted — when the caller supplied an explicit MIME type, `actualMimeType` was set to `null` and `guessMimeType` was **only** consulted when the caller passed null. Collapse to `mimeType ?: guessMimeType(uriOrPath)` so caller input wins and guessing is the fallback.
+
+### Features
+- **background-thread**: New public API on `BackgroundThreadManager` for the Activity-bridge allowlist: `addBgActivityBridgeListenerClassPrefix(prefix)`, `setBgActivityBridgeListenerClassAllowlist(prefixes)`, `getBgActivityBridgeListenerClassAllowlist()`. The module ships an empty default — host apps must register FQCN prefixes early in `Application.onCreate` before the first Activity lifecycle callback fires.
+- **split-bundle-loader**: Diagnostic logging on Android (`[resolveSeg]`, `[extractBuiltin]`, `[install-stamp]`) and iOS (`[resolveAbs]`) for triaging "segment not found" reports in production.
+
+### Chores
+- Inline former `app-monorepo/patches/@onekeyfe+react-native-background-thread+3.0.18.patch` and `@onekeyfe+react-native-split-bundle-loader+3.0.18.patch` directly into source; consumers no longer need `patch-package`.
+- Bump all packages to 3.0.19.
+
+## [3.0.18] - 2026-04-10
+
+### Features
+- **background-thread**: Drain the Hermes microtask queue after every `nativeExecuteWork` so `Promise.then` / `async-await` continuations actually run on the background runtime (RN 0.74+ requires explicit `drainMicrotasks()` — without it, all awaits hang in bg).
+- **background-thread**: Add cross-runtime timer primitives in `cpp-adapter.cpp` (timer worker thread, pending work queue, JSI-safe scheduling) underpinning split-bundle + bg-host `setTimeout`/`Promise` behaviour.
+
+### Chores
+- Bump all packages to 3.0.18.
+
+## [3.0.17] - 2026-04-10
+
+### Bug Fixes
+- **tcp-socket / zip-archive / network-info / ping / async-storage / cloud-fs / dns-lookup**: Align Android TurboModule class names with their TS spec filenames so codegen resolves the native modules correctly.
+
+### Chores
+- Bump all packages to 3.0.17.
+
+## [3.0.16] - 2026-04-10
+
+### Bug Fixes
+- **async-storage (Android)**: Correct codegen class name in `RNCAsyncStorageModule.kt`.
+
+### Chores
+- Bump all packages to 3.0.16.
+
+## [3.0.15] - 2026-04-09
+
+### Features
+- **cloud-fs**: Align types and native implementations with the upstream source repo — replace `Object` params with proper TS types across the Spec, port `DriveServiceHelper` and the full `RNCloudFsModule` from Java to a Kotlin TurboModule, add Android Google Drive methods (`loginIfNeeded`, `logout`, `getGoogleDriveDocument`, `getCurrentlySignedInUserData`), add iOS stubs for Android-only methods, fix iOS `syncCloud` to return a boolean, re-add `createFile` to the Spec, and wire the Google Drive dependencies into Android `build.gradle`.
+
+### Bug Fixes
+- **async-storage (web)**: Resolve web type errors by adding `DOM` lib to tsconfig and declaring types for `merge-options`.
+
+### Chores
+- Patch bump workspaces and fix async-storage module files.
+- Bump all packages to 3.0.15.
+
+## [3.0.13] - 2026-04-08
+
+### Features
+- **async-storage**: Add web implementation (`NativeAsyncStorage`) backed by `localStorage`.
+
+### Chores
+- Bump all packages to 3.0.13.
+
+## [3.0.11] - 2026-04-03
+
+### Features
+- **async-storage**: Add `AsyncStorageStatic` compatibility layer for legacy call sites.
+
+### Bug Fixes
+- **ping / pbkdf2 / network-info**: Fix compilation errors.
+- **aes-crypto**: Sync patch changes — use Hex encoding for all I/O.
+- **dns-lookup (iOS)**: Add `CFDataRef` cast in `DnsLookup.mm` to fix compilation.
+- Align Android implementations with upstream originals.
+- iOS compilation fixes verified with local build.
+
+### Chores
+- `gitignore` the `lib/` build output and exclude `.map` files from npm publish.
+- Bump all packages through 3.0.11.
+
+## [3.0.4] - 2026-04-03
+
+### Bug Fixes
+- **split-bundle-loader**: Fix stale reflection class name for `BundleUpdateStore` in Android `getOtaBundlePath()` — updated from `expo.modules.onekeybundleupdate.BundleUpdateStore` to `com.margelo.nitro.reactnativebundleupdate.BundleUpdateStoreAndroid`
+- **native-logger**: Fix dedup logic suppressing error logs — comparison now includes level, tag, and message instead of message-only
+- **background-thread**: Fix JNI GlobalRef leak on each `nativeInstallSharedBridge` call — wrap in `shared_ptr` with custom deleter
+- **background-thread**: Fix `SharedRPC::reset()` crash from destroying `jsi::Function` on wrong thread — use intentional leak pattern
+- **background-thread**: Fix `nativeDestroy` not resetting `SharedStore`, leaving stale data across restarts
+- Correct codegen class names to match TS spec file names
+
+### Chores
+- Align all package versions to 3.x line (cloud-fs cannot use 1.x since npm already has 2.6.5)
+- Bump all packages to 3.0.4
+
+## [1.1.59] - 2026-04-03
+
+### Bug Fixes
+- **tcp-socket**: Correct header import to match codegenConfig name
+
+### Chores
+- Bump all packages to 1.1.59
+
+## [1.1.58] - 2026-04-03
+
+### Bug Fixes
+- **cloud-fs**: Set version to 3.0.0 (npm already has 2.6.5, cannot publish lower)
+
+### Chores
+- Bump all packages to 1.1.58
+
+## [1.1.57] - 2026-04-03
+
+### Bug Fixes
+- Add missing release scripts for cloud-fs, ping, zip-archive
+
+### Chores
+- Bump all packages to 1.1.57
+
+## [1.1.56] - 2026-04-03
+
+### Features
+- **aes-crypto / async-storage / cloud-fs / dns-lookup / network-info / ping / tcp-socket / zip-archive**: Add Android TurboModule implementations for legacy bridge module replacements
+- **tcp-socket**: Fix type definitions
+
+### Chores
+- Bump all packages to 1.1.56
+
+## [1.1.55] - 2026-04-03
+
+### Features
+- **aes-crypto / async-storage / cloud-fs / dns-lookup / network-info / ping / tcp-socket / zip-archive**: Add TurboModule replacements for legacy React Native bridge modules (iOS + JS)
+
+### Chores
+- Bump all packages to 1.1.55
+
+## [1.1.54] - 2026-04-02
+
+### Chores
+- Bump all packages to 1.1.54
+
+## [1.1.53] - 2026-04-02
+
+### Features
+- **split-bundle-loader**: Add split-bundle timing instrumentation and update PGP public key
+- **split-bundle-loader**: Add comprehensive timing logs for three-bundle split verification
+
+### Chores
+- Bump all packages to 1.1.53
+
+## [1.1.52] - 2026-04-02
+
+### Features
+- **background-thread**: Add split-bundle common+entry loading strategy for background runtime
+
+### Chores
+- Bump all packages to 1.1.52
+
+## [1.1.51] - 2026-04-01
+
+### Features
+- **split-bundle-loader**: Add `resolveSegmentPath` API and path traversal protection
+
+### Bug Fixes
+- **split-bundle-loader**: Resolve Android `registerSegmentInBackground` race condition
+- **split-bundle-loader**: Enhance bridgeless support and robustness improvements
+
+### Chores
+- Bump all packages to 1.1.51
+
+## [1.1.49] - 2026-04-01
+
+### Features
+- **split-bundle-loader**: Add `react-native-split-bundle-loader` TurboModule with `getRuntimeBundleContext` and `loadSegment` APIs
+- **split-bundle-loader**: Expose `loadSegmentInBackground` from TurboModule API
+- **bundle-update**: Add `registerSegmentInBackground` for late HBC segment loading
+
+### Chores
+- Bump all packages to 1.1.49
+
+## [1.1.48] - 2026-03-31
+
+### Features
+- **bundle-update**: Support background bundle pair bootstrap — add `getBackgroundJsBundlePath`, metadata validation for `requiresBackgroundBundle` and `backgroundProtocolVersion`, and bundle pair compatibility checks
+
+### Chores
+- Bump all packages to 1.1.48
+
+## [1.1.47] - 2026-03-31
+
+### Features
+- **background-thread**: Add SharedBridge JSI HostObject for cross-runtime data transfer between main and background JS runtimes
+- **background-thread**: Implement Android background runtime with second ReactHost and SharedBridge
+- **background-thread**: Replace SharedBridge with SharedStore + SharedRPC architecture
+- **background-thread**: Add onWrite cross-runtime notification, remove legacy messaging
+- **native-logger**: Add dedup for identical consecutive log messages
+
+### Bug Fixes
+- **background-thread**: Stabilize background thread runtime initialization
+- **background-thread**: Initialize Android shared bridge at app startup
+- **shared-rpc**: Rename `RuntimeExecutor` to `RPCRuntimeExecutor` to avoid React Native conflict
+- **shared-rpc**: Prevent crash on JS reload by deduplicating listeners with runtimeId
+- **shared-rpc**: Leak stale `jsi::Function` callback on reload to prevent crash
+
+### Chores
+- Bump all packages to 1.1.47
+
 ## [1.1.46] - 2026-03-19
 
 ### Bug Fixes
