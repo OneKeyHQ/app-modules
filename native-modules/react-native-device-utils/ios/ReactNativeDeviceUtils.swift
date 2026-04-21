@@ -236,4 +236,28 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         }
         return Promise.resolved(withResult: action)
     }
+
+    // MARK: - Android Channel & Installer
+
+    func getAndroidChannel() throws -> AndroidChannel {
+        // iOS has no ANDROID_CHANNEL concept; signal with `.unknown` for API parity.
+        return .unknown
+    }
+
+    func getInstallerPackageName() throws -> InstallerPackageName {
+        // Mirror react-native-device-info: distinguish AppStore / TestFlight / Other
+        // via receipt path and embedded mobileprovision. Simulator has neither.
+        #if targetEnvironment(simulator)
+        return .unknown
+        #else
+        let hasEmbeddedProvision = Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") != nil
+        if let receiptUrl = Bundle.main.appStoreReceiptURL {
+            if receiptUrl.lastPathComponent == "sandboxReceipt" {
+                return hasEmbeddedProvision ? .other : .testflight
+            }
+            return hasEmbeddedProvision ? .other : .appstore
+        }
+        return hasEmbeddedProvision ? .other : .unknown
+        #endif
+    }
 }
