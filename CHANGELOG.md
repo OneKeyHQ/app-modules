@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.20] - 2026-04-21
+
+### Features
+- **device-utils**: Add synchronous `getAndroidChannel()` and `getInstallerPackageName()` Nitro HostObject methods. Both return closed string-union types (compiled to native enums) rather than open-ended strings so JS callers get a fixed set at the type level — `AndroidChannel`: `direct` / `google` / `huawei` / `unknown`; `InstallerPackageName`: `appStore` / `testFlight` / `other` / `playStore` / `huaweiAppGallery` / `unknown`.
+- **device-utils (Android)**: `getAndroidChannel()` reflects the host app's `BuildConfig.ANDROID_CHANNEL` with a candidate-package walk (original `packageName`, its parent packages, and the Application class's package hierarchy) so the lookup stays correct under `applicationIdSuffix` or a sub-packaged Application class. All fallback paths return `direct` to match the gradle default; only a successfully-read but unrecognized string maps to `unknown`. Ships `consumer-rules.pro` with a `-keep class **.BuildConfig { ANDROID_CHANNEL }` rule so R8/minify in the consumer app cannot strip or rename the reflected class/field.
+- **device-utils (Android)**: `getInstallerPackageName()` uses `PackageManager.getInstallSourceInfo()` on API 30+ (and the deprecated `getInstallerPackageName()` below), mapping `com.android.vending` → `playStore`, `com.huawei.appmarket` → `huaweiAppGallery`, any other non-null installer → `other`, and null/empty → `unknown`.
+- **device-utils (iOS)**: `getInstallerPackageName()` distinguishes AppStore / TestFlight / Other using `Bundle.main.appStoreReceiptURL.lastPathComponent == "sandboxReceipt"` + the presence of `embedded.mobileprovision`, aligned with `react-native-device-info`'s contract; simulator returns `unknown`. `getAndroidChannel()` returns `unknown` on iOS for API parity.
+
+### Chores
+- Bump all packages to 3.0.20.
+
 ## [3.0.19] - 2026-04-21
 
 ### Bug Fixes
