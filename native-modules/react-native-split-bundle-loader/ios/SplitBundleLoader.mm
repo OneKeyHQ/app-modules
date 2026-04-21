@@ -130,22 +130,32 @@
     // 1. Try OTA bundle root first
     NSString *otaPath = [SplitBundleLoader otaBundlePath];
     if (otaPath) {
-        NSString *otaRoot = [otaPath stringByDeletingLastPathComponent];
+        // Standardize root so hasPrefix matches candidate (iOS resolves /private/var → /var).
+        NSString *otaRoot = [[otaPath stringByDeletingLastPathComponent] stringByStandardizingPath];
         NSString *candidate = [[otaRoot stringByAppendingPathComponent:relativePath] stringByStandardizingPath];
-        if ([candidate hasPrefix:otaRoot] &&
-            [[NSFileManager defaultManager] fileExistsAtPath:candidate]) {
+        BOOL otaPrefixOk = [candidate hasPrefix:otaRoot];
+        BOOL otaExists = [[NSFileManager defaultManager] fileExistsAtPath:candidate];
+        [SBLLogger info:[NSString stringWithFormat:@"[resolveAbs] rel=%@ ota root=%@ cand=%@ prefixOk=%d exists=%d",
+                         relativePath, otaRoot, candidate, otaPrefixOk, otaExists]];
+        if (otaPrefixOk && otaExists) {
             return candidate;
         }
+    } else {
+        [SBLLogger info:[NSString stringWithFormat:@"[resolveAbs] rel=%@ otaPath=(nil) — skipping OTA", relativePath]];
     }
 
     // 2. Fallback to builtin resource path
-    NSString *builtinRoot = [[NSBundle mainBundle] resourcePath];
+    NSString *builtinRoot = [[[NSBundle mainBundle] resourcePath] stringByStandardizingPath];
     NSString *candidate = [[builtinRoot stringByAppendingPathComponent:relativePath] stringByStandardizingPath];
-    if ([candidate hasPrefix:builtinRoot] &&
-        [[NSFileManager defaultManager] fileExistsAtPath:candidate]) {
+    BOOL builtinPrefixOk = [candidate hasPrefix:builtinRoot];
+    BOOL builtinExists = [[NSFileManager defaultManager] fileExistsAtPath:candidate];
+    [SBLLogger info:[NSString stringWithFormat:@"[resolveAbs] rel=%@ builtin root=%@ cand=%@ prefixOk=%d exists=%d",
+                     relativePath, builtinRoot, candidate, builtinPrefixOk, builtinExists]];
+    if (builtinPrefixOk && builtinExists) {
         return candidate;
     }
 
+    [SBLLogger warn:[NSString stringWithFormat:@"[resolveAbs] rel=%@ → nil (not found in OTA nor builtin)", relativePath]];
     return nil;
 }
 
