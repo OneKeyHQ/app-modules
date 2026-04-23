@@ -102,10 +102,35 @@ public class BundleUpdateStore: NSObject {
     )?
     private static let cachedValidatedBundleInfoLock = NSLock()
 
+    // Lazy per-version cache for the web-embed subtree. getWebEmbedPath is
+    // called every time a WebView is created, but the subtree contents are
+    // immutable for a given currentBundleVersion. Stores the version that
+    // most recently passed full sha256 sweep over web-embed/**; invalidated
+    // alongside cachedValidatedBundleInfo on any bundle mutation.
+    private static var cachedWebEmbedVerifiedVersion: String?
+    private static let cachedWebEmbedVerifiedVersionLock = NSLock()
+
     public static func invalidateValidatedBundleInfoCache() {
         cachedValidatedBundleInfoLock.lock()
         cachedValidatedBundleInfo = nil
         cachedValidatedBundleInfoLock.unlock()
+        cachedWebEmbedVerifiedVersionLock.lock()
+        cachedWebEmbedVerifiedVersion = nil
+        cachedWebEmbedVerifiedVersionLock.unlock()
+    }
+
+    /// True when the current bundle's metadata declares the three-bundle /
+    /// split-thread layout (or explicitly opts in via requiresCommonBundle).
+    /// SplitBundleLoader queries this reflectively to decide whether an empty
+    /// per-segment sha256 is a back-compat skip (older formats) or a hard
+    /// fail (three-bundle, which always ships per-segment hashes).
+    public static func currentBundleRequiresPerSegmentHash() -> Bool {
+        guard let info = validatedCurrentBundleInfo() else { return false }
+        if metadataBoolValue(info.metadata, key: metadataRequiresCommonBundleKey) {
+            return true
+        }
+        let format = metadataStringValue(info.metadata, key: metadataBundleFormatKey) ?? ""
+        return format == "three-bundle"
     }
 
     public static func documentDirectory() -> String {
@@ -187,7 +212,103 @@ public class BundleUpdateStore: NSObject {
 
     public static func getWebEmbedPath() -> String {
         guard let bundleInfo = validatedCurrentBundleInfo() else { return "" }
+        // Lazy full-tree sha256 sweep for web-embed/**. The startup hot path
+        // only validates the JS entry bundles (validateEntryBundlesSha256), so
+        // without this, a tampered web-embed asset would slip through. Result
+        // is cached per currentBundleVersion and invalidated on any bundle
+        // mutation, so cost is paid once per (re)install.
+        if !ensureWebEmbedVerified(
+            bundleDirPath: bundleInfo.bundleDirPath,
+            currentBundleVersion: bundleInfo.currentBundleVersion,
+            metadata: bundleInfo.metadata,
+        ) {
+            return ""
+        }
         return (bundleInfo.bundleDirPath as NSString).appendingPathComponent("web-embed")
+    }
+
+    private static func ensureWebEmbedVerified(
+        bundleDirPath: String,
+        currentBundleVersion: String,
+        metadata: [String: Any],
+    ) -> Bool {
+        cachedWebEmbedVerifiedVersionLock.lock()
+        if cachedWebEmbedVerifiedVersion == currentBundleVersion {
+            cachedWebEmbedVerifiedVersionLock.unlock()
+            return true
+        }
+        cachedWebEmbedVerifiedVersionLock.unlock()
+
+        if !validateWebEmbedSha256(bundleDirPath: bundleDirPath, metadata: metadata) {
+            OneKeyLog.error("BundleUpdate", "validateWebEmbedSha256 failed for \(currentBundleVersion)")
+            return false
+        }
+
+        cachedWebEmbedVerifiedVersionLock.lock()
+        cachedWebEmbedVerifiedVersion = currentBundleVersion
+        cachedWebEmbedVerifiedVersionLock.unlock()
+        return true
+    }
+
+    /// Walks bundleDirPath/web-embed/** and verifies every file's sha256
+    /// against the metadata entry (key is the bundle-relative path). Also
+    /// rejects files on disk that aren't listed in metadata, and metadata
+    /// entries whose backing file is missing. Returns true when web-embed
+    /// is absent from both disk and metadata (bundles without web-embed).
+    static func validateWebEmbedSha256(
+        bundleDirPath: String,
+        metadata: [String: Any],
+    ) -> Bool {
+        let fm = FileManager.default
+        let webEmbedDir = (bundleDirPath as NSString).appendingPathComponent("web-embed")
+        let allEntries = fileMetadataEntries(from: metadata)
+        let webEmbedEntries = allEntries.filter { $0.key.hasPrefix("web-embed/") }
+
+        var dirExists: ObjCBool = false
+        let dirPresent = fm.fileExists(atPath: webEmbedDir, isDirectory: &dirExists) && dirExists.boolValue
+        if !dirPresent {
+            // No web-embed in this bundle is fine, as long as metadata agrees.
+            if !webEmbedEntries.isEmpty {
+                OneKeyLog.error("BundleUpdate", "[web-embed-verify] metadata lists web-embed entries but directory is missing")
+                return false
+            }
+            return true
+        }
+
+        let bundleDirWithSlash = bundleDirPath.hasSuffix("/") ? bundleDirPath : bundleDirPath + "/"
+        guard let enumerator = fm.enumerator(atPath: webEmbedDir) else {
+            OneKeyLog.error("BundleUpdate", "[web-embed-verify] failed to enumerate web-embed directory")
+            return false
+        }
+        while let entry = enumerator.nextObject() as? String {
+            let fullPath = (webEmbedDir as NSString).appendingPathComponent(entry)
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue { continue }
+            if entry.hasSuffix(".DS_Store") { continue }
+
+            let relativePath = fullPath.replacingOccurrences(of: bundleDirWithSlash, with: "")
+            guard let expected = webEmbedEntries[relativePath], !expected.isEmpty else {
+                OneKeyLog.error("BundleUpdate", "[web-embed-verify] file on disk not in metadata: \(relativePath)")
+                return false
+            }
+            guard let actual = calculateSHA256(fullPath) else {
+                OneKeyLog.error("BundleUpdate", "[web-embed-verify] failed to hash file: \(relativePath)")
+                return false
+            }
+            if !expected.secureCompare(actual) {
+                OneKeyLog.error("BundleUpdate", "[web-embed-verify] sha256 mismatch for \(relativePath)")
+                return false
+            }
+        }
+
+        for key in webEmbedEntries.keys {
+            let expectedFilePath = bundleDirWithSlash + key
+            if !fm.fileExists(atPath: expectedFilePath) {
+                OneKeyLog.error("BundleUpdate", "[web-embed-verify] file listed in metadata but missing on disk: \(key)")
+                return false
+            }
+        }
+        return true
     }
 
     public static func calculateSHA256(_ filePath: String) -> String? {
@@ -1334,6 +1455,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     func installBundle(params: BundleInstallParams) throws -> Promise<Void> {
+        BundleUpdateStore.invalidateValidatedBundleInfoCache()
         return Promise.async {
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion

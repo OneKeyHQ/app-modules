@@ -428,12 +428,53 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
     }
 
     /**
+     * Reflectively asks bundle-update whether the current bundle's manifest
+     * is required to ship per-segment SHA-256s (three-bundle / split-thread
+     * format). When this returns true, an empty [expected] in [verifySha256]
+     * is treated as a hard fail instead of the back-compat skip.
+     *
+     * Returns false (back-compat allowed) if the symbol is absent — older
+     * bundle-update versions don't expose this and we don't want to wedge
+     * the loader on an upgrade race.
+     */
+    private fun currentBundleRequiresPerSegmentHash(): Boolean {
+        return try {
+            val bundleUpdateStore = Class.forName(
+                "com.margelo.nitro.reactnativebundleupdate.BundleUpdateStoreAndroid"
+            )
+            val method = bundleUpdateStore.getMethod(
+                "currentBundleRequiresPerSegmentHash",
+                Context::class.java
+            )
+            // Kotlin `object` instance methods need INSTANCE; @JvmStatic
+            // exposes a static method with the same name. Try the static
+            // call first, then fall back to INSTANCE so we work either way
+            // if the bundle-update side toggles @JvmStatic in the future.
+            val result = try {
+                method.invoke(null, reactApplicationContext)
+            } catch (_: NullPointerException) {
+                val instance = bundleUpdateStore.getField("INSTANCE").get(null)
+                method.invoke(instance, reactApplicationContext)
+            } catch (_: IllegalArgumentException) {
+                val instance = bundleUpdateStore.getField("INSTANCE").get(null)
+                method.invoke(instance, reactApplicationContext)
+            }
+            (result as? Boolean) ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
      * Streams [path] and compares its SHA-256 against [expected] (hex,
-     * case-insensitive). Empty [expected] is treated as "skip" for
-     * back-compat with manifests that omit per-segment hashes.
+     * case-insensitive). When [expected] is empty, defers to bundle-update:
+     * three-bundle format manifests must ship per-segment hashes (fail
+     * closed); older formats are allowed to omit them (back-compat).
      */
     private fun verifySha256(path: String, expected: String): Boolean {
-        if (expected.isEmpty()) return true
+        if (expected.isEmpty()) {
+            return !currentBundleRequiresPerSegmentHash()
+        }
         return try {
             val md = MessageDigest.getInstance("SHA-256")
             FileInputStream(path).use { input ->

@@ -9,13 +9,45 @@
 
 @implementation SplitBundleLoader
 
+// Reflectively asks bundle-update whether the current bundle's manifest is
+// required to ship per-segment SHA-256s (three-bundle / split-thread format).
+// When this returns YES, an empty `expected` in verifySha256OfFile:expected:
+// is treated as a hard fail instead of the back-compat skip. Returns NO when
+// the symbol is absent so older bundle-update versions don't wedge the loader.
++ (BOOL)currentBundleRequiresPerSegmentHash
+{
+    Class cls = NSClassFromString(@"ReactNativeBundleUpdate.BundleUpdateStore");
+    if (!cls) return NO;
+    SEL sel = NSSelectorFromString(@"currentBundleRequiresPerSegmentHash");
+    if (![cls respondsToSelector:sel]) return NO;
+    NSMethodSignature *sig = [cls methodSignatureForSelector:sel];
+    if (!sig) return NO;
+    // BOOL on Apple platforms is signed char (or bool on arm64); accept both.
+    const char *retType = sig.methodReturnType;
+    if (strcmp(retType, @encode(BOOL)) != 0 &&
+        strcmp(retType, @encode(char)) != 0 &&
+        strcmp(retType, @encode(bool)) != 0) {
+        return NO;
+    }
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.target = cls;
+    inv.selector = sel;
+    [inv invoke];
+    BOOL result = NO;
+    [inv getReturnValue:&result];
+    return result;
+}
+
 // Segment-time SHA-256 verification helper. Returns YES on match, NO on
 // mismatch or read failure. Streams the file with a fixed-size buffer so a
 // large segment doesn't pull the whole bundle into memory just to hash it.
 + (BOOL)verifySha256OfFile:(NSString *)path expected:(NSString *)expected
 {
     if (expected.length == 0) {
-        return YES;
+        // Defer to bundle-update: three-bundle format manifests must ship
+        // per-segment hashes (fail closed); older formats are allowed to omit
+        // them (back-compat).
+        return ![SplitBundleLoader currentBundleRequiresPerSegmentHash];
     }
     NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
     if (!handle) {

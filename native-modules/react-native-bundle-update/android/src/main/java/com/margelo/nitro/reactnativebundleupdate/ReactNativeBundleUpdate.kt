@@ -124,9 +124,30 @@ object BundleUpdateStoreAndroid {
     // invalidated on any mutation of the current bundle.
     @Volatile private var cachedValidatedBundleInfo: ValidatedBundleInfo? = null
 
+    // Lazy per-version cache for the web-embed subtree. getWebEmbedPath is
+    // called every time a WebView is created, but the subtree contents are
+    // immutable for a given currentBundleVersion. Stores the version that
+    // most recently passed full sha256 sweep over web-embed/**; invalidated
+    // alongside cachedValidatedBundleInfo on any bundle mutation.
+    @Volatile private var cachedWebEmbedVerifiedVersion: String? = null
+
     @Synchronized
     fun invalidateValidatedBundleInfoCache() {
         cachedValidatedBundleInfo = null
+        cachedWebEmbedVerifiedVersion = null
+    }
+
+    /**
+     * True when the current bundle's metadata declares the three-bundle /
+     * split-thread layout (or explicitly opts in via requiresCommonBundle).
+     * SplitBundleLoader queries this reflectively to decide whether an empty
+     * per-segment sha256 is a back-compat skip (older formats) or a hard
+     * fail (three-bundle, which always ships per-segment hashes).
+     */
+    @JvmStatic
+    fun currentBundleRequiresPerSegmentHash(context: Context): Boolean {
+        val info = getValidatedCurrentBundleInfo(context) ?: return false
+        return metadataRequiresCommonBundle(info.metadata)
     }
 
     fun getDownloadBundleDir(context: Context): String {
@@ -923,7 +944,109 @@ object BundleUpdateStoreAndroid {
 
     fun getWebEmbedPath(context: Context): String {
         val bundleInfo = getValidatedCurrentBundleInfo(context) ?: return ""
+        // Lazy full-tree sha256 sweep for web-embed/**. The startup hot path
+        // only validates the JS entry bundles (validateEntryBundlesSha256), so
+        // without this, a tampered web-embed asset would slip through. Result
+        // is cached per currentBundleVersion and invalidated on any bundle
+        // mutation, so cost is paid once per (re)install.
+        if (!ensureWebEmbedVerified(
+                bundleDir = bundleInfo.bundleDir,
+                currentBundleVersion = bundleInfo.currentBundleVersion,
+                metadata = bundleInfo.metadata,
+            )) {
+            return ""
+        }
         return File(bundleInfo.bundleDir, "web-embed").absolutePath
+    }
+
+    @Synchronized
+    private fun ensureWebEmbedVerified(
+        bundleDir: String,
+        currentBundleVersion: String,
+        metadata: Map<String, String>,
+    ): Boolean {
+        if (cachedWebEmbedVerifiedVersion == currentBundleVersion) {
+            return true
+        }
+        if (!validateWebEmbedSha256(bundleDir, metadata)) {
+            OneKeyLog.error("BundleUpdate", "validateWebEmbedSha256 failed for $currentBundleVersion")
+            return false
+        }
+        cachedWebEmbedVerifiedVersion = currentBundleVersion
+        return true
+    }
+
+    /**
+     * Walks bundleDir/web-embed/** and verifies every file's sha256 against
+     * the metadata entry (key is the bundle-relative path). Also rejects
+     * files on disk that aren't listed in metadata, and metadata entries
+     * whose backing file is missing. Returns true when web-embed is absent
+     * from both disk and metadata (bundles without web-embed).
+     */
+    fun validateWebEmbedSha256(bundleDir: String, metadata: Map<String, String>): Boolean {
+        val webEmbedRoot = File(bundleDir, "web-embed")
+        val fileEntries = getFileMetadataEntries(metadata)
+        val webEmbedEntries = fileEntries.filterKeys { it.startsWith("web-embed/") }
+
+        if (!webEmbedRoot.exists() || !webEmbedRoot.isDirectory) {
+            if (webEmbedEntries.isNotEmpty()) {
+                OneKeyLog.error(
+                    "BundleUpdate",
+                    "[web-embed-verify] metadata lists web-embed entries but directory is missing",
+                )
+                return false
+            }
+            return true
+        }
+
+        val bundleDirWithSlash = if (bundleDir.endsWith("/")) bundleDir else "$bundleDir/"
+        if (!validateWebEmbedRecursive(webEmbedRoot, webEmbedEntries, bundleDirWithSlash)) {
+            return false
+        }
+        for ((key, _) in webEmbedEntries) {
+            val expectedFile = File(bundleDirWithSlash + key)
+            if (!expectedFile.exists()) {
+                OneKeyLog.error(
+                    "BundleUpdate",
+                    "[web-embed-verify] file listed in metadata but missing on disk: $key",
+                )
+                return false
+            }
+        }
+        return true
+    }
+
+    private fun validateWebEmbedRecursive(
+        dir: File,
+        webEmbedEntries: Map<String, String>,
+        bundleDirWithSlash: String,
+    ): Boolean {
+        val files = dir.listFiles() ?: return true
+        for (file in files) {
+            if (file.isDirectory) {
+                if (!validateWebEmbedRecursive(file, webEmbedEntries, bundleDirWithSlash)) return false
+                continue
+            }
+            if (file.name == ".DS_Store") continue
+            val relativePath = file.absolutePath.removePrefix(bundleDirWithSlash)
+            val expected = webEmbedEntries[relativePath]
+            if (expected.isNullOrEmpty()) {
+                OneKeyLog.error(
+                    "BundleUpdate",
+                    "[web-embed-verify] file on disk not in metadata: $relativePath",
+                )
+                return false
+            }
+            val actual = calculateSHA256(file.absolutePath)
+            if (actual == null || !secureCompare(expected, actual)) {
+                OneKeyLog.error(
+                    "BundleUpdate",
+                    "[web-embed-verify] sha256 mismatch for $relativePath",
+                )
+                return false
+            }
+        }
+        return true
     }
 
     /**
@@ -1339,6 +1462,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     }
 
     override fun installBundle(params: BundleInstallParams): Promise<Unit> {
+        BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
         return Promise.async {
             val context = getContext()
             val appVersion = params.latestVersion
