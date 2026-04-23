@@ -7,8 +7,10 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.annotations.ReactModule
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.concurrent.Semaphore
 
 /**
@@ -171,6 +173,13 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
         try {
             ensureExtractDirFreshForCurrentInstall(reactApplicationContext)
             val absolutePath = resolveSegmentPath(relativePath, sha256)
+            if (absolutePath != null && !verifySha256(absolutePath, sha256)) {
+                promise.reject(
+                    "SPLIT_BUNDLE_SHA256_MISMATCH",
+                    "Segment SHA-256 mismatch: $relativePath"
+                )
+                return
+            }
             if (absolutePath != null) {
                 promise.resolve(absolutePath)
             } else {
@@ -195,10 +204,6 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
         sha256: String,
         promise: Promise
     ) {
-        // NOTE (#44): sha256 param is not verified at load time by design.
-        // Per §6.4.1, runtime trusts that OTA install has already verified
-        // segment integrity. Builtin segments are signed as part of the APK/IPA.
-        // If runtime SHA-256 verification is needed, add it here.
         try {
             ensureExtractDirFreshForCurrentInstall(reactApplicationContext)
             val segId = segmentId.toInt()
@@ -208,6 +213,18 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
                 promise.reject(
                     "SPLIT_BUNDLE_NOT_FOUND",
                     "Segment file not found: $relativePath (key=$segmentKey)"
+                )
+                return
+            }
+
+            // Per-segment integrity check at load time. Replaces the legacy
+            // assumption that install-time validation is sufficient: now
+            // BundleUpdate skips full-tree sha256 on startup hot path, so
+            // segment integrity is enforced lazily here.
+            if (!verifySha256(absolutePath, sha256)) {
+                promise.reject(
+                    "SPLIT_BUNDLE_SHA256_MISMATCH",
+                    "Segment SHA-256 mismatch: $relativePath (key=$segmentKey)"
                 )
                 return
             }
@@ -407,6 +424,31 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
             result?.toString()
         } catch (_: Exception) {
             null
+        }
+    }
+
+    /**
+     * Streams [path] and compares its SHA-256 against [expected] (hex,
+     * case-insensitive). Empty [expected] is treated as "skip" for
+     * back-compat with manifests that omit per-segment hashes.
+     */
+    private fun verifySha256(path: String, expected: String): Boolean {
+        if (expected.isEmpty()) return true
+        return try {
+            val md = MessageDigest.getInstance("SHA-256")
+            FileInputStream(path).use { input ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n <= 0) break
+                    md.update(buf, 0, n)
+                }
+            }
+            val actual = md.digest().joinToString("") { "%02x".format(it) }
+            actual.equals(expected, ignoreCase = true)
+        } catch (e: Exception) {
+            SBLLogger.warn("verifySha256 failed for $path: ${e.message}")
+            false
         }
     }
 }
