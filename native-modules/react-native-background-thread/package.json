@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-background-thread",
-  "version": "3.0.21",
+  "version": "3.0.22",
   "description": "react-native-background-thread",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -84,7 +84,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-bundle-update": ">=3.0.21",
+    "@onekeyfe/react-native-bundle-update": ">=3.0.22",
     "react": "*",
     "react-native": "*"
   },
