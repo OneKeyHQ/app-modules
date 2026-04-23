@@ -95,6 +95,36 @@ static NSURL *resolveMainBundleResourceURL(NSString *resourceName)
                                  withExtension:extension.length > 0 ? extension : nil];
 }
 
+/// Reflectively query BundleUpdateStore for an OTA-installed bundle path.
+/// Mirrors the cross-framework reflection pattern used by SplitBundleLoader
+/// (we can't import the Swift module directly because its umbrella header
+/// pulls in C++/Nitro headers that break the Clang dependency scanner).
+/// Returns nil when the selector is absent (older bundle-update package) or
+/// when no OTA is currently active.
+static NSString *resolveOtaBundlePath(NSString *selectorName)
+{
+  Class cls = NSClassFromString(@"ReactNativeBundleUpdate.BundleUpdateStore");
+  if (!cls) return nil;
+  SEL sel = NSSelectorFromString(selectorName);
+  if (![cls respondsToSelector:sel]) return nil;
+  NSMethodSignature *sig = [cls methodSignatureForSelector:sel];
+  if (!sig || strcmp(sig.methodReturnType, @encode(id)) != 0) return nil;
+  NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+  inv.target = cls;
+  inv.selector = sel;
+  [inv invoke];
+  __unsafe_unretained id raw = nil;
+  [inv getReturnValue:&raw];
+  if (![raw isKindOfClass:[NSString class]]) return nil;
+  NSString *result = (NSString *)raw;
+  if (result.length == 0) return nil;
+  if ([result hasPrefix:@"file://"]) {
+    result = [[NSURL URLWithString:result] path];
+  }
+  if (![[NSFileManager defaultManager] fileExistsAtPath:result]) return nil;
+  return result;
+}
+
 static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
 {
   if (jsBundleSourceNS.length == 0) {
@@ -183,7 +213,18 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   }
 
   // Default: load common bundle (shared polyfills + modules).
-  // The background entry bundle is loaded later in hostDidStart:.
+  // Prefer OTA-installed common.bundle so a three-bundle OTA update is
+  // actually picked up by the background runtime; fall back to the IPA
+  // built-in common.jsbundle when no OTA is active. Without this, OTA
+  // would push a new common.bundle to disk but the background runtime
+  // would keep loading the stale built-in copy and crash on
+  // moduleId mismatch with the OTA-loaded background.bundle.
+  NSString *otaCommonPath = resolveOtaBundlePath(@"currentBundleCommonJSBundle");
+  if (otaCommonPath) {
+    [BTLogger info:[NSString stringWithFormat:@"BackgroundRuntime: using OTA common bundle at %@", otaCommonPath]];
+    return [NSURL fileURLWithPath:otaCommonPath];
+  }
+
   NSURL *commonURL = resolveMainBundleResourceURL(@"common.jsbundle");
   if (commonURL) {
     return commonURL;
@@ -193,6 +234,13 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
 
 - (NSString *)resolveBackgroundEntryBundlePath
 {
+  // Prefer OTA-installed background.bundle; fall back to IPA built-in.
+  NSString *otaBackgroundPath = resolveOtaBundlePath(@"currentBundleBackgroundJSBundle");
+  if (otaBackgroundPath) {
+    [BTLogger info:[NSString stringWithFormat:@"BackgroundRuntime: using OTA background bundle at %@", otaBackgroundPath]];
+    return otaBackgroundPath;
+  }
+
   NSURL *url = resolveMainBundleResourceURL(@"background.bundle");
   return url.path;
 }
