@@ -916,7 +916,15 @@ object BundleUpdateStoreAndroid {
                 return false
             }
             val actual = calculateSHA256(file.absolutePath)
-            if (actual == null || !expected.equals(actual, ignoreCase = true)) {
+            // secureCompare is byte-wise (case-sensitive); lowercase both
+            // sides so an uppercase-hex manifest doesn't false-mismatch
+            // against `calculateSHA256`'s lowercase output. Matches the
+            // semantic of the previous `equals(actual, ignoreCase = true)`
+            // while preserving the constant-time guarantee against timing
+            // attacks on hash comparisons (consistent with every other
+            // sha256 comparison in this file: validateFilesRecursive,
+            // validateWebEmbedRecursive, iOS validateEntryBundlesSha256).
+            if (actual == null || !secureCompare(expected.lowercase(), actual.lowercase())) {
                 OneKeyLog.error("BundleUpdate", "[entry-verify] sha256 mismatch for entry: $entry")
                 return false
             }
