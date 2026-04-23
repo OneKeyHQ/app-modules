@@ -1455,6 +1455,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     func installBundle(params: BundleInstallParams) throws -> Promise<Void> {
+        // Invalidate up front so any concurrent reader misses the cache while
+        // the install is running. We invalidate again after the async body
+        // commits so a same-version reinstall (or any reader that re-cached
+        // pre-commit data inside the race window) can't leave stale entries.
         BundleUpdateStore.invalidateValidatedBundleInfoCache()
         return Promise.async {
             let appVersion = params.latestVersion
@@ -1525,6 +1529,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             BundleUpdateStore.writeFallbackUpdateBundleDataFile(fallbackData)
             ud.synchronize()
+
+            // Second invalidate: closes the race window between the up-front
+            // invalidate and the actual currentBundleVersion write. Without
+            // this, a reader entering validatedCurrentBundleInfo() between
+            // the two could re-cache pre-install state and leave it stale.
+            BundleUpdateStore.invalidateValidatedBundleInfoCache()
 
             OneKeyLog.info("BundleUpdate", "installBundle: completed successfully, installed version=\(folderName), fallbackCount=\(fallbackData.count)")
         }

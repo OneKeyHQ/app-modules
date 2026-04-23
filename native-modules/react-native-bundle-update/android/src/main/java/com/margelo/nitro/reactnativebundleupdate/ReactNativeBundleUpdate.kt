@@ -143,11 +143,23 @@ object BundleUpdateStoreAndroid {
      * SplitBundleLoader queries this reflectively to decide whether an empty
      * per-segment sha256 is a back-compat skip (older formats) or a hard
      * fail (three-bundle, which always ships per-segment hashes).
+     *
+     * Uses OR semantics matching iOS's `currentBundleRequiresPerSegmentHash`:
+     * an explicit `requiresCommonBundle=false` does NOT suppress the
+     * `bundleFormat=three-bundle` signal. (`metadataRequiresCommonBundle`
+     * has different semantics — explicit-false overrides bundleFormat — and
+     * is left as-is to preserve the existing `validateBundleDescriptor`
+     * behavior.)
      */
     @JvmStatic
     fun currentBundleRequiresPerSegmentHash(context: Context): Boolean {
         val info = getValidatedCurrentBundleInfo(context) ?: return false
-        return metadataRequiresCommonBundle(info.metadata)
+        val explicit = info.metadata[METADATA_REQUIRES_COMMON_BUNDLE_KEY]
+            ?.lowercase()
+            ?.let { value -> value == "1" || value == "true" || value == "yes" }
+            ?: false
+        if (explicit) return true
+        return info.metadata[METADATA_BUNDLE_FORMAT_KEY]?.lowercase() == "three-bundle"
     }
 
     fun getDownloadBundleDir(context: Context): String {
@@ -1462,6 +1474,10 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     }
 
     override fun installBundle(params: BundleInstallParams): Promise<Unit> {
+        // Invalidate up front so any concurrent reader misses the cache while
+        // the install is running. We invalidate again after the async body
+        // commits so a same-version reinstall (or any reader that re-cached
+        // pre-commit data inside the race window) can't leave stale entries.
         BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
         return Promise.async {
             val context = getContext()
@@ -1532,6 +1548,11 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             } catch (e: Exception) {
                 OneKeyLog.error("BundleUpdate", "installBundle: fallbackUpdateBundleData error: ${e.message}")
             }
+            // Second invalidate: closes the race window between the up-front
+            // invalidate and the actual currentBundleVersion write. Without
+            // this, a reader entering getValidatedCurrentBundleInfo() between
+            // the two could re-cache pre-install state and leave it stale.
+            BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
         }
     }
 
