@@ -163,14 +163,21 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   RCTInstance *_rctInstance;
   std::string _origin;
   std::string _jsBundleSource;
-  // Set inside `bundleURL` when the resolved common bundle came from an
-  // OTA install. `resolveBackgroundEntryBundlePath` and `hostDidStart`
-  // consult this to distinguish "background bundle missing because the
-  // current bundle was never split" (legitimate, just warn) from "OTA
-  // common is loaded but the matching OTA background couldn't be
-  // resolved" (fatal — IPA built-in background would moduleId-mismatch
-  // the OTA common and crash on first require()).
-  BOOL _bundleURLUsedOtaCommon;
+  // YES when `bundleURL` observed an active OTA main bundle on its most
+  // recent invocation, regardless of whether OTA common actually resolved.
+  // Captures the invariant "this delegate is locked to OTA territory; IPA
+  // built-in fallbacks for the matching common/background bundle are
+  // unsafe", covering both:
+  //   1. OTA common was resolved (loaded). IPA built-in background would
+  //      moduleId-mismatch the OTA common.
+  //   2. OTA common was unresolvable but OTA main was active (`bundleURL`
+  //      returned nil). hostDidStart shouldn't fire in this case under
+  //      normal RCTHost lifecycle, but if it ever does, we must not let
+  //      `resolveBackgroundEntryBundlePath` happily fall back to IPA bg.
+  // `resolveBackgroundEntryBundlePath` and `hostDidStart` consult the flag
+  // to distinguish those fatal cases from the legitimate "this build was
+  // never split" case (no OTA, no background bundled — warn and continue).
+  BOOL _otaActiveAtBundleResolve;
 }
 
 - (void)cleanupResources;
@@ -187,7 +194,7 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   if (self = [super init]) {
     _hasOnMessageHandler = NO;
     _hasOnErrorHandler = NO;
-    _bundleURLUsedOtaCommon = NO;
+    _otaActiveAtBundleResolve = NO;
     self.dependencyProvider = [[RCTAppDependencyProvider alloc] init];
   }
   return self;
@@ -223,8 +230,8 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
 - (NSURL *)bundleURL
 {
   // Reset on every call so a re-entry (e.g. host restart) can't carry over
-  // a stale OTA-common assertion from a previous load.
-  _bundleURLUsedOtaCommon = NO;
+  // a stale OTA assertion from a previous load.
+  _otaActiveAtBundleResolve = NO;
 
   // When _jsBundleSource is set (dev mode or explicit override), use it as-is.
   // This is a single full bundle (not split), so DON'T use common+entry strategy.
@@ -248,7 +255,9 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   NSString *otaCommonPath = resolveOtaBundlePath(@"currentBundleCommonJSBundle");
   if (otaCommonPath) {
     [BTLogger info:[NSString stringWithFormat:@"BackgroundRuntime: using OTA common bundle at %@", otaCommonPath]];
-    _bundleURLUsedOtaCommon = YES;
+    // OTA common resolved implies OTA main is active; the matching OTA
+    // background MUST be used (IPA bg would moduleId-mismatch).
+    _otaActiveAtBundleResolve = YES;
     return [NSURL fileURLWithPath:otaCommonPath];
   }
 
@@ -257,6 +266,12 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   // Returning nil aborts the background runtime; the foreground main runtime
   // would have crashed anyway, so this just makes the failure mode loud.
   if (isOtaMainBundleActive()) {
+    // Set the flag here too so the invariant ("OTA was active when bundleURL
+    // ran") holds regardless of whether OTA common resolved. Under normal
+    // RCTHost lifecycle hostDidStart won't run after we return nil, but if
+    // it ever does (host retry, lifecycle bug, future refactor), the flag
+    // ensures the same fatal-abort branch is taken.
+    _otaActiveAtBundleResolve = YES;
     [BTLogger error:@"BackgroundRuntime: OTA main is active but OTA common bundle is unresolvable — refusing IPA fallback to avoid moduleId mismatch crash"];
     return nil;
   }
@@ -277,14 +292,15 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
     return otaBackgroundPath;
   }
 
-  // Mixed-state guard: bundleURL set _bundleURLUsedOtaCommon when it loaded
-  // an OTA-installed common.bundle. The IPA built-in background.bundle was
+  // Mixed-state guard: bundleURL set _otaActiveAtBundleResolve when it
+  // observed an active OTA main on its most recent invocation (whether or
+  // not OTA common itself resolved). The IPA built-in background.bundle was
   // built against the IPA common.jsbundle, so its moduleIds won't line up
-  // with the OTA common — using it would crash on first require(). Return
-  // nil; hostDidStart consults the same flag and aborts loudly instead of
-  // continuing with a broken background runtime.
-  if (_bundleURLUsedOtaCommon) {
-    [BTLogger error:@"BackgroundRuntime: OTA common is loaded but OTA background is unresolvable — refusing IPA fallback to avoid moduleId mismatch crash"];
+  // with whatever OTA bundle the foreground runtime is using — IPA fallback
+  // would crash on first require(). Return nil; hostDidStart consults the
+  // same flag and aborts loudly instead of continuing with a broken runtime.
+  if (_otaActiveAtBundleResolve) {
+    [BTLogger error:@"BackgroundRuntime: OTA main is active but OTA background is unresolvable — refusing IPA fallback to avoid moduleId mismatch crash"];
     return nil;
   }
 
@@ -323,12 +339,21 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
       bgBundleSourceURL = bgBundlePath.lastPathComponent ?: @"background.bundle";
       [BTLogger info:[NSString stringWithFormat:@"Background entry bundle loaded from %@ (%lu bytes)",
                       bgBundlePath, (unsigned long)bgBundleData.length]];
-    } else if (_bundleURLUsedOtaCommon) {
-      // Fatal: bundleURL loaded an OTA common but resolveBackgroundEntryBundlePath
-      // refused the IPA fallback. Setting up SharedStore / SharedRPC and calling
-      // __setupBackgroundRPCHandler against a runtime with no entry bundle would
-      // leave RPC silently broken. Abort host setup so the failure is loud.
-      [BTLogger error:@"BackgroundRuntime: aborting hostDidStart — OTA common loaded but OTA background bundle is unresolvable"];
+    } else if (_otaActiveAtBundleResolve) {
+      // Fatal: bundleURL committed to OTA territory (loaded OTA common, or
+      // detected OTA main and refused IPA fallback) but the matching OTA
+      // background couldn't be resolved. Setting up SharedStore / SharedRPC
+      // and calling __setupBackgroundRPCHandler against a runtime with no
+      // entry bundle would leave RPC silently broken; falling back to IPA
+      // bg would moduleId-mismatch and crash. Abort loudly.
+      //
+      // Clear _rctInstance before returning so registerSegmentWithId (and
+      // any other downstream method that gates on `_rctInstance != nil`)
+      // doesn't operate on a half-initialized runtime where SharedStore /
+      // SharedRPC / error handler / __setupBackgroundRPCHandler were all
+      // skipped.
+      [BTLogger error:@"BackgroundRuntime: aborting hostDidStart — OTA bundle is loaded but OTA background bundle is unresolvable"];
+      _rctInstance = nil;
       return;
     } else {
       [BTLogger warn:@"Background entry bundle not found, __setupBackgroundRPCHandler may not be defined"];
