@@ -17,7 +17,7 @@
 
 /// Evaluate a JS bundle file inside the given RCTHost's runtime.
 /// Used for the common + entry split-bundle loading strategy:
-///   1. RCTHost boots with common.jsbundle (polyfills + shared modules)
+///   1. RCTHost boots with common.bundle (polyfills + shared modules)
 ///   2. After the runtime is ready, this evaluates the entry-specific bundle
 ///      (main.jsbundle or background.bundle) via jsi::Runtime::evaluateJavaScript.
 ///

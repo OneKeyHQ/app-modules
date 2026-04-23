@@ -248,7 +248,7 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   // Default: load common bundle (shared polyfills + modules).
   // Prefer OTA-installed common.bundle so a three-bundle OTA update is
   // actually picked up by the background runtime; fall back to the IPA
-  // built-in common.jsbundle when no OTA is active. Without this, OTA
+  // built-in common.bundle when no OTA is active. Without this, OTA
   // would push a new common.bundle to disk but the background runtime
   // would keep loading the stale built-in copy and crash on
   // moduleId mismatch with the OTA-loaded background.bundle.
@@ -276,11 +276,11 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
     return nil;
   }
 
-  NSURL *commonURL = resolveMainBundleResourceURL(@"common.jsbundle");
+  NSURL *commonURL = resolveMainBundleResourceURL(@"common.bundle");
   if (commonURL) {
     return commonURL;
   }
-  return [[NSBundle mainBundle] URLForResource:@"common" withExtension:@"jsbundle"];
+  return [[NSBundle mainBundle] URLForResource:@"common" withExtension:@"bundle"];
 }
 
 - (NSString *)resolveBackgroundEntryBundlePath
@@ -295,7 +295,7 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   // Mixed-state guard: bundleURL set _otaActiveAtBundleResolve when it
   // observed an active OTA main on its most recent invocation (whether or
   // not OTA common itself resolved). The IPA built-in background.bundle was
-  // built against the IPA common.jsbundle, so its moduleIds won't line up
+  // built against the IPA common.bundle, so its moduleIds won't line up
   // with whatever OTA bundle the foreground runtime is using — IPA fallback
   // would crash on first require(). Return nil; hostDidStart consults the
   // same flag and aborts loudly instead of continuing with a broken runtime.
