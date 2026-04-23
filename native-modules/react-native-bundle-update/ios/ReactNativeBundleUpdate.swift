@@ -87,6 +87,7 @@ public class BundleUpdateStore: NSObject {
     private static let metadataBackgroundProtocolVersionKey = "backgroundProtocolVersion"
     private static let metadataRequiresCommonBundleKey = "requiresCommonBundle"
     private static let metadataBundleFormatKey = "bundleFormat"
+    private static let bundleFormatThreeBundle = "three-bundle"
     private static let supportedBackgroundProtocolVersion = "1"
 
     // In-memory cache for validatedCurrentBundleInfo. Without this, every
@@ -130,7 +131,7 @@ public class BundleUpdateStore: NSObject {
             return true
         }
         let format = metadataStringValue(info.metadata, key: metadataBundleFormatKey) ?? ""
-        return format.lowercased() == "three-bundle"
+        return format.lowercased() == bundleFormatThreeBundle
     }
 
     public static func documentDirectory() -> String {
@@ -742,7 +743,7 @@ public class BundleUpdateStore: NSObject {
         let bundleFormat = metadataStringValue(metadata, key: metadataBundleFormatKey) ?? ""
         let requiresCommonBundle =
             metadataBoolValue(metadata, key: metadataRequiresCommonBundleKey) ||
-            bundleFormat.lowercased() == "three-bundle"
+            bundleFormat.lowercased() == bundleFormatThreeBundle
         if requiresCommonBundle {
             let commonBundlePath = (bundleDirPath as NSString)
                 .appendingPathComponent(commonBundleEntryFileName)
@@ -906,7 +907,7 @@ public class BundleUpdateStore: NSObject {
         var entriesToCheck: [String] = [mainBundleEntryFileName]
         let bundleFormat = metadataStringValue(metadata, key: metadataBundleFormatKey) ?? ""
         if metadataBoolValue(metadata, key: metadataRequiresCommonBundleKey) ||
-            bundleFormat.lowercased() == "three-bundle" {
+            bundleFormat.lowercased() == bundleFormatThreeBundle {
             entriesToCheck.append(commonBundleEntryFileName)
         }
         if metadataBoolValue(metadata, key: metadataRequiresBackgroundBundleKey) {

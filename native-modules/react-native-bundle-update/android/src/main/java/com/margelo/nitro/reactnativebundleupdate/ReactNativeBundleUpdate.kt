@@ -116,6 +116,7 @@ object BundleUpdateStoreAndroid {
     private const val METADATA_BACKGROUND_PROTOCOL_VERSION_KEY = "backgroundProtocolVersion"
     private const val METADATA_REQUIRES_COMMON_BUNDLE_KEY = "requiresCommonBundle"
     private const val METADATA_BUNDLE_FORMAT_KEY = "bundleFormat"
+    private const val BUNDLE_FORMAT_THREE_BUNDLE = "three-bundle"
     private const val SUPPORTED_BACKGROUND_PROTOCOL_VERSION = "1"
 
     // In-memory cache for getValidatedCurrentBundleInfo. Without this, every
@@ -490,7 +491,7 @@ object BundleUpdateStoreAndroid {
             ?.let { value -> value == "1" || value == "true" || value == "yes" }
             ?: false
         if (explicit) return true
-        return metadata[METADATA_BUNDLE_FORMAT_KEY]?.lowercase() == "three-bundle"
+        return metadata[METADATA_BUNDLE_FORMAT_KEY]?.lowercase() == BUNDLE_FORMAT_THREE_BUNDLE
     }
 
     private fun metadataBackgroundProtocolVersion(metadata: Map<String, String>): String {
