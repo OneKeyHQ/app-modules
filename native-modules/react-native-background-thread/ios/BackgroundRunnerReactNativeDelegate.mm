@@ -163,6 +163,14 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   RCTInstance *_rctInstance;
   std::string _origin;
   std::string _jsBundleSource;
+  // Set inside `bundleURL` when the resolved common bundle came from an
+  // OTA install. `resolveBackgroundEntryBundlePath` and `hostDidStart`
+  // consult this to distinguish "background bundle missing because the
+  // current bundle was never split" (legitimate, just warn) from "OTA
+  // common is loaded but the matching OTA background couldn't be
+  // resolved" (fatal — IPA built-in background would moduleId-mismatch
+  // the OTA common and crash on first require()).
+  BOOL _bundleURLUsedOtaCommon;
 }
 
 - (void)cleanupResources;
@@ -179,6 +187,7 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   if (self = [super init]) {
     _hasOnMessageHandler = NO;
     _hasOnErrorHandler = NO;
+    _bundleURLUsedOtaCommon = NO;
     self.dependencyProvider = [[RCTAppDependencyProvider alloc] init];
   }
   return self;
@@ -213,6 +222,10 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
 
 - (NSURL *)bundleURL
 {
+  // Reset on every call so a re-entry (e.g. host restart) can't carry over
+  // a stale OTA-common assertion from a previous load.
+  _bundleURLUsedOtaCommon = NO;
+
   // When _jsBundleSource is set (dev mode or explicit override), use it as-is.
   // This is a single full bundle (not split), so DON'T use common+entry strategy.
   if (!_jsBundleSource.empty()) {
@@ -235,6 +248,7 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   NSString *otaCommonPath = resolveOtaBundlePath(@"currentBundleCommonJSBundle");
   if (otaCommonPath) {
     [BTLogger info:[NSString stringWithFormat:@"BackgroundRuntime: using OTA common bundle at %@", otaCommonPath]];
+    _bundleURLUsedOtaCommon = YES;
     return [NSURL fileURLWithPath:otaCommonPath];
   }
 
@@ -263,11 +277,14 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
     return otaBackgroundPath;
   }
 
-  // Same mixed-state guard as bundleURL: an OTA main with an unresolvable
-  // OTA background means IPA built-in background.bundle would moduleId-
-  // mismatch the OTA main bundle. Refuse fallback rather than crash.
-  if (isOtaMainBundleActive()) {
-    [BTLogger error:@"BackgroundRuntime: OTA main is active but OTA background bundle is unresolvable — refusing IPA fallback to avoid moduleId mismatch crash"];
+  // Mixed-state guard: bundleURL set _bundleURLUsedOtaCommon when it loaded
+  // an OTA-installed common.bundle. The IPA built-in background.bundle was
+  // built against the IPA common.jsbundle, so its moduleIds won't line up
+  // with the OTA common — using it would crash on first require(). Return
+  // nil; hostDidStart consults the same flag and aborts loudly instead of
+  // continuing with a broken background runtime.
+  if (_bundleURLUsedOtaCommon) {
+    [BTLogger error:@"BackgroundRuntime: OTA common is loaded but OTA background is unresolvable — refusing IPA fallback to avoid moduleId mismatch crash"];
     return nil;
   }
 
@@ -306,6 +323,13 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
       bgBundleSourceURL = bgBundlePath.lastPathComponent ?: @"background.bundle";
       [BTLogger info:[NSString stringWithFormat:@"Background entry bundle loaded from %@ (%lu bytes)",
                       bgBundlePath, (unsigned long)bgBundleData.length]];
+    } else if (_bundleURLUsedOtaCommon) {
+      // Fatal: bundleURL loaded an OTA common but resolveBackgroundEntryBundlePath
+      // refused the IPA fallback. Setting up SharedStore / SharedRPC and calling
+      // __setupBackgroundRPCHandler against a runtime with no entry bundle would
+      // leave RPC silently broken. Abort host setup so the failure is loud.
+      [BTLogger error:@"BackgroundRuntime: aborting hostDidStart — OTA common loaded but OTA background bundle is unresolvable"];
+      return;
     } else {
       [BTLogger warn:@"Background entry bundle not found, __setupBackgroundRPCHandler may not be defined"];
     }
