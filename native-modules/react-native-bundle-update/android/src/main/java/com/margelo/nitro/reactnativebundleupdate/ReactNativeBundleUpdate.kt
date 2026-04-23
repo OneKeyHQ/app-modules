@@ -143,23 +143,11 @@ object BundleUpdateStoreAndroid {
      * SplitBundleLoader queries this reflectively to decide whether an empty
      * per-segment sha256 is a back-compat skip (older formats) or a hard
      * fail (three-bundle, which always ships per-segment hashes).
-     *
-     * Uses OR semantics matching iOS's `currentBundleRequiresPerSegmentHash`:
-     * an explicit `requiresCommonBundle=false` does NOT suppress the
-     * `bundleFormat=three-bundle` signal. (`metadataRequiresCommonBundle`
-     * has different semantics — explicit-false overrides bundleFormat — and
-     * is left as-is to preserve the existing `validateBundleDescriptor`
-     * behavior.)
      */
     @JvmStatic
     fun currentBundleRequiresPerSegmentHash(context: Context): Boolean {
         val info = getValidatedCurrentBundleInfo(context) ?: return false
-        val explicit = info.metadata[METADATA_REQUIRES_COMMON_BUNDLE_KEY]
-            ?.lowercase()
-            ?.let { value -> value == "1" || value == "true" || value == "yes" }
-            ?: false
-        if (explicit) return true
-        return info.metadata[METADATA_BUNDLE_FORMAT_KEY]?.lowercase() == "three-bundle"
+        return metadataRequiresCommonBundle(info.metadata)
     }
 
     fun getDownloadBundleDir(context: Context): String {
@@ -494,10 +482,14 @@ object BundleUpdateStoreAndroid {
     }
 
     private fun metadataRequiresCommonBundle(metadata: Map<String, String>): Boolean {
+        // OR semantics matching iOS: an explicit `requiresCommonBundle=false`
+        // does NOT suppress the `bundleFormat=three-bundle` signal. Both
+        // signals are treated as opt-ins; either one being true is enough.
         val explicit = metadata[METADATA_REQUIRES_COMMON_BUNDLE_KEY]
             ?.lowercase()
             ?.let { value -> value == "1" || value == "true" || value == "yes" }
-        if (explicit != null) return explicit
+            ?: false
+        if (explicit) return true
         return metadata[METADATA_BUNDLE_FORMAT_KEY]?.lowercase() == "three-bundle"
     }
 
@@ -1033,7 +1025,18 @@ object BundleUpdateStoreAndroid {
         webEmbedEntries: Map<String, String>,
         bundleDirWithSlash: String,
     ): Boolean {
-        val files = dir.listFiles() ?: return true
+        val files = dir.listFiles()
+        if (files == null) {
+            // listFiles() returns null on I/O error or unreadable directory.
+            // Fail closed instead of treating an unlistable subtree as
+            // "nothing to verify" — that would silently allow a tampered
+            // web-embed asset whose containing dir was made unreadable.
+            OneKeyLog.error(
+                "BundleUpdate",
+                "[web-embed-verify] failed to list directory: ${dir.absolutePath}",
+            )
+            return false
+        }
         for (file in files) {
             if (file.isDirectory) {
                 if (!validateWebEmbedRecursive(file, webEmbedEntries, bundleDirWithSlash)) return false

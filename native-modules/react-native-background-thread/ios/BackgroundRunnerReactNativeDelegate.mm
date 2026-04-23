@@ -125,6 +125,19 @@ static NSString *resolveOtaBundlePath(NSString *selectorName)
   return result;
 }
 
+/// True when an OTA-installed main bundle is currently active. Used to
+/// prevent falling back to IPA built-in common/background bundles when the
+/// foreground main runtime has already loaded an OTA main: a mixed
+/// OTA-main + IPA-built-in pair would moduleId-mismatch and crash on first
+/// require(). Without this guard, package skew (split-bundle-loader/
+/// background-thread upgraded but bundle-update still on a version that
+/// doesn't expose currentBundleCommonJSBundle) would silently reintroduce
+/// the very crash this patch was added to fix.
+static BOOL isOtaMainBundleActive(void)
+{
+  return resolveOtaBundlePath(@"currentBundleMainJSBundle") != nil;
+}
+
 static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
 {
   if (jsBundleSourceNS.length == 0) {
@@ -225,6 +238,15 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
     return [NSURL fileURLWithPath:otaCommonPath];
   }
 
+  // Mixed-state guard: if OTA main is loaded but OTA common is unresolvable,
+  // refusing the IPA fallback is safer than crashing on moduleId mismatch.
+  // Returning nil aborts the background runtime; the foreground main runtime
+  // would have crashed anyway, so this just makes the failure mode loud.
+  if (isOtaMainBundleActive()) {
+    [BTLogger error:@"BackgroundRuntime: OTA main is active but OTA common bundle is unresolvable — refusing IPA fallback to avoid moduleId mismatch crash"];
+    return nil;
+  }
+
   NSURL *commonURL = resolveMainBundleResourceURL(@"common.jsbundle");
   if (commonURL) {
     return commonURL;
@@ -239,6 +261,14 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   if (otaBackgroundPath) {
     [BTLogger info:[NSString stringWithFormat:@"BackgroundRuntime: using OTA background bundle at %@", otaBackgroundPath]];
     return otaBackgroundPath;
+  }
+
+  // Same mixed-state guard as bundleURL: an OTA main with an unresolvable
+  // OTA background means IPA built-in background.bundle would moduleId-
+  // mismatch the OTA main bundle. Refuse fallback rather than crash.
+  if (isOtaMainBundleActive()) {
+    [BTLogger error:@"BackgroundRuntime: OTA main is active but OTA background bundle is unresolvable — refusing IPA fallback to avoid moduleId mismatch crash"];
+    return nil;
   }
 
   NSURL *url = resolveMainBundleResourceURL(@"background.bundle");
