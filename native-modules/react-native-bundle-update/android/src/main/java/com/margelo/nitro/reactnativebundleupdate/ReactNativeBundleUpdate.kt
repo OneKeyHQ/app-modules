@@ -114,7 +114,20 @@ object BundleUpdateStoreAndroid {
     private const val COMMON_BUNDLE_FILE_NAME = "common.bundle"
     private const val METADATA_REQUIRES_BACKGROUND_BUNDLE_KEY = "requiresBackgroundBundle"
     private const val METADATA_BACKGROUND_PROTOCOL_VERSION_KEY = "backgroundProtocolVersion"
+    private const val METADATA_REQUIRES_COMMON_BUNDLE_KEY = "requiresCommonBundle"
+    private const val METADATA_BUNDLE_FORMAT_KEY = "bundleFormat"
     private const val SUPPORTED_BACKGROUND_PROTOCOL_VERSION = "1"
+
+    // In-memory cache for getValidatedCurrentBundleInfo. Without this, every
+    // bundleURL / common / main / background path getter on startup re-runs
+    // the whole validation pipeline. Cache key is currentBundleVersion;
+    // invalidated on any mutation of the current bundle.
+    @Volatile private var cachedValidatedBundleInfo: ValidatedBundleInfo? = null
+
+    @Synchronized
+    fun invalidateValidatedBundleInfoCache() {
+        cachedValidatedBundleInfo = null
+    }
 
     fun getDownloadBundleDir(context: Context): String {
         val dir = File(context.filesDir, "onekey-bundle-download")
@@ -190,6 +203,7 @@ object BundleUpdateStoreAndroid {
     }
 
     fun clearUpdateBundleData(context: Context) {
+        invalidateValidatedBundleInfoCache()
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().clear().commit()
         // Clear all signature files
@@ -407,7 +421,16 @@ object BundleUpdateStoreAndroid {
             val keys = obj.keys()
             while (keys.hasNext()) {
                 val key = keys.next()
-                metadata[key] = obj.getString(key)
+                // Only accept string-valued entries. Any nested object / array
+                // / numeric value is silently skipped so the metadata can carry
+                // non-string scalars (e.g. runtimeGraphVersion) or future V2
+                // descriptors without breaking file-level SHA verification.
+                val value = obj.opt(key)
+                if (value is String) {
+                    metadata[key] = value
+                } else if (value is Boolean || value is Number) {
+                    metadata[key] = value.toString()
+                }
             }
         } catch (e: Exception) {
             OneKeyLog.error("BundleUpdate", "Error parsing metadata JSON: ${e.message}")
@@ -421,7 +444,9 @@ object BundleUpdateStoreAndroid {
 
     private fun isReservedMetadataKey(key: String): Boolean {
         return key == METADATA_REQUIRES_BACKGROUND_BUNDLE_KEY ||
-            key == METADATA_BACKGROUND_PROTOCOL_VERSION_KEY
+            key == METADATA_BACKGROUND_PROTOCOL_VERSION_KEY ||
+            key == METADATA_REQUIRES_COMMON_BUNDLE_KEY ||
+            key == METADATA_BUNDLE_FORMAT_KEY
     }
 
     private fun getFileMetadataEntries(metadata: Map<String, String>): Map<String, String> {
@@ -433,6 +458,14 @@ object BundleUpdateStoreAndroid {
             ?.lowercase()
             ?.let { value -> value == "1" || value == "true" || value == "yes" }
             ?: false
+    }
+
+    private fun metadataRequiresCommonBundle(metadata: Map<String, String>): Boolean {
+        val explicit = metadata[METADATA_REQUIRES_COMMON_BUNDLE_KEY]
+            ?.lowercase()
+            ?.let { value -> value == "1" || value == "true" || value == "yes" }
+        if (explicit != null) return explicit
+        return metadata[METADATA_BUNDLE_FORMAT_KEY]?.lowercase() == "three-bundle"
     }
 
     private fun metadataBackgroundProtocolVersion(metadata: Map<String, String>): String {
@@ -686,6 +719,21 @@ object BundleUpdateStoreAndroid {
             return false
         }
 
+        // Three-bundle (union / split thread) mode requires a common.bundle
+        // shipped alongside main.jsbundle.hbc. Without it, entry-only main
+        // bundle references moduleIds that live in the common bundle and the
+        // runtime crashes on first require().
+        if (metadataRequiresCommonBundle(metadata)) {
+            val commonBundleFile = File(bundleDir, COMMON_BUNDLE_FILE_NAME)
+            if (!commonBundleFile.exists()) {
+                OneKeyLog.error(
+                    "BundleUpdate",
+                    "requiresCommonBundle is true but common.bundle is missing at ${commonBundleFile.absolutePath}",
+                )
+                return false
+            }
+        }
+
         if (!metadataRequiresBackgroundBundle(metadata)) {
             return true
         }
@@ -723,7 +771,17 @@ object BundleUpdateStoreAndroid {
             val currentAppVersion = getAppVersion(context)
             val currentBundleVersion = getCurrentBundleVersion(context) ?: run {
                 OneKeyLog.warn("BundleUpdate", "getJsBundlePath: no currentBundleVersion stored")
+                invalidateValidatedBundleInfoCache()
                 return null
+            }
+
+            // Memo cache: avoid re-running signature + entry-bundle sha256 for
+            // every bundleURL / common / main / background path getter on
+            // startup.
+            cachedValidatedBundleInfo?.let { cached ->
+                if (cached.currentBundleVersion == currentBundleVersion) {
+                    return cached
+                }
             }
 
             OneKeyLog.info("BundleUpdate", "currentAppVersion: $currentAppVersion, currentBundleVersion: $currentBundleVersion")
@@ -777,29 +835,68 @@ object BundleUpdateStoreAndroid {
             }
             val metadata = parseMetadataJson(metadataContent)
 
-            val lastDashIndex = currentBundleVersion.lastIndexOf("-")
-            if (lastDashIndex > 0) {
-                val appVer = currentBundleVersion.substring(0, lastDashIndex)
-                val bundleVer = currentBundleVersion.substring(lastDashIndex + 1)
-                if (!validateAllFilesInDir(context, bundleDir, metadata, appVer, bundleVer)) {
-                    OneKeyLog.info("BundleUpdate", "validateAllFilesInDir failed on startup")
-                    return null
-                }
+            // Startup hot path: only verify entry-bundle SHA-256
+            // (main + common + background as required by metadata flags). The
+            // full-tree sha256 sweep already runs at install time
+            // (validateAllFilesInDir in installBundle), so re-doing it on every
+            // launch costs hundreds of ms per startup with no security gain
+            // (sandboxed app data + signed metadata.json bind every file's
+            // expected hash). Per-segment integrity is checked at loadSegment
+            // time by SplitBundleLoader.
+            if (!validateEntryBundlesSha256(bundleDir, metadata)) {
+                OneKeyLog.info("BundleUpdate", "validateEntryBundlesSha256 failed on startup")
+                return null
             }
 
             if (!validateBundlePairCompatibility(bundleDir, metadata)) {
                 return null
             }
 
-            ValidatedBundleInfo(
+            val info = ValidatedBundleInfo(
                 bundleDir = bundleDir,
                 currentBundleVersion = currentBundleVersion,
                 metadata = metadata,
             )
+            cachedValidatedBundleInfo = info
+            info
         } catch (e: Exception) {
             OneKeyLog.error("BundleUpdate", "Error getting bundle: ${e.message}")
             null
         }
+    }
+
+    /**
+     * Verifies SHA-256 of just the entry bundles required to boot the JS
+     * runtime (main + common + background, gated by metadata flags). Runs in
+     * place of the legacy validateAllFilesInDir on the startup hot path.
+     */
+    fun validateEntryBundlesSha256(bundleDir: String, metadata: Map<String, String>): Boolean {
+        val fileEntries = getFileMetadataEntries(metadata)
+        val entriesToCheck = mutableListOf(MAIN_JS_BUNDLE_FILE_NAME)
+        if (metadataRequiresCommonBundle(metadata)) {
+            entriesToCheck += COMMON_BUNDLE_FILE_NAME
+        }
+        if (metadataRequiresBackgroundBundle(metadata)) {
+            entriesToCheck += BACKGROUND_BUNDLE_FILE_NAME
+        }
+        for (entry in entriesToCheck) {
+            val file = File(bundleDir, entry)
+            if (!file.exists()) {
+                OneKeyLog.error("BundleUpdate", "[entry-verify] missing entry file: $entry")
+                return false
+            }
+            val expected = fileEntries[entry]
+            if (expected.isNullOrEmpty()) {
+                OneKeyLog.error("BundleUpdate", "[entry-verify] no metadata sha256 for entry: $entry")
+                return false
+            }
+            val actual = calculateSHA256(file.absolutePath)
+            if (actual == null || !expected.equals(actual, ignoreCase = true)) {
+                OneKeyLog.error("BundleUpdate", "[entry-verify] sha256 mismatch for entry: $entry")
+                return false
+            }
+        }
+        return true
     }
 
     fun getCurrentBundleEntryPath(context: Context, entryFileName: String): String? {
@@ -1331,6 +1428,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     }
 
     override fun clearBundle(): Promise<Unit> {
+        BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "clearBundle: clearing download and bundle directories...")
             val context = getContext()
@@ -1352,6 +1450,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     }
 
     override fun resetToBuiltInBundle(): Promise<Unit> {
+        BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "resetToBuiltInBundle: clearing currentBundleVersion preference...")
             val context = getContext()
@@ -1368,6 +1467,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     }
 
     override fun clearAllJSBundleData(): Promise<TestResult> {
+        BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: starting...")
             val context = getContext()
@@ -1405,6 +1505,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
     }
 
     override fun setCurrentUpdateBundleData(params: BundleSwitchParams): Promise<Unit> {
+        BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
         return Promise.async {
             val context = getContext()
             val bundleVersion = "${params.appVersion}-${params.bundleVersion}"
