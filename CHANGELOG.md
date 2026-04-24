@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.23] - 2026-04-24
+
+### Bug Fixes
+- **bundle-update (Android)**: Avoid nested-comment trigger in `validateWebEmbedSha256` KDoc. Kotlin block comments nest, so a bare `**` inside a `/** ... */` KDoc (as in `web-embed/**`) is lexed as a nested comment opener; the outer closing `*/` only decrements depth to 1, swallowing the rest of the file — including `fun validateWebEmbedSha256` and `fun isDevSettingsEnabled` — as comment body until EOF, which surfaced as cascading Android release errors (`Missing '}'`, `Unclosed comment`, two `Unresolved reference`). Rewrite the sentence in prose so the glob no longer appears in the KDoc body.
+
+### Chores
+- Bump all packages to 3.0.23.
+
 ## [3.0.22] - 2026-04-24
 
 ### Documentation
