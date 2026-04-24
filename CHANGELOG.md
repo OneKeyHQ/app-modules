@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.22] - 2026-04-24
+
+### Documentation
+- **background-thread / split-bundle-loader**: Correct stale `common.jsbundle` references in comments to match the actual resource name (`common.bundle`) used in code. No runtime change.
+
+### Chores
+- Bump all packages to 3.0.22.
+
+## [3.0.21] - 2026-04-23
+
+### Features
+- **background-thread (iOS)**: Prefer OTA-installed `common.bundle` / `background.bundle` over the IPA built-in copies. Reflectively queries `BundleUpdateStore` (mirroring the SplitBundleLoader cross-framework reflection pattern, since the Swift umbrella header pulls in C++/Nitro headers that break the Clang dependency scanner) and falls back to the built-in resources only when no OTA is active. Without this, an OTA three-bundle update would push a new `common.bundle` to disk but the background runtime would keep loading the stale IPA copy and crash on moduleId mismatch with the OTA-loaded background bundle. Migrated from `app-monorepo` patch.
+- **bundle-update**: Three-bundle metadata support — parse and reserve `requiresCommonBundle` and `bundleFormat` keys; when set, `validateBundleDescriptor` requires a `common.bundle` alongside `main.jsbundle.hbc` so OTA installs of the union/split-thread layout fail closed instead of silently shipping a broken main bundle that references moduleIds living in common. The Android metadata parser also now accepts boolean/numeric scalars (skipping nested objects) so manifests can carry future descriptors without breaking sha verification.
+- **bundle-update**: Add `validatedCurrentBundleInfo` cache. Every bundleURL / common / main / background path getter on startup previously re-ran the full signature + sha256 pipeline; now memoized by `currentBundleVersion` and invalidated on every mutation (`clearBundle`, `resetToBuiltInBundle`, `clearAllJSBundleData`, `setCurrentUpdateBundleData`, `installBundle`) and on the no-version path.
+- **bundle-update**: Fast-path entry sha256 at startup. Replace the full-tree `validateAllFilesInDir` sweep on the hot path with `validateEntryBundlesSha256`, which only hashes main + common + background (gated by metadata flags). Full-tree validation already runs at install time; per-segment integrity is now enforced at `loadSegment` time by SplitBundleLoader.
+- **bundle-update (iOS)**: Expose `BundleUpdateStore.currentBundleCommonJSBundle()` so the background runtime can look up the OTA common bundle path.
+- **split-bundle-loader**: Verify segment SHA-256 at `resolveSegmentPath` / `loadSegment` time. Pairs with the bundle-update fast-path startup change — since BundleUpdate no longer re-hashes the whole bundle directory on every launch, segment integrity is now enforced lazily here instead of trusting install-time validation. Hashes are streamed in 64KB chunks so a large segment doesn't pull the whole file into memory to verify it. For the three-bundle / split-thread layout, empty per-segment expected hash is a hard fail (via `BundleUpdateStore.currentBundleRequiresPerSegmentHash()`); older formats keep the back-compat skip. Migrated from `app-monorepo` patch.
+
+### Bug Fixes
+- **bundle-update**: Lazy web-embed sha256 verification + cache. Startup fast path only verifies JS entry bundles, so a tampered web-embed asset (HTML/JS/CSS) would slip through and execute inside the WebView (WebKit/Chromium SRI isn't enforced because the build pipeline doesn't yet inject integrity attributes). Walk `web-embed/**` at `getWebEmbedPath` time, gate against metadata sha256 entries (rejecting files-on-disk-not-in-metadata and metadata-entries-missing-on-disk), and cache the verified `bundleVersion` so the cost is paid once per (re)install. Cache is invalidated alongside `cachedValidatedBundleInfo` on every bundle mutation. Both platforms.
+- **bundle-update (Android)**: Fail closed when `validateWebEmbedRecursive` gets `listFiles() == null` (I/O error or unreadable dir). Previously treating that as "nothing to verify" silently allowed a tampered web-embed asset whose containing directory was unlistable.
+- **bundle-update (Android)**: Align `metadataRequiresCommonBundle` with iOS OR semantics. Previously an explicit `requiresCommonBundle=false` would suppress the `bundleFormat=three-bundle` signal, letting Android accept three-bundle manifests that iOS rejects (missing `common.bundle` allowed through, `common.bundle` sha256 not enforced on startup hot path). Switch the helper itself to OR semantics so `validateBundleDescriptor`, `validateEntryBundlesSha256`, and `currentBundleRequiresPerSegmentHash` all agree with iOS.
+- **bundle-update**: Close `installBundle` same-version reinstall race. Invalidating the validated-bundle cache *before* the async install body allowed a concurrent `validatedCurrentBundleInfo()` reader to re-cache pre-install state. Add a second invalidate at the end of the async body on both platforms; different-version installs were already safe via the version-keyed cache.
+- **bundle-update (Android)**: Use constant-time `secureCompare` in `validateEntryBundlesSha256` instead of `String.equals(..., ignoreCase = true)` to match the timing-attack guarantee of every other sha256 comparison in the file. `secureCompare(expected.lowercase(), actual.lowercase())` preserves case-insensitive semantics against uppercase-hex manifests.
+- **bundle-update (iOS)**: Lowercase `bundleFormat` comparand at all three sites (`currentBundleRequiresPerSegmentHash`, `validateBundlePairCompatibility`, `validateEntryBundlesSha256`) to match Android's case-insensitive semantic. A manifest with `bundleFormat: "Three-Bundle"` previously activated three-bundle gating on Android but not on iOS, leaving iOS silently in two-bundle mode.
+- **background-thread (iOS)**: Refuse IPA fallback when OTA main is active. If the OTA main bundle is loaded but the OTA common / background lookup fails (typical cause: package skew where bundle-update is older than split-bundle-loader/background-thread and doesn't expose the new `currentBundleCommonJSBundle` selector), falling back to the IPA built-in `common.bundle` / `background.bundle` would moduleId-mismatch the OTA main and crash on first `require()`. Detect "OTA main is active" via reflective lookup and return nil from `bundleURL` / `resolveBackgroundEntryBundlePath`.
+- **background-thread (iOS)**: Abort `hostDidStart` when OTA common loaded but OTA background missing. Previously nil entry bundle was treated identically to the legitimate "no background bundle" case (warn and continue), so `SharedStore` / `SharedRPC` / `__setupBackgroundRPCHandler` would install against a runtime with no entry bundle — RPC silently broken instead of loudly fatal. Track OTA-active state on a new `_otaActiveAtBundleResolve` ivar (set in both OTA branches of `bundleURL` to capture the invariant "this delegate is locked to OTA territory") and return early when bg bundle path is nil AND the flag is set. Clear `_rctInstance = nil` before the abort so `registerSegmentWithId` can't call into the half-initialized runtime.
+
+### Refactors
+- **bundle-update**: Extract `"three-bundle"` string literal into a `bundleFormatThreeBundle` (Swift) / `BUNDLE_FORMAT_THREE_BUNDLE` (Kotlin) constant alongside the existing metadata-key constants. Keeps the iOS and Android sides in lockstep and prevents the class of bug where one platform gets updated to a new format token (or a typo) while the other silently keeps comparing against the old literal.
+
+### Chores
+- **split-bundle-loader / background-thread**: Peer-depend on `@onekeyfe/react-native-bundle-update` `>=3.0.21`. Both packages reflectively call `BundleUpdateStore` APIs only available in this release (`currentBundleRequiresPerSegmentHash` for segment fail-closed gating; `currentBundleCommonJSBundle` for OTA common path lookup). Without the peer dep, an app that bumps either package without bumping bundle-update silently falls through to back-compat code paths (reflection returns nil, fail-open per-segment, IPA built-in common bundle). Now surfaced as an install-time peer-dependency warning.
+- Bump all packages to 3.0.21.
+
 ## [3.0.20] - 2026-04-21
 
 ### Features

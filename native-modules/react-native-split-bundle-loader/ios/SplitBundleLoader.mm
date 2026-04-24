@@ -4,9 +4,75 @@
 #import <ReactCommon/RCTHost+Internal.h>
 #import <ReactCommon/RCTInstance.h>
 #import <objc/runtime.h>
+#import <CommonCrypto/CommonDigest.h>
 #include <jsi/jsi.h>
 
 @implementation SplitBundleLoader
+
+// Reflectively asks bundle-update whether the current bundle's manifest is
+// required to ship per-segment SHA-256s (three-bundle / split-thread format).
+// When this returns YES, an empty `expected` in verifySha256OfFile:expected:
+// is treated as a hard fail instead of the back-compat skip. Returns NO when
+// the symbol is absent so older bundle-update versions don't wedge the loader.
++ (BOOL)currentBundleRequiresPerSegmentHash
+{
+    Class cls = NSClassFromString(@"ReactNativeBundleUpdate.BundleUpdateStore");
+    if (!cls) return NO;
+    SEL sel = NSSelectorFromString(@"currentBundleRequiresPerSegmentHash");
+    if (![cls respondsToSelector:sel]) return NO;
+    NSMethodSignature *sig = [cls methodSignatureForSelector:sel];
+    if (!sig) return NO;
+    // BOOL on Apple platforms is signed char (or bool on arm64); accept both.
+    const char *retType = sig.methodReturnType;
+    if (strcmp(retType, @encode(BOOL)) != 0 &&
+        strcmp(retType, @encode(char)) != 0 &&
+        strcmp(retType, @encode(bool)) != 0) {
+        return NO;
+    }
+    NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+    inv.target = cls;
+    inv.selector = sel;
+    [inv invoke];
+    BOOL result = NO;
+    [inv getReturnValue:&result];
+    return result;
+}
+
+// Segment-time SHA-256 verification helper. Returns YES on match, NO on
+// mismatch or read failure. Streams the file with a fixed-size buffer so a
+// large segment doesn't pull the whole bundle into memory just to hash it.
++ (BOOL)verifySha256OfFile:(NSString *)path expected:(NSString *)expected
+{
+    if (expected.length == 0) {
+        // Defer to bundle-update: three-bundle format manifests must ship
+        // per-segment hashes (fail closed); older formats are allowed to omit
+        // them (back-compat).
+        return ![SplitBundleLoader currentBundleRequiresPerSegmentHash];
+    }
+    NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
+    if (!handle) {
+        return NO;
+    }
+    CC_SHA256_CTX ctx;
+    CC_SHA256_Init(&ctx);
+    @try {
+        const NSUInteger chunk = 64 * 1024;
+        while (1) {
+            NSData *data = [handle readDataOfLength:chunk];
+            if (data.length == 0) break;
+            CC_SHA256_Update(&ctx, data.bytes, (CC_LONG)data.length);
+        }
+    } @finally {
+        [handle closeFile];
+    }
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256_Final(digest, &ctx);
+    NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
+    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) {
+        [hex appendFormat:@"%02x", digest[i]];
+    }
+    return [hex caseInsensitiveCompare:expected] == NSOrderedSame;
+}
 
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
@@ -175,13 +241,19 @@
         }
 
         NSString *absolutePath = [SplitBundleLoader resolveAbsolutePath:relativePath];
-        if (absolutePath) {
-            resolve(absolutePath);
-        } else {
+        if (!absolutePath) {
             reject(@"SPLIT_BUNDLE_NOT_FOUND",
                    [NSString stringWithFormat:@"Segment file not found: %@", relativePath],
                    nil);
+            return;
         }
+        if (![SplitBundleLoader verifySha256OfFile:absolutePath expected:sha256]) {
+            reject(@"SPLIT_BUNDLE_SHA256_MISMATCH",
+                   [NSString stringWithFormat:@"Segment SHA-256 mismatch: %@", relativePath],
+                   nil);
+            return;
+        }
+        resolve(absolutePath);
     } @catch (NSException *exception) {
         reject(@"SPLIT_BUNDLE_RESOLVE_ERROR", exception.reason, nil);
     }
@@ -259,6 +331,13 @@
         if (!absolutePath) {
             reject(@"SPLIT_BUNDLE_NOT_FOUND",
                    [NSString stringWithFormat:@"Segment file not found: %@ (key=%@)", relativePath, segmentKey],
+                   nil);
+            return;
+        }
+
+        if (![SplitBundleLoader verifySha256OfFile:absolutePath expected:sha256]) {
+            reject(@"SPLIT_BUNDLE_SHA256_MISMATCH",
+                   [NSString stringWithFormat:@"Segment SHA-256 mismatch: %@ (key=%@)", relativePath, segmentKey],
                    nil);
             return;
         }

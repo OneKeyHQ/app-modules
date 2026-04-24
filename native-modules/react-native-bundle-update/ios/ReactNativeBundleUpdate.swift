@@ -82,9 +82,57 @@ public class BundleUpdateStore: NSObject {
     private static let nativeBuildNumberKey = "nativeBuildNumber"
     private static let mainBundleEntryFileName = "main.jsbundle.hbc"
     private static let backgroundBundleEntryFileName = "background.bundle"
+    private static let commonBundleEntryFileName = "common.bundle"
     private static let metadataRequiresBackgroundBundleKey = "requiresBackgroundBundle"
     private static let metadataBackgroundProtocolVersionKey = "backgroundProtocolVersion"
+    private static let metadataRequiresCommonBundleKey = "requiresCommonBundle"
+    private static let metadataBundleFormatKey = "bundleFormat"
+    private static let bundleFormatThreeBundle = "three-bundle"
     private static let supportedBackgroundProtocolVersion = "1"
+
+    // In-memory cache for validatedCurrentBundleInfo. Without this, every
+    // bundleURL / common / main / background path getter on startup re-runs
+    // the whole validation pipeline (signature + sha256 of every entry file).
+    // Cache key is currentBundleVersion; invalidated on any mutation of the
+    // current bundle (setCurrentUpdateBundleData / clearBundle /
+    // resetToBuiltInBundle / clearAllJSBundleData / native version change).
+    private static var cachedValidatedBundleInfo: (
+        bundleDirPath: String,
+        currentBundleVersion: String,
+        metadata: [String: Any]
+    )?
+    private static let cachedValidatedBundleInfoLock = NSLock()
+
+    // Lazy per-version cache for the web-embed subtree. getWebEmbedPath is
+    // called every time a WebView is created, but the subtree contents are
+    // immutable for a given currentBundleVersion. Stores the version that
+    // most recently passed full sha256 sweep over web-embed/**; invalidated
+    // alongside cachedValidatedBundleInfo on any bundle mutation.
+    private static var cachedWebEmbedVerifiedVersion: String?
+    private static let cachedWebEmbedVerifiedVersionLock = NSLock()
+
+    public static func invalidateValidatedBundleInfoCache() {
+        cachedValidatedBundleInfoLock.lock()
+        cachedValidatedBundleInfo = nil
+        cachedValidatedBundleInfoLock.unlock()
+        cachedWebEmbedVerifiedVersionLock.lock()
+        cachedWebEmbedVerifiedVersion = nil
+        cachedWebEmbedVerifiedVersionLock.unlock()
+    }
+
+    /// True when the current bundle's metadata declares the three-bundle /
+    /// split-thread layout (or explicitly opts in via requiresCommonBundle).
+    /// SplitBundleLoader queries this reflectively to decide whether an empty
+    /// per-segment sha256 is a back-compat skip (older formats) or a hard
+    /// fail (three-bundle, which always ships per-segment hashes).
+    public static func currentBundleRequiresPerSegmentHash() -> Bool {
+        guard let info = validatedCurrentBundleInfo() else { return false }
+        if metadataBoolValue(info.metadata, key: metadataRequiresCommonBundleKey) {
+            return true
+        }
+        let format = metadataStringValue(info.metadata, key: metadataBundleFormatKey) ?? ""
+        return format.lowercased() == bundleFormatThreeBundle
+    }
 
     public static func documentDirectory() -> String {
         NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0]
@@ -165,7 +213,103 @@ public class BundleUpdateStore: NSObject {
 
     public static func getWebEmbedPath() -> String {
         guard let bundleInfo = validatedCurrentBundleInfo() else { return "" }
+        // Lazy full-tree sha256 sweep for web-embed/**. The startup hot path
+        // only validates the JS entry bundles (validateEntryBundlesSha256), so
+        // without this, a tampered web-embed asset would slip through. Result
+        // is cached per currentBundleVersion and invalidated on any bundle
+        // mutation, so cost is paid once per (re)install.
+        if !ensureWebEmbedVerified(
+            bundleDirPath: bundleInfo.bundleDirPath,
+            currentBundleVersion: bundleInfo.currentBundleVersion,
+            metadata: bundleInfo.metadata,
+        ) {
+            return ""
+        }
         return (bundleInfo.bundleDirPath as NSString).appendingPathComponent("web-embed")
+    }
+
+    private static func ensureWebEmbedVerified(
+        bundleDirPath: String,
+        currentBundleVersion: String,
+        metadata: [String: Any],
+    ) -> Bool {
+        cachedWebEmbedVerifiedVersionLock.lock()
+        if cachedWebEmbedVerifiedVersion == currentBundleVersion {
+            cachedWebEmbedVerifiedVersionLock.unlock()
+            return true
+        }
+        cachedWebEmbedVerifiedVersionLock.unlock()
+
+        if !validateWebEmbedSha256(bundleDirPath: bundleDirPath, metadata: metadata) {
+            OneKeyLog.error("BundleUpdate", "validateWebEmbedSha256 failed for \(currentBundleVersion)")
+            return false
+        }
+
+        cachedWebEmbedVerifiedVersionLock.lock()
+        cachedWebEmbedVerifiedVersion = currentBundleVersion
+        cachedWebEmbedVerifiedVersionLock.unlock()
+        return true
+    }
+
+    /// Walks bundleDirPath/web-embed/** and verifies every file's sha256
+    /// against the metadata entry (key is the bundle-relative path). Also
+    /// rejects files on disk that aren't listed in metadata, and metadata
+    /// entries whose backing file is missing. Returns true when web-embed
+    /// is absent from both disk and metadata (bundles without web-embed).
+    static func validateWebEmbedSha256(
+        bundleDirPath: String,
+        metadata: [String: Any],
+    ) -> Bool {
+        let fm = FileManager.default
+        let webEmbedDir = (bundleDirPath as NSString).appendingPathComponent("web-embed")
+        let allEntries = fileMetadataEntries(from: metadata)
+        let webEmbedEntries = allEntries.filter { $0.key.hasPrefix("web-embed/") }
+
+        var dirExists: ObjCBool = false
+        let dirPresent = fm.fileExists(atPath: webEmbedDir, isDirectory: &dirExists) && dirExists.boolValue
+        if !dirPresent {
+            // No web-embed in this bundle is fine, as long as metadata agrees.
+            if !webEmbedEntries.isEmpty {
+                OneKeyLog.error("BundleUpdate", "[web-embed-verify] metadata lists web-embed entries but directory is missing")
+                return false
+            }
+            return true
+        }
+
+        let bundleDirWithSlash = bundleDirPath.hasSuffix("/") ? bundleDirPath : bundleDirPath + "/"
+        guard let enumerator = fm.enumerator(atPath: webEmbedDir) else {
+            OneKeyLog.error("BundleUpdate", "[web-embed-verify] failed to enumerate web-embed directory")
+            return false
+        }
+        while let entry = enumerator.nextObject() as? String {
+            let fullPath = (webEmbedDir as NSString).appendingPathComponent(entry)
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue { continue }
+            if entry.hasSuffix(".DS_Store") { continue }
+
+            let relativePath = fullPath.replacingOccurrences(of: bundleDirWithSlash, with: "")
+            guard let expected = webEmbedEntries[relativePath], !expected.isEmpty else {
+                OneKeyLog.error("BundleUpdate", "[web-embed-verify] file on disk not in metadata: \(relativePath)")
+                return false
+            }
+            guard let actual = calculateSHA256(fullPath) else {
+                OneKeyLog.error("BundleUpdate", "[web-embed-verify] failed to hash file: \(relativePath)")
+                return false
+            }
+            if !expected.secureCompare(actual) {
+                OneKeyLog.error("BundleUpdate", "[web-embed-verify] sha256 mismatch for \(relativePath)")
+                return false
+            }
+        }
+
+        for key in webEmbedEntries.keys {
+            let expectedFilePath = bundleDirWithSlash + key
+            if !fm.fileExists(atPath: expectedFilePath) {
+                OneKeyLog.error("BundleUpdate", "[web-embed-verify] file listed in metadata but missing on disk: \(key)")
+                return false
+            }
+        }
+        return true
     }
 
     public static func calculateSHA256(_ filePath: String) -> String? {
@@ -335,7 +479,10 @@ public class BundleUpdateStore: NSObject {
     }
 
     private static func isReservedMetadataKey(_ key: String) -> Bool {
-        key == metadataRequiresBackgroundBundleKey || key == metadataBackgroundProtocolVersionKey
+        key == metadataRequiresBackgroundBundleKey ||
+        key == metadataBackgroundProtocolVersionKey ||
+        key == metadataRequiresCommonBundleKey ||
+        key == metadataBundleFormatKey
     }
 
     private static func metadataStringValue(
@@ -589,6 +736,26 @@ public class BundleUpdateStore: NSObject {
             return false
         }
 
+        // Three-bundle (union build / split thread) mode requires a
+        // common.bundle shipped alongside main.jsbundle.hbc. Without it
+        // the entry-only main bundle references moduleIds that only exist in
+        // the common bundle and the runtime crashes on first require().
+        let bundleFormat = metadataStringValue(metadata, key: metadataBundleFormatKey) ?? ""
+        let requiresCommonBundle =
+            metadataBoolValue(metadata, key: metadataRequiresCommonBundleKey) ||
+            bundleFormat.lowercased() == bundleFormatThreeBundle
+        if requiresCommonBundle {
+            let commonBundlePath = (bundleDirPath as NSString)
+                .appendingPathComponent(commonBundleEntryFileName)
+            guard FileManager.default.fileExists(atPath: commonBundlePath) else {
+                OneKeyLog.error(
+                    "BundleUpdate",
+                    "requiresCommonBundle is true but common.bundle is missing at \(commonBundlePath)",
+                )
+                return false
+            }
+        }
+
         let requiresBackgroundBundle = metadataBoolValue(
             metadata,
             key: metadataRequiresBackgroundBundleKey,
@@ -630,8 +797,18 @@ public class BundleUpdateStore: NSObject {
         processPreLaunchPendingTask()
         guard let currentBundleVer = currentBundleVersion() else {
             OneKeyLog.warn("BundleUpdate", "getJsBundlePath: no currentBundleVersion stored")
+            invalidateValidatedBundleInfoCache()
             return nil
         }
+
+        // Memo cache: avoid re-running signature + entry-bundle sha256 for every
+        // bundleURL / common / main / background path getter on startup.
+        cachedValidatedBundleInfoLock.lock()
+        if let cached = cachedValidatedBundleInfo, cached.currentBundleVersion == currentBundleVer {
+            cachedValidatedBundleInfoLock.unlock()
+            return cached
+        }
+        cachedValidatedBundleInfoLock.unlock()
 
         let currentAppVersion = getCurrentNativeVersion()
         guard let prevNativeVersion = getNativeVersion() else {
@@ -694,20 +871,69 @@ public class BundleUpdateStore: NSObject {
             return nil
         }
 
-        if let dashRange = currentBundleVer.range(of: "-", options: .backwards) {
-            let appVer = String(currentBundleVer[currentBundleVer.startIndex..<dashRange.lowerBound])
-            let bundleVer = String(currentBundleVer[dashRange.upperBound...])
-            if !validateAllFilesInDir(folderName, metadata: metadata, appVersion: appVer, bundleVersion: bundleVer) {
-                OneKeyLog.info("BundleUpdate", "validateAllFilesInDir failed on startup")
-                return nil
-            }
+        // Startup hot path: only verify entry-bundle SHA-256
+        // (main + common + background as required by metadata flags). The
+        // full-tree sha256 sweep already runs at install time
+        // (validateAllFilesInDir in installBundle), so re-doing it on every
+        // launch costs hundreds of ms per startup with no security gain
+        // (sandboxed app data + signed metadata.json bind every file's
+        // expected hash). Per-segment integrity is checked at loadSegment
+        // time by SplitBundleLoader.
+        if !validateEntryBundlesSha256(bundleDirPath: folderName, metadata: metadata) {
+            OneKeyLog.info("BundleUpdate", "validateEntryBundlesSha256 failed on startup")
+            return nil
         }
 
         if !validateBundlePairCompatibility(bundleDirPath: folderName, metadata: metadata) {
             return nil
         }
 
-        return (folderName, currentBundleVer, metadata)
+        let result = (folderName, currentBundleVer, metadata)
+        cachedValidatedBundleInfoLock.lock()
+        cachedValidatedBundleInfo = result
+        cachedValidatedBundleInfoLock.unlock()
+        return result
+    }
+
+    /// Verifies SHA-256 of just the entry bundles required to boot the JS
+    /// runtime (main + common + background, gated by metadata flags). Runs in
+    /// place of the legacy validateAllFilesInDir on the startup hot path.
+    static func validateEntryBundlesSha256(
+        bundleDirPath: String,
+        metadata: [String: Any],
+    ) -> Bool {
+        let fileEntries = fileMetadataEntries(from: metadata)
+
+        var entriesToCheck: [String] = [mainBundleEntryFileName]
+        let bundleFormat = metadataStringValue(metadata, key: metadataBundleFormatKey) ?? ""
+        if metadataBoolValue(metadata, key: metadataRequiresCommonBundleKey) ||
+            bundleFormat.lowercased() == bundleFormatThreeBundle {
+            entriesToCheck.append(commonBundleEntryFileName)
+        }
+        if metadataBoolValue(metadata, key: metadataRequiresBackgroundBundleKey) {
+            entriesToCheck.append(backgroundBundleEntryFileName)
+        }
+
+        for entry in entriesToCheck {
+            let path = (bundleDirPath as NSString).appendingPathComponent(entry)
+            guard FileManager.default.fileExists(atPath: path) else {
+                OneKeyLog.error("BundleUpdate", "[entry-verify] missing entry file: \(entry)")
+                return false
+            }
+            guard let expected = fileEntries[entry], !expected.isEmpty else {
+                OneKeyLog.error("BundleUpdate", "[entry-verify] no metadata sha256 for entry: \(entry)")
+                return false
+            }
+            guard let actual = calculateSHA256(path) else {
+                OneKeyLog.error("BundleUpdate", "[entry-verify] failed to hash entry: \(entry)")
+                return false
+            }
+            if !expected.secureCompare(actual) {
+                OneKeyLog.error("BundleUpdate", "[entry-verify] sha256 mismatch for entry: \(entry)")
+                return false
+            }
+        }
+        return true
     }
 
     private static func currentBundleEntryPath(_ entryFileName: String) -> String? {
@@ -729,6 +955,10 @@ public class BundleUpdateStore: NSObject {
 
     public static func currentBundleBackgroundJSBundle() -> String? {
         currentBundleEntryPath(backgroundBundleEntryFileName)
+    }
+
+    public static func currentBundleCommonJSBundle() -> String? {
+        currentBundleEntryPath(commonBundleEntryFileName)
     }
 
     // Fallback data management
@@ -759,6 +989,7 @@ public class BundleUpdateStore: NSObject {
     }
 
     public static func clearUpdateBundleData() {
+        invalidateValidatedBundleInfoCache()
         let bDir = bundleDir()
         let fm = FileManager.default
         if fm.fileExists(atPath: bDir) {
@@ -1225,6 +1456,11 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     func installBundle(params: BundleInstallParams) throws -> Promise<Void> {
+        // Invalidate up front so any concurrent reader misses the cache while
+        // the install is running. We invalidate again after the async body
+        // commits so a same-version reinstall (or any reader that re-cached
+        // pre-commit data inside the race window) can't leave stale entries.
+        BundleUpdateStore.invalidateValidatedBundleInfoCache()
         return Promise.async {
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
@@ -1295,6 +1531,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             BundleUpdateStore.writeFallbackUpdateBundleDataFile(fallbackData)
             ud.synchronize()
 
+            // Second invalidate: closes the race window between the up-front
+            // invalidate and the actual currentBundleVersion write. Without
+            // this, a reader entering validatedCurrentBundleInfo() between
+            // the two could re-cache pre-install state and leave it stale.
+            BundleUpdateStore.invalidateValidatedBundleInfoCache()
+
             OneKeyLog.info("BundleUpdate", "installBundle: completed successfully, installed version=\(folderName), fallbackCount=\(fallbackData.count)")
         }
     }
@@ -1318,6 +1560,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     func clearBundle() throws -> Promise<Void> {
+        BundleUpdateStore.invalidateValidatedBundleInfoCache()
         return Promise.async { [weak self] in
             OneKeyLog.info("BundleUpdate", "clearBundle: clearing download and bundle directories...")
             // Clear download directory
@@ -1341,6 +1584,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     func resetToBuiltInBundle() throws -> Promise<Void> {
+        BundleUpdateStore.invalidateValidatedBundleInfoCache()
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "resetToBuiltInBundle: clearing currentBundleVersion preference...")
             let ud = UserDefaults.standard
@@ -1357,6 +1601,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     func clearAllJSBundleData() throws -> Promise<TestResult> {
+        BundleUpdateStore.invalidateValidatedBundleInfoCache()
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "clearAllJSBundleData: starting...")
             let bundleDir = BundleUpdateStore.bundleDir()
@@ -1393,6 +1638,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     }
 
     func setCurrentUpdateBundleData(params: BundleSwitchParams) throws -> Promise<Void> {
+        BundleUpdateStore.invalidateValidatedBundleInfoCache()
         return Promise.async {
             let bundleVersion = "\(params.appVersion)-\(params.bundleVersion)"
             OneKeyLog.info("BundleUpdate", "setCurrentUpdateBundleData: switching to \(bundleVersion)")
