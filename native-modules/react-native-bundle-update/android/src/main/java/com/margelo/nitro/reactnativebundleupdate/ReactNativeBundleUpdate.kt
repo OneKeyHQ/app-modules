@@ -990,11 +990,12 @@ object BundleUpdateStoreAndroid {
     }
 
     /**
-     * Walks bundleDir/web-embed/** and verifies every file's sha256 against
-     * the metadata entry (key is the bundle-relative path). Also rejects
-     * files on disk that aren't listed in metadata, and metadata entries
-     * whose backing file is missing. Returns true when web-embed is absent
-     * from both disk and metadata (bundles without web-embed).
+     * Walks every file under bundleDir/web-embed/ recursively and verifies
+     * each file's sha256 against the metadata entry (key is the bundle-relative
+     * path). Also rejects files on disk that aren't listed in metadata, and
+     * metadata entries whose backing file is missing. Returns true when
+     * web-embed is absent from both disk and metadata (bundles without
+     * web-embed).
      */
     fun validateWebEmbedSha256(bundleDir: String, metadata: Map<String, String>): Boolean {
         val webEmbedRoot = File(bundleDir, "web-embed")
