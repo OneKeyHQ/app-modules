@@ -943,14 +943,23 @@ object BundleUpdateStoreAndroid {
         return entryFile.absolutePath
     }
 
+    // @JvmStatic exposes these entry-point getters as true JVM-static methods
+    // so SplitBundleLoaderModule (and any future external module) can call them
+    // via Class.getMethod(...).invoke(null, ctx) reflection. Without it, Kotlin
+    // `object` members are INSTANCE methods on the singleton, the null-receiver
+    // invoke throws NPE, and the OTA segment lookup silently falls back to APK
+    // builtin assets — see #SBL-OTA-FALLBACK regression report.
+    @JvmStatic
     fun getCurrentBundleMainJSBundle(context: Context): String? {
         return getCurrentBundleEntryPath(context, MAIN_JS_BUNDLE_FILE_NAME)
     }
 
+    @JvmStatic
     fun getCurrentBundleBackgroundJSBundle(context: Context): String? {
         return getCurrentBundleEntryPath(context, BACKGROUND_BUNDLE_FILE_NAME)
     }
 
+    @JvmStatic
     fun getCurrentBundleCommonJSBundle(context: Context): String? {
         return getCurrentBundleEntryPath(context, COMMON_BUNDLE_FILE_NAME)
     }
