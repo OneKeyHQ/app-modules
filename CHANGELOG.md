@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.23] - 2026-04-28
+
+### Bug Fixes
+- **bundle-update (Android)**: Annotate `BundleUpdateStoreAndroid.getCurrentBundleMainJSBundle` / `getCurrentBundleBackgroundJSBundle` / `getCurrentBundleCommonJSBundle` with `@JvmStatic` so external modules (notably `SplitBundleLoaderModule`) can invoke them via `Class.getMethod(...).invoke(null, ctx)`. Without `@JvmStatic` the Kotlin `object` members are instance methods on the singleton, the null-receiver reflection call throws NPE, and OTA segment lookup silently falls back to APK builtin assets — so a freshly-installed three-bundle OTA would keep loading the IPA/APK common bundle and crash on moduleId mismatch with the OTA-loaded main.
+
+### Chores
+- Bump all packages to 3.0.23.
+
 ## [3.0.22] - 2026-04-24
 
 ### Documentation

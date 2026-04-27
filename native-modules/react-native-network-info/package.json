@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-network-info",
-  "version": "3.0.22",
+  "version": "3.0.23",
   "description": "react-native-network-info",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
