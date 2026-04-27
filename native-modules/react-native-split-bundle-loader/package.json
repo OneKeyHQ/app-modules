@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-split-bundle-loader",
-  "version": "3.0.23",
+  "version": "3.0.24",
   "description": "react-native-split-bundle-loader",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -82,7 +82,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-bundle-update": ">=3.0.23",
+    "@onekeyfe/react-native-bundle-update": ">=3.0.24",
     "react": "*",
     "react-native": "*"
   },
