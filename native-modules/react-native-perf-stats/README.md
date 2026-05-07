@@ -1,9 +1,10 @@
 # @onekeyfe/react-native-perf-stats
 
-Native CPU and RAM sampler for React Native, with an optional draggable on-screen overlay. Built on [Nitro Modules](https://nitro.margelo.com/) — the sampler runs on a dedicated background thread so the overlay keeps updating even when the JS thread is frozen.
+Native CPU, RAM, UI-FPS and JS-FPS sampler for React Native, with an optional draggable on-screen overlay. Built on [Nitro Modules](https://nitro.margelo.com/) — the sampler runs on a dedicated background thread so the overlay keeps updating even when the JS thread is frozen.
 
-- **Android**: HandlerThread + `/proc/self/stat` (CPU ticks) + `/proc/self/statm` (RSS); overlay attached via `WindowManager` to the current Activity (no `SYSTEM_ALERT_WINDOW` permission).
-- **iOS**: GCD dispatch source + `task_info` (`phys_footprint`); overlay added as a `UILabel` on the key `UIWindow`.
+- **Android**: HandlerThread + `/proc/self/stat` (CPU ticks) + `/proc/self/statm` (RSS) + `Choreographer.FrameCallback` (UI FPS); overlay attached via `WindowManager` to the current Activity (no `SYSTEM_ALERT_WINDOW` permission).
+- **iOS**: GCD dispatch source + `task_info` (`phys_footprint`) + `CADisplayLink` (UI FPS); overlay added as a `UILabel` on the key `UIWindow`.
+- **JS FPS**: opt-in JS-side `requestAnimationFrame` ticker that pushes its per-second count to native via `setJsFpsHint`. Started by `startJsFpsTracker()`.
 
 ## Installation
 
@@ -16,46 +17,62 @@ yarn add @onekeyfe/react-native-perf-stats react-native-nitro-modules
 ## Usage
 
 ```ts
-import { ReactNativePerfStats } from '@onekeyfe/react-native-perf-stats';
+import {
+  ReactNativePerfStats,
+  startJsFpsTracker,
+  stopJsFpsTracker,
+} from '@onekeyfe/react-native-perf-stats';
 
 // Start sampling at 1 Hz. Idempotent — calling again just updates the interval.
 ReactNativePerfStats.start(1000);
+
+// Optional: turn on the JS-side rAF ticker so PerfSample.jsFps is populated.
+startJsFpsTracker();
 
 // Show the floating overlay (drag to reposition).
 ReactNativePerfStats.showOverlay();
 
 // One-shot read without touching the overlay timer.
 const sample = await ReactNativePerfStats.sample();
-console.log(sample); // { cpu: 12.3, rss: 187654144, timestamp: 1730000000000 }
+console.log(sample);
+// { cpu: 12.3, rss: 187654144, uiFps: 59, jsFps: 60, timestamp: 1730000000000 }
 
 // Tear down.
+stopJsFpsTracker();
 ReactNativePerfStats.hideOverlay();
 ReactNativePerfStats.stop();
 ```
 
 ### `PerfSample`
 
-| field       | unit                       | notes                                                                                                  |
-| ----------- | -------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `cpu`       | percent of one core        | `(Δcpu / Δwall) * 100`. May exceed 100 on multi-core saturation. First sample after launch is `0`.     |
-| `rss`       | bytes                      | iOS `phys_footprint`, Android `VmRSS`.                                                                 |
-| `timestamp` | ms since unix epoch        | Wall-clock at sample time.                                                                             |
+| field       | unit                  | notes                                                                                                  |
+| ----------- | --------------------- | ------------------------------------------------------------------------------------------------------ |
+| `cpu`       | percent of one core   | `(Δcpu / Δwall) * 100`. May exceed 100 on multi-core saturation. First sample after launch is `0`.     |
+| `rss`       | bytes                 | iOS `phys_footprint`, Android `VmRSS`.                                                                 |
+| `uiFps`     | frames per second     | UI thread frame rate over the last sampling window. `0` until at least one window has elapsed.         |
+| `jsFps`     | frames per second     | JS thread rAF count. `0` unless `startJsFpsTracker()` has been called and reported at least once.      |
+| `timestamp` | ms since unix epoch   | Wall-clock at sample time.                                                                             |
 
 ### API
 
 - `start(intervalMs: number): void` — minimum interval is clamped to 200 ms.
-- `stop(): void` — also hides the overlay.
+- `stop(): void` — also hides the overlay and resets the cached UI FPS.
 - `showOverlay(): void` / `hideOverlay(): void` — overlay shows `--` until `start` runs.
 - `sample(): Promise<PerfSample>` — runs off the JS thread, shares baseline with the overlay sampler.
+- `setJsFpsHint(fps: number): void` — low-level escape hatch; prefer `startJsFpsTracker()` below.
+- `startJsFpsTracker(reportIntervalMs?: number): void` — kicks off a `requestAnimationFrame` loop that reports the per-second count to native via `setJsFpsHint`. Idempotent.
+- `stopJsFpsTracker(): void` — cancels the rAF loop. Idempotent.
 
 ### Anomaly logging
 
 While the sampler is running, the native side emits a warn to `@onekeyfe/react-native-native-logger` (`OneKeyLog.warn`, tag `PerfStats`) whenever a metric stays over its threshold for **5 consecutive samples**. Each category has an independent **30 s cooldown** so a sustained spike produces one log every 30 s rather than one per sample.
 
-| metric | threshold |
-| ------ | --------- |
-| CPU    | ≥ 150 %   |
-| RSS    | ≥ 800 MB  |
+| metric | threshold        |
+| ------ | ---------------- |
+| CPU    | ≥ 150 %          |
+| RSS    | ≥ 800 MB         |
+| UI FPS | ≤ 45 fps (and > 0) |
+| JS FPS | ≤ 30 fps (and > 0) |
 
 One-off `sample()` calls do **not** trip this path — only the periodic timer started by `start()` does.
 

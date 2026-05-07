@@ -12,8 +12,16 @@ private let kMinIntervalMs: Double = 200
 // for kAnomalyCooldownSec to avoid flooding native-logger.
 private let kCpuAnomalyPct: Double = 150.0
 private let kRssAnomalyBytes: Double = 800.0 * 1024.0 * 1024.0
+// Below ~45 fps the UI thread feels janky on a 60 Hz panel. On 90/120 Hz
+// devices this still represents a clearly degraded experience, so we keep
+// one threshold rather than introducing refresh-rate detection.
+private let kUiFpsAnomalyBelow: Double = 45.0
+// Below ~30 fps the JS thread is missing every other frame's RAF callback.
+private let kJsFpsAnomalyBelow: Double = 30.0
 private let kAnomalySustainSamples: Int = 5
 private let kAnomalyCooldownSec: Double = 30.0
+// JS FPS hints older than this are treated as stale and reported as 0.
+private let kJsFpsHintTtlSec: Double = 2.0
 
 class ReactNativePerfStats: HybridReactNativePerfStatsSpec {
 
@@ -37,6 +45,10 @@ class ReactNativePerfStats: HybridReactNativePerfStatsSpec {
         return Promise.async {
             return Sampler.shared.takeSample()
         }
+    }
+
+    func setJsFpsHint(fps: Double) throws {
+        JsFpsHolder.shared.set(fps: fps)
     }
 }
 
@@ -63,8 +75,17 @@ private final class Sampler {
     // toggles the sampler rapidly.
     private var cpuOverCount: Int = 0
     private var rssOverCount: Int = 0
+    private var uiFpsUnderCount: Int = 0
+    private var jsFpsUnderCount: Int = 0
     private var lastCpuLogSec: Double = 0
     private var lastRssLogSec: Double = 0
+    private var lastUiFpsLogSec: Double = 0
+    private var lastJsFpsLogSec: Double = 0
+
+    // Last UI FPS computed by the periodic timer. takeSample() reads this
+    // directly so one-shot sample() calls do not steal frames from the
+    // UiFpsMonitor counter (which is owned by the periodic timer).
+    private var lastUiFps: Double = 0
 
     func start(intervalMs ms: Double) {
         queue.async { [weak self] in
@@ -91,6 +112,9 @@ private final class Sampler {
             )
             t.setEventHandler { [weak self] in
                 guard let self = self, self.running else { return }
+                // Refresh cached UI FPS *before* takeSample reads it, so
+                // the value covers exactly the just-elapsed interval.
+                self.lastUiFps = UiFpsMonitor.shared.readAndReset(nowSec: self.monotonicSec())
                 let s = self.takeSample()
                 Overlay.shared.update(sample: s)
                 self.checkAnomalyAndLog(sample: s)
@@ -98,6 +122,7 @@ private final class Sampler {
             self.timer = t
             t.resume()
         }
+        UiFpsMonitor.shared.start()
     }
 
     func stop() {
@@ -106,7 +131,9 @@ private final class Sampler {
             self.running = false
             self.timer?.cancel()
             self.timer = nil
+            self.lastUiFps = 0
         }
+        UiFpsMonitor.shared.stop()
         Overlay.shared.hide()
     }
 
@@ -134,6 +161,8 @@ private final class Sampler {
         return PerfSample(
             cpu: cpuPct,
             rss: Double(rssBytes),
+            uiFps: lastUiFps,
+            jsFps: JsFpsHolder.shared.read(nowSec: nowMono),
             timestamp: nowWallMs
         )
     }
@@ -180,6 +209,45 @@ private final class Sampler {
             }
         } else {
             rssOverCount = 0
+        }
+
+        // FPS thresholds. Require uiFps > 0 to avoid logging the very first
+        // sample (no interval yet), and jsFps > 0 to skip when no JS-side
+        // tracker has been started.
+        if s.uiFps > 0 && s.uiFps <= kUiFpsAnomalyBelow {
+            uiFpsUnderCount += 1
+            if uiFpsUnderCount >= kAnomalySustainSamples,
+               nowSec - lastUiFpsLogSec >= kAnomalyCooldownSec {
+                OneKeyLog.warn(
+                    kTag,
+                    String(
+                        format: "Sustained low UI FPS: %.1f over %d samples",
+                        s.uiFps, uiFpsUnderCount
+                    )
+                )
+                lastUiFpsLogSec = nowSec
+                uiFpsUnderCount = 0
+            }
+        } else {
+            uiFpsUnderCount = 0
+        }
+
+        if s.jsFps > 0 && s.jsFps <= kJsFpsAnomalyBelow {
+            jsFpsUnderCount += 1
+            if jsFpsUnderCount >= kAnomalySustainSamples,
+               nowSec - lastJsFpsLogSec >= kAnomalyCooldownSec {
+                OneKeyLog.warn(
+                    kTag,
+                    String(
+                        format: "Sustained low JS FPS: %.1f over %d samples",
+                        s.jsFps, jsFpsUnderCount
+                    )
+                )
+                lastJsFpsLogSec = nowSec
+                jsFpsUnderCount = 0
+            }
+        } else {
+            jsFpsUnderCount = 0
         }
     }
 
@@ -231,6 +299,114 @@ private final class Sampler {
 
         OneKeyLog.warn(kTag, "Failed to read resident memory; vmKr=\(kr) basicKr=\(basicKr)")
         return 0
+    }
+}
+
+// MARK: - UiFpsMonitor
+//
+// CADisplayLink fires once per main-thread refresh cycle (60/90/120 Hz)
+// when the UI thread is responsive, so the per-second count is a faithful
+// proxy for "did the main thread service its frame callbacks". The link
+// must be attached to the main RunLoop, so start/stop dispatch to .main.
+
+private final class UiFpsMonitor: NSObject {
+    static let shared = UiFpsMonitor()
+
+    private override init() { super.init() }
+
+    private var displayLink: CADisplayLink?
+    // Read-modify-write of frameCounter happens on the display-link
+    // callback (main thread) and on readAndReset (sampler thread), so
+    // guard with a lock. Lightweight: two integer ops per call.
+    private let counterLock = NSLock()
+    private var frameCounter: Int = 0
+    private var lastReadSec: Double = -1
+
+    func start() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.displayLink != nil { return }
+            let link = CADisplayLink(target: self, selector: #selector(self.tick))
+            link.add(to: .main, forMode: .common)
+            self.displayLink = link
+        }
+    }
+
+    func stop() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.displayLink?.invalidate()
+            self.displayLink = nil
+        }
+        counterLock.lock()
+        frameCounter = 0
+        lastReadSec = -1
+        counterLock.unlock()
+    }
+
+    @objc private func tick(link: CADisplayLink) {
+        counterLock.lock()
+        frameCounter += 1
+        counterLock.unlock()
+    }
+
+    /// Returns the FPS observed since the previous call. The first call
+    /// after `start` returns 0 because there's no baseline interval yet.
+    /// Safe to invoke from any thread.
+    func readAndReset(nowSec: Double) -> Double {
+        counterLock.lock()
+        let frames = frameCounter
+        frameCounter = 0
+        let prev = lastReadSec
+        lastReadSec = nowSec
+        counterLock.unlock()
+        if prev <= 0 { return 0 }
+        let dWall = nowSec - prev
+        if dWall <= 0 { return 0 }
+        return Double(frames) / dWall
+    }
+}
+
+// MARK: - JsFpsHolder
+//
+// Caches the most recent JS-thread FPS hint pushed via `setJsFpsHint`.
+// The value is computed entirely on the JS side via the
+// `requestAnimationFrame` ticker started by `startJsFpsTracker`, then
+// reported here. Hints older than `kJsFpsHintTtlSec` are reported as 0
+// so the overlay doesn't keep showing a fossilised number after the
+// JS tracker has been stopped (or has not yet booted).
+
+private final class JsFpsHolder {
+    static let shared = JsFpsHolder()
+
+    private init() {}
+
+    private let lock = NSLock()
+    private var lastFps: Double = 0
+    private var lastSetSec: Double = -1
+
+    func set(fps: Double) {
+        let nowSec: Double = {
+            var ts = timespec()
+            if clock_gettime(CLOCK_MONOTONIC, &ts) != 0 {
+                return Date().timeIntervalSince1970
+            }
+            return Double(ts.tv_sec) + Double(ts.tv_nsec) / 1_000_000_000.0
+        }()
+        lock.lock()
+        lastFps = fps
+        lastSetSec = nowSec
+        lock.unlock()
+    }
+
+    func read(nowSec: Double) -> Double {
+        lock.lock()
+        let last = lastSetSec
+        let fps = lastFps
+        lock.unlock()
+        if last < 0 { return 0 }
+        if nowSec - last > kJsFpsHintTtlSec { return 0 }
+        return fps
     }
 }
 
@@ -313,15 +489,15 @@ private final class Overlay: NSObject {
             return
         }
 
-        let lbl = UILabel(frame: CGRect(x: 30, y: 100, width: 160, height: 60))
+        let lbl = UILabel(frame: CGRect(x: 30, y: 100, width: 170, height: 92))
         lbl.backgroundColor = UIColor.black.withAlphaComponent(0.7)
         lbl.layer.cornerRadius = 8
         lbl.layer.masksToBounds = true
         lbl.textColor = .white
         lbl.font = .systemFont(ofSize: 13, weight: .bold)
         lbl.textAlignment = .center
-        lbl.numberOfLines = 2
-        lbl.text = "CPU: --\nRAM: --"
+        lbl.numberOfLines = 4
+        lbl.text = "CPU: --\nRAM: --\nUI:  --\nJS:  --"
         lbl.isUserInteractionEnabled = true
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
@@ -360,7 +536,9 @@ private final class Overlay: NSObject {
         let cpuStr = s.cpu > 0 ? String(format: "%.1f%%", s.cpu) : "--"
         let mb = s.rss / 1024.0 / 1024.0
         let memStr = mb > 0 ? String(format: "%.1f MB", mb) : "--"
-        return "CPU: \(cpuStr)\nRAM: \(memStr)"
+        let uiStr = s.uiFps > 0 ? String(format: "%.0f fps", s.uiFps) : "--"
+        let jsStr = s.jsFps > 0 ? String(format: "%.0f fps", s.jsFps) : "--"
+        return "CPU: \(cpuStr)\nRAM: \(memStr)\nUI:  \(uiStr)\nJS:  \(jsStr)"
     }
 
     private func currentKeyWindow() -> UIWindow? {

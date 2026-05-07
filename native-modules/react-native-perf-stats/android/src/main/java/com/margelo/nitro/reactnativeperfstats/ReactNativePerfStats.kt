@@ -12,10 +12,12 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
 import android.util.TypedValue
+import android.view.Choreographer
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.TextView
+import java.util.concurrent.atomic.AtomicInteger
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
@@ -37,8 +39,18 @@ private const val CLOCK_TICKS_PER_SECOND = 100L
 private const val CPU_ANOMALY_PCT = 150.0
 // 800 MiB.
 private const val RSS_ANOMALY_BYTES = 838_860_800.0
+// Below ~45 fps the UI thread feels janky on a 60 Hz panel. On 90/120 Hz
+// devices this still represents a clearly degraded experience, so we keep
+// one threshold rather than introducing refresh-rate detection.
+private const val UI_FPS_ANOMALY_BELOW = 45.0
+// Below ~30 fps the JS thread is missing every other frame's RAF callback.
+private const val JS_FPS_ANOMALY_BELOW = 30.0
 private const val ANOMALY_SUSTAIN_SAMPLES = 5
 private const val ANOMALY_COOLDOWN_MS = 30_000L
+// JS FPS hints older than this are treated as stale and reported as 0,
+// so the overlay doesn't keep showing a fossilised number after the
+// JS-side tracker has been stopped (or is still booting).
+private const val JS_FPS_HINT_TTL_MS = 2_000L
 
 @DoNotStrip
 class ReactNativePerfStats : HybridReactNativePerfStatsSpec() {
@@ -63,6 +75,10 @@ class ReactNativePerfStats : HybridReactNativePerfStatsSpec() {
         return Promise.async {
             Sampler.takeSample()
         }
+    }
+
+    override fun setJsFpsHint(fps: Double) {
+        JsFpsHolder.set(fps)
     }
 }
 
@@ -94,6 +110,10 @@ private object Sampler {
     private val lock = Any()
     @Volatile private var lastCpuTicks: Long = -1L
     @Volatile private var lastMonoNs: Long = -1L
+    // Last UI FPS computed by the periodic tick. takeSample() reads this
+    // directly so one-shot sample() calls do not steal frames from the
+    // UiFpsMonitor counter (which is owned by the periodic tick).
+    @Volatile private var lastUiFps: Double = 0.0
 
     // Anomaly state lives on the sampler HandlerThread (single consumer),
     // so no synchronization is needed. lastLogMs intentionally persists
@@ -101,8 +121,12 @@ private object Sampler {
     // caller toggles the sampler rapidly.
     private var cpuOverCount = 0
     private var rssOverCount = 0
+    private var uiFpsUnderCount = 0
+    private var jsFpsUnderCount = 0
     private var lastCpuLogMs = 0L
     private var lastRssLogMs = 0L
+    private var lastUiFpsLogMs = 0L
+    private var lastJsFpsLogMs = 0L
 
     fun start(intervalMsNew: Long) {
         synchronized(schedulerLock) {
@@ -116,6 +140,7 @@ private object Sampler {
             running = true
             scheduleTick(generation, handler!!)
         }
+        UiFpsMonitor.start()
     }
 
     fun stop() {
@@ -128,7 +153,9 @@ private object Sampler {
             handlerThread?.quitSafely()
             handlerThread = null
             handler = null
+            lastUiFps = 0.0
         }
+        UiFpsMonitor.stop()
         Overlay.hide()
     }
 
@@ -140,6 +167,9 @@ private object Sampler {
                     genAtStart == generation && running
                 }
                 if (!active) return
+                // Refresh the cached UI FPS *before* takeSample reads it,
+                // so the value covers exactly the just-elapsed interval.
+                lastUiFps = UiFpsMonitor.readAndReset(System.nanoTime())
                 val sample = takeSample()
                 Overlay.update(sample)
                 checkAnomalyAndLog(sample)
@@ -200,6 +230,49 @@ private object Sampler {
         } else {
             rssOverCount = 0
         }
+
+        // FPS thresholds. We require uiFps > 0 to avoid logging during the
+        // first sample (when no interval has elapsed yet); jsFps > 0 to skip
+        // when the JS-side tracker hasn't been started.
+        if (s.uiFps in 0.001..UI_FPS_ANOMALY_BELOW) {
+            uiFpsUnderCount++
+            if (uiFpsUnderCount >= ANOMALY_SUSTAIN_SAMPLES &&
+                nowMs - lastUiFpsLogMs >= ANOMALY_COOLDOWN_MS
+            ) {
+                OneKeyLog.warn(
+                    TAG,
+                    String.format(
+                        Locale.US,
+                        "Sustained low UI FPS: %.1f over %d samples",
+                        s.uiFps, uiFpsUnderCount,
+                    ),
+                )
+                lastUiFpsLogMs = nowMs
+                uiFpsUnderCount = 0
+            }
+        } else {
+            uiFpsUnderCount = 0
+        }
+
+        if (s.jsFps in 0.001..JS_FPS_ANOMALY_BELOW) {
+            jsFpsUnderCount++
+            if (jsFpsUnderCount >= ANOMALY_SUSTAIN_SAMPLES &&
+                nowMs - lastJsFpsLogMs >= ANOMALY_COOLDOWN_MS
+            ) {
+                OneKeyLog.warn(
+                    TAG,
+                    String.format(
+                        Locale.US,
+                        "Sustained low JS FPS: %.1f over %d samples",
+                        s.jsFps, jsFpsUnderCount,
+                    ),
+                )
+                lastJsFpsLogMs = nowMs
+                jsFpsUnderCount = 0
+            }
+        } else {
+            jsFpsUnderCount = 0
+        }
     }
 
     fun takeSample(): PerfSample {
@@ -230,6 +303,8 @@ private object Sampler {
         return PerfSample(
             cpu = cpuPct,
             rss = rssBytes.toDouble(),
+            uiFps = lastUiFps,
+            jsFps = JsFpsHolder.read(nowMonoNs),
             timestamp = nowWallMs,
         )
     }
@@ -279,6 +354,96 @@ private object Sampler {
             OneKeyLog.warn(TAG, "Failed to read /proc/self/statm: ${e.message}")
             0L
         }
+    }
+}
+
+// ---- UiFpsMonitor -----------------------------------------------------
+//
+// Counts main-thread frames via Choreographer.FrameCallback. The
+// callback fires once per refresh cycle (60/90/120 Hz) when the UI
+// thread is responsive, so the per-second count is a faithful proxy
+// for "did the UI thread service its frame callbacks".
+//
+// `Choreographer.getInstance()` returns the per-thread instance, so
+// the registration must run on the main looper to observe main-thread
+// frames; the worker HandlerThread has no Choreographer.
+
+private object UiFpsMonitor {
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val frameCounter = AtomicInteger(0)
+    @Volatile private var registered = false
+    @Volatile private var lastReadMonoNs: Long = -1L
+
+    private val callback = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            frameCounter.incrementAndGet()
+            if (registered) {
+                Choreographer.getInstance().postFrameCallback(this)
+            }
+        }
+    }
+
+    fun start() {
+        if (registered) return
+        registered = true
+        mainHandler.post {
+            // Re-check inside the post: a stop() may have raced ahead
+            // before this lambda ran.
+            if (!registered) return@post
+            Choreographer.getInstance().postFrameCallback(callback)
+        }
+    }
+
+    fun stop() {
+        if (!registered) return
+        registered = false
+        mainHandler.post {
+            Choreographer.getInstance().removeFrameCallback(callback)
+        }
+        frameCounter.set(0)
+        lastReadMonoNs = -1L
+    }
+
+    /**
+     * Returns the FPS observed since the previous call. The first call
+     * after [start] returns 0 because there's no baseline interval yet.
+     * Safe to invoke from any thread.
+     */
+    fun readAndReset(nowMonoNs: Long): Double {
+        val prev = lastReadMonoNs
+        val frames = frameCounter.getAndSet(0)
+        lastReadMonoNs = nowMonoNs
+        if (prev <= 0) return 0.0
+        val dWallSec = (nowMonoNs - prev).toDouble() / 1_000_000_000.0
+        if (dWallSec <= 0) return 0.0
+        return frames / dWallSec
+    }
+}
+
+// ---- JsFpsHolder ------------------------------------------------------
+//
+// Caches the most recent JS-thread FPS hint pushed via
+// `setJsFpsHint`. The value is computed entirely on the JS side via
+// the `requestAnimationFrame` ticker started by `startJsFpsTracker`,
+// then reported here. We stale out hints older than [JS_FPS_HINT_TTL_MS]
+// to avoid surfacing a fossilised number when the JS tracker has been
+// stopped or has not yet booted.
+
+private object JsFpsHolder {
+    @Volatile private var lastFps: Double = 0.0
+    @Volatile private var lastSetMonoNs: Long = -1L
+
+    fun set(fps: Double) {
+        lastFps = fps
+        lastSetMonoNs = System.nanoTime()
+    }
+
+    fun read(nowMonoNs: Long): Double {
+        val last = lastSetMonoNs
+        if (last < 0) return 0.0
+        val ageMs = (nowMonoNs - last) / 1_000_000L
+        if (ageMs > JS_FPS_HINT_TTL_MS) return 0.0
+        return lastFps
     }
 }
 
@@ -452,8 +617,8 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
             )
             gravity = Gravity.START
             // Min width prevents re-layout when digit count changes
-            minWidth = dp(activity, 110)
-            text = "CPU: --\nRAM: --"
+            minWidth = dp(activity, 130)
+            text = "CPU: --\nRAM: --\nUI:  --\nJS:  --"
         }
     }
 
@@ -491,7 +656,9 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
         val cpu = if (s.cpu > 0) String.format(Locale.US, "%.1f%%", s.cpu) else "--"
         val mb = s.rss / 1024.0 / 1024.0
         val mem = if (mb > 0) String.format(Locale.US, "%.1f MB", mb) else "--"
-        return "CPU: $cpu\nRAM: $mem"
+        val ui = if (s.uiFps > 0) String.format(Locale.US, "%.0f fps", s.uiFps) else "--"
+        val js = if (s.jsFps > 0) String.format(Locale.US, "%.0f fps", s.jsFps) else "--"
+        return "CPU: $cpu\nRAM: $mem\nUI:  $ui\nJS:  $js"
     }
 
     private fun dp(activity: Activity, v: Int): Int =

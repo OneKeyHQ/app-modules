@@ -10,6 +10,18 @@ export interface PerfSample {
   cpu: number;
   /** Resident set size in bytes. iOS: phys_footprint; Android: VmRSS. */
   rss: number;
+  /**
+   * UI thread frame rate, frames per second over the last 1 s window.
+   * Measured on the platform's main thread via Choreographer (Android)
+   * or CADisplayLink (iOS). `0` until at least one window has elapsed.
+   */
+  uiFps: number;
+  /**
+   * JS thread frame rate, frames per second reported by the JS-side
+   * `requestAnimationFrame` ticker (see `startJsFpsTracker`). `0` if
+   * the tracker has not been started or no hint has been received yet.
+   */
+  jsFps: number;
   /** Wall-clock timestamp (ms since unix epoch) when the sample was taken. */
   timestamp: number;
 }
@@ -51,4 +63,15 @@ export interface ReactNativePerfStats
    * Shares the same delta baseline as the overlay sampler.
    */
   sample(): Promise<PerfSample>;
+
+  /**
+   * Push the latest JS-thread frame count from the JS-side
+   * `requestAnimationFrame` ticker. Native stores the value and
+   * surfaces it as `PerfSample.jsFps` on the next sample. Cheap;
+   * intended to be called once per second.
+   *
+   * Prefer the `startJsFpsTracker` helper exported from JS rather
+   * than calling this directly.
+   */
+  setJsFpsHint(fps: number): void;
 }
