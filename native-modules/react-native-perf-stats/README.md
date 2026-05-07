@@ -17,17 +17,11 @@ yarn add @onekeyfe/react-native-perf-stats react-native-nitro-modules
 ## Usage
 
 ```ts
-import {
-  ReactNativePerfStats,
-  startJsFpsTracker,
-  stopJsFpsTracker,
-} from '@onekeyfe/react-native-perf-stats';
+import { ReactNativePerfStats } from '@onekeyfe/react-native-perf-stats';
 
 // Start sampling at 1 Hz. Idempotent — calling again just updates the interval.
+// Also kicks off the JS-side rAF tracker so PerfSample.jsFps is populated.
 ReactNativePerfStats.start(1000);
-
-// Optional: turn on the JS-side rAF ticker so PerfSample.jsFps is populated.
-startJsFpsTracker();
 
 // Show the floating overlay (drag to reposition).
 ReactNativePerfStats.showOverlay();
@@ -37,8 +31,7 @@ const sample = await ReactNativePerfStats.sample();
 console.log(sample);
 // { cpu: 12.3, rss: 187654144, uiFps: 59, jsFps: 60, timestamp: 1730000000000 }
 
-// Tear down.
-stopJsFpsTracker();
+// Tear down. Also stops the JS-side rAF tracker.
 ReactNativePerfStats.hideOverlay();
 ReactNativePerfStats.stop();
 ```
@@ -55,13 +48,12 @@ ReactNativePerfStats.stop();
 
 ### API
 
-- `start(intervalMs: number): void` — minimum interval is clamped to 200 ms.
-- `stop(): void` — also hides the overlay and resets the cached UI FPS.
+- `start(intervalMs: number): void` — minimum interval is clamped to 200 ms. Also starts the JS-side rAF tracker (matched to `intervalMs`) so `jsFps` flows automatically.
+- `stop(): void` — stops the JS-side tracker, the native sampler, and hides the overlay.
 - `showOverlay(): void` / `hideOverlay(): void` — overlay shows `--` until `start` runs.
 - `sample(): Promise<PerfSample>` — runs off the JS thread, shares baseline with the overlay sampler.
-- `setJsFpsHint(fps: number): void` — low-level escape hatch; prefer `startJsFpsTracker()` below.
-- `startJsFpsTracker(reportIntervalMs?: number): void` — kicks off a `requestAnimationFrame` loop that reports the per-second count to native via `setJsFpsHint`. Idempotent.
-- `stopJsFpsTracker(): void` — cancels the rAF loop. Idempotent.
+- `setJsFpsHint(fps: number): void` — low-level escape hatch; normally driven by the auto-managed tracker.
+- `startJsFpsTracker(reportIntervalMs?: number): void` / `stopJsFpsTracker(): void` — manual control of the JS-side rAF tracker. Useful if you want JS FPS without enabling the native sampler. Calling `startJsFpsTracker` with a different `reportIntervalMs` while running restarts the loop with the new interval.
 
 ### Anomaly logging
 
