@@ -284,8 +284,12 @@ private object Sampler {
 
 // ---- Overlay ----------------------------------------------------------
 //
-// Attaches a TextView via WindowManager.addView using
-// TYPE_APPLICATION_ABOVE_SUB_PANEL (z=1005). This sits above:
+// Attaches a TextView via WindowManager.addView at z=1005, the AOSP slot
+// `TYPE_APPLICATION_ABOVE_SUB_PANEL` (FIRST_SUB_WINDOW + 5). The named
+// constant is `@hide` in the public SDK, so we use the literal value
+// directly — `WINDOW_TYPE_ABOVE_SUB_PANEL` below — to keep this file
+// compilable against the public SDK while preserving the original z-order
+// intent. This sits above:
 //   - The activity's main window (TYPE_APPLICATION = 2)
 //   - PANEL / SUB_PANEL (1000 / 1002)
 //   - ATTACHED_DIALOG used by RN's Modal (1003)
@@ -299,6 +303,11 @@ private object Sampler {
 // captured. Without this hook, JS code calling showOverlay() after the
 // React tree mounts would arrive too late and currentActivity would stay
 // null indefinitely.
+
+// FIRST_SUB_WINDOW (1000) + 5; the public SDK hides the named constant
+// `TYPE_APPLICATION_ABOVE_SUB_PANEL` even though the value is honoured at
+// runtime. See the block comment above for the z-order rationale.
+private const val WINDOW_TYPE_ABOVE_SUB_PANEL = 1005
 
 internal object Overlay : Application.ActivityLifecycleCallbacks {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -392,7 +401,7 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_ABOVE_SUB_PANEL,
+            WINDOW_TYPE_ABOVE_SUB_PANEL,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                 or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
