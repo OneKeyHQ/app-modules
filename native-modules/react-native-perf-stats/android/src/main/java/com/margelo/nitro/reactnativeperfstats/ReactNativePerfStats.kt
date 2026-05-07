@@ -65,57 +65,69 @@ private object Sampler {
     // The HandlerThread is created lazily on start() and quit on stop() so
     // an idle process doesn't keep a worker thread (~512KB stack + VM
     // overhead) alive forever. Recreated on next start().
+    //
+    // schedulerLock guards `handlerThread`, `handler`, `running`, `generation`
+    // and `intervalMs` together — start/stop must transition all of them
+    // atomically, otherwise a start() lambda queued on the (now-quitting)
+    // looper could resurrect `running=true` after stop() and strand the
+    // sampler with no live handler.
     private val schedulerLock = Any()
     private var handlerThread: HandlerThread? = null
     private var handler: Handler? = null
+    // Bumped on every stop(); any in-flight tick whose generation no longer
+    // matches drops itself instead of rescheduling on a stale handler.
+    private var generation = 0L
+    private var running = false
+    private var intervalMs: Long = 1000L
 
     private val lock = Any()
-    @Volatile private var running = false
-    @Volatile private var intervalMs: Long = 1000L
     @Volatile private var lastCpuTicks: Long = -1L
     @Volatile private var lastMonoNs: Long = -1L
 
-    private val tick = object : Runnable {
-        override fun run() {
-            if (!running) return
-            val sample = takeSample()
-            Overlay.update(sample)
-            // handler may be null if stop() raced ahead; tolerated.
-            handler?.postDelayed(this, intervalMs)
-        }
-    }
-
     fun start(intervalMsNew: Long) {
-        val h = synchronized(schedulerLock) {
+        synchronized(schedulerLock) {
             intervalMs = intervalMsNew
-            var existing = handler
-            if (existing == null) {
+            if (running) return
+            if (handler == null) {
                 val ht = HandlerThread("PerfStatsSampler").apply { start() }
-                existing = Handler(ht.looper)
                 handlerThread = ht
-                handler = existing
+                handler = Handler(ht.looper)
             }
-            existing
-        }
-        h.post {
-            if (running) return@post
             running = true
-            h.removeCallbacks(tick)
-            h.post(tick)
+            scheduleTick(generation, handler!!)
         }
     }
 
     fun stop() {
         synchronized(schedulerLock) {
+            generation++
             running = false
-            handler?.removeCallbacks(tick)
-            // quitSafely lets in-flight tick body finish; subsequent
-            // handler?.postDelayed in tick is null-safe.
+            handler?.removeCallbacksAndMessages(null)
+            // quitSafely lets in-flight tick body finish; the generation
+            // check below prevents that body from rescheduling itself.
             handlerThread?.quitSafely()
             handlerThread = null
             handler = null
         }
         Overlay.hide()
+    }
+
+    /** Caller must hold schedulerLock; [h] is the handler captured at start time. */
+    private fun scheduleTick(genAtStart: Long, h: Handler) {
+        h.post(object : Runnable {
+            override fun run() {
+                val active = synchronized(schedulerLock) {
+                    genAtStart == generation && running
+                }
+                if (!active) return
+                val sample = takeSample()
+                Overlay.update(sample)
+                synchronized(schedulerLock) {
+                    if (genAtStart != generation || !running) return
+                    handler?.postDelayed(this, intervalMs)
+                }
+            }
+        })
     }
 
     fun takeSample(): PerfSample {
