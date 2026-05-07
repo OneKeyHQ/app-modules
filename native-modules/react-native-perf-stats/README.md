@@ -48,6 +48,17 @@ ReactNativePerfStats.stop();
 - `showOverlay(): void` / `hideOverlay(): void` — overlay shows `--` until `start` runs.
 - `sample(): Promise<PerfSample>` — runs off the JS thread, shares baseline with the overlay sampler.
 
+### Anomaly logging
+
+While the sampler is running, the native side emits a warn to `@onekeyfe/react-native-native-logger` (`OneKeyLog.warn`, tag `PerfStats`) whenever a metric stays over its threshold for **5 consecutive samples**. Each category has an independent **30 s cooldown** so a sustained spike produces one log every 30 s rather than one per sample.
+
+| metric | threshold |
+| ------ | --------- |
+| CPU    | ≥ 150 %   |
+| RSS    | ≥ 800 MB  |
+
+One-off `sample()` calls do **not** trip this path — only the periodic timer started by `start()` does.
+
 ## License
 
 MIT

@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -28,6 +29,16 @@ private const val MIN_INTERVAL_MS = 200L
 // Standard Android USER_HZ. If a device differs the absolute CPU% scales
 // accordingly, but values stay self-consistent across samples.
 private const val CLOCK_TICKS_PER_SECOND = 100L
+
+// Anomaly logging thresholds. We only emit a warn after the metric has
+// stayed over the threshold for SUSTAIN samples in a row, to skip
+// transient spikes (e.g. JS startup, GC). After firing we throttle for
+// COOLDOWN_MS to avoid flooding native-logger.
+private const val CPU_ANOMALY_PCT = 150.0
+// 800 MiB.
+private const val RSS_ANOMALY_BYTES = 838_860_800.0
+private const val ANOMALY_SUSTAIN_SAMPLES = 5
+private const val ANOMALY_COOLDOWN_MS = 30_000L
 
 @DoNotStrip
 class ReactNativePerfStats : HybridReactNativePerfStatsSpec() {
@@ -84,6 +95,15 @@ private object Sampler {
     @Volatile private var lastCpuTicks: Long = -1L
     @Volatile private var lastMonoNs: Long = -1L
 
+    // Anomaly state lives on the sampler HandlerThread (single consumer),
+    // so no synchronization is needed. lastLogMs intentionally persists
+    // across stop()/start() cycles to keep the cooldown honest if the
+    // caller toggles the sampler rapidly.
+    private var cpuOverCount = 0
+    private var rssOverCount = 0
+    private var lastCpuLogMs = 0L
+    private var lastRssLogMs = 0L
+
     fun start(intervalMsNew: Long) {
         synchronized(schedulerLock) {
             intervalMs = intervalMsNew
@@ -122,12 +142,64 @@ private object Sampler {
                 if (!active) return
                 val sample = takeSample()
                 Overlay.update(sample)
+                checkAnomalyAndLog(sample)
                 synchronized(schedulerLock) {
                     if (genAtStart != generation || !running) return
                     handler?.postDelayed(this, intervalMs)
                 }
             }
         })
+    }
+
+    /**
+     * Emits a warn to native-logger when CPU or RSS has stayed over its
+     * threshold for [ANOMALY_SUSTAIN_SAMPLES] consecutive samples. Only
+     * called from the periodic sampler tick; one-off `sample()` calls do
+     * not trip this path. Each metric tracks its own counter and cooldown.
+     */
+    private fun checkAnomalyAndLog(s: PerfSample) {
+        val nowMs = SystemClock.uptimeMillis()
+
+        if (s.cpu >= CPU_ANOMALY_PCT) {
+            cpuOverCount++
+            if (cpuOverCount >= ANOMALY_SUSTAIN_SAMPLES &&
+                nowMs - lastCpuLogMs >= ANOMALY_COOLDOWN_MS
+            ) {
+                OneKeyLog.warn(
+                    TAG,
+                    String.format(
+                        Locale.US,
+                        "Sustained high CPU: %.1f%% over %d samples",
+                        s.cpu, cpuOverCount,
+                    ),
+                )
+                lastCpuLogMs = nowMs
+                cpuOverCount = 0
+            }
+        } else {
+            cpuOverCount = 0
+        }
+
+        if (s.rss >= RSS_ANOMALY_BYTES) {
+            rssOverCount++
+            if (rssOverCount >= ANOMALY_SUSTAIN_SAMPLES &&
+                nowMs - lastRssLogMs >= ANOMALY_COOLDOWN_MS
+            ) {
+                val mb = s.rss / 1024.0 / 1024.0
+                OneKeyLog.warn(
+                    TAG,
+                    String.format(
+                        Locale.US,
+                        "Sustained high RSS: %.1f MB over %d samples",
+                        mb, rssOverCount,
+                    ),
+                )
+                lastRssLogMs = nowMs
+                rssOverCount = 0
+            }
+        } else {
+            rssOverCount = 0
+        }
     }
 
     fun takeSample(): PerfSample {

@@ -6,6 +6,15 @@ import UIKit
 private let kTag = "PerfStats"
 private let kMinIntervalMs: Double = 200
 
+// Anomaly logging thresholds. We only emit a warn after the metric has
+// stayed over the threshold for kAnomalySustainSamples in a row, to
+// skip transient spikes (e.g. JS startup, GC). After firing we throttle
+// for kAnomalyCooldownSec to avoid flooding native-logger.
+private let kCpuAnomalyPct: Double = 150.0
+private let kRssAnomalyBytes: Double = 800.0 * 1024.0 * 1024.0
+private let kAnomalySustainSamples: Int = 5
+private let kAnomalyCooldownSec: Double = 30.0
+
 class ReactNativePerfStats: HybridReactNativePerfStatsSpec {
 
     func start(intervalMs: Double) throws {
@@ -48,6 +57,15 @@ private final class Sampler {
     private var lastCpuSec: Double = -1
     private var lastMonoSec: Double = -1
 
+    // Anomaly state lives on the sampler's serial dispatch queue, so no
+    // synchronization is needed. lastLogSec intentionally persists across
+    // stop()/start() cycles to keep the cooldown honest if the caller
+    // toggles the sampler rapidly.
+    private var cpuOverCount: Int = 0
+    private var rssOverCount: Int = 0
+    private var lastCpuLogSec: Double = 0
+    private var lastRssLogSec: Double = 0
+
     func start(intervalMs ms: Double) {
         queue.async { [weak self] in
             guard let self = self else { return }
@@ -75,6 +93,7 @@ private final class Sampler {
                 guard let self = self, self.running else { return }
                 let s = self.takeSample()
                 Overlay.shared.update(sample: s)
+                self.checkAnomalyAndLog(sample: s)
             }
             self.timer = t
             t.resume()
@@ -117,6 +136,51 @@ private final class Sampler {
             rss: Double(rssBytes),
             timestamp: nowWallMs
         )
+    }
+
+    /// Emits a warn to native-logger when CPU or RSS has stayed over its
+    /// threshold for `kAnomalySustainSamples` consecutive samples. Only
+    /// called from the periodic timer; one-off `sample()` calls do not
+    /// trip this path. Each metric tracks its own counter and cooldown.
+    private func checkAnomalyAndLog(sample s: PerfSample) {
+        let nowSec = monotonicSec()
+
+        if s.cpu >= kCpuAnomalyPct {
+            cpuOverCount += 1
+            if cpuOverCount >= kAnomalySustainSamples,
+               nowSec - lastCpuLogSec >= kAnomalyCooldownSec {
+                OneKeyLog.warn(
+                    kTag,
+                    String(
+                        format: "Sustained high CPU: %.1f%% over %d samples",
+                        s.cpu, cpuOverCount
+                    )
+                )
+                lastCpuLogSec = nowSec
+                cpuOverCount = 0
+            }
+        } else {
+            cpuOverCount = 0
+        }
+
+        if s.rss >= kRssAnomalyBytes {
+            rssOverCount += 1
+            if rssOverCount >= kAnomalySustainSamples,
+               nowSec - lastRssLogSec >= kAnomalyCooldownSec {
+                let mb = s.rss / 1024.0 / 1024.0
+                OneKeyLog.warn(
+                    kTag,
+                    String(
+                        format: "Sustained high RSS: %.1f MB over %d samples",
+                        mb, rssOverCount
+                    )
+                )
+                lastRssLogSec = nowSec
+                rssOverCount = 0
+            }
+        } else {
+            rssOverCount = 0
+        }
     }
 
     private func monotonicSec() -> Double {
