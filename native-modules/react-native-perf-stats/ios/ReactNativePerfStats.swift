@@ -412,12 +412,35 @@ private final class JsFpsHolder {
 
 // MARK: - Overlay
 //
-// Singleton UILabel attached to the current key UIWindow. Updates always
-// dispatch to main. No floating-window permission needed; overlay only
-// shows while the app is in the foreground.
+// Singleton overlay rendered on its own dedicated UIWindow at
+// `.alert + 1` windowLevel. The dedicated window is required because
+// React Native's <Modal> presents view controllers via UIKit's modal
+// presentation, which renders above any subview added to the host
+// app's main UIWindow — a UILabel attached to keyWindow ends up behind
+// the modal regardless of view-hierarchy z-order. A separate UIWindow
+// with a higher `windowLevel` sits above modal-presented view
+// controllers and system alerts, so the overlay stays visible.
+//
+// `OverlayPassthroughWindow` overrides `hitTest` to return nil for
+// touches outside the label, letting them fall through to the
+// underlying app windows — otherwise the overlay window would swallow
+// every tap on the screen.
 //
 // Inherits NSObject so UIPanGestureRecognizer's target/action selector
 // dispatch resolves cleanly via Obj-C runtime.
+
+private final class OverlayPassthroughWindow: UIWindow {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        // Anything that bubbles up to the window itself or its empty
+        // root view means the touch missed our overlay subview — pass it
+        // through to whatever's below this window.
+        if hit === self || hit === self.rootViewController?.view {
+            return nil
+        }
+        return hit
+    }
+}
 
 private final class Overlay: NSObject {
     static let shared = Overlay()
@@ -425,6 +448,7 @@ private final class Overlay: NSObject {
     private override init() { super.init() }
 
     private var label: UILabel?
+    private var overlayWindow: UIWindow?
     private var visible = false
 
     // `_lastSample` is written by the Sampler timer thread and read by the
@@ -484,10 +508,26 @@ private final class Overlay: NSObject {
 
     private func attach() {
         if label != nil { return }
-        guard let window = currentKeyWindow() else {
-            OneKeyLog.warn(kTag, "No key UIWindow available; overlay deferred")
+        guard let scene = currentForegroundScene() else {
+            OneKeyLog.warn(kTag, "No foreground UIWindowScene; overlay deferred")
             return
         }
+
+        // Dedicated host VC keeps the window's view hierarchy minimal —
+        // the empty UIView serves only as the parent for the label and
+        // as the hitTest sentinel checked by OverlayPassthroughWindow.
+        let host = UIViewController()
+        host.view.backgroundColor = .clear
+
+        let window = OverlayPassthroughWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
+        // .alert is 2000 on iOS; +1 puts the overlay above modal-presented
+        // controllers, system alerts and action sheets. Status bar is
+        // .statusBar (1000), which we stay below intentionally.
+        window.windowLevel = UIWindow.Level.alert + 1
+        window.backgroundColor = .clear
+        window.isHidden = false
+        window.rootViewController = host
 
         let lbl = UILabel(frame: CGRect(x: 30, y: 100, width: 170, height: 92))
         lbl.backgroundColor = UIColor.black.withAlphaComponent(0.7)
@@ -503,8 +543,9 @@ private final class Overlay: NSObject {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         lbl.addGestureRecognizer(pan)
 
-        window.addSubview(lbl)
+        host.view.addSubview(lbl)
         label = lbl
+        overlayWindow = window
 
         if let s = lastSample {
             lbl.text = renderText(s)
@@ -514,6 +555,13 @@ private final class Overlay: NSObject {
     private func detach() {
         label?.removeFromSuperview()
         label = nil
+        // Hide before nilling so UIKit can release the window cleanly;
+        // assigning nil to rootViewController first avoids a fleeting
+        // warning when the window is torn down with a controller still
+        // attached.
+        overlayWindow?.isHidden = true
+        overlayWindow?.rootViewController = nil
+        overlayWindow = nil
     }
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
@@ -541,29 +589,19 @@ private final class Overlay: NSObject {
         return "CPU: \(cpuStr)\nRAM: \(memStr)\nUI:  \(uiStr)\nJS:  \(jsStr)"
     }
 
-    private func currentKeyWindow() -> UIWindow? {
-        // iOS 15+ preferred path
-        if #available(iOS 15.0, *) {
-            for scene in UIApplication.shared.connectedScenes {
-                guard
-                    let windowScene = scene as? UIWindowScene,
-                    windowScene.activationState == .foregroundActive
-                else { continue }
-                if let kw = windowScene.keyWindow {
-                    return kw
-                }
-            }
-        }
-        // Fallback: scan all connected scenes
+    /// Locate an active foreground `UIWindowScene` to host the overlay
+    /// window. Prefers `.foregroundActive`; falls back to the first
+    /// connected `UIWindowScene` so we still attach during transient
+    /// states like cold launch when no scene is `.foregroundActive` yet.
+    private func currentForegroundScene() -> UIWindowScene? {
+        var fallback: UIWindowScene?
         for scene in UIApplication.shared.connectedScenes {
-            guard let windowScene = scene as? UIWindowScene else { continue }
-            if let kw = windowScene.windows.first(where: { $0.isKeyWindow }) {
-                return kw
+            guard let ws = scene as? UIWindowScene else { continue }
+            if ws.activationState == .foregroundActive {
+                return ws
             }
-            if let any = windowScene.windows.first {
-                return any
-            }
+            if fallback == nil { fallback = ws }
         }
-        return nil
+        return fallback
     }
 }
