@@ -1251,6 +1251,35 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
+    /**
+     * Returns a low-cardinality, path-free tag describing why a download
+     * failed. Used in the JS-facing `update/error` event so listeners
+     * never observe Android's `/data/data/<pkg>/...` or `/data/user/<u>/<pkg>/...`
+     * paths that FileNotFoundException / IOException embed in `e.message`.
+     *
+     * Recognized payloads (same shape extractUpdateErrorCode parses):
+     *   - "Bundle SHA256 verification failed: <REASON>" → preserved verbatim;
+     *      JS extractor maps to SHA256_<REASON>.
+     *   - "HTTP <code>" / "HTTP 416 ..." → preserved verbatim; maps to HTTP_<code>.
+     *   - "Already downloading" / "Invalid version string format" /
+     *     "Bundle download URL must use HTTPS" → preserved verbatim; the
+     *     hooks unrecoverable-list matches them by exact substring.
+     *   - Anything else → "IO_<exceptionClassName>" so the JS extractor
+     *     splits the bucket on exception class without leaking the message.
+     */
+    private fun sanitizeErrorMessageForEvent(e: Exception): String {
+        val msg = e.message ?: return "IO_${e.javaClass.simpleName}"
+        if (msg.startsWith("Bundle SHA256 verification failed:")) return msg
+        if (msg.startsWith("HTTP ")) return msg
+        if (msg == "Already downloading" ||
+            msg == "Invalid version string format" ||
+            msg == "Bundle download URL must use HTTPS" ||
+            msg == "Empty response body" ||
+            msg == "Failed to finalize download"
+        ) return msg
+        return "IO_${e.javaClass.simpleName}"
+    }
+
     override fun addDownloadListener(callback: (BundleDownloadEvent) -> Unit): Double {
         val id = nextListenerId.getAndIncrement().toDouble()
         listeners.add(BundleListener(id, callback))
@@ -1530,8 +1559,16 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             OneKeyLog.info("BundleUpdate", "downloadBundle: completed successfully, appVersion=$appVersion, bundleVersion=$bundleVersion")
             result
             } catch (e: Exception) {
+                // Keep the rich detail in OneKeyLog (local-only). The JS
+                // event channel must NOT carry e.message verbatim — Android
+                // FileNotFoundException etc. embed the full /data/user/.../
+                // path including the package identifier, and downstream
+                // listeners would forward that into analytics. Emit only a
+                // domain+code shape; mirrors the iOS sendEvent payload at
+                // ReactNativeBundleUpdate.swift's "update/error" sites.
                 OneKeyLog.error("BundleUpdate", "downloadBundle: failed: ${e.javaClass.simpleName}: ${e.message}")
-                sendEvent("update/error", message = "${e.javaClass.simpleName}: ${e.message}")
+                val codeTag = sanitizeErrorMessageForEvent(e)
+                sendEvent("update/error", message = "${e.javaClass.simpleName}: $codeTag")
                 throw e
             } finally {
                 isDownloading.set(false)

@@ -1239,6 +1239,11 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         if let token = didEnterBackgroundObserver {
             NotificationCenter.default.removeObserver(token)
         }
+        // URLSession retains its delegate strongly until invalidated.
+        // Without this call the session (and its DownloadDelegate) would
+        // leak past module deallocation — relevant in dev hot-reload and
+        // any future test harness that spins up multiple module instances.
+        urlSession?.invalidateAndCancel()
     }
 
     /// On iOS, force-quit (user swipes the app off the App Switcher) cannot
