@@ -5,6 +5,7 @@ import CommonCrypto
 import Gopenpgp
 import SSZipArchive
 import MMKV
+import UIKit
 
 // OneKey GPG public key for signature verification
 private let GPG_PUBLIC_KEY = """
@@ -1220,9 +1221,97 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }
 
+    /// Path of the bundle being downloaded right now (mirrors filePath in
+    /// downloadBundle). Set on entry, cleared on exit. Single value because
+    /// isDownloading enforces at most one in-flight download per process.
+    /// Read by the background-snapshot handler so it knows where to drop the
+    /// `.resume` sidecar.
+    private var activeDownloadFilePath: String?
+    private var didEnterBackgroundObserver: NSObjectProtocol?
+
     override init() {
         super.init()
         urlSession = createURLSession()
+        registerBackgroundSnapshotObserver()
+    }
+
+    deinit {
+        if let token = didEnterBackgroundObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
+
+    /// On iOS, force-quit (user swipes the app off the App Switcher) cannot
+    /// fire `URLSession`'s `didCompleteWithError` — SIGKILL leaves no time
+    /// for callbacks. The kill is, however, *always* preceded by the app
+    /// transitioning to the background. We hook that transition and call
+    /// `cancel(byProducingResumeData:)` synchronously, so the resume blob
+    /// is on disk before the app can possibly be terminated. Memory-pressure
+    /// kills follow the same chain (the OS only reaps backgrounded apps
+    /// under memory pressure), so this also covers OOM termination.
+    ///
+    /// `beginBackgroundTask` extends the ~5s of guaranteed background runtime
+    /// to ~30s, which is plenty for a few-KB blob write — but we don't rely
+    /// on the extension to *complete* the snapshot; the `cancel` callback
+    /// returns the data synchronously, so even if iOS suspends us right
+    /// after `endBackgroundTask` the resume blob is already persisted.
+    private func registerBackgroundSnapshotObserver() {
+        didEnterBackgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.snapshotResumeDataForBackgrounding()
+        }
+    }
+
+    private func snapshotResumeDataForBackgrounding() {
+        guard let session = self.urlSession else { return }
+        let stillDownloading = self.stateQueue.sync { self.isDownloading }
+        guard stillDownloading, let filePath = self.activeDownloadFilePath else { return }
+
+        let resumeDataPath = "\(filePath).resume"
+        let bgTaskName = "BundleUpdateResumeSnapshot"
+        var bgTaskId: UIBackgroundTaskIdentifier = .invalid
+        bgTaskId = UIApplication.shared.beginBackgroundTask(withName: bgTaskName) {
+            // Expiration handler — system is reclaiming us. Best-effort end.
+            if bgTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskId)
+                bgTaskId = .invalid
+            }
+        }
+        OneKeyLog.info("BundleUpdate", "didEnterBackground: snapshotting resumeData for \(filePath)")
+
+        session.getAllTasks { tasks in
+            let group = DispatchGroup()
+            for task in tasks {
+                guard let dl = task as? URLSessionDownloadTask, dl.state == .running else { continue }
+                group.enter()
+                dl.cancel(byProducingResumeData: { data in
+                    if let data = data, data.count > 0 {
+                        do {
+                            let dir = (resumeDataPath as NSString).deletingLastPathComponent
+                            if !FileManager.default.fileExists(atPath: dir) {
+                                try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+                            }
+                            try data.write(to: URL(fileURLWithPath: resumeDataPath), options: .atomic)
+                            OneKeyLog.info("BundleUpdate", "didEnterBackground: persisted resumeData (\(data.count) bytes) at \(resumeDataPath)")
+                        } catch {
+                            OneKeyLog.warn("BundleUpdate", "didEnterBackground: failed to persist resumeData: \(error)")
+                        }
+                    } else {
+                        OneKeyLog.info("BundleUpdate", "didEnterBackground: cancel produced no resumeData (task may have just completed)")
+                    }
+                    group.leave()
+                })
+            }
+            group.notify(queue: .main) {
+                if bgTaskId != .invalid {
+                    UIApplication.shared.endBackgroundTask(bgTaskId)
+                    bgTaskId = .invalid
+                }
+            }
+        }
     }
 
     private func sendEvent(type: String, progress: Int = 0, message: String = "") {
@@ -1267,7 +1356,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: rejected, already downloading")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Already downloading"])
             }
-            defer { self.stateQueue.sync { self.isDownloading = false } }
+            defer {
+                self.stateQueue.sync { self.isDownloading = false }
+                // Clear the snapshot anchor so a stray didEnterBackground
+                // after this point doesn't try to cancel a finished task.
+                self.activeDownloadFilePath = nil
+            }
 
             let appVersion = params.latestVersion
             let bundleVersion = params.bundleVersion
@@ -1356,6 +1450,11 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             delegate.onProgress = { [weak self] progress in
                 self?.sendEvent(type: "update/downloading", progress: progress)
             }
+
+            // Anchor for the background-snapshot handler. Set BEFORE task.resume()
+            // so a foreground→background transition that races the very first
+            // bytes still finds a path to write the resume blob to.
+            self.activeDownloadFilePath = filePath
 
             let downloadOutcome: Result<(URL, URLResponse), Error>
             do {
