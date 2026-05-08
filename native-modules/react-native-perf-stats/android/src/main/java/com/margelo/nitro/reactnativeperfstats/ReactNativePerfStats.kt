@@ -593,7 +593,11 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
         val view = overlayView ?: return
         if (attachedToWindowManager) {
             try {
-                val wm = currentActivity?.getSystemService(Context.WINDOW_SERVICE)
+                // Use the view's own context, not currentActivity. onActivityDestroyed
+                // posts detach() to the main handler and then clears currentActivity
+                // synchronously, so by the time this runs currentActivity may already
+                // be null and the overlay would otherwise leak.
+                val wm = view.context.getSystemService(Context.WINDOW_SERVICE)
                     as? WindowManager
                 wm?.removeView(view)
             } catch (e: Exception) {

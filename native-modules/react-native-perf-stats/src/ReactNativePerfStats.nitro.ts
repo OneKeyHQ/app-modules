@@ -45,9 +45,13 @@ export interface ReactNativePerfStats
   /**
    * Show the floating overlay (CPU + RAM) drawn natively.
    *
-   * - Android: TextView attached to the current Activity via
-   *   `addContentView` — no floating-window permission required.
-   * - iOS: UILabel added to the key UIWindow.
+   * - Android: TextView attached via `WindowManager.addView` using the
+   *   current Activity's window token (window type
+   *   `TYPE_APPLICATION_ABOVE_SUB_PANEL`) — no floating-window permission
+   *   required, and the overlay tracks Activity lifecycle (re-attach on
+   *   resume, detach on pause/destroy).
+   * - iOS: UILabel hosted on a dedicated passthrough UIWindow above the
+   *   app's key window so it stays above modally-presented controllers.
    * - Draggable on both platforms.
    * - Idempotent. If the sampler is not running, the overlay shows "--"
    *   until `start` is called.
