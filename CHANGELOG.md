@@ -2,6 +2,55 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.29] - 2026-05-09
+
+### Features
+- **bundle-update (iOS)**: Persist `URLSession` resume data on download failure. `DownloadDelegate` now captures `NSURLSessionDownloadTaskResumeData` from the failed task's `userInfo` and `downloadBundle` writes it to a `<filePath>.resume` sidecar; on the next attempt, `session.downloadTask(withResumeData:)` finishes from the OS-recorded cut point instead of restarting from byte 0. The success branch unlinks the stale blob so the sidecar stays in lockstep with the bundle. Previously the ~11KB resume blob iOS attaches to every `NSURL -1005` / `-1001` failure was discarded — the same two error codes that account for ~64% of all download failures (~5,940 mixpanel users).
+- **bundle-update (iOS)**: Snapshot resume data on `UIApplication.didEnterBackgroundNotification`. Force-quit (user swipes off App Switcher) and memory-pressure kills both SIGKILL the app, leaving no time for `URLSession` `didCompleteWithError` callbacks to write the resume blob. Both kill paths are deterministically preceded by a background transition, so `init` registers a notification observer (paired removal in `deinit`); on fire, `beginBackgroundTask` extends the ~5s of guaranteed background runtime to ~30s while we walk `URLSession.getAllTasks` and call `cancel(byProducingResumeData:)` on every running download task — the cancel callback hands us the blob synchronously, so even if iOS suspends right after `endBackgroundTask` the data is already on disk. Anchored to `activeDownloadFilePath`, set before `task.resume()` and cleared in `defer` so observers fired outside an active download are no-ops.
+- **bundle-update (Android)**: Range-based resume via `<filePath>.partial` sidecar. Mirrors the Desktop implementation — download streams to the partial file, rename to the final filename happens only after SHA256 verifies. On retry, `.partial` size becomes the `Range: bytes=<offset>-` header; server-side 206 with parsed `Content-Range` gives the true total, 200 on a Range request transparently restarts, 416 wipes the partial and bubbles up so the next attempt starts clean. A corrupt full file can no longer poison the "exists → already valid" fast path.
+- **bundle-update**: Per-failure SHA256 subtype tagging. A `ThreadLocal` (Android) / `Thread.threadDictionary` (iOS) side-channel stamp records `FILE_NOT_FOUND` / `FILE_EMPTY` / `FILE_DISAPPEARED` / `FILE_TRUNCATED` / `PERMISSION_DENIED` / `OOM` / `IO_<class>` / `UNEXPECTED_<class>`; `verifyBundleSHA256` reads it back so a hash-mismatch (reason==null) is distinguishable from a computation failure. iOS replaces the raise-prone `readData(ofLength:)` with a throwing `read(upToCount:)` wrapper so disk I/O failures become catchable Swift errors instead of `NSException` surface. The download flow attaches the subtype to its `update/error` event payload (`SHA256_FILE_TRUNCATED`, `SHA256_OOM`, …) so the previously opaque 91.3% Android `verifyPackage` mixpanel bucket can be split end-to-end.
+
+### Bug Fixes
+- **bundle-update**: Drop inner exception text from thrown messages to prevent path leakage. iOS `verifyBundleASC` previously embedded `error.localizedDescription` from `SSZipArchive`, which on a real device frequently contains the install UUID under `/var/mobile/Containers/Data/Application/<UUID>/`; now throws `Failed to unzip bundle: IO_<NSError code>`. Android `getMetadata` previously embedded `e.message` from `org.json` parse failures, which can carry partial JSON contents or local file paths from the underlying reader; now throws `Failed to parse metadata.json: IO_<class>`. The full description still flows to OneKeyLog (local-only) for support diagnostics; only the `IO_*` tag escapes into the Promise rejection that JS analytics observes. Tag shape matches the `SHA256_<reason>` convention so `extractUpdateErrorCode` classifies them into the same `IO_*` mixpanel bucket without a separate parser.
+- **bundle-update**: Verify-stage SHA failures now propagate the subtype. `verifyBundleASC`'s SHA256 guard threw `Bundle signature verification failed`, opaque to `extractUpdateErrorCode`, which collapsed every verify-stage SHA failure into one bucket. Now reads the side-channel reason and throws `Bundle SHA256 verification failed: <reason>` matching the download-stage shape so the JS extractor splits the bucket end-to-end.
+- **bundle-update (iOS)**: Protect `activeDownloadFilePath` under `stateQueue`. Previously `isDownloading` was read inside `stateQueue` but `activeDownloadFilePath` was read outside it, so a foreground/background race could observe a torn state (`isDownloading=true` with a stale or nil path, or vice versa). Read both inside the same sync block, and pair the writes with the same queue.
+- **bundle-update (iOS)**: Invalidate `URLSession` in `deinit`. `URLSession` retains its delegate strongly until invalidated, so without `urlSession?.invalidateAndCancel()` the session and its `DownloadDelegate` would outlive the module — relevant on dev hot-reload and any future test harness with multiple module instances.
+- **bundle-update (Android)**: Recover crashed-before-rename `.partial` via promote+verify. If the JVM was killed between the last byte being written to `.partial` and the rename to the final filename, the previous code unconditionally deleted the partial when its size hit `expectedSize`, forcing a full re-download of an already-complete bundle. Now: when `partialSize == expectedSize`, attempt rename + SHA verify first; if it passes, treat the bundle as complete and skip the download entirely. Only deletes on verify failure.
+- **bundle-update (Android)**: Recover from HTTP 416 when `Content-Range` indicates the partial IS the complete bundle. `Content-Range: bytes */<total>` where `total == partialBytes` means the local partial is byte-complete and the server correctly rejected our `Range` request. Parse the header, attempt promote+verify before falling through to the wipe branch; otherwise behavior is unchanged.
+- **bundle-update (Android)**: Sanitize `update/error` event payloads. Route exception messages through `sanitizeErrorMessageForEvent` before emitting `update/error`, so `FileNotFoundException` / `IOException` payloads never leak `/data/user/<u>/<pkg>/...` paths to JS listeners or downstream analytics. Known low-cardinality reasons (SHA256 verify, HTTP `<code>`, guard messages) are preserved verbatim; everything else collapses to `IO_<exceptionClassName>`.
+- **perf-stats (Android)**: Prevent overlay leak on Activity destroy. The window-manager-attached overlay was not removed when the host Activity was destroyed, leaking the `View` and its `WindowManager` token across configuration changes / Activity recreation.
+
+### Chores
+- Bump all packages to 3.0.29.
+
+## [3.0.28] - 2026-05-08
+
+### Features
+- **perf-stats**: Add UI FPS and JS FPS metrics. `PerfSample` gains `uiFps` (native — Android `Choreographer` / iOS `CADisplayLink`, counted on the main thread) and `jsFps` (JS-side `requestAnimationFrame` count pushed via `setJsFpsHint`). Native owns UI FPS read-and-reset on each periodic tick, then caches the value so one-shot `sample()` calls don't steal frames from the next interval. JS FPS hints stale out after 2s so the overlay doesn't surface a frozen number when the JS-side tracker has been stopped. Anomaly logging extends to `ui_fps <= 45 (and > 0)` and `js_fps <= 30 (and > 0)`, each with the same 5-sample sustain and 30s cooldown already used for CPU/RSS. Overlay renders four lines.
+- **perf-stats**: Auto-manage JS FPS tracker from `start` / `stop`. `ReactNativePerfStats.start` now also runs `startJsFpsTracker` with the sampler's interval, and `.stop` tears it down — callers no longer have to wire the `rAF` lifecycle separately for `jsFps` to populate. `startJsFpsTracker` / `stopJsFpsTracker` remain exported as escape hatches; restarting `start` with a different `reportIntervalMs` while the loop is already running cleanly restarts the rAF reporter.
+
+### Bug Fixes
+- **perf-stats (iOS)**: Keep overlay above modal-presented controllers. The overlay `UILabel` was attached directly to the host app's key `UIWindow`, so any UIKit-modal-presented controller (RN `<Modal>`, native action sheets, etc.) rendered above it regardless of subview z-order — modal presentation works above the entire root window's view hierarchy, so no amount of `bringSubviewToFront` would help. Switch to a dedicated `UIWindow` at `windowLevel = .alert + 1`, backed by `OverlayPassthroughWindow`, a `UIWindow` subclass that forwards every touch outside the label to the windows below via `hitTest` so the overlay never swallows taps.
+
+### Chores
+- Bump all packages to 3.0.28.
+
+## [3.0.25] - 2026-05-07
+
+### Features
+- **perf-stats**: New `@onekeyfe/react-native-perf-stats` Nitro module — periodic CPU% and RSS sampler with a debug overlay, wired through `react-native-nitro-modules` with Android (Kotlin/JNI) and iOS (Swift) bindings.
+- **perf-stats**: Log sustained CPU/RSS anomalies to native-logger. Periodic sampler emits `OneKeyLog.warn` when CPU >= 150% or RSS >= 800 MB for 5 consecutive samples, with a per-category 30s cooldown to avoid log flooding. One-shot `sample()` calls do not trip this path; counters live on the sampler thread (Android `HandlerThread`, iOS serial queue) so they need no extra locking, while the cooldown clock persists across stop/start cycles.
+
+### Bug Fixes
+- **perf-stats**: Close `start` / `stop` race that stranded the sampler. Move `running=true` and handler lifecycle into a single synchronized block, plus a generation token so any in-flight tick whose scheduler has been stopped drops itself instead of rescheduling on a quitting (or freshly-recreated) handler. Previously `running=true` was `post()`ed onto the handler thread; if `stop()` landed between the post and its execution, the lambda resurrected `running=true` after `stop` had nulled the handler and quit the looper, leaving `running=true` with no live scheduler — the next `start()` then early-returned on the running check and the sampler never recovered.
+- **perf-stats (Android)**: Use literal `1005` for `ABOVE_SUB_PANEL` window type. `WindowManager.LayoutParams.TYPE_APPLICATION_ABOVE_SUB_PANEL` is `@hide` in the public Android SDK, so referencing it by name fails to compile against a non-internal `android.jar`. Runtime still honours the value (`FIRST_SUB_WINDOW + 5 == 1005`), so use the literal directly via a private const and document the intent.
+
+### Documentation
+- **perf-stats**: Rewrite README with the real API and the scoped package name.
+
+### Chores
+- Bump all packages to 3.0.25.
+
 ## [3.0.24] - 2026-04-28
 
 ### Bug Fixes
