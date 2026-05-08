@@ -1360,15 +1360,32 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
             // Resume: if a partial from a previous run exists and is smaller
             // than the expected size, send `Range: bytes=<offset>-` so the
-            // server fills in the rest. Larger-than-expected partials are
-            // garbage from a prior schema; nuke and start over.
+            // server fills in the rest. If the partial is exactly the
+            // expected size it's a process-killed-just-before-rename case
+            // (full body on disk but never promoted): try SHA verify
+            // before discarding so we save a full re-download.
             val expectedSize = if (params.fileSize > 0) params.fileSize.toLong() else 0L
             var partialBytes = 0L
             if (partialFile.exists()) {
                 val partialSize = partialFile.length()
                 when {
-                    expectedSize > 0 && partialSize >= expectedSize -> {
-                        OneKeyLog.warn("BundleUpdate", "downloadBundle: stale partial (>=expected), discarding: $partialSize/$expectedSize")
+                    expectedSize > 0 && partialSize == expectedSize -> {
+                        OneKeyLog.info("BundleUpdate", "downloadBundle: partial matches expected size ($partialSize), trying promote+verify")
+                        if (downloadedFile.exists()) downloadedFile.delete()
+                        if (partialFile.renameTo(downloadedFile) && verifyBundleSHA256(filePath, sha256)) {
+                            OneKeyLog.info("BundleUpdate", "downloadBundle: recovered crashed-before-rename bundle, skipping download")
+                            isDownloading.set(false)
+                            Thread.sleep(1000)
+                            sendEvent("update/complete")
+                            return@async result
+                        } else {
+                            OneKeyLog.warn("BundleUpdate", "downloadBundle: promote+verify failed, discarding both files")
+                            if (downloadedFile.exists()) downloadedFile.delete()
+                            // partialFile is gone (renamed); nothing to delete
+                        }
+                    }
+                    expectedSize > 0 && partialSize > expectedSize -> {
+                        OneKeyLog.warn("BundleUpdate", "downloadBundle: stale partial (>expected), discarding: $partialSize/$expectedSize")
                         partialFile.delete()
                     }
                     partialSize > 0 -> {
@@ -1388,12 +1405,30 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
             val response = httpClient.newCall(requestBuilder.build()).execute()
 
-            // 416 Range Not Satisfiable: our partial offset is past the file
-            // length on the server. Either the partial is corrupt, or the
-            // bundle changed underneath us. Wipe and bubble up — next caller
-            // attempt starts clean.
+            // 416 Range Not Satisfiable: server says our offset is past the
+            // file length. Two sub-cases distinguishable from
+            // `Content-Range: bytes */<total>`:
+            //   (a) total == partialBytes → file is exactly complete on
+            //       server; our partial is the whole bundle and just
+            //       needs SHA verify + rename. Recover instead of wipe.
+            //   (b) anything else → partial is corrupt or bundle changed.
+            //       Wipe and bubble up.
             if (response.code == 416) {
+                val contentRange = response.header("Content-Range")
                 response.close()
+                val totalFromHeader = contentRange
+                    ?.let { Regex("""bytes\s+\*\s*/\s*(\d+)""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
+                if (totalFromHeader != null && totalFromHeader == partialBytes && partialFile.exists()) {
+                    OneKeyLog.info("BundleUpdate", "downloadBundle: HTTP 416 with total==$totalFromHeader matches partial, attempting promote+verify")
+                    if (downloadedFile.exists()) downloadedFile.delete()
+                    if (partialFile.renameTo(downloadedFile) && verifyBundleSHA256(filePath, sha256)) {
+                        OneKeyLog.info("BundleUpdate", "downloadBundle: 416 recovery succeeded, skipping download")
+                        sendEvent("update/complete")
+                        return@async result
+                    }
+                    OneKeyLog.warn("BundleUpdate", "downloadBundle: 416 recovery failed verify, discarding")
+                    if (downloadedFile.exists()) downloadedFile.delete()
+                }
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: HTTP 416 (range not satisfiable), discarding partial and failing this attempt")
                 if (partialFile.exists()) partialFile.delete()
                 sendEvent("update/error", message = "HTTP 416 (range not satisfiable)")
@@ -1557,8 +1592,13 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             if (!skipGPG) {
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: verifying SHA256 of downloaded file...")
                 if (!verifyBundleSHA256(filePath, sha256)) {
-                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: SHA256 verification failed for file=$filePath")
-                    throw Exception("Bundle signature verification failed")
+                    // Promote the SHA256 subtype (FILE_TRUNCATED / OOM /
+                    // IO_<class> / MISMATCH) into the thrown message so
+                    // extractUpdateErrorCode in the JS layer can split
+                    // this bucket the same way the download stage does.
+                    val reason = BundleUpdateStoreAndroid.lastSHA256FailureReason() ?: "MISMATCH"
+                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: SHA256 verification failed for file=$filePath, reason=$reason")
+                    throw Exception("Bundle SHA256 verification failed: $reason")
                 }
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: SHA256 verified OK")
             } else {

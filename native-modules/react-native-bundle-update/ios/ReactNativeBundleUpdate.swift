@@ -1267,8 +1267,15 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
     private func snapshotResumeDataForBackgrounding() {
         guard let session = self.urlSession else { return }
-        let stillDownloading = self.stateQueue.sync { self.isDownloading }
-        guard stillDownloading, let filePath = self.activeDownloadFilePath else { return }
+        // Read both isDownloading AND activeDownloadFilePath inside the
+        // same stateQueue.sync block so a concurrent downloadBundle entry
+        // (which writes filePath BEFORE flipping isDownloading) cannot
+        // produce a torn read where isDownloading=true but filePath=nil.
+        let snapshot: (Bool, String?) = self.stateQueue.sync {
+            (self.isDownloading, self.activeDownloadFilePath)
+        }
+        let (stillDownloading, snapshotPath) = snapshot
+        guard stillDownloading, let filePath = snapshotPath else { return }
 
         let resumeDataPath = "\(filePath).resume"
         let bgTaskName = "BundleUpdateResumeSnapshot"
@@ -1357,10 +1364,14 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Already downloading"])
             }
             defer {
-                self.stateQueue.sync { self.isDownloading = false }
-                // Clear the snapshot anchor so a stray didEnterBackground
-                // after this point doesn't try to cancel a finished task.
-                self.activeDownloadFilePath = nil
+                // Clear isDownloading + the snapshot anchor under the same
+                // queue so didEnterBackground's paired read can't observe
+                // a half-cleared state (isDownloading=true while
+                // activeDownloadFilePath=nil, or vice versa).
+                self.stateQueue.sync {
+                    self.isDownloading = false
+                    self.activeDownloadFilePath = nil
+                }
             }
 
             let appVersion = params.latestVersion
@@ -1451,10 +1462,13 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 self?.sendEvent(type: "update/downloading", progress: progress)
             }
 
-            // Anchor for the background-snapshot handler. Set BEFORE task.resume()
-            // so a foreground→background transition that races the very first
-            // bytes still finds a path to write the resume blob to.
-            self.activeDownloadFilePath = filePath
+            // Anchor for the background-snapshot handler. Set BEFORE
+            // task.resume() so a foreground→background transition that
+            // races the very first bytes still finds a path to write the
+            // resume blob to. Pair the write with the same stateQueue the
+            // snapshot reader uses, so isDownloading=true and a non-nil
+            // activeDownloadFilePath always go together.
+            self.stateQueue.sync { self.activeDownloadFilePath = filePath }
 
             let downloadOutcome: Result<(URL, URLResponse), Error>
             do {
@@ -1593,10 +1607,16 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             if !skipGPG {
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: verifying SHA256 of downloaded file...")
-                guard let calculated = BundleUpdateStore.calculateSHA256(filePath),
-                      calculated.secureCompare(sha256) else {
-                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: SHA256 verification failed for file=\(filePath)")
-                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
+                let calculated = BundleUpdateStore.calculateSHA256(filePath)
+                let isValid = calculated != nil && calculated!.secureCompare(sha256)
+                if !isValid {
+                    // Promote the SHA256 subtype (FILE_TRUNCATED / OOM /
+                    // IO_<class> / MISMATCH) into the thrown message so
+                    // analytics' extractUpdateErrorCode can split this
+                    // bucket the same way the download stage already does.
+                    let reason = BundleUpdateStore.lastSHA256FailureReason() ?? "MISMATCH"
+                    OneKeyLog.error("BundleUpdate", "verifyBundleASC: SHA256 verification failed for file=\(filePath), reason=\(reason)")
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle SHA256 verification failed: \(reason)"])
                 }
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: SHA256 verified OK")
             } else {
