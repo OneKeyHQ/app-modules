@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativeperfstats"],
+  "ios": {
+    "iosModuleName": "ReactNativePerfStats"
+  },
+  "android": {
+    "androidNamespace": ["reactnativeperfstats"],
+    "androidCxxLibName": "reactnativeperfstats"
+  },
+  "autolinking": {
+    "ReactNativePerfStats": {
+      "swift": "ReactNativePerfStats",
+      "kotlin": "ReactNativePerfStats"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

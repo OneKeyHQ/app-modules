@@ -1,0 +1,694 @@
+package com.margelo.nitro.reactnativeperfstats
+
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.app.Application
+import android.content.Context
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
+import android.os.SystemClock
+import android.util.TypedValue
+import android.view.Choreographer
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.WindowManager
+import android.widget.TextView
+import java.util.concurrent.atomic.AtomicInteger
+import com.facebook.proguard.annotations.DoNotStrip
+import com.margelo.nitro.NitroModules
+import com.margelo.nitro.core.Promise
+import com.margelo.nitro.nativelogger.OneKeyLog
+import java.io.BufferedReader
+import java.io.FileReader
+import java.util.Locale
+
+private const val TAG = "PerfStats"
+private const val MIN_INTERVAL_MS = 200L
+// Standard Android USER_HZ. If a device differs the absolute CPU% scales
+// accordingly, but values stay self-consistent across samples.
+private const val CLOCK_TICKS_PER_SECOND = 100L
+
+// Anomaly logging thresholds. We only emit a warn after the metric has
+// stayed over the threshold for SUSTAIN samples in a row, to skip
+// transient spikes (e.g. JS startup, GC). After firing we throttle for
+// COOLDOWN_MS to avoid flooding native-logger.
+private const val CPU_ANOMALY_PCT = 150.0
+// 800 MiB.
+private const val RSS_ANOMALY_BYTES = 838_860_800.0
+// Below ~45 fps the UI thread feels janky on a 60 Hz panel. On 90/120 Hz
+// devices this still represents a clearly degraded experience, so we keep
+// one threshold rather than introducing refresh-rate detection.
+private const val UI_FPS_ANOMALY_BELOW = 45.0
+// Below ~30 fps the JS thread is missing every other frame's RAF callback.
+private const val JS_FPS_ANOMALY_BELOW = 30.0
+private const val ANOMALY_SUSTAIN_SAMPLES = 5
+private const val ANOMALY_COOLDOWN_MS = 30_000L
+// JS FPS hints older than this are treated as stale and reported as 0,
+// so the overlay doesn't keep showing a fossilised number after the
+// JS-side tracker has been stopped (or is still booting).
+private const val JS_FPS_HINT_TTL_MS = 2_000L
+
+@DoNotStrip
+class ReactNativePerfStats : HybridReactNativePerfStatsSpec() {
+
+    override fun start(intervalMs: Double) {
+        Sampler.start(intervalMs.toLong().coerceAtLeast(MIN_INTERVAL_MS))
+    }
+
+    override fun stop() {
+        Sampler.stop()
+    }
+
+    override fun showOverlay() {
+        Overlay.show()
+    }
+
+    override fun hideOverlay() {
+        Overlay.hide()
+    }
+
+    override fun sample(): Promise<PerfSample> {
+        return Promise.async {
+            Sampler.takeSample()
+        }
+    }
+
+    override fun setJsFpsHint(fps: Double) {
+        JsFpsHolder.set(fps)
+    }
+}
+
+// ---- Sampler ----------------------------------------------------------
+//
+// Singleton state shared across all HybridObject instances. The
+// HandlerThread runs the polling loop off the main / native-modules queue,
+// so JS-thread freezes do not stop overlay updates.
+
+private object Sampler {
+    // The HandlerThread is created lazily on start() and quit on stop() so
+    // an idle process doesn't keep a worker thread (~512KB stack + VM
+    // overhead) alive forever. Recreated on next start().
+    //
+    // schedulerLock guards `handlerThread`, `handler`, `running`, `generation`
+    // and `intervalMs` together — start/stop must transition all of them
+    // atomically, otherwise a start() lambda queued on the (now-quitting)
+    // looper could resurrect `running=true` after stop() and strand the
+    // sampler with no live handler.
+    private val schedulerLock = Any()
+    private var handlerThread: HandlerThread? = null
+    private var handler: Handler? = null
+    // Bumped on every stop(); any in-flight tick whose generation no longer
+    // matches drops itself instead of rescheduling on a stale handler.
+    private var generation = 0L
+    private var running = false
+    private var intervalMs: Long = 1000L
+
+    private val lock = Any()
+    @Volatile private var lastCpuTicks: Long = -1L
+    @Volatile private var lastMonoNs: Long = -1L
+    // Last UI FPS computed by the periodic tick. takeSample() reads this
+    // directly so one-shot sample() calls do not steal frames from the
+    // UiFpsMonitor counter (which is owned by the periodic tick).
+    @Volatile private var lastUiFps: Double = 0.0
+
+    // Anomaly state lives on the sampler HandlerThread (single consumer),
+    // so no synchronization is needed. lastLogMs intentionally persists
+    // across stop()/start() cycles to keep the cooldown honest if the
+    // caller toggles the sampler rapidly.
+    private var cpuOverCount = 0
+    private var rssOverCount = 0
+    private var uiFpsUnderCount = 0
+    private var jsFpsUnderCount = 0
+    private var lastCpuLogMs = 0L
+    private var lastRssLogMs = 0L
+    private var lastUiFpsLogMs = 0L
+    private var lastJsFpsLogMs = 0L
+
+    fun start(intervalMsNew: Long) {
+        synchronized(schedulerLock) {
+            intervalMs = intervalMsNew
+            if (running) return
+            if (handler == null) {
+                val ht = HandlerThread("PerfStatsSampler").apply { start() }
+                handlerThread = ht
+                handler = Handler(ht.looper)
+            }
+            running = true
+            scheduleTick(generation, handler!!)
+        }
+        UiFpsMonitor.start()
+    }
+
+    fun stop() {
+        synchronized(schedulerLock) {
+            generation++
+            running = false
+            handler?.removeCallbacksAndMessages(null)
+            // quitSafely lets in-flight tick body finish; the generation
+            // check below prevents that body from rescheduling itself.
+            handlerThread?.quitSafely()
+            handlerThread = null
+            handler = null
+            lastUiFps = 0.0
+        }
+        UiFpsMonitor.stop()
+        Overlay.hide()
+    }
+
+    /** Caller must hold schedulerLock; [h] is the handler captured at start time. */
+    private fun scheduleTick(genAtStart: Long, h: Handler) {
+        h.post(object : Runnable {
+            override fun run() {
+                val active = synchronized(schedulerLock) {
+                    genAtStart == generation && running
+                }
+                if (!active) return
+                // Refresh the cached UI FPS *before* takeSample reads it,
+                // so the value covers exactly the just-elapsed interval.
+                lastUiFps = UiFpsMonitor.readAndReset(System.nanoTime())
+                val sample = takeSample()
+                Overlay.update(sample)
+                checkAnomalyAndLog(sample)
+                synchronized(schedulerLock) {
+                    if (genAtStart != generation || !running) return
+                    handler?.postDelayed(this, intervalMs)
+                }
+            }
+        })
+    }
+
+    /**
+     * Emits a warn to native-logger when CPU or RSS has stayed over its
+     * threshold for [ANOMALY_SUSTAIN_SAMPLES] consecutive samples. Only
+     * called from the periodic sampler tick; one-off `sample()` calls do
+     * not trip this path. Each metric tracks its own counter and cooldown.
+     */
+    private fun checkAnomalyAndLog(s: PerfSample) {
+        val nowMs = SystemClock.uptimeMillis()
+
+        if (s.cpu >= CPU_ANOMALY_PCT) {
+            cpuOverCount++
+            if (cpuOverCount >= ANOMALY_SUSTAIN_SAMPLES &&
+                nowMs - lastCpuLogMs >= ANOMALY_COOLDOWN_MS
+            ) {
+                OneKeyLog.warn(
+                    TAG,
+                    String.format(
+                        Locale.US,
+                        "Sustained high CPU: %.1f%% over %d samples",
+                        s.cpu, cpuOverCount,
+                    ),
+                )
+                lastCpuLogMs = nowMs
+                cpuOverCount = 0
+            }
+        } else {
+            cpuOverCount = 0
+        }
+
+        if (s.rss >= RSS_ANOMALY_BYTES) {
+            rssOverCount++
+            if (rssOverCount >= ANOMALY_SUSTAIN_SAMPLES &&
+                nowMs - lastRssLogMs >= ANOMALY_COOLDOWN_MS
+            ) {
+                val mb = s.rss / 1024.0 / 1024.0
+                OneKeyLog.warn(
+                    TAG,
+                    String.format(
+                        Locale.US,
+                        "Sustained high RSS: %.1f MB over %d samples",
+                        mb, rssOverCount,
+                    ),
+                )
+                lastRssLogMs = nowMs
+                rssOverCount = 0
+            }
+        } else {
+            rssOverCount = 0
+        }
+
+        // FPS thresholds. We require uiFps > 0 to avoid logging during the
+        // first sample (when no interval has elapsed yet); jsFps > 0 to skip
+        // when the JS-side tracker hasn't been started.
+        if (s.uiFps in 0.001..UI_FPS_ANOMALY_BELOW) {
+            uiFpsUnderCount++
+            if (uiFpsUnderCount >= ANOMALY_SUSTAIN_SAMPLES &&
+                nowMs - lastUiFpsLogMs >= ANOMALY_COOLDOWN_MS
+            ) {
+                OneKeyLog.warn(
+                    TAG,
+                    String.format(
+                        Locale.US,
+                        "Sustained low UI FPS: %.1f over %d samples",
+                        s.uiFps, uiFpsUnderCount,
+                    ),
+                )
+                lastUiFpsLogMs = nowMs
+                uiFpsUnderCount = 0
+            }
+        } else {
+            uiFpsUnderCount = 0
+        }
+
+        if (s.jsFps in 0.001..JS_FPS_ANOMALY_BELOW) {
+            jsFpsUnderCount++
+            if (jsFpsUnderCount >= ANOMALY_SUSTAIN_SAMPLES &&
+                nowMs - lastJsFpsLogMs >= ANOMALY_COOLDOWN_MS
+            ) {
+                OneKeyLog.warn(
+                    TAG,
+                    String.format(
+                        Locale.US,
+                        "Sustained low JS FPS: %.1f over %d samples",
+                        s.jsFps, jsFpsUnderCount,
+                    ),
+                )
+                lastJsFpsLogMs = nowMs
+                jsFpsUnderCount = 0
+            }
+        } else {
+            jsFpsUnderCount = 0
+        }
+    }
+
+    fun takeSample(): PerfSample {
+        val nowMonoNs = System.nanoTime()
+        val cpuTicks = readProcessCpuTicks()
+        val rssBytes = readResidentBytes()
+        val nowWallMs = System.currentTimeMillis().toDouble()
+
+        var cpuPct = 0.0
+        synchronized(lock) {
+            val prevCpu = lastCpuTicks
+            val prevMono = lastMonoNs
+            if (cpuTicks != null && prevCpu >= 0 && prevMono > 0) {
+                val dTicks = cpuTicks - prevCpu
+                val dWallNs = nowMonoNs - prevMono
+                if (dWallNs > 0 && dTicks >= 0) {
+                    val cpuSec = dTicks.toDouble() / CLOCK_TICKS_PER_SECOND
+                    val wallSec = dWallNs.toDouble() / 1_000_000_000.0
+                    cpuPct = (cpuSec / wallSec) * 100.0
+                }
+            }
+            if (cpuTicks != null) {
+                lastCpuTicks = cpuTicks
+                lastMonoNs = nowMonoNs
+            }
+        }
+
+        return PerfSample(
+            cpu = cpuPct,
+            rss = rssBytes.toDouble(),
+            uiFps = lastUiFps,
+            jsFps = JsFpsHolder.read(nowMonoNs),
+            timestamp = nowWallMs,
+        )
+    }
+
+    private fun readProcessCpuTicks(): Long? {
+        return try {
+            BufferedReader(FileReader("/proc/self/stat")).use { reader ->
+                val line = reader.readLine() ?: return null
+                // Field 2 (comm) is in parens and may itself contain spaces,
+                // so split everything *after* the last ')'.
+                val rparen = line.lastIndexOf(')')
+                if (rparen < 0 || rparen + 2 >= line.length) return null
+                val tail = line.substring(rparen + 2).split(" ")
+                if (tail.size < 13) return null
+                tail[11].toLong() + tail[12].toLong()
+            }
+        } catch (e: Exception) {
+            OneKeyLog.warn(TAG, "Failed to read /proc/self/stat: ${e.message}")
+            null
+        }
+    }
+
+    // Cache page size; sysconf is not free, and the value never changes.
+    // Pixel 9 Pro Fold's 16K-page system image is why we don't hard-code 4096.
+    private val pageSize: Long by lazy {
+        try {
+            android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE)
+        } catch (_: Throwable) {
+            4096L
+        }
+    }
+
+    /**
+     * Reads /proc/self/statm field 2 (resident pages) and converts to bytes.
+     * One readLine, ~50 byte allocation; vs /proc/self/status which scans
+     * ~25 lines until VmRSS — at higher polling rates statm produces ~20x
+     * less GC pressure for an equivalent value.
+     */
+    private fun readResidentBytes(): Long {
+        return try {
+            val line = BufferedReader(FileReader("/proc/self/statm")).use { it.readLine() }
+                ?: return 0L
+            val parts = line.split(" ")
+            if (parts.size < 2) return 0L
+            parts[1].toLong() * pageSize
+        } catch (e: Exception) {
+            OneKeyLog.warn(TAG, "Failed to read /proc/self/statm: ${e.message}")
+            0L
+        }
+    }
+}
+
+// ---- UiFpsMonitor -----------------------------------------------------
+//
+// Counts main-thread frames via Choreographer.FrameCallback. The
+// callback fires once per refresh cycle (60/90/120 Hz) when the UI
+// thread is responsive, so the per-second count is a faithful proxy
+// for "did the UI thread service its frame callbacks".
+//
+// `Choreographer.getInstance()` returns the per-thread instance, so
+// the registration must run on the main looper to observe main-thread
+// frames; the worker HandlerThread has no Choreographer.
+
+private object UiFpsMonitor {
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val frameCounter = AtomicInteger(0)
+    @Volatile private var registered = false
+    @Volatile private var lastReadMonoNs: Long = -1L
+
+    private val callback = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            frameCounter.incrementAndGet()
+            if (registered) {
+                Choreographer.getInstance().postFrameCallback(this)
+            }
+        }
+    }
+
+    fun start() {
+        if (registered) return
+        registered = true
+        mainHandler.post {
+            // Re-check inside the post: a stop() may have raced ahead
+            // before this lambda ran.
+            if (!registered) return@post
+            Choreographer.getInstance().postFrameCallback(callback)
+        }
+    }
+
+    fun stop() {
+        if (!registered) return
+        registered = false
+        mainHandler.post {
+            Choreographer.getInstance().removeFrameCallback(callback)
+        }
+        frameCounter.set(0)
+        lastReadMonoNs = -1L
+    }
+
+    /**
+     * Returns the FPS observed since the previous call. The first call
+     * after [start] returns 0 because there's no baseline interval yet.
+     * Safe to invoke from any thread.
+     */
+    fun readAndReset(nowMonoNs: Long): Double {
+        val prev = lastReadMonoNs
+        val frames = frameCounter.getAndSet(0)
+        lastReadMonoNs = nowMonoNs
+        if (prev <= 0) return 0.0
+        val dWallSec = (nowMonoNs - prev).toDouble() / 1_000_000_000.0
+        if (dWallSec <= 0) return 0.0
+        return frames / dWallSec
+    }
+}
+
+// ---- JsFpsHolder ------------------------------------------------------
+//
+// Caches the most recent JS-thread FPS hint pushed via
+// `setJsFpsHint`. The value is computed entirely on the JS side via
+// the `requestAnimationFrame` ticker started by `startJsFpsTracker`,
+// then reported here. We stale out hints older than [JS_FPS_HINT_TTL_MS]
+// to avoid surfacing a fossilised number when the JS tracker has been
+// stopped or has not yet booted.
+
+private object JsFpsHolder {
+    @Volatile private var lastFps: Double = 0.0
+    @Volatile private var lastSetMonoNs: Long = -1L
+
+    fun set(fps: Double) {
+        lastFps = fps
+        lastSetMonoNs = System.nanoTime()
+    }
+
+    fun read(nowMonoNs: Long): Double {
+        val last = lastSetMonoNs
+        if (last < 0) return 0.0
+        val ageMs = (nowMonoNs - last) / 1_000_000L
+        if (ageMs > JS_FPS_HINT_TTL_MS) return 0.0
+        return lastFps
+    }
+}
+
+// ---- Overlay ----------------------------------------------------------
+//
+// Attaches a TextView via WindowManager.addView at z=1005, the AOSP slot
+// `TYPE_APPLICATION_ABOVE_SUB_PANEL` (FIRST_SUB_WINDOW + 5). The named
+// constant is `@hide` in the public SDK, so we use the literal value
+// directly — `WINDOW_TYPE_ABOVE_SUB_PANEL` below — to keep this file
+// compilable against the public SDK while preserving the original z-order
+// intent. This sits above:
+//   - The activity's main window (TYPE_APPLICATION = 2)
+//   - PANEL / SUB_PANEL (1000 / 1002)
+//   - ATTACHED_DIALOG used by RN's Modal (1003)
+// and below system-level windows (Toast = 2005, OVERLAY = 2038).
+// Tied to the current Activity's window token, so it stays inside the app
+// (no SYSTEM_ALERT_WINDOW permission required) and is removed automatically
+// when the Activity is paused/destroyed.
+//
+// `bootstrap(app)` is invoked by `PerfStatsInitProvider` during process
+// startup, which guarantees the launcher Activity's onResumed event is
+// captured. Without this hook, JS code calling showOverlay() after the
+// React tree mounts would arrive too late and currentActivity would stay
+// null indefinitely.
+
+// FIRST_SUB_WINDOW (1000) + 5; the public SDK hides the named constant
+// `TYPE_APPLICATION_ABOVE_SUB_PANEL` even though the value is honoured at
+// runtime. See the block comment above for the z-order rationale.
+private const val WINDOW_TYPE_ABOVE_SUB_PANEL = 1005
+
+internal object Overlay : Application.ActivityLifecycleCallbacks {
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    @Volatile private var registered = false
+    @Volatile private var visible = false
+    @Volatile private var currentActivity: Activity? = null
+    @Volatile private var overlayView: TextView? = null
+    @Volatile private var attachedToWindowManager = false
+    @Volatile private var lastSample: PerfSample? = null
+
+    // Persist drag position across Activity transitions
+    @Volatile private var posX: Int = -1
+    @Volatile private var posY: Int = -1
+
+    /** Called from PerfStatsInitProvider at process start so we never miss
+     *  the launcher Activity's onResumed event. */
+    fun bootstrap(app: Application) {
+        if (registered) return
+        app.registerActivityLifecycleCallbacks(this)
+        registered = true
+    }
+
+    fun show() {
+        visible = true
+        mainHandler.post {
+            ensureRegistered()
+            attachIfPossible()
+        }
+    }
+
+    fun hide() {
+        visible = false
+        mainHandler.post { detach() }
+    }
+
+    /**
+     * Coalesce updates: if the main thread is blocked, we don't want N
+     * setText calls piling up only to all fire when it unblocks. removing
+     * any pending instance and posting a fresh one guarantees at most one
+     * pending update at a time, and it always reads the latest sample.
+     */
+    private val updateRunnable = Runnable {
+        val s = lastSample ?: return@Runnable
+        overlayView?.text = renderText(s)
+    }
+
+    fun update(sample: PerfSample) {
+        lastSample = sample
+        if (!visible) return
+        mainHandler.removeCallbacks(updateRunnable)
+        mainHandler.post(updateRunnable)
+    }
+
+    /** Late-init fallback if bootstrap() somehow didn't run. */
+    private fun ensureRegistered() {
+        if (registered) return
+        val ctx = NitroModules.applicationContext
+        if (ctx == null) {
+            OneKeyLog.warn(TAG, "applicationContext is null at showOverlay()")
+            return
+        }
+        val app = ctx.applicationContext as? Application
+        if (app == null) {
+            OneKeyLog.warn(TAG, "applicationContext is not Application")
+            return
+        }
+        app.registerActivityLifecycleCallbacks(this)
+        registered = true
+    }
+
+    private fun attachIfPossible() {
+        val activity = currentActivity ?: return
+        if (overlayView != null) return
+
+        val wm = activity.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        if (wm == null) {
+            OneKeyLog.warn(TAG, "WindowManager unavailable on current Activity")
+            return
+        }
+
+        val token = activity.window?.decorView?.windowToken
+        if (token == null) {
+            // decorView may not have a token before the first frame draws.
+            // Defer to next onActivityResumed which will retry.
+            OneKeyLog.warn(TAG, "Activity window token is null; deferring overlay")
+            return
+        }
+
+        val tv = createOverlay(activity)
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WINDOW_TYPE_ABOVE_SUB_PANEL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            this.token = token
+            gravity = Gravity.TOP or Gravity.START
+            x = if (posX >= 0) posX else dp(activity, 30)
+            y = if (posY >= 0) posY else dp(activity, 100)
+        }
+
+        try {
+            wm.addView(tv, params)
+            attachedToWindowManager = true
+            overlayView = tv
+            attachDragListener(tv)
+            lastSample?.let { tv.text = renderText(it) }
+        } catch (e: Exception) {
+            OneKeyLog.warn(TAG, "Failed to addView overlay: ${e.message}")
+        }
+    }
+
+    private fun detach() {
+        val view = overlayView ?: return
+        if (attachedToWindowManager) {
+            try {
+                // Use the view's own context, not currentActivity. onActivityDestroyed
+                // posts detach() to the main handler and then clears currentActivity
+                // synchronously, so by the time this runs currentActivity may already
+                // be null and the overlay would otherwise leak.
+                val wm = view.context.getSystemService(Context.WINDOW_SERVICE)
+                    as? WindowManager
+                wm?.removeView(view)
+            } catch (e: Exception) {
+                OneKeyLog.warn(TAG, "Failed to removeView overlay: ${e.message}")
+            }
+        }
+        attachedToWindowManager = false
+        overlayView = null
+    }
+
+    private fun createOverlay(activity: Activity): TextView {
+        return TextView(activity).apply {
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setBackgroundColor(0xB0000000.toInt())
+            setPadding(
+                dp(activity, 12),
+                dp(activity, 8),
+                dp(activity, 12),
+                dp(activity, 8),
+            )
+            gravity = Gravity.START
+            // Min width prevents re-layout when digit count changes
+            minWidth = dp(activity, 130)
+            text = "CPU: --\nRAM: --\nUI:  --\nJS:  --"
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun attachDragListener(view: TextView) {
+        var dX = 0f
+        var dY = 0f
+        view.setOnTouchListener { v, event ->
+            val params = (v.layoutParams as? WindowManager.LayoutParams)
+                ?: return@setOnTouchListener false
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    dX = event.rawX - params.x
+                    dY = event.rawY - params.y
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val newX = (event.rawX - dX).toInt()
+                    val newY = (event.rawY - dY).toInt()
+                    params.x = newX
+                    params.y = newY
+                    posX = newX
+                    posY = newY
+                    val wm = v.context.getSystemService(Context.WINDOW_SERVICE)
+                        as? WindowManager
+                    try { wm?.updateViewLayout(v, params) } catch (_: Exception) {}
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun renderText(s: PerfSample): String {
+        val cpu = if (s.cpu > 0) String.format(Locale.US, "%.1f%%", s.cpu) else "--"
+        val mb = s.rss / 1024.0 / 1024.0
+        val mem = if (mb > 0) String.format(Locale.US, "%.1f MB", mb) else "--"
+        val ui = if (s.uiFps > 0) String.format(Locale.US, "%.0f fps", s.uiFps) else "--"
+        val js = if (s.jsFps > 0) String.format(Locale.US, "%.0f fps", s.jsFps) else "--"
+        return "CPU: $cpu\nRAM: $mem\nUI:  $ui\nJS:  $js"
+    }
+
+    private fun dp(activity: Activity, v: Int): Int =
+        (v * activity.resources.displayMetrics.density).toInt()
+
+    // Application.ActivityLifecycleCallbacks ----------------------------
+
+    override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+    override fun onActivityStarted(activity: Activity) {}
+    override fun onActivityResumed(activity: Activity) {
+        currentActivity = activity
+        if (visible && overlayView == null) {
+            mainHandler.post { attachIfPossible() }
+        }
+    }
+    override fun onActivityPaused(activity: Activity) {
+        if (currentActivity === activity) {
+            mainHandler.post { detach() }
+        }
+    }
+    override fun onActivityStopped(activity: Activity) {}
+    override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+    override fun onActivityDestroyed(activity: Activity) {
+        if (currentActivity === activity) {
+            mainHandler.post { detach() }
+            currentActivity = null
+        }
+    }
+}
