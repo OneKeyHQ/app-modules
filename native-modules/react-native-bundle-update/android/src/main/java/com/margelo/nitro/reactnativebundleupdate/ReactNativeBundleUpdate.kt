@@ -500,8 +500,13 @@ object BundleUpdateStoreAndroid {
                 }
             }
         } catch (e: Exception) {
-            OneKeyLog.error("BundleUpdate", "Error parsing metadata JSON: ${e.message}")
-            throw Exception("Failed to parse metadata.json: ${e.message}")
+            // org.json's exception messages occasionally embed file paths or
+            // partial JSON content. Keep the rich detail in OneKeyLog (local
+            // only), but throw a class-tag-only message so the JS analytics
+            // layer cannot reflect arbitrary inner content. Mirrors the
+            // SHA256_<reason>/IO_<class> convention used elsewhere.
+            OneKeyLog.error("BundleUpdate", "Error parsing metadata JSON: ${e.javaClass.simpleName}: ${e.message}")
+            throw Exception("Failed to parse metadata.json: IO_${e.javaClass.simpleName}")
         }
         if (metadata.isEmpty()) {
             throw Exception("metadata.json is empty or contains no file entries")

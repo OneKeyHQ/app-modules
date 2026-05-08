@@ -1524,9 +1524,19 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 try SSZipArchive.unzipFile(atPath: filePath, toDestination: destination, overwrite: true, password: nil)
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: extraction completed")
             } catch {
-                OneKeyLog.error("BundleUpdate", "verifyBundleASC: unzip failed: \(error.localizedDescription)")
+                // SSZipArchive's NSError.localizedDescription often embeds the
+                // failing file path which on iOS includes the install UUID
+                // (/var/mobile/Containers/Data/Application/<UUID>/...). Keep
+                // the rich detail in OneKeyLog (local-only), but expose only
+                // a code-shaped tag in the thrown message so the JS-side
+                // analytics layer can never reflect that path back to the
+                // server. Subtypes intentionally low-cardinality so
+                // extractUpdateErrorCode picks them up cleanly:
+                //   IO_<NSError code>
+                let nsErr = error as NSError
+                OneKeyLog.error("BundleUpdate", "verifyBundleASC: unzip failed: domain=\(nsErr.domain) code=\(nsErr.code) desc=\(nsErr.localizedDescription)")
                 try? FileManager.default.removeItem(atPath: destination)
-                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to unzip bundle: \(error.localizedDescription)"])
+                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to unzip bundle: IO_\(nsErr.code)"])
             }
 
             // Validate extracted paths (symlinks, path traversal)
