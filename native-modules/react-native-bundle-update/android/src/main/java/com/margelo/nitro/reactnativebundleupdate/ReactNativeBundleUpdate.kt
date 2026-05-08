@@ -404,7 +404,31 @@ object BundleUpdateStoreAndroid {
         }
     }
 
+    private val lastSHA256Failure = ThreadLocal<String?>()
+
+    /**
+     * Subtype of the most recent calculateSHA256 failure on this thread, or
+     * null if the last call succeeded. Surfaces the specific reason —
+     * FILE_NOT_FOUND / FILE_EMPTY / FILE_TRUNCATED / OOM / IO_<class> /
+     * UNEXPECTED_<class> — so analytics can split the previously opaque
+     * "Failed to calculate SHA256" bucket (mixpanel: 91.3 percent of
+     * verifyPackage failures) into actionable categories.
+     */
+    fun lastSHA256FailureReason(): String? = lastSHA256Failure.get()
+
     fun calculateSHA256(filePath: String): String? {
+        lastSHA256Failure.set(null)
+        val file = File(filePath)
+        if (!file.exists()) {
+            lastSHA256Failure.set("FILE_NOT_FOUND")
+            OneKeyLog.error("BundleUpdate", "calculateSHA256: file not found: $filePath")
+            return null
+        }
+        if (file.length() == 0L) {
+            lastSHA256Failure.set("FILE_EMPTY")
+            OneKeyLog.error("BundleUpdate", "calculateSHA256: file empty: $filePath")
+            return null
+        }
         return try {
             val digest = MessageDigest.getInstance("SHA-256")
             BufferedInputStream(FileInputStream(filePath)).use { bis ->
@@ -415,8 +439,29 @@ object BundleUpdateStoreAndroid {
                 }
             }
             bytesToHex(digest.digest())
+        } catch (e: java.io.FileNotFoundException) {
+            lastSHA256Failure.set("FILE_DISAPPEARED")
+            OneKeyLog.error("BundleUpdate", "calculateSHA256: file disappeared during read: ${e.message}")
+            null
+        } catch (e: java.io.EOFException) {
+            lastSHA256Failure.set("FILE_TRUNCATED")
+            OneKeyLog.error("BundleUpdate", "calculateSHA256: truncated file: ${e.message}")
+            null
+        } catch (e: SecurityException) {
+            lastSHA256Failure.set("PERMISSION_DENIED")
+            OneKeyLog.error("BundleUpdate", "calculateSHA256: permission denied: ${e.message}")
+            null
+        } catch (e: OutOfMemoryError) {
+            lastSHA256Failure.set("OOM")
+            OneKeyLog.error("BundleUpdate", "calculateSHA256: OutOfMemoryError on ${file.length()} bytes")
+            null
+        } catch (e: java.io.IOException) {
+            lastSHA256Failure.set("IO_${e.javaClass.simpleName}")
+            OneKeyLog.error("BundleUpdate", "calculateSHA256: ${e.javaClass.simpleName}: ${e.message}")
+            null
         } catch (e: Exception) {
-            OneKeyLog.error("BundleUpdate", "Error calculating SHA256: ${e.message}")
+            lastSHA256Failure.set("UNEXPECTED_${e.javaClass.simpleName}")
+            OneKeyLog.error("BundleUpdate", "calculateSHA256: ${e.javaClass.simpleName}: ${e.message}")
             null
         }
     }
@@ -1274,6 +1319,11 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
             val fileName = "$appVersion-$bundleVersion.zip"
             val filePath = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context), fileName).absolutePath
+            // Resume support: download to <filename>.partial; rename to <filename>
+            // only after the full transfer + SHA256 verify pass. Mirrors the
+            // Desktop convention so a corrupt completion can never poison the
+            // "exists at filePath -> already valid" cache check above.
+            val partialFilePath = "$filePath.partial"
 
             val result = BundleDownloadResult(
                 downloadedFile = filePath,
@@ -1286,6 +1336,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             OneKeyLog.info("BundleUpdate", "downloadBundle: filePath=$filePath")
 
             val downloadedFile = File(filePath)
+            val partialFile = File(partialFilePath)
             if (downloadedFile.exists()) {
                 OneKeyLog.info("BundleUpdate", "downloadBundle: file already exists, verifying SHA256...")
                 if (verifyBundleSHA256(filePath, sha256)) {
@@ -1297,47 +1348,112 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 } else {
                     OneKeyLog.warn("BundleUpdate", "downloadBundle: existing file SHA256 mismatch, re-downloading")
                     downloadedFile.delete()
+                    // Stale completed file invalidates any partial too.
+                    if (partialFile.exists()) partialFile.delete()
+                }
+            }
+
+            // Resume: if a partial from a previous run exists and is smaller
+            // than the expected size, send `Range: bytes=<offset>-` so the
+            // server fills in the rest. Larger-than-expected partials are
+            // garbage from a prior schema; nuke and start over.
+            val expectedSize = if (params.fileSize > 0) params.fileSize.toLong() else 0L
+            var partialBytes = 0L
+            if (partialFile.exists()) {
+                val partialSize = partialFile.length()
+                when {
+                    expectedSize > 0 && partialSize >= expectedSize -> {
+                        OneKeyLog.warn("BundleUpdate", "downloadBundle: stale partial (>=expected), discarding: $partialSize/$expectedSize")
+                        partialFile.delete()
+                    }
+                    partialSize > 0 -> {
+                        partialBytes = partialSize
+                        OneKeyLog.info("BundleUpdate", "downloadBundle: resuming from $partialBytes bytes (expected=$expectedSize)")
+                    }
+                    else -> partialFile.delete()
                 }
             }
 
             sendEvent("update/start")
-            OneKeyLog.info("BundleUpdate", "downloadBundle: starting download...")
+            OneKeyLog.info("BundleUpdate", "downloadBundle: starting download (resume=${partialBytes > 0})...")
 
-            val request = Request.Builder().url(downloadUrl).build()
-            val response = httpClient.newCall(request).execute()
+            val requestBuilder = Request.Builder().url(downloadUrl)
+            if (partialBytes > 0) {
+                requestBuilder.addHeader("Range", "bytes=$partialBytes-")
+            }
+            val response = httpClient.newCall(requestBuilder.build()).execute()
 
-            if (!response.isSuccessful) {
+            // 416 Range Not Satisfiable: our partial offset is past the file
+            // length on the server. Either the partial is corrupt, or the
+            // bundle changed underneath us. Wipe and bubble up — next caller
+            // attempt starts clean.
+            if (response.code == 416) {
+                response.close()
+                OneKeyLog.warn("BundleUpdate", "downloadBundle: HTTP 416 (range not satisfiable), discarding partial and failing this attempt")
+                if (partialFile.exists()) partialFile.delete()
+                sendEvent("update/error", message = "HTTP 416 (range not satisfiable)")
+                throw Exception("HTTP 416")
+            }
+
+            val expectsResume = partialBytes > 0
+            val isPartialResponse = response.code == 206
+
+            if (!response.isSuccessful || (response.code != 200 && response.code != 206)) {
                 OneKeyLog.error("BundleUpdate", "downloadBundle: HTTP error, statusCode=${response.code}")
+                response.close()
                 sendEvent("update/error", message = "HTTP ${response.code}")
                 throw Exception("HTTP ${response.code}")
             }
 
+            // Server can ignore `Range` and return the full body with 200; in
+            // that case our partial is meaningless — restart fresh.
+            if (expectsResume && !isPartialResponse) {
+                OneKeyLog.warn("BundleUpdate", "downloadBundle: requested Range but server returned 200, restarting from scratch")
+                if (partialFile.exists()) partialFile.delete()
+                partialBytes = 0L
+            }
+
             val body = response.body ?: throw Exception("Empty response body")
-            val fileSize = if (params.fileSize > 0) params.fileSize.toLong() else body.contentLength()
-            OneKeyLog.info("BundleUpdate", "downloadBundle: HTTP 200, contentLength=$fileSize, downloading...")
+            val contentLength = body.contentLength()
+            // Total size of the whole resource (not the slice). On 206 prefer
+            // Content-Range's "/total" tail; fall back to partial+contentLength.
+            val totalSize: Long = if (isPartialResponse) {
+                val contentRange = response.header("Content-Range")
+                val parsedTotal = contentRange
+                    ?.let { Regex("""bytes \d+-\d+/(\d+)""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
+                parsedTotal ?: (partialBytes + contentLength.coerceAtLeast(0L))
+            } else {
+                if (contentLength > 0) contentLength else expectedSize
+            }
+            OneKeyLog.info(
+                "BundleUpdate",
+                "downloadBundle: HTTP ${response.code}, contentLength=$contentLength, totalSize=$totalSize, partialBytes=$partialBytes, downloading..."
+            )
 
             // Ensure parent directory exists before writing
-            val parentDir = File(filePath).parentFile
+            val parentDir = File(partialFilePath).parentFile
             if (parentDir != null && !parentDir.exists()) {
                 parentDir.mkdirs()
                 OneKeyLog.info("BundleUpdate", "downloadBundle: created parent directory: ${parentDir.absolutePath}")
             }
 
-            var totalBytesRead = 0L
+            // Append iff server granted us a 206 partial; otherwise overwrite.
+            val appendMode = isPartialResponse
+            var totalBytesRead = if (isPartialResponse) partialBytes else 0L
             body.byteStream().use { inputStream ->
-                FileOutputStream(filePath).use { outputStream ->
+                FileOutputStream(partialFilePath, appendMode).use { outputStream ->
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
 
-                    var prevProgress = 0
+                    var prevProgress = -1
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         outputStream.write(buffer, 0, bytesRead)
                         totalBytesRead += bytesRead
-                        if (fileSize > 0) {
-                            val progress = ((totalBytesRead * 100) / fileSize).toInt()
+                        if (totalSize > 0) {
+                            val progress = ((totalBytesRead * 100) / totalSize).toInt().coerceIn(0, 100)
                             if (progress != prevProgress) {
                                 sendEvent("update/downloading", progress = progress)
-                                OneKeyLog.info("BundleUpdate", "download progress: $progress% ($totalBytesRead/$fileSize)")
+                                OneKeyLog.info("BundleUpdate", "download progress: $progress% ($totalBytesRead/$totalSize)")
                                 prevProgress = progress
                             }
                         }
@@ -1345,13 +1461,29 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
             }
 
-            val downloadedFileAfter = File(filePath)
-            OneKeyLog.info("BundleUpdate", "downloadBundle: download finished, totalBytesRead=$totalBytesRead, fileExists=${downloadedFileAfter.exists()}, fileSize=${if (downloadedFileAfter.exists()) downloadedFileAfter.length() else -1}, verifying SHA256...")
+            val partialAfter = File(partialFilePath)
+            OneKeyLog.info(
+                "BundleUpdate",
+                "downloadBundle: download finished, totalBytesRead=$totalBytesRead, partialExists=${partialAfter.exists()}, partialSize=${if (partialAfter.exists()) partialAfter.length() else -1}, finalizing..."
+            )
+
+            // Promote .partial to final ONLY after the full transfer; renaming
+            // first means a SHA256 mismatch leaves no half-baked filePath that
+            // the next call would mistake for a cached good bundle.
+            if (downloadedFile.exists()) downloadedFile.delete()
+            if (!partialAfter.renameTo(downloadedFile)) {
+                OneKeyLog.error("BundleUpdate", "downloadBundle: rename .partial -> final failed")
+                sendEvent("update/error", message = "rename .partial failed")
+                throw Exception("Failed to finalize download")
+            }
+
+            OneKeyLog.info("BundleUpdate", "downloadBundle: verifying SHA256...")
             if (!verifyBundleSHA256(filePath, sha256)) {
+                val reason = BundleUpdateStoreAndroid.lastSHA256FailureReason() ?: "MISMATCH"
                 File(filePath).delete()
-                OneKeyLog.error("BundleUpdate", "downloadBundle: SHA256 verification failed after download")
-                sendEvent("update/error", message = "Bundle signature verification failed")
-                throw Exception("Bundle signature verification failed")
+                OneKeyLog.error("BundleUpdate", "downloadBundle: SHA256 verification failed after download, reason=$reason")
+                sendEvent("update/error", message = "SHA256_$reason")
+                throw Exception("Bundle SHA256 verification failed: $reason")
             }
 
             sendEvent("update/complete")
@@ -1367,10 +1499,18 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
+    /**
+     * Returns true on hash match. On false, callers may inspect
+     * BundleUpdateStoreAndroid.lastSHA256FailureReason() to distinguish a
+     * computation failure (FILE_TRUNCATED / OOM / IO_*) from a clean hash
+     * mismatch (reason == null).
+     */
     private fun verifyBundleSHA256(bundlePath: String, sha256: String): Boolean {
         val calculated = BundleUpdateStoreAndroid.calculateSHA256(bundlePath)
         if (calculated == null) {
-            OneKeyLog.error("BundleUpdate", "verifyBundleSHA256: failed to calculate SHA256 for: $bundlePath")
+            val reason = BundleUpdateStoreAndroid.lastSHA256FailureReason() ?: "UNKNOWN"
+            val fileSize = try { File(bundlePath).length() } catch (_: Exception) { -1L }
+            OneKeyLog.error("BundleUpdate", "verifyBundleSHA256: failed to calculate SHA256 for: $bundlePath, reason=$reason, fileSize=$fileSize")
             return false
         }
         val isValid = BundleUpdateStoreAndroid.secureCompare(calculated, sha256)

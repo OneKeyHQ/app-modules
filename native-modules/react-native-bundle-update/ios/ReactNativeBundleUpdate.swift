@@ -312,23 +312,91 @@ public class BundleUpdateStore: NSObject {
         return true
     }
 
+    /// Subtype of the most recent calculateSHA256 failure on this thread, or
+    /// nil if the last call succeeded. Surfaces FILE_NOT_FOUND / FILE_EMPTY /
+    /// FILE_DISAPPEARED / IO_<NSError code> / UNEXPECTED so analytics can
+    /// split the previously opaque "Failed to calculate SHA256" bucket
+    /// (mixpanel: 91.3% of verifyPackage failures are Android; iOS shares
+    /// the calculator and inherits the same blind spot for its 14 ASC +
+    /// 2 verifyPackage Promise-destroyed cases).
+    public static func lastSHA256FailureReason() -> String? {
+        return Thread.current.threadDictionary[kSHA256FailureKey] as? String
+    }
+    private static let kSHA256FailureKey = "so.onekey.bundleupdate.sha256.failure"
+    private static func setSHA256Failure(_ reason: String?) {
+        if let reason = reason {
+            Thread.current.threadDictionary[kSHA256FailureKey] = reason
+        } else {
+            Thread.current.threadDictionary.removeObject(forKey: kSHA256FailureKey)
+        }
+    }
+
     public static func calculateSHA256(_ filePath: String) -> String? {
-        guard let fileHandle = FileHandle(forReadingAtPath: filePath) else { return nil }
+        setSHA256Failure(nil)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: filePath) {
+            setSHA256Failure("FILE_NOT_FOUND")
+            OneKeyLog.error("BundleUpdate", "calculateSHA256: file not found: \(filePath)")
+            return nil
+        }
+        let attrs = (try? fm.attributesOfItem(atPath: filePath)) ?? [:]
+        let fileSize = (attrs[.size] as? NSNumber)?.int64Value ?? -1
+        if fileSize == 0 {
+            setSHA256Failure("FILE_EMPTY")
+            OneKeyLog.error("BundleUpdate", "calculateSHA256: file empty: \(filePath)")
+            return nil
+        }
+        guard let fileHandle = FileHandle(forReadingAtPath: filePath) else {
+            setSHA256Failure("FILE_DISAPPEARED")
+            OneKeyLog.error("BundleUpdate", "calculateSHA256: open failed (file disappeared between stat and open): \(filePath)")
+            return nil
+        }
         defer { fileHandle.closeFile() }
 
-        var context = CC_SHA256_CTX()
-        CC_SHA256_Init(&context)
-        while autoreleasepool(invoking: {
-            let data = fileHandle.readData(ofLength: 8192)
-            if data.count > 0 {
-                data.withUnsafeBytes { CC_SHA256_Update(&context, $0.baseAddress, CC_LONG(data.count)) }
-                return true
+        do {
+            var context = CC_SHA256_CTX()
+            CC_SHA256_Init(&context)
+            var threwError: Error?
+            // Wrap reads in try/catch via NSException bridge: FileHandle.readData
+            // can raise on read failure (NSFileHandleOperationException);
+            // ObjCRuntime catches those when bridged through NSObject methods.
+            while autoreleasepool(invoking: {
+                do {
+                    let data = try Self.safeRead(fileHandle: fileHandle, length: 8192)
+                    if data.count > 0 {
+                        data.withUnsafeBytes { CC_SHA256_Update(&context, $0.baseAddress, CC_LONG(data.count)) }
+                        return true
+                    }
+                    return false
+                } catch {
+                    threwError = error
+                    return false
+                }
+            }) {}
+            if let err = threwError {
+                let nsErr = err as NSError
+                setSHA256Failure("IO_\(nsErr.domain)_\(nsErr.code)")
+                OneKeyLog.error("BundleUpdate", "calculateSHA256: read failed: \(nsErr.domain) \(nsErr.code) \(nsErr.localizedDescription)")
+                return nil
             }
-            return false
-        }) {}
-        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-        CC_SHA256_Final(&hash, &context)
-        return hash.map { String(format: "%02x", $0) }.joined()
+            var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+            CC_SHA256_Final(&hash, &context)
+            return hash.map { String(format: "%02x", $0) }.joined()
+        }
+    }
+
+    /// Raises throwing wrapper around FileHandle.read(upToCount:) so disk
+    /// I/O failures (truncated file, unmounted volume) become catchable Swift
+    /// errors rather than NSFileHandleOperationException.
+    private static func safeRead(fileHandle: FileHandle, length: Int) throws -> Data {
+        if #available(iOS 13.4, macOS 10.15.4, *) {
+            return try fileHandle.read(upToCount: length) ?? Data()
+        } else {
+            // Pre-iOS 13.4 fallback: classic readData(ofLength:) does not
+            // throw, but raises NSException; we cannot bridge that here so
+            // accept the legacy behavior on these old OS versions only.
+            return fileHandle.readData(ofLength: length)
+        }
     }
 
     public static func getNativeVersion() -> String? {
@@ -1036,6 +1104,10 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
     /// Continuation to bridge delegate callbacks → async/await
     private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
     private var tempFileURL: URL?
+    /// Resume data captured from the most recent failure so the caller can
+    /// persist it for the next attempt. Populated in didCompleteWithError
+    /// when the system supplies NSURLSessionDownloadTaskResumeData.
+    private(set) var lastResumeData: Data?
     private let lock = NSLock()
 
     func setContinuation(_ cont: CheckedContinuation<(URL, URLResponse), Error>) {
@@ -1079,10 +1151,23 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
         lock.unlock()
 
         if let error = error {
+            // iOS attaches partial download bytes via userInfo so the next
+            // attempt can finish from the cut point instead of byte 0. Mixpanel
+            // shows ~5,940 of our failures (NSURL -1005 / -1001) carry ~11KB of
+            // resume data each — previously discarded.
+            let nsError = error as NSError
+            if let resumeData = nsError.userInfo[NSURLSessionDownloadTaskResumeData] as? Data, resumeData.count > 0 {
+                self.lastResumeData = resumeData
+                OneKeyLog.info("BundleUpdate", "download error captured resumeData: \(resumeData.count) bytes")
+            } else {
+                self.lastResumeData = nil
+            }
             cont?.resume(throwing: error)
         } else if let tempURL = tempFileURL, let response = task.response {
+            self.lastResumeData = nil
             cont?.resume(returning: (tempURL, response))
         } else {
+            self.lastResumeData = nil
             cont?.resume(throwing: NSError(domain: "BundleUpdate", code: -1,
                 userInfo: [NSLocalizedDescriptionKey: "Download completed without file"]))
         }
@@ -1105,6 +1190,7 @@ private class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
         tempFileURL = nil
         onProgress = nil
         prevProgress = -1
+        lastResumeData = nil
     }
 }
 
@@ -1202,6 +1288,10 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             let fileName = "\(appVersion)-\(bundleVersion).zip"
             let filePath = (BundleUpdateStore.downloadBundleDir() as NSString).appendingPathComponent(fileName)
+            // Persisted resume blob from a previous failed attempt. Lives next
+            // to the bundle so it shares fate (delete-with-bundle) without
+            // polluting the bundle dir's cache lookup.
+            let resumeDataPath = "\(filePath).resume"
 
             let result = BundleDownloadResult(
                 downloadedFile: filePath,
@@ -1218,6 +1308,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 OneKeyLog.info("BundleUpdate", "downloadBundle: file already exists, verifying SHA256...")
                 if self.verifyBundleSHA256(filePath, sha256: sha256) {
                     OneKeyLog.info("BundleUpdate", "downloadBundle: existing file SHA256 valid, skipping download")
+                    // A valid completed bundle invalidates any stale resume blob.
+                    try? FileManager.default.removeItem(atPath: resumeDataPath)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                         self?.sendEvent(type: "update/complete")
                     }
@@ -1225,6 +1317,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 } else {
                     OneKeyLog.warn("BundleUpdate", "downloadBundle: existing file SHA256 mismatch, re-downloading")
                     try? FileManager.default.removeItem(atPath: filePath)
+                    // Hash-failed bundle means the resume blob is also poisoned.
+                    try? FileManager.default.removeItem(atPath: resumeDataPath)
                 }
             }
 
@@ -1239,8 +1333,17 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "URLSession not initialized"])
             }
 
+            // Resume blob from a prior failed attempt; iOS rebuilds the byte
+            // offset internally so we never need a Range header on this path.
+            let persistedResumeData: Data? = {
+                guard FileManager.default.fileExists(atPath: resumeDataPath),
+                      let data = try? Data(contentsOf: URL(fileURLWithPath: resumeDataPath)),
+                      data.count > 0 else { return nil }
+                return data
+            }()
+
             self.sendEvent(type: "update/start")
-            OneKeyLog.info("BundleUpdate", "downloadBundle: starting download...")
+            OneKeyLog.info("BundleUpdate", "downloadBundle: starting download (resumeBytes=\(persistedResumeData?.count ?? 0))...")
 
             let request = URLRequest(url: url)
 
@@ -1254,51 +1357,95 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 self?.sendEvent(type: "update/downloading", progress: progress)
             }
 
-            let (tempURL, response) = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, URLResponse), Error>) in
-                delegate.setContinuation(continuation)
-                let task = session.downloadTask(with: request)
-                task.resume()
+            let downloadOutcome: Result<(URL, URLResponse), Error>
+            do {
+                let value = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(URL, URLResponse), Error>) in
+                    delegate.setContinuation(continuation)
+                    let task: URLSessionDownloadTask
+                    if let resumeData = persistedResumeData {
+                        task = session.downloadTask(withResumeData: resumeData)
+                    } else {
+                        task = session.downloadTask(with: request)
+                    }
+                    task.resume()
+                }
+                downloadOutcome = .success(value)
+            } catch {
+                downloadOutcome = .failure(error)
             }
 
-            // Verify HTTPS was maintained (no HTTP redirect)
-            if let httpResponse = response as? HTTPURLResponse,
-               let responseUrl = httpResponse.url,
-               responseUrl.scheme?.lowercased() != "https" {
-                OneKeyLog.error("BundleUpdate", "downloadBundle: redirected to non-HTTPS URL: \(responseUrl)")
-                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Download was redirected to non-HTTPS URL"])
-            }
+            switch downloadOutcome {
+            case .failure(let error):
+                // Persist the freshly captured resume blob for the next call.
+                // If iOS gave us nothing usable, clear any stale blob so a
+                // future attempt isn't held back by an unresumable cut point.
+                if let resumeData = delegate.lastResumeData {
+                    do {
+                        let dir = (resumeDataPath as NSString).deletingLastPathComponent
+                        if !FileManager.default.fileExists(atPath: dir) {
+                            try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+                        }
+                        try resumeData.write(to: URL(fileURLWithPath: resumeDataPath), options: .atomic)
+                        OneKeyLog.info("BundleUpdate", "downloadBundle: persisted resumeData (\(resumeData.count) bytes) at \(resumeDataPath)")
+                    } catch {
+                        OneKeyLog.warn("BundleUpdate", "downloadBundle: failed to persist resumeData: \(error)")
+                    }
+                } else {
+                    try? FileManager.default.removeItem(atPath: resumeDataPath)
+                }
+                let nsError = error as NSError
+                OneKeyLog.error("BundleUpdate", "downloadBundle: download failed: \(nsError.domain) \(nsError.code) \(nsError.localizedDescription)")
+                self.sendEvent(type: "update/error", message: "\(nsError.domain) \(nsError.code)")
+                throw error
 
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
-                OneKeyLog.error("BundleUpdate", "downloadBundle: HTTP error, statusCode=\(statusCode)")
-                self.sendEvent(type: "update/error", message: "HTTP error \(statusCode)")
-                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Download failed with HTTP \(statusCode)"])
-            }
+            case .success(let (tempURL, response)):
+                // Successful completion ⇒ no longer need the resume blob.
+                try? FileManager.default.removeItem(atPath: resumeDataPath)
 
-            OneKeyLog.info("BundleUpdate", "downloadBundle: download finished, HTTP 200, moving to destination...")
+                // Verify HTTPS was maintained (no HTTP redirect)
+                if let httpResponse = response as? HTTPURLResponse,
+                   let responseUrl = httpResponse.url,
+                   responseUrl.scheme?.lowercased() != "https" {
+                    OneKeyLog.error("BundleUpdate", "downloadBundle: redirected to non-HTTPS URL: \(responseUrl)")
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Download was redirected to non-HTTPS URL"])
+                }
 
-            // Move downloaded file to destination
-            let destDir = (filePath as NSString).deletingLastPathComponent
-            if !FileManager.default.fileExists(atPath: destDir) {
-                try FileManager.default.createDirectory(atPath: destDir, withIntermediateDirectories: true)
-            }
-            if FileManager.default.fileExists(atPath: filePath) {
-                try FileManager.default.removeItem(atPath: filePath)
-            }
-            try FileManager.default.moveItem(at: tempURL, to: URL(fileURLWithPath: filePath))
+                // 206 is acceptable when the OS finished a Range-resumed task on
+                // our behalf; everything else non-200 is a real error.
+                guard let httpResponse = response as? HTTPURLResponse,
+                      httpResponse.statusCode == 200 || httpResponse.statusCode == 206 else {
+                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+                    OneKeyLog.error("BundleUpdate", "downloadBundle: HTTP error, statusCode=\(statusCode)")
+                    self.sendEvent(type: "update/error", message: "HTTP error \(statusCode)")
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Download failed with HTTP \(statusCode)"])
+                }
 
-            // Verify SHA256
-            OneKeyLog.info("BundleUpdate", "downloadBundle: verifying SHA256...")
-            if !self.verifyBundleSHA256(filePath, sha256: sha256) {
-                try? FileManager.default.removeItem(atPath: filePath)
-                OneKeyLog.error("BundleUpdate", "downloadBundle: SHA256 verification failed after download")
-                self.sendEvent(type: "update/error", message: "Bundle signature verification failed")
-                throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle signature verification failed"])
-            }
+                OneKeyLog.info("BundleUpdate", "downloadBundle: download finished, HTTP \(httpResponse.statusCode), moving to destination...")
 
-            self.sendEvent(type: "update/complete")
-            OneKeyLog.info("BundleUpdate", "downloadBundle: completed successfully, appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
-            return result
+                // Move downloaded file to destination
+                let destDir = (filePath as NSString).deletingLastPathComponent
+                if !FileManager.default.fileExists(atPath: destDir) {
+                    try FileManager.default.createDirectory(atPath: destDir, withIntermediateDirectories: true)
+                }
+                if FileManager.default.fileExists(atPath: filePath) {
+                    try FileManager.default.removeItem(atPath: filePath)
+                }
+                try FileManager.default.moveItem(at: tempURL, to: URL(fileURLWithPath: filePath))
+
+                // Verify SHA256
+                OneKeyLog.info("BundleUpdate", "downloadBundle: verifying SHA256...")
+                if !self.verifyBundleSHA256(filePath, sha256: sha256) {
+                    let reason = BundleUpdateStore.lastSHA256FailureReason() ?? "MISMATCH"
+                    try? FileManager.default.removeItem(atPath: filePath)
+                    OneKeyLog.error("BundleUpdate", "downloadBundle: SHA256 verification failed after download, reason=\(reason)")
+                    self.sendEvent(type: "update/error", message: "SHA256_\(reason)")
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle SHA256 verification failed: \(reason)"])
+                }
+
+                self.sendEvent(type: "update/complete")
+                OneKeyLog.info("BundleUpdate", "downloadBundle: completed successfully, appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
+                return result
+            }
         }
     }
 
