@@ -314,12 +314,20 @@ public class BundleUpdateStore: NSObject {
     }
 
     /// Subtype of the most recent calculateSHA256 failure on this thread, or
-    /// nil if the last call succeeded. Surfaces FILE_NOT_FOUND / FILE_EMPTY /
+    /// nil if the last call succeeded. Surfaces FILE_NOT_FOUND /
     /// FILE_DISAPPEARED / IO_<NSError code> / UNEXPECTED so analytics can
     /// split the previously opaque "Failed to calculate SHA256" bucket
     /// (mixpanel: 91.3% of verifyPackage failures are Android; iOS shares
     /// the calculator and inherits the same blind spot for its 14 ASC +
     /// 2 verifyPackage Promise-destroyed cases).
+    ///
+    /// Note: 0-byte files are NOT treated as a failure. They hash to the
+    /// well-known empty-content SHA256 and the caller's expected/actual
+    /// comparison handles legitimate vs. corrupt-empty cases. Rejecting
+    /// empty files here would make any OTA bundle that legitimately
+    /// contains a 0-byte file (touched marker, blank locale fallback)
+    /// fail validateAllFilesInDir / validateWebEmbedSha256 / launch entry
+    /// verification — all of which share this calculator.
     public static func lastSHA256FailureReason() -> String? {
         return Thread.current.threadDictionary[kSHA256FailureKey] as? String
     }
@@ -338,13 +346,6 @@ public class BundleUpdateStore: NSObject {
         if !fm.fileExists(atPath: filePath) {
             setSHA256Failure("FILE_NOT_FOUND")
             OneKeyLog.error("BundleUpdate", "calculateSHA256: file not found: \(filePath)")
-            return nil
-        }
-        let attrs = (try? fm.attributesOfItem(atPath: filePath)) ?? [:]
-        let fileSize = (attrs[.size] as? NSNumber)?.int64Value ?? -1
-        if fileSize == 0 {
-            setSHA256Failure("FILE_EMPTY")
-            OneKeyLog.error("BundleUpdate", "calculateSHA256: file empty: \(filePath)")
             return nil
         }
         guard let fileHandle = FileHandle(forReadingAtPath: filePath) else {
@@ -376,7 +377,11 @@ public class BundleUpdateStore: NSObject {
             }) {}
             if let err = threwError {
                 let nsErr = err as NSError
-                setSHA256Failure("IO_\(nsErr.domain)_\(nsErr.code)")
+                // Keep the failure tag low-cardinality (`IO_<code>`) so it
+                // matches the doc on lastSHA256FailureReason and stays under
+                // the analytics bucket cap. The full `domain code description`
+                // detail is still logged below for local debugging.
+                setSHA256Failure("IO_\(nsErr.code)")
                 OneKeyLog.error("BundleUpdate", "calculateSHA256: read failed: \(nsErr.domain) \(nsErr.code) \(nsErr.localizedDescription)")
                 return nil
             }
@@ -1249,17 +1254,22 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     /// On iOS, force-quit (user swipes the app off the App Switcher) cannot
     /// fire `URLSession`'s `didCompleteWithError` — SIGKILL leaves no time
     /// for callbacks. The kill is, however, *always* preceded by the app
-    /// transitioning to the background. We hook that transition and call
-    /// `cancel(byProducingResumeData:)` synchronously, so the resume blob
-    /// is on disk before the app can possibly be terminated. Memory-pressure
-    /// kills follow the same chain (the OS only reaps backgrounded apps
-    /// under memory pressure), so this also covers OOM termination.
+    /// transitioning to the background. We hook that transition and kick
+    /// off `cancel(byProducingResumeData:)` for any in-flight downloads so
+    /// the resume blob lands on disk before the app can be terminated.
+    /// Memory-pressure kills follow the same chain (the OS only reaps
+    /// backgrounded apps under memory pressure), so this also covers OOM
+    /// termination.
     ///
-    /// `beginBackgroundTask` extends the ~5s of guaranteed background runtime
-    /// to ~30s, which is plenty for a few-KB blob write — but we don't rely
-    /// on the extension to *complete* the snapshot; the `cancel` callback
-    /// returns the data synchronously, so even if iOS suspends us right
-    /// after `endBackgroundTask` the resume blob is already persisted.
+    /// Both `URLSession.getAllTasks(_:)` and `cancel(byProducingResumeData:)`
+    /// deliver their results *asynchronously* via a closure — the resume
+    /// data does not pop out synchronously. We wrap the work in a
+    /// `beginBackgroundTask` window that extends the ~5s of guaranteed
+    /// background runtime to ~30s so the closures actually have time to
+    /// fire and write the few-KB blob before suspension. Persistence is
+    /// best-effort: if iOS reaps us before the writer closure runs (very
+    /// short background windows, expiration), the next launch simply
+    /// re-downloads from scratch — a resume miss is correct, just slower.
     private func registerBackgroundSnapshotObserver() {
         didEnterBackgroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
@@ -1284,14 +1294,35 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
         let resumeDataPath = "\(filePath).resume"
         let bgTaskName = "BundleUpdateResumeSnapshot"
-        var bgTaskId: UIBackgroundTaskIdentifier = .invalid
-        bgTaskId = UIApplication.shared.beginBackgroundTask(withName: bgTaskName) {
-            // Expiration handler — system is reclaiming us. Best-effort end.
-            if bgTaskId != .invalid {
-                UIApplication.shared.endBackgroundTask(bgTaskId)
-                bgTaskId = .invalid
+
+        // bgTaskId is mutated from three escaping closures: the
+        // beginBackgroundTask expiration handler (called on main),
+        // session.getAllTasks's completion (NOT guaranteed to be main),
+        // and group.notify on .main. Wrap reads/writes in a tiny holder
+        // serialized through a dedicated queue so we cannot double-end
+        // the background task or leak it. `endOnce` guarantees endBackgroundTask
+        // is invoked exactly once across whichever closure reaches it first.
+        final class BgTaskHolder {
+            private let q = DispatchQueue(label: "so.onekey.bundleupdate.bgtask")
+            private var id: UIBackgroundTaskIdentifier = .invalid
+            func set(_ newId: UIBackgroundTaskIdentifier) {
+                q.sync { id = newId }
+            }
+            func endOnce() {
+                q.sync {
+                    if id != .invalid {
+                        UIApplication.shared.endBackgroundTask(id)
+                        id = .invalid
+                    }
+                }
             }
         }
+        let bgTask = BgTaskHolder()
+        let started = UIApplication.shared.beginBackgroundTask(withName: bgTaskName) {
+            // Expiration handler — system is reclaiming us. Best-effort end.
+            bgTask.endOnce()
+        }
+        bgTask.set(started)
         OneKeyLog.info("BundleUpdate", "didEnterBackground: snapshotting resumeData for \(filePath)")
 
         session.getAllTasks { tasks in
@@ -1318,10 +1349,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 })
             }
             group.notify(queue: .main) {
-                if bgTaskId != .invalid {
-                    UIApplication.shared.endBackgroundTask(bgTaskId)
-                    bgTaskId = .invalid
-                }
+                bgTask.endOnce()
             }
         }
     }

@@ -409,10 +409,18 @@ object BundleUpdateStoreAndroid {
     /**
      * Subtype of the most recent calculateSHA256 failure on this thread, or
      * null if the last call succeeded. Surfaces the specific reason —
-     * FILE_NOT_FOUND / FILE_EMPTY / FILE_TRUNCATED / OOM / IO_<class> /
+     * FILE_NOT_FOUND / FILE_TRUNCATED / OOM / IO_<class> /
      * UNEXPECTED_<class> — so analytics can split the previously opaque
      * "Failed to calculate SHA256" bucket (mixpanel: 91.3 percent of
      * verifyPackage failures) into actionable categories.
+     *
+     * Note: 0-byte files are NOT treated as a failure. They hash to the
+     * well-known empty-content SHA-256 and the caller's expected/actual
+     * comparison handles legitimate vs. corrupt-empty cases. Rejecting
+     * empty files here would make any OTA bundle that legitimately
+     * contains a 0-byte file (touched marker, blank locale fallback)
+     * fail validateAllFilesInDir / validateWebEmbedSha256 / launch entry
+     * verification — all of which share this calculator.
      */
     fun lastSHA256FailureReason(): String? = lastSHA256Failure.get()
 
@@ -422,11 +430,6 @@ object BundleUpdateStoreAndroid {
         if (!file.exists()) {
             lastSHA256Failure.set("FILE_NOT_FOUND")
             OneKeyLog.error("BundleUpdate", "calculateSHA256: file not found: $filePath")
-            return null
-        }
-        if (file.length() == 0L) {
-            lastSHA256Failure.set("FILE_EMPTY")
-            OneKeyLog.error("BundleUpdate", "calculateSHA256: file empty: $filePath")
             return null
         }
         return try {
@@ -1460,8 +1463,10 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: HTTP 416 (range not satisfiable), discarding partial and failing this attempt")
                 if (partialFile.exists()) partialFile.delete()
-                sendEvent("update/error", message = "HTTP 416 (range not satisfiable)")
-                throw Exception("HTTP 416")
+                // Don't pre-emit update/error here; the outer catch is the
+                // single source of error events. sanitizeErrorMessageForEvent
+                // recognizes "HTTP " prefix and forwards this string verbatim.
+                throw Exception("HTTP 416 (range not satisfiable)")
             }
 
             val expectsResume = partialBytes > 0
@@ -1470,7 +1475,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             if (!response.isSuccessful || (response.code != 200 && response.code != 206)) {
                 OneKeyLog.error("BundleUpdate", "downloadBundle: HTTP error, statusCode=${response.code}")
                 response.close()
-                sendEvent("update/error", message = "HTTP ${response.code}")
+                // outer catch is the single source of update/error events.
                 throw Exception("HTTP ${response.code}")
             }
 
@@ -1542,7 +1547,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             if (downloadedFile.exists()) downloadedFile.delete()
             if (!partialAfter.renameTo(downloadedFile)) {
                 OneKeyLog.error("BundleUpdate", "downloadBundle: rename .partial -> final failed")
-                sendEvent("update/error", message = "rename .partial failed")
+                // outer catch is the single source of update/error events;
+                // "Failed to finalize download" is in the verbatim allowlist.
                 throw Exception("Failed to finalize download")
             }
 
@@ -1551,7 +1557,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 val reason = BundleUpdateStoreAndroid.lastSHA256FailureReason() ?: "MISMATCH"
                 File(filePath).delete()
                 OneKeyLog.error("BundleUpdate", "downloadBundle: SHA256 verification failed after download, reason=$reason")
-                sendEvent("update/error", message = "SHA256_$reason")
+                // outer catch emits the verbatim "Bundle SHA256 verification
+                // failed: <REASON>" payload (recognized by sanitize/JS).
                 throw Exception("Bundle SHA256 verification failed: $reason")
             }
 
@@ -1563,12 +1570,13 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 // event channel must NOT carry e.message verbatim — Android
                 // FileNotFoundException etc. embed the full /data/user/.../
                 // path including the package identifier, and downstream
-                // listeners would forward that into analytics. Emit only a
-                // domain+code shape; mirrors the iOS sendEvent payload at
-                // ReactNativeBundleUpdate.swift's "update/error" sites.
+                // listeners would forward that into analytics. Emit only the
+                // sanitized tag; mirrors the iOS sendEvent payload at
+                // ReactNativeBundleUpdate.swift's "update/error" sites and
+                // matches the verbatim guarantees documented on
+                // sanitizeErrorMessageForEvent.
                 OneKeyLog.error("BundleUpdate", "downloadBundle: failed: ${e.javaClass.simpleName}: ${e.message}")
-                val codeTag = sanitizeErrorMessageForEvent(e)
-                sendEvent("update/error", message = "${e.javaClass.simpleName}: $codeTag")
+                sendEvent("update/error", message = sanitizeErrorMessageForEvent(e))
                 throw e
             } finally {
                 isDownloading.set(false)
