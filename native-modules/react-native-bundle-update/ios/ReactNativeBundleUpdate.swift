@@ -315,11 +315,15 @@ public class BundleUpdateStore: NSObject {
 
     /// Subtype of the most recent calculateSHA256 failure on this thread, or
     /// nil if the last call succeeded. Surfaces FILE_NOT_FOUND /
-    /// FILE_DISAPPEARED / IO_<NSError code> / UNEXPECTED so analytics can
-    /// split the previously opaque "Failed to calculate SHA256" bucket
-    /// (mixpanel: 91.3% of verifyPackage failures are Android; iOS shares
-    /// the calculator and inherits the same blind spot for its 14 ASC +
-    /// 2 verifyPackage Promise-destroyed cases).
+    /// FILE_DISAPPEARED / IO_<NSError code> so analytics can split the
+    /// previously opaque "Failed to calculate SHA256" bucket (mixpanel:
+    /// 91.3% of verifyPackage failures are Android; iOS shares the
+    /// calculator and inherits the same blind spot for its 14 ASC + 2
+    /// verifyPackage Promise-destroyed cases). Keep this list in sync
+    /// with the setSHA256Failure(...) call sites in calculateSHA256
+    /// below — Android's wider taxonomy (FILE_TRUNCATED / OOM /
+    /// UNEXPECTED_<class>) does not apply here because the iOS reader
+    /// surfaces every disk error as a single `IO_<NSError code>`.
     ///
     /// Note: 0-byte files are NOT treated as a failure. They hash to the
     /// well-known empty-content SHA256 and the caller's expected/actual
@@ -359,9 +363,15 @@ public class BundleUpdateStore: NSObject {
             var context = CC_SHA256_CTX()
             CC_SHA256_Init(&context)
             var threwError: Error?
-            // Wrap reads in try/catch via NSException bridge: FileHandle.readData
-            // can raise on read failure (NSFileHandleOperationException);
-            // ObjCRuntime catches those when bridged through NSObject methods.
+            // safeRead routes reads through FileHandle.read(upToCount:) on
+            // iOS 13.4+ — that variant surfaces disk failures as throwing
+            // NSError, which we catch here as Swift `Error`. On pre-13.4
+            // OS versions safeRead falls back to readData(ofLength:),
+            // which raises NSFileHandleOperationException; Swift cannot
+            // catch ObjC NSExceptions via try/catch, so on those legacy
+            // versions a read failure will still abort the process. We
+            // accept that on the floor since 13.4+ has been the deployment
+            // target for years.
             while autoreleasepool(invoking: {
                 do {
                     let data = try Self.safeRead(fileHandle: fileHandle, length: 8192)

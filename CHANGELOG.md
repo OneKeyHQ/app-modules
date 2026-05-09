@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.0.30] - 2026-05-09
+## [3.0.31] - 2026-05-09
 
 ### Features
 - **bundle-update (iOS)**: Persist `URLSession` resume data on download failure. `DownloadDelegate` now captures `NSURLSessionDownloadTaskResumeData` from the failed task's `userInfo` and `downloadBundle` writes it to a `<filePath>.resume` sidecar; on the next attempt, `session.downloadTask(withResumeData:)` finishes from the OS-recorded cut point instead of restarting from byte 0. The success branch unlinks the stale blob so the sidecar stays in lockstep with the bundle. Previously the ~11KB resume blob iOS attaches to every `NSURL -1005` / `-1001` failure was discarded — the same two error codes that account for ~64% of all download failures (~5,940 mixpanel users).
@@ -21,7 +21,7 @@ All notable changes to this project will be documented in this file.
 - **perf-stats (Android)**: Prevent overlay leak on Activity destroy. The window-manager-attached overlay was not removed when the host Activity was destroyed, leaking the `View` and its `WindowManager` token across configuration changes / Activity recreation.
 
 ### Chores
-- Bump all packages to 3.0.30.
+- Bump all packages to 3.0.31.
 
 ## [3.0.28] - 2026-05-08
 

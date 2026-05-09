@@ -1489,7 +1489,14 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 partialBytes = 0L
             }
 
-            val body = response.body ?: throw Exception("Empty response body")
+            // Close the response before throwing on a null body — OkHttp
+            // holds connection resources on the response wrapper itself,
+            // and `throw` here exits the function before any byteStream()
+            // consumption would close it for us.
+            val body = response.body ?: run {
+                response.close()
+                throw Exception("Empty response body")
+            }
             val contentLength = body.contentLength()
             // Total size of the whole resource (not the slice). On 206 prefer
             // Content-Range's "/total" tail; fall back to partial+contentLength.
