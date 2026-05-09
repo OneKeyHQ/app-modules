@@ -409,10 +409,12 @@ object BundleUpdateStoreAndroid {
     /**
      * Subtype of the most recent calculateSHA256 failure on this thread, or
      * null if the last call succeeded. Surfaces the specific reason —
-     * FILE_NOT_FOUND / FILE_TRUNCATED / OOM / IO_<class> /
-     * UNEXPECTED_<class> — so analytics can split the previously opaque
-     * "Failed to calculate SHA256" bucket (mixpanel: 91.3 percent of
-     * verifyPackage failures) into actionable categories.
+     * FILE_NOT_FOUND / FILE_DISAPPEARED / FILE_TRUNCATED /
+     * PERMISSION_DENIED / OOM / IO_<class> / UNEXPECTED_<class> — so
+     * analytics can split the previously opaque "Failed to calculate
+     * SHA256" bucket (mixpanel: 91.3 percent of verifyPackage failures)
+     * into actionable categories. Keep this list in sync with the
+     * lastSHA256Failure.set(...) call sites in calculateSHA256 below.
      *
      * Note: 0-byte files are NOT treated as a failure. They hash to the
      * well-known empty-content SHA-256 and the caller's expected/actual
@@ -1576,8 +1578,16 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 // matches the verbatim guarantees documented on
                 // sanitizeErrorMessageForEvent.
                 OneKeyLog.error("BundleUpdate", "downloadBundle: failed: ${e.javaClass.simpleName}: ${e.message}")
-                sendEvent("update/error", message = sanitizeErrorMessageForEvent(e))
-                throw e
+                val sanitized = sanitizeErrorMessageForEvent(e)
+                sendEvent("update/error", message = sanitized)
+                // Rethrow with the same sanitized message so the Promise
+                // rejection surfacing to JS carries no /data/user/<u>/<pkg>/
+                // paths. Without this rewrap, FileNotFoundException etc.
+                // would re-leak via Promise.reject's message channel even
+                // though the event payload was already sanitized. Keep
+                // the original exception as `cause` so OneKeyLog (and any
+                // native crash reporter) still sees the full chain.
+                throw Exception(sanitized, e)
             } finally {
                 isDownloading.set(false)
             }

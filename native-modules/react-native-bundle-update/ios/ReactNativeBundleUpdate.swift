@@ -1283,9 +1283,14 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     private func snapshotResumeDataForBackgrounding() {
         guard let session = self.urlSession else { return }
         // Read both isDownloading AND activeDownloadFilePath inside the
-        // same stateQueue.sync block so a concurrent downloadBundle entry
-        // (which writes filePath BEFORE flipping isDownloading) cannot
-        // produce a torn read where isDownloading=true but filePath=nil.
+        // same stateQueue.sync block. A concurrent downloadBundle entry
+        // flips isDownloading=true at the start of the Promise body but
+        // only writes activeDownloadFilePath later (after the early
+        // guards / version + URL validation). Without this paired read,
+        // didEnterBackground could observe isDownloading=true while
+        // activeDownloadFilePath is still nil from a previous run, or —
+        // on the unwind via defer — see isDownloading=false alongside a
+        // not-yet-cleared path.
         let snapshot: (Bool, String?) = self.stateQueue.sync {
             (self.isDownloading, self.activeDownloadFilePath)
         }
@@ -1542,7 +1547,19 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 let nsError = error as NSError
                 OneKeyLog.error("BundleUpdate", "downloadBundle: download failed: \(nsError.domain) \(nsError.code) \(nsError.localizedDescription)")
                 self.sendEvent(type: "update/error", message: "\(nsError.domain) \(nsError.code)")
-                throw error
+                // Rethrow a sanitized NSError. The original `error` is a
+                // URLSession/system error whose `localizedDescription` may
+                // include the temp file path (e.g. NSURLErrorFailingURLString
+                // userInfo, or the ~/Library/.../CFNetworkDownload_*.tmp
+                // path on cancel-with-resume) — Promise rejections surface
+                // that string to JS, which would re-leak the paths the
+                // event-payload sanitization just stripped. Keep the full
+                // detail in OneKeyLog (above) and emit only `domain code`.
+                throw NSError(
+                    domain: nsError.domain,
+                    code: nsError.code,
+                    userInfo: [NSLocalizedDescriptionKey: "Download failed: \(nsError.domain) \(nsError.code)"]
+                )
 
             case .success(let (tempURL, response)):
                 // Successful completion ⇒ no longer need the resume blob.
