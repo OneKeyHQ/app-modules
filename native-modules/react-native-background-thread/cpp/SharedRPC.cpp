@@ -1,5 +1,7 @@
 #include "SharedRPC.h"
 
+#include <algorithm>
+
 #ifdef __ANDROID__
 #include <android/log.h>
 #define RPC_LOG(...) __android_log_print(ANDROID_LOG_INFO, "SharedRPC", __VA_ARGS__)
