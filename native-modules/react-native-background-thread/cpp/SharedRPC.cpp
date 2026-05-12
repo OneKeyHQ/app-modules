@@ -26,17 +26,14 @@ void SharedRPC::install(jsi::Runtime &rt, RPCRuntimeExecutor executor,
   auto alive = std::make_shared<std::atomic<bool>>(true);
 
   std::lock_guard<std::mutex> lock(mutex_);
-  // Remove any existing listener with the same runtimeId (reload scenario).
-  // IMPORTANT: The old listener's callback is a jsi::Function tied to the old
-  // runtime. On reload, that runtime is already destroyed, so calling
-  // ~jsi::Function() would crash (null deref in Pointer::~Pointer).
-  // We intentionally leak the callback to avoid this.
-  //
-  // We ALSO flip the old listener's alive flag to false. Any executor lambda
-  // snapshotted by an earlier notifyOtherRuntime() shares this atomic and
-  // will short-circuit when it eventually runs — closing the race where a
-  // lambda was already past the snapshot lock but hadn't yet dispatched onto
-  // the dying runtime.
+  // Defensive dedup: under the normal restart flow, invalidate() has already
+  // run for this runtimeId and erased the entry, so this loop matches
+  // nothing. The branch survives as a fallback for any path that re-installs
+  // without first calling invalidate (e.g. legacy host integrations, partial
+  // teardown). Same correctness invariants as invalidate(): flip alive=false
+  // so any executor lambda already in flight short-circuits, and leak the
+  // jsi::Function callback because destroying it on a wrong/dying thread
+  // crashes (null deref in Pointer::~Pointer).
   for (auto &listener : listeners_) {
     if (listener.runtimeId == runtimeId) {
       if (listener.alive) {
@@ -71,11 +68,22 @@ bool SharedRPC::invalidate(const std::string &runtimeId) {
       new std::shared_ptr<jsi::Function>(std::move(listener.callback));
     }
     // Drop the executor closure so nothing tries to dispatch via the dying
-    // RCTInstance/CallInvoker after this point. The listener entry itself
-    // stays (alive=false) until the next install() replaces it.
+    // RCTInstance/CallInvoker after this point.
     listener.executor = nullptr;
     found = true;
   }
+  // Erase the dead entries. Already-dispatched executor lambdas hold their
+  // own shared_ptr<alive> snapshot, so erasing here does not affect them —
+  // it only prevents NEW notifyOtherRuntime() snapshots from picking up the
+  // dead listener. Without the erase, a mode='all' restart whose post-reload
+  // re-install never fires would leave a permanently-dead entry in the
+  // vector. The next install() for the same runtimeId pushes a fresh entry.
+  listeners_.erase(
+      std::remove_if(listeners_.begin(), listeners_.end(),
+                     [&runtimeId](const RuntimeListener &l) {
+                       return l.runtimeId == runtimeId;
+                     }),
+      listeners_.end());
   return found;
 }
 

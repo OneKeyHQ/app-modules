@@ -26,6 +26,11 @@
 @property (nonatomic, strong) RCTReactNativeFactory *reactNativeFactory;
 @property (nonatomic, assign) BOOL hasListeners;
 @property (nonatomic, assign, readwrite) BOOL isStarted;
+// Flipped to YES inside the installSharedBridgeInMainRuntime: lambda and to
+// NO at the start of restartWithMode:. Read by the post-reload observer to
+// detect when the host app's hostDidStart: failed to re-invoke the install
+// on the new RCTHost — which would silently break main→bg RPC.
+@property (atomic, assign) BOOL mainSharedBridgeInstalled;
 @end
 
 @implementation BackgroundThreadManager
@@ -90,6 +95,10 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
             }];
         };
         SharedRPC::install(runtime, std::move(mainExecutor), "main");
+        // Set the integration-health flag from inside the JS-thread lambda so
+        // it only flips true AFTER the listener is actually live; the post-
+        // reload observer reads this to detect host hostDidStart: omissions.
+        [BackgroundThreadManager sharedInstance].mainSharedBridgeInstalled = YES;
         [BTLogger info:@"SharedStore and SharedRPC installed in main runtime"];
     }];
 }
@@ -214,15 +223,58 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
             self.isStarted = NO;
         }
 
-        // (3) Trigger the main bridge reload. Equivalent to what
+        // (3) Arm a one-shot defensive observer BEFORE triggering the reload.
+        // After the new main bridge finishes loading, it: (a) self-respawns
+        // the bg runtime for mode='all' if the host AppDelegate didn't —
+        // idempotent via startBackgroundRunner's isStarted guard, so a
+        // correctly-wired host pays nothing; (b) logs a loud error if the
+        // host failed to call installSharedBridgeInMainRuntime: on the new
+        // RCTHost — otherwise that integration bug surfaces only as silent
+        // RPC drop in production. See restartWithMode: header doc for the
+        // full contract.
+        self.mainSharedBridgeInstalled = NO;
+        __weak BackgroundThreadManager *weakSelf = self;
+        __block id observer = nil;
+        observer = [[NSNotificationCenter defaultCenter]
+            addObserverForName:RCTJavaScriptDidLoadNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(NSNotification *_) {
+            // One-shot: detach so subsequent reloads (DevSettings, future
+            // restart() calls) don't double-trigger this check.
+            [[NSNotificationCenter defaultCenter] removeObserver:observer];
+            BackgroundThreadManager *strongSelf = weakSelf;
+            if (!strongSelf) return;
+            // Delay the verification so the host's hostDidStart: chain, which
+            // typically fires right after RCTJavaScriptDidLoadNotification on
+            // the new host, has a chance to re-arm both halves before we
+            // declare anything broken.
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                if (isAll && !strongSelf.isStarted) {
+                    [BTLogger info:@"restart(all): bg not respawned by host AppDelegate; self-respawning"];
+                    [strongSelf startBackgroundRunner];
+                }
+                if (!strongSelf.mainSharedBridgeInstalled) {
+                    [BTLogger error:[NSString stringWithFormat:
+                        @"restart(%@): SharedBridge not re-installed in main runtime after reload. "
+                        @"Host AppDelegate's hostDidStart: must invoke "
+                        @"+[BackgroundThreadManager installSharedBridgeInMainRuntime:newHost] "
+                        @"on the new RCTHost or main→bg RPC will silently fail.", mode]];
+                }
+            });
+        }];
+
+        // (4) Trigger the main bridge reload. Equivalent to what
         // react-native-restart did, but now sequenced AFTER quiesce so the
         // SharedRPC race window is closed.
         RCTTriggerReloadCommandListeners(attributedReason);
 
-        // (4) For mode=all, the new main host's hostDidStart will call
+        // (5) For mode=all, the new main host's hostDidStart will call
         // BackgroundThreadBridge.startBackgroundRunner again (isStarted==NO
         // now), recreating the bg host and re-installing the "background"
         // listener via BackgroundRunnerReactNativeDelegate.hostDidStart.
+        // If the host fails to do so, the observer above self-heals.
         // For mode=ui, the bg host stays as-is; only the "main" listener
         // gets re-installed in installSharedBridgeInMainRuntime.
 

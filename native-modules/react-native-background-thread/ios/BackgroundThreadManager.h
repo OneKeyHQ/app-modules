@@ -12,7 +12,14 @@ NS_ASSUME_NONNULL_BEGIN
 + (instancetype)sharedInstance;
 
 /// Install SharedBridge HostObject into the main (UI) runtime.
-/// Call this from your AppDelegate's ReactNativeDelegate hostDidStart: callback.
+///
+/// MUST be invoked from the host app's RCTReactNativeFactoryDelegate
+/// hostDidStart: callback on EVERY main RCTHost lifecycle start — including
+/// after a `BackgroundThread.restart` (both modes) reloads the main bridge.
+/// The module cannot self-invoke this because it does not own the RCTHost
+/// reference; restartWithMode: emits a loud error log if it detects this
+/// contract was violated post-reload.
+///
 /// @param host The RCTHost for the main runtime
 + (void)installSharedBridgeInMainRuntime:(RCTHost *)host;
 
@@ -38,6 +45,30 @@ NS_ASSUME_NONNULL_BEGIN
 /// Coordinates SharedRPC quiesce + RCTReloadCommand so cross-runtime traffic
 /// in flight during reload is silently dropped instead of crashing on a
 /// torn-down RCTInstance / dangling jsi::Function callback.
+///
+/// ## Post-reload contract (host responsibility)
+///
+/// After `RCTTriggerReloadCommandListeners` rebuilds the main RCTHost, the
+/// host app's `RCTReactNativeFactoryDelegate.hostDidStart:` is responsible
+/// for re-arming BOTH halves of the integration on the new host:
+///   1. `+[BackgroundThreadManager installSharedBridgeInMainRuntime:newHost]`
+///      — re-arms the "main" SharedRPC listener; without this main→bg RPC
+///      silently breaks even though both runtimes are alive.
+///   2. (mode='all' only) `[BackgroundThreadManager.sharedInstance
+///      startBackgroundRunner]` — recreates the bg RCTHost since the
+///      previous one was released and `isStarted` was reset to NO.
+///
+/// The module defends against host integration omissions with a one-shot
+/// `RCTJavaScriptDidLoadNotification` observer that fires after the new
+/// main bridge loads:
+///   - For mode='all': if `isStarted` is still NO ~1.5s after JS load,
+///     self-respawns the bg runtime (idempotent — startBackgroundRunner's
+///     internal guard makes a redundant host-side call a no-op).
+///   - For both modes: if `installSharedBridgeInMainRuntime:` was not
+///     called on the new host, logs `[BTLogger error:...]` so the
+///     integration bug is visible in production logs instead of just
+///     surfacing as silent RPC drop.
+///
 /// @param mode `@"ui"` to reload only the main runtime (bg stays hot);
 ///             `@"all"` to reload both. Any other value invokes completion
 ///             with NSError domain `BackgroundThread` code 10.

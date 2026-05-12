@@ -842,21 +842,33 @@ class BackgroundThreadManager private constructor() {
         val host = mainReactHost
         if (isUi && host != null) {
             BTLogger.info("restart(ui): soft reload via ReactHost.reload")
-            // Resolve before reload — the runtime tearing down will drop the
-            // callback anyway, but explicit resolve avoids relying on that
-            // and matches the iOS completion-before-reload-sequencing ordering.
-            promise.resolve(null)
             // Post to the UI thread to keep the call off the JS thread that
             // is about to be torn down; ReactHost.reload is itself thread-
             // safe but the work it kicks off (JNI teardown of the old
             // ReactInstance) is cleaner when not initiated from inside the
             // outgoing runtime's callback frame.
+            //
+            // Promise resolution is sequenced after reload() returns: reload
+            // returns a Task immediately (the actual teardown is async), so
+            // the JS thread is still live and can deliver the success
+            // callback before being destroyed. If reload() throws
+            // synchronously, we try the process-restart fallback; only if
+            // THAT also fails do we reject — never falsely report success.
             Handler(Looper.getMainLooper()).post {
                 try {
                     host.reload("BackgroundThread.restart(ui): $reason")
+                    promise.resolve(null)
                 } catch (t: Throwable) {
-                    BTLogger.error("restart(ui): ReactHost.reload failed, falling back to process restart: ${t.message}")
-                    triggerProcessRestart(context)
+                    BTLogger.error("restart(ui): ReactHost.reload failed: ${t.message}")
+                    if (!triggerProcessRestart(context)) {
+                        promise.reject(
+                            "BG_RESTART_ERROR",
+                            "restart(ui): reload failed and process restart fallback also failed: ${t.message}",
+                            t,
+                        )
+                    }
+                    // if triggerProcessRestart returned true, Runtime.exit(0)
+                    // ran and this resolve/reject is unreachable
                 }
             }
             return
@@ -865,22 +877,37 @@ class BackgroundThreadManager private constructor() {
         if (isUi) {
             BTLogger.warn("restart(ui): ReactHost unavailable, falling back to process restart")
         }
-        triggerProcessRestart(context)
-        promise.resolve(null)
+        if (!triggerProcessRestart(context)) {
+            promise.reject(
+                "BG_RESTART_ERROR",
+                "Failed to trigger process restart (intent resolution or startActivity failed)"
+            )
+        }
+        // if triggerProcessRestart returned true, Runtime.exit(0) ran and
+        // any further code here is unreachable
     }
 
-    private fun triggerProcessRestart(context: ReactApplicationContext) {
+    /**
+     * Returns true if Runtime.exit(0) was reached (in which case the process
+     * is now terminating and any code after the call site is unreachable).
+     * Returns false if intent resolution failed or startActivity threw
+     * before exit() — caller is responsible for propagating that failure
+     * to the JS Promise so callers don't observe a false success.
+     */
+    private fun triggerProcessRestart(context: ReactApplicationContext): Boolean {
         try {
             val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
             if (intent == null) {
                 BTLogger.error("triggerProcessRestart: launch intent not found for ${context.packageName}")
-                return
+                return false
             }
             val mainIntent = Intent.makeRestartActivityTask(intent.component)
             context.startActivity(mainIntent)
             Runtime.getRuntime().exit(0)
+            return true // unreachable; exit() does not return
         } catch (t: Throwable) {
             BTLogger.error("triggerProcessRestart: ${t.message}")
+            return false
         }
     }
 
