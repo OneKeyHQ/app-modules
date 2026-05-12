@@ -3,10 +3,18 @@ source 'https://rubygems.org'
 # You may use http://rbenv.org/ or https://rvm.io/ to install and use this version
 ruby ">= 2.6.10"
 
-# Exclude problematic versions of cocoapods and activesupport that causes build failures.
-gem 'cocoapods', '>= 1.13', '!= 1.15.0', '!= 1.15.1'
+# Pin cocoapods to 1.16.x: 1.15.x (including 1.15.2 we previously
+# resolved to) depends on the `kconv` stdlib gem, which Ruby 3.4
+# removed — `bundle exec pod install` crashes with
+# `cannot load such file -- kconv` on system Rubies >= 3.4. The 1.16.x
+# line dropped that dependency, so pinning to ~> 1.16.2 guarantees a
+# working bundle on current macOS Rubies while still leaving room for
+# 1.16 patch updates.
+gem 'cocoapods', '~> 1.16.2'
 gem 'activesupport', '>= 6.1.7.5', '!= 7.1.0'
-gem 'xcodeproj', '< 1.26.0'
+# cocoapods 1.16.x requires xcodeproj >= 1.27 (the old `< 1.26.0` cap
+# was paired with the cocoapods 1.15.x line and is incompatible now).
+gem 'xcodeproj', '>= 1.27.0'
 gem 'concurrent-ruby', '< 1.3.4'
 
 # Ruby 3.4.0 has removed some libraries from the standard library.
@@ -14,3 +22,9 @@ gem 'bigdecimal'
 gem 'logger'
 gem 'benchmark'
 gem 'mutex_m'
+# CFPropertyList 3.x has a leftover `require 'kconv'` at file head, but
+# xcodeproj caps CFPropertyList to `< 4.0`, so we cannot upgrade. Ship
+# a tiny local gem with an empty kconv.rb so the require succeeds on
+# Ruby 3.4 (which removed the kconv stdlib). The shim is a no-op —
+# CFPropertyList never actually calls any Kconv method.
+gem 'kconv-shim', path: 'gem-shims/kconv-shim'
