@@ -30,8 +30,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// @param entryURL The custom entry URL for the background runner
 - (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL;
 
-/// Check if background runner is started
-@property (nonatomic, readonly) BOOL isStarted;
+/// Check if background runner is started.
+///
+/// Atomic to match the implementation's redeclaration (the post-reload
+/// health-check reads this on the main thread while the start path writes
+/// it from whichever thread the caller is on). Keeping the header
+/// `nonatomic` while the impl was `atomic` tripped Clang's
+/// -Wproperty-attribute-mismatch and breaks CI builds under -Werror.
+@property (atomic, readonly) BOOL isStarted;
 
 /// Register a HBC segment in the background runtime (Phase 2.5 spike)
 /// @param segmentId The segment ID to register

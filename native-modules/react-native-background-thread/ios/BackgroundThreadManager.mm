@@ -322,12 +322,13 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 // dispatch. Reads `mainSharedBridgeInstalled` and (for mode='all')
 // `isStarted` — both signals the module owns. Decides:
 //   - Both healthy → log success, done.
-//   - Main healthy, bg not healthy (mode='all' only) → STABLE signal that
-//     the host AppDelegate didn't re-spawn bg; self-respawn now without
-//     waiting another cycle.
-//   - Main NOT healthy → could be a slow device whose hostDidStart chain
-//     hasn't finished yet. Reschedule stage 2 (+~3s more, total ~6s) and
-//     defer the final verdict.
+//   - Anything missing → reschedule stage 2 (+~3s more, total ~6s) and
+//     defer the final verdict. This is intentional: even the "main ready,
+//     bg not ready" case is rescheduled rather than self-respawned at
+//     stage 1, because hosts that gate startBackgroundRunner on async
+//     work (feature-flag fetch, login, network callback) can be
+//     mainReady=YES while their async start is still in flight — see the
+//     in-line comment in the stage-1 branch below.
 //
 // Stage 2 fires at total ~6s. Whatever state we see is the final verdict;
 // any remaining gap is logged as an integration failure (with self-heal
