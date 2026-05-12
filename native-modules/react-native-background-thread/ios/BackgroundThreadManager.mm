@@ -27,11 +27,23 @@
 @property (nonatomic, assign) BOOL hasListeners;
 @property (nonatomic, assign, readwrite) BOOL isStarted;
 // Flipped to YES inside the installSharedBridgeInMainRuntime: lambda and to
-// NO at the start of restartWithMode:. Read by the post-reload observer to
-// detect when the host app's hostDidStart: failed to re-invoke the install
-// on the new RCTHost — which would silently break main→bg RPC.
+// NO at the start of restartWithMode:. Read by the post-reload health-check
+// to detect when the host app's hostDidStart: failed to re-invoke the
+// install on the new RCTHost — which would silently break main→bg RPC.
 @property (atomic, assign) BOOL mainSharedBridgeInstalled;
+// Monotonic counter bumped on every restartWithMode: call. The post-reload
+// health-check captures its own generation and bails if a newer restart()
+// supersedes it, preventing the second restart's flag reset from making
+// the first restart's check misreport. Touched only on the main thread
+// (the dispatch_block_t `work` runs there), so non-atomic is correct.
+@property (nonatomic, assign) NSUInteger restartGeneration;
 @end
+
+// Empirical upper bound for the host's post-reload hostDidStart chain on
+// low-end devices. iPhone-baseline measurements show ~500ms; 6x margin
+// gives 3s. Beyond this, integration failure is more likely than a slow
+// host — the health-check is meant to catch wiring bugs, not racing them.
+static const NSTimeInterval kRestartHealthCheckDelaySeconds = 3.0;
 
 @implementation BackgroundThreadManager
 
@@ -223,47 +235,60 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
             self.isStarted = NO;
         }
 
-        // (3) Arm a one-shot defensive observer BEFORE triggering the reload.
-        // After the new main bridge finishes loading, it: (a) self-respawns
-        // the bg runtime for mode='all' if the host AppDelegate didn't —
-        // idempotent via startBackgroundRunner's isStarted guard, so a
-        // correctly-wired host pays nothing; (b) logs a loud error if the
-        // host failed to call installSharedBridgeInMainRuntime: on the new
-        // RCTHost — otherwise that integration bug surfaces only as silent
-        // RPC drop in production. See restartWithMode: header doc for the
-        // full contract.
+        // (3) Schedule a defensive post-reload health-check BEFORE triggering
+        // the reload. Both signals we need (mainSharedBridgeInstalled and
+        // isStarted) are our own state — there is no external notification
+        // to wait on. We use a plain dispatch_after instead of an
+        // RCTJavaScriptDidLoadNotification observer because that notification
+        // is unreliable in bridgeless / NewArch (post timing is not
+        // guaranteed across RN versions) and the observer pattern adds two
+        // failure modes that this code is otherwise immune to:
+        //   - If the notification never fires, the observer leaks and any
+        //     later reload that finally fires it will trigger stale checks.
+        //   - Concurrent restart() calls each register an observer, all of
+        //     which fire on the next notification using the latest flag
+        //     state (cross-generation misreporting).
+        // dispatch_after, paired with a per-restart `myGen` generation
+        // capture, has neither hazard.
         self.mainSharedBridgeInstalled = NO;
+        NSUInteger myGen = ++self.restartGeneration;
         __weak BackgroundThreadManager *weakSelf = self;
-        __block id observer = nil;
-        observer = [[NSNotificationCenter defaultCenter]
-            addObserverForName:RCTJavaScriptDidLoadNotification
-                        object:nil
-                         queue:[NSOperationQueue mainQueue]
-                    usingBlock:^(NSNotification *_) {
-            // One-shot: detach so subsequent reloads (DevSettings, future
-            // restart() calls) don't double-trigger this check.
-            [[NSNotificationCenter defaultCenter] removeObserver:observer];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                     (int64_t)(kRestartHealthCheckDelaySeconds * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
             BackgroundThreadManager *strongSelf = weakSelf;
             if (!strongSelf) return;
-            // Delay the verification so the host's hostDidStart: chain, which
-            // typically fires right after RCTJavaScriptDidLoadNotification on
-            // the new host, has a chance to re-arm both halves before we
-            // declare anything broken.
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{
-                if (isAll && !strongSelf.isStarted) {
-                    [BTLogger info:@"restart(all): bg not respawned by host AppDelegate; self-respawning"];
-                    [strongSelf startBackgroundRunner];
-                }
-                if (!strongSelf.mainSharedBridgeInstalled) {
-                    [BTLogger error:[NSString stringWithFormat:
-                        @"restart(%@): SharedBridge not re-installed in main runtime after reload. "
-                        @"Host AppDelegate's hostDidStart: must invoke "
-                        @"+[BackgroundThreadManager installSharedBridgeInMainRuntime:newHost] "
-                        @"on the new RCTHost or main→bg RPC will silently fail.", mode]];
-                }
-            });
-        }];
+            // A newer restart() has bumped the generation while we were
+            // waiting — its own check will run; bail to avoid reading flags
+            // that now belong to the newer cycle.
+            if (strongSelf.restartGeneration != myGen) {
+                [BTLogger info:[NSString stringWithFormat:
+                    @"restart(%@) health-check superseded by newer restart (gen %lu → %lu)",
+                    mode, (unsigned long)myGen, (unsigned long)strongSelf.restartGeneration]];
+                return;
+            }
+            if (isAll && !strongSelf.isStarted) {
+                // Self-respawn falls through startBackgroundRunner →
+                // startBackgroundRunnerWithEntryURL:@"background.bundle"
+                // (release) / debug URL (debug). Any custom entryURL the
+                // host previously passed (e.g. OTA-resolved bundle path) is
+                // gone because reactNativeFactoryDelegate was released for
+                // mode='all'. Warn explicitly so a host with broken
+                // AppDelegate wiring + OTA paths doesn't get silently
+                // pinned to the default bundle.
+                [BTLogger info:@"restart(all): bg not respawned by host AppDelegate; self-respawning with default entry URL"];
+                [BTLogger warn:@"restart(all): self-respawn uses the default entry URL; any custom entryURL set via startBackgroundRunnerWithEntryURL: is lost. Wire host AppDelegate.hostDidStart: to call startBackgroundRunner explicitly if you need to preserve a custom OTA bundle path."];
+                [strongSelf startBackgroundRunner];
+            }
+            if (!strongSelf.mainSharedBridgeInstalled) {
+                [BTLogger error:[NSString stringWithFormat:
+                    @"restart(%@): SharedBridge not re-installed in main runtime within %.1fs after reload. "
+                    @"Host AppDelegate's hostDidStart: must invoke "
+                    @"+[BackgroundThreadManager installSharedBridgeInMainRuntime:newHost] "
+                    @"on the new RCTHost or main→bg RPC will silently fail.",
+                    mode, kRestartHealthCheckDelaySeconds]];
+            }
+        });
 
         // (4) Trigger the main bridge reload. Equivalent to what
         // react-native-restart did, but now sequenced AFTER quiesce so the
@@ -274,7 +299,8 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         // BackgroundThreadBridge.startBackgroundRunner again (isStarted==NO
         // now), recreating the bg host and re-installing the "background"
         // listener via BackgroundRunnerReactNativeDelegate.hostDidStart.
-        // If the host fails to do so, the observer above self-heals.
+        // If the host fails to do so, the health-check above self-heals
+        // (with the default-entry-URL caveat noted there).
         // For mode=ui, the bg host stays as-is; only the "main" listener
         // gets re-installed in installSharedBridgeInMainRuntime.
 

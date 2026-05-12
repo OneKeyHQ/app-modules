@@ -848,12 +848,15 @@ class BackgroundThreadManager private constructor() {
             // ReactInstance) is cleaner when not initiated from inside the
             // outgoing runtime's callback frame.
             //
-            // Promise resolution is sequenced after reload() returns: reload
-            // returns a Task immediately (the actual teardown is async), so
-            // the JS thread is still live and can deliver the success
-            // callback before being destroyed. If reload() throws
-            // synchronously, we try the process-restart fallback; only if
-            // THAT also fails do we reject — never falsely report success.
+            // Promise resolution is sequenced after reload() returns. The
+            // actual *delivery* of that resolve to JS is best-effort: the
+            // CallInvoker that would route it back is tied to the outgoing
+            // ReactInstance which reload() is about to invalidate, and the
+            // typical caller is `await restart(...)` whose continuation
+            // never runs because the reload supersedes it. The position
+            // matters only for the synchronous-throw case — if reload()
+            // throws inline, the catch block reaches the fallback / reject
+            // path instead of misreporting success.
             Handler(Looper.getMainLooper()).post {
                 try {
                     host.reload("BackgroundThread.restart(ui): $reason")

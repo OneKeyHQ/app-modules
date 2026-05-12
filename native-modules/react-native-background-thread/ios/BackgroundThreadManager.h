@@ -58,16 +58,29 @@ NS_ASSUME_NONNULL_BEGIN
 ///      startBackgroundRunner]` — recreates the bg RCTHost since the
 ///      previous one was released and `isStarted` was reset to NO.
 ///
-/// The module defends against host integration omissions with a one-shot
-/// `RCTJavaScriptDidLoadNotification` observer that fires after the new
-/// main bridge loads:
-///   - For mode='all': if `isStarted` is still NO ~1.5s after JS load,
-///     self-respawns the bg runtime (idempotent — startBackgroundRunner's
-///     internal guard makes a redundant host-side call a no-op).
+/// The module defends against host integration omissions with a delayed
+/// post-reload health-check (a `dispatch_after` on the main queue scheduled
+/// before the reload is triggered — does NOT depend on
+/// `RCTJavaScriptDidLoadNotification`, which is unreliable in bridgeless /
+/// NewArch). The check fires ~3s after `restartWithMode:` returns:
+///   - For mode='all': if `isStarted` is still NO, self-respawns the bg
+///     runtime using the default entry URL (idempotent —
+///     startBackgroundRunner's internal guard makes a redundant host-side
+///     call a no-op). NOTE: self-respawn loses any custom entry URL the
+///     host previously passed via `startBackgroundRunnerWithEntryURL:`
+///     (e.g. an OTA-resolved bundle path); a `[BTLogger warn:]` is emitted
+///     in that case so a host with broken AppDelegate wiring + OTA paths
+///     doesn't get silently pinned to the default bundle.
 ///   - For both modes: if `installSharedBridgeInMainRuntime:` was not
 ///     called on the new host, logs `[BTLogger error:...]` so the
 ///     integration bug is visible in production logs instead of just
 ///     surfacing as silent RPC drop.
+///
+/// Concurrent restart() calls are made safe via a monotonic generation
+/// counter: each invocation captures its own generation and the health-
+/// check bails if a newer restart() has superseded it, preventing the
+/// second restart's flag reset from making the first restart's check
+/// misreport.
 ///
 /// @param mode `@"ui"` to reload only the main runtime (bg stays hot);
 ///             `@"all"` to reload both. Any other value invokes completion
