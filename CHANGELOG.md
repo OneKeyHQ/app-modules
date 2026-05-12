@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.33] - 2026-05-13
+
+### Bug Fixes
+- **auto-size-input**: Dispatch `focus()` / `blur()` to the UI thread. Nitro hybrid view methods can be invoked off the UI thread (JS thread on iOS, arbitrary thread on Android), but `becomeFirstResponder` / `resignFirstResponder` (iOS) and `requestFocus` / `clearFocus` / `InputMethodManager` (Android) must run on the main thread. iOS previously crashed with SIGTRAP via FrontBoardServices' `assertBarrierOnQueue`; Android raised `CalledFromWrongThreadException`. Both platforms now short-circuit when already on the main thread (`Thread.isMainThread` / `Looper.myLooper() == Looper.getMainLooper()`) and otherwise dispatch via `DispatchQueue.main.async` / `View.post`. The Android post re-checks `isDisposed` inside the queued block so a recycled view is never touched. iOS captures `self` weakly inside the dispatched block.
+
+### Chores
+- Bump `@onekeyfe/react-native-auto-size-input` to 3.0.33. Other packages unaffected this release.
+
 ## [3.0.32] - 2026-05-12
 
 ### Features
