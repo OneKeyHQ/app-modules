@@ -31,10 +31,7 @@ export type RestartMode = 'ui' | 'all';
 export interface Spec extends TurboModule {
   startBackgroundRunnerWithEntryURL(entryURL: string): void;
   installSharedBridge(): void;
-  loadSegmentInBackground(
-    segmentId: number,
-    path: string,
-  ): Promise<void>;
+  loadSegmentInBackground(segmentId: number, path: string): Promise<void>;
   /**
    * Reload one or both JS runtimes. Replaces `react-native-restart`.
    *
@@ -63,8 +60,11 @@ export interface Spec extends TurboModule {
    *
    * - **iOS**: process survives. The main RCTHost is rebuilt in-place via
    *   `RCTTriggerReloadCommandListeners`; the bg RCTHost is released and
-   *   re-spawned by the post-reload observer (or the host AppDelegate's
-   *   `hostDidStart:`). Any process-level state (NSUserDefaults cache,
+   *   re-spawned by the host AppDelegate's `hostDidStart:`, with the
+   *   module's two-stage `dispatch_after` health-check as a fallback if
+   *   the host integration fails to re-arm (intentionally not driven by
+   *   `RCTJavaScriptDidLoadNotification`, whose timing is unreliable in
+   *   bridgeless / NewArch). Any process-level state (NSUserDefaults cache,
    *   live URLSession tasks, GCD timers attached to the app process)
    *   survives. iOS goes through soft reload here because abrupt
    *   termination is App Store-unfriendly and iOS lacks a clean self-

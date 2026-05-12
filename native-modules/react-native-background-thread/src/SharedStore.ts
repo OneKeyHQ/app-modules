@@ -9,7 +9,6 @@ export interface ISharedStore {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var sharedStore: ISharedStore | undefined;
 }
 

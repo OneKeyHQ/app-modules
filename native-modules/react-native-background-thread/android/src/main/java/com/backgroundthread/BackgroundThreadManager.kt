@@ -23,6 +23,7 @@ import com.facebook.react.runtime.hermes.HermesInstance
 import com.facebook.react.shell.MainReactPackage
 import java.io.File
 import java.lang.ref.WeakReference
+import java.util.concurrent.TimeUnit
 
 /**
  * Singleton manager for the background React Native runtime.
@@ -857,12 +858,27 @@ class BackgroundThreadManager private constructor() {
             // matters only for the synchronous-throw case — if reload()
             // throws inline, the catch block reaches the fallback / reject
             // path instead of misreporting success.
+            //
+            // ReactHost.reload(reason) returns a TaskInterface<Void> that
+            // completes when the new ReactInstance is up; an async fault
+            // means reload failed AFTER we already invalidated the
+            // SharedRPC main listener — main runtime is torn down without
+            // rebuild, SharedRPC is permanently dead for "main". Watch the
+            // task on a daemon thread and fall back to a process restart
+            // on fault / cancellation / timeout so we converge on a known
+            // good state instead of leaving the app wedged. TaskInterface
+            // only exposes waitForCompletion + isFaulted/isCancelled/
+            // getError (no continueWith/onError callback in RN 0.83's
+            // public surface), so polling on a worker thread is what we
+            // have. Timeout is generous (15s) — observed worst case
+            // reload on a low-end Android is ~3s.
             Handler(Looper.getMainLooper()).post {
-                try {
-                    host.reload("BackgroundThread.restart(ui): $reason")
-                    promise.resolve(null)
+                val task = try {
+                    host.reload("BackgroundThread.restart(ui): $reason").also {
+                        promise.resolve(null)
+                    }
                 } catch (t: Throwable) {
-                    BTLogger.error("restart(ui): ReactHost.reload failed: ${t.message}")
+                    BTLogger.error("restart(ui): ReactHost.reload threw synchronously: ${t.message}")
                     if (!triggerProcessRestart(context)) {
                         promise.reject(
                             "BG_RESTART_ERROR",
@@ -871,7 +887,41 @@ class BackgroundThreadManager private constructor() {
                         )
                     }
                     // if triggerProcessRestart returned true, Runtime.exit(0)
-                    // ran and this resolve/reject is unreachable
+                    // ran and this reject is unreachable
+                    null
+                }
+                if (task != null) {
+                    Thread {
+                        try {
+                            val completed = task.waitForCompletion(15, TimeUnit.SECONDS)
+                            if (!completed || task.isFaulted() || task.isCancelled()) {
+                                val err = task.getError()
+                                BTLogger.error(
+                                    "restart(ui): reload task did not complete cleanly " +
+                                            "(completed=$completed, faulted=${task.isFaulted()}, " +
+                                            "cancelled=${task.isCancelled()}): ${err?.message} — " +
+                                            "falling back to process restart"
+                                )
+                                Handler(Looper.getMainLooper()).post {
+                                    triggerProcessRestart(context)
+                                }
+                            } else {
+                                BTLogger.info("restart(ui): reload task completed successfully")
+                            }
+                        } catch (t: Throwable) {
+                            BTLogger.error(
+                                "restart(ui): reload-task watch thread errored: ${t.message} — " +
+                                        "falling back to process restart"
+                            )
+                            Handler(Looper.getMainLooper()).post {
+                                triggerProcessRestart(context)
+                            }
+                        }
+                    }.apply {
+                        isDaemon = true
+                        name = "OneKey-BgThread-ReloadWatch"
+                        start()
+                    }
                 }
             }
             return
