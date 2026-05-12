@@ -509,19 +509,37 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
 
   // MARK: - Methods
 
-  func focus() throws {
-    if multiline == true {
-      multiLineInput.becomeFirstResponder()
+  // Nitro hybrid view methods are invoked on the JS thread. UIKit responder
+  // changes (becomeFirstResponder / resignFirstResponder) must run on the
+  // main thread — otherwise FrontBoardServices' `assertBarrierOnQueue`
+  // trips and the process is killed with SIGTRAP.
+  private func runOnMain(_ block: @escaping () -> Void) {
+    if Thread.isMainThread {
+      block()
     } else {
-      singleLineInput.becomeFirstResponder()
+      DispatchQueue.main.async(execute: block)
+    }
+  }
+
+  func focus() throws {
+    runOnMain { [weak self] in
+      guard let self else { return }
+      if self.multiline == true {
+        self.multiLineInput.becomeFirstResponder()
+      } else {
+        self.singleLineInput.becomeFirstResponder()
+      }
     }
   }
 
   func blur() throws {
-    if multiline == true {
-      multiLineInput.resignFirstResponder()
-    } else {
-      singleLineInput.resignFirstResponder()
+    runOnMain { [weak self] in
+      guard let self else { return }
+      if self.multiline == true {
+        self.multiLineInput.resignFirstResponder()
+      } else {
+        self.singleLineInput.resignFirstResponder()
+      }
     }
   }
 
