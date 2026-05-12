@@ -64,13 +64,14 @@ NS_ASSUME_NONNULL_BEGIN
 /// `RCTJavaScriptDidLoadNotification`, which is unreliable in bridgeless /
 /// NewArch). Stage 1 fires ~3s after `restartWithMode:` returns; stage 2
 /// (if needed) ~3s later. The check decides:
-///   - Both halves healthy → log success, done.
-///   - Stage 1 + main ready but bg not ready (mode='all' only) → STABLE
-///     signal that the host AppDelegate didn't re-spawn bg; self-respawn
-///     immediately without waiting another cycle.
-///   - Stage 1 + main NOT ready → could be a slow device whose
-///     hostDidStart chain hasn't finished yet; reschedule stage 2 and
-///     defer the verdict.
+///   - Both halves healthy at stage 1 → log success, done.
+///   - Anything missing at stage 1 → reschedule stage 2 unconditionally.
+///     Earlier designs short-circuited the "main ready, bg not ready"
+///     case at stage 1 as a stable signal, but hosts that gate
+///     startBackgroundRunner on async work (feature flag, login, network)
+///     can be mainReady=YES while the real start call is still inflight;
+///     short-circuiting would race them and the host's late start would
+///     be silently dropped (now warn-logged on the early-return path).
 ///   - Stage 2 → final verdict; whatever's missing is logged and self-
 ///     healed where possible.
 ///
@@ -81,6 +82,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// the IPA while main runs the OTA-updated main bundle, and the next
 /// cross-runtime RPC would moduleId-mismatch and crash. The cache makes
 /// self-respawn a true safety net for the broken-AppDelegate-wiring case.
+/// The bundled default name `"background.bundle"` is intentionally treated
+/// as "no real cache" by the self-respawn fallback so the OTA-mismatch
+/// warning still fires for hosts that initially bootstrapped with the
+/// default URL and never swapped to an OTA-resolved path.
 ///
 /// Concurrent restart() calls are made safe via a monotonic generation
 /// counter: each invocation captures its own generation and each health-

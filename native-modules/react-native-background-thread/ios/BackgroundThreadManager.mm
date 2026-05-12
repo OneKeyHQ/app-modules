@@ -49,8 +49,10 @@
 // chosen entry URL (typically an OTA-resolved bundle path) across restart;
 // `reactNativeFactoryDelegate` is released for mode='all', so without this
 // cache we'd fall back to the bundled "background.bundle" — which on OTA
-// devices is a moduleId-mismatch crash waiting to happen.
-@property (nonatomic, copy) NSString *lastEntryURL;
+// devices is a moduleId-mismatch crash waiting to happen. Atomic for the
+// same reason as isStarted: written from the caller's thread (public API
+// doesn't pin start... to main) and read on main by the health-check.
+@property (atomic, copy) NSString *lastEntryURL;
 
 // Forward declaration so restartWithMode: can call it; definition lives
 // after restartWithMode: for readability (the call site is the natural
@@ -150,6 +152,19 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 
 - (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL {
     if (self.isStarted) {
+        // Surface the URL mismatch when a second start... call would
+        // otherwise silently drop the host's intent — most common in the
+        // self-respawn-vs-host-start race after restart('all'): self-
+        // respawn boots with cached URL, then the host's async
+        // hostDidStart chain (gated on feature flag / login / network)
+        // finally calls start with a different URL and gets short-
+        // circuited. The log lets that race be diagnosed from production
+        // traces instead of "why is bg on the old URL".
+        if (entryURL.length > 0 && ![entryURL isEqualToString:self.lastEntryURL]) {
+            [BTLogger warn:[NSString stringWithFormat:
+                @"startBackgroundRunnerWithEntryURL: ignored (already started); requested=%@ active=%@",
+                entryURL, self.lastEntryURL ?: @"<nil>"]];
+        }
         return;
     }
     self.isStarted = YES;
@@ -353,26 +368,41 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
             return;
         }
 
-        // Stage 1 and main is NOT ready: could be a slow device; give it
-        // one more stage before declaring integration broken. We DON'T
-        // reschedule on the bg-only-failure path even when not retried —
-        // mainReady=YES is a stable signal that the new host has run far
-        // enough into hostDidStart that any startBackgroundRunner call
-        // from the host would have landed already.
-        if (!retried && !mainReady) {
+        // Stage 1: anything missing → reschedule stage 2.
+        //
+        // Earlier rounds short-circuited the "mainReady=YES, bgReady=NO"
+        // case as a stable signal that the host wasn't going to call
+        // startBackgroundRunner. That assumption holds only for hosts
+        // whose hostDidStart: synchronously calls both install AND start.
+        // Hosts that gate startBackgroundRunner on async work (feature
+        // flag fetch, login state, network callback) can have
+        // mainReady=YES while their async start call is still in flight;
+        // self-respawning at stage 1 would race them and the host's
+        // later (real) start would be silently dropped by the early
+        // return in startBackgroundRunnerWithEntryURL: (now logged as a
+        // warn, see #2). Stage 2 (+~3s) is sized to give that async path
+        // time to land; if it still hasn't by then, the host is broken
+        // and self-respawn is correct.
+        if (!retried) {
             [BTLogger info:[NSString stringWithFormat:
-                @"restart(%@): stage1 incomplete (mainReady=NO, bgReady=%@) — rescheduling stage2 to allow slow hostDidStart chains",
-                mode, bgReady ? @"YES" : @"NO"]];
+                @"restart(%@): stage1 incomplete (mainReady=%@, bgReady=%@) — rescheduling stage2 to cover slow hostDidStart chains and async host start calls",
+                mode, mainReady ? @"YES" : @"NO", bgReady ? @"YES" : @"NO"]];
             [strongSelf scheduleHealthCheckForRestart:mode isAll:isAll generation:myGen retried:YES];
             return;
         }
 
-        // Verdict: either mainReady is true but bg failed (stable, stage 1
-        // is enough), or we're in stage 2 and something still failed.
+        // Stage 2 final verdict.
 
         if (isAll && !strongSelf.isStarted) {
             NSString *cachedURL = strongSelf.lastEntryURL;
-            if (cachedURL.length > 0) {
+            // Treat the bundled default name as "no real cache" so the
+            // OTA warn still fires for hosts that initially bootstrapped
+            // with the default URL and haven't yet swapped to an OTA-
+            // resolved path. Such hosts have OTA risk but no signal in
+            // lastEntryURL that distinguishes them.
+            BOOL hasCustomCachedURL = cachedURL.length > 0
+                && ![cachedURL isEqualToString:@"background.bundle"];
+            if (hasCustomCachedURL) {
                 // Preferred path: replay the host's last entry URL. On OTA
                 // devices this is the OTA-resolved bundle, which keeps the
                 // bg moduleId table aligned with the new main bundle and
@@ -383,14 +413,13 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
                     mode, cachedURL]];
                 [strongSelf startBackgroundRunnerWithEntryURL:cachedURL];
             } else {
-                // No cached URL means host never called start. Fall back to
-                // the default-URL path. Same OTA-mismatch caveat applies
-                // but is implausible in practice: an OTA-equipped host
-                // would have called startBackgroundRunnerWithEntryURL: at
-                // least once before triggering restart('all').
+                // Cache is empty or holds the bundled default. Fall back
+                // and warn — on an OTA-equipped host this is the path
+                // that historically produces a moduleId-mismatch crash on
+                // the next cross-runtime RPC.
                 [BTLogger warn:[NSString stringWithFormat:
-                    @"restart(%@): bg not respawned and no cached entryURL; falling back to default. If host uses OTA bundles, wire AppDelegate.hostDidStart: to call startBackgroundRunner explicitly to avoid moduleId-mismatch.",
-                    mode]];
+                    @"restart(%@): bg not respawned and no custom cached entryURL (cache=%@); falling back to default. If host uses OTA bundles, wire AppDelegate.hostDidStart: to call startBackgroundRunner explicitly to avoid moduleId-mismatch.",
+                    mode, cachedURL ?: @"<nil>"]];
                 [strongSelf startBackgroundRunner];
             }
         }
@@ -401,8 +430,7 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
                 @"Host AppDelegate's hostDidStart: must invoke "
                 @"+[BackgroundThreadManager installSharedBridgeInMainRuntime:newHost] "
                 @"on the new RCTHost or main→bg RPC will silently fail.",
-                mode, retried ? kRestartHealthCheckDelaySeconds * 2 : kRestartHealthCheckDelaySeconds,
-                stage]];
+                mode, kRestartHealthCheckDelaySeconds * 2, stage]];
         }
     });
 }
