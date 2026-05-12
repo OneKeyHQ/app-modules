@@ -23,15 +23,28 @@ void SharedRPC::install(jsi::Runtime &rt, RPCRuntimeExecutor executor,
   auto obj = jsi::Object::createFromHostObject(rt, rpc);
   rt.global().setProperty(rt, "sharedRPC", std::move(obj));
 
+  auto alive = std::make_shared<std::atomic<bool>>(true);
+
   std::lock_guard<std::mutex> lock(mutex_);
   // Remove any existing listener with the same runtimeId (reload scenario).
   // IMPORTANT: The old listener's callback is a jsi::Function tied to the old
   // runtime. On reload, that runtime is already destroyed, so calling
   // ~jsi::Function() would crash (null deref in Pointer::~Pointer).
   // We intentionally leak the callback to avoid this.
+  //
+  // We ALSO flip the old listener's alive flag to false. Any executor lambda
+  // snapshotted by an earlier notifyOtherRuntime() shares this atomic and
+  // will short-circuit when it eventually runs — closing the race where a
+  // lambda was already past the snapshot lock but hadn't yet dispatched onto
+  // the dying runtime.
   for (auto &listener : listeners_) {
-    if (listener.runtimeId == runtimeId && listener.callback) {
-      new std::shared_ptr<jsi::Function>(std::move(listener.callback));
+    if (listener.runtimeId == runtimeId) {
+      if (listener.alive) {
+        listener.alive->store(false);
+      }
+      if (listener.callback) {
+        new std::shared_ptr<jsi::Function>(std::move(listener.callback));
+      }
     }
   }
   listeners_.erase(
@@ -40,7 +53,30 @@ void SharedRPC::install(jsi::Runtime &rt, RPCRuntimeExecutor executor,
                        return l.runtimeId == runtimeId;
                      }),
       listeners_.end());
-  listeners_.push_back({runtimeId, &rt, std::move(executor), nullptr});
+  listeners_.push_back(
+      {runtimeId, &rt, std::move(executor), nullptr, std::move(alive)});
+}
+
+bool SharedRPC::invalidate(const std::string &runtimeId) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  bool found = false;
+  for (auto &listener : listeners_) {
+    if (listener.runtimeId != runtimeId) continue;
+    if (listener.alive) {
+      listener.alive->store(false);
+    }
+    if (listener.callback) {
+      // Same rationale as install(): destroying a jsi::Function tied to a
+      // torn-down runtime crashes. Leak it; the runtime is going away anyway.
+      new std::shared_ptr<jsi::Function>(std::move(listener.callback));
+    }
+    // Drop the executor closure so nothing tries to dispatch via the dying
+    // RCTInstance/CallInvoker after this point. The listener entry itself
+    // stays (alive=false) until the next install() replaces it.
+    listener.executor = nullptr;
+    found = true;
+  }
+  return found;
 }
 
 void SharedRPC::reset() {
@@ -48,7 +84,12 @@ void SharedRPC::reset() {
   slots_.clear();
   // Intentionally leak jsi::Function callbacks to avoid destroying them on the
   // wrong thread (same rationale as the leak in install() for reload scenarios).
+  // Also flip alive=false so any executor lambda still in flight short-circuits
+  // before touching a torn-down runtime.
   for (auto &listener : listeners_) {
+    if (listener.alive) {
+      listener.alive->store(false);
+    }
     if (listener.callback) {
       new std::shared_ptr<jsi::Function>(std::move(listener.callback));
     }
@@ -59,25 +100,49 @@ void SharedRPC::reset() {
 void SharedRPC::notifyOtherRuntime(jsi::Runtime &callerRt, const std::string &callId) {
   // Collect executors and callbacks under lock, then invoke outside lock
   // to avoid deadlock (executor may schedule work that also acquires mutex_).
-  std::vector<std::pair<RPCRuntimeExecutor, std::shared_ptr<jsi::Function>>> toNotify;
+  //
+  // Each snapshot carries the listener's shared `alive` flag. The flag is
+  // checked twice — once here (so an already-invalidated listener is never
+  // even scheduled) and once again inside the dispatched lambda (so a
+  // listener invalidated AFTER snapshot but BEFORE the lambda runs is also
+  // short-circuited before touching the dying runtime).
+  struct Snapshot {
+    RPCRuntimeExecutor executor;
+    std::shared_ptr<jsi::Function> callback;
+    std::shared_ptr<std::atomic<bool>> alive;
+  };
+  std::vector<Snapshot> toNotify;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     RPC_LOG("notifyOtherRuntime: callId=%s, listeners=%zu, callerRt=%p",
             callId.c_str(), listeners_.size(), &callerRt);
     for (auto &listener : listeners_) {
-      RPC_LOG("  listener: id=%s, rt=%p, hasCallback=%d",
-              listener.runtimeId.c_str(), listener.runtime, listener.callback != nullptr);
+      RPC_LOG("  listener: id=%s, rt=%p, hasCallback=%d, alive=%d",
+              listener.runtimeId.c_str(), listener.runtime,
+              listener.callback != nullptr,
+              listener.alive ? listener.alive->load() : 0);
       if (listener.runtime == &callerRt) continue;
       if (!listener.callback) continue;
-      toNotify.emplace_back(listener.executor, listener.callback);
+      if (!listener.executor) continue;
+      if (!listener.alive || !listener.alive->load()) continue;
+      toNotify.push_back({listener.executor, listener.callback, listener.alive});
     }
     RPC_LOG("  toNotify count: %zu", toNotify.size());
   }
 
-  for (auto &[executor, cb] : toNotify) {
+  for (auto &snap : toNotify) {
     auto id = callId;
     RPC_LOG("  invoking executor for callId=%s", id.c_str());
-    executor([cb, id](jsi::Runtime &rt) {
+    auto cb = snap.callback;
+    auto alive = snap.alive;
+    snap.executor([cb, alive, id](jsi::Runtime &rt) {
+      // Listener was invalidated between snapshot and dispatch — bail
+      // before calling into a runtime that may already be torn down.
+      if (!alive || !alive->load()) {
+        RPC_LOG("  executor work skipped (listener invalidated) for callId=%s",
+                id.c_str());
+        return;
+      }
       RPC_LOG("  executor work running for callId=%s", id.c_str());
       try {
         cb->call(rt, jsi::String::createFromUtf8(rt, id));

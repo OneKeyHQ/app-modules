@@ -34,6 +34,21 @@ NS_ASSUME_NONNULL_BEGIN
                                path:(NSString *)path
                          completion:(void (^)(NSError * _Nullable error))completion;
 
+/// Restart the JS runtime(s). Replaces direct use of `react-native-restart`.
+/// Coordinates SharedRPC quiesce + RCTReloadCommand so cross-runtime traffic
+/// in flight during reload is silently dropped instead of crashing on a
+/// torn-down RCTInstance / dangling jsi::Function callback.
+/// @param mode `@"ui"` to reload only the main runtime (bg stays hot);
+///             `@"all"` to reload both. Any other value invokes completion
+///             with NSError domain `BackgroundThread` code 10.
+/// @param reason Free-form attribution string forwarded to
+///               RCTTriggerReloadCommandListeners and host logs.
+/// @param completion Invoked once the reload has been triggered. nil error
+///                   on success.
+- (void)restartWithMode:(NSString *)mode
+                 reason:(NSString *)reason
+             completion:(void (^)(NSError * _Nullable error))completion;
+
 @end
 
 NS_ASSUME_NONNULL_END

@@ -74,6 +74,14 @@ class BackgroundThreadManager private constructor() {
     private external fun nativeDestroy()
     private external fun nativeExecuteWork(runtimePtr: Long, workId: Long)
 
+    /**
+     * Synchronously mark the SharedRPC listener for `runtimeId` as dead
+     * before the underlying JS runtime is torn down. See
+     * SharedRPC::invalidate (cpp/SharedRPC.cpp) for the cross-runtime
+     * correctness rationale.
+     */
+    private external fun nativeInvalidateSharedRpc(runtimeId: String): Boolean
+
     // ── SharedBridge ────────────────────────────────────────────────────────
 
     /**
@@ -751,6 +759,74 @@ class BackgroundThreadManager private constructor() {
             block()
         } else {
             Handler(Looper.getMainLooper()).post(block)
+        }
+    }
+
+    // ── Restart ─────────────────────────────────────────────────────────────
+    //
+    // Replaces direct use of `react-native-restart` from JS. The native module
+    // is the only piece that has visibility into BOTH the main and background
+    // ReactHost lifecycles, so it can sequence:
+    //   1. SharedRPC quiesce (mark listener alive=false, leak callback, drop
+    //      executor) — synchronous, holds SharedRPC mutex internally
+    //   2. JS runtime teardown — currently full-process restart (parity with
+    //      what react-native-restart-newarch did on Android). A future
+    //      revision should swap mode='ui' to a bridgeless ReactHost.reload()
+    //      so the bg runtime stays hot; punted for v1 because the original
+    //      iOS crash (use-after-free on dangling jsi::Function) does not
+    //      manifest on Android — Java_..._nativeExecuteWork already re-reads
+    //      the runtime ptr inside the JS-queue closure, dropping stale work.
+    //
+    // On Android both modes currently lead to the same process restart; the
+    // mode argument still flows through so SharedRPC::invalidate runs for the
+    // correct listener(s), and so the call site doesn't need to special-case
+    // per-platform behaviour.
+
+    fun restart(context: ReactApplicationContext, mode: String, reason: String, promise: com.facebook.react.bridge.Promise) {
+        val isUi = mode == "ui"
+        val isAll = mode == "all"
+        if (!isUi && !isAll) {
+            promise.reject(
+                "BG_RESTART_ERROR",
+                "BackgroundThread.restart: unsupported mode '$mode', expected 'ui' or 'all'"
+            )
+            return
+        }
+
+        BTLogger.info("restart: mode=$mode reason=$reason")
+
+        try {
+            nativeInvalidateSharedRpc("main")
+            if (isAll) {
+                nativeInvalidateSharedRpc("background")
+            }
+        } catch (t: Throwable) {
+            // Invalidate is best-effort; not fatal if the JNI call somehow
+            // throws (e.g. so library not loaded yet). Continue to restart.
+            BTLogger.error("restart: SharedRPC invalidate failed: ${t.message}")
+        }
+
+        // TODO(bg-restart-ui): for mode='ui', swap this to
+        // `context.reactHost?.reload(reason)` (NewArch) so the bg runtime
+        // stays hot. Requires confirming bridgeless mode is on and that the
+        // host app exposes the ReactHost reference at this point in the
+        // process lifecycle. Until then, both modes do a process restart.
+        triggerProcessRestart(context)
+        promise.resolve(null)
+    }
+
+    private fun triggerProcessRestart(context: ReactApplicationContext) {
+        try {
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            if (intent == null) {
+                BTLogger.error("triggerProcessRestart: launch intent not found for ${context.packageName}")
+                return
+            }
+            val mainIntent = Intent.makeRestartActivityTask(intent.component)
+            context.startActivity(mainIntent)
+            Runtime.getRuntime().exit(0)
+        } catch (t: Throwable) {
+            BTLogger.error("triggerProcessRestart: ${t.message}")
         }
     }
 

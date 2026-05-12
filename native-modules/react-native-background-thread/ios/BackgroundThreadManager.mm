@@ -17,6 +17,7 @@
 
 #include "SharedStore.h"
 #include "SharedRPC.h"
+#import <React/RCTReloadCommand.h>
 #import <ReactCommon/RCTHost.h>
 #import <objc/runtime.h>
 
@@ -71,10 +72,20 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
     [instance callFunctionOnBufferedRuntimeExecutor:^(facebook::jsi::Runtime &runtime) {
         SharedStore::install(runtime);
 
-        // Install SharedRPC with executor for cross-runtime notifications
-        id capturedInstance = instance;
-        RPCRuntimeExecutor mainExecutor = [capturedInstance](std::function<void(jsi::Runtime &)> work) {
-            [capturedInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
+        // Install SharedRPC with executor for cross-runtime notifications.
+        // Capture the RCTInstance __weak: when the main host is torn down on
+        // reload (RNRestart / RCTReloadCommand / BackgroundThread.restart) the
+        // instance is dealloc'd, and any executor lambda still in flight will
+        // see a nil strong reference and bail out — instead of dispatching
+        // callFunctionOnBufferedRuntimeExecutor on a freed instance and
+        // crashing (EXC_BAD_ACCESS / use-after-free).
+        __weak id weakInstance = instance;
+        RPCRuntimeExecutor mainExecutor = [weakInstance](std::function<void(jsi::Runtime &)> work) {
+            id strongInstance = weakInstance;
+            if (!strongInstance) {
+                return;
+            }
+            [strongInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
                 work(rt);
             }];
         };
@@ -153,6 +164,75 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
                                          userInfo:@{NSLocalizedDescriptionKey:
                                                         @"Failed to register segment in background runtime"}];
         if (completion) completion(error);
+    }
+}
+
+#pragma mark - Restart
+
+- (void)restartWithMode:(NSString *)mode
+                 reason:(NSString *)reason
+             completion:(void (^)(NSError * _Nullable error))completion
+{
+    BOOL isUI = [mode isEqualToString:@"ui"];
+    BOOL isAll = [mode isEqualToString:@"all"];
+
+    if (!isUI && !isAll) {
+        NSError *error = [NSError errorWithDomain:@"BackgroundThread"
+                                             code:10
+                                         userInfo:@{NSLocalizedDescriptionKey:
+                                                        [NSString stringWithFormat:@"BackgroundThread.restart: unsupported mode '%@', expected 'ui' or 'all'", mode]}];
+        if (completion) completion(error);
+        return;
+    }
+
+    NSString *attributedReason = reason.length > 0
+        ? [NSString stringWithFormat:@"BackgroundThread.restart(%@): %@", mode, reason]
+        : [NSString stringWithFormat:@"BackgroundThread.restart(%@)", mode];
+
+    [BTLogger info:[NSString stringWithFormat:@"restart: mode=%@ reason=%@", mode, reason ?: @"<none>"]];
+
+    // Bridge teardown must happen on the main thread; everything before
+    // RCTTriggerReloadCommandListeners runs synchronously on that thread so
+    // the quiesce is provably done before any reload-driven instance dealloc.
+    dispatch_block_t work = ^{
+        // (1) Quiesce SharedRPC listener(s). Synchronous, holds the SharedRPC
+        // mutex internally — any concurrent notifyOtherRuntime that gets past
+        // the lock will see alive=false.
+        SharedRPC::invalidate("main");
+        if (isAll) {
+            SharedRPC::invalidate("background");
+        }
+
+        // (2) For mode=all, drop our strong refs to the bg host so ARC can
+        // dealloc it. We also reset isStarted so the post-reload hostDidStart
+        // callback (which is invoked from AppDelegate after the main reload
+        // completes) re-enters startBackgroundRunner instead of short-circuiting.
+        if (isAll) {
+            [BTLogger info:@"restart(all): releasing bg factory + resetting isStarted"];
+            self.reactNativeFactory = nil;
+            self.reactNativeFactoryDelegate = nil;
+            self.isStarted = NO;
+        }
+
+        // (3) Trigger the main bridge reload. Equivalent to what
+        // react-native-restart did, but now sequenced AFTER quiesce so the
+        // SharedRPC race window is closed.
+        RCTTriggerReloadCommandListeners(attributedReason);
+
+        // (4) For mode=all, the new main host's hostDidStart will call
+        // BackgroundThreadBridge.startBackgroundRunner again (isStarted==NO
+        // now), recreating the bg host and re-installing the "background"
+        // listener via BackgroundRunnerReactNativeDelegate.hostDidStart.
+        // For mode=ui, the bg host stays as-is; only the "main" listener
+        // gets re-installed in installSharedBridgeInMainRuntime.
+
+        if (completion) completion(nil);
+    };
+
+    if ([NSThread isMainThread]) {
+        work();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), work);
     }
 }
 

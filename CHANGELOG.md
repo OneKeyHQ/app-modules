@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.32] - 2026-05-12
+
+### Features
+- **background-thread**: New `restart(mode, reason)` TurboModule method intended to replace direct use of `react-native-restart`. `mode` is `'ui'` (reload the main JS runtime only; bg stays hot — for language/currency/devSettings) or `'all'` (reload both runtimes — for OTA install/switch, resetData, where the JS bundle on disk has changed and the two runtimes cannot keep running mismatched moduleId tables). `reason` is forwarded to `RCTTriggerReloadCommandListeners` and host logs so production restarts are attributable.
+- **background-thread (iOS)**: `BackgroundThreadManager.restartWithMode:reason:completion:` sequences SharedRPC quiesce → optional bg host release (`mode=all`) → `RCTTriggerReloadCommandListeners`, all on the main thread. After main reload, AppDelegate.hostDidStart re-arms the "main" SharedRPC listener; for `mode=all` it also re-spawns the bg host because `isStarted` was reset.
+- **background-thread (Android)**: `BackgroundThreadManager.restart(...)` invalidates SharedRPC listener(s) via new JNI `nativeInvalidateSharedRpc` then process-restarts the app (parity with `react-native-restart-newarch` behaviour). The iOS soft-reload path is not yet replicated on Android because the original dangling-`jsi::Function` crash does not manifest there — `nativeExecuteWork` already re-reads the runtime ptr inside the JS-queue closure, dropping stale work. TODO: swap to `ReactHost.reload(reason)` for `mode='ui'` so the bg runtime stays hot.
+
+### Bug Fixes
+- **background-thread (iOS)**: Fix `EXC_BAD_ACCESS` on iOS when reloading the main JS runtime (language switch, OTA, DevSettings). Two dangling-pointer paths: (1) the SharedRPC main listener kept a `jsi::Function` callback tied to a torn-down runtime; `notifyOtherRuntime` would still snapshot and dispatch into the dying runtime; (2) the `RPCRuntimeExecutor` lambda captured the main `RCTInstance` strongly, so even after iOS dealloced it under reload the lambda kept it alive and then called `callFunctionOnBufferedRuntimeExecutor` on an invalidated instance. Both paths now close: SharedRPC carries a per-listener `std::shared_ptr<std::atomic<bool>> alive` flag that is flipped to false synchronously at the start of `restart()` (via the new `SharedRPC::invalidate(runtimeId)`) and re-checked both in `notifyOtherRuntime`'s collection phase and inside each dispatched executor lambda. Executor lambdas on both iOS sites (`BackgroundThreadManager.installSharedBridgeInMainRuntime:` and `BackgroundRunnerReactNativeDelegate.hostDidStart:`) now capture the `RCTInstance` `__weak`, so a torn-down instance no-ops cleanly instead of crashing on dispatch. The C++ defenses apply to Android too as defense-in-depth, even though the Android-side crash signature does not occur in practice.
+
+### Chores
+- Bump `@onekeyfe/react-native-background-thread` to 3.0.32. Other packages unaffected this release.
+
 ## [3.0.31] - 2026-05-09
 
 ### Features

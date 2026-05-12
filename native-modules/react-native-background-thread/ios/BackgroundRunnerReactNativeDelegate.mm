@@ -368,10 +368,18 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
     // Install SharedStore into background runtime
     SharedStore::install(runtime);
 
-    // Install SharedRPC with executor for cross-runtime notifications
-    RCTInstance *bgInstance = _rctInstance;
-    RPCRuntimeExecutor bgExecutor = [bgInstance](std::function<void(jsi::Runtime &)> work) {
-        [bgInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
+    // Install SharedRPC with executor for cross-runtime notifications.
+    // Capture the bg RCTInstance __weak so executor lambdas still in flight
+    // when the bg host is torn down (BackgroundThread.restart mode=all,
+    // OTA bundle install) no-op cleanly instead of dispatching onto a
+    // freed instance and crashing.
+    __weak RCTInstance *weakBgInstance = _rctInstance;
+    RPCRuntimeExecutor bgExecutor = [weakBgInstance](std::function<void(jsi::Runtime &)> work) {
+        RCTInstance *strongBgInstance = weakBgInstance;
+        if (!strongBgInstance) {
+            return;
+        }
+        [strongBgInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
             work(rt);
         }];
     };
