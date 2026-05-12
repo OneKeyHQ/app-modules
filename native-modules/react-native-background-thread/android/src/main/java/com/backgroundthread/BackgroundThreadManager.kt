@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import com.facebook.react.ReactApplication
+import com.facebook.react.ReactHost
 import com.facebook.react.ReactPackage
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.ReactInstanceEventListener
@@ -47,6 +49,14 @@ class BackgroundThreadManager private constructor() {
     @Volatile
     private var mainRuntimePtr: Long = 0
     private var mainReactContext: ReactApplicationContext? = null
+
+    // Captured lazily on the first installSharedBridgeInMainRuntime() call.
+    // Used by restart(mode='ui') to soft-reload the main runtime via
+    // ReactHost.reload(reason) so the bg runtime stays hot. Null when the
+    // host app is not on bridgeless / NewArch — restart() falls back to a
+    // full process restart in that case.
+    @Volatile
+    private var mainReactHost: ReactHost? = null
     private var isStarted = false
 
     companion object {
@@ -94,6 +104,23 @@ class BackgroundThreadManager private constructor() {
 
     fun installSharedBridgeInMainRuntime(context: ReactApplicationContext) {
         mainReactContext = context
+        // Capture the host the first time we see it; reload() needs it. We
+        // resolve via ReactApplication.reactHost — non-null only on bridgeless
+        // / NewArch builds. Bound here (not in restart()) because installShared
+        // Bridge is invoked from JS bootstrap, which is also when ReactContext
+        // is guaranteed live. Restart('ui') falls back to process restart if
+        // this stays null.
+        if (mainReactHost == null) {
+            try {
+                val app = context.applicationContext as? ReactApplication
+                mainReactHost = app?.reactHost
+                if (mainReactHost == null) {
+                    BTLogger.warn("ReactHost unavailable (non-bridgeless host?); restart('ui') will fall back to process restart")
+                }
+            } catch (t: Throwable) {
+                BTLogger.error("Failed to resolve ReactHost: ${t.message}")
+            }
+        }
         context.runOnJSQueueThread {
             try {
                 val ptr = context.javaScriptContextHolder?.get() ?: 0L
@@ -769,18 +796,24 @@ class BackgroundThreadManager private constructor() {
     // ReactHost lifecycles, so it can sequence:
     //   1. SharedRPC quiesce (mark listener alive=false, leak callback, drop
     //      executor) — synchronous, holds SharedRPC mutex internally
-    //   2. JS runtime teardown — currently full-process restart (parity with
-    //      what react-native-restart-newarch did on Android). A future
-    //      revision should swap mode='ui' to a bridgeless ReactHost.reload()
-    //      so the bg runtime stays hot; punted for v1 because the original
-    //      iOS crash (use-after-free on dangling jsi::Function) does not
-    //      manifest on Android — Java_..._nativeExecuteWork already re-reads
-    //      the runtime ptr inside the JS-queue closure, dropping stale work.
+    //   2. JS runtime teardown — see per-mode behaviour below
     //
-    // On Android both modes currently lead to the same process restart; the
-    // mode argument still flows through so SharedRPC::invalidate runs for the
-    // correct listener(s), and so the call site doesn't need to special-case
-    // per-platform behaviour.
+    // mode='ui':
+    //   Soft-reload the main runtime via ReactHost.reload(reason). bg runtime
+    //   keeps running. After reload, JS bootstrap re-invokes installShared
+    //   Bridge() (the TurboModule entry point), which re-installs the "main"
+    //   SharedRPC listener and refreshes mainRuntimePtr. Requires bridgeless /
+    //   NewArch — if ReactHost was never captured (old arch host), falls back
+    //   to a process restart so callers get consistent reload semantics.
+    //
+    // mode='all':
+    //   Process-level restart (Runtime.exit + makeRestartActivityTask). OTA
+    //   install/switch and resetData want a clean slate on disk; a process
+    //   relaunch trivially guarantees both runtimes bootstrap from fresh
+    //   bundle content without us having to sequence "tear down bg → reload
+    //   main → wait for new main → restart bg". iOS goes through soft reload
+    //   for mode='all' because abrupt termination is App Store-unfriendly and
+    //   iOS has no clean self-relaunch; Android does, so we keep using it.
 
     fun restart(context: ReactApplicationContext, mode: String, reason: String, promise: com.facebook.react.bridge.Promise) {
         val isUi = mode == "ui"
@@ -806,11 +839,32 @@ class BackgroundThreadManager private constructor() {
             BTLogger.error("restart: SharedRPC invalidate failed: ${t.message}")
         }
 
-        // TODO(bg-restart-ui): for mode='ui', swap this to
-        // `context.reactHost?.reload(reason)` (NewArch) so the bg runtime
-        // stays hot. Requires confirming bridgeless mode is on and that the
-        // host app exposes the ReactHost reference at this point in the
-        // process lifecycle. Until then, both modes do a process restart.
+        val host = mainReactHost
+        if (isUi && host != null) {
+            BTLogger.info("restart(ui): soft reload via ReactHost.reload")
+            // Resolve before reload — the runtime tearing down will drop the
+            // callback anyway, but explicit resolve avoids relying on that
+            // and matches the iOS completion-before-reload-sequencing ordering.
+            promise.resolve(null)
+            // Post to the UI thread to keep the call off the JS thread that
+            // is about to be torn down; ReactHost.reload is itself thread-
+            // safe but the work it kicks off (JNI teardown of the old
+            // ReactInstance) is cleaner when not initiated from inside the
+            // outgoing runtime's callback frame.
+            Handler(Looper.getMainLooper()).post {
+                try {
+                    host.reload("BackgroundThread.restart(ui): $reason")
+                } catch (t: Throwable) {
+                    BTLogger.error("restart(ui): ReactHost.reload failed, falling back to process restart: ${t.message}")
+                    triggerProcessRestart(context)
+                }
+            }
+            return
+        }
+
+        if (isUi) {
+            BTLogger.warn("restart(ui): ReactHost unavailable, falling back to process restart")
+        }
         triggerProcessRestart(context)
         promise.resolve(null)
     }
@@ -839,6 +893,7 @@ class BackgroundThreadManager private constructor() {
         bgRuntimePtr = 0
         mainRuntimePtr = 0
         mainReactContext = null
+        mainReactHost = null
         bgReactHost?.destroy("BackgroundThreadManager destroyed", null)
         bgReactHost = null
         isStarted = false
