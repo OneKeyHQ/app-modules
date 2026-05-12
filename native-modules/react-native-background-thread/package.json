@@ -84,7 +84,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-bundle-update": ">=3.0.31",
+    "@onekeyfe/react-native-bundle-update": "*",
     "react": "*",
     "react-native": "*"
   },
