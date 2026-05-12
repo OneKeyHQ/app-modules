@@ -58,29 +58,33 @@ NS_ASSUME_NONNULL_BEGIN
 ///      startBackgroundRunner]` — recreates the bg RCTHost since the
 ///      previous one was released and `isStarted` was reset to NO.
 ///
-/// The module defends against host integration omissions with a delayed
-/// post-reload health-check (a `dispatch_after` on the main queue scheduled
+/// The module defends against host integration omissions with a two-stage
+/// post-reload health-check (`dispatch_after` on the main queue scheduled
 /// before the reload is triggered — does NOT depend on
 /// `RCTJavaScriptDidLoadNotification`, which is unreliable in bridgeless /
-/// NewArch). The check fires ~3s after `restartWithMode:` returns:
-///   - For mode='all': if `isStarted` is still NO, self-respawns the bg
-///     runtime using the default entry URL (idempotent —
-///     startBackgroundRunner's internal guard makes a redundant host-side
-///     call a no-op). NOTE: self-respawn loses any custom entry URL the
-///     host previously passed via `startBackgroundRunnerWithEntryURL:`
-///     (e.g. an OTA-resolved bundle path); a `[BTLogger warn:]` is emitted
-///     in that case so a host with broken AppDelegate wiring + OTA paths
-///     doesn't get silently pinned to the default bundle.
-///   - For both modes: if `installSharedBridgeInMainRuntime:` was not
-///     called on the new host, logs `[BTLogger error:...]` so the
-///     integration bug is visible in production logs instead of just
-///     surfacing as silent RPC drop.
+/// NewArch). Stage 1 fires ~3s after `restartWithMode:` returns; stage 2
+/// (if needed) ~3s later. The check decides:
+///   - Both halves healthy → log success, done.
+///   - Stage 1 + main ready but bg not ready (mode='all' only) → STABLE
+///     signal that the host AppDelegate didn't re-spawn bg; self-respawn
+///     immediately without waiting another cycle.
+///   - Stage 1 + main NOT ready → could be a slow device whose
+///     hostDidStart chain hasn't finished yet; reschedule stage 2 and
+///     defer the verdict.
+///   - Stage 2 → final verdict; whatever's missing is logged and self-
+///     healed where possible.
+///
+/// For mode='all' self-respawn, the module replays the host's last entry
+/// URL — cached in `startBackgroundRunnerWithEntryURL:` — instead of the
+/// default `background.bundle`. This is critical on OTA-equipped hosts:
+/// without the cache, self-respawn would load the bundled bg bundle from
+/// the IPA while main runs the OTA-updated main bundle, and the next
+/// cross-runtime RPC would moduleId-mismatch and crash. The cache makes
+/// self-respawn a true safety net for the broken-AppDelegate-wiring case.
 ///
 /// Concurrent restart() calls are made safe via a monotonic generation
-/// counter: each invocation captures its own generation and the health-
-/// check bails if a newer restart() has superseded it, preventing the
-/// second restart's flag reset from making the first restart's check
-/// misreport.
+/// counter: each invocation captures its own generation and each health-
+/// check stage bails if a newer restart() has superseded it.
 ///
 /// @param mode `@"ui"` to reload only the main runtime (bg stays hot);
 ///             `@"all"` to reload both. Any other value invokes completion

@@ -25,7 +25,14 @@
 @property (nonatomic, strong) BackgroundReactNativeDelegate *reactNativeFactoryDelegate;
 @property (nonatomic, strong) RCTReactNativeFactory *reactNativeFactory;
 @property (nonatomic, assign) BOOL hasListeners;
-@property (nonatomic, assign, readwrite) BOOL isStarted;
+// Atomic because the post-reload health-check reads it on the main thread
+// while startBackgroundRunnerWithEntryURL: writes it from whichever thread
+// the caller is on (the module's public surface does not constrain caller
+// thread). Atomic gives us the memory-barrier needed for cross-thread
+// reads to see the latest store. The set+dispatch pattern in start... is
+// still TOCTOU-racy for concurrent first-time starts, but that hazard
+// pre-exists this PR and is out of scope here.
+@property (atomic, assign, readwrite) BOOL isStarted;
 // Flipped to YES inside the installSharedBridgeInMainRuntime: lambda and to
 // NO at the start of restartWithMode:. Read by the post-reload health-check
 // to detect when the host app's hostDidStart: failed to re-invoke the
@@ -37,12 +44,27 @@
 // the first restart's check misreport. Touched only on the main thread
 // (the dispatch_block_t `work` runs there), so non-atomic is correct.
 @property (nonatomic, assign) NSUInteger restartGeneration;
+// Cached from the most recent startBackgroundRunnerWithEntryURL: call. Used
+// by the mode='all' self-respawn fallback to preserve the host's last
+// chosen entry URL (typically an OTA-resolved bundle path) across restart;
+// `reactNativeFactoryDelegate` is released for mode='all', so without this
+// cache we'd fall back to the bundled "background.bundle" — which on OTA
+// devices is a moduleId-mismatch crash waiting to happen.
+@property (nonatomic, copy) NSString *lastEntryURL;
+
+// Forward declaration so restartWithMode: can call it; definition lives
+// after restartWithMode: for readability (the call site is the natural
+// place to start reading the restart flow).
+- (void)scheduleHealthCheckForRestart:(NSString *)mode
+                                isAll:(BOOL)isAll
+                           generation:(NSUInteger)myGen
+                              retried:(BOOL)retried;
 @end
 
-// Empirical upper bound for the host's post-reload hostDidStart chain on
-// low-end devices. iPhone-baseline measurements show ~500ms; 6x margin
-// gives 3s. Beyond this, integration failure is more likely than a slow
-// host — the health-check is meant to catch wiring bugs, not racing them.
+// First-stage delay for the post-reload health-check. Picked so the host's
+// hostDidStart: chain has time to run on a typical device. On slower
+// devices the chain can exceed this; that's why the check is structured as
+// two stages — see scheduleHealthCheckForRestart:isAll:generation:retried:.
 static const NSTimeInterval kRestartHealthCheckDelaySeconds = 3.0;
 
 @implementation BackgroundThreadManager
@@ -131,6 +153,11 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         return;
     }
     self.isStarted = YES;
+    // Cache the URL before we even start so the mode='all' self-respawn
+    // path can preserve it across a restart that releases the delegate.
+    // Updated unconditionally — first-time and re-start with a new URL
+    // both reflect into lastEntryURL.
+    self.lastEntryURL = entryURL;
     [BTLogger info:[NSString stringWithFormat:@"Starting background runner with entryURL: %@", entryURL]];
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -236,59 +263,17 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         }
 
         // (3) Schedule a defensive post-reload health-check BEFORE triggering
-        // the reload. Both signals we need (mainSharedBridgeInstalled and
-        // isStarted) are our own state — there is no external notification
-        // to wait on. We use a plain dispatch_after instead of an
-        // RCTJavaScriptDidLoadNotification observer because that notification
-        // is unreliable in bridgeless / NewArch (post timing is not
-        // guaranteed across RN versions) and the observer pattern adds two
-        // failure modes that this code is otherwise immune to:
-        //   - If the notification never fires, the observer leaks and any
-        //     later reload that finally fires it will trigger stale checks.
-        //   - Concurrent restart() calls each register an observer, all of
-        //     which fire on the next notification using the latest flag
-        //     state (cross-generation misreporting).
-        // dispatch_after, paired with a per-restart `myGen` generation
-        // capture, has neither hazard.
+        // the reload. The check uses pure dispatch_after on our own state
+        // (mainSharedBridgeInstalled, isStarted) instead of an
+        // RCTJavaScriptDidLoadNotification observer — that notification's
+        // post timing is unreliable in bridgeless / NewArch, and an
+        // observer-based design introduces observer-leak + cross-generation
+        // misreporting hazards that dispatch_after + restartGeneration
+        // sidesteps entirely. See scheduleHealthCheckForRestart:... for the
+        // two-stage retry that tolerates slow devices.
         self.mainSharedBridgeInstalled = NO;
         NSUInteger myGen = ++self.restartGeneration;
-        __weak BackgroundThreadManager *weakSelf = self;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
-                                     (int64_t)(kRestartHealthCheckDelaySeconds * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            BackgroundThreadManager *strongSelf = weakSelf;
-            if (!strongSelf) return;
-            // A newer restart() has bumped the generation while we were
-            // waiting — its own check will run; bail to avoid reading flags
-            // that now belong to the newer cycle.
-            if (strongSelf.restartGeneration != myGen) {
-                [BTLogger info:[NSString stringWithFormat:
-                    @"restart(%@) health-check superseded by newer restart (gen %lu → %lu)",
-                    mode, (unsigned long)myGen, (unsigned long)strongSelf.restartGeneration]];
-                return;
-            }
-            if (isAll && !strongSelf.isStarted) {
-                // Self-respawn falls through startBackgroundRunner →
-                // startBackgroundRunnerWithEntryURL:@"background.bundle"
-                // (release) / debug URL (debug). Any custom entryURL the
-                // host previously passed (e.g. OTA-resolved bundle path) is
-                // gone because reactNativeFactoryDelegate was released for
-                // mode='all'. Warn explicitly so a host with broken
-                // AppDelegate wiring + OTA paths doesn't get silently
-                // pinned to the default bundle.
-                [BTLogger info:@"restart(all): bg not respawned by host AppDelegate; self-respawning with default entry URL"];
-                [BTLogger warn:@"restart(all): self-respawn uses the default entry URL; any custom entryURL set via startBackgroundRunnerWithEntryURL: is lost. Wire host AppDelegate.hostDidStart: to call startBackgroundRunner explicitly if you need to preserve a custom OTA bundle path."];
-                [strongSelf startBackgroundRunner];
-            }
-            if (!strongSelf.mainSharedBridgeInstalled) {
-                [BTLogger error:[NSString stringWithFormat:
-                    @"restart(%@): SharedBridge not re-installed in main runtime within %.1fs after reload. "
-                    @"Host AppDelegate's hostDidStart: must invoke "
-                    @"+[BackgroundThreadManager installSharedBridgeInMainRuntime:newHost] "
-                    @"on the new RCTHost or main→bg RPC will silently fail.",
-                    mode, kRestartHealthCheckDelaySeconds]];
-            }
-        });
+        [self scheduleHealthCheckForRestart:mode isAll:isAll generation:myGen retried:NO];
 
         // (4) Trigger the main bridge reload. Equivalent to what
         // react-native-restart did, but now sequenced AFTER quiesce so the
@@ -312,6 +297,114 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
     } else {
         dispatch_async(dispatch_get_main_queue(), work);
     }
+}
+
+#pragma mark - Restart Health Check
+
+// Two-stage post-reload health-check.
+//
+// Stage 1 fires at +kRestartHealthCheckDelaySeconds (~3s) from restart()
+// dispatch. Reads `mainSharedBridgeInstalled` and (for mode='all')
+// `isStarted` — both signals the module owns. Decides:
+//   - Both healthy → log success, done.
+//   - Main healthy, bg not healthy (mode='all' only) → STABLE signal that
+//     the host AppDelegate didn't re-spawn bg; self-respawn now without
+//     waiting another cycle.
+//   - Main NOT healthy → could be a slow device whose hostDidStart chain
+//     hasn't finished yet. Reschedule stage 2 (+~3s more, total ~6s) and
+//     defer the final verdict.
+//
+// Stage 2 fires at total ~6s. Whatever state we see is the final verdict;
+// any remaining gap is logged as an integration failure (with self-heal
+// where possible). 6s comfortably covers a low-end iPhone OTA reload chain
+// (observed worst case ~2.5s); past that, integration is more likely
+// broken than slow.
+//
+// Generation check at the top of each stage block bails out if a newer
+// restart() has bumped restartGeneration in the meantime — its own check
+// will run, and reading flags now would mix cycles.
+- (void)scheduleHealthCheckForRestart:(NSString *)mode
+                                isAll:(BOOL)isAll
+                           generation:(NSUInteger)myGen
+                              retried:(BOOL)retried
+{
+    __weak BackgroundThreadManager *weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                 (int64_t)(kRestartHealthCheckDelaySeconds * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        BackgroundThreadManager *strongSelf = weakSelf;
+        if (!strongSelf) return;
+        if (strongSelf.restartGeneration != myGen) {
+            [BTLogger info:[NSString stringWithFormat:
+                @"restart(%@) health-check stage%@ superseded by newer restart (gen %lu → %lu)",
+                mode, retried ? @"2" : @"1",
+                (unsigned long)myGen, (unsigned long)strongSelf.restartGeneration]];
+            return;
+        }
+
+        BOOL mainReady = strongSelf.mainSharedBridgeInstalled;
+        BOOL bgReady = !isAll || strongSelf.isStarted;
+        NSString *stage = retried ? @"2" : @"1";
+
+        if (mainReady && bgReady) {
+            [BTLogger info:[NSString stringWithFormat:
+                @"restart(%@): post-reload health-check stage%@ OK (mainReady=YES, bgReady=YES)",
+                mode, stage]];
+            return;
+        }
+
+        // Stage 1 and main is NOT ready: could be a slow device; give it
+        // one more stage before declaring integration broken. We DON'T
+        // reschedule on the bg-only-failure path even when not retried —
+        // mainReady=YES is a stable signal that the new host has run far
+        // enough into hostDidStart that any startBackgroundRunner call
+        // from the host would have landed already.
+        if (!retried && !mainReady) {
+            [BTLogger info:[NSString stringWithFormat:
+                @"restart(%@): stage1 incomplete (mainReady=NO, bgReady=%@) — rescheduling stage2 to allow slow hostDidStart chains",
+                mode, bgReady ? @"YES" : @"NO"]];
+            [strongSelf scheduleHealthCheckForRestart:mode isAll:isAll generation:myGen retried:YES];
+            return;
+        }
+
+        // Verdict: either mainReady is true but bg failed (stable, stage 1
+        // is enough), or we're in stage 2 and something still failed.
+
+        if (isAll && !strongSelf.isStarted) {
+            NSString *cachedURL = strongSelf.lastEntryURL;
+            if (cachedURL.length > 0) {
+                // Preferred path: replay the host's last entry URL. On OTA
+                // devices this is the OTA-resolved bundle, which keeps the
+                // bg moduleId table aligned with the new main bundle and
+                // avoids the silent → crash regression of falling back to
+                // the bundled `background.bundle`.
+                [BTLogger info:[NSString stringWithFormat:
+                    @"restart(%@): bg not respawned by host AppDelegate; self-respawning with cached entryURL=%@",
+                    mode, cachedURL]];
+                [strongSelf startBackgroundRunnerWithEntryURL:cachedURL];
+            } else {
+                // No cached URL means host never called start. Fall back to
+                // the default-URL path. Same OTA-mismatch caveat applies
+                // but is implausible in practice: an OTA-equipped host
+                // would have called startBackgroundRunnerWithEntryURL: at
+                // least once before triggering restart('all').
+                [BTLogger warn:[NSString stringWithFormat:
+                    @"restart(%@): bg not respawned and no cached entryURL; falling back to default. If host uses OTA bundles, wire AppDelegate.hostDidStart: to call startBackgroundRunner explicitly to avoid moduleId-mismatch.",
+                    mode]];
+                [strongSelf startBackgroundRunner];
+            }
+        }
+
+        if (!strongSelf.mainSharedBridgeInstalled) {
+            [BTLogger error:[NSString stringWithFormat:
+                @"restart(%@): SharedBridge not re-installed in main runtime within ~%.1fs after reload (stage%@). "
+                @"Host AppDelegate's hostDidStart: must invoke "
+                @"+[BackgroundThreadManager installSharedBridgeInMainRuntime:newHost] "
+                @"on the new RCTHost or main→bg RPC will silently fail.",
+                mode, retried ? kRestartHealthCheckDelaySeconds * 2 : kRestartHealthCheckDelaySeconds,
+                stage]];
+        }
+    });
 }
 
 @end
