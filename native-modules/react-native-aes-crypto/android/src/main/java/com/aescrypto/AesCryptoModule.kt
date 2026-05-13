@@ -220,8 +220,6 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
     }
 
     private fun aesGcmEncryptImpl(text: String, hexKey: String, hexNonce: String, aad: String?): String {
-        if (text.isEmpty()) return ""
-
         val secretKey = SecretKeySpec(Hex.decode(hexKey), KEY_ALGORITHM)
         val cipher = Cipher.getInstance(CIPHER_GCM_ALGORITHM)
         val gcmSpec = GCMParameterSpec(GCM_AUTH_TAG_LENGTH_BITS, Hex.decode(hexNonce))
@@ -233,7 +231,11 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
     }
 
     private fun aesGcmDecryptImpl(ciphertextWithTag: String, hexKey: String, hexNonce: String, aad: String?): String {
-        if (ciphertextWithTag.isEmpty()) return ""
+        val encrypted = Hex.decode(ciphertextWithTag)
+        val tagBytes = GCM_AUTH_TAG_LENGTH_BITS / 8
+        if (encrypted.size < tagBytes) {
+            throw IllegalArgumentException("AES-GCM ciphertext must include the ${tagBytes}-byte authentication tag")
+        }
 
         val secretKey = SecretKeySpec(Hex.decode(hexKey), KEY_ALGORITHM)
         val cipher = Cipher.getInstance(CIPHER_GCM_ALGORITHM)
@@ -242,6 +244,6 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
         if (!aad.isNullOrEmpty()) {
             cipher.updateAAD(Hex.decode(aad))
         }
-        return bytesToHex(cipher.doFinal(Hex.decode(ciphertextWithTag)))
+        return bytesToHex(cipher.doFinal(encrypted))
     }
 }
