@@ -51,12 +51,35 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
             }
             return String(hexChars)
         }
+
+        // Reject empty strings at every native entry point. Callers MUST
+        // supply concrete bytes for every argument; an empty hex string is
+        // almost always an upstream bug (forgotten parameter, miswired AAD,
+        // truncated input) that we want to fail loudly instead of letting
+        // it sneak past the cipher layer.
+        private fun requireNonEmpty(value: String?, method: String, paramName: String): String {
+            if (value.isNullOrEmpty()) {
+                throw IllegalArgumentException("$method: $paramName must not be empty")
+            }
+            return value
+        }
+
+        private fun requirePositive(value: Int, method: String, paramName: String): Int {
+            if (value <= 0) {
+                throw IllegalArgumentException("$method: $paramName must be > 0")
+            }
+            return value
+        }
     }
 
     override fun getName(): String = NAME
 
     override fun encrypt(data: String, key: String, iv: String, algorithm: String, promise: Promise) {
         try {
+            requireNonEmpty(data, "encrypt", "data")
+            requireNonEmpty(key, "encrypt", "key")
+            requireNonEmpty(iv, "encrypt", "iv")
+            requireNonEmpty(algorithm, "encrypt", "algorithm")
             val cipherAlgorithm = if (algorithm.lowercase().contains("cbc")) CIPHER_CBC_ALGORITHM else CIPHER_CTR_ALGORITHM
             val result = encryptImpl(data, key, iv, cipherAlgorithm)
             promise.resolve(result)
@@ -67,6 +90,10 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun decrypt(base64: String, key: String, iv: String, algorithm: String, promise: Promise) {
         try {
+            requireNonEmpty(base64, "decrypt", "ciphertext")
+            requireNonEmpty(key, "decrypt", "key")
+            requireNonEmpty(iv, "decrypt", "iv")
+            requireNonEmpty(algorithm, "decrypt", "algorithm")
             val cipherAlgorithm = if (algorithm.lowercase().contains("cbc")) CIPHER_CBC_ALGORITHM else CIPHER_CTR_ALGORITHM
             val result = decryptImpl(base64, key, iv, cipherAlgorithm)
             promise.resolve(result)
@@ -77,6 +104,10 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun aesGcmEncrypt(data: String, key: String, nonce: String, aad: String, promise: Promise) {
         try {
+            requireNonEmpty(data, "aesGcmEncrypt", "data")
+            requireNonEmpty(key, "aesGcmEncrypt", "key")
+            requireNonEmpty(nonce, "aesGcmEncrypt", "nonce")
+            requireNonEmpty(aad, "aesGcmEncrypt", "aad")
             val result = aesGcmEncryptImpl(data, key, nonce, aad)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -86,6 +117,10 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun aesGcmDecrypt(ciphertextWithTag: String, key: String, nonce: String, aad: String, promise: Promise) {
         try {
+            requireNonEmpty(ciphertextWithTag, "aesGcmDecrypt", "ciphertextWithTag")
+            requireNonEmpty(key, "aesGcmDecrypt", "key")
+            requireNonEmpty(nonce, "aesGcmDecrypt", "nonce")
+            requireNonEmpty(aad, "aesGcmDecrypt", "aad")
             val result = aesGcmDecryptImpl(ciphertextWithTag, key, nonce, aad)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -95,6 +130,11 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun pbkdf2(password: String, salt: String, cost: Double, length: Double, algorithm: String, promise: Promise) {
         try {
+            requireNonEmpty(password, "pbkdf2", "password")
+            requireNonEmpty(salt, "pbkdf2", "salt")
+            requireNonEmpty(algorithm, "pbkdf2", "algorithm")
+            requirePositive(cost.toInt(), "pbkdf2", "cost")
+            requirePositive(length.toInt(), "pbkdf2", "length")
             val result = pbkdf2Impl(password, salt, cost.toInt(), length.toInt(), algorithm)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -104,6 +144,8 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun hmac256(data: String, key: String, promise: Promise) {
         try {
+            requireNonEmpty(data, "hmac256", "data")
+            requireNonEmpty(key, "hmac256", "key")
             val result = hmacX(data, key, HMAC_SHA_256)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -113,6 +155,8 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun hmac512(data: String, key: String, promise: Promise) {
         try {
+            requireNonEmpty(data, "hmac512", "data")
+            requireNonEmpty(key, "hmac512", "key")
             val result = hmacX(data, key, HMAC_SHA_512)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -122,6 +166,7 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun sha1(text: String, promise: Promise) {
         try {
+            requireNonEmpty(text, "sha1", "text")
             val result = shaX(text, "SHA-1")
             promise.resolve(result)
         } catch (e: Exception) {
@@ -131,6 +176,7 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun sha256(text: String, promise: Promise) {
         try {
+            requireNonEmpty(text, "sha256", "text")
             val result = shaX(text, "SHA-256")
             promise.resolve(result)
         } catch (e: Exception) {
@@ -140,6 +186,7 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun sha512(text: String, promise: Promise) {
         try {
+            requireNonEmpty(text, "sha512", "text")
             val result = shaX(text, "SHA-512")
             promise.resolve(result)
         } catch (e: Exception) {
@@ -157,7 +204,8 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun randomKey(length: Double, promise: Promise) {
         try {
-            val key = ByteArray(length.toInt())
+            val keyLength = requirePositive(length.toInt(), "randomKey", "length")
+            val key = ByteArray(keyLength)
             SecureRandom().nextBytes(key)
             promise.resolve(bytesToHex(key))
         } catch (e: Exception) {

@@ -6,6 +6,32 @@
 #import <CommonCrypto/CommonKeyDerivation.h>
 #import <Security/Security.h>
 
+// Reject empty string / non-positive numeric arguments at every native
+// entry point. An empty hex string is almost always an upstream bug —
+// forgotten parameter, miswired AAD, truncated input. Fail loudly here
+// instead of silently feeding zero-length bytes into the cipher layer.
+#define ONEKEY_AES_REQUIRE_NON_EMPTY(value, method, paramName, reject) \
+    do { \
+        if ((value) == nil || [(value) length] == 0) { \
+            (reject)(@"-1", \
+                     [NSString stringWithFormat:@"%@: %@ must not be empty", \
+                                                (method), (paramName)], \
+                     nil); \
+            return; \
+        } \
+    } while (0)
+
+#define ONEKEY_AES_REQUIRE_POSITIVE(value, method, paramName, reject) \
+    do { \
+        if ((value) <= 0) { \
+            (reject)(@"-1", \
+                     [NSString stringWithFormat:@"%@: %@ must be > 0", \
+                                                (method), (paramName)], \
+                     nil); \
+            return; \
+        } \
+    } while (0)
+
 // ---------------------------------------------------------------------------
 // MARK: - Internal helpers
 // ---------------------------------------------------------------------------
@@ -156,6 +182,10 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(data, @"encrypt", @"data", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"encrypt", @"key", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(iv, @"encrypt", @"iv", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(algorithm, @"encrypt", @"algorithm", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *inputData = fromHex(data);
@@ -185,6 +215,10 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(base64, @"decrypt", @"ciphertext", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"decrypt", @"key", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(iv, @"decrypt", @"iv", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(algorithm, @"decrypt", @"algorithm", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *inputData = fromHex(base64);
@@ -214,6 +248,10 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
               resolve:(RCTPromiseResolveBlock)resolve
                reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(data, @"aesGcmEncrypt", @"data", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"aesGcmEncrypt", @"key", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(nonce, @"aesGcmEncrypt", @"nonce", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(aad, @"aesGcmEncrypt", @"aad", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSError *error = nil;
@@ -238,6 +276,10 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
               resolve:(RCTPromiseResolveBlock)resolve
                reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(ciphertextWithTag, @"aesGcmDecrypt", @"ciphertextWithTag", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"aesGcmDecrypt", @"key", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(nonce, @"aesGcmDecrypt", @"nonce", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(aad, @"aesGcmDecrypt", @"aad", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSError *error = nil;
@@ -263,6 +305,11 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(password, @"pbkdf2", @"password", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(salt, @"pbkdf2", @"salt", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(algorithm, @"pbkdf2", @"algorithm", reject);
+    ONEKEY_AES_REQUIRE_POSITIVE(cost, @"pbkdf2", @"cost", reject);
+    ONEKEY_AES_REQUIRE_POSITIVE(length, @"pbkdf2", @"length", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *passwordData = fromHex(password);
@@ -307,6 +354,8 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(base64, @"hmac256", @"data", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"hmac256", @"key", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *keyData   = fromHex(key);
@@ -337,6 +386,8 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(base64, @"hmac512", @"data", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"hmac512", @"key", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *keyData   = fromHex(key);
@@ -366,6 +417,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
      resolve:(RCTPromiseResolveBlock)resolve
       reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(text, @"sha1", @"text", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *inputData = fromHex(text);
@@ -384,6 +436,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
        resolve:(RCTPromiseResolveBlock)resolve
         reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(text, @"sha256", @"text", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *inputData = fromHex(text);
@@ -409,6 +462,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
        resolve:(RCTPromiseResolveBlock)resolve
         reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(text, @"sha512", @"text", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *inputData = fromHex(text);
@@ -449,6 +503,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
           resolve:(RCTPromiseResolveBlock)resolve
            reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_POSITIVE(length, @"randomKey", @"length", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSUInteger len = (NSUInteger)length;
