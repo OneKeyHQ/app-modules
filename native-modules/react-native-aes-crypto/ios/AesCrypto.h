@@ -1,3 +1,10 @@
+// The TurboModule spec header `<AesCryptoSpec/AesCryptoSpec.h>` is generated
+// as ObjC++ (the `NativeAesCryptoSpecBase` base class uses C++ types from
+// React Native's TurboModule runtime). The `@interface` is wrapped in the
+// same `#ifdef __cplusplus` block as the import because it inherits from
+// `NativeAesCryptoSpecBase`, which only resolves in an ObjC++ translation
+// unit. Pure ObjC `.m` files therefore cannot include this header — that is
+// intentional; AesCrypto.mm is the sole consumer.
 #ifdef __cplusplus
 #import <AesCryptoSpec/AesCryptoSpec.h>
 

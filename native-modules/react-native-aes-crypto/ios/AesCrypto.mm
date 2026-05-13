@@ -5,6 +5,8 @@
 #import <CommonCrypto/CommonHMAC.h>
 #import <CommonCrypto/CommonKeyDerivation.h>
 #import <Security/Security.h>
+#import <limits.h>
+#import <math.h>
 
 // Reject empty string / non-positive numeric arguments at every native
 // entry point. An empty hex string is almost always an upstream bug —
@@ -21,12 +23,22 @@
         } \
     } while (0)
 
+// Numeric arguments arrive as `double` from the JS bridge. A plain `<= 0`
+// check lets NaN, Infinity, and fractional values slip through (NaN compares
+// false against every value, and 1.5 would later cast to 1). This guard
+// rejects all of those — and anything larger than INT_MAX — up front so
+// callers cannot smuggle a malformed numeric into a buffer allocation or
+// KDF iteration count.
 #define ONEKEY_AES_REQUIRE_POSITIVE(value, method, paramName, reject) \
     do { \
-        if ((value) <= 0) { \
+        double _onekeyAesValue = (double)(value); \
+        if (!isfinite(_onekeyAesValue) \
+            || _onekeyAesValue <= 0.0 \
+            || _onekeyAesValue != floor(_onekeyAesValue) \
+            || _onekeyAesValue > (double)INT_MAX) { \
             (reject)(@"-1", \
-                     [NSString stringWithFormat:@"%@: %@ must be > 0", \
-                                                (method), (paramName)], \
+                     [NSString stringWithFormat:@"%@: %@ must be a positive finite integer (<= %d)", \
+                                                (method), (paramName), INT_MAX], \
                      nil); \
             return; \
         } \
@@ -257,12 +269,12 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             NSError *error = nil;
             NSString *result = [AesCryptoGcm encryptWithDataHex:data keyHex:key nonceHex:nonce aadHex:aad error:&error];
             if (result == nil) {
-                reject(@"aes_gcm_encrypt_fail", error.localizedDescription ?: @"AES-GCM encrypt error", error);
+                reject(@"-1", error.localizedDescription ?: @"AES-GCM encrypt error", error);
             } else {
                 resolve(result);
             }
         } @catch (NSException *exception) {
-            reject(@"aes_gcm_encrypt_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -285,12 +297,12 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             NSError *error = nil;
             NSString *result = [AesCryptoGcm decryptWithCiphertextWithTagHex:ciphertextWithTag keyHex:key nonceHex:nonce aadHex:aad error:&error];
             if (result == nil) {
-                reject(@"aes_gcm_decrypt_fail", error.localizedDescription ?: @"AES-GCM decrypt failed", error);
+                reject(@"-1", error.localizedDescription ?: @"AES-GCM decrypt failed", error);
             } else {
                 resolve(result);
             }
         } @catch (NSException *exception) {
-            reject(@"aes_gcm_decrypt_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }

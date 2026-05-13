@@ -34,6 +34,12 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
         private const val CIPHER_CTR_ALGORITHM = "AES/CTR/PKCS5Padding"
         private const val CIPHER_GCM_ALGORITHM = "AES/GCM/NoPadding"
         private const val GCM_AUTH_TAG_LENGTH_BITS = 128
+        // AES-GCM nonce length: NIST SP 800-38D recommends 96 bits (12 bytes).
+        // CryptoKit on iOS enforces 12 bytes for the default nonce, so locking
+        // Android to the same length avoids the platform mismatch where
+        // GCMParameterSpec would otherwise accept a non-12-byte nonce that
+        // CryptoKit cannot decrypt.
+        private const val GCM_NONCE_LENGTH_BYTES = 12
         private const val HMAC_SHA_256 = "HmacSHA256"
         private const val HMAC_SHA_512 = "HmacSHA512"
         private const val KEY_ALGORITHM = "AES"
@@ -64,11 +70,23 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
             return value
         }
 
-        private fun requirePositive(value: Int, method: String, paramName: String): Int {
-            if (value <= 0) {
-                throw IllegalArgumentException("$method: $paramName must be > 0")
+        // Numeric arguments from the JS side arrive as Double. Coerce them to
+        // a positive 32-bit integer, but reject NaN, infinities, fractional
+        // values, and anything outside Int range up front — otherwise toInt()
+        // would silently truncate (1.5 -> 1) or saturate (NaN -> 0), and the
+        // `<= 0` guard alone would let either path slip through into cipher /
+        // KDF code that subsequently treats the value as a buffer size.
+        private fun requirePositiveInt(value: Double, method: String, paramName: String): Int {
+            if (!value.isFinite()
+                || value <= 0.0
+                || value != Math.floor(value)
+                || value > Int.MAX_VALUE.toDouble()
+            ) {
+                throw IllegalArgumentException(
+                    "$method: $paramName must be a positive finite integer (<= ${Int.MAX_VALUE})"
+                )
             }
-            return value
+            return value.toInt()
         }
     }
 
@@ -133,9 +151,9 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
             requireNonEmpty(password, "pbkdf2", "password")
             requireNonEmpty(salt, "pbkdf2", "salt")
             requireNonEmpty(algorithm, "pbkdf2", "algorithm")
-            requirePositive(cost.toInt(), "pbkdf2", "cost")
-            requirePositive(length.toInt(), "pbkdf2", "length")
-            val result = pbkdf2Impl(password, salt, cost.toInt(), length.toInt(), algorithm)
+            val costInt = requirePositiveInt(cost, "pbkdf2", "cost")
+            val lengthInt = requirePositiveInt(length, "pbkdf2", "length")
+            val result = pbkdf2Impl(password, salt, costInt, lengthInt, algorithm)
             promise.resolve(result)
         } catch (e: Exception) {
             promise.reject("-1", e.message)
@@ -204,7 +222,7 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun randomKey(length: Double, promise: Promise) {
         try {
-            val keyLength = requirePositive(length.toInt(), "randomKey", "length")
+            val keyLength = requirePositiveInt(length, "randomKey", "length")
             val key = ByteArray(keyLength)
             SecureRandom().nextBytes(key)
             promise.resolve(bytesToHex(key))
@@ -267,18 +285,26 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
         return bytesToHex(decrypted)
     }
 
-    private fun aesGcmEncryptImpl(text: String, hexKey: String, hexNonce: String, aad: String?): String {
+    private fun decodeGcmNonce(hexNonce: String): ByteArray {
+        val nonceBytes = Hex.decode(hexNonce)
+        if (nonceBytes.size != GCM_NONCE_LENGTH_BYTES) {
+            throw IllegalArgumentException(
+                "AES-GCM nonce must be exactly $GCM_NONCE_LENGTH_BYTES bytes (got ${nonceBytes.size})"
+            )
+        }
+        return nonceBytes
+    }
+
+    private fun aesGcmEncryptImpl(text: String, hexKey: String, hexNonce: String, aad: String): String {
         val secretKey = SecretKeySpec(Hex.decode(hexKey), KEY_ALGORITHM)
         val cipher = Cipher.getInstance(CIPHER_GCM_ALGORITHM)
-        val gcmSpec = GCMParameterSpec(GCM_AUTH_TAG_LENGTH_BITS, Hex.decode(hexNonce))
+        val gcmSpec = GCMParameterSpec(GCM_AUTH_TAG_LENGTH_BITS, decodeGcmNonce(hexNonce))
         cipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec)
-        if (!aad.isNullOrEmpty()) {
-            cipher.updateAAD(Hex.decode(aad))
-        }
+        cipher.updateAAD(Hex.decode(aad))
         return bytesToHex(cipher.doFinal(Hex.decode(text)))
     }
 
-    private fun aesGcmDecryptImpl(ciphertextWithTag: String, hexKey: String, hexNonce: String, aad: String?): String {
+    private fun aesGcmDecryptImpl(ciphertextWithTag: String, hexKey: String, hexNonce: String, aad: String): String {
         val encrypted = Hex.decode(ciphertextWithTag)
         val tagBytes = GCM_AUTH_TAG_LENGTH_BITS / 8
         if (encrypted.size < tagBytes) {
@@ -287,11 +313,9 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
         val secretKey = SecretKeySpec(Hex.decode(hexKey), KEY_ALGORITHM)
         val cipher = Cipher.getInstance(CIPHER_GCM_ALGORITHM)
-        val gcmSpec = GCMParameterSpec(GCM_AUTH_TAG_LENGTH_BITS, Hex.decode(hexNonce))
+        val gcmSpec = GCMParameterSpec(GCM_AUTH_TAG_LENGTH_BITS, decodeGcmNonce(hexNonce))
         cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
-        if (!aad.isNullOrEmpty()) {
-            cipher.updateAAD(Hex.decode(aad))
-        }
+        cipher.updateAAD(Hex.decode(aad))
         return bytesToHex(cipher.doFinal(encrypted))
     }
 }
