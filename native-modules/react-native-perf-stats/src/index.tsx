@@ -31,6 +31,11 @@ let jsFpsIntervalId: ReturnType<typeof setInterval> | null = null;
 let jsFpsFrameCount = 0;
 let jsFpsCurrentInterval: number | null = null;
 
+// Module-level latch so forceGarbageCollection's "no GC binding" branch
+// warns exactly once per JS realm. Avoids spamming the console when a
+// memory-warning handler calls forceGarbageCollection on every event.
+let forceGcMissingWarned = false;
+
 /**
  * Start the JS-side FPS ticker. Normally invoked automatically by
  * `ReactNativePerfStats.start` and stopped by `.stop`; exported as
@@ -107,6 +112,12 @@ export const ReactNativePerfStats = {
   ): number => nativeImpl.addMemoryWarningListener(callback),
   removeMemoryWarningListener: (id: number): void =>
     nativeImpl.removeMemoryWarningListener(id),
+  /**
+   * Run the same native reclaim path the OS memory-warning observer
+   * triggers, on demand. Returns immediately (heavy work runs async
+   * on iOS). See the spec doc for what gets dropped on each platform.
+   */
+  cleanupNativeCaches: (): void => nativeImpl.cleanupNativeCaches(),
 
   /**
    * Best-effort hint to the JS engine that now is a good time to GC.
@@ -117,9 +128,13 @@ export const ReactNativePerfStats = {
    * absent in others. We feature-detect it and fall back to a no-op so
    * callers never have to branch.
    *
-   * Returns `true` if a GC was actually requested (i.e. an engine hook
-   * was found and called). Callers can use the return value for
-   * observability, not as a guarantee that GC ran or freed anything.
+   * Returns `true` only if a GC binding was both found AND invoked
+   * without throwing. A `false` return therefore covers three cases —
+   * binding missing (production Hermes is the common case), binding
+   * present but threw, and any unexpected failure. The first miss is
+   * logged once via `console.warn` so the caller knows it landed in the
+   * "no binding" branch; throws are logged on every occurrence because
+   * those are real errors.
    *
    * Cost: when honoured, Hermes does a stop-the-world collection that
    * can take 100–500 ms — never call this on the hot path. Memory-warning
@@ -133,7 +148,8 @@ export const ReactNativePerfStats = {
       try {
         hi.gc();
         return true;
-      } catch {
+      } catch (e) {
+        console.warn('[PerfStats] HermesInternal.gc threw:', e);
         return false;
       }
     }
@@ -143,9 +159,18 @@ export const ReactNativePerfStats = {
       try {
         g.gc();
         return true;
-      } catch {
+      } catch (e) {
+        console.warn('[PerfStats] globalThis.gc threw:', e);
         return false;
       }
+    }
+    if (!forceGcMissingWarned) {
+      forceGcMissingWarned = true;
+      console.warn(
+        '[PerfStats] forceGarbageCollection: no GC binding found ' +
+          '(HermesInternal.gc / globalThis.gc absent). Production Hermes ' +
+          'strips these; this warning fires once per JS realm.',
+      );
     }
     return false;
   },

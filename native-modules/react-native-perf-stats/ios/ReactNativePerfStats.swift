@@ -3,7 +3,8 @@ import ReactNativeNativeLogger
 import Darwin
 import UIKit
 import WebKit
-// Used for `malloc_zone_pressure_relief(nil, 0)` — see `performNativeCleanup`.
+// URLCache and Date come transitively from UIKit. malloc_zone_pressure_relief
+// lives in <malloc/malloc.h>, which is reached via `import Darwin`.
 import Foundation
 
 private let kTag = "PerfStats"
@@ -54,7 +55,9 @@ class ReactNativePerfStats: HybridReactNativePerfStatsSpec {
 
     func sample() throws -> Promise<PerfSample> {
         return Promise.async {
-            return Sampler.shared.takeSample()
+            // recordBaseline=false: one-shot reads must not write the
+            // CPU baseline used by the periodic tick. See takeSample.
+            return Sampler.shared.takeSample(recordBaseline: false)
         }
     }
 
@@ -76,6 +79,13 @@ class ReactNativePerfStats: HybridReactNativePerfStatsSpec {
         // is a no-op.
         guard let intId = Int(exactly: id) else { return }
         MemoryWarningCenter.shared.remove(id: intId)
+    }
+
+    func cleanupNativeCaches() throws {
+        // Caller-initiated: pass rssBefore=nil so the bg reclaim-delta
+        // log is skipped (the OS-warning path is the only one that
+        // wants that "before vs after" line; on-demand callers don't).
+        MemoryWarningCenter.shared.performNativeCleanup()
     }
 }
 
@@ -131,6 +141,16 @@ private final class Sampler {
                 }
                 return
             }
+            // Cold-start path: reset CPU baseline now, before scheduling
+            // the timer. Doing it here rather than in stop() also stops
+            // sample() (Promise.async on a worker queue, not this serial
+            // queue) from writing a fresh baseline between stop() and
+            // start(). One-shot sample() now passes recordBaseline=false
+            // and the periodic tick is the only writer.
+            self.lock.lock()
+            self.lastCpuSec = -1
+            self.lastMonoSec = -1
+            self.lock.unlock()
             self.running = true
             let t = DispatchSource.makeTimerSource(queue: self.queue)
             t.schedule(
@@ -163,21 +183,20 @@ private final class Sampler {
             self.timer = nil
             self.lock.lock()
             self.lastUiFps = 0
-            // Reset the CPU baseline so the first tick after a future
-            // start() doesn't compute (now - lastCpuSec) over the entire
-            // stop gap and report a stale multi-minute average. The
-            // takeSample() guards (lastCpuSec >= 0 && lastMonoSec > 0)
-            // then return 0 for the first sample, matching cold-start
-            // semantics.
-            self.lastCpuSec = -1
-            self.lastMonoSec = -1
             self.lock.unlock()
         }
         UiFpsMonitor.shared.stop()
         Overlay.shared.hide()
     }
 
-    func takeSample() -> PerfSample {
+    /// - parameter recordBaseline: `true` for the periodic timer (the
+    ///   next sample's CPU delta is computed against this read); `false`
+    ///   for one-shot `sample()` calls so they don't pollute the periodic
+    ///   CPU% baseline. A one-shot call between two periodic ticks (or
+    ///   between stop() and start()) would otherwise insert a new
+    ///   baseline that the next periodic tick reads, producing a CPU%
+    ///   that spans the gap.
+    func takeSample(recordBaseline: Bool = true) -> PerfSample {
         let nowMono = monotonicSec()
         let nowCpu = processCpuSec()
         let rssBytes = residentBytes()
@@ -193,7 +212,7 @@ private final class Sampler {
                 cpuPct = (dCpu / dWall) * 100.0
             }
         }
-        if nowCpu >= 0 {
+        if recordBaseline && nowCpu >= 0 {
             lastCpuSec = nowCpu
             lastMonoSec = nowMono
         }
@@ -502,10 +521,44 @@ private final class OverlayPassthroughWindow: UIWindow {
     }
 }
 
+/// Host VC for the overlay window. Exists only to give us a
+/// `viewWillTransition(to:with:)` hook so the label can be re-clamped
+/// after rotation / split-screen size changes. Without this, after a
+/// rotation the label's center could land outside the new parent.bounds
+/// and the user would have to drag it back before the pan-clamp kicks in.
+private final class OverlayHostViewController: UIViewController {
+    var onTransitionComplete: (() -> Void)?
+
+    override func viewWillTransition(
+        to size: CGSize,
+        with coordinator: UIViewControllerTransitionCoordinator
+    ) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            self?.onTransitionComplete?()
+        }
+    }
+}
+
 private final class Overlay: NSObject {
     static let shared = Overlay()
 
-    private override init() { super.init() }
+    private override init() {
+        super.init()
+        // Process-wide observer for scene teardown (iPadOS / Vision Pro
+        // multi-window, Mac Catalyst). When the user closes the scene
+        // hosting the overlay, our UIWindow ends up referencing a
+        // disconnected UIWindowScene — subsequent isHidden / rootVC
+        // mutations are at best no-ops and at worst crash on certain
+        // iOS releases. Detach references so the next show() can attach
+        // cleanly to whichever scene is foreground.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSceneDisconnect(_:)),
+            name: UIScene.didDisconnectNotification,
+            object: nil
+        )
+    }
 
     private var label: UILabel?
     private var overlayWindow: UIWindow?
@@ -591,8 +644,13 @@ private final class Overlay: NSObject {
         // Dedicated host VC keeps the window's view hierarchy minimal —
         // the empty UIView serves only as the parent for the label and
         // as the hitTest sentinel checked by OverlayPassthroughWindow.
-        let host = UIViewController()
+        // The subclass overrides viewWillTransition so the label gets
+        // re-clamped after rotation / split-screen size changes.
+        let host = OverlayHostViewController()
         host.view.backgroundColor = .clear
+        host.onTransitionComplete = { [weak self] in
+            self?.clampLabelToBounds()
+        }
 
         let window = OverlayPassthroughWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
@@ -655,6 +713,35 @@ private final class Overlay: NSObject {
         gesture.setTranslation(.zero, in: parent)
     }
 
+    /// Re-clamp the label to its parent.bounds. Called after rotation /
+    /// size-class change so the persisted center doesn't leave the
+    /// label half-off-screen until the next pan triggers handlePan.
+    private func clampLabelToBounds() {
+        guard let lbl = label, let parent = lbl.superview else { return }
+        let parentW = parent.bounds.size.width
+        let parentH = parent.bounds.size.height
+        if parentW <= 0 || parentH <= 0 { return }
+        let halfW = lbl.bounds.size.width / 2
+        let halfH = lbl.bounds.size.height / 2
+        lbl.center = CGPoint(
+            x: max(halfW, min(parentW - halfW, lbl.center.x)),
+            y: max(halfH, min(parentH - halfH, lbl.center.y))
+        )
+    }
+
+    /// Fires when a UIWindowScene disconnects (multi-window close on
+    /// iPad / Vision / Mac Catalyst). If it's the scene our window is
+    /// attached to, drop our references so the next show() rebuilds
+    /// against the new foreground scene. UIScene notifications post on
+    /// the main thread, so this matches the threading invariants of
+    /// attach/detach.
+    @objc private func handleSceneDisconnect(_ note: Notification) {
+        guard let scene = note.object as? UIWindowScene else { return }
+        if overlayWindow?.windowScene === scene {
+            detach()
+        }
+    }
+
     private func renderText(_ s: PerfSample) -> String {
         let cpuStr = s.cpu > 0 ? String(format: "%.1f%%", s.cpu) : "--"
         let mb = s.rss / 1024.0 / 1024.0
@@ -695,6 +782,24 @@ private final class Overlay: NSObject {
 // main thread because that's the queue UIApplication posts on; Nitro's
 // dispatcher will hop back to the JS thread.
 
+/// 500ms cleanup throttle. UIApplication usually coalesces repeated
+/// didReceiveMemoryWarning posts but doesn't guarantee it; without a
+/// gate, a burst would re-run URLCache.removeAllCachedResponses
+/// (no-op), WK clear (kicks off a redundant async run) and a 100-500ms
+/// malloc zone walk back-to-back. Mirrors Android's emit() dedupe
+/// window in MemoryWarningCenter.kt.
+private let kCleanupDedupSec: Double = 0.5
+
+/// `malloc_zone_pressure_relief(nil, 0)` walks every registered libmalloc
+/// zone and can block 100-500ms on an 800MB+ heap. Hosted off-main on a
+/// userInitiated queue so the OS memory-warning observer chain returns
+/// promptly. File-scope private so all MemoryWarningCenter calls share
+/// the queue.
+private let perfStatsCleanupQueue = DispatchQueue(
+    label: "io.onekey.perfstats.cleanup",
+    qos: .userInitiated
+)
+
 private final class MemoryWarningCenter: NSObject {
     static let shared = MemoryWarningCenter()
 
@@ -704,6 +809,10 @@ private final class MemoryWarningCenter: NSObject {
     private var listeners: [Int: (MemoryWarningEvent) -> Void] = [:]
     private var nextId: Int = 1
     private var observed = false
+    /// Monotonic seconds of the last cleanup run, guarded by `lock`.
+    /// Survives the process lifetime to honour the dedup window across
+    /// rapid back-to-back memory warnings.
+    private var lastCleanupSec: Double = 0
 
     func add(callback: @escaping (MemoryWarningEvent) -> Void) -> Int {
         lock.lock()
@@ -747,21 +856,21 @@ private final class MemoryWarningCenter: NSObject {
             event.rss / 1024.0 / 1024.0
         ))
 
-        // Native cleanup BEFORE notifying JS. JS handlers (jotai cache
-        // purge, WS disconnect, etc.) come right after on the JS thread;
-        // running these native reclaims first means by the time JS sees
-        // the event, page-level memory is already lower.
-        performNativeCleanup()
+        // Throttle native cleanup but never the JS notification: the OS
+        // can post a second warning within milliseconds of the first
+        // (UIApplication "usually coalesces" — not guaranteed), and the
+        // second one's URLCache + WK + malloc relief would all be
+        // redundant work. JS handlers still get every signal because
+        // they may want to know the pressure persists even after a
+        // skipped cleanup.
+        let nowSec = monotonicSec()
+        lock.lock()
+        let shouldClean = nowSec - lastCleanupSec >= kCleanupDedupSec
+        if shouldClean { lastCleanupSec = nowSec }
+        lock.unlock()
 
-        let rssAfter = Sampler.shared.residentBytesPublic()
-        let deltaMB = (Double(rssBefore) - Double(rssAfter)) / 1024.0 / 1024.0
-        if deltaMB > 0.5 {
-            OneKeyLog.warn(kTag, String(
-                format: "Native cleanup reclaimed %.1f MB (RSS %.1f → %.1f)",
-                deltaMB,
-                Double(rssBefore) / 1024.0 / 1024.0,
-                Double(rssAfter) / 1024.0 / 1024.0
-            ))
+        if shouldClean {
+            performNativeCleanup(rssBefore: rssBefore)
         }
 
         lock.lock()
@@ -774,23 +883,34 @@ private final class MemoryWarningCenter: NSObject {
     ///
     /// 1. `URLCache.shared.removeAllCachedResponses()` — drops the
     ///    process-wide HTTP response cache (CFNetwork). Empirically the
-    ///    largest single non-WebView pool, often 50–200 MB. Cheap and
-    ///    transparent to app code; the next request just goes to the
-    ///    network.
-    /// 2. `WKWebsiteDataStore.removeData(...)` for memory + disk + offline
-    ///    caches only. Excludes cookies / localStorage / IndexedDB so
-    ///    in-WebView auth (TradingView, etc.) survives. Asynchronous;
-    ///    fire-and-forget.
-    /// 3. `malloc_zone_pressure_relief(nil, 0)` — asks libmalloc to walk
-    ///    every registered zone and return free pages to the kernel.
-    ///    This is the only API that actually drops `phys_footprint`;
-    ///    the previous two reduce allocator usage but pages stay mapped
-    ///    until pressure relief runs.
-    private func performNativeCleanup() {
+    ///    largest single non-WebView pool, often 50–200 MB. **Note:**
+    ///    this is process-wide, so any code path relying on URLCache
+    ///    for offline content (some image libraries, default
+    ///    URLSessionConfiguration) loses its cached responses; the
+    ///    next request goes to network. Synchronous, ~few ms.
+    /// 2. `WKWebsiteDataStore.removeData(...)` for HTTP caches and the
+    ///    AppCache/ServiceWorker store. Excludes cookies / localStorage
+    ///    / IndexedDB so in-WebView auth survives. **AppCache and
+    ///    Service Worker registrations ARE in scope** — PWAs that rely
+    ///    on a Service Worker for offline fallback will lose that until
+    ///    the SW re-registers on next navigation. Asynchronous, runs on
+    ///    a WebKit private queue; the reclaim is not visible in the
+    ///    rssBefore/rssAfter delta logged below.
+    /// 3. `malloc_zone_pressure_relief(nil, 0)` — asks libmalloc to
+    ///    walk every registered zone and return free pages to the
+    ///    kernel. This is the only API that actually drops
+    ///    `phys_footprint`; the previous two reduce allocator usage but
+    ///    pages stay mapped until pressure relief runs. **Can block
+    ///    100-500ms on a heap of 800MB+**, so it's dispatched to a
+    ///    background queue.
+    ///
+    /// - parameter rssBefore: baseline for the reclaim-delta log. Pass
+    ///   non-nil from the memory-warning path so the bg-dispatched
+    ///   `OneKeyLog.warn` shows "before/after"; pass nil for caller-
+    ///   initiated cleanups (`cleanupNativeCaches`) to skip the log.
+    func performNativeCleanup(rssBefore: UInt64? = nil) {
         URLCache.shared.removeAllCachedResponses()
 
-        // Caches only — never auth/state. The set is hand-picked so a
-        // logged-in DApp / TradingView doesn't get bounced.
         let cacheTypes: Set<String> = [
             WKWebsiteDataTypeMemoryCache,
             WKWebsiteDataTypeDiskCache,
@@ -802,9 +922,31 @@ private final class MemoryWarningCenter: NSObject {
             completionHandler: {}
         )
 
-        // Must run last: the two clears above free objects in the
-        // allocator's free lists; pressure-relief is what gives those
-        // pages back to the kernel.
-        malloc_zone_pressure_relief(nil, 0)
+        perfStatsCleanupQueue.async {
+            malloc_zone_pressure_relief(nil, 0)
+            guard let before = rssBefore else { return }
+            let rssAfter = Sampler.shared.residentBytesPublic()
+            let deltaMB = (Double(before) - Double(rssAfter)) / 1024.0 / 1024.0
+            if deltaMB > 0.5 {
+                OneKeyLog.warn(kTag, String(
+                    format: "Native cleanup reclaimed %.1f MB (RSS %.1f → %.1f, " +
+                            "excludes WK async reclaim which completes later)",
+                    deltaMB,
+                    Double(before) / 1024.0 / 1024.0,
+                    Double(rssAfter) / 1024.0 / 1024.0
+                ))
+            }
+        }
+    }
+
+    /// Local monotonic helper. `Sampler.monotonicSec` is private; rather
+    /// than widening its visibility for one caller, we inline the same
+    /// `clock_gettime(CLOCK_MONOTONIC)` lookup here.
+    private func monotonicSec() -> Double {
+        var ts = timespec()
+        if clock_gettime(CLOCK_MONOTONIC, &ts) != 0 {
+            return Date().timeIntervalSince1970
+        }
+        return Double(ts.tv_sec) + Double(ts.tv_nsec) / 1_000_000_000.0
     }
 }

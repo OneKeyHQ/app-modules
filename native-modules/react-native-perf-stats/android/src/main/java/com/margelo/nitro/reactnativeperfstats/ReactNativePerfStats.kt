@@ -3,6 +3,7 @@ package com.margelo.nitro.reactnativeperfstats
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
+import android.content.ComponentCallbacks
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.res.Configuration
@@ -85,7 +86,9 @@ class ReactNativePerfStats : HybridReactNativePerfStatsSpec() {
 
     override fun sample(): Promise<PerfSample> {
         return Promise.async {
-            Sampler.takeSample()
+            // recordBaseline=false: one-shot reads must not write the
+            // CPU baseline used by the periodic tick. See takeSample.
+            Sampler.takeSample(recordBaseline = false)
         }
     }
 
@@ -104,6 +107,13 @@ class ReactNativePerfStats : HybridReactNativePerfStatsSpec() {
 
     override fun removeMemoryWarningListener(id: Double) {
         MemoryWarningCenter.remove(id.toLong())
+    }
+
+    override fun cleanupNativeCaches() {
+        // Same hint that the LOW / CRITICAL warning path runs. ART may
+        // ignore Runtime.gc() at low pressure, but the cost of asking
+        // is negligible.
+        MemoryWarningCenter.performNativeCleanup()
     }
 }
 
@@ -170,6 +180,20 @@ private object Sampler {
                 }
                 return
             }
+            // Cold-start path: reset CPU baseline now, before any tick is
+            // scheduled. Doing it here rather than in stop() is the only
+            // race-free option — stop()'s `quitSafely` doesn't synchronously
+            // drain a tick whose `active` check already passed, so a
+            // reset in stop() can be silently undone by that in-flight
+            // tick writing its captured cpuTicks back into lastCpuTicks.
+            // takeSample() called from one-shot sample() (recordBaseline
+            // = false) also wouldn't be able to clobber this, so the
+            // first periodic tick after start() always begins from a
+            // clean slate.
+            synchronized(lock) {
+                lastCpuTicks = -1L
+                lastMonoNs = -1L
+            }
             if (handler == null) {
                 val ht = HandlerThread("PerfStatsSampler").apply { start() }
                 handlerThread = ht
@@ -193,15 +217,11 @@ private object Sampler {
             handler = null
             lastUiFps = 0.0
         }
-        // CPU baseline lives under `lock` (not schedulerLock) — reset it
-        // here so the first tick after a future start() doesn't compute
-        // dCpu/dWall over the stop gap and report a stale multi-minute
-        // average. takeSample()'s guard then returns 0 for the first
-        // post-restart sample, matching cold-start semantics.
-        synchronized(lock) {
-            lastCpuTicks = -1L
-            lastMonoNs = -1L
-        }
+        // No CPU baseline reset here on purpose: an in-flight tick that
+        // already passed the `active` check would race with us and write
+        // its captured cpuTicks back, undoing the reset. start() resets
+        // on its cold-start path instead, where no sampler thread is
+        // running yet.
         UiFpsMonitor.stop()
         Overlay.hide()
     }
@@ -326,7 +346,15 @@ private object Sampler {
      *  to each emitted event. Safe to call from any thread. */
     fun residentBytesPublic(): Long = readResidentBytes()
 
-    fun takeSample(): PerfSample {
+    /**
+     * @param recordBaseline true for periodic ticks (the next sample's
+     *   delta is computed against this read). false for one-shot
+     *   sample() calls so they don't pollute the periodic CPU% baseline
+     *   — between stop() and start(), or between two periodic ticks,
+     *   a sample() would otherwise insert a new baseline that the next
+     *   periodic tick reads, producing a CPU% covering the gap.
+     */
+    fun takeSample(recordBaseline: Boolean = true): PerfSample {
         val nowMonoNs = System.nanoTime()
         val cpuTicks = readProcessCpuTicks()
         val rssBytes = readResidentBytes()
@@ -345,7 +373,7 @@ private object Sampler {
                     cpuPct = (cpuSec / wallSec) * 100.0
                 }
             }
-            if (cpuTicks != null) {
+            if (recordBaseline && cpuTicks != null) {
                 lastCpuTicks = cpuTicks
                 lastMonoNs = nowMonoNs
             }
@@ -545,11 +573,27 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
     @Volatile private var posX: Int = -1
     @Volatile private var posY: Int = -1
 
+    // Configuration callback for rotation / split-screen / foldable
+    // size changes. Activities declaring android:configChanges (a common
+    // optimization in RN apps) don't re-create on rotation, so
+    // attachIfPossible's posted clamp never re-runs — handle it here.
+    private val configCallbacks = object : ComponentCallbacks {
+        override fun onConfigurationChanged(newConfig: Configuration) {
+            val view = overlayView ?: return
+            mainHandler.post { clampOverlayToWindow(view) }
+        }
+        override fun onLowMemory() {
+            // No-op. Memory pressure is handled by MemoryWarningCenter
+            // via ComponentCallbacks2 on a separate registration.
+        }
+    }
+
     /** Called from PerfStatsInitProvider at process start so we never miss
      *  the launcher Activity's onResumed event. */
     fun bootstrap(app: Application) {
         if (registered) return
         app.registerActivityLifecycleCallbacks(this)
+        app.registerComponentCallbacks(configCallbacks)
         registered = true
     }
 
@@ -598,6 +642,7 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
             return
         }
         app.registerActivityLifecycleCallbacks(this)
+        app.registerComponentCallbacks(configCallbacks)
         registered = true
     }
 
@@ -933,15 +978,19 @@ internal object MemoryWarningCenter : ComponentCallbacks2 {
         //   process-wide shared instance to drop, so we leave that to JS-
         //   side subscribers that own their clients.
         // - WebView cache clearing needs a WebView instance; defer to JS.
-        if (level == MemoryWarningLevel.CRITICAL) {
-            performNativeCleanup()
-        }
+        //
+        // Fires on both LOW and CRITICAL: iOS triggers cleanup on every
+        // warning (there's only one level), and JS handlers reasonably
+        // assume "native already attempted a reclaim before this event"
+        // across platforms. Runtime.gc() is a hint anyway, so even when
+        // ART ignores it on LOW the cost is negligible.
+        performNativeCleanup()
 
         val snapshot = synchronized(lock) { listeners.values.toList() }
         for (cb in snapshot) cb(event)
     }
 
-    private fun performNativeCleanup() {
+    internal fun performNativeCleanup() {
         // Hint to ART; safe to call from main, returns quickly. ART may
         // ignore under low pressure but under TRIM_MEMORY_RUNNING_CRITICAL
         // it generally promotes to a concurrent collection.
