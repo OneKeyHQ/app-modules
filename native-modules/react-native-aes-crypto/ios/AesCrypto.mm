@@ -1,9 +1,48 @@
 #import "AesCrypto.h"
+#import "AesCrypto-Swift.h"
 #import <CommonCrypto/CommonCryptor.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <CommonCrypto/CommonHMAC.h>
 #import <CommonCrypto/CommonKeyDerivation.h>
 #import <Security/Security.h>
+#import <limits.h>
+#import <math.h>
+
+// Reject empty string / non-positive numeric arguments at every native
+// entry point. An empty hex string is almost always an upstream bug —
+// forgotten parameter, miswired AAD, truncated input. Fail loudly here
+// instead of silently feeding zero-length bytes into the cipher layer.
+#define ONEKEY_AES_REQUIRE_NON_EMPTY(value, method, paramName, reject) \
+    do { \
+        if ((value) == nil || [(value) length] == 0) { \
+            (reject)(@"-1", \
+                     [NSString stringWithFormat:@"%@: %@ must not be empty", \
+                                                (method), (paramName)], \
+                     nil); \
+            return; \
+        } \
+    } while (0)
+
+// Numeric arguments arrive as `double` from the JS bridge. A plain `<= 0`
+// check lets NaN, Infinity, and fractional values slip through (NaN compares
+// false against every value, and 1.5 would later cast to 1). This guard
+// rejects all of those — and anything larger than INT_MAX — up front so
+// callers cannot smuggle a malformed numeric into a buffer allocation or
+// KDF iteration count.
+#define ONEKEY_AES_REQUIRE_POSITIVE(value, method, paramName, reject) \
+    do { \
+        double _onekeyAesValue = (double)(value); \
+        if (!isfinite(_onekeyAesValue) \
+            || _onekeyAesValue <= 0.0 \
+            || _onekeyAesValue != floor(_onekeyAesValue) \
+            || _onekeyAesValue > (double)INT_MAX) { \
+            (reject)(@"-1", \
+                     [NSString stringWithFormat:@"%@: %@ must be a positive finite integer (<= %d)", \
+                                                (method), (paramName), INT_MAX], \
+                     nil); \
+            return; \
+        } \
+    } while (0)
 
 // ---------------------------------------------------------------------------
 // MARK: - Internal helpers
@@ -155,6 +194,10 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(data, @"encrypt", @"data", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"encrypt", @"key", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(iv, @"encrypt", @"iv", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(algorithm, @"encrypt", @"algorithm", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *inputData = fromHex(data);
@@ -165,12 +208,12 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                 result = aesCBC(@"encrypt", inputData, key, iv, algorithm);
             }
             if (result == nil) {
-                reject(@"encrypt_fail", @"Encrypt error", nil);
+                reject(@"-1", @"Encrypt error", nil);
             } else {
                 resolve(toHex(result));
             }
         } @catch (NSException *exception) {
-            reject(@"encrypt_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -184,6 +227,10 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(base64, @"decrypt", @"ciphertext", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"decrypt", @"key", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(iv, @"decrypt", @"iv", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(algorithm, @"decrypt", @"algorithm", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *inputData = fromHex(base64);
@@ -194,12 +241,71 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                 result = aesCBC(@"decrypt", inputData, key, iv, algorithm);
             }
             if (result == nil) {
-                reject(@"decrypt_fail", @"Decrypt failed", nil);
+                reject(@"-1", @"Decrypt failed", nil);
             } else {
                 resolve(toHex(result));
             }
         } @catch (NSException *exception) {
-            reject(@"decrypt_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
+        }
+    });
+}
+
+// MARK: - aesGcmEncrypt
+
+- (void)aesGcmEncrypt:(NSString *)data
+                  key:(NSString *)key
+                nonce:(NSString *)nonce
+                  aad:(NSString *)aad
+              resolve:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject
+{
+    // `data` is intentionally NOT required to be non-empty: empty plaintext
+    // is a legitimate AEAD operation that yields the 16-byte auth tag.
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"aesGcmEncrypt", @"key", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(nonce, @"aesGcmEncrypt", @"nonce", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(aad, @"aesGcmEncrypt", @"aad", reject);
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        @try {
+            NSError *error = nil;
+            NSString *result = [AesCryptoGcm encryptWithDataHex:data keyHex:key nonceHex:nonce aadHex:aad error:&error];
+            if (result == nil) {
+                reject(@"-1", error.localizedDescription ?: @"AES-GCM encrypt error", error);
+            } else {
+                resolve(result);
+            }
+        } @catch (NSException *exception) {
+            reject(@"-1", exception.reason, nil);
+        }
+    });
+}
+
+// MARK: - aesGcmDecrypt
+
+- (void)aesGcmDecrypt:(NSString *)ciphertextWithTag
+                  key:(NSString *)key
+                nonce:(NSString *)nonce
+                  aad:(NSString *)aad
+              resolve:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject
+{
+    // `ciphertextWithTag` is intentionally NOT required to be non-empty
+    // here — the Swift impl enforces a stronger `>= 16 bytes` guard which
+    // already covers the empty / truncated cases.
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"aesGcmDecrypt", @"key", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(nonce, @"aesGcmDecrypt", @"nonce", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(aad, @"aesGcmDecrypt", @"aad", reject);
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        @try {
+            NSError *error = nil;
+            NSString *result = [AesCryptoGcm decryptWithCiphertextWithTagHex:ciphertextWithTag keyHex:key nonceHex:nonce aadHex:aad error:&error];
+            if (result == nil) {
+                reject(@"-1", error.localizedDescription ?: @"AES-GCM decrypt failed", error);
+            } else {
+                resolve(result);
+            }
+        } @catch (NSException *exception) {
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -214,6 +320,11 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(password, @"pbkdf2", @"password", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(salt, @"pbkdf2", @"salt", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(algorithm, @"pbkdf2", @"algorithm", reject);
+    ONEKEY_AES_REQUIRE_POSITIVE(cost, @"pbkdf2", @"cost", reject);
+    ONEKEY_AES_REQUIRE_POSITIVE(length, @"pbkdf2", @"length", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *passwordData = fromHex(password);
@@ -241,12 +352,12 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                 (uint8_t *)hashKeyData.mutableBytes, hashKeyData.length);
 
             if (status == kCCParamError) {
-                reject(@"keygen_fail", @"Key derivation parameter error", nil);
+                reject(@"-1", @"Key derivation parameter error", nil);
             } else {
                 resolve(toHex(hashKeyData));
             }
         } @catch (NSException *exception) {
-            reject(@"keygen_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -258,13 +369,15 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(base64, @"hmac256", @"data", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"hmac256", @"key", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *keyData   = fromHex(key);
             NSData *inputData = fromHex(base64);
             void *buffer = malloc(CC_SHA256_DIGEST_LENGTH);
             if (!buffer) {
-                reject(@"hmac_fail", @"Memory allocation error", nil);
+                reject(@"-1", @"Memory allocation error", nil);
                 return;
             }
             CCHmac(kCCHmacAlgSHA256,
@@ -276,7 +389,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                                             freeWhenDone:YES];
             resolve(toHex(result));
         } @catch (NSException *exception) {
-            reject(@"hmac_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -288,13 +401,15 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(base64, @"hmac512", @"data", reject);
+    ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"hmac512", @"key", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *keyData   = fromHex(key);
             NSData *inputData = fromHex(base64);
             void *buffer = malloc(CC_SHA512_DIGEST_LENGTH);
             if (!buffer) {
-                reject(@"hmac_fail", @"Memory allocation error", nil);
+                reject(@"-1", @"Memory allocation error", nil);
                 return;
             }
             CCHmac(kCCHmacAlgSHA512,
@@ -306,7 +421,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                                             freeWhenDone:YES];
             resolve(toHex(result));
         } @catch (NSException *exception) {
-            reject(@"hmac_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -317,6 +432,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
      resolve:(RCTPromiseResolveBlock)resolve
       reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(text, @"sha1", @"text", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *inputData = fromHex(text);
@@ -324,7 +440,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             CC_SHA1((const void *)inputData.bytes, (CC_LONG)inputData.length, (unsigned char *)result.mutableBytes);
             resolve(toHex(result));
         } @catch (NSException *exception) {
-            reject(@"sha1_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -335,12 +451,13 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
        resolve:(RCTPromiseResolveBlock)resolve
         reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(text, @"sha256", @"text", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *inputData = fromHex(text);
             unsigned char *buffer = (unsigned char *)malloc(CC_SHA256_DIGEST_LENGTH);
             if (!buffer) {
-                reject(@"sha256_fail", @"Memory allocation error", nil);
+                reject(@"-1", @"Memory allocation error", nil);
                 return;
             }
             CC_SHA256((const void *)inputData.bytes, (CC_LONG)inputData.length, buffer);
@@ -349,7 +466,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                                             freeWhenDone:YES];
             resolve(toHex(result));
         } @catch (NSException *exception) {
-            reject(@"sha256_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -360,12 +477,13 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
        resolve:(RCTPromiseResolveBlock)resolve
         reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_NON_EMPTY(text, @"sha512", @"text", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSData *inputData = fromHex(text);
             unsigned char *buffer = (unsigned char *)malloc(CC_SHA512_DIGEST_LENGTH);
             if (!buffer) {
-                reject(@"sha512_fail", @"Memory allocation error", nil);
+                reject(@"-1", @"Memory allocation error", nil);
                 return;
             }
             CC_SHA512((const void *)inputData.bytes, (CC_LONG)inputData.length, buffer);
@@ -374,7 +492,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                                             freeWhenDone:YES];
             resolve(toHex(result));
         } @catch (NSException *exception) {
-            reject(@"sha512_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -389,7 +507,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             NSString *uuid = [[NSUUID UUID] UUIDString];
             resolve(uuid);
         } @catch (NSException *exception) {
-            reject(@"uuid_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -400,18 +518,19 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
           resolve:(RCTPromiseResolveBlock)resolve
            reject:(RCTPromiseRejectBlock)reject
 {
+    ONEKEY_AES_REQUIRE_POSITIVE(length, @"randomKey", @"length", reject);
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @try {
             NSUInteger len = (NSUInteger)length;
             NSMutableData *data = [NSMutableData dataWithLength:len];
             int result = SecRandomCopyBytes(kSecRandomDefault, len, data.mutableBytes);
             if (result != errSecSuccess) {
-                reject(@"random_fail", @"Random key generation error", nil);
+                reject(@"-1", @"Random key generation error", nil);
             } else {
                 resolve(toHex(data));
             }
         } @catch (NSException *exception) {
-            reject(@"random_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
