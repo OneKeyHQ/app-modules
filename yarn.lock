@@ -2993,7 +2993,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-bundle-update": ">=3.0.31"
+    "@onekeyfe/react-native-bundle-update": "*"
     react: "*"
     react-native: "*"
   languageName: unknown
@@ -3619,7 +3619,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-bundle-update": ">=3.0.31"
+    "@onekeyfe/react-native-bundle-update": ">=3.0.33"
     react: "*"
     react-native: "*"
   languageName: unknown

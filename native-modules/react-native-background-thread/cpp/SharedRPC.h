@@ -1,6 +1,7 @@
 #pragma once
 
 #include <jsi/jsi.h>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -22,6 +23,11 @@ struct RuntimeListener {
   jsi::Runtime *runtime;
   RPCRuntimeExecutor executor;
   std::shared_ptr<jsi::Function> callback; // JS onWrite callback
+  // Liveness flag, shared with any executor lambda already in flight.
+  // Flipped to false by invalidate() (or by a follow-up install() that
+  // replaces this listener) so notifyOtherRuntime and any already-enqueued
+  // lambda can short-circuit before touching a torn-down runtime.
+  std::shared_ptr<std::atomic<bool>> alive;
 };
 
 class SharedRPC : public jsi::HostObject {
@@ -36,6 +42,14 @@ public:
   /// runtimeId should be "main" or "background" — used for dedup on reload.
   static void install(jsi::Runtime &rt, RPCRuntimeExecutor executor,
                       const std::string &runtimeId);
+
+  /// Synchronously quiesce the listener for runtimeId before the underlying
+  /// JS runtime is torn down. Marks alive=false (so any executor lambda
+  /// already in flight short-circuits), leaks the jsi::Function callback
+  /// (destroying it on a wrong/dying thread crashes), and clears the
+  /// executor closure (drops the lambda's captured RCTInstance/CallInvoker).
+  /// Safe to call from any thread. Returns true if a listener was found.
+  static bool invalidate(const std::string &runtimeId);
 
   static void reset();
 

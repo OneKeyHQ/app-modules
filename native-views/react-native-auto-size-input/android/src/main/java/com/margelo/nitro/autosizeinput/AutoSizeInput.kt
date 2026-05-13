@@ -5,6 +5,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Looper
 import android.text.Editable
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
@@ -753,16 +754,36 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
 
   // MARK: - Methods
 
+  // Nitro hybrid view methods may be invoked off the UI thread. Android view
+  // operations (`requestFocus` / `clearFocus`) and `InputMethodManager` calls
+  // must run on the view's looper — otherwise we hit
+  // `CalledFromWrongThreadException`. `View.post` is thread-safe and queues
+  // onto the main looper.
+  private fun runOnViewThread(action: () -> Unit) {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+      action()
+    } else {
+      inputView.post {
+        if (isDisposed) return@post
+        action()
+      }
+    }
+  }
+
   override fun focus() {
     if (isDisposed) return
-    requestInputFocus()
+    runOnViewThread {
+      requestInputFocus()
+    }
   }
 
   override fun blur() {
     if (isDisposed) return
-    inputView.clearFocus()
-    val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-    imm?.hideSoftInputFromWindow(inputView.windowToken, 0)
+    runOnViewThread {
+      inputView.clearFocus()
+      val imm = context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+      imm?.hideSoftInputFromWindow(inputView.windowToken, 0)
+    }
   }
 
   // MARK: - Helpers

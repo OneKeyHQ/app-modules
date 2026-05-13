@@ -45,6 +45,22 @@
     }];
 }
 
+- (void)restart:(NSString *)mode
+         reason:(NSString *)reason
+        resolve:(RCTPromiseResolveBlock)resolve
+         reject:(RCTPromiseRejectBlock)reject {
+    BackgroundThreadManager *manager = [BackgroundThreadManager sharedInstance];
+    [manager restartWithMode:mode
+                      reason:reason
+                  completion:^(NSError * _Nullable error) {
+        if (error) {
+            reject(@"BG_RESTART_ERROR", error.localizedDescription, error);
+        } else {
+            resolve(nil);
+        }
+    }];
+}
+
 + (NSString *)moduleName
 {
   return @"BackgroundThread";

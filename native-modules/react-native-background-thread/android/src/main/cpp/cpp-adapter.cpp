@@ -586,6 +586,28 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeSetupErrorHandler(
     }
 }
 
+// ── nativeInvalidateSharedRpc ───────────────────────────────────────────
+// Synchronously quiesce the SharedRPC listener for a given runtimeId before
+// the underlying JS runtime is torn down. Called from
+// BackgroundThreadManager.restart() ahead of process restart / soft reload
+// so any cross-runtime executor lambda still in flight short-circuits
+// instead of dispatching onto a dying runtime (parity with iOS).
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_backgroundthread_BackgroundThreadManager_nativeInvalidateSharedRpc(
+    JNIEnv *env, jobject thiz, jstring runtimeId) {
+
+    const char *idChars = env->GetStringUTFChars(runtimeId, nullptr);
+    if (!idChars) {
+        return JNI_FALSE;
+    }
+    std::string id(idChars);
+    env->ReleaseStringUTFChars(runtimeId, idChars);
+
+    bool found = SharedRPC::invalidate(id);
+    LOGI("nativeInvalidateSharedRpc: id=%s found=%d", id.c_str(), found ? 1 : 0);
+    return found ? JNI_TRUE : JNI_FALSE;
+}
+
 // ── nativeDestroy ───────────────────────────────────────────────────────
 // Clean up native resources.
 // Called from BackgroundThreadManager.destroy().

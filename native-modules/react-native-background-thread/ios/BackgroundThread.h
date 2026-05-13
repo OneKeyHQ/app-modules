@@ -9,5 +9,9 @@
                            path:(NSString *)path
                         resolve:(RCTPromiseResolveBlock)resolve
                          reject:(RCTPromiseRejectBlock)reject;
+- (void)restart:(NSString *)mode
+         reason:(NSString *)reason
+        resolve:(RCTPromiseResolveBlock)resolve
+         reject:(RCTPromiseRejectBlock)reject;
 
 @end

@@ -38,4 +38,8 @@ class BackgroundThreadModule(reactContext: ReactApplicationContext) :
                 }
             }
     }
+
+    override fun restart(mode: String, reason: String, promise: Promise) {
+        BackgroundThreadManager.getInstance().restart(reactApplicationContext, mode, reason, promise)
+    }
 }

@@ -7,7 +7,6 @@ export interface ISharedRPC {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var sharedRPC: ISharedRPC | undefined;
 }
 
