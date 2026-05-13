@@ -2,6 +2,10 @@ import NativeAesCrypto from './NativeAesCrypto';
 
 export const encrypt = NativeAesCrypto.encrypt.bind(NativeAesCrypto);
 export const decrypt = NativeAesCrypto.decrypt.bind(NativeAesCrypto);
+export const aesGcmEncrypt =
+  NativeAesCrypto.aesGcmEncrypt.bind(NativeAesCrypto);
+export const aesGcmDecrypt =
+  NativeAesCrypto.aesGcmDecrypt.bind(NativeAesCrypto);
 export const pbkdf2 = NativeAesCrypto.pbkdf2.bind(NativeAesCrypto);
 export const hmac256 = NativeAesCrypto.hmac256.bind(NativeAesCrypto);
 export const hmac512 = NativeAesCrypto.hmac512.bind(NativeAesCrypto);

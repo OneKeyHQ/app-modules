@@ -1,3 +1,4 @@
+#ifdef __cplusplus
 #import <AesCryptoSpec/AesCryptoSpec.h>
 
 @interface AesCrypto : NativeAesCryptoSpecBase <NativeAesCryptoSpec>
@@ -15,6 +16,20 @@
       algorithm:(NSString *)algorithm
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject;
+
+- (void)aesGcmEncrypt:(NSString *)data
+                  key:(NSString *)key
+                nonce:(NSString *)nonce
+                  aad:(NSString *)aad
+              resolve:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject;
+
+- (void)aesGcmDecrypt:(NSString *)ciphertextWithTag
+                  key:(NSString *)key
+                nonce:(NSString *)nonce
+                  aad:(NSString *)aad
+              resolve:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject;
 
 - (void)pbkdf2:(NSString *)password
            salt:(NSString *)salt
@@ -54,3 +69,4 @@
            reject:(RCTPromiseRejectBlock)reject;
 
 @end
+#endif

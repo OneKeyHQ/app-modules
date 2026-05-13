@@ -14,6 +14,8 @@ export interface Spec extends TurboModule {
     iv: string,
     algorithm: string,
   ): Promise<string>;
+  aesGcmEncrypt(data: string, key: string, nonce: string, aad: string): Promise<string>;
+  aesGcmDecrypt(ciphertextWithTag: string, key: string, nonce: string, aad: string): Promise<string>;
   pbkdf2(
     password: string,
     salt: string,

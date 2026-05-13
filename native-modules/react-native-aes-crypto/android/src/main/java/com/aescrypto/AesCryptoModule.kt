@@ -9,6 +9,7 @@ import java.security.SecureRandom
 import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.Mac
+import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import org.spongycastle.crypto.Digest
@@ -31,6 +32,8 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
         const val NAME = "AesCrypto"
         private const val CIPHER_CBC_ALGORITHM = "AES/CBC/PKCS7Padding"
         private const val CIPHER_CTR_ALGORITHM = "AES/CTR/PKCS5Padding"
+        private const val CIPHER_GCM_ALGORITHM = "AES/GCM/NoPadding"
+        private const val GCM_AUTH_TAG_LENGTH_BITS = 128
         private const val HMAC_SHA_256 = "HmacSHA256"
         private const val HMAC_SHA_512 = "HmacSHA512"
         private const val KEY_ALGORITHM = "AES"
@@ -66,6 +69,24 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
         try {
             val cipherAlgorithm = if (algorithm.lowercase().contains("cbc")) CIPHER_CBC_ALGORITHM else CIPHER_CTR_ALGORITHM
             val result = decryptImpl(base64, key, iv, cipherAlgorithm)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
+    }
+
+    override fun aesGcmEncrypt(data: String, key: String, nonce: String, aad: String, promise: Promise) {
+        try {
+            val result = aesGcmEncryptImpl(data, key, nonce, aad)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            promise.reject("-1", e.message)
+        }
+    }
+
+    override fun aesGcmDecrypt(ciphertextWithTag: String, key: String, nonce: String, aad: String, promise: Promise) {
+        try {
+            val result = aesGcmDecryptImpl(ciphertextWithTag, key, nonce, aad)
             promise.resolve(result)
         } catch (e: Exception) {
             promise.reject("-1", e.message)
@@ -196,5 +217,31 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
         cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec)
         val decrypted = cipher.doFinal(Hex.decode(ciphertext))
         return bytesToHex(decrypted)
+    }
+
+    private fun aesGcmEncryptImpl(text: String, hexKey: String, hexNonce: String, aad: String?): String {
+        if (text.isEmpty()) return ""
+
+        val secretKey = SecretKeySpec(Hex.decode(hexKey), KEY_ALGORITHM)
+        val cipher = Cipher.getInstance(CIPHER_GCM_ALGORITHM)
+        val gcmSpec = GCMParameterSpec(GCM_AUTH_TAG_LENGTH_BITS, Hex.decode(hexNonce))
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec)
+        if (!aad.isNullOrEmpty()) {
+            cipher.updateAAD(Hex.decode(aad))
+        }
+        return bytesToHex(cipher.doFinal(Hex.decode(text)))
+    }
+
+    private fun aesGcmDecryptImpl(ciphertextWithTag: String, hexKey: String, hexNonce: String, aad: String?): String {
+        if (ciphertextWithTag.isEmpty()) return ""
+
+        val secretKey = SecretKeySpec(Hex.decode(hexKey), KEY_ALGORITHM)
+        val cipher = Cipher.getInstance(CIPHER_GCM_ALGORITHM)
+        val gcmSpec = GCMParameterSpec(GCM_AUTH_TAG_LENGTH_BITS, Hex.decode(hexNonce))
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, gcmSpec)
+        if (!aad.isNullOrEmpty()) {
+            cipher.updateAAD(Hex.decode(aad))
+        }
+        return bytesToHex(cipher.doFinal(Hex.decode(ciphertextWithTag)))
     }
 }

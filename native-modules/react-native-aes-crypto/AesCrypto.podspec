@@ -15,7 +15,10 @@ Pod::Spec.new do |s|
 
   s.source_files = "ios/**/*.{h,m,mm,swift}"
 
-  s.frameworks = 'Security'
+  s.frameworks = ['Security', 'CryptoKit']
+  s.pod_target_xcconfig = {
+    'SWIFT_ENABLE_EXPLICIT_MODULES' => 'NO'
+  }
 
   install_modules_dependencies(s)
 end

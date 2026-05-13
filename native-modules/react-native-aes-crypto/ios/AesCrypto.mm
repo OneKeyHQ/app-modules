@@ -1,4 +1,5 @@
 #import "AesCrypto.h"
+#import "AesCrypto-Swift.h"
 #import <CommonCrypto/CommonCryptor.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <CommonCrypto/CommonHMAC.h>
@@ -200,6 +201,54 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             }
         } @catch (NSException *exception) {
             reject(@"decrypt_fail", exception.reason, nil);
+        }
+    });
+}
+
+// MARK: - aesGcmEncrypt
+
+- (void)aesGcmEncrypt:(NSString *)data
+                  key:(NSString *)key
+                nonce:(NSString *)nonce
+                  aad:(NSString *)aad
+              resolve:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject
+{
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        @try {
+            NSError *error = nil;
+            NSString *result = [AesCryptoGcm encryptWithDataHex:data keyHex:key nonceHex:nonce aadHex:aad error:&error];
+            if (result == nil) {
+                reject(@"aes_gcm_encrypt_fail", error.localizedDescription ?: @"AES-GCM encrypt error", error);
+            } else {
+                resolve(result);
+            }
+        } @catch (NSException *exception) {
+            reject(@"aes_gcm_encrypt_fail", exception.reason, nil);
+        }
+    });
+}
+
+// MARK: - aesGcmDecrypt
+
+- (void)aesGcmDecrypt:(NSString *)ciphertextWithTag
+                  key:(NSString *)key
+                nonce:(NSString *)nonce
+                  aad:(NSString *)aad
+              resolve:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject
+{
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        @try {
+            NSError *error = nil;
+            NSString *result = [AesCryptoGcm decryptWithCiphertextWithTagHex:ciphertextWithTag keyHex:key nonceHex:nonce aadHex:aad error:&error];
+            if (result == nil) {
+                reject(@"aes_gcm_decrypt_fail", error.localizedDescription ?: @"AES-GCM decrypt failed", error);
+            } else {
+                resolve(result);
+            }
+        } @catch (NSException *exception) {
+            reject(@"aes_gcm_decrypt_fail", exception.reason, nil);
         }
     });
 }
