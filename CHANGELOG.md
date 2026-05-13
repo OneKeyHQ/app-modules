@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.35] - 2026-05-13
+
+### Chores
+- Republish: bump all native modules and views to 3.0.35 without code changes, to refresh the published artifacts.
+
+## [3.0.34] - 2026-05-13
+
+### Features
+- **aes-crypto**: Add native AES-GCM `aesGcmEncrypt` / `aesGcmDecrypt` to the TurboModule spec. Both methods take hex-encoded `data` / `ciphertextWithTag`, `key`, `nonce`, and `aad`; encrypt returns hex-encoded `ciphertext || tag` (16-byte authentication tag appended), decrypt verifies the tag and rejects on mismatch. Android implements via `Cipher.getInstance("AES/GCM/NoPadding")` with `GCMParameterSpec(128, nonce)`; iOS implements via CryptoKit `AES.GCM` in a new `AesCryptoGcm.swift` helper bridged from `AesCrypto.mm`. Podspec links `Security` + `CryptoKit` and disables Swift explicit modules to match the existing ObjC++ + Swift bridging setup; `AesCrypto.h` is now guarded with `#ifdef __cplusplus` so the generated `AesCrypto-Swift.h` can import it cleanly.
+
+### Bug Fixes
+- **aes-crypto (Android)**: Preserve GCM auth tag for empty payloads. `aesGcmEncryptImpl` no longer short-circuits on empty plaintext — CryptoKit on iOS still runs `AES.GCM.seal` and returns the 16-byte tag for empty plaintext, so Android must too in order for the two backends to emit the same `ciphertext || tag` shape. `aesGcmDecryptImpl` no longer treats empty input as success; any `ciphertextWithTag` shorter than 16 bytes is rejected with `IllegalArgumentException` (translated to a `-1` promise rejection), matching the iOS `encrypted.count < 16` guard and closing a path where a truncated ciphertext could bypass authentication and silently resolve to `""` on Android.
+- **aes-crypto**: Enforce strict 12-byte (96-bit) GCM nonce on both platforms. Android's `GCMParameterSpec` accepts arbitrary nonce lengths, CryptoKit on iOS effectively does not — non-12-byte nonces silently produced ciphertexts that Android could encrypt but iOS could not decrypt. The bridge layer now decodes nonce hex up front and rejects any length `!= 12` on both platforms with the unified `-1` code.
+- **aes-crypto**: Reject empty / non-positive / non-finite numeric inputs at every entry point. New shared `requireNonEmpty` / `requirePositive` helpers (Android Kotlin companion object, iOS `ONEKEY_AES_REQUIRE_NON_EMPTY` / `_POSITIVE` macros, Swift `AesCryptoGcm` helpers) cover `encrypt` / `decrypt` (data, key, iv, algorithm), `aesGcmEncrypt` / `aesGcmDecrypt` (key, nonce, AAD — empty `data` / `ciphertextWithTag` is still allowed because empty AEAD plaintext is legitimate), `pbkdf2` (password, salt, algorithm; cost and length must be positive), `hmac256` / `hmac512` (data, key), `sha1` / `sha256` / `sha512` (text), `randomKey` (length). The previous `<= 0` numeric check passed `NaN`, `Infinity`, and fractional values straight through (NaN compares false to every value; `1.5` would silently cast to `1`); the new helpers reject non-finite, non-integer, non-positive, and `> INT_MAX` inputs uniformly with the existing `-1` code. AAD is intentionally required to be non-empty even though AEAD permits 0-byte AAD — every production caller already supplies an explicit context binding (v2 envelope header bytes; keyless fixed AAD constants), so rejecting empty AAD catches "forgot to pass AAD" bugs without affecting any current call site.
+- **aes-crypto (iOS)**: Unify rejection codes across the whole module. CBC/CTR encrypt / decrypt, PBKDF2, HMAC, SHA, randomKey, and UUID rejections previously used per-method strings (`encrypt_fail`, `decrypt_fail`, `keygen_fail`, `hmac_fail`, `sha*_fail`, `uuid_fail`, `random_fail`); now all use `"-1"`, matching Android (already uniform) and the GCM path. JS callers only need to handle a single error code across both platforms and all methods.
+- **aes-crypto (iOS)**: `AesCryptoGcmError` now conforms to `LocalizedError` with `errorDescription` populated for `.invalidHex` and `.invalidCiphertext`, so the enum's `NSError` bridge carries the real message instead of Cocoa's default `The operation couldn't be completed. (... error N.)`. The JS reject message is now informative on both platforms.
+- **aes-crypto (Android)**: Remove dead branches in `encryptImpl` / `decryptImpl` and the GCM impls — the unreachable `if (text.isEmpty()) return null`, the `emptyIvSpec` companion, the `if (hexIv == null || hexIv.isEmpty())` fallback, and the `if (aad.isNullOrEmpty())` branch in the GCM impls are all covered by the entry-level `requireNonEmpty` guards. Impl signatures tightened to non-null `hexIv` / `aad: String`.
+
+### Documentation
+- **aes-crypto**: JSDoc on `aesGcmEncrypt` / `aesGcmDecrypt` in `src/index.tsx` spells out the contract (12-byte nonce, non-empty AAD, hex strings throughout, `ciphertext || tag` layout, empty plaintext allowed) so consumers do not have to read native source. Header comments on `AesCrypto.h` explain why the `@interface` lives inside the `#ifdef __cplusplus` block (TurboModule base class is ObjC++-only); `AesCrypto.podspec` explains the `SWIFT_ENABLE_EXPLICIT_MODULES = NO` workaround so future maintainers know it is tied to the ObjC++ + Swift bridging-header conflict rather than a general toolchain pessimisation.
+
+### Chores
+- Bump all packages to 3.0.34. Legacy `fromHex` `strtol` leniency is tracked as follow-up — fixing it requires broadening the change to all CBC/CTR/PBKDF2/HMAC/SHA paths and revalidating against existing fixed-vector tests.
+
 ## [3.0.33] - 2026-05-13
 
 ### Bug Fixes
