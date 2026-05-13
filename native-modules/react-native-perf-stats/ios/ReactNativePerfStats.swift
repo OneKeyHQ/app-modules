@@ -2,9 +2,15 @@ import NitroModules
 import ReactNativeNativeLogger
 import Darwin
 import UIKit
+import WebKit
+// Used for `malloc_zone_pressure_relief(nil, 0)` — see `performNativeCleanup`.
+import Foundation
 
 private let kTag = "PerfStats"
 private let kMinIntervalMs: Double = 200
+// 24 h. The interval feeds DispatchSource.schedule(deadline: .now() + .milliseconds(Int(ms))),
+// and Int(Double) traps on values that don't fit in Int — cap before the cast.
+private let kMaxIntervalMs: Double = 86_400_000
 
 // Anomaly logging thresholds. We only emit a warn after the metric has
 // stayed over the threshold for kAnomalySustainSamples in a row, to
@@ -26,7 +32,12 @@ private let kJsFpsHintTtlSec: Double = 2.0
 class ReactNativePerfStats: HybridReactNativePerfStatsSpec {
 
     func start(intervalMs: Double) throws {
-        Sampler.shared.start(intervalMs: max(intervalMs, kMinIntervalMs))
+        // Sanitise the JS-supplied value: NaN/Inf would trap on Int(...)
+        // inside DispatchSource scheduling, and max(NaN, x) returns NaN
+        // in Swift so the lower-bound clamp below can't catch it.
+        let finite = intervalMs.isFinite ? intervalMs : 1000.0
+        let clamped = min(max(finite, kMinIntervalMs), kMaxIntervalMs)
+        Sampler.shared.start(intervalMs: clamped)
     }
 
     func stop() throws {
@@ -90,9 +101,9 @@ private final class Sampler {
     private var lastUiFpsLogSec: Double = 0
     private var lastJsFpsLogSec: Double = 0
 
-    // Last UI FPS computed by the periodic timer. takeSample() reads this
-    // directly so one-shot sample() calls do not steal frames from the
-    // UiFpsMonitor counter (which is owned by the periodic timer).
+    // Last UI FPS computed by the periodic timer. Guarded by `lock`:
+    // the periodic tick writes from the sampler queue while takeSample()
+    // may read from Nitro's worker queue when called via Promise.async.
     private var lastUiFps: Double = 0
 
     func start(intervalMs ms: Double) {
@@ -122,7 +133,10 @@ private final class Sampler {
                 guard let self = self, self.running else { return }
                 // Refresh cached UI FPS *before* takeSample reads it, so
                 // the value covers exactly the just-elapsed interval.
-                self.lastUiFps = UiFpsMonitor.shared.readAndReset(nowSec: self.monotonicSec())
+                let newUiFps = UiFpsMonitor.shared.readAndReset(nowSec: self.monotonicSec())
+                self.lock.lock()
+                self.lastUiFps = newUiFps
+                self.lock.unlock()
                 let s = self.takeSample()
                 Overlay.shared.update(sample: s)
                 self.checkAnomalyAndLog(sample: s)
@@ -139,7 +153,9 @@ private final class Sampler {
             self.running = false
             self.timer?.cancel()
             self.timer = nil
+            self.lock.lock()
             self.lastUiFps = 0
+            self.lock.unlock()
         }
         UiFpsMonitor.shared.stop()
         Overlay.shared.hide()
@@ -152,6 +168,7 @@ private final class Sampler {
         let nowWallMs = Date().timeIntervalSince1970 * 1000.0
 
         var cpuPct: Double = 0
+        var uiFps: Double = 0
         lock.lock()
         if nowCpu >= 0 && lastCpuSec >= 0 && lastMonoSec > 0 {
             let dCpu = nowCpu - lastCpuSec
@@ -164,12 +181,13 @@ private final class Sampler {
             lastCpuSec = nowCpu
             lastMonoSec = nowMono
         }
+        uiFps = lastUiFps
         lock.unlock()
 
         return PerfSample(
             cpu: cpuPct,
             rss: Double(rssBytes),
-            uiFps: lastUiFps,
+            uiFps: uiFps,
             jsFps: JsFpsHolder.shared.read(nowSec: nowMono),
             timestamp: nowWallMs
         )
@@ -464,16 +482,19 @@ private final class Overlay: NSObject {
 
     private var label: UILabel?
     private var overlayWindow: UIWindow?
-    private var visible = false
 
     // `_lastSample` is written by the Sampler timer thread and read by the
     // main thread in attach() and inside the coalesced update closure.
     // Optional<struct> is not atomic in Swift, so guard with a lock to avoid
-    // torn reads / undefined behaviour. `_updatePending` is part of the same
-    // protected state to coalesce overlay refreshes.
+    // torn reads / undefined behaviour. `_updatePending` and `_visible` join
+    // the same lock: _updatePending coalesces overlay refreshes; _visible is
+    // toggled by show()/hide() on the caller's thread but read in update()'s
+    // main-thread closure, so snapshotting it under the existing lock keeps
+    // the read race-free without a second lock.
     private let sampleLock = NSLock()
     private var _lastSample: PerfSample?
     private var _updatePending = false
+    private var _visible = false
 
     private var lastSample: PerfSample? {
         get {
@@ -483,6 +504,17 @@ private final class Overlay: NSObject {
         set {
             sampleLock.lock(); defer { sampleLock.unlock() }
             _lastSample = newValue
+        }
+    }
+
+    private var visible: Bool {
+        get {
+            sampleLock.lock(); defer { sampleLock.unlock() }
+            return _visible
+        }
+        set {
+            sampleLock.lock(); defer { sampleLock.unlock() }
+            _visible = newValue
         }
     }
 
@@ -515,8 +547,9 @@ private final class Overlay: NSObject {
             self.sampleLock.lock()
             self._updatePending = false
             let snapshot = self._lastSample
+            let isVisible = self._visible
             self.sampleLock.unlock()
-            guard self.visible, let snapshot = snapshot else { return }
+            guard isVisible, let snapshot = snapshot else { return }
             self.label?.text = self.renderText(snapshot)
         }
     }
@@ -677,19 +710,75 @@ private final class MemoryWarningCenter: NSObject {
     }
 
     @objc private func handleWarning() {
-        let rss = Sampler.shared.residentBytesPublic()
+        let rssBefore = Sampler.shared.residentBytesPublic()
         let event = MemoryWarningEvent(
-            level: "critical",
-            rss: Double(rss),
+            level: .critical,
+            rss: Double(rssBefore),
             timestamp: Date().timeIntervalSince1970 * 1000.0
         )
         OneKeyLog.warn(kTag, String(
             format: "Memory warning received (critical), RSS=%.1f MB",
             event.rss / 1024.0 / 1024.0
         ))
+
+        // Native cleanup BEFORE notifying JS. JS handlers (jotai cache
+        // purge, WS disconnect, etc.) come right after on the JS thread;
+        // running these native reclaims first means by the time JS sees
+        // the event, page-level memory is already lower.
+        performNativeCleanup()
+
+        let rssAfter = Sampler.shared.residentBytesPublic()
+        let deltaMB = (Double(rssBefore) - Double(rssAfter)) / 1024.0 / 1024.0
+        if deltaMB > 0.5 {
+            OneKeyLog.warn(kTag, String(
+                format: "Native cleanup reclaimed %.1f MB (RSS %.1f → %.1f)",
+                deltaMB,
+                Double(rssBefore) / 1024.0 / 1024.0,
+                Double(rssAfter) / 1024.0 / 1024.0
+            ))
+        }
+
         lock.lock()
-        let snapshot = listeners.values
+        let snapshot = Array(listeners.values)
         lock.unlock()
         for cb in snapshot { cb(event) }
+    }
+
+    /// Three reclaim paths, ordered from cheap-and-safe to system-level:
+    ///
+    /// 1. `URLCache.shared.removeAllCachedResponses()` — drops the
+    ///    process-wide HTTP response cache (CFNetwork). Empirically the
+    ///    largest single non-WebView pool, often 50–200 MB. Cheap and
+    ///    transparent to app code; the next request just goes to the
+    ///    network.
+    /// 2. `WKWebsiteDataStore.removeData(...)` for memory + disk + offline
+    ///    caches only. Excludes cookies / localStorage / IndexedDB so
+    ///    in-WebView auth (TradingView, etc.) survives. Asynchronous;
+    ///    fire-and-forget.
+    /// 3. `malloc_zone_pressure_relief(nil, 0)` — asks libmalloc to walk
+    ///    every registered zone and return free pages to the kernel.
+    ///    This is the only API that actually drops `phys_footprint`;
+    ///    the previous two reduce allocator usage but pages stay mapped
+    ///    until pressure relief runs.
+    private func performNativeCleanup() {
+        URLCache.shared.removeAllCachedResponses()
+
+        // Caches only — never auth/state. The set is hand-picked so a
+        // logged-in DApp / TradingView doesn't get bounced.
+        let cacheTypes: Set<String> = [
+            WKWebsiteDataTypeMemoryCache,
+            WKWebsiteDataTypeDiskCache,
+            WKWebsiteDataTypeOfflineWebApplicationCache,
+        ]
+        WKWebsiteDataStore.default().removeData(
+            ofTypes: cacheTypes,
+            modifiedSince: Date(timeIntervalSince1970: 0),
+            completionHandler: {}
+        )
+
+        // Must run last: the two clears above free objects in the
+        // allocator's free lists; pressure-relief is what gives those
+        // pages back to the kernel.
+        malloc_zone_pressure_relief(nil, 0)
     }
 }

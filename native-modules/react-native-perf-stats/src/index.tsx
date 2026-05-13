@@ -99,4 +99,46 @@ export const ReactNativePerfStats = {
   ): number => nativeImpl.addMemoryWarningListener(callback),
   removeMemoryWarningListener: (id: number): void =>
     nativeImpl.removeMemoryWarningListener(id),
+
+  /**
+   * Best-effort hint to the JS engine that now is a good time to GC.
+   *
+   * Hermes does not expose a public `collectGarbage` binding in production
+   * builds; the only stable JS-level entry point is the (undocumented)
+   * `HermesInternal.gc` property, which is present in some builds and
+   * absent in others. We feature-detect it and fall back to a no-op so
+   * callers never have to branch.
+   *
+   * Returns `true` if a GC was actually requested (i.e. an engine hook
+   * was found and called). Callers can use the return value for
+   * observability, not as a guarantee that GC ran or freed anything.
+   *
+   * Cost: when honoured, Hermes does a stop-the-world collection that
+   * can take 100–500 ms — never call this on the hot path. Memory-warning
+   * handlers are the intended use case.
+   */
+  forceGarbageCollection(): boolean {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const g = globalThis as any;
+    const hi = g?.HermesInternal;
+    if (hi && typeof hi.gc === 'function') {
+      try {
+        hi.gc();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    if (typeof g?.gc === 'function') {
+      // V8-style binding (only present with --expose-gc; never in
+      // production Hermes, but harmless to try).
+      try {
+        g.gc();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  },
 };

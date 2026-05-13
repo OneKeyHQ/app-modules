@@ -21,6 +21,7 @@ import android.view.WindowManager
 import android.widget.TextView
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
@@ -143,8 +144,21 @@ private object Sampler {
 
     fun start(intervalMsNew: Long) {
         synchronized(schedulerLock) {
+            val prevInterval = intervalMs
             intervalMs = intervalMsNew
-            if (running) return
+            if (running) {
+                // Mirror iOS dispatch_source schedule() on a running timer:
+                // a fresh start() with a new interval re-paces the loop
+                // immediately rather than waiting for the old period to
+                // elapse. Bump generation so the in-flight tick (if any)
+                // self-rejects before rescheduling on the stale cadence.
+                if (prevInterval != intervalMsNew) {
+                    generation++
+                    handler?.removeCallbacksAndMessages(null)
+                    scheduleTick(generation, handler!!)
+                }
+                return
+            }
             if (handler == null) {
                 val ht = HandlerThread("PerfStatsSampler").apply { start() }
                 handlerThread = ht
@@ -401,24 +415,29 @@ private object UiFpsMonitor {
     }
 
     fun start() {
-        if (registered) return
-        registered = true
+        // Idempotency check runs inside the main-thread lambda so two
+        // concurrent start() calls can't both pass the gate and post the
+        // callback twice — Choreographer happily enqueues the same instance
+        // multiple times, which would double (then exponentially grow) the
+        // frame count and repost cadence.
         mainHandler.post {
-            // Re-check inside the post: a stop() may have raced ahead
-            // before this lambda ran.
-            if (!registered) return@post
+            if (registered) return@post
+            registered = true
             Choreographer.getInstance().postFrameCallback(callback)
         }
     }
 
     fun stop() {
-        if (!registered) return
-        registered = false
+        // Mirror start(): serialize the toggle on the main looper so a
+        // start/stop pair posted from a non-main thread can't interleave
+        // out of order.
         mainHandler.post {
+            if (!registered) return@post
+            registered = false
             Choreographer.getInstance().removeFrameCallback(callback)
+            frameCounter.set(0)
+            lastReadMonoNs = -1L
         }
-        frameCounter.set(0)
-        lastReadMonoNs = -1L
     }
 
     /**
@@ -447,20 +466,21 @@ private object UiFpsMonitor {
 // stopped or has not yet booted.
 
 private object JsFpsHolder {
-    @Volatile private var lastFps: Double = 0.0
-    @Volatile private var lastSetMonoNs: Long = -1L
+    // Pair holds (fps, lastSetMonoNs). Stored together so a concurrent
+    // reader can't observe a new timestamp paired with a stale fps (or
+    // vice versa) — which two independent @Volatile fields would allow.
+    private val state = AtomicReference(Pair(0.0, -1L))
 
     fun set(fps: Double) {
-        lastFps = fps
-        lastSetMonoNs = System.nanoTime()
+        state.set(Pair(fps, System.nanoTime()))
     }
 
     fun read(nowMonoNs: Long): Double {
-        val last = lastSetMonoNs
+        val (fps, last) = state.get()
         if (last < 0) return 0.0
         val ageMs = (nowMonoNs - last) / 1_000_000L
         if (ageMs > JS_FPS_HINT_TTL_MS) return 0.0
-        return lastFps
+        return fps
     }
 }
 
@@ -785,15 +805,15 @@ internal object MemoryWarningCenter : ComponentCallbacks2 {
     override fun onTrimMemory(level: Int) {
         val normalised = when (level) {
             ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE,
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> "low"
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> "critical"
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> MemoryWarningLevel.LOW
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> MemoryWarningLevel.CRITICAL
             else -> return // background / UI_HIDDEN — see header comment
         }
         emit(normalised, "onTrimMemory($level)")
     }
 
     override fun onLowMemory() {
-        emit("critical", "onLowMemory")
+        emit(MemoryWarningLevel.CRITICAL, "onLowMemory")
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -801,17 +821,18 @@ internal object MemoryWarningCenter : ComponentCallbacks2 {
         // callbacks above; the configuration channel is unused.
     }
 
-    private fun emit(level: String, source: String) {
+    private fun emit(level: MemoryWarningLevel, source: String) {
         val nowMs = System.currentTimeMillis()
-        if (level == "critical") {
+        if (level == MemoryWarningLevel.CRITICAL) {
+            // Suppress: TRIM_MEMORY_RUNNING_CRITICAL + onLowMemory() often
+            // arrive within tens of ms of each other; one cache purge is
+            // enough. ComponentCallbacks2 fires on the main thread in
+            // practice, but we use CAS so the read/check/write window is
+            // closed even if a future Android version posts these from a
+            // worker thread.
             val prev = lastEmitTimestamp.get()
-            if (nowMs - prev < DEDUP_WINDOW_MS) {
-                // Suppress: TRIM_MEMORY_RUNNING_CRITICAL + onLowMemory()
-                // often arrive within tens of ms of each other; one cache
-                // purge is enough.
-                return
-            }
-            lastEmitTimestamp.set(nowMs)
+            if (nowMs - prev < DEDUP_WINDOW_MS) return
+            if (!lastEmitTimestamp.compareAndSet(prev, nowMs)) return
         }
         val rssBytes = Sampler.residentBytesPublic()
         val event = MemoryWarningEvent(
@@ -824,10 +845,36 @@ internal object MemoryWarningCenter : ComponentCallbacks2 {
             String.format(
                 Locale.US,
                 "Memory warning received (%s) from %s, RSS=%.1f MB",
-                level, source, rssBytes / 1024.0 / 1024.0,
+                level.name.lowercase(Locale.US), source, rssBytes / 1024.0 / 1024.0,
             ),
         )
+
+        // Native cleanup before notifying JS subscribers. On Android the
+        // analogues of iOS's URLCache / malloc_pressure are far weaker:
+        // - Dalvik/ART has no equivalent of malloc_zone_pressure_relief;
+        //   `System.gc()` is a hint only, the runtime decides whether to
+        //   honour it. We still call it because under TRIM_MEMORY_RUNNING_*
+        //   the runtime is more likely to act on the hint.
+        // - HTTP caches live inside each OkHttpClient and there's no
+        //   process-wide shared instance to drop, so we leave that to JS-
+        //   side subscribers that own their clients.
+        // - WebView cache clearing needs a WebView instance; defer to JS.
+        if (level == MemoryWarningLevel.CRITICAL) {
+            performNativeCleanup()
+        }
+
         val snapshot = synchronized(lock) { listeners.values.toList() }
         for (cb in snapshot) cb(event)
+    }
+
+    private fun performNativeCleanup() {
+        // Hint to ART; safe to call from main, returns quickly. ART may
+        // ignore under low pressure but under TRIM_MEMORY_RUNNING_CRITICAL
+        // it generally promotes to a concurrent collection.
+        try {
+            Runtime.getRuntime().gc()
+        } catch (e: Throwable) {
+            OneKeyLog.warn(MEMORY_TAG, "Runtime.gc() failed: ${e.message}")
+        }
     }
 }
