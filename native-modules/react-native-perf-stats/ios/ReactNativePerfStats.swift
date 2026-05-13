@@ -59,6 +59,9 @@ class ReactNativePerfStats: HybridReactNativePerfStatsSpec {
     }
 
     func setJsFpsHint(fps: Double) throws {
+        // Drop NaN/Inf at the boundary; JsFpsHolder caches the value and
+        // the overlay would happily render "inf fps" otherwise.
+        guard fps.isFinite else { return }
         JsFpsHolder.shared.set(fps: fps)
     }
 
@@ -67,7 +70,12 @@ class ReactNativePerfStats: HybridReactNativePerfStatsSpec {
     }
 
     func removeMemoryWarningListener(id: Double) throws {
-        MemoryWarningCenter.shared.remove(id: Int(id))
+        // Int(exactly:) returns nil for NaN/Inf/non-integral/out-of-range
+        // values; plain Int(NaN) traps. We treat any of those as "unknown
+        // id", consistent with the doc note that removal of unknown ids
+        // is a no-op.
+        guard let intId = Int(exactly: id) else { return }
+        MemoryWarningCenter.shared.remove(id: intId)
     }
 }
 
@@ -155,6 +163,14 @@ private final class Sampler {
             self.timer = nil
             self.lock.lock()
             self.lastUiFps = 0
+            // Reset the CPU baseline so the first tick after a future
+            // start() doesn't compute (now - lastCpuSec) over the entire
+            // stop gap and report a stale multi-minute average. The
+            // takeSample() guards (lastCpuSec >= 0 && lastMonoSec > 0)
+            // then return 0 for the first sample, matching cold-start
+            // semantics.
+            self.lastCpuSec = -1
+            self.lastMonoSec = -1
             self.lock.unlock()
         }
         UiFpsMonitor.shared.stop()
@@ -303,6 +319,17 @@ private final class Sampler {
         return residentBytes()
     }
 
+    // Primary path is `phys_footprint` (TASK_VM_INFO) — the same metric
+    // iOS jetsam uses for pressure decisions; it includes IOKit
+    // accounting and dirty pages credited to this process. The fallback
+    // reads `resident_size` (MACH_TASK_BASIC_INFO), which is the raw
+    // resident-page count and is semantically smaller and noisier.
+    //
+    // The two values are NOT interchangeable: if TASK_VM_INFO ever fails
+    // mid-run, live readings will step DOWN on the next sample without
+    // the underlying memory state having actually changed. TASK_VM_INFO
+    // is well supported on iOS 12+, so this is largely defensive — but
+    // the discontinuity is worth knowing about when reading the logs.
     private func residentBytes() -> UInt64 {
         var vmInfo = task_vm_info_data_t()
         var count = mach_msg_type_number_t(
@@ -683,23 +710,22 @@ private final class MemoryWarningCenter: NSObject {
         let id = nextId
         nextId += 1
         listeners[id] = callback
-        let needsObserve = !observed
-        if needsObserve { observed = true }
-        lock.unlock()
-        if needsObserve {
-            // Register on main so the observer is associated with the main
-            // run loop. NotificationCenter retains observers weakly via
-            // selector pattern; we hold the singleton statically.
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                NotificationCenter.default.addObserver(
-                    self,
-                    selector: #selector(self.handleWarning),
-                    name: UIApplication.didReceiveMemoryWarningNotification,
-                    object: nil
-                )
-            }
+        if !observed {
+            // Register synchronously inside the lock so a memory warning
+            // posted between `add` returning and the observer being attached
+            // cannot slip past the caller. NotificationCenter.addObserver
+            // has no main-thread requirement; the selector is dispatched on
+            // whichever thread posts the notification (UIApplication posts
+            // on main, so handleWarning still lands there).
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(self.handleWarning),
+                name: UIApplication.didReceiveMemoryWarningNotification,
+                object: nil
+            )
+            observed = true
         }
+        lock.unlock()
         return id
     }
 

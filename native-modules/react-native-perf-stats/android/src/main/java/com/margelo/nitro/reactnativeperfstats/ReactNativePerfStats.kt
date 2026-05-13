@@ -32,6 +32,10 @@ import java.util.Locale
 
 private const val TAG = "PerfStats"
 private const val MIN_INTERVAL_MS = 200L
+// 24 h. `Double.POSITIVE_INFINITY.toLong()` saturates to Long.MAX_VALUE
+// and `postDelayed(_, Long.MAX_VALUE)` would silently never fire again,
+// so we cap before handing to the scheduler. Mirrors iOS kMaxIntervalMs.
+private const val MAX_INTERVAL_MS = 86_400_000L
 // Standard Android USER_HZ. If a device differs the absolute CPU% scales
 // accordingly, but values stay self-consistent across samples.
 private const val CLOCK_TICKS_PER_SECOND = 100L
@@ -60,7 +64,11 @@ private const val JS_FPS_HINT_TTL_MS = 2_000L
 class ReactNativePerfStats : HybridReactNativePerfStatsSpec() {
 
     override fun start(intervalMs: Double) {
-        Sampler.start(intervalMs.toLong().coerceAtLeast(MIN_INTERVAL_MS))
+        // Drop NaN/Inf at the JS↔native boundary: `Double.NaN.toLong()`
+        // returns 0 (then clamps to MIN), but `Infinity.toLong()` saturates
+        // to Long.MAX_VALUE and would freeze the sampler indefinitely.
+        val safe = if (intervalMs.isFinite()) intervalMs.toLong() else 1000L
+        Sampler.start(safe.coerceIn(MIN_INTERVAL_MS, MAX_INTERVAL_MS))
     }
 
     override fun stop() {
@@ -82,6 +90,9 @@ class ReactNativePerfStats : HybridReactNativePerfStatsSpec() {
     }
 
     override fun setJsFpsHint(fps: Double) {
+        // Drop NaN/Inf at the boundary; JsFpsHolder caches the value and
+        // the overlay would happily render "inf fps" otherwise.
+        if (!fps.isFinite()) return
         JsFpsHolder.set(fps)
     }
 
@@ -181,6 +192,15 @@ private object Sampler {
             handlerThread = null
             handler = null
             lastUiFps = 0.0
+        }
+        // CPU baseline lives under `lock` (not schedulerLock) — reset it
+        // here so the first tick after a future start() doesn't compute
+        // dCpu/dWall over the stop gap and report a stale multi-minute
+        // average. takeSample()'s guard then returns 0 for the first
+        // post-restart sample, matching cold-start semantics.
+        synchronized(lock) {
+            lastCpuTicks = -1L
+            lastMonoNs = -1L
         }
         UiFpsMonitor.stop()
         Overlay.hide()
@@ -621,9 +641,46 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
             overlayView = tv
             attachDragListener(tv)
             lastSample?.let { tv.text = renderText(it) }
+            // posX/posY are persisted from previous orientations and
+            // sessions; after rotation or a fold/unfold the saved
+            // position can land off the new window. Posted after addView
+            // so tv.width/height are measured, then re-clamped once.
+            tv.post { clampOverlayToWindow(tv) }
         } catch (e: Exception) {
             OneKeyLog.warn(TAG, "Failed to addView overlay: ${e.message}")
         }
+    }
+
+    /** Preferred window size for clamping: the host Activity's decorView
+     *  (correct under split-screen / foldable, where the Activity owns
+     *  only part of the physical display), falling back to displayMetrics
+     *  if the Activity / decorView isn't ready yet. */
+    private fun resolveWindowSize(view: TextView): Pair<Int, Int> {
+        val activity = view.context as? Activity
+        val decor = activity?.window?.decorView
+        val metrics = view.context.resources.displayMetrics
+        val w = decor?.width?.takeIf { it > 0 } ?: metrics.widthPixels
+        val h = decor?.height?.takeIf { it > 0 } ?: metrics.heightPixels
+        return w to h
+    }
+
+    /** Re-clamps the overlay's current params to the host window. Called
+     *  after addView (when posX/posY may have come from a different
+     *  orientation) and could be reused on configuration changes. */
+    private fun clampOverlayToWindow(tv: TextView) {
+        val (winW, winH) = resolveWindowSize(tv)
+        val maxX = (winW - tv.width).coerceAtLeast(0)
+        val maxY = (winH - tv.height).coerceAtLeast(0)
+        val curParams = (tv.layoutParams as? WindowManager.LayoutParams) ?: return
+        val newX = curParams.x.coerceIn(0, maxX)
+        val newY = curParams.y.coerceIn(0, maxY)
+        if (newX == curParams.x && newY == curParams.y) return
+        curParams.x = newX
+        curParams.y = newY
+        posX = newX
+        posY = newY
+        val wm = tv.context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        try { wm?.updateViewLayout(tv, curParams) } catch (_: Exception) {}
     }
 
     private fun detach() {
@@ -677,17 +734,34 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    // Clamp to the host Activity window — without this the
+                    // overlay can be dragged off-screen and stays
+                    // unreachable, since hit-testing follows params.x/y.
+                    // resolveWindowSize uses decorView dimensions so
+                    // split-screen / foldable sessions don't let the
+                    // overlay wander into another app's pane (where the
+                    // overlay's window token can't receive touches).
                     val newX = (event.rawX - dX).toInt()
                     val newY = (event.rawY - dY).toInt()
-                    params.x = newX
-                    params.y = newY
-                    posX = newX
-                    posY = newY
+                    val (winW, winH) = resolveWindowSize(v as TextView)
+                    val maxX = (winW - v.width).coerceAtLeast(0)
+                    val maxY = (winH - v.height).coerceAtLeast(0)
+                    val clampedX = newX.coerceIn(0, maxX)
+                    val clampedY = newY.coerceIn(0, maxY)
+                    params.x = clampedX
+                    params.y = clampedY
+                    posX = clampedX
+                    posY = clampedY
                     val wm = v.context.getSystemService(Context.WINDOW_SERVICE)
                         as? WindowManager
                     try { wm?.updateViewLayout(v, params) } catch (_: Exception) {}
                     true
                 }
+                // Terminate the gesture cleanly so the touch sequence
+                // we claimed in ACTION_DOWN doesn't leak to whatever is
+                // below the overlay window on the up-stroke.
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL -> true
                 else -> false
             }
         }

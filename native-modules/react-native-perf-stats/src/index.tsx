@@ -42,9 +42,17 @@ let jsFpsCurrentInterval: number | null = null;
  * interval is a no-op.
  */
 export function startJsFpsTracker(reportIntervalMs: number = 1000): void {
-  if (jsFpsCurrentInterval === reportIntervalMs) return;
+  // Clamp before use: `setInterval(_, 0)` fires every event-loop tick and
+  // the per-second divide below would race away to Infinity; NaN/negative
+  // values are equally meaningless here. 100 ms is below one rAF frame
+  // on a 60 Hz display, so it's already finer than the data warrants;
+  // 60 s is an arbitrary upper sanity bound.
+  const safeInterval = Number.isFinite(reportIntervalMs)
+    ? Math.max(100, Math.min(60_000, Math.trunc(reportIntervalMs)))
+    : 1000;
+  if (jsFpsCurrentInterval === safeInterval) return;
   stopJsFpsTracker();
-  jsFpsCurrentInterval = reportIntervalMs;
+  jsFpsCurrentInterval = safeInterval;
 
   const tick = () => {
     jsFpsFrameCount += 1;
@@ -53,10 +61,10 @@ export function startJsFpsTracker(reportIntervalMs: number = 1000): void {
   jsFpsRafId = requestAnimationFrame(tick);
 
   jsFpsIntervalId = setInterval(() => {
-    const fps = (jsFpsFrameCount * 1000) / reportIntervalMs;
+    const fps = (jsFpsFrameCount * 1000) / safeInterval;
     jsFpsFrameCount = 0;
     nativeImpl.setJsFpsHint(fps);
-  }, reportIntervalMs);
+  }, safeInterval);
 }
 
 /** Stop the JS-side FPS ticker. Idempotent. */

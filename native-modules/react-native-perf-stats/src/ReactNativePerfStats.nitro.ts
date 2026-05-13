@@ -116,6 +116,22 @@ export interface ReactNativePerfStats
    * survives `stop()` — memory pressure is independent of the perf
    * sampler being active. Callbacks are invoked on the JS thread.
    *
+   * **Always pair this with `removeMemoryWarningListener`** (e.g. in a
+   * React effect cleanup): the callback closure is retained for the life
+   * of the subscription, and forgetting to remove leaks every object the
+   * closure transitively captures — typically the React component instance
+   * that registered it. This matters in dev too: the native listener
+   * table is a process-wide singleton that **does not clear on RN
+   * reload**, so a Fast-Refresh / dev reload that drops the JS realm
+   * without first calling `removeMemoryWarningListener` will leave the
+   * pre-reload callback in the table, pointing at a dead JS context.
+   * The cleanest fix is the same effect-cleanup pattern.
+   *
+   * The relative order in which subscribed callbacks fire for a single
+   * event is **not guaranteed** — iOS iterates a hash dictionary, Android
+   * iterates a LinkedHashMap, and either may change. Don't take a
+   * cross-listener dependency.
+   *
    * Returns an opaque id; pass it to `removeMemoryWarningListener` to
    * unsubscribe.
    */
