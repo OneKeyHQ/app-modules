@@ -26,6 +26,30 @@ export interface PerfSample {
   timestamp: number;
 }
 
+/**
+ * Severity of a system-emitted memory pressure event, normalised across
+ * platforms.
+ *
+ * - `low`: Android `TRIM_MEMORY_RUNNING_MODERATE` /
+ *   `TRIM_MEMORY_RUNNING_LOW`. iOS does not emit this level (iOS only
+ *   fires the critical warning), so JS code should treat the absence of
+ *   `low` events on iOS as expected, not a missing signal.
+ * - `critical`: iOS `UIApplicationDidReceiveMemoryWarningNotification`;
+ *   Android `TRIM_MEMORY_RUNNING_CRITICAL` or `onLowMemory()`. Indicates
+ *   the OS is about to start killing background apps (Android) or the
+ *   app itself (iOS jetsam). Subscribers should drop everything that
+ *   can be rebuilt on demand.
+ */
+export type MemoryWarningLevel = 'low' | 'critical';
+
+export interface MemoryWarningEvent {
+  level: MemoryWarningLevel;
+  /** Process RSS in bytes at the moment the warning fired. `0` if the lookup failed. */
+  rss: number;
+  /** Wall-clock timestamp (ms since unix epoch). */
+  timestamp: number;
+}
+
 export interface ReactNativePerfStats
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   /**
@@ -78,4 +102,25 @@ export interface ReactNativePerfStats
    * than calling this directly.
    */
   setJsFpsHint(fps: number): void;
+
+  /**
+   * Subscribe to OS-emitted memory pressure events.
+   *
+   * - iOS: `UIApplicationDidReceiveMemoryWarningNotification`, mapped to
+   *   `critical`. Fires on the main thread.
+   * - Android: `ComponentCallbacks2.onTrimMemory` filtered to
+   *   `TRIM_MEMORY_RUNNING_*` (foreground process pressure), plus
+   *   `onLowMemory()` as `critical`. Fires on the main thread.
+   *
+   * The native listener is registered process-wide on first call and
+   * survives `stop()` — memory pressure is independent of the perf
+   * sampler being active. Callbacks are invoked on the JS thread.
+   *
+   * Returns an opaque id; pass it to `removeMemoryWarningListener` to
+   * unsubscribe.
+   */
+  addMemoryWarningListener(callback: (event: MemoryWarningEvent) => void): number;
+
+  /** Unsubscribe a previously-registered memory warning listener. No-op for unknown ids. */
+  removeMemoryWarningListener(id: number): void;
 }

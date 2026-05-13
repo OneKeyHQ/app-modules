@@ -3,7 +3,9 @@ package com.margelo.nitro.reactnativeperfstats
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
+import android.content.ComponentCallbacks2
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Bundle
@@ -18,6 +20,7 @@ import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.TextView
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
@@ -79,6 +82,16 @@ class ReactNativePerfStats : HybridReactNativePerfStatsSpec() {
 
     override fun setJsFpsHint(fps: Double) {
         JsFpsHolder.set(fps)
+    }
+
+    override fun addMemoryWarningListener(
+        callback: (MemoryWarningEvent) -> Unit,
+    ): Double {
+        return MemoryWarningCenter.add(callback).toDouble()
+    }
+
+    override fun removeMemoryWarningListener(id: Double) {
+        MemoryWarningCenter.remove(id.toLong())
     }
 }
 
@@ -274,6 +287,10 @@ private object Sampler {
             jsFpsUnderCount = 0
         }
     }
+
+    /** Public alias used by [MemoryWarningCenter] to attach an RSS reading
+     *  to each emitted event. Safe to call from any thread. */
+    fun residentBytesPublic(): Long = readResidentBytes()
 
     fun takeSample(): PerfSample {
         val nowMonoNs = System.nanoTime()
@@ -690,5 +707,127 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
             mainHandler.post { detach() }
             currentActivity = null
         }
+    }
+}
+
+// ---- MemoryWarningCenter ---------------------------------------------
+//
+// Bridges Android's ComponentCallbacks2 callbacks to Nitro listeners.
+//
+// Levels are normalised to match iOS:
+//   - TRIM_MEMORY_RUNNING_MODERATE / TRIM_MEMORY_RUNNING_LOW   -> "low"
+//   - TRIM_MEMORY_RUNNING_CRITICAL                             -> "critical"
+//   - onLowMemory() (deprecated, fires alongside CRITICAL or
+//     standalone on older devices)                             -> "critical"
+//   - TRIM_MEMORY_UI_HIDDEN and TRIM_MEMORY_BACKGROUND/MODERATE/COMPLETE
+//     are ignored. UI_HIDDEN is a backgrounding signal, not memory
+//     pressure; the BACKGROUND tier is too late to be useful for a
+//     foreground-pressure response (process is already targeted for
+//     LRU eviction). Subscribers who care about backgrounding can use
+//     AppState directly.
+//
+// Registration is process-wide via `Application.registerComponentCallbacks`,
+// triggered lazily by [PerfStatsInitProvider] or the first `add()` call.
+// Listeners are invoked on the main thread (the thread the callbacks
+// fire on). Nitro's dispatcher hops back to the JS thread before the JS
+// closure runs.
+//
+// We coalesce duplicate critical events that arrive within
+// [DEDUP_WINDOW_MS]: Android often fires onLowMemory() right after
+// TRIM_MEMORY_RUNNING_CRITICAL, and we don't want JS to receive two
+// back-to-back cache-purge signals.
+
+internal object MemoryWarningCenter : ComponentCallbacks2 {
+    private const val MEMORY_TAG = "PerfStats.Memory"
+    private const val DEDUP_WINDOW_MS = 500L
+
+    private val lock = Any()
+    private val listeners = LinkedHashMap<Long, (MemoryWarningEvent) -> Unit>()
+    private val nextId = AtomicLong(1)
+    @Volatile private var registered = false
+    private val lastEmitTimestamp = AtomicLong(0L)
+
+    /** Called from [PerfStatsInitProvider] at process start so we never
+     *  miss the first memory-pressure event on Android 14+ where the
+     *  system may fire one shortly after Application onCreate. */
+    fun bootstrap(app: Application) {
+        ensureRegistered(app)
+    }
+
+    fun add(callback: (MemoryWarningEvent) -> Unit): Long {
+        val id = nextId.getAndIncrement()
+        synchronized(lock) { listeners[id] = callback }
+        // Late-init fallback: PerfStatsInitProvider normally registers
+        // us, but defend against test harnesses or stripped manifests.
+        ensureRegistered(null)
+        return id
+    }
+
+    fun remove(id: Long) {
+        synchronized(lock) { listeners.remove(id) }
+    }
+
+    private fun ensureRegistered(appHint: Application?) {
+        if (registered) return
+        val app = appHint
+            ?: (NitroModules.applicationContext as? Application)
+            ?: run {
+                OneKeyLog.warn(MEMORY_TAG, "applicationContext is null; skipping registration")
+                return
+            }
+        synchronized(lock) {
+            if (registered) return
+            app.registerComponentCallbacks(this)
+            registered = true
+        }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        val normalised = when (level) {
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE,
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> "low"
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> "critical"
+            else -> return // background / UI_HIDDEN — see header comment
+        }
+        emit(normalised, "onTrimMemory($level)")
+    }
+
+    override fun onLowMemory() {
+        emit("critical", "onLowMemory")
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        // No-op. We only implement ComponentCallbacks2 for the memory
+        // callbacks above; the configuration channel is unused.
+    }
+
+    private fun emit(level: String, source: String) {
+        val nowMs = System.currentTimeMillis()
+        if (level == "critical") {
+            val prev = lastEmitTimestamp.get()
+            if (nowMs - prev < DEDUP_WINDOW_MS) {
+                // Suppress: TRIM_MEMORY_RUNNING_CRITICAL + onLowMemory()
+                // often arrive within tens of ms of each other; one cache
+                // purge is enough.
+                return
+            }
+            lastEmitTimestamp.set(nowMs)
+        }
+        val rssBytes = Sampler.residentBytesPublic()
+        val event = MemoryWarningEvent(
+            level = level,
+            rss = rssBytes.toDouble(),
+            timestamp = nowMs.toDouble(),
+        )
+        OneKeyLog.warn(
+            MEMORY_TAG,
+            String.format(
+                Locale.US,
+                "Memory warning received (%s) from %s, RSS=%.1f MB",
+                level, source, rssBytes / 1024.0 / 1024.0,
+            ),
+        )
+        val snapshot = synchronized(lock) { listeners.values.toList() }
+        for (cb in snapshot) cb(event)
     }
 }

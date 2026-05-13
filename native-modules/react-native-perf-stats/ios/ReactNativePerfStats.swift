@@ -50,6 +50,14 @@ class ReactNativePerfStats: HybridReactNativePerfStatsSpec {
     func setJsFpsHint(fps: Double) throws {
         JsFpsHolder.shared.set(fps: fps)
     }
+
+    func addMemoryWarningListener(callback: @escaping (MemoryWarningEvent) -> Void) throws -> Double {
+        return Double(MemoryWarningCenter.shared.add(callback: callback))
+    }
+
+    func removeMemoryWarningListener(id: Double) throws {
+        MemoryWarningCenter.shared.remove(id: Int(id))
+    }
 }
 
 // MARK: - Sampler
@@ -268,6 +276,13 @@ private final class Sampler {
             return -1
         }
         return Double(ts.tv_sec) + Double(ts.tv_nsec) / 1_000_000_000.0
+    }
+
+    /// Public alias used by `MemoryWarningCenter` to attach an RSS reading
+    /// to each emitted event. Reads `phys_footprint` (or `resident_size`
+    /// as a fallback) on the calling thread; safe to call from main.
+    func residentBytesPublic() -> UInt64 {
+        return residentBytes()
     }
 
     private func residentBytes() -> UInt64 {
@@ -603,5 +618,78 @@ private final class Overlay: NSObject {
             if fallback == nil { fallback = ws }
         }
         return fallback
+    }
+}
+
+// MARK: - MemoryWarningCenter
+//
+// Bridges UIKit's memory-warning notification to Nitro callbacks.
+//
+// iOS only emits one level — `UIApplicationDidReceiveMemoryWarningNotification`
+// — which we map to `critical`. There is no `low` analog on iOS, by design
+// (`MemoryWarningEvent.level` is normalised across platforms).
+//
+// The observer is registered lazily on the first `add(callback:)` and kept
+// for the process lifetime. iOS guarantees a single NotificationCenter
+// callback per notification, so cost is negligible. Callbacks fire on the
+// main thread because that's the queue UIApplication posts on; Nitro's
+// dispatcher will hop back to the JS thread.
+
+private final class MemoryWarningCenter: NSObject {
+    static let shared = MemoryWarningCenter()
+
+    private override init() { super.init() }
+
+    private let lock = NSLock()
+    private var listeners: [Int: (MemoryWarningEvent) -> Void] = [:]
+    private var nextId: Int = 1
+    private var observed = false
+
+    func add(callback: @escaping (MemoryWarningEvent) -> Void) -> Int {
+        lock.lock()
+        let id = nextId
+        nextId += 1
+        listeners[id] = callback
+        let needsObserve = !observed
+        if needsObserve { observed = true }
+        lock.unlock()
+        if needsObserve {
+            // Register on main so the observer is associated with the main
+            // run loop. NotificationCenter retains observers weakly via
+            // selector pattern; we hold the singleton statically.
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(self.handleWarning),
+                    name: UIApplication.didReceiveMemoryWarningNotification,
+                    object: nil
+                )
+            }
+        }
+        return id
+    }
+
+    func remove(id: Int) {
+        lock.lock()
+        listeners.removeValue(forKey: id)
+        lock.unlock()
+    }
+
+    @objc private func handleWarning() {
+        let rss = Sampler.shared.residentBytesPublic()
+        let event = MemoryWarningEvent(
+            level: "critical",
+            rss: Double(rss),
+            timestamp: Date().timeIntervalSince1970 * 1000.0
+        )
+        OneKeyLog.warn(kTag, String(
+            format: "Memory warning received (critical), RSS=%.1f MB",
+            event.rss / 1024.0 / 1024.0
+        ))
+        lock.lock()
+        let snapshot = listeners.values
+        lock.unlock()
+        for cb in snapshot { cb(event) }
     }
 }

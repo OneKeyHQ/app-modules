@@ -1,5 +1,8 @@
 import { NitroModules } from 'react-native-nitro-modules';
-import type { ReactNativePerfStats as ReactNativePerfStatsType } from './ReactNativePerfStats.nitro';
+import type {
+  MemoryWarningEvent,
+  ReactNativePerfStats as ReactNativePerfStatsType,
+} from './ReactNativePerfStats.nitro';
 
 const nativeImpl =
   NitroModules.createHybridObject<ReactNativePerfStatsType>('ReactNativePerfStats');
@@ -89,4 +92,11 @@ export const ReactNativePerfStats = {
   hideOverlay: (): void => nativeImpl.hideOverlay(),
   sample: () => nativeImpl.sample(),
   setJsFpsHint: (fps: number): void => nativeImpl.setJsFpsHint(fps),
+  // Memory pressure is independent of the sampler — these stay active
+  // even after `stop()`. iOS only emits `level: 'critical'`.
+  addMemoryWarningListener: (
+    callback: (event: MemoryWarningEvent) => void,
+  ): number => nativeImpl.addMemoryWarningListener(callback),
+  removeMemoryWarningListener: (id: number): void =>
+    nativeImpl.removeMemoryWarningListener(id),
 };
