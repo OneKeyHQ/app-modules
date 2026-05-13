@@ -18,7 +18,9 @@ public final class AesCryptoGcm: NSObject {
     error: NSErrorPointer
   ) -> String? {
     do {
-      try requireNonEmpty(dataHex, method: "aesGcmEncrypt", paramName: "data")
+      // `dataHex` is intentionally NOT required to be non-empty: empty
+      // plaintext is a legitimate AEAD operation (produces the 16-byte
+      // authentication tag).
       try requireNonEmpty(keyHex, method: "aesGcmEncrypt", paramName: "key")
       try requireNonEmpty(nonceHex, method: "aesGcmEncrypt", paramName: "nonce")
       try requireNonEmpty(aadHex, method: "aesGcmEncrypt", paramName: "aad")
@@ -45,7 +47,9 @@ public final class AesCryptoGcm: NSObject {
     error: NSErrorPointer
   ) -> String? {
     do {
-      try requireNonEmpty(ciphertextWithTagHex, method: "aesGcmDecrypt", paramName: "ciphertextWithTag")
+      // `ciphertextWithTagHex` is intentionally NOT validated for non-emptiness
+      // here — the `encrypted.count < 16` check below is stronger and covers
+      // the empty-hex case.
       try requireNonEmpty(keyHex, method: "aesGcmDecrypt", paramName: "key")
       try requireNonEmpty(nonceHex, method: "aesGcmDecrypt", paramName: "nonce")
       try requireNonEmpty(aadHex, method: "aesGcmDecrypt", paramName: "aad")
@@ -67,12 +71,9 @@ public final class AesCryptoGcm: NSObject {
     }
   }
 
-  // The GCM entry points enforce a strict non-empty contract for every
-  // hex argument (data / ciphertextWithTag, key, nonce, aad). The legacy
-  // CBC/CTR paths in AesCrypto.mm have their own ONEKEY_AES_REQUIRE_NON_EMPTY
-  // guards at the ObjC++ entry, so dataFromHex never sees an empty string
-  // from production callers — the `if hex.isEmpty` branch below is kept
-  // only as defence-in-depth.
+  // The GCM entry points enforce a strict non-empty contract on key / nonce /
+  // aad; `data` and `ciphertextWithTag` are allowed to be empty hex (the
+  // `< 16-byte` guard in decrypt handles the truncated case explicitly).
   private static func requireNonEmpty(_ value: String, method: String, paramName: String) throws {
     if value.isEmpty {
       throw NSError(
@@ -97,6 +98,9 @@ public final class AesCryptoGcm: NSObject {
   }
 
   private static func dataFromHex(_ hex: String) throws -> Data {
+    // Empty hex is reachable when callers pass empty plaintext (encrypt) or
+    // when the `< 16-byte` ciphertext check fires (decrypt) — return an
+    // empty `Data` so AES.GCM.seal can produce the bare 16-byte tag.
     if hex.isEmpty {
       return Data()
     }
@@ -122,7 +126,19 @@ public final class AesCryptoGcm: NSObject {
   }
 }
 
-private enum AesCryptoGcmError: Error {
+// Use `LocalizedError` so that when these enum cases bridge to `NSError`,
+// `(error as NSError).localizedDescription` returns the message below instead
+// of Cocoa's default "The operation couldn't be completed. (... error N.)".
+private enum AesCryptoGcmError: LocalizedError {
   case invalidHex
   case invalidCiphertext
+
+  var errorDescription: String? {
+    switch self {
+    case .invalidHex:
+      return "AES-GCM: hex string must have even length and contain only [0-9a-fA-F]"
+    case .invalidCiphertext:
+      return "AES-GCM: ciphertextWithTag must be at least 16 bytes (the auth tag length)"
+    }
+  }
 }

@@ -44,8 +44,6 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
         private const val HMAC_SHA_512 = "HmacSHA512"
         private const val KEY_ALGORITHM = "AES"
 
-        private val emptyIvSpec = IvParameterSpec(ByteArray(16) { 0x00 })
-
         @JvmStatic
         fun bytesToHex(bytes: ByteArray): String {
             val hexArray = "0123456789abcdef".toCharArray()
@@ -122,7 +120,9 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun aesGcmEncrypt(data: String, key: String, nonce: String, aad: String, promise: Promise) {
         try {
-            requireNonEmpty(data, "aesGcmEncrypt", "data")
+            // `data` is intentionally NOT required to be non-empty: AEAD with an
+            // empty plaintext is a legitimate operation that yields a 16-byte
+            // authentication tag, and CryptoKit on iOS supports it directly.
             requireNonEmpty(key, "aesGcmEncrypt", "key")
             requireNonEmpty(nonce, "aesGcmEncrypt", "nonce")
             requireNonEmpty(aad, "aesGcmEncrypt", "aad")
@@ -135,7 +135,10 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
 
     override fun aesGcmDecrypt(ciphertextWithTag: String, key: String, nonce: String, aad: String, promise: Promise) {
         try {
-            requireNonEmpty(ciphertextWithTag, "aesGcmDecrypt", "ciphertextWithTag")
+            // `ciphertextWithTag` is intentionally NOT validated here for
+            // non-emptiness — `aesGcmDecryptImpl` enforces the stronger
+            // `>= 16 bytes` (auth-tag length) guard, which already covers the
+            // empty-string case.
             requireNonEmpty(key, "aesGcmDecrypt", "key")
             requireNonEmpty(nonce, "aesGcmDecrypt", "nonce")
             requireNonEmpty(aad, "aesGcmDecrypt", "aad")
@@ -261,26 +264,20 @@ class AesCryptoModule(reactContext: ReactApplicationContext) :
         return bytesToHex(mac.doFinal(contentData))
     }
 
-    private fun encryptImpl(text: String, hexKey: String, hexIv: String?, algorithm: String): String? {
-        if (text.isEmpty()) return null
-
+    private fun encryptImpl(text: String, hexKey: String, hexIv: String, algorithm: String): String {
         val key = Hex.decode(hexKey)
         val secretKey = SecretKeySpec(key, KEY_ALGORITHM)
         val cipher = Cipher.getInstance(algorithm)
-        val ivSpec = if (hexIv == null || hexIv.isEmpty()) emptyIvSpec else IvParameterSpec(Hex.decode(hexIv))
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey, ivSpec)
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey, IvParameterSpec(Hex.decode(hexIv)))
         val encrypted = cipher.doFinal(Hex.decode(text))
         return bytesToHex(encrypted)
     }
 
-    private fun decryptImpl(ciphertext: String, hexKey: String, hexIv: String?, algorithm: String): String? {
-        if (ciphertext.isEmpty()) return null
-
+    private fun decryptImpl(ciphertext: String, hexKey: String, hexIv: String, algorithm: String): String {
         val key = Hex.decode(hexKey)
         val secretKey = SecretKeySpec(key, KEY_ALGORITHM)
         val cipher = Cipher.getInstance(algorithm)
-        val ivSpec = if (hexIv == null || hexIv.isEmpty()) emptyIvSpec else IvParameterSpec(Hex.decode(hexIv))
-        cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec)
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, IvParameterSpec(Hex.decode(hexIv)))
         val decrypted = cipher.doFinal(Hex.decode(ciphertext))
         return bytesToHex(decrypted)
     }

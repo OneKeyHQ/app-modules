@@ -208,12 +208,12 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                 result = aesCBC(@"encrypt", inputData, key, iv, algorithm);
             }
             if (result == nil) {
-                reject(@"encrypt_fail", @"Encrypt error", nil);
+                reject(@"-1", @"Encrypt error", nil);
             } else {
                 resolve(toHex(result));
             }
         } @catch (NSException *exception) {
-            reject(@"encrypt_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -241,12 +241,12 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                 result = aesCBC(@"decrypt", inputData, key, iv, algorithm);
             }
             if (result == nil) {
-                reject(@"decrypt_fail", @"Decrypt failed", nil);
+                reject(@"-1", @"Decrypt failed", nil);
             } else {
                 resolve(toHex(result));
             }
         } @catch (NSException *exception) {
-            reject(@"decrypt_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -260,7 +260,8 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
               resolve:(RCTPromiseResolveBlock)resolve
                reject:(RCTPromiseRejectBlock)reject
 {
-    ONEKEY_AES_REQUIRE_NON_EMPTY(data, @"aesGcmEncrypt", @"data", reject);
+    // `data` is intentionally NOT required to be non-empty: empty plaintext
+    // is a legitimate AEAD operation that yields the 16-byte auth tag.
     ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"aesGcmEncrypt", @"key", reject);
     ONEKEY_AES_REQUIRE_NON_EMPTY(nonce, @"aesGcmEncrypt", @"nonce", reject);
     ONEKEY_AES_REQUIRE_NON_EMPTY(aad, @"aesGcmEncrypt", @"aad", reject);
@@ -288,7 +289,9 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
               resolve:(RCTPromiseResolveBlock)resolve
                reject:(RCTPromiseRejectBlock)reject
 {
-    ONEKEY_AES_REQUIRE_NON_EMPTY(ciphertextWithTag, @"aesGcmDecrypt", @"ciphertextWithTag", reject);
+    // `ciphertextWithTag` is intentionally NOT required to be non-empty
+    // here — the Swift impl enforces a stronger `>= 16 bytes` guard which
+    // already covers the empty / truncated cases.
     ONEKEY_AES_REQUIRE_NON_EMPTY(key, @"aesGcmDecrypt", @"key", reject);
     ONEKEY_AES_REQUIRE_NON_EMPTY(nonce, @"aesGcmDecrypt", @"nonce", reject);
     ONEKEY_AES_REQUIRE_NON_EMPTY(aad, @"aesGcmDecrypt", @"aad", reject);
@@ -349,12 +352,12 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                 (uint8_t *)hashKeyData.mutableBytes, hashKeyData.length);
 
             if (status == kCCParamError) {
-                reject(@"keygen_fail", @"Key derivation parameter error", nil);
+                reject(@"-1", @"Key derivation parameter error", nil);
             } else {
                 resolve(toHex(hashKeyData));
             }
         } @catch (NSException *exception) {
-            reject(@"keygen_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -374,7 +377,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             NSData *inputData = fromHex(base64);
             void *buffer = malloc(CC_SHA256_DIGEST_LENGTH);
             if (!buffer) {
-                reject(@"hmac_fail", @"Memory allocation error", nil);
+                reject(@"-1", @"Memory allocation error", nil);
                 return;
             }
             CCHmac(kCCHmacAlgSHA256,
@@ -386,7 +389,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                                             freeWhenDone:YES];
             resolve(toHex(result));
         } @catch (NSException *exception) {
-            reject(@"hmac_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -406,7 +409,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             NSData *inputData = fromHex(base64);
             void *buffer = malloc(CC_SHA512_DIGEST_LENGTH);
             if (!buffer) {
-                reject(@"hmac_fail", @"Memory allocation error", nil);
+                reject(@"-1", @"Memory allocation error", nil);
                 return;
             }
             CCHmac(kCCHmacAlgSHA512,
@@ -418,7 +421,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                                             freeWhenDone:YES];
             resolve(toHex(result));
         } @catch (NSException *exception) {
-            reject(@"hmac_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -437,7 +440,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             CC_SHA1((const void *)inputData.bytes, (CC_LONG)inputData.length, (unsigned char *)result.mutableBytes);
             resolve(toHex(result));
         } @catch (NSException *exception) {
-            reject(@"sha1_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -454,7 +457,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             NSData *inputData = fromHex(text);
             unsigned char *buffer = (unsigned char *)malloc(CC_SHA256_DIGEST_LENGTH);
             if (!buffer) {
-                reject(@"sha256_fail", @"Memory allocation error", nil);
+                reject(@"-1", @"Memory allocation error", nil);
                 return;
             }
             CC_SHA256((const void *)inputData.bytes, (CC_LONG)inputData.length, buffer);
@@ -463,7 +466,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                                             freeWhenDone:YES];
             resolve(toHex(result));
         } @catch (NSException *exception) {
-            reject(@"sha256_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -480,7 +483,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             NSData *inputData = fromHex(text);
             unsigned char *buffer = (unsigned char *)malloc(CC_SHA512_DIGEST_LENGTH);
             if (!buffer) {
-                reject(@"sha512_fail", @"Memory allocation error", nil);
+                reject(@"-1", @"Memory allocation error", nil);
                 return;
             }
             CC_SHA512((const void *)inputData.bytes, (CC_LONG)inputData.length, buffer);
@@ -489,7 +492,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
                                             freeWhenDone:YES];
             resolve(toHex(result));
         } @catch (NSException *exception) {
-            reject(@"sha512_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -504,7 +507,7 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             NSString *uuid = [[NSUUID UUID] UUIDString];
             resolve(uuid);
         } @catch (NSException *exception) {
-            reject(@"uuid_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
@@ -522,12 +525,12 @@ static NSData *aesCTR(NSString *operation, NSData *inputData, NSString *key, NSS
             NSMutableData *data = [NSMutableData dataWithLength:len];
             int result = SecRandomCopyBytes(kSecRandomDefault, len, data.mutableBytes);
             if (result != errSecSuccess) {
-                reject(@"random_fail", @"Random key generation error", nil);
+                reject(@"-1", @"Random key generation error", nil);
             } else {
                 resolve(toHex(data));
             }
         } @catch (NSException *exception) {
-            reject(@"random_fail", exception.reason, nil);
+            reject(@"-1", exception.reason, nil);
         }
     });
 }
