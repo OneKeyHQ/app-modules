@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.36] - 2026-05-14
+
+### Features
+- **perf-stats**: Add `addMemoryWarningListener` / `removeMemoryWarningListener` with a normalised `MemoryWarningEvent { level: 'low' | 'critical'; rss; timestamp }`. iOS maps `didReceiveMemoryWarning` → `critical`; Android maps `TRIM_MEMORY_RUNNING_*` and `onLowMemory()` with a 500 ms critical dedup. Auto-registers pre-`Application.onCreate` via a `ContentProvider` on Android.
+- **perf-stats (iOS)**: On every warning, drop `URLCache.shared` and the WK HTTP / disk / offline-app caches (cookies / `localStorage` / IndexedDB preserved), then run `malloc_zone_pressure_relief`. Reclaim delta logged.
+- **perf-stats (Android)**: On every warning (LOW + CRITICAL for parity), `Runtime.gc()` as an ART hint.
+- **perf-stats**: New `cleanupNativeCaches()` to trigger the same reclaim path on demand; iOS does the libmalloc walk on a background queue.
+- **perf-stats**: New `forceGarbageCollection()` — feature-detects `HermesInternal.gc` / `globalThis.gc`.
+
+### Bug Fixes
+- **perf-stats**: Clamp `intervalMs` to `[200 ms, 24 h]` and reject NaN/Inf at the JS↔native boundary (otherwise iOS `Int(Double)` traps and Android `Double.toLong()` saturates `postDelayed` to never fire).
+- **perf-stats**: Move CPU baseline reset from `stop()` to `start()`'s cold-start path — the Android `stop()` reset raced an in-flight tick that could write its captured ticks back.
+- **perf-stats**: One-shot `sample()` no longer writes the periodic CPU baseline (`recordBaseline=false`).
+- **perf-stats (Android)**: Fix `UiFpsMonitor.start()` double-registering the Choreographer callback under concurrent calls (would fan out exponentially); idempotency check moved inside the main-thread post.
+- **perf-stats (Android)**: `JsFpsHolder` switched to `AtomicReference<Pair<>>` so readers can't observe a fresh timestamp paired with a stale fps.
+- **perf-stats (Android)**: Overlay drag/clamp uses the Activity `decorView` instead of `displayMetrics`, preventing the overlay from being dragged into the other pane under split-screen / foldable. Re-clamps on `onConfigurationChanged` so `android:configChanges` Activities recover from rotation.
+- **perf-stats (iOS)**: Observe `UIScene.didDisconnectNotification` to drop dangling overlay refs on multi-window close. Re-clamp the label after `viewWillTransition` so rotation doesn't strand it off-screen.
+- **perf-stats (iOS)**: Register `didReceiveMemoryWarning` observer synchronously inside the listeners-table lock — closes the gap where a warning posted between `add()` returning and `addObserver` running could miss the new listener.
+- **perf-stats (iOS)**: `removeMemoryWarningListener` uses `Int(exactly:)` so a JS-passed `NaN` / `Inf` no longer traps.
+
+### Chores
+- Bump `@onekeyfe/react-native-perf-stats` to 3.0.36.
+
 ## [3.0.35] - 2026-05-13
 
 ### Chores

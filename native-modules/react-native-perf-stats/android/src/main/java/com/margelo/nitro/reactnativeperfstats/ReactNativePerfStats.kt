@@ -3,7 +3,10 @@ package com.margelo.nitro.reactnativeperfstats
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
+import android.content.ComponentCallbacks
+import android.content.ComponentCallbacks2
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Bundle
@@ -18,6 +21,8 @@ import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.TextView
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
@@ -28,6 +33,10 @@ import java.util.Locale
 
 private const val TAG = "PerfStats"
 private const val MIN_INTERVAL_MS = 200L
+// 24 h. `Double.POSITIVE_INFINITY.toLong()` saturates to Long.MAX_VALUE
+// and `postDelayed(_, Long.MAX_VALUE)` would silently never fire again,
+// so we cap before handing to the scheduler. Mirrors iOS kMaxIntervalMs.
+private const val MAX_INTERVAL_MS = 86_400_000L
 // Standard Android USER_HZ. If a device differs the absolute CPU% scales
 // accordingly, but values stay self-consistent across samples.
 private const val CLOCK_TICKS_PER_SECOND = 100L
@@ -56,7 +65,11 @@ private const val JS_FPS_HINT_TTL_MS = 2_000L
 class ReactNativePerfStats : HybridReactNativePerfStatsSpec() {
 
     override fun start(intervalMs: Double) {
-        Sampler.start(intervalMs.toLong().coerceAtLeast(MIN_INTERVAL_MS))
+        // Drop NaN/Inf at the JS↔native boundary: `Double.NaN.toLong()`
+        // returns 0 (then clamps to MIN), but `Infinity.toLong()` saturates
+        // to Long.MAX_VALUE and would freeze the sampler indefinitely.
+        val safe = if (intervalMs.isFinite()) intervalMs.toLong() else 1000L
+        Sampler.start(safe.coerceIn(MIN_INTERVAL_MS, MAX_INTERVAL_MS))
     }
 
     override fun stop() {
@@ -73,12 +86,34 @@ class ReactNativePerfStats : HybridReactNativePerfStatsSpec() {
 
     override fun sample(): Promise<PerfSample> {
         return Promise.async {
-            Sampler.takeSample()
+            // recordBaseline=false: one-shot reads must not write the
+            // CPU baseline used by the periodic tick. See takeSample.
+            Sampler.takeSample(recordBaseline = false)
         }
     }
 
     override fun setJsFpsHint(fps: Double) {
+        // Drop NaN/Inf at the boundary; JsFpsHolder caches the value and
+        // the overlay would happily render "inf fps" otherwise.
+        if (!fps.isFinite()) return
         JsFpsHolder.set(fps)
+    }
+
+    override fun addMemoryWarningListener(
+        callback: (MemoryWarningEvent) -> Unit,
+    ): Double {
+        return MemoryWarningCenter.add(callback).toDouble()
+    }
+
+    override fun removeMemoryWarningListener(id: Double) {
+        MemoryWarningCenter.remove(id.toLong())
+    }
+
+    override fun cleanupNativeCaches() {
+        // Same hint that the LOW / CRITICAL warning path runs. ART may
+        // ignore Runtime.gc() at low pressure, but the cost of asking
+        // is negligible.
+        MemoryWarningCenter.performNativeCleanup()
     }
 }
 
@@ -130,8 +165,35 @@ private object Sampler {
 
     fun start(intervalMsNew: Long) {
         synchronized(schedulerLock) {
+            val prevInterval = intervalMs
             intervalMs = intervalMsNew
-            if (running) return
+            if (running) {
+                // Mirror iOS dispatch_source schedule() on a running timer:
+                // a fresh start() with a new interval re-paces the loop
+                // immediately rather than waiting for the old period to
+                // elapse. Bump generation so the in-flight tick (if any)
+                // self-rejects before rescheduling on the stale cadence.
+                if (prevInterval != intervalMsNew) {
+                    generation++
+                    handler?.removeCallbacksAndMessages(null)
+                    scheduleTick(generation, handler!!)
+                }
+                return
+            }
+            // Cold-start path: reset CPU baseline now, before any tick is
+            // scheduled. Doing it here rather than in stop() is the only
+            // race-free option — stop()'s `quitSafely` doesn't synchronously
+            // drain a tick whose `active` check already passed, so a
+            // reset in stop() can be silently undone by that in-flight
+            // tick writing its captured cpuTicks back into lastCpuTicks.
+            // takeSample() called from one-shot sample() (recordBaseline
+            // = false) also wouldn't be able to clobber this, so the
+            // first periodic tick after start() always begins from a
+            // clean slate.
+            synchronized(lock) {
+                lastCpuTicks = -1L
+                lastMonoNs = -1L
+            }
             if (handler == null) {
                 val ht = HandlerThread("PerfStatsSampler").apply { start() }
                 handlerThread = ht
@@ -155,6 +217,11 @@ private object Sampler {
             handler = null
             lastUiFps = 0.0
         }
+        // No CPU baseline reset here on purpose: an in-flight tick that
+        // already passed the `active` check would race with us and write
+        // its captured cpuTicks back, undoing the reset. start() resets
+        // on its cold-start path instead, where no sampler thread is
+        // running yet.
         UiFpsMonitor.stop()
         Overlay.hide()
     }
@@ -275,7 +342,19 @@ private object Sampler {
         }
     }
 
-    fun takeSample(): PerfSample {
+    /** Public alias used by [MemoryWarningCenter] to attach an RSS reading
+     *  to each emitted event. Safe to call from any thread. */
+    fun residentBytesPublic(): Long = readResidentBytes()
+
+    /**
+     * @param recordBaseline true for periodic ticks (the next sample's
+     *   delta is computed against this read). false for one-shot
+     *   sample() calls so they don't pollute the periodic CPU% baseline
+     *   — between stop() and start(), or between two periodic ticks,
+     *   a sample() would otherwise insert a new baseline that the next
+     *   periodic tick reads, producing a CPU% covering the gap.
+     */
+    fun takeSample(recordBaseline: Boolean = true): PerfSample {
         val nowMonoNs = System.nanoTime()
         val cpuTicks = readProcessCpuTicks()
         val rssBytes = readResidentBytes()
@@ -294,7 +373,7 @@ private object Sampler {
                     cpuPct = (cpuSec / wallSec) * 100.0
                 }
             }
-            if (cpuTicks != null) {
+            if (recordBaseline && cpuTicks != null) {
                 lastCpuTicks = cpuTicks
                 lastMonoNs = nowMonoNs
             }
@@ -384,24 +463,29 @@ private object UiFpsMonitor {
     }
 
     fun start() {
-        if (registered) return
-        registered = true
+        // Idempotency check runs inside the main-thread lambda so two
+        // concurrent start() calls can't both pass the gate and post the
+        // callback twice — Choreographer happily enqueues the same instance
+        // multiple times, which would double (then exponentially grow) the
+        // frame count and repost cadence.
         mainHandler.post {
-            // Re-check inside the post: a stop() may have raced ahead
-            // before this lambda ran.
-            if (!registered) return@post
+            if (registered) return@post
+            registered = true
             Choreographer.getInstance().postFrameCallback(callback)
         }
     }
 
     fun stop() {
-        if (!registered) return
-        registered = false
+        // Mirror start(): serialize the toggle on the main looper so a
+        // start/stop pair posted from a non-main thread can't interleave
+        // out of order.
         mainHandler.post {
+            if (!registered) return@post
+            registered = false
             Choreographer.getInstance().removeFrameCallback(callback)
+            frameCounter.set(0)
+            lastReadMonoNs = -1L
         }
-        frameCounter.set(0)
-        lastReadMonoNs = -1L
     }
 
     /**
@@ -430,20 +514,21 @@ private object UiFpsMonitor {
 // stopped or has not yet booted.
 
 private object JsFpsHolder {
-    @Volatile private var lastFps: Double = 0.0
-    @Volatile private var lastSetMonoNs: Long = -1L
+    // Pair holds (fps, lastSetMonoNs). Stored together so a concurrent
+    // reader can't observe a new timestamp paired with a stale fps (or
+    // vice versa) — which two independent @Volatile fields would allow.
+    private val state = AtomicReference(Pair(0.0, -1L))
 
     fun set(fps: Double) {
-        lastFps = fps
-        lastSetMonoNs = System.nanoTime()
+        state.set(Pair(fps, System.nanoTime()))
     }
 
     fun read(nowMonoNs: Long): Double {
-        val last = lastSetMonoNs
+        val (fps, last) = state.get()
         if (last < 0) return 0.0
         val ageMs = (nowMonoNs - last) / 1_000_000L
         if (ageMs > JS_FPS_HINT_TTL_MS) return 0.0
-        return lastFps
+        return fps
     }
 }
 
@@ -488,11 +573,27 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
     @Volatile private var posX: Int = -1
     @Volatile private var posY: Int = -1
 
+    // Configuration callback for rotation / split-screen / foldable
+    // size changes. Activities declaring android:configChanges (a common
+    // optimization in RN apps) don't re-create on rotation, so
+    // attachIfPossible's posted clamp never re-runs — handle it here.
+    private val configCallbacks = object : ComponentCallbacks {
+        override fun onConfigurationChanged(newConfig: Configuration) {
+            val view = overlayView ?: return
+            mainHandler.post { clampOverlayToWindow(view) }
+        }
+        override fun onLowMemory() {
+            // No-op. Memory pressure is handled by MemoryWarningCenter
+            // via ComponentCallbacks2 on a separate registration.
+        }
+    }
+
     /** Called from PerfStatsInitProvider at process start so we never miss
      *  the launcher Activity's onResumed event. */
     fun bootstrap(app: Application) {
         if (registered) return
         app.registerActivityLifecycleCallbacks(this)
+        app.registerComponentCallbacks(configCallbacks)
         registered = true
     }
 
@@ -541,6 +642,7 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
             return
         }
         app.registerActivityLifecycleCallbacks(this)
+        app.registerComponentCallbacks(configCallbacks)
         registered = true
     }
 
@@ -584,9 +686,46 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
             overlayView = tv
             attachDragListener(tv)
             lastSample?.let { tv.text = renderText(it) }
+            // posX/posY are persisted from previous orientations and
+            // sessions; after rotation or a fold/unfold the saved
+            // position can land off the new window. Posted after addView
+            // so tv.width/height are measured, then re-clamped once.
+            tv.post { clampOverlayToWindow(tv) }
         } catch (e: Exception) {
             OneKeyLog.warn(TAG, "Failed to addView overlay: ${e.message}")
         }
+    }
+
+    /** Preferred window size for clamping: the host Activity's decorView
+     *  (correct under split-screen / foldable, where the Activity owns
+     *  only part of the physical display), falling back to displayMetrics
+     *  if the Activity / decorView isn't ready yet. */
+    private fun resolveWindowSize(view: TextView): Pair<Int, Int> {
+        val activity = view.context as? Activity
+        val decor = activity?.window?.decorView
+        val metrics = view.context.resources.displayMetrics
+        val w = decor?.width?.takeIf { it > 0 } ?: metrics.widthPixels
+        val h = decor?.height?.takeIf { it > 0 } ?: metrics.heightPixels
+        return w to h
+    }
+
+    /** Re-clamps the overlay's current params to the host window. Called
+     *  after addView (when posX/posY may have come from a different
+     *  orientation) and could be reused on configuration changes. */
+    private fun clampOverlayToWindow(tv: TextView) {
+        val (winW, winH) = resolveWindowSize(tv)
+        val maxX = (winW - tv.width).coerceAtLeast(0)
+        val maxY = (winH - tv.height).coerceAtLeast(0)
+        val curParams = (tv.layoutParams as? WindowManager.LayoutParams) ?: return
+        val newX = curParams.x.coerceIn(0, maxX)
+        val newY = curParams.y.coerceIn(0, maxY)
+        if (newX == curParams.x && newY == curParams.y) return
+        curParams.x = newX
+        curParams.y = newY
+        posX = newX
+        posY = newY
+        val wm = tv.context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        try { wm?.updateViewLayout(tv, curParams) } catch (_: Exception) {}
     }
 
     private fun detach() {
@@ -640,17 +779,34 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    // Clamp to the host Activity window — without this the
+                    // overlay can be dragged off-screen and stays
+                    // unreachable, since hit-testing follows params.x/y.
+                    // resolveWindowSize uses decorView dimensions so
+                    // split-screen / foldable sessions don't let the
+                    // overlay wander into another app's pane (where the
+                    // overlay's window token can't receive touches).
                     val newX = (event.rawX - dX).toInt()
                     val newY = (event.rawY - dY).toInt()
-                    params.x = newX
-                    params.y = newY
-                    posX = newX
-                    posY = newY
+                    val (winW, winH) = resolveWindowSize(v as TextView)
+                    val maxX = (winW - v.width).coerceAtLeast(0)
+                    val maxY = (winH - v.height).coerceAtLeast(0)
+                    val clampedX = newX.coerceIn(0, maxX)
+                    val clampedY = newY.coerceIn(0, maxY)
+                    params.x = clampedX
+                    params.y = clampedY
+                    posX = clampedX
+                    posY = clampedY
                     val wm = v.context.getSystemService(Context.WINDOW_SERVICE)
                         as? WindowManager
                     try { wm?.updateViewLayout(v, params) } catch (_: Exception) {}
                     true
                 }
+                // Terminate the gesture cleanly so the touch sequence
+                // we claimed in ACTION_DOWN doesn't leak to whatever is
+                // below the overlay window on the up-stroke.
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL -> true
                 else -> false
             }
         }
@@ -689,6 +845,159 @@ internal object Overlay : Application.ActivityLifecycleCallbacks {
         if (currentActivity === activity) {
             mainHandler.post { detach() }
             currentActivity = null
+        }
+    }
+}
+
+// ---- MemoryWarningCenter ---------------------------------------------
+//
+// Bridges Android's ComponentCallbacks2 callbacks to Nitro listeners.
+//
+// Levels are normalised to match iOS:
+//   - TRIM_MEMORY_RUNNING_MODERATE / TRIM_MEMORY_RUNNING_LOW   -> "low"
+//   - TRIM_MEMORY_RUNNING_CRITICAL                             -> "critical"
+//   - onLowMemory() (deprecated, fires alongside CRITICAL or
+//     standalone on older devices)                             -> "critical"
+//   - TRIM_MEMORY_UI_HIDDEN and TRIM_MEMORY_BACKGROUND/MODERATE/COMPLETE
+//     are ignored. UI_HIDDEN is a backgrounding signal, not memory
+//     pressure; the BACKGROUND tier is too late to be useful for a
+//     foreground-pressure response (process is already targeted for
+//     LRU eviction). Subscribers who care about backgrounding can use
+//     AppState directly.
+//
+// Registration is process-wide via `Application.registerComponentCallbacks`,
+// triggered lazily by [PerfStatsInitProvider] or the first `add()` call.
+// Listeners are invoked on the main thread (the thread the callbacks
+// fire on). Nitro's dispatcher hops back to the JS thread before the JS
+// closure runs.
+//
+// We coalesce duplicate critical events that arrive within
+// [DEDUP_WINDOW_MS]: Android often fires onLowMemory() right after
+// TRIM_MEMORY_RUNNING_CRITICAL, and we don't want JS to receive two
+// back-to-back cache-purge signals.
+
+internal object MemoryWarningCenter : ComponentCallbacks2 {
+    private const val MEMORY_TAG = "PerfStats.Memory"
+    private const val DEDUP_WINDOW_MS = 500L
+
+    private val lock = Any()
+    private val listeners = LinkedHashMap<Long, (MemoryWarningEvent) -> Unit>()
+    private val nextId = AtomicLong(1)
+    @Volatile private var registered = false
+    private val lastEmitTimestamp = AtomicLong(0L)
+
+    /** Called from [PerfStatsInitProvider] at process start so we never
+     *  miss the first memory-pressure event on Android 14+ where the
+     *  system may fire one shortly after Application onCreate. */
+    fun bootstrap(app: Application) {
+        ensureRegistered(app)
+    }
+
+    fun add(callback: (MemoryWarningEvent) -> Unit): Long {
+        val id = nextId.getAndIncrement()
+        synchronized(lock) { listeners[id] = callback }
+        // Late-init fallback: PerfStatsInitProvider normally registers
+        // us, but defend against test harnesses or stripped manifests.
+        ensureRegistered(null)
+        return id
+    }
+
+    fun remove(id: Long) {
+        synchronized(lock) { listeners.remove(id) }
+    }
+
+    private fun ensureRegistered(appHint: Application?) {
+        if (registered) return
+        val app = appHint
+            ?: (NitroModules.applicationContext as? Application)
+            ?: run {
+                OneKeyLog.warn(MEMORY_TAG, "applicationContext is null; skipping registration")
+                return
+            }
+        synchronized(lock) {
+            if (registered) return
+            app.registerComponentCallbacks(this)
+            registered = true
+        }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        val normalised = when (level) {
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE,
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> MemoryWarningLevel.LOW
+            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> MemoryWarningLevel.CRITICAL
+            else -> return // background / UI_HIDDEN — see header comment
+        }
+        emit(normalised, "onTrimMemory($level)")
+    }
+
+    override fun onLowMemory() {
+        emit(MemoryWarningLevel.CRITICAL, "onLowMemory")
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        // No-op. We only implement ComponentCallbacks2 for the memory
+        // callbacks above; the configuration channel is unused.
+    }
+
+    private fun emit(level: MemoryWarningLevel, source: String) {
+        val nowMs = System.currentTimeMillis()
+        if (level == MemoryWarningLevel.CRITICAL) {
+            // Suppress: TRIM_MEMORY_RUNNING_CRITICAL + onLowMemory() often
+            // arrive within tens of ms of each other; one cache purge is
+            // enough. ComponentCallbacks2 fires on the main thread in
+            // practice, but we use CAS so the read/check/write window is
+            // closed even if a future Android version posts these from a
+            // worker thread.
+            val prev = lastEmitTimestamp.get()
+            if (nowMs - prev < DEDUP_WINDOW_MS) return
+            if (!lastEmitTimestamp.compareAndSet(prev, nowMs)) return
+        }
+        val rssBytes = Sampler.residentBytesPublic()
+        val event = MemoryWarningEvent(
+            level = level,
+            rss = rssBytes.toDouble(),
+            timestamp = nowMs.toDouble(),
+        )
+        OneKeyLog.warn(
+            MEMORY_TAG,
+            String.format(
+                Locale.US,
+                "Memory warning received (%s) from %s, RSS=%.1f MB",
+                level.name.lowercase(Locale.US), source, rssBytes / 1024.0 / 1024.0,
+            ),
+        )
+
+        // Native cleanup before notifying JS subscribers. On Android the
+        // analogues of iOS's URLCache / malloc_pressure are far weaker:
+        // - Dalvik/ART has no equivalent of malloc_zone_pressure_relief;
+        //   `System.gc()` is a hint only, the runtime decides whether to
+        //   honour it. We still call it because under TRIM_MEMORY_RUNNING_*
+        //   the runtime is more likely to act on the hint.
+        // - HTTP caches live inside each OkHttpClient and there's no
+        //   process-wide shared instance to drop, so we leave that to JS-
+        //   side subscribers that own their clients.
+        // - WebView cache clearing needs a WebView instance; defer to JS.
+        //
+        // Fires on both LOW and CRITICAL: iOS triggers cleanup on every
+        // warning (there's only one level), and JS handlers reasonably
+        // assume "native already attempted a reclaim before this event"
+        // across platforms. Runtime.gc() is a hint anyway, so even when
+        // ART ignores it on LOW the cost is negligible.
+        performNativeCleanup()
+
+        val snapshot = synchronized(lock) { listeners.values.toList() }
+        for (cb in snapshot) cb(event)
+    }
+
+    internal fun performNativeCleanup() {
+        // Hint to ART; safe to call from main, returns quickly. ART may
+        // ignore under low pressure but under TRIM_MEMORY_RUNNING_CRITICAL
+        // it generally promotes to a concurrent collection.
+        try {
+            Runtime.getRuntime().gc()
+        } catch (e: Throwable) {
+            OneKeyLog.warn(MEMORY_TAG, "Runtime.gc() failed: ${e.message}")
         }
     }
 }

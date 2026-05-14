@@ -2,9 +2,16 @@ import NitroModules
 import ReactNativeNativeLogger
 import Darwin
 import UIKit
+import WebKit
+// URLCache and Date come transitively from UIKit. malloc_zone_pressure_relief
+// lives in <malloc/malloc.h>, which is reached via `import Darwin`.
+import Foundation
 
 private let kTag = "PerfStats"
 private let kMinIntervalMs: Double = 200
+// 24 h. The interval feeds DispatchSource.schedule(deadline: .now() + .milliseconds(Int(ms))),
+// and Int(Double) traps on values that don't fit in Int — cap before the cast.
+private let kMaxIntervalMs: Double = 86_400_000
 
 // Anomaly logging thresholds. We only emit a warn after the metric has
 // stayed over the threshold for kAnomalySustainSamples in a row, to
@@ -26,7 +33,12 @@ private let kJsFpsHintTtlSec: Double = 2.0
 class ReactNativePerfStats: HybridReactNativePerfStatsSpec {
 
     func start(intervalMs: Double) throws {
-        Sampler.shared.start(intervalMs: max(intervalMs, kMinIntervalMs))
+        // Sanitise the JS-supplied value: NaN/Inf would trap on Int(...)
+        // inside DispatchSource scheduling, and max(NaN, x) returns NaN
+        // in Swift so the lower-bound clamp below can't catch it.
+        let finite = intervalMs.isFinite ? intervalMs : 1000.0
+        let clamped = min(max(finite, kMinIntervalMs), kMaxIntervalMs)
+        Sampler.shared.start(intervalMs: clamped)
     }
 
     func stop() throws {
@@ -43,12 +55,37 @@ class ReactNativePerfStats: HybridReactNativePerfStatsSpec {
 
     func sample() throws -> Promise<PerfSample> {
         return Promise.async {
-            return Sampler.shared.takeSample()
+            // recordBaseline=false: one-shot reads must not write the
+            // CPU baseline used by the periodic tick. See takeSample.
+            return Sampler.shared.takeSample(recordBaseline: false)
         }
     }
 
     func setJsFpsHint(fps: Double) throws {
+        // Drop NaN/Inf at the boundary; JsFpsHolder caches the value and
+        // the overlay would happily render "inf fps" otherwise.
+        guard fps.isFinite else { return }
         JsFpsHolder.shared.set(fps: fps)
+    }
+
+    func addMemoryWarningListener(callback: @escaping (MemoryWarningEvent) -> Void) throws -> Double {
+        return Double(MemoryWarningCenter.shared.add(callback: callback))
+    }
+
+    func removeMemoryWarningListener(id: Double) throws {
+        // Int(exactly:) returns nil for NaN/Inf/non-integral/out-of-range
+        // values; plain Int(NaN) traps. We treat any of those as "unknown
+        // id", consistent with the doc note that removal of unknown ids
+        // is a no-op.
+        guard let intId = Int(exactly: id) else { return }
+        MemoryWarningCenter.shared.remove(id: intId)
+    }
+
+    func cleanupNativeCaches() throws {
+        // Caller-initiated: pass rssBefore=nil so the bg reclaim-delta
+        // log is skipped (the OS-warning path is the only one that
+        // wants that "before vs after" line; on-demand callers don't).
+        MemoryWarningCenter.shared.performNativeCleanup()
     }
 }
 
@@ -82,9 +119,9 @@ private final class Sampler {
     private var lastUiFpsLogSec: Double = 0
     private var lastJsFpsLogSec: Double = 0
 
-    // Last UI FPS computed by the periodic timer. takeSample() reads this
-    // directly so one-shot sample() calls do not steal frames from the
-    // UiFpsMonitor counter (which is owned by the periodic timer).
+    // Last UI FPS computed by the periodic timer. Guarded by `lock`:
+    // the periodic tick writes from the sampler queue while takeSample()
+    // may read from Nitro's worker queue when called via Promise.async.
     private var lastUiFps: Double = 0
 
     func start(intervalMs ms: Double) {
@@ -104,6 +141,16 @@ private final class Sampler {
                 }
                 return
             }
+            // Cold-start path: reset CPU baseline now, before scheduling
+            // the timer. Doing it here rather than in stop() also stops
+            // sample() (Promise.async on a worker queue, not this serial
+            // queue) from writing a fresh baseline between stop() and
+            // start(). One-shot sample() now passes recordBaseline=false
+            // and the periodic tick is the only writer.
+            self.lock.lock()
+            self.lastCpuSec = -1
+            self.lastMonoSec = -1
+            self.lock.unlock()
             self.running = true
             let t = DispatchSource.makeTimerSource(queue: self.queue)
             t.schedule(
@@ -114,7 +161,10 @@ private final class Sampler {
                 guard let self = self, self.running else { return }
                 // Refresh cached UI FPS *before* takeSample reads it, so
                 // the value covers exactly the just-elapsed interval.
-                self.lastUiFps = UiFpsMonitor.shared.readAndReset(nowSec: self.monotonicSec())
+                let newUiFps = UiFpsMonitor.shared.readAndReset(nowSec: self.monotonicSec())
+                self.lock.lock()
+                self.lastUiFps = newUiFps
+                self.lock.unlock()
                 let s = self.takeSample()
                 Overlay.shared.update(sample: s)
                 self.checkAnomalyAndLog(sample: s)
@@ -131,19 +181,29 @@ private final class Sampler {
             self.running = false
             self.timer?.cancel()
             self.timer = nil
+            self.lock.lock()
             self.lastUiFps = 0
+            self.lock.unlock()
         }
         UiFpsMonitor.shared.stop()
         Overlay.shared.hide()
     }
 
-    func takeSample() -> PerfSample {
+    /// - parameter recordBaseline: `true` for the periodic timer (the
+    ///   next sample's CPU delta is computed against this read); `false`
+    ///   for one-shot `sample()` calls so they don't pollute the periodic
+    ///   CPU% baseline. A one-shot call between two periodic ticks (or
+    ///   between stop() and start()) would otherwise insert a new
+    ///   baseline that the next periodic tick reads, producing a CPU%
+    ///   that spans the gap.
+    func takeSample(recordBaseline: Bool = true) -> PerfSample {
         let nowMono = monotonicSec()
         let nowCpu = processCpuSec()
         let rssBytes = residentBytes()
         let nowWallMs = Date().timeIntervalSince1970 * 1000.0
 
         var cpuPct: Double = 0
+        var uiFps: Double = 0
         lock.lock()
         if nowCpu >= 0 && lastCpuSec >= 0 && lastMonoSec > 0 {
             let dCpu = nowCpu - lastCpuSec
@@ -152,16 +212,17 @@ private final class Sampler {
                 cpuPct = (dCpu / dWall) * 100.0
             }
         }
-        if nowCpu >= 0 {
+        if recordBaseline && nowCpu >= 0 {
             lastCpuSec = nowCpu
             lastMonoSec = nowMono
         }
+        uiFps = lastUiFps
         lock.unlock()
 
         return PerfSample(
             cpu: cpuPct,
             rss: Double(rssBytes),
-            uiFps: lastUiFps,
+            uiFps: uiFps,
             jsFps: JsFpsHolder.shared.read(nowSec: nowMono),
             timestamp: nowWallMs
         )
@@ -270,6 +331,24 @@ private final class Sampler {
         return Double(ts.tv_sec) + Double(ts.tv_nsec) / 1_000_000_000.0
     }
 
+    /// Public alias used by `MemoryWarningCenter` to attach an RSS reading
+    /// to each emitted event. Reads `phys_footprint` (or `resident_size`
+    /// as a fallback) on the calling thread; safe to call from main.
+    func residentBytesPublic() -> UInt64 {
+        return residentBytes()
+    }
+
+    // Primary path is `phys_footprint` (TASK_VM_INFO) — the same metric
+    // iOS jetsam uses for pressure decisions; it includes IOKit
+    // accounting and dirty pages credited to this process. The fallback
+    // reads `resident_size` (MACH_TASK_BASIC_INFO), which is the raw
+    // resident-page count and is semantically smaller and noisier.
+    //
+    // The two values are NOT interchangeable: if TASK_VM_INFO ever fails
+    // mid-run, live readings will step DOWN on the next sample without
+    // the underlying memory state having actually changed. TASK_VM_INFO
+    // is well supported on iOS 12+, so this is largely defensive — but
+    // the discontinuity is worth knowing about when reading the logs.
     private func residentBytes() -> UInt64 {
         var vmInfo = task_vm_info_data_t()
         var count = mach_msg_type_number_t(
@@ -442,23 +521,60 @@ private final class OverlayPassthroughWindow: UIWindow {
     }
 }
 
+/// Host VC for the overlay window. Exists only to give us a
+/// `viewWillTransition(to:with:)` hook so the label can be re-clamped
+/// after rotation / split-screen size changes. Without this, after a
+/// rotation the label's center could land outside the new parent.bounds
+/// and the user would have to drag it back before the pan-clamp kicks in.
+private final class OverlayHostViewController: UIViewController {
+    var onTransitionComplete: (() -> Void)?
+
+    override func viewWillTransition(
+        to size: CGSize,
+        with coordinator: UIViewControllerTransitionCoordinator
+    ) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            self?.onTransitionComplete?()
+        }
+    }
+}
+
 private final class Overlay: NSObject {
     static let shared = Overlay()
 
-    private override init() { super.init() }
+    private override init() {
+        super.init()
+        // Process-wide observer for scene teardown (iPadOS / Vision Pro
+        // multi-window, Mac Catalyst). When the user closes the scene
+        // hosting the overlay, our UIWindow ends up referencing a
+        // disconnected UIWindowScene — subsequent isHidden / rootVC
+        // mutations are at best no-ops and at worst crash on certain
+        // iOS releases. Detach references so the next show() can attach
+        // cleanly to whichever scene is foreground.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSceneDisconnect(_:)),
+            name: UIScene.didDisconnectNotification,
+            object: nil
+        )
+    }
 
     private var label: UILabel?
     private var overlayWindow: UIWindow?
-    private var visible = false
 
     // `_lastSample` is written by the Sampler timer thread and read by the
     // main thread in attach() and inside the coalesced update closure.
     // Optional<struct> is not atomic in Swift, so guard with a lock to avoid
-    // torn reads / undefined behaviour. `_updatePending` is part of the same
-    // protected state to coalesce overlay refreshes.
+    // torn reads / undefined behaviour. `_updatePending` and `_visible` join
+    // the same lock: _updatePending coalesces overlay refreshes; _visible is
+    // toggled by show()/hide() on the caller's thread but read in update()'s
+    // main-thread closure, so snapshotting it under the existing lock keeps
+    // the read race-free without a second lock.
     private let sampleLock = NSLock()
     private var _lastSample: PerfSample?
     private var _updatePending = false
+    private var _visible = false
 
     private var lastSample: PerfSample? {
         get {
@@ -468,6 +584,17 @@ private final class Overlay: NSObject {
         set {
             sampleLock.lock(); defer { sampleLock.unlock() }
             _lastSample = newValue
+        }
+    }
+
+    private var visible: Bool {
+        get {
+            sampleLock.lock(); defer { sampleLock.unlock() }
+            return _visible
+        }
+        set {
+            sampleLock.lock(); defer { sampleLock.unlock() }
+            _visible = newValue
         }
     }
 
@@ -500,8 +627,9 @@ private final class Overlay: NSObject {
             self.sampleLock.lock()
             self._updatePending = false
             let snapshot = self._lastSample
+            let isVisible = self._visible
             self.sampleLock.unlock()
-            guard self.visible, let snapshot = snapshot else { return }
+            guard isVisible, let snapshot = snapshot else { return }
             self.label?.text = self.renderText(snapshot)
         }
     }
@@ -516,8 +644,13 @@ private final class Overlay: NSObject {
         // Dedicated host VC keeps the window's view hierarchy minimal —
         // the empty UIView serves only as the parent for the label and
         // as the hitTest sentinel checked by OverlayPassthroughWindow.
-        let host = UIViewController()
+        // The subclass overrides viewWillTransition so the label gets
+        // re-clamped after rotation / split-screen size changes.
+        let host = OverlayHostViewController()
         host.view.backgroundColor = .clear
+        host.onTransitionComplete = { [weak self] in
+            self?.clampLabelToBounds()
+        }
 
         let window = OverlayPassthroughWindow(windowScene: scene)
         window.frame = scene.coordinateSpace.bounds
@@ -580,6 +713,35 @@ private final class Overlay: NSObject {
         gesture.setTranslation(.zero, in: parent)
     }
 
+    /// Re-clamp the label to its parent.bounds. Called after rotation /
+    /// size-class change so the persisted center doesn't leave the
+    /// label half-off-screen until the next pan triggers handlePan.
+    private func clampLabelToBounds() {
+        guard let lbl = label, let parent = lbl.superview else { return }
+        let parentW = parent.bounds.size.width
+        let parentH = parent.bounds.size.height
+        if parentW <= 0 || parentH <= 0 { return }
+        let halfW = lbl.bounds.size.width / 2
+        let halfH = lbl.bounds.size.height / 2
+        lbl.center = CGPoint(
+            x: max(halfW, min(parentW - halfW, lbl.center.x)),
+            y: max(halfH, min(parentH - halfH, lbl.center.y))
+        )
+    }
+
+    /// Fires when a UIWindowScene disconnects (multi-window close on
+    /// iPad / Vision / Mac Catalyst). If it's the scene our window is
+    /// attached to, drop our references so the next show() rebuilds
+    /// against the new foreground scene. UIScene notifications post on
+    /// the main thread, so this matches the threading invariants of
+    /// attach/detach.
+    @objc private func handleSceneDisconnect(_ note: Notification) {
+        guard let scene = note.object as? UIWindowScene else { return }
+        if overlayWindow?.windowScene === scene {
+            detach()
+        }
+    }
+
     private func renderText(_ s: PerfSample) -> String {
         let cpuStr = s.cpu > 0 ? String(format: "%.1f%%", s.cpu) : "--"
         let mb = s.rss / 1024.0 / 1024.0
@@ -603,5 +765,188 @@ private final class Overlay: NSObject {
             if fallback == nil { fallback = ws }
         }
         return fallback
+    }
+}
+
+// MARK: - MemoryWarningCenter
+//
+// Bridges UIKit's memory-warning notification to Nitro callbacks.
+//
+// iOS only emits one level — `UIApplicationDidReceiveMemoryWarningNotification`
+// — which we map to `critical`. There is no `low` analog on iOS, by design
+// (`MemoryWarningEvent.level` is normalised across platforms).
+//
+// The observer is registered lazily on the first `add(callback:)` and kept
+// for the process lifetime. iOS guarantees a single NotificationCenter
+// callback per notification, so cost is negligible. Callbacks fire on the
+// main thread because that's the queue UIApplication posts on; Nitro's
+// dispatcher will hop back to the JS thread.
+
+/// 500ms cleanup throttle. UIApplication usually coalesces repeated
+/// didReceiveMemoryWarning posts but doesn't guarantee it; without a
+/// gate, a burst would re-run URLCache.removeAllCachedResponses
+/// (no-op), WK clear (kicks off a redundant async run) and a 100-500ms
+/// malloc zone walk back-to-back. Mirrors Android's emit() dedupe
+/// window in MemoryWarningCenter.kt.
+private let kCleanupDedupSec: Double = 0.5
+
+/// `malloc_zone_pressure_relief(nil, 0)` walks every registered libmalloc
+/// zone and can block 100-500ms on an 800MB+ heap. Hosted off-main on a
+/// userInitiated queue so the OS memory-warning observer chain returns
+/// promptly. File-scope private so all MemoryWarningCenter calls share
+/// the queue.
+private let perfStatsCleanupQueue = DispatchQueue(
+    label: "io.onekey.perfstats.cleanup",
+    qos: .userInitiated
+)
+
+private final class MemoryWarningCenter: NSObject {
+    static let shared = MemoryWarningCenter()
+
+    private override init() { super.init() }
+
+    private let lock = NSLock()
+    private var listeners: [Int: (MemoryWarningEvent) -> Void] = [:]
+    private var nextId: Int = 1
+    private var observed = false
+    /// Monotonic seconds of the last cleanup run, guarded by `lock`.
+    /// Survives the process lifetime to honour the dedup window across
+    /// rapid back-to-back memory warnings.
+    private var lastCleanupSec: Double = 0
+
+    func add(callback: @escaping (MemoryWarningEvent) -> Void) -> Int {
+        lock.lock()
+        let id = nextId
+        nextId += 1
+        listeners[id] = callback
+        if !observed {
+            // Register synchronously inside the lock so a memory warning
+            // posted between `add` returning and the observer being attached
+            // cannot slip past the caller. NotificationCenter.addObserver
+            // has no main-thread requirement; the selector is dispatched on
+            // whichever thread posts the notification (UIApplication posts
+            // on main, so handleWarning still lands there).
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(self.handleWarning),
+                name: UIApplication.didReceiveMemoryWarningNotification,
+                object: nil
+            )
+            observed = true
+        }
+        lock.unlock()
+        return id
+    }
+
+    func remove(id: Int) {
+        lock.lock()
+        listeners.removeValue(forKey: id)
+        lock.unlock()
+    }
+
+    @objc private func handleWarning() {
+        let rssBefore = Sampler.shared.residentBytesPublic()
+        let event = MemoryWarningEvent(
+            level: .critical,
+            rss: Double(rssBefore),
+            timestamp: Date().timeIntervalSince1970 * 1000.0
+        )
+        OneKeyLog.warn(kTag, String(
+            format: "Memory warning received (critical), RSS=%.1f MB",
+            event.rss / 1024.0 / 1024.0
+        ))
+
+        // Throttle native cleanup but never the JS notification: the OS
+        // can post a second warning within milliseconds of the first
+        // (UIApplication "usually coalesces" — not guaranteed), and the
+        // second one's URLCache + WK + malloc relief would all be
+        // redundant work. JS handlers still get every signal because
+        // they may want to know the pressure persists even after a
+        // skipped cleanup.
+        let nowSec = monotonicSec()
+        lock.lock()
+        let shouldClean = nowSec - lastCleanupSec >= kCleanupDedupSec
+        if shouldClean { lastCleanupSec = nowSec }
+        lock.unlock()
+
+        if shouldClean {
+            performNativeCleanup(rssBefore: rssBefore)
+        }
+
+        lock.lock()
+        let snapshot = Array(listeners.values)
+        lock.unlock()
+        for cb in snapshot { cb(event) }
+    }
+
+    /// Three reclaim paths, ordered from cheap-and-safe to system-level:
+    ///
+    /// 1. `URLCache.shared.removeAllCachedResponses()` — drops the
+    ///    process-wide HTTP response cache (CFNetwork). Empirically the
+    ///    largest single non-WebView pool, often 50–200 MB. **Note:**
+    ///    this is process-wide, so any code path relying on URLCache
+    ///    for offline content (some image libraries, default
+    ///    URLSessionConfiguration) loses its cached responses; the
+    ///    next request goes to network. Synchronous, ~few ms.
+    /// 2. `WKWebsiteDataStore.removeData(...)` for HTTP caches and the
+    ///    AppCache/ServiceWorker store. Excludes cookies / localStorage
+    ///    / IndexedDB so in-WebView auth survives. **AppCache and
+    ///    Service Worker registrations ARE in scope** — PWAs that rely
+    ///    on a Service Worker for offline fallback will lose that until
+    ///    the SW re-registers on next navigation. Asynchronous, runs on
+    ///    a WebKit private queue; the reclaim is not visible in the
+    ///    rssBefore/rssAfter delta logged below.
+    /// 3. `malloc_zone_pressure_relief(nil, 0)` — asks libmalloc to
+    ///    walk every registered zone and return free pages to the
+    ///    kernel. This is the only API that actually drops
+    ///    `phys_footprint`; the previous two reduce allocator usage but
+    ///    pages stay mapped until pressure relief runs. **Can block
+    ///    100-500ms on a heap of 800MB+**, so it's dispatched to a
+    ///    background queue.
+    ///
+    /// - parameter rssBefore: baseline for the reclaim-delta log. Pass
+    ///   non-nil from the memory-warning path so the bg-dispatched
+    ///   `OneKeyLog.warn` shows "before/after"; pass nil for caller-
+    ///   initiated cleanups (`cleanupNativeCaches`) to skip the log.
+    func performNativeCleanup(rssBefore: UInt64? = nil) {
+        URLCache.shared.removeAllCachedResponses()
+
+        let cacheTypes: Set<String> = [
+            WKWebsiteDataTypeMemoryCache,
+            WKWebsiteDataTypeDiskCache,
+            WKWebsiteDataTypeOfflineWebApplicationCache,
+        ]
+        WKWebsiteDataStore.default().removeData(
+            ofTypes: cacheTypes,
+            modifiedSince: Date(timeIntervalSince1970: 0),
+            completionHandler: {}
+        )
+
+        perfStatsCleanupQueue.async {
+            malloc_zone_pressure_relief(nil, 0)
+            guard let before = rssBefore else { return }
+            let rssAfter = Sampler.shared.residentBytesPublic()
+            let deltaMB = (Double(before) - Double(rssAfter)) / 1024.0 / 1024.0
+            if deltaMB > 0.5 {
+                OneKeyLog.warn(kTag, String(
+                    format: "Native cleanup reclaimed %.1f MB (RSS %.1f → %.1f, " +
+                            "excludes WK async reclaim which completes later)",
+                    deltaMB,
+                    Double(before) / 1024.0 / 1024.0,
+                    Double(rssAfter) / 1024.0 / 1024.0
+                ))
+            }
+        }
+    }
+
+    /// Local monotonic helper. `Sampler.monotonicSec` is private; rather
+    /// than widening its visibility for one caller, we inline the same
+    /// `clock_gettime(CLOCK_MONOTONIC)` lookup here.
+    private func monotonicSec() -> Double {
+        var ts = timespec()
+        if clock_gettime(CLOCK_MONOTONIC, &ts) != 0 {
+            return Date().timeIntervalSince1970
+        }
+        return Double(ts.tv_sec) + Double(ts.tv_nsec) / 1_000_000_000.0
     }
 }

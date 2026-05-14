@@ -7,19 +7,26 @@ import android.database.Cursor
 import android.net.Uri
 
 /**
- * Auto-initialises [Overlay] before Application.onCreate().
+ * Auto-initialises [Overlay] and [MemoryWarningCenter] before
+ * Application.onCreate().
  *
  * ContentProvider.onCreate() runs between Application.attachBaseContext()
  * and Application.onCreate(), so registering ActivityLifecycleCallbacks
- * here guarantees we capture the launcher Activity's first onResumed
- * event. Without this hook, JS code calling showOverlay() after the React
- * tree mounts would arrive too late and `currentActivity` would stay null.
+ * and ComponentCallbacks2 here guarantees:
+ *  - we capture the launcher Activity's first onResumed event (Overlay),
+ *  - we are subscribed before the system can fire its first low-memory
+ *    callback (MemoryWarningCenter).
+ *
+ * Without this hook, JS code calling showOverlay() / addMemoryWarningListener
+ * after the React tree mounts would arrive after early-boot memory
+ * pressure events and would miss them.
  */
 class PerfStatsInitProvider : ContentProvider() {
 
     override fun onCreate(): Boolean {
         val app = context?.applicationContext as? Application ?: return true
         Overlay.bootstrap(app)
+        MemoryWarningCenter.bootstrap(app)
         return true
     }
 
