@@ -17,8 +17,6 @@ import com.margelo.nitro.nativelogger.OneKeyLog
 import com.tencent.mmkv.MMKV
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okio.buffer
-import okio.sink
 import java.io.BufferedInputStream
 import java.io.BufferedReader
 import java.io.File
@@ -309,43 +307,179 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     }
 
     /**
-     * Check if an existing APK is valid by verifying GPG signature and SHA256 against the ASC file.
-     * Downloads ASC if not present. Returns true if APK is valid.
+     * Outcome of verifying an existing APK against its detached SHA256SUMS.asc.
+     * Three states matter: a clean pass, a real hash mismatch (file is stale and
+     * must be discarded), and "we can't tell" — typically because the ASC was
+     * unfetchable (no network) or the local ASC is unparseable. The previous
+     * Boolean collapsed Indeterminate into "invalid" and the caller deleted a
+     * perfectly-good partial download on every transient network blip.
      */
-    private fun tryVerifyExistingApk(url: String, filePath: String, apkFile: File): Boolean {
+    private sealed class ApkVerifyOutcome {
+        object Valid : ApkVerifyOutcome()
+        object HashMismatch : ApkVerifyOutcome()
+        object Indeterminate : ApkVerifyOutcome()
+    }
+
+    /**
+     * Check the apkFile against its detached SHA256SUMS.asc and return a
+     * tri-state outcome. Callers must NOT delete the APK on Indeterminate —
+     * the bytes on disk may still be the right ones; the next online retry can
+     * decide. Downloads ASC if not present.
+     */
+    private fun verifyExistingApk(url: String, filePath: String, apkFile: File): ApkVerifyOutcome {
         return try {
             val ascFilePath = "$filePath.SHA256SUMS.asc"
             val ascFile = buildFile(ascFilePath)
 
             if (!ascFile.exists()) {
                 val ascUrl = "$url.SHA256SUMS.asc"
-                OneKeyLog.info("AppUpdate", "tryVerifyExistingApk: ASC not found, downloading from $ascUrl")
-                if (downloadAscFile(ascUrl, ascFile) == null) {
-                    OneKeyLog.warn("AppUpdate", "tryVerifyExistingApk: ASC download failed")
-                    return false
+                OneKeyLog.info("AppUpdate", "verifyExistingApk: ASC not found, downloading from $ascUrl")
+                val downloaded = try {
+                    downloadAscFile(ascUrl, ascFile)
+                } catch (e: Exception) {
+                    // OkHttp throws IOException family on offline / DNS / connection-reset.
+                    // Treat as Indeterminate so caller preserves the partial.
+                    OneKeyLog.warn("AppUpdate", "verifyExistingApk: ASC download threw ${e.javaClass.simpleName}: ${e.message}")
+                    null
                 }
-                OneKeyLog.info("AppUpdate", "tryVerifyExistingApk: ASC downloaded to ${ascFile.absolutePath}")
+                if (downloaded == null) {
+                    OneKeyLog.warn("AppUpdate", "verifyExistingApk: ASC unavailable, indeterminate")
+                    return ApkVerifyOutcome.Indeterminate
+                }
+                OneKeyLog.info("AppUpdate", "verifyExistingApk: ASC downloaded to ${ascFile.absolutePath}")
             }
 
             val expectedSha256 = verifyAscAndExtractSha256(ascFile)
             if (expectedSha256 == null) {
-                OneKeyLog.warn("AppUpdate", "tryVerifyExistingApk: GPG verification or SHA256 extraction failed")
-                return false
+                // Local ASC failed parsing/GPG. Could be a corrupted cache from
+                // an earlier interrupted write — drop it so the next round
+                // re-downloads cleanly. Don't condemn the APK on this alone.
+                OneKeyLog.warn("AppUpdate", "verifyExistingApk: GPG verification or SHA256 extraction failed, discarding local ASC")
+                ascFile.delete()
+                return ApkVerifyOutcome.Indeterminate
             }
 
-            OneKeyLog.info("AppUpdate", "tryVerifyExistingApk: computing SHA256 of existing APK (size=${apkFile.length()})...")
+            OneKeyLog.info("AppUpdate", "verifyExistingApk: computing SHA256 of existing APK (size=${apkFile.length()})...")
             val actualSha256 = computeSha256(apkFile)
 
             if (secureCompare(actualSha256, expectedSha256)) {
-                OneKeyLog.info("AppUpdate", "tryVerifyExistingApk: SHA256 matches, APK is valid")
+                OneKeyLog.info("AppUpdate", "verifyExistingApk: SHA256 matches, APK is valid")
+                ApkVerifyOutcome.Valid
+            } else {
+                OneKeyLog.warn("AppUpdate", "verifyExistingApk: SHA256 mismatch, expected=${expectedSha256.take(16)}..., got=${actualSha256.take(16)}...")
+                ApkVerifyOutcome.HashMismatch
+            }
+        } catch (e: Exception) {
+            OneKeyLog.warn("AppUpdate", "verifyExistingApk: unexpected failure: ${e.javaClass.simpleName}: ${e.message}")
+            ApkVerifyOutcome.Indeterminate
+        }
+    }
+
+    /**
+     * Thrown when we cannot decide whether the bytes on disk are still
+     * the right APK (typically: ASC unreachable due to offline). Extends
+     * IOException so existing IOException-aware callers still match it,
+     * but a dedicated type lets JS branch on `IOException`/class name
+     * instead of substring-matching the message — which would silently
+     * rot the moment we tweak the wording.
+     */
+    private class ApkVerificationDeferredException :
+        java.io.IOException(DEFERRED_VERIFICATION_MESSAGE) {
+        companion object {
+            const val DEFERRED_VERIFICATION_MESSAGE = "APK verification deferred: ASC unavailable"
+        }
+    }
+
+    /**
+     * Move bytes from the final path back into the .partial slot. Tries
+     * an atomic rename first; on the rare same-fs rename failure, falls
+     * back to a stream copy so a transient FS hiccup cannot destroy the
+     * one and only copy of an already-downloaded payload (the exact
+     * regression this PR is trying to avoid). Returns true if the bytes
+     * are at partialFile by the time we return.
+     */
+    private fun rollbackFinalToPartial(downloadedFile: File, partialFile: File): Boolean {
+        if (!downloadedFile.exists()) return false
+        if (partialFile.exists()) partialFile.delete()
+        if (downloadedFile.renameTo(partialFile)) return true
+        OneKeyLog.warn("AppUpdate", "rollbackFinalToPartial: rename failed, falling back to byte copy (size=${downloadedFile.length()})")
+        return try {
+            FileInputStream(downloadedFile).use { input ->
+                FileOutputStream(partialFile).use { output ->
+                    val buffer = ByteArray(8192)
+                    var n: Int
+                    while (input.read(buffer).also { n = it } != -1) {
+                        output.write(buffer, 0, n)
+                    }
+                }
+            }
+            val ok = partialFile.length() == downloadedFile.length()
+            if (ok) {
+                downloadedFile.delete()
+                OneKeyLog.info("AppUpdate", "rollbackFinalToPartial: byte copy fallback succeeded (size=${partialFile.length()})")
                 true
             } else {
-                OneKeyLog.warn("AppUpdate", "tryVerifyExistingApk: SHA256 mismatch, expected=${expectedSha256.take(16)}..., got=${actualSha256.take(16)}...")
+                OneKeyLog.error("AppUpdate", "rollbackFinalToPartial: byte copy size mismatch (partial=${partialFile.length()}, final=${downloadedFile.length()}), discarding copy")
+                partialFile.delete()
                 false
             }
         } catch (e: Exception) {
-            OneKeyLog.warn("AppUpdate", "tryVerifyExistingApk: failed: ${e.javaClass.simpleName}: ${e.message}")
+            OneKeyLog.error("AppUpdate", "rollbackFinalToPartial: byte copy fallback failed: ${e.javaClass.simpleName}: ${e.message}")
+            if (partialFile.exists()) partialFile.delete()
             false
+        }
+    }
+
+    /**
+     * Outcome of promoting a fully-sized .partial to the final path and
+     * running the GPG/SHA verifier against it.
+     */
+    private sealed class PromoteOutcome {
+        object Valid : PromoteOutcome()
+        object HashMismatch : PromoteOutcome()
+        object Deferred : PromoteOutcome()     // verifier Indeterminate; bytes restored to .partial
+        object RenameFailed : PromoteOutcome() // promotion rename failed; bytes preserved at .partial
+    }
+
+    /**
+     * Promote .partial -> final, run the verifier, and dispatch the
+     * tri-state outcome. On Indeterminate the bytes are rolled back into
+     * .partial (with copy fallback if rename fails), so callers can
+     * retry later. On promotion-rename failure the .partial is kept
+     * intact so Phase 3 can Range-resume on the next pass.
+     *
+     * This consolidates the previously three-times-duplicated
+     * promote+verify+dispatch logic in downloadAPK. Any future tweak to
+     * promotion semantics happens once here, not in three drift-prone
+     * sites.
+     */
+    private fun tryPromoteAndVerify(
+        url: String,
+        filePath: String,
+        partialFile: File,
+        downloadedFile: File
+    ): PromoteOutcome {
+        if (downloadedFile.exists()) downloadedFile.delete()
+        if (!partialFile.renameTo(downloadedFile)) {
+            OneKeyLog.warn("AppUpdate", "tryPromoteAndVerify: rename .partial -> final failed, preserving .partial for Range resume")
+            // renameTo is atomic on same fs: either partial moved to
+            // final or it didn't. On failure the bytes are still at
+            // partialFile; leave them so Phase 3 can Range-resume.
+            if (downloadedFile.exists()) downloadedFile.delete()
+            return PromoteOutcome.RenameFailed
+        }
+        return when (verifyExistingApk(url, filePath, downloadedFile)) {
+            ApkVerifyOutcome.Valid -> PromoteOutcome.Valid
+            ApkVerifyOutcome.HashMismatch -> {
+                downloadedFile.delete()
+                PromoteOutcome.HashMismatch
+            }
+            ApkVerifyOutcome.Indeterminate -> {
+                if (!rollbackFinalToPartial(downloadedFile, partialFile)) {
+                    OneKeyLog.error("AppUpdate", "tryPromoteAndVerify: rollback failed for both rename and byte copy; bytes lost")
+                }
+                PromoteOutcome.Deferred
+            }
         }
     }
 
@@ -417,71 +551,287 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     throw Exception("Download URL must use HTTPS")
                 }
 
+                // Resume model (mirrors react-native-bundle-update's downloadBundle):
+                //   * Bytes in flight live in <filePath>.partial.
+                //   * The "final" filePath only ever holds a fully transferred APK
+                //     (verified or about-to-be-verified). This keeps the
+                //     "exists at filePath -> already valid" cache check below
+                //     immune to the previous bug where a half-baked APK at the
+                //     final path looked complete to clearCache / installAPK callers.
+                val partialFilePath = "$filePath.partial"
                 val downloadedFile = buildFile(filePath)
+                val partialFile = buildFile(partialFilePath)
+                val expectedSize = if (fileSize > 0) fileSize else 0L
+
+                // Phase 1 — adopt anything already at the final path.
+                // Old builds (pre-resume) wrote partial bytes here directly, so
+                // a small file at filePath is most likely a stalled download
+                // from an earlier app version: promote it to .partial so we can
+                // Range-resume instead of starting over. A correctly-sized file
+                // goes through the tri-state verifier and only gets deleted on
+                // a real hash mismatch — never on an unfetchable ASC.
+                //
+                // Caveat: when expectedSize == 0 (caller didn't pass fileSize)
+                // we cannot distinguish a complete cached APK from a pre-resume
+                // half-baked one — both flow into the verifier, and a stale
+                // half-baked file that happens to be online will hit
+                // HashMismatch and get deleted (correct, but loses the bytes).
+                // Always pass fileSize from JS to unlock the size-based
+                // pre-resume migration path.
                 if (downloadedFile.exists()) {
-                    OneKeyLog.info("AppUpdate", "downloadAPK: existing APK found (size=${downloadedFile.length()}), verifying...")
-                    if (tryVerifyExistingApk(url, filePath, downloadedFile)) {
-                        OneKeyLog.info("AppUpdate", "downloadAPK: existing APK is valid, skipping download")
-                        sendEvent("update/downloaded")
-                        return@async
+                    val existingSize = downloadedFile.length()
+                    OneKeyLog.info("AppUpdate", "downloadAPK: existing APK at final path (size=$existingSize, expected=$expectedSize)")
+                    when {
+                        expectedSize > 0 && existingSize > expectedSize -> {
+                            OneKeyLog.warn("AppUpdate", "downloadAPK: existing APK larger than expected, deleting")
+                            downloadedFile.delete()
+                        }
+                        expectedSize > 0 && existingSize < expectedSize -> {
+                            OneKeyLog.info("AppUpdate", "downloadAPK: existing APK smaller than expected, promoting to .partial for resume")
+                            if (partialFile.exists()) partialFile.delete()
+                            if (!downloadedFile.renameTo(partialFile)) {
+                                OneKeyLog.warn("AppUpdate", "downloadAPK: rename to .partial failed, deleting stale final")
+                                downloadedFile.delete()
+                            }
+                        }
+                        else -> {
+                            when (verifyExistingApk(url, filePath, downloadedFile)) {
+                                ApkVerifyOutcome.Valid -> {
+                                    OneKeyLog.info("AppUpdate", "downloadAPK: existing APK is valid, skipping download")
+                                    sendEvent("update/downloaded")
+                                    return@async
+                                }
+                                ApkVerifyOutcome.HashMismatch -> {
+                                    OneKeyLog.info("AppUpdate", "downloadAPK: existing APK hash mismatch, deleting and re-downloading")
+                                    downloadedFile.delete()
+                                    if (partialFile.exists()) partialFile.delete()
+                                }
+                                ApkVerifyOutcome.Indeterminate -> {
+                                    // ASC could not be fetched (offline) or could
+                                    // not be parsed. The on-disk APK might still
+                                    // be the right one — surface a transient
+                                    // error so the JS retry layer waits for
+                                    // network and re-runs verify, instead of
+                                    // wiping the bytes preemptively.
+                                    OneKeyLog.warn("AppUpdate", "downloadAPK: cannot verify existing APK (ASC unavailable); preserving file and aborting this attempt")
+                                    throw ApkVerificationDeferredException()
+                                }
+                            }
+                        }
                     }
-                    OneKeyLog.info("AppUpdate", "downloadAPK: existing APK invalid, deleting and re-downloading...")
-                    downloadedFile.delete()
                 }
 
+                // Phase 2 — pick up an in-flight partial.
+                var partialBytes = 0L
+                if (partialFile.exists()) {
+                    val partialSize = partialFile.length()
+                    when {
+                        expectedSize > 0 && partialSize == expectedSize -> {
+                            // Full body on disk but the previous run was killed
+                            // before promotion. Try promote + verify before
+                            // re-downloading.
+                            OneKeyLog.info("AppUpdate", "downloadAPK: partial matches expected size ($partialSize), trying promote+verify")
+                            when (tryPromoteAndVerify(url, filePath, partialFile, downloadedFile)) {
+                                PromoteOutcome.Valid -> {
+                                    OneKeyLog.info("AppUpdate", "downloadAPK: recovered crashed-before-rename APK, skipping download")
+                                    sendEvent("update/downloaded")
+                                    return@async
+                                }
+                                PromoteOutcome.HashMismatch -> {
+                                    OneKeyLog.warn("AppUpdate", "downloadAPK: promoted partial failed hash check, discarding")
+                                    // Helper already deleted final; partial slot empty.
+                                    // Fall through: Phase 3 fetches from byte zero.
+                                }
+                                PromoteOutcome.Deferred -> {
+                                    throw ApkVerificationDeferredException()
+                                }
+                                PromoteOutcome.RenameFailed -> {
+                                    // Bytes preserved at .partial: Phase 3 will Range-resume.
+                                    OneKeyLog.warn("AppUpdate", "downloadAPK: promote rename failed, will Range-resume from .partial")
+                                    partialBytes = partialFile.length()
+                                }
+                            }
+                        }
+                        expectedSize > 0 && partialSize > expectedSize -> {
+                            OneKeyLog.warn("AppUpdate", "downloadAPK: stale partial (>expected $partialSize/$expectedSize), discarding")
+                            partialFile.delete()
+                        }
+                        partialSize > 0 -> {
+                            partialBytes = partialSize
+                            OneKeyLog.info("AppUpdate", "downloadAPK: resuming from $partialBytes bytes (expected=$expectedSize)")
+                        }
+                        else -> partialFile.delete()
+                    }
+                }
+
+                // Phase 3 — fetch (with Range header iff resuming).
                 val client = OkHttpClient.Builder()
                     .connectTimeout(10, TimeUnit.SECONDS)
                     .readTimeout(60, TimeUnit.SECONDS)
                     .followRedirects(false)
                     .followSslRedirects(false)
                     .build()
-                val request = Request.Builder().url(url).build()
-                val response = client.newCall(request).execute()
+                val requestBuilder = Request.Builder().url(url)
+                if (partialBytes > 0) {
+                    requestBuilder.addHeader("Range", "bytes=$partialBytes-")
+                }
+                sendEvent("update/start")
+                OneKeyLog.info("AppUpdate", "downloadAPK: starting download (resume=${partialBytes > 0})...")
 
-                if (!response.isSuccessful) {
+                val response = client.newCall(requestBuilder.build()).execute()
+
+                // 416 Range Not Satisfiable: server says our offset is past the
+                // file length. Two sub-cases distinguishable from
+                // `Content-Range: bytes */<total>`:
+                //   (a) total == partialBytes → file is exactly complete on
+                //       server; our partial IS the whole APK and just needs
+                //       SHA verify + rename. Recover instead of wipe.
+                //   (b) anything else → partial is corrupt or build changed.
+                //       Wipe and bubble up.
+                if (response.code == 416) {
+                    val contentRange = response.header("Content-Range")
+                    response.close()
+                    val totalFromHeader = contentRange
+                        ?.let { Regex("""bytes\s+\*\s*/\s*(\d+)""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
+                    if (totalFromHeader != null && totalFromHeader == partialBytes && partialFile.exists()) {
+                        OneKeyLog.info("AppUpdate", "downloadAPK: HTTP 416 with total=$totalFromHeader matches partial, attempting promote+verify")
+                        when (tryPromoteAndVerify(url, filePath, partialFile, downloadedFile)) {
+                            PromoteOutcome.Valid -> {
+                                OneKeyLog.info("AppUpdate", "downloadAPK: 416 recovery succeeded, skipping download")
+                                sendEvent("update/downloaded")
+                                return@async
+                            }
+                            PromoteOutcome.HashMismatch -> {
+                                // Server says "you have it all" AND sizes match,
+                                // but SHA doesn't: the upstream build was
+                                // replaced after we started downloading. That's
+                                // the actual failure — raw "HTTP 416" misleads
+                                // anyone reading the error.
+                                OneKeyLog.warn("AppUpdate", "downloadAPK: 416 recovery hash mismatch — server build changed mid-download")
+                                if (partialFile.exists()) partialFile.delete()
+                                throw java.io.IOException("Server build changed mid-download (size matches but hash differs)")
+                            }
+                            PromoteOutcome.Deferred -> {
+                                throw ApkVerificationDeferredException()
+                            }
+                            PromoteOutcome.RenameFailed -> {
+                                // Bytes still at .partial; surface a transient
+                                // error so caller retries (and we'll try the
+                                // promotion again next pass).
+                                OneKeyLog.warn("AppUpdate", "downloadAPK: 416 recovery rename failed, retry later")
+                                throw java.io.IOException("Failed to finalize 416 recovery (rename failed)")
+                            }
+                        }
+                    }
+                    OneKeyLog.warn("AppUpdate", "downloadAPK: HTTP 416 (range not satisfiable), discarding partial and failing attempt")
+                    if (partialFile.exists()) partialFile.delete()
+                    throw Exception("HTTP 416 (range not satisfiable)")
+                }
+
+                if (!response.isSuccessful || (response.code != 200 && response.code != 206)) {
                     OneKeyLog.error("AppUpdate", "downloadAPK: HTTP error, statusCode=${response.code}")
+                    response.close()
                     sendEvent("update/error", message = response.code.toString())
                     throw Exception(response.code.toString())
                 }
 
-                val body = response.body ?: throw Exception("Empty response body")
-                val contentLength = if (fileSize > 0) fileSize else body.contentLength()
-                OneKeyLog.info("AppUpdate", "downloadAPK: HTTP 200, contentLength=$contentLength, starting download...")
-                val source = body.source()
-                val sink = downloadedFile.sink().buffer()
-                val sinkBuffer = sink.buffer
+                val expectsResume = partialBytes > 0
+                var serverWillResume = response.code == 206
 
-                var totalBytesRead = 0L
-                val bufferSize = 8 * 1024L
-                sendEvent("update/start")
-                var prevProgress = 0
+                // Server may legally ignore Range and reply 200 with the full
+                // body. Drop the stale partial and restart from byte zero.
+                if (expectsResume && !serverWillResume) {
+                    OneKeyLog.warn("AppUpdate", "downloadAPK: requested Range but server returned 200, restarting from scratch")
+                    if (partialFile.exists()) partialFile.delete()
+                    partialBytes = 0L
+                }
 
-                try {
-                    while (true) {
-                        val bytesRead = source.read(sinkBuffer, bufferSize)
-                        if (bytesRead == -1L) break
-                        sink.emit()
-                        totalBytesRead += bytesRead
-                        if (contentLength > 0) {
-                            val progress = ((totalBytesRead * 100) / contentLength).toInt()
-                            if (prevProgress != progress) {
-                                sendEvent("update/downloading", progress = progress)
-                                OneKeyLog.info("AppUpdate", "download progress: $progress%")
-                                builder.setProgress(100, progress, false)
-                                if (ActivityCompat.checkSelfPermission(
-                                        context, android.Manifest.permission.POST_NOTIFICATIONS
-                                    ) == PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    notifyManager.notify(NOTIFICATION_ID, builder.build())
+                // 206 sanity check: the server MUST tell us where its body
+                // starts. If `Content-Range: bytes start-end/total` is missing
+                // or `start != partialBytes` (CDN bug / proxy rewrite), we'd
+                // be appending mis-aligned bytes and only catching it later
+                // at the SHA step — with the partial now corrupted. Demote to
+                // a full restart instead.
+                val rangeRegex = Regex("""bytes\s+(\d+)\s*-\s*(\d+)\s*/\s*(\d+|\*)""")
+                val rangeMatch = if (serverWillResume) {
+                    response.header("Content-Range")?.let { rangeRegex.find(it) }
+                } else null
+                if (serverWillResume) {
+                    val rangeStart = rangeMatch?.groupValues?.getOrNull(1)?.toLongOrNull()
+                    if (rangeStart == null || rangeStart != partialBytes) {
+                        OneKeyLog.warn("AppUpdate", "downloadAPK: 206 Content-Range start mismatch (header='${response.header("Content-Range")}', requested=$partialBytes); treating as full restart")
+                        if (partialFile.exists()) partialFile.delete()
+                        partialBytes = 0L
+                        serverWillResume = false
+                    }
+                }
+
+                val body = response.body ?: run {
+                    response.close()
+                    throw Exception("Empty response body")
+                }
+                val contentLength = body.contentLength()
+                val totalSize: Long = if (serverWillResume) {
+                    val parsedTotal = rangeMatch?.groupValues?.getOrNull(3)?.toLongOrNull()
+                    parsedTotal ?: (partialBytes + contentLength.coerceAtLeast(0L))
+                } else {
+                    if (contentLength > 0) contentLength else expectedSize
+                }
+                val isPartialResponse = serverWillResume
+                OneKeyLog.info("AppUpdate", "downloadAPK: HTTP ${response.code}, contentLength=$contentLength, totalSize=$totalSize, partialBytes=$partialBytes, downloading...")
+
+                val parentDir = partialFile.parentFile
+                if (parentDir != null && !parentDir.exists()) {
+                    parentDir.mkdirs()
+                    OneKeyLog.info("AppUpdate", "downloadAPK: created parent directory: ${parentDir.absolutePath}")
+                }
+
+                // Append iff server granted us a 206. On a 200 (full body
+                // restart) we truncate the partial file.
+                val appendMode = isPartialResponse
+                var totalBytesRead = if (isPartialResponse) partialBytes else 0L
+                // -1 sentinel (vs the old 0) so 0% emits exactly once on a
+                // fresh start. Listeners just set state from event.progress,
+                // so this is a benign improvement (no double-fire on resume —
+                // a resumed download's first event is already >0%).
+                var prevProgress = -1
+
+                body.byteStream().use { inputStream ->
+                    FileOutputStream(partialFile.absolutePath, appendMode).use { outputStream ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            outputStream.write(buffer, 0, bytesRead)
+                            totalBytesRead += bytesRead
+                            if (totalSize > 0) {
+                                val progress = ((totalBytesRead * 100) / totalSize).toInt().coerceIn(0, 100)
+                                if (progress != prevProgress) {
+                                    sendEvent("update/downloading", progress = progress)
+                                    OneKeyLog.info("AppUpdate", "download progress: $progress% ($totalBytesRead/$totalSize)")
+                                    builder.setProgress(100, progress, false)
+                                    if (ActivityCompat.checkSelfPermission(
+                                            context, android.Manifest.permission.POST_NOTIFICATIONS
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        notifyManager.notify(NOTIFICATION_ID, builder.build())
+                                    }
+                                    prevProgress = progress
                                 }
-                                prevProgress = progress
                             }
                         }
                     }
-                } finally {
-                    sink.flush()
-                    sink.close()
-                    source.close()
+                }
+
+                OneKeyLog.info("AppUpdate", "downloadAPK: download finished, totalBytesRead=$totalBytesRead, finalizing...")
+
+                // Promote .partial -> final ONLY after the full transfer. Doing
+                // it before would mean a SHA mismatch leaves a half-baked
+                // filePath that the next call would mistake for a cached good
+                // APK.
+                if (downloadedFile.exists()) downloadedFile.delete()
+                if (!partialFile.renameTo(downloadedFile)) {
+                    OneKeyLog.error("AppUpdate", "downloadAPK: rename .partial -> final failed")
+                    throw Exception("Failed to finalize download")
                 }
 
                 OneKeyLog.info("AppUpdate", "Download completed")
