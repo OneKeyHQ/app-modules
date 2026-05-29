@@ -664,6 +664,65 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     }
                 }
 
+                // === Concurrent multi-range download (P2) ===
+                // Try the 8-range concurrent path first. On COMPLETED the
+                // .partial is fully on disk, so we promote + emit downloaded
+                // here (SHA/GPG verification still happens later via verifyAPK,
+                // same as the single-stream path). On FALLBACK we fall through
+                // to single-stream Phase 3 below. Transient errors bubble to the
+                // outer catch (the downloader keeps its partial + manifest).
+                sendEvent("update/start")
+                run {
+                    val concurrentClient = OkHttpClient.Builder()
+                        .connectTimeout(10, TimeUnit.SECONDS)
+                        .readTimeout(60, TimeUnit.SECONDS)
+                        .followRedirects(false)
+                        .followSslRedirects(false)
+                        .build()
+                    var concurrentProgress = -1
+                    val concurrentOutcome = ConcurrentRangeDownloader(
+                        httpClient = concurrentClient,
+                        log = { msg -> OneKeyLog.info("AppUpdate", msg) },
+                    ).download(url, partialFilePath) { transferred, total ->
+                        if (total > 0) {
+                            val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
+                            if (p != concurrentProgress) {
+                                sendEvent("update/downloading", progress = p)
+                                builder.setProgress(100, p, false)
+                                if (ActivityCompat.checkSelfPermission(
+                                        context, android.Manifest.permission.POST_NOTIFICATIONS
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notifyManager.notify(NOTIFICATION_ID, builder.build())
+                                }
+                                concurrentProgress = p
+                            }
+                        }
+                    }
+                    if (concurrentOutcome == ConcurrentRangeDownloader.Outcome.COMPLETED) {
+                        if (downloadedFile.exists()) downloadedFile.delete()
+                        if (!partialFile.renameTo(downloadedFile)) {
+                            OneKeyLog.error("AppUpdate", "downloadAPK: concurrent rename .partial -> final failed")
+                            throw Exception("Failed to finalize download")
+                        }
+                        OneKeyLog.info("AppUpdate", "downloadAPK: concurrent download completed")
+                        sendEvent("update/downloaded")
+                        notifyManager.cancel(NOTIFICATION_ID)
+                        builder.setContentText("")
+                            .setProgress(0, 0, false)
+                            .setOngoing(false)
+                            .setAutoCancel(true)
+                        if (ActivityCompat.checkSelfPermission(
+                                context, android.Manifest.permission.POST_NOTIFICATIONS
+                            ) == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notifyManager.notify(NOTIFICATION_ID, builder.build())
+                        }
+                        return@async
+                    }
+                    OneKeyLog.info("AppUpdate", "downloadAPK: concurrent not used, falling back to single-stream")
+                }
+
                 // Phase 3 — fetch (with Range header iff resuming).
                 val client = OkHttpClient.Builder()
                     .connectTimeout(10, TimeUnit.SECONDS)
@@ -675,8 +734,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 if (partialBytes > 0) {
                     requestBuilder.addHeader("Range", "bytes=$partialBytes-")
                 }
-                sendEvent("update/start")
-                OneKeyLog.info("AppUpdate", "downloadAPK: starting download (resume=${partialBytes > 0})...")
+                // update/start already emitted before the concurrent attempt above.
+                OneKeyLog.info("AppUpdate", "downloadAPK: starting single-stream download (resume=${partialBytes > 0})...")
 
                 val response = client.newCall(requestBuilder.build()).execute()
 

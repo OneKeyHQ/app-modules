@@ -1380,6 +1380,10 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 OneKeyLog.info("BundleUpdate", "downloadBundle: file already exists, verifying SHA256...")
                 if (verifyBundleSHA256(filePath, sha256)) {
                     OneKeyLog.info("BundleUpdate", "downloadBundle: existing file SHA256 valid, skipping download")
+                    // Final file is authoritative — drop any stale concurrent
+                    // partial/manifest left by an earlier interrupted attempt.
+                    if (partialFile.exists()) partialFile.delete()
+                    File("$partialFilePath.progress").delete()
                     isDownloading.set(false)
                     Thread.sleep(1000)
                     sendEvent("update/complete")
@@ -1390,6 +1394,49 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     // Stale completed file invalidates any partial too.
                     if (partialFile.exists()) partialFile.delete()
                 }
+            }
+
+            // === Concurrent multi-range download (P2) ===
+            // Try the 8-range concurrent path first. On COMPLETED the .partial
+            // is fully on disk, so we promote + verify here and finish. On
+            // FALLBACK we fall through to the original single-stream path below.
+            // Transient errors bubble to the outer catch (the concurrent
+            // downloader keeps its partial + manifest for resume).
+            sendEvent("update/start")
+            run {
+                var concurrentProgress = -1
+                val concurrentOutcome = ConcurrentRangeDownloader(
+                    httpClient = httpClient,
+                    log = { msg -> OneKeyLog.info("BundleUpdate", msg) },
+                ).download(downloadUrl, partialFilePath) { transferred, total ->
+                    if (total > 0) {
+                        val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
+                        if (p != concurrentProgress) {
+                            sendEvent("update/downloading", progress = p)
+                            concurrentProgress = p
+                        }
+                    }
+                }
+                if (concurrentOutcome == ConcurrentRangeDownloader.Outcome.COMPLETED) {
+                    // Promote .partial -> final, then SHA256 verify — identical
+                    // finalize to the single-stream path below.
+                    if (downloadedFile.exists()) downloadedFile.delete()
+                    if (!File(partialFilePath).renameTo(downloadedFile)) {
+                        OneKeyLog.error("BundleUpdate", "downloadBundle: concurrent rename .partial -> final failed")
+                        throw Exception("Failed to finalize download")
+                    }
+                    OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent download finished, verifying SHA256...")
+                    if (!verifyBundleSHA256(filePath, sha256)) {
+                        val reason = BundleUpdateStoreAndroid.lastSHA256FailureReason() ?: "MISMATCH"
+                        File(filePath).delete()
+                        OneKeyLog.error("BundleUpdate", "downloadBundle: concurrent SHA256 verification failed, reason=$reason")
+                        throw Exception("Bundle SHA256 verification failed: $reason")
+                    }
+                    sendEvent("update/complete")
+                    OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent completed successfully, appVersion=$appVersion, bundleVersion=$bundleVersion")
+                    return@async result
+                }
+                OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent not used, falling back to single-stream")
             }
 
             // Resume: if a partial from a previous run exists and is smaller
@@ -1430,8 +1477,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
             }
 
-            sendEvent("update/start")
-            OneKeyLog.info("BundleUpdate", "downloadBundle: starting download (resume=${partialBytes > 0})...")
+            // update/start already emitted before the concurrent attempt above.
+            OneKeyLog.info("BundleUpdate", "downloadBundle: starting single-stream download (resume=${partialBytes > 0})...")
 
             val requestBuilder = Request.Builder().url(downloadUrl)
             if (partialBytes > 0) {
