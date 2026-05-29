@@ -1475,6 +1475,38 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 }
             }
 
+            // === Concurrent + background multi-range download (P2/P4) ===
+            // Try the 8-range background session first. On success the bundle is
+            // fully assembled at filePath (downloads continue even if the app is
+            // suspended). On FallbackError we fall through to the single-stream
+            // path below. Transient errors bubble to the outer Promise; the
+            // concurrent downloader keeps its `.segN` files for the next attempt.
+            self.sendEvent(type: "update/start")
+            self.stateQueue.sync { self.activeDownloadFilePath = filePath }
+            do {
+                try await ConcurrentBundleDownloader.shared.downloadConcurrent(
+                    urlString: downloadUrl,
+                    filePath: filePath
+                ) { [weak self] progress in
+                    self?.sendEvent(type: "update/downloading", progress: progress)
+                }
+                OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent finished, verifying SHA256...")
+                if !self.verifyBundleSHA256(filePath, sha256: sha256) {
+                    let reason = BundleUpdateStore.lastSHA256FailureReason() ?? "MISMATCH"
+                    try? FileManager.default.removeItem(atPath: filePath)
+                    self.sendEvent(type: "update/error", message: "SHA256_\(reason)")
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle SHA256 verification failed: \(reason)"])
+                }
+                try? FileManager.default.removeItem(atPath: resumeDataPath)
+                self.sendEvent(type: "update/complete")
+                OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent completed successfully, appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
+                return result
+            } catch let fb as ConcurrentBundleDownloader.FallbackError {
+                OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent fallback (\(fb.reason)), using single-stream")
+                ConcurrentBundleDownloader.shared.discardArtifacts(filePath: filePath)
+                // fall through to the single-stream path below
+            }
+
             // Download the file
             guard let url = URL(string: downloadUrl) else {
                 OneKeyLog.error("BundleUpdate", "downloadBundle: invalid URL: \(downloadUrl)")
@@ -1495,8 +1527,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 return data
             }()
 
-            self.sendEvent(type: "update/start")
-            OneKeyLog.info("BundleUpdate", "downloadBundle: starting download (resumeBytes=\(persistedResumeData?.count ?? 0))...")
+            // update/start already emitted before the concurrent attempt above.
+            OneKeyLog.info("BundleUpdate", "downloadBundle: starting single-stream download (resumeBytes=\(persistedResumeData?.count ?? 0))...")
 
             let request = URLRequest(url: url)
 
