@@ -6,6 +6,17 @@ import ReactNativeNativeLogger
 public class LaunchOptionsStore: NSObject {
     public static let shared = LaunchOptionsStore()
 
+    // Exposed as an Objective-C class method so the app's
+    // NSClassFromString + perform() bridge can reach the singleton.
+    // A Swift `static let` stored type property is NOT visible to the
+    // Objective-C runtime (even under @objcMembers), so KVC
+    // `value(forKeyPath: "shared")` returns nil and silently drops every
+    // `setValue(_:forKey:)` write (e.g. startupTime), which is why iOS
+    // never reported launch timing while Android did.
+    public static func sharedInstance() -> LaunchOptionsStore {
+        return shared
+    }
+
     public var launchOptions: [AnyHashable: Any]?
     public var deviceToken: Data?
     public var startupTime: TimeInterval = 0
