@@ -3,7 +3,7 @@ require "json"
 package = JSON.parse(File.read(File.join(__dir__, "package.json")))
 
 Pod::Spec.new do |s|
-  s.name         = "ZipArchive"
+  s.name         = "ReactNativeZipArchive"
   s.version      = package["version"]
   s.summary      = package["description"]
   s.homepage     = package["homepage"]
@@ -13,9 +13,16 @@ Pod::Spec.new do |s|
   s.platforms    = { :ios => min_ios_version_supported }
   s.source       = { :git => "https://github.com/OneKeyHQ/app-modules/react-native-zip-archive.git", :tag => "#{s.version}" }
 
-  s.source_files = "ios/**/*.{h,m,mm}"
+  s.source_files = [
+    "ios/**/*.{swift}",
+    "ios/**/*.{m,mm}",
+    "cpp/**/*.{hpp,cpp}",
+  ]
 
   s.dependency 'SSZipArchive'
+
+  load 'nitrogen/generated/ios/ReactNativeZipArchive+autolinking.rb'
+  add_nitrogen_files(s)
 
   install_modules_dependencies(s)
 end

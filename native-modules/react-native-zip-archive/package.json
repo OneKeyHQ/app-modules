@@ -15,18 +15,26 @@
   "files": [
     "src",
     "lib",
+    "android",
     "ios",
+    "nitrogen",
+    "nitro.json",
     "*.podspec",
     "!ios/build",
+    "!android/build",
+    "!android/gradle",
+    "!android/gradlew",
+    "!android/gradlew.bat",
+    "!android/local.properties",
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
     "!**/.*",
-    "android",
     "!**/*.map"
   ],
   "scripts": {
     "prepare": "bob build",
+    "nitrogen": "nitrogen",
     "typecheck": "tsc",
     "release": "yarn prepare && npm whoami && npm publish --access public"
   },
@@ -50,19 +58,29 @@
   },
   "peerDependencies": {
     "react": "*",
-    "react-native": "*"
+    "react-native": "*",
+    "react-native-nitro-modules": "0.33.2"
   },
   "devDependencies": {
     "@react-native/babel-preset": "0.83.0",
+    "nitrogen": "0.31.10",
     "react": "19.2.0",
-    "react-native": "0.83.0",
+    "react-native": "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch",
     "react-native-builder-bob": "^0.40.17",
+    "react-native-nitro-modules": "0.33.2",
     "typescript": "^5.9.2"
   },
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",
     "targets": [
+      [
+        "custom",
+        {
+          "script": "nitrogen",
+          "clean": "nitrogen/"
+        }
+      ],
       [
         "module",
         {
@@ -76,18 +94,5 @@
         }
       ]
     ]
-  },
-  "codegenConfig": {
-    "name": "RNZipArchiveSpec",
-    "type": "modules",
-    "jsSrcsDir": "src",
-    "android": {
-      "javaPackageName": "com.rnziparchive"
-    },
-    "ios": {
-      "modulesProvider": {
-        "RNZipArchive": "ZipArchive"
-      }
-    }
   }
 }

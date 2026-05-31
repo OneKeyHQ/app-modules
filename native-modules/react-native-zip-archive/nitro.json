@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativeziparchive"],
+  "ios": {
+    "iosModuleName": "ReactNativeZipArchive"
+  },
+  "android": {
+    "androidNamespace": ["reactnativeziparchive"],
+    "androidCxxLibName": "reactnativeziparchive"
+  },
+  "autolinking": {
+    "ReactNativeZipArchive": {
+      "swift": "ReactNativeZipArchive",
+      "kotlin": "ReactNativeZipArchive"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
