@@ -36,6 +36,11 @@ Pod::Spec.new do |s|
   # single in-tree Gopenpgp.xcframework — removing the duplicate framework that
   # previously caused a same-named pod conflict on iOS.
   s.dependency 'ReactNativeBundleCrypto'
+  # Shared concurrent + background multi-range downloader. The iOS bundle
+  # download now delegates its 8-range background download to
+  # react-native-range-downloader's RangeDownloader.shared (the concurrent
+  # downloader that originated here), removing the in-tree duplicate.
+  s.dependency 'ReactNativeRangeDownloader'
   s.dependency 'SSZipArchive', '~> 2.4'
   s.dependency 'MMKV', '~> 2.2'
 

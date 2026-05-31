@@ -143,6 +143,10 @@ dependencies {
   // of truth across both native modules.
   implementation project(":onekeyfe_react-native-bundle-crypto")
 
+  // Shared concurrent range downloader lives in react-native-range-downloader.
+  // This module reuses it instead of carrying its own byte-identical copy.
+  implementation project(":onekeyfe_react-native-range-downloader")
+
   implementation "com.squareup.okhttp3:okhttp:4.12.0"
 
   // MMKV for reading DevSettings (compileOnly: provided by the host app via react-native-mmkv)

@@ -2,6 +2,7 @@ import NitroModules
 import ReactNativeNativeLogger
 import Foundation
 import ReactNativeBundleCrypto
+import ReactNativeRangeDownloader
 import SSZipArchive
 import MMKV
 import UIKit
@@ -1217,21 +1218,56 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 }
             }
 
-            // === Concurrent + background multi-range download (P2/P4) ===
-            // Try the 8-range background session first. On success the bundle is
-            // fully assembled at filePath (downloads continue even if the app is
-            // suspended). On FallbackError we fall through to the single-stream
-            // path below. Transient errors bubble to the outer Promise; the
-            // concurrent downloader keeps its `.segN` files for the next attempt.
+            // === Concurrent + background multi-range download (shared core) ===
+            // Delegate to react-native-range-downloader's RangeDownloader (the
+            // 8-range background session that originated in this module). On
+            // success the bundle is fully assembled at filePath (downloads
+            // continue even if the app is suspended). A `.fallback` outcome —
+            // Range unsupported, server returned 200, file too small, or a
+            // transient error — makes us hand off to the single-stream path
+            // below; the range downloader keeps its `.segN` files for the next
+            // attempt (its background session resumes them by taskId).
             self.sendEvent(type: "update/start")
             self.stateQueue.sync { self.activeDownloadFilePath = filePath }
-            do {
-                try await ConcurrentBundleDownloader.shared.downloadConcurrent(
-                    urlString: downloadUrl,
-                    filePath: filePath
-                ) { [weak self] progress in
-                    self?.sendEvent(type: "update/downloading", progress: progress)
-                }
+
+            // Stable, unique task id for this bundle. Same value across retry
+            // attempts so the range downloader can resume its `.segN` files, and
+            // it lets the progress listener below filter events to THIS download.
+            let rangeTaskId = "\(appVersion)-\(bundleVersion)"
+
+            // Bridge RangeDownloader progress events back into this module's
+            // `update/downloading` stream. We only react to "progress" events on
+            // the bundle channel for our own task id; "start"/"complete"/
+            // "fallback" are surfaced by this method's own sendEvent calls and
+            // the download outcome below, so we don't double-emit them here.
+            let progressListenerId = RangeDownloader.shared.addListener { [weak self] event in
+                guard event.channel.stringValue == DownloadChannel.bundle.stringValue,
+                      event.taskId == rangeTaskId,
+                      event.type == "progress" else { return }
+                self?.sendEvent(type: "update/downloading", progress: Int(event.progress))
+            }
+
+            let (rangeOutcome, _, rangeReason) = await RangeDownloader.shared.download(
+                channel: .bundle,
+                taskId: rangeTaskId,
+                urlString: downloadUrl,
+                filePath: filePath,
+                // SHA256 is verified by this module right after assembly (below),
+                // so we don't double-hash inside the range downloader.
+                expectedSha256: nil,
+                segmentCount: nil,
+                minConcurrentBytes: nil
+            )
+            RangeDownloader.shared.removeListener(progressListenerId)
+
+            if rangeOutcome.stringValue == RangeDownloadOutcome.fallback.stringValue {
+                // Concurrent path unavailable (Range unsupported / file too small /
+                // server returned 200 / transient error). Hand off to the
+                // single-stream path, leaving a clean slot.
+                OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent fallback (\(rangeReason ?? "")), using single-stream")
+                RangeDownloader.shared.discardArtifacts(filePath: filePath)
+                // fall through to the single-stream path below
+            } else {
                 OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent finished, verifying SHA256...")
                 if !self.verifyBundleSHA256(filePath, sha256: sha256) {
                     let reason = BundleUpdateStore.lastSHA256FailureReason() ?? "MISMATCH"
@@ -1243,10 +1279,6 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 self.sendEvent(type: "update/complete")
                 OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent completed successfully, appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
                 return result
-            } catch let fb as ConcurrentBundleDownloader.FallbackError {
-                OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent fallback (\(fb.reason)), using single-stream")
-                ConcurrentBundleDownloader.shared.discardArtifacts(filePath: filePath)
-                // fall through to the single-stream path below
             }
 
             // Download the file

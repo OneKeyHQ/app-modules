@@ -91,9 +91,9 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
 /// "channel|taskId" so multiple channels can download at once. Each running
 /// task's `taskDescription` encodes "channel|taskId|segIndex" so a delegate
 /// callback can locate both the run and the segment.
-final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
+public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
-  static let shared = RangeDownloader()
+  public static let shared = RangeDownloader()
 
   /// Posted by the AppDelegate from
   /// application(_:handleEventsForBackgroundURLSession:completionHandler:).
@@ -248,7 +248,7 @@ final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   // MARK: - Listeners
 
-  func addListener(_ callback: @escaping (RangeDownloadEvent) -> Void) -> Int {
+  public func addListener(_ callback: @escaping (RangeDownloadEvent) -> Void) -> Int {
     lock.lock(); defer { lock.unlock() }
     let id = nextListenerId
     nextListenerId += 1
@@ -256,7 +256,7 @@ final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     return id
   }
 
-  func removeListener(_ id: Int) {
+  public func removeListener(_ id: Int) {
     lock.lock(); defer { lock.unlock() }
     listeners.removeValue(forKey: id)
   }
@@ -315,7 +315,7 @@ final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   /// reason)` when the caller should use its single-stream path. Transient
   /// network errors are also reported as `.fallback` with the error reason (the
   /// `.segN` files are kept for the next attempt).
-  func download(
+  public func download(
     channel: DownloadChannel,
     taskId: String,
     urlString: String,
@@ -544,7 +544,7 @@ final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   // MARK: - URLSessionDownloadDelegate
 
-  func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+  public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                   didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
                   totalBytesExpectedToWrite: Int64) {
     guard let desc = downloadTask.taskDescription,
@@ -568,7 +568,7 @@ final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     }
   }
 
-  func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+  public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                   didFinishDownloadingTo location: URL) {
     guard let desc = downloadTask.taskDescription,
           let (state, idx) = run(for: desc) else { return }
@@ -595,7 +595,7 @@ final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     }
   }
 
-  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+  public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     guard let desc = task.taskDescription,
           let (state, _) = run(for: desc) else { return }
     let ranges = lock.withLockValue { state.ranges }
@@ -638,7 +638,7 @@ final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   /// Called on the session delegate queue when all background events for this
   /// session have been delivered after a background relaunch.
-  func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+  public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
     let identifier = session.configuration.identifier
     DispatchQueue.main.async { [weak self] in
       guard let self = self else { return }
@@ -705,7 +705,7 @@ final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   /// Discards all segment artifacts (used by the caller when falling back to
   /// single-stream so the bare slot is clean).
-  func discardArtifacts(filePath: String) {
+  public func discardArtifacts(filePath: String) {
     for idx in 0..<Self.defaultSegmentCount {
       try? FileManager.default.removeItem(atPath: "\(filePath).seg\(idx)")
     }

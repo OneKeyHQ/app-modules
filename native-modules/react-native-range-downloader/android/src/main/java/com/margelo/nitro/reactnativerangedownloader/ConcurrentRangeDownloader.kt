@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicReference
  * `.partial`. Either both exist (resume) or neither does (fresh) — any other
  * combination is treated as "no resumable state".
  */
-internal class ConcurrentRangeDownloader(
+class ConcurrentRangeDownloader(
     private val httpClient: OkHttpClient,
     private val segmentCount: Int = 8,
     private val minConcurrentBytes: Long = 2L * 1024 * 1024,

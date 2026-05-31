@@ -2901,6 +2901,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeBundleCrypto
     - ReactNativeNativeLogger
+    - ReactNativeRangeDownloader
     - SocketRocket
     - SSZipArchive (~> 2.4)
     - Yoga
@@ -3712,7 +3713,7 @@ SPEC CHECKSUMS:
   ReactCommon: 424cc34cf5055d69a3dcf02f3436481afb8b0f6f
   ReactNativeAppUpdate: b172e0e7bdc76ab46bf63e0d7a51bdb4cacb28b7
   ReactNativeBundleCrypto: 466a12504ed2c1015d8d933b17e2633c295c91b8
-  ReactNativeBundleUpdate: 435866e15454ba73bd69b5735d8704d7d71ea8ac
+  ReactNativeBundleUpdate: 07dd5330a2651a43dcaf748e60eaa3cae2ef0a8f
   ReactNativeCheckBiometricAuthChanged: 67395343869cb5472ca693d6abce58d8e90dbc77
   ReactNativeDeviceUtils: 6d009ed31ff612762c7f0f2d57fb951cb84db6c3
   ReactNativeGetRandomValues: dcb347de8ce5279e4acc799c979b2c8fe1fde470

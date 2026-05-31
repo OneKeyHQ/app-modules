@@ -8,6 +8,7 @@ import com.margelo.nitro.core.Promise
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.nativelogger.OneKeyLog
 import com.margelo.nitro.reactnativebundlecrypto.BundleCryptoCore
+import com.margelo.nitro.reactnativerangedownloader.ConcurrentRangeDownloader
 import com.tencent.mmkv.MMKV
 import okhttp3.OkHttpClient
 import okhttp3.Request
