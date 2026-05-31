@@ -132,6 +132,8 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
+  - MMKV (2.2.4):
+    - MMKVCore (~> 2.2.4)
   - MMKVCore (2.2.4)
   - NitroMmkv (4.1.2):
     - boost
@@ -2868,6 +2870,40 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
+  - ReactNativeBundleUpdate (3.0.38):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - MMKV (~> 2.2)
+    - NitroModules
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeBundleCrypto
+    - ReactNativeNativeLogger
+    - SocketRocket
+    - SSZipArchive (~> 2.4)
+    - Yoga
   - ReactNativeCheckBiometricAuthChanged (3.0.38):
     - boost
     - DoubleConversion
@@ -3356,6 +3392,7 @@ DEPENDENCIES:
   - ReactCommon/turbomodule/core (from `../../../node_modules/react-native/ReactCommon`)
   - "ReactNativeAppUpdate (from `../../../node_modules/@onekeyfe/react-native-app-update`)"
   - "ReactNativeBundleCrypto (from `../../../node_modules/@onekeyfe/react-native-bundle-crypto`)"
+  - "ReactNativeBundleUpdate (from `../../../node_modules/@onekeyfe/react-native-bundle-update`)"
   - "ReactNativeCheckBiometricAuthChanged (from `../../../node_modules/@onekeyfe/react-native-check-biometric-auth-changed`)"
   - "ReactNativeDeviceUtils (from `../../../node_modules/@onekeyfe/react-native-device-utils`)"
   - "ReactNativeGetRandomValues (from `../../../node_modules/@onekeyfe/react-native-get-random-values`)"
@@ -3374,6 +3411,7 @@ DEPENDENCIES:
 SPEC REPOS:
   trunk:
     - CocoaLumberjack
+    - MMKV
     - MMKVCore
     - SocketRocket
     - SSZipArchive
@@ -3554,6 +3592,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/@onekeyfe/react-native-app-update"
   ReactNativeBundleCrypto:
     :path: "../../../node_modules/@onekeyfe/react-native-bundle-crypto"
+  ReactNativeBundleUpdate:
+    :path: "../../../node_modules/@onekeyfe/react-native-bundle-update"
   ReactNativeCheckBiometricAuthChanged:
     :path: "../../../node_modules/@onekeyfe/react-native-check-biometric-auth-changed"
   ReactNativeDeviceUtils:
@@ -3594,6 +3634,7 @@ SPEC CHECKSUMS:
   glog: 5683914934d5b6e4240e497e0f4a3b42d1854183
   hermes-engine: 70fdc9d0bb0d8532e0411dcb21e53ce5a160960a
   KeychainModule: fa5a973be1d933415f40bea536bec4d65e645baa
+  MMKV: 1a8e7dbce7f9cad02c52e1b1091d07bd843aefaf
   MMKVCore: f2dd4c9befea04277a55e84e7812f930537993df
   NitroMmkv: 0be91455465952f2b943f753b9ee7df028d89e5c
   NitroModules: 11bba9d065af151eae51e38a6425e04c3b223ff3
@@ -3671,6 +3712,7 @@ SPEC CHECKSUMS:
   ReactCommon: 424cc34cf5055d69a3dcf02f3436481afb8b0f6f
   ReactNativeAppUpdate: b172e0e7bdc76ab46bf63e0d7a51bdb4cacb28b7
   ReactNativeBundleCrypto: 466a12504ed2c1015d8d933b17e2633c295c91b8
+  ReactNativeBundleUpdate: 435866e15454ba73bd69b5735d8704d7d71ea8ac
   ReactNativeCheckBiometricAuthChanged: 67395343869cb5472ca693d6abce58d8e90dbc77
   ReactNativeDeviceUtils: 6d009ed31ff612762c7f0f2d57fb951cb84db6c3
   ReactNativeGetRandomValues: dcb347de8ce5279e4acc799c979b2c8fe1fde470

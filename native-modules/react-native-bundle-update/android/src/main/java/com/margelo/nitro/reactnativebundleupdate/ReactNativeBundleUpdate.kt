@@ -7,28 +7,21 @@ import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.nativelogger.OneKeyLog
+import com.margelo.nitro.reactnativebundlecrypto.BundleCryptoCore
 import com.tencent.mmkv.MMKV
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
-import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
-import org.bouncycastle.openpgp.PGPPublicKeyRingCollection
-import org.bouncycastle.openpgp.PGPUtil
-import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory
-import org.bouncycastle.openpgp.operator.jcajce.JcaKeyFingerprintCalculator
-import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentVerifierBuilderProvider
-import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -37,75 +30,8 @@ private data class BundleListener(
     val callback: (BundleDownloadEvent) -> Unit
 )
 
-// OneKey GPG public key for signature verification
-private const val GPG_PUBLIC_KEY = """-----BEGIN PGP PUBLIC KEY BLOCK-----
-
-mQINBGJATGwBEADL1K7b8dzYYzlSsvAGiA8mz042pygB7AAh/uFUycpNQdSzuoDE
-VoXq/QsXCOsGkMdFLwlUjarRaxFX6RTV6S51LOlJFRsyGwXiMz08GSNagSafQ0YL
-Gi+aoemPh6Ta5jWgYGIUWXavkjJciJYw43ACMdVmIWos94bA41Xm93dq9C3VRpl+
-EjvGAKRUMxJbH8r13TPzPmfN4vdrHLq+us7eKGJpwV/VtD9vVHAi0n48wGRq7DQw
-IUDU2mKy3wmjwS38vIIu4yQyeUdl4EqwkCmGzWc7Cv2HlOG6rLcUdTAOMNBBX1IQ
-iHKg9Bhh96MXYvBhEL7XHJ96S3+gTHw/LtrccBM+eiDJVHPZn+lw2HqX994DueLV
-tAFDS+qf3ieX901IC97PTHsX6ztn9YZQtSGBJO3lEMBdC4ez2B7zUv4bgyfU+KvE
-zHFIK9HmDehx3LoDAYc66nhZXyasiu6qGPzuxXu8/4qTY8MnhXJRBkbWz5P84fx1
-/Db5WETLE72on11XLreFWmlJnEWN4UOARrNn1Zxbwl+uxlSJyM+2GTl4yoccG+WR
-uOUCmRXTgduHxejPGI1PfsNmFpVefAWBDO7SdnwZb1oUP3AFmhH5CD1GnmLnET+l
-/c+7XfFLwgSUVSADBdO3GVS4Cr9ux4nIrHGJCrrroFfM2yvG8AtUVr16PQARAQAB
-tCJvbmVrZXlocSBkZXZlbG9wZXIgPGRldkBvbmVrZXkuc28+iQJUBBMBCAA+FiEE
-62iuVE8f3YzSZGJPs2mmepC/OHsFAmJATGwCGwMFCQeGH0QFCwkIBwIGFQoJCAsC
-BBYCAwECHgECF4AACgkQs2mmepC/OHtgvg//bsWFMln08ZJjf5od/buJua7XYb3L
-jWq1H5rdjJva5TP1UuQaDULuCuPqllxb+h+RB7g52yRG/1nCIrpTfveYOVtq/mYE
-D12KYAycDwanbmtoUp25gcKqCrlNeSE1EXmPlBzyiNzxJutE1DGlvbY3rbuNZLQi
-UTFBG3hk6JgsaXkFCwSmF95uATAaItv8aw6eY7RWv47rXhQch6PBMCir4+a/v7vs
-lXxQtcpCqfLtjrloq7wvmD423yJVsUGNEa7/BrwFz6/GP6HrUZc6JgvrieuiBE4n
-ttXQFm3dkOfD+67MLMO3dd7nPhxtjVEGi+43UH3/cdtmU4JFX3pyCQpKIlXTEGp2
-wqim561auKsRb1B64qroCwT7aACwH0ZTgQS8rPifG3QM8ta9QheuOsjHLlqjo8jI
-fpqe0vKYUlT092joT0o6nT2MzmLmHUW0kDqD9p6JEJEZUZpqcSRE84eMTFNyu966
-xy/rjN2SMJTFzkNXPkwXYrMYoahGez1oZfLzV6SQ0+blNc3aATt9aQW6uaCZtMw1
-ibcfWW9neHVpRtTlMYCoa2reGaBGCv0Nd8pMcyFUQkVaes5cQHkh3r5Dba+YrVvp
-l4P8HMbN8/LqAv7eBfj3ylPa/8eEPWVifcum2Y9TqherN1C2JDqWIpH4EsApek3k
-NMK6q0lPxXjZ3PaJAlQEEwEIAD4CGwMFCwkIBwIGFQoJCAsCBBYCAwECHgECF4AW
-IQTraK5UTx/djNJkYk+zaaZ6kL84ewUCactdeAUJDxpqwwAKCRCzaaZ6kL84e8TX
-EACtuZUT79PZx964iUf6T04IZ/SFqftMdIPrvCOpyYUkzFfTjufZSP7S5dmut/dl
-VLQnPjip0ZGeHeSX2ersXmmp7Ny2zqZr858ZIdLpamkEg6hRi5LWOOK4clnKzTLe
-OGWlA6WzF3cb4YB4NiNOX1yxxtggZrndyMxLfSU27aZ4h98/g5j/o/FRCt0OzibH
-IGKl+tUayKEEtq7+CrxWHwCXY+wFeeJFm2yhEMqeAZlVpsvGgtfWevQwHaRcld99
-5ousZOOqsCkl1J7rCeaIFowIEA3TzH0FWIQGahGiHN/+zwc7iSIL9gNEq4/AYJWK
-80jPqyrRDia7VfZA/SULbWaPmmqrn/Y8qYl3jDvT/6BuwXFAgK9pz5NkWggkjAMX
-nGylez9tZBfv+Bymv5RTRAHey49noF/6ZcF5fidtXAS2tfhuRIlOUfEY+QyB3lXj
-kxeOOAGJ2ejTVBVIJnfoSFSsG+LH1tvzbDJvNQcMh0oQD849fip+6O0Ae3KfNZpw
-aNkIdxThvBU0XCPgmyEXll/mkS5QlUQUo+EwbZOjr6xGmi310DgJo3Ry1dfZ8qBq
-F3DD6NK40bkfw8I6Qjwf/IXd921ZbKe88UMjVBTpm2IH3WXR51My9LN/2gzV9zL+
-7odaaXfd+u2x9RuZ1caLXSv4Qyc/7Le1d2T4LpevA7GwMrkCDQRiQExsARAAzVHg
-3dsGTAqQd5jCxABJ69SQfBjh6Do1yCl/01uYkdwSKipdMi/SccJBuizc/Y2Fe8Oj
-CPgkWQr9luk/3KjSntMjh9ySx5VJbAi2IX2X/w6Ze9hky3DeEdxRRlV0meTTGupP
-qeLqHJEUh9uqi6zr++mqLQYbucH/6VQTlK0Y3zr3plZHIBf0ybChGih2zdKE0k/T
-4YJgd8hwbRdGEQMwmmH7uZY+WRBRzNrhoSPE5DhK3DCn5kvWtdKXIkg+TVL38UhL
-9TDkaCoUlch/mf5IJW1RnyUZ50RbB7jBeyg8XHE5zYarDmvhOskV2ADcym1h5teZ
-vYsYyyxdBMzUBBLYt2mdbDjj5fUIe9DSbikTD+DY6B6gk8G6tVSe7aZT8z4BFmJL
-hx4BHSktk3tirjynXCvoQ4FB0DdSxvK5zXsw5Eb8iNGaPPhIr+W5AteM37SPBBKg
-zWRwgehGTfsHx94eNW58kMqWq3DzcfW427qUbBvwzEOBO64eWgOKMINCyfqbtkpT
-WqosMa128JRjai/O45RL2+/owCFHzomSqhTew4Ex5CGcFpM0pTQiNPgz4REJZDsx
-7CXNe48eDJvjGjDVIpmfL5/59hc/L36HHj+PnFoqtkp2rnMij4ZEZ7iUDTzyXbne
-cZ4uBKdextLGoAOoorvd3sFcsJURkfF/hJrkk3sAEQEAAYkCPAQYAQgAJhYhBOto
-rlRPH92M0mRiT7NppnqQvzh7BQJiQExsAhsMBQkHhh9EAAoJELNppnqQvzh7RQYP
-/iZVbIahALzpPI+hTg9vmvybKddaaIdkYq7aWXyqfeXlDrs6imGBsDUjQZMEWxgr
-Z/3VqGCzsUSwuubP/bkTzJtx0mKkhMTrzr2fITVvfuNVvfPcEkthL/gxo2+6A3Ph
-WMwdZUAvnaCVcs35IkFI2xyZZkMqdWdGeuf6QES85ZmAtuLgyk+I1XCbY8aeu0/O
-51NyD81Lcc5yYlN8beaufDA0nJtNUDG3GVA+hdSklComO2Q89b4KqiyiWlF26BDn
-OkVKDTmIv6834IytU+STznDzt22yJ2XJmX9k0hOsvPKb13ZQVVBljatGiE11F/He
-Xit9ckUtqpC2KFG8EiIwpNtRvZXSl3etUvPYKTeAmo988QSYJZLQ3HqswTybSw6Q
-3Ixq7d0xRQCziPZzek5CaxlGMqjssBzv8ZqEoWFnZoEJDO9xMRL6A8fVnkeeK+Ry
-dQXaCdBX3HtQ6vVD964omzE+XkIJm0w30YVbXRwPEWjtw7kKH78GSSR95u4j/hZr
-VJBPNrCzFPHh6KQrBx6aB8OzIipGzZbrY8GuoLOz1ODX2XfmwJ2a9iy8xp2tgVe6
-QdeJQoSnAkx1MsC2Mn4BfzhgvC4eLf6pnmiREKpkf5ClKiNJJxP0fnN7hmm4/R3y
-krJzFvwzZF9h3I61P96qxn/URA+DuSo/ZDl0KV6eOONU
-=HlTQ
------END PGP PUBLIC KEY BLOCK-----"""
-
 // Public static store for CustomReactNativeHost access (called before JS starts)
 object BundleUpdateStoreAndroid {
-    private val bcProvider = BouncyCastleProvider()
     private const val PREFS_NAME = "BundleUpdatePrefs"
     internal const val NATIVE_VERSION_PREFS_NAME = "NativeVersionPrefs"
     private const val CURRENT_BUNDLE_VERSION_KEY = "currentBundleVersion"
@@ -426,53 +352,21 @@ object BundleUpdateStoreAndroid {
      */
     fun lastSHA256FailureReason(): String? = lastSHA256Failure.get()
 
+    // Thin delegate over the shared BundleCryptoCore.sha256OfFile. The actual
+    // streaming MessageDigest implementation and its failureReason taxonomy
+    // (FILE_NOT_FOUND / FILE_DISAPPEARED / FILE_TRUNCATED / PERMISSION_DENIED /
+    // OOM / IO_<class> / UNEXPECTED_<class>) now live in react-native-bundle-crypto.
+    // We re-publish that reason into the existing per-thread lastSHA256Failure
+    // ThreadLocal so lastSHA256FailureReason() keeps working unchanged for all
+    // existing analytics call sites.
     fun calculateSHA256(filePath: String): String? {
         lastSHA256Failure.set(null)
-        val file = File(filePath)
-        if (!file.exists()) {
-            lastSHA256Failure.set("FILE_NOT_FOUND")
-            OneKeyLog.error("BundleUpdate", "calculateSHA256: file not found: $filePath")
+        val result = BundleCryptoCore.sha256OfFile(filePath)
+        if (result.sha256 == null) {
+            lastSHA256Failure.set(result.failureReason)
             return null
         }
-        return try {
-            val digest = MessageDigest.getInstance("SHA-256")
-            BufferedInputStream(FileInputStream(filePath)).use { bis ->
-                val buffer = ByteArray(8192)
-                var count: Int
-                while (bis.read(buffer).also { count = it } > 0) {
-                    digest.update(buffer, 0, count)
-                }
-            }
-            bytesToHex(digest.digest())
-        } catch (e: java.io.FileNotFoundException) {
-            lastSHA256Failure.set("FILE_DISAPPEARED")
-            OneKeyLog.error("BundleUpdate", "calculateSHA256: file disappeared during read: ${e.message}")
-            null
-        } catch (e: java.io.EOFException) {
-            lastSHA256Failure.set("FILE_TRUNCATED")
-            OneKeyLog.error("BundleUpdate", "calculateSHA256: truncated file: ${e.message}")
-            null
-        } catch (e: SecurityException) {
-            lastSHA256Failure.set("PERMISSION_DENIED")
-            OneKeyLog.error("BundleUpdate", "calculateSHA256: permission denied: ${e.message}")
-            null
-        } catch (e: OutOfMemoryError) {
-            lastSHA256Failure.set("OOM")
-            OneKeyLog.error("BundleUpdate", "calculateSHA256: OutOfMemoryError on ${file.length()} bytes")
-            null
-        } catch (e: java.io.IOException) {
-            lastSHA256Failure.set("IO_${e.javaClass.simpleName}")
-            OneKeyLog.error("BundleUpdate", "calculateSHA256: ${e.javaClass.simpleName}: ${e.message}")
-            null
-        } catch (e: Exception) {
-            lastSHA256Failure.set("UNEXPECTED_${e.javaClass.simpleName}")
-            OneKeyLog.error("BundleUpdate", "calculateSHA256: ${e.javaClass.simpleName}: ${e.message}")
-            null
-        }
-    }
-
-    private fun bytesToHex(bytes: ByteArray): String {
-        return bytes.joinToString("") { "%02x".format(it) }
+        return result.sha256
     }
 
     fun getMetadataFilePath(context: Context, currentBundleVersion: String?): String? {
@@ -564,16 +458,13 @@ object BundleUpdateStoreAndroid {
         return null
     }
 
-    /** Constant-time comparison to prevent timing attacks on hash values */
+    /**
+     * Constant-time comparison to prevent timing attacks on hash values.
+     * Delegates to the shared BundleCryptoCore.secureEqualHex (same byte-wise
+     * constant-time algorithm).
+     */
     fun secureCompare(a: String, b: String): Boolean {
-        val aBytes = a.toByteArray(Charsets.UTF_8)
-        val bBytes = b.toByteArray(Charsets.UTF_8)
-        if (aBytes.size != bBytes.size) return false
-        var result = 0
-        for (i in aBytes.indices) {
-            result = result or (aBytes[i].toInt() xor bBytes[i].toInt())
-        }
-        return result == 0
+        return BundleCryptoCore.secureEqualHex(a, b)
     }
 
     fun isSafeVersionString(version: String): Boolean {
@@ -581,91 +472,23 @@ object BundleUpdateStoreAndroid {
     }
 
     /**
-     * Verify a PGP cleartext-signed message using BouncyCastle and extract the sha256.
-     * Returns null if verification fails or the signature is not a PGP cleartext message.
+     * Verify a PGP cleartext-signed message and extract the sha256.
+     * Returns null if verification fails or the signature is not a PGP cleartext
+     * message.
+     *
+     * Delegates to the shared BundleCryptoCore.verifyGpgCleartext (the
+     * BouncyCastle verify logic + the OneKey GPG public key now live there as
+     * the single source of truth). Behavior is preserved: any non-valid result
+     * (NOT_PGP_SIGNED_MESSAGE / INVALID_FORMAT / NO_SIGNATURE / PUBKEY_NOT_FOUND
+     * / SIGNATURE_INVALID / NO_SHA256_FIELD / ERROR_*) maps to null.
      */
     fun verifyGPGAndExtractSha256(signature: String): String? {
-        if (!signature.contains("-----BEGIN PGP SIGNED MESSAGE-----")) return null
-
-        return try {
-            // Parse the cleartext signed message
-            val inputStream = signature.byteInputStream()
-            val pgpFactory = JcaPGPObjectFactory(PGPUtil.getDecoderStream(inputStream))
-
-            // Parse the public key
-            val pubKeyStream = PGPUtil.getDecoderStream(GPG_PUBLIC_KEY.byteInputStream())
-            val pgpPubKeyRingCollection = PGPPublicKeyRingCollection(pubKeyStream, JcaKeyFingerprintCalculator())
-
-            // Extract cleartext and signature from the PGP signed message manually
-            // BouncyCastle's cleartext handling requires manual parsing
-            val lines = signature.lines()
-            val hashHeaderIdx = lines.indexOfFirst { it.startsWith("Hash:") }
-            val sigStartIdx = lines.indexOfFirst { it == "-----BEGIN PGP SIGNATURE-----" }
-            val sigEndIdx = lines.indexOfFirst { it == "-----END PGP SIGNATURE-----" }
-
-            if (hashHeaderIdx < 0 || sigStartIdx < 0 || sigEndIdx < 0) {
-                OneKeyLog.error("BundleUpdate", "Invalid PGP cleartext signed message format")
-                return null
-            }
-
-            // The cleartext body is between the Hash header blank line and the PGP SIGNATURE block
-            val bodyStartIdx = hashHeaderIdx + 2 // skip Hash: line and the blank line after it
-            val bodyLines = lines.subList(bodyStartIdx, sigStartIdx)
-            // Remove trailing empty line that PGP adds
-            val cleartextBody = bodyLines.joinToString("\r\n").trimEnd()
-
-            // The signature block
-            val sigBlock = lines.subList(sigStartIdx, sigEndIdx + 1).joinToString("\n")
-
-            // Decode the signature
-            val sigInputStream = PGPUtil.getDecoderStream(sigBlock.byteInputStream())
-            val sigFactory = JcaPGPObjectFactory(sigInputStream)
-            val signatureList = sigFactory.nextObject()
-
-            if (signatureList !is org.bouncycastle.openpgp.PGPSignatureList || signatureList.isEmpty) {
-                OneKeyLog.error("BundleUpdate", "No PGP signature found in message")
-                return null
-            }
-
-            val pgpSignature = signatureList[0]
-            val keyId = pgpSignature.keyID
-
-            // Find the public key
-            val publicKey = pgpPubKeyRingCollection.getPublicKey(keyId)
-            if (publicKey == null) {
-                OneKeyLog.error("BundleUpdate", "Public key not found for keyId: ${java.lang.Long.toHexString(keyId)}")
-                return null
-            }
-
-            // Verify the signature
-            pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
-
-            // Dash-unescape the cleartext per RFC 4880 Section 7.1
-            val unescapedLines = cleartextBody.lines().map { line ->
-                if (line.startsWith("- ")) line.substring(2) else line
-            }
-            val dataToVerify = unescapedLines.joinToString("\r\n").toByteArray(Charsets.UTF_8)
-            pgpSignature.update(dataToVerify)
-
-            if (!pgpSignature.verify()) {
-                OneKeyLog.error("BundleUpdate", "GPG signature verification failed")
-                return null
-            }
-
-            // Signature verified, parse the cleartext JSON
-            val json = JSONObject(cleartextBody.trim())
-            val sha256 = json.optString("sha256", "")
-            if (sha256.isEmpty()) {
-                OneKeyLog.error("BundleUpdate", "No sha256 field in signed cleartext JSON")
-                return null
-            }
-
-            OneKeyLog.info("BundleUpdate", "GPG verification succeeded, sha256: $sha256")
-            sha256
-        } catch (e: Exception) {
-            OneKeyLog.error("BundleUpdate", "GPG verification error: ${e.message}")
-            null
+        val result = BundleCryptoCore.verifyGpgCleartext(signature)
+        if (!result.valid) {
+            OneKeyLog.error("BundleUpdate", "GPG verification failed: ${result.reason}")
+            return null
         }
+        return result.sha256
     }
 
     fun validateMetadataFileSha256(context: Context, currentBundleVersion: String, signature: String?): Boolean {

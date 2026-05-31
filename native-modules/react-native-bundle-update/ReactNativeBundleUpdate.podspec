@@ -19,8 +19,6 @@ Pod::Spec.new do |s|
     "cpp/**/*.{hpp,cpp}",
   ]
 
-  s.vendored_frameworks = 'ios/Frameworks/Gopenpgp.xcframework'
-
   # When ONEKEY_ALLOW_SKIP_GPG_VERIFICATION env var is set to a non-empty, non-'false' value,
   # enable the ALLOW_SKIP_GPG_VERIFICATION Swift compilation condition.
   # Without this flag, all skip-GPG code paths are compiled out (dead code elimination).
@@ -33,6 +31,11 @@ Pod::Spec.new do |s|
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
   s.dependency 'ReactNativeNativeLogger'
+  # Shared GPG/sha256/path-safety security core. iOS verification + hashing now
+  # delegates to react-native-bundle-crypto's BundleCryptoCore, which owns the
+  # single in-tree Gopenpgp.xcframework — removing the duplicate framework that
+  # previously caused a same-named pod conflict on iOS.
+  s.dependency 'ReactNativeBundleCrypto'
   s.dependency 'SSZipArchive', '~> 2.4'
   s.dependency 'MMKV', '~> 2.2'
 
