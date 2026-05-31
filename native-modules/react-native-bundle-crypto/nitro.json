@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativebundlecrypto"],
+  "ios": {
+    "iosModuleName": "ReactNativeBundleCrypto"
+  },
+  "android": {
+    "androidNamespace": ["reactnativebundlecrypto"],
+    "androidCxxLibName": "reactnativebundlecrypto"
+  },
+  "autolinking": {
+    "ReactNativeBundleCrypto": {
+      "swift": "ReactNativeBundleCrypto",
+      "kotlin": "ReactNativeBundleCrypto"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
