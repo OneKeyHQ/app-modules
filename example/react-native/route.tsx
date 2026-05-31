@@ -18,6 +18,11 @@ import { ScrollGuardTestPage } from './pages/ScrollGuardTestPage';
 import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
 import { BundleUpdateTestPage } from './pages/BundleUpdateTestPage';
 import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
+import { RangeDownloaderTestPage } from './pages/RangeDownloaderTestPage';
+import { BundleCryptoTestPage } from './pages/BundleCryptoTestPage';
+import { ZipArchiveTestPage } from './pages/ZipArchiveTestPage';
+import { OtaPipelineTestPage } from './pages/OtaPipelineTestPage';
+import { ApkOtaPipelineTestPage } from './pages/ApkOtaPipelineTestPage';
 import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
 import { TabViewTestPage } from './pages/TabViewTestPage';
 import { TabViewSettingsPage } from './pages/TabViewSettingsPage';
@@ -44,8 +49,13 @@ export type RootStackParamList = {
   LiteCard: undefined;
   GetRandomValues: undefined;
   NativeLogger: undefined;
+  OtaPipeline: undefined;
+  ApkOtaPipeline: undefined;
   PagerView: undefined;
   PerfMemory: undefined;
+  RangeDownloader: undefined;
+  BundleCrypto: undefined;
+  ZipArchive: undefined;
   ScrollGuard: undefined;
   Skeleton: undefined;
   SplashScreen: undefined;
@@ -87,6 +97,36 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
     name: 'Bundle Update',
     description: 'JS bundle download, verification, install, and path management',
     icon: '📥',
+  },
+  {
+    screen: 'BundleCrypto',
+    name: 'Bundle Crypto',
+    description: 'sha256OfFile, secureEqualHex, validateExtractedPathSafety, verifyGpgCleartext',
+    icon: '🔏',
+  },
+  {
+    screen: 'OtaPipeline',
+    name: 'JS Bundle OTA Pipeline',
+    description: 'JS bundle OTA: download → sha256 verify → GPG cleartext verify → unzip → path-safety',
+    icon: '🔗',
+  },
+  {
+    screen: 'ApkOtaPipeline',
+    name: 'APK OTA Pipeline',
+    description: 'APK OTA: download → sha256 → verify detached SHA256SUMS.asc → match → install',
+    icon: '📲',
+  },
+  {
+    screen: 'RangeDownloader',
+    name: 'Range Downloader',
+    description: 'Concurrent multi-range download with progress events and artifact discard',
+    icon: '🚀',
+  },
+  {
+    screen: 'ZipArchive',
+    name: 'Zip Archive',
+    description: 'unzip, getUncompressedSize, isPasswordProtected for OTA bundle archives',
+    icon: '🗜️',
   },
   {
     screen: 'CloudKit',
@@ -340,6 +380,11 @@ export function AppNavigator() {
       <Stack.Screen name="BackgroundThread" component={BackgroundThreadTestPage} options={{ title: 'Background Thread' }} />
       <Stack.Screen name="BiometricAuth" component={BiometricAuthTestPage} options={{ title: 'Biometric Auth' }} />
       <Stack.Screen name="BundleUpdate" component={BundleUpdateTestPage} options={{ title: 'Bundle Update' }} />
+      <Stack.Screen name="BundleCrypto" component={BundleCryptoTestPage} options={{ title: 'Bundle Crypto' }} />
+      <Stack.Screen name="RangeDownloader" component={RangeDownloaderTestPage} options={{ title: 'Range Downloader' }} />
+      <Stack.Screen name="ZipArchive" component={ZipArchiveTestPage} options={{ title: 'Zip Archive' }} />
+      <Stack.Screen name="OtaPipeline" component={OtaPipelineTestPage} options={{ title: 'JS Bundle OTA Pipeline' }} />
+      <Stack.Screen name="ApkOtaPipeline" component={ApkOtaPipelineTestPage} options={{ title: 'APK OTA Pipeline' }} />
       <Stack.Screen name="CloudKit" component={CloudKitTestPage} options={{ title: 'CloudKit' }} />
       <Stack.Screen name="DeviceUtils" component={DeviceUtilsTestPage} options={{ title: 'Device Utils' }} />
       <Stack.Screen name="Keychain" component={KeychainTestPage} options={{ title: 'Keychain' }} />
