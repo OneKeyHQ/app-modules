@@ -17,90 +17,16 @@ import com.margelo.nitro.nativelogger.OneKeyLog
 import com.tencent.mmkv.MMKV
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.BufferedInputStream
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStreamReader
-import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import org.bouncycastle.openpgp.PGPPublicKeyRingCollection
-import org.bouncycastle.openpgp.PGPSignatureList
-import org.bouncycastle.openpgp.PGPUtil
-import org.bouncycastle.openpgp.jcajce.JcaPGPObjectFactory
-import org.bouncycastle.openpgp.operator.jcajce.JcaKeyFingerprintCalculator
-import org.bouncycastle.openpgp.operator.jcajce.JcaPGPContentVerifierBuilderProvider
-import org.bouncycastle.jce.provider.BouncyCastleProvider
-
-// OneKey GPG public key for signature verification
-private const val GPG_PUBLIC_KEY = """-----BEGIN PGP PUBLIC KEY BLOCK-----
-
-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
-=HlTQ
------END PGP PUBLIC KEY BLOCK-----"""
+import com.margelo.nitro.reactnativebundlecrypto.BundleCryptoCore
 
 private data class Listener(
     val id: Double,
@@ -113,8 +39,6 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     companion object {
         private const val CHANNEL_ID = "updateApp"
         private const val NOTIFICATION_ID = 1
-        // Use our own BouncyCastle provider instance to avoid Android's stripped-down built-in "BC"
-        private val bcProvider = BouncyCastleProvider()
     }
 
     private val listeners = CopyOnWriteArrayList<Listener>()
@@ -196,20 +120,18 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         return file
     }
 
-    private fun bytesToHex(bytes: ByteArray): String {
-        return bytes.joinToString("") { "%02x".format(it) }
-    }
-
+    /**
+     * Thin delegate over the shared BundleCryptoCore.sha256OfFile. The streaming
+     * MessageDigest implementation now lives in react-native-bundle-crypto.
+     * Preserves the original throw-on-failure contract: callers here expect a
+     * non-null hex String or an exception, so a null sha256 (with its
+     * failureReason taxonomy) is surfaced as a thrown exception rather than a
+     * silent empty string.
+     */
     private fun computeSha256(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        BufferedInputStream(FileInputStream(file)).use { bis ->
-            val buffer = ByteArray(8192)
-            var count: Int
-            while (bis.read(buffer).also { count = it } > 0) {
-                digest.update(buffer, 0, count)
-            }
-        }
-        return bytesToHex(digest.digest())
+        val result = BundleCryptoCore.sha256OfFile(file.absolutePath)
+        return result.sha256
+            ?: throw java.io.IOException("SHA256 computation failed: ${result.failureReason}")
     }
 
     /**
@@ -250,60 +172,34 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     /**
      * Verify GPG signature of ASC content string and extract the SHA256 hash.
      * Returns the SHA256 hash if signature is valid, null otherwise.
+     *
+     * Thin delegate over the shared BundleCryptoCore.verifyDetachedAsc — the
+     * BouncyCastle cleartext-signed-message parsing/verify and the OneKey GPG
+     * public key now live there as the single source of truth. Behavior is
+     * preserved: any non-valid result (NOT_PGP_SIGNED_MESSAGE / INVALID_FORMAT /
+     * NO_SIGNATURE / PUBKEY_NOT_FOUND / SIGNATURE_INVALID / SHA256_TOKEN_INVALID
+     * / ERROR_*) maps to null.
      */
     private fun verifyAscContentAndExtractSha256(ascContent: String): String? {
-        if (!ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----")) return null
-
-        val lines = ascContent.lines()
-        val hashHeaderIdx = lines.indexOfFirst { it.startsWith("Hash:") }
-        val sigStartIdx = lines.indexOfFirst { it == "-----BEGIN PGP SIGNATURE-----" }
-        val sigEndIdx = lines.indexOfFirst { it == "-----END PGP SIGNATURE-----" }
-        if (hashHeaderIdx < 0 || sigStartIdx < 0 || sigEndIdx < 0) return null
-
-        val bodyStartIdx = hashHeaderIdx + 2
-        val bodyLines = lines.subList(bodyStartIdx, sigStartIdx)
-        val cleartextBody = bodyLines.joinToString("\r\n").trimEnd()
-        val sigBlock = lines.subList(sigStartIdx, sigEndIdx + 1).joinToString("\n")
-
-        // Verify GPG signature
-        val sigInputStream = PGPUtil.getDecoderStream(sigBlock.byteInputStream())
-        val sigFactory = JcaPGPObjectFactory(sigInputStream)
-        val signatureList = sigFactory.nextObject()
-        if (signatureList !is PGPSignatureList || signatureList.isEmpty) return null
-
-        val pgpSignature = signatureList[0]
-        val pubKeyStream = PGPUtil.getDecoderStream(GPG_PUBLIC_KEY.byteInputStream())
-        val pgpPubKeyRingCollection = PGPPublicKeyRingCollection(pubKeyStream, JcaKeyFingerprintCalculator())
-        val publicKey = pgpPubKeyRingCollection.getPublicKey(pgpSignature.keyID) ?: return null
-
-        pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
-        val unescapedLines = cleartextBody.lines().map { line ->
-            if (line.startsWith("- ")) line.substring(2) else line
+        val result = BundleCryptoCore.verifyDetachedAsc(ascContent)
+        if (!result.valid) {
+            OneKeyLog.error("AppUpdate", "ASC verification failed: ${result.reason}")
+            return null
         }
-        val dataToVerify = unescapedLines.joinToString("\r\n").toByteArray(Charsets.UTF_8)
-        pgpSignature.update(dataToVerify)
-        if (!pgpSignature.verify()) return null
-
-        // Extract SHA256 from verified cleartext
-        val sha256 = cleartextBody.trim().split("\\s+".toRegex())[0].lowercase()
-        if (sha256.length != 64 || !sha256.all { it in '0'..'9' || it in 'a'..'f' }) return null
-        return sha256
+        return result.sha256
     }
 
     private fun verifyAscAndExtractSha256(ascFile: File): String? {
         return verifyAscContentAndExtractSha256(ascFile.readText())
     }
 
-    /** Constant-time comparison to prevent timing attacks on hash values */
+    /**
+     * Constant-time comparison to prevent timing attacks on hash values.
+     * Delegates to the shared BundleCryptoCore.secureEqualHex (same byte-wise
+     * constant-time algorithm).
+     */
     private fun secureCompare(a: String, b: String): Boolean {
-        val aBytes = a.toByteArray(Charsets.UTF_8)
-        val bBytes = b.toByteArray(Charsets.UTF_8)
-        if (aBytes.size != bBytes.size) return false
-        var result = 0
-        for (i in aBytes.indices) {
-            result = result or (aBytes[i].toInt() xor bBytes[i].toInt())
-        }
-        return result == 0
+        return BundleCryptoCore.secureEqualHex(a, b)
     }
 
     /**
@@ -1009,79 +905,26 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             val ascContent = ascFile.readText()
             OneKeyLog.info("AppUpdate", "verifyASC: ASC file loaded, size=${ascContent.length} bytes")
 
-            if (!ascContent.contains("-----BEGIN PGP SIGNED MESSAGE-----")) {
-                OneKeyLog.error("AppUpdate", "verifyASC: ASC file missing PGP signed message header")
-                throw Exception("ASC file does not contain a PGP signed message")
+            // Verify the detached SHA256SUMS.asc cleartext signature and extract
+            // the expected APK sha256. The BouncyCastle parse/verify, the OneKey
+            // GPG public key, and the sha256-token validation now live in the
+            // shared BundleCryptoCore.verifyDetachedAsc (single source of truth).
+            // On any non-valid result we throw, preserving this method's
+            // throw-on-failure contract; the reason taxonomy
+            // (NOT_PGP_SIGNED_MESSAGE / INVALID_FORMAT / NO_SIGNATURE /
+            // PUBKEY_NOT_FOUND / SIGNATURE_INVALID / SHA256_TOKEN_INVALID /
+            // ERROR_*) is logged for diagnostics.
+            OneKeyLog.info("AppUpdate", "verifyASC: verifying detached ASC signature via BundleCryptoCore...")
+            val ascResult = BundleCryptoCore.verifyDetachedAsc(ascContent)
+            // Capture in a local val so Kotlin can smart-cast to non-null below
+            // (sha256 is a cross-module data-class property, which is not
+            // smart-castable directly).
+            val sha256 = ascResult.sha256
+            if (!ascResult.valid || sha256 == null) {
+                OneKeyLog.error("AppUpdate", "verifyASC: ASC verification FAILED: ${ascResult.reason}")
+                throw Exception("ASC signature verification failed: ${ascResult.reason}")
             }
-
-            // Parse the cleartext signed message
-            val lines = ascContent.lines()
-            val hashHeaderIdx = lines.indexOfFirst { it.startsWith("Hash:") }
-            val sigStartIdx = lines.indexOfFirst { it == "-----BEGIN PGP SIGNATURE-----" }
-            val sigEndIdx = lines.indexOfFirst { it == "-----END PGP SIGNATURE-----" }
-
-            if (hashHeaderIdx < 0 || sigStartIdx < 0 || sigEndIdx < 0) {
-                OneKeyLog.error("AppUpdate", "verifyASC: invalid cleartext format (hashHeader=$hashHeaderIdx, sigStart=$sigStartIdx, sigEnd=$sigEndIdx)")
-                throw Exception("Invalid PGP cleartext signed message format")
-            }
-
-            OneKeyLog.info("AppUpdate", "verifyASC: parsed cleartext message structure OK")
-
-            val bodyStartIdx = hashHeaderIdx + 2
-            val bodyLines = lines.subList(bodyStartIdx, sigStartIdx)
-            val cleartextBody = bodyLines.joinToString("\r\n").trimEnd()
-
-            val sigBlock = lines.subList(sigStartIdx, sigEndIdx + 1).joinToString("\n")
-
-            // Parse signature
-            OneKeyLog.info("AppUpdate", "verifyASC: parsing PGP signature...")
-            val sigInputStream = PGPUtil.getDecoderStream(sigBlock.byteInputStream())
-            val sigFactory = JcaPGPObjectFactory(sigInputStream)
-            val signatureList = sigFactory.nextObject()
-
-            if (signatureList !is PGPSignatureList || signatureList.isEmpty) {
-                OneKeyLog.error("AppUpdate", "verifyASC: no PGP signature found in ASC file")
-                throw Exception("No PGP signature found in ASC file")
-            }
-
-            val pgpSignature = signatureList[0]
-            val keyId = pgpSignature.keyID
-            OneKeyLog.info("AppUpdate", "verifyASC: signature keyID=${java.lang.Long.toHexString(keyId).uppercase()}")
-
-            // Parse public key
-            OneKeyLog.info("AppUpdate", "verifyASC: loading GPG public key...")
-            val pubKeyStream = PGPUtil.getDecoderStream(GPG_PUBLIC_KEY.byteInputStream())
-            val pgpPubKeyRingCollection = PGPPublicKeyRingCollection(pubKeyStream, JcaKeyFingerprintCalculator())
-            val publicKey = pgpPubKeyRingCollection.getPublicKey(keyId)
-            if (publicKey == null) {
-                OneKeyLog.error("AppUpdate", "verifyASC: GPG public key not found for keyID=${java.lang.Long.toHexString(keyId).uppercase()}")
-                throw Exception("GPG public key not found for signature verification")
-            }
-            OneKeyLog.info("AppUpdate", "verifyASC: public key matched, verifying signature...")
-
-            // Verify signature
-            pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
-
-            val unescapedLines = cleartextBody.lines().map { line ->
-                if (line.startsWith("- ")) line.substring(2) else line
-            }
-            val dataToVerify = unescapedLines.joinToString("\r\n").toByteArray(Charsets.UTF_8)
-            pgpSignature.update(dataToVerify)
-
-            if (!pgpSignature.verify()) {
-                OneKeyLog.error("AppUpdate", "verifyASC: GPG signature verification FAILED")
-                throw Exception("GPG signature verification failed for ASC file")
-            }
-            OneKeyLog.info("AppUpdate", "verifyASC: GPG signature verified OK")
-
-            // Extract SHA256 from cleartext (format: "<sha256hash>  <filename>\n" or just "<sha256hash>")
-            val sha256 = cleartextBody.trim().split("\\s+".toRegex())[0].lowercase()
-            OneKeyLog.info("AppUpdate", "verifyASC: extracted SHA256=${sha256.take(16)}...")
-
-            if (sha256.length != 64 || !sha256.all { it in '0'..'9' || it in 'a'..'f' }) {
-                OneKeyLog.error("AppUpdate", "verifyASC: invalid SHA256 hash format (length=${sha256.length})")
-                throw Exception("Invalid SHA256 hash format in ASC file")
-            }
+            OneKeyLog.info("AppUpdate", "verifyASC: ASC verified OK, extracted SHA256=${sha256.take(16)}...")
 
             // Verify APK file SHA256
             val apkFile = buildFile(filePath)
