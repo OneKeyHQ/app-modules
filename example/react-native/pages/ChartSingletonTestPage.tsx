@@ -40,27 +40,62 @@ const PARAMS_A = {
   storageNamespace: 'market-hyperliquid',
 };
 
-// B: a different chart loaded from the remote URL (QQQon on BSC, market mode).
+// B: a different chart (QQQon on BSC, market mode). It can be loaded either from
+// the REMOTE URL or from the same OFFLINE bundle as A — the toggle below switches
+// B's source so you can compare remote vs local loading of the same chart.
 const B_URL =
   'https://tradingview.onekey.so/?timezone=Asia%2FShanghai&locale=zh-CN&platform=web&theme=dark&appVersion=6.4.0&decimal=8&networkId=evm--56&address=0x0cde6936d305d5b34667fc46425e852efd73559a&symbol=QQQon&type=market&storageNamespace=market';
+
+// Same params as B_URL, for loading QQQon from the local offline bundle. platform
+// is the device so the chart uses our native bridge.
+const PARAMS_B = {
+  timezone: 'Asia/Shanghai',
+  locale: 'zh-CN',
+  platform: Platform.OS === 'ios' ? 'ios' : 'android',
+  theme: 'dark',
+  appVersion: '6.4.0',
+  decimal: '8',
+  networkId: 'evm--56',
+  address: '0x0cde6936d305d5b34667fc46425e852efd73559a',
+  symbol: 'QQQon',
+  type: 'market',
+  storageNamespace: 'market',
+};
 
 export function ChartSingletonTestPage() {
   const [slot, setSlot] = useState<'A' | 'B'>('A');
   const [pooled, setPooled] = useState(true);
+  const [bRemote, setBRemote] = useState(true);
   const [loads, setLoads] = useState(0);
   const hybridRefHolder = useRef<{ current: ChartWebviewMethods | null } | null>(
     null,
   );
 
+  // Always pass ALL source keys (unused ones empty): a Nitro optional string
+  // prop that flips from set to *absent* gets reset to null, which the native
+  // binding rejects ("uri: Value is null, expected a String"). Empty strings
+  // keep every prop a valid String; native treats "" as "not this mode".
   const sourceA = useMemo(
     () => ({
+      uri: '',
       localBundle: 'tradingview-assets',
       entry: 'index.html',
       paramsJson: JSON.stringify(PARAMS_A),
     }),
     [],
   );
-  const sourceB = useMemo(() => ({ uri: B_URL }), []);
+  const sourceB = useMemo(
+    () =>
+      bRemote
+        ? { uri: B_URL, localBundle: '', entry: '', paramsJson: '' }
+        : {
+            uri: '',
+            localBundle: 'tradingview-assets',
+            entry: 'index.html',
+            paramsJson: JSON.stringify(PARAMS_B),
+          },
+    [bRemote],
+  );
 
   const hybridRefProp = useMemo(
     () =>
@@ -103,6 +138,10 @@ export function ChartSingletonTestPage() {
         <TestButton
           title={`Pooled (singleton): ${pooled ? 'ON' : 'OFF'} — tap to toggle`}
           onPress={() => setPooled((p) => !p)}
+        />
+        <TestButton
+          title={`SLOT B source: ${bRemote ? 'REMOTE url' : 'LOCAL bundle'} — tap to switch`}
+          onPress={() => setBRemote((r) => !r)}
         />
         <TestButton
           title="Clear snapshot cache"
