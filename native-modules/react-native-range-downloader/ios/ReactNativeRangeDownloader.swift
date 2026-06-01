@@ -98,12 +98,9 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   /// Posted by the AppDelegate from
   /// application(_:handleEventsForBackgroundURLSession:completionHandler:).
   /// userInfo: ["identifier": String, "completionHandler": () -> Void].
-  /// (P2 monorepo work renames the AppDelegate's notification; here we listen
-  /// on the new name and stay backward-compatible with the legacy name.)
+  /// (The AppDelegate posts this generic name for every background URLSession.)
   static let backgroundEventsNotification =
     Notification.Name("RangeDownloaderBackgroundEvents")
-  static let legacyBackgroundEventsNotification =
-    Notification.Name("ConcurrentBundleDownloaderBackgroundEvents")
 
   /// Our per-channel session identifier prefix. Identifiers not carrying this
   /// prefix (and not the legacy one) are ignored so we never steal another
@@ -168,12 +165,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       self,
       selector: #selector(handleBackgroundEventsNotification(_:)),
       name: Self.backgroundEventsNotification,
-      object: nil
-    )
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(handleBackgroundEventsNotification(_:)),
-      name: Self.legacyBackgroundEventsNotification,
       object: nil
     )
   }
