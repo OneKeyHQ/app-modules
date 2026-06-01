@@ -19,11 +19,14 @@ import {
 // Visual proof: scroll/zoom the candles, then Move A<->B. Pooled keeps the
 // view exactly as you left it; non-pooled reloads from scratch.
 
+// ONE shared WebView (same reuseKey) reused for two DIFFERENT charts: the active
+// slot drives the single WebView's content (its params), so switching reloads it
+// to the other chart — the real "one chart host, swap symbol" optimization. Each
+// slot still freezes to its own last frame when inactive.
 const REUSE_KEY = 'chart-singleton';
 
-// Hyperliquid scene: the chart self-fetches real candles (no business bridge),
-// so you can see real state (scroll/zoom) survive the reparent.
-const PARAMS = {
+// A: offline Hyperliquid BTC (self-fetches candles, no business bridge needed).
+const PARAMS_A = {
   symbol: 'BTC',
   type: 'market',
   theme: 'dark',
@@ -37,6 +40,10 @@ const PARAMS = {
   storageNamespace: 'market-hyperliquid',
 };
 
+// B: a different chart loaded from the remote URL (QQQon on BSC, market mode).
+const B_URL =
+  'https://tradingview.onekey.so/?timezone=Asia%2FShanghai&locale=zh-CN&platform=web&theme=dark&appVersion=6.4.0&decimal=8&networkId=evm--56&address=0x0cde6936d305d5b34667fc46425e852efd73559a&symbol=QQQon&type=market&storageNamespace=market';
+
 export function ChartSingletonTestPage() {
   const [slot, setSlot] = useState<'A' | 'B'>('A');
   const [pooled, setPooled] = useState(true);
@@ -45,14 +52,15 @@ export function ChartSingletonTestPage() {
     null,
   );
 
-  const source = useMemo(
+  const sourceA = useMemo(
     () => ({
       localBundle: 'tradingview-assets',
       entry: 'index.html',
-      paramsJson: JSON.stringify(PARAMS),
+      paramsJson: JSON.stringify(PARAMS_A),
     }),
     [],
   );
+  const sourceB = useMemo(() => ({ uri: B_URL }), []);
 
   const hybridRefProp = useMemo(
     () =>
@@ -66,14 +74,18 @@ export function ChartSingletonTestPage() {
     [],
   );
 
-  // BOTH slots stay mounted; `active` decides which one displays the single live
-  // WebView. The inactive host shows the cached frame snapshot (so its slot isn't
-  // blank), and the live WebView reparents to whichever host becomes active.
-  const renderChart = (active: boolean) => (
+  // Both slots stay mounted; `active` decides which one is shown live vs frozen
+  // to its own snapshot. A and B use different reuseKeys, so each is its own
+  // persisted WebView with its own content.
+  const renderChart = (
+    active: boolean,
+    source: object,
+    reuseKey: string,
+  ) => (
     <ChartWebviewView
       style={s.chart}
       {...source}
-      reuseKey={REUSE_KEY}
+      reuseKey={reuseKey}
       pooled={pooled}
       active={active}
       hybridRef={hybridRefProp}
@@ -104,12 +116,12 @@ export function ChartSingletonTestPage() {
 
       <View style={s.slots}>
         <View style={[s.slot, s.slotA]}>
-          <Text style={s.slotLabel}>SLOT A {slot === 'A' ? '(live)' : '(snapshot)'}</Text>
-          {renderChart(slot === 'A')}
+          <Text style={s.slotLabel}>SLOT A · BTC {slot === 'A' ? '(live)' : '(snapshot)'}</Text>
+          {renderChart(slot === 'A', sourceA, REUSE_KEY)}
         </View>
         <View style={[s.slot, s.slotB]}>
-          <Text style={s.slotLabel}>SLOT B {slot === 'B' ? '(live)' : '(snapshot)'}</Text>
-          {renderChart(slot === 'B')}
+          <Text style={s.slotLabel}>SLOT B · QQQon {slot === 'B' ? '(live)' : '(snapshot)'}</Text>
+          {renderChart(slot === 'B', sourceB, REUSE_KEY)}
         </View>
       </View>
     </View>

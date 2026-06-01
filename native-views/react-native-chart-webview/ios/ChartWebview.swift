@@ -139,35 +139,43 @@ class HybridChartWebview: HybridChartWebviewSpec {
       pooled.owner = self
       pooled.attach(to: container)
       pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
+      // Keep a fresh frame of OUR content while we own the WebView, so that when
+      // we later go inactive (and the shared WebView reloads the other slot's
+      // chart) our slot freezes to its own last frame, not the other content.
+      startOwnCapture()
     } else {
-      // Inactive: give up ownership only if we still hold it, show the cached
-      // frame, and let the next active host reparent the live WebView away. We
-      // do NOT detach here — that races with a rapid re-claim and can blank it.
+      // Inactive: give up ownership only if we still hold it, and freeze to our
+      // own last captured frame. We do NOT detach (that races a rapid re-claim).
       let wasOwner = pooled.owner === self
       if wasOwner { pooled.owner = nil }
-      showPlaceholder(pooled.snapshot())
-      if wasOwner {
-        pooled.captureNow { [weak self] image in
-          guard let self = self else { return }
-          if pooled.owner !== self { self.showPlaceholder(image) }
-        }
-      }
-      // Under rapid toggling a capture can miss; poll briefly so the inactive
-      // slot doesn't stay blank — the active host captures right after attaching.
-      scheduleSnapshotRetry(pooled, 4)
+      stopOwnCapture()
+      showPlaceholder(ownSnapshot)
     }
   }
 
-  // Poll for a snapshot until one is available (and we're still inactive).
-  private func scheduleSnapshotRetry(_ pooled: PooledChartWebView, _ attemptsLeft: Int) {
-    if attemptsLeft <= 0 || placeholder != nil || pooled.snapshot() != nil {
-      showPlaceholder(pooled.snapshot())
-      return
-    }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-      guard let self = self, !self.wantsOwnership() else { return }
-      if pooled.snapshot() != nil { self.showPlaceholder(pooled.snapshot()) }
-      else { self.scheduleSnapshotRetry(pooled, attemptsLeft - 1) }
+  // OUR content's last frame. Because the WebView is shared and reloads other
+  // slots' charts, we keep our own snapshot, captured periodically while we own
+  // the WebView (late results dropped once we yield, so it only holds our frame).
+  private var ownSnapshot: UIImage?
+  private var capturing = false
+
+  private func startOwnCapture() {
+    if capturing { return }
+    capturing = true
+    scheduleOwnCapture()
+  }
+
+  private func stopOwnCapture() { capturing = false }
+
+  private func scheduleOwnCapture() {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+      guard let self = self, self.capturing,
+            let entry = self.backing, entry.owner === self else { return }
+      entry.captureNow { [weak self] image in
+        guard let self = self else { return }
+        if let image = image, entry.owner === self { self.ownSnapshot = image }
+      }
+      if self.capturing { self.scheduleOwnCapture() }
     }
   }
 

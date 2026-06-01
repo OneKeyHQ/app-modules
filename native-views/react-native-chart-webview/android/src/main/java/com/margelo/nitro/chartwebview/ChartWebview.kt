@@ -168,24 +168,17 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
       entry.owner = this
       entry.attachTo(container)
       entry.setSource(_uri, _localBundle, _entry, _paramsJson)
+      // Keep a fresh frame of OUR content while we own the WebView, so that when
+      // we later go inactive (and the shared WebView reloads the other slot's
+      // chart) our slot freezes to its own last frame, not the other content.
+      startOwnCapture()
     } else {
-      // Inactive: give up ownership only if we still hold it (another host may
-      // have claimed already), show the cached frame so the slot isn't blank,
-      // and let the next active host reparent the live WebView away. We do NOT
-      // detach here — that races with a rapid re-claim and can blank the view.
+      // Inactive: give up ownership only if we still hold it, and freeze to our
+      // own last captured frame. We do NOT detach (that races a rapid re-claim).
       val wasOwner = entry.owner == this
       if (wasOwner) entry.owner = null
-      showPlaceholder(entry.snapshot())
-      if (wasOwner) {
-        // Upgrade the placeholder to our very last frame once it is captured,
-        // unless we've meanwhile become the owner again.
-        entry.captureNow { bmp -> if (entry.owner != this) showPlaceholder(bmp) }
-      }
-      // Under rapid toggling a capture can miss (the WebView is mid-reparent),
-      // leaving us with no frame. Poll briefly until one is available so the
-      // inactive slot doesn't stay blank — the active host captures right after
-      // it attaches.
-      scheduleSnapshotRetry(entry, 4)
+      stopOwnCapture()
+      showPlaceholder(ownSnapshot)
     }
   }
 
@@ -207,24 +200,34 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     }
   }
 
-  // --- Snapshot placeholder (shown while this host is inactive) ---
+  // --- Per-host snapshot (this host's own last frame, shown while inactive) ---
 
   private var placeholder: ImageView? = null
+  // OUR content's last frame. Because the WebView is shared and reloads other
+  // slots' charts, we can't read the snapshot off the pooled entry — we keep our
+  // own, captured periodically while we own the WebView.
+  private var ownSnapshot: Bitmap? = null
 
-  // Poll for a snapshot until one is available (and we're still inactive). The
-  // active host captures shortly after attaching, so a freshly-inactive slot
-  // may have to wait a couple of frames for its placeholder.
-  private fun scheduleSnapshotRetry(entry: PooledChartWebView, attemptsLeft: Int) {
-    if (attemptsLeft <= 0 || placeholder != null || entry.snapshot() != null) {
-      showPlaceholder(entry.snapshot())
-      return
-    }
-    container.postDelayed({
-      if (!wantsOwnership()) {
-        if (entry.snapshot() != null) showPlaceholder(entry.snapshot())
-        else scheduleSnapshotRetry(entry, attemptsLeft - 1)
+  private val ownCaptureRunnable = object : Runnable {
+    override fun run() {
+      val entry = backing ?: return
+      if (entry.owner != this@HybridChartWebview) return
+      // Late async results are dropped if we've meanwhile yielded ownership, so
+      // ownSnapshot only ever holds a frame captured while WE were showing.
+      entry.captureNow { bmp ->
+        if (bmp != null && entry.owner == this@HybridChartWebview) ownSnapshot = bmp
       }
-    }, 200)
+      container.postDelayed(this, 1200)
+    }
+  }
+
+  private fun startOwnCapture() {
+    container.removeCallbacks(ownCaptureRunnable)
+    container.postDelayed(ownCaptureRunnable, 500)
+  }
+
+  private fun stopOwnCapture() {
+    container.removeCallbacks(ownCaptureRunnable)
   }
 
   private fun showPlaceholder(bmp: Bitmap?) {
