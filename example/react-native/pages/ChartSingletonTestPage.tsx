@@ -93,6 +93,10 @@ export function ChartSingletonTestPage() {
           title={`Pooled (singleton): ${pooled ? 'ON' : 'OFF'} — tap to toggle`}
           onPress={() => setPooled((p) => !p)}
         />
+        <TestButton
+          title="Clear snapshot cache"
+          onPress={() => hybridRefHolder.current?.current?.clearSnapshot()}
+        />
         <Text style={s.hint}>
           {`slot=${slot}  •  onLoadEnd fired ${loads}×\n`}
           {`adb logcat -s ChartWebviewPool  → count "WebView CREATED"`}

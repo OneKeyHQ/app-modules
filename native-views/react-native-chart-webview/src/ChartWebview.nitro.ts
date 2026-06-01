@@ -45,6 +45,9 @@ export interface ChartWebviewMethods extends HybridViewMethods {
   // string built by the JS business layer.
   postMessage(message: string): void;
   reload(): void;
+  // Drop the cached frame snapshot used to mask the reparent (move) flash, and
+  // remove any visible overlay. Call to free the bitmap or force a fresh capture.
+  clearSnapshot(): void;
 }
 
 export type ChartWebview = HybridView<ChartWebviewProps, ChartWebviewMethods>;

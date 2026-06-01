@@ -93,6 +93,7 @@ class HybridChartWebview: HybridChartWebviewSpec {
 
   func postMessage(message: String) throws { backing?.postMessage(message) }
   func reload() throws { backing?.reload() }
+  func clearSnapshot() throws { backing?.clearSnapshot() }
 
   // MARK: - Ownership reconciliation
 
@@ -161,6 +162,13 @@ final class PooledChartWebView {
 
   /// Read by the scheme handler to resolve offline files.
   fileprivate var currentLocalBundle: String?
+
+  // Last rendered frame, used to mask the brief blank frame the reparent (move)
+  // can produce. WKWebView renders out-of-process, so a *synchronous* capture
+  // returns blank — we keep an asynchronously-captured snapshot fresh instead
+  // (after load and after each move) and show it as an overlay on the next move.
+  private var cachedSnapshot: UIImage?
+  private var overlay: UIImageView?
 
   init(key: String) {
     self.key = key
@@ -234,18 +242,64 @@ final class PooledChartWebView {
   func attach(to container: UIView) {
     runOnMain { [weak self] in
       guard let self = self, let webView = self.webView else { return }
-      if webView.superview !== container {
-        webView.removeFromSuperview()
-        webView.frame = container.bounds
-        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        container.addSubview(webView)
-      }
+      guard webView.superview !== container else { return }
+      webView.removeFromSuperview()
+      webView.frame = container.bounds
+      webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      container.addSubview(webView)
+      self.showSnapshotOverlay(in: container)
+      // Capture a fresh snapshot (async) so the NEXT move has a current frame.
+      self.refreshSnapshotSoon()
     }
   }
 
   /// Remove the WebView from its current parent (keeps it alive, warm).
   func detachFromParent() {
-    runOnMain { [weak self] in self?.webView?.removeFromSuperview() }
+    runOnMain { [weak self] in
+      self?.removeOverlay()
+      self?.webView?.removeFromSuperview()
+    }
+  }
+
+  /// Drop the cached snapshot and remove any visible overlay.
+  func clearSnapshot() {
+    runOnMain { [weak self] in
+      self?.removeOverlay()
+      self?.cachedSnapshot = nil
+    }
+  }
+
+  /// Asynchronously capture the current frame shortly after things settle.
+  func refreshSnapshotSoon() {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+      guard let self = self, let webView = self.webView,
+            webView.superview != nil,
+            webView.bounds.width > 0, webView.bounds.height > 0 else { return }
+      let config = WKSnapshotConfiguration()
+      config.afterScreenUpdates = false
+      webView.takeSnapshot(with: config) { [weak self] image, _ in
+        if let image = image { self?.cachedSnapshot = image }
+      }
+    }
+  }
+
+  private func showSnapshotOverlay(in container: UIView) {
+    guard let snap = cachedSnapshot else { return }
+    removeOverlay()
+    let iv = UIImageView(image: snap)
+    iv.frame = container.bounds
+    iv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    iv.contentMode = .scaleToFill
+    container.addSubview(iv) // added last => on top of the WebView
+    overlay = iv
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+      self?.removeOverlay()
+    }
+  }
+
+  private func removeOverlay() {
+    overlay?.removeFromSuperview()
+    overlay = nil
   }
 
   // MARK: - Loading
@@ -377,6 +431,8 @@ extension ChartWebViewProxy: WKScriptMessageHandler {
 extension ChartWebViewProxy: WKNavigationDelegate {
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
     pooled?.owner?.handleLoadEnd()
+    // Prime the snapshot so the first move already has a frame to mask with.
+    pooled?.refreshSnapshotSoon()
   }
 
   func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

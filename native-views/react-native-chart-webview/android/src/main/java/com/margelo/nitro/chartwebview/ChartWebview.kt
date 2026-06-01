@@ -104,6 +104,7 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
   // --- Methods ---
   override fun postMessage(message: String) { backing?.postMessage(message) }
   override fun reload() { backing?.reload() }
+  override fun clearSnapshot() { backing?.clearSnapshot() }
 
   // --- Ownership reconciliation ---
 

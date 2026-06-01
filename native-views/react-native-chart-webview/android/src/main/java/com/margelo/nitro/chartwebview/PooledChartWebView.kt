@@ -1,10 +1,20 @@
 package com.margelo.nitro.chartwebview
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Rect
+import android.os.Handler
 import android.os.Looper
+import android.view.PixelCopy
+import android.view.View
 import android.view.ViewGroup
+import android.view.Window
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.webkit.JavascriptInterface
+import com.facebook.react.uimanager.ThemedReactContext
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -67,6 +77,16 @@ class PooledChartWebView private constructor(
   private var lastLoadedUrl: String? = null
   private var lastLocalBundle: String? = null
 
+  // Last rendered frame, used to mask the brief blank frame while the WebView's
+  // surface is torn down and recreated during a reparent (move). Kept until
+  // clearSnapshot() or the next capture replaces it.
+  private var cachedSnapshot: Bitmap? = null
+  private var overlay: ImageView? = null
+
+  // How long the snapshot overlay stays up after a reparent, giving the WebView
+  // time to draw its first frame in the new container (~5 frames).
+  private val overlayHideDelayMs = 80L
+
   val webView: WebView = WebView(context).apply {
     settings.javaScriptEnabled = true
     settings.domStorageEnabled = true
@@ -100,6 +120,8 @@ class PooledChartWebView private constructor(
         super.onPageFinished(view, url)
         view.evaluateJavascript(OUTBOUND_BRIDGE_JS, null)
         owner?.dispatchLoadEnd()
+        // Prime the snapshot so the first move already has a frame to mask with.
+        refreshSnapshotSoon()
       }
 
       override fun onReceivedError(
@@ -126,20 +148,99 @@ class PooledChartWebView private constructor(
   /** Move the WebView into [container], detaching it from any previous parent. */
   fun attachTo(container: ViewGroup) {
     runOnUiThread {
+      if (webView.parent === container) return@runOnUiThread
       (webView.parent as? ViewGroup)?.removeView(webView)
       container.addView(
         webView,
-        ViewGroup.LayoutParams(
-          ViewGroup.LayoutParams.MATCH_PARENT,
-          ViewGroup.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams(
+          FrameLayout.LayoutParams.MATCH_PARENT,
+          FrameLayout.LayoutParams.MATCH_PARENT,
         ),
       )
+      // Mask the reparent's blank frame with the last captured frame, then
+      // refresh the cache (async) so the next move has a current frame.
+      showSnapshotOverlay(container)
+      refreshSnapshotSoon()
     }
   }
 
   /** Remove the WebView from its current parent (keeps it alive, warm). */
   fun detachFromParent() {
-    runOnUiThread { (webView.parent as? ViewGroup)?.removeView(webView) }
+    runOnUiThread {
+      // Capture while still attached to the window (PixelCopy needs that), so a
+      // release-before-claim ordering still leaves a fresh frame to mask with.
+      capturePixelCopy()
+      removeOverlay()
+      (webView.parent as? ViewGroup)?.removeView(webView)
+    }
+  }
+
+  /** Drop the cached snapshot and remove any visible overlay. */
+  fun clearSnapshot() {
+    runOnUiThread {
+      removeOverlay()
+      cachedSnapshot = null
+    }
+  }
+
+  /// Capture the current frame a moment after things settle (async).
+  fun refreshSnapshotSoon() {
+    webView.postDelayed({ capturePixelCopy() }, 120)
+  }
+
+  // Capture the WebView's REAL on-screen pixels (incl. GPU-rendered chart
+  // canvas) via PixelCopy. `webView.draw()` on a software canvas would miss the
+  // hardware-accelerated <canvas>, so the chart candles wouldn't be captured.
+  // PixelCopy is async and needs the view attached to a window.
+  private fun capturePixelCopy() {
+    val w = webView.width
+    val h = webView.height
+    if (w <= 0 || h <= 0 || webView.windowToken == null) return
+    val window = currentWindow() ?: return
+    val location = IntArray(2)
+    webView.getLocationInWindow(location)
+    val src = Rect(location[0], location[1], location[0] + w, location[1] + h)
+    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    try {
+      PixelCopy.request(
+        window,
+        src,
+        bmp,
+        { result -> if (result == PixelCopy.SUCCESS) cachedSnapshot = bmp },
+        webView.handler ?: Handler(Looper.getMainLooper()),
+      )
+    } catch (e: Throwable) {
+      // Best-effort: a failure just means no flash mask this move.
+    }
+  }
+
+  // The window owning the container the WebView is attached to (the host
+  // Activity). The WebView itself was created with an application context.
+  private fun currentWindow(): Window? {
+    val ctx = (webView.parent as? View)?.context
+    (ctx as? ThemedReactContext)?.currentActivity?.window?.let { return it }
+    return (ctx as? Activity)?.window
+  }
+
+  private fun showSnapshotOverlay(container: ViewGroup) {
+    val snap = cachedSnapshot ?: return
+    removeOverlay()
+    val iv = ImageView(container.context).apply {
+      setImageBitmap(snap)
+      scaleType = ImageView.ScaleType.FIT_XY
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT,
+      )
+    }
+    container.addView(iv) // added last => drawn on top of the WebView
+    overlay = iv
+    iv.postDelayed({ removeOverlay() }, overlayHideDelayMs)
+  }
+
+  private fun removeOverlay() {
+    overlay?.let { (it.parent as? ViewGroup)?.removeView(it) }
+    overlay = null
   }
 
   /**
