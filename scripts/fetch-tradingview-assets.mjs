@@ -69,6 +69,9 @@ page.on('response', async (res) => {
   try {
     const u = new URL(res.url());
     if (u.origin !== origin) return; // only the chart app's own static material
+    // Skip API/data endpoints (e.g. an encoded-URL path like
+    // `/https:/.../<uuid>`); static asset paths never contain a colon.
+    if (u.pathname.includes(':')) return;
     const buf = await res.body();
     save(u.pathname, buf);
   } catch {
