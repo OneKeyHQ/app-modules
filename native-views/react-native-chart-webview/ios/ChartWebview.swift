@@ -109,35 +109,92 @@ class HybridChartWebview: HybridChartWebviewSpec {
   private func wantsOwnership() -> Bool { attached && (active != false) }
 
   private func reconcile() {
-    if wantsOwnership() { claim() } else { release() }
+    if isPooled() { reconcilePooled() } else { reconcilePrivate() }
   }
 
-  private func claim() {
-    let pooled: PooledChartWebView
-    if isPooled() {
-      pooled = ChartWebviewPool.shared.acquireShared(key: effectiveKey())
+  // Pooled: every host sharing the key references the one entry. The active host
+  // displays the live WebView; inactive hosts display the cached frame snapshot
+  // so their slot isn't blank (and the live WebView reparents on hand-off).
+  private func reconcilePooled() {
+    let pooled = ChartWebviewPool.shared.acquireShared(key: effectiveKey())
+    backing = pooled
+    if wantsOwnership() {
+      removePlaceholder()
+      pooled.owner = self
+      pooled.attach(to: container)
+      pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
     } else {
-      pooled = backing ?? PooledChartWebView(key: effectiveKey())
+      // Inactive: give up ownership only if we still hold it, show the cached
+      // frame, and let the next active host reparent the live WebView away. We
+      // do NOT detach here — that races with a rapid re-claim and can blank it.
+      let wasOwner = pooled.owner === self
+      if wasOwner { pooled.owner = nil }
+      showPlaceholder(pooled.snapshot())
+      if wasOwner {
+        pooled.captureNow { [weak self] image in
+          guard let self = self else { return }
+          if pooled.owner !== self { self.showPlaceholder(image) }
+        }
+      }
+      // Under rapid toggling a capture can miss; poll briefly so the inactive
+      // slot doesn't stay blank — the active host captures right after attaching.
+      scheduleSnapshotRetry(pooled, 4)
     }
+  }
+
+  // Poll for a snapshot until one is available (and we're still inactive).
+  private func scheduleSnapshotRetry(_ pooled: PooledChartWebView, _ attemptsLeft: Int) {
+    if attemptsLeft <= 0 || placeholder != nil || pooled.snapshot() != nil {
+      showPlaceholder(pooled.snapshot())
+      return
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+      guard let self = self, !self.wantsOwnership() else { return }
+      if pooled.snapshot() != nil { self.showPlaceholder(pooled.snapshot()) }
+      else { self.scheduleSnapshotRetry(pooled, attemptsLeft - 1) }
+    }
+  }
+
+  // Non-pooled: a private WebView, claimed when active, kept on this host so a
+  // later re-claim reuses it without a reload. No placeholder (single host).
+  private func reconcilePrivate() {
+    guard wantsOwnership() else { return }
+    let pooled = backing ?? PooledChartWebView(key: effectiveKey())
     backing = pooled
     pooled.owner = self
     pooled.attach(to: container)
     pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
   }
 
-  private func release() {
-    guard let pooled = backing else { return }
-    if pooled.owner === self {
-      pooled.detachFromParent()
-      pooled.owner = nil
-    }
-    // Pooled entries stay warm in the pool; a private backing is kept on this
-    // host so a later re-claim reuses it without a reload.
-  }
-
   private func applySourceIfOwner() {
     guard let pooled = backing, pooled.owner === self else { return }
     pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
+  }
+
+  // MARK: - Snapshot placeholder (shown while this host is inactive)
+
+  private var placeholder: UIImageView?
+
+  private func showPlaceholder(_ image: UIImage?) {
+    guard let image = image else { return }
+    let iv: UIImageView
+    if let existing = placeholder {
+      iv = existing
+    } else {
+      iv = UIImageView()
+      iv.contentMode = .scaleToFill
+      iv.frame = container.bounds
+      iv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      container.addSubview(iv)
+      placeholder = iv
+    }
+    iv.image = image
+    container.bringSubviewToFront(iv)
+  }
+
+  private func removePlaceholder() {
+    placeholder?.removeFromSuperview()
+    placeholder = nil
   }
 }
 
@@ -269,17 +326,35 @@ final class PooledChartWebView {
     }
   }
 
+  /// The last captured frame (shown by inactive hosts as a placeholder).
+  func snapshot() -> UIImage? { cachedSnapshot }
+
   /// Asynchronously capture the current frame shortly after things settle.
   func refreshSnapshotSoon() {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-      guard let self = self, let webView = self.webView,
-            webView.superview != nil,
-            webView.bounds.width > 0, webView.bounds.height > 0 else { return }
-      let config = WKSnapshotConfiguration()
-      config.afterScreenUpdates = false
-      webView.takeSnapshot(with: config) { [weak self] image, _ in
-        if let image = image { self?.cachedSnapshot = image }
-      }
+      self?.takeSnapshotNow(nil)
+    }
+  }
+
+  /// Capture now and deliver the fresh frame (so the host losing ownership can
+  /// upgrade its placeholder to its very last frame).
+  func captureNow(_ callback: @escaping (UIImage?) -> Void) {
+    takeSnapshotNow(callback)
+  }
+
+  private func takeSnapshotNow(_ callback: ((UIImage?) -> Void)?) {
+    // Don't capture mid-reparent (overlay visible): the page may be blank for a
+    // frame and we'd cache a black image. Keep the last good frame instead.
+    guard overlay == nil, let webView = webView, webView.superview != nil,
+          webView.bounds.width > 0, webView.bounds.height > 0 else {
+      callback?(cachedSnapshot)
+      return
+    }
+    let config = WKSnapshotConfiguration()
+    config.afterScreenUpdates = false
+    webView.takeSnapshot(with: config) { [weak self] image, _ in
+      if let image = image { self?.cachedSnapshot = image }
+      callback?(self?.cachedSnapshot)
     }
   }
 

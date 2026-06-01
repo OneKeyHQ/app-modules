@@ -1,7 +1,9 @@
 package com.margelo.nitro.chartwebview
 
+import android.graphics.Bitmap
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.uimanager.ThemedReactContext
 import java.util.concurrent.atomic.AtomicInteger
@@ -29,7 +31,26 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
 
   private val instanceId = instanceIds.incrementAndGet()
 
-  private val container: FrameLayout = FrameLayout(context).apply {
+  // Fabric lays its views out top-down and ignores layout requests from children
+  // we add at runtime (the WebView / placeholder). Without forcing a measure +
+  // layout pass here, those children stay 0x0 and the slot renders blank. This
+  // requestLayout override is the standard RN fix for custom ViewGroups.
+  private inner class ChartContainer(ctx: android.content.Context) : FrameLayout(ctx) {
+    private val relayout = Runnable {
+      measure(
+        MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
+      )
+      layout(left, top, right, bottom)
+    }
+
+    override fun requestLayout() {
+      super.requestLayout()
+      post(relayout)
+    }
+  }
+
+  private val container: FrameLayout = ChartContainer(context).apply {
     addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
       override fun onViewAttachedToWindow(v: View) {
         attached = true
@@ -116,29 +137,50 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
   private fun wantsOwnership(): Boolean = attached && (_active != false)
 
   private fun reconcile() {
-    if (wantsOwnership()) claim() else release()
+    if (isPooled()) reconcilePooled() else reconcilePrivate()
   }
 
-  private fun claim() {
-    val pooled = if (isPooled()) {
-      ChartWebviewPool.acquireShared(effectiveKey(), context)
+  // Pooled: every host sharing the key references the one entry. The active host
+  // displays the live WebView; inactive hosts display the cached frame snapshot
+  // so their slot isn't blank (and the live WebView reparents on hand-off).
+  private fun reconcilePooled() {
+    val entry = ChartWebviewPool.acquireShared(effectiveKey(), context)
+    backing = entry
+    if (wantsOwnership()) {
+      removePlaceholder()
+      entry.owner = this
+      entry.attachTo(container)
+      entry.setSource(_uri, _localBundle, _entry, _paramsJson)
     } else {
-      backing ?: PooledChartWebView.create(context, effectiveKey())
+      // Inactive: give up ownership only if we still hold it (another host may
+      // have claimed already), show the cached frame so the slot isn't blank,
+      // and let the next active host reparent the live WebView away. We do NOT
+      // detach here — that races with a rapid re-claim and can blank the view.
+      val wasOwner = entry.owner == this
+      if (wasOwner) entry.owner = null
+      showPlaceholder(entry.snapshot())
+      if (wasOwner) {
+        // Upgrade the placeholder to our very last frame once it is captured,
+        // unless we've meanwhile become the owner again.
+        entry.captureNow { bmp -> if (entry.owner != this) showPlaceholder(bmp) }
+      }
+      // Under rapid toggling a capture can miss (the WebView is mid-reparent),
+      // leaving us with no frame. Poll briefly until one is available so the
+      // inactive slot doesn't stay blank — the active host captures right after
+      // it attaches.
+      scheduleSnapshotRetry(entry, 4)
     }
+  }
+
+  // Non-pooled: a private WebView, claimed when active, kept on this host so a
+  // later re-claim reuses it without a reload. No placeholder (single host).
+  private fun reconcilePrivate() {
+    if (!wantsOwnership()) return
+    val pooled = backing ?: PooledChartWebView.create(context, effectiveKey())
     backing = pooled
     pooled.owner = this
     pooled.attachTo(container)
     pooled.setSource(_uri, _localBundle, _entry, _paramsJson)
-  }
-
-  private fun release() {
-    val pooled = backing ?: return
-    if (pooled.owner == this) {
-      pooled.detachFromParent()
-      pooled.owner = null
-    }
-    // Pooled entries stay warm in the pool; a private (non-pooled) backing is
-    // kept on this host so a later re-claim reuses it without a reload.
   }
 
   private fun applySourceIfOwner() {
@@ -146,5 +188,45 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     if (pooled.owner == this) {
       pooled.setSource(_uri, _localBundle, _entry, _paramsJson)
     }
+  }
+
+  // --- Snapshot placeholder (shown while this host is inactive) ---
+
+  private var placeholder: ImageView? = null
+
+  // Poll for a snapshot until one is available (and we're still inactive). The
+  // active host captures shortly after attaching, so a freshly-inactive slot
+  // may have to wait a couple of frames for its placeholder.
+  private fun scheduleSnapshotRetry(entry: PooledChartWebView, attemptsLeft: Int) {
+    if (attemptsLeft <= 0 || placeholder != null || entry.snapshot() != null) {
+      showPlaceholder(entry.snapshot())
+      return
+    }
+    container.postDelayed({
+      if (!wantsOwnership()) {
+        if (entry.snapshot() != null) showPlaceholder(entry.snapshot())
+        else scheduleSnapshotRetry(entry, attemptsLeft - 1)
+      }
+    }, 200)
+  }
+
+  private fun showPlaceholder(bmp: Bitmap?) {
+    if (bmp == null) return
+    val iv = placeholder ?: ImageView(context).apply {
+      scaleType = ImageView.ScaleType.FIT_XY
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT,
+      )
+      container.addView(this)
+      placeholder = this
+    }
+    iv.setImageBitmap(bmp)
+    iv.bringToFront()
+  }
+
+  private fun removePlaceholder() {
+    placeholder?.let { container.removeView(it) }
+    placeholder = null
   }
 }

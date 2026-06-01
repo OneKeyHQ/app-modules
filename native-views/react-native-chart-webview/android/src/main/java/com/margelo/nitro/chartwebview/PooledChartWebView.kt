@@ -169,7 +169,7 @@ class PooledChartWebView private constructor(
     runOnUiThread {
       // Capture while still attached to the window (PixelCopy needs that), so a
       // release-before-claim ordering still leaves a fresh frame to mask with.
-      capturePixelCopy()
+      capturePixelCopy(null)
       removeOverlay()
       (webView.parent as? ViewGroup)?.removeView(webView)
     }
@@ -183,20 +183,32 @@ class PooledChartWebView private constructor(
     }
   }
 
+  /** The last captured frame (shown by inactive hosts as a placeholder). */
+  fun snapshot(): Bitmap? = cachedSnapshot
+
   /// Capture the current frame a moment after things settle (async).
   fun refreshSnapshotSoon() {
-    webView.postDelayed({ capturePixelCopy() }, 120)
+    webView.postDelayed({ capturePixelCopy(null) }, 120)
+  }
+
+  /// Capture now and deliver the fresh frame (e.g. so the host that is losing
+  /// ownership can update its placeholder to its very last frame).
+  fun captureNow(callback: (Bitmap?) -> Unit) {
+    capturePixelCopy(callback)
   }
 
   // Capture the WebView's REAL on-screen pixels (incl. GPU-rendered chart
   // canvas) via PixelCopy. `webView.draw()` on a software canvas would miss the
   // hardware-accelerated <canvas>, so the chart candles wouldn't be captured.
   // PixelCopy is async and needs the view attached to a window.
-  private fun capturePixelCopy() {
+  private fun capturePixelCopy(callback: ((Bitmap?) -> Unit)?) {
+    // Don't capture mid-reparent (overlay visible): the WebView may be blank for
+    // a frame and we'd cache a black image. Keep the last good frame instead.
+    if (overlay != null) { callback?.invoke(cachedSnapshot); return }
     val w = webView.width
     val h = webView.height
-    if (w <= 0 || h <= 0 || webView.windowToken == null) return
-    val window = currentWindow() ?: return
+    if (w <= 0 || h <= 0 || webView.windowToken == null) { callback?.invoke(cachedSnapshot); return }
+    val window = currentWindow() ?: run { callback?.invoke(cachedSnapshot); return }
     val location = IntArray(2)
     webView.getLocationInWindow(location)
     val src = Rect(location[0], location[1], location[0] + w, location[1] + h)
@@ -206,11 +218,15 @@ class PooledChartWebView private constructor(
         window,
         src,
         bmp,
-        { result -> if (result == PixelCopy.SUCCESS) cachedSnapshot = bmp },
+        { result ->
+          if (result == PixelCopy.SUCCESS) cachedSnapshot = bmp
+          callback?.invoke(cachedSnapshot)
+        },
         webView.handler ?: Handler(Looper.getMainLooper()),
       )
     } catch (e: Throwable) {
       // Best-effort: a failure just means no flash mask this move.
+      callback?.invoke(cachedSnapshot)
     }
   }
 

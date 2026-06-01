@@ -66,17 +66,16 @@ export function ChartSingletonTestPage() {
     [],
   );
 
-  // A single chart element. Mounting it inside slot A or slot B is what triggers
-  // the native reparent. `key` is stable so React moves (not remounts) it; the
-  // native pool is what actually preserves the WebView across slots.
-  const chart = (
+  // BOTH slots stay mounted; `active` decides which one displays the single live
+  // WebView. The inactive host shows the cached frame snapshot (so its slot isn't
+  // blank), and the live WebView reparents to whichever host becomes active.
+  const renderChart = (active: boolean) => (
     <ChartWebviewView
-      key="singleton-chart"
       style={s.chart}
       {...source}
       reuseKey={REUSE_KEY}
       pooled={pooled}
-      active
+      active={active}
       hybridRef={hybridRefProp}
       onLoadEnd={onLoadEndProp}
     />
@@ -105,12 +104,12 @@ export function ChartSingletonTestPage() {
 
       <View style={s.slots}>
         <View style={[s.slot, s.slotA]}>
-          <Text style={s.slotLabel}>SLOT A</Text>
-          {slot === 'A' ? chart : <Text style={s.empty}>empty</Text>}
+          <Text style={s.slotLabel}>SLOT A {slot === 'A' ? '(live)' : '(snapshot)'}</Text>
+          {renderChart(slot === 'A')}
         </View>
         <View style={[s.slot, s.slotB]}>
-          <Text style={s.slotLabel}>SLOT B</Text>
-          {slot === 'B' ? chart : <Text style={s.empty}>empty</Text>}
+          <Text style={s.slotLabel}>SLOT B {slot === 'B' ? '(live)' : '(snapshot)'}</Text>
+          {renderChart(slot === 'B')}
         </View>
       </View>
     </View>
