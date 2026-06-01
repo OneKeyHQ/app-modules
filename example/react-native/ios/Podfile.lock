@@ -2903,7 +2903,7 @@ PODS:
     - ReactNativeNativeLogger
     - ReactNativeRangeDownloader
     - SocketRocket
-    - SSZipArchive (~> 2.4)
+    - SSZipArchive (>= 2.5.4)
     - Yoga
   - ReactNativeCheckBiometricAuthChanged (3.0.38):
     - boost
@@ -3179,7 +3179,7 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - SocketRocket
-    - SSZipArchive
+    - SSZipArchive (>= 2.5.4)
     - Yoga
   - RNScreens (4.24.0):
     - boost
@@ -3301,7 +3301,7 @@ PODS:
     - SocketRocket
     - Yoga
   - SocketRocket (0.7.1)
-  - SSZipArchive (2.4.3)
+  - SSZipArchive (2.6.0)
   - Yoga (0.0.0)
 
 DEPENDENCIES:
@@ -3713,7 +3713,7 @@ SPEC CHECKSUMS:
   ReactCommon: 424cc34cf5055d69a3dcf02f3436481afb8b0f6f
   ReactNativeAppUpdate: b172e0e7bdc76ab46bf63e0d7a51bdb4cacb28b7
   ReactNativeBundleCrypto: 466a12504ed2c1015d8d933b17e2633c295c91b8
-  ReactNativeBundleUpdate: 07dd5330a2651a43dcaf748e60eaa3cae2ef0a8f
+  ReactNativeBundleUpdate: 6de1a7f7852449505ebedf01c71dad21091bf39d
   ReactNativeCheckBiometricAuthChanged: 67395343869cb5472ca693d6abce58d8e90dbc77
   ReactNativeDeviceUtils: 6d009ed31ff612762c7f0f2d57fb951cb84db6c3
   ReactNativeGetRandomValues: dcb347de8ce5279e4acc799c979b2c8fe1fde470
@@ -3722,14 +3722,14 @@ SPEC CHECKSUMS:
   ReactNativePerfMemory: f8f37134353dfba0464b11e488cea3802c15a0c7
   ReactNativeRangeDownloader: 05efcd37efb4bc1675d688c73710653cfccc9c5e
   ReactNativeSplashScreen: 699fb6aaf5b35bba8e8dfa8600bd27305b7eadb9
-  ReactNativeZipArchive: 2e3541be1bcb3b8dc7b24a6f5b8a948eb7ba14a2
+  ReactNativeZipArchive: a1654f55ffee902bb67d252a376151d3e93d4a3b
   RNScreens: 7f643ee0fd1407dc5085c7795460bd93da113b8f
   ScrollGuard: 5734dc0f19be41d413ad965acdc7fb4dfe7a5d5f
   Skeleton: a72f447ed61186a93cea9ac84207247e988eac99
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
-  SSZipArchive: fe6a26b2a54d5a0890f2567b5cc6de5caa600aef
+  SSZipArchive: 8a6ee5677c8e304bebc109e39cf0da91ccef22ea
   Yoga: 6ca93c8c13f56baeec55eb608577619b17a4d64e
 
-PODFILE CHECKSUM: dd92a8ce78a30e0a42b1ad8717f0b0bb35b2df5e
+PODFILE CHECKSUM: 411055e9bd12bfaef71f85689d342948b7ab3235
 
 COCOAPODS: 1.16.2
