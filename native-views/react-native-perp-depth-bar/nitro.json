@@ -1,0 +1,21 @@
+{
+  "cxxNamespace": ["perpdepthbar"],
+  "ios": {
+    "iosModuleName": "PerpDepthBar"
+  },
+  "android": {
+    "androidNamespace": ["perpdepthbar"],
+    "androidCxxLibName": "perpdepthbar"
+  },
+  "autolinking": {
+    "PerpDepthBars": {
+      "swift": "HybridPerpDepthBars",
+      "kotlin": "HybridPerpDepthBars"
+    },
+    "PerpSideRatio": {
+      "swift": "HybridPerpSideRatio",
+      "kotlin": "HybridPerpSideRatio"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

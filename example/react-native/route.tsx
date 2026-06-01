@@ -16,6 +16,7 @@ import { NativeLoggerTestPage } from './pages/NativeLoggerTestPage';
 import { PagerViewTestPage } from './pages/PagerViewTestPage';
 import { ScrollGuardTestPage } from './pages/ScrollGuardTestPage';
 import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
+import { PerpDepthBarTestPage } from './pages/PerpDepthBarTestPage';
 import { BundleUpdateTestPage } from './pages/BundleUpdateTestPage';
 import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
 import { RangeDownloaderTestPage } from './pages/RangeDownloaderTestPage';
@@ -57,6 +58,7 @@ export type RootStackParamList = {
   ChartSingleton: undefined;
   PagerView: undefined;
   PerfMemory: undefined;
+  PerpDepthBar: undefined;
   RangeDownloader: undefined;
   BundleCrypto: undefined;
   ZipArchive: undefined;
@@ -190,6 +192,12 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
     screen: 'PerfMemory',
     name: 'Perf Memory',
     description: 'Read process memory usage (RSS) for performance monitoring',
+    icon: '📊',
+  },
+  {
+    screen: 'PerpDepthBar',
+    name: 'Perp Depth Bar',
+    description: 'Native order-book depth bars + side-ratio (replaces reanimated)',
     icon: '📊',
   },
   {
@@ -411,6 +419,7 @@ export function AppNavigator() {
       <Stack.Screen name="NativeLogger" component={NativeLoggerTestPage} options={{ title: 'Native Logger' }} />
       <Stack.Screen name="PagerView" component={PagerViewTestPage} options={{ title: 'Pager View' }} />
       <Stack.Screen name="PerfMemory" component={PerfMemoryTestPage} options={{ title: 'Perf Memory' }} />
+      <Stack.Screen name="PerpDepthBar" component={PerpDepthBarTestPage} options={{ title: 'Perp Depth Bar' }} />
       <Stack.Screen name="ScrollGuard" component={ScrollGuardTestPage} options={{ title: 'Scroll Guard' }} />
       <Stack.Screen name="Skeleton" component={SkeletonTestPage} options={{ title: 'Skeleton' }} />
       <Stack.Screen name="SplashScreen" component={SplashScreenTestPage} options={{ title: 'Splash Screen' }} />

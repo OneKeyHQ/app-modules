@@ -26,6 +26,7 @@
     "@onekeyfe/react-native-native-logger": "workspace:*",
     "@onekeyfe/react-native-pager-view": "workspace:*",
     "@onekeyfe/react-native-perf-memory": "workspace:*",
+    "@onekeyfe/react-native-perp-depth-bar": "workspace:*",
     "@onekeyfe/react-native-range-downloader": "workspace:*",
     "@onekeyfe/react-native-scroll-guard": "workspace:*",
     "@onekeyfe/react-native-skeleton": "workspace:*",
