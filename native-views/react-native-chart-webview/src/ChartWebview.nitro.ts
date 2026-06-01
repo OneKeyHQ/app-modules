@@ -21,15 +21,17 @@ export interface ChartWebviewProps extends HybridViewProps {
   // native side stays free of a structured-prop dependency.
   paramsJson?: string;
 
-  // --- Singleton (accepted now, ignored in the MVP) ---
+  // --- Singleton ---
   // Reuse group: same key shares one live WebView (market / perps each one).
   reuseKey?: string;
-  // Opt into the shared singleton pool. MVP: off -> every view owns its WebView.
+  // Opt into the shared singleton pool. Off -> every view owns its WebView.
   pooled?: boolean;
-  // Arbitration signal for who holds the shared WebView when multiple are
-  // attached (from useIsFocused). Native attach claims first; this only resolves
-  // ambiguity. Ignored in the MVP.
-  isActive?: boolean;
+  // Arbitration signal for who holds the shared WebView when multiple hosts
+  // share a key (from useIsFocused). Native attach claims first; this resolves
+  // ambiguity. NOTE: not named `isActive` — an `is`-prefixed boolean prop makes
+  // Kotlin emit `setActive`/`isActive` accessors while Nitro's JNI binding
+  // hardcodes `setIsActive`/`getIsActive`, causing a NoSuchMethodError at runtime.
+  active?: boolean;
 
   // --- Events ---
   // page -> JS, raw JSON string (the JS layer parses the $private payload).

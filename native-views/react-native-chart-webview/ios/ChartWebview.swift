@@ -2,66 +2,81 @@ import Foundation
 import UIKit
 import WebKit
 
-/// A dumb WebView host + message pipe. It knows nothing about TradingView: it
-/// loads a `source`, injects messages into the page, and surfaces messages
-/// from the page. All protocol/data logic lives in the JS business layer.
+// MARK: - Constants (shared)
+
+private enum ChartWebviewConst {
+  /// Custom scheme used for the offline virtual same-origin.
+  static let customScheme = "onekey-chart"
+  /// Virtual host used when serving offline content.
+  static let virtualHost = "chart"
+  /// Name of the page -> native message handler.
+  static let messageHandlerName = "onekeyChart"
+}
+
+// MARK: - ChartContainerView (window-attach detection)
+
+/// The host's `view`. Reports when it is attached to / detached from a window so
+/// the host can claim / release the shared WebView at the right time.
+final class ChartContainerView: UIView {
+  var onWindowChange: ((_ attached: Bool) -> Void)?
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    onWindowChange?(window != nil)
+  }
+}
+
+// MARK: - HybridChartWebview (thin host)
+
+/// Thin host for a chart WebView. It owns only a container view; the real
+/// WKWebView lives in a `PooledChartWebView` which can be **shared** across
+/// hosts that use the same `reuseKey` (singleton via reparenting).
 ///
-/// Offline content is served from a virtual same-origin via a custom
-/// `onekey-chart://` URL scheme handler backed by files bundled in the app.
-///
-/// The WebKit delegates / scheme handler require an `NSObject`, but the Nitro
-/// spec base (`HybridChartWebviewSpec_base`) is a plain Swift class, so we
-/// cannot conform `HybridChartWebview` to them directly. Instead a dedicated
-/// `ChartWebViewProxy: NSObject` owns the WebKit conformances and forwards
-/// back to the host through a weak reference.
+/// The host claims the backing WebView into its container when it is attached
+/// AND active (`active != false`), releases it otherwise, forwards page events
+/// to its Nitro callbacks while it is the active owner, and delegates
+/// `postMessage` / `reload` to the backing WebView.
 class HybridChartWebview: HybridChartWebviewSpec {
 
-  // MARK: - Constants
-
-  /// Custom scheme used for the offline virtual same-origin.
-  fileprivate static let customScheme = "onekey-chart"
-  /// Virtual host used when serving offline content.
-  fileprivate static let virtualHost = "chart"
-  /// Name of the page -> native message handler.
-  fileprivate static let messageHandlerName = "onekeyChart"
-
-  // MARK: - State
-
-  private var webView: WKWebView!
-  private var proxy: ChartWebViewProxy!
-  /// Becomes true once props have settled enough to perform the first load.
-  /// Guards against loading repeatedly while individual props arrive.
-  private var hasLoadedOnce = false
+  private static var instanceIds = 0
+  private let instanceId: Int = {
+    HybridChartWebview.instanceIds += 1
+    return HybridChartWebview.instanceIds
+  }()
 
   // MARK: - HybridView
 
-  var view: UIView = UIView()
+  private let container = ChartContainerView()
+  var view: UIView { container }
+
+  /// The WebView backing this host (a shared pool entry, or a private one).
+  private var backing: PooledChartWebView?
+  private var attached = false
+
+  override init() {
+    super.init()
+    container.onWindowChange = { [weak self] attached in
+      self?.attached = attached
+      self?.reconcile()
+    }
+  }
 
   // MARK: - Props (source)
 
-  var uri: String? {
-    didSet { loadIfNeeded() }
-  }
+  var uri: String? { didSet { applySourceIfOwner() } }
+  var localBundle: String? { didSet { applySourceIfOwner() } }
+  var entry: String? { didSet { applySourceIfOwner() } }
+  var paramsJson: String? { didSet { applySourceIfOwner() } }
 
-  var localBundle: String? {
-    didSet { loadIfNeeded() }
-  }
+  // MARK: - Props (singleton)
 
-  var entry: String? {
-    didSet { loadIfNeeded() }
-  }
-
-  var paramsJson: String? {
-    didSet { loadIfNeeded() }
-  }
-
-  // MARK: - Props (singleton — accepted now, ignored in the MVP)
-
-  // MVP ignores reuseKey/pooled/isActive: every view owns its own WebView and
-  // there is no shared pool / reparenting. Stored only so the props bind.
-  var reuseKey: String?
-  var pooled: Bool?
-  var isActive: Bool?
+  // `pooled` + non-empty `reuseKey` => the backing WebView is shared (keyed by
+  // reuseKey) across hosts; otherwise the host owns a private WebView.
+  var reuseKey: String? { didSet { reconcile() } }
+  var pooled: Bool? { didSet { reconcile() } }
+  // `active` (JS useIsFocused) decides which host, among those sharing a key,
+  // owns the single WebView. nil is treated as active (single-host case).
+  var active: Bool? { didSet { reconcile() } }
 
   // MARK: - Props (events)
 
@@ -69,21 +84,96 @@ class HybridChartWebview: HybridChartWebviewSpec {
   var onLoadEnd: (() -> Void)?
   var onError: ((_ message: String) -> Void)?
 
-  // MARK: - Init
+  // Called by the backing PooledChartWebView while this host is the owner.
+  func handleMessage(_ message: String) { onMessage?(message) }
+  func handleLoadEnd() { onLoadEnd?() }
+  func handleError(_ message: String) { onError?(message) }
 
-  override init() {
-    super.init()
+  // MARK: - Methods
+
+  func postMessage(message: String) throws { backing?.postMessage(message) }
+  func reload() throws { backing?.reload() }
+
+  // MARK: - Ownership reconciliation
+
+  private func isPooled() -> Bool {
+    if let key = reuseKey, !key.isEmpty, pooled == true { return true }
+    return false
+  }
+
+  private func effectiveKey() -> String {
+    isPooled() ? reuseKey! : "private:\(instanceId)"
+  }
+
+  private func wantsOwnership() -> Bool { attached && (active != false) }
+
+  private func reconcile() {
+    if wantsOwnership() { claim() } else { release() }
+  }
+
+  private func claim() {
+    let pooled: PooledChartWebView
+    if isPooled() {
+      pooled = ChartWebviewPool.shared.acquireShared(key: effectiveKey())
+    } else {
+      pooled = backing ?? PooledChartWebView(key: effectiveKey())
+    }
+    backing = pooled
+    pooled.owner = self
+    pooled.attach(to: container)
+    pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
+  }
+
+  private func release() {
+    guard let pooled = backing else { return }
+    if pooled.owner === self {
+      pooled.detachFromParent()
+      pooled.owner = nil
+    }
+    // Pooled entries stay warm in the pool; a private backing is kept on this
+    // host so a later re-claim reuses it without a reload.
+  }
+
+  private func applySourceIfOwner() {
+    guard let pooled = backing, pooled.owner === self else { return }
+    pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
+  }
+}
+
+// MARK: - PooledChartWebView (owns the WKWebView)
+
+/// Owns one real `WKWebView` together with its message bridge, custom-scheme
+/// handler and load state. A single instance can be **reparented** across
+/// multiple hosts that share a `reuseKey`, so N mount points are backed by ONE
+/// WebView (state preserved, no reload on hand-off). Page events are routed to
+/// the current `owner`.
+final class PooledChartWebView {
+  // Live WebView count, logged on create/destroy — the signal the example uses
+  // to verify the singleton (N hosts sharing a key => one "CREATED" line).
+  private static var liveCount = 0
+
+  let key: String
+  weak var owner: HybridChartWebview?
+
+  private var webView: WKWebView!
+  private var proxy: ChartWebViewProxy!
+  private var lastLoadedUrl: String?
+
+  /// Read by the scheme handler to resolve offline files.
+  fileprivate var currentLocalBundle: String?
+
+  init(key: String) {
+    self.key = key
+    PooledChartWebView.liveCount += 1
+    NSLog("[ChartWebviewPool] WebView CREATED key=\(key) liveCount=\(PooledChartWebView.liveCount)")
     setupWebView()
   }
 
   private func setupWebView() {
-    let proxy = ChartWebViewProxy(host: self)
+    let proxy = ChartWebViewProxy(pooled: self)
     self.proxy = proxy
 
     let config = WKWebViewConfiguration()
-
-    // Enable JavaScript. DOM storage / localStorage are on by default in
-    // WKWebView, so nothing extra is required for them.
     let preferences = WKPreferences()
     preferences.javaScriptCanOpenWindowsAutomatically = false
     config.preferences = preferences
@@ -95,24 +185,13 @@ class HybridChartWebview: HybridChartWebviewSpec {
       config.preferences.javaScriptEnabled = true
     }
 
-    // Offline virtual same-origin: serve onekey-chart:// from the app bundle.
-    config.setURLSchemeHandler(proxy, forURLScheme: HybridChartWebview.customScheme)
+    config.setURLSchemeHandler(proxy, forURLScheme: ChartWebviewConst.customScheme)
 
-    // page -> native bridge.
     let userContent = WKUserContentController()
-    userContent.add(proxy, name: HybridChartWebview.messageHandlerName)
+    userContent.add(proxy, name: ChartWebviewConst.messageHandlerName)
 
-    // Forward the page's outbound messages into our WKScriptMessageHandler at
-    // document start. Three outbound conventions are supported so this stays a
-    // dumb pipe regardless of how the page was built:
-    //   A) `window.$onekey.$private.request(e)` — OneKey's chart/DApp native
-    //      bridge (used when the page is told it runs on a native platform).
-    //   B) `window.ReactNativeWebView.postMessage(s)` (react-native-webview style).
-    //   C) `window.parent.postMessage(envelope, '*')` — in a top-level WebView
-    //      `parent === window`, so it surfaces as a `message` event here. Only
-    //      the page's own `$private` envelopes are forwarded; the messages WE
-    //      inject (native -> page) are not `$private`, so they never echo back.
-    let handlerName = HybridChartWebview.messageHandlerName
+    // See the Android host for the rationale; identical dumb-pipe bridge.
+    let handlerName = ChartWebviewConst.messageHandlerName
     let bridgeScript = """
     (function () {
       if (window.__onekeyChartBridge) return; window.__onekeyChartBridge = true;
@@ -139,81 +218,65 @@ class HybridChartWebview: HybridChartWebviewSpec {
     userContent.addUserScript(userScript)
     config.userContentController = userContent
 
-    let webView = WKWebView(frame: view.bounds, configuration: config)
+    let webView = WKWebView(frame: .zero, configuration: config)
     webView.navigationDelegate = proxy
     webView.uiDelegate = proxy
-    webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     webView.scrollView.bounces = false
     if #available(iOS 16.4, *) {
       webView.isInspectable = true
     }
     self.webView = webView
-
-    view.addSubview(webView)
-    webView.frame = view.bounds
   }
 
-  // MARK: - Event forwarding (called by the proxy)
+  // MARK: - Reparenting
 
-  fileprivate func handleMessage(_ message: String) {
-    onMessage?(message)
+  /// Move the WebView into `container`, detaching it from any previous parent.
+  func attach(to container: UIView) {
+    runOnMain { [weak self] in
+      guard let self = self, let webView = self.webView else { return }
+      if webView.superview !== container {
+        webView.removeFromSuperview()
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(webView)
+      }
+    }
   }
 
-  fileprivate func handleLoadEnd() {
-    onLoadEnd?()
-  }
-
-  fileprivate func handleError(_ message: String) {
-    onError?(message)
-  }
-
-  fileprivate var currentLocalBundle: String? {
-    localBundle
+  /// Remove the WebView from its current parent (keeps it alive, warm).
+  func detachFromParent() {
+    runOnMain { [weak self] in self?.webView?.removeFromSuperview() }
   }
 
   // MARK: - Loading
 
-  /// The URL string currently loaded, so redundant prop re-applies (from React
-  /// re-renders) don't reload the page — which would restart the chart and feed
-  /// back into onLoadEnd -> re-render. Only an actual URL change reloads.
-  private var lastLoadedUrl: String?
-
-  /// Loads the configured source. Driven by prop didSet; only loads once props
-  /// are present, and only when the effective URL actually changes.
-  private func loadIfNeeded() {
-    guard let webView = webView else { return }
-    guard let urlString = computeTargetUrl() else { return }
+  /// Apply the source props and (re)load only when the effective URL changes —
+  /// so reparenting / redundant prop re-applies never reload (which would lose
+  /// chart state, the whole point of pooling).
+  func setSource(uri: String?, localBundle: String?, entry: String?, paramsJson: String?) {
+    currentLocalBundle = localBundle
+    guard let urlString = computeTargetUrl(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson) else { return }
     guard urlString != lastLoadedUrl else { return }
     guard let url = URL(string: urlString) else {
-      onError?("Invalid url: \(urlString)")
+      owner?.handleError("Invalid url: \(urlString)")
       return
     }
     lastLoadedUrl = urlString
-    hasLoadedOnce = true
-    webView.load(URLRequest(url: url))
+    runOnMain { [weak self] in self?.webView?.load(URLRequest(url: url)) }
   }
 
-  /// Resolves the effective URL from the current props: `uri` (remote) wins,
-  /// otherwise the offline bundle served via the `onekey-chart://` scheme.
-  /// Returns nil when no source is set yet.
-  private func computeTargetUrl() -> String? {
-    if let uri = uri, !uri.isEmpty {
-      return uri
-    }
+  private func computeTargetUrl(uri: String?, localBundle: String?, entry: String?, paramsJson: String?) -> String? {
+    if let uri = uri, !uri.isEmpty { return uri }
     if let localBundle = localBundle, !localBundle.isEmpty {
       let entryFile = (entry?.isEmpty == false) ? entry! : "index.html"
       let query = buildQueryString(fromParamsJson: paramsJson)
-      var urlString = "\(HybridChartWebview.customScheme)://\(HybridChartWebview.virtualHost)/\(entryFile)"
-      if !query.isEmpty {
-        urlString += "?\(query)"
-      }
+      var urlString = "\(ChartWebviewConst.customScheme)://\(ChartWebviewConst.virtualHost)/\(entryFile)"
+      if !query.isEmpty { urlString += "?\(query)" }
       return urlString
     }
     return nil
   }
 
-  /// Parses `paramsJson` (a JSON object string) into a URL-encoded query
-  /// string. Non-string values are stringified. Returns "" on any problem.
   private func buildQueryString(fromParamsJson json: String?) -> String {
     guard let json = json, !json.isEmpty,
           let data = json.data(using: .utf8),
@@ -221,80 +284,47 @@ class HybridChartWebview: HybridChartWebviewSpec {
           let dict = obj as? [String: Any] else {
       return ""
     }
-
     var allowed = CharacterSet.urlQueryAllowed
-    // RFC 3986 sub-delims that are valid in a query but ambiguous as
-    // separators must be percent-encoded.
     allowed.remove(charactersIn: "&=+?#")
-
     var pairs: [String] = []
     for (key, value) in dict {
       let stringValue: String
       switch value {
-      case let s as String:
-        stringValue = s
-      case let b as Bool:
-        stringValue = b ? "true" : "false"
-      case let n as NSNumber:
-        stringValue = n.stringValue
-      default:
-        stringValue = "\(value)"
+      case let s as String: stringValue = s
+      case let b as Bool: stringValue = b ? "true" : "false"
+      case let n as NSNumber: stringValue = n.stringValue
+      default: stringValue = "\(value)"
       }
       let encodedKey = key.addingPercentEncoding(withAllowedCharacters: allowed) ?? key
       let encodedValue = stringValue.addingPercentEncoding(withAllowedCharacters: allowed) ?? stringValue
       pairs.append("\(encodedKey)=\(encodedValue)")
     }
-    // Stable order for deterministic URLs.
     return pairs.sorted().joined(separator: "&")
   }
 
-  // MARK: - Methods
+  // MARK: - Bridge methods
 
-  private func runOnMain(_ block: @escaping () -> Void) {
-    if Thread.isMainThread {
-      block()
-    } else {
-      DispatchQueue.main.async(execute: block)
-    }
-  }
-
-  /// JS -> page. `message` is a raw JSON string built by the JS business layer.
-  ///
-  /// Escaping strategy: rather than splicing the JSON object literal directly
-  /// into JS source (which risks breaking out of context if the payload is
-  /// ever malformed), we treat `message` as a *string*, JSON-encode that
-  /// string to get a safely-escaped JS string literal, and have the page
-  /// `JSON.parse` it back into an object before dispatching. This keeps the
-  /// injection inert regardless of the payload's contents.
-  func postMessage(message: String) throws {
+  func postMessage(_ message: String) {
     runOnMain { [weak self] in
       guard let self = self, let webView = self.webView else { return }
-      // Produce a JS string literal whose runtime value equals `message`.
       let jsStringLiteral = self.jsStringLiteral(from: message)
       let js = "window.postMessage(JSON.parse(\(jsStringLiteral)), '*')"
       webView.evaluateJavaScript(js, completionHandler: nil)
     }
   }
 
-  func reload() throws {
-    runOnMain { [weak self] in
-      self?.webView?.reload()
-    }
+  func reload() {
+    runOnMain { [weak self] in self?.webView?.reload() }
   }
 
-  /// Encodes an arbitrary Swift string into a safe JS string literal
-  /// (including surrounding quotes). Uses JSONSerialization so all control
-  /// characters, quotes and backslashes are escaped correctly.
   private func jsStringLiteral(from raw: String) -> String {
     if let data = try? JSONSerialization.data(withJSONObject: [raw], options: []),
        let arrStr = String(data: data, encoding: .utf8) {
-      // arrStr looks like ["...escaped..."]; strip the array brackets.
       var s = arrStr
       if s.hasPrefix("[") { s.removeFirst() }
       if s.hasSuffix("]") { s.removeLast() }
       return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    // Fallback: minimal manual escaping.
     let escaped = raw
       .replacingOccurrences(of: "\\", with: "\\\\")
       .replacingOccurrences(of: "\"", with: "\\\"")
@@ -302,18 +332,22 @@ class HybridChartWebview: HybridChartWebviewSpec {
       .replacingOccurrences(of: "\r", with: "\\r")
     return "\"\(escaped)\""
   }
+
+  private func runOnMain(_ block: @escaping () -> Void) {
+    if Thread.isMainThread { block() } else { DispatchQueue.main.async(execute: block) }
+  }
 }
 
 // MARK: - ChartWebViewProxy (NSObject host for the WebKit conformances)
 
 /// Owns every WebKit delegate / handler conformance that requires `NSObject`,
-/// forwarding back to the host. Held strongly by the host; references the host
-/// weakly to avoid a retain cycle.
+/// forwarding back to the pooled WebView's current owner. Held strongly by the
+/// PooledChartWebView; references it weakly to avoid a retain cycle.
 private final class ChartWebViewProxy: NSObject {
-  private weak var host: HybridChartWebview?
+  private weak var pooled: PooledChartWebView?
 
-  init(host: HybridChartWebview) {
-    self.host = host
+  init(pooled: PooledChartWebView) {
+    self.pooled = pooled
     super.init()
   }
 }
@@ -325,19 +359,15 @@ extension ChartWebViewProxy: WKScriptMessageHandler {
     _ userContentController: WKUserContentController,
     didReceive message: WKScriptMessage
   ) {
-    guard message.name == HybridChartWebview.messageHandlerName else { return }
-    // Surface the raw payload as a JSON string without parsing it; the JS
-    // business layer is responsible for interpreting it.
+    guard message.name == ChartWebviewConst.messageHandlerName else { return }
+    let owner = pooled?.owner
     if let body = message.body as? String {
-      host?.handleMessage(body)
+      owner?.handleMessage(body)
+    } else if let data = try? JSONSerialization.data(withJSONObject: message.body, options: []),
+              let str = String(data: data, encoding: .utf8) {
+      owner?.handleMessage(str)
     } else {
-      // Non-string payloads (object/number) — re-serialize to a JSON string.
-      if let data = try? JSONSerialization.data(withJSONObject: message.body, options: []),
-         let str = String(data: data, encoding: .utf8) {
-        host?.handleMessage(str)
-      } else {
-        host?.handleMessage("\(message.body)")
-      }
+      owner?.handleMessage("\(message.body)")
     }
   }
 }
@@ -346,32 +376,21 @@ extension ChartWebViewProxy: WKScriptMessageHandler {
 
 extension ChartWebViewProxy: WKNavigationDelegate {
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-    host?.handleLoadEnd()
+    pooled?.owner?.handleLoadEnd()
   }
 
-  func webView(
-    _ webView: WKWebView,
-    didFail navigation: WKNavigation!,
-    withError error: Error
-  ) {
-    host?.handleError(error.localizedDescription)
+  func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    pooled?.owner?.handleError(error.localizedDescription)
   }
 
-  func webView(
-    _ webView: WKWebView,
-    didFailProvisionalNavigation navigation: WKNavigation!,
-    withError error: Error
-  ) {
-    host?.handleError(error.localizedDescription)
+  func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    pooled?.owner?.handleError(error.localizedDescription)
   }
 }
 
 // MARK: - WKUIDelegate
 
-extension ChartWebViewProxy: WKUIDelegate {
-  // Default behavior is sufficient for the MVP. Set as delegate so future
-  // JS dialogs / target=_blank handling can be wired here.
-}
+extension ChartWebViewProxy: WKUIDelegate {}
 
 // MARK: - WKURLSchemeHandler (offline virtual same-origin)
 
@@ -384,46 +403,28 @@ extension ChartWebViewProxy: WKURLSchemeHandler {
       return
     }
 
-    guard let localBundle = host?.currentLocalBundle, !localBundle.isEmpty else {
+    guard let localBundle = pooled?.currentLocalBundle, !localBundle.isEmpty else {
       respondNotFound(url: url, task: urlSchemeTask)
       return
     }
 
-    // Resolve the requested path against the bundled `localBundle` directory.
-    // The path component (sans query/fragment) maps 1:1 to a file in the
-    // bundle subdirectory. e.g. onekey-chart://chart/assets/app.js ->
-    // <bundle>/<localBundle>/assets/app.js
     var relativePath = url.path
-    if relativePath.hasPrefix("/") {
-      relativePath.removeFirst()
-    }
-    if relativePath.isEmpty {
-      relativePath = "index.html"
-    }
+    if relativePath.hasPrefix("/") { relativePath.removeFirst() }
+    if relativePath.isEmpty { relativePath = "index.html" }
 
-    guard let fileURL = resolveBundleFileURL(localBundle: localBundle, relativePath: relativePath) else {
+    guard let fileURL = resolveBundleFileURL(localBundle: localBundle, relativePath: relativePath),
+          let data = try? Data(contentsOf: fileURL) else {
       respondNotFound(url: url, task: urlSchemeTask)
       return
     }
 
-    guard let data = try? Data(contentsOf: fileURL) else {
-      respondNotFound(url: url, task: urlSchemeTask)
-      return
-    }
-
-    let mimeType = mimeTypeForPath(fileURL.pathExtension)
     let headers: [String: String] = [
-      "Content-Type": mimeType,
+      "Content-Type": mimeTypeForPath(fileURL.pathExtension),
       "Content-Length": "\(data.count)",
       "Access-Control-Allow-Origin": "*",
       "Cache-Control": "no-cache",
     ]
-    guard let response = HTTPURLResponse(
-      url: url,
-      statusCode: 200,
-      httpVersion: "HTTP/1.1",
-      headerFields: headers
-    ) else {
+    guard let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers) else {
       respondNotFound(url: url, task: urlSchemeTask)
       return
     }
@@ -433,28 +434,17 @@ extension ChartWebViewProxy: WKURLSchemeHandler {
     urlSchemeTask.didFinish()
   }
 
-  func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
-    // No long-running work to cancel; reads are synchronous and one-shot.
-  }
+  func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 
-  /// Maps `<localBundle>/<relativePath>` to a concrete file URL inside the app
-  /// bundle. Guards against path traversal escaping the bundle directory.
   private func resolveBundleFileURL(localBundle: String, relativePath: String) -> URL? {
     let resourceURL = Bundle.main.resourceURL ?? Bundle.main.bundleURL
     let baseDir = resourceURL.appendingPathComponent(localBundle, isDirectory: true)
     let candidate = baseDir.appendingPathComponent(relativePath).standardizedFileURL
-
-    // Ensure the resolved path stays within the bundle directory.
     let basePath = baseDir.standardizedFileURL.path
-    guard candidate.path == basePath || candidate.path.hasPrefix(basePath + "/") else {
-      return nil
-    }
-
+    guard candidate.path == basePath || candidate.path.hasPrefix(basePath + "/") else { return nil }
     let fm = FileManager.default
     var isDir: ObjCBool = false
-    guard fm.fileExists(atPath: candidate.path, isDirectory: &isDir), !isDir.boolValue else {
-      return nil
-    }
+    guard fm.fileExists(atPath: candidate.path, isDirectory: &isDir), !isDir.boolValue else { return nil }
     return candidate
   }
 
@@ -492,5 +482,23 @@ extension ChartWebViewProxy: WKURLSchemeHandler {
     case "txt": return "text/plain; charset=utf-8"
     default: return "application/octet-stream"
     }
+  }
+}
+
+// MARK: - ChartWebviewPool (warm pool keyed by reuseKey)
+
+/// Warm pool of `PooledChartWebView`s keyed by `reuseKey`. Entries are created
+/// on first use and kept warm (a single static chart instance, OKX-style), so
+/// the next mount point that claims the same key reuses the live WebView instead
+/// of recreating it. Non-pooled hosts don't use this — they own a private one.
+final class ChartWebviewPool {
+  static let shared = ChartWebviewPool()
+  private var entries: [String: PooledChartWebView] = [:]
+
+  func acquireShared(key: String) -> PooledChartWebView {
+    if let existing = entries[key] { return existing }
+    let created = PooledChartWebView(key: key)
+    entries[key] = created
+    return created
   }
 }
