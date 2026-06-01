@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Platform, Switch } from 'react-native';
 import { callback } from 'react-native-nitro-modules';
 import { TestButton } from './TestPageBase';
+import { fetchMarketKline } from './marketKline';
 import {
   ChartWebviewView,
   type ChartWebviewMethods,
@@ -78,9 +79,26 @@ export function ChartSingletonTestPage() {
   const [pooled, setPooled] = useState(true);
   const [remote, setRemote] = useState(false);
   const [loads, setLoads] = useState(0);
-  const hybridRefHolder = useRef<{ current: ChartWebviewMethods | null } | null>(
-    null,
+  // The nitro hybridRef callback hands us the HybridObject (methods) directly.
+  // Both hosts share the same pooled WebView, so posting via either reaches the
+  // live chart.
+  const refA = useRef<ChartWebviewMethods | null>(null);
+  const refB = useRef<ChartWebviewMethods | null>(null);
+  const hybridRefA = useMemo(
+    () => callback((r: ChartWebviewMethods) => { refA.current = r; }),
+    [],
   );
+  const hybridRefB = useMemo(
+    () => callback((r: ChartWebviewMethods) => { refB.current = r; }),
+    [],
+  );
+  // Post a reply to whichever ref currently exposes the methods (the live host).
+  const postToChart = useCallback((reply: string) => {
+    const m = [refA.current, refB.current].find(
+      (x) => typeof x?.postMessage === 'function',
+    );
+    m?.postMessage(reply);
+  }, []);
 
   const sourceA = useMemo(
     () => makeSource(remote, URL_A, PARAMS_A_JSON),
@@ -91,25 +109,59 @@ export function ChartSingletonTestPage() {
     [remote],
   );
 
-  const hybridRefProp = useMemo(
-    () =>
-      callback((r: { current: ChartWebviewMethods | null }) => {
-        hybridRefHolder.current = r;
-      }),
-    [],
-  );
   const onLoadEndProp = useMemo(
     () => callback(() => setLoads((n) => n + 1)),
     [],
   );
 
+  // B is a `market` chart: it asks the app for candles over the bridge instead of
+  // self-fetching (A's Hyperliquid scene does that). This replays the app's data
+  // path — on a getKLineData request we fetch real candles from the OneKey market
+  // API and reply, so B draws live data. (A never sends this; it self-fetches.)
+  const onMessage = useCallback((raw: string) => {
+    if (!raw.includes('getKLineData') && !raw.includes('getHistoryData')) {
+      return;
+    }
+    let messageData: Record<string, unknown> = {};
+    try {
+      messageData = (JSON.parse(raw)?.data as Record<string, unknown>) ?? {};
+    } catch {
+      return;
+    }
+    const { resolution, from, to } = messageData as {
+      resolution?: string;
+      from?: number;
+      to?: number;
+    };
+    if (resolution == null || from == null || to == null) return;
+    fetchMarketKline({
+      tokenAddress: PARAMS_B.address,
+      networkId: PARAMS_B.networkId,
+      resolution: String(resolution),
+      from: Number(from),
+      to: Number(to),
+    })
+      .then((kLineData) => {
+        const reply = JSON.stringify({
+          type: 'kLineData',
+          payload: { type: 'history', kLineData, requestData: messageData },
+        });
+        postToChart(reply);
+      })
+      .catch(() => {
+        /* network/best-effort; chart keeps its loading state */
+      });
+  }, [postToChart]);
+  const onMessageProp = useMemo(() => callback(onMessage), [onMessage]);
+
   // Both slots stay mounted; `active` decides which one is shown live vs frozen
-  // to its own snapshot. A and B use different reuseKeys, so each is its own
-  // persisted WebView with its own content.
+  // to its own snapshot. One shared WebView (same reuseKey) drives the active
+  // slot's content; the other freezes to its own snapshot.
   const renderChart = (
     active: boolean,
     source: object,
     reuseKey: string,
+    hybridRef: unknown,
   ) => (
     <ChartWebviewView
       style={s.chart}
@@ -117,8 +169,9 @@ export function ChartSingletonTestPage() {
       reuseKey={reuseKey}
       pooled={pooled}
       active={active}
-      hybridRef={hybridRefProp}
+      hybridRef={hybridRef as never}
       onLoadEnd={onLoadEndProp}
+      onMessage={onMessageProp}
     />
   );
 
@@ -141,7 +194,7 @@ export function ChartSingletonTestPage() {
         </View>
         <TestButton
           title="Clear snapshot cache"
-          onPress={() => hybridRefHolder.current?.current?.clearSnapshot()}
+          onPress={() => (refA.current ?? refB.current)?.clearSnapshot?.()}
         />
         <Text style={s.hint}>
           {`slot=${slot}  •  onLoadEnd fired ${loads}×\n`}
@@ -152,11 +205,11 @@ export function ChartSingletonTestPage() {
       <View style={s.slots}>
         <View style={[s.slot, s.slotA]}>
           <Text style={s.slotLabel}>SLOT A · BTC {slot === 'A' ? '(live)' : '(snapshot)'}</Text>
-          {renderChart(slot === 'A', sourceA, REUSE_KEY)}
+          {renderChart(slot === 'A', sourceA, REUSE_KEY, hybridRefA)}
         </View>
         <View style={[s.slot, s.slotB]}>
           <Text style={s.slotLabel}>SLOT B · QQQon {slot === 'B' ? '(live)' : '(snapshot)'}</Text>
-          {renderChart(slot === 'B', sourceB, REUSE_KEY)}
+          {renderChart(slot === 'B', sourceB, REUSE_KEY, hybridRefB)}
         </View>
       </View>
     </View>
