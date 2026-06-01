@@ -57,7 +57,7 @@ class HybridChartWebview: HybridChartWebviewSpec {
     super.init()
     container.onWindowChange = { [weak self] attached in
       self?.attached = attached
-      self?.reconcile()
+      self?.scheduleReconcile()
     }
   }
 
@@ -72,11 +72,11 @@ class HybridChartWebview: HybridChartWebviewSpec {
 
   // `pooled` + non-empty `reuseKey` => the backing WebView is shared (keyed by
   // reuseKey) across hosts; otherwise the host owns a private WebView.
-  var reuseKey: String? { didSet { reconcile() } }
-  var pooled: Bool? { didSet { reconcile() } }
+  var reuseKey: String? { didSet { scheduleReconcile() } }
+  var pooled: Bool? { didSet { scheduleReconcile() } }
   // `active` (JS useIsFocused) decides which host, among those sharing a key,
   // owns the single WebView. nil is treated as active (single-host case).
-  var active: Bool? { didSet { reconcile() } }
+  var active: Bool? { didSet { scheduleReconcile() } }
 
   // MARK: - Props (events)
 
@@ -107,6 +107,22 @@ class HybridChartWebview: HybridChartWebviewSpec {
   }
 
   private func wantsOwnership() -> Bool { attached && (active != false) }
+
+  // A single React commit applies props one at a time, so the intermediate
+  // states are inconsistent (e.g. `pooled` re-applied while `active` is still
+  // stale). Reacting to each setter synchronously makes the wrong host claim
+  // mid-commit. Coalesce to ONE reconcile at the end of the run-loop, by which
+  // point every prop in the commit holds its final value.
+  private var reconcileScheduled = false
+
+  private func scheduleReconcile() {
+    if reconcileScheduled { return }
+    reconcileScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      self?.reconcileScheduled = false
+      self?.reconcile()
+    }
+  }
 
   private func reconcile() {
     if isPooled() { reconcilePooled() } else { reconcilePrivate() }

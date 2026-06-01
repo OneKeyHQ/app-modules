@@ -54,7 +54,7 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
       override fun onViewAttachedToWindow(v: View) {
         attached = true
-        reconcile()
+        scheduleReconcile()
       }
 
       override fun onViewDetachedFromWindow(v: View) {
@@ -98,19 +98,19 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
   private var _reuseKey: String? = null
   override var reuseKey: String?
     get() = _reuseKey
-    set(value) { _reuseKey = value; reconcile() }
+    set(value) { _reuseKey = value; scheduleReconcile() }
 
   private var _pooled: Boolean? = null
   override var pooled: Boolean?
     get() = _pooled
-    set(value) { _pooled = value; reconcile() }
+    set(value) { _pooled = value; scheduleReconcile() }
 
   // `active` (JS useIsFocused) decides which host, among those sharing a key,
   // owns the single WebView. null is treated as active (single-host case).
   private var _active: Boolean? = null
   override var active: Boolean?
     get() = _active
-    set(value) { _active = value; reconcile() }
+    set(value) { _active = value; scheduleReconcile() }
 
   // --- Event callbacks ---
   override var onMessage: ((message: String) -> Unit)? = null
@@ -135,6 +135,23 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     if (isPooled()) _reuseKey!! else "private:$instanceId"
 
   private fun wantsOwnership(): Boolean = attached && (_active != false)
+
+  // A single React commit applies props one at a time, so the intermediate
+  // states are inconsistent (e.g. `pooled` re-applied while `active` is still
+  // stale). Reacting to each setter synchronously makes the wrong host claim
+  // mid-commit. Coalesce to ONE reconcile at the end of the run-loop, by which
+  // point every prop in the commit holds its final value.
+  private var reconcileScheduled = false
+  private val reconcileRunnable = Runnable {
+    reconcileScheduled = false
+    reconcile()
+  }
+
+  private fun scheduleReconcile() {
+    if (reconcileScheduled) return
+    reconcileScheduled = true
+    container.post(reconcileRunnable)
+  }
 
   private fun reconcile() {
     if (isPooled()) reconcilePooled() else reconcilePrivate()
