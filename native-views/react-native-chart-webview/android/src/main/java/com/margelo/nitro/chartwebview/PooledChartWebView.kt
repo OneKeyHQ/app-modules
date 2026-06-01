@@ -51,23 +51,34 @@ class PooledChartWebView private constructor(
     const val ASSET_HOST = "appassets.androidplatform.net"
     private const val DEFAULT_ENTRY = "index.html"
 
-    // See HybridChartWebview for the rationale; identical dumb-pipe bridge.
-    private const val OUTBOUND_BRIDGE_JS =
-      "(function(){" +
-      "  if (window.__onekeyChartBridge) return; window.__onekeyChartBridge = true;" +
-      "  var fwd = function(m){ try { AndroidChartBridge.postMessage(typeof m === 'string' ? m : JSON.stringify(m)); } catch (e) {} };" +
-      "  window.\$onekey = window.\$onekey || {};" +
-      "  window.\$onekey.\$private = window.\$onekey.\$private || {};" +
-      "  window.\$onekey.\$private.request = function(m){ fwd(m); };" +
-      "  window.ReactNativeWebView = window.ReactNativeWebView || {};" +
-      "  window.ReactNativeWebView.postMessage = function(s){ fwd(String(s)); };" +
-      "  window.addEventListener('message', function(e){" +
-      "    try { var d = e && e.data; if (d && d.scope === '\$private') fwd(d); } catch (err) {}" +
-      "  });" +
-      "})();"
+    // Tiny platform transport shim: defines the single hook the shared TS bridge
+    // (CHART_BRIDGE_JS) calls. The bulk of the bridge lives in the TS layer and
+    // arrives via the `bridgeScript` ctor arg — this is the only platform-specific
+    // piece (Android -> AndroidChartBridge).
+    private const val NATIVE_POST_SHIM_JS =
+      "(function(){window.__chartNativePost=function(s){" +
+      "try{AndroidChartBridge.postMessage(s);}catch(e){}};})();"
 
     fun create(context: Context, key: String): PooledChartWebView =
       PooledChartWebView(context.applicationContext, key)
+  }
+
+  // Shim (defines __chartNativePost) + the TS bridge that uses it. Set lazily via
+  // setBridgeScript once the host has the prop value — registering it in init
+  // would capture an empty script, since the first reconcile (window-attach) can
+  // run before the bridgeScript prop is applied. Re-asserted on page start/finish.
+  private var outboundBridgeJs: String = ""
+  private var bridgeRegistered = false
+
+  // Called by the host before the first load. Registers the document-start bridge
+  // once a non-empty script is available; subsequent calls are no-ops.
+  fun setBridgeScript(bridgeScript: String) {
+    if (bridgeRegistered || bridgeScript.isEmpty()) return
+    outboundBridgeJs = "$NATIVE_POST_SHIM_JS\n$bridgeScript"
+    bridgeRegistered = true
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+      WebViewCompat.addDocumentStartJavaScript(webView, outboundBridgeJs, setOf("*"))
+    }
   }
 
   /** The host currently displaying this WebView; page events route here. */
@@ -101,10 +112,6 @@ class PooledChartWebView private constructor(
     val n = liveCount.incrementAndGet()
     android.util.Log.d("ChartWebviewPool", "WebView CREATED key=$key liveCount=$n")
 
-    if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-      WebViewCompat.addDocumentStartJavaScript(webView, OUTBOUND_BRIDGE_JS, setOf("*"))
-    }
-
     webView.webViewClient = object : WebViewClientCompat() {
       override fun shouldInterceptRequest(
         view: WebView,
@@ -113,12 +120,12 @@ class PooledChartWebView private constructor(
 
       override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
         super.onPageStarted(view, url, favicon)
-        view.evaluateJavascript(OUTBOUND_BRIDGE_JS, null)
+        if (outboundBridgeJs.isNotEmpty()) view.evaluateJavascript(outboundBridgeJs, null)
       }
 
       override fun onPageFinished(view: WebView, url: String?) {
         super.onPageFinished(view, url)
-        view.evaluateJavascript(OUTBOUND_BRIDGE_JS, null)
+        if (outboundBridgeJs.isNotEmpty()) view.evaluateJavascript(outboundBridgeJs, null)
         owner?.dispatchLoadEnd()
         // Prime the snapshot so the first move already has a frame to mask with.
         refreshSnapshotSoon()
@@ -265,6 +272,10 @@ class PooledChartWebView private constructor(
    * chart state, the whole point of pooling).
    */
   fun setSource(uri: String?, localBundle: String?, entry: String?, paramsJson: String?) {
+    // Never load before the document-start bridge is registered — otherwise the
+    // page boots without the bridge and its first $private requests are lost. The
+    // host re-calls setSource once the bridgeScript prop arrives.
+    if (!bridgeRegistered) return
     if (localBundle != lastLocalBundle) {
       lastLocalBundle = localBundle
       rebuildAssetLoader(localBundle)

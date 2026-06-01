@@ -21,6 +21,12 @@ export interface ChartWebviewProps extends HybridViewProps {
   // native side stays free of a structured-prop dependency.
   paramsJson?: string;
 
+  // JS injected into the page at document-start (before any page JS), wiring the
+  // page's outbound channels to the native transport. Single source of truth in
+  // the TS layer (see CHART_BRIDGE_JS); the native side only adds a tiny
+  // platform transport shim. Defaulted by the JS wrapper so it's always present.
+  bridgeScript?: string;
+
   // --- Singleton ---
   // Reuse group: same key shares one live WebView (market / perps each one).
   reuseKey?: string;

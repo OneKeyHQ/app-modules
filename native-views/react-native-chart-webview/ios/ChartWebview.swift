@@ -79,6 +79,11 @@ class HybridChartWebview: HybridChartWebviewSpec {
   var entry: String? { didSet { applySourceIfOwner() } }
   var paramsJson: String? { didSet { applySourceIfOwner() } }
 
+  // Document-start bridge JS (single source of truth in the TS layer). Handed to
+  // the pooled WebView when we claim it, before its first load. Re-applying the
+  // source on change triggers a deferred load if this prop lands after the source.
+  var bridgeScript: String? { didSet { applySourceIfOwner() } }
+
   // MARK: - Props (singleton)
 
   // `pooled` + non-empty `reuseKey` => the backing WebView is shared (keyed by
@@ -167,6 +172,9 @@ class HybridChartWebview: HybridChartWebviewSpec {
     backing = pooled
     if wantsOwnership() {
       pooled.owner = self
+      // Register the document-start bridge before the first load (the prop is set
+      // by now; the pool may have been created earlier by a window-attach reconcile).
+      pooled.setBridgeScript(bridgeScript ?? "")
       pooled.attach(to: container)
       pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
       // Keep a fresh frame of OUR content while we own the WebView, so that when
@@ -224,12 +232,16 @@ class HybridChartWebview: HybridChartWebviewSpec {
     let pooled = backing ?? PooledChartWebView(key: effectiveKey())
     backing = pooled
     pooled.owner = self
+    pooled.setBridgeScript(bridgeScript ?? "")
     pooled.attach(to: container)
     pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
   }
 
   private func applySourceIfOwner() {
     guard let pooled = backing, pooled.owner === self else { return }
+    // Register the bridge before any load setSource may trigger (setSource defers
+    // loading until the bridge is registered).
+    pooled.setBridgeScript(bridgeScript ?? "")
     pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
   }
 
@@ -310,6 +322,11 @@ final class PooledChartWebView {
   let key: String
   weak var owner: HybridChartWebview?
 
+  // The page's user-content controller, kept so the document-start bridge can be
+  // added lazily (see setBridgeScript) once the host has the prop value.
+  private var userContent: WKUserContentController?
+  private var bridgeRegistered = false
+
   private var webView: WKWebView!
   private var proxy: ChartWebViewProxy!
   private var lastLoadedUrl: String?
@@ -329,6 +346,24 @@ final class PooledChartWebView {
     PooledChartWebView.liveCount += 1
     NSLog("[ChartWebviewPool] WebView CREATED key=\(key) liveCount=\(PooledChartWebView.liveCount)")
     setupWebView()
+  }
+
+  // Called by the host before the first load. Registers the document-start bridge
+  // (shim + the shared TS bridgeScript) once a non-empty script is available;
+  // subsequent calls are no-ops. Done lazily because the first reconcile
+  // (window-attach) can run before the bridgeScript prop is applied.
+  func setBridgeScript(_ bridgeScript: String) {
+    guard !bridgeRegistered, !bridgeScript.isEmpty, let userContent = userContent else { return }
+    bridgeRegistered = true
+    let handlerName = ChartWebviewConst.messageHandlerName
+    let shim = "(function(){window.__chartNativePost=function(s){"
+      + "window.webkit.messageHandlers.\(handlerName).postMessage(s);};})();"
+    let userScript = WKUserScript(
+      source: shim + "\n" + bridgeScript,
+      injectionTime: .atDocumentStart,
+      forMainFrameOnly: false
+    )
+    userContent.addUserScript(userScript)
   }
 
   private func setupWebView() {
@@ -351,33 +386,9 @@ final class PooledChartWebView {
 
     let userContent = WKUserContentController()
     userContent.add(proxy, name: ChartWebviewConst.messageHandlerName)
-
-    // See the Android host for the rationale; identical dumb-pipe bridge.
-    let handlerName = ChartWebviewConst.messageHandlerName
-    let bridgeScript = """
-    (function () {
-      if (window.__onekeyChartBridge) return; window.__onekeyChartBridge = true;
-      var fwd = function (m) {
-        window.webkit.messageHandlers.\(handlerName).postMessage(typeof m === 'string' ? m : JSON.stringify(m));
-      };
-      window.$onekey = window.$onekey || {};
-      window.$onekey.$private = window.$onekey.$private || {};
-      window.$onekey.$private.request = function (m) { fwd(m); };
-      window.ReactNativeWebView = { postMessage: function (s) { fwd(String(s)); } };
-      window.addEventListener('message', function (e) {
-        try {
-          var d = e && e.data;
-          if (d && d.scope === '$private') fwd(d);
-        } catch (err) {}
-      });
-    })();
-    """
-    let userScript = WKUserScript(
-      source: bridgeScript,
-      injectionTime: .atDocumentStart,
-      forMainFrameOnly: false
-    )
-    userContent.addUserScript(userScript)
+    // The document-start bridge is added later via setBridgeScript (the TS prop
+    // isn't available yet at construction).
+    self.userContent = userContent
     config.userContentController = userContent
 
     let webView = WKWebView(frame: .zero, configuration: config)
@@ -480,6 +491,10 @@ final class PooledChartWebView {
   /// so reparenting / redundant prop re-applies never reload (which would lose
   /// chart state, the whole point of pooling).
   func setSource(uri: String?, localBundle: String?, entry: String?, paramsJson: String?) {
+    // Never load before the document-start bridge is registered — otherwise the
+    // page boots without the bridge and its first $private requests are lost. The
+    // host re-calls setSource once the bridgeScript prop arrives.
+    guard bridgeRegistered else { return }
     currentLocalBundle = localBundle
     guard let urlString = computeTargetUrl(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson) else { return }
     guard urlString != lastLoadedUrl else { return }

@@ -102,6 +102,15 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     get() = _paramsJson
     set(value) { _paramsJson = value; applySourceIfOwner() }
 
+  // Document-start bridge JS (single source of truth in the TS layer). Stored and
+  // handed to the pooled WebView when we claim it, before its first load.
+  private var _bridgeScript: String? = null
+  override var bridgeScript: String?
+    get() = _bridgeScript
+    // Re-apply the source: if this prop lands after the source props (a load can't
+    // run before the bridge is registered, so setSource deferred), this triggers it.
+    set(value) { _bridgeScript = value; applySourceIfOwner() }
+
   // --- Singleton props ---
   // `pooled` + non-empty `reuseKey` => the backing WebView is shared (keyed by
   // reuseKey) across hosts; otherwise the host owns a private WebView.
@@ -195,6 +204,9 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     backing = entry
     if (wantsOwnership()) {
       entry.owner = this
+      // Register the document-start bridge before the first load (the prop is set
+      // by now; the pool may have been created earlier by a window-attach reconcile).
+      entry.setBridgeScript(_bridgeScript ?: "")
       entry.attachTo(container)
       entry.setSource(_uri, _localBundle, _entry, _paramsJson)
       // Keep a fresh frame of OUR content while we own the WebView, so that when
@@ -222,6 +234,7 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     val pooled = backing ?: PooledChartWebView.create(context, effectiveKey())
     backing = pooled
     pooled.owner = this
+    pooled.setBridgeScript(_bridgeScript ?: "")
     pooled.attachTo(container)
     pooled.setSource(_uri, _localBundle, _entry, _paramsJson)
   }
@@ -229,6 +242,9 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
   private fun applySourceIfOwner() {
     val pooled = backing ?: return
     if (pooled.owner == this) {
+      // Register the bridge before any load setSource may trigger (setSource
+      // defers loading until the bridge is registered).
+      pooled.setBridgeScript(_bridgeScript ?: "")
       pooled.setSource(_uri, _localBundle, _entry, _paramsJson)
     }
   }
