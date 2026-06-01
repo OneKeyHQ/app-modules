@@ -16,11 +16,10 @@ import {
 // source-encoded symbol. Switching a slot just posts SYMBOL_CHANGE{source,...};
 // the source prop never changes, so the WebView never reloads.
 //
-// We point at the chart dev server so this exercises the in-repo unified
-// datafeed build. Android emulator reaches the host machine at 10.0.2.2.
+// Loaded from the offline bundle (tradingview-assets/, built from the chart
+// repo's unified-datafeed dist) — proves unified instant switching works fully
+// offline, not just against the dev server.
 const REUSE_KEY = 'chart-singleton';
-const CHART_DEV_HOST =
-  Platform.OS === 'android' ? 'http://10.0.2.2:5173/' : 'http://localhost:5173/';
 
 const MARKET_TOKEN = {
   symbol: 'QQQon',
@@ -41,7 +40,7 @@ const UNIFIED_PARAMS: Record<string, string> = {
   appVersion: '6.4.0',
   decimal: '4',
 };
-const UNIFIED_URL = `${CHART_DEV_HOST}?${new URLSearchParams(UNIFIED_PARAMS).toString()}`;
+const UNIFIED_PARAMS_JSON = JSON.stringify(UNIFIED_PARAMS);
 
 type ISlotKind = 'hyperliquid' | 'market';
 interface ISlotDef {
@@ -69,10 +68,10 @@ const SLOTS: ISlotDef[] = [
 // the WebView never reloads on switch. Always pass all source keys (empty for
 // unused) — a Nitro optional string flipping to absent is rejected as null.
 const UNIFIED_SOURCE = {
-  uri: UNIFIED_URL,
-  localBundle: '',
-  entry: '',
-  paramsJson: '',
+  uri: '',
+  localBundle: 'tradingview-assets',
+  entry: 'index.html',
+  paramsJson: UNIFIED_PARAMS_JSON,
 };
 
 export function ChartSingletonTestPage() {
