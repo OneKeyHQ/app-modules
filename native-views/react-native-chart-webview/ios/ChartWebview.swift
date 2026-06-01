@@ -44,6 +44,17 @@ class HybridChartWebview: HybridChartWebviewSpec {
     return HybridChartWebview.instanceIds
   }()
 
+  // Substring of the chart's render-ready bridge message (method
+  // 'tradingview_renderReady'); cheaper than JSON-parsing every page message.
+  private static let renderReadyMarker = "tradingview_renderReady"
+  // Safety-net: reveal the live chart even if the render-ready signal is missed.
+  private static let revealFallback: TimeInterval = 2.0
+  // The one host currently holding a snapshot over a switch, waiting for the
+  // render-ready signal. Shared so render-ready (which arrives on whichever host
+  // owns the WebView at that instant — not necessarily the awaiting one) reveals
+  // the correct host regardless of the owner-handoff timing.
+  private static weak var pendingRevealHost: HybridChartWebview?
+
   // MARK: - HybridView
 
   private let container = ChartContainerView()
@@ -76,7 +87,22 @@ class HybridChartWebview: HybridChartWebviewSpec {
   var pooled: Bool? { didSet { scheduleReconcile() } }
   // `active` (JS useIsFocused) decides which host, among those sharing a key,
   // owns the single WebView. nil is treated as active (single-host case).
-  var active: Bool? { didSet { scheduleReconcile() } }
+  var active: Bool? {
+    didSet {
+      // Becoming active: cover with our last frame NOW (synchronously, before the
+      // JS symbol-change fires this commit) and wait for the chart's render-ready,
+      // so the switch holds the snapshot until the new content paints. Doing it
+      // here rather than in the coalesced reconcile is essential — a cached symbol
+      // can render + signal before the async reconcile even runs. ownSnapshot is
+      // non-nil only for pooled hosts shown before (first show reveals live).
+      let wasActive = (oldValue ?? true) != false
+      if active != false, !wasActive, let snapshot = ownSnapshot {
+        showPlaceholder(snapshot)
+        awaitContentReveal()
+      }
+      scheduleReconcile()
+    }
+  }
 
   // MARK: - Props (events)
 
@@ -85,7 +111,12 @@ class HybridChartWebview: HybridChartWebviewSpec {
   var onError: ((_ message: String) -> Void)?
 
   // Called by the backing PooledChartWebView while this host is the owner.
-  func handleMessage(_ message: String) { onMessage?(message) }
+  func handleMessage(_ message: String) {
+    // The chart reports it has painted the new symbol after a switch; that's our
+    // cue to drop the snapshot we held over the switch and reveal the live chart.
+    if message.contains(HybridChartWebview.renderReadyMarker) { onContentRendered() }
+    onMessage?(message)
+  }
   func handleLoadEnd() { onLoadEnd?() }
   func handleError(_ message: String) { onError?(message) }
 
@@ -135,7 +166,6 @@ class HybridChartWebview: HybridChartWebviewSpec {
     let pooled = ChartWebviewPool.shared.acquireShared(key: effectiveKey())
     backing = pooled
     if wantsOwnership() {
-      removePlaceholder()
       pooled.owner = self
       pooled.attach(to: container)
       pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
@@ -143,6 +173,14 @@ class HybridChartWebview: HybridChartWebviewSpec {
       // we later go inactive (and the shared WebView reloads the other slot's
       // chart) our slot freezes to its own last frame, not the other content.
       startOwnCapture()
+      // The snapshot hold/reveal over a switch is driven by the `active` setter +
+      // render-ready, not here. Just keep a held snapshot on top of the freshly
+      // attached WebView, or clear a stale one if we're not holding.
+      if awaitingReveal {
+        if let ph = placeholder { container.bringSubviewToFront(ph) }
+      } else {
+        removePlaceholder()
+      }
     } else {
       // Inactive: give up ownership only if we still hold it, and freeze to our
       // own last captured frame. We do NOT detach (that races a rapid re-claim).
@@ -219,6 +257,41 @@ class HybridChartWebview: HybridChartWebviewSpec {
   private func removePlaceholder() {
     placeholder?.removeFromSuperview()
     placeholder = nil
+  }
+
+  // MARK: - Reveal coordination (hold the snapshot over a switch until the chart
+  // reports the new symbol has painted, with a safety-net timeout)
+
+  private var awaitingReveal = false
+  private var revealFallbackWork: DispatchWorkItem?
+
+  private func awaitContentReveal() {
+    awaitingReveal = true
+    HybridChartWebview.pendingRevealHost = self
+    revealFallbackWork?.cancel()
+    let work = DispatchWorkItem { [weak self] in self?.doReveal() }
+    revealFallbackWork = work
+    // Safety net: reveal even if the render-ready signal is missed.
+    DispatchQueue.main.asyncAfter(
+      deadline: .now() + HybridChartWebview.revealFallback, execute: work)
+  }
+
+  // The chart signalled the post-switch render is done (see handleMessage).
+  // Reveal whichever host is holding a snapshot — render-ready may land on a
+  // different host than the one waiting, depending on owner-handoff timing.
+  private func onContentRendered() {
+    HybridChartWebview.pendingRevealHost?.doReveal()
+  }
+
+  private func doReveal() {
+    guard awaitingReveal else { return }
+    awaitingReveal = false
+    if HybridChartWebview.pendingRevealHost === self {
+      HybridChartWebview.pendingRevealHost = nil
+    }
+    revealFallbackWork?.cancel()
+    revealFallbackWork = nil
+    removePlaceholder()
   }
 }
 
