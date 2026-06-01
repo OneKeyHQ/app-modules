@@ -1,77 +1,60 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Platform, Switch } from 'react-native';
 import { callback } from 'react-native-nitro-modules';
 import { TestButton } from './TestPageBase';
-import { fetchMarketKline } from './marketKline';
 import {
   ChartWebviewView,
   type ChartWebviewMethods,
 } from '@onekeyfe/react-native-chart-webview';
 
-// Verifies the singleton: with `pooled` on, the SAME native WebView is reparented
-// between mount slots A and B (state preserved, ONE creation). With `pooled` off,
-// each slot is its own WebView (recreated, state lost).
-//
-// How to read the result in logcat:
-//   adb logcat -s ChartWebviewPool
-//   - pooled ON  -> exactly ONE "WebView CREATED key=chart-singleton" no matter
-//     how many times you move A<->B
-//   - pooled OFF -> a new "WebView CREATED" every time you move (different keys)
-// Visual proof: scroll/zoom the candles, then Move A<->B. Pooled keeps the
-// view exactly as you left it; non-pooled reloads from scratch.
-
-// ONE shared WebView (same reuseKey) reused for two DIFFERENT charts: the active
-// slot drives the single WebView's content (its params), so switching reloads it
-// to the other chart — the real "one chart host, swap symbol" optimization. Each
-// slot still freezes to its own last frame when inactive. A single Source switch
-// flips BOTH slots between the offline bundle and the remote URL.
+// ONE shared WebView, reused for two DIFFERENT market charts WITHOUT reloading:
+// both slots load the same market chart once, and switching sends a SYMBOL_CHANGE
+// message so the chart swaps symbol via tvWidget.setSymbol (no page/library
+// reload — instant), then re-requests candles which we feed from the market API.
+// Reparenting moves the live WebView between slots; the inactive slot freezes to
+// its own last frame.
 const REUSE_KEY = 'chart-singleton';
-
 const CHART_HOST = 'https://tradingview.onekey.so/';
 
-// A: Hyperliquid BTC (self-fetches candles, no business bridge needed).
-const PARAMS_A = {
-  symbol: 'BTC',
-  type: 'market',
-  theme: 'dark',
-  locale: 'zh-CN',
-  platform: Platform.OS === 'ios' ? 'ios' : 'android',
-  appVersion: '6.4.0',
-  decimal: '8',
-  networkId: 'btc--0',
-  address: '',
-  scene: 'market-hyperliquid',
-  storageNamespace: 'market-hyperliquid',
-};
+// Two Hyperliquid coins. The Hyperliquid scene self-fetches candles AND supports
+// SYMBOL_CHANGE (perps-style), so switching coins is instant — no reload, no
+// bridge data feed needed.
+const TOKEN_A = { symbol: 'BTC' };
+const TOKEN_B = { symbol: 'ETH' };
 
-// B: a different chart (QQQon on BSC, market mode).
-const PARAMS_B = {
-  timezone: 'Asia/Shanghai',
-  locale: 'zh-CN',
-  platform: Platform.OS === 'ios' ? 'ios' : 'android',
-  theme: 'dark',
-  appVersion: '6.4.0',
-  decimal: '8',
-  networkId: 'evm--56',
-  address: '0x0cde6936d305d5b34667fc46425e852efd73559a',
-  symbol: 'QQQon',
-  type: 'market',
-  storageNamespace: 'market',
-};
+function hyperliquidParams(symbol: string) {
+  return {
+    symbol,
+    type: 'market',
+    theme: 'dark',
+    locale: 'zh-CN',
+    platform: Platform.OS === 'ios' ? 'ios' : 'android',
+    appVersion: '6.4.0',
+    decimal: '8',
+    networkId: 'btc--0',
+    address: '',
+    scene: 'market-hyperliquid',
+    storageNamespace: 'market-hyperliquid',
+  };
+}
 
-const PARAMS_A_JSON = JSON.stringify(PARAMS_A);
-const PARAMS_B_JSON = JSON.stringify(PARAMS_B);
-const URL_A = `${CHART_HOST}?${new URLSearchParams(PARAMS_A).toString()}`;
-const URL_B = `${CHART_HOST}?${new URLSearchParams(PARAMS_B).toString()}`;
+// The single chart is loaded once with coin A; coin B is reached via
+// SYMBOL_CHANGE, never a reload.
+const SHARED_PARAMS_JSON = JSON.stringify(hyperliquidParams(TOKEN_A.symbol));
+const SHARED_URL = `${CHART_HOST}?${new URLSearchParams(hyperliquidParams(TOKEN_A.symbol)).toString()}`;
 
 // Always pass ALL source keys (unused ones empty): a Nitro optional string prop
 // that flips from set to *absent* is reset to null, which the native binding
-// rejects ("uri: Value is null, expected a String"). Empty strings keep every
-// prop a valid String; native treats "" as "not this mode".
-function makeSource(remote: boolean, url: string, paramsJson: string) {
+// rejects ("uri: Value is null, expected a String").
+function makeSource(remote: boolean) {
   return remote
-    ? { uri: url, localBundle: '', entry: '', paramsJson: '' }
-    : { uri: '', localBundle: 'tradingview-assets', entry: 'index.html', paramsJson };
+    ? { uri: SHARED_URL, localBundle: '', entry: '', paramsJson: '' }
+    : {
+        uri: '',
+        localBundle: 'tradingview-assets',
+        entry: 'index.html',
+        paramsJson: SHARED_PARAMS_JSON,
+      };
 }
 
 export function ChartSingletonTestPage() {
@@ -79,9 +62,10 @@ export function ChartSingletonTestPage() {
   const [pooled, setPooled] = useState(true);
   const [remote, setRemote] = useState(false);
   const [loads, setLoads] = useState(0);
-  // The nitro hybridRef callback hands us the HybridObject (methods) directly.
-  // Both hosts share the same pooled WebView, so posting via either reaches the
-  // live chart.
+
+  // The nitro hybridRef callback hands us the HybridObject (methods) directly,
+  // once on mount. Both hosts share the same pooled WebView, so posting via
+  // either reaches the live chart.
   const refA = useRef<ChartWebviewMethods | null>(null);
   const refB = useRef<ChartWebviewMethods | null>(null);
   const hybridRefA = useMemo(
@@ -92,86 +76,49 @@ export function ChartSingletonTestPage() {
     () => callback((r: ChartWebviewMethods) => { refB.current = r; }),
     [],
   );
-  // Post a reply to whichever ref currently exposes the methods (the live host).
-  const postToChart = useCallback((reply: string) => {
+  const postToChart = useCallback((msg: string) => {
     const m = [refA.current, refB.current].find(
       (x) => typeof x?.postMessage === 'function',
     );
-    m?.postMessage(reply);
+    m?.postMessage(msg);
   }, []);
 
-  const sourceA = useMemo(
-    () => makeSource(remote, URL_A, PARAMS_A_JSON),
-    [remote],
-  );
-  const sourceB = useMemo(
-    () => makeSource(remote, URL_B, PARAMS_B_JSON),
-    [remote],
-  );
+  const source = useMemo(() => makeSource(remote), [remote]);
 
   const onLoadEndProp = useMemo(
     () => callback(() => setLoads((n) => n + 1)),
     [],
   );
 
-  // B is a `market` chart: it asks the app for candles over the bridge instead of
-  // self-fetching (A's Hyperliquid scene does that). This replays the app's data
-  // path — on a getKLineData request we fetch real candles from the OneKey market
-  // API and reply, so B draws live data. (A never sends this; it self-fetches.)
-  const onMessage = useCallback((raw: string) => {
-    if (!raw.includes('getKLineData') && !raw.includes('getHistoryData')) {
-      return;
-    }
-    let messageData: Record<string, unknown> = {};
-    try {
-      messageData = (JSON.parse(raw)?.data as Record<string, unknown>) ?? {};
-    } catch {
-      return;
-    }
-    const { resolution, from, to } = messageData as {
-      resolution?: string;
-      from?: number;
-      to?: number;
-    };
-    if (resolution == null || from == null || to == null) return;
-    fetchMarketKline({
-      tokenAddress: PARAMS_B.address,
-      networkId: PARAMS_B.networkId,
-      resolution: String(resolution),
-      from: Number(from),
-      to: Number(to),
-    })
-      .then((kLineData) => {
-        const reply = JSON.stringify({
-          type: 'kLineData',
-          payload: { type: 'history', kLineData, requestData: messageData },
-        });
-        postToChart(reply);
-      })
-      .catch(() => {
-        /* network/best-effort; chart keeps its loading state */
-      });
-  }, [postToChart]);
-  const onMessageProp = useMemo(() => callback(onMessage), [onMessage]);
+  // On slot change, swap the chart's symbol via SYMBOL_CHANGE — the chart calls
+  // tvWidget.setSymbol (no page/library reload = instant), then self-fetches the
+  // new coin's candles (Hyperliquid scene).
+  useEffect(() => {
+    const token = slot === 'A' ? TOKEN_A : TOKEN_B;
+    postToChart(
+      JSON.stringify({
+        type: 'SYMBOL_CHANGE',
+        payload: {
+          symbol: token.symbol,
+          displayPair: token.symbol,
+          displayCoin: token.symbol,
+          force: true,
+        },
+      }),
+    );
+  }, [slot, postToChart]);
 
-  // Both slots stay mounted; `active` decides which one is shown live vs frozen
-  // to its own snapshot. One shared WebView (same reuseKey) drives the active
-  // slot's content; the other freezes to its own snapshot.
-  const renderChart = (
-    active: boolean,
-    source: object,
-    reuseKey: string,
-    hybridRef: unknown,
-  ) => (
+  // Both slots stay mounted; `active` decides which one shows the live WebView vs
+  // its own frozen snapshot. Same source + reuseKey => one WebView, reparented.
+  const renderChart = (active: boolean, hybridRef: unknown) => (
     <ChartWebviewView
       style={s.chart}
       {...source}
-      reuseKey={reuseKey}
+      reuseKey={REUSE_KEY}
       pooled={pooled}
       active={active}
       hybridRef={hybridRef as never}
       onLoadEnd={onLoadEndProp}
-      onMessage={onMessageProp}
     />
   );
 
@@ -179,7 +126,7 @@ export function ChartSingletonTestPage() {
     <View style={s.root}>
       <View style={s.toolbar}>
         <TestButton
-          title={`Move chart  ${slot === 'A' ? 'A → B' : 'B → A'}`}
+          title={`Switch symbol  ${slot === 'A' ? `${TOKEN_A.symbol} → ${TOKEN_B.symbol}` : `${TOKEN_B.symbol} → ${TOKEN_A.symbol}`}  (instant)`}
           onPress={() => setSlot((p) => (p === 'A' ? 'B' : 'A'))}
         />
         <TestButton
@@ -197,19 +144,19 @@ export function ChartSingletonTestPage() {
           onPress={() => (refA.current ?? refB.current)?.clearSnapshot?.()}
         />
         <Text style={s.hint}>
-          {`slot=${slot}  •  onLoadEnd fired ${loads}×\n`}
+          {`slot=${slot} (${slot === 'A' ? TOKEN_A.symbol : TOKEN_B.symbol})  •  loads ${loads}× — should stay low (SYMBOL_CHANGE, not reload)\n`}
           {`adb logcat -s ChartWebviewPool  → count "WebView CREATED"`}
         </Text>
       </View>
 
       <View style={s.slots}>
         <View style={[s.slot, s.slotA]}>
-          <Text style={s.slotLabel}>SLOT A · BTC {slot === 'A' ? '(live)' : '(snapshot)'}</Text>
-          {renderChart(slot === 'A', sourceA, REUSE_KEY, hybridRefA)}
+          <Text style={s.slotLabel}>SLOT A · {TOKEN_A.symbol} {slot === 'A' ? '(live)' : '(snapshot)'}</Text>
+          {renderChart(slot === 'A', hybridRefA)}
         </View>
         <View style={[s.slot, s.slotB]}>
-          <Text style={s.slotLabel}>SLOT B · QQQon {slot === 'B' ? '(live)' : '(snapshot)'}</Text>
-          {renderChart(slot === 'B', sourceB, REUSE_KEY, hybridRefB)}
+          <Text style={s.slotLabel}>SLOT B · {TOKEN_B.symbol} {slot === 'B' ? '(live)' : '(snapshot)'}</Text>
+          {renderChart(slot === 'B', hybridRefB)}
         </View>
       </View>
     </View>
@@ -236,5 +183,4 @@ const s = StyleSheet.create({
   slotB: { borderColor: '#ff9f0a' },
   slotLabel: { color: '#8e8e93', fontSize: 10, fontWeight: '700', padding: 4 },
   chart: { flex: 1, backgroundColor: '#111' },
-  empty: { color: '#444', fontSize: 12, textAlign: 'center', marginTop: 20 },
 });
