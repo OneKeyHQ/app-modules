@@ -16,6 +16,7 @@
     "@onekeyfe/react-native-background-thread": "workspace:*",
     "@onekeyfe/react-native-bundle-crypto": "workspace:*",
     "@onekeyfe/react-native-bundle-update": "workspace:*",
+    "@onekeyfe/react-native-chart-webview": "workspace:*",
     "@onekeyfe/react-native-check-biometric-auth-changed": "workspace:*",
     "@onekeyfe/react-native-cloud-kit-module": "workspace:*",
     "@onekeyfe/react-native-device-utils": "workspace:*",

@@ -1,0 +1,48 @@
+import type {
+  HybridView,
+  HybridViewMethods,
+  HybridViewProps,
+} from 'react-native-nitro-modules';
+
+// A dumb WebView host + message pipe. It knows nothing about TradingView: it
+// loads a `source`, injects messages into the page, and surfaces messages from
+// the page. All protocol/data logic lives in the JS business layer.
+export interface ChartWebviewProps extends HybridViewProps {
+  // --- Source (exactly one mode) ---
+  // Remote: load this URL directly.
+  uri?: string;
+  // Offline: serve `localBundle` (a folder bundled in the app) from a virtual
+  // same-origin (iOS onekey-chart:// / Android appassets https) and navigate to
+  // `entry` (default "index.html") with `paramsJson` as the query string.
+  localBundle?: string;
+  entry?: string;
+  // Query params for the entry, as a JSON object string (e.g.
+  // '{"symbol":"BTC","type":"market","theme":"dark"}'). Kept as a string so the
+  // native side stays free of a structured-prop dependency.
+  paramsJson?: string;
+
+  // --- Singleton (accepted now, ignored in the MVP) ---
+  // Reuse group: same key shares one live WebView (market / perps each one).
+  reuseKey?: string;
+  // Opt into the shared singleton pool. MVP: off -> every view owns its WebView.
+  pooled?: boolean;
+  // Arbitration signal for who holds the shared WebView when multiple are
+  // attached (from useIsFocused). Native attach claims first; this only resolves
+  // ambiguity. Ignored in the MVP.
+  isActive?: boolean;
+
+  // --- Events ---
+  // page -> JS, raw JSON string (the JS layer parses the $private payload).
+  onMessage?: (message: string) => void;
+  onLoadEnd?: () => void;
+  onError?: (message: string) => void;
+}
+
+export interface ChartWebviewMethods extends HybridViewMethods {
+  // JS -> page: injects `window.postMessage(message)`. `message` is a raw JSON
+  // string built by the JS business layer.
+  postMessage(message: string): void;
+  reload(): void;
+}
+
+export type ChartWebview = HybridView<ChartWebviewProps, ChartWebviewMethods>;

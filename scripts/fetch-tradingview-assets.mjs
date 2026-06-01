@@ -87,6 +87,25 @@ await page.goto(chartUrl, { waitUntil: 'networkidle', timeout: 120_000 }).catch(
 await page.waitForTimeout(12_000);
 await browser.close();
 
+// Rewrite the chart origin to a ROOT-relative path so the bundle is
+// self-contained and loads under any virtual origin (iOS onekey-chart:// /
+// Android appassets https), at any file depth. Root-relative `/x` is
+// depth-independent; a plain relative rewrite would break deep references.
+function rewriteOriginToRoot(dir) {
+  for (const name of fs.readdirSync(dir)) {
+    const p = path.join(dir, name);
+    const stat = fs.statSync(p);
+    if (stat.isDirectory()) {
+      rewriteOriginToRoot(p);
+    } else if (/\.(html|js|mjs|css|json|map)$/.test(name)) {
+      const before = fs.readFileSync(p, 'utf8');
+      const after = before.split(`${origin}/`).join('/');
+      if (after !== before) fs.writeFileSync(p, after);
+    }
+  }
+}
+rewriteOriginToRoot(outDir);
+
 const totalBytes = [...saved.values()].reduce((a, b) => a + b, 0);
 console.log(`\n✓ Saved ${saved.size} files (${(totalBytes / 1024 / 1024).toFixed(1)} MB) → ${outDir}`);
 if (!saved.has('/index.html')) {

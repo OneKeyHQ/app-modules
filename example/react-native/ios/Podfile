@@ -27,6 +27,22 @@ target 'example' do
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
+  # Copy the offline TradingView chart material (fetched by `yarn fetch:tradingview`,
+  # gitignored) into the app bundle as `tradingview-assets/`, preserving the
+  # directory tree so react-native-chart-webview's WKURLSchemeHandler can serve it.
+  script_phase :name => 'Bundle TradingView offline chart assets',
+    :execution_position => :after_compile,
+    :script => <<-SH
+SRC="${PROJECT_DIR}/../tradingview-assets"
+DEST="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/tradingview-assets"
+if [ -d "$SRC" ]; then
+  rm -rf "$DEST"; mkdir -p "$DEST"; cp -R "$SRC/." "$DEST/"
+  echo "chart-webview: copied offline assets -> $DEST"
+else
+  echo "chart-webview: no tradingview-assets (run 'yarn fetch:tradingview')"
+fi
+SH
+
   post_install do |installer|
     react_native_post_install(
       installer,

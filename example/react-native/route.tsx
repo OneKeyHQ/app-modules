@@ -23,6 +23,7 @@ import { BundleCryptoTestPage } from './pages/BundleCryptoTestPage';
 import { ZipArchiveTestPage } from './pages/ZipArchiveTestPage';
 import { OtaPipelineTestPage } from './pages/OtaPipelineTestPage';
 import { ApkOtaPipelineTestPage } from './pages/ApkOtaPipelineTestPage';
+import { ChartWebViewTestPage } from './pages/ChartWebViewTestPage';
 import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
 import { TabViewTestPage } from './pages/TabViewTestPage';
 import { TabViewSettingsPage } from './pages/TabViewSettingsPage';
@@ -51,6 +52,7 @@ export type RootStackParamList = {
   NativeLogger: undefined;
   OtaPipeline: undefined;
   ApkOtaPipeline: undefined;
+  ChartWebView: undefined;
   PagerView: undefined;
   PerfMemory: undefined;
   RangeDownloader: undefined;
@@ -115,6 +117,12 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
     name: 'APK OTA Pipeline',
     description: 'APK OTA: download → sha256 → verify detached SHA256SUMS.asc → match → install',
     icon: '📲',
+  },
+  {
+    screen: 'ChartWebView',
+    name: 'Chart WebView',
+    description: 'Offline TradingView chart via virtual same-origin + JS↔native message bridge',
+    icon: '📈',
   },
   {
     screen: 'RangeDownloader',
@@ -385,6 +393,7 @@ export function AppNavigator() {
       <Stack.Screen name="ZipArchive" component={ZipArchiveTestPage} options={{ title: 'Zip Archive' }} />
       <Stack.Screen name="OtaPipeline" component={OtaPipelineTestPage} options={{ title: 'JS Bundle OTA Pipeline' }} />
       <Stack.Screen name="ApkOtaPipeline" component={ApkOtaPipelineTestPage} options={{ title: 'APK OTA Pipeline' }} />
+      <Stack.Screen name="ChartWebView" component={ChartWebViewTestPage} options={{ title: 'Chart WebView' }} />
       <Stack.Screen name="CloudKit" component={CloudKitTestPage} options={{ title: 'CloudKit' }} />
       <Stack.Screen name="DeviceUtils" component={DeviceUtilsTestPage} options={{ title: 'Device Utils' }} />
       <Stack.Screen name="Keychain" component={KeychainTestPage} options={{ title: 'Keychain' }} />

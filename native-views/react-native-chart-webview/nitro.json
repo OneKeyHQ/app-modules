@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["chartwebview"],
+  "ios": {
+    "iosModuleName": "ChartWebview"
+  },
+  "android": {
+    "androidNamespace": ["chartwebview"],
+    "androidCxxLibName": "chartwebview"
+  },
+  "autolinking": {
+    "ChartWebview": {
+      "swift": "HybridChartWebview",
+      "kotlin": "HybridChartWebview"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
