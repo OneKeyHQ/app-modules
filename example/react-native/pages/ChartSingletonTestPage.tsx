@@ -89,6 +89,12 @@ export function ChartSingletonTestPage() {
     m?.postMessage(msg);
   }, []);
 
+  // Last market history request (resolution + token) so the realtime poller
+  // feeds updates at the same resolution the chart is showing.
+  const lastMarketReq = useRef<{ resolution: string; address: string; networkId: string } | null>(
+    null,
+  );
+
   // ONE handler carrying BOTH chart contracts (this is "兼容两种图表" at the
   // bridge): priceScale for Hyperliquid slots, kLineData feed for the market
   // slot (token comes from the request now, routed by the unified datafeed),
@@ -114,10 +120,15 @@ export function ChartSingletonTestPage() {
         }
         if (method === 'tradingview_getKLineData') {
           const req = env?.data ?? {};
+          const address = String(req.address ?? MARKET_TOKEN.address);
+          const networkId = String(req.networkId ?? MARKET_TOKEN.networkId);
+          const resolution = String(req.resolution ?? '1');
+          // Remember for the realtime poller.
+          lastMarketReq.current = { resolution, address, networkId };
           fetchMarketKline({
-            tokenAddress: String(req.address ?? MARKET_TOKEN.address),
-            networkId: String(req.networkId ?? MARKET_TOKEN.networkId),
-            resolution: String(req.resolution ?? '1'),
+            tokenAddress: address,
+            networkId,
+            resolution,
             from: Number(req.from),
             to: Number(req.to),
           })
@@ -166,6 +177,47 @@ export function ChartSingletonTestPage() {
         },
       }),
     );
+  }, [slot, postToChart]);
+
+  // Market realtime: HL slots self-update via Hyperliquid websocket, but the
+  // market source only gets what the host feeds. While a market slot is LIVE,
+  // poll the latest bar (at the chart's current resolution) and push it as a
+  // realtime tick so the price keeps moving. Gated on active+market so we never
+  // push market bars into the shared widget while it's showing a HL symbol.
+  useEffect(() => {
+    const d = SLOTS.find((x) => x.id === slot);
+    if (!d || d.source !== 'market') return undefined;
+    let cancelled = false;
+    const tick = async () => {
+      const req = lastMarketReq.current;
+      if (!req) return;
+      const now = Math.floor(Date.now() / 1000);
+      try {
+        const k = await fetchMarketKline({
+          tokenAddress: req.address,
+          networkId: req.networkId,
+          resolution: req.resolution,
+          from: now - 6 * 3600,
+          to: now,
+        });
+        const last = k.points[k.points.length - 1];
+        if (!cancelled && last) {
+          postToChart(
+            JSON.stringify({
+              type: 'autoKLineUpdate',
+              payload: { type: 'realtime', kLineData: { points: [last] } },
+            }),
+          );
+        }
+      } catch {
+        // ignore transient fetch errors
+      }
+    };
+    const id = setInterval(tick, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [slot, postToChart]);
 
   const renderChart = (slotIndex: number) => {
