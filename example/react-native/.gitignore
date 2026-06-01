@@ -73,3 +73,7 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Offline TradingView chart material (fetched by `yarn fetch:tradingview`,
+# bundled at build time, never committed).
+tradingview-assets/

@@ -6,6 +6,7 @@
   "scripts": {
     "create:module": "node scripts/create-nitro-module.js",
     "create:view": "node scripts/create-nitro-view.js",
+    "fetch:tradingview": "node scripts/fetch-tradingview-assets.mjs",
     "version:patch:update": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules --topological version --deferred patch",
     "version:patch:apply": "yarn version apply --all",
     "version:patch": "yarn version:patch:update && yarn version:patch:apply",
