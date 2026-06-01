@@ -83,6 +83,37 @@ export function ChartSingletonTestPage() {
     m?.postMessage(msg);
   }, []);
 
+  // The chart asks the host (over the bridge) for the Hyperliquid price scale and
+  // BLOCKS rendering candles until it gets an answer — if nobody replies it waits
+  // a full 5s timeout before even calling getBars. That timeout, NOT the local
+  // bundle load (~130ms), is the cold-start "loading" you see. Answer immediately
+  // so the offline chart renders without the dead wait. (priceScale=100 => 2
+  // decimals, fine for BTC/ETH; the real app derives it from the mid price.)
+  const onMessageProp = useMemo(
+    () =>
+      callback((raw: string) => {
+        let env: { method?: string; data?: { requestId?: unknown } };
+        try {
+          env = JSON.parse(raw);
+        } catch {
+          return;
+        }
+        if (env?.method === 'tradingview_getHyperliquidPriceScale') {
+          postToChart(
+            JSON.stringify({
+              type: 'HYPERLIQUID_PRICESCALE_RESPONSE',
+              payload: {
+                priceScale: 100,
+                minmov: 1,
+                requestId: env?.data?.requestId,
+              },
+            }),
+          );
+        }
+      }),
+    [postToChart],
+  );
+
   const source = useMemo(() => makeSource(remote), [remote]);
 
   const onLoadEndProp = useMemo(
@@ -118,6 +149,7 @@ export function ChartSingletonTestPage() {
       pooled={pooled}
       active={active}
       hybridRef={hybridRef as never}
+      onMessage={onMessageProp}
       onLoadEnd={onLoadEndProp}
     />
   );
