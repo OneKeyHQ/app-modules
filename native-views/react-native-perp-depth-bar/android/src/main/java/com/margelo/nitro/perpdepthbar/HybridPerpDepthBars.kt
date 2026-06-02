@@ -3,6 +3,7 @@ package com.margelo.nitro.perpdepthbar
 import android.animation.ValueAnimator
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.view.MotionEvent
 import android.view.View
 import android.view.animation.PathInterpolator
 import com.facebook.proguard.annotations.DoNotStrip
@@ -18,6 +19,8 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
 
   private val density = context.resources.displayMetrics.density
   private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+  private val pricePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.LEFT }
+  private val sizePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.RIGHT }
 
   private var current = DoubleArray(0)
   private var start = DoubleArray(0)
@@ -31,9 +34,21 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
   override val view: View = object : View(context) {
     override fun onDraw(canvas: Canvas) {
       drawBars(canvas)
+      drawTexts(canvas)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+      when (event.action) {
+        MotionEvent.ACTION_DOWN -> return true // claim the gesture
+        MotionEvent.ACTION_UP -> {
+          handleTap(event.y)
+          return true
+        }
+      }
+      return super.onTouchEvent(event)
     }
   }.apply {
-    isClickable = false
+    isClickable = true
     isFocusable = false
   }
 
@@ -74,6 +89,67 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
       paint.color = PerpColorParser.parse(value)
       view.invalidate()
     }
+
+  // MARK: - Text props
+  override var prices: Array<String> = emptyArray()
+    get() = field
+    set(value) { if (!isDisposed) { field = value; view.invalidate() } }
+
+  override var sizes: Array<String> = emptyArray()
+    get() = field
+    set(value) { if (!isDisposed) { field = value; view.invalidate() } }
+
+  override var priceColor: String = ""
+    get() = field
+    set(value) {
+      if (isDisposed) return
+      field = value
+      pricePaint.color = PerpColorParser.parse(value)
+      view.invalidate()
+    }
+
+  override var sizeColor: String = ""
+    get() = field
+    set(value) {
+      if (isDisposed) return
+      field = value
+      sizePaint.color = PerpColorParser.parse(value)
+      view.invalidate()
+    }
+
+  override var priceFontSize: Double = 11.0
+    get() = field
+    set(value) {
+      if (isDisposed) return
+      field = value
+      pricePaint.textSize = (value * density).toFloat()
+      view.invalidate()
+    }
+
+  override var sizeFontSize: Double = 11.0
+    get() = field
+    set(value) {
+      if (isDisposed) return
+      field = value
+      sizePaint.textSize = (value * density).toFloat()
+      view.invalidate()
+    }
+
+  override var textInset: Double = 0.0
+    get() = field
+    set(value) { if (!isDisposed) { field = value; view.invalidate() } }
+
+  override var onRowPress: ((rowIndex: Double) -> Unit)? = null
+
+  private fun handleTap(y: Float) {
+    if (isDisposed) return
+    val step = ((rowHeight + rowMarginTop) * density).toFloat()
+    if (step <= 0f) return
+    val mt = (rowMarginTop * density).toFloat()
+    val i = ((y - mt) / step).toInt()
+    val count = maxOf(percents.size, maxOf(prices.size, sizes.size))
+    if (i in 0 until count) onRowPress?.invoke(i.toDouble())
+  }
 
   /**
    * Called by Nitro once after a prop-update transaction. Recompute targets and
@@ -145,6 +221,29 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
       val left = if (isRight) w - fillW else 0f
       val right = if (isRight) w else fillW
       canvas.drawRect(left, top, right, bottom, paint)
+    }
+  }
+
+  private fun drawTexts(canvas: Canvas) {
+    if (prices.isEmpty() && sizes.isEmpty()) return
+    val w = view.width.toFloat()
+    if (w <= 0f) return
+    val rh = (rowHeight * density).toFloat()
+    val mt = (rowMarginTop * density).toFloat()
+    val pad = (textInset * density).toFloat()
+    val rightX = w - pad
+    val rows = maxOf(prices.size, sizes.size)
+    for (i in 0 until rows) {
+      val rowTop = mt + i * (rh + mt)
+      // Vertically center single-line text within the row.
+      if (i < prices.size && prices[i].isNotEmpty()) {
+        val baseline = rowTop + rh / 2f - (pricePaint.descent() + pricePaint.ascent()) / 2f
+        canvas.drawText(prices[i], pad, baseline, pricePaint)
+      }
+      if (i < sizes.size && sizes[i].isNotEmpty()) {
+        val baseline = rowTop + rh / 2f - (sizePaint.descent() + sizePaint.ascent()) / 2f
+        canvas.drawText(sizes[i], rightX, baseline, sizePaint)
+      }
     }
   }
 

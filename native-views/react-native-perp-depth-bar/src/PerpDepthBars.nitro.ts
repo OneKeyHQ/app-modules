@@ -35,6 +35,33 @@ export interface PerpDepthBarsProps extends HybridViewProps {
    * empty<->full so native snaps to the new values WITHOUT animating.
    */
   epoch: number;
+
+  // --- Per-row text (optional). When `prices`/`sizes` are empty the view
+  // renders bars only (backward compatible). When provided they are drawn
+  // natively per row — price left-aligned, size right-aligned, vertically
+  // centred — so the order-book ladder needs NO sibling RN <Text> rows.
+  // Each array is parallel to `percents` (same length / order).
+  /** Formatted price string per row (e.g. "1981.4"). */
+  prices: string[];
+  /** Formatted size string per row (e.g. "389.04"). */
+  sizes: string[];
+  /** Price text color: hex or rgba()/rgb(). */
+  priceColor: string;
+  /** Size text color: hex or rgba()/rgb(). */
+  sizeColor: string;
+  /** Price text font size in points. */
+  priceFontSize: number;
+  /** Size text font size in points. */
+  sizeFontSize: number;
+  /** Horizontal text inset in points (price padding-left, size padding-right). */
+  textInset: number;
+
+  /**
+   * Fired natively when a row is tapped. `rowIndex` is the 0-based row
+   * (top→bottom, parallel to `percents`/`prices`/`sizes`). The view handles
+   * the touch itself — no RN overlay / JS hit-testing needed.
+   */
+  onRowPress?: (rowIndex: number) => void;
 }
 
 export interface PerpDepthBarsMethods extends HybridViewMethods {}

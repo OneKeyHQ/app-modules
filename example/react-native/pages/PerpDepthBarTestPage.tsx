@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Switch } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Switch, Pressable } from 'react-native';
 import { TestPageBase, TestButton } from './TestPageBase';
 import {
   PerpDepthBarsView,
@@ -71,6 +71,7 @@ function Side({
   origin,
   reducedMotion,
   epoch,
+  onSelectRow,
 }: {
   side: 'ask' | 'bid';
   levels: Level[];
@@ -79,10 +80,22 @@ function Side({
   origin: 'left' | 'right';
   reducedMotion: boolean;
   epoch: number;
+  onSelectRow?: (level: Level, side: 'ask' | 'bid', index: number) => void;
 }) {
+  // Bars, price/size text AND per-row tap are all handled natively — the
+  // view owns the touch and emits `onRowPress(rowIndex)`. Plain function —
+  // the module wraps it with Nitro's `callback()` internally.
+  const levelsRef = useRef(levels);
+  levelsRef.current = levels;
+  const handleRowPress = useCallback(
+    (rowIndex: number) => {
+      const l = levelsRef.current[rowIndex];
+      if (l) onSelectRow?.(l, side, rowIndex);
+    },
+    [onSelectRow, side],
+  );
   return (
     <View style={{ width: COLUMN_WIDTH, height: COLUMN_HEIGHT }}>
-      {/* background: native animated depth bars */}
       <PerpDepthBarsView
         style={StyleSheet.absoluteFill}
         percents={levels.map((l) => l.percent)}
@@ -93,16 +106,15 @@ function Side({
         origin={origin}
         reducedMotion={reducedMotion}
         epoch={epoch}
+        prices={levels.map((l) => l.price)}
+        sizes={levels.map((l) => l.size)}
+        priceColor={textColor}
+        sizeColor="#c9d1d9"
+        priceFontSize={13}
+        sizeFontSize={13}
+        textInset={8}
+        onRowPress={handleRowPress}
       />
-      {/* foreground: RN price/size text rows (overlaid, same rowHeight) */}
-      <View style={StyleSheet.absoluteFill}>
-        {levels.map((l, i) => (
-          <View key={i} style={styles.row}>
-            <Text style={[styles.cell, { color: textColor }]}>{l.price}</Text>
-            <Text style={[styles.cell, styles.sizeCell]}>{l.size}</Text>
-          </View>
-        ))}
-      </View>
     </View>
   );
 }
@@ -114,6 +126,7 @@ export function PerpDepthBarTestPage() {
   const [reducedMotion, setReducedMotion] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const [auto, setAuto] = useState(true);
+  const [tapped, setTapped] = useState('—');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const tick = () => {
@@ -153,10 +166,22 @@ export function PerpDepthBarTestPage() {
         />
       </View>
 
+      <View style={styles.switchRow}>
+        <Text style={styles.label}>Tapped row</Text>
+        <Text style={[styles.label, { fontWeight: '700' }]}>{tapped}</Text>
+      </View>
+
       <View style={styles.book}>
+        {/* two-line stacked header (matches production: 价格/(USD), 数量/(MU)) */}
         <View style={styles.header}>
-          <Text style={styles.headerCell}>价格 (USD)</Text>
-          <Text style={[styles.headerCell, styles.sizeCell]}>数量 (ETH)</Text>
+          <View>
+            <Text style={styles.headerCell}>价格</Text>
+            <Text style={styles.headerUnit}>(USD)</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.headerCell}>数量</Text>
+            <Text style={styles.headerUnit}>(ETH)</Text>
+          </View>
         </View>
 
         <Side
@@ -167,9 +192,19 @@ export function PerpDepthBarTestPage() {
           origin="left"
           reducedMotion={reducedMotion}
           epoch={epoch}
+          onSelectRow={(l, s) => setTapped(`${s.toUpperCase()} ${l.price}  ×${l.size}`)}
         />
 
-        <Text style={styles.mid}>{MID.toFixed(2)}</Text>
+        {/* mid / spread block — big mark price + small last price, clickable.
+            Left padding lives on the block so both lines share one left
+            origin, aligned with the price column (native textInset = 8). */}
+        <Pressable
+          style={styles.midBlock}
+          onPress={() => setTapped(`MID ${MID.toFixed(2)}`)}
+        >
+          <Text style={styles.mid}>{MID.toFixed(2)}</Text>
+          <Text style={styles.midSub}>{(MID - TICK).toFixed(1)}</Text>
+        </Pressable>
 
         <Side
           side="bid"
@@ -179,6 +214,7 @@ export function PerpDepthBarTestPage() {
           origin="left"
           reducedMotion={reducedMotion}
           epoch={epoch}
+          onSelectRow={(l, s) => setTapped(`${s.toUpperCase()} ${l.price}  ×${l.size}`)}
         />
 
         <View style={styles.ratioWrap}>
@@ -227,7 +263,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingBottom: 6,
   },
-  headerCell: { fontSize: 11, color: '#8b949e' },
+  headerCell: { fontSize: 13, color: '#8b949e' },
+  headerUnit: { fontSize: 11, color: '#8b949e' },
   row: {
     height: ROW_HEIGHT,
     flexDirection: 'row',
@@ -240,13 +277,26 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   sizeCell: { color: '#c9d1d9', textAlign: 'right' },
-  mid: {
+  midBlock: {
     width: COLUMN_WIDTH,
+    paddingLeft: 8,
+    paddingVertical: 6,
+    alignItems: 'flex-start',
+  },
+  mid: {
     fontSize: 22,
     fontWeight: '600',
     color: '#e6edf3',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+  },
+  midSub: {
+    fontSize: 12,
+    color: '#8b949e',
+    // dashed underline (RN Android ignores textDecorationStyle, so use a
+    // dashed bottom border sized to the text)
+    borderBottomWidth: 1,
+    borderBottomColor: '#8b949e',
+    borderStyle: 'dashed',
+    paddingBottom: 1,
   },
   ratioWrap: {
     width: COLUMN_WIDTH,

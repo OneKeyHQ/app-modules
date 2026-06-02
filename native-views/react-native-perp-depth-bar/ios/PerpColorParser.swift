@@ -84,9 +84,17 @@ enum PerpTiming {
 /// HybridView can re-lay-out its CALayers when bounds change.
 final class PerpLayoutView: UIView {
   var onLayout: (() -> Void)?
+  /// Native tap handler — receives the tap's y in view coordinates (points).
+  var onTap: ((CGFloat) -> Void)?
 
   override func layoutSubviews() {
     super.layoutSubviews()
     onLayout?()
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+    super.touchesEnded(touches, with: event)
+    guard let onTap, let touch = touches.first else { return }
+    onTap(touch.location(in: self).y)
   }
 }

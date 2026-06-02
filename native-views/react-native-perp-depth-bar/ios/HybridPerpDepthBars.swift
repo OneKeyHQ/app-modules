@@ -12,6 +12,11 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
   // MARK: - Per-row fill layers
   private var barLayers: [CALayer] = []
 
+  // MARK: - Per-row text layers (price left, size right)
+  private var priceLayers: [CATextLayer] = []
+  private var sizeLayers: [CATextLayer] = []
+  private let textScale = UIScreen.main.scale
+
   // MARK: - State for animation decisions
   private var lastPercents: [Double] = []
   private var lastEpoch: Double = .nan
@@ -34,13 +39,49 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
   }
   private var cachedColor: CGColor = UIColor.clear.cgColor
 
+  // MARK: - Text props
+  var prices: [String] = [] { didSet { scheduleLayout() } }
+  var sizes: [String] = [] { didSet { scheduleLayout() } }
+  var priceFontSize: Double = 11 { didSet { scheduleLayout() } }
+  var sizeFontSize: Double = 11 { didSet { scheduleLayout() } }
+  var textInset: Double = 0 { didSet { scheduleLayout() } }
+
+  var priceColor: String = "" {
+    didSet {
+      cachedPriceColor = PerpColorParser.parse(priceColor).cgColor
+      scheduleLayout()
+    }
+  }
+  var sizeColor: String = "" {
+    didSet {
+      cachedSizeColor = PerpColorParser.parse(sizeColor).cgColor
+      scheduleLayout()
+    }
+  }
+  private var cachedPriceColor: CGColor = UIColor.black.cgColor
+  private var cachedSizeColor: CGColor = UIColor.gray.cgColor
+
+  // MARK: - Tap callback (native row hit-testing)
+  var onRowPress: ((Double) -> Void)?
+
   // MARK: - Init
   override init() {
     super.init()
-    view.isUserInteractionEnabled = false // taps handled by RN overlay
+    view.isUserInteractionEnabled = true // native row tap handling
     view.clipsToBounds = true
     if let layoutView = view as? PerpLayoutView {
       layoutView.onLayout = { [weak self] in self?.performLayout() }
+      layoutView.onTap = { [weak self] y in self?.handleTap(atY: y) }
+    }
+  }
+
+  private func handleTap(atY y: CGFloat) {
+    let step = CGFloat(rowHeight + rowMarginTop)
+    guard step > 0 else { return }
+    let i = Int((y - CGFloat(rowMarginTop)) / step)
+    let count = max(percents.count, max(prices.count, sizes.count))
+    if i >= 0 && i < count {
+      onRowPress?(Double(i))
     }
   }
 
@@ -55,6 +96,7 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
 
     let count = percents.count
     syncLayerCount(count)
+    syncTextLayerCount(count)
 
     // Decide whether this update should animate or snap.
     let epochChanged = epoch != lastEpoch
@@ -94,9 +136,63 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
 
     CATransaction.commit()
 
+    // Text never animates — snap frames/strings each layout pass.
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    let half = rowW / 2
+    let pad = CGFloat(textInset)
+    for i in 0..<count {
+      let rowTop = CGFloat(rowMarginTop) + CGFloat(i) * (h + CGFloat(rowMarginTop))
+      let priceLine = CGFloat(priceFontSize) * 1.16
+      let sizeLine = CGFloat(sizeFontSize) * 1.16
+      let priceLayer = priceLayers[i]
+      priceLayer.frame = CGRect(
+        x: pad, y: rowTop + (h - priceLine) / 2,
+        width: max(half - pad, 0), height: priceLine)
+      priceLayer.fontSize = CGFloat(priceFontSize)
+      priceLayer.foregroundColor = cachedPriceColor
+      priceLayer.string = i < prices.count ? prices[i] : ""
+
+      let sizeLayer = sizeLayers[i]
+      sizeLayer.frame = CGRect(
+        x: half, y: rowTop + (h - sizeLine) / 2,
+        width: max(half - pad, 0), height: sizeLine)
+      sizeLayer.fontSize = CGFloat(sizeFontSize)
+      sizeLayer.foregroundColor = cachedSizeColor
+      sizeLayer.string = i < sizes.count ? sizes[i] : ""
+    }
+    CATransaction.commit()
+
     lastPercents = percents
     lastEpoch = epoch
     hasLaidOut = true
+  }
+
+  private func makeTextLayer(alignment: CATextLayerAlignmentMode) -> CATextLayer {
+    let l = CATextLayer()
+    l.contentsScale = textScale
+    l.alignmentMode = alignment
+    l.truncationMode = .none
+    l.isWrapped = false
+    return l
+  }
+
+  private func syncTextLayerCount(_ count: Int) {
+    if priceLayers.count < count {
+      for _ in priceLayers.count..<count {
+        let p = makeTextLayer(alignment: .left)
+        let s = makeTextLayer(alignment: .right)
+        view.layer.addSublayer(p)
+        view.layer.addSublayer(s)
+        priceLayers.append(p)
+        sizeLayers.append(s)
+      }
+    } else if priceLayers.count > count {
+      for l in priceLayers[count...] { l.removeFromSuperlayer() }
+      for l in sizeLayers[count...] { l.removeFromSuperlayer() }
+      priceLayers.removeLast(priceLayers.count - count)
+      sizeLayers.removeLast(sizeLayers.count - count)
+    }
   }
 
   private func animateScaleX(layer: CALayer, to target: CGFloat) {
