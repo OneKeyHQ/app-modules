@@ -1,5 +1,7 @@
 #include "SharedRPC.h"
 
+#include "SharedStore.h"
+
 #include <algorithm>
 
 #ifdef __ANDROID__
@@ -10,8 +12,8 @@
 #endif
 
 std::mutex SharedRPC::mutex_;
-std::unordered_map<std::string, RPCValue> SharedRPC::slots_;
 std::vector<RuntimeListener> SharedRPC::listeners_;
+std::unordered_map<std::string, std::string> SharedRPC::readinessKeys_;
 
 void SharedRPC::install(jsi::Runtime &rt) {
   auto rpc = std::make_shared<SharedRPC>();
@@ -86,12 +88,21 @@ bool SharedRPC::invalidate(const std::string &runtimeId) {
                        return l.runtimeId == runtimeId;
                      }),
       listeners_.end());
+
+  // Restart freshness: drop this runtime's latched readiness key from
+  // SharedStore so a respawned reader can never observe a prior-life
+  // "peer ready". Robust to crash-restart because it runs in the native
+  // invalidate path, not a JS teardown hook. SharedStore::eraseKey takes its
+  // own mutex (distinct from mutex_, only ever locked SharedRPC→SharedStore).
+  auto keyIt = readinessKeys_.find(runtimeId);
+  if (keyIt != readinessKeys_.end()) {
+    SharedStore::eraseKey(keyIt->second);
+  }
   return found;
 }
 
 void SharedRPC::reset() {
   std::lock_guard<std::mutex> lock(mutex_);
-  slots_.clear();
   // Intentionally leak jsi::Function callbacks to avoid destroying them on the
   // wrong thread (same rationale as the leak in install() for reload scenarios).
   // Also flip alive=false so any executor lambda still in flight short-circuits
@@ -107,7 +118,8 @@ void SharedRPC::reset() {
   listeners_.clear();
 }
 
-void SharedRPC::notifyOtherRuntime(jsi::Runtime &callerRt, const std::string &callId) {
+void SharedRPC::notifyOtherRuntime(jsi::Runtime &callerRt,
+                                   const std::string &callId, RPCValue value) {
   // Collect executors and callbacks under lock, then invoke outside lock
   // to avoid deadlock (executor may schedule work that also acquires mutex_).
   //
@@ -140,12 +152,22 @@ void SharedRPC::notifyOtherRuntime(jsi::Runtime &callerRt, const std::string &ca
     RPC_LOG("  toNotify count: %zu", toNotify.size());
   }
 
-  for (auto &snap : toNotify) {
+  for (size_t i = 0; i < toNotify.size(); ++i) {
+    auto &snap = toNotify[i];
     auto id = callId;
     RPC_LOG("  invoking executor for callId=%s", id.c_str());
     auto cb = snap.callback;
     auto alive = snap.alive;
-    snap.executor([cb, alive, id](jsi::Runtime &rt) {
+    // The payload rides the dispatched lambda's capture. In practice there is
+    // exactly one non-caller listener, so the last (only) iteration moves the
+    // value; any earlier listener takes a copy. A captured RPCValue is a pure
+    // C++ value type — its destructor is thread-agnostic, so dropping this
+    // lambda during teardown is safe (unlike the per-runtime jsi::Function,
+    // which is why `cb` is leaked on invalidate/reset). The jsi::String/value
+    // is materialized via toJSI ONLY inside cb->call, i.e. on the target
+    // runtime's JS thread where it is legal.
+    RPCValue v = (i + 1 == toNotify.size()) ? std::move(value) : value;
+    snap.executor([cb, alive, id, v = std::move(v)](jsi::Runtime &rt) {
       // Listener was invalidated between snapshot and dispatch — bail
       // before calling into a runtime that may already be torn down.
       if (!alive || !alive->load()) {
@@ -155,7 +177,7 @@ void SharedRPC::notifyOtherRuntime(jsi::Runtime &callerRt, const std::string &ca
       }
       RPC_LOG("  executor work running for callId=%s", id.c_str());
       try {
-        cb->call(rt, jsi::String::createFromUtf8(rt, id));
+        cb->call(rt, jsi::String::createFromUtf8(rt, id), toJSI(rt, v));
         RPC_LOG("  cb->call succeeded for callId=%s", id.c_str());
       } catch (const jsi::JSError &e) {
         RPC_LOG("  JSError in cb->call: %s", e.getMessage().c_str());
@@ -206,67 +228,17 @@ jsi::Value SharedRPC::get(jsi::Runtime &rt, const jsi::PropNameID &name) {
                 rt, "SharedRPC.write expects (callId: string, value)");
           }
           auto callId = args[0].getString(rt).utf8(rt);
-          auto value = extractValue(rt, args[1]);
-          {
-            std::lock_guard<std::mutex> lock(mutex_);
-            slots_.insert_or_assign(callId, std::move(value));
-          }
-          // Notify OUTSIDE the lock
-          notifyOtherRuntime(rt, callId);
+          RPCValue value = extractValue(rt, args[1]);
+          // Value-inline: no slot map. The payload is handed straight to
+          // notifyOtherRuntime, which moves it into the dispatched lambda's
+          // capture and delivers it as the callback's 2nd argument on the
+          // target runtime. No lock here — notify takes the lock internally.
+          notifyOtherRuntime(rt, callId, std::move(value));
           return jsi::Value::undefined();
         });
   }
 
-  // read(callId: string): bool | number | string | undefined
-  // Deletes the entry after reading (read-and-delete semantics).
-  if (prop == "read") {
-    return jsi::Function::createFromHostFunction(
-        rt, name, 1,
-        [](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args,
-           size_t count) -> jsi::Value {
-          if (count < 1 || !args[0].isString()) {
-            throw jsi::JSError(
-                rt, "SharedRPC.read expects (callId: string)");
-          }
-          auto callId = args[0].getString(rt).utf8(rt);
-          {
-            std::lock_guard<std::mutex> lock(mutex_);
-            auto it = slots_.find(callId);
-            if (it == slots_.end()) {
-              return jsi::Value::undefined();
-            }
-            auto value = std::move(it->second);
-            slots_.erase(it);
-            return toJSI(rt, value);
-          }
-        });
-  }
-
-  // has(callId: string): boolean
-  if (prop == "has") {
-    return jsi::Function::createFromHostFunction(
-        rt, name, 1,
-        [](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args,
-           size_t count) -> jsi::Value {
-          if (count < 1 || !args[0].isString()) {
-            throw jsi::JSError(
-                rt, "SharedRPC.has expects (callId: string)");
-          }
-          auto callId = args[0].getString(rt).utf8(rt);
-          {
-            std::lock_guard<std::mutex> lock(mutex_);
-            return jsi::Value(slots_.count(callId) > 0);
-          }
-        });
-  }
-
-  // pendingCount: number (getter, not a function)
-  if (prop == "pendingCount") {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return jsi::Value(static_cast<double>(slots_.size()));
-  }
-
-  // onWrite(callback: (callId: string) => void): void
+  // onWrite(callback: (callId: string, value: string|number|boolean) => void)
   if (prop == "onWrite") {
     return jsi::Function::createFromHostFunction(
         rt, name, 1,
@@ -291,15 +263,41 @@ jsi::Value SharedRPC::get(jsi::Runtime &rt, const jsi::PropNameID &name) {
         });
   }
 
+  // registerReadinessKey(key: string): void
+  // The calling runtime declares which SharedStore key holds its readiness
+  // payload, so invalidate() can clear exactly that key on teardown (restart
+  // freshness). Identified by the calling runtime pointer → its listener's
+  // runtimeId, mirroring how onWrite finds the listener.
+  if (prop == "registerReadinessKey") {
+    return jsi::Function::createFromHostFunction(
+        rt, name, 1,
+        [](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args,
+           size_t count) -> jsi::Value {
+          if (count < 1 || !args[0].isString()) {
+            throw jsi::JSError(
+                rt, "SharedRPC.registerReadinessKey expects (key: string)");
+          }
+          auto key = args[0].getString(rt).utf8(rt);
+          {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (auto &listener : listeners_) {
+              if (listener.runtime == &rt) {
+                readinessKeys_[listener.runtimeId] = std::move(key);
+                break;
+              }
+            }
+          }
+          return jsi::Value::undefined();
+        });
+  }
+
   return jsi::Value::undefined();
 }
 
 std::vector<jsi::PropNameID> SharedRPC::getPropertyNames(jsi::Runtime &rt) {
   std::vector<jsi::PropNameID> props;
   props.push_back(jsi::PropNameID::forUtf8(rt, "write"));
-  props.push_back(jsi::PropNameID::forUtf8(rt, "read"));
-  props.push_back(jsi::PropNameID::forUtf8(rt, "has"));
-  props.push_back(jsi::PropNameID::forUtf8(rt, "pendingCount"));
   props.push_back(jsi::PropNameID::forUtf8(rt, "onWrite"));
+  props.push_back(jsi::PropNameID::forUtf8(rt, "registerReadinessKey"));
   return props;
 }
