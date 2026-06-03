@@ -15,6 +15,7 @@ import { SkeletonTestPage } from './pages/SkeletonTestPage';
 import { NativeLoggerTestPage } from './pages/NativeLoggerTestPage';
 import { PagerViewTestPage } from './pages/PagerViewTestPage';
 import { ScrollGuardTestPage } from './pages/ScrollGuardTestPage';
+import { SegmentSliderTestPage } from './pages/SegmentSliderTestPage';
 import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
 import { PerpDepthBarTestPage } from './pages/PerpDepthBarTestPage';
 import { BundleUpdateTestPage } from './pages/BundleUpdateTestPage';
@@ -63,6 +64,7 @@ export type RootStackParamList = {
   BundleCrypto: undefined;
   ZipArchive: undefined;
   ScrollGuard: undefined;
+  SegmentSlider: undefined;
   Skeleton: undefined;
   SplashScreen: undefined;
   TabView: undefined;
@@ -205,6 +207,12 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
     name: 'Scroll Guard',
     description: 'Prevent parent PagerView from intercepting child ScrollView gestures',
     icon: '🛡️',
+  },
+  {
+    screen: 'SegmentSlider',
+    name: 'Segment Slider',
+    description: 'Native segmented slider — track, fill, marks, thumb, bubble drawn natively',
+    icon: '🎚️',
   },
   {
     screen: 'Skeleton',
@@ -421,6 +429,7 @@ export function AppNavigator() {
       <Stack.Screen name="PerfMemory" component={PerfMemoryTestPage} options={{ title: 'Perf Memory' }} />
       <Stack.Screen name="PerpDepthBar" component={PerpDepthBarTestPage} options={{ title: 'Perp Depth Bar' }} />
       <Stack.Screen name="ScrollGuard" component={ScrollGuardTestPage} options={{ title: 'Scroll Guard' }} />
+      <Stack.Screen name="SegmentSlider" component={SegmentSliderTestPage} options={{ title: 'Segment Slider' }} />
       <Stack.Screen name="Skeleton" component={SkeletonTestPage} options={{ title: 'Skeleton' }} />
       <Stack.Screen name="SplashScreen" component={SplashScreenTestPage} options={{ title: 'Splash Screen' }} />
       <Stack.Screen name="TabView" component={TabViewTestPage} options={{ title: 'Tab View' }} />

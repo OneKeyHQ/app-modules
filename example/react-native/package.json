@@ -29,6 +29,7 @@
     "@onekeyfe/react-native-perp-depth-bar": "workspace:*",
     "@onekeyfe/react-native-range-downloader": "workspace:*",
     "@onekeyfe/react-native-scroll-guard": "workspace:*",
+    "@onekeyfe/react-native-segment-slider": "workspace:*",
     "@onekeyfe/react-native-skeleton": "workspace:*",
     "@onekeyfe/react-native-splash-screen": "workspace:*",
     "@onekeyfe/react-native-tab-view": "workspace:*",
