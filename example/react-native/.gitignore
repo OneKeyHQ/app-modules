@@ -77,3 +77,5 @@ yarn-error.log
 # Offline TradingView chart material (fetched by `yarn fetch:tradingview`,
 # bundled at build time, never committed).
 tradingview-assets/
+# Namespaced copy produced by the copyChartWebviewAssets Gradle task.
+android/app/src/main/assets/tradingview-assets/

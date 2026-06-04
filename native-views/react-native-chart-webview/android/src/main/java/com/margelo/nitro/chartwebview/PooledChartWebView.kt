@@ -333,6 +333,12 @@ class PooledChartWebView private constructor(
       append("https://")
       append(ASSET_HOST)
       append('/')
+      // Serve the offline bundle from assets/<localBundle>/ (namespaced) rather
+      // than the assets root, so it doesn't collide with other bundled assets
+      // (e.g. web-embed). The dist uses relative asset paths (PUBLIC_URL='./'),
+      // so loading the entry from a subpath resolves the rest correctly.
+      append(localBundle)
+      append('/')
       append(entryPath)
       if (query.isNotEmpty()) {
         append('?')

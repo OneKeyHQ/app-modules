@@ -83,15 +83,9 @@ android {
 
     namespace "com.example"
 
-    // Bundle the offline TradingView chart material fetched by
-    // `yarn fetch:tradingview` (gitignored; absent until you run it — Gradle
-    // simply skips a missing asset dir). It lands under the APK's assets/ so
-    // chart-webview can load the chart offline via WebViewAssetLoader.
-    sourceSets {
-        main {
-            assets.srcDirs += ["$projectDir/../../tradingview-assets"]
-        }
-    }
+    // Offline TradingView chart bundle is copied into a namespaced assets
+    // subdir (assets/tradingview-assets/) by the copyChartWebviewAssets task
+    // below, so chart-webview loads it via WebViewAssetLoader from that subpath.
     defaultConfig {
         applicationId "com.example"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -132,3 +126,12 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// Copy the offline TradingView chart bundle (fetched by `yarn fetch:tradingview`,
+// gitignored; absent until fetched — Copy skips a missing source) into a
+// namespaced assets subdir so chart-webview loads it from assets/tradingview-assets/.
+tasks.register('copyChartWebviewAssets', Copy) {
+    from "$projectDir/../../tradingview-assets"
+    into "$projectDir/src/main/assets/tradingview-assets"
+}
+preBuild.dependsOn 'copyChartWebviewAssets'
