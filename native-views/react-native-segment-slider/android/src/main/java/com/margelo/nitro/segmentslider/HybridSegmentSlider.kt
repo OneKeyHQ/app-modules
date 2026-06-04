@@ -67,6 +67,16 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   // Segment node the thumb currently sits on (-1 = none). Drives the halo +
   // a light haptic tick fired once each time the thumb enters a new node.
   private var hoverMarkIndex = -1
+  // Tap-vs-drag tracking for `snapTapToSegment`. A gesture starts as a tap
+  // candidate; once the finger travels past `tapMoveThresholdPx` it becomes a
+  // drag and the release no longer snaps.
+  private var touchStartX = 0f
+  private var lastTouchX = 0f
+  private var hasDragged = false
+  private val tapMoveThresholdPx = 8f * density
+  // A tap only snaps when it's quick. Holding longer (without dragging) is a
+  // long-press and does nothing — matching the competitor's tap window.
+  private val tapMaxDurationMs = 300L
 
   override val view: View = object : View(context) {
     override fun onDraw(canvas: Canvas) {
@@ -78,19 +88,40 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       when (event.action) {
         MotionEvent.ACTION_DOWN -> {
           isDragging = true
+          hasDragged = false
+          touchStartX = event.x
+          lastTouchX = event.x
           onSlideStart?.invoke()
           animateThumbScale(1.15f)
-          commitDragValue(valueFromX(event.x))
+          // Tap-snap mode: defer the value commit until we know this is a tap or
+          // a drag, so a tap never jumps to the raw touch point first.
+          if (!snapTapsActive) commitDragValue(valueFromX(event.x))
           parent?.requestDisallowInterceptTouchEvent(true)
           return true
         }
         MotionEvent.ACTION_MOVE -> {
-          if (isDragging) commitDragValue(valueFromX(event.x))
+          if (isDragging) {
+            lastTouchX = event.x
+            if (!hasDragged && Math.abs(event.x - touchStartX) > tapMoveThresholdPx) {
+              hasDragged = true
+            }
+            // Still a tap candidate in snap mode → keep the thumb put.
+            if (!(snapTapsActive && !hasDragged)) commitDragValue(valueFromX(event.x))
+          }
           return true
         }
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
           if (isDragging) {
             isDragging = false
+            // A quick tap (no drag) lands directly on the nearest segment node
+            // in a single move — no detour through the raw touch point. A long
+            // press (held past tapMaxDurationMs without dragging) does nothing.
+            // A drag keeps its free value.
+            if (snapTapsActive && !hasDragged &&
+              (event.eventTime - event.downTime) <= tapMaxDurationMs
+            ) {
+              commitDragValue(snapValueToNearestMark(valueFromX(lastTouchX)))
+            }
             hoverMarkIndex = -1
             animateThumbScale(1f)
             view.invalidate()
@@ -153,6 +184,11 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     get() = field
     set(v) { field = v; invalidateIfAlive() }
 
+  // Gates tap snapping only; no visual change on its own.
+  override var snapTapToSegment: Boolean = false
+    get() = field
+    set(v) { field = v }
+
   override var epoch: Double = 0.0
     get() = field
     set(v) { field = v }
@@ -209,6 +245,9 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   private val rangeSafe: Double get() = (max - min).let { if (it == 0.0) 1.0 else it }
   private val markCount: Int get() = if (segments >= 1) segments.toInt() + 1 else 0
 
+  /** True when tap-snapping should defer the value commit: enabled with marks to snap to. */
+  private val snapTapsActive: Boolean get() = snapTapToSegment && markCount > 1
+
   private fun valueToFrac(v: Double): Float {
     val clamped = v.coerceIn(min, max)
     return ((clamped - min) / rangeSafe).toFloat()
@@ -220,6 +259,14 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     val clampedX = x.coerceIn(insetPx, insetPx + w)
     val frac = ((clampedX - insetPx) / w).toDouble()
     return min + frac * (max - min)
+  }
+
+  /** Snaps a value to the value of the nearest segment mark. Caller guarantees `markCount > 1`. */
+  private fun snapValueToNearestMark(v: Double): Double {
+    val frac = valueToFrac(v).toDouble()
+    val idx = Math.round(frac * (markCount - 1)).toDouble()
+    val snappedFrac = idx / (markCount - 1)
+    return min + snappedFrac * (max - min)
   }
 
   private fun commitDragValue(raw: Double) {

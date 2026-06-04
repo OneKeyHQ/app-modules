@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-segment-slider",
-  "version": "3.0.46",
+  "version": "3.0.47",
   "description": "react-native-segment-slider",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -35,7 +35,7 @@
   ],
   "scripts": {
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
-    "prepare": "bob build && cp -r nitrogen lib/nitrogen",
+    "prepare": "bob build && rm -rf lib/nitrogen && cp -r nitrogen lib/nitrogen",
     "nitrogen": "nitrogen",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",

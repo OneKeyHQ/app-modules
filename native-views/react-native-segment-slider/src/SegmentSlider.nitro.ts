@@ -41,6 +41,13 @@ export interface SegmentSliderProps extends HybridViewProps {
   /** When true the fill grows from the value-0 origin instead of the left. */
   centerOrigin: boolean;
   /**
+   * When true, a tap (a press that does not turn into a drag) snaps the value to
+   * the nearest segment mark on release; a drag still moves freely to any value.
+   * No-op when `segments` is 0 (no marks to snap to). Default false, so existing
+   * callers keep the free-tap behavior.
+   */
+  snapTapToSegment: boolean;
+  /**
    * Monotonic token. Bump from JS on coin / leverage reset so the native view
    * snaps to the new value WITHOUT animating the thumb scale. Mirrors the
    * `epoch` convention used by react-native-perp-depth-bar.

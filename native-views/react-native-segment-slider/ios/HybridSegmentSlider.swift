@@ -44,6 +44,17 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   private var lastEmitted: Double = .nan
   private var isDragging = false
   private var hasLaidOut = false
+  // Tap-vs-drag tracking for `snapTapToSegment`. A gesture starts as a tap
+  // candidate; once the finger travels past `tapMoveThreshold` it becomes a
+  // drag and the release no longer snaps.
+  private var touchStartX: CGFloat = 0
+  private var lastTouchX: CGFloat = 0
+  private var touchStartTime: CFTimeInterval = 0
+  private var hasDragged = false
+  private let tapMoveThreshold: CGFloat = 8
+  // A tap only snaps when it's quick. Holding longer (without dragging) is a
+  // long-press and does nothing — matching the competitor's tap window.
+  private let tapMaxDuration: CFTimeInterval = 0.3
   // Segment node the thumb currently sits on (-1 = none). Drives the halo +
   // a light haptic tick fired once each time the thumb enters a new node.
   private var hoverMarkIndex = -1
@@ -73,6 +84,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   }
   var showBubble: Bool = true { didSet { scheduleLayout() } }
   var centerOrigin: Bool = false { didSet { scheduleLayout() } }
+  // Gates tap snapping only; no visual change on its own, so no didSet.
+  var snapTapToSegment: Bool = false
   var epoch: Double = 0 { didSet { scheduleLayout() } }
 
   var fillColor: String = "" {
@@ -360,29 +373,66 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   }
 
   // MARK: - Touch handling
+  /// True when tap-snapping should defer the value commit: enabled and there
+  /// are marks to snap to.
+  private var snapTapsActive: Bool { snapTapToSegment && markCount > 1 }
+
   private func handleTouchBegan(_ x: CGFloat) {
     guard !disabled else { return }
     isDragging = true
+    hasDragged = false
+    touchStartX = x
+    lastTouchX = x
+    touchStartTime = CACurrentMediaTime()
     haptic.prepare()
     onSlideStart?()
     animateThumbScale(1.15)
     setBubbleVisible(true)
-    setValue(valueFromX(x))
+    // Tap-snap mode: defer any value change until we know this is a tap or a
+    // drag, so a tap never jumps to the raw touch point first.
+    if !snapTapsActive {
+      setValue(valueFromX(x))
+    }
   }
 
   private func handleTouchMoved(_ x: CGFloat) {
     guard isDragging else { return }
+    lastTouchX = x
+    if !hasDragged, abs(x - touchStartX) > tapMoveThreshold {
+      hasDragged = true
+    }
+    // Still a tap candidate in snap mode → keep the thumb put.
+    if snapTapsActive, !hasDragged { return }
     setValue(valueFromX(x))
   }
 
   private func handleTouchEnded() {
     guard isDragging else { return }
     isDragging = false
+    // A quick tap (no drag) lands directly on the nearest segment node in a
+    // single move — no detour through the raw touch point. A long press (held
+    // past tapMaxDuration without dragging) does nothing. A drag keeps its
+    // free value.
+    if snapTapsActive, !hasDragged {
+      let pressDuration = CACurrentMediaTime() - touchStartTime
+      if pressDuration <= tapMaxDuration {
+        setValue(snapValueToNearestMark(valueFromX(lastTouchX)))
+      }
+    }
     hoverMarkIndex = -1
     setHalo(visible: false, index: 0)
     animateThumbScale(1.0)
     setBubbleVisible(false)
     onSlideComplete?()
+  }
+
+  /// Snaps a value to the value of the nearest segment mark. Caller guarantees
+  /// `markCount > 1`.
+  private func snapValueToNearestMark(_ v: Double) -> Double {
+    let frac = Double(valueToFrac(v))
+    let idx = (frac * Double(markCount - 1)).rounded()
+    let snappedFrac = idx / Double(markCount - 1)
+    return min + snappedFrac * (max - min)
   }
 
   private func setValue(_ raw: Double) {
