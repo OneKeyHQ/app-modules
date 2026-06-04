@@ -75,6 +75,17 @@ enum PerpTiming {
   static let depthBarDurationMs: Double = 260
   static let sideRatioDurationMs: Double = 300
 
+  /// Exponential-smoothing time constant (seconds) for the continuous,
+  /// frame-driven depth-bar easing. Each frame the on-screen value moves a
+  /// fraction `1 - exp(-dt / tau)` toward the latest target, so the bar always
+  /// glides toward the newest data instead of restarting a fixed-length anim
+  /// per tick. ~63% of any change covered in `tau`, ~95% in `3*tau`.
+  static let depthBarSmoothingTauSeconds: Double = 0.10
+
+  /// Same continuous-easing time constant for the bid/ask side-ratio bar. A
+  /// touch larger than the depth bars since it changes more slowly.
+  static let sideRatioSmoothingTauSeconds: Double = 0.12
+
   static func easeOutCubic() -> CAMediaTimingFunction {
     CAMediaTimingFunction(controlPoints: 0.33, 1, 0.68, 1)
   }

@@ -1,15 +1,22 @@
 package com.margelo.nitro.perpdepthbar
 
-import android.animation.ValueAnimator
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.view.Choreographer
 import android.view.View
-import android.view.animation.PathInterpolator
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.uimanager.ThemedReactContext
+import kotlin.math.abs
+import kotlin.math.exp
 
-/** Two horizontal segments whose widths animate to the bid/ask ratio. */
+/**
+ * Two horizontal segments whose widths ease to the bid/ask ratio.
+ *
+ * Animation model mirrors the depth bars: a single [Choreographer] frame loop
+ * continuously eases the split fraction toward its latest target (exponential
+ * smoothing). New data just retargets; the loop stops once settled.
+ */
 @DoNotStrip
 class HybridPerpSideRatio(val context: ThemedReactContext) : HybridPerpSideRatioSpec() {
 
@@ -19,11 +26,15 @@ class HybridPerpSideRatio(val context: ThemedReactContext) : HybridPerpSideRatio
 
   // Animated split fraction (bid share of the available width), 0..1.
   private var currentSplit = 0.5
-  private var startSplit = 0.5
   private var targetSplit = 0.5
   private var hasDrawn = false
   private var isDisposed = false
-  private var animator: ValueAnimator? = null
+
+  // Continuous-easing frame loop.
+  private val choreographer = Choreographer.getInstance()
+  private var frameScheduled = false
+  private var lastFrameNanos = 0L
+  private val frameCallback = Choreographer.FrameCallback { now -> onFrame(now) }
 
   override val view: View = object : View(context) {
     override fun onDraw(canvas: Canvas) {
@@ -84,26 +95,51 @@ class HybridPerpSideRatio(val context: ThemedReactContext) : HybridPerpSideRatio
     val split = bid / (bid + ask)
     val snap = !hasDrawn || reducedMotion
     if (snap) {
-      animator?.cancel()
+      cancelFrameLoop()
       currentSplit = split
       targetSplit = split
       hasDrawn = true
       view.invalidate()
       return
     }
-    startSplit = currentSplit
     targetSplit = split
-    animator?.cancel()
-    animator = ValueAnimator.ofFloat(0f, 1f).apply {
-      duration = DURATION_MS
-      interpolator = EASE_OUT_CUBIC
-      addUpdateListener { a ->
-        if (isDisposed) return@addUpdateListener
-        currentSplit = startSplit + (targetSplit - startSplit) * a.animatedFraction
-        view.invalidate()
-      }
-      start()
+    scheduleFrameLoop()
+  }
+
+  // MARK: - Continuous easing (Choreographer)
+  private fun scheduleFrameLoop() {
+    if (frameScheduled || isDisposed) return
+    if (abs(targetSplit - currentSplit) <= 0.0005) { view.invalidate(); return }
+    frameScheduled = true
+    lastFrameNanos = 0L
+    choreographer.postFrameCallback(frameCallback)
+  }
+
+  private fun cancelFrameLoop() {
+    if (frameScheduled) {
+      choreographer.removeFrameCallback(frameCallback)
+      frameScheduled = false
     }
+    lastFrameNanos = 0L
+  }
+
+  private fun onFrame(now: Long) {
+    if (isDisposed) { frameScheduled = false; return }
+    val dt = if (lastFrameNanos > 0L) (now - lastFrameNanos) / 1e9 else 1.0 / 60.0
+    lastFrameNanos = now
+    val alpha = 1.0 - exp(-maxOf(dt, 0.0) / TAU_SECONDS)
+
+    val d = targetSplit - currentSplit
+    if (abs(d) <= 0.0005) {
+      currentSplit = targetSplit
+      view.invalidate()
+      frameScheduled = false
+      lastFrameNanos = 0L
+      return
+    }
+    currentSplit += d * alpha
+    view.invalidate()
+    choreographer.postFrameCallback(frameCallback)
   }
 
   private fun drawSegments(canvas: Canvas) {
@@ -128,12 +164,14 @@ class HybridPerpSideRatio(val context: ThemedReactContext) : HybridPerpSideRatio
 
   override fun dispose() {
     isDisposed = true
-    animator?.cancel()
-    animator = null
+    cancelFrameLoop()
   }
 
   companion object {
-    private const val DURATION_MS = 300L
-    private val EASE_OUT_CUBIC = PathInterpolator(0.33f, 1f, 0.68f, 1f)
+    /**
+     * Exponential-smoothing time constant (seconds); mirror of
+     * PerpTiming.sideRatioSmoothingTauSeconds on iOS.
+     */
+    private const val TAU_SECONDS = 0.12
   }
 }

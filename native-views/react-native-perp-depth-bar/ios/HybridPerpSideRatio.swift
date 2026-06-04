@@ -1,7 +1,11 @@
 import Foundation
 import UIKit
 
-/// Two horizontal segments whose widths animate to the bid/ask ratio.
+/// Two horizontal segments whose widths ease to the bid/ask ratio.
+///
+/// Animation model mirrors the depth bars: a single `CADisplayLink` continuously
+/// eases the split fraction toward its latest target (exponential smoothing).
+/// New data just retargets — the link keeps gliding and stops once settled.
 final class HybridPerpSideRatio: HybridPerpSideRatioSpec {
 
   // MARK: - HybridView
@@ -10,6 +14,12 @@ final class HybridPerpSideRatio: HybridPerpSideRatioSpec {
   private let bidLayer = CALayer()
   private let askLayer = CALayer()
   private var hasLaidOut = false
+
+  // MARK: - Continuous-easing state (bid share of the available width, 0...1)
+  private var currentSplit: CGFloat = 0.5
+  private var targetSplit: CGFloat = 0.5
+  private var displayLink: CADisplayLink?
+  private var lastTick: CFTimeInterval = 0
 
   // MARK: - Props
   var bidPercentage: Double = 50 { didSet { scheduleLayout() } }
@@ -43,6 +53,10 @@ final class HybridPerpSideRatio: HybridPerpSideRatioSpec {
     }
   }
 
+  deinit {
+    stopDisplayLink()
+  }
+
   private func scheduleLayout() {
     view.setNeedsLayout()
   }
@@ -52,67 +66,88 @@ final class HybridPerpSideRatio: HybridPerpSideRatioSpec {
     guard bounds.width > 0 else { return }
 
     let h = CGFloat(segmentHeight)
-    let y = (bounds.height - h) / 2
-    let g = CGFloat(gap)
-    let available = max(bounds.width - g, 0)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    bidLayer.cornerRadius = min(CGFloat(cornerRadius), h / 2)
+    askLayer.cornerRadius = min(CGFloat(cornerRadius), h / 2)
+    CATransaction.commit()
 
     let bid = max(bidPercentage, 1)
     let ask = max(askPercentage, 1)
-    let total = bid + ask
-    let bidW = available * CGFloat(bid / total)
-    let askW = available - bidW
-    let radius = CGFloat(cornerRadius)
-
-    let bidFrame = CGRect(x: 0, y: y, width: bidW, height: h)
-    let askFrame = CGRect(x: bidW + g, y: y, width: askW, height: h)
+    let target = CGFloat(bid / (bid + ask))
 
     let snap = !hasLaidOut || reducedMotion
-
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    bidLayer.cornerRadius = min(radius, h / 2)
-    askLayer.cornerRadius = min(radius, h / 2)
-    CATransaction.commit()
-
     if snap {
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      bidLayer.frame = bidFrame
-      askLayer.frame = askFrame
-      CATransaction.commit()
+      stopDisplayLink()
+      currentSplit = target
+      targetSplit = target
+      layoutSegments(currentSplit)
     } else {
-      animateFrame(layer: bidLayer, to: bidFrame)
-      animateFrame(layer: askLayer, to: askFrame)
+      targetSplit = target
+      layoutSegments(currentSplit) // apply current + any geometry change now
+      startDisplayLinkIfNeeded()
     }
     hasLaidOut = true
   }
 
-  private func animateFrame(layer: CALayer, to frame: CGRect) {
-    let duration = PerpTiming.sideRatioDurationMs / 1000.0
-    let timing = PerpTiming.easeOutCubic()
-
-    let fromBounds = layer.presentation()?.bounds ?? layer.bounds
-    let fromPos = layer.presentation()?.position ?? layer.position
-
-    let newBounds = CGRect(x: 0, y: 0, width: frame.width, height: frame.height)
-    let newPos = CGPoint(x: frame.midX, y: frame.midY)
-
-    layer.bounds = newBounds
-    layer.position = newPos
-
-    let boundsAnim = CABasicAnimation(keyPath: "bounds")
-    boundsAnim.fromValue = NSValue(cgRect: fromBounds)
-    boundsAnim.toValue = NSValue(cgRect: newBounds)
-    boundsAnim.duration = duration
-    boundsAnim.timingFunction = timing
-
-    let posAnim = CABasicAnimation(keyPath: "position")
-    posAnim.fromValue = NSValue(cgPoint: fromPos)
-    posAnim.toValue = NSValue(cgPoint: newPos)
-    posAnim.duration = duration
-    posAnim.timingFunction = timing
-
-    layer.add(boundsAnim, forKey: "ratioBounds")
-    layer.add(posAnim, forKey: "ratioPos")
+  /// Lays both segment frames out from a split fraction (no implicit anim).
+  private func layoutSegments(_ split: CGFloat) {
+    let bounds = view.bounds
+    guard bounds.width > 0 else { return }
+    let h = CGFloat(segmentHeight)
+    let y = (bounds.height - h) / 2
+    let g = CGFloat(gap)
+    let available = max(bounds.width - g, 0)
+    let bidW = available * split
+    let askW = max(available - bidW, 0)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    bidLayer.frame = CGRect(x: 0, y: y, width: bidW, height: h)
+    askLayer.frame = CGRect(x: bidW + g, y: y, width: askW, height: h)
+    CATransaction.commit()
   }
+
+  // MARK: - Continuous easing (display link)
+  private func startDisplayLinkIfNeeded() {
+    if displayLink != nil { return }
+    guard abs(targetSplit - currentSplit) > 0.0005 else { return }
+    lastTick = 0
+    let proxy = SideRatioLinkProxy(self)
+    let link = CADisplayLink(target: proxy, selector: #selector(SideRatioLinkProxy.tick(_:)))
+    link.add(to: .main, forMode: .common)
+    displayLink = link
+  }
+
+  private func stopDisplayLink() {
+    displayLink?.invalidate()
+    displayLink = nil
+    lastTick = 0
+  }
+
+  func handleTick(_ link: CADisplayLink) {
+    let now = link.timestamp
+    let dt = lastTick > 0 ? now - lastTick : link.duration
+    lastTick = now
+    let tau = PerpTiming.sideRatioSmoothingTauSeconds
+    let alpha = CGFloat(1 - exp(-max(dt, 0) / max(tau, 0.0001)))
+
+    let d = targetSplit - currentSplit
+    if abs(d) <= 0.0005 {
+      if currentSplit != targetSplit {
+        currentSplit = targetSplit
+        layoutSegments(currentSplit)
+      }
+      stopDisplayLink()
+      return
+    }
+    currentSplit += d * alpha
+    layoutSegments(currentSplit)
+  }
+}
+
+/// Weak forwarder so the `CADisplayLink` does not retain `HybridPerpSideRatio`.
+private final class SideRatioLinkProxy {
+  weak var owner: HybridPerpSideRatio?
+  init(_ owner: HybridPerpSideRatio) { self.owner = owner }
+  @objc func tick(_ link: CADisplayLink) { owner?.handleTick(link) }
 }
