@@ -116,6 +116,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
       // While dragging, the finger owns the value (mirrors web).
       if (!isDragging && !isDisposed) {
         currentValue = v
+        lastEmitted = v
         view.invalidate()
       }
     }

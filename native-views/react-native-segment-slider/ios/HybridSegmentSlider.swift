@@ -56,6 +56,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
       // (web skips its useLayoutEffect when draggingRef.current is true).
       if !isDragging {
         currentValue = value
+        lastEmitted = value
         applyVisual(value)
       }
     }
