@@ -13,9 +13,9 @@ import kotlin.math.exp
 /**
  * Two horizontal segments whose widths ease to the bid/ask ratio.
  *
- * Animation model mirrors the depth bars: a single [Choreographer] frame loop
- * continuously eases the split fraction toward its latest target (exponential
- * smoothing). New data just retargets; the loop stops once settled.
+ * Animation model mirrors the depth bars: a [Choreographer] frame loop
+ * continuously eases the split fraction toward its latest target (short fixed
+ * exponential smoothing). New data just retargets; the loop stops once settled.
  */
 @DoNotStrip
 class HybridPerpSideRatio(val context: ThemedReactContext) : HybridPerpSideRatioSpec() {
@@ -30,11 +30,10 @@ class HybridPerpSideRatio(val context: ThemedReactContext) : HybridPerpSideRatio
   private var hasDrawn = false
   private var isDisposed = false
 
-  // Continuous-easing frame loop.
   private val choreographer = Choreographer.getInstance()
   private var frameScheduled = false
   private var lastFrameNanos = 0L
-  private val frameCallback = Choreographer.FrameCallback { now -> onFrame(now) }
+  private val frameCallback = Choreographer.FrameCallback { onFrame(it) }
 
   override val view: View = object : View(context) {
     override fun onDraw(canvas: Canvas) {
@@ -65,6 +64,7 @@ class HybridPerpSideRatio(val context: ThemedReactContext) : HybridPerpSideRatio
     get() = field
     set(value) { if (!isDisposed) { field = value; view.invalidate() } }
 
+  /** Kept for OS "reduce motion" accessibility only — NOT a caller on/off knob. */
   override var reducedMotion: Boolean = false
     get() = field
     set(value) { field = value }

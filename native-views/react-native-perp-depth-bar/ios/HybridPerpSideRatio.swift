@@ -3,9 +3,9 @@ import UIKit
 
 /// Two horizontal segments whose widths ease to the bid/ask ratio.
 ///
-/// Animation model mirrors the depth bars: a single `CADisplayLink` continuously
-/// eases the split fraction toward its latest target (exponential smoothing).
-/// New data just retargets — the link keeps gliding and stops once settled.
+/// Animation model mirrors the depth bars: a `CADisplayLink` continuously eases
+/// the split fraction toward its latest target (short fixed exponential
+/// smoothing). New data just retargets; the link stops once settled.
 final class HybridPerpSideRatio: HybridPerpSideRatioSpec {
 
   // MARK: - HybridView
@@ -27,6 +27,7 @@ final class HybridPerpSideRatio: HybridPerpSideRatioSpec {
   var segmentHeight: Double = 4 { didSet { scheduleLayout() } }
   var cornerRadius: Double = 999 { didSet { scheduleLayout() } }
   var gap: Double = 2 { didSet { scheduleLayout() } }
+  /// Kept for OS "reduce motion" accessibility only — NOT a caller on/off knob.
   var reducedMotion: Bool = false { didSet { scheduleLayout() } }
 
   var longColor: String = "" {

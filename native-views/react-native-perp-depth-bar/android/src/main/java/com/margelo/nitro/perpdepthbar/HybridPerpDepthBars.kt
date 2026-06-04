@@ -14,12 +14,11 @@ import kotlin.math.exp
  * Renders an entire column of order-book depth bars for one side. Draws N rects
  * whose horizontal fill fraction is eased on the UI thread.
  *
- * Animation model: a single [Choreographer] frame loop continuously eases every
- * row's on-screen fill toward its latest target (exponential smoothing). New
- * data just retargets — the loop keeps gliding and only stops once every row has
- * settled. Updates therefore chain into continuous motion regardless of data
- * cadence, and a fluctuating row count no longer freezes the column (only a
- * coin/tick switch snaps, via `epoch`).
+ * Animation model: a [Choreographer] frame loop continuously eases every row's
+ * on-screen fill toward its latest target (short fixed exponential smoothing).
+ * New data just retargets — the loop keeps gliding and only stops once every row
+ * has settled. Updates chain into continuous motion and a fluctuating row count
+ * no longer freezes the column (only a coin/tick switch snaps, via `epoch`).
  */
 @DoNotStrip
 class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBarsSpec() {
@@ -36,11 +35,10 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
   private var hasDrawn = false
   private var isDisposed = false
 
-  // Continuous-easing frame loop.
   private val choreographer = Choreographer.getInstance()
   private var frameScheduled = false
   private var lastFrameNanos = 0L
-  private val frameCallback = Choreographer.FrameCallback { now -> onFrame(now) }
+  private val frameCallback = Choreographer.FrameCallback { onFrame(it) }
 
   override val view: View = object : View(context) {
     override fun onDraw(canvas: Canvas) {
@@ -84,6 +82,7 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
     get() = field
     set(value) { if (!isDisposed) { field = value; view.invalidate() } }
 
+  /** Kept for OS "reduce motion" accessibility only — NOT a caller on/off knob. */
   override var reducedMotion: Boolean = false
     get() = field
     set(value) { field = value }
@@ -191,8 +190,7 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
     // Keep existing rows easing; brand-new rows appear at their target (no
     // grow-from-zero flash). Then retarget and let the frame loop glide.
     if (current.size != count) {
-      val resized = DoubleArray(count) { i -> if (i < current.size) current[i] else newTarget[i] }
-      current = resized
+      current = DoubleArray(count) { i -> if (i < current.size) current[i] else newTarget[i] }
     }
     target = newTarget
     lastEpoch = epoch
@@ -303,8 +301,7 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
   companion object {
     /**
      * Exponential-smoothing time constant (seconds); mirror of
-     * PerpTiming.depthBarSmoothingTauSeconds on iOS. ~63% of any change covered
-     * in TAU, ~95% in 3*TAU.
+     * PerpTiming.depthBarSmoothingTauSeconds on iOS.
      */
     private const val TAU_SECONDS = 0.10
   }

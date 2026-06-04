@@ -6,11 +6,12 @@ import UIKit
 /// thread, replacing N reanimated `DepthBar` instances.
 ///
 /// Animation model: a single `CADisplayLink` continuously eases every row's
-/// on-screen scale toward its latest target (exponential smoothing). New data
-/// just retargets — the link keeps gliding and only stops once every row has
-/// settled. This makes updates chain into continuous motion regardless of data
-/// cadence, and a fluctuating row count no longer freezes the column (only a
-/// coin/tick switch snaps, via `epoch`).
+/// on-screen scale toward its latest target (short fixed exponential smoothing,
+/// `tau ≈ 0.1s`). New data just retargets — the link keeps gliding and only
+/// stops once every row has settled. Updates therefore chain into continuous
+/// motion, and a fluctuating row count no longer freezes the column (only a
+/// coin/tick switch snaps, via `epoch`). Tracks the per-row text closely so the
+/// bar and the price/size labels stay in agreement.
 final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
 
   // MARK: - HybridView
@@ -40,6 +41,8 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
   var rowMarginTop: Double = 0 { didSet { scheduleLayout() } }
   var barInset: Double = 0 { didSet { scheduleLayout() } }
   var origin: String = "left" { didSet { scheduleLayout() } }
+  /// Kept for OS "reduce motion" accessibility only — NOT a caller on/off knob.
+  /// Depth bars animate by default; callers don't pass anything to enable it.
   var reducedMotion: Bool = false { didSet { scheduleLayout() } }
   var epoch: Double = 0 { didSet { scheduleLayout() } }
 
@@ -114,8 +117,6 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
     syncLayerCount(count)
     syncTextLayerCount(count)
 
-    // Only a coin/tick switch (or reduced motion / first paint) snaps. A
-    // fluctuating row count no longer freezes the whole column — see below.
     let epochChanged = epoch != lastEpoch
     let snap = !hasLaidOut || reducedMotion || epochChanged
 
