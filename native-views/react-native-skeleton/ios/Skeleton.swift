@@ -15,6 +15,31 @@ class HybridSkeleton : HybridSkeletonSpec {
   private let maxRetryCount: Int = 10
   private var viewObserver: NSKeyValueObservation?
 
+  // Guard against high-frequency afterUpdate() animation churn (REACT-NATIVE-40K ANR).
+  // Fabric calls afterUpdate() on every prop commit; list/order-book screens update very
+  // frequently. Unconditionally restarting the shimmer tears down/rebuilds the
+  // CAGradientLayer + CABasicAnimation each time on the main thread. We cache a signature
+  // of the inputs that actually drive the animation (speed + gradient colors + bounds) and
+  // only restart when that signature changes. Otherwise the running animation is left as-is.
+  private var lastShimmerSignature: String?
+  private var isShimmerRunning: Bool = false
+
+  // Build a signature from every input that decides the shimmer animation:
+  // - shimmerSpeed -> CABasicAnimation.duration
+  // - gradient colors -> CAGradientLayer.colors
+  // - view bounds -> animation travel range (-width..width) and layer frames
+  private func currentShimmerSignature() -> String {
+    let colors: [UIColor] = customGradientColors ?? DEFAULT_GRADIENT_COLORS
+    let colorsKey = colors.map { color -> String in
+      var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+      color.getRed(&r, green: &g, blue: &b, alpha: &a)
+      return "\(r)-\(g)-\(b)-\(a)"
+    }.joined(separator: ",")
+    let speed = shimmerSpeed ?? 3
+    let bounds = view.bounds
+    return "\(speed)|\(colorsKey)|\(bounds.width)x\(bounds.height)"
+  }
+
   var shimmerGradientColors: [String]? {
     didSet {
       guard isActive else { return }
@@ -172,6 +197,11 @@ class HybridSkeleton : HybridSkeletonSpec {
 
     // Use weak self pattern for potential future animation delegates/completion handlers
     gradientLayer.add(animation, forKey: "shimmerAnimation")
+
+    // Record the inputs this running animation was built from, so afterUpdate() can skip
+    // restarting while none of them change.
+    lastShimmerSignature = currentShimmerSignature()
+    isShimmerRunning = true
   }
 
   func stopShimmer() {
@@ -195,12 +225,24 @@ class HybridSkeleton : HybridSkeletonSpec {
     // Nil out references
     shimmerLayer = nil
     skeletonLayer = nil
+    isShimmerRunning = false
   }
 
   func afterUpdate() {
     guard isActive else { return }
     DispatchQueue.main.async { [weak self] in
       guard let self = self, self.isActive else { return }
+
+      // Defensive guard against animation churn (REACT-NATIVE-40K ANR):
+      // afterUpdate() runs on every Fabric prop commit. Only restart the shimmer when an
+      // input that actually drives the animation changed (speed / colors / bounds). If the
+      // shimmer is already running and nothing relevant changed, leave the existing
+      // CABasicAnimation alone to avoid main-thread layer teardown/rebuild churn.
+      let signature = self.currentShimmerSignature()
+      if self.isShimmerRunning, self.shimmerLayer != nil, signature == self.lastShimmerSignature {
+        return
+      }
+
       self.restartShimmer()
     }
   }
