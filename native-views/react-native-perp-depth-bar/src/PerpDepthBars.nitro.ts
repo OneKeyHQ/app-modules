@@ -1,5 +1,4 @@
 import type {
-  ArrayBuffer,
   HybridView,
   HybridViewMethods,
   HybridViewProps,
