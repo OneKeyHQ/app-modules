@@ -7,6 +7,8 @@ import android.view.MotionEvent
 import android.view.View
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.uimanager.ThemedReactContext
+import com.margelo.nitro.core.ArrayBuffer
+import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlin.math.exp
 
@@ -168,14 +170,31 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
   override fun afterUpdate() {
     super.afterUpdate()
     if (isDisposed) return
-    syncTargets()
+    syncTargets(percents)
   }
 
-  private fun syncTargets() {
-    val count = percents.size
+  /**
+   * Imperative depth update — bypasses the high-frequency `percents` prop write
+   * path (props/JSICache lock contention, REACT-NATIVE-1JZ). `buffer` is a
+   * packed little-endian `Float32Array`: one float per row, each the row's depth
+   * percentage with the SAME 0..100 semantics as the `percents` prop. The parsed
+   * values flow through the identical [syncTargets] clamp/target/frame-loop logic
+   * the prop path uses — only the data source differs.
+   */
+  override fun setDepth(buffer: ArrayBuffer) {
+    if (isDisposed) return
+    val byteBuffer = buffer.getBuffer(false)
+    val count = buffer.size / 4
+    val floats = byteBuffer.order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+    val depths = DoubleArray(count) { floats.get(it).toDouble() }
+    syncTargets(depths)
+  }
+
+  private fun syncTargets(depths: DoubleArray) {
+    val count = depths.size
     val epochChanged = epoch != lastEpoch
     val snap = !hasDrawn || reducedMotion || epochChanged
-    val newTarget = DoubleArray(count) { clampFrac(percents[it]) }
+    val newTarget = DoubleArray(count) { clampFrac(depths[it]) }
 
     if (snap) {
       cancelFrameLoop()

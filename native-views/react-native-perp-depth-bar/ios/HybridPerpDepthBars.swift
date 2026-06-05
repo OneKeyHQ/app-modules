@@ -94,6 +94,34 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
     stopDisplayLink()
   }
 
+  // MARK: - Imperative depth update
+  /// Imperatively update the per-row depth percentages, bypassing the
+  /// high-frequency `percents` prop write path (props/JSICache lock contention,
+  /// REACT-NATIVE-1JZ). `buffer` is a packed little-endian `Float32Array`: one
+  /// float per row, each the row's depth percentage with the SAME 0..100
+  /// semantics as the `percents` prop. The parsed values are routed through the
+  /// exact same `performLayout` clamp (`clampScale`) / target / display-link
+  /// path the prop uses — only the data source differs.
+  func setDepth(buffer: ArrayBuffer) throws {
+    let count = buffer.size / 4
+    guard count > 0 else {
+      percents = []
+      return
+    }
+    // `buffer.data` is a `UInt8` pointer; reinterpret it as little-endian
+    // Float32. iOS (arm/x86) is little-endian and JS `Float32Array` is too, so
+    // an unaligned little-endian load matches the prop semantics exactly.
+    var depths = [Double](repeating: 0, count: count)
+    let raw = UnsafeRawPointer(buffer.data)
+    for i in 0..<count {
+      let bits = raw.loadUnaligned(fromByteOffset: i * 4, as: UInt32.self)
+      depths[i] = Double(Float(bitPattern: UInt32(littleEndian: bits)))
+    }
+    // Feed through the single source of truth so the clamp/target/easing logic
+    // is byte-for-byte identical to the `percents` prop path.
+    percents = depths
+  }
+
   private func handleTap(atY y: CGFloat) {
     let step = CGFloat(rowHeight + rowMarginTop)
     guard step > 0 else { return }

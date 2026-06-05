@@ -58,6 +58,18 @@ final class HybridPerpSideRatio: HybridPerpSideRatioSpec {
     stopDisplayLink()
   }
 
+  /// Imperative ratio update — bypasses the high-frequency
+  /// `bidPercentage`/`askPercentage` prop write path (props/JSICache lock
+  /// contention, REACT-NATIVE-1JZ). Companion to `HybridPerpDepthBars.setDepth`.
+  /// The two args carry the SAME 0..100 semantics as the props of the same
+  /// name; assigning them feeds through the identical `didSet` →
+  /// `scheduleLayout` → `performLayout` clamp/split/display-link path the prop
+  /// setters use — only the data source differs.
+  func setRatio(bidPercentage: Double, askPercentage: Double) throws {
+    self.bidPercentage = bidPercentage
+    self.askPercentage = askPercentage
+  }
+
   private func scheduleLayout() {
     view.setNeedsLayout()
   }

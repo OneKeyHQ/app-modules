@@ -87,6 +87,25 @@ class HybridPerpSideRatio(val context: ThemedReactContext) : HybridPerpSideRatio
       view.invalidate()
     }
 
+  /**
+   * Imperative ratio update — bypasses the high-frequency
+   * `bidPercentage`/`askPercentage` prop write path (props/JSICache lock
+   * contention, REACT-NATIVE-1JZ). Companion to [HybridPerpDepthBars.setDepth].
+   * The two args carry the SAME 0..100 semantics as the props of the same name;
+   * we store them exactly like the prop setters and then route through the
+   * identical [afterUpdate] clamp/split/frame-loop logic the prop path uses —
+   * only the data source differs.
+   */
+  override fun setRatio(bidPercentage: Double, askPercentage: Double) {
+    if (isDisposed) return
+    this.bidPercentage = bidPercentage
+    this.askPercentage = askPercentage
+    // Note: the prop path goes through the framework's beforeUpdate()/afterUpdate()
+    // pair; beforeUpdate() is an empty base-class hook, so calling afterUpdate()
+    // directly here is equivalent. If beforeUpdate() ever gains behavior, mirror it.
+    afterUpdate()
+  }
+
   override fun afterUpdate() {
     super.afterUpdate()
     if (isDisposed) return

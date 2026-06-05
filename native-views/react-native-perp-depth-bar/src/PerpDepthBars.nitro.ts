@@ -1,4 +1,5 @@
 import type {
+  ArrayBuffer,
   HybridView,
   HybridViewMethods,
   HybridViewProps,
@@ -64,6 +65,24 @@ export interface PerpDepthBarsProps extends HybridViewProps {
   onRowPress?: (rowIndex: number) => void;
 }
 
-export interface PerpDepthBarsMethods extends HybridViewMethods {}
+export interface PerpDepthBarsMethods extends HybridViewMethods {
+  /**
+   * Imperatively update the per-row depth percentages, bypassing the
+   * high-frequency `percents` prop write path (and its props/JSICache lock
+   * contention — REACT-NATIVE-1JZ).
+   *
+   * `buffer` is a packed `Float32Array` (little-endian): one float per row,
+   * each the row's depth percentage with the SAME semantics as the
+   * `percents: number[]` prop (0..100, clamped natively exactly like the prop
+   * setter). Row count == `buffer.byteLength / 4`. The native side rebuilds
+   * its animation targets from these values and reuses the identical
+   * clamp/target/frame-loop logic as the `percents` prop path — only the data
+   * source differs.
+   *
+   * The `percents` prop is retained for backward compatibility; callers may
+   * use either path.
+   */
+  setDepth(buffer: ArrayBuffer): void;
+}
 
 export type PerpDepthBars = HybridView<PerpDepthBarsProps, PerpDepthBarsMethods>;
