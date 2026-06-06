@@ -36,6 +36,12 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
   private var lastEpoch = Double.NaN
   private var hasDrawn = false
   private var isDisposed = false
+  // Set once the caller drives depth through the imperative `setDepth` path. In
+  // that mode the `percents` prop is intentionally left empty, so `afterUpdate`
+  // must NOT re-sync targets from it — doing so would wipe `current` to an empty
+  // array on every unrelated prop commit (e.g. high-frequency prices/sizes text
+  // updates), blanking the bars between `setDepth` calls (REACT-NATIVE-1JZ).
+  private var imperativeDepth = false
 
   private val choreographer = Choreographer.getInstance()
   private var frameScheduled = false
@@ -103,13 +109,32 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
     }
 
   // MARK: - Text props
+  // The strings actually drawn each frame. Decoupled from the `prices`/`sizes`
+  // props so the imperative `setText` path can drive them without the prop
+  // setters clobbering the values on unrelated prop commits (REACT-NATIVE-1JZ).
+  private var displayPrices: Array<String> = emptyArray()
+  private var displaySizes: Array<String> = emptyArray()
+  // Set once the caller drives text through `setText`; the `prices`/`sizes` props
+  // are then ignored (they are left empty in that mode).
+  private var imperativeText = false
+
   override var prices: Array<String> = emptyArray()
     get() = field
-    set(value) { if (!isDisposed) { field = value; view.invalidate() } }
+    set(value) {
+      if (isDisposed || imperativeText) return
+      field = value
+      displayPrices = value
+      view.invalidate()
+    }
 
   override var sizes: Array<String> = emptyArray()
     get() = field
-    set(value) { if (!isDisposed) { field = value; view.invalidate() } }
+    set(value) {
+      if (isDisposed || imperativeText) return
+      field = value
+      displaySizes = value
+      view.invalidate()
+    }
 
   override var priceColor: String = ""
     get() = field
@@ -159,7 +184,7 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
     if (step <= 0f) return
     val mt = (rowMarginTop * density).toFloat()
     val i = ((y - mt) / step).toInt()
-    val count = maxOf(percents.size, maxOf(prices.size, sizes.size))
+    val count = maxOf(percents.size, maxOf(displayPrices.size, displaySizes.size))
     if (i in 0 until count) onRowPress?.invoke(i.toDouble())
   }
 
@@ -170,6 +195,10 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
   override fun afterUpdate() {
     super.afterUpdate()
     if (isDisposed) return
+    // In imperative mode the depth comes from `setDepth`; the `percents` prop is
+    // empty and must be ignored here, otherwise every prop commit would wipe the
+    // bars. Prop-path callers (never call `setDepth`) keep the original behaviour.
+    if (imperativeDepth) return
     syncTargets(percents)
   }
 
@@ -183,11 +212,27 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
    */
   override fun setDepth(buffer: ArrayBuffer) {
     if (isDisposed) return
+    imperativeDepth = true
     val byteBuffer = buffer.getBuffer(false)
     val count = buffer.size / 4
     val floats = byteBuffer.order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
     val depths = DoubleArray(count) { floats.get(it).toDouble() }
     syncTargets(depths)
+  }
+
+  /**
+   * Imperative per-row text update — companion to [setDepth] for the price/size
+   * layer. Bypasses the high-frequency `prices`/`sizes` prop write path (and the
+   * `afterUpdate`/prop-commit machinery) and just retargets the drawn strings in
+   * one call. Call in the SAME frame as [setDepth] so bar fill and row text come
+   * from the same source frame (REACT-NATIVE-1JZ).
+   */
+  override fun setText(prices: Array<String>, sizes: Array<String>) {
+    if (isDisposed) return
+    imperativeText = true
+    displayPrices = prices
+    displaySizes = sizes
+    view.invalidate()
   }
 
   private fun syncTargets(depths: DoubleArray) {
@@ -287,24 +332,24 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
   }
 
   private fun drawTexts(canvas: Canvas) {
-    if (prices.isEmpty() && sizes.isEmpty()) return
+    if (displayPrices.isEmpty() && displaySizes.isEmpty()) return
     val w = view.width.toFloat()
     if (w <= 0f) return
     val rh = (rowHeight * density).toFloat()
     val mt = (rowMarginTop * density).toFloat()
     val pad = (textInset * density).toFloat()
     val rightX = w - pad
-    val rows = maxOf(prices.size, sizes.size)
+    val rows = maxOf(displayPrices.size, displaySizes.size)
     for (i in 0 until rows) {
       val rowTop = mt + i * (rh + mt)
       // Vertically center single-line text within the row.
-      if (i < prices.size && prices[i].isNotEmpty()) {
+      if (i < displayPrices.size && displayPrices[i].isNotEmpty()) {
         val baseline = rowTop + rh / 2f - (pricePaint.descent() + pricePaint.ascent()) / 2f
-        canvas.drawText(prices[i], pad, baseline, pricePaint)
+        canvas.drawText(displayPrices[i], pad, baseline, pricePaint)
       }
-      if (i < sizes.size && sizes[i].isNotEmpty()) {
+      if (i < displaySizes.size && displaySizes[i].isNotEmpty()) {
         val baseline = rowTop + rh / 2f - (sizePaint.descent() + sizePaint.ascent()) / 2f
-        canvas.drawText(sizes[i], rightX, baseline, sizePaint)
+        canvas.drawText(displaySizes[i], rightX, baseline, sizePaint)
       }
     }
   }

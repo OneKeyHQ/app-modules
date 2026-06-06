@@ -11,9 +11,19 @@ import type {
  * alignment risk is low.
  */
 export interface PerpSideRatioProps extends HybridViewProps {
-  /** Bid (long) share, 0..100. */
+  /**
+   * Bid (long) share, 0..100. INITIAL VALUE ONLY for high-frequency callers:
+   * the first `setRatio` call switches the view into imperative mode and this
+   * prop is then ignored, so unrelated prop commits can't reset the split to the
+   * static initial value (REACT-NATIVE-1JZ). Update via `setRatio`. Callers that
+   * update infrequently may drive it purely through this prop.
+   */
   bidPercentage: number;
-  /** Ask (short) share, 0..100. */
+  /**
+   * Ask (short) share, 0..100. INITIAL VALUE ONLY for high-frequency callers:
+   * this prop is IGNORED once `setRatio` has been called; update via `setRatio`
+   * (see `bidPercentage` — REACT-NATIVE-1JZ).
+   */
   askPercentage: number;
   /** Resolved long (bid) color. */
   longColor: string;

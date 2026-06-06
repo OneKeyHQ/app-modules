@@ -1,4 +1,5 @@
 import Foundation
+import NitroModules
 import UIKit
 
 /// Renders an entire column of order-book depth bars for one side (asks/bids).
@@ -120,6 +121,16 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
     // Feed through the single source of truth so the clamp/target/easing logic
     // is byte-for-byte identical to the `percents` prop path.
     percents = depths
+  }
+
+  /// Imperatively update the per-row price/size text — companion to `setDepth`
+  /// for the text layer. Bypasses the high-frequency `prices`/`sizes` prop write
+  /// path; assigning them feeds through the identical `didSet` → `scheduleLayout`
+  /// → `performLayout` path the prop setters use (REACT-NATIVE-1JZ). Call in the
+  /// SAME frame as `setDepth` so bar fill and row text share one source frame.
+  func setText(prices: [String], sizes: [String]) throws {
+    self.prices = prices
+    self.sizes = sizes
   }
 
   private func handleTap(atY y: CGFloat) {
@@ -295,6 +306,23 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
     l.alignmentMode = alignment
     l.truncationMode = .none
     l.isWrapped = false
+    // Disable ALL implicit Core Animation actions on this text layer. CATextLayer
+    // crossfades its `contents` whenever `string`/`foregroundColor` changes; even
+    // inside `CATransaction.setDisableActions(true)` the fade can leak through, so
+    // pin the relevant keys to NSNull() to guarantee instant per-row text switches
+    // (PM: no fade/gradient when the order-book text updates). The bar fill keeps
+    // its own explicit display-link easing — only text is made instant here.
+    let noAction = NSNull()
+    l.actions = [
+      "contents": noAction,
+      "string": noAction,
+      "foregroundColor": noAction,
+      "fontSize": noAction,
+      "bounds": noAction,
+      "position": noAction,
+      "hidden": noAction,
+      "opacity": noAction,
+    ]
     return l
   }
 

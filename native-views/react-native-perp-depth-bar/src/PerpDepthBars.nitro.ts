@@ -16,7 +16,17 @@ import type {
  * All values are in points (DIP); the native side quantizes to physical pixels.
  */
 export interface PerpDepthBarsProps extends HybridViewProps {
-  /** Depth percentage per row, 0..100. Length == number of rows on this side. */
+  /**
+   * Depth percentage per row, 0..100. Length == number of rows on this side.
+   *
+   * INITIAL VALUE ONLY when using the imperative path. The first
+   * `setDepth(buffer)` call switches the view into imperative mode; from then on
+   * this prop is IGNORED on every prop-update transaction (so unrelated
+   * high-frequency prop commits like `prices`/`sizes` can't wipe the bars —
+   * REACT-NATIVE-1JZ). For high-frequency depth updates ALWAYS call `setDepth`;
+   * do NOT keep writing this prop at tick rate. Callers that never call
+   * `setDepth` may drive the bars purely through this prop (each write retargets).
+   */
   percents: number[];
   /** Row height in points (matches the sibling RN text row height). */
   rowHeight: number;
@@ -36,14 +46,28 @@ export interface PerpDepthBarsProps extends HybridViewProps {
    */
   epoch: number;
 
-  // --- Per-row text (optional). When `prices`/`sizes` are empty the view
-  // renders bars only (backward compatible). When provided they are drawn
-  // natively per row — price left-aligned, size right-aligned, vertically
-  // centred — so the order-book ladder needs NO sibling RN <Text> rows.
-  // Each array is parallel to `percents` (same length / order).
-  /** Formatted price string per row (e.g. "1981.4"). */
+  /**
+   * Per-row price text, parallel to `percents` (same length / order). Drawn
+   * natively per row (price left-aligned), so the order-book ladder needs NO
+   * sibling RN <Text> rows. Empty => the view renders bars only.
+   *
+   * INITIAL VALUE ONLY for high-frequency callers: the first `setText` call
+   * switches the text layer into imperative mode and this prop is then IGNORED on
+   * every prop-update transaction. For high-frequency text updates ALWAYS call
+   * `setText`; do NOT keep writing this prop at tick rate (string-array prop
+   * commits are the heaviest part of the Fabric props + JSI path — exactly what
+   * REACT-NATIVE-1JZ avoids). Callers that update infrequently may drive it
+   * purely through this prop.
+   */
   prices: string[];
-  /** Formatted size string per row (e.g. "389.04"). */
+  /**
+   * Per-row size text, parallel to `percents`. Drawn natively per row (size
+   * right-aligned). Empty => bars only.
+   *
+   * INITIAL VALUE ONLY for high-frequency callers: update via `setText`; this
+   * prop is IGNORED once `setText` has been called (see `prices` —
+   * REACT-NATIVE-1JZ).
+   */
   sizes: string[];
   /** Price text color: hex or rgba()/rgb(). */
   priceColor: string;
@@ -82,6 +106,22 @@ export interface PerpDepthBarsMethods extends HybridViewMethods {
    * use either path.
    */
   setDepth(buffer: ArrayBuffer): void;
+
+  /**
+   * Imperatively update the per-row price/size text, bypassing the
+   * high-frequency `prices`/`sizes` prop write path (and its props/JSICache lock
+   * contention — REACT-NATIVE-1JZ). Companion to [setDepth] for the text layer.
+   *
+   * `prices[i]` / `sizes[i]` are the formatted strings for row `i`, parallel to
+   * the depth buffer pushed via `setDepth` (same length / order). Pass `[]` for a
+   * side that draws bars only. Call this in the SAME frame/effect as `setDepth`
+   * so the bar fill and its row text always come from one source frame (no
+   * fill-vs-text misalignment).
+   *
+   * The `prices`/`sizes` props are retained for backward compatibility; callers
+   * may use either path.
+   */
+  setText(prices: string[], sizes: string[]): void;
 }
 
 export type PerpDepthBars = HybridView<PerpDepthBarsProps, PerpDepthBarsMethods>;

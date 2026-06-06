@@ -29,6 +29,11 @@ class HybridPerpSideRatio(val context: ThemedReactContext) : HybridPerpSideRatio
   private var targetSplit = 0.5
   private var hasDrawn = false
   private var isDisposed = false
+  // Set once the caller drives the ratio through `setRatio`. The
+  // `bidPercentage`/`askPercentage` props are then ignored in `afterUpdate`,
+  // otherwise every prop commit would reset the split back to the (static)
+  // initial prop values (REACT-NATIVE-1JZ).
+  private var imperativeRatio = false
 
   private val choreographer = Choreographer.getInstance()
   private var frameScheduled = false
@@ -98,17 +103,23 @@ class HybridPerpSideRatio(val context: ThemedReactContext) : HybridPerpSideRatio
    */
   override fun setRatio(bidPercentage: Double, askPercentage: Double) {
     if (isDisposed) return
-    this.bidPercentage = bidPercentage
-    this.askPercentage = askPercentage
-    // Note: the prop path goes through the framework's beforeUpdate()/afterUpdate()
-    // pair; beforeUpdate() is an empty base-class hook, so calling afterUpdate()
-    // directly here is equivalent. If beforeUpdate() ever gains behavior, mirror it.
-    afterUpdate()
+    imperativeRatio = true
+    // Apply the args directly — do NOT route through the `bidPercentage`/
+    // `askPercentage` prop fields, which a later prop commit could overwrite with
+    // the static initial values.
+    applyRatio(bidPercentage, askPercentage)
   }
 
   override fun afterUpdate() {
     super.afterUpdate()
     if (isDisposed) return
+    // In imperative mode the ratio comes from `setRatio`; ignore the (static)
+    // props so a prop commit can't reset the bar to the initial values.
+    if (imperativeRatio) return
+    applyRatio(bidPercentage, askPercentage)
+  }
+
+  private fun applyRatio(bidPercentage: Double, askPercentage: Double) {
     val bid = maxOf(bidPercentage, 1.0)
     val ask = maxOf(askPercentage, 1.0)
     val split = bid / (bid + ask)
