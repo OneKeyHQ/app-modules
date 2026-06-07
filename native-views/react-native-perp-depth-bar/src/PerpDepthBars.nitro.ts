@@ -81,6 +81,24 @@ export interface PerpDepthBarsProps extends HybridViewProps {
   textInset: number;
 
   /**
+   * Per-row placeholder text drawn while the column has NO real data (no rows
+   * from `percents`/`setDepth` and no `prices`/`sizes`/`setText`), e.g. "--".
+   * Empty string disables the placeholder. This replaces any RN skeleton/overlay:
+   * the view draws the placeholder itself, then atomically swaps to real numbers
+   * the moment data lands — so there is never a blank frame between the two
+   * (the old overlay approach removed the JS skeleton a few frames before the
+   * native view had painted, flashing blank). Drawn in `priceColor` (left) and
+   * `sizeColor` (right); no bar fill.
+   */
+  placeholderText: string;
+  /**
+   * How many placeholder rows to draw when `placeholderText` is shown. Match the
+   * order book's rows-per-side so the column reserves a stable height before any
+   * data arrives. Ignored once real data is present.
+   */
+  placeholderRows: number;
+
+  /**
    * Fired natively when a row is tapped. `rowIndex` is the 0-based row
    * (top→bottom, parallel to `percents`/`prices`/`sizes`). The view handles
    * the touch itself — no RN overlay / JS hit-testing needed.

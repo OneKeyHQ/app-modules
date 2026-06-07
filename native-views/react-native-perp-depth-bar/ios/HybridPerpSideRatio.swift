@@ -71,7 +71,13 @@ final class HybridPerpSideRatio: HybridPerpSideRatioSpec {
   }
 
   private func scheduleLayout() {
-    view.setNeedsLayout()
+    // Imperative setRatio runs on the JS thread (off-main); `setNeedsLayout` must
+    // be issued on the main thread.
+    if Thread.isMainThread {
+      view.setNeedsLayout()
+    } else {
+      DispatchQueue.main.async { [weak self] in self?.view.setNeedsLayout() }
+    }
   }
 
   private func performLayout() {

@@ -100,7 +100,16 @@ final class PerpLayoutView: UIView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    onLayout?()
+    guard let onLayout else { return }
+    // Fabric (New Architecture) can drive layout off the main thread. The
+    // `onLayout` callback mutates CALayer/CATextLayer state, which UIKit requires
+    // on the main thread — doing it off-main asserts ("Unsupported layout off the
+    // main thread") and can leave the view blank. Hop to main when needed.
+    if Thread.isMainThread {
+      onLayout()
+    } else {
+      DispatchQueue.main.async { onLayout() }
+    }
   }
 
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {

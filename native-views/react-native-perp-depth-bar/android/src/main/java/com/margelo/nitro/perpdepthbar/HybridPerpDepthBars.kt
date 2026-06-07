@@ -50,8 +50,12 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
 
   override val view: View = object : View(context) {
     override fun onDraw(canvas: Canvas) {
-      drawBars(canvas)
-      drawTexts(canvas)
+      if (hasRealData()) {
+        drawBars(canvas)
+        drawTexts(canvas)
+      } else {
+        drawPlaceholder(canvas)
+      }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -176,7 +180,22 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
     get() = field
     set(value) { if (!isDisposed) { field = value; view.invalidate() } }
 
+  // Per-row placeholder drawn natively while there is no real data (see
+  // PerpDepthBars.nitro.ts). Replaces the RN skeleton overlay so there is no
+  // blank handoff frame between placeholder and real numbers.
+  override var placeholderText: String = ""
+    get() = field
+    set(value) { if (!isDisposed) { field = value; view.invalidate() } }
+
+  override var placeholderRows: Double = 0.0
+    get() = field
+    set(value) { if (!isDisposed) { field = value; view.invalidate() } }
+
   override var onRowPress: ((rowIndex: Double) -> Unit)? = null
+
+  /** True once any real per-row data (bars or text) has been provided. */
+  private fun hasRealData(): Boolean =
+    current.isNotEmpty() || displayPrices.isNotEmpty() || displaySizes.isNotEmpty()
 
   private fun handleTap(y: Float) {
     if (isDisposed) return
@@ -351,6 +370,29 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
         val baseline = rowTop + rh / 2f - (sizePaint.descent() + sizePaint.ascent()) / 2f
         canvas.drawText(displaySizes[i], rightX, baseline, sizePaint)
       }
+    }
+  }
+
+  /**
+   * Draws `placeholderRows` rows of `placeholderText` (price left / size right,
+   * no bar) while there is no real data. Mirrors `drawTexts` geometry so the
+   * swap to real numbers is seamless.
+   */
+  private fun drawPlaceholder(canvas: Canvas) {
+    val rows = placeholderRows.toInt()
+    if (placeholderText.isEmpty() || rows <= 0) return
+    val w = view.width.toFloat()
+    if (w <= 0f) return
+    val rh = (rowHeight * density).toFloat()
+    val mt = (rowMarginTop * density).toFloat()
+    val pad = (textInset * density).toFloat()
+    val rightX = w - pad
+    for (i in 0 until rows) {
+      val rowTop = mt + i * (rh + mt)
+      val priceBaseline = rowTop + rh / 2f - (pricePaint.descent() + pricePaint.ascent()) / 2f
+      canvas.drawText(placeholderText, pad, priceBaseline, pricePaint)
+      val sizeBaseline = rowTop + rh / 2f - (sizePaint.descent() + sizePaint.ascent()) / 2f
+      canvas.drawText(placeholderText, rightX, sizeBaseline, sizePaint)
     }
   }
 

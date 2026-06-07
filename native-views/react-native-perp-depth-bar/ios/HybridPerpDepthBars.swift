@@ -62,6 +62,12 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
   var sizeFontSize: Double = 11 { didSet { scheduleLayout() } }
   var textInset: Double = 0 { didSet { scheduleLayout() } }
 
+  // Per-row placeholder drawn natively while there is no real data (see
+  // PerpDepthBars.nitro.ts). Replaces the RN skeleton overlay so there is no
+  // blank handoff frame between placeholder and real numbers.
+  var placeholderText: String = "" { didSet { scheduleLayout() } }
+  var placeholderRows: Double = 0 { didSet { scheduleLayout() } }
+
   var priceColor: String = "" {
     didSet {
       cachedPriceColor = PerpColorParser.parse(priceColor).cgColor
@@ -144,7 +150,13 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
   }
 
   private func scheduleLayout() {
-    view.setNeedsLayout()
+    // Imperative setDepth/setText run on the JS thread (off-main); `setNeedsLayout`
+    // must be issued on the main thread.
+    if Thread.isMainThread {
+      view.setNeedsLayout()
+    } else {
+      DispatchQueue.main.async { [weak self] in self?.view.setNeedsLayout() }
+    }
   }
 
   // MARK: - Layout + retarget
@@ -152,7 +164,13 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
     let bounds = view.bounds
     guard bounds.width > 0 else { return }
 
-    let count = percents.count
+    // When there is no real data, draw `placeholderRows` rows of placeholder
+    // text (no bar fill) instead of nothing — the native view owns the empty
+    // state, so there is no RN overlay to remove and no blank handoff frame.
+    let dataCount = percents.count
+    let placeholderMode =
+      dataCount == 0 && !placeholderText.isEmpty && Int(placeholderRows) > 0
+    let count = placeholderMode ? Int(placeholderRows) : dataCount
     syncLayerCount(count)
     syncTextLayerCount(count)
 
@@ -180,8 +198,11 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
     }
     CATransaction.commit()
 
+    // Placeholder rows have no bar fill (all-zero targets); real rows use data.
     var newTargets = [CGFloat](repeating: 0, count: count)
-    for i in 0..<count { newTargets[i] = clampScale(percents[i]) }
+    if !placeholderMode {
+      for i in 0..<count { newTargets[i] = clampScale(percents[i]) }
+    }
 
     if snap {
       stopDisplayLink()
@@ -216,7 +237,8 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
         width: max(half - pad, 0), height: priceLine)
       priceLayer.fontSize = CGFloat(priceFontSize)
       priceLayer.foregroundColor = cachedPriceColor
-      priceLayer.string = i < prices.count ? prices[i] : ""
+      priceLayer.string =
+        placeholderMode ? placeholderText : (i < prices.count ? prices[i] : "")
 
       let sizeLayer = sizeLayers[i]
       sizeLayer.frame = CGRect(
@@ -224,7 +246,8 @@ final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
         width: max(half - pad, 0), height: sizeLine)
       sizeLayer.fontSize = CGFloat(sizeFontSize)
       sizeLayer.foregroundColor = cachedSizeColor
-      sizeLayer.string = i < sizes.count ? sizes[i] : ""
+      sizeLayer.string =
+        placeholderMode ? placeholderText : (i < sizes.count ? sizes[i] : "")
     }
     CATransaction.commit()
 
