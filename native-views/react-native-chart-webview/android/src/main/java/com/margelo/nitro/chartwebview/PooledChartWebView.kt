@@ -97,6 +97,7 @@ class PooledChartWebView private constructor(
   // How long the snapshot overlay stays up after a reparent, giving the WebView
   // time to draw its first frame in the new container (~5 frames).
   private val overlayHideDelayMs = 80L
+  private val attachGeneration = AtomicInteger(0)
 
   val webView: WebView = WebView(context).apply {
     settings.javaScriptEnabled = true
@@ -154,21 +155,41 @@ class PooledChartWebView private constructor(
 
   /** Move the WebView into [container], detaching it from any previous parent. */
   fun attachTo(container: ViewGroup) {
+    val generation = attachGeneration.incrementAndGet()
     runOnUiThread {
-      if (webView.parent === container) return@runOnUiThread
-      (webView.parent as? ViewGroup)?.removeView(webView)
-      container.addView(
-        webView,
-        FrameLayout.LayoutParams(
-          FrameLayout.LayoutParams.MATCH_PARENT,
-          FrameLayout.LayoutParams.MATCH_PARENT,
-        ),
-      )
-      // Mask the reparent's blank frame with the last captured frame, then
-      // refresh the cache (async) so the next move has a current frame.
-      showSnapshotOverlay(container)
-      refreshSnapshotSoon()
+      attachToContainer(container, generation, canRetry = true)
     }
+  }
+
+  private fun attachToContainer(container: ViewGroup, generation: Int, canRetry: Boolean) {
+    if (generation != attachGeneration.get()) return
+    if (webView.parent === container) return
+
+    (webView.parent as? ViewGroup)?.removeView(webView)
+    val currentParent = webView.parent
+    if (currentParent != null) {
+      if (canRetry) {
+        webView.post { attachToContainer(container, generation, canRetry = false) }
+      } else {
+        android.util.Log.w(
+          "ChartWebviewPool",
+          "Skip attach key=$key because WebView parent was not cleared: $currentParent",
+        )
+      }
+      return
+    }
+
+    container.addView(
+      webView,
+      FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT,
+      ),
+    )
+    // Mask the reparent's blank frame with the last captured frame, then
+    // refresh the cache (async) so the next move has a current frame.
+    showSnapshotOverlay(container)
+    refreshSnapshotSoon()
   }
 
   /** Remove the WebView from its current parent (keeps it alive, warm). */

@@ -330,6 +330,7 @@ final class PooledChartWebView {
   private var webView: WKWebView!
   private var proxy: ChartWebViewProxy!
   private var lastLoadedUrl: String?
+  private var attachGeneration = 0
 
   /// Read by the scheme handler to resolve offline files.
   fileprivate var currentLocalBundle: String?
@@ -405,8 +406,11 @@ final class PooledChartWebView {
 
   /// Move the WebView into `container`, detaching it from any previous parent.
   func attach(to container: UIView) {
+    attachGeneration += 1
+    let generation = attachGeneration
     runOnMain { [weak self] in
       guard let self = self, let webView = self.webView else { return }
+      guard generation == self.attachGeneration else { return }
       guard webView.superview !== container else { return }
       webView.removeFromSuperview()
       webView.frame = container.bounds
