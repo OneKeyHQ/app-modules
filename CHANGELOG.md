@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.52] - 2026-06-08
+
+### Features
+- **range-downloader / bundle-crypto**: New Nitro modules for concurrent multi-range downloading and crypto. Android adds 8-range concurrent download; iOS adds concurrent multi-range download. `bundle-update` and `app-update` now delegate downloading and crypto to the shared modules.
+- **chart-webview**: New offline chart host with a pooled WebView reused across mount points; cached frame snapshots mask reparenting flash during switches. Android loads offline bundles from `assets/<localBundle>/`.
+- **perp-depth-bar**: New native depth-bar view with per-row price/size text rendering and tap handling. Depth bars and side ratio use continuous exponential-smoothing easing. Added imperative `setDepth` / `setRatio` APIs and native placeholder-row support.
+- **segment-slider**: New native Nitro slider view; tap snaps to the nearest mark while dragging remains free.
+- **background-thread**: SharedRPC gains inline-value messaging; restart freshness is now validated.
+- **zip-archive**: Migrated to a Nitro module.
+
+### Bug Fixes
+- **app-update (Android)**: APK download supports Range / `.partial` resume.
+- **chart-webview**: Fixed reconcile handing off in one direction only; added attach generation to prevent stale reparenting.
+- **perp-depth-bar**: Fixed imperative API races against high-frequency prop updates; iOS text snap alignment; main-thread safety for layout updates.
+- **segment-slider**: Fixed `lastEmitted` sync when controlled value changes.
+- **skeleton**: Guarded shimmer restart against no-op `afterUpdate`.
+- **device-utils**: Exposed `LaunchOptionsStore` singleton to the ObjC runtime.
+- **security**: Required SSZipArchive >= 2.5.4 to fix zip-slip CVEs.
+
+### Chores
+- Bump all packages to 3.0.52.
+
 ## [3.0.36] - 2026-05-14
 
 ### Features
