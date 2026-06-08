@@ -20,8 +20,8 @@ Pod::Spec.new do |s|
   ]
 
   # Vendored Gopenpgp framework: GPG cleartext/detached signature verification.
-  # This is the single in-tree copy used by the bundle-crypto security module
-  # (copied from react-native-bundle-update during P1; that module keeps its own).
+  # This is the single in-tree copy used by bundle-crypto and by modules that
+  # delegate to BundleCryptoCore instead of vendoring their own framework.
   s.vendored_frameworks = 'ios/Frameworks/Gopenpgp.xcframework'
 
   s.dependency 'React-jsi'

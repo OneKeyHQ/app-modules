@@ -129,8 +129,12 @@ dependencies {
 
 // Copy the optional offline TradingView chart bundle into a namespaced assets
 // subdir so chart-webview loads it from assets/tradingview-assets/.
+def chartWebviewAssetsDest = "$projectDir/src/main/assets/tradingview-assets"
 tasks.register('copyChartWebviewAssets', Copy) {
     from "$projectDir/../../tradingview-assets"
-    into "$projectDir/src/main/assets/tradingview-assets"
+    into chartWebviewAssetsDest
+    doFirst {
+        delete chartWebviewAssetsDest
+    }
 }
 preBuild.dependsOn 'copyChartWebviewAssets'
