@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
   demoValue: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#00B812',
+    color: '#000',
   },
   sliderBox: {
     width: '100%',
