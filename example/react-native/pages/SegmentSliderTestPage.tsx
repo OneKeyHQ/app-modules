@@ -65,6 +65,7 @@ function Demo({
           disabled={disabled}
           showBubble={showBubble}
           centerOrigin={centerOrigin}
+          snapTapToSegment={segments > 0}
           epoch={epochRef.current}
           onChange={setValue}
           onSlideStart={() => console.log(`[${title}] start`)}

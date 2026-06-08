@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { type ViewProps } from 'react-native';
 import { callback, getHostComponent } from 'react-native-nitro-modules';
 
 import type {
@@ -34,7 +35,7 @@ const PerpDepthBarsHost = getHostComponent<
 export function PerpDepthBarsView({
   onRowPress,
   ...props
-}: PerpDepthBarsProps) {
+}: PerpDepthBarsProps & ViewProps) {
   const onRowPressRef = useRef(onRowPress);
   onRowPressRef.current = onRowPress;
 

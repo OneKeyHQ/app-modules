@@ -38,16 +38,24 @@ class ReactNativeZipArchive : HybridReactNativeZipArchiveSpec() {
   override fun unzip(from: String, to: String): Promise<String> {
     return Promise.async {
       val destDir = File(to)
-      if (!destDir.exists()) destDir.mkdirs()
+      if (!destDir.exists() && !destDir.mkdirs()) {
+        throw Exception("Failed to create unzip destination: $to")
+      }
+      val canonicalDestDir = destDir.canonicalFile
 
       ZipInputStream(BufferedInputStream(FileInputStream(from))).use { zis ->
         var entry: ZipEntry? = zis.nextEntry
         while (entry != null) {
-          val outFile = File(destDir, entry.name)
+          val outFile = safeZipEntryFile(canonicalDestDir, entry)
           if (entry.isDirectory) {
-            outFile.mkdirs()
+            if (!outFile.exists() && !outFile.mkdirs()) {
+              throw Exception("Failed to create unzip directory: ${outFile.absolutePath}")
+            }
           } else {
-            outFile.parentFile?.mkdirs()
+            val parent = outFile.parentFile
+            if (parent != null && !parent.exists() && !parent.mkdirs()) {
+              throw Exception("Failed to create unzip directory: ${parent.absolutePath}")
+            }
             FileOutputStream(outFile).use { fos ->
               val buffer = ByteArray(BUFFER_SIZE)
               var len: Int
@@ -62,6 +70,15 @@ class ReactNativeZipArchive : HybridReactNativeZipArchiveSpec() {
       }
       to
     }
+  }
+
+  private fun safeZipEntryFile(destDir: File, entry: ZipEntry): File {
+    val outFile = File(destDir, entry.name).canonicalFile
+    val destPath = destDir.path + File.separator
+    if (outFile.path != destDir.path && !outFile.path.startsWith(destPath)) {
+      throw Exception("Unsafe zip entry path: ${entry.name}")
+    }
+    return outFile
   }
 
   override fun unzipWithPassword(from: String, to: String, password: String): Promise<String> {

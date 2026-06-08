@@ -10,12 +10,25 @@ yarn add @onekeyfe/react-native-chart-webview
 
 ## Usage
 
-```js
+```tsx
 import { ChartWebviewView } from '@onekeyfe/react-native-chart-webview';
 
 // ...
 
-<ChartWebviewView color="#ff0000" style={{ width: 100, height: 100 }} />
+<ChartWebviewView
+  style={{ flex: 1 }}
+  uri="https://tradingview.onekey.so/?theme=dark&symbol=BTC"
+  reuseKey="market"
+  pooled={true}
+  active={true}
+/>
+
+<ChartWebviewView
+  style={{ flex: 1 }}
+  localBundle="tradingview-assets"
+  entry="index.html"
+  paramsJson={JSON.stringify({ theme: 'dark', symbol: 'BTC' })}
+/>
 ```
 
 ## Contributing

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.0.52] - 2026-06-08
+## [3.0.53] - 2026-06-08
 
 ### Features
 - **range-downloader / bundle-crypto**: New Nitro modules for concurrent multi-range downloading and crypto. Android adds 8-range concurrent download; iOS adds concurrent multi-range download. `bundle-update` and `app-update` now delegate downloading and crypto to the shared modules.
@@ -22,7 +22,7 @@ All notable changes to this project will be documented in this file.
 - **security**: Required SSZipArchive >= 2.5.4 to fix zip-slip CVEs.
 
 ### Chores
-- Bump all packages to 3.0.52.
+- Bump all packages to 3.0.53.
 
 ## [3.0.36] - 2026-05-14
 

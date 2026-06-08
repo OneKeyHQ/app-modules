@@ -10,12 +10,34 @@ yarn add @onekeyfe/react-native-segment-slider
 
 ## Usage
 
-```js
+```tsx
 import { SegmentSliderView } from '@onekeyfe/react-native-segment-slider';
 
 // ...
 
-<SegmentSliderView color="#ff0000" style={{ width: 100, height: 100 }} />
+<SegmentSliderView
+  style={{ width: 240, height: 24 }}
+  value={50}
+  min={0}
+  max={100}
+  segments={4}
+  sliderHeight={4}
+  disabled={false}
+  showBubble={true}
+  centerOrigin={false}
+  snapTapToSegment={true}
+  epoch={0}
+  fillColor="#000000df"
+  trackColor="#0000001f"
+  thumbColor="#ffffff"
+  thumbBorderColor="#00000031"
+  markActiveColor="#000000df"
+  markInactiveColor="#ffffff"
+  markBorderColor="#0000001f"
+  bubbleColor="#000000df"
+  bubbleTextColor="#ffffff"
+  onChange={(nextValue) => console.log(nextValue)}
+/>
 ```
 
 ## Contributing

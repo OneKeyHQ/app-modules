@@ -113,6 +113,8 @@ function Side({
         priceFontSize={13}
         sizeFontSize={13}
         textInset={8}
+        placeholderText="--"
+        placeholderRows={levels.length}
         onRowPress={handleRowPress}
       />
     </View>

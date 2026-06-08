@@ -5,20 +5,28 @@ react-native-bundle-crypto
 ## Installation
 
 ```sh
-npm install react-native-bundle-crypto react-native-nitro-modules
+npm install @onekeyfe/react-native-bundle-crypto react-native-nitro-modules
 
 > `react-native-nitro-modules` is required as this library relies on [Nitro Modules](https://nitro.margelo.com/).
 ```
 
 ## Usage
 
-```js
-import { ReactNativeBundleCrypto } from 'react-native-bundle-crypto';
+```ts
+import { ReactNativeBundleCrypto } from '@onekeyfe/react-native-bundle-crypto';
 
 // ...
 
-const result = await ReactNativeBundleCrypto.hello({ message: 'World' });
-console.log(result); // { success: true, data: 'Hello, World!' }
+const hash = await ReactNativeBundleCrypto.sha256OfFile('/absolute/path/bundle.zip');
+if (hash.sha256) {
+  console.log('sha256:', hash.sha256);
+}
+
+const isSame = ReactNativeBundleCrypto.secureEqualHex(
+  '0123456789abcdef',
+  '0123456789abcdef'
+);
+console.log(isSame);
 ```
 
 ## Contributing

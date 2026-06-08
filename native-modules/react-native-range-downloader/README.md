@@ -5,20 +5,38 @@ react-native-range-downloader
 ## Installation
 
 ```sh
-npm install react-native-range-downloader react-native-nitro-modules
+npm install @onekeyfe/react-native-range-downloader react-native-nitro-modules
 
 > `react-native-nitro-modules` is required as this library relies on [Nitro Modules](https://nitro.margelo.com/).
 ```
 
 ## Usage
 
-```js
-import { ReactNativeRangeDownloader } from 'react-native-range-downloader';
+```ts
+import { ReactNativeRangeDownloader } from '@onekeyfe/react-native-range-downloader';
 
 // ...
 
-const result = await ReactNativeRangeDownloader.hello({ message: 'World' });
-console.log(result); // { success: true, data: 'Hello, World!' }
+const taskId = 'chart-assets';
+const destFilePath = `${ReactNativeRangeDownloader.getDownloadsDir()}/chart-assets.zip`;
+
+const listenerId = ReactNativeRangeDownloader.addDownloadListener((event) => {
+  if (event.channel === 'chart' && event.taskId === taskId) {
+    console.log(event.type, event.progress, event.message);
+  }
+});
+
+try {
+  const result = await ReactNativeRangeDownloader.download({
+    channel: 'chart',
+    taskId,
+    url: 'https://example.com/chart-assets.zip',
+    destFilePath,
+  });
+  console.log(result.outcome, result.filePath, result.fallbackReason);
+} finally {
+  ReactNativeRangeDownloader.removeDownloadListener(listenerId);
+}
 ```
 
 ## Contributing

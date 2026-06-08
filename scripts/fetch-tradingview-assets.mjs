@@ -39,6 +39,27 @@ const outDir = path.resolve(
 );
 const origin = new URL(chartUrl).origin;
 
+function isSameOrChild(parent, target) {
+  const rel = path.relative(parent, target);
+  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function assertSafeOutputDir(dir) {
+  const resolved = path.resolve(dir);
+  const root = path.parse(resolved).root;
+  const home = process.env.HOME ? path.resolve(process.env.HOME) : null;
+
+  if (resolved === root) {
+    throw new Error(`Refusing to delete filesystem root: ${resolved}`);
+  }
+  if (isSameOrChild(resolved, repoRoot) || isSameOrChild(resolved, process.cwd())) {
+    throw new Error(`Refusing to delete a directory that contains the repo/cwd: ${resolved}`);
+  }
+  if (home && resolved === home) {
+    throw new Error(`Refusing to delete home directory: ${resolved}`);
+  }
+}
+
 let chromium;
 try {
   ({ chromium } = await import('playwright'));
@@ -50,16 +71,21 @@ try {
   process.exit(1);
 }
 
+assertSafeOutputDir(outDir);
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
 
 const saved = new Map();
 function save(pathname, buf) {
-  const rel = pathname === '/' || pathname === '' ? '/index.html' : pathname;
-  const dest = path.join(outDir, rel);
+  const urlPath = pathname === '/' || pathname === '' ? '/index.html' : pathname;
+  const rel = urlPath.replace(/^\/+/, '');
+  const dest = path.resolve(outDir, rel);
+  if (!isSameOrChild(outDir, dest)) {
+    throw new Error(`Refusing to write outside output directory: ${urlPath}`);
+  }
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.writeFileSync(dest, buf);
-  saved.set(rel, buf.length);
+  saved.set(urlPath, buf.length);
 }
 
 const browser = await chromium.launch();
