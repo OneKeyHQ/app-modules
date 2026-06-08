@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { type ViewProps } from 'react-native';
 import { callback, getHostComponent } from 'react-native-nitro-modules';
 
@@ -42,11 +42,15 @@ export function PerpDepthBarsView({
   const stableOnRowPress = useCallback((rowIndex: number) => {
     onRowPressRef.current?.(rowIndex);
   }, []);
+  const onRowPressCallback = useMemo(
+    () => callback(stableOnRowPress),
+    [stableOnRowPress],
+  );
 
   return (
     <PerpDepthBarsHost
       {...props}
-      onRowPress={onRowPress ? callback(stableOnRowPress) : undefined}
+      onRowPress={onRowPress ? onRowPressCallback : undefined}
     />
   );
 }

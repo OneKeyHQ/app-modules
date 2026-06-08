@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 import { type ViewProps } from 'react-native';
 import { callback, getHostComponent } from 'react-native-nitro-modules';
@@ -45,15 +45,25 @@ export function SegmentSliderView({
   const stableOnSlideComplete = useCallback(() => {
     onSlideCompleteRef.current?.();
   }, []);
+  const onChangeCallback = useMemo(
+    () => callback(stableOnChange),
+    [stableOnChange],
+  );
+  const onSlideStartCallback = useMemo(
+    () => callback(stableOnSlideStart),
+    [stableOnSlideStart],
+  );
+  const onSlideCompleteCallback = useMemo(
+    () => callback(stableOnSlideComplete),
+    [stableOnSlideComplete],
+  );
 
   return (
     <SegmentSliderHost
       {...props}
-      onChange={onChange ? callback(stableOnChange) : undefined}
-      onSlideStart={onSlideStart ? callback(stableOnSlideStart) : undefined}
-      onSlideComplete={
-        onSlideComplete ? callback(stableOnSlideComplete) : undefined
-      }
+      onChange={onChange ? onChangeCallback : undefined}
+      onSlideStart={onSlideStart ? onSlideStartCallback : undefined}
+      onSlideComplete={onSlideComplete ? onSlideCompleteCallback : undefined}
     />
   );
 }

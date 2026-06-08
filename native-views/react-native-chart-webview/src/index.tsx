@@ -15,6 +15,12 @@ const NativeChartWebviewView = getHostComponent<ChartWebviewProps, ChartWebviewM
 // Default the document-start bridge script so consumers never have to know about
 // it (and it's never absent — an optional string flipping to null is rejected by
 // the native binding). Callers can still override `bridgeScript` to customize.
-export function ChartWebviewView(props: ComponentProps<typeof NativeChartWebviewView>) {
-  return createElement(NativeChartWebviewView, { bridgeScript: CHART_BRIDGE_JS, ...props });
+export function ChartWebviewView({
+  bridgeScript,
+  ...props
+}: ComponentProps<typeof NativeChartWebviewView>) {
+  return createElement(NativeChartWebviewView, {
+    ...props,
+    bridgeScript: bridgeScript ?? CHART_BRIDGE_JS,
+  });
 }
