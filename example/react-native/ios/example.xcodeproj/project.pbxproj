@@ -226,7 +226,7 @@
 			name = "[CP-User] Bundle TradingView offline chart assets";
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "SRC=\"${PROJECT_DIR}/../tradingview-assets\"\nDEST=\"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/tradingview-assets\"\nif [ -d \"$SRC\" ]; then\n  rm -rf \"$DEST\"; mkdir -p \"$DEST\"; cp -R \"$SRC/.\" \"$DEST/\"\n  echo \"chart-webview: copied offline assets -> $DEST\"\nelse\n  echo \"chart-webview: no tradingview-assets (run 'yarn fetch:tradingview')\"\nfi\n";
+			shellScript = "SRC=\"${PROJECT_DIR}/../tradingview-assets\"\nDEST=\"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/tradingview-assets\"\nif [ -d \"$SRC\" ]; then\n  rm -rf \"$DEST\"; mkdir -p \"$DEST\"; cp -R \"$SRC/.\" \"$DEST/\"\n  echo \"chart-webview: copied offline assets -> $DEST\"\nelse\n  echo \"chart-webview: no local tradingview-assets directory\"\nfi\n";
 		};
 		C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
