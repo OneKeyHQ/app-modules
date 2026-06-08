@@ -1,5 +1,3 @@
-import { ReactNativeRangeDownloader } from '@onekeyfe/react-native-range-downloader';
-
 // Writable directory for the capability-extraction green-field demos.
 //
 // Resolved LAZILY at first use from the app sandbox via range-downloader's
@@ -15,6 +13,9 @@ let cached: string | null = null;
 export function getDemoWritableDir(): string {
   if (cached === null) {
     try {
+      const { ReactNativeRangeDownloader } = require(
+        '@onekeyfe/react-native-range-downloader',
+      ) as typeof import('@onekeyfe/react-native-range-downloader');
       cached = ReactNativeRangeDownloader.getDownloadsDir() || '';
     } catch {
       cached = '';

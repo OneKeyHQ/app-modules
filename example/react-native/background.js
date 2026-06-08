@@ -10,18 +10,15 @@ function setupRPCHandler() {
   if (hasRegisteredRPCHandler || !globalThis.sharedRPC) return false;
   hasRegisteredRPCHandler = true;
 
-  globalThis.sharedRPC.onWrite((callId) => {
+  globalThis.sharedRPC.onWrite((callId, value) => {
     // Skip result writes (those are our own responses)
     if (callId.endsWith(':result')) return;
 
-    const raw = globalThis.sharedRPC.read(callId);
-    if (raw === undefined) return;
-
     let params;
     try {
-      params = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      params = typeof value === 'string' ? JSON.parse(value) : value;
     } catch {
-      params = raw;
+      params = value;
     }
 
     // Dispatch to handler by method name
