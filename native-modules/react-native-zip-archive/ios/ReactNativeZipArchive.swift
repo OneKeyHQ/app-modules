@@ -67,7 +67,9 @@ final class ReactNativeZipArchive: HybridReactNativeZipArchiveSpec {
       throw NSError(
         domain: "ZipArchive",
         code: -1,
-        userInfo: [NSLocalizedDescriptionKey: "unable to unzip"]
+        userInfo: [
+          NSLocalizedDescriptionKey: error?.localizedDescription ?? "unable to unzip"
+        ]
       )
     }
   }
