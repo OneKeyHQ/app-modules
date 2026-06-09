@@ -56,9 +56,17 @@ public:
 private:
   static RPCValue extractValue(jsi::Runtime &rt, const jsi::Value &val);
   static jsi::Value toJSI(jsi::Runtime &rt, const RPCValue &val);
-  void notifyOtherRuntime(jsi::Runtime &callerRt, const std::string &callId);
+  // Value-inline messaging: the payload rides the dispatched lambda's capture
+  // (delivered as the 2nd callback arg on the target runtime) instead of being
+  // parked in a shared slot map and read back. No `slots_` involved.
+  void notifyOtherRuntime(jsi::Runtime &callerRt, const std::string &callId,
+                          RPCValue value);
 
   static std::mutex mutex_;
-  static std::unordered_map<std::string, RPCValue> slots_;
   static std::vector<RuntimeListener> listeners_;
+  // runtimeId ("main"/"background") → the SharedStore readiness key that
+  // runtime owns. Registered by the JS via `registerReadinessKey`; consumed by
+  // invalidate() to clear that key from SharedStore on teardown so a respawned
+  // reader never sees a prior-life "peer ready" value (restart freshness).
+  static std::unordered_map<std::string, std::string> readinessKeys_;
 };

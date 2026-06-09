@@ -1,0 +1,17 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "outputs": [
+        "lib/**",
+        "nitrogen/**"
+      ],
+      "inputs": [
+        "src/**",
+        "android/src/**",
+        "ios/**",
+        "cpp/**"
+      ]
+    }
+  }
+}

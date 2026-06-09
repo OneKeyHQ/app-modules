@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["reactnativerangedownloader"],
+  "ios": {
+    "iosModuleName": "ReactNativeRangeDownloader"
+  },
+  "android": {
+    "androidNamespace": ["reactnativerangedownloader"],
+    "androidCxxLibName": "reactnativerangedownloader"
+  },
+  "autolinking": {
+    "ReactNativeRangeDownloader": {
+      "swift": "ReactNativeRangeDownloader",
+      "kotlin": "ReactNativeRangeDownloader"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

@@ -1,0 +1,17 @@
+{
+  "cxxNamespace": ["segmentslider"],
+  "ios": {
+    "iosModuleName": "SegmentSlider"
+  },
+  "android": {
+    "androidNamespace": ["segmentslider"],
+    "androidCxxLibName": "segmentslider"
+  },
+  "autolinking": {
+    "SegmentSlider": {
+      "swift": "HybridSegmentSlider",
+      "kotlin": "HybridSegmentSlider"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

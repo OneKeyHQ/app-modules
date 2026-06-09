@@ -15,9 +15,18 @@ import { SkeletonTestPage } from './pages/SkeletonTestPage';
 import { NativeLoggerTestPage } from './pages/NativeLoggerTestPage';
 import { PagerViewTestPage } from './pages/PagerViewTestPage';
 import { ScrollGuardTestPage } from './pages/ScrollGuardTestPage';
+import { SegmentSliderTestPage } from './pages/SegmentSliderTestPage';
 import { PerfMemoryTestPage } from './pages/PerfMemoryTestPage';
+import { PerpDepthBarTestPage } from './pages/PerpDepthBarTestPage';
 import { BundleUpdateTestPage } from './pages/BundleUpdateTestPage';
 import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
+import { RangeDownloaderTestPage } from './pages/RangeDownloaderTestPage';
+import { BundleCryptoTestPage } from './pages/BundleCryptoTestPage';
+import { ZipArchiveTestPage } from './pages/ZipArchiveTestPage';
+import { OtaPipelineTestPage } from './pages/OtaPipelineTestPage';
+import { ApkOtaPipelineTestPage } from './pages/ApkOtaPipelineTestPage';
+import { ChartWebViewTestPage } from './pages/ChartWebViewTestPage';
+import { ChartSingletonTestPage } from './pages/ChartSingletonTestPage';
 import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
 import { TabViewTestPage } from './pages/TabViewTestPage';
 import { TabViewSettingsPage } from './pages/TabViewSettingsPage';
@@ -44,9 +53,18 @@ export type RootStackParamList = {
   LiteCard: undefined;
   GetRandomValues: undefined;
   NativeLogger: undefined;
+  OtaPipeline: undefined;
+  ApkOtaPipeline: undefined;
+  ChartWebView: undefined;
+  ChartSingleton: undefined;
   PagerView: undefined;
   PerfMemory: undefined;
+  PerpDepthBar: undefined;
+  RangeDownloader: undefined;
+  BundleCrypto: undefined;
+  ZipArchive: undefined;
   ScrollGuard: undefined;
+  SegmentSlider: undefined;
   Skeleton: undefined;
   SplashScreen: undefined;
   TabView: undefined;
@@ -87,6 +105,48 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
     name: 'Bundle Update',
     description: 'JS bundle download, verification, install, and path management',
     icon: '📥',
+  },
+  {
+    screen: 'BundleCrypto',
+    name: 'Bundle Crypto',
+    description: 'sha256OfFile, secureEqualHex, validateExtractedPathSafety, verifyGpgCleartext',
+    icon: '🔏',
+  },
+  {
+    screen: 'OtaPipeline',
+    name: 'JS Bundle OTA Pipeline',
+    description: 'JS bundle OTA: download → sha256 verify → GPG cleartext verify → unzip → path-safety',
+    icon: '🔗',
+  },
+  {
+    screen: 'ApkOtaPipeline',
+    name: 'APK OTA Pipeline',
+    description: 'APK OTA: download → sha256 → verify detached SHA256SUMS.asc → match → install',
+    icon: '📲',
+  },
+  {
+    screen: 'ChartWebView',
+    name: 'Chart WebView',
+    description: 'Offline TradingView chart via virtual same-origin + JS↔native message bridge',
+    icon: '📈',
+  },
+  {
+    screen: 'ChartSingleton',
+    name: 'Chart Singleton',
+    description: 'One shared WebView reparented across mount slots (pooled reuseKey)',
+    icon: '♻️',
+  },
+  {
+    screen: 'RangeDownloader',
+    name: 'Range Downloader',
+    description: 'Concurrent multi-range download with progress events and artifact discard',
+    icon: '🚀',
+  },
+  {
+    screen: 'ZipArchive',
+    name: 'Zip Archive',
+    description: 'unzip, getUncompressedSize, isPasswordProtected for OTA bundle archives',
+    icon: '🗜️',
   },
   {
     screen: 'CloudKit',
@@ -137,10 +197,22 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
     icon: '📊',
   },
   {
+    screen: 'PerpDepthBar',
+    name: 'Perp Depth Bar',
+    description: 'Native order-book depth bars + side-ratio (replaces reanimated)',
+    icon: '📊',
+  },
+  {
     screen: 'ScrollGuard',
     name: 'Scroll Guard',
     description: 'Prevent parent PagerView from intercepting child ScrollView gestures',
     icon: '🛡️',
+  },
+  {
+    screen: 'SegmentSlider',
+    name: 'Segment Slider',
+    description: 'Native segmented slider — track, fill, marks, thumb, bubble drawn natively',
+    icon: '🎚️',
   },
   {
     screen: 'Skeleton',
@@ -340,6 +412,13 @@ export function AppNavigator() {
       <Stack.Screen name="BackgroundThread" component={BackgroundThreadTestPage} options={{ title: 'Background Thread' }} />
       <Stack.Screen name="BiometricAuth" component={BiometricAuthTestPage} options={{ title: 'Biometric Auth' }} />
       <Stack.Screen name="BundleUpdate" component={BundleUpdateTestPage} options={{ title: 'Bundle Update' }} />
+      <Stack.Screen name="BundleCrypto" component={BundleCryptoTestPage} options={{ title: 'Bundle Crypto' }} />
+      <Stack.Screen name="RangeDownloader" component={RangeDownloaderTestPage} options={{ title: 'Range Downloader' }} />
+      <Stack.Screen name="ZipArchive" component={ZipArchiveTestPage} options={{ title: 'Zip Archive' }} />
+      <Stack.Screen name="OtaPipeline" component={OtaPipelineTestPage} options={{ title: 'JS Bundle OTA Pipeline' }} />
+      <Stack.Screen name="ApkOtaPipeline" component={ApkOtaPipelineTestPage} options={{ title: 'APK OTA Pipeline' }} />
+      <Stack.Screen name="ChartWebView" component={ChartWebViewTestPage} options={{ title: 'Chart WebView' }} />
+      <Stack.Screen name="ChartSingleton" component={ChartSingletonTestPage} options={{ title: 'Chart Singleton' }} />
       <Stack.Screen name="CloudKit" component={CloudKitTestPage} options={{ title: 'CloudKit' }} />
       <Stack.Screen name="DeviceUtils" component={DeviceUtilsTestPage} options={{ title: 'Device Utils' }} />
       <Stack.Screen name="Keychain" component={KeychainTestPage} options={{ title: 'Keychain' }} />
@@ -348,7 +427,9 @@ export function AppNavigator() {
       <Stack.Screen name="NativeLogger" component={NativeLoggerTestPage} options={{ title: 'Native Logger' }} />
       <Stack.Screen name="PagerView" component={PagerViewTestPage} options={{ title: 'Pager View' }} />
       <Stack.Screen name="PerfMemory" component={PerfMemoryTestPage} options={{ title: 'Perf Memory' }} />
+      <Stack.Screen name="PerpDepthBar" component={PerpDepthBarTestPage} options={{ title: 'Perp Depth Bar' }} />
       <Stack.Screen name="ScrollGuard" component={ScrollGuardTestPage} options={{ title: 'Scroll Guard' }} />
+      <Stack.Screen name="SegmentSlider" component={SegmentSliderTestPage} options={{ title: 'Segment Slider' }} />
       <Stack.Screen name="Skeleton" component={SkeletonTestPage} options={{ title: 'Skeleton' }} />
       <Stack.Screen name="SplashScreen" component={SplashScreenTestPage} options={{ title: 'Splash Screen' }} />
       <Stack.Screen name="TabView" component={TabViewTestPage} options={{ title: 'Tab View' }} />

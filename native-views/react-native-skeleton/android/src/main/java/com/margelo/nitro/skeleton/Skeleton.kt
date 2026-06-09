@@ -36,6 +36,27 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
   private val maxRetryCount: Int = 10
   private var pendingStartRunnable: Runnable? = null
 
+  // Guard against high-frequency afterUpdate() ValueAnimator churn (REACT-NATIVE-40K ANR).
+  // Fabric calls afterUpdate() on every prop commit, and list/order-book screens update
+  // very frequently. Unconditionally restarting the shimmer cancels/rebuilds the
+  // ValueAnimator each time (ValueAnimator.cancel -> AnimationHandler.removeCallback ->
+  // ArrayList.indexOf), blocking the main thread. We cache a signature of the inputs that
+  // actually drive the animation (speed + gradient colors + view size) and only restart
+  // when that signature changes. If nothing relevant changed and the shimmer is already
+  // running, we leave the existing animator untouched (no cancel, no rebuild).
+  private var lastShimmerSignature: String? = null
+  private var isShimmerRunning: Boolean = false
+
+  // Build a signature from every input that decides the shimmer animation:
+  // - animationSpeed -> ValueAnimator.duration
+  // - gradient colors -> shimmer gradient / draw output
+  // - view width/height -> animation travel range (-width..width*2) and draw bounds
+  private fun currentShimmerSignature(): String {
+    val colors = customGradientColors ?: DEFAULT_GRADIENT_COLORS
+    val colorsKey = colors.joinToString(",")
+    return "$animationSpeed|$colorsKey|${view.width}x${view.height}"
+  }
+
   // View with shimmer effect
   override val view: View = object : View(context) {
     override fun onDraw(canvas: Canvas) {
@@ -137,6 +158,11 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
       }
       start()
     }
+
+    // Record the inputs this running animator was built from, so afterUpdate() can skip
+    // restarting while none of them change.
+    lastShimmerSignature = currentShimmerSignature()
+    isShimmerRunning = true
   }
 
   private fun stopShimmer() {
@@ -152,13 +178,24 @@ class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
       cancel()
     }
     shimmerAnimator = null
+    isShimmerRunning = false
   }
 
   override fun afterUpdate() {
     super.afterUpdate()
-    if (!isDisposed) {
-      restartShimmer()
+    if (isDisposed) return
+
+    // Defensive guard against ValueAnimator churn (REACT-NATIVE-40K ANR):
+    // afterUpdate() runs on every Fabric prop commit. Only restart the shimmer when an
+    // input that actually drives the animation changed (speed / colors / view size).
+    // If the shimmer is already running and nothing relevant changed, leave the existing
+    // ValueAnimator alone to avoid main-thread cancel/rebuild churn.
+    val signature = currentShimmerSignature()
+    if (isShimmerRunning && shimmerAnimator != null && signature == lastShimmerSignature) {
+      return
     }
+
+    restartShimmer()
   }
 
   private fun restartShimmer() {

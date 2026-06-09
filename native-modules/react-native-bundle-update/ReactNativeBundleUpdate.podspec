@@ -19,8 +19,6 @@ Pod::Spec.new do |s|
     "cpp/**/*.{hpp,cpp}",
   ]
 
-  s.vendored_frameworks = 'ios/Frameworks/Gopenpgp.xcframework'
-
   # When ONEKEY_ALLOW_SKIP_GPG_VERIFICATION env var is set to a non-empty, non-'false' value,
   # enable the ALLOW_SKIP_GPG_VERIFICATION Swift compilation condition.
   # Without this flag, all skip-GPG code paths are compiled out (dead code elimination).
@@ -33,7 +31,19 @@ Pod::Spec.new do |s|
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
   s.dependency 'ReactNativeNativeLogger'
-  s.dependency 'SSZipArchive', '~> 2.4'
+  # Shared GPG/sha256/path-safety security core. iOS verification + hashing now
+  # delegates to react-native-bundle-crypto's BundleCryptoCore, which owns the
+  # single in-tree Gopenpgp.xcframework — removing the duplicate framework that
+  # previously caused a same-named pod conflict on iOS.
+  s.dependency 'ReactNativeBundleCrypto'
+  # Shared concurrent + background multi-range downloader. The iOS bundle
+  # download now delegates its 8-range background download to
+  # react-native-range-downloader's RangeDownloader.shared (the concurrent
+  # downloader that originated here), removing the in-tree duplicate.
+  s.dependency 'ReactNativeRangeDownloader'
+  # >= 2.5.4 pulls the fix for the zip-slip / symlink path-traversal CVEs
+  # (CVE-2023-39139 etc.) — important since OTA unzips downloaded archives.
+  s.dependency 'SSZipArchive', '>= 2.5.4'
   s.dependency 'MMKV', '~> 2.2'
 
   load 'nitrogen/generated/ios/ReactNativeBundleUpdate+autolinking.rb'

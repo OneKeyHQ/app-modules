@@ -26,12 +26,10 @@ export function BackgroundThreadTestPage() {
   // Register onWrite listener for RPC responses from background
   useEffect(() => {
     if (!ready) return;
-    globalThis.sharedRPC!.onWrite((callId: string) => {
+    globalThis.sharedRPC!.onWrite((callId: string, value) => {
       if (!callId.endsWith(':result')) return;
-      const raw = globalThis.sharedRPC?.read(callId);
-      if (raw === undefined) return;
       const time = new Date().toLocaleTimeString();
-      setRpcLog((prev) => `${prev}[${time}] ← ${raw}\n`);
+      setRpcLog((prev) => `${prev}[${time}] ← ${value}\n`);
     });
   }, [ready]);
 

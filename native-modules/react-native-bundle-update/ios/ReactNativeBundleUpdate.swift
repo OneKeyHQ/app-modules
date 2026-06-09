@@ -1,79 +1,11 @@
 import NitroModules
 import ReactNativeNativeLogger
 import Foundation
-import CommonCrypto
-import Gopenpgp
+import ReactNativeBundleCrypto
+import ReactNativeRangeDownloader
 import SSZipArchive
 import MMKV
 import UIKit
-
-// OneKey GPG public key for signature verification
-private let GPG_PUBLIC_KEY = """
------BEGIN PGP PUBLIC KEY BLOCK-----
-
-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
-=HlTQ
------END PGP PUBLIC KEY BLOCK-----
-"""
 
 // Public static store for AppDelegate access (called before JS starts)
 @objcMembers
@@ -297,7 +229,7 @@ public class BundleUpdateStore: NSObject {
                 OneKeyLog.error("BundleUpdate", "[web-embed-verify] failed to hash file: \(relativePath)")
                 return false
             }
-            if !expected.secureCompare(actual) {
+            if !BundleCryptoCore.secureEqualHex(expected, actual) {
                 OneKeyLog.error("BundleUpdate", "[web-embed-verify] sha256 mismatch for \(relativePath)")
                 return false
             }
@@ -344,75 +276,16 @@ public class BundleUpdateStore: NSObject {
         }
     }
 
+    /// Thin wrapper over the shared BundleCryptoCore.sha256OfFile. The streaming
+    /// CommonCrypto implementation now lives in react-native-bundle-crypto; this
+    /// preserves the existing per-thread failureReason channel
+    /// (lastSHA256FailureReason) that analytics call sites read after a nil
+    /// result. failureReason taxonomy (FILE_NOT_FOUND / FILE_DISAPPEARED /
+    /// IO_<code>) is identical because the core was ported verbatim from here.
     public static func calculateSHA256(_ filePath: String) -> String? {
-        setSHA256Failure(nil)
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: filePath) {
-            setSHA256Failure("FILE_NOT_FOUND")
-            OneKeyLog.error("BundleUpdate", "calculateSHA256: file not found: \(filePath)")
-            return nil
-        }
-        guard let fileHandle = FileHandle(forReadingAtPath: filePath) else {
-            setSHA256Failure("FILE_DISAPPEARED")
-            OneKeyLog.error("BundleUpdate", "calculateSHA256: open failed (file disappeared between stat and open): \(filePath)")
-            return nil
-        }
-        defer { fileHandle.closeFile() }
-
-        do {
-            var context = CC_SHA256_CTX()
-            CC_SHA256_Init(&context)
-            var threwError: Error?
-            // safeRead routes reads through FileHandle.read(upToCount:) on
-            // iOS 13.4+ — that variant surfaces disk failures as throwing
-            // NSError, which we catch here as Swift `Error`. On pre-13.4
-            // OS versions safeRead falls back to readData(ofLength:),
-            // which raises NSFileHandleOperationException; Swift cannot
-            // catch ObjC NSExceptions via try/catch, so on those legacy
-            // versions a read failure will still abort the process. We
-            // accept that on the floor since 13.4+ has been the deployment
-            // target for years.
-            while autoreleasepool(invoking: {
-                do {
-                    let data = try Self.safeRead(fileHandle: fileHandle, length: 8192)
-                    if data.count > 0 {
-                        data.withUnsafeBytes { CC_SHA256_Update(&context, $0.baseAddress, CC_LONG(data.count)) }
-                        return true
-                    }
-                    return false
-                } catch {
-                    threwError = error
-                    return false
-                }
-            }) {}
-            if let err = threwError {
-                let nsErr = err as NSError
-                // Keep the failure tag low-cardinality (`IO_<code>`) so it
-                // matches the doc on lastSHA256FailureReason and stays under
-                // the analytics bucket cap. The full `domain code description`
-                // detail is still logged below for local debugging.
-                setSHA256Failure("IO_\(nsErr.code)")
-                OneKeyLog.error("BundleUpdate", "calculateSHA256: read failed: \(nsErr.domain) \(nsErr.code) \(nsErr.localizedDescription)")
-                return nil
-            }
-            var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-            CC_SHA256_Final(&hash, &context)
-            return hash.map { String(format: "%02x", $0) }.joined()
-        }
-    }
-
-    /// Raises throwing wrapper around FileHandle.read(upToCount:) so disk
-    /// I/O failures (truncated file, unmounted volume) become catchable Swift
-    /// errors rather than NSFileHandleOperationException.
-    private static func safeRead(fileHandle: FileHandle, length: Int) throws -> Data {
-        if #available(iOS 13.4, macOS 10.15.4, *) {
-            return try fileHandle.read(upToCount: length) ?? Data()
-        } else {
-            // Pre-iOS 13.4 fallback: classic readData(ofLength:) does not
-            // throw, but raises NSException; we cannot bridge that here so
-            // accept the legacy behavior on these old OS versions only.
-            return fileHandle.readData(ofLength: length)
-        }
+        let result = BundleCryptoCore.sha256OfFile(filePath)
+        setSHA256Failure(result.sha256 == nil ? (result.failureReason ?? "MISMATCH") : nil)
+        return result.sha256
     }
 
     public static func getNativeVersion() -> String? {
@@ -643,93 +516,15 @@ public class BundleUpdateStore: NSObject {
     public static func readMetadataFileSha256(_ signature: String) -> String? {
         guard !signature.isEmpty else { return nil }
 
-        // GPG cleartext signature verification is required
-        guard let sha256 = verifyGPGAndExtractSha256(signature) else {
-            OneKeyLog.error("BundleUpdate", "readMetadataFileSha256: GPG verification failed, rejecting unsigned content")
+        // GPG cleartext signature verification is required. The actual PGP
+        // verification + JSON-body sha256 extraction lives in the shared
+        // BundleCryptoCore (react-native-bundle-crypto); preserve the previous
+        // "failure => nil" semantics here.
+        let r = BundleCryptoCore.verifyGpgCleartext(signature)
+        guard r.valid, let sha256 = r.sha256 else {
+            OneKeyLog.error("BundleUpdate", "readMetadataFileSha256: GPG verification failed (\(r.reason ?? "unknown")), rejecting unsigned content")
             return nil
         }
-        return sha256
-    }
-
-    /// Verify a PGP cleartext-signed message and extract the sha256 from the signed JSON body.
-    /// Uses Gopenpgp framework (vendored xcframework).
-    /// Returns nil if verification fails.
-    public static func verifyGPGAndExtractSha256(_ signature: String) -> String? {
-        // Check if this looks like a PGP signed message
-        guard signature.contains("-----BEGIN PGP SIGNED MESSAGE-----") else {
-            return nil
-        }
-
-        // 1. Load public key
-        guard let pubKey = CryptoKey(fromArmored: GPG_PUBLIC_KEY) else {
-            OneKeyLog.error("BundleUpdate", "Failed to parse GPG public key")
-            return nil
-        }
-
-        // 2. Get PGP handle
-        guard let pgp = CryptoPGP() else {
-            OneKeyLog.error("BundleUpdate", "Failed to create PGPHandle")
-            return nil
-        }
-
-        // 3. Build verify handle: pgp.verify().verificationKey(pubKey).new()
-        guard let verifyBuilder = pgp.verify() else {
-            OneKeyLog.error("BundleUpdate", "Failed to get verify builder")
-            return nil
-        }
-        guard let builderWithKey = verifyBuilder.verificationKey(pubKey) else {
-            OneKeyLog.error("BundleUpdate", "Failed to set verification key")
-            return nil
-        }
-
-        let verifyHandle: any CryptoPGPVerifyProtocol
-        do {
-            verifyHandle = try builderWithKey.new()
-        } catch {
-            OneKeyLog.error("BundleUpdate", "Failed to create verify handle: \(error.localizedDescription)")
-            return nil
-        }
-
-        // 4. Verify cleartext
-        guard let signatureData = signature.data(using: .utf8) else {
-            return nil
-        }
-
-        let cleartextResult: CryptoVerifyCleartextResult
-        do {
-            cleartextResult = try verifyHandle.verifyCleartext(signatureData)
-        } catch {
-            OneKeyLog.error("BundleUpdate", "GPG verification error: \(error.localizedDescription)")
-            return nil
-        }
-
-        // 5. Check signature error
-        do {
-            try cleartextResult.signatureError()
-        } catch {
-            OneKeyLog.error("BundleUpdate", "GPG signature invalid: \(error.localizedDescription)")
-            return nil
-        }
-
-        // 6. Get cleartext
-        guard let cleartextData = cleartextResult.cleartext() else {
-            OneKeyLog.error("BundleUpdate", "Failed to extract cleartext from GPG result")
-            return nil
-        }
-
-        guard let text = String(data: cleartextData, encoding: .utf8) else {
-            return nil
-        }
-
-        // 7. Parse JSON and extract sha256
-        guard let jsonData = text.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-              let sha256 = json["sha256"] as? String else {
-            OneKeyLog.error("BundleUpdate", "Failed to parse cleartext JSON")
-            return nil
-        }
-
-        OneKeyLog.info("BundleUpdate", "GPG verification succeeded, sha256: \(sha256)")
         return sha256
     }
 
@@ -742,68 +537,30 @@ public class BundleUpdateStore: NSObject {
             return false
         }
         guard let calculatedSha256 = calculateSHA256(metadataFilePath) else { return false }
-        return calculatedSha256.secureCompare(extractedSha256)
+        return BundleCryptoCore.secureEqualHex(calculatedSha256, extractedSha256)
     }
 
-    public static func validateExtractedPathSafety(_ destination: String) -> Bool {
-        let fm = FileManager.default
-        let resolvedDestination = (destination as NSString).resolvingSymlinksInPath
-
-        guard let enumerator = fm.enumerator(atPath: destination) else { return true }
-        while let file = enumerator.nextObject() as? String {
-            let fullPath = (destination as NSString).appendingPathComponent(file)
-            if let attrs = enumerator.fileAttributes,
-               attrs[.type] as? FileAttributeType == .typeSymbolicLink {
-                OneKeyLog.error("BundleUpdate", "Symlink detected in extracted bundle: \(file)")
-                return false
-            }
-            let resolvedPath = (fullPath as NSString).resolvingSymlinksInPath
-            if !resolvedPath.hasPrefix(resolvedDestination) {
-                OneKeyLog.error("BundleUpdate", "Path traversal detected in extracted bundle: \(file)")
-                return false
-            }
+    /// Maps the verified metadata's relativePath -> sha256 entries into the
+    /// plain BundleCryptoCore.DirHash list consumed by verifyDirAgainstHashes.
+    /// Metadata parsing is orchestration and stays here; the crypto core only
+    /// hashes/compares.
+    private static func dirHashEntries(from metadata: [String: Any]) -> [BundleCryptoCore.DirHash] {
+        fileMetadataEntries(from: metadata).map {
+            BundleCryptoCore.DirHash(relativePath: $0.key, sha256: $0.value)
         }
-        return true
     }
 
     public static func validateAllFilesInDir(_ dirPath: String, metadata: [String: Any], appVersion: String, bundleVersion: String) -> Bool {
-        let parentBundleDir = bundleDir()
-        let folderName = "\(appVersion)-\(bundleVersion)"
-        let jsBundleDir = (parentBundleDir as NSString).appendingPathComponent(folderName) + "/"
-        let fm = FileManager.default
-        let fileEntries = fileMetadataEntries(from: metadata)
-
-        guard let enumerator = fm.enumerator(atPath: dirPath) else { return false }
-        while let file = enumerator.nextObject() as? String {
-            if file.contains("metadata.json") || file.contains(".DS_Store") { continue }
-            let fullPath = (dirPath as NSString).appendingPathComponent(file)
-            var isDir: ObjCBool = false
-            if fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue { continue }
-
-            let relativePath = fullPath.replacingOccurrences(of: jsBundleDir, with: "")
-            guard let expectedSHA256 = fileEntries[relativePath] else {
-                OneKeyLog.error("BundleUpdate", "[bundle-verify] File on disk not found in metadata: \(relativePath)")
-                return false
-            }
-            guard let actualSHA256 = calculateSHA256(fullPath) else {
-                OneKeyLog.error("BundleUpdate", "[bundle-verify] Failed to calculate SHA256 for file: \(relativePath)")
-                return false
-            }
-            if !expectedSHA256.secureCompare(actualSHA256) {
-                OneKeyLog.error("BundleUpdate", "[bundle-verify] SHA256 mismatch for \(relativePath)")
-                return false
-            }
-        }
-
-        // Verify completeness
-        for key in fileEntries.keys {
-            let expectedFilePath = jsBundleDir + key
-            if !fm.fileExists(atPath: expectedFilePath) {
-                OneKeyLog.error("BundleUpdate", "[bundle-verify] File listed in metadata but missing on disk: \(key)")
-                return false
-            }
-        }
-        return true
+        // The full per-file enumeration + sha256 + constant-time compare logic
+        // now lives in the shared BundleCryptoCore.verifyDirAgainstHashes. The
+        // dirPath passed by every caller is bundleDir()/<appVersion>-<bundleVersion>,
+        // which the core normalizes the same way the old jsBundleDir prefix did,
+        // so relativePath derivation (and thus the verification result) is
+        // identical. metadata -> entries mapping stays here as orchestration.
+        return BundleCryptoCore.verifyDirAgainstHashes(
+            dirPath: dirPath,
+            entries: dirHashEntries(from: metadata),
+        )
     }
 
     static func validateBundlePairCompatibility(
@@ -1012,7 +769,7 @@ public class BundleUpdateStore: NSObject {
                 OneKeyLog.error("BundleUpdate", "[entry-verify] failed to hash entry: \(entry)")
                 return false
             }
-            if !expected.secureCompare(actual) {
+            if !BundleCryptoCore.secureEqualHex(expected, actual) {
                 OneKeyLog.error("BundleUpdate", "[entry-verify] sha256 mismatch for entry: \(entry)")
                 return false
             }
@@ -1087,20 +844,6 @@ public class BundleUpdateStore: NSObject {
         }
         ud.removeObject(forKey: bundlePrefsKey)
         ud.synchronize()
-    }
-}
-
-// Constant-time string comparison to prevent timing attacks on hash comparisons
-private extension String {
-    func secureCompare(_ other: String) -> Bool {
-        let lhs = Array(self.utf8)
-        let rhs = Array(other.utf8)
-        guard lhs.count == rhs.count else { return false }
-        var result: UInt8 = 0
-        for i in 0..<lhs.count {
-            result |= lhs[i] ^ rhs[i]
-        }
-        return result == 0
     }
 }
 
@@ -1475,6 +1218,69 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 }
             }
 
+            // === Concurrent + background multi-range download (shared core) ===
+            // Delegate to react-native-range-downloader's RangeDownloader (the
+            // 8-range background session that originated in this module). On
+            // success the bundle is fully assembled at filePath (downloads
+            // continue even if the app is suspended). A `.fallback` outcome —
+            // Range unsupported, server returned 200, file too small, or a
+            // transient error — makes us hand off to the single-stream path
+            // below; the range downloader keeps its `.segN` files for the next
+            // attempt (its background session resumes them by taskId).
+            self.sendEvent(type: "update/start")
+            self.stateQueue.sync { self.activeDownloadFilePath = filePath }
+
+            // Stable, unique task id for this bundle. Same value across retry
+            // attempts so the range downloader can resume its `.segN` files, and
+            // it lets the progress listener below filter events to THIS download.
+            let rangeTaskId = "\(appVersion)-\(bundleVersion)"
+
+            // Bridge RangeDownloader progress events back into this module's
+            // `update/downloading` stream. We only react to "progress" events on
+            // the bundle channel for our own task id; "start"/"complete"/
+            // "fallback" are surfaced by this method's own sendEvent calls and
+            // the download outcome below, so we don't double-emit them here.
+            let progressListenerId = RangeDownloader.shared.addListener { [weak self] event in
+                guard event.channel.stringValue == DownloadChannel.bundle.stringValue,
+                      event.taskId == rangeTaskId,
+                      event.type == "progress" else { return }
+                self?.sendEvent(type: "update/downloading", progress: Int(event.progress))
+            }
+
+            let (rangeOutcome, _, rangeReason) = await RangeDownloader.shared.download(
+                channel: .bundle,
+                taskId: rangeTaskId,
+                urlString: downloadUrl,
+                filePath: filePath,
+                // SHA256 is verified by this module right after assembly (below),
+                // so we don't double-hash inside the range downloader.
+                expectedSha256: nil,
+                segmentCount: nil,
+                minConcurrentBytes: nil
+            )
+            RangeDownloader.shared.removeListener(progressListenerId)
+
+            if rangeOutcome.stringValue == RangeDownloadOutcome.fallback.stringValue {
+                // Concurrent path unavailable (Range unsupported / file too small /
+                // server returned 200 / transient error). Hand off to the
+                // single-stream path, leaving a clean slot.
+                OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent fallback (\(rangeReason ?? "")), using single-stream")
+                RangeDownloader.shared.discardArtifacts(filePath: filePath)
+                // fall through to the single-stream path below
+            } else {
+                OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent finished, verifying SHA256...")
+                if !self.verifyBundleSHA256(filePath, sha256: sha256) {
+                    let reason = BundleUpdateStore.lastSHA256FailureReason() ?? "MISMATCH"
+                    try? FileManager.default.removeItem(atPath: filePath)
+                    self.sendEvent(type: "update/error", message: "SHA256_\(reason)")
+                    throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle SHA256 verification failed: \(reason)"])
+                }
+                try? FileManager.default.removeItem(atPath: resumeDataPath)
+                self.sendEvent(type: "update/complete")
+                OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent completed successfully, appVersion=\(appVersion), bundleVersion=\(bundleVersion)")
+                return result
+            }
+
             // Download the file
             guard let url = URL(string: downloadUrl) else {
                 OneKeyLog.error("BundleUpdate", "downloadBundle: invalid URL: \(downloadUrl)")
@@ -1495,8 +1301,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 return data
             }()
 
-            self.sendEvent(type: "update/start")
-            OneKeyLog.info("BundleUpdate", "downloadBundle: starting download (resumeBytes=\(persistedResumeData?.count ?? 0))...")
+            // update/start already emitted before the concurrent attempt above.
+            OneKeyLog.info("BundleUpdate", "downloadBundle: starting single-stream download (resumeBytes=\(persistedResumeData?.count ?? 0))...")
 
             let request = URLRequest(url: url)
 
@@ -1627,7 +1433,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             OneKeyLog.error("BundleUpdate", "verifyBundleSHA256: failed to calculate SHA256 for: \(bundlePath)")
             return false
         }
-        let isValid = calculated.secureCompare(sha256)
+        let isValid = BundleCryptoCore.secureEqualHex(calculated, sha256)
         OneKeyLog.debug("BundleUpdate", "verifyBundleSHA256: path=\(bundlePath), expected=\(sha256.prefix(16))..., calculated=\(calculated.prefix(16))..., valid=\(isValid)")
         return isValid
     }
@@ -1668,7 +1474,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             if !skipGPG {
                 OneKeyLog.info("BundleUpdate", "verifyBundleASC: verifying SHA256 of downloaded file...")
                 let calculated = BundleUpdateStore.calculateSHA256(filePath)
-                let isValid = calculated != nil && calculated!.secureCompare(sha256)
+                let isValid = calculated != nil && BundleCryptoCore.secureEqualHex(calculated!, sha256)
                 if !isValid {
                     // Promote the SHA256 subtype (FILE_TRUNCATED / OOM /
                     // IO_<class> / MISMATCH) into the thrown message so
@@ -1720,7 +1526,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
 
             // Validate extracted paths (symlinks, path traversal)
             OneKeyLog.info("BundleUpdate", "verifyBundleASC: validating extracted path safety...")
-            if !BundleUpdateStore.validateExtractedPathSafety(destination) {
+            if !BundleCryptoCore.validateExtractedPathSafety(destination) {
                 OneKeyLog.error("BundleUpdate", "verifyBundleASC: path traversal or symlink attack detected")
                 try? FileManager.default.removeItem(atPath: destination)
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Path traversal or symlink attack detected"])
@@ -1782,7 +1588,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 OneKeyLog.error("BundleUpdate", "verifyBundle: failed to calculate SHA256 for file=\(filePath)")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to calculate SHA256"])
             }
-            guard calculated.secureCompare(sha256) else {
+            guard BundleCryptoCore.secureEqualHex(calculated, sha256) else {
                 OneKeyLog.error("BundleUpdate", "verifyBundle: SHA256 mismatch, expected=\(sha256.prefix(16))..., got=\(calculated.prefix(16))...")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "SHA256 verification failed"])
             }
@@ -2110,7 +1916,8 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             =A/Ii
             -----END PGP SIGNATURE-----
             """
-            let result = BundleUpdateStore.verifyGPGAndExtractSha256(testSignature)
+            let gpg = BundleCryptoCore.verifyGpgCleartext(testSignature)
+            let result = gpg.valid ? gpg.sha256 : nil
             let isValid = result == "2ada9c871104fc40649fa3de67a7d8e33faadc18e9abd587e8bb85be0a003eba"
             OneKeyLog.info("BundleUpdate", "testVerification: GPG verification result: \(isValid)")
             return isValid
@@ -2241,7 +2048,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let resolvedPath = (filePath as NSString).resolvingSymlinksInPath
             let bundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
             let downloadDir = (BundleUpdateStore.downloadBundleDir() as NSString).resolvingSymlinksInPath
-            guard resolvedPath.hasPrefix(bundleDir) || resolvedPath.hasPrefix(downloadDir) else {
+            // Enforce a separator boundary so e.g. "onekey-bundle-evil/x" is not
+            // accepted as confined under "onekey-bundle". The base dir itself is allowed.
+            func isConfined(to base: String) -> Bool {
+                return resolvedPath == base || resolvedPath.hasPrefix(base + "/")
+            }
+            guard isConfined(to: bundleDir) || isConfined(to: downloadDir) else {
                 OneKeyLog.error("BundleUpdate", "getSha256FromFilePath: path outside allowed directories: \(resolvedPath)")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "File path outside allowed bundle directories"])
             }

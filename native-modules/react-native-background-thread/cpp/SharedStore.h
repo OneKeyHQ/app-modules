@@ -19,6 +19,12 @@ public:
   static void install(jsi::Runtime &rt);
   static void reset();
 
+  /// Native-side erase of a single key. Used by SharedRPC::invalidate to drop
+  /// the readiness key owned by a runtime being torn down, so a respawned
+  /// reader can never observe a prior-life "peer ready" (restart freshness).
+  /// Safe to call from any thread; takes the SharedStore mutex internally.
+  static void eraseKey(const std::string &key);
+
 private:
   static StoreValue extractValue(jsi::Runtime &rt, const jsi::Value &val);
   static jsi::Value toJSI(jsi::Runtime &rt, const StoreValue &val);

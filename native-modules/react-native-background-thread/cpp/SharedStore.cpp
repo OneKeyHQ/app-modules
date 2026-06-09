@@ -15,6 +15,11 @@ void SharedStore::reset() {
   data_.clear();
 }
 
+void SharedStore::eraseKey(const std::string &key) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  data_.erase(key);
+}
+
 StoreValue SharedStore::extractValue(jsi::Runtime &rt,
                                      const jsi::Value &val) {
   if (val.isBool()) {

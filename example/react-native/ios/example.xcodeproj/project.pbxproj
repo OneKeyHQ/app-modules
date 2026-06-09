@@ -129,6 +129,7 @@
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				00EEFC60759A1932668264C0 /* [CP] Embed Pods Frameworks */,
 				E235C05ADACE081382539298 /* [CP] Copy Pods Resources */,
+				29BB6ACFF3EC3627CA614864 /* [CP-User] Bundle TradingView offline chart assets */,
 			);
 			buildRules = (
 			);
@@ -216,6 +217,16 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-example/Pods-example-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
+		};
+		29BB6ACFF3EC3627CA614864 /* [CP-User] Bundle TradingView offline chart assets */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			name = "[CP-User] Bundle TradingView offline chart assets";
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "SRC=\"${PROJECT_DIR}/../tradingview-assets\"\nDEST=\"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/tradingview-assets\"\nif [ -d \"$SRC\" ]; then\n  rm -rf \"$DEST\"; mkdir -p \"$DEST\"; cp -R \"$SRC/.\" \"$DEST/\"\n  echo \"chart-webview: copied offline assets -> $DEST\"\nelse\n  echo \"chart-webview: no local tradingview-assets directory\"\nfi\n";
 		};
 		C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;

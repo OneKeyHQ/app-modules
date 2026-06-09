@@ -1,0 +1,402 @@
+import Foundation
+import NitroModules
+import UIKit
+
+/// Renders an entire column of order-book depth bars for one side (asks/bids).
+/// Each row is a CALayer whose horizontal `scaleX` fill is eased on the UI
+/// thread, replacing N reanimated `DepthBar` instances.
+///
+/// Animation model: a single `CADisplayLink` continuously eases every row's
+/// on-screen scale toward its latest target (short fixed exponential smoothing,
+/// `tau ≈ 0.1s`). New data just retargets — the link keeps gliding and only
+/// stops once every row has settled. Updates therefore chain into continuous
+/// motion, and a fluctuating row count no longer freezes the column (only a
+/// coin/tick switch snaps, via `epoch`). Tracks the per-row text closely so the
+/// bar and the price/size labels stay in agreement.
+final class HybridPerpDepthBars: HybridPerpDepthBarsSpec {
+
+  // MARK: - HybridView
+  var view: UIView = PerpLayoutView()
+
+  // MARK: - Per-row fill layers
+  private var barLayers: [CALayer] = []
+
+  // MARK: - Per-row text layers (price left, size right)
+  private var priceLayers: [CATextLayer] = []
+  private var sizeLayers: [CATextLayer] = []
+  private let textScale = UIScreen.main.scale
+
+  // MARK: - Continuous-easing state
+  private var currentScales: [CGFloat] = [] // on-screen scaleX per row (0...1)
+  private var targetScales: [CGFloat] = []  // latest target scaleX per row
+  private var displayLink: CADisplayLink?
+  private var lastTick: CFTimeInterval = 0
+
+  // MARK: - State for animation decisions
+  private var lastEpoch: Double = .nan
+  private var hasLaidOut = false
+
+  // MARK: - Props (required props -> non-optional in generated spec)
+  var percents: [Double] = [] { didSet { scheduleLayout() } }
+  var rowHeight: Double = 0 { didSet { scheduleLayout() } }
+  var rowMarginTop: Double = 0 { didSet { scheduleLayout() } }
+  var barInset: Double = 0 { didSet { scheduleLayout() } }
+  var origin: String = "left" { didSet { scheduleLayout() } }
+  /// Kept for OS "reduce motion" accessibility only — NOT a caller on/off knob.
+  /// Depth bars animate by default; callers don't pass anything to enable it.
+  var reducedMotion: Bool = false { didSet { scheduleLayout() } }
+  var epoch: Double = 0 { didSet { scheduleLayout() } }
+
+  var color: String = "" {
+    didSet {
+      cachedColor = PerpColorParser.parse(color).cgColor
+      applyColorToLayers()
+    }
+  }
+  private var cachedColor: CGColor = UIColor.clear.cgColor
+
+  // MARK: - Text props
+  var prices: [String] = [] { didSet { scheduleLayout() } }
+  var sizes: [String] = [] { didSet { scheduleLayout() } }
+  var priceFontSize: Double = 11 { didSet { scheduleLayout() } }
+  var sizeFontSize: Double = 11 { didSet { scheduleLayout() } }
+  var textInset: Double = 0 { didSet { scheduleLayout() } }
+
+  // Per-row placeholder drawn natively while there is no real data (see
+  // PerpDepthBars.nitro.ts). Replaces the RN skeleton overlay so there is no
+  // blank handoff frame between placeholder and real numbers.
+  var placeholderText: String = "" { didSet { scheduleLayout() } }
+  var placeholderRows: Double = 0 { didSet { scheduleLayout() } }
+
+  var priceColor: String = "" {
+    didSet {
+      cachedPriceColor = PerpColorParser.parse(priceColor).cgColor
+      scheduleLayout()
+    }
+  }
+  var sizeColor: String = "" {
+    didSet {
+      cachedSizeColor = PerpColorParser.parse(sizeColor).cgColor
+      scheduleLayout()
+    }
+  }
+  private var cachedPriceColor: CGColor = UIColor.black.cgColor
+  private var cachedSizeColor: CGColor = UIColor.gray.cgColor
+
+  // MARK: - Tap callback (native row hit-testing)
+  var onRowPress: ((Double) -> Void)?
+
+  // MARK: - Init
+  override init() {
+    super.init()
+    view.isUserInteractionEnabled = true // native row tap handling
+    view.clipsToBounds = true
+    if let layoutView = view as? PerpLayoutView {
+      layoutView.onLayout = { [weak self] in self?.performLayout() }
+      layoutView.onTap = { [weak self] y in self?.handleTap(atY: y) }
+    }
+  }
+
+  deinit {
+    stopDisplayLink()
+  }
+
+  // MARK: - Imperative depth update
+  /// Imperatively update the per-row depth percentages, bypassing the
+  /// high-frequency `percents` prop write path (props/JSICache lock contention,
+  /// REACT-NATIVE-1JZ). `buffer` is a packed little-endian `Float32Array`: one
+  /// float per row, each the row's depth percentage with the SAME 0..100
+  /// semantics as the `percents` prop. The parsed values are routed through the
+  /// exact same `performLayout` clamp (`clampScale`) / target / display-link
+  /// path the prop uses — only the data source differs.
+  func setDepth(buffer: ArrayBuffer) throws {
+    let count = buffer.size / 4
+    guard count > 0 else {
+      percents = []
+      return
+    }
+    // `buffer.data` is a `UInt8` pointer; reinterpret it as little-endian
+    // Float32. iOS (arm/x86) is little-endian and JS `Float32Array` is too, so
+    // an unaligned little-endian load matches the prop semantics exactly.
+    var depths = [Double](repeating: 0, count: count)
+    let raw = UnsafeRawPointer(buffer.data)
+    for i in 0..<count {
+      let bits = raw.loadUnaligned(fromByteOffset: i * 4, as: UInt32.self)
+      depths[i] = Double(Float(bitPattern: UInt32(littleEndian: bits)))
+    }
+    // Feed through the single source of truth so the clamp/target/easing logic
+    // is byte-for-byte identical to the `percents` prop path.
+    percents = depths
+  }
+
+  /// Imperatively update the per-row price/size text — companion to `setDepth`
+  /// for the text layer. Bypasses the high-frequency `prices`/`sizes` prop write
+  /// path; assigning them feeds through the identical `didSet` → `scheduleLayout`
+  /// → `performLayout` path the prop setters use (REACT-NATIVE-1JZ). Call in the
+  /// SAME frame as `setDepth` so bar fill and row text share one source frame.
+  func setText(prices: [String], sizes: [String]) throws {
+    self.prices = prices
+    self.sizes = sizes
+  }
+
+  private func handleTap(atY y: CGFloat) {
+    let step = CGFloat(rowHeight + rowMarginTop)
+    guard step > 0 else { return }
+    let i = Int((y - CGFloat(rowMarginTop)) / step)
+    let count = max(percents.count, max(prices.count, sizes.count))
+    if i >= 0 && i < count {
+      onRowPress?(Double(i))
+    }
+  }
+
+  private func scheduleLayout() {
+    // Imperative setDepth/setText run on the JS thread (off-main); `setNeedsLayout`
+    // must be issued on the main thread.
+    if Thread.isMainThread {
+      view.setNeedsLayout()
+    } else {
+      DispatchQueue.main.async { [weak self] in self?.view.setNeedsLayout() }
+    }
+  }
+
+  // MARK: - Layout + retarget
+  private func performLayout() {
+    let bounds = view.bounds
+    guard bounds.width > 0 else { return }
+
+    // When there is no real data, draw `placeholderRows` rows of placeholder
+    // text (no bar fill) instead of nothing — the native view owns the empty
+    // state, so there is no RN overlay to remove and no blank handoff frame.
+    let dataCount = percents.count
+    let placeholderMode =
+      dataCount == 0 && !placeholderText.isEmpty && Int(placeholderRows) > 0
+    let count = placeholderMode ? Int(placeholderRows) : dataCount
+    syncLayerCount(count)
+    syncTextLayerCount(count)
+
+    let epochChanged = epoch != lastEpoch
+    let snap = !hasLaidOut || reducedMotion || epochChanged
+
+    let rowW = bounds.width
+    let h = CGFloat(rowHeight)
+    let inset = CGFloat(barInset)
+    let barH = max(h - inset * 2, 0)
+    let isRight = origin == "right"
+    let anchorX: CGFloat = isRight ? 1 : 0
+
+    // Geometry never animates — set it directly each pass.
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for i in 0..<count {
+      let layer = barLayers[i]
+      let rowTop = CGFloat(rowMarginTop) + CGFloat(i) * (h + CGFloat(rowMarginTop))
+      let rowCenterY = rowTop + h / 2
+      layer.anchorPoint = CGPoint(x: anchorX, y: 0.5)
+      layer.bounds = CGRect(x: 0, y: 0, width: rowW, height: barH)
+      layer.position = CGPoint(x: isRight ? rowW : 0, y: rowCenterY)
+      layer.backgroundColor = cachedColor
+    }
+    CATransaction.commit()
+
+    // Placeholder rows have no bar fill (all-zero targets); real rows use data.
+    var newTargets = [CGFloat](repeating: 0, count: count)
+    if !placeholderMode {
+      for i in 0..<count { newTargets[i] = clampScale(percents[i]) }
+    }
+
+    if snap {
+      stopDisplayLink()
+      currentScales = newTargets
+      targetScales = newTargets
+      applyScales()
+    } else {
+      // Keep existing rows easing; brand-new rows appear at their target (no
+      // grow-from-zero flash). Then retarget and let the display link glide.
+      if currentScales.count < count {
+        for i in currentScales.count..<count { currentScales.append(newTargets[i]) }
+      } else if currentScales.count > count {
+        currentScales.removeLast(currentScales.count - count)
+      }
+      targetScales = newTargets
+      applyScales() // render current immediately (geometry/new rows) this frame
+      startDisplayLinkIfNeeded()
+    }
+
+    // Text never animates — snap frames/strings each layout pass.
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    let half = rowW / 2
+    let pad = CGFloat(textInset)
+    for i in 0..<count {
+      let rowTop = CGFloat(rowMarginTop) + CGFloat(i) * (h + CGFloat(rowMarginTop))
+      let priceLine = CGFloat(priceFontSize) * 1.16
+      let sizeLine = CGFloat(sizeFontSize) * 1.16
+      let priceLayer = priceLayers[i]
+      priceLayer.frame = CGRect(
+        x: pad, y: rowTop + (h - priceLine) / 2,
+        width: max(half - pad, 0), height: priceLine)
+      priceLayer.fontSize = CGFloat(priceFontSize)
+      priceLayer.foregroundColor = cachedPriceColor
+      priceLayer.string =
+        placeholderMode ? placeholderText : (i < prices.count ? prices[i] : "")
+
+      let sizeLayer = sizeLayers[i]
+      sizeLayer.frame = CGRect(
+        x: half, y: rowTop + (h - sizeLine) / 2,
+        width: max(half - pad, 0), height: sizeLine)
+      sizeLayer.fontSize = CGFloat(sizeFontSize)
+      sizeLayer.foregroundColor = cachedSizeColor
+      sizeLayer.string =
+        placeholderMode ? placeholderText : (i < sizes.count ? sizes[i] : "")
+    }
+    CATransaction.commit()
+
+    lastEpoch = epoch
+    hasLaidOut = true
+  }
+
+  /// Writes `currentScales` into every bar layer's transform (no implicit anim).
+  private func applyScales() {
+    let n = min(currentScales.count, barLayers.count)
+    guard n > 0 else { return }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for i in 0..<n {
+      barLayers[i].transform = CATransform3DMakeScale(currentScales[i], 1, 1)
+    }
+    CATransaction.commit()
+  }
+
+  // MARK: - Continuous easing (display link)
+  private func startDisplayLinkIfNeeded() {
+    if displayLink != nil { return }
+    let n = min(currentScales.count, targetScales.count)
+    var needs = false
+    for i in 0..<n where abs(targetScales[i] - currentScales[i]) > 0.001 {
+      needs = true
+      break
+    }
+    guard needs else { return }
+    lastTick = 0
+    let proxy = DisplayLinkProxy(self)
+    let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.tick(_:)))
+    link.add(to: .main, forMode: .common)
+    displayLink = link
+  }
+
+  private func stopDisplayLink() {
+    displayLink?.invalidate()
+    displayLink = nil
+    lastTick = 0
+  }
+
+  /// Called by the display link each frame. Eases every row toward its target.
+  func handleTick(_ link: CADisplayLink) {
+    let now = link.timestamp
+    let dt = lastTick > 0 ? now - lastTick : link.duration
+    lastTick = now
+    let tau = PerpTiming.depthBarSmoothingTauSeconds
+    let alpha = CGFloat(1 - exp(-max(dt, 0) / max(tau, 0.0001)))
+
+    var settled = true
+    let n = min(min(currentScales.count, targetScales.count), barLayers.count)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for i in 0..<n {
+      let t = targetScales[i]
+      let c = currentScales[i]
+      let d = t - c
+      if abs(d) <= 0.001 {
+        if c != t {
+          currentScales[i] = t
+          barLayers[i].transform = CATransform3DMakeScale(t, 1, 1)
+        }
+      } else {
+        let nc = c + d * alpha
+        currentScales[i] = nc
+        barLayers[i].transform = CATransform3DMakeScale(nc, 1, 1)
+        settled = false
+      }
+    }
+    CATransaction.commit()
+
+    if settled { stopDisplayLink() }
+  }
+
+  private func makeTextLayer(alignment: CATextLayerAlignmentMode) -> CATextLayer {
+    let l = CATextLayer()
+    l.contentsScale = textScale
+    l.alignmentMode = alignment
+    l.truncationMode = .none
+    l.isWrapped = false
+    // Disable ALL implicit Core Animation actions on this text layer. CATextLayer
+    // crossfades its `contents` whenever `string`/`foregroundColor` changes; even
+    // inside `CATransaction.setDisableActions(true)` the fade can leak through, so
+    // pin the relevant keys to NSNull() to guarantee instant per-row text switches
+    // (PM: no fade/gradient when the order-book text updates). The bar fill keeps
+    // its own explicit display-link easing — only text is made instant here.
+    let noAction = NSNull()
+    l.actions = [
+      "contents": noAction,
+      "string": noAction,
+      "foregroundColor": noAction,
+      "fontSize": noAction,
+      "bounds": noAction,
+      "position": noAction,
+      "hidden": noAction,
+      "opacity": noAction,
+    ]
+    return l
+  }
+
+  private func syncTextLayerCount(_ count: Int) {
+    if priceLayers.count < count {
+      for _ in priceLayers.count..<count {
+        let p = makeTextLayer(alignment: .left)
+        let s = makeTextLayer(alignment: .right)
+        view.layer.addSublayer(p)
+        view.layer.addSublayer(s)
+        priceLayers.append(p)
+        sizeLayers.append(s)
+      }
+    } else if priceLayers.count > count {
+      for l in priceLayers[count...] { l.removeFromSuperlayer() }
+      for l in sizeLayers[count...] { l.removeFromSuperlayer() }
+      priceLayers.removeLast(priceLayers.count - count)
+      sizeLayers.removeLast(sizeLayers.count - count)
+    }
+  }
+
+  private func syncLayerCount(_ count: Int) {
+    if barLayers.count < count {
+      for _ in barLayers.count..<count {
+        let l = CALayer()
+        l.backgroundColor = cachedColor
+        view.layer.addSublayer(l)
+        barLayers.append(l)
+      }
+    } else if barLayers.count > count {
+      for l in barLayers[count...] { l.removeFromSuperlayer() }
+      barLayers.removeLast(barLayers.count - count)
+    }
+  }
+
+  private func applyColorToLayers() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for l in barLayers { l.backgroundColor = cachedColor }
+    CATransaction.commit()
+  }
+
+  private func clampScale(_ percent: Double) -> CGFloat {
+    CGFloat(max(0, min(100, percent)) / 100.0)
+  }
+}
+
+/// Weak forwarder so the `CADisplayLink` (retained by the run loop) does not
+/// retain `HybridPerpDepthBars`, allowing `deinit` to invalidate the link.
+private final class DisplayLinkProxy {
+  weak var owner: HybridPerpDepthBars?
+  init(_ owner: HybridPerpDepthBars) { self.owner = owner }
+  @objc func tick(_ link: CADisplayLink) { owner?.handleTick(link) }
+}

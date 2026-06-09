@@ -7,7 +7,9 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
-platform :ios, min_ios_version_supported
+# Raised to 15.5 to match the OneKey app (app-monorepo) and to satisfy
+# SSZipArchive >= 2.5.4 (the zip-slip CVE fix), which requires iOS 15.5.
+platform :ios, '15.5'
 prepare_react_native_project!
 
 linkage = ENV['USE_FRAMEWORKS']
@@ -24,6 +26,22 @@ target 'example' do
     # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
+
+  # Copy optional offline TradingView chart material into the app bundle as
+  # `tradingview-assets/`, preserving the
+  # directory tree so react-native-chart-webview's WKURLSchemeHandler can serve it.
+  script_phase :name => 'Bundle TradingView offline chart assets',
+    :execution_position => :after_compile,
+    :script => <<-SH
+SRC="${PROJECT_DIR}/../tradingview-assets"
+DEST="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/tradingview-assets"
+if [ -d "$SRC" ]; then
+  rm -rf "$DEST"; mkdir -p "$DEST"; cp -R "$SRC/." "$DEST/"
+  echo "chart-webview: copied offline assets -> $DEST"
+else
+  echo "chart-webview: no local tradingview-assets directory"
+fi
+SH
 
   post_install do |installer|
     react_native_post_install(

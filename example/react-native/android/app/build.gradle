@@ -82,6 +82,10 @@ android {
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.example"
+
+    // Offline TradingView chart bundle is copied into a namespaced assets
+    // subdir (assets/tradingview-assets/) by the copyChartWebviewAssets task
+    // below, so chart-webview loads it via WebViewAssetLoader from that subpath.
     defaultConfig {
         applicationId "com.example"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -122,3 +126,15 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// Copy the optional offline TradingView chart bundle into a namespaced assets
+// subdir so chart-webview loads it from assets/tradingview-assets/.
+def chartWebviewAssetsDest = "$projectDir/src/main/assets/tradingview-assets"
+tasks.register('copyChartWebviewAssets', Copy) {
+    from "$projectDir/../../tradingview-assets"
+    into chartWebviewAssetsDest
+    doFirst {
+        delete chartWebviewAssetsDest
+    }
+}
+preBuild.dependsOn 'copyChartWebviewAssets'
