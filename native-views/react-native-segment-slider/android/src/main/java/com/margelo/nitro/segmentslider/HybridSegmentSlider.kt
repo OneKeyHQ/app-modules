@@ -85,7 +85,10 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
       if (disabled || isDisposed) return false
-      when (event.action) {
+      // Use actionMasked so multi-touch pointer events (ACTION_POINTER_UP /
+      // pointer-index > 0) still resolve to the right action and never strand
+      // the drag state or the disallow-intercept flag.
+      when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
           isDragging = true
           hasDragged = false
@@ -144,12 +147,11 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     get() = field
     set(v) {
       field = v
-      // While dragging, the finger owns the value (mirrors web).
-      if (!isDragging && !isDisposed) {
-        currentValue = v
-        lastEmitted = v
-        view.invalidate()
-      }
+      // A controlled value change is authoritative: hard-snap the thumb to it,
+      // bypassing the dragging guard. Otherwise a JS reset that arrives while a
+      // drag is in flight (or right after one) would leave the thumb showing the
+      // stale dragged value.
+      syncToValue(v)
     }
 
   override var min: Double = 0.0
@@ -189,9 +191,12 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     get() = field
     set(v) { field = v }
 
+  // Bumping epoch forces a hard re-sync of the thumb to the current `value`,
+  // even mid-drag — the documented escape hatch for "re-apply the controlled
+  // value now" after a JS-side reset.
   override var epoch: Double = 0.0
     get() = field
-    set(v) { field = v }
+    set(v) { field = v; syncToValue(value) }
 
   override var fillColor: String = ""
     get() = field
@@ -267,6 +272,19 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     val idx = Math.round(frac * (markCount - 1)).toDouble()
     val snappedFrac = idx / (markCount - 1)
     return min + snappedFrac * (max - min)
+  }
+
+  /** Hard re-sync: snap the thumb to [v], overriding any in-flight drag. */
+  private fun syncToValue(v: Double) {
+    if (isDisposed) return
+    // A controlled value/epoch update wins over the current gesture: drop the
+    // drag so a queued ACTION_MOVE can't immediately re-overwrite the thumb,
+    // and clear the transient hover/halo so the snapped position renders clean.
+    isDragging = false
+    hoverMarkIndex = -1
+    currentValue = v
+    lastEmitted = v
+    view.invalidate()
   }
 
   private fun commitDragValue(raw: Double) {

@@ -231,12 +231,23 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
    */
   override fun setDepth(buffer: ArrayBuffer) {
     if (isDisposed) return
-    imperativeDepth = true
-    val byteBuffer = buffer.getBuffer(false)
-    val count = buffer.size / 4
-    val floats = byteBuffer.order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
-    val depths = DoubleArray(count) { floats.get(it).toDouble() }
-    syncTargets(depths)
+    // Parse the foreign JS buffer synchronously on the calling (JS) thread into a
+    // local copy, BEFORE hopping to the UI thread. `getBuffer(true)` requests a
+    // copy so the bytes can't be reclaimed/overwritten once this call returns, and
+    // reads are clamped to `remaining()` rather than assuming a position-0,
+    // capacity==size buffer (a sub-view buffer would otherwise IndexOutOfBounds).
+    val floats = buffer.getBuffer(true).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+    val count = floats.remaining()
+    // Relative reads honour `remaining()` from the buffer's current position, so a
+    // sub-view (position != 0, capacity > size) is read correctly, not from index 0.
+    val depths = DoubleArray(count) { floats.get().toDouble() }
+    // Shared drawing state (current/target, invalidate, Choreographer) is mutated
+    // only on the UI thread; `onFrame` reads/writes the same state there.
+    view.post {
+      if (isDisposed) return@post
+      imperativeDepth = true
+      syncTargets(depths)
+    }
   }
 
   /**
@@ -248,10 +259,15 @@ class HybridPerpDepthBars(val context: ThemedReactContext) : HybridPerpDepthBars
    */
   override fun setText(prices: Array<String>, sizes: Array<String>) {
     if (isDisposed) return
-    imperativeText = true
-    displayPrices = prices
-    displaySizes = sizes
-    view.invalidate()
+    // Mutate the drawn strings + invalidate on the UI thread; `drawTexts` reads
+    // them there. The args are read synchronously on the calling (JS) thread.
+    view.post {
+      if (isDisposed) return@post
+      imperativeText = true
+      displayPrices = prices
+      displaySizes = sizes
+      view.invalidate()
+    }
   }
 
   private fun syncTargets(depths: DoubleArray) {

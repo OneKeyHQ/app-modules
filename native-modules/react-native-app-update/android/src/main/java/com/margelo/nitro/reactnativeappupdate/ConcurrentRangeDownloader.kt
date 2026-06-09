@@ -18,8 +18,14 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * Mirrors the desktop DesktopApiBundleUpdate concurrent path. This class is
  * intentionally free of Android/OneKey dependencies (logging is injected) so
- * it can be unit/type-checked standalone; the whole-file SHA256 check the
- * caller already performs after promotion is the final correctness backstop.
+ * it can be unit/type-checked standalone.
+ *
+ * LOAD-BEARING: the caller's whole-file SHA256 + GPG verify performed AFTER
+ * promotion is the final correctness backstop for this concurrent path and must
+ * NEVER be skipped. Resume here is best-effort (ETag-gated; no ETag => fresh
+ * start), and concurrent stitching of ranges has no per-segment integrity
+ * check — a mismatched or mixed file is only ever caught by that downstream
+ * whole-file verify. Removing it would let a corrupt/mixed APK reach install.
  *
  * Invariant: the manifest is only meaningful as metadata for an existing
  * `.partial`. Either both exist (resume) or neither does (fresh) — any other
@@ -147,8 +153,13 @@ internal class ConcurrentRangeDownloader(
     }
 
     // Single round-trip probe: a one-byte Range request that confirms Range
-    // support and captures total size + ETag. OkHttp follows redirects (the
-    // caller's client enforces HTTPS on each hop).
+    // support and captures total size + ETag. The caller's OkHttp client has
+    // redirects DISABLED (followRedirects(false)/followSslRedirects(false)), so
+    // a 3xx is not a 200/206 and probe() returns null -> Outcome.FALLBACK; the
+    // single-stream path (also redirect-disabled) then handles it.
+    // TODO: if APK origins ever start issuing redirects, decide deliberately
+    // whether to enable followSslRedirects(true) (HTTPS-only) here; until then
+    // redirecting origins simply fall back to single-stream.
     private fun probe(url: String): Probe? {
         return try {
             val req = Request.Builder().url(url).addHeader("Range", "bytes=0-0").build()
@@ -249,7 +260,18 @@ internal class ConcurrentRangeDownloader(
             val savedEtag = head.getOrNull(1)?.takeIf { it.isNotEmpty() }
             // Object must be identical to what's on disk and on the CDN.
             if (savedSize != total || partialSize != total) return null
-            if (etag != null && savedEtag != null && etag != savedEtag) return null
+            // Without an ETag we have no strong validator that the bytes already
+            // on disk belong to the SAME build as the one the CDN is serving now.
+            // A same-size-but-different build (common during a staged rollout)
+            // would otherwise resume by stitching old + new bytes into one file.
+            // The downstream whole-file SHA256 + GPG verify WOULD reject that
+            // mixed file, but only after we've wasted the whole download. So treat
+            // an ETag-less manifest as untrustworthy across restarts: bail out
+            // here and let the caller start fresh.
+            // (If a weaker validator is ever wanted, persist+compare Last-Modified
+            // instead of dropping outright.)
+            if (etag == null || savedEtag == null) return null
+            if (etag != savedEtag) return null
             val parts = ArrayList<Part>()
             for (idx in 1 until lines.size) {
                 val cols = lines[idx].split(',')

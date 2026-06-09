@@ -49,6 +49,10 @@ enum SegmentSliderColorParser {
     return UIColor(red: r, green: g, blue: b, alpha: a)
   }
 
+  /// Opaque mid-gray: a conservative, always-visible stand-in for a bad rgb().
+  private static let defaultVisible = UIColor(
+    red: 128 / 255.0, green: 128 / 255.0, blue: 128 / 255.0, alpha: 1)
+
   private static func parseRGB(_ value: String) -> UIColor? {
     guard let open = value.firstIndex(of: "("),
           let close = value.firstIndex(of: ")") else { return nil }
@@ -56,17 +60,28 @@ enum SegmentSliderColorParser {
     let parts = inner.split(separator: ",").map {
       $0.trimmingCharacters(in: .whitespaces)
     }
-    guard parts.count >= 3,
-          let r = Double(parts[0]),
-          let g = Double(parts[1]),
-          let b = Double(parts[2]) else { return nil }
+    guard parts.count >= 3 else { return nil }
+    // A malformed channel degrades to gray rather than the invisible `.clear`
+    // fallback: a wrong-but-visible element is far easier to notice and debug
+    // than one that silently disappears. Percentage forms (`rgb(50%, ...)`) are
+    // accepted and scaled to 0...1.
+    guard let r = channel(parts[0]),
+          let g = channel(parts[1]),
+          let b = channel(parts[2]) else { return defaultVisible }
     let a = parts.count >= 4 ? (Double(parts[3]) ?? 1.0) : 1.0
     return UIColor(
-      red: CGFloat(r) / 255.0,
-      green: CGFloat(g) / 255.0,
-      blue: CGFloat(b) / 255.0,
-      alpha: CGFloat(a)
-    )
+      red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: CGFloat(a))
+  }
+
+  /// Parses an rgb() channel to 0...1, supporting `0...255` and `0%...100%`.
+  private static func channel(_ part: String) -> Double? {
+    if part.hasSuffix("%") {
+      guard let pct = Double(part.dropLast().trimmingCharacters(in: .whitespaces))
+      else { return nil }
+      return Swift.max(0, Swift.min(1, pct / 100.0))
+    }
+    guard let v = Double(part) else { return nil }
+    return Swift.max(0, Swift.min(1, v / 255.0))
   }
 }
 
@@ -148,5 +163,21 @@ final class SegmentSliderUIView: UIControl {
     super.touchesCancelled(touches, with: event)
     unlockAncestorGestures()
     onTouchEnded?()
+  }
+
+  // If the view is detached mid-drag (e.g. JS unmounts it during a gesture),
+  // touchesEnded/Cancelled may never fire, which would leave the ancestors'
+  // pan recognizers permanently disabled — the scroll view and swipe-back would
+  // stay dead. Restore them on the way out of the window, and again on deinit
+  // as a final safety net.
+  override func willMove(toWindow newWindow: UIWindow?) {
+    super.willMove(toWindow: newWindow)
+    if newWindow == nil {
+      unlockAncestorGestures()
+    }
+  }
+
+  deinit {
+    unlockAncestorGestures()
   }
 }

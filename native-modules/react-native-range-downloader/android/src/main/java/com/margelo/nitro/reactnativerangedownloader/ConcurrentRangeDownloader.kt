@@ -44,7 +44,35 @@ class ConcurrentRangeDownloader(
     /** Thrown internally when a segment proves concurrency can't be used. */
     private class FallbackException(message: String) : Exception(message)
 
-    private class Part(val index: Int, val start: Long, val end: Long, @Volatile var done: Long) {
+    /**
+     * Cooperative-cancel handle the caller can register a download against. The
+     * adapter keeps these in a per-taskId registry so `cancel`/`discardArtifacts`
+     * can flip [aborted] and `shutdownNow()` the worker pool BEFORE deleting the
+     * `.partial`/`.progress`, so no in-flight worker resurrects a deleted file.
+     */
+    class CancelHandle {
+        val aborted = AtomicBoolean(false)
+
+        @Volatile
+        private var pool: java.util.concurrent.ExecutorService? = null
+
+        internal fun attach(pool: java.util.concurrent.ExecutorService) {
+            this.pool = pool
+            // If cancel() already raced in before the pool was attached, honor it.
+            if (aborted.get()) pool.shutdownNow()
+        }
+
+        /** Flip the abort flag and stop the worker pool. Idempotent. */
+        fun cancel() {
+            aborted.set(true)
+            pool?.shutdownNow()
+        }
+    }
+
+    private class Part(val index: Int, val start: Long, val end: Long, done: Long) {
+        // AtomicLong so manifest snapshots read a consistent value even if the
+        // owning thread ever changes (cross-thread reads in flushManifest).
+        val done = AtomicLong(done)
         val length: Long get() = end - start + 1
     }
 
@@ -59,6 +87,7 @@ class ConcurrentRangeDownloader(
     fun download(
         url: String,
         partialFilePath: String,
+        cancelHandle: CancelHandle? = null,
         onProgress: (transferred: Long, total: Long) -> Unit,
     ): Outcome {
         val partialFile = File(partialFilePath)
@@ -78,30 +107,41 @@ class ConcurrentRangeDownloader(
         }
         val total = probe.totalSize
         val etag = probe.etag
+        // A strong validator (ETag) is what lets If-Range pin a resumed range to
+        // the exact object the partial was started against. Without it we cannot
+        // safely trust or persist `.partial`/`.progress` across attempts, so we
+        // start fresh and skip manifest persistence (the caller's whole-file
+        // SHA256 check after promotion remains the final correctness backstop).
+        val hasValidator = !etag.isNullOrEmpty()
 
         partialFile.parentFile?.let { if (!it.exists()) it.mkdirs() }
         dropOrphanManifest(partialFile, manifestFile)
-        val parts = loadOrInitManifest(manifestFile, partialFile, total, etag)
+        val parts = loadOrInitManifest(manifestFile, partialFile, total, etag, hasValidator)
 
-        val transferred = AtomicLong(parts.sumOf { it.done })
+        val transferred = AtomicLong(parts.sumOf { it.done.get() })
         onProgress(transferred.get(), total)
 
-        val aborted = AtomicBoolean(false)
+        // Share the abort flag with the cancel handle so an external cancel() is
+        // observed by the per-segment loops; default to a private flag otherwise.
+        val aborted = cancelHandle?.aborted ?: AtomicBoolean(false)
         val fallback = AtomicBoolean(false)
         val firstError = AtomicReference<Exception?>(null)
-        val lastFlushed = LongArray(parts.size) { parts[it].done }
+        val lastFlushed = LongArray(parts.size) { parts[it].done.get() }
 
         val pool = Executors.newFixedThreadPool(minOf(segmentCount, parts.size))
+        cancelHandle?.attach(pool)
         try {
             val futures = parts.map { part ->
                 pool.submit {
                     try {
                         downloadPart(url, etag, partialFile, part, aborted) { delta ->
                             val t = transferred.addAndGet(delta)
-                            synchronized(lastFlushed) {
-                                if (part.done - lastFlushed[part.index] >= manifestFlushBytes) {
-                                    lastFlushed[part.index] = part.done
-                                    flushManifest(manifestFile, total, etag, parts)
+                            if (hasValidator) {
+                                synchronized(lastFlushed) {
+                                    if (part.done.get() - lastFlushed[part.index] >= manifestFlushBytes) {
+                                        lastFlushed[part.index] = part.done.get()
+                                        flushManifest(manifestFile, total, etag, parts)
+                                    }
                                 }
                             }
                             onProgress(t, total)
@@ -128,13 +168,23 @@ class ConcurrentRangeDownloader(
         }
         val err = firstError.get()
         if (err != null) {
-            // Transient — persist progress so the next attempt resumes, then bubble up.
-            flushManifest(manifestFile, total, etag, parts)
+            if (hasValidator) {
+                // Transient — persist progress so the next attempt resumes, then bubble up.
+                flushManifest(manifestFile, total, etag, parts)
+            } else {
+                // No validator: resume state is untrustworthy, so don't persist
+                // it — discard and let the next attempt start clean.
+                discard(partialFile, manifestFile)
+            }
             throw err
         }
-        val got = parts.sumOf { it.done }
+        val got = parts.sumOf { it.done.get() }
         if (got < total) {
-            flushManifest(manifestFile, total, etag, parts)
+            if (hasValidator) {
+                flushManifest(manifestFile, total, etag, parts)
+            } else {
+                discard(partialFile, manifestFile)
+            }
             throw java.io.IOException("Concurrent download incomplete ($got/$total)")
         }
 
@@ -195,11 +245,14 @@ class ConcurrentRangeDownloader(
         partialFile: File,
         total: Long,
         etag: String?,
+        hasValidator: Boolean,
     ): List<Part> {
-        if (manifestFile.exists() && partialFile.exists()) {
+        // Only trust an existing manifest when a strong validator pins it to the
+        // server object; otherwise always start fresh.
+        if (hasValidator && manifestFile.exists() && partialFile.exists()) {
             val parsed = parseManifest(manifestFile, total, etag, partialFile.length())
             if (parsed != null) {
-                log("concurrent: resuming, transferred=${parsed.sumOf { it.done }}/$total")
+                log("concurrent: resuming, transferred=${parsed.sumOf { it.done.get() }}/$total")
                 return parsed
             }
         }
@@ -215,7 +268,8 @@ class ConcurrentRangeDownloader(
             parts.add(Part(parts.size, start, end, 0))
             i += 1
         }
-        writeManifest(manifestFile, total, etag, parts)
+        // Persist the manifest only when it can be safely resumed later.
+        if (hasValidator) writeManifest(manifestFile, total, etag, parts)
         return parts
     }
 
@@ -226,7 +280,7 @@ class ConcurrentRangeDownloader(
         sb.append(total).append('|').append(etag ?: "").append('\n')
         for (p in parts) {
             sb.append(p.index).append(',').append(p.start).append(',')
-                .append(p.end).append(',').append(p.done).append('\n')
+                .append(p.end).append(',').append(p.done.get()).append('\n')
         }
         manifestFile.writeText(sb.toString())
     }
@@ -284,7 +338,7 @@ class ConcurrentRangeDownloader(
         var retry = 0
         while (true) {
             if (aborted.get()) throw java.io.IOException("aborted")
-            val rangeStart = part.start + part.done
+            val rangeStart = part.start + part.done.get()
             if (rangeStart > part.end) return
             try {
                 fetchSegment(url, etag, partialFile, part, rangeStart, aborted, onBytes)
@@ -330,7 +384,7 @@ class ConcurrentRangeDownloader(
                         val read = input.read(buffer)
                         if (read == -1) break
                         raf.write(buffer, 0, read)
-                        part.done += read
+                        part.done.addAndGet(read.toLong())
                         onBytes(read.toLong())
                     }
                 }

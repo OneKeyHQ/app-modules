@@ -43,7 +43,18 @@ export interface ReactNativeRangeDownloader
 
   // Clean the concurrent artifacts (.segN / .partial / .progress) for one task.
   // Caller invokes before falling back to its own single-stream path.
+  // Cancel-then-delete: any in-flight tasks/workers for (channel,taskId) are
+  // cancelled before the files are removed so they cannot be resurrected.
   discardArtifacts(
+    channel: DownloadChannel,
+    taskId: string,
+    destFilePath: string
+  ): Promise<void>;
+
+  // Cancel an in-flight download for (channel,taskId) and remove its artifacts.
+  // iOS cancels the matching background URLSession tasks; Android flips the
+  // worker pool's abort flag and shuts it down — both before deleting files.
+  cancel(
     channel: DownloadChannel,
     taskId: string,
     destFilePath: string

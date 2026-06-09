@@ -42,7 +42,23 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
     destFilePath: String
   ) throws -> Promise<Void> {
     return Promise.async {
-      RangeDownloader.shared.discardArtifacts(filePath: destFilePath)
+      // Cancel-then-delete: cancel any in-flight tasks for this run before
+      // removing files so a running task can't resurrect a deleted segment.
+      await RangeDownloader.shared.cancel(
+        channel: channel, taskId: taskId, filePath: destFilePath
+      )
+    }
+  }
+
+  func cancel(
+    channel: DownloadChannel,
+    taskId: String,
+    destFilePath: String
+  ) throws -> Promise<Void> {
+    return Promise.async {
+      await RangeDownloader.shared.cancel(
+        channel: channel, taskId: taskId, filePath: destFilePath
+      )
     }
   }
 
@@ -145,6 +161,12 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     var continuation: CheckedContinuation<Void, Error>?
     var prevProgress = -1
     var fellBack = false
+    /// Set when a segment could not be stashed (move/size-check failure). Carries
+    /// the terminal error so didCompleteWithError finalizes instead of hanging.
+    var stashError: Error?
+    /// Whether a strong validator (ETag) was captured for this run. When false,
+    /// resumable `.segN` state must not be trusted across attempts.
+    var hasValidator = false
     let sessionIdentifier: String
 
     init(channel: DownloadChannel, taskId: String, filePath: String,
@@ -344,6 +366,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     )
     state.totalSize = probe.total
     state.etag = probe.etag
+    state.hasValidator = (probe.etag?.isEmpty == false)
     state.ranges = Self.planRanges(total: probe.total, segments: segCount)
     state.segmentWritten = [Int64](repeating: 0, count: state.ranges.count)
 
@@ -352,6 +375,14 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     lock.unlock()
 
     let ranges = state.ranges
+
+    // Without a strong validator (ETag) we cannot pin stashed `.segN` to a
+    // specific server object via If-Range, so any leftover segments from a prior
+    // attempt are untrustworthy. Start fresh and only proceed on the resumable
+    // path when expectedSha256 will gate the assembled file (verified below).
+    if !state.hasValidator {
+      cleanupSegments(state: state, ranges: ranges)
+    }
 
     emit(channel: channel, taskId: taskId, type: "start", progress: 0, message: "")
 
@@ -461,6 +492,22 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     return Int64(tail.trimmingCharacters(in: .whitespaces))
   }
 
+  /// Parses the start/end of a "bytes <start>-<end>/<total>" Content-Range.
+  static func parseContentRangeBounds(_ header: String) -> (start: Int64, end: Int64)? {
+    // Drop the leading "bytes " and the trailing "/<total>".
+    let trimmed = header.trimmingCharacters(in: .whitespaces)
+    guard let spaceIdx = trimmed.firstIndex(of: " ") else { return nil }
+    var rangePart = String(trimmed[trimmed.index(after: spaceIdx)...])
+    if let slash = rangePart.firstIndex(of: "/") {
+      rangePart = String(rangePart[..<slash])
+    }
+    let bounds = rangePart.split(separator: "-", maxSplits: 1).map { String($0) }
+    guard bounds.count == 2,
+          let start = Int64(bounds[0].trimmingCharacters(in: .whitespaces)),
+          let end = Int64(bounds[1].trimmingCharacters(in: .whitespaces)) else { return nil }
+    return (start, end)
+  }
+
   // MARK: - Task reconciliation (handles app relaunch)
 
   /// Ensures exactly one in-flight (or completed) artifact per missing segment:
@@ -563,15 +610,50 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
                   didFinishDownloadingTo location: URL) {
     guard let desc = downloadTask.taskDescription,
           let (state, idx) = run(for: desc) else { return }
-    // A 200 means the server ignored Range / the ETag changed — we cannot
-    // safely assemble. Flag fallback; finalize happens in didCompleteWithError.
-    if let http = downloadTask.response as? HTTPURLResponse, http.statusCode == 200 {
+    let ranges = lock.withLockValue { state.ranges }
+    guard idx < ranges.count else { return }
+    let range = ranges[idx]
+    let expectedLen = range.end - range.start + 1
+
+    // We require a 206 Partial Content that matches the requested byte range.
+    // Anything else — 200 (Range ignored / ETag changed) or an out-of-range
+    // Content-Range — means we cannot safely assemble this segment, so flag
+    // fallback; finalize happens in didCompleteWithError.
+    guard let http = downloadTask.response as? HTTPURLResponse else {
       lock.lock(); state.fellBack = true; lock.unlock()
       return
     }
-    // Move the segment into place atomically (temp file is deleted after return).
+    if http.statusCode != 206 {
+      lock.lock(); state.fellBack = true; lock.unlock()
+      return
+    }
+    // Verify the server's Content-Range start/end matches what we asked for so a
+    // stashed `.segN` can't be a slice of a different object/range.
+    if let cr = http.value(forHTTPHeaderField: "Content-Range") {
+      guard let parsed = Self.parseContentRangeBounds(cr),
+            parsed.start == range.start, parsed.end == range.end else {
+        lock.lock(); state.fellBack = true; lock.unlock()
+        return
+      }
+    } else {
+      // 206 without a Content-Range header is non-conforming — don't trust it.
+      lock.lock(); state.fellBack = true; lock.unlock()
+      return
+    }
+
+    // Validate the downloaded body length BEFORE moving it into place: a
+    // truncated 206 must never be stashed as a valid segment.
     let dest = state.segPath(idx)
     do {
+      let attrs = try FileManager.default.attributesOfItem(atPath: location.path)
+      let size = attrs[.size] as? Int64
+      guard let size = size, size == expectedLen else {
+        throw NSError(domain: "RangeDownloader", code: -2, userInfo: [
+          NSLocalizedDescriptionKey:
+            "segment \(idx) truncated (got \(size.map(String.init) ?? "nil"), expected \(expectedLen))"
+        ])
+      }
+      // Move the segment into place (temp file is deleted after return).
       let dir = (dest as NSString).deletingLastPathComponent
       if !FileManager.default.fileExists(atPath: dir) {
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -583,6 +665,12 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     } catch {
       OneKeyLog.error("RangeDownloader",
                       "\(state.channel.stringValue)/\(state.taskId): failed to stash segment \(idx): \(error)")
+      // Record the failure so didCompleteWithError finalizes the run with this
+      // terminal error instead of waiting forever for a segment that will never
+      // appear.
+      lock.lock()
+      if state.stashError == nil { state.stashError = error }
+      lock.unlock()
     }
   }
 
@@ -621,10 +709,45 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
                          ranges: ranges)
       return
     }
+    // A segment failed to stash (move/size-check failure in didFinishDownloadingTo).
+    // That segment will never appear, so finalize terminally instead of waiting.
+    if let stashErr = lock.withLockValue({ state.stashError }) {
+      finishContinuation(state: state, with: stashErr, ranges: ranges)
+      return
+    }
     if allSegmentsPresent(state: state, ranges: ranges) {
       finishContinuation(state: state, with: nil, ranges: ranges)
+      return
     }
-    // else: other segments still in flight; wait for their completions.
+    // This task finished error==nil but not all segments are present. If any
+    // tasks for THIS run are still in flight, wait for their completions.
+    // Otherwise nothing will ever resume the continuation — finalize with a
+    // descriptive terminal error so the JS promise resolves (as fallback).
+    let channel = state.channel
+    let taskId = state.taskId
+    session.getAllTasks { [weak self] tasks in
+      guard let self = self else { return }
+      let stillInFlight = tasks.contains { t in
+        guard let d = t.taskDescription,
+              let decoded = Self.decodeTaskDescription(d),
+              decoded.channel.stringValue == channel.stringValue,
+              decoded.taskId == taskId else { return false }
+        return t.state == .running || t.state == .suspended
+      }
+      if stillInFlight { return }
+      // Re-check under no-in-flight: a just-finished stash may have completed.
+      if self.allSegmentsPresent(state: state, ranges: ranges) {
+        self.finishContinuation(state: state, with: nil, ranges: ranges)
+        return
+      }
+      let missing = ranges.indices.first {
+        !FileManager.default.fileExists(atPath: state.segPath($0))
+      }
+      let reason = "segment \(missing.map(String.init) ?? "?") missing/truncated after completion"
+      self.finishContinuation(state: state,
+                              with: FallbackError(reason: reason),
+                              ranges: ranges)
+    }
   }
 
   /// Called on the session delegate queue when all background events for this
@@ -675,9 +798,22 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
                     userInfo: [NSLocalizedDescriptionKey: "cannot open partial for write"])
     }
     defer { try? out.close() }
+    // Stream each segment in fixed-size chunks so a full segment is never held
+    // in RAM (mirrors the streamed SHA256 backstop below).
+    let chunkSize = 1 * 1024 * 1024
     for idx in 0..<ranges.count {
-      let segData = try Data(contentsOf: URL(fileURLWithPath: state.segPath(idx)))
-      try out.write(contentsOf: segData)
+      let segPath = state.segPath(idx)
+      guard let inHandle = FileHandle(forReadingAtPath: segPath) else {
+        throw NSError(domain: "RangeDownloader", code: -3,
+                      userInfo: [NSLocalizedDescriptionKey: "cannot open segment \(idx) for read"])
+      }
+      defer { try? inHandle.close() }
+      while try autoreleasepool(invoking: { () -> Bool in
+        let data = inHandle.readData(ofLength: chunkSize)
+        if data.isEmpty { return false }
+        try out.write(contentsOf: data)
+        return true
+      }) {}
     }
     try? out.close()
     if FileManager.default.fileExists(atPath: filePath) {
@@ -694,8 +830,36 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     try? FileManager.default.removeItem(atPath: "\(state.filePath).partial")
   }
 
+  /// Cancels any in-flight background tasks for (channel|taskId) and then
+  /// discards all segment artifacts. Cancel-then-delete prevents a still-running
+  /// `nsurlsessiond` task from resurrecting a `.segN` we just deleted.
+  public func cancel(channel: DownloadChannel, taskId: String,
+                     filePath: String) async {
+    let session = session(forChannel: channel, segmentCount: Self.defaultSegmentCount)
+    // Cancel matching tasks first and wait for getAllTasks to return so the
+    // cancels have been issued before we touch the files.
+    await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+      session.getAllTasks { tasks in
+        for t in tasks {
+          if let d = t.taskDescription,
+             let decoded = Self.decodeTaskDescription(d),
+             decoded.channel.stringValue == channel.stringValue,
+             decoded.taskId == taskId {
+            t.cancel()
+          }
+        }
+        cont.resume()
+      }
+    }
+    // Drop the run state so a late delegate callback can't re-stash a segment.
+    clearRun(key: Self.runKey(channel: channel, taskId: taskId))
+    discardArtifacts(filePath: filePath)
+  }
+
   /// Discards all segment artifacts (used by the caller when falling back to
-  /// single-stream so the bare slot is clean).
+  /// single-stream so the bare slot is clean). Prefer `cancel(...)` when tasks
+  /// may still be in flight; this file-only delete is for the post-fallback
+  /// case where tasks have already been abandoned.
   public func discardArtifacts(filePath: String) {
     for idx in 0..<Self.defaultSegmentCount {
       try? FileManager.default.removeItem(atPath: "\(filePath).seg\(idx)")

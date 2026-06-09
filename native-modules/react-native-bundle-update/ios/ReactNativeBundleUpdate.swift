@@ -2048,7 +2048,12 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             let resolvedPath = (filePath as NSString).resolvingSymlinksInPath
             let bundleDir = (BundleUpdateStore.bundleDir() as NSString).resolvingSymlinksInPath
             let downloadDir = (BundleUpdateStore.downloadBundleDir() as NSString).resolvingSymlinksInPath
-            guard resolvedPath.hasPrefix(bundleDir) || resolvedPath.hasPrefix(downloadDir) else {
+            // Enforce a separator boundary so e.g. "onekey-bundle-evil/x" is not
+            // accepted as confined under "onekey-bundle". The base dir itself is allowed.
+            func isConfined(to base: String) -> Bool {
+                return resolvedPath == base || resolvedPath.hasPrefix(base + "/")
+            }
+            guard isConfined(to: bundleDir) || isConfined(to: downloadDir) else {
                 OneKeyLog.error("BundleUpdate", "getSha256FromFilePath: path outside allowed directories: \(resolvedPath)")
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "File path outside allowed bundle directories"])
             }

@@ -6,6 +6,7 @@ import com.margelo.nitro.core.Promise
 import com.margelo.nitro.nativelogger.OneKeyLog
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 
@@ -30,6 +31,15 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
   private val listeners = CopyOnWriteArrayList<Listener>()
   private val nextListenerId = AtomicLong(1)
+
+  // Active downloads keyed by "channel|taskId" so cancel/discardArtifacts can
+  // flip the abort flag + stop the worker pool BEFORE deleting files, instead of
+  // racing live workers that would resurrect a just-deleted .partial.
+  private val activeDownloads =
+    ConcurrentHashMap<String, ConcurrentRangeDownloader.CancelHandle>()
+
+  private fun runKey(channel: DownloadChannel, taskId: String): String =
+    "${channel.name}|$taskId"
 
   // HTTPS-only client: reject any redirect to a non-HTTPS hop. Mirrors the
   // existing react-native-bundle-update configuration verbatim.
@@ -69,20 +79,29 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
       sendEvent(channel, taskId, type = "start")
 
+      val runKey = runKey(channel, taskId)
+      val cancelHandle = ConcurrentRangeDownloader.CancelHandle()
+      activeDownloads[runKey] = cancelHandle
+
       var lastProgress = -1
-      val outcome = ConcurrentRangeDownloader(
-        httpClient = httpClient,
-        segmentCount = segmentCount,
-        minConcurrentBytes = minConcurrentBytes,
-        log = { msg -> OneKeyLog.info("RangeDownloader", msg) },
-      ).download(downloadUrl, partialFilePath) { transferred, total ->
-        if (total > 0) {
-          val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
-          if (p != lastProgress) {
-            sendEvent(channel, taskId, type = "progress", progress = p)
-            lastProgress = p
+      val outcome = try {
+        ConcurrentRangeDownloader(
+          httpClient = httpClient,
+          segmentCount = segmentCount,
+          minConcurrentBytes = minConcurrentBytes,
+          log = { msg -> OneKeyLog.info("RangeDownloader", msg) },
+        ).download(downloadUrl, partialFilePath, cancelHandle) { transferred, total ->
+          if (total > 0) {
+            val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
+            if (p != lastProgress) {
+              sendEvent(channel, taskId, type = "progress", progress = p)
+              lastProgress = p
+            }
           }
         }
+      } finally {
+        // Only deregister our own handle (a concurrent cancel may have replaced it).
+        activeDownloads.remove(runKey, cancelHandle)
       }
 
       if (outcome == ConcurrentRangeDownloader.Outcome.FALLBACK) {
@@ -99,9 +118,12 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
       // COMPLETED: `.partial` is fully on disk. Promote -> final, then run the
       // optional in-module SHA256 self-check (mirrors the source finalize path).
-      if (destFile.exists()) destFile.delete()
-      if (!File(partialFilePath).renameTo(destFile)) {
-        OneKeyLog.error("RangeDownloader", "download: rename .partial -> final failed")
+      // Use an atomic move so a kill mid-finalize never leaves NEITHER file:
+      // the destination is replaced in one step, preserving the previous file on
+      // failure (vs. the old delete-then-rename, which had a window with both
+      // gone if the rename then failed).
+      if (!promoteAtomically(File(partialFilePath), destFile)) {
+        OneKeyLog.error("RangeDownloader", "download: promote .partial -> final failed")
         sendEvent(channel, taskId, type = "error", message = "Failed to finalize download")
         throw Exception("Failed to finalize download")
       }
@@ -132,12 +154,75 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
     destFilePath: String
   ): Promise<Unit> {
     return Promise.async {
+      // Cancel-then-delete: stop any live workers for this task before removing
+      // files, otherwise a still-running segment could re-create the .partial we
+      // just deleted.
+      cancelActive(channel, taskId)
       // Manifest first so it never outlives the partial it describes.
       File("$destFilePath.partial.progress").delete()
       File("$destFilePath.partial").delete()
       OneKeyLog.info("RangeDownloader", "discardArtifacts: channel=$channel taskId=$taskId")
       Unit
     }
+  }
+
+  override fun cancel(
+    channel: DownloadChannel,
+    taskId: String,
+    destFilePath: String
+  ): Promise<Unit> {
+    return Promise.async {
+      // Stop workers first, then delete artifacts so nothing resurrects them.
+      cancelActive(channel, taskId)
+      File("$destFilePath.partial.progress").delete()
+      File("$destFilePath.partial").delete()
+      OneKeyLog.info("RangeDownloader", "cancel: channel=$channel taskId=$taskId")
+      Unit
+    }
+  }
+
+  // Flip the abort flag + shutdown the pool for an in-flight download (if any).
+  private fun cancelActive(channel: DownloadChannel, taskId: String) {
+    activeDownloads.remove(runKey(channel, taskId))?.cancel()
+  }
+
+  // Atomically replace [dest] with [src] so a kill mid-finalize never leaves
+  // NEITHER file. On API 26+ uses Files.move with ATOMIC_MOVE/REPLACE_EXISTING
+  // (single-step rename onto the destination). On older APIs (java.nio.file is
+  // API 26+) File.renameTo onto an existing dest is itself an atomic rename on a
+  // POSIX filesystem (the kernel replaces the inode in one step), which gives
+  // the same "old file preserved until the new one lands" guarantee.
+  private fun promoteAtomically(src: File, dest: File): Boolean {
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+      try {
+        java.nio.file.Files.move(
+          src.toPath(), dest.toPath(),
+          java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+          java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+        )
+        return true
+      } catch (e: Exception) {
+        // ATOMIC_MOVE may be unsupported across the source/dest (e.g. different
+        // stores) — retry a plain replace, still single-step on one filesystem.
+        try {
+          java.nio.file.Files.move(
+            src.toPath(), dest.toPath(),
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+          )
+          return true
+        } catch (e2: Exception) {
+          OneKeyLog.error(
+            "RangeDownloader",
+            "promoteAtomically: Files.move failed (${e2.javaClass.simpleName}), falling back to renameTo",
+          )
+        }
+      }
+    }
+    // API < 26 (or Files.move unsupported): rename directly onto the dest. On a
+    // POSIX filesystem this replaces the destination atomically and keeps the old
+    // file until the rename lands. Do NOT pre-delete the dest — that reintroduces
+    // the both-files-gone window we are fixing.
+    return src.renameTo(dest)
   }
 
   override fun addDownloadListener(callback: (event: RangeDownloadEvent) -> Unit): Double {

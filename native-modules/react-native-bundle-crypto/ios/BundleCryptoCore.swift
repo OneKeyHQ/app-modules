@@ -356,6 +356,18 @@ public enum BundleCryptoCore {
     return result == 0
   }
 
+  /// Strip only the leading base directory from an absolute path, returning the
+  /// relative path with any leading "/" trimmed. Unlike replacingOccurrences,
+  /// this removes only the leading prefix so a base dir name that recurs deeper
+  /// in the tree cannot corrupt the relative path / metadata key.
+  private static func stripLeadingDir(_ fullPath: String, prefix: String) -> String {
+    if fullPath.hasPrefix(prefix) {
+      return String(fullPath.dropFirst(prefix.count))
+    }
+    // Fall back to trimming a leading separator so keys stay consistent.
+    return fullPath.hasPrefix("/") ? String(fullPath.dropFirst()) : fullPath
+  }
+
   /// Synchronous sha256 used internally by dir hashing — returns nil on any
   /// failure (used where only the hex/nil distinction matters).
   private static func calculateSHA256Sync(_ filePath: String) -> String? {
@@ -405,12 +417,18 @@ public enum BundleCryptoCore {
 
     guard let enumerator = fm.enumerator(atPath: dirPath) else { return false }
     while let file = enumerator.nextObject() as? String {
-      if file.contains("metadata.json") || file.contains(".DS_Store") { continue }
+      // Skip only by EXACT basename (defense-in-depth: `file` is the relative
+      // path, so a substring match was even looser and could let an unverified
+      // file like "evil-metadata.json" or "sub/metadata.json.bak" bypass).
+      let basename = (file as NSString).lastPathComponent
+      if basename == "metadata.json" || basename == ".DS_Store" { continue }
       let fullPath = (dirPath as NSString).appendingPathComponent(file)
       var entryIsDir: ObjCBool = false
       if fm.fileExists(atPath: fullPath, isDirectory: &entryIsDir), entryIsDir.boolValue { continue }
 
-      let relativePath = fullPath.replacingOccurrences(of: normalizedDir, with: "")
+      // Strip only the leading base dir; a global replace would corrupt paths
+      // where the base dir name recurs deeper in the tree.
+      let relativePath = Self.stripLeadingDir(fullPath, prefix: normalizedDir)
       guard let expectedSHA256 = expected[relativePath] else {
         OneKeyLog.error("BundleCrypto", "[bundle-verify] File on disk not found in metadata: \(relativePath)")
         return false
@@ -446,7 +464,9 @@ public enum BundleCryptoCore {
     var results: [DirHash] = []
     guard let enumerator = fm.enumerator(atPath: dirPath) else { return [] }
     while let file = enumerator.nextObject() as? String {
-      if file.contains("metadata.json") || file.contains(".DS_Store") { continue }
+      // Skip only by EXACT basename (mirror verifyDirAgainstHashes / sibling check).
+      let basename = (file as NSString).lastPathComponent
+      if basename == "metadata.json" || basename == ".DS_Store" { continue }
       let fullPath = (dirPath as NSString).appendingPathComponent(file)
       var entryIsDir: ObjCBool = false
       if fm.fileExists(atPath: fullPath, isDirectory: &entryIsDir), entryIsDir.boolValue { continue }
@@ -454,7 +474,8 @@ public enum BundleCryptoCore {
         OneKeyLog.error("BundleCrypto", "hashDir: failed to hash \(file)")
         throw NSError(domain: "BundleCrypto", code: -1, userInfo: [NSLocalizedDescriptionKey: "HASH_FAILED"])
       }
-      let relativePath = fullPath.replacingOccurrences(of: normalizedDir, with: "")
+      // Strip only the leading base dir (see verifyDirAgainstHashes).
+      let relativePath = Self.stripLeadingDir(fullPath, prefix: normalizedDir)
       results.append(DirHash(relativePath: relativePath, sha256: sha256))
     }
     return results
@@ -476,7 +497,10 @@ public enum BundleCryptoCore {
         return false
       }
       let resolvedPath = (fullPath as NSString).resolvingSymlinksInPath
-      if !resolvedPath.hasPrefix(resolvedDestination) {
+      // Require a path-separator boundary (or exact match) so a sibling dir like
+      // "/Bundles/v1-evil" cannot pass the "/Bundles/v1" prefix check. Mirrors
+      // the tight Android canonicalPath check.
+      if resolvedPath != resolvedDestination && !resolvedPath.hasPrefix(resolvedDestination + "/") {
         OneKeyLog.error("BundleCrypto", "Path traversal detected in extracted bundle: \(file)")
         return false
       }

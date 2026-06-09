@@ -61,11 +61,12 @@ enum PerpColorParser {
           let g = Double(parts[1]),
           let b = Double(parts[2]) else { return nil }
     let a = parts.count >= 4 ? (Double(parts[3]) ?? 1.0) : 1.0
+    // Clamp channels to 0...255 and alpha to 0...1 (matches Android's PerpColorParser).
     return UIColor(
-      red: CGFloat(r) / 255.0,
-      green: CGFloat(g) / 255.0,
-      blue: CGFloat(b) / 255.0,
-      alpha: CGFloat(a)
+      red: CGFloat(min(max(r, 0), 255)) / 255.0,
+      green: CGFloat(min(max(g, 0), 255)) / 255.0,
+      blue: CGFloat(min(max(b, 0), 255)) / 255.0,
+      alpha: CGFloat(min(max(a, 0), 1))
     )
   }
 }

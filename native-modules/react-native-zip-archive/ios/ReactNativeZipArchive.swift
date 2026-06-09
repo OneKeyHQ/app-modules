@@ -36,12 +36,14 @@ final class ReactNativeZipArchive: HybridReactNativeZipArchiveSpec {
       if success {
         return to
       }
-      throw NSError(
+      // Preserve the underlying NSError (domain + code) so callers can tell a
+      // corrupt archive apart from a wrong password or an I/O failure. Only fall
+      // back to the generic "ZipArchive" error when SSZipArchive reported failure
+      // without populating an error.
+      throw error ?? NSError(
         domain: "ZipArchive",
         code: -1,
-        userInfo: [
-          NSLocalizedDescriptionKey: error?.localizedDescription ?? "unable to unzip"
-        ]
+        userInfo: [NSLocalizedDescriptionKey: "unable to unzip"]
       )
     }
   }
@@ -64,12 +66,14 @@ final class ReactNativeZipArchive: HybridReactNativeZipArchiveSpec {
       if success {
         return to
       }
-      throw NSError(
+      // Preserve the underlying NSError (domain + code) so callers can tell a
+      // corrupt archive apart from a wrong password or an I/O failure. Only fall
+      // back to the generic "ZipArchive" error when SSZipArchive reported failure
+      // without populating an error.
+      throw error ?? NSError(
         domain: "ZipArchive",
         code: -1,
-        userInfo: [
-          NSLocalizedDescriptionKey: error?.localizedDescription ?? "unable to unzip"
-        ]
+        userInfo: [NSLocalizedDescriptionKey: "unable to unzip"]
       )
     }
   }
@@ -123,10 +127,13 @@ final class ReactNativeZipArchive: HybridReactNativeZipArchiveSpec {
       // NSErrorPointer because the return is unannotated/non-nullable).
       var error: NSError?
       let wantedFileSize = SSZipArchive.payloadSizeForArchive(atPath: path, error: &error)
-      if error == nil {
-        return wantedFileSize.doubleValue
+      if let error {
+        // Contract: return -1 on failure. Log the underlying error so a missing
+        // file can be told apart from a corrupt archive when investigating.
+        NSLog("[ZipArchive] getUncompressedSize failed for \(path): \(error)")
+        return -1
       }
-      return -1
+      return wantedFileSize.doubleValue
     }
   }
 }

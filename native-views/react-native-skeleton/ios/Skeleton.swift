@@ -77,6 +77,9 @@ class HybridSkeleton : HybridSkeletonSpec {
     viewObserver?.invalidate()
     viewObserver = nil
 
+    // Stop observing app lifecycle notifications
+    NotificationCenter.default.removeObserver(self)
+
     // Cleanup must happen on main thread, but avoid deadlock
     // Use async if not on main thread to prevent blocking
     if Thread.isMainThread {
@@ -122,10 +125,31 @@ class HybridSkeleton : HybridSkeletonSpec {
       }
     }
 
+    // Recover the shimmer when returning from background. CoreAnimation strips the running
+    // CAAnimation on backgrounding and does not re-add it on foreground, which would freeze
+    // the gradient for the view's lifetime. Re-add the animation when the app reactivates.
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(appDidBecomeActive),
+      name: UIApplication.didBecomeActiveNotification,
+      object: nil
+    )
+
     // Start animation when view is ready
     DispatchQueue.main.async { [weak self] in
       guard let self = self, self.isActive else { return }
       self.startShimmer()
+    }
+  }
+
+  @objc private func appDidBecomeActive() {
+    guard isActive else { return }
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, self.isActive else { return }
+      // Only restart if the shimmer should be running but its animation was stripped.
+      if self.isShimmerRunning, self.shimmerLayer?.animation(forKey: "shimmerAnimation") == nil {
+        self.restartShimmer()
+      }
     }
   }
 
@@ -238,8 +262,15 @@ class HybridSkeleton : HybridSkeletonSpec {
       // input that actually drives the animation changed (speed / colors / bounds). If the
       // shimmer is already running and nothing relevant changed, leave the existing
       // CABasicAnimation alone to avoid main-thread layer teardown/rebuild churn.
+      //
+      // Verify the CAAnimation is actually still attached rather than trusting the cached
+      // signature alone: on backgrounding, CoreAnimation strips the running animation (and
+      // does not re-add it on foreground) while the layer, isShimmerRunning, and signature
+      // stay unchanged. Checking the live animation lets afterUpdate() recover by restarting.
       let signature = self.currentShimmerSignature()
-      if self.isShimmerRunning, self.shimmerLayer != nil, signature == self.lastShimmerSignature {
+      if self.isShimmerRunning,
+         self.shimmerLayer?.animation(forKey: "shimmerAnimation") != nil,
+         signature == self.lastShimmerSignature {
         return
       }
 

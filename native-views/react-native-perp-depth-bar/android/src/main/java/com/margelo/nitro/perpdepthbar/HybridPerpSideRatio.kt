@@ -103,11 +103,17 @@ class HybridPerpSideRatio(val context: ThemedReactContext) : HybridPerpSideRatio
    */
   override fun setRatio(bidPercentage: Double, askPercentage: Double) {
     if (isDisposed) return
-    imperativeRatio = true
-    // Apply the args directly — do NOT route through the `bidPercentage`/
-    // `askPercentage` prop fields, which a later prop commit could overwrite with
-    // the static initial values.
-    applyRatio(bidPercentage, askPercentage)
+    // The args are read synchronously on the calling (JS) thread; the shared
+    // drawing state (currentSplit/targetSplit, invalidate, Choreographer) is
+    // mutated only on the UI thread, where `onFrame` reads/writes the same state.
+    view.post {
+      if (isDisposed) return@post
+      imperativeRatio = true
+      // Apply the args directly — do NOT route through the `bidPercentage`/
+      // `askPercentage` prop fields, which a later prop commit could overwrite with
+      // the static initial values.
+      applyRatio(bidPercentage, askPercentage)
+    }
   }
 
   override fun afterUpdate() {

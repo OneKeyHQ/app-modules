@@ -152,23 +152,13 @@ object BundleCryptoCore {
       // Extract cleartext and signature from the PGP signed message manually
       // (BouncyCastle's cleartext handling requires manual parsing).
       val lines = signedMessage.lines()
-      val hashHeaderIdx = lines.indexOfFirst { it.startsWith("Hash:") }
-      val sigStartIdx = lines.indexOfFirst { it == "-----BEGIN PGP SIGNATURE-----" }
-      val sigEndIdx = lines.indexOfFirst { it == "-----END PGP SIGNATURE-----" }
-
-      if (hashHeaderIdx < 0 || sigStartIdx < 0 || sigEndIdx < 0) {
-        OneKeyLog.error("BundleCrypto", "Invalid PGP cleartext signed message format")
-        return VerifyResult(false, null, "INVALID_FORMAT")
-      }
-
-      // The cleartext body is between the Hash header blank line and the PGP SIGNATURE block.
-      val bodyStartIdx = hashHeaderIdx + 2 // skip Hash: line and the blank line after it
-      val bodyLines = lines.subList(bodyStartIdx, sigStartIdx)
-      // Remove trailing empty line that PGP adds.
-      val cleartextBody = bodyLines.joinToString("\r\n").trimEnd()
-
-      // The signature block.
-      val sigBlock = lines.subList(sigStartIdx, sigEndIdx + 1).joinToString("\n")
+      val framed = frameCleartext(lines)
+        ?: run {
+          OneKeyLog.error("BundleCrypto", "Invalid PGP cleartext signed message format")
+          return VerifyResult(false, null, "INVALID_FORMAT")
+        }
+      val cleartextBody = framed.body
+      val sigBlock = framed.signatureBlock
 
       // Decode the signature.
       val sigInputStream = PGPUtil.getDecoderStream(sigBlock.byteInputStream())
@@ -193,11 +183,9 @@ object BundleCryptoCore {
       // Verify the signature.
       pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
 
-      // Dash-unescape the cleartext per RFC 4880 Section 7.1.
-      val unescapedLines = cleartextBody.lines().map { line ->
-        if (line.startsWith("- ")) line.substring(2) else line
-      }
-      val dataToVerify = unescapedLines.joinToString("\r\n").toByteArray(Charsets.UTF_8)
+      // Canonicalize the cleartext per RFC 4880 Section 7.1 (dash-unescape +
+      // per-line trailing-whitespace strip), matching iOS Gopenpgp.
+      val dataToVerify = canonicalizeCleartext(cleartextBody).toByteArray(Charsets.UTF_8)
       pgpSignature.update(dataToVerify)
 
       if (!pgpSignature.verify()) {
@@ -234,17 +222,10 @@ object BundleCryptoCore {
 
     return try {
       val lines = ascContent.lines()
-      val hashHeaderIdx = lines.indexOfFirst { it.startsWith("Hash:") }
-      val sigStartIdx = lines.indexOfFirst { it == "-----BEGIN PGP SIGNATURE-----" }
-      val sigEndIdx = lines.indexOfFirst { it == "-----END PGP SIGNATURE-----" }
-      if (hashHeaderIdx < 0 || sigStartIdx < 0 || sigEndIdx < 0) {
-        return VerifyResult(false, null, "INVALID_FORMAT")
-      }
-
-      val bodyStartIdx = hashHeaderIdx + 2
-      val bodyLines = lines.subList(bodyStartIdx, sigStartIdx)
-      val cleartextBody = bodyLines.joinToString("\r\n").trimEnd()
-      val sigBlock = lines.subList(sigStartIdx, sigEndIdx + 1).joinToString("\n")
+      val framed = frameCleartext(lines)
+        ?: return VerifyResult(false, null, "INVALID_FORMAT")
+      val cleartextBody = framed.body
+      val sigBlock = framed.signatureBlock
 
       // Verify GPG signature.
       val sigInputStream = PGPUtil.getDecoderStream(sigBlock.byteInputStream())
@@ -261,10 +242,9 @@ object BundleCryptoCore {
         ?: return VerifyResult(false, null, "PUBKEY_NOT_FOUND")
 
       pgpSignature.init(JcaPGPContentVerifierBuilderProvider().setProvider(bcProvider), publicKey)
-      val unescapedLines = cleartextBody.lines().map { line ->
-        if (line.startsWith("- ")) line.substring(2) else line
-      }
-      val dataToVerify = unescapedLines.joinToString("\r\n").toByteArray(Charsets.UTF_8)
+      // Canonicalize per RFC 4880 Section 7.1 (dash-unescape + per-line
+      // trailing-whitespace strip), matching iOS Gopenpgp.
+      val dataToVerify = canonicalizeCleartext(cleartextBody).toByteArray(Charsets.UTF_8)
       pgpSignature.update(dataToVerify)
       if (!pgpSignature.verify()) {
         return VerifyResult(false, null, "SIGNATURE_INVALID")
@@ -281,6 +261,55 @@ object BundleCryptoCore {
     } catch (e: Exception) {
       OneKeyLog.error("BundleCrypto", "ASC verification error: ${e.javaClass.simpleName}: ${e.message}")
       VerifyResult(false, null, "ERROR_${e.javaClass.simpleName}")
+    }
+  }
+
+  // MARK: - PGP cleartext framing + canonicalization (RFC 4880 §7.1)
+  // Shared by verifyGpgCleartext and verifyDetachedAsc so both forms parse and
+  // canonicalize identically.
+
+  private data class FramedCleartext(val body: String, val signatureBlock: String)
+
+  // Frame a PGP CLEARTEXT SIGNED MESSAGE per RFC 4880 §7: a header section
+  // (one-or-more "Key: value" lines such as Hash:) terminated by the FIRST blank
+  // line, then the cleartext body, then the ASCII-armored signature block. This
+  // is robust to zero, one, or multiple armor headers rather than assuming a
+  // single "Hash:" line. Returns null if the message is not well-formed.
+  private fun frameCleartext(lines: List<String>): FramedCleartext? {
+    val msgStartIdx = lines.indexOfFirst { it == "-----BEGIN PGP SIGNED MESSAGE-----" }
+    val sigStartIdx = lines.indexOfFirst { it == "-----BEGIN PGP SIGNATURE-----" }
+    val sigEndIdx = lines.indexOfFirst { it == "-----END PGP SIGNATURE-----" }
+    if (msgStartIdx < 0 || sigStartIdx < 0 || sigEndIdx < 0) return null
+    if (sigStartIdx <= msgStartIdx || sigEndIdx < sigStartIdx) return null
+
+    // Header lines run from just after the BEGIN line until the first blank line;
+    // the body starts immediately after that blank line. If there is no blank
+    // line before the signature, the format is invalid.
+    var blankIdx = -1
+    for (i in (msgStartIdx + 1) until sigStartIdx) {
+      if (lines[i].isEmpty()) { blankIdx = i; break }
+    }
+    if (blankIdx < 0) return null
+
+    val bodyStartIdx = blankIdx + 1
+    val bodyLines = lines.subList(bodyStartIdx, sigStartIdx)
+    // Remove the trailing empty line that PGP adds before the signature block.
+    val body = bodyLines.joinToString("\r\n").trimEnd()
+    val signatureBlock = lines.subList(sigStartIdx, sigEndIdx + 1).joinToString("\n")
+    return FramedCleartext(body, signatureBlock)
+  }
+
+  // Canonicalize cleartext for signature verification per RFC 4880 §7.1, matching
+  // iOS Gopenpgp:
+  //   - dash-unescape: a line beginning with "- " has that prefix removed;
+  //   - trailing whitespace is stripped from each line;
+  //   - lines are rejoined with CRLF.
+  // Fail-safe: a stricter canonicalization can only reject otherwise-valid
+  // signatures, never accept an invalid one.
+  private fun canonicalizeCleartext(body: String): String {
+    return body.lines().joinToString("\r\n") { line ->
+      val unescaped = if (line.startsWith("- ")) line.substring(2) else line
+      unescaped.trimEnd(' ', '\t')
     }
   }
 
@@ -384,8 +413,12 @@ object BundleCryptoCore {
       if (file.isDirectory) {
         if (!validateFilesRecursive(file, expected, jsBundleDir)) return false
       } else {
-        if (file.name.contains("metadata.json") || file.name.contains(".DS_Store")) continue
-        val relativePath = file.absolutePath.replace(jsBundleDir, "")
+        // Skip only by EXACT basename (defense-in-depth: substring match could
+        // let an unverified file like "evil-metadata.json" bypass hashing).
+        if (file.name == "metadata.json" || file.name == ".DS_Store") continue
+        // Strip only the leading base dir; a global replace would corrupt paths
+        // where the base dir name recurs deeper in the tree.
+        val relativePath = file.absolutePath.removePrefix(jsBundleDir)
         val expectedSHA256 = expected[relativePath]
         if (expectedSHA256 == null) {
           OneKeyLog.error("BundleCrypto", "[bundle-verify] File on disk not found in metadata: $relativePath")
@@ -426,8 +459,10 @@ object BundleCryptoCore {
       if (file.isDirectory) {
         hashFilesRecursive(file, jsBundleDir, out)
       } else {
-        if (file.name.contains("metadata.json") || file.name.contains(".DS_Store")) continue
-        val relativePath = file.absolutePath.replace(jsBundleDir, "")
+        // Skip only by EXACT basename (mirror verify loop / sibling check).
+        if (file.name == "metadata.json" || file.name == ".DS_Store") continue
+        // Strip only the leading base dir (see validateFilesRecursive).
+        val relativePath = file.absolutePath.removePrefix(jsBundleDir)
         val sha256 = calculateSHA256(file.absolutePath).sha256
           ?: throw Exception("HASH_FAILED:$relativePath")
         out.add(DirHash(relativePath, sha256))

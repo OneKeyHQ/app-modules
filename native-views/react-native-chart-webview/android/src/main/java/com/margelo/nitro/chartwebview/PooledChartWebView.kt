@@ -18,6 +18,7 @@ import com.facebook.react.uimanager.ThemedReactContext
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import androidx.webkit.ScriptHandler
 import androidx.webkit.WebResourceErrorCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
@@ -66,18 +67,83 @@ class PooledChartWebView private constructor(
   // Shim (defines __chartNativePost) + the TS bridge that uses it. Set lazily via
   // setBridgeScript once the host has the prop value — registering it in init
   // would capture an empty script, since the first reconcile (window-attach) can
-  // run before the bridgeScript prop is applied. Re-asserted on page start/finish.
+  // run before the bridgeScript prop is applied. The privileged bridge exposes
+  // window.$onekey.$private.request etc., so it must only ever be injected into
+  // the trusted chart origin(s) we load — NOT cross-origin subframes / arbitrary
+  // pages. The actual document-start registration is therefore deferred to
+  // registerBridgeForOrigins(), called once the load URL (hence origin) is known.
   private var outboundBridgeJs: String = ""
-  private var bridgeRegistered = false
 
-  // Called by the host before the first load. Registers the document-start bridge
-  // once a non-empty script is available; subsequent calls are no-ops.
+  // Handler for the currently-registered document-start script, kept so it can be
+  // removed and re-registered if the bridge script or the trusted origin set
+  // changes (instead of silently latching the first one).
+  private var bridgeScriptHandler: ScriptHandler? = null
+  // The (script, origins) pair currently registered, so we can detect changes and
+  // avoid redundant re-registration.
+  private var registeredBridgeJs: String? = null
+  private var registeredOrigins: Set<String> = emptySet()
+
+  // True once we have a non-empty bridge script staged; gates loading (the page
+  // must not boot before the bridge is registered or its first requests are lost).
+  private val bridgeRegistered: Boolean
+    get() = outboundBridgeJs.isNotEmpty()
+
+  // Called by the host before the first load. Stages the document-start bridge
+  // (shim + the shared TS bridgeScript) once a non-empty script is available.
+  // The script is not injected into the page yet — that happens, scoped to the
+  // trusted origin(s), in registerBridgeForOrigins() when the load URL is known.
+  // If a second host sharing the reuseKey supplies a DIFFERENT script we update
+  // it (and re-register on next load) rather than silently dropping it; in the
+  // app's single-reuseKey + constant-bridge reality this branch never fires, but
+  // not latching keeps it correct if that ever changes.
   fun setBridgeScript(bridgeScript: String) {
-    if (bridgeRegistered || bridgeScript.isEmpty()) return
+    if (bridgeScript.isEmpty()) return
     outboundBridgeJs = "$NATIVE_POST_SHIM_JS\n$bridgeScript"
-    bridgeRegistered = true
-    if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-      WebViewCompat.addDocumentStartJavaScript(webView, outboundBridgeJs, setOf("*"))
+  }
+
+  // Register (or re-register) the document-start bridge scoped to exactly the
+  // trusted origins we load. allowedOriginRules of setOf("*") would leak the
+  // privileged bridge into every cross-origin subframe; here we pass only the
+  // offline asset origin and (in online mode) the configured chart origin.
+  private fun registerBridgeForOrigins(origins: Set<String>) {
+    if (outboundBridgeJs.isEmpty() || origins.isEmpty()) return
+    if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+    // No-op if nothing changed (same script + same origin set already registered).
+    if (bridgeScriptHandler != null &&
+      registeredBridgeJs == outboundBridgeJs &&
+      registeredOrigins == origins
+    ) {
+      return
+    }
+    bridgeScriptHandler?.remove()
+    bridgeScriptHandler =
+      WebViewCompat.addDocumentStartJavaScript(webView, outboundBridgeJs, origins)
+    registeredBridgeJs = outboundBridgeJs
+    registeredOrigins = origins
+  }
+
+  // The trusted origin set for the current source: the offline asset origin
+  // (https://appassets.androidplatform.net) always, plus the online/fallback
+  // `uri` origin when running in online mode. computeTargetUrl serves offline
+  // content from ASSET_HOST and online content from `uri`, so these are exactly
+  // the origins the privileged bridge legitimately runs in.
+  private fun trustedOriginsFor(uri: String?): Set<String> {
+    val origins = linkedSetOf("https://$ASSET_HOST")
+    originOf(uri)?.let { origins.add(it) }
+    return origins
+  }
+
+  // scheme://host[:port] of a URL, or null if it can't be parsed / isn't http(s).
+  private fun originOf(url: String?): String? {
+    if (url.isNullOrEmpty()) return null
+    return try {
+      val u = java.net.URI(url)
+      val scheme = u.scheme?.lowercase() ?: return null
+      if (scheme != "https" && scheme != "http") return null
+      val host = u.host ?: return null
+      if (u.port != -1) "$scheme://$host:${u.port}" else "$scheme://$host"
+    } catch (e: Exception) {
+      null
     }
   }
 
@@ -93,6 +159,10 @@ class PooledChartWebView private constructor(
   // clearSnapshot() or the next capture replaces it.
   private var cachedSnapshot: Bitmap? = null
   private var overlay: ImageView? = null
+  // The bitmap currently shown by `overlay` (a snapshot reused directly, not a
+  // copy). Tracked so a concurrent capture doesn't recycle a bitmap still on
+  // screen — see capturePixelCopy.
+  private var overlaySnapshot: Bitmap? = null
 
   // How long the snapshot overlay stays up after a reparent, giving the WebView
   // time to draw its first frame in the new container (~5 frames).
@@ -119,14 +189,12 @@ class PooledChartWebView private constructor(
         request: WebResourceRequest,
       ): WebResourceResponse? = assetLoader?.shouldInterceptRequest(request.url)
 
-      override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
-        super.onPageStarted(view, url, favicon)
-        if (outboundBridgeJs.isNotEmpty()) view.evaluateJavascript(outboundBridgeJs, null)
-      }
-
       override fun onPageFinished(view: WebView, url: String?) {
         super.onPageFinished(view, url)
-        if (outboundBridgeJs.isNotEmpty()) view.evaluateJavascript(outboundBridgeJs, null)
+        // The bridge is delivered exclusively via the origin-scoped document-start
+        // script (see registerBridgeForOrigins). We deliberately do NOT re-inject
+        // it here via evaluateJavascript — that ran on every page event regardless
+        // of URL and would expose the privileged bridge to untrusted pages/frames.
         owner?.dispatchLoadEnd()
         // Prime the snapshot so the first move already has a frame to mask with.
         refreshSnapshotSoon()
@@ -207,6 +275,9 @@ class PooledChartWebView private constructor(
   fun clearSnapshot() {
     runOnUiThread {
       removeOverlay()
+      // The pool owns cachedSnapshot outright (hosts get copies via captureNow),
+      // so recycle it here instead of leaving a full-size ARGB_8888 bitmap to GC.
+      cachedSnapshot?.recycle()
       cachedSnapshot = null
     }
   }
@@ -220,9 +291,17 @@ class PooledChartWebView private constructor(
   }
 
   /// Capture now and deliver the fresh frame (e.g. so the host that is losing
-  /// ownership can update its placeholder to its very last frame).
+  /// ownership can update its placeholder to its very last frame). The host gets
+  /// an independent COPY: the pool reuses/recycles its own `cachedSnapshot` on
+  /// every internal refresh, so handing out the live buffer would let it recycle
+  /// a bitmap still shown in a host placeholder. The copy is the host's to keep.
   fun captureNow(callback: (Bitmap?) -> Unit) {
-    capturePixelCopy(callback)
+    capturePixelCopy { bmp ->
+      val copy = bmp?.takeIf { !it.isRecycled }?.let {
+        it.copy(it.config ?: Bitmap.Config.ARGB_8888, false)
+      }
+      callback(copy)
+    }
   }
 
   // Capture the WebView's REAL on-screen pixels (incl. GPU-rendered chart
@@ -247,7 +326,20 @@ class PooledChartWebView private constructor(
         src,
         bmp,
         { result ->
-          if (result == PixelCopy.SUCCESS) cachedSnapshot = bmp
+          if (result == PixelCopy.SUCCESS) {
+            // Recycle the frame we're replacing to avoid piling up full-size
+            // ARGB_8888 bitmaps. Guard against recycling one still referenced by a
+            // live overlay/placeholder ImageView (showSnapshotOverlay reuses
+            // cachedSnapshot directly): only the unused old buffer is freed.
+            val old = cachedSnapshot
+            cachedSnapshot = bmp
+            if (old != null && old !== bmp && old !== overlaySnapshot && !old.isRecycled) {
+              old.recycle()
+            }
+          } else {
+            // Capture failed: the freshly allocated buffer is unused — free it.
+            if (!bmp.isRecycled) bmp.recycle()
+          }
           callback?.invoke(cachedSnapshot)
         },
         webView.handler ?: Handler(Looper.getMainLooper()),
@@ -279,12 +371,17 @@ class PooledChartWebView private constructor(
     }
     container.addView(iv) // added last => drawn on top of the WebView
     overlay = iv
+    overlaySnapshot = snap
     iv.postDelayed({ removeOverlay() }, overlayHideDelayMs)
   }
 
   private fun removeOverlay() {
-    overlay?.let { (it.parent as? ViewGroup)?.removeView(it) }
+    overlay?.let {
+      (it.parent as? ViewGroup)?.removeView(it)
+      it.setImageDrawable(null)
+    }
     overlay = null
+    overlaySnapshot = null
   }
 
   /**
@@ -301,6 +398,11 @@ class PooledChartWebView private constructor(
       lastLocalBundle = localBundle
       rebuildAssetLoader(localBundle)
     }
+    // Register the document-start bridge scoped to exactly the origin(s) this load
+    // uses (offline asset origin, plus the online `uri` origin when present) before
+    // navigating, so the page boots with the bridge but cross-origin subframes /
+    // untrusted pages don't receive it.
+    registerBridgeForOrigins(trustedOriginsFor(uri))
     val target = computeTargetUrl(uri, localBundle, entry, paramsJson) ?: return
     if (target == lastLoadedUrl) return
     lastLoadedUrl = target
@@ -319,9 +421,19 @@ class PooledChartWebView private constructor(
     runOnUiThread { webView.reload() }
   }
 
-  /** Permanently free the WebView (used for non-pooled / private instances). */
+  /**
+   * Permanently free the WebView and its bridge/snapshot resources. Used for the
+   * non-pooled (private) path on host teardown, and reachable for the pool (see
+   * ChartWebviewPool.release) so an evicted entry can be torn down rather than
+   * leaking a Chromium renderer + JavascriptInterface.
+   */
   fun destroy() {
     runOnUiThread {
+      bridgeScriptHandler?.remove()
+      bridgeScriptHandler = null
+      removeOverlay()
+      cachedSnapshot?.recycle()
+      cachedSnapshot = null
       (webView.parent as? ViewGroup)?.removeView(webView)
       webView.destroy()
       val n = liveCount.decrementAndGet()
@@ -405,8 +517,42 @@ class PooledChartWebView private constructor(
  */
 object ChartWebviewPool {
   private val shared = HashMap<String, PooledChartWebView>()
+  // Refcount per key: incremented when a host adopts the entry, decremented when a
+  // host releases it. Lets us know when an entry has no live hosts. With the app's
+  // single constant reuseKey this stays >= 0 and the entry is kept warm; the count
+  // exists so destroy() is *reachable* (see releaseShared) rather than dead code,
+  // and so a future multi-key/LRU policy can evict safely.
+  private val refCounts = HashMap<String, Int>()
 
+  /** Get (creating if absent) the entry for [key]. Does not change the refcount —
+   *  call [adopt] exactly once per host to register a live reference. */
   @Synchronized
   fun acquireShared(key: String, context: Context): PooledChartWebView =
     shared.getOrPut(key) { PooledChartWebView.create(context, key) }
+
+  /** Register one live host reference to [key] (call once per host; idempotency is
+   *  the caller's responsibility via adoptedPoolKey). */
+  @Synchronized
+  fun adopt(key: String) {
+    refCounts[key] = (refCounts[key] ?: 0) + 1
+  }
+
+  /**
+   * A host that previously adopted [key] is going away. Decrements the refcount.
+   * By default the entry is kept warm even at zero (intentional single-instance
+   * cache — see class doc); pass [destroyWhenIdle] = true to actually tear the
+   * WebView down when the last host leaves (used for an LRU/eviction policy).
+   */
+  @Synchronized
+  fun releaseShared(key: String, destroyWhenIdle: Boolean = false) {
+    val next = (refCounts[key] ?: 0) - 1
+    if (next <= 0) {
+      refCounts.remove(key)
+      if (destroyWhenIdle) {
+        shared.remove(key)?.destroy()
+      }
+    } else {
+      refCounts[key] = next
+    }
+  }
 }

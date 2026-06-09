@@ -63,12 +63,35 @@ class HybridChartWebview: HybridChartWebviewSpec {
   /// The WebView backing this host (a shared pool entry, or a private one).
   private var backing: PooledChartWebView?
   private var attached = false
+  // The pooled key this host has refcounted via the pool (nil when not pooled).
+  // Makes adopt/release idempotent per host across many reconciles.
+  private var adoptedPoolKey: String?
 
   override init() {
     super.init()
     container.onWindowChange = { [weak self] attached in
       self?.attached = attached
       self?.scheduleReconcile()
+    }
+  }
+
+  // Host teardown. ARC deallocates the host when the view manager drops it; this is
+  // the reliable "host is gone" signal. Tears down the NON-pooled (private) WebView
+  // so it doesn't leak, balances the pool refcount for the pooled path, and clears
+  // the static pendingRevealHost if we go away mid-reveal.
+  deinit {
+    revealFallbackWork?.cancel()
+    if HybridChartWebview.pendingRevealHost === self {
+      HybridChartWebview.pendingRevealHost = nil
+    }
+    let entry = backing
+    if let key = adoptedPoolKey {
+      // Pooled: balance the adopt(). Kept warm by default; release makes the
+      // pool's destroy() reachable.
+      ChartWebviewPool.shared.releaseShared(key: key)
+    } else {
+      // Private: this host solely owns the WebView — tear it down.
+      entry?.destroy()
     }
   }
 
@@ -168,8 +191,16 @@ class HybridChartWebview: HybridChartWebviewSpec {
   // displays the live WebView; inactive hosts display the cached frame snapshot
   // so their slot isn't blank (and the live WebView reparents on hand-off).
   private func reconcilePooled() {
-    let pooled = ChartWebviewPool.shared.acquireShared(key: effectiveKey())
+    let key = effectiveKey()
+    let pooled = ChartWebviewPool.shared.acquireShared(key: key)
     backing = pooled
+    // Refcount the entry once per host (reconcile runs many times). Balanced by
+    // releaseShared in deinit. If the reuseKey changed, release the old one first.
+    if adoptedPoolKey != key {
+      if let old = adoptedPoolKey { ChartWebviewPool.shared.releaseShared(key: old) }
+      ChartWebviewPool.shared.adopt(key: key)
+      adoptedPoolKey = key
+    }
     if wantsOwnership() {
       pooled.owner = self
       // Register the document-start bridge before the first load (the prop is set
@@ -326,6 +357,9 @@ final class PooledChartWebView {
   // added lazily (see setBridgeScript) once the host has the prop value.
   private var userContent: WKUserContentController?
   private var bridgeRegistered = false
+  // The bridge script currently registered, so a differing script from a second
+  // host sharing a reuseKey is re-registered rather than silently dropped (fix #4).
+  private var registeredBridgeScript: String?
 
   private var webView: WKWebView!
   private var proxy: ChartWebViewProxy!
@@ -354,15 +388,27 @@ final class PooledChartWebView {
   // subsequent calls are no-ops. Done lazily because the first reconcile
   // (window-attach) can run before the bridgeScript prop is applied.
   func setBridgeScript(_ bridgeScript: String) {
-    guard !bridgeRegistered, !bridgeScript.isEmpty, let userContent = userContent else { return }
+    guard !bridgeScript.isEmpty, let userContent = userContent else { return }
+    // Re-register if a second host sharing the reuseKey supplies a DIFFERENT script
+    // instead of silently dropping it (fix #4). In the app's single-reuseKey +
+    // constant-bridge reality this never fires; not latching keeps it correct.
+    if bridgeRegistered, registeredBridgeScript == bridgeScript { return }
+    if bridgeRegistered {
+      // WKUserScripts can't be removed individually; drop all and re-add ours.
+      userContent.removeAllUserScripts()
+    }
     bridgeRegistered = true
+    registeredBridgeScript = bridgeScript
     let handlerName = ChartWebviewConst.messageHandlerName
     let shim = "(function(){window.__chartNativePost=function(s){"
       + "window.webkit.messageHandlers.\(handlerName).postMessage(s);};})();"
     let userScript = WKUserScript(
       source: shim + "\n" + bridgeScript,
       injectionTime: .atDocumentStart,
-      forMainFrameOnly: false
+      // Main frame only: the privileged bridge (window.$onekey.$private.request etc.)
+      // must not be exposed to cross-origin iframes. The chart page runs in the main
+      // frame, so it still gets the full bridge (fix #1).
+      forMainFrameOnly: true
     )
     userContent.addUserScript(userScript)
   }
@@ -427,6 +473,32 @@ final class PooledChartWebView {
     runOnMain { [weak self] in
       self?.removeOverlay()
       self?.webView?.removeFromSuperview()
+    }
+  }
+
+  /// Permanently tear down the WebView and its bridge. Used for the non-pooled
+  /// (private) path on host teardown, and reachable for the pool (see
+  /// ChartWebviewPool.releaseShared). Stops loading, detaches the view, and
+  /// removes the script message handler so the proxy retain is released.
+  func destroy() {
+    runOnMain { [weak self] in
+      guard let self = self else { return }
+      self.removeOverlay()
+      self.cachedSnapshot = nil
+      if let webView = self.webView {
+        webView.stopLoading()
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        webView.removeFromSuperview()
+      }
+      // Drop the page -> native handler so the user-content controller stops
+      // retaining the proxy (and re-entrancy can't deliver to a torn-down owner).
+      self.userContent?.removeScriptMessageHandler(forName: ChartWebviewConst.messageHandlerName)
+      self.userContent?.removeAllUserScripts()
+      self.userContent = nil
+      self.webView = nil
+      PooledChartWebView.liveCount -= 1
+      NSLog("[ChartWebviewPool] WebView DESTROYED key=\(self.key) liveCount=\(PooledChartWebView.liveCount)")
     }
   }
 
@@ -741,11 +813,52 @@ extension ChartWebViewProxy: WKURLSchemeHandler {
 final class ChartWebviewPool {
   static let shared = ChartWebviewPool()
   private var entries: [String: PooledChartWebView] = [:]
+  // Refcount per key: incremented on adopt, decremented on release. Lets us know
+  // when an entry has no live hosts. With the app's single constant reuseKey this
+  // stays warm; the count exists so destroy() is reachable (see releaseShared) and
+  // so a future multi-key/LRU policy can evict safely.
+  private var refCounts: [String: Int] = [:]
+  // Serializes all dictionary access. Android guards the pool with @Synchronized;
+  // here concurrent acquire/release could otherwise corrupt the dict or create
+  // duplicate WebViews for one key (fix #3).
+  private let lock = NSLock()
 
+  /// Get (creating if absent) the entry for `key`. Does NOT change the refcount —
+  /// call `adopt` exactly once per host (idempotency via `adoptedPoolKey`).
   func acquireShared(key: String) -> PooledChartWebView {
+    lock.lock()
+    defer { lock.unlock() }
     if let existing = entries[key] { return existing }
     let created = PooledChartWebView(key: key)
     entries[key] = created
     return created
+  }
+
+  /// Register one live host reference to `key` (call once per host).
+  func adopt(key: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    refCounts[key, default: 0] += 1
+  }
+
+  /// A host that previously adopted `key` is going away. Decrements the refcount.
+  /// Kept warm by default (intentional single-instance cache); pass
+  /// `destroyWhenIdle: true` to tear the WebView down when the last host leaves.
+  func releaseShared(key: String, destroyWhenIdle: Bool = false) {
+    lock.lock()
+    let next = (refCounts[key] ?? 0) - 1
+    var toDestroy: PooledChartWebView?
+    if next <= 0 {
+      refCounts[key] = nil
+      if destroyWhenIdle {
+        toDestroy = entries.removeValue(forKey: key)
+      }
+    } else {
+      refCounts[key] = next
+    }
+    lock.unlock()
+    // destroy() hops to main and isn't part of the dict invariant — call outside
+    // the lock.
+    toDestroy?.destroy()
   }
 }

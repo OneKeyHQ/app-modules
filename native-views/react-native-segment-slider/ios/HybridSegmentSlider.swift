@@ -63,13 +63,11 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   // MARK: - Props (required props are non-optional in the generated spec)
   var value: Double = 0 {
     didSet {
-      // While dragging, the finger owns the value — ignore controlled updates
-      // (web skips its useLayoutEffect when draggingRef.current is true).
-      if !isDragging {
-        currentValue = value
-        lastEmitted = value
-        applyVisual(value)
-      }
+      // A controlled value change is authoritative: hard-snap the thumb to the
+      // incoming `value`, bypassing the dragging guard. Otherwise a JS reset
+      // that arrives while a drag is in flight (or right after one) would leave
+      // the thumb showing the stale dragged value.
+      syncToValue(value)
     }
   }
   var min: Double = 0 { didSet { scheduleLayout() } }
@@ -86,7 +84,10 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   var centerOrigin: Bool = false { didSet { scheduleLayout() } }
   // Gates tap snapping only; no visual change on its own, so no didSet.
   var snapTapToSegment: Bool = false
-  var epoch: Double = 0 { didSet { scheduleLayout() } }
+  // Bumping epoch forces a hard re-sync of the thumb to the current `value`,
+  // even mid-drag — the documented escape hatch for "re-apply the controlled
+  // value now" after a JS-side reset.
+  var epoch: Double = 0 { didSet { syncToValue(value) } }
 
   var fillColor: String = "" {
     didSet { cFill = parse(fillColor); fillLayer.backgroundColor = cFill; scheduleLayout() }
@@ -433,6 +434,21 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     let idx = (frac * Double(markCount - 1)).rounded()
     let snappedFrac = idx / Double(markCount - 1)
     return min + snappedFrac * (max - min)
+  }
+
+  /// Hard re-sync: snap the thumb to `v`, overriding any in-flight drag. A
+  /// controlled value/epoch update wins over the current gesture, so drop the
+  /// drag (a queued touchesMoved can't then re-overwrite the thumb) and clear
+  /// the transient hover/halo before re-rendering.
+  private func syncToValue(_ v: Double) {
+    isDragging = false
+    if hoverMarkIndex != -1 {
+      hoverMarkIndex = -1
+      setHalo(visible: false, index: 0)
+    }
+    currentValue = v
+    lastEmitted = v
+    applyVisual(v)
   }
 
   private func setValue(_ raw: Double) {

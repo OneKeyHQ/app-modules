@@ -36,7 +36,16 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     // render-ready signal. Shared so render-ready (which arrives on whichever host
     // owns the WebView at that instant — not necessarily the awaiting one) reveals
     // the correct host regardless of the owner-handoff timing.
-    private var pendingRevealHost: HybridChartWebview? = null
+    //
+    // WeakReference (iOS uses a `weak` static for the same reason): a strong static
+    // would leak the host — and its ReactContext/Activity — if the host unmounts
+    // mid-reveal. dispose() also clears it eagerly on detach.
+    private var pendingRevealHostRef: java.lang.ref.WeakReference<HybridChartWebview>? = null
+    private var pendingRevealHost: HybridChartWebview?
+      get() = pendingRevealHostRef?.get()
+      set(value) {
+        pendingRevealHostRef = value?.let { java.lang.ref.WeakReference(it) }
+      }
   }
 
   private val instanceId = instanceIds.incrementAndGet()
@@ -45,7 +54,11 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
   // we add at runtime (the WebView / placeholder). Without forcing a measure +
   // layout pass here, those children stay 0x0 and the slot renders blank. This
   // requestLayout override is the standard RN fix for custom ViewGroups.
-  private inner class ChartContainer(ctx: android.content.Context) : FrameLayout(ctx) {
+  private inner class ChartContainer(ctx: android.content.Context) : FrameLayout(ctx), HostAware {
+    // Lets the view manager reach this host from the dropped View (onDropViewInstance)
+    // to run teardown — see TeardownChartWebviewManager.
+    override val chartHost: HybridChartWebview get() = this@HybridChartWebview
+
     private val relayout = Runnable {
       measure(
         MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
@@ -79,6 +92,9 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
   /** The WebView backing this host (a shared pool entry, or a private one). */
   private var backing: PooledChartWebView? = null
   private var attached = false
+  // The pooled key this host has refcounted via ChartWebviewPool.adopt (null when
+  // not pooled). Makes adopt/release idempotent per host across many reconciles.
+  private var adoptedPoolKey: String? = null
 
   // --- Source props ---
 
@@ -200,8 +216,16 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
   // displays the live WebView; inactive hosts display the cached frame snapshot
   // so their slot isn't blank (and the live WebView reparents on hand-off).
   private fun reconcilePooled() {
-    val entry = ChartWebviewPool.acquireShared(effectiveKey(), context)
+    val key = effectiveKey()
+    val entry = ChartWebviewPool.acquireShared(key, context)
     backing = entry
+    // Refcount the pool entry once per host (reconcile runs many times). Balanced
+    // by releaseShared in dispose(). If the reuseKey changed, release the old one.
+    if (adoptedPoolKey != key) {
+      adoptedPoolKey?.let { ChartWebviewPool.releaseShared(it) }
+      ChartWebviewPool.adopt(key)
+      adoptedPoolKey = key
+    }
     if (wantsOwnership()) {
       entry.owner = this
       // Register the document-start bridge before the first load (the prop is set
@@ -327,5 +351,32 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
   private fun removePlaceholder() {
     placeholder?.let { container.removeView(it) }
     placeholder = null
+  }
+
+  // Host teardown. Called by the view manager's onDropViewInstance (the only
+  // reliable "host is gone" signal — onViewDetachedFromWindow fires on every
+  // navigation, not just final teardown). Tears down the NON-pooled (private)
+  // WebView so it doesn't leak a Chromium renderer + JavascriptInterface per
+  // mount/unmount. Pooled (shared) backing is intentionally left alive in the
+  // warm pool — other hosts may still share it; its lifetime is the pool's.
+  fun dispose() {
+    stopOwnCapture()
+    container.removeCallbacks(reconcileRunnable)
+    container.removeCallbacks(revealFallbackRunnable)
+    // Don't leak this host (and its ReactContext/Activity) via the static
+    // pendingRevealHost if we unmount mid-reveal.
+    if (pendingRevealHost == this) pendingRevealHost = null
+    val entry = backing
+    if (entry != null && entry.owner == this) entry.owner = null
+    // Balance the pool adopt() if this host ever joined a pooled key. Kept warm by
+    // default (single-instance cache); the release path makes destroy() reachable.
+    adoptedPoolKey?.let { ChartWebviewPool.releaseShared(it) }
+    adoptedPoolKey = null
+    // A private (non-pooled) instance is owned solely by this host — tear it down
+    // so it doesn't leak a Chromium renderer + JavascriptInterface.
+    if (entry != null && !isPooled()) entry.destroy()
+    backing = null
+    removePlaceholder()
+    ownSnapshot = null
   }
 }

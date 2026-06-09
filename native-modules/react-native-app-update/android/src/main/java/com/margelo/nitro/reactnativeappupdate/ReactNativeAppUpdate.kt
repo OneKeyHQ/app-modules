@@ -25,6 +25,7 @@ import java.io.InputStreamReader
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import com.margelo.nitro.reactnativebundlecrypto.BundleCryptoCore
 
@@ -518,8 +519,24 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
 
                 // Phase 2 — pick up an in-flight partial.
+                //
+                // A concurrent (multi-range) partial is pre-allocated to the FULL
+                // size up front (RandomAccessFile.setLength(total)) and tracks the
+                // real, durably-written cursor only in its sidecar
+                // "<partial>.progress" manifest — the .partial itself is zero-filled
+                // past the real data. The size-based classification below is blind
+                // to that: it would see partialSize == expectedSize and try to
+                // promote+SHA-verify a mostly-zeroed file, hit HashMismatch, and
+                // DELETE it — nuking every interrupted concurrent download back to
+                // byte 0. So when the manifest exists, skip the size-based
+                // promote/discard branches entirely and let the concurrent
+                // downloader below own the file: it resumes from the manifest (or
+                // returns FALLBACK and hands the bytes back to single-stream).
+                // The path must match exactly what ConcurrentRangeDownloader writes:
+                // File("$partialFilePath.progress").
+                val hasConcurrentManifest = buildFile("$partialFilePath.progress").exists()
                 var partialBytes = 0L
-                if (partialFile.exists()) {
+                if (partialFile.exists() && !hasConcurrentManifest) {
                     val partialSize = partialFile.length()
                     when {
                         expectedSize > 0 && partialSize == expectedSize -> {
@@ -575,23 +592,36 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         .followRedirects(false)
                         .followSslRedirects(false)
                         .build()
-                    var concurrentProgress = -1
+                    // onProgress is invoked concurrently from all 8 worker
+                    // threads. concurrentProgress must be an AtomicInteger so the
+                    // "did the percent advance?" check is race-free, and the
+                    // NotificationCompat.Builder (shared, NOT thread-safe) plus the
+                    // notify() call must be guarded by a single lock so two threads
+                    // never mutate/build it at once. We emit at most once per
+                    // percent step: getAndSet returns the previous value, and only
+                    // the thread that actually moved the percent forward proceeds.
+                    val concurrentProgress = AtomicInteger(-1)
+                    val notifyLock = Any()
                     val concurrentOutcome = ConcurrentRangeDownloader(
                         httpClient = concurrentClient,
                         log = { msg -> OneKeyLog.info("AppUpdate", msg) },
                     ).download(url, partialFilePath) { transferred, total ->
                         if (total > 0) {
                             val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
-                            if (p != concurrentProgress) {
+                            // Only the thread that advances the percent emits; a
+                            // stale/lower p (out-of-order delivery) is dropped.
+                            val prev = concurrentProgress.get()
+                            if (p > prev && concurrentProgress.compareAndSet(prev, p)) {
                                 sendEvent("update/downloading", progress = p)
-                                builder.setProgress(100, p, false)
-                                if (ActivityCompat.checkSelfPermission(
-                                        context, android.Manifest.permission.POST_NOTIFICATIONS
-                                    ) == PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    notifyManager.notify(NOTIFICATION_ID, builder.build())
+                                synchronized(notifyLock) {
+                                    builder.setProgress(100, p, false)
+                                    if (ActivityCompat.checkSelfPermission(
+                                            context, android.Manifest.permission.POST_NOTIFICATIONS
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        notifyManager.notify(NOTIFICATION_ID, builder.build())
+                                    }
                                 }
-                                concurrentProgress = p
                             }
                         }
                     }

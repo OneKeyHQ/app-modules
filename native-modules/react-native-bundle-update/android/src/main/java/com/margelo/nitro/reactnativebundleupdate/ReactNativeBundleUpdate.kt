@@ -137,18 +137,26 @@ object BundleUpdateStoreAndroid {
     fun setCurrentBundleVersionAndSignature(context: Context, version: String, signature: String?) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val currentVersion = prefs.getString(CURRENT_BUNDLE_VERSION_KEY, "")
+
+        // Write the signature file BEFORE flipping the current-version pointer,
+        // and commit the pref synchronously (commit() not apply()). This matches
+        // the atomic intent of the commit() pre-launch path and guarantees that
+        // a crash can never leave the version pointing at a bundle whose
+        // signature is missing — which would make a perfectly valid bundle fail
+        // verification and get discarded on next launch. Either the pointer flip
+        // hasn't happened (old bundle stays active, new bundle untouched on disk)
+        // or both signature + version are durably persisted together.
+        if (!signature.isNullOrEmpty()) {
+            writeSignatureFile(context, version, signature)
+        }
+
         val editor = prefs.edit()
         editor.putString(CURRENT_BUNDLE_VERSION_KEY, version)
         // Remove old signature key from prefs (legacy cleanup)
         if (!currentVersion.isNullOrEmpty()) {
             editor.remove(currentVersion)
         }
-        editor.apply()
-
-        // Store signature to file
-        if (!signature.isNullOrEmpty()) {
-            writeSignatureFile(context, version, signature)
-        }
+        editor.commit()
     }
 
     fun clearUpdateBundleData(context: Context) {
@@ -526,13 +534,24 @@ object BundleUpdateStoreAndroid {
     }
 
     private fun validateFilesRecursive(dir: File, metadata: Map<String, String>, jsBundleDir: String): Boolean {
-        val files = dir.listFiles() ?: return true
+        val files = dir.listFiles()
+        if (files == null) {
+            // listFiles() returns null on I/O error or unreadable directory.
+            // Fail closed instead of treating an unlistable subtree as
+            // "nothing to verify" — that would silently allow a tampered
+            // bundle asset whose containing dir was made unreadable.
+            OneKeyLog.error(
+                "BundleUpdate",
+                "[bundle-verify] failed to list directory: ${dir.absolutePath}",
+            )
+            return false
+        }
         for (file in files) {
             if (file.isDirectory) {
                 if (!validateFilesRecursive(file, metadata, jsBundleDir)) return false
             } else {
-                if (file.name.contains("metadata.json") || file.name.contains(".DS_Store")) continue
-                val relativePath = file.absolutePath.replace(jsBundleDir, "")
+                if (file.name == "metadata.json" || file.name == ".DS_Store") continue
+                val relativePath = file.absolutePath.removePrefix(jsBundleDir)
                 val expectedSHA256 = metadata[relativePath]
                 if (expectedSHA256 == null) {
                     OneKeyLog.error("BundleUpdate", "[bundle-verify] File on disk not found in metadata: $relativePath")
@@ -1208,8 +1227,12 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     // partial/manifest left by an earlier interrupted attempt.
                     if (partialFile.exists()) partialFile.delete()
                     File("$partialFilePath.progress").delete()
-                    isDownloading.set(false)
+                    // Keep isDownloading held across the skip delay below. Clearing
+                    // it before the sleep opens a ~1s window where a second
+                    // downloadBundle could pass the getAndSet guard and run
+                    // concurrently. Reset only after the delay completes.
                     Thread.sleep(1000)
+                    isDownloading.set(false)
                     sendEvent("update/complete")
                     return@async result
                 } else {
@@ -2051,7 +2074,11 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             val resolvedPath = File(filePath).canonicalPath
             val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context)).canonicalPath
             val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context)).canonicalPath
-            if (!resolvedPath.startsWith(bundleDir) && !resolvedPath.startsWith(downloadDir)) {
+            // Enforce a separator boundary so e.g. "onekey-bundle-evil/x" is not
+            // accepted as confined under "onekey-bundle". The base dir itself is allowed.
+            fun isConfinedTo(base: String): Boolean =
+                resolvedPath == base || resolvedPath.startsWith(base + File.separator)
+            if (!isConfinedTo(bundleDir) && !isConfinedTo(downloadDir)) {
                 OneKeyLog.error("BundleUpdate", "getSha256FromFilePath: path outside allowed directories: $resolvedPath")
                 throw Exception("File path outside allowed bundle directories")
             }
