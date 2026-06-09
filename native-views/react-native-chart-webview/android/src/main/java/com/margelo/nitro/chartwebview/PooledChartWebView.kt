@@ -149,6 +149,11 @@ class PooledChartWebView private constructor(
 
   /** The host currently displaying this WebView; page events route here. */
   var owner: HybridChartWebview? = null
+  // The host that warm-booted the page and can drive its symbol / receive its
+  // callbacks while there is no VISIBLE owner yet. Separate from `owner` (the
+  // YIELD path clears `owner`); callbacks fall back to this so bars-state /
+  // load-end aren't dropped during warm. Mirror of the iOS warmDriver.
+  var warmDriver: HybridChartWebview? = null
 
   private var assetLoader: WebViewAssetLoader? = null
   private var lastLoadedUrl: String? = null
@@ -195,7 +200,7 @@ class PooledChartWebView private constructor(
         // script (see registerBridgeForOrigins). We deliberately do NOT re-inject
         // it here via evaluateJavascript — that ran on every page event regardless
         // of URL and would expose the privileged bridge to untrusted pages/frames.
-        owner?.dispatchLoadEnd()
+        (owner ?: warmDriver)?.dispatchLoadEnd()
         // Prime the snapshot so the first move already has a frame to mask with.
         refreshSnapshotSoon()
       }
@@ -217,7 +222,16 @@ class PooledChartWebView private constructor(
   private inner class ChartBridge {
     @JavascriptInterface
     fun postMessage(message: String) {
-      runOnUiThread { owner?.dispatchMessage(message) }
+      runOnUiThread {
+        val target = owner ?: warmDriver
+        if (target == null) {
+          android.util.Log.w(
+            "ChartWV",
+            "msg DROPPED (no owner/warmDriver): ${message.take(80)}",
+          )
+        }
+        target?.dispatchMessage(message)
+      }
     }
   }
 
