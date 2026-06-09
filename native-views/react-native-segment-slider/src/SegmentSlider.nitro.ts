@@ -24,8 +24,16 @@ import type {
  * hex / rgba() strings so the native side never depends on the theme system.
  */
 export interface SegmentSliderProps extends HybridViewProps {
-  /** Current (controlled) value. Ignored while the user is dragging. */
-  value: number;
+  /**
+   * Initial value, applied ONCE when the view mounts. The slider is
+   * UNCONTROLLED: after mount the native view owns the value (driven by the
+   * pan gesture and reported via `onChange`). To set the value imperatively
+   * from JS — e.g. a leverage / coin reset — call the `setValue` method on the
+   * hybrid ref instead of re-rendering with a new prop. This keeps reset (and
+   * any high-rate) updates off the Fabric prop-commit path (REACT-NATIVE-1JZ)
+   * and removes the controlled-value-vs-drag conflict entirely.
+   */
+  defaultValue: number;
   /** Range minimum (default range 0..100). */
   min: number;
   /** Range maximum. */
@@ -47,12 +55,6 @@ export interface SegmentSliderProps extends HybridViewProps {
    * callers keep the free-tap behavior.
    */
   snapTapToSegment: boolean;
-  /**
-   * Monotonic token. Bump from JS on coin / leverage reset so the native view
-   * snaps to the new value WITHOUT animating the thumb scale. Mirrors the
-   * `epoch` convention used by react-native-perp-depth-bar.
-   */
-  epoch: number;
 
   // --- Resolved theme colors (hex `#rgb`/`#rrggbb`/`#rrggbbaa` or rgba()) ---
   /** Active fill bar color (Tamagui `bgPrimary`). */
@@ -82,6 +84,15 @@ export interface SegmentSliderProps extends HybridViewProps {
   onSlideComplete?: () => void;
 }
 
-export interface SegmentSliderMethods extends HybridViewMethods {}
+export interface SegmentSliderMethods extends HybridViewMethods {
+  /**
+   * Imperatively set the slider value (clamped to `min..max`). Hard-snaps the
+   * thumb to the new value, cancelling any in-flight drag, and does NOT fire
+   * `onChange` (the JS caller already knows the value, so re-emitting would
+   * loop). This is the supported way to update the value after mount — see
+   * `defaultValue`.
+   */
+  setValue(value: number): void;
+}
 
 export type SegmentSlider = HybridView<SegmentSliderProps, SegmentSliderMethods>;

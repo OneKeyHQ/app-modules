@@ -10,14 +10,37 @@ yarn add @onekeyfe/react-native-segment-slider
 
 ## Usage
 
+The slider is **uncontrolled**: pass the initial value via `defaultValue` (applied
+once on mount), read live changes through `onChange`, and set the value
+imperatively via the `setValue` method on the hybrid ref. This keeps reset/programmatic
+updates off the Fabric prop-commit path and avoids any controlled-value-vs-drag conflict.
+
 ```tsx
-import { SegmentSliderView } from '@onekeyfe/react-native-segment-slider';
+import { useMemo, useRef } from 'react';
+import {
+  type SegmentSliderMethods,
+  type SegmentSliderProps,
+  SegmentSliderView,
+} from '@onekeyfe/react-native-segment-slider';
+import { type HybridView, callback } from 'react-native-nitro-modules';
+
+type ISegmentSliderRef = HybridView<SegmentSliderProps, SegmentSliderMethods>;
 
 // ...
 
+const sliderRef = useRef<ISegmentSliderRef | null>(null);
+const hybridRef = useMemo(
+  () => callback((node: ISegmentSliderRef) => { sliderRef.current = node; }),
+  [],
+);
+
+// Programmatically move the thumb (does NOT fire onChange):
+// sliderRef.current?.setValue(50);
+
 <SegmentSliderView
   style={{ width: 240, height: 24 }}
-  value={50}
+  hybridRef={hybridRef}
+  defaultValue={50}
   min={0}
   max={100}
   segments={4}
@@ -26,7 +49,6 @@ import { SegmentSliderView } from '@onekeyfe/react-native-segment-slider';
   showBubble={true}
   centerOrigin={false}
   snapTapToSegment={true}
-  epoch={0}
   fillColor="#000000df"
   trackColor="#0000001f"
   thumbColor="#ffffff"

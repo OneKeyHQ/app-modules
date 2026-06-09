@@ -143,15 +143,19 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   }
 
   // MARK: - Props
-  override var value: Double = 0.0
+  // Guards the apply-once semantics of [defaultValue]: only the first prop
+  // commit seeds the initial value. After that the view is uncontrolled and JS
+  // drives it via the imperative [setValue] method.
+  private var didApplyDefault = false
+
+  override var defaultValue: Double = 0.0
     get() = field
     set(v) {
       field = v
-      // A controlled value change is authoritative: hard-snap the thumb to it,
-      // bypassing the dragging guard. Otherwise a JS reset that arrives while a
-      // drag is in flight (or right after one) would leave the thumb showing the
-      // stale dragged value.
-      syncToValue(v)
+      if (!didApplyDefault) {
+        didApplyDefault = true
+        syncToValue(v)
+      }
     }
 
   override var min: Double = 0.0
@@ -190,13 +194,6 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   override var snapTapToSegment: Boolean = false
     get() = field
     set(v) { field = v }
-
-  // Bumping epoch forces a hard re-sync of the thumb to the current `value`,
-  // even mid-drag — the documented escape hatch for "re-apply the controlled
-  // value now" after a JS-side reset.
-  override var epoch: Double = 0.0
-    get() = field
-    set(v) { field = v; syncToValue(value) }
 
   override var fillColor: String = ""
     get() = field
@@ -239,6 +236,18 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   override var onSlideStart: (() -> Unit)? = null
   override var onSlideComplete: (() -> Unit)? = null
 
+  // MARK: - Imperative methods
+  // Set the value from JS without a Fabric prop commit. Called on the JS
+  // thread, so hop to the UI thread before touching the view / drawing state
+  // (mirrors react-native-perp-depth-bar's imperative methods). Does NOT fire
+  // onChange — syncToValue updates lastEmitted so the caller's own value never
+  // echoes back.
+  override fun setValue(value: Double) {
+    view.post {
+      if (!isDisposed) syncToValue(value)
+    }
+  }
+
   private fun parse(v: String) = SegmentSliderColorParser.parse(v)
 
   private fun invalidateIfAlive() {
@@ -277,9 +286,10 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   /** Hard re-sync: snap the thumb to [v], overriding any in-flight drag. */
   private fun syncToValue(v: Double) {
     if (isDisposed) return
-    // A controlled value/epoch update wins over the current gesture: drop the
-    // drag so a queued ACTION_MOVE can't immediately re-overwrite the thumb,
-    // and clear the transient hover/halo so the snapped position renders clean.
+    // An imperative setValue (or the initial defaultValue) wins over the
+    // current gesture: drop the drag so a queued ACTION_MOVE can't immediately
+    // re-overwrite the thumb, and clear the transient hover/halo so the snapped
+    // position renders clean.
     isDragging = false
     hoverMarkIndex = -1
     currentValue = v

@@ -61,13 +61,15 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   private lazy var haptic = UIImpactFeedbackGenerator(style: .light)
 
   // MARK: - Props (required props are non-optional in the generated spec)
-  var value: Double = 0 {
+  // Guards the apply-once semantics of `defaultValue`: only the first prop
+  // commit seeds the initial value. After that the view is uncontrolled and JS
+  // drives it via the imperative `setValue` method.
+  private var didApplyDefault = false
+  var defaultValue: Double = 0 {
     didSet {
-      // A controlled value change is authoritative: hard-snap the thumb to the
-      // incoming `value`, bypassing the dragging guard. Otherwise a JS reset
-      // that arrives while a drag is in flight (or right after one) would leave
-      // the thumb showing the stale dragged value.
-      syncToValue(value)
+      guard !didApplyDefault else { return }
+      didApplyDefault = true
+      syncToValue(defaultValue)
     }
   }
   var min: Double = 0 { didSet { scheduleLayout() } }
@@ -84,10 +86,6 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   var centerOrigin: Bool = false { didSet { scheduleLayout() } }
   // Gates tap snapping only; no visual change on its own, so no didSet.
   var snapTapToSegment: Bool = false
-  // Bumping epoch forces a hard re-sync of the thumb to the current `value`,
-  // even mid-drag — the documented escape hatch for "re-apply the controlled
-  // value now" after a JS-side reset.
-  var epoch: Double = 0 { didSet { syncToValue(value) } }
 
   var fillColor: String = "" {
     didSet { cFill = parse(fillColor); fillLayer.backgroundColor = cFill; scheduleLayout() }
@@ -392,7 +390,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     // Tap-snap mode: defer any value change until we know this is a tap or a
     // drag, so a tap never jumps to the raw touch point first.
     if !snapTapsActive {
-      setValue(valueFromX(x))
+      commitDragValue(valueFromX(x))
     }
   }
 
@@ -404,7 +402,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     }
     // Still a tap candidate in snap mode → keep the thumb put.
     if snapTapsActive, !hasDragged { return }
-    setValue(valueFromX(x))
+    commitDragValue(valueFromX(x))
   }
 
   private func handleTouchEnded() {
@@ -417,7 +415,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     if snapTapsActive, !hasDragged {
       let pressDuration = CACurrentMediaTime() - touchStartTime
       if pressDuration <= tapMaxDuration {
-        setValue(snapValueToNearestMark(valueFromX(lastTouchX)))
+        commitDragValue(snapValueToNearestMark(valueFromX(lastTouchX)))
       }
     }
     hoverMarkIndex = -1
@@ -436,10 +434,10 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     return min + snappedFrac * (max - min)
   }
 
-  /// Hard re-sync: snap the thumb to `v`, overriding any in-flight drag. A
-  /// controlled value/epoch update wins over the current gesture, so drop the
-  /// drag (a queued touchesMoved can't then re-overwrite the thumb) and clear
-  /// the transient hover/halo before re-rendering.
+  /// Hard re-sync: snap the thumb to `v`, overriding any in-flight drag. An
+  /// imperative `setValue` (or the initial `defaultValue`) wins over the current
+  /// gesture, so drop the drag (a queued touchesMoved can't then re-overwrite
+  /// the thumb) and clear the transient hover/halo before re-rendering.
   private func syncToValue(_ v: Double) {
     isDragging = false
     if hoverMarkIndex != -1 {
@@ -451,7 +449,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     applyVisual(v)
   }
 
-  private func setValue(_ raw: Double) {
+  private func commitDragValue(_ raw: Double) {
     let clamped = Swift.max(min, Swift.min(max, raw))
     let rounded = clamped.rounded()
     currentValue = rounded
@@ -459,6 +457,17 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     if rounded != lastEmitted {
       lastEmitted = rounded
       onChange?(rounded)
+    }
+  }
+
+  // MARK: - Imperative methods
+  /// Set the value from JS without a Fabric prop commit. Called on the JS
+  /// thread, so hop to the main thread before touching the view / layers. Does
+  /// NOT fire `onChange` — `syncToValue` updates `lastEmitted` so the caller's
+  /// own value never echoes back.
+  func setValue(value: Double) throws {
+    DispatchQueue.main.async { [weak self] in
+      self?.syncToValue(value)
     }
   }
 
