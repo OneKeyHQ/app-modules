@@ -21,7 +21,25 @@ public class LaunchOptionsStore: NSObject {
     public var deviceToken: Data?
     public var startupTime: TimeInterval = 0
 
+    // Cold-start deep-link: the JSON `userInfo` of a LOCAL notification the user
+    // tapped to launch the (killed) app. The legacy `NotificationCenter` broadcast
+    // in AppDelegate is fire-and-forget and is lost on cold start because JS has
+    // not registered a listener yet; this slot is a pull buffer JS drains once it
+    // boots. In-memory ONLY (no NSUserDefaults): a new process = fresh `nil`, so
+    // it is naturally launch-scoped and cannot replay a stale tap on a later
+    // unrelated cold start. AppDelegate writes it via KVC
+    // (`setValue(_:forKey:"coldStartLocalNotification")`), same bridge as the
+    // properties above.
+    public var coldStartLocalNotification: String?
+
     private static let deviceTokenKey = "1k_device_token"
+
+    // Read-once: hand the payload to JS exactly once per launch.
+    public func takeColdStartLocalNotification() -> String {
+        let value = coldStartLocalNotification ?? ""
+        coldStartLocalNotification = nil
+        return value
+    }
 
     public func getDeviceTokenString() -> String {
         // Prefer the JS-saved token (persisted across launches)
@@ -186,6 +204,12 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     func getStartupTime() throws -> Promise<Double> {
         return Promise.async {
             return LaunchOptionsStore.shared.startupTime * 1000.0
+        }
+    }
+
+    func getAndClearColdStartLocalNotification() throws -> Promise<String> {
+        return Promise.async {
+            return LaunchOptionsStore.shared.takeColdStartLocalNotification()
         }
     }
 
