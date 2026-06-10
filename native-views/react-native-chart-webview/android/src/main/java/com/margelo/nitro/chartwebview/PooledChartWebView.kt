@@ -52,6 +52,12 @@ class PooledChartWebView private constructor(
     const val ASSET_HOST = "appassets.androidplatform.net"
     private const val DEFAULT_ENTRY = "index.html"
 
+    // TEMP diagnostic tag (root-cause C1..C4 verification). All high-frequency
+    // signals are THROTTLED counters logged once per ~3s — never per-message —
+    // so this can't flood logcat / saturate the bridge like the earlier per-msg
+    // logging did. Read via: adb logcat -d -s ChartDBG. Remove once root-caused.
+    const val DBG = "ChartDBG"
+
     // Tiny platform transport shim: defines the single hook the shared TS bridge
     // (CHART_BRIDGE_JS) calls. The bulk of the bridge lives in the TS layer and
     // arrives via the `bridgeScript` ctor arg — this is the only platform-specific
@@ -148,12 +154,45 @@ class PooledChartWebView private constructor(
   }
 
   /** The host currently displaying this WebView; page events route here. */
-  var owner: HybridChartWebview? = null
+  private var _owner: HybridChartWebview? = null
+  var owner: HybridChartWebview?
+    get() = _owner
+    set(value) {
+      if (_owner !== value) android.util.Log.i(DBG, "pool[$key] owner ${_owner?.dbgId} -> ${value?.dbgId}")
+      _owner = value
+    }
   // The host that warm-booted the page and can drive its symbol / receive its
   // callbacks while there is no VISIBLE owner yet. Separate from `owner` (the
   // YIELD path clears `owner`); callbacks fall back to this so bars-state /
   // load-end aren't dropped during warm. Mirror of the iOS warmDriver.
-  var warmDriver: HybridChartWebview? = null
+  private var _warmDriver: HybridChartWebview? = null
+  var warmDriver: HybridChartWebview?
+    get() = _warmDriver
+    set(value) {
+      if (_warmDriver !== value) android.util.Log.i(DBG, "pool[$key] warmDriver ${_warmDriver?.dbgId} -> ${value?.dbgId}")
+      _warmDriver = value
+    }
+
+  // --- C1 diagnostic: throttled message-rate counters (JSI load). Incremented
+  // per message (cheap, no logging), flushed to ONE log line every ~3s by
+  // rateLogger. A high msgIn rate while NOT on a perps screen = the offscreen
+  // prewarm page is still pumping over JSI.
+  private val msgInCounter = AtomicInteger(0)
+  private val nativeToPageCounter = AtomicInteger(0)
+  private val rateHandler = Handler(Looper.getMainLooper())
+  private val rateLogger = object : Runnable {
+    override fun run() {
+      val mi = msgInCounter.getAndSet(0)
+      val np = nativeToPageCounter.getAndSet(0)
+      if (mi > 0 || np > 0) {
+        android.util.Log.i(
+          DBG,
+          "pool[$key] RATE msgIn=$mi/3s native->page=$np/3s owner=${_owner?.dbgId} warm=${_warmDriver?.dbgId} paused=$paused",
+        )
+      }
+      rateHandler.postDelayed(this, 3000)
+    }
+  }
 
   // PERF (Android only): Android's in-process WebView/Chromium does NOT throttle
   // an offscreen/unowned page (unlike iOS WKWebView). Left running, the warm
@@ -178,14 +217,21 @@ class PooledChartWebView private constructor(
   // until the first load so we never freeze a booting page. Resumed (+ redraw)
   // on the next CLAIM so the chart paints again.
   fun pauseIfIdle() {
-    if (paused || !hasLoadedOnce || owner != null) return
+    if (paused || !hasLoadedOnce || owner != null) {
+      // C4: if we SKIP because an owner still holds the shared page, the WebView
+      // keeps running (rAF/websocket) — i.e. it never idles while any host owns it.
+      android.util.Log.i(DBG, "pool[$key] pauseIfIdle SKIP paused=$paused loaded=$hasLoadedOnce owner=${_owner?.dbgId}")
+      return
+    }
     paused = true
+    android.util.Log.w(DBG, "pool[$key] PAUSE (renderer idle)")
     runOnUiThread { webView.onPause() }
   }
 
   fun resume() {
     if (!paused) return
     paused = false
+    android.util.Log.w(DBG, "pool[$key] RESUME")
     runOnUiThread {
       webView.onResume()
       webView.invalidate()
@@ -243,6 +289,7 @@ class PooledChartWebView private constructor(
   init {
     val n = liveCount.incrementAndGet()
     android.util.Log.d("ChartWebviewPool", "WebView CREATED key=$key liveCount=$n")
+    rateHandler.postDelayed(rateLogger, 3000)
 
     webView.webViewClient = object : WebViewClientCompat() {
       override fun shouldInterceptRequest(
@@ -279,16 +326,27 @@ class PooledChartWebView private constructor(
   private inner class ChartBridge {
     @JavascriptInterface
     fun postMessage(message: String) {
+      msgInCounter.incrementAndGet() // C1: throttled rate (flushed by rateLogger)
       runOnUiThread {
         val target = owner ?: warmDriver
-        if (target == null) {
-          android.util.Log.w(
-            "ChartWV",
-            "msg DROPPED (no owner/warmDriver): ${message.take(80)}",
-          )
-        }
         target?.dispatchMessage(message)
       }
+    }
+  }
+
+  // Robustly detach the WebView from [parent], even when [parent] is a disposed
+  // host container that is mid-teardown / detached from the window and holds the
+  // child in a transition / disappearing-children list — where a plain removeView()
+  // is deferred and leaves webView.parent set, stranding the shared WebView and
+  // blanking the next chart slot. endViewTransition() clears any pending transition
+  // hold; removeViewInLayout() is the in-layout fallback if the child is still held.
+  private fun forceDetach(parent: ViewGroup) {
+    if (webView.parent !== parent) return
+    try { parent.endViewTransition(webView) } catch (e: Throwable) {}
+    parent.removeView(webView)
+    if (webView.parent === parent) {
+      try { parent.removeViewInLayout(webView) } catch (e: Throwable) {}
+      parent.requestLayout()
     }
   }
 
@@ -304,16 +362,16 @@ class PooledChartWebView private constructor(
     if (generation != attachGeneration.get()) return
     if (webView.parent === container) return
 
-    (webView.parent as? ViewGroup)?.removeView(webView)
+    (webView.parent as? ViewGroup)?.let { forceDetach(it) }
     val currentParent = webView.parent
-    if (currentParent != null) {
-      // The old container hasn't released the WebView yet (it can be mid-layout /
-      // mid-teardown when the previous host unmounts). Retry on the next frame
-      // instead of giving up after one attempt — a single retry was not enough and
-      // left the WebView stranded in the old (now offscreen) container, so the new
-      // chart screen showed a blank/white slot.
+    if (currentParent != null && currentParent !== container) {
+      // The old container still hasn't released the WebView (a disposed host's
+      // container mid-teardown / detached from window: removeView is deferred and
+      // getParent() stays set). Retry — but on the TARGET container's handler,
+      // which is attached to the window so its queue keeps draining, instead of the
+      // detached webView/old parent whose post() runnables may never run.
       if (retriesLeft > 0) {
-        webView.post {
+        container.post {
           attachToContainer(container, generation, retriesLeft = retriesLeft - 1)
         }
       } else {
@@ -336,6 +394,27 @@ class PooledChartWebView private constructor(
     // refresh the cache (async) so the next move has a current frame.
     showSnapshotOverlay(container)
     refreshSnapshotSoon()
+  }
+
+  /**
+   * Remove the WebView from [container] ONLY if it is still parented there.
+   *
+   * Called on a pooled host's final teardown (dispose): that host's container is
+   * about to be dropped from the view tree, and a pooled host deliberately does
+   * NOT detach on the YIELD path (to avoid racing a rapid re-claim). Without this,
+   * the shared WebView stays parented to the dropped/detached container; the next
+   * host's [attachTo] then keeps hitting "old parent not cleared" (removeView on a
+   * detached container isn't applied synchronously) and retries forever — leaving
+   * the new chart slot blank/white. The `parent === container` guard makes this
+   * safe against ordering: if a new host has already re-claimed and reparented the
+   * WebView, we must NOT rip it back off, so we only remove when WE still hold it.
+   */
+  fun detachFrom(container: ViewGroup) {
+    runOnUiThread {
+      if (webView.parent === container) {
+        forceDetach(container)
+      }
+    }
   }
 
   /** Remove the WebView from its current parent (keeps it alive, warm). */
@@ -488,6 +567,7 @@ class PooledChartWebView private constructor(
   }
 
   fun postMessage(message: String) {
+    nativeToPageCounter.incrementAndGet() // C1: throttled rate (flushed by rateLogger)
     val payload = JSONObject.quote(message)
     val js =
       "(function(){try{window.postMessage(JSON.parse($payload), '*');}" +
@@ -506,6 +586,7 @@ class PooledChartWebView private constructor(
    * leaking a Chromium renderer + JavascriptInterface.
    */
   fun destroy() {
+    rateHandler.removeCallbacks(rateLogger)
     runOnUiThread {
       bridgeScriptHandler?.remove()
       bridgeScriptHandler = null

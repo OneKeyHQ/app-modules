@@ -49,6 +49,8 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
   }
 
   private val instanceId = instanceIds.incrementAndGet()
+  // TEMP diagnostic id so the pool's owner/warmDriver logs can name which host.
+  val dbgId: Int get() = instanceId
 
   // Fabric lays its views out top-down and ignores layout requests from children
   // we add at runtime (the WebView / placeholder). Without forcing a measure +
@@ -422,6 +424,14 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     // default (single-instance cache); the release path makes destroy() reachable.
     adoptedPoolKey?.let { ChartWebviewPool.releaseShared(it) }
     adoptedPoolKey = null
+    // Pooled host going away: release the shared WebView from THIS host's
+    // container, which is about to be dropped from the view tree. The pool keeps
+    // the WebView alive (warm) for the next host, but if we leave it parented to
+    // our dropped container the next host's attach can't clear that stale parent
+    // (removeView on a detached container isn't applied synchronously) and retries
+    // forever → blank/white chart. detachFrom is parent-checked, so if another host
+    // already re-claimed the WebView we leave it where it is.
+    if (entry != null && isPooled()) entry.detachFrom(container)
     // A private (non-pooled) instance is owned solely by this host — tear it down
     // so it doesn't leak a Chromium renderer + JavascriptInterface.
     if (entry != null && !isPooled()) entry.destroy()
