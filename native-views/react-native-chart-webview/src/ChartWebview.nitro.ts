@@ -39,6 +39,16 @@ export interface ChartWebviewProps extends HybridViewProps {
   // hardcodes `setIsActive`/`getIsActive`, causing a NoSuchMethodError at runtime.
   active?: boolean;
 
+  // --- Debugging ---
+  // Make the backing WebView inspectable (Safari Web Inspector on iOS,
+  // chrome://inspect on Android). Driven by the app's "Enable Native Webview
+  // Debugging" dev-mode toggle, mirroring how the main react-native-webview
+  // honors it. When omitted, the native side defaults to its dev-build default
+  // (iOS DEBUG / Android leaves it off). NOTE (Android): the underlying call
+  // WebView.setWebContentsDebuggingEnabled is PROCESS-GLOBAL — once any WebView
+  // enables it, it stays enabled process-wide until the app is killed.
+  webviewDebuggingEnabled?: boolean;
+
   // --- Events ---
   // page -> JS, raw JSON string (the JS layer parses the $private payload).
   onMessage?: (message: string) => void;

@@ -155,6 +155,43 @@ class PooledChartWebView private constructor(
   // load-end aren't dropped during warm. Mirror of the iOS warmDriver.
   var warmDriver: HybridChartWebview? = null
 
+  // PERF (Android only): Android's in-process WebView/Chromium does NOT throttle
+  // an offscreen/unowned page (unlike iOS WKWebView). Left running, the warm
+  // pooled page keeps its rAF render loop + websockets + compositing alive
+  // FOREVER after the user leaves the chart — pinning a CPU core, growing RAM to
+  // OOM, and stealing the GPU from RN's RenderThread (every other screen stalls).
+  // We pause the WebView whenever no host owns it (after the first load) and
+  // resume on claim. Uses the PER-INSTANCE onPause()/onResume() — NOT the static
+  // pauseTimers()/resumeTimers(), which are process-global and would also freeze
+  // the app's other WebViews (inpage provider / web-embed / dapp browser).
+  private var paused = false
+  private var hasLoadedOnce = false
+
+  fun markLoaded() {
+    hasLoadedOnce = true
+  }
+
+  // Pause the renderer when nobody owns the shared WebView. onPause() stops
+  // drawing/compositing/animations (frees the GPU so navigation is smooth again)
+  // WITHOUT changing the view's visibility/attachment — we must NOT toggle
+  // visibility here, that left the WebView blank/white after re-claim. Skipped
+  // until the first load so we never freeze a booting page. Resumed (+ redraw)
+  // on the next CLAIM so the chart paints again.
+  fun pauseIfIdle() {
+    if (paused || !hasLoadedOnce || owner != null) return
+    paused = true
+    runOnUiThread { webView.onPause() }
+  }
+
+  fun resume() {
+    if (!paused) return
+    paused = false
+    runOnUiThread {
+      webView.onResume()
+      webView.invalidate()
+    }
+  }
+
   private var assetLoader: WebViewAssetLoader? = null
   private var lastLoadedUrl: String? = null
   private var lastLocalBundle: String? = null
@@ -184,6 +221,25 @@ class PooledChartWebView private constructor(
     addJavascriptInterface(ChartBridge(), "AndroidChartBridge")
   }
 
+  // Apply the app's "Enable Native Webview Debugging" dev-mode toggle, mirroring
+  // how the main react-native-webview calls WebView.setWebContentsDebuggingEnabled.
+  // Called by the host both on the prop change and at host claim, so the toggle is
+  // honored even when this entry was created before the prop arrived.
+  //
+  // CAVEAT (PROCESS-GLOBAL): setWebContentsDebuggingEnabled is a STATIC method that
+  // flips remote-debugging for EVERY WebView in the whole process. Once any WebView
+  // (this chart, the main react-native-webview, etc.) enables it, it stays enabled
+  // process-wide until the app is killed — Android exposes no per-WebView toggle and
+  // no way to read the current value. So a null/false preference here cannot turn
+  // debugging back OFF once another WebView (or a prior true value) turned it ON; it
+  // simply does not re-enable it. We therefore only ever call the setter with `true`
+  // when explicitly enabled, leaving the process-global state untouched otherwise.
+  fun setInspectable(enabled: Boolean?) {
+    if (enabled == true) {
+      runOnUiThread { WebView.setWebContentsDebuggingEnabled(true) }
+    }
+  }
+
   init {
     val n = liveCount.incrementAndGet()
     android.util.Log.d("ChartWebviewPool", "WebView CREATED key=$key liveCount=$n")
@@ -196,6 +252,7 @@ class PooledChartWebView private constructor(
 
       override fun onPageFinished(view: WebView, url: String?) {
         super.onPageFinished(view, url)
+        markLoaded()
         // The bridge is delivered exclusively via the origin-scoped document-start
         // script (see registerBridgeForOrigins). We deliberately do NOT re-inject
         // it here via evaluateJavascript — that ran on every page event regardless
@@ -239,23 +296,30 @@ class PooledChartWebView private constructor(
   fun attachTo(container: ViewGroup) {
     val generation = attachGeneration.incrementAndGet()
     runOnUiThread {
-      attachToContainer(container, generation, canRetry = true)
+      attachToContainer(container, generation, retriesLeft = 12)
     }
   }
 
-  private fun attachToContainer(container: ViewGroup, generation: Int, canRetry: Boolean) {
+  private fun attachToContainer(container: ViewGroup, generation: Int, retriesLeft: Int) {
     if (generation != attachGeneration.get()) return
     if (webView.parent === container) return
 
     (webView.parent as? ViewGroup)?.removeView(webView)
     val currentParent = webView.parent
     if (currentParent != null) {
-      if (canRetry) {
-        webView.post { attachToContainer(container, generation, canRetry = false) }
+      // The old container hasn't released the WebView yet (it can be mid-layout /
+      // mid-teardown when the previous host unmounts). Retry on the next frame
+      // instead of giving up after one attempt — a single retry was not enough and
+      // left the WebView stranded in the old (now offscreen) container, so the new
+      // chart screen showed a blank/white slot.
+      if (retriesLeft > 0) {
+        webView.post {
+          attachToContainer(container, generation, retriesLeft = retriesLeft - 1)
+        }
       } else {
         android.util.Log.w(
           "ChartWebviewPool",
-          "Skip attach key=$key because WebView parent was not cleared: $currentParent",
+          "Skip attach key=$key after retries because WebView parent was not cleared: $currentParent",
         )
       }
       return

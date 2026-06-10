@@ -159,6 +159,20 @@ class HybridChartWebview: HybridChartWebviewSpec {
     }
   }
 
+  // MARK: - Props (debugging)
+
+  // Make the backing WKWebView inspectable (Safari Web Inspector). Driven by the
+  // app's "Enable Native Webview Debugging" dev-mode toggle, mirroring the main
+  // react-native-webview (which sets WKWebView.isInspectable). nil => default to
+  // the DEBUG build behavior (see PooledChartWebView.applyInspectable). Applied to
+  // the backing WebView both here (on prop change) and at WebView creation, since
+  // `backing` is nil until the first reconcile assigns it.
+  var webviewDebuggingEnabled: Bool? {
+    didSet {
+      backing?.setInspectable(webviewDebuggingEnabled)
+    }
+  }
+
   // MARK: - Props (events)
 
   var onMessage: ((_ message: String) -> Void)?
@@ -244,6 +258,9 @@ class HybridChartWebview: HybridChartWebviewSpec {
     let key = effectiveKey()
     let pooled = ChartWebviewPool.shared.acquireShared(key: key)
     backing = pooled
+    // Apply this host's debug preference to the (possibly freshly created) backing
+    // WebView. Mirrors the main react-native-webview toggling WKWebView.isInspectable.
+    pooled.setInspectable(webviewDebuggingEnabled)
     // Refcount the entry once per host (reconcile runs many times). Balanced by
     // releaseShared in deinit. If the reuseKey changed, release the old one first.
     if adoptedPoolKey != key {
@@ -336,6 +353,7 @@ class HybridChartWebview: HybridChartWebviewSpec {
     guard wantsOwnership() else { return }
     let pooled = backing ?? PooledChartWebView(key: effectiveKey())
     backing = pooled
+    pooled.setInspectable(webviewDebuggingEnabled)
     pooled.owner = self
     pooled.setBridgeScript(bridgeScript ?? "")
     pooled.attach(to: container)
@@ -440,6 +458,11 @@ final class PooledChartWebView {
   private var lastLoadedUrl: String?
   private var attachGeneration = 0
 
+  // Whether the backing WKWebView should be inspectable (Safari Web Inspector).
+  // nil until a host applies its debug preference; defaults to the DEBUG build
+  // behavior (see resolvedInspectable), mirroring the main react-native-webview.
+  private var inspectablePreference: Bool?
+
   /// Read by the scheme handler to resolve offline files.
   fileprivate var currentLocalBundle: String?
 
@@ -520,10 +543,37 @@ final class PooledChartWebView {
     webView.navigationDelegate = proxy
     webView.uiDelegate = proxy
     webView.scrollView.bounces = false
-    if #available(iOS 16.4, *) {
-      webView.isInspectable = true
-    }
     self.webView = webView
+    // Honor the app's dev-mode webview-debug toggle instead of an unconditional
+    // `true`. nil (no preference applied yet) falls back to the DEBUG build default.
+    applyInspectable()
+  }
+
+  // Set the host-driven debug preference and apply it to the live WebView. Called
+  // both on the prop change and at host claim, so the (possibly newly created)
+  // WebView always reflects the latest toggle value.
+  func setInspectable(_ enabled: Bool?) {
+    inspectablePreference = enabled
+    applyInspectable()
+  }
+
+  // Resolve the effective inspectable value: explicit preference if set, otherwise
+  // the DEBUG build default (mirrors the main react-native-webview, which is
+  // inspectable in dev builds even without the toggle).
+  private func resolvedInspectable() -> Bool {
+    if let pref = inspectablePreference { return pref }
+    #if DEBUG
+    return true
+    #else
+    return false
+    #endif
+  }
+
+  private func applyInspectable() {
+    guard let webView = webView else { return }
+    if #available(iOS 16.4, *) {
+      webView.isInspectable = resolvedInspectable()
+    }
   }
 
   // MARK: - Reparenting

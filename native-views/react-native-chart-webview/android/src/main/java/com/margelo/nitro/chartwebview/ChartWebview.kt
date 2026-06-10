@@ -165,6 +165,22 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
       scheduleReconcile()
     }
 
+  // --- Debugging ---
+  // Make the backing WebView inspectable via chrome://inspect. Driven by the
+  // app's "Enable Native Webview Debugging" dev-mode toggle, mirroring the main
+  // react-native-webview (which calls WebView.setWebContentsDebuggingEnabled).
+  // Stored and applied to the backing WebView both here (on prop change) and at
+  // host claim, since `backing` is null until the first reconcile assigns it.
+  // CAVEAT: setWebContentsDebuggingEnabled is PROCESS-GLOBAL — see
+  // PooledChartWebView.setInspectable.
+  private var _webviewDebuggingEnabled: Boolean? = null
+  override var webviewDebuggingEnabled: Boolean?
+    get() = _webviewDebuggingEnabled
+    set(value) {
+      _webviewDebuggingEnabled = value
+      backing?.setInspectable(value)
+    }
+
   // --- Event callbacks ---
   override var onMessage: ((message: String) -> Unit)? = null
   override var onLoadEnd: (() -> Unit)? = null
@@ -222,6 +238,9 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     val key = effectiveKey()
     val entry = ChartWebviewPool.acquireShared(key, context)
     backing = entry
+    // Apply this host's debug preference to the (possibly freshly created) backing
+    // WebView. Mirrors the main react-native-webview's setWebContentsDebuggingEnabled.
+    entry.setInspectable(_webviewDebuggingEnabled)
     // Refcount the pool entry once per host (reconcile runs many times). Balanced
     // by releaseShared in dispose(). If the reuseKey changed, release the old one.
     if (adoptedPoolKey != key) {
@@ -244,6 +263,8 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     }
     if (wantsOwnership()) {
       entry.owner = this
+      // PERF: a host is now showing the chart — make sure the renderer is running.
+      entry.resume()
       entry.attachTo(container)
       // Keep a fresh frame of OUR content while we own the WebView, so that when
       // we later go inactive (and the shared WebView reloads the other slot's
@@ -260,6 +281,11 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
       if (wasOwner) entry.owner = null
       stopOwnCapture()
       showPlaceholder(ownSnapshot)
+      // PERF: if nobody owns the shared WebView now, pause its renderer so it
+      // doesn't keep burning a CPU core + GPU + RAM in the background (Android
+      // doesn't auto-throttle offscreen WebViews like iOS does). Resumed on the
+      // next CLAIM. No-op until the page's first load completed.
+      entry.pauseIfIdle()
     }
   }
 
@@ -269,6 +295,7 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     if (!wantsOwnership()) return
     val pooled = backing ?: PooledChartWebView.create(context, effectiveKey())
     backing = pooled
+    pooled.setInspectable(_webviewDebuggingEnabled)
     pooled.owner = this
     pooled.setBridgeScript(_bridgeScript ?: "")
     pooled.attachTo(container)
