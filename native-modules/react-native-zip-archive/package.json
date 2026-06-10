@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-zip-archive",
-  "version": "3.0.56",
+  "version": "3.0.57",
   "description": "react-native-zip-archive Nitro HybridObject for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
