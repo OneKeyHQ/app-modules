@@ -1764,7 +1764,7 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             /// is unparseable (leave foreign names alone).
             func shouldKeep(stem: String) -> Bool {
                 if let active = currentBundleVersion, stem == active { return true }
-                guard let appV = BundleUpdateStore.appVersionFromStem(stem) else { return true }
+                guard let appV = Self.appVersionFromStem(stem) else { return true }
                 return appV == currentAppV
             }
 

@@ -1201,7 +1201,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
      * (JS-gated, no in-flight download to cancel). The [tag] flows into the
      * log lines so the two callers stay distinguishable in logcat.
      */
-    private fun wipeApkCacheFiles(tag: String) {
+    private fun wipeApkCacheFiles(tag: String, protectedPaths: Set<String> = emptySet()) {
         val context = NitroModules.applicationContext
         if (context == null) {
             OneKeyLog.warn("AppUpdate", "$tag: application context unavailable, skipping file cleanup")
@@ -1215,7 +1215,16 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
         val filesToDelete = apkDir.listFiles() ?: emptyArray()
         OneKeyLog.info("AppUpdate", "$tag: found ${filesToDelete.size} cached file(s) to delete in ${apkDir.absolutePath}")
         var deletedCount = 0
+        var skippedCount = 0
         filesToDelete.forEach { file ->
+            // Never delete a verified, pending-install APK (its canonical path is
+            // still in verifiedFiles). Protects the install flow from a racing
+            // cleanup that slipped past the JS status gate.
+            if (protectedPaths.isNotEmpty() && file.canonicalPath in protectedPaths) {
+                OneKeyLog.info("AppUpdate", "$tag: skipping verified pending-install file ${file.name}")
+                skippedCount++
+                return@forEach
+            }
             val size = file.length()
             // The file may already be gone (concurrent OS cache reclaim);
             // treat a non-existent file as nothing to do, not a failure.
@@ -1226,7 +1235,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
                 OneKeyLog.warn("AppUpdate", "$tag: failed to delete ${file.name}")
             }
         }
-        OneKeyLog.info("AppUpdate", "$tag: completed, deleted $deletedCount/${filesToDelete.size} files")
+        OneKeyLog.info("AppUpdate", "$tag: completed, deleted $deletedCount/${filesToDelete.size} files (skipped $skippedCount protected)")
     }
 
     override fun clearCache(): Promise<Unit> {
@@ -1245,12 +1254,24 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
     override fun clearApkCache(): Promise<Unit> {
         return Promise.async {
             // Wipe downloaded APK artifacts from cacheDir/apks/ only. The JS
-            // layer gates on app-update status before calling, so there is no
-            // in-flight download to cancel here: deliberately do NOT touch
-            // isDownloading / verifiedFiles (that's clearCache's job). Missing
-            // dir/files are tolerated.
-            OneKeyLog.info("AppUpdate", "clearApkCache: starting stale APK cache cleanup...")
-            wipeApkCacheFiles("clearApkCache")
+            // layer gates on app-update status before calling, but that read is
+            // not atomic with this delete, so guard natively too:
+            //  - bail entirely if a download is in flight (would yank its
+            //    .partial/.progress out from under the writer);
+            //  - never delete a verified, pending-install APK (still tracked in
+            //    verifiedFiles) so an open installer keeps a readable file.
+            // Deliberately do NOT touch isDownloading / verifiedFiles state here
+            // (that's clearCache's job). Missing dir/files are tolerated.
+            if (isDownloading.get()) {
+                OneKeyLog.info("AppUpdate", "clearApkCache: download in progress, skipping APK cache cleanup")
+                return@async
+            }
+            val protectedPaths = synchronized(verifiedFiles) { verifiedFiles.keys.toSet() }
+            OneKeyLog.info(
+                "AppUpdate",
+                "clearApkCache: starting stale APK cache cleanup (protecting ${protectedPaths.size} verified file(s))...",
+            )
+            wipeApkCacheFiles("clearApkCache", protectedPaths)
         }
     }
 }

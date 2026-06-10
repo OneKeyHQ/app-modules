@@ -1013,16 +1013,26 @@ object BundleUpdateStoreAndroid {
         }
     }
 
-    private fun deleteDirectory(directory: File) {
-        if (directory.exists()) {
-            directory.listFiles()?.forEach { file ->
-                if (file.isDirectory) deleteDirectory(file) else file.delete()
-            }
-            directory.delete()
+    /**
+     * Recursively deletes [directory], returning true only when nothing is left
+     * behind. An already-missing entry counts as success (tolerates concurrent
+     * removal); a child that fails to delete makes the whole call return false
+     * so callers never report a half-deleted tree as a clean delete.
+     */
+    private fun deleteDirectory(directory: File): Boolean {
+        if (!directory.exists()) return true
+        var allDeleted = true
+        directory.listFiles()?.forEach { file ->
+            val ok = if (file.isDirectory) deleteDirectory(file) else (!file.exists() || file.delete())
+            if (!ok) allDeleted = false
         }
+        // delete() on a non-empty dir returns false, so a child failure above
+        // naturally propagates here too.
+        val dirDeleted = !directory.exists() || directory.delete()
+        return allDeleted && dirDeleted
     }
 
-    fun deleteDir(dir: File) = deleteDirectory(dir)
+    fun deleteDir(dir: File): Boolean = deleteDirectory(dir)
 
     private const val MAX_UNZIPPED_SIZE = 512L * 1024 * 1024  // 512 MB limit
 
@@ -1816,9 +1826,12 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     if (name == "asc" || name == "fallbackUpdateBundleData.json") return@forEach
                     if (shouldKeep(name)) return@forEach
                     try {
-                        BundleUpdateStoreAndroid.deleteDir(child)
-                        deletedDirCount++
-                        OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted stale bundle dir $name")
+                        if (BundleUpdateStoreAndroid.deleteDir(child)) {
+                            deletedDirCount++
+                            OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted stale bundle dir $name")
+                        } else {
+                            OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: incomplete delete of bundle dir $name (left behind)")
+                        }
                     } catch (e: Exception) {
                         OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete bundle dir $name: ${e.message}")
                     }
@@ -1840,12 +1853,16 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     }
                     if (shouldKeep(stem)) return@forEach
                     try {
-                        if (file.isDirectory) {
+                        val deleted = if (file.isDirectory) {
                             BundleUpdateStoreAndroid.deleteDir(file)
                         } else {
-                            file.delete()
+                            !file.exists() || file.delete()
                         }
-                        OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted stale download $name")
+                        if (deleted) {
+                            OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted stale download $name")
+                        } else {
+                            OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete download $name")
+                        }
                     } catch (e: Exception) {
                         OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete download $name: ${e.message}")
                     }
