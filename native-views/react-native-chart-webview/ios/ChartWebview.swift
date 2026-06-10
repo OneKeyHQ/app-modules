@@ -129,6 +129,11 @@ class HybridChartWebview: HybridChartWebviewSpec {
   var localBundle: String? { didSet { applySource() } }
   var entry: String? { didSet { applySource() } }
   var paramsJson: String? { didSet { applySource() } }
+  // ANDROID ONLY. iOS serves offline content from the onekey-chart:// custom
+  // scheme (https can't be intercepted here), so this host stores the prop to
+  // satisfy the generated spec but never reads it — offline origin/behavior is
+  // unchanged on iOS.
+  var assetHost: String?
 
   // Document-start bridge JS (single source of truth in the TS layer). Handed to
   // the pooled WebView when we claim it, before its first load.

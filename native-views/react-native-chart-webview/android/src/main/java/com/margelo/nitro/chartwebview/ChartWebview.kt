@@ -123,6 +123,15 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     get() = _paramsJson
     set(value) { _paramsJson = value; applySource() }
 
+  // ANDROID: the host the offline `localBundle` is served under. When set, the
+  // offline bundle is served from https://<assetHost>/ so the WebView reuses the
+  // real chart origin's same-origin storage (zero migration). Falls back to the
+  // built-in appassets host in the pool when null. (iOS ignores this prop.)
+  private var _assetHost: String? = null
+  override var assetHost: String?
+    get() = _assetHost
+    set(value) { _assetHost = value; applySource() }
+
   // Document-start bridge JS (single source of truth in the TS layer). Stored and
   // handed to the pooled WebView when we claim it, before its first load.
   private var _bridgeScript: String? = null
@@ -259,7 +268,7 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     if (!bs.isNullOrEmpty()) {
       entry.setBridgeScript(bs)
       entry.warmDriver = this
-      entry.setSource(_uri, _localBundle, _entry, _paramsJson)
+      entry.setSource(_uri, _localBundle, _entry, _paramsJson, _assetHost)
     }
     if (wantsOwnership()) {
       entry.owner = this
@@ -299,7 +308,7 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     pooled.owner = this
     pooled.setBridgeScript(_bridgeScript ?: "")
     pooled.attachTo(container)
-    pooled.setSource(_uri, _localBundle, _entry, _paramsJson)
+    pooled.setSource(_uri, _localBundle, _entry, _paramsJson, _assetHost)
   }
 
   // Apply the source synchronously when a source/bridge prop changes. For a
@@ -315,10 +324,10 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     if (isPooled() && !bs.isNullOrEmpty()) {
       pooled.setBridgeScript(bs)
       pooled.warmDriver = this
-      pooled.setSource(_uri, _localBundle, _entry, _paramsJson)
+      pooled.setSource(_uri, _localBundle, _entry, _paramsJson, _assetHost)
     } else if (pooled.owner == this) {
       pooled.setBridgeScript(_bridgeScript ?: "")
-      pooled.setSource(_uri, _localBundle, _entry, _paramsJson)
+      pooled.setSource(_uri, _localBundle, _entry, _paramsJson, _assetHost)
     }
   }
 

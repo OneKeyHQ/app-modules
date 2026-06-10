@@ -126,12 +126,12 @@ class PooledChartWebView private constructor(
   }
 
   // The trusted origin set for the current source: the offline asset origin
-  // (https://appassets.androidplatform.net) always, plus the online/fallback
-  // `uri` origin when running in online mode. computeTargetUrl serves offline
-  // content from ASSET_HOST and online content from `uri`, so these are exactly
-  // the origins the privileged bridge legitimately runs in.
+  // (https://<assetHost>, default appassets.androidplatform.net) always, plus the
+  // online/fallback `uri` origin when running in online mode. computeTargetUrl
+  // serves offline content from `assetHost` and online content from `uri`, so
+  // these are exactly the origins the privileged bridge legitimately runs in.
   private fun trustedOriginsFor(uri: String?): Set<String> {
-    val origins = linkedSetOf("https://$ASSET_HOST")
+    val origins = linkedSetOf("https://$assetHost")
     originOf(uri)?.let { origins.add(it) }
     return origins
   }
@@ -212,6 +212,13 @@ class PooledChartWebView private constructor(
   private var assetLoader: WebViewAssetLoader? = null
   private var lastLoadedUrl: String? = null
   private var lastLocalBundle: String? = null
+  // The host the offline bundle is served under. Defaults to the built-in
+  // appassets host (old behavior); when the app passes `assetHost` we serve the
+  // bundle under the real chart origin so the WebView reuses that origin's
+  // same-origin storage (zero migration). Tracked so an assetHost change rebuilds
+  // the asset loader + recomputes the target URL, same as a localBundle change.
+  private var assetHost: String = ASSET_HOST
+  private var lastAssetHost: String = ASSET_HOST
 
   // Last rendered frame, used to mask the brief blank frame while the WebView's
   // surface is torn down and recreated during a reparent (move). Kept until
@@ -515,13 +522,23 @@ class PooledChartWebView private constructor(
    * so reparenting / redundant prop re-applies never reload (which would lose
    * chart state, the whole point of pooling).
    */
-  fun setSource(uri: String?, localBundle: String?, entry: String?, paramsJson: String?) {
+  fun setSource(
+    uri: String?,
+    localBundle: String?,
+    entry: String?,
+    paramsJson: String?,
+    assetHost: String?,
+  ) {
     // Never load before the document-start bridge is registered — otherwise the
     // page boots without the bridge and its first $private requests are lost. The
     // host re-calls setSource once the bridgeScript prop arrives.
     if (!bridgeRegistered) return
-    if (localBundle != lastLocalBundle) {
+    // Per-instance asset host: fall back to the built-in appassets host (old
+    // behavior) when the app doesn't pass one. Empty string is treated as absent.
+    this.assetHost = assetHost?.takeIf { it.isNotEmpty() } ?: ASSET_HOST
+    if (localBundle != lastLocalBundle || this.assetHost != lastAssetHost) {
       lastLocalBundle = localBundle
+      lastAssetHost = this.assetHost
       rebuildAssetLoader(localBundle)
     }
     // Register the document-start bridge scoped to exactly the origin(s) this load
@@ -572,9 +589,28 @@ class PooledChartWebView private constructor(
       assetLoader = null
       return
     }
+    // Narrow the path handler to ONLY the offline bundle subtree
+    // (/<localBundle>/, e.g. /tradingview-assets/) instead of intercepting all of
+    // "/". When the bundle is served under the real chart origin (`assetHost`),
+    // intercepting "/" would shadow every web path on that domain; with the narrow
+    // handler, unmatched paths fall through to the network — so an `assetHost`
+    // that is a real public domain keeps behaving normally off-bundle.
+    // computeTargetUrl produces https://<assetHost>/<localBundle>/<entry>, which
+    // stays inside this handler's path. (Path built as /<localBundle>/ so a
+    // localBundle that already has a trailing slash doesn't double it.)
+    val bundleDir = localBundle.trim('/')
+    val bundlePath = "/$bundleDir/"
+    // WebViewAssetLoader strips the registered prefix before calling the handler,
+    // so AssetsPathHandler alone would resolve the remainder against the assets
+    // ROOT (assets/<entry>) and lose the bundle namespace. Re-prepend <bundleDir>/
+    // so we still serve from assets/<localBundle>/<entry>. Returning null on a
+    // miss lets WebViewAssetLoader fall through to the network.
+    val assets = WebViewAssetLoader.AssetsPathHandler(webView.context)
+    val namespacedHandler =
+      WebViewAssetLoader.PathHandler { suffix -> assets.handle("$bundleDir/$suffix") }
     assetLoader = WebViewAssetLoader.Builder()
-      .setDomain(ASSET_HOST)
-      .addPathHandler("/", WebViewAssetLoader.AssetsPathHandler(webView.context))
+      .setDomain(assetHost)
+      .addPathHandler(bundlePath, namespacedHandler)
       .build()
   }
 
@@ -590,7 +626,7 @@ class PooledChartWebView private constructor(
     val query = buildQueryFromParamsJson(paramsJson)
     return buildString {
       append("https://")
-      append(ASSET_HOST)
+      append(assetHost)
       append('/')
       // Serve the offline bundle from assets/<localBundle>/ (namespaced) rather
       // than the assets root, so it doesn't collide with other bundled assets
