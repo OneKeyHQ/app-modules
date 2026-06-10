@@ -52,11 +52,8 @@ class PooledChartWebView private constructor(
     const val ASSET_HOST = "appassets.androidplatform.net"
     private const val DEFAULT_ENTRY = "index.html"
 
-    // TEMP diagnostic tag (root-cause C1..C4 verification). All high-frequency
-    // signals are THROTTLED counters logged once per ~3s — never per-message —
-    // so this can't flood logcat / saturate the bridge like the earlier per-msg
-    // logging did. Read via: adb logcat -d -s ChartDBG. Remove once root-caused.
-    const val DBG = "ChartDBG"
+    // Operational log tag for this pool (lifecycle + error paths only).
+    private const val TAG = "ChartWebviewPool"
 
     // Tiny platform transport shim: defines the single hook the shared TS bridge
     // (CHART_BRIDGE_JS) calls. The bulk of the bridge lives in the TS layer and
@@ -158,7 +155,6 @@ class PooledChartWebView private constructor(
   var owner: HybridChartWebview?
     get() = _owner
     set(value) {
-      if (_owner !== value) android.util.Log.i(DBG, "pool[$key] owner ${_owner?.dbgId} -> ${value?.dbgId}")
       _owner = value
     }
   // The host that warm-booted the page and can drive its symbol / receive its
@@ -169,30 +165,8 @@ class PooledChartWebView private constructor(
   var warmDriver: HybridChartWebview?
     get() = _warmDriver
     set(value) {
-      if (_warmDriver !== value) android.util.Log.i(DBG, "pool[$key] warmDriver ${_warmDriver?.dbgId} -> ${value?.dbgId}")
       _warmDriver = value
     }
-
-  // --- C1 diagnostic: throttled message-rate counters (JSI load). Incremented
-  // per message (cheap, no logging), flushed to ONE log line every ~3s by
-  // rateLogger. A high msgIn rate while NOT on a perps screen = the offscreen
-  // prewarm page is still pumping over JSI.
-  private val msgInCounter = AtomicInteger(0)
-  private val nativeToPageCounter = AtomicInteger(0)
-  private val rateHandler = Handler(Looper.getMainLooper())
-  private val rateLogger = object : Runnable {
-    override fun run() {
-      val mi = msgInCounter.getAndSet(0)
-      val np = nativeToPageCounter.getAndSet(0)
-      if (mi > 0 || np > 0) {
-        android.util.Log.i(
-          DBG,
-          "pool[$key] RATE msgIn=$mi/3s native->page=$np/3s owner=${_owner?.dbgId} warm=${_warmDriver?.dbgId} paused=$paused",
-        )
-      }
-      rateHandler.postDelayed(this, 3000)
-    }
-  }
 
   // PERF (Android only): Android's in-process WebView/Chromium does NOT throttle
   // an offscreen/unowned page (unlike iOS WKWebView). Left running, the warm
@@ -218,20 +192,17 @@ class PooledChartWebView private constructor(
   // on the next CLAIM so the chart paints again.
   fun pauseIfIdle() {
     if (paused || !hasLoadedOnce || owner != null) {
-      // C4: if we SKIP because an owner still holds the shared page, the WebView
-      // keeps running (rAF/websocket) — i.e. it never idles while any host owns it.
-      android.util.Log.i(DBG, "pool[$key] pauseIfIdle SKIP paused=$paused loaded=$hasLoadedOnce owner=${_owner?.dbgId}")
       return
     }
     paused = true
-    android.util.Log.w(DBG, "pool[$key] PAUSE (renderer idle)")
+    android.util.Log.i(TAG, "pool[$key] PAUSE (renderer idle)")
     runOnUiThread { webView.onPause() }
   }
 
   fun resume() {
     if (!paused) return
     paused = false
-    android.util.Log.w(DBG, "pool[$key] RESUME")
+    android.util.Log.i(TAG, "pool[$key] RESUME")
     runOnUiThread {
       webView.onResume()
       webView.invalidate()
@@ -288,8 +259,7 @@ class PooledChartWebView private constructor(
 
   init {
     val n = liveCount.incrementAndGet()
-    android.util.Log.d("ChartWebviewPool", "WebView CREATED key=$key liveCount=$n")
-    rateHandler.postDelayed(rateLogger, 3000)
+    android.util.Log.d(TAG, "WebView CREATED key=$key liveCount=$n")
 
     webView.webViewClient = object : WebViewClientCompat() {
       override fun shouldInterceptRequest(
@@ -326,7 +296,6 @@ class PooledChartWebView private constructor(
   private inner class ChartBridge {
     @JavascriptInterface
     fun postMessage(message: String) {
-      msgInCounter.incrementAndGet() // C1: throttled rate (flushed by rateLogger)
       runOnUiThread {
         val target = owner ?: warmDriver
         target?.dispatchMessage(message)
@@ -376,7 +345,7 @@ class PooledChartWebView private constructor(
         }
       } else {
         android.util.Log.w(
-          "ChartWebviewPool",
+          TAG,
           "Skip attach key=$key after retries because WebView parent was not cleared: $currentParent",
         )
       }
@@ -567,7 +536,6 @@ class PooledChartWebView private constructor(
   }
 
   fun postMessage(message: String) {
-    nativeToPageCounter.incrementAndGet() // C1: throttled rate (flushed by rateLogger)
     val payload = JSONObject.quote(message)
     val js =
       "(function(){try{window.postMessage(JSON.parse($payload), '*');}" +
@@ -586,7 +554,6 @@ class PooledChartWebView private constructor(
    * leaking a Chromium renderer + JavascriptInterface.
    */
   fun destroy() {
-    rateHandler.removeCallbacks(rateLogger)
     runOnUiThread {
       bridgeScriptHandler?.remove()
       bridgeScriptHandler = null
@@ -596,7 +563,7 @@ class PooledChartWebView private constructor(
       (webView.parent as? ViewGroup)?.removeView(webView)
       webView.destroy()
       val n = liveCount.decrementAndGet()
-      android.util.Log.d("ChartWebviewPool", "WebView DESTROYED key=$key liveCount=$n")
+      android.util.Log.d(TAG, "WebView DESTROYED key=$key liveCount=$n")
     }
   }
 
