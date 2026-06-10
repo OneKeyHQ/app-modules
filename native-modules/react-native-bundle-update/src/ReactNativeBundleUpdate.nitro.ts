@@ -99,6 +99,10 @@ export interface ReactNativeBundleUpdate
   clearBundle(): Promise<void>;
   clearAllJSBundleData(): Promise<TestResult>;
   resetToBuiltInBundle(): Promise<void>;
+  // Prune every artifact whose appVersion differs from the running native
+  // binary version (stale OTA dirs, download stages, orphan asc, lingering
+  // fallback entries). Returns the count of deleted version directories.
+  pruneStaleAppVersionBundles(): Promise<number>;
 
   // Bundle data
   getFallbackUpdateBundleData(): Promise<FallbackBundleInfo[]>;

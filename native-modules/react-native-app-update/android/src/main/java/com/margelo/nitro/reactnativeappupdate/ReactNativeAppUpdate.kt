@@ -1191,6 +1191,44 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
         return result
     }
 
+    /**
+     * Delete every file in cacheDir/apks/ (.apk / .partial / .progress /
+     * .SHA256SUMS.asc). Tolerates a missing directory and per-file delete
+     * failures (e.g. the OS reclaimed the cache mid-pass — see
+     * verifyExistingApk's Indeterminate handling for the same defensive
+     * stance). Pure file I/O: does NOT touch download/verification state, so
+     * it is safe to share between clearCache (full reset) and clearApkCache
+     * (JS-gated, no in-flight download to cancel). The [tag] flows into the
+     * log lines so the two callers stay distinguishable in logcat.
+     */
+    private fun wipeApkCacheFiles(tag: String) {
+        val context = NitroModules.applicationContext
+        if (context == null) {
+            OneKeyLog.warn("AppUpdate", "$tag: application context unavailable, skipping file cleanup")
+            return
+        }
+        val apkDir = File(context.cacheDir, "apks")
+        if (!apkDir.exists()) {
+            OneKeyLog.info("AppUpdate", "$tag: apks cache directory does not exist, nothing to clean")
+            return
+        }
+        val filesToDelete = apkDir.listFiles() ?: emptyArray()
+        OneKeyLog.info("AppUpdate", "$tag: found ${filesToDelete.size} cached file(s) to delete in ${apkDir.absolutePath}")
+        var deletedCount = 0
+        filesToDelete.forEach { file ->
+            val size = file.length()
+            // The file may already be gone (concurrent OS cache reclaim);
+            // treat a non-existent file as nothing to do, not a failure.
+            if (!file.exists() || file.delete()) {
+                OneKeyLog.debug("AppUpdate", "$tag: deleted ${file.name} (${size} bytes)")
+                deletedCount++
+            } else {
+                OneKeyLog.warn("AppUpdate", "$tag: failed to delete ${file.name}")
+            }
+        }
+        OneKeyLog.info("AppUpdate", "$tag: completed, deleted $deletedCount/${filesToDelete.size} files")
+    }
+
     override fun clearCache(): Promise<Unit> {
         return Promise.async {
             OneKeyLog.info("AppUpdate", "clearCache: starting cleanup...")
@@ -1200,29 +1238,19 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             OneKeyLog.info("AppUpdate", "clearCache: reset download state, cleared $verifiedCount verified file entries")
 
             // Clean up downloaded APK and ASC files from cacheDir/apks/ directory
-            val context = NitroModules.applicationContext
-            if (context != null) {
-                val apkDir = File(context.cacheDir, "apks")
-                if (apkDir.exists()) {
-                    val filesToDelete = apkDir.listFiles() ?: emptyArray()
-                    OneKeyLog.info("AppUpdate", "clearCache: found ${filesToDelete.size} cached file(s) to delete in ${apkDir.absolutePath}")
-                    var deletedCount = 0
-                    filesToDelete.forEach { file ->
-                        val size = file.length()
-                        if (file.delete()) {
-                            OneKeyLog.debug("AppUpdate", "clearCache: deleted ${file.name} (${size} bytes)")
-                            deletedCount++
-                        } else {
-                            OneKeyLog.warn("AppUpdate", "clearCache: failed to delete ${file.name}")
-                        }
-                    }
-                    OneKeyLog.info("AppUpdate", "clearCache: completed, deleted $deletedCount/${filesToDelete.size} files")
-                } else {
-                    OneKeyLog.info("AppUpdate", "clearCache: apks cache directory does not exist, nothing to clean")
-                }
-            } else {
-                OneKeyLog.warn("AppUpdate", "clearCache: application context unavailable, skipping file cleanup")
-            }
+            wipeApkCacheFiles("clearCache")
+        }
+    }
+
+    override fun clearApkCache(): Promise<Unit> {
+        return Promise.async {
+            // Wipe downloaded APK artifacts from cacheDir/apks/ only. The JS
+            // layer gates on app-update status before calling, so there is no
+            // in-flight download to cancel here: deliberately do NOT touch
+            // isDownloading / verifiedFiles (that's clearCache's job). Missing
+            // dir/files are tolerated.
+            OneKeyLog.info("AppUpdate", "clearApkCache: starting stale APK cache cleanup...")
+            wipeApkCacheFiles("clearApkCache")
         }
     }
 }

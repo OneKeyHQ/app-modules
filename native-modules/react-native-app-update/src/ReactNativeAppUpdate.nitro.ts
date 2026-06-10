@@ -24,6 +24,10 @@ export interface ReactNativeAppUpdate
   verifyAPK(params: AppUpdateFileParams): Promise<void>;
   installAPK(params: AppUpdateFileParams): Promise<void>;
   clearCache(): Promise<void>;
+  // Wipe downloaded APK artifacts from cacheDir/apks (.apk / .partial /
+  // .SHA256SUMS.asc). Android-only; the JS layer gates on update status before
+  // calling so this does NOT cancel an in-flight download. iOS is a no-op stub.
+  clearApkCache(): Promise<void>;
 
   // Verification & testing
   testVerification(): Promise<boolean>;
