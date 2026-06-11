@@ -1769,7 +1769,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     /**
      * Prunes every artifact whose appVersion != the running native binary
-     * version: stale onekey-bundle/* dirs, onekey-bundle-download/* stages
+     * version: stale onekey-bundle/<v> dirs, onekey-bundle-download/<v> stages
      * (.zip / .partial / .progress / .resume), orphan asc signatures, and
      * lingering fallback entries. Hard-refuses to delete the current
      * appVersion's artifacts and the active currentBundleVersion. Tolerates
