@@ -33,10 +33,36 @@ android {
   defaultConfig {
     minSdkVersion getExtOrIntegerDefault("minSdkVersion")
     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
+
+    externalNativeBuild {
+      cmake {
+        // C++20 to match React Native's prefab targets.
+        cppFlags "-O2", "-frtti", "-fexceptions", "-std=c++20"
+        // The react-android / hermestooling prefab targets are built against
+        // the shared STL; without this the default static STL is selected and
+        // CMake configure fails ("static STL but library requires a shared
+        // STL [//ReactAndroid/hermestooling]"). Matches react-native-background-thread.
+        arguments "-DANDROID_STL=c++_shared"
+        // Only build the ABIs the app ships.
+        abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+      }
+    }
   }
 
   buildFeatures {
     buildConfig true
+    // Consume react-android / fbjni prefab packages (jsi, reactnative, fbjni)
+    // from the AAR for the native (JNI) side.
+    prefab true
+  }
+
+  // Native (JNI) side: evaluates split-bundle segments on the JS thread and
+  // resolves the promise strictly AFTER eval (fixes the "Requiring unknown
+  // module" race). See src/main/cpp/SplitBundleLoaderJSI.cpp.
+  externalNativeBuild {
+    cmake {
+      path "CMakeLists.txt"
+    }
   }
 
   buildTypes {

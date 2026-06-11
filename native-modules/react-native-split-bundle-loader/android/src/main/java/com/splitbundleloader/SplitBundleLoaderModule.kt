@@ -5,13 +5,18 @@ import android.content.res.AssetManager
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.common.annotations.FrameworkAPI
 import com.facebook.react.module.annotations.ReactModule
+import com.facebook.react.turbomodule.core.CallInvokerHolderImpl
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.Semaphore
+import java.util.concurrent.atomic.AtomicBoolean
+import android.os.Handler
+import android.os.Looper
 
 /**
  * TurboModule entry point for SplitBundleLoader.
@@ -26,9 +31,65 @@ import java.util.concurrent.Semaphore
 class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
     NativeSplitBundleLoaderSpec(reactContext) {
 
+    /**
+     * Completion contract invoked by the native (JNI) side AFTER the segment
+     * has been evaluated into the runtime. Called from the JS thread.
+     *
+     * @param error null on success; a non-empty message on failure. A failure
+     *   message prefixed with "IO_ERROR:" denotes a segment file read/mmap
+     *   failure (mapped to SPLIT_BUNDLE_IO_ERROR); any other message denotes a
+     *   segment JS/Hermes eval throw (mapped to SPLIT_BUNDLE_EVAL_ERROR).
+     */
+    fun interface SegmentEvalCallback {
+        fun onComplete(error: String?)
+    }
+
     companion object {
         const val NAME = "SplitBundleLoader"
         private const val BUILTIN_EXTRACT_DIR = "onekey-builtin-segments"
+
+        // Bounded watchdog: if the JS thread is wedged and the segment eval
+        // never runs, reject rather than leaving the JS promise pending forever.
+        // Generous because a cold JS thread under load can legitimately take a
+        // while to drain to our scheduled eval.
+        private const val SEGMENT_EVAL_TIMEOUT_MS = 30_000L
+
+        // Loads the JNI library that provides nativeEvaluateSegment. Wrapped so
+        // a missing/failed load is detectable: loadSegment then fail-closes with
+        // SPLIT_BUNDLE_NATIVE_UNAVAILABLE instead of crashing (we deliberately do
+        // NOT fall back to the legacy registerSegment path).
+        @JvmStatic
+        @Volatile
+        var nativeLibLoaded: Boolean = false
+            private set
+
+        init {
+            nativeLibLoaded = try {
+                System.loadLibrary("splitbundleloader")
+                true
+            } catch (e: Throwable) {
+                SBLLogger.warn("[SplitBundle] failed to load native lib 'splitbundleloader': ${e.message}")
+                false
+            }
+        }
+
+        /**
+         * JNI entry point. Schedules evaluation of the segment at [segmentPath]
+         * onto the JS thread via the bridgeless CallInvoker and invokes
+         * [callback] from inside that same JS-thread block, strictly AFTER the
+         * segment's `__d(...)` module definitions have run. This is the ordering
+         * guarantee that fixes the "Requiring unknown module" race.
+         *
+         * Returns immediately; [callback] fires later on the JS thread.
+         */
+        @JvmStatic
+        @OptIn(FrameworkAPI::class)
+        external fun nativeEvaluateSegment(
+            callInvokerHolder: CallInvokerHolderImpl,
+            segmentPath: String,
+            sourceURL: String,
+            callback: SegmentEvalCallback
+        )
         // #18: Limit concurrent asset extractions to avoid I/O contention
         private const val MAX_CONCURRENT_EXTRACTS = 2
         private val extractSemaphore = Semaphore(MAX_CONCURRENT_EXTRACTS)
@@ -197,6 +258,7 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
     // loadSegment
     // -----------------------------------------------------------------------
 
+    @OptIn(FrameworkAPI::class)
     override fun loadSegment(
         segmentId: Double,
         segmentKey: String,
@@ -229,15 +291,119 @@ class SplitBundleLoaderModule(reactContext: ReactApplicationContext) :
                 return
             }
 
-            // Use ReactContext.registerSegment which works in both bridge
-            // and bridgeless modes. In bridge mode it delegates to
-            // CatalystInstance; in bridgeless mode it delegates to ReactHost.
             val reactContext = reactApplicationContext
             val segStart = System.nanoTime()
-            reactContext.registerSegment(segId, absolutePath) {
-                val segMs = (System.nanoTime() - segStart) / 1_000_000.0
-                SBLLogger.info("[SplitBundle] segment $segmentKey (id=$segId) registered in ${String.format("%.1f", segMs)}ms")
-                promise.resolve(null)
+
+            // PRIMARY PATH (fixes the "Requiring unknown module" race):
+            // Evaluate the segment OURSELVES on the JS thread via the bridgeless
+            // CallInvoker and resolve ONLY after eval completes. We intentionally
+            // do NOT use ReactContext.registerSegment here: that resolves its
+            // callback immediately (on Task.IMMEDIATE_EXECUTOR) while the actual
+            // segment eval is merely ENQUEUED onto the RuntimeScheduler, so the
+            // promise resolves BEFORE the segment's __d(...) module definitions
+            // run — Metro's import().then(() => __r(moduleId)) can then hit a
+            // fatal "Requiring unknown module". nativeEvaluateSegment collapses
+            // eval + resolve into one JS-thread block (mirrors the iOS
+            // callFunctionOnBufferedRuntimeExecutor: fix).
+            val callInvokerHolder =
+                reactContext.jsCallInvokerHolder as? CallInvokerHolderImpl
+
+            if (nativeLibLoaded && callInvokerHolder != null) {
+                val sourceURL = File(absolutePath).name
+                // One-shot guard: native success/error AND the watchdog can each
+                // try to settle the promise; only the first wins.
+                val settled = AtomicBoolean(false)
+
+                // Bounded watchdog: if the JS thread never drains to our eval,
+                // reject instead of hanging the JS promise forever.
+                val watchdog = Handler(Looper.getMainLooper())
+                val timeoutRunnable = Runnable {
+                    if (settled.compareAndSet(false, true)) {
+                        SBLLogger.warn("[SplitBundle] segment $segmentKey (id=$segId) eval timed out after ${SEGMENT_EVAL_TIMEOUT_MS}ms")
+                        // D: Reject with the RETRYABLE timeout code from the shared
+                        // contract (NOT SPLIT_BUNDLE_EVAL_TIMEOUT). A wedged JS
+                        // thread is a transient condition; using the retryable
+                        // SPLIT_BUNDLE_TIMEOUT lets the JS loader re-attempt rather
+                        // than caching this segment as a permanent failure.
+                        promise.reject(
+                            "SPLIT_BUNDLE_TIMEOUT",
+                            "Segment eval timed out: $segmentKey (id=$segId)"
+                        )
+                    }
+                }
+                watchdog.postDelayed(timeoutRunnable, SEGMENT_EVAL_TIMEOUT_MS)
+
+                // Catch Throwable, NOT just Exception, around the native call.
+                // nativeEvaluateSegment is `external`: if the symbol is
+                // registered-but-broken (or the lib half-loaded) the JVM raises
+                // UnsatisfiedLinkError, which is a java.lang.Error — it would
+                // sail past the outer `catch (e: Exception)` and leave the JS
+                // promise unsettled forever (the watchdog would eventually fire,
+                // but only after a 30s hang). Settle exactly once here via the
+                // same AtomicBoolean one-shot guard and cancel the watchdog.
+                try {
+                    nativeEvaluateSegment(
+                        callInvokerHolder,
+                        absolutePath,
+                        sourceURL
+                    ) { error ->
+                        if (settled.compareAndSet(false, true)) {
+                            watchdog.removeCallbacks(timeoutRunnable)
+                            if (error == null) {
+                                val segMs = (System.nanoTime() - segStart) / 1_000_000.0
+                                SBLLogger.info("[SplitBundle] segment $segmentKey (id=$segId) evaluated in ${String.format("%.1f", segMs)}ms (eval-complete)")
+                                promise.resolve(null)
+                            } else {
+                                // The native side prefixes I/O failures (file
+                                // read/mmap) with "IO_ERROR:" so we can map them to
+                                // SPLIT_BUNDLE_IO_ERROR (non-retryable). Everything
+                                // else is a segment JS/Hermes eval throw →
+                                // SPLIT_BUNDLE_EVAL_ERROR (also non-retryable, a real
+                                // bug in the segment's own code).
+                                if (error.startsWith("IO_ERROR:")) {
+                                    val msg = error.removePrefix("IO_ERROR:")
+                                    SBLLogger.warn("[SplitBundle] segment $segmentKey (id=$segId) IO failed: $msg")
+                                    promise.reject("SPLIT_BUNDLE_IO_ERROR", msg)
+                                } else {
+                                    SBLLogger.warn("[SplitBundle] segment $segmentKey (id=$segId) eval failed: $error")
+                                    promise.reject("SPLIT_BUNDLE_EVAL_ERROR", error)
+                                }
+                            }
+                        }
+                    }
+                } catch (t: Throwable) {
+                    // UnsatisfiedLinkError / any native dispatch failure. The
+                    // callback never fired (the native side never got far enough
+                    // to invoke it), so settle the promise ourselves — exactly
+                    // once — as a fatal, non-retryable native fault.
+                    if (settled.compareAndSet(false, true)) {
+                        watchdog.removeCallbacks(timeoutRunnable)
+                        SBLLogger.error("[SplitBundle] FATAL: nativeEvaluateSegment threw for $segmentKey (id=$segId): ${t.message}")
+                        promise.reject(
+                            "SPLIT_BUNDLE_NATIVE_UNAVAILABLE",
+                            "Native segment eval threw: $segmentKey (id=$segId): ${t.message}"
+                        )
+                    }
+                }
+            } else {
+                // B: FAIL CLOSED. On this app (RN 0.81, NewArch / bridgeless),
+                // jsCallInvokerHolder is always a CallInvokerHolderImpl and the
+                // JNI lib ships in the AAR, so reaching here means a genuine
+                // native fault (loadLibrary failed or the holder cast failed) —
+                // NOT a benign legacy-bridge mode (this app never runs the old
+                // bridge). We deliberately do NOT fall back to the legacy
+                // ReactContext.registerSegment path: that resolves before eval
+                // and reintroduces the intermittent, uncatchable "Requiring
+                // unknown module" native crash. Failing closed (segment load
+                // unavailable → JS error boundary) is strictly better than an
+                // intermittent crash, so we reject with the dedicated
+                // NATIVE_UNAVAILABLE code (non-retryable; the JS loader will not
+                // hammer-retry a structurally broken native primitive).
+                SBLLogger.error("[SplitBundle] FATAL: native eval primitive unavailable (libLoaded=$nativeLibLoaded, holderCast=${callInvokerHolder != null}) for $segmentKey (id=$segId); failing closed instead of using the race-prone legacy registerSegment fallback")
+                promise.reject(
+                    "SPLIT_BUNDLE_NATIVE_UNAVAILABLE",
+                    "Native segment eval unavailable (libLoaded=$nativeLibLoaded, holderCast=${callInvokerHolder != null}): $segmentKey (id=$segId)"
+                )
             }
         } catch (e: Exception) {
             promise.reject("SPLIT_BUNDLE_LOAD_ERROR", e.message, e)

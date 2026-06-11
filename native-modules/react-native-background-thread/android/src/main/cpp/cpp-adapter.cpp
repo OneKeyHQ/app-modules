@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -447,6 +448,323 @@ static void installTimersOnRuntime(jsi::Runtime &rt) {
     LOGI("Timer + rAF + rIC polyfills installed on bg runtime");
 }
 
+// ── Background segment eval (fix A: eval-then-resolve on the BG runtime) ──
+//
+// WHY THIS EXISTS — the "Requiring unknown module" race on the BACKGROUND
+// runtime:
+// The Kotlin BackgroundThreadManager.registerSegmentInBackground previously
+// called `ReactContext.registerSegment(...)`, which (bridgeless) routes through
+// ReactHostImpl.registerSegment → ReactInstance.registerSegment → C++
+// ReactInstance::registerSegment, and that only `scheduleWork`s the
+// evaluateJavaScript onto the RuntimeScheduler before returning. The Kotlin
+// completion callback then fired immediately, so the JS promise resolved BEFORE
+// the segment's `__d(...)` module definitions ran. Metro's
+// `import().then(() => __r(moduleId))` could then run `__r` before the module
+// table was populated → a fatal, uncatchable "Requiring unknown module". Locale
+// segments load through THIS bg path, so a language switch could still crash.
+//
+// THE FIX (mirrors the MAIN-runtime SplitBundleLoaderJSI fix and the iOS
+// callFunctionOnBufferedRuntimeExecutor: fix):
+// We evaluate the segment OURSELVES on the BACKGROUND JS thread and signal
+// completion in the SAME block, strictly AFTER eval. The accessor we use is the
+// background runtime's own RuntimeExecutor (`gBgTimerExecutor`), captured in
+// nativeInstallSharedBridge for the bg runtime (isMain=false). It dispatches via
+// scheduleOnJSThread(isMain=false, ...) → nativeExecuteWork, which runs the work
+// on the bg JS queue thread and then drainMicrotasks() — so this targets the
+// BACKGROUND runtime, NOT the main one. This is the correct bg analogue of the
+// main path's CallInvoker (the bg runtime is created by ReactHostImpl and the bg
+// ReactContext does not surface a usable jsCallInvokerHolder the way the main
+// one does, but its RuntimeExecutor already exists and routes to the bg JS
+// thread).
+//
+// Off-thread read (fix F): the segment file is read on the CALLING (native
+// module) thread before dispatch; only evaluateJavaScript + completion run on
+// the bg JS thread.
+
+// Java callback contract — implemented in Kotlin as
+// BackgroundThreadManager.SegmentEvalCallback.onComplete(error). Empty/null
+// error string → success. A message prefixed with "NO_RUNTIME:" → bg runtime
+// not ready (retryable); "IO_ERROR:" → file read failure (fatal); otherwise →
+// eval throw (fatal). Resolved exactly once on the Kotlin side via its watchdog
+// guard.
+static void invokeBgSegmentCallback(jobject globalCallback, const std::string &error) {
+    JNIEnv *env = getJNIEnv();
+    if (!env || !globalCallback) {
+        return;
+    }
+    jclass cls = env->GetObjectClass(globalCallback);
+    jmethodID mid =
+        env->GetMethodID(cls, "onComplete", "(Ljava/lang/String;)V");
+    if (mid) {
+        jstring jerr = error.empty() ? nullptr : env->NewStringUTF(error.c_str());
+        env->CallVoidMethod(globalCallback, mid, jerr);
+        if (env->ExceptionCheck()) {
+            LOGE("invokeBgSegmentCallback: JNI exception after onComplete");
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+        }
+        if (jerr) {
+            env->DeleteLocalRef(jerr);
+        }
+    } else {
+        LOGE("invokeBgSegmentCallback: onComplete method not found!");
+        if (env->ExceptionCheck()) {
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+        }
+    }
+    env->DeleteLocalRef(cls);
+}
+
+// ── Pending bg-eval callback registry (fix: bounded global-ref lifetime) ──
+//
+// The bg-eval work lambda captures a JNI global ref to the SegmentEvalCallback
+// and is enqueued onto gPendingWork for the bg JS thread. If that work is
+// enqueued but NEVER runs, the captured global ref would leak and the JS promise
+// would settle only via the Kotlin 30s watchdog. The drop paths that release it:
+//   - Java schedule fails (JNI exception / missing scheduleOnJSThread): the C++
+//     executor erases gPendingWork[workId] and drains this eval.
+//   - bg context==null / ptr==0 in scheduleOnJSThread: Kotlin calls
+//     nativeDropScheduledWork(workId) — which erases the work AND drains —
+//     BEFORE it would call nativeExecuteWork. (nativeExecuteWork's own
+//     rt==nullptr guard merely returns and is NOT a drain path; it is never
+//     reached for a dead ptr because Kotlin intercepts that case first.)
+//   - nativeDestroy: intentionally leaks the work lambdas (their ~jsi::Function
+//     can't run on a torn-down runtime) but drains this registry to settle them.
+// To make this strictly bounded, every in-flight bg eval registers here. Whoever
+// settles it first (the work lambda after eval, OR a drain on a drop path) claims
+// it via `settled`, invokes the Java callback exactly once, and deletes the
+// global ref. This guarantees no leak and no double-invoke.
+struct PendingBgEval {
+    jobject globalCallback;                  // owned: deleted by whoever settles
+    std::shared_ptr<std::atomic<bool>> settled;  // exactly-once claim
+};
+static std::mutex gBgEvalMutex;
+static std::unordered_map<int64_t, PendingBgEval> gPendingBgEvals;
+static int64_t gNextBgEvalId = 0;
+
+// Settle a pending bg eval exactly once: invoke the Java callback with `error`
+// (empty => success) and release the global ref. The shared `settled` flag is
+// the single source of truth for the one-shot — the registry entry may already
+// be gone (claimed/erased by the other party), so this is self-contained.
+static void settleBgEval(jobject globalCallback,
+                         const std::shared_ptr<std::atomic<bool>> &settled,
+                         const std::string &error) {
+    if (!settled) {
+        return;
+    }
+    bool expected = false;
+    if (!settled->compare_exchange_strong(expected, true)) {
+        // Already settled by the other party (lambda vs drain). Do nothing —
+        // the winner already invoked + deleted the global ref.
+        return;
+    }
+    invokeBgSegmentCallback(globalCallback, error);
+    JNIEnv *env = getJNIEnv();
+    if (env && globalCallback) {
+        env->DeleteGlobalRef(globalCallback);
+    }
+}
+
+// Settle ALL currently-registered bg evals with a retryable NO_RUNTIME-class
+// failure and clear the registry. Used when the bg runtime is going away (or is
+// unreachable) and any enqueued-but-unrun eval would otherwise leak its global
+// ref and hang the JS promise until the Kotlin watchdog. Each settle is
+// exactly-once (the work lambda may race us, but the shared flag arbitrates),
+// so this never double-invokes.
+static void drainPendingBgEvals(const std::string &reason) {
+    // Move the entries OUT under the lock and clear the registry, then settle
+    // OUTSIDE the lock. settleBgEval performs a Java upcall (onComplete via
+    // CallVoidMethod), so holding gBgEvalMutex across it would hold a native
+    // lock across arbitrary JS — a re-entrancy / deadlock hazard if a callback
+    // ever synchronously re-enters a gBgEvalMutex-taking path. PendingBgEval is
+    // copyable (jobject handle + shared_ptr); copies share the same global ref
+    // and `settled` flag, and the shared flag still arbitrates exactly-once
+    // against a racing work lambda, so the global ref is released exactly once.
+    std::vector<PendingBgEval> drained;
+    {
+        std::lock_guard<std::mutex> lock(gBgEvalMutex);
+        if (gPendingBgEvals.empty()) {
+            return;
+        }
+        LOGE("[SplitBundle] draining %zu pending bg eval(s): %s",
+             gPendingBgEvals.size(), reason.c_str());
+        drained.reserve(gPendingBgEvals.size());
+        for (auto &entry : gPendingBgEvals) {
+            drained.push_back(entry.second);
+        }
+        gPendingBgEvals.clear();
+    }
+    for (auto &entry : drained) {
+        settleBgEval(entry.globalCallback, entry.settled, "NO_RUNTIME:" + reason);
+    }
+}
+
+// Reads the whole file at `path` into `out`. Returns false on failure.
+static bool readBgFileToString(const std::string &path, std::string &out) {
+    FILE *f = std::fopen(path.c_str(), "rb");
+    if (f == nullptr) {
+        return false;
+    }
+    if (std::fseek(f, 0, SEEK_END) != 0) {
+        std::fclose(f);
+        return false;
+    }
+    long size = std::ftell(f);
+    if (size < 0) {
+        std::fclose(f);
+        return false;
+    }
+    if (std::fseek(f, 0, SEEK_SET) != 0) {
+        std::fclose(f);
+        return false;
+    }
+    out.resize(static_cast<size_t>(size));
+    size_t readBytes =
+        (size == 0) ? 0 : std::fread(&out[0], 1, static_cast<size_t>(size), f);
+    std::fclose(f);
+    return readBytes == static_cast<size_t>(size);
+}
+
+// nativeEvaluateSegmentInBackground: schedule eval of the segment at `path`
+// onto the BACKGROUND JS thread via the bg RuntimeExecutor and invoke `callback`
+// from INSIDE that same block, strictly AFTER eval. Returns immediately; the
+// callback fires later on the bg JS thread (or synchronously here on a fail-fast
+// path such as bg runtime not ready / file read failure).
+extern "C" JNIEXPORT void JNICALL
+Java_com_backgroundthread_BackgroundThreadManager_nativeEvaluateSegmentInBackground(
+    JNIEnv *env, jobject /* thiz */, jstring segmentPath, jstring sourceURL,
+    jobject callback) {
+
+    // Global-ref the callback: it is invoked later on a different thread.
+    jobject globalCallback = env->NewGlobalRef(callback);
+    // Shared one-shot claim flag for this eval — used by BOTH the work lambda
+    // (after eval) and any drop-path drain, so exactly one of them invokes the
+    // callback + deletes the global ref.
+    auto settled = std::make_shared<std::atomic<bool>>(false);
+
+    const char *pathChars = segmentPath ? env->GetStringUTFChars(segmentPath, nullptr) : nullptr;
+    std::string path = pathChars ? std::string(pathChars) : std::string();
+    if (pathChars) env->ReleaseStringUTFChars(segmentPath, pathChars);
+
+    const char *urlChars = sourceURL ? env->GetStringUTFChars(sourceURL, nullptr) : nullptr;
+    std::string url = urlChars ? std::string(urlChars) : std::string("segment");
+    if (urlChars) env->ReleaseStringUTFChars(sourceURL, urlChars);
+
+    // Fail-fast on THIS thread: settle exactly once, no registry entry created.
+    auto finishOnThisThread = [&](const std::string &err) {
+        settleBgEval(globalCallback, settled, err);
+    };
+
+    if (path.empty()) {
+        finishOnThisThread("IO_ERROR:Empty segment path");
+        return;
+    }
+
+    // Snapshot the bg RuntimeExecutor under the timer mutex (the same lock that
+    // guards its assignment/teardown). If it's null the bg runtime hasn't
+    // installed its SharedBridge yet → retryable NO_RUNTIME.
+    RPCRuntimeExecutor executor;
+    {
+        std::lock_guard<std::mutex> lock(gTimerMutex);
+        executor = gBgTimerExecutor;
+    }
+    if (!executor) {
+        finishOnThisThread("NO_RUNTIME:Background runtime executor not available");
+        return;
+    }
+
+    // F: read the segment file HERE, on the calling (native module) thread,
+    // BEFORE dispatch — so only evaluateJavaScript + completion run on the bg JS
+    // thread and the read does not block it or race the watchdog.
+    std::string source;
+    if (!readBgFileToString(path, source)) {
+        finishOnThisThread("IO_ERROR:Failed to read bg segment file: " + path);
+        return;
+    }
+    if (source.empty()) {
+        finishOnThisThread("IO_ERROR:Empty bg segment file: " + path);
+        return;
+    }
+
+    // Register this in-flight eval BEFORE dispatch so that if the enqueued work
+    // never runs (schedule fails, context==null, ptr==0, or nativeDestroy drops
+    // pending work) the drain can settle it as a retryable NO_RUNTIME failure
+    // and release the global ref — instead of leaking it and leaning on the
+    // Kotlin 30s watchdog. The work lambda removes its own entry when it runs.
+    int64_t bgEvalId;
+    {
+        std::lock_guard<std::mutex> lock(gBgEvalMutex);
+        bgEvalId = gNextBgEvalId++;
+        gPendingBgEvals[bgEvalId] = PendingBgEval{globalCallback, settled};
+    }
+
+    // Move the already-read buffer + the global callback ref into the work
+    // lambda. The lambda runs on the bg JS thread (via nativeExecuteWork), which
+    // also drainMicrotasks() after — preserving eval+resolve as one atomic turn.
+    executor([globalCallback, settled, bgEvalId, source = std::move(source),
+              url = std::move(url)](jsi::Runtime &rt) {
+        // We are running now → claim ownership and remove our registry entry so
+        // a concurrent nativeDestroy drain can't also touch this eval.
+        {
+            std::lock_guard<std::mutex> lock(gBgEvalMutex);
+            gPendingBgEvals.erase(bgEvalId);
+        }
+        std::string error;
+        try {
+            LOGI("[SplitBundle] bg evaluating segment %s (%zu bytes)", url.c_str(),
+                 source.size());
+            auto buffer =
+                std::make_shared<jsi::StringBuffer>(std::move(source));
+            // Runs the segment's top-level __d(...) synchronously on the bg JS
+            // thread before returning.
+            rt.evaluateJavaScript(std::move(buffer), url);
+            LOGI("[SplitBundle] bg segment %s evaluated", url.c_str());
+        } catch (const jsi::JSError &e) {
+            error = std::string("Bg segment eval JSError for ") + url + ": " +
+                    e.getMessage();
+            LOGE("[SplitBundle] %s", error.c_str());
+        } catch (const std::exception &e) {
+            error = std::string("Bg segment eval failed for ") + url + ": " +
+                    e.what();
+            LOGE("[SplitBundle] %s", error.c_str());
+        } catch (...) {
+            error = std::string("Bg segment eval failed for ") + url +
+                    " (unknown C++ exception)";
+            LOGE("[SplitBundle] %s", error.c_str());
+        }
+        // Resolve/reject from INSIDE this same bg-JS-thread block, strictly
+        // AFTER eval above — the ordering guarantee that fixes the race. The
+        // shared `settled` flag makes this a no-op if a drain already claimed
+        // it (it would not have, since we erased our entry above, but the flag
+        // keeps the invariant airtight against any reorder).
+        settleBgEval(globalCallback, settled, error);
+    });
+}
+
+// nativeDropScheduledWork: clean up after a scheduleOnJSThread drop path where
+// CallVoidMethod itself SUCCEEDED but Kotlin then found the bg runtime
+// unreachable (context==null / ptr==0) and returned WITHOUT calling
+// nativeExecuteWork for this `workId`. Two things must be released:
+//   1. gPendingWork[workId] — the stored work lambda (holding the segment
+//      SOURCE BUFFER). nativeExecuteWork is the only other eraser and it will
+//      never run for this id, so without this it leaks until nativeDestroy.
+//   2. The in-flight bg eval(s) — settle as retryable NO_RUNTIME so the JNI
+//      global ref is released and the JS promise resolves now instead of
+//      hanging on the 30s watchdog. drain-all is sound: an unreachable bg JS
+//      thread dooms every enqueued bg eval equally.
+// Exactly-once via the shared `settled` flag, so a recovered runtime that later
+// DOES run stale work (it can't — we erased it) would be a harmless no-op.
+extern "C" JNIEXPORT void JNICALL
+Java_com_backgroundthread_BackgroundThreadManager_nativeDropScheduledWork(
+    JNIEnv * /* env */, jobject /* thiz */, jlong workId) {
+    {
+        std::lock_guard<std::mutex> lock(gWorkMutex);
+        gPendingWork.erase(static_cast<int64_t>(workId));
+    }
+    drainPendingBgEvals("Background runtime unreachable when scheduling segment eval");
+}
+
 // ── nativeInstallSharedBridge ───────────────────────────────────────────
 // Install SharedStore and SharedRPC into a runtime.
 extern "C" JNIEXPORT void JNICALL
@@ -471,8 +789,24 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
 
     RPCRuntimeExecutor executor = [ref, capturedIsMain](std::function<void(jsi::Runtime &)> work) {
         JNIEnv *env = getJNIEnv();
+
+        // Settle any enqueued-but-now-unrunnable bg eval when this work will NOT
+        // reach nativeExecuteWork. Bg eval lambdas are only ever dispatched via
+        // the bg executor, so this is gated on !capturedIsMain — a main-thread
+        // schedule hiccup must never falsely reject healthy bg evals. This
+        // mirrors the existing context==null / ptr==0 (nativeDropScheduledWork)
+        // and nativeDestroy drop paths: drain-all is sound because a failed bg
+        // schedule means the bg JS thread is unreachable, so every enqueued bg
+        // eval is equally doomed. NO_RUNTIME is retryable, so JS re-attempts.
+        auto drainBgEvalsIfBg = [capturedIsMain](const char *reason) {
+            if (!capturedIsMain) {
+                drainPendingBgEvals(reason);
+            }
+        };
+
         if (!env || !ref) {
             LOGE("executor: env=%p, ref=%p — aborting", env, ref.get());
+            drainBgEvalsIfBg("Background executor env/ref unavailable when scheduling segment eval");
             return;
         }
 
@@ -485,6 +819,7 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
 
         jclass cls = env->GetObjectClass(ref.get());
         jmethodID mid = env->GetMethodID(cls, "scheduleOnJSThread", "(ZJ)V");
+        bool scheduled = false;
         if (mid) {
             LOGI("executor: calling scheduleOnJSThread(isMain=%d, workId=%ld)", capturedIsMain, (long)workId);
             env->CallVoidMethod(ref.get(), mid, static_cast<jboolean>(capturedIsMain), static_cast<jlong>(workId));
@@ -492,6 +827,8 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
                 LOGE("executor: JNI exception after scheduleOnJSThread");
                 env->ExceptionDescribe();
                 env->ExceptionClear();
+            } else {
+                scheduled = true;
             }
         } else {
             LOGE("executor: scheduleOnJSThread method not found!");
@@ -501,6 +838,21 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
             }
         }
         env->DeleteLocalRef(cls);
+
+        // Schedule failed (JNI exception or missing method): nativeExecuteWork
+        // will never run this workId, so erase it now to free the stored work
+        // (and its captured segment source buffer) instead of leaking it until
+        // nativeDestroy. Then settle the corresponding bg eval(s) so the JNI
+        // global ref is released and the JS promise resolves immediately rather
+        // than hanging on the Kotlin 30s watchdog. Erasing also makes a late
+        // Kotlin enqueue (if scheduleOnJSThread threw AFTER posting) a no-op.
+        if (!scheduled) {
+            {
+                std::lock_guard<std::mutex> lock(gWorkMutex);
+                gPendingWork.erase(workId);
+            }
+            drainBgEvalsIfBg("Background JS thread unreachable when scheduling segment eval");
+        }
     };
 
     std::string runtimeId = isMain ? "main" : "background";
@@ -646,6 +998,11 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeDestroy(
     // Drain pending cross-runtime work. Each std::function may capture a
     // shared_ptr<jsi::Function> tied to the destroyed runtime; leak them
     // for the same reason as above.
+    //
+    // NOTE: the bg-eval work lambdas captured here also hold a JNI global ref
+    // to a SegmentEvalCallback. Leaking the std::function leaks that ref AND
+    // leaves the JS promise pending — so we settle those explicitly below via
+    // gPendingBgEvals (the entry survives independently of the leaked lambda).
     {
         std::lock_guard<std::mutex> lock(gWorkMutex);
         for (auto &entry : gPendingWork) {
@@ -653,6 +1010,12 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeDestroy(
         }
         gPendingWork.clear();
     }
+
+    // Drain pending bg-eval callbacks: the bg runtime is gone, so any eval that
+    // was enqueued but never ran must be settled NOW (retryable NO_RUNTIME) so
+    // the JS promise resolves immediately and the global ref is released —
+    // rather than leaking and relying on the Kotlin 30s watchdog.
+    drainPendingBgEvals("Background runtime destroyed before segment eval ran");
 
     LOGI("Native resources cleaned up");
 }

@@ -24,6 +24,7 @@ import com.facebook.react.shell.MainReactPackage
 import java.io.File
 import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Singleton manager for the background React Native runtime.
@@ -63,6 +64,12 @@ class BackgroundThreadManager private constructor() {
     companion object {
         private const val MODULE_NAME = "background"
 
+        // Bounded watchdog: if the bg JS thread never drains to our scheduled
+        // eval (e.g. the bg entry bundle never finished evaluating), reject as a
+        // RETRYABLE timeout rather than leaving the JS promise pending forever.
+        // Matches the main-runtime SplitBundleLoader watchdog.
+        private const val BG_SEGMENT_EVAL_TIMEOUT_MS = 30_000L
+
         init {
             System.loadLibrary("background_thread")
         }
@@ -78,12 +85,54 @@ class BackgroundThreadManager private constructor() {
         }
     }
 
+    /**
+     * Completion contract invoked by the native (JNI) side AFTER the bg segment
+     * has been evaluated into the BACKGROUND runtime. Called from the bg JS
+     * thread (or synchronously on the caller thread for fail-fast paths).
+     *
+     * @param error null on success; a non-empty message on failure. A message
+     *   prefixed with "NO_RUNTIME:" means the bg runtime is not ready yet
+     *   (retryable); "IO_ERROR:" means the segment file read failed (fatal);
+     *   any other message is a segment JS/Hermes eval throw (fatal).
+     */
+    fun interface SegmentEvalCallback {
+        fun onComplete(error: String?)
+    }
+
     // ── JNI declarations ────────────────────────────────────────────────────
 
     private external fun nativeInstallSharedBridge(runtimePtr: Long, isMain: Boolean)
     private external fun nativeSetupErrorHandler(runtimePtr: Long)
     private external fun nativeDestroy()
     private external fun nativeExecuteWork(runtimePtr: Long, workId: Long)
+
+    /**
+     * Evaluate the segment at [segmentPath] into the BACKGROUND runtime on its
+     * JS thread and invoke [callback] from inside that same JS-thread block,
+     * strictly AFTER the segment's `__d(...)` module definitions have run. This
+     * is the ordering guarantee that fixes the bg "Requiring unknown module"
+     * race (the bg analogue of the main-runtime SplitBundleLoaderJSI fix).
+     *
+     * Returns immediately; [callback] fires later on the bg JS thread (or
+     * synchronously on the calling thread for fail-fast paths such as the bg
+     * runtime not being ready or the segment file failing to read).
+     */
+    private external fun nativeEvaluateSegmentInBackground(
+        segmentPath: String,
+        sourceURL: String,
+        callback: SegmentEvalCallback
+    )
+
+    /**
+     * Settle every in-flight bg segment eval as a retryable NO_RUNTIME failure
+     * without tearing the runtime down. Called from [scheduleOnJSThread] when
+     * the bg runtime is momentarily unreachable (context == null / ptr == 0) so
+     * any eval enqueued onto the native pending-work map — which will never be
+     * drained on the JS thread in that state — releases its JNI global ref and
+     * settles the JS promise immediately, instead of leaking until the next
+     * teardown or relying on the bg watchdog. Exactly-once on the native side.
+     */
+    private external fun nativeDropScheduledWork(workId: Long)
 
     /**
      * Synchronously mark the SharedRPC listener for `runtimeId` as dead
@@ -412,8 +461,17 @@ class BackgroundThreadManager private constructor() {
         BTLogger.info("scheduleOnJSThread: isMain=$isMain, workId=$workId, context=${context != null}")
         if (context == null) {
             BTLogger.error("scheduleOnJSThread: context is null! isMain=$isMain, mainCtx=${mainReactContext != null}, bgHost=${bgReactHost != null}, bgCtx=${bgReactHost?.currentReactContext != null}")
+            // The just-enqueued native work will never reach the bg JS thread.
+            // Drop it now: erase gPendingWork[workId] (frees the captured segment
+            // source buffer) and, if it was a bg segment eval, settle it
+            // (retryable NO_RUNTIME) so its JNI global ref is released and the JS
+            // promise resolves instead of leaking until teardown / the bg watchdog.
+            if (!isMain) {
+                nativeDropScheduledWork(workId)
+            }
+            return
         }
-        context?.runOnJSQueueThread {
+        context.runOnJSQueueThread {
             // Re-read ptr inside the block — if a reload happened between
             // scheduling and execution, the old ptr may be stale.
             val ptr = if (isMain) mainRuntimePtr else bgRuntimePtr
@@ -426,6 +484,13 @@ class BackgroundThreadManager private constructor() {
                 }
             } else {
                 BTLogger.error("scheduleOnJSThread: ptr is 0! isMain=$isMain")
+                // Same as the null-context case: the work won't run on this
+                // (stale/torn-down) bg runtime. Drop gPendingWork[workId] (frees
+                // the source buffer) and settle any pending bg eval so it doesn't
+                // leak its global ref / hang the JS promise.
+                if (!isMain) {
+                    nativeDropScheduledWork(workId)
+                }
             }
         }
     }
@@ -433,51 +498,98 @@ class BackgroundThreadManager private constructor() {
     // ── Segment Registration (Phase 2.5 spike) ─────────────────────────────
 
     /**
-     * Register a HBC segment in the background runtime.
-     * Uses CatalystInstance.registerSegment() on the background ReactContext.
+     * Evaluate a HBC segment into the background runtime with completion
+     * callback (fix A: eval-then-resolve).
      *
-     * @param segmentId The segment ID to register
-     * @param path Absolute file path to the .seg.hbc file
-     * @throws IllegalStateException if background runtime is not started
-     * @throws IllegalArgumentException if segment file does not exist
-     */
-    /**
-     * Register a HBC segment in the background runtime with completion callback.
-     * Dispatches to the background JS queue thread and invokes the callback
-     * only after registerSegment has actually executed.
+     * Previously this called `ReactContext.registerSegment(...)`, whose
+     * completion fires BEFORE the segment bytecode is evaluated into the runtime
+     * (registerSegment only ENQUEUES the eval). That races Metro's
+     * `import().then(() => __r(moduleId))` and produces a fatal, uncatchable
+     * "Requiring unknown module" — locale segments load through this bg path, so
+     * a language switch could still crash. We now evaluate the segment OURSELVES
+     * on the bg JS thread via [nativeEvaluateSegmentInBackground] and resolve
+     * ONLY after eval completes, so eval + resolve are one atomic JS-thread turn.
      *
-     * @param segmentId The segment ID to register
+     * @param segmentId The segment ID (used only for the synthetic source URL)
      * @param path Absolute file path to the .seg.hbc file
-     * @param onComplete Called with null on success, or an Exception on failure
+     * @param onComplete Called with (code=null) on success, or
+     *   (code=<contract reject code>, message) on failure. The code is one of
+     *   the SHARED split-bundle contract codes so the JS loader's retryable set
+     *   { SPLIT_BUNDLE_NO_RUNTIME, SPLIT_BUNDLE_TIMEOUT } classifies correctly.
      */
-    fun registerSegmentInBackground(segmentId: Int, path: String, onComplete: (Exception?) -> Unit) {
+    fun registerSegmentInBackground(
+        segmentId: Int,
+        path: String,
+        onComplete: (code: String?, message: String?) -> Unit
+    ) {
         if (!isStarted) {
-            onComplete(IllegalStateException("Background runtime not started"))
+            // Bg runtime not started yet → retryable (the loader will re-attempt
+            // once the bg host is up).
+            onComplete("SPLIT_BUNDLE_NO_RUNTIME", "Background runtime not started")
             return
         }
 
         val file = File(path)
         if (!file.exists()) {
-            onComplete(IllegalArgumentException("Segment file not found: $path"))
+            onComplete("SPLIT_BUNDLE_NOT_FOUND", "Segment file not found: $path")
             return
         }
 
         val context = bgReactHost?.currentReactContext
         if (context == null) {
-            onComplete(IllegalStateException("Background ReactContext not available"))
+            onComplete("SPLIT_BUNDLE_NO_RUNTIME", "Background ReactContext not available")
             return
         }
 
-        // Use ReactContext.registerSegment which works in both bridge
-        // and bridgeless modes.
-        try {
-            context.registerSegment(segmentId, path) {
-                BTLogger.info("Segment registered in background runtime: id=$segmentId, path=$path")
-                onComplete(null)
+        // One-shot guard: native success/error AND the watchdog can each try to
+        // settle; only the first wins.
+        val settled = AtomicBoolean(false)
+        val sourceURL = "seg-$segmentId.js"
+        val segStart = System.nanoTime()
+
+        // Bounded watchdog: if the bg JS thread never drains to our eval, reject
+        // with the RETRYABLE SPLIT_BUNDLE_TIMEOUT instead of hanging forever.
+        val watchdog = Handler(Looper.getMainLooper())
+        val timeoutRunnable = Runnable {
+            if (settled.compareAndSet(false, true)) {
+                BTLogger.error("[SplitBundle] bg segment id=$segmentId eval timed out after ${BG_SEGMENT_EVAL_TIMEOUT_MS}ms (bg entry bundle likely never finished evaluating); rejecting as retryable timeout")
+                onComplete("SPLIT_BUNDLE_TIMEOUT", "Bg segment eval timed out: id=$segmentId")
             }
-        } catch (e: Exception) {
-            BTLogger.error("Failed to register segment in background runtime: ${e.message}")
-            onComplete(e)
+        }
+        watchdog.postDelayed(timeoutRunnable, BG_SEGMENT_EVAL_TIMEOUT_MS)
+
+        try {
+            nativeEvaluateSegmentInBackground(path, sourceURL) { error ->
+                if (settled.compareAndSet(false, true)) {
+                    watchdog.removeCallbacks(timeoutRunnable)
+                    if (error == null) {
+                        val segMs = (System.nanoTime() - segStart) / 1_000_000.0
+                        BTLogger.info("[SplitBundle] bg segment id=$segmentId evaluated in ${String.format("%.1f", segMs)}ms (eval-complete)")
+                        onComplete(null, null)
+                    } else {
+                        // Native prefixes its failures so we can map to the
+                        // shared contract codes: NO_RUNTIME (retryable),
+                        // IO_ERROR (fatal), else eval throw (fatal).
+                        when {
+                            error.startsWith("NO_RUNTIME:") ->
+                                onComplete("SPLIT_BUNDLE_NO_RUNTIME", error.removePrefix("NO_RUNTIME:"))
+                            error.startsWith("IO_ERROR:") ->
+                                onComplete("SPLIT_BUNDLE_IO_ERROR", error.removePrefix("IO_ERROR:"))
+                            else ->
+                                onComplete("SPLIT_BUNDLE_EVAL_ERROR", error)
+                        }
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            // nativeEvaluateSegmentInBackground itself failed to dispatch (e.g.
+            // UnsatisfiedLinkError). Fail closed; do NOT fall back to the
+            // race-prone registerSegment path.
+            if (settled.compareAndSet(false, true)) {
+                watchdog.removeCallbacks(timeoutRunnable)
+                BTLogger.error("[SplitBundle] FATAL: nativeEvaluateSegmentInBackground threw for id=$segmentId: ${e.message}")
+                onComplete("SPLIT_BUNDLE_NATIVE_UNAVAILABLE", "Bg native segment eval unavailable: ${e.message}")
+            }
         }
     }
 
