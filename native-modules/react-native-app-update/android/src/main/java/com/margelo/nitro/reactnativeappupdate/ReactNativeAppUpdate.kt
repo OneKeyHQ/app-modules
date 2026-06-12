@@ -79,10 +79,21 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         listeners.removeAll { it.id == id }
     }
 
-    private fun getApkCacheDir(): File {
+    /**
+     * Directory for downloaded APK artifacts (.apk / .partial / .segN / .asc).
+     *
+     * Uses filesDir, NOT cacheDir: cacheDir is system-reclaimable — under
+     * storage pressure Android can purge it or make it unwritable mid-download,
+     * surfacing as EROFS/ENOSPC when opening a new segment file. filesDir is
+     * persistent app data and is the same location react-native-bundle-update
+     * downloads to. It is still installable: the APK is handed to the system
+     * installer via FileProvider, whose <paths> exposes this dir
+     * (see res/xml/app_update_file_paths.xml: <files-path name="apks_files" .../>).
+     */
+    private fun getApkDownloadDir(): File {
         val context = NitroModules.applicationContext
             ?: throw SecurityException("Application context unavailable")
-        val apkDir = File(context.cacheDir, "apks")
+        val apkDir = File(context.filesDir, "apks")
         if (!apkDir.exists()) apkDir.mkdirs()
         return apkDir
     }
@@ -108,7 +119,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         val file = if (stripped.startsWith("/")) {
             File(stripped)
         } else {
-            File(getApkCacheDir(), stripped)
+            File(getApkDownloadDir(), stripped)
         }
 
         // Validate the resolved path is within the app's cache or files directory
@@ -1216,7 +1227,8 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             OneKeyLog.warn("AppUpdate", "$tag: application context unavailable, skipping file cleanup")
             return
         }
-        val apkDir = File(context.cacheDir, "apks")
+        // Must match getApkDownloadDir() (filesDir/apks).
+        val apkDir = File(context.filesDir, "apks")
         if (!apkDir.exists()) {
             OneKeyLog.info("AppUpdate", "$tag: apks cache directory does not exist, nothing to clean")
             return
