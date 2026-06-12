@@ -129,9 +129,12 @@ class BackgroundThreadManager private constructor() {
      * already on the stale/torn-down JS thread, so C++ saw scheduled == true and
      * will not clean up on its own). For the given runtime ([isMain]) the native
      * side erases gPendingWork[workId] (frees the captured segment source
-     * buffer), leak+clears the coalesced RuntimeWorkQueue, and resets
-     * drainScheduled so a recovered runtime re-arms a fresh drain on the next
-     * enqueue. For the bg runtime only, it also settles every in-flight bg
+     * buffer) and resets drainScheduled so a recovered runtime re-arms a fresh
+     * drain on the next enqueue. This is a TRANSIENT reload condition, so the
+     * native side deliberately leaves the coalesced RuntimeWorkQueue's items
+     * INTACT — the same runtime recovers and the main runtime has no JS-side
+     * retry net, so abandoning its queued SharedRPC deliveries would lose them.
+     * For the bg runtime only, it also settles every in-flight bg
      * segment eval as a retryable NO_RUNTIME failure so each JNI global ref is
      * released and the JS promise resolves immediately instead of leaking until
      * teardown or the bg watchdog. Exactly-once on the native side.
@@ -492,9 +495,11 @@ class BackgroundThreadManager private constructor() {
                     // SUCCESSFUL post (C++ saw scheduled==true), so the work won't
                     // run and C++ won't clean up on its own. Drop it for THIS
                     // runtime (main or bg): erase gPendingWork[workId] (frees the
-                    // source buffer), leak+clear the coalesced RuntimeWorkQueue,
-                    // and reset drainScheduled so a recovered runtime re-arms a
-                    // fresh drain. drainPendingBgEvals inside the native fn is
+                    // source buffer) and reset drainScheduled so a recovered
+                    // runtime re-arms a fresh drain. The coalesced RuntimeWork
+                    // Queue items are left intact (transient reload; the same
+                    // runtime recovers and main has no JS retry net).
+                    // drainPendingBgEvals inside the native fn is
                     // gated to !isMain, so settling bg evals only happens for bg.
                     nativeDropScheduledWork(isMain, workId)
                 }
