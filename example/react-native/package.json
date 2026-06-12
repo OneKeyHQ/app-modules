@@ -39,6 +39,7 @@
     "@onekeyfe/react-native-scroll-guard": "workspace:*",
     "@onekeyfe/react-native-segment-slider": "workspace:*",
     "@onekeyfe/react-native-skeleton": "workspace:*",
+    "@onekeyfe/react-native-sni-connect": "workspace:*",
     "@onekeyfe/react-native-splash-screen": "workspace:*",
     "@onekeyfe/react-native-split-bundle-loader": "workspace:*",
     "@onekeyfe/react-native-tab-view": "workspace:*",

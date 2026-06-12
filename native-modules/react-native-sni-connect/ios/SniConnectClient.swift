@@ -1,30 +1,34 @@
 import Foundation
+import UIKit
 import EMASCurl
 
 /// Core HTTPS client that enforces IP direct connection with SNI.
 final class SniConnectClient {
 
-  // Logging callback
-  var onLog: ((String, String) -> Void)?
-
   // Active requests tracking for cancellation support
   private var activeTasks: [String: Task<Response, Error>] = [:]
   private let tasksQueue = DispatchQueue(label: "com.onekey.sni.connect.tasks", attributes: .concurrent)
 
+  // Token for the memory-warning observer (block-based observers are not removed
+  // by `removeObserver(self)`, so the token must be retained and removed explicitly).
+  private var memoryWarningObserver: NSObjectProtocol?
+
   init() {
     // Register for memory warnings to clean cache
-    NotificationCenter.default.addObserver(
+    memoryWarningObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.didReceiveMemoryWarningNotification,
       object: nil,
       queue: .main
-    ) { [weak self] _ in
-      self?.onLog?("warning", "Memory warning received, cleaning DNS cache")
+    ) { _ in
+      SniConnectLog.info("Memory warning received, cleaning DNS cache")
       DNSResolver.cleanExpiredEntries()
     }
   }
 
   deinit {
-    NotificationCenter.default.removeObserver(self)
+    if let observer = memoryWarningObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
   }
 
   struct RequestConfig {
@@ -164,8 +168,10 @@ final class SniConnectClient {
     curlConfig.enableBuiltInRedirection = true
     curlConfig.cacheEnabled = false
 
-    // Enable full certificate validation for security
-    // The certificate will be validated against the SNI hostname, not the IP
+    // Enable full certificate validation for security.
+    // The certificate is validated against the SNI hostname, not the IP, because
+    // the custom DNS resolver only overrides address resolution — libcurl keeps the
+    // original hostname for SNI and certificate CN/SAN matching.
     curlConfig.certificateValidationEnabled = true
     curlConfig.domainNameVerificationEnabled = true
     curlConfig.dnsResolver = DNSResolver.self
@@ -178,88 +184,54 @@ final class SniConnectClient {
     private static let queue = DispatchQueue(label: "com.onekey.sni.connect.dns", attributes: .concurrent)
     private static let cache = DNSCache()
 
-    /// LRU cache for DNS mappings with size limit and TTL support
-    /// Uses hostname:IP as cache key to ensure different IPs for the same hostname are isolated
-    private class DNSCache {
-      private struct CacheEntry {
-        let hostname: String
+    /// Thread-safe hostname -> IP pin with TTL.
+    ///
+    /// LIMITATION: EMASCurl only exposes a process-global DNS resolver
+    /// (`setDNSResolver:`), which receives only the hostname. There is no
+    /// per-request DNS API, so the pin is keyed by hostname and the most recent
+    /// IP for a hostname wins. Concurrent requests to the SAME hostname targeting
+    /// DIFFERENT IPs are therefore not guaranteed to each hit their own IP. Normal
+    /// usage (one IP per hostname at a time) is unaffected.
+    private final class DNSCache {
+      private struct Entry {
         let ip: String
         let timestamp: TimeInterval
       }
 
-      private var storage: [String: CacheEntry] = [:]
-      private var accessOrder: [String] = []
-
-      // Mapping from hostname to IP for DNS resolution
-      // This stores the most recently set IP for each hostname
-      private var hostnameToIP: [String: String] = [:]
-
-      // Maximum cache entries (100 as specified in requirements)
+      private var hostnameToEntry: [String: Entry] = [:]
       private let maxSize = 100
-      // TTL in seconds (5 minutes default)
-      private let ttl: TimeInterval = 300
-
-      /// Generate cache key using hostname:IP format
-      /// This ensures different IPs for the same hostname are isolated (accurate speed testing)
-      private func makeCacheKey(hostname: String, ip: String) -> String {
-        return "\(hostname.lowercased()):\(ip)"
-      }
+      private let ttl: TimeInterval = 300 // 5 minutes
 
       func get(_ domain: String) -> String? {
-        let normalizedDomain = domain.lowercased()
-
-        // Return the most recently set IP for this hostname
-        return hostnameToIP[normalizedDomain]
+        let key = domain.lowercased()
+        guard let entry = hostnameToEntry[key] else { return nil }
+        if Date().timeIntervalSince1970 - entry.timestamp > ttl {
+          hostnameToEntry.removeValue(forKey: key)
+          return nil
+        }
+        return entry.ip
       }
 
       func set(_ ip: String, for domain: String) {
-        let normalizedDomain = domain.lowercased()
-        let key = makeCacheKey(hostname: normalizedDomain, ip: ip)
-
-        // Update hostname to IP mapping
-        hostnameToIP[normalizedDomain] = ip
-
-        // Evict oldest entry if cache is full
-        if storage.count >= maxSize && storage[key] == nil {
-          if let oldest = accessOrder.first {
-            storage.removeValue(forKey: oldest)
-            accessOrder.removeFirst()
+        let key = domain.lowercased()
+        // Evict the oldest entry when at capacity (and this is a new host).
+        if hostnameToEntry.count >= maxSize && hostnameToEntry[key] == nil {
+          if let oldest = hostnameToEntry.min(by: { $0.value.timestamp < $1.value.timestamp })?.key {
+            hostnameToEntry.removeValue(forKey: oldest)
           }
         }
-
-        // Add or update entry
-        let entry = CacheEntry(hostname: normalizedDomain, ip: ip, timestamp: Date().timeIntervalSince1970)
-        storage[key] = entry
-
-        // Update access order
-        if let index = accessOrder.firstIndex(of: key) {
-          accessOrder.remove(at: index)
-        }
-        accessOrder.append(key)
-      }
-
-      func remove(_ key: String) {
-        storage.removeValue(forKey: key)
-        if let index = accessOrder.firstIndex(of: key) {
-          accessOrder.remove(at: index)
-        }
+        hostnameToEntry[key] = Entry(ip: ip, timestamp: Date().timeIntervalSince1970)
       }
 
       func clear() {
-        storage.removeAll()
-        accessOrder.removeAll()
-        hostnameToIP.removeAll()
+        hostnameToEntry.removeAll()
       }
 
       func cleanExpired() {
         let now = Date().timeIntervalSince1970
-        let expiredKeys = storage.filter { now - $0.value.timestamp > ttl }.map { $0.key }
-        for key in expiredKeys {
-          remove(key)
-          // Also remove from hostnameToIP if this was the active mapping
-          if let entry = storage[key], hostnameToIP[entry.hostname] == entry.ip {
-            hostnameToIP.removeValue(forKey: entry.hostname)
-          }
+        let expired = hostnameToEntry.filter { now - $0.value.timestamp > ttl }.map { $0.key }
+        for key in expired {
+          hostnameToEntry.removeValue(forKey: key)
         }
       }
     }
@@ -296,19 +268,19 @@ final class SniConnectClient {
   /// Clear all DNS cache entries
   func clearDNSCache() {
     DNSResolver.clearCache()
-    onLog?("info", "DNS cache cleared")
+    SniConnectLog.info("DNS cache cleared")
   }
 
   /// Cancel a request by ID
   func cancelRequest(requestId: String) {
     tasksQueue.async(flags: .barrier) { [weak self] in
       guard let task = self?.activeTasks[requestId] else {
-        self?.onLog?("warning", "No active request found with ID: \(requestId)")
+        SniConnectLog.warn("No active request found with ID: \(requestId)")
         return
       }
       task.cancel()
       self?.activeTasks.removeValue(forKey: requestId)
-      self?.onLog?("info", "Request cancelled: \(requestId)")
+      SniConnectLog.info("Request cancelled: \(requestId)")
     }
   }
 
@@ -321,15 +293,14 @@ final class SniConnectClient {
         task.cancel()
       }
       self.activeTasks.removeAll()
-      self.onLog?("info", "Cancelled \(count) active requests")
+      SniConnectLog.info("Cancelled \(count) active requests")
     }
   }
 
-  /// Register an active task (synchronous for immediate registration)
+  /// Register an active task (async barrier; the task is already running).
   func registerTask(_ task: Task<Response, Error>, for requestId: String) {
-    tasksQueue.sync(flags: .barrier) { [weak self] in
+    tasksQueue.async(flags: .barrier) { [weak self] in
       self?.activeTasks[requestId] = task
-      self?.onLog?("info", "Registered request: \(requestId), total active: \(self?.activeTasks.count ?? 0)")
     }
   }
 
@@ -338,7 +309,6 @@ final class SniConnectClient {
     guard let requestId = requestId else { return }
     tasksQueue.async(flags: .barrier) { [weak self] in
       self?.activeTasks.removeValue(forKey: requestId)
-      self?.onLog?("info", "Unregistered request: \(requestId)")
     }
   }
 
@@ -350,12 +320,25 @@ final class SniConnectClient {
       unregisterTask(requestId: config.requestId)
     }
 
+    // Validate every caller-controlled field before it reaches the network layer.
+    let method: String
+    let normalizedPath: String
+    do {
+      try SniConnectValidation.validatePublicIP(config.ip)
+      try SniConnectValidation.validateHostname(config.hostname)
+      try SniConnectValidation.validateHeaders(config.headers)
+      method = try SniConnectValidation.normalizeMethod(config.method)
+      normalizedPath = try SniConnectValidation.normalizePath(config.path)
+    } catch {
+      throw SniConnectError.invalidConfig("\(error)")
+    }
+
     DNSResolver.setIP(config.ip, for: config.hostname)
 
-    let url = try Self.buildURL(hostname: config.hostname, path: config.path)
+    let url = try Self.buildURL(hostname: config.hostname, normalizedPath: normalizedPath)
 
     let mutableRequest = NSMutableURLRequest(url: url)
-    mutableRequest.httpMethod = config.method.uppercased()
+    mutableRequest.httpMethod = method
 
     // Convert milliseconds to seconds for timeout values
     let totalTimeoutSeconds = config.effectiveTotalTimeout / 1000.0
@@ -380,15 +363,15 @@ final class SniConnectClient {
       mutableRequest.httpBody = bodyData
     }
 
-    // Configure connection timeout for EMASCurl
-    EMASCurlProtocol.setConnectTimeoutInterval(connectTimeoutSeconds)
+    // Per-request connect timeout (avoids the process-global setter race).
+    EMASCurlProtocol.setConnectTimeoutIntervalFor(mutableRequest, connectTimeoutInterval: connectTimeoutSeconds)
     let request = mutableRequest as URLRequest
 
     do {
       let (data, response) = try await Self.urlSession.data(for: request)
       guard let httpResponse = response as? HTTPURLResponse else {
         let errorMsg = "Invalid HTTP response type"
-        onLog?("error", errorMsg)
+        SniConnectLog.error(errorMsg)
         throw SniConnectError.invalidConfig(errorMsg)
       }
 
@@ -397,11 +380,10 @@ final class SniConnectClient {
       let (headers, multiValueHeaders) = Self.extractHeaders(from: httpResponse)
       let statusText = HTTPURLResponse.localizedString(forStatusCode: status)
 
-      // Check for HTTP errors (4xx, 5xx)
+      // 4xx/5xx are returned to JS as a normal response (the caller inspects
+      // `status`); we only record it for diagnostics.
       if status >= 400 {
-        let error = SniConnectError.httpError(code: status, message: statusText)
-        onLog?("error", "HTTP error: \(error.message)")
-        // Still return the response for client to handle
+        SniConnectLog.warn("HTTP \(status) for \(config.hostname)")
       }
 
       return Response(
@@ -412,33 +394,33 @@ final class SniConnectClient {
         multiValueHeaders: multiValueHeaders
       )
     } catch let error as SniConnectError {
-      onLog?("error", "[\(error.code)] \(error.message)")
+      SniConnectLog.error("[\(error.code)] \(error.message)")
       throw error
     } catch {
       // Convert generic errors to specific SniConnectError types
       let sniError = SniConnectError.from(error)
-      onLog?("error", "[\(sniError.code)] \(sniError.message)")
+      SniConnectLog.error("[\(sniError.code)] \(sniError.message)")
       throw sniError
     }
   }
 
-  private static func buildURL(hostname: String, path: String) throws -> URL {
-    let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    if let url = URL(string: trimmedPath), url.scheme != nil {
-      return url
-    }
-
-    let normalizedPath: String
-    if trimmedPath.isEmpty {
-      normalizedPath = "/"
-    } else if trimmedPath.hasPrefix("/") {
-      normalizedPath = trimmedPath
+  /// Build the request URL. Always `https://<hostname><path>` on port 443 — the
+  /// path has already been validated as relative (no scheme/authority), so the
+  /// caller cannot override scheme, host or port.
+  private static func buildURL(hostname: String, normalizedPath: String) throws -> URL {
+    var components = URLComponents()
+    components.scheme = "https"
+    components.host = hostname
+    // `normalizedPath` is "/...optional?query". Split off the query so URLComponents
+    // percent-encodes each part correctly.
+    if let queryIndex = normalizedPath.firstIndex(of: "?") {
+      components.percentEncodedPath = String(normalizedPath[..<queryIndex])
+      let queryStart = normalizedPath.index(after: queryIndex)
+      components.percentEncodedQuery = String(normalizedPath[queryStart...])
     } else {
-      normalizedPath = "/" + trimmedPath
+      components.percentEncodedPath = normalizedPath
     }
-
-    guard let url = URL(string: "https://\(hostname)\(normalizedPath)") else {
+    guard let url = components.url else {
       throw SniConnectError.invalidURL
     }
     return url
@@ -446,7 +428,7 @@ final class SniConnectClient {
 
   private static func parseResponseData(_ data: Data) -> Any {
     guard !data.isEmpty else {
-      return [:]
+      return ""
     }
 
     if let jsonObject = try? JSONSerialization.jsonObject(with: data, options: []) {
@@ -483,13 +465,7 @@ final class SniConnectClient {
     for (key, values) in headerGroups {
       // For backward compatibility, single-value headers use the last value
       singleValueHeaders[key] = values.last
-
-      // Multi-value headers contain all values
-      if values.count > 1 {
-        multiValueHeaders[key] = values
-      } else {
-        multiValueHeaders[key] = values
-      }
+      multiValueHeaders[key] = values
     }
 
     return (singleValueHeaders, multiValueHeaders)

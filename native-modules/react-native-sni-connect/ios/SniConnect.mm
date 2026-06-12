@@ -1,5 +1,4 @@
 #import <React/RCTBridgeModule.h>
-#import <React/RCTEventEmitter.h>
 #import <React/RCTUtils.h>
 
 #ifdef RCT_NEW_ARCH_ENABLED
@@ -8,7 +7,7 @@
 
 // Forward declaration of the Swift implementation
 @interface SniConnectImpl : NSObject
-- (instancetype)initWithEventSender:(id)eventSender;
+- (instancetype)init;
 - (void)request:(NSDictionary *)config
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject;
@@ -21,7 +20,7 @@
                reject:(RCTPromiseRejectBlock)reject;
 @end
 
-@interface SniConnect : RCTEventEmitter
+@interface SniConnect : NSObject
 #ifdef RCT_NEW_ARCH_ENABLED
 <NativeSniConnectSpec>
 #else
@@ -31,15 +30,9 @@
 
 @implementation SniConnect {
   SniConnectImpl *_implementation;
-  BOOL _hasListeners;
 }
 
 RCT_EXPORT_MODULE(SniConnect)
-
-// Expose hasListeners as a property for Swift access
-- (BOOL)hasListeners {
-  return _hasListeners;
-}
 
 + (BOOL)requiresMainQueueSetup {
   return NO;
@@ -47,30 +40,9 @@ RCT_EXPORT_MODULE(SniConnect)
 
 - (instancetype)init {
   if (self = [super init]) {
-    _implementation = [[SniConnectImpl alloc] initWithEventSender:self];
-    _hasListeners = NO;
+    _implementation = [[SniConnectImpl alloc] init];
   }
   return self;
-}
-
-// Event emitter methods
-- (NSArray<NSString *> *)supportedEvents {
-  return @[@"SniConnectLog"];
-}
-
-- (void)startObserving {
-  _hasListeners = YES;
-}
-
-- (void)stopObserving {
-  _hasListeners = NO;
-}
-
-// Method to send log event to JS
-- (void)sendLogEvent:(NSDictionary *)logData {
-  if (_hasListeners) {
-    [self sendEventWithName:@"SniConnectLog" body:logData];
-  }
 }
 
 #ifdef RCT_NEW_ARCH_ENABLED
@@ -78,16 +50,22 @@ RCT_EXPORT_MODULE(SniConnect)
 - (void)request:(JS::NativeSniConnect::SniConnectRequest &)config
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject {
-  // Convert Codegen struct to NSDictionary for Swift implementation
-  NSDictionary *configDict = @{
-    @"ip": config.ip(),
-    @"hostname": config.hostname(),
-    @"method": config.method(),
-    @"path": config.path(),
-    @"headers": config.headers(),
-    @"body": config.body() ?: [NSNull null],
-    @"timeout": @(config.timeout())
-  };
+  // Convert Codegen struct to NSDictionary for the Swift implementation.
+  // Null-guard every field so a nil value never crashes the dictionary literal,
+  // and forward requestId so cancellation works under the new architecture.
+  NSMutableDictionary *configDict = [NSMutableDictionary dictionary];
+  configDict[@"ip"] = config.ip() ?: @"";
+  configDict[@"hostname"] = config.hostname() ?: @"";
+  configDict[@"method"] = config.method() ?: @"GET";
+  configDict[@"path"] = config.path() ?: @"/";
+  configDict[@"headers"] = config.headers() ?: @{};
+  configDict[@"timeout"] = @(config.timeout());
+  if (config.requestId()) {
+    configDict[@"requestId"] = config.requestId();
+  }
+  if (config.body()) {
+    configDict[@"body"] = config.body();
+  }
 
   [_implementation request:configDict resolve:resolve reject:reject];
 }

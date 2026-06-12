@@ -33,10 +33,6 @@ export interface Spec extends TurboModule {
   cancelRequest(requestId: string): Promise<{ success: boolean }>;
   cancelAllRequests(): Promise<{ success: boolean }>;
   clearDNSCache(): Promise<{ success: boolean }>;
-
-  // Event emitter methods required for NativeEventEmitter
-  addListener(eventType: string): void;
-  removeListeners(count: Int32): void;
 }
 
 const LINKING_ERROR =
@@ -45,12 +41,7 @@ const LINKING_ERROR =
   '- You rebuilt the app after installing the package\n' +
   '- You are not using Expo Go; create a custom dev client instead\n';
 
-export type SniConnectModule = Spec & {
-  request(config: SniConnectRequest): Promise<SniConnectResponse>;
-  cancelRequest(requestId: string): Promise<{ success: boolean }>;
-  cancelAllRequests(): Promise<{ success: boolean }>;
-  clearDNSCache(): Promise<{ success: boolean }>;
-};
+export type SniConnectModule = Spec;
 
 const turboModuleResult = TurboModuleRegistry.get<Spec>('SniConnect');
 

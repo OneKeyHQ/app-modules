@@ -1,37 +1,62 @@
-# react-native-sni-connect
+# @onekeyfe/react-native-sni-connect
 
-onekey sni http client
+OneKey SNI HTTP client for React Native. Performs HTTPS requests to a caller-supplied
+IP address while preserving the original TLS SNI / `Host` of a hostname, so certificate
+chain and hostname verification are still enforced against the real hostname (not the IP).
+
+Backed by EMASCurl (libcurl) on iOS and OkHttp on Android.
 
 ## Installation
 
+This package is published as part of the OneKey `app-modules` workspace:
 
 ```sh
-npm install react-native-sni-connect
+yarn add @onekeyfe/react-native-sni-connect
 ```
 
+iOS: run `pod install`. Android autolinks.
 
 ## Usage
 
+```ts
+import {
+  request,
+  cancelRequest,
+  cancelAllRequests,
+  clearDNSCache,
+} from '@onekeyfe/react-native-sni-connect';
 
-```js
-import { multiply } from 'react-native-sni-connect';
+const res = await request({
+  // requestId is optional; required only if you want to cancel the request.
+  requestId: 'health-check-1',
+  ip: '93.184.216.34', // must be a public IP literal (private/loopback/metadata are rejected)
+  hostname: 'example.com', // used for SNI, Host header and certificate validation
+  method: 'GET',
+  path: '/api/v1/ping', // relative path only — absolute URLs are rejected
+  headers: { 'Content-Type': 'application/json' },
+  timeout: 30_000,
+});
 
-// ...
+console.log(res.status, res.headers, res.data);
 
-const result = multiply(3, 7);
+// Cancellation (requires requestId on the request)
+await cancelRequest('health-check-1');
+await cancelAllRequests();
+
+// Drop pinned-IP connections / cached clients
+await clearDNSCache();
 ```
 
+### Security notes
 
-## Contributing
-
-- [Development workflow](CONTRIBUTING.md#development-workflow)
-- [Sending a pull request](CONTRIBUTING.md#sending-a-pull-request)
-- [Code of conduct](CODE_OF_CONDUCT.md)
+- The request scheme is always `https` on port `443`; `path` cannot override scheme, host or port.
+- `ip` must be an IPv4/IPv6 literal that routes to a public destination; loopback, private,
+  link-local (incl. cloud metadata), CGNAT, multicast and reserved ranges are rejected.
+- Header names/values containing CR/LF/control characters are rejected; the `Host` header is
+  managed by the module.
+- Native logs go through OneKey's native logger (with sensitive-data redaction); there is no
+  JS log event channel.
 
 ## License
 
 MIT
-
----
-
-Made with [create-react-native-library](https://github.com/callstack/react-native-builder-bob)

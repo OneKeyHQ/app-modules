@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
   s.authors      = package["author"]
 
   s.platforms    = { :ios => min_ios_version_supported }
-  s.source       = { :git => "https://github.com/OneKeyHQ/react-native-sni-connect.git", :tag => "#{s.version}" }
+  s.source       = { :git => "https://github.com/OneKeyHQ/app-modules/react-native-sni-connect.git", :tag => "#{s.version}" }
 
   s.static_framework = true
 
