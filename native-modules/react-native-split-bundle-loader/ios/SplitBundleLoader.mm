@@ -3,6 +3,7 @@
 #import <ReactCommon/RCTHost.h>
 #import <ReactCommon/RCTHost+Internal.h>
 #import <ReactCommon/RCTInstance.h>
+#import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <os/lock.h>
@@ -71,6 +72,304 @@ class NSDataJSIBuffer : public facebook::jsi::Buffer {
   }
   os_unfair_lock_unlock(&_lock);
   return won;
+}
+@end
+
+// ACTIVE-TIME watchdog for the buffered runtime executor (replaces the bare
+// dispatch_after C1 watchdog).
+//
+// WHY: the old watchdog was a single `dispatch_after(NOW + 30s)`. dispatch_after
+// arms against an ABSOLUTE wall/uptime deadline that keeps elapsing while the
+// app is backgrounded/suspended. If the app is suspended during cold start while
+// a segment's eval is still BUFFERED (waiting for the entry bundle to finish),
+// the 30s deadline can pass entirely off-screen; on FOREGROUND RESUME the stale
+// block fires essentially instantly and wins the SBLSettleGuard race against the
+// buffered executor that was ~1ms from succeeding — false-rejecting the segment
+// as SPLIT_BUNDLE_TIMEOUT and white-screening the app.
+//
+// This watchdog instead accumulates ONLY foreground/active wall-time: suspended
+// time never accrues toward the 30s, and a fresh foreground-grace window after
+// every resume guarantees the buffered executor gets a chance to flush first, so
+// a stale deadline can never fire instantly on resume.
+//
+// Time base: CLOCK_UPTIME_RAW already excludes device sleep; on top of that we
+// only count intervals during which the app is in the active state. All mutable
+// timing state is confined to a single serial queue (_queue) so the timer tick,
+// the start/cancel calls, and the foreground/background notification callbacks
+// never race. The fired/cancelled one-shot flag makes both onTimeout and teardown
+// happen at most once regardless of which thread triggers them.
+@interface SBLActiveWatchdog : NSObject
+- (instancetype)initWithTimeoutMs:(uint64_t)timeoutMs
+                 foregroundGraceMs:(uint64_t)foregroundGraceMs
+                         onTimeout:(dispatch_block_t)onTimeout;
+- (void)start;
+- (void)cancel;
+@end
+
+@implementation SBLActiveWatchdog {
+  // Serial queue that owns ALL mutable state below — every read/write of these
+  // ivars happens on _queue, so no additional lock is needed.
+  dispatch_queue_t _queue;
+  dispatch_source_t _timer;
+
+  uint64_t _timeoutMs;          // active-time budget before firing (e.g. 30000).
+  uint64_t _foregroundGraceMs;  // post-resume window during which we won't fire.
+
+  uint64_t _accumulatedActiveMs;   // folded active time from completed intervals.
+  uint64_t _currentIntervalStartUptimeNs;  // CLOCK_UPTIME_RAW at active start.
+  uint64_t _graceUntilUptimeNs;    // no fire before this uptime (grace window).
+  BOOL _isActive;                  // app currently in active/foreground state.
+  BOOL _finished;                  // one-shot: fired OR cancelled.
+
+  dispatch_block_t _onTimeout;
+  BOOL _observersRegistered;
+}
+
+- (instancetype)initWithTimeoutMs:(uint64_t)timeoutMs
+                 foregroundGraceMs:(uint64_t)foregroundGraceMs
+                         onTimeout:(dispatch_block_t)onTimeout {
+  if (self = [super init]) {
+    _queue = dispatch_queue_create("com.onekey.splitbundle.watchdog", DISPATCH_QUEUE_SERIAL);
+    _timeoutMs = timeoutMs;
+    _foregroundGraceMs = foregroundGraceMs;
+    _onTimeout = [onTimeout copy];
+    _accumulatedActiveMs = 0;
+    _currentIntervalStartUptimeNs = 0;
+    _graceUntilUptimeNs = 0;
+    _isActive = NO;
+    _finished = NO;
+    _observersRegistered = NO;
+  }
+  return self;
+}
+
+static uint64_t SBLNowUptimeNs(void) {
+  return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+}
+
+// Current active-interval elapsed (ms) while _isActive; 0 otherwise. _queue only.
+- (uint64_t)currentIntervalMsLocked {
+  if (!_isActive || _currentIntervalStartUptimeNs == 0) {
+    return 0;
+  }
+  uint64_t now = SBLNowUptimeNs();
+  if (now <= _currentIntervalStartUptimeNs) {
+    return 0;
+  }
+  return (now - _currentIntervalStartUptimeNs) / 1000000ULL;
+}
+
+- (void)start {
+  // Seed initial app-state + register observers on the MAIN thread:
+  // -applicationState and the notification center are both main-thread concerns.
+  // We then hop to _queue with the captured `activeNow` to prime timing + timer,
+  // so the timing-state ivars are only ever touched on _queue.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self registerObservers];
+    // Treat anything other than Background as "active" for timing purposes
+    // (Inactive still makes progress toward the wedge).
+    UIApplicationState appState = UIApplication.sharedApplication.applicationState;
+    BOOL activeNow = (appState != UIApplicationStateBackground);
+    dispatch_async(self->_queue, ^{
+      [self primeTimerLockedWithActive:activeNow];
+    });
+  });
+}
+
+// Initialize timing state and create+resume the polling timer. _queue only.
+- (void)primeTimerLockedWithActive:(BOOL)activeNow {
+  if (_finished) {
+    return;  // cancelled before we got to prime — nothing to do.
+  }
+  _isActive = activeNow;
+  // Apply an initial grace window so a slow first foreground frame doesn't
+  // immediately trip the watchdog the very first tick. Read the clock ONCE so
+  // the interval start and the grace deadline share the same base instant.
+  if (activeNow) {
+    uint64_t now = SBLNowUptimeNs();
+    _currentIntervalStartUptimeNs = now;
+    _graceUntilUptimeNs = now + _foregroundGraceMs * 1000000ULL;
+  } else {
+    _currentIntervalStartUptimeNs = 0;
+  }
+
+  // Polling timer: survives pause/resume trivially (unlike a one-shot
+  // dispatch_after). Tick every 500ms. Leeway gives the scheduler slack.
+  _timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, _queue);
+  if (!_timer) {
+    // Fail safe: if the timer source can't be created we cannot guard against a
+    // wedge. Settle now (as a RETRYABLE timeout) via fireLocked rather than
+    // leaving the watchdog half-started (observers registered, _finished=NO,
+    // tick never firing) — that stuck state would hang loadSegment: forever.
+    // The JS loader re-attempts on SPLIT_BUNDLE_TIMEOUT, and the buffered
+    // executor, if it does run, still benefits the module table.
+    [self fireLocked];
+    return;
+  }
+  dispatch_source_set_timer(_timer,
+                            dispatch_time(DISPATCH_TIME_NOW, (int64_t)(500 * NSEC_PER_MSEC)),
+                            (uint64_t)(500 * NSEC_PER_MSEC),
+                            (uint64_t)(100 * NSEC_PER_MSEC));
+  __weak SBLActiveWatchdog *weakSelf = self;
+  dispatch_source_set_event_handler(_timer, ^{
+    SBLActiveWatchdog *strongSelf = weakSelf;
+    if (strongSelf) {
+      [strongSelf tickLocked];
+    }
+  });
+  dispatch_resume(_timer);
+}
+
+// Timer tick — runs on _queue (the timer's own queue), so state is consistent.
+- (void)tickLocked {
+  if (_finished) {
+    return;
+  }
+  if (!_isActive) {
+    return;  // only foreground/active time counts toward the timeout.
+  }
+  uint64_t now = SBLNowUptimeNs();
+  if (now < _graceUntilUptimeNs) {
+    return;  // inside the post-resume grace window — give the executor a chance.
+  }
+  uint64_t totalActiveMs = _accumulatedActiveMs + [self currentIntervalMsLocked];
+  if (totalActiveMs >= _timeoutMs) {
+    [self fireLocked];
+  }
+}
+
+// Fire onTimeout at most once, then tear everything down. _queue only.
+- (void)fireLocked {
+  if (_finished) {
+    return;
+  }
+  _finished = YES;
+  dispatch_block_t cb = _onTimeout;
+  _onTimeout = nil;
+  [self teardownTimerLocked];
+  // Remove observers on the main thread (where they were registered).
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self removeObservers];
+  });
+  if (cb) {
+    cb();
+  }
+}
+
+// Cancel the timer source exactly once. _queue only.
+- (void)teardownTimerLocked {
+  if (_timer) {
+    dispatch_source_cancel(_timer);
+    _timer = nil;  // drop our ref; the source is retained until cancel completes.
+  }
+}
+
+// Public cancel — thread-safe, may be called from the executor block's success
+// path on a DIFFERENT thread. Hops onto _queue so it serializes with the tick.
+- (void)cancel {
+  dispatch_async(_queue, ^{
+    if (self->_finished) {
+      return;
+    }
+    self->_finished = YES;
+    self->_onTimeout = nil;
+    [self teardownTimerLocked];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self removeObservers];
+    });
+  });
+}
+
+// MARK: - App-state observers (main thread)
+
+- (void)registerObservers {
+  if (_observersRegistered) {
+    return;
+  }
+  _observersRegistered = YES;
+  NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+  [nc addObserver:self
+         selector:@selector(handleDidBecomeActive)
+             name:UIApplicationDidBecomeActiveNotification
+           object:nil];
+  [nc addObserver:self
+         selector:@selector(handleWillResignActive)
+             name:UIApplicationWillResignActiveNotification
+           object:nil];
+  // DidEnterBackground is folded in too: on some transitions WillResignActive
+  // and DidEnterBackground both arrive; the resign handler is idempotent (it
+  // no-ops when already inactive), so treating background like resign is safe.
+  [nc addObserver:self
+         selector:@selector(handleWillResignActive)
+             name:UIApplicationDidEnterBackgroundNotification
+           object:nil];
+}
+
+- (void)removeObservers {
+  if (!_observersRegistered) {
+    return;
+  }
+  _observersRegistered = NO;
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)handleWillResignActive {
+  // Sample the resign instant SYNCHRONOUSLY here (main thread), BEFORE the app
+  // can suspend. The _queue block below may not run until the app is resumed
+  // minutes later; if it sampled the clock then (via currentIntervalMsLocked),
+  // it would fold all the suspended-but-awake wall time — during which
+  // CLOCK_UPTIME_RAW keeps advancing — into _accumulatedActiveMs, and the
+  // watchdog could fire right after the 500ms resume grace, re-introducing the
+  // exact false-fire this watchdog exists to prevent. Capturing resignAt up
+  // front caps the accrued interval at the moment the app actually went inactive.
+  uint64_t resignAtUptimeNs = SBLNowUptimeNs();
+  dispatch_async(_queue, ^{
+    if (self->_finished || !self->_isActive) {
+      return;  // idempotent: already inactive or already settled.
+    }
+    // Fold ONLY the active interval up to resignAt into the accumulator, then
+    // stop the clock. Suspended time after this point does NOT accrue.
+    if (self->_currentIntervalStartUptimeNs != 0 &&
+        resignAtUptimeNs > self->_currentIntervalStartUptimeNs) {
+      self->_accumulatedActiveMs +=
+          (resignAtUptimeNs - self->_currentIntervalStartUptimeNs) / 1000000ULL;
+    }
+    self->_isActive = NO;
+    self->_currentIntervalStartUptimeNs = 0;
+  });
+}
+
+- (void)handleDidBecomeActive {
+  dispatch_async(_queue, ^{
+    if (self->_finished || self->_isActive) {
+      return;
+    }
+    // Resume the clock and arm a fresh grace window so the buffered executor
+    // gets a chance to flush before the watchdog can fire again. One clock read
+    // so the interval start and the grace deadline share the same base instant.
+    uint64_t now = SBLNowUptimeNs();
+    self->_isActive = YES;
+    self->_currentIntervalStartUptimeNs = now;
+    self->_graceUntilUptimeNs = now + self->_foregroundGraceMs * 1000000ULL;
+  });
+}
+
+- (void)dealloc {
+  // Defensive: observers are normally removed via cancel/fire, but if this
+  // object is released without either (shouldn't happen — the executor block
+  // retains it until cancel), make sure we don't leave a dangling observer.
+  if (_observersRegistered) {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+  }
+  // Make the "timer is nil by dealloc" invariant explicit: cancel/fireLocked
+  // both null _timer before the last retain drops, but guard here so a future
+  // early-return on those paths can't orphan a running dispatch_source_t. Safe
+  // to touch _timer without hopping to _queue — no other thread references a
+  // deallocating object.
+  if (_timer) {
+    dispatch_source_cancel(_timer);
+    _timer = nil;
+  }
 }
 @end
 
@@ -362,11 +661,30 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
     // either order, on a wedge).
     SBLSettleGuard *settleGuard = [[SBLSettleGuard alloc] init];
 
+    // C1 active-time watchdog. Constructed BEFORE the executor block so the block
+    // can capture (retain) it and tear it down on the happy path. It fires only
+    // on a genuine wedge AND only after kSegmentEvalWatchdogSeconds of
+    // FOREGROUND/active time has accrued — backgrounded/suspended time never
+    // counts, so a stale deadline can never fire instantly on a foreground
+    // resume (the white-screen bug this replaces). On fire it settles the SAME
+    // SBLSettleGuard via tryClaim, so there is still exactly one settle.
+    SBLActiveWatchdog *watchdog = [[SBLActiveWatchdog alloc]
+        initWithTimeoutMs:(uint64_t)(kSegmentEvalWatchdogSeconds * 1000.0)
+        foregroundGraceMs:500
+                onTimeout:^{
+        if ([settleGuard tryClaim]) {
+            [SBLLogger error:[NSString stringWithFormat:@"[SplitBundle] loadSegment: %@ (key=%@) WATCHDOG fired after %.0fs active time — runtime executor never ran (entry bundle likely never finished evaluating). Rejecting as retryable timeout.", sourceURL, segmentKey, kSegmentEvalWatchdogSeconds]];
+            onEvaluated([NSError errorWithDomain:@"SplitBundleLoader"
+                                            code:ESegmentEvalErrorTimeout
+                                        userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Segment %@ eval timed out after %.0fs active time (buffered runtime executor never ran)", segmentKey, kSegmentEvalWatchdogSeconds]}]);
+        }
+    }];
+
     [instance callFunctionOnBufferedRuntimeExecutor:^(facebook::jsi::Runtime &runtime) {
         @autoreleasepool {
-            // If the watchdog already fired (entry took >30s then unwedged),
-            // the JS promise is already rejected — still evaluate the segment
-            // (the module table benefits) but don't double-settle.
+            // If the watchdog already fired (entry took >30s active then
+            // unwedged), the JS promise is already rejected — still evaluate the
+            // segment (the module table benefits) but don't double-settle.
             BOOL won = [settleGuard tryClaim];
             NSError *evalError = nil;
             CFAbsoluteTime evalStart = CFAbsoluteTimeGetCurrent();
@@ -389,33 +707,31 @@ typedef NS_ENUM(NSInteger, ESegmentEvalError) {
                                             userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Segment evaluation failed for %@ (unknown C++ exception)", sourceURL]}];
                 [SBLLogger warn:[NSString stringWithFormat:@"[SplitBundle] loadSegment: %@ evaluation threw an unknown exception", sourceURL]];
             }
+            // Tear down the active-time watchdog (timer + observers) regardless
+            // of who won the settle: the buffered executor has now run, so the
+            // watchdog has no further job. Capturing `watchdog` here is also what
+            // RETAINS it for the lifetime of this async block (until cancel). It
+            // is safe to cancel from this (different) thread — cancel hops onto
+            // the watchdog's own serial queue and is a one-shot.
+            [watchdog cancel];
             if (won) {
                 // Resolve/reject the JS promise from INSIDE this same block,
                 // strictly AFTER the segment eval above — the ordering guarantee
                 // that fixes the "Requiring unknown module" race (see method doc).
                 onEvaluated(evalError);
             } else {
-                [SBLLogger warn:[NSString stringWithFormat:@"[SplitBundle] loadSegment: %@ evaluated AFTER watchdog already settled (entry was wedged >%.0fs)", sourceURL, kSegmentEvalWatchdogSeconds]];
+                [SBLLogger warn:[NSString stringWithFormat:@"[SplitBundle] loadSegment: %@ evaluated AFTER watchdog already settled (entry was wedged >%.0fs active time)", sourceURL, kSegmentEvalWatchdogSeconds]];
             }
         }
     }];
 
-    // C1 watchdog. Fires only on a genuine wedge: in steady state the entry
-    // bundle is long done and the buffered block runs sub-millisecond, so the
-    // guard is already claimed (tryClaim returns NO) long before this elapses.
-    // On a real wedge it settles the promise with a distinct, RETRYABLE timeout
-    // error so the JS loader can re-attempt instead of hanging inflightSegments
-    // forever. The block retains settleGuard, so the lock stays valid even if
-    // the executor block later runs (entry finally evaluates).
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kSegmentEvalWatchdogSeconds * NSEC_PER_SEC)),
-                   dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        if ([settleGuard tryClaim]) {
-            [SBLLogger error:[NSString stringWithFormat:@"[SplitBundle] loadSegment: %@ (key=%@) WATCHDOG fired after %.0fs — runtime executor never ran (entry bundle likely never finished evaluating). Rejecting as retryable timeout.", sourceURL, segmentKey, kSegmentEvalWatchdogSeconds]];
-            onEvaluated([NSError errorWithDomain:@"SplitBundleLoader"
-                                            code:ESegmentEvalErrorTimeout
-                                        userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Segment %@ eval timed out after %.0fs (buffered runtime executor never ran)", segmentKey, kSegmentEvalWatchdogSeconds]}]);
-        }
-    });
+    // Arm the watchdog AFTER scheduling the executor. Fires only on a genuine
+    // wedge: in steady state the entry bundle is long done and the buffered block
+    // runs sub-millisecond, so it cancels the watchdog (and the guard is already
+    // claimed) long before kSegmentEvalWatchdogSeconds of ACTIVE time elapses.
+    // Because only foreground/active time is counted, a suspend-during-cold-start
+    // can no longer let a stale deadline false-fire on resume.
+    [watchdog start];
 
     double dispatchMs = (CFAbsoluteTimeGetCurrent() - dispatchStart) * 1000.0;
     [SBLLogger info:[NSString stringWithFormat:@"[SplitBundle] loadSegment: %@ dispatched in %.1fms (resolve fires after eval; watchdog %.0fs)", sourceURL, dispatchMs, kSegmentEvalWatchdogSeconds]];
