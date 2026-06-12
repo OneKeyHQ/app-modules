@@ -54,6 +54,13 @@ class ReactNativeAppUpdate: HybridReactNativeAppUpdateSpec {
         return Promise.resolved(withResult: ())
     }
 
+    func clearApkCache() throws -> Promise<Void> {
+        // APK is Android-only; nothing to wipe on iOS. Safe no-op so the
+        // cross-platform Nitro spec stays satisfied.
+        OneKeyLog.debug("AppUpdate", "clearApkCache not available on iOS")
+        return Promise.resolved(withResult: ())
+    }
+
     func addDownloadListener(callback: @escaping (DownloadEvent) -> Void) throws -> Double {
         let id = nextListenerId
         nextListenerId += 1

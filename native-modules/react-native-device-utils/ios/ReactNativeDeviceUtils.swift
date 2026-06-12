@@ -1,6 +1,7 @@
 import NitroModules
 import UIKit
 import ReactNativeNativeLogger
+import os
 
 @objcMembers
 public class LaunchOptionsStore: NSObject {
@@ -34,8 +35,20 @@ public class LaunchOptionsStore: NSObject {
 
     private static let deviceTokenKey = "1k_device_token"
 
-    // Read-once: hand the payload to JS exactly once per launch.
+    // Serializes access to `coldStartLocalNotification`. The getter resolves on a
+    // nitro background thread (Promise.async) while AppDelegate writes the slot on
+    // the main thread during launch, so the read-and-clear below must be one
+    // critical section to avoid a double-drain race (delivering the deep-link
+    // twice) and memory-visibility issues. NOTE: AppDelegate writes via KVC
+    // (`setValue(_:forKey:)`), which bypasses this lock, so we cannot fully
+    // synchronize the writer from here — we protect the take side as best we can.
+    private var coldStartLock = os_unfair_lock()
+
+    // Read-once: hand the payload to JS exactly once per launch. The read+clear is
+    // performed atomically under `coldStartLock`.
     public func takeColdStartLocalNotification() -> String {
+        os_unfair_lock_lock(&coldStartLock)
+        defer { os_unfair_lock_unlock(&coldStartLock) }
         let value = coldStartLocalNotification ?? ""
         coldStartLocalNotification = nil
         return value
@@ -209,7 +222,10 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
     func getAndClearColdStartLocalNotification() throws -> Promise<String> {
         return Promise.async {
-            return LaunchOptionsStore.shared.takeColdStartLocalNotification()
+            let value = LaunchOptionsStore.shared.takeColdStartLocalNotification()
+            // Presence only — never log the payload (it's a deep-link target / PII).
+            OneKeyLog.info("DeviceUtils", "getAndClearColdStartLocalNotification: hasPayload=\(!value.isEmpty)")
+            return value
         }
     }
 

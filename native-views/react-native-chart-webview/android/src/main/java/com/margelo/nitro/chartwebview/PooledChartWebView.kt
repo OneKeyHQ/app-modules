@@ -25,6 +25,7 @@ import androidx.webkit.WebViewClientCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import org.json.JSONObject
+import java.lang.ref.WeakReference
 import java.net.URLEncoder
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -126,12 +127,12 @@ class PooledChartWebView private constructor(
   }
 
   // The trusted origin set for the current source: the offline asset origin
-  // (https://appassets.androidplatform.net) always, plus the online/fallback
-  // `uri` origin when running in online mode. computeTargetUrl serves offline
-  // content from ASSET_HOST and online content from `uri`, so these are exactly
-  // the origins the privileged bridge legitimately runs in.
+  // (https://<assetHost>, default appassets.androidplatform.net) always, plus the
+  // online/fallback `uri` origin when running in online mode. computeTargetUrl
+  // serves offline content from `assetHost` and online content from `uri`, so
+  // these are exactly the origins the privileged bridge legitimately runs in.
   private fun trustedOriginsFor(uri: String?): Set<String> {
-    val origins = linkedSetOf("https://$ASSET_HOST")
+    val origins = linkedSetOf("https://$assetHost")
     originOf(uri)?.let { origins.add(it) }
     return origins
   }
@@ -151,21 +152,25 @@ class PooledChartWebView private constructor(
   }
 
   /** The host currently displaying this WebView; page events route here. */
-  private var _owner: HybridChartWebview? = null
+  // Weak (mirror of iOS): the pool entry is immortal, so a strong ref here would
+  // pin a disposed host — and its ReactContext/Activity — forever. A GC'd host
+  // reads back as null, which makes `entry.owner == this` correctly false.
+  private var _ownerRef: WeakReference<HybridChartWebview>? = null
   var owner: HybridChartWebview?
-    get() = _owner
+    get() = _ownerRef?.get()
     set(value) {
-      _owner = value
+      _ownerRef = value?.let { WeakReference(it) }
     }
   // The host that warm-booted the page and can drive its symbol / receive its
   // callbacks while there is no VISIBLE owner yet. Separate from `owner` (the
   // YIELD path clears `owner`); callbacks fall back to this so bars-state /
   // load-end aren't dropped during warm. Mirror of the iOS warmDriver.
-  private var _warmDriver: HybridChartWebview? = null
+  // Weak for the same immortal-pool reason as `owner` above.
+  private var _warmDriverRef: WeakReference<HybridChartWebview>? = null
   var warmDriver: HybridChartWebview?
-    get() = _warmDriver
+    get() = _warmDriverRef?.get()
     set(value) {
-      _warmDriver = value
+      _warmDriverRef = value?.let { WeakReference(it) }
     }
 
   // PERF (Android only): Android's in-process WebView/Chromium does NOT throttle
@@ -195,14 +200,14 @@ class PooledChartWebView private constructor(
       return
     }
     paused = true
-    android.util.Log.i(TAG, "pool[$key] PAUSE (renderer idle)")
+    android.util.Log.d(TAG, "pool[$key] PAUSE (renderer idle)")
     runOnUiThread { webView.onPause() }
   }
 
   fun resume() {
     if (!paused) return
     paused = false
-    android.util.Log.i(TAG, "pool[$key] RESUME")
+    android.util.Log.d(TAG, "pool[$key] RESUME")
     runOnUiThread {
       webView.onResume()
       webView.invalidate()
@@ -212,6 +217,13 @@ class PooledChartWebView private constructor(
   private var assetLoader: WebViewAssetLoader? = null
   private var lastLoadedUrl: String? = null
   private var lastLocalBundle: String? = null
+  // The host the offline bundle is served under. Defaults to the built-in
+  // appassets host (old behavior); when the app passes `assetHost` we serve the
+  // bundle under the real chart origin so the WebView reuses that origin's
+  // same-origin storage (zero migration). Tracked so an assetHost change rebuilds
+  // the asset loader + recomputes the target URL, same as a localBundle change.
+  private var assetHost: String = ASSET_HOST
+  private var lastAssetHost: String = ASSET_HOST
 
   // Last rendered frame, used to mask the brief blank frame while the WebView's
   // surface is torn down and recreated during a reparent (move). Kept until
@@ -226,6 +238,9 @@ class PooledChartWebView private constructor(
   // How long the snapshot overlay stays up after a reparent, giving the WebView
   // time to draw its first frame in the new container (~5 frames).
   private val overlayHideDelayMs = 80L
+  // Delay between bounded attach retries (~1 vsync at 60Hz): long enough for the
+  // old parent's pending layout / removeView to flush, short enough to stay snappy.
+  private val attachRetryDelayMs = 16L
   private val attachGeneration = AtomicInteger(0)
 
   val webView: WebView = WebView(context).apply {
@@ -311,10 +326,18 @@ class PooledChartWebView private constructor(
   // hold; removeViewInLayout() is the in-layout fallback if the child is still held.
   private fun forceDetach(parent: ViewGroup) {
     if (webView.parent !== parent) return
-    try { parent.endViewTransition(webView) } catch (e: Throwable) {}
+    try {
+      parent.endViewTransition(webView)
+    } catch (e: Throwable) {
+      android.util.Log.w(TAG, "forceDetach: endViewTransition failed", e)
+    }
     parent.removeView(webView)
     if (webView.parent === parent) {
-      try { parent.removeViewInLayout(webView) } catch (e: Throwable) {}
+      try {
+        parent.removeViewInLayout(webView)
+      } catch (e: Throwable) {
+        android.util.Log.w(TAG, "forceDetach: removeViewInLayout failed", e)
+      }
       parent.requestLayout()
     }
   }
@@ -340,14 +363,25 @@ class PooledChartWebView private constructor(
       // which is attached to the window so its queue keeps draining, instead of the
       // detached webView/old parent whose post() runnables may never run.
       if (retriesLeft > 0) {
-        container.post {
+        // postDelayed (not a tight container.post spin): a small delay lets the
+        // old parent's pending layout / removeView flush between attempts, instead
+        // of re-checking on the very next vsync before anything could change.
+        container.postDelayed({
           attachToContainer(container, generation, retriesLeft = retriesLeft - 1)
-        }
+        }, attachRetryDelayMs)
       } else {
-        android.util.Log.w(
-          TAG,
-          "Skip attach key=$key after retries because WebView parent was not cleared: $currentParent",
-        )
+        // Last resort before giving up: the old parent never released the WebView
+        // through the normal path. Force-detach it and try the attach once more so
+        // we don't leave the WebView unparented (the blank-chart symptom).
+        (currentParent as? ViewGroup)?.let { forceDetach(it) }
+        if (webView.parent == null || webView.parent === container) {
+          attachToContainer(container, generation, retriesLeft = 0)
+        } else {
+          android.util.Log.w(
+            TAG,
+            "Skip attach key=$key after retries because WebView parent was not cleared: $currentParent",
+          )
+        }
       }
       return
     }
@@ -515,13 +549,26 @@ class PooledChartWebView private constructor(
    * so reparenting / redundant prop re-applies never reload (which would lose
    * chart state, the whole point of pooling).
    */
-  fun setSource(uri: String?, localBundle: String?, entry: String?, paramsJson: String?) {
+  fun setSource(
+    uri: String?,
+    localBundle: String?,
+    entry: String?,
+    paramsJson: String?,
+    assetHost: String?,
+  ) {
     // Never load before the document-start bridge is registered — otherwise the
     // page boots without the bridge and its first $private requests are lost. The
     // host re-calls setSource once the bridgeScript prop arrives.
     if (!bridgeRegistered) return
-    if (localBundle != lastLocalBundle) {
+    // Per-instance asset host: fall back to the built-in appassets host (old
+    // behavior) when the app doesn't pass one. Empty string is treated as absent.
+    // Sanitize untrusted values before they reach the privileged-bridge origin
+    // ("https://$assetHost") and WebViewAssetLoader.setDomain — see sanitizeAssetHost.
+    this.assetHost = assetHost?.takeIf { it.isNotEmpty() }
+      ?.let { sanitizeAssetHost(it) } ?: ASSET_HOST
+    if (localBundle != lastLocalBundle || this.assetHost != lastAssetHost) {
       lastLocalBundle = localBundle
+      lastAssetHost = this.assetHost
       rebuildAssetLoader(localBundle)
     }
     // Register the document-start bridge scoped to exactly the origin(s) this load
@@ -567,14 +614,62 @@ class PooledChartWebView private constructor(
     }
   }
 
+  // Validate an incoming assetHost prop before it becomes the trusted bridge
+  // origin ("https://$assetHost") and WebViewAssetLoader.setDomain(assetHost). A
+  // malformed value (scheme, path, '/', '@'/userinfo, whitespace, port, query)
+  // could corrupt the privileged-origin allowlist or throw on the UI thread, so a
+  // candidate that is not a bare hostname falls back to the built-in ASSET_HOST.
+  private fun sanitizeAssetHost(candidate: String): String {
+    val invalid = {
+      android.util.Log.w(
+        TAG,
+        "Ignoring invalid assetHost '$candidate'; falling back to default $ASSET_HOST",
+      )
+      ASSET_HOST
+    }
+    // Cheap rejects first: a bare hostname has no whitespace and no '/'.
+    if (candidate.any { it.isWhitespace() } || candidate.contains('/')) return invalid()
+    return try {
+      val uri = java.net.URI("https://$candidate")
+      val bareHost =
+        uri.host == candidate &&
+        uri.path.isNullOrEmpty() &&
+        uri.userInfo == null &&
+        uri.query == null &&
+        uri.port == -1
+      if (bareHost) candidate else invalid()
+    } catch (e: Exception) {
+      invalid()
+    }
+  }
+
   private fun rebuildAssetLoader(localBundle: String?) {
     if (localBundle.isNullOrEmpty()) {
       assetLoader = null
       return
     }
+    // Narrow the path handler to ONLY the offline bundle subtree
+    // (/<localBundle>/, e.g. /tradingview-assets/) instead of intercepting all of
+    // "/". When the bundle is served under the real chart origin (`assetHost`),
+    // intercepting "/" would shadow every web path on that domain; with the narrow
+    // handler, unmatched paths fall through to the network — so an `assetHost`
+    // that is a real public domain keeps behaving normally off-bundle.
+    // computeTargetUrl produces https://<assetHost>/<localBundle>/<entry>, which
+    // stays inside this handler's path. (Path built as /<localBundle>/ so a
+    // localBundle that already has a trailing slash doesn't double it.)
+    val bundleDir = localBundle.trim('/')
+    val bundlePath = "/$bundleDir/"
+    // WebViewAssetLoader strips the registered prefix before calling the handler,
+    // so AssetsPathHandler alone would resolve the remainder against the assets
+    // ROOT (assets/<entry>) and lose the bundle namespace. Re-prepend <bundleDir>/
+    // so we still serve from assets/<localBundle>/<entry>. Returning null on a
+    // miss lets WebViewAssetLoader fall through to the network.
+    val assets = WebViewAssetLoader.AssetsPathHandler(webView.context)
+    val namespacedHandler =
+      WebViewAssetLoader.PathHandler { suffix -> assets.handle("$bundleDir/$suffix") }
     assetLoader = WebViewAssetLoader.Builder()
-      .setDomain(ASSET_HOST)
-      .addPathHandler("/", WebViewAssetLoader.AssetsPathHandler(webView.context))
+      .setDomain(assetHost)
+      .addPathHandler(bundlePath, namespacedHandler)
       .build()
   }
 
@@ -588,15 +683,21 @@ class PooledChartWebView private constructor(
     if (localBundle.isNullOrEmpty()) return null
     val entryPath = entry?.takeIf { it.isNotEmpty() } ?: DEFAULT_ENTRY
     val query = buildQueryFromParamsJson(paramsJson)
+    // Normalize the bundle dir the SAME way rebuildAssetLoader does (trim '/'), so
+    // the URL has exactly single slashes between host, bundle dir and entry. A raw
+    // localBundle like "/tradingview-assets/" would otherwise yield
+    // https://host//tradingview-assets//index.html, which misses the registered
+    // handler prefix → falls through to the network → blank chart.
+    val bundleDir = localBundle.trim('/')
     return buildString {
       append("https://")
-      append(ASSET_HOST)
+      append(assetHost)
       append('/')
       // Serve the offline bundle from assets/<localBundle>/ (namespaced) rather
       // than the assets root, so it doesn't collide with other bundled assets
       // (e.g. web-embed). The dist uses relative asset paths (PUBLIC_URL='./'),
       // so loading the entry from a subpath resolves the rest correctly.
-      append(localBundle)
+      append(bundleDir)
       append('/')
       append(entryPath)
       if (query.isNotEmpty()) {

@@ -20,6 +20,82 @@
 #import <React/RCTReloadCommand.h>
 #import <ReactCommon/RCTHost.h>
 #import <objc/runtime.h>
+#import <os/lock.h>
+#include <jsi/jsi.h>
+#include <cstdint>
+
+namespace {
+
+// Zero-copy jsi::Buffer that retains its NSData for the async (buffered)
+// executor block's lifetime — same rationale as SplitBundleLoader's
+// NSDataJSIBuffer (M4/M5): no second full copy of the segment bytes, and the
+// mmap'd/heap bytes stay alive because the buffer owns the NSData.
+class BgMgrNSDataJSIBuffer : public facebook::jsi::Buffer {
+ public:
+  explicit BgMgrNSDataJSIBuffer(NSData *data) : data_(data) {}
+  size_t size() const override { return data_.length; }
+  const uint8_t *data() const override {
+    return static_cast<const uint8_t *>(data_.bytes);
+  }
+
+ private:
+  NSData *data_;  // strong retain (ARC).
+};
+
+}  // namespace
+
+// Exactly-once settle guard for the bg watchdog — same design as
+// SplitBundleLoader's SBLSettleGuard. An ARC object captured by both the
+// executor block and the watchdog dispatch_after; ARC keeps its lock alive
+// until both release, so neither block needs (or may do) a manual free —
+// avoiding the use-after-free that would occur if either freed the lock while
+// the other still runs.
+@interface BgMgrSettleGuard : NSObject
+- (BOOL)tryClaim;
+@end
+
+@implementation BgMgrSettleGuard {
+  os_unfair_lock _lock;
+  BOOL _settled;
+}
+- (instancetype)init {
+  if (self = [super init]) {
+    _lock = OS_UNFAIR_LOCK_INIT;
+    _settled = NO;
+  }
+  return self;
+}
+- (BOOL)tryClaim {
+  os_unfair_lock_lock(&_lock);
+  BOOL won = !_settled;
+  if (won) {
+    _settled = YES;
+  }
+  os_unfair_lock_unlock(&_lock);
+  return won;
+}
+@end
+
+// Watchdog window for the bg buffered runtime executor (H2 = bg-runtime port of
+// SplitBundleLoader's C1). The bg runtime's buffered executor stays buffered
+// until the bg entry bundle finishes evaluating in
+// BackgroundReactNativeDelegate.hostDidStart:; if that never completes (host
+// teardown, OTA-resolve abort), the block never runs — without this watchdog
+// the JS promise would hang inflightSegments forever.
+//
+// Fix G: 30s (matching Android and the main-runtime watchdog). The buffered
+// executor stays buffered until the bg ENTRY bundle finishes evaluating; on a
+// slow/throttled cold start that entry eval can itself exceed 10s, which would
+// falsely trip the watchdog on a load that was about to succeed. 30s keeps the
+// genuine-wedge safety net while leaving generous headroom for slow cold starts.
+static const NSTimeInterval kBgSegmentEvalWatchdogSeconds = 30.0;
+
+// EBgMgrSegmentEvalError NSError `code` values are declared in
+// BackgroundThreadManager.h so the TurboModule boundary
+// (BackgroundThread.loadSegmentInBackground) can map each distinct code to its
+// own JS reject code by NAME. They stay numerically aligned with
+// SplitBundleLoader's ESegmentEvalError; see installProdBundleLoader.ts for the
+// retryable-vs-fatal classification (H3 / fix E).
 
 @interface BackgroundThreadManager ()
 @property (nonatomic, strong) BackgroundReactNativeDelegate *reactNativeFactoryDelegate;
@@ -201,33 +277,166 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
                          completion:(void (^)(NSError * _Nullable error))completion
 {
     if (!self.isStarted || !self.reactNativeFactoryDelegate) {
+        // Transient: the bg runtime just isn't up yet. NotStarted → NO_RUNTIME
+        // (retryable). Previously a raw `code:1` which fell through the
+        // boundary's `default` — same destination, but now NAMED so the mapping
+        // is explicit and can never drift (fix 1 / E).
         NSError *error = [NSError errorWithDomain:@"BackgroundThread"
-                                             code:1
+                                             code:EBgMgrSegmentEvalErrorNotStarted
                                          userInfo:@{NSLocalizedDescriptionKey: @"Background runtime not started"}];
         if (completion) completion(error);
         return;
     }
 
-    // Verify the file exists
+    // Verify the file exists. FATAL: a missing segment file is real packaging /
+    // OTA corruption — retrying just re-misses. Previously a raw `code:2` that
+    // the boundary's `default` MISCLASSIFIED as retryable NO_RUNTIME, masking
+    // the corruption; now FileNotFound → NOT_FOUND (fatal) (fix 1 / E — the
+    // NO-SHIP blocker).
     if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
         NSError *error = [NSError errorWithDomain:@"BackgroundThread"
-                                             code:2
+                                             code:EBgMgrSegmentEvalErrorFileNotFound
                                          userInfo:@{NSLocalizedDescriptionKey:
                                                         [NSString stringWithFormat:@"Segment file not found: %@", path]}];
         if (completion) completion(error);
         return;
     }
 
-    BOOL success = [self.reactNativeFactoryDelegate registerSegmentWithId:segmentId path:path];
-    if (success) {
-        if (completion) completion(nil);
-    } else {
+    [self evaluateSegmentInBackground:segmentId path:path completion:completion];
+}
+
+// Evaluate-then-resolve segment load for the BACKGROUND runtime (H2).
+//
+// WHY THIS REPLACES registerSegmentWithId: + immediate completion(nil):
+// The old path called `[delegate registerSegmentWithId:path:]` (which routes to
+// RCTInstance/ReactInstance::registerSegment — that only ENQUEUES
+// `runtime.evaluateJavaScript(segment)` on the runtime scheduler and returns)
+// then resolved the JS promise immediately. That is the exact
+// "Requiring unknown module" race the MAIN runtime already fixed in
+// SplitBundleLoader: Metro's `import().then(() => __r(moduleId))` microtask can
+// run `__r` BEFORE the scheduled eval populated the module table → a FATAL,
+// uncatchable crash. Locale segments load through THIS path in the bg runtime
+// (ServiceSetting.refreshLocaleMessages → import('./json/*.json') runs in
+// kit-bg), so a language switch could still crash.
+//
+// Fix: evaluate the segment OURSELVES inside one
+// `callFunctionOnBufferedRuntimeExecutor:` block on the bg RCTInstance and
+// signal completion in that SAME block, strictly AFTER eval — making eval +
+// resolve one atomic unit so any subsequent `__r(moduleId)` finds the module.
+// The bg RCTInstance is the delegate's private `_rctInstance` ivar; we read it
+// reflectively (the same pattern installSharedBridgeInMainRuntime: uses on the
+// main host) to keep this fix self-contained in this file rather than widening
+// the delegate's surface. Includes the same exactly-once + watchdog guard as
+// the main-runtime fix (C1) because the bg buffered executor is likewise
+// buffered until the bg entry bundle finishes evaluating in hostDidStart:.
+- (void)evaluateSegmentInBackground:(NSNumber *)segmentId
+                               path:(NSString *)path
+                         completion:(void (^)(NSError * _Nullable error))completion
+{
+    // Reach the bg RCTInstance via the delegate's `_rctInstance` ivar. `id`
+    // (not a typed RCTInstance*) mirrors installSharedBridgeInMainRuntime:'s
+    // untyped handling and avoids needing the RCTInstance header here.
+    BackgroundReactNativeDelegate *delegate = self.reactNativeFactoryDelegate;
+    Ivar ivar = class_getInstanceVariable([delegate class], "_rctInstance");
+    if (!ivar) {
+        // Loud failure (L7 parity): a future RN/delegate refactor that renames
+        // this ivar silently disables ALL bg segment loading — surface it.
+        // STRUCTURAL/PERMANENT (not transient): retrying can never recreate a
+        // renamed ivar, so this maps to fatal NATIVE_UNAVAILABLE — distinct from
+        // the nil-instance case below, which IS transient. Misclassifying this
+        // as NO_RUNTIME would make JS retry a permanently-broken reflection.
+        [BTLogger error:[NSString stringWithFormat:@"[SplitBundle] FATAL: _rctInstance ivar not found on %@ — bg segment loading is DISABLED.", [delegate class]]];
         NSError *error = [NSError errorWithDomain:@"BackgroundThread"
-                                             code:3
-                                         userInfo:@{NSLocalizedDescriptionKey:
-                                                        @"Failed to register segment in background runtime"}];
+                                             code:EBgMgrSegmentEvalErrorIvarMissing
+                                         userInfo:@{NSLocalizedDescriptionKey: @"_rctInstance ivar not found on bg delegate"}];
         if (completion) completion(error);
+        return;
     }
+    id instance = object_getIvar(delegate, ivar);
+    if (!instance) {
+        [BTLogger error:@"[SplitBundle] bg loadSegment: background RCTInstance not available"];
+        NSError *error = [NSError errorWithDomain:@"BackgroundThread"
+                                             code:EBgMgrSegmentEvalErrorNilInstance
+                                         userInfo:@{NSLocalizedDescriptionKey: @"Background RCTInstance not available"}];
+        if (completion) completion(error);
+        return;
+    }
+
+    // M4/M5: mmap + zero-copy buffer (retains the NSData for the async block).
+    NSError *readError = nil;
+    NSData *data = [NSData dataWithContentsOfFile:path
+                                         options:NSDataReadingMappedIfSafe
+                                           error:&readError];
+    if (!data || data.length == 0) {
+        NSError *error = [NSError errorWithDomain:@"BackgroundThread"
+                                             code:EBgMgrSegmentEvalErrorIORead
+                                         userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Failed to read bg segment at %@%@", path, readError ? [NSString stringWithFormat:@": %@", readError.localizedDescription] : @""]}];
+        if (completion) completion(error);
+        return;
+    }
+
+    // M6: synthetic `seg-<id>.js` source URL for in-segment crash symbolication.
+    int segIdInt = segmentId.intValue;
+    NSString *sourceURL = [NSString stringWithFormat:@"seg-%d.js", segIdInt];
+
+    // C1: exactly-once guard shared (and retained) by the executor block and the
+    // watchdog. ARC-owned so the lock outlives both with no manual free.
+    BgMgrSettleGuard *settleGuard = [[BgMgrSettleGuard alloc] init];
+
+    CFAbsoluteTime dispatchStart = CFAbsoluteTimeGetCurrent();
+    [BTLogger info:[NSString stringWithFormat:@"[SplitBundle] bg loadSegment: evaluating %@ (id=%d, %lu bytes)", sourceURL, segIdInt, (unsigned long)data.length]];
+
+    // No __weak dance needed here (unlike the SharedRPC executor): this block
+    // does not re-dispatch onto the instance — it runs synchronously inside the
+    // instance's own runtime executor with a live `runtime &`, so by the time it
+    // executes the instance is necessarily still alive.
+    [instance callFunctionOnBufferedRuntimeExecutor:^(facebook::jsi::Runtime &runtime) {
+        @autoreleasepool {
+            BOOL won = [settleGuard tryClaim];
+            NSError *evalError = nil;
+            CFAbsoluteTime evalStart = CFAbsoluteTimeGetCurrent();
+            try {
+                auto buffer = std::make_shared<BgMgrNSDataJSIBuffer>(data);
+                runtime.evaluateJavaScript(buffer, [sourceURL UTF8String]);
+                double evalMs = (CFAbsoluteTimeGetCurrent() - evalStart) * 1000.0;
+                [BTLogger info:[NSString stringWithFormat:@"[SplitBundle] bg loadSegment: %@ evaluated in %.1fms", sourceURL, evalMs]];
+            } catch (const std::exception &e) {
+                evalError = [NSError errorWithDomain:@"BackgroundThread"
+                                                code:EBgMgrSegmentEvalErrorEvalThrow
+                                            userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Bg segment evaluation failed for %@: %s", sourceURL, e.what()]}];
+                [BTLogger error:[NSString stringWithFormat:@"[SplitBundle] bg loadSegment: %@ evaluation threw: %s", sourceURL, e.what()]];
+            } catch (...) {
+                evalError = [NSError errorWithDomain:@"BackgroundThread"
+                                                code:EBgMgrSegmentEvalErrorEvalThrow
+                                            userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Bg segment evaluation failed for %@ (unknown C++ exception)", sourceURL]}];
+                [BTLogger error:[NSString stringWithFormat:@"[SplitBundle] bg loadSegment: %@ evaluation threw an unknown exception", sourceURL]];
+            }
+            if (won) {
+                // Resolve AFTER eval — the ordering guarantee that fixes the race.
+                if (completion) completion(evalError);
+            } else {
+                [BTLogger warn:[NSString stringWithFormat:@"[SplitBundle] bg loadSegment: %@ evaluated AFTER watchdog already settled (bg entry was wedged >%.0fs)", sourceURL, kBgSegmentEvalWatchdogSeconds]];
+            }
+        }
+    }];
+
+    // C1 watchdog — fires only on a genuine wedge (bg entry bundle never
+    // finished evaluating). Rejects with a retryable timeout so the JS loader
+    // re-attempts. settleGuard is retained by this block, so the lock stays
+    // valid even if the executor block later runs.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kBgSegmentEvalWatchdogSeconds * NSEC_PER_SEC)),
+                   dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        if ([settleGuard tryClaim]) {
+            [BTLogger error:[NSString stringWithFormat:@"[SplitBundle] bg loadSegment: %@ WATCHDOG fired after %.0fs — bg runtime executor never ran (bg entry bundle likely never finished evaluating). Rejecting as retryable timeout.", sourceURL, kBgSegmentEvalWatchdogSeconds]];
+            NSError *timeoutError = [NSError errorWithDomain:@"BackgroundThread"
+                                                        code:EBgMgrSegmentEvalErrorTimeout
+                                                    userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Bg segment %@ eval timed out after %.0fs (buffered runtime executor never ran)", sourceURL, kBgSegmentEvalWatchdogSeconds]}];
+            if (completion) completion(timeoutError);
+        }
+    });
+
+    double dispatchMs = (CFAbsoluteTimeGetCurrent() - dispatchStart) * 1000.0;
+    [BTLogger info:[NSString stringWithFormat:@"[SplitBundle] bg loadSegment: %@ dispatched in %.1fms (resolve fires after eval; watchdog %.0fs)", sourceURL, dispatchMs, kBgSegmentEvalWatchdogSeconds]];
 }
 
 #pragma mark - Restart

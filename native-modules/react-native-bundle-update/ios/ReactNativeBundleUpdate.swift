@@ -1725,6 +1725,130 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
         }
     }
 
+    /// Parses an "{appVersion}-{bundleVersion}" folder/file stem into its
+    /// appVersion component using the SAME last-dash split as listLocalBundles
+    /// and the installBundle fallback logic. Returns nil when the stem has no
+    /// dash or an empty appVersion, so callers leave unrecognized entries
+    /// untouched.
+    private static func appVersionFromStem(_ stem: String) -> String? {
+        guard let lastDash = stem.range(of: "-", options: .backwards),
+              lastDash.lowerBound > stem.startIndex else { return nil }
+        let appVersion = String(stem[stem.startIndex..<lastDash.lowerBound])
+        return appVersion.isEmpty ? nil : appVersion
+    }
+
+    /// Prunes every artifact whose appVersion != the running native binary
+    /// version: stale onekey-bundle/* dirs, onekey-bundle-download/* stages
+    /// (.zip / .partial / .progress / .resume), orphan asc signatures, and
+    /// lingering fallback entries. Hard-refuses to delete the current
+    /// appVersion's artifacts and the active currentBundleVersion. Tolerates
+    /// already-missing files. Returns the count of deleted version directories.
+    func pruneStaleAppVersionBundles() throws -> Promise<Double> {
+        BundleUpdateStore.invalidateValidatedBundleInfoCache()
+        return Promise.async {
+            let fm = FileManager.default
+            let currentAppV = BundleUpdateStore.getCurrentNativeVersion()
+            // Safety net: never delete the bundle backing the active pointer.
+            let currentBundleVersion = BundleUpdateStore.currentBundleVersion()
+            OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: currentAppV=\(currentAppV), currentBundleVersion=\(currentBundleVersion ?? "nil")")
+
+            // Without a known native version we cannot decide what is stale;
+            // bail out rather than risk deleting the wrong artifacts.
+            guard !currentAppV.isEmpty else {
+                OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: empty currentAppV, skipping")
+                return 0
+            }
+
+            /// True when this entry stem must be kept: its appVersion matches
+            /// the running binary, it IS the active currentBundleVersion, or it
+            /// is unparseable (leave foreign names alone).
+            func shouldKeep(stem: String) -> Bool {
+                if let active = currentBundleVersion, stem == active { return true }
+                guard let appV = Self.appVersionFromStem(stem) else { return true }
+                return appV == currentAppV
+            }
+
+            var deletedDirCount = 0
+
+            // 1. onekey-bundle/* extracted dirs
+            let bundleDir = BundleUpdateStore.bundleDir()
+            if let contents = try? fm.contentsOfDirectory(atPath: bundleDir) {
+                for name in contents {
+                    // Skip non-version entries (asc dir, fallback json, etc.)
+                    if name == "asc" || name == "fallbackUpdateBundleData.json" { continue }
+                    let fullPath = (bundleDir as NSString).appendingPathComponent(name)
+                    var isDir: ObjCBool = false
+                    guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue else { continue }
+                    if shouldKeep(stem: name) { continue }
+                    do {
+                        try fm.removeItem(atPath: fullPath)
+                        deletedDirCount += 1
+                        OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted stale bundle dir \(name)")
+                    } catch {
+                        OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete bundle dir \(name): \(error)")
+                    }
+                }
+            }
+
+            // 2. onekey-bundle-download/* stages (zip / partial / progress / resume)
+            let downloadDir = BundleUpdateStore.downloadBundleDir()
+            if let contents = try? fm.contentsOfDirectory(atPath: downloadDir) {
+                for name in contents {
+                    // Strip the trailing extension chain to recover the
+                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial").
+                    var stem = name
+                    for suffix in [".resume", ".progress", ".partial", ".zip"] {
+                        if stem.hasSuffix(suffix) {
+                            stem = String(stem.dropLast(suffix.count))
+                        }
+                    }
+                    if shouldKeep(stem: stem) { continue }
+                    let fullPath = (downloadDir as NSString).appendingPathComponent(name)
+                    do {
+                        try fm.removeItem(atPath: fullPath)
+                        OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted stale download \(name)")
+                    } catch {
+                        OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete download \(name): \(error)")
+                    }
+                }
+            }
+
+            // 3. onekey-bundle/asc/*-signature.asc orphan signatures
+            let ascDir = BundleUpdateStore.ascDir()
+            if let contents = try? fm.contentsOfDirectory(atPath: ascDir) {
+                let suffix = "-signature.asc"
+                for name in contents {
+                    guard name.hasSuffix(suffix) else { continue }
+                    let stem = String(name.dropLast(suffix.count))
+                    if shouldKeep(stem: stem) { continue }
+                    let fullPath = (ascDir as NSString).appendingPathComponent(name)
+                    do {
+                        try fm.removeItem(atPath: fullPath)
+                        OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted orphan asc \(name)")
+                    } catch {
+                        OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete asc \(name): \(error)")
+                    }
+                }
+            }
+
+            // 4. Persisted fallback list: drop entries whose appVersion != currentAppV.
+            // Fixes the latent leak where stale fallback entries linger after a
+            // native upgrade. Reuses the existing read/write helpers.
+            let fallbackData = BundleUpdateStore.readFallbackUpdateBundleDataFile()
+            let prunedFallback = fallbackData.filter { entry in
+                guard let appV = entry["appVersion"], !appV.isEmpty else { return true }
+                return appV == currentAppV
+            }
+            if prunedFallback.count != fallbackData.count {
+                BundleUpdateStore.writeFallbackUpdateBundleDataFile(prunedFallback)
+                OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: pruned fallback entries \(fallbackData.count) -> \(prunedFallback.count)")
+            }
+
+            OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: completed, deletedDirCount=\(deletedDirCount)")
+            return Double(deletedDirCount)
+        }
+    }
+
     func resetToBuiltInBundle() throws -> Promise<Void> {
         BundleUpdateStore.invalidateValidatedBundleInfoCache()
         return Promise.async {

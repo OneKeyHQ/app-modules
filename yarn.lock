@@ -2744,28 +2744,38 @@ __metadata:
     "@babel/core": "npm:^7.25.2"
     "@babel/preset-env": "npm:^7.25.3"
     "@babel/runtime": "npm:^7.25.0"
+    "@onekeyfe/react-native-aes-crypto": "workspace:*"
     "@onekeyfe/react-native-app-update": "workspace:*"
+    "@onekeyfe/react-native-async-storage": "workspace:*"
     "@onekeyfe/react-native-auto-size-input": "workspace:*"
     "@onekeyfe/react-native-background-thread": "workspace:*"
     "@onekeyfe/react-native-bundle-crypto": "workspace:*"
     "@onekeyfe/react-native-bundle-update": "workspace:*"
     "@onekeyfe/react-native-chart-webview": "workspace:*"
     "@onekeyfe/react-native-check-biometric-auth-changed": "workspace:*"
+    "@onekeyfe/react-native-cloud-fs": "workspace:*"
     "@onekeyfe/react-native-cloud-kit-module": "workspace:*"
     "@onekeyfe/react-native-device-utils": "workspace:*"
+    "@onekeyfe/react-native-dns-lookup": "workspace:*"
     "@onekeyfe/react-native-get-random-values": "workspace:*"
     "@onekeyfe/react-native-keychain-module": "workspace:*"
     "@onekeyfe/react-native-lite-card": "workspace:*"
     "@onekeyfe/react-native-native-logger": "workspace:*"
+    "@onekeyfe/react-native-network-info": "workspace:*"
     "@onekeyfe/react-native-pager-view": "workspace:*"
+    "@onekeyfe/react-native-pbkdf2": "workspace:*"
     "@onekeyfe/react-native-perf-memory": "workspace:*"
+    "@onekeyfe/react-native-perf-stats": "workspace:*"
     "@onekeyfe/react-native-perp-depth-bar": "workspace:*"
+    "@onekeyfe/react-native-ping": "workspace:*"
     "@onekeyfe/react-native-range-downloader": "workspace:*"
     "@onekeyfe/react-native-scroll-guard": "workspace:*"
     "@onekeyfe/react-native-segment-slider": "workspace:*"
     "@onekeyfe/react-native-skeleton": "workspace:*"
     "@onekeyfe/react-native-splash-screen": "workspace:*"
+    "@onekeyfe/react-native-split-bundle-loader": "workspace:*"
     "@onekeyfe/react-native-tab-view": "workspace:*"
+    "@onekeyfe/react-native-tcp-socket": "workspace:*"
     "@onekeyfe/react-native-zip-archive": "workspace:*"
     "@react-native-community/cli": "npm:20.0.0"
     "@react-native-community/cli-platform-android": "npm:20.0.0"
@@ -2832,7 +2842,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-aes-crypto@workspace:native-modules/react-native-aes-crypto":
+"@onekeyfe/react-native-aes-crypto@workspace:*, @onekeyfe/react-native-aes-crypto@workspace:native-modules/react-native-aes-crypto":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-aes-crypto@workspace:native-modules/react-native-aes-crypto"
   dependencies:
@@ -2901,7 +2911,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-async-storage@workspace:native-modules/react-native-async-storage":
+"@onekeyfe/react-native-async-storage@workspace:*, @onekeyfe/react-native-async-storage@workspace:native-modules/react-native-async-storage":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-async-storage@workspace:native-modules/react-native-async-storage"
   dependencies:
@@ -3149,7 +3159,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-cloud-fs@workspace:native-modules/react-native-cloud-fs":
+"@onekeyfe/react-native-cloud-fs@workspace:*, @onekeyfe/react-native-cloud-fs@workspace:native-modules/react-native-cloud-fs":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-cloud-fs@workspace:native-modules/react-native-cloud-fs"
   dependencies:
@@ -3236,7 +3246,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-dns-lookup@workspace:native-modules/react-native-dns-lookup":
+"@onekeyfe/react-native-dns-lookup@workspace:*, @onekeyfe/react-native-dns-lookup@workspace:native-modules/react-native-dns-lookup":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-dns-lookup@workspace:native-modules/react-native-dns-lookup"
   dependencies:
@@ -3410,7 +3420,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-network-info@workspace:native-modules/react-native-network-info":
+"@onekeyfe/react-native-network-info@workspace:*, @onekeyfe/react-native-network-info@workspace:native-modules/react-native-network-info":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-network-info@workspace:native-modules/react-native-network-info"
   dependencies:
@@ -3458,7 +3468,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-pbkdf2@workspace:native-modules/react-native-pbkdf2":
+"@onekeyfe/react-native-pbkdf2@workspace:*, @onekeyfe/react-native-pbkdf2@workspace:native-modules/react-native-pbkdf2":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-pbkdf2@workspace:native-modules/react-native-pbkdf2"
   dependencies:
@@ -3527,7 +3537,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-perf-stats@workspace:native-modules/react-native-perf-stats":
+"@onekeyfe/react-native-perf-stats@workspace:*, @onekeyfe/react-native-perf-stats@workspace:native-modules/react-native-perf-stats":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-perf-stats@workspace:native-modules/react-native-perf-stats"
   dependencies:
@@ -3599,7 +3609,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-ping@workspace:native-modules/react-native-ping":
+"@onekeyfe/react-native-ping@workspace:*, @onekeyfe/react-native-ping@workspace:native-modules/react-native-ping":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-ping@workspace:native-modules/react-native-ping"
   dependencies:
@@ -3777,7 +3787,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-split-bundle-loader@workspace:native-modules/react-native-split-bundle-loader":
+"@onekeyfe/react-native-split-bundle-loader@workspace:*, @onekeyfe/react-native-split-bundle-loader@workspace:native-modules/react-native-split-bundle-loader":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-split-bundle-loader@workspace:native-modules/react-native-split-bundle-loader"
   dependencies:
@@ -3829,7 +3839,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-tcp-socket@workspace:native-modules/react-native-tcp-socket":
+"@onekeyfe/react-native-tcp-socket@workspace:*, @onekeyfe/react-native-tcp-socket@workspace:native-modules/react-native-tcp-socket":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-tcp-socket@workspace:native-modules/react-native-tcp-socket"
   dependencies:

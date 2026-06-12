@@ -20,6 +20,14 @@ export interface ChartWebviewProps extends HybridViewProps {
   // '{"symbol":"BTC","type":"market","theme":"dark"}'). Kept as a string so the
   // native side stays free of a structured-prop dependency.
   paramsJson?: string;
+  // ANDROID ONLY: the host the offline `localBundle` is served under, so Android
+  // can reuse the real TradingView origin (e.g. "tradingview.onekey.so") and read
+  // the existing same-origin WebView storage with zero migration. When omitted,
+  // Android falls back to the built-in "appassets.androidplatform.net" host
+  // (identical to the old behavior). IGNORED on iOS, which always serves offline
+  // content from the onekey-chart:// custom scheme (https can't be intercepted
+  // there).
+  assetHost?: string;
 
   // JS injected into the page at document-start (before any page JS), wiring the
   // page's outbound channels to the native transport. Single source of truth in

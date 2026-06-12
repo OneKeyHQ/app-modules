@@ -1013,16 +1013,26 @@ object BundleUpdateStoreAndroid {
         }
     }
 
-    private fun deleteDirectory(directory: File) {
-        if (directory.exists()) {
-            directory.listFiles()?.forEach { file ->
-                if (file.isDirectory) deleteDirectory(file) else file.delete()
-            }
-            directory.delete()
+    /**
+     * Recursively deletes [directory], returning true only when nothing is left
+     * behind. An already-missing entry counts as success (tolerates concurrent
+     * removal); a child that fails to delete makes the whole call return false
+     * so callers never report a half-deleted tree as a clean delete.
+     */
+    private fun deleteDirectory(directory: File): Boolean {
+        if (!directory.exists()) return true
+        var allDeleted = true
+        directory.listFiles()?.forEach { file ->
+            val ok = if (file.isDirectory) deleteDirectory(file) else (!file.exists() || file.delete())
+            if (!ok) allDeleted = false
         }
+        // delete() on a non-empty dir returns false, so a child failure above
+        // naturally propagates here too.
+        val dirDeleted = !directory.exists() || directory.delete()
+        return allDeleted && dirDeleted
     }
 
-    fun deleteDir(dir: File) = deleteDirectory(dir)
+    fun deleteDir(dir: File): Boolean = deleteDirectory(dir)
 
     private const val MAX_UNZIPPED_SIZE = 512L * 1024 * 1024  // 512 MB limit
 
@@ -1754,6 +1764,148 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
             isDownloading.set(false)
             OneKeyLog.info("BundleUpdate", "clearBundle: completed")
+        }
+    }
+
+    /**
+     * Prunes every artifact whose appVersion != the running native binary
+     * version: stale onekey-bundle/<v> dirs, onekey-bundle-download/<v> stages
+     * (.zip / .partial / .progress / .resume), orphan asc signatures, and
+     * lingering fallback entries. Hard-refuses to delete the current
+     * appVersion's artifacts and the active currentBundleVersion. Tolerates
+     * already-missing files. Returns the count of deleted version directories.
+     *
+     * appVersion is parsed from the "{appVersion}-{bundleVersion}" stem using
+     * the SAME last-dash split as listLocalBundles / the installBundle fallback
+     * logic, so behavior matches the rest of the module.
+     */
+    override fun pruneStaleAppVersionBundles(): Promise<Double> {
+        BundleUpdateStoreAndroid.invalidateValidatedBundleInfoCache()
+        return Promise.async {
+            val context = getContext()
+            val currentAppV = BundleUpdateStoreAndroid.getAppVersion(context) ?: ""
+            // Safety net: never delete the bundle backing the active pointer.
+            val currentBundleVersion = BundleUpdateStoreAndroid.getCurrentBundleVersion(context)
+            OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: currentAppV=$currentAppV, currentBundleVersion=$currentBundleVersion")
+
+            // Without a known native version we cannot decide what is stale;
+            // bail out rather than risk deleting the wrong artifacts.
+            if (currentAppV.isEmpty()) {
+                OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: empty currentAppV, skipping")
+                return@async 0.0
+            }
+
+            // Parses an "{appVersion}-{bundleVersion}" stem into its appVersion
+            // component using the same last-dash split as listLocalBundles.
+            // Returns null for stems without a dash or with an empty appVersion.
+            fun appVersionFromStem(stem: String): String? {
+                val lastDash = stem.lastIndexOf('-')
+                if (lastDash <= 0) return null
+                val appV = stem.substring(0, lastDash)
+                return if (appV.isEmpty()) null else appV
+            }
+
+            // True when this entry stem must be kept: its appVersion matches the
+            // running binary, it IS the active currentBundleVersion, or it is
+            // unparseable (leave foreign names alone).
+            fun shouldKeep(stem: String): Boolean {
+                if (currentBundleVersion != null && stem == currentBundleVersion) return true
+                val appV = appVersionFromStem(stem) ?: return true
+                return appV == currentAppV
+            }
+
+            var deletedDirCount = 0
+
+            // 1. onekey-bundle/* extracted dirs
+            val bundleDir = File(BundleUpdateStoreAndroid.getBundleDir(context))
+            if (bundleDir.exists() && bundleDir.isDirectory) {
+                bundleDir.listFiles()?.forEach { child ->
+                    if (!child.isDirectory) return@forEach
+                    val name = child.name
+                    // Skip non-version entries (asc dir, fallback json, etc.)
+                    if (name == "asc" || name == "fallbackUpdateBundleData.json") return@forEach
+                    if (shouldKeep(name)) return@forEach
+                    try {
+                        if (BundleUpdateStoreAndroid.deleteDir(child)) {
+                            deletedDirCount++
+                            OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted stale bundle dir $name")
+                        } else {
+                            OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: incomplete delete of bundle dir $name (left behind)")
+                        }
+                    } catch (e: Exception) {
+                        OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete bundle dir $name: ${e.message}")
+                    }
+                }
+            }
+
+            // 2. onekey-bundle-download/* stages (zip / partial / progress / resume)
+            val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
+            if (downloadDir.exists() && downloadDir.isDirectory) {
+                downloadDir.listFiles()?.forEach { file ->
+                    val name = file.name
+                    // Strip the trailing extension chain to recover the
+                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial").
+                    var stem = name
+                    for (suffix in listOf(".resume", ".progress", ".partial", ".zip")) {
+                        if (stem.endsWith(suffix)) {
+                            stem = stem.substring(0, stem.length - suffix.length)
+                        }
+                    }
+                    if (shouldKeep(stem)) return@forEach
+                    try {
+                        val deleted = if (file.isDirectory) {
+                            BundleUpdateStoreAndroid.deleteDir(file)
+                        } else {
+                            !file.exists() || file.delete()
+                        }
+                        if (deleted) {
+                            OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted stale download $name")
+                        } else {
+                            OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete download $name")
+                        }
+                    } catch (e: Exception) {
+                        OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete download $name: ${e.message}")
+                    }
+                }
+            }
+
+            // 3. onekey-bundle/asc/*-signature.asc orphan signatures
+            val ascDir = File(BundleUpdateStoreAndroid.getAscDir(context))
+            if (ascDir.exists() && ascDir.isDirectory) {
+                val suffix = "-signature.asc"
+                ascDir.listFiles()?.forEach { file ->
+                    val name = file.name
+                    if (!name.endsWith(suffix)) return@forEach
+                    val stem = name.substring(0, name.length - suffix.length)
+                    if (shouldKeep(stem)) return@forEach
+                    try {
+                        file.delete()
+                        OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: deleted orphan asc $name")
+                    } catch (e: Exception) {
+                        OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: failed to delete asc $name: ${e.message}")
+                    }
+                }
+            }
+
+            // 4. Persisted fallback list: drop entries whose appVersion != currentAppV.
+            // Fixes the latent leak where stale fallback entries linger after a
+            // native upgrade. Reuses the existing read/write helpers.
+            try {
+                val fallbackData = BundleUpdateStoreAndroid.readFallbackUpdateBundleDataFile(context)
+                val prunedFallback = fallbackData.filter { entry ->
+                    val appV = entry["appVersion"]
+                    appV.isNullOrEmpty() || appV == currentAppV
+                }
+                if (prunedFallback.size != fallbackData.size) {
+                    BundleUpdateStoreAndroid.writeFallbackUpdateBundleDataFile(prunedFallback, context)
+                    OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: pruned fallback entries ${fallbackData.size} -> ${prunedFallback.size}")
+                }
+            } catch (e: Exception) {
+                OneKeyLog.warn("BundleUpdate", "pruneStaleAppVersionBundles: fallback prune error: ${e.message}")
+            }
+
+            OneKeyLog.info("BundleUpdate", "pruneStaleAppVersionBundles: completed, deletedDirCount=$deletedDirCount")
+            deletedDirCount.toDouble()
         }
     }
 

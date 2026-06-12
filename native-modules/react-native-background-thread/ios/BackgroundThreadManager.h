@@ -6,6 +6,49 @@ NS_ASSUME_NONNULL_BEGIN
 @class RCTReactNativeFactory;
 @class RCTHost;
 
+/// NSError `code` values produced by `registerSegmentInBackground:` /
+/// `evaluateSegmentInBackground:` under the `BackgroundThread` error domain.
+///
+/// These are DISTINCT (kept numerically aligned with SplitBundleLoader's
+/// `ESegmentEvalError`) so the TurboModule boundary
+/// (`BackgroundThread.loadSegmentInBackground`) can map each to its OWN JS
+/// reject code and JS can classify retryable-vs-fatal — rather than collapsing
+/// every bg failure into one opaque code (fix E). EVERY failure the manager
+/// produces MUST have a NAMED case here so the boundary's switch maps it
+/// explicitly: a raw integer literal would fall through to the boundary's
+/// defensive `default` (→ retryable NO_RUNTIME) and silently MISCLASSIFY a
+/// fatal failure (e.g. a missing segment file) as a transient one that gets
+/// retried/masked instead of surfaced. The mapping the boundary applies is:
+///   - NotStarted  (bg runtime not started yet) → `SPLIT_BUNDLE_NO_RUNTIME`     (retryable)
+///   - FileNotFound (segment file missing)      → `SPLIT_BUNDLE_NOT_FOUND`      (fatal)
+///   - NilInstance (bg RCTInstance is nil)      → `SPLIT_BUNDLE_NO_RUNTIME`     (retryable)
+///   - IORead      (file read/mmap failed)      → `SPLIT_BUNDLE_IO_ERROR`       (fatal)
+///   - EvalThrow   (segment JS/Hermes bug)      → `SPLIT_BUNDLE_EVAL_ERROR`     (fatal)
+///   - Timeout     (buffered executor never ran)→ `SPLIT_BUNDLE_TIMEOUT`        (retryable)
+///   - IvarMissing (`_rctInstance` reflection
+///                  failed — STRUCTURAL/permanent)→ `SPLIT_BUNDLE_NATIVE_UNAVAILABLE` (fatal)
+///
+/// WHY NilInstance and IvarMissing are split (and not both NO_RUNTIME): a nil
+/// RCTInstance is TRANSIENT — the bg host just isn't up yet, a later attempt
+/// can succeed. A missing `_rctInstance` ivar is STRUCTURAL/PERMANENT — an RN
+/// version bump renamed/removed the private field our reflection depends on, so
+/// bg segment loading is disabled until the native code is updated. Retrying
+/// the latter is futile, so it maps to fatal NATIVE_UNAVAILABLE.
+///
+/// Declared here (not file-local in the .mm) so the boundary references these
+/// by NAME — a future renumbering stays exact instead of drifting against a
+/// hardcoded magic-number switch. Values 3-6 are kept STABLE; 1/2/7 fill in the
+/// previously-raw `registerSegmentInBackground:` codes and the structural split.
+typedef NS_ENUM(NSInteger, EBgMgrSegmentEvalError) {
+    EBgMgrSegmentEvalErrorNotStarted = 1,   // bg runtime not started yet (retryable)
+    EBgMgrSegmentEvalErrorFileNotFound = 2, // segment file missing (fatal)
+    EBgMgrSegmentEvalErrorNilInstance = 3,  // bg RCTInstance is nil (retryable)
+    EBgMgrSegmentEvalErrorIORead = 4,       // file read/mmap failed (fatal)
+    EBgMgrSegmentEvalErrorEvalThrow = 5,    // segment JS/Hermes bug (fatal)
+    EBgMgrSegmentEvalErrorTimeout = 6,      // buffered executor never ran (retryable)
+    EBgMgrSegmentEvalErrorIvarMissing = 7,  // `_rctInstance` ivar reflection failed (fatal, structural)
+};
+
 @interface BackgroundThreadManager : NSObject
 
 /// Shared instance for singleton pattern

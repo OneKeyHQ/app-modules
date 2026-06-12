@@ -30,9 +30,17 @@ class BackgroundThreadModule(reactContext: ReactApplicationContext) :
 
     override fun loadSegmentInBackground(segmentId: Double, path: String, promise: Promise) {
         BackgroundThreadManager.getInstance()
-            .registerSegmentInBackground(segmentId.toInt(), path) { error ->
-                if (error != null) {
-                    promise.reject("BG_SEGMENT_LOAD_ERROR", error.message, error)
+            .registerSegmentInBackground(segmentId.toInt(), path) { code, message ->
+                if (code != null) {
+                    // Reject with the SHARED split-bundle contract code (e.g.
+                    // SPLIT_BUNDLE_NO_RUNTIME / SPLIT_BUNDLE_TIMEOUT are
+                    // retryable; SPLIT_BUNDLE_IO_ERROR / SPLIT_BUNDLE_EVAL_ERROR
+                    // / SPLIT_BUNDLE_NATIVE_UNAVAILABLE / SPLIT_BUNDLE_NOT_FOUND
+                    // are not) so the JS loader classifies retryability the same
+                    // way it does for the main path. registerSegmentInBackground
+                    // always supplies one of these contract codes here, so there
+                    // is no legacy/opaque default string to fall back to.
+                    promise.reject(code, message)
                 } else {
                     promise.resolve(null)
                 }
