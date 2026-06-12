@@ -625,7 +625,14 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     val concurrentOutcome = ConcurrentRangeDownloader(
                         httpClient = concurrentClient,
                         log = { msg -> OneKeyLog.info("AppUpdate", msg) },
-                    ).download(url, partialFilePath) { transferred, total ->
+                        // MUST be the ABSOLUTE path. partialFilePath is just a
+                        // file NAME ("<apk>.partial"); the downloader does
+                        // File(path) on it, which resolves a relative name
+                        // against the process CWD ("/") and writes the segment
+                        // files to the read-only root fs → EROFS. Resolve it to
+                        // the real apks dir (filesDir/apks) first, exactly like
+                        // react-native-bundle-update passes an absolute path.
+                    ).download(url, partialFile.absolutePath) { transferred, total ->
                         if (total > 0) {
                             val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
                             // Only the thread that advances the percent emits; a
