@@ -80,6 +80,11 @@ static constexpr size_t kRuntimeQueueWarnInterval = 128;
 struct RuntimeWorkQueue {
     std::deque<std::function<void(jsi::Runtime &)>> items;
     bool drainScheduled = false;
+    // workId of the drain currently posted to gPendingWork (valid only while
+    // drainScheduled == true). Tracked so a teardown path (nativeInvalidate
+    // SharedRpc) can erase the orphaned gPendingWork entry if its posted drain
+    // is dropped during reload. -1 means "none outstanding".
+    int64_t scheduledDrainWorkId = -1;
 };
 
 static RuntimeWorkQueue gMainRuntimeWorkQueue;
@@ -100,6 +105,7 @@ static void leakAndClearRuntimeQueue(RuntimeWorkQueue &queue) {
     }
     queue.items.clear();
     queue.drainScheduled = false;
+    queue.scheduledDrainWorkId = -1;
 }
 
 static bool callScheduleOnJSThread(const JavaObjectRef &ref, bool isMain, int64_t workId) {
@@ -186,6 +192,9 @@ static void drainRuntimeWorkQueue(jsi::Runtime &rt, JavaObjectRef ref, bool isMa
         remaining = queue.items.size();
         if (remaining == 0) {
             queue.drainScheduled = false;
+            // This drain's gPendingWork entry was already erased by
+            // nativeExecuteWork before it ran; its workId is now stale.
+            queue.scheduledDrainWorkId = -1;
         } else {
             shouldReschedule = true;
         }
@@ -206,8 +215,24 @@ static void scheduleRuntimeDrain(const JavaObjectRef &ref, bool isMain) {
     size_t queued = 0;
     {
         std::lock_guard<std::mutex> lock(gWorkMutex);
+        auto &queue = getRuntimeWorkQueue(isMain);
+        // Stale-id guard: drainRuntimeWorkQueue observes remaining>0, drops the
+        // lock, then calls us — but a concurrent nativeInvalidateSharedRpc can
+        // clear the queue + latch in between. If the queue is now empty there is
+        // nothing to drain: do NOT post a gPendingWork entry / scheduleOnJSThread
+        // for an already-drained/invalidated queue. Just disarm the latch and
+        // return. The normal enqueue→schedule path always has items.size()>=1, so
+        // this never short-circuits it.
+        if (queue.items.empty()) {
+            queue.drainScheduled = false;
+            queue.scheduledDrainWorkId = -1;
+            return;
+        }
         workId = gNextWorkId++;
-        queued = getRuntimeWorkQueue(isMain).items.size();
+        queued = queue.items.size();
+        // Track the outstanding drain's workId so a teardown path can erase its
+        // orphaned gPendingWork entry if the post is dropped during reload.
+        queue.scheduledDrainWorkId = workId;
         gPendingWork[workId] = [ref, isMain](jsi::Runtime &rt) {
             drainRuntimeWorkQueue(rt, ref, isMain);
         };
@@ -892,10 +917,19 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeEvaluateSegmentInBackgro
     executor([globalCallback, settled, bgEvalId, source = std::move(source),
               url = std::move(url)](jsi::Runtime &rt) {
         // We are running now → claim ownership and remove our registry entry so
-        // a concurrent nativeDestroy drain can't also touch this eval.
+        // a concurrent nativeDestroy drain can't also touch this eval. If the
+        // entry is ALREADY gone, a drop/destroy drain (drainPendingBgEvals)
+        // already settled this eval as retryable NO_RUNTIME and JS will retry —
+        // so we must NOT evaluate the segment again. This is reachable because a
+        // ptr==0 reload keeps this lambda in the coalesced queue (it only
+        // disarms the drain latch, preserving queue.items) and the recovered
+        // runtime's install-recover replays it; without this guard the segment
+        // would be evaluated twice on the recovered runtime.
         {
             std::lock_guard<std::mutex> lock(gBgEvalMutex);
-            gPendingBgEvals.erase(bgEvalId);
+            if (gPendingBgEvals.erase(bgEvalId) == 0) {
+                return;
+            }
         }
         std::string error;
         try {
@@ -936,13 +970,17 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeEvaluateSegmentInBackgro
 //   1. gPendingWork[workId] — the stored work lambda (holding the segment
 //      SOURCE BUFFER). nativeExecuteWork is the only other eraser and it will
 //      never run for this id, so without this it leaks until nativeDestroy.
-//   2. The coalesced RuntimeWorkQueue for this runtime — under the coalesced
-//      model a successful post (scheduled==true) that never reaches the JS
-//      thread leaves the queue stranded with drainScheduled==true, so a
-//      recovered runtime would never re-arm a drain. Leak+clear the queued
-//      functors (their ~jsi::Function must not run on a dead runtime) and reset
-//      the drain latch so the next enqueue re-arms a fresh drain. Applies to
-//      BOTH runtimes (isMain selects which queue).
+//   2. The coalesced RuntimeWorkQueue's drain latch for this runtime — under
+//      the coalesced model a successful post (scheduled==true) that never
+//      reaches the JS thread leaves the queue stranded with drainScheduled==
+//      true, so a recovered runtime would never re-arm a drain. This is a
+//      TRANSIENT condition: ptr==0 happens during reload, and the SAME runtime
+//      recovers with a fresh ptr. We therefore must NOT leak+clear queue.items
+//      — the main runtime has no JS-side retry net, so abandoning its queued
+//      SharedRPC deliveries (notifyOtherRuntime) loses them forever. Instead we
+//      only reset the drain latch (drainScheduled / scheduledDrainWorkId) so the
+//      next enqueue re-arms a fresh drain, leaving queue.items intact for the
+//      recovered runtime to drain. Applies to BOTH runtimes (isMain selects).
 //   3. (bg only) The in-flight bg eval(s) — settle as retryable NO_RUNTIME so
 //      the JNI global ref is released and the JS promise resolves now instead of
 //      hanging on the 30s watchdog. drain-all is sound: an unreachable bg JS
@@ -955,7 +993,12 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeDropScheduledWork(
     {
         std::lock_guard<std::mutex> lock(gWorkMutex);
         gPendingWork.erase(static_cast<int64_t>(workId));
-        leakAndClearRuntimeQueue(getRuntimeWorkQueue(static_cast<bool>(isMain)));
+        // TRANSIENT ptr==0 (reload in flight): do NOT abandon queue.items — the
+        // recovered runtime still needs them (main has no JS retry net). Only
+        // disarm the drain latch so the next enqueue re-arms a fresh drain.
+        auto &queue = getRuntimeWorkQueue(static_cast<bool>(isMain));
+        queue.drainScheduled = false;
+        queue.scheduledDrainWorkId = -1;
     }
     if (!isMain) {
         drainPendingBgEvals("Background runtime unreachable when scheduling segment eval");
@@ -998,6 +1041,12 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
     // back to the bg JS queue. We must do this BEFORE moving `executor` into
     // SharedRPC::install (which will std::move it out).
     if (!capturedIsMain) {
+        // gBgTimerExecutor is read/cleared under gTimerMutex (timer worker
+        // snapshot ~L857, nativeDestroy ~L1133); this write must take the same
+        // lock or it races those readers (UB on std::function). nativeInstall
+        // SharedBridge holds no other lock here, so a narrow guard scoped to
+        // just the assignment is correct and cannot double-lock.
+        std::lock_guard<std::mutex> lock(gTimerMutex);
         gBgTimerExecutor = executor;
     }
     SharedRPC::install(*rt, std::move(executor), runtimeId);
@@ -1009,6 +1058,37 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
         // setTimeout callback in the background thread would never fire.
         installTimersOnRuntime(*rt);
         invokeOptionalGlobalFunction(*rt, "__setupBackgroundRPCHandler");
+    }
+
+    // Recover items stranded by a ptr==0 drop during reload. nativeDropScheduled
+    // Work deliberately KEEPS queue.items (main has no JS retry net) and only
+    // disarms the drain latch, relying on a LATER enqueue to re-arm a drain. But
+    // if no further enqueue arrives after this runtime recovers, those carried-
+    // over items (e.g. main-runtime notifyOtherRuntime deliveries) would sit
+    // until nativeDestroy and be lost. Make recovery structural.
+    //
+    // Force a fresh drain on the freshly installed runtime whenever the queue is
+    // non-empty, REGARDLESS of the drainScheduled latch: a drain posted before
+    // reload may have been queued on the now-dead pre-reload JS thread and
+    // silently discarded (its runnable never runs, so its nativeDropScheduledWork
+    // never fires and the latch is stuck drainScheduled==true). Gating recovery on
+    // !drainScheduled would then skip it and strand the items forever. Re-arming
+    // here on this runtime's executor (`ref`) guarantees they drain; if a stale
+    // drain is in fact still live, it self-cancels via the empty-queue guard in
+    // scheduleRuntimeDrain (at worst one benign extra drain hop). Mirror
+    // enqueueRuntimeWork's lock discipline: set the latch under gWorkMutex, call
+    // scheduleRuntimeDrain OUTSIDE the lock. Applies to BOTH runtimes.
+    bool shouldRecoverDrain = false;
+    {
+        std::lock_guard<std::mutex> lock(gWorkMutex);
+        auto &queue = getRuntimeWorkQueue(capturedIsMain);
+        if (!queue.items.empty()) {
+            queue.drainScheduled = true;
+            shouldRecoverDrain = true;
+        }
+    }
+    if (shouldRecoverDrain) {
+        scheduleRuntimeDrain(ref, capturedIsMain);
     }
 }
 
@@ -1094,6 +1174,26 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInvalidateSharedRpc(
     env->ReleaseStringUTFChars(runtimeId, idChars);
 
     bool found = SharedRPC::invalidate(id);
+
+    // The runtime named by `id` is being torn down (restart → host.reload).
+    // Its coalesced work queue must be fully quiesced: if a drain was posted
+    // (drainScheduled==true) but is dropped during reload, the latch would
+    // survive the reinstall and every future enqueue would see a stale
+    // drainScheduled==true → shouldSchedule stays false and new work enqueues
+    // but never schedules a drain again (work stranded forever). Leak+clear the
+    // queue (it's being destroyed anyway — the queued ~jsi::Function must not
+    // run on the dying runtime), reset the drain latch, and erase the orphaned
+    // gPendingWork entry for the outstanding drain. runtimeId "main" → isMain.
+    {
+        std::lock_guard<std::mutex> lock(gWorkMutex);
+        bool isMain = (id == "main");
+        auto &queue = getRuntimeWorkQueue(isMain);
+        if (queue.scheduledDrainWorkId >= 0) {
+            gPendingWork.erase(queue.scheduledDrainWorkId);
+        }
+        leakAndClearRuntimeQueue(queue);
+    }
+
     LOGI("nativeInvalidateSharedRpc: id=%s found=%d", id.c_str(), found ? 1 : 0);
     return found ? JNI_TRUE : JNI_FALSE;
 }
@@ -1153,6 +1253,7 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeDestroy(
             }
             queue->items.clear();
             queue->drainScheduled = false;
+            queue->scheduledDrainWorkId = -1;
         }
     }
 
