@@ -29,11 +29,17 @@ import java.util.concurrent.atomic.AtomicReference
  * up to the real space limit instead of reserving everything at once.
  *
  * Resume across kill/suspend is simply "which `<partial>.segN` already exist
- * and how big": a full-sized segment is kept; a short one resumes from its
- * current length via `Range` + `If-Range`; with no strong validator (ETag)
- * leftover segments can't be pinned to the server object and are wiped. The
- * caller's whole-file SHA256 + GPG verify after promotion remains the final
- * correctness backstop.
+ * and how big" plus "how far the `.partial` concat already committed": a
+ * full-sized segment is kept; a short one resumes from its current length via
+ * `Range`; a segment whose extent is already inside the committed `.partial`
+ * prefix is done even if its `.segN` was deleted mid-concat. Object identity is
+ * intentionally NOT pinned (no ETag/If-Range) — resume is unconditional, and a
+ * mid-flight object swap that slips through is caught by the caller's whole-file
+ * SHA256 + GPG verify after promotion, which then drives a clean full
+ * re-download (concat deletes every `.segN` on success). That verify is the sole
+ * correctness backstop. The only validator-free safety nets kept inline are: a
+ * 200 to a Range request → FallbackException, an over-long/oversized segment →
+ * discard, and a per-segment Content-Range bounds check against mis-aligned 206s.
  *
  * This class is intentionally free of Android/OneKey dependencies (logging is
  * injected) so it can be unit/type-checked standalone.
@@ -85,7 +91,7 @@ class ConcurrentRangeDownloader(
         val length: Long get() = end - start + 1
     }
 
-    private class Probe(val totalSize: Long, val etag: String?, val supportsRange: Boolean)
+    private class Probe(val totalSize: Long, val supportsRange: Boolean)
 
     /**
      * Fills [partialFilePath] completely with the resource at [url] using
@@ -116,21 +122,20 @@ class ConcurrentRangeDownloader(
             return Outcome.FALLBACK
         }
         val total = probe.totalSize
-        val etag = probe.etag
-        // A strong validator (ETag) is what lets If-Range pin a resumed segment
-        // to the exact object the segments were started against. Without it,
-        // leftover segments are untrustworthy — start fresh.
-        val hasValidator = !etag.isNullOrEmpty()
 
         partialFile.parentFile?.let { if (!it.exists()) it.mkdirs() }
 
         val parts = planRanges(total)
 
-        if (!hasValidator) {
-            wipeArtifacts(partialFile, segFile)
-        }
+        // Resume is unconditional: object identity is NOT pinned (no ETag) — any
+        // mid-flight object swap that survives this far is caught by the caller's
+        // whole-file SHA256/GPG verify, which then drives a clean full re-download
+        // (concat deletes every `.segN` on success, so the retry starts fresh).
+        // We therefore never wipe `.segN` for "no/changed validator" reasons.
+
         // Discard any leftover segment that can't belong to this plan (wrong
-        // length = different object/range, or an index beyond the plan).
+        // length = different object/range, or an index beyond the plan). This is
+        // a pure size check, independent of any validator.
         for (i in 0 until segmentCount) {
             val f = segFile(i)
             if (!f.exists()) continue
@@ -141,7 +146,22 @@ class ConcurrentRangeDownloader(
             }
         }
 
-        val transferred = AtomicLong(parts.sumOf { segFile(it.index).length() })
+        // `.partial`'s current length is the committed-concat cursor: every byte
+        // below it has already been appended into `.partial` and its source
+        // `.segN` may have been deleted by an interrupted concat. Such prefix
+        // segments are DONE — they must not be re-fetched (that would waste the
+        // network and break the "~1x + one segment" footprint target).
+        val committedBytes = if (partialFile.exists()) partialFile.length() else 0L
+        // A segment is "committed" when `.partial` already covers its full extent.
+        val isCommitted: (Part) -> Boolean = { committedBytes >= it.start + it.length }
+
+        // Progress baseline: committed bytes already in `.partial`, plus the
+        // current length of every not-yet-committed segment file (committed
+        // segments are already accounted for by `committedBytes`, so adding their
+        // `.segN` length — if it still exists — would double-count).
+        val transferred = AtomicLong(
+            committedBytes + parts.filterNot(isCommitted).sumOf { segFile(it.index).length() }
+        )
         onProgress(transferred.get(), total)
 
         // Share the abort flag with the cancel handle so an external cancel() is
@@ -150,8 +170,10 @@ class ConcurrentRangeDownloader(
         val fallback = AtomicBoolean(false)
         val firstError = AtomicReference<Exception?>(null)
 
-        // Only segments not yet fully on disk need fetching.
-        val pending = parts.filter { segFile(it.index).length() < it.length }
+        // Only segments not yet fully on disk AND not already committed into
+        // `.partial` need fetching. A committed prefix segment whose `.segN` was
+        // deleted by an interrupted concat must NOT be treated as missing.
+        val pending = parts.filterNot(isCommitted).filter { segFile(it.index).length() < it.length }
         if (pending.isNotEmpty()) {
             val pool = Executors.newFixedThreadPool(minOf(segmentCount, pending.size))
             cancelHandle?.attach(pool)
@@ -159,7 +181,7 @@ class ConcurrentRangeDownloader(
                 val futures = pending.map { part ->
                     pool.submit {
                         try {
-                            downloadSegment(url, etag, segFile(part.index), part, aborted) { delta ->
+                            downloadSegment(url, segFile(part.index), part, aborted) { delta ->
                                 onProgress(transferred.addAndGet(delta), total)
                             }
                         } catch (e: FallbackException) {
@@ -185,14 +207,16 @@ class ConcurrentRangeDownloader(
         }
         val err = firstError.get()
         if (err != null) {
-            // Transient. Keep the segment files so the next attempt resumes when
-            // we have a validator; otherwise they can't be trusted — wipe them.
-            if (!hasValidator) wipeArtifacts(partialFile, segFile)
+            // Transient. Always keep the segment files so the next attempt
+            // resumes — resume is unconditional now (no validator gate).
             throw err
         }
-        val incomplete = parts.firstOrNull { segFile(it.index).length() != it.length }
+        // A committed prefix segment is complete even though its `.segN` is gone;
+        // only not-yet-committed segments must have a full-length `.segN`.
+        val incomplete = parts.filterNot(isCommitted)
+            .firstOrNull { segFile(it.index).length() != it.length }
         if (incomplete != null) {
-            if (!hasValidator) wipeArtifacts(partialFile, segFile)
+            // Keep the segment files for the next attempt to resume.
             throw java.io.IOException("Concurrent download incomplete (segment ${incomplete.index})")
         }
 
@@ -217,23 +241,25 @@ class ConcurrentRangeDownloader(
     }
 
     // Single round-trip probe: a one-byte Range request that confirms Range
-    // support and captures total size + ETag. OkHttp follows redirects (the
-    // caller's client enforces HTTPS on each hop).
+    // support and captures total size. Object identity is intentionally NOT
+    // validated here (no ETag/If-Range) — the caller's whole-file SHA256 + GPG
+    // verify after promotion is the sole correctness backstop, so resume is
+    // always allowed. OkHttp follows redirects (the caller's client enforces
+    // HTTPS on each hop).
     private fun probe(url: String): Probe? {
         return try {
             val req = Request.Builder().url(url).addHeader("Range", "bytes=0-0").build()
             httpClient.newCall(req).execute().use { response ->
-                val etag = response.header("ETag")
                 when (response.code) {
                     206 -> {
                         val total = response.header("Content-Range")
                             ?.let { Regex("""bytes \d+-\d+/(\d+)""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
-                        if (total != null) Probe(total, etag, true) else Probe(0, etag, false)
+                        if (total != null) Probe(total, true) else Probe(0, false)
                     }
                     200 -> {
                         // Server ignored Range — single-stream only.
                         val len = response.body?.contentLength() ?: -1L
-                        Probe(if (len > 0) len else 0, etag, false)
+                        Probe(if (len > 0) len else 0, false)
                     }
                     else -> null
                 }
@@ -305,7 +331,6 @@ class ConcurrentRangeDownloader(
     // failures in place.
     private fun downloadSegment(
         url: String,
-        etag: String?,
         segFile: File,
         part: Part,
         aborted: AtomicBoolean,
@@ -318,7 +343,7 @@ class ConcurrentRangeDownloader(
             if (have >= part.length) return
             val rangeStart = part.start + have
             try {
-                fetchSegment(url, etag, segFile, part, rangeStart, aborted, onBytes)
+                fetchSegment(url, segFile, part, rangeStart, aborted, onBytes)
                 return
             } catch (e: FallbackException) {
                 throw e
@@ -332,25 +357,40 @@ class ConcurrentRangeDownloader(
 
     private fun fetchSegment(
         url: String,
-        etag: String?,
         segFile: File,
         part: Part,
         rangeStart: Long,
         aborted: AtomicBoolean,
         onBytes: (delta: Long) -> Unit,
     ) {
-        val builder = Request.Builder().url(url)
+        val request = Request.Builder().url(url)
             .addHeader("Range", "bytes=$rangeStart-${part.end}")
-        // If-Range: a mismatched ETag makes the CDN reply 200 (full body)
-        // instead of 206, which we treat as a fallback signal — appending a
-        // from-zero body onto a partially-filled segment would corrupt it.
-        if (etag != null) builder.addHeader("If-Range", etag)
-        httpClient.newCall(builder.build()).execute().use { response ->
+            .build()
+        httpClient.newCall(request).execute().use { response ->
+            // A 200 (full body) to a Range request is the one validator-free
+            // safety net we keep: appending a from-zero body onto a partially
+            // filled segment would corrupt it, so bail to the single-stream path.
             if (response.code == 200) {
                 throw FallbackException("server returned 200 to a Range request")
             }
             if (response.code != 206) {
                 throw java.io.IOException("HTTP ${response.code}")
+            }
+            // Verify the 206 covers exactly the slice we asked for. This guards
+            // against a proxy/CDN returning a mis-aligned 206 (wrong window),
+            // which would otherwise silently corrupt the assembled file. A
+            // missing/mismatched Content-Range is treated as transient (retry).
+            // It canNOT detect an object swapped behind an identical window —
+            // that is the caller's whole-file SHA256/GPG verify's job.
+            val contentRange = response.header("Content-Range")
+                ?: throw java.io.IOException("206 without Content-Range")
+            val bounds = parseContentRangeBounds(contentRange)
+                ?: throw java.io.IOException("unparseable Content-Range: $contentRange")
+            if (bounds.first != rangeStart || bounds.second != part.end) {
+                throw java.io.IOException(
+                    "Content-Range mismatch: got ${bounds.first}-${bounds.second}, " +
+                        "expected $rangeStart-${part.end}"
+                )
             }
             val body = response.body ?: throw java.io.IOException("Empty segment body")
             // Append the fetched tail to the segment file. Append mode keeps
@@ -368,5 +408,23 @@ class ConcurrentRangeDownloader(
                 }
             }
         }
+        // A 206 can still over-deliver (server ignored our end bound). A segment
+        // longer than its planned length is unusable — drop it so the next
+        // attempt re-fetches cleanly rather than concatenating misaligned bytes.
+        if (segFile.length() > part.length) {
+            segFile.delete()
+            throw java.io.IOException(
+                "Segment ${part.index} overran (${segFile.length()}/${part.length})"
+            )
+        }
+    }
+
+    // Parse "bytes <start>-<end>/<total>" → (start, end). Returns null when the
+    // header is absent-of-bounds (e.g. "bytes */1234") or otherwise unparseable.
+    private fun parseContentRangeBounds(value: String): Pair<Long, Long>? {
+        val m = Regex("""bytes\s+(\d+)-(\d+)/""").find(value) ?: return null
+        val start = m.groupValues[1].toLongOrNull() ?: return null
+        val end = m.groupValues[2].toLongOrNull() ?: return null
+        return start to end
     }
 }

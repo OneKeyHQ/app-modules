@@ -10,22 +10,36 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 
-// P1: faithful migration of the Android concurrent multi-range downloader.
+// P1: Nitro adapter for the Android concurrent multi-range downloader.
 //
-// The core algorithm (.partial preallocation + .progress manifest resume +
-// 8-segment thread pool + If-Range/200 fallback) lives unchanged in the
-// in-module ConcurrentRangeDownloader helper, copied byte-for-byte from
-// react-native-bundle-update. This class is the Nitro adapter: it builds the
-// HTTPS-only OkHttpClient, drives the helper, finalizes on COMPLETED (promote
-// .partial -> dest + optional SHA256 self-check), and bridges progress to the
-// shared listener registry as RangeDownloadEvent (tagged with channel/taskId).
+// The core algorithm lives in the in-module ConcurrentRangeDownloader helper:
+// each of the N segments streams into its own sibling file
+// `<dest>.partial.seg0` .. `<dest>.partial.segN-1` (no whole-file preallocation,
+// no `.progress` manifest), and on success the segments are concatenated in
+// order into `<dest>.partial`. Resume re-uses whatever bytes each `.segN`
+// already holds. An 8-segment thread pool plus a 200-to-a-Range fallback round
+// it out (object identity is not pinned — no ETag/If-Range; the optional
+// whole-file SHA256 self-check below is the correctness backstop). This class
+// builds the HTTPS-only OkHttpClient, drives the helper,
+// finalizes on COMPLETED (promote .partial -> dest + optional SHA256
+// self-check), and bridges progress to the shared listener registry as
+// RangeDownloadEvent (tagged with channel/taskId).
 //
 // Android has no background-session concept: `channel` is only an event label
-// + artifact-directory tag and does not change the download mechanism. The
-// on-disk format (.partial + .progress) is kept exactly as shipped so existing
-// interrupted downloads resume cleanly.
+// + artifact-directory tag and does not change the download mechanism.
 @DoNotStrip
 class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
+
+  companion object {
+    // Segment count used by cancel/discardArtifacts when sweeping the sibling
+    // `<dest>.partial.segN` files. download() lets callers override segmentCount,
+    // but cancel/discard don't receive params, so we sweep the shipped default
+    // (matches ConcurrentRangeDownloader's default and download()'s `?: 8`),
+    // which covers the overwhelming majority of runs. A larger custom count
+    // would leave a few high-index `.segN` behind, but the next resume only
+    // trusts segments it re-reads, so the worst case is a little stale disk.
+    private const val DEFAULT_SEGMENT_COUNT = 8
+  }
 
   private class Listener(val id: Double, val callback: (RangeDownloadEvent) -> Unit)
 
@@ -158,8 +172,10 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
       // files, otherwise a still-running segment could re-create the .partial we
       // just deleted.
       cancelActive(channel, taskId)
-      // Manifest first so it never outlives the partial it describes.
-      File("$destFilePath.partial.progress").delete()
+      // Sweep the per-segment `.segN` files plus the concatenated `.partial` so a
+      // future resume can't re-trust stale bytes (no `.progress` manifest exists
+      // anymore in the segmented model).
+      for (i in 0 until DEFAULT_SEGMENT_COUNT) File("$destFilePath.partial.seg$i").delete()
       File("$destFilePath.partial").delete()
       OneKeyLog.info("RangeDownloader", "discardArtifacts: channel=$channel taskId=$taskId")
       Unit
@@ -174,7 +190,9 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
     return Promise.async {
       // Stop workers first, then delete artifacts so nothing resurrects them.
       cancelActive(channel, taskId)
-      File("$destFilePath.partial.progress").delete()
+      // Same segmented-artifact sweep as discardArtifacts: per-segment `.segN`
+      // files plus the concatenated `.partial`.
+      for (i in 0 until DEFAULT_SEGMENT_COUNT) File("$destFilePath.partial.seg$i").delete()
       File("$destFilePath.partial").delete()
       OneKeyLog.info("RangeDownloader", "cancel: channel=$channel taskId=$taskId")
       Unit

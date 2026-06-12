@@ -20,6 +20,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -1252,8 +1253,11 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 } else {
                     OneKeyLog.warn("BundleUpdate", "downloadBundle: existing file SHA256 mismatch, re-downloading")
                     downloadedFile.delete()
-                    // Stale completed file invalidates any partial too.
+                    // Stale completed file invalidates any partial too — including
+                    // the concurrent segment files, otherwise the next resume would
+                    // pick up bytes belonging to the rejected build.
                     if (partialFile.exists()) partialFile.delete()
+                    for (i in 0 until 8) File("$partialFilePath.seg$i").delete()
                 }
             }
 
@@ -1265,16 +1269,22 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             // downloader keeps its partial + manifest for resume).
             sendEvent("update/start")
             run {
-                var concurrentProgress = -1
+                // onProgress is invoked concurrently by all 8 worker threads, so
+                // a plain `var` read-compare-write races (duplicate/out-of-order
+                // progress events). Use AtomicInteger + CAS: only the thread that
+                // wins the compareAndSet to a strictly higher value emits, which
+                // also keeps progress monotonic. (Worst case a race only affects
+                // progress eventing, never file bytes.)
+                val concurrentProgress = AtomicInteger(-1)
                 val concurrentOutcome = ConcurrentRangeDownloader(
                     httpClient = httpClient,
                     log = { msg -> OneKeyLog.info("BundleUpdate", msg) },
                 ).download(downloadUrl, partialFilePath) { transferred, total ->
                     if (total > 0) {
                         val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
-                        if (p != concurrentProgress) {
+                        val prev = concurrentProgress.get()
+                        if (p > prev && concurrentProgress.compareAndSet(prev, p)) {
                             sendEvent("update/downloading", progress = p)
-                            concurrentProgress = p
                         }
                     }
                 }
@@ -1329,6 +1339,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     expectedSize > 0 && partialSize > expectedSize -> {
                         OneKeyLog.warn("BundleUpdate", "downloadBundle: stale partial (>expected), discarding: $partialSize/$expectedSize")
                         partialFile.delete()
+                        for (i in 0 until 8) File("$partialFilePath.seg$i").delete()
                     }
                     partialSize > 0 -> {
                         partialBytes = partialSize
@@ -1373,6 +1384,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: HTTP 416 (range not satisfiable), discarding partial and failing this attempt")
                 if (partialFile.exists()) partialFile.delete()
+                for (i in 0 until 8) File("$partialFilePath.seg$i").delete()
                 // Don't pre-emit update/error here; the outer catch is the
                 // single source of error events. sanitizeErrorMessageForEvent
                 // recognizes "HTTP " prefix and forwards this string verbatim.
@@ -1380,7 +1392,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
 
             val expectsResume = partialBytes > 0
-            val isPartialResponse = response.code == 206
+            var isPartialResponse = response.code == 206
 
             if (!response.isSuccessful || (response.code != 200 && response.code != 206)) {
                 OneKeyLog.error("BundleUpdate", "downloadBundle: HTTP error, statusCode=${response.code}")
@@ -1395,6 +1407,28 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: requested Range but server returned 200, restarting from scratch")
                 if (partialFile.exists()) partialFile.delete()
                 partialBytes = 0L
+            }
+
+            // On a 206 the server's `Content-Range` start MUST equal the offset
+            // we asked to resume from (`partialBytes`). A misconfigured server or
+            // proxy can return a 206 whose range starts somewhere else; appending
+            // that slice onto our `.partial` would splice mismatched bytes and the
+            // final SHA256 would fail only after a full download. Guard here: if
+            // the start is missing or != partialBytes, drop the partial and treat
+            // this response as a fresh full rewrite (200 semantics).
+            if (isPartialResponse && partialBytes > 0) {
+                val contentRangeStart = response.header("Content-Range")
+                    ?.let { Regex("""bytes\s+(\d+)-\d+/\d+""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
+                if (contentRangeStart == null || contentRangeStart != partialBytes) {
+                    OneKeyLog.warn(
+                        "BundleUpdate",
+                        "downloadBundle: 206 Content-Range start=$contentRangeStart != partialBytes=$partialBytes, discarding partial and restarting from scratch"
+                    )
+                    if (partialFile.exists()) partialFile.delete()
+                    for (i in 0 until 8) File("$partialFilePath.seg$i").delete()
+                    partialBytes = 0L
+                    isPartialResponse = false
+                }
             }
 
             // Close the response before throwing on a null body — OkHttp
