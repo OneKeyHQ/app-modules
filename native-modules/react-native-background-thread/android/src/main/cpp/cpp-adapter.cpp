@@ -917,10 +917,19 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeEvaluateSegmentInBackgro
     executor([globalCallback, settled, bgEvalId, source = std::move(source),
               url = std::move(url)](jsi::Runtime &rt) {
         // We are running now → claim ownership and remove our registry entry so
-        // a concurrent nativeDestroy drain can't also touch this eval.
+        // a concurrent nativeDestroy drain can't also touch this eval. If the
+        // entry is ALREADY gone, a drop/destroy drain (drainPendingBgEvals)
+        // already settled this eval as retryable NO_RUNTIME and JS will retry —
+        // so we must NOT evaluate the segment again. This is reachable because a
+        // ptr==0 reload keeps this lambda in the coalesced queue (it only
+        // disarms the drain latch, preserving queue.items) and the recovered
+        // runtime's install-recover replays it; without this guard the segment
+        // would be evaluated twice on the recovered runtime.
         {
             std::lock_guard<std::mutex> lock(gBgEvalMutex);
-            gPendingBgEvals.erase(bgEvalId);
+            if (gPendingBgEvals.erase(bgEvalId) == 0) {
+                return;
+            }
         }
         std::string error;
         try {
@@ -1056,16 +1065,24 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
     // disarms the drain latch, relying on a LATER enqueue to re-arm a drain. But
     // if no further enqueue arrives after this runtime recovers, those carried-
     // over items (e.g. main-runtime notifyOtherRuntime deliveries) would sit
-    // until nativeDestroy and be lost. Make recovery structural: if the freshly
-    // installed runtime's queue has leftover items and no drain is armed, re-arm
-    // one now on this runtime's executor (`ref`). Mirror enqueueRuntimeWork's
-    // lock discipline: set the latch under gWorkMutex, call scheduleRuntimeDrain
-    // OUTSIDE the lock. Applies to BOTH runtimes (capturedIsMain selects).
+    // until nativeDestroy and be lost. Make recovery structural.
+    //
+    // Force a fresh drain on the freshly installed runtime whenever the queue is
+    // non-empty, REGARDLESS of the drainScheduled latch: a drain posted before
+    // reload may have been queued on the now-dead pre-reload JS thread and
+    // silently discarded (its runnable never runs, so its nativeDropScheduledWork
+    // never fires and the latch is stuck drainScheduled==true). Gating recovery on
+    // !drainScheduled would then skip it and strand the items forever. Re-arming
+    // here on this runtime's executor (`ref`) guarantees they drain; if a stale
+    // drain is in fact still live, it self-cancels via the empty-queue guard in
+    // scheduleRuntimeDrain (at worst one benign extra drain hop). Mirror
+    // enqueueRuntimeWork's lock discipline: set the latch under gWorkMutex, call
+    // scheduleRuntimeDrain OUTSIDE the lock. Applies to BOTH runtimes.
     bool shouldRecoverDrain = false;
     {
         std::lock_guard<std::mutex> lock(gWorkMutex);
         auto &queue = getRuntimeWorkQueue(capturedIsMain);
-        if (!queue.items.empty() && !queue.drainScheduled) {
+        if (!queue.items.empty()) {
             queue.drainScheduled = true;
             shouldRecoverDrain = true;
         }
