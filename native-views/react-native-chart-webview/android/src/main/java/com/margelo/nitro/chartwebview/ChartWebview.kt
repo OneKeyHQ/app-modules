@@ -98,34 +98,37 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
 
   // --- Source props ---
 
+  // Source/bridge setters call applySource (synchronous) — NOT scheduleReconcile,
+  // which caused an infinite reconcile loop (reconcile -> setSource -> prop
+  // re-apply -> reconcile ...). applySource sets warmDriver + warm-boots the page
+  // even when this host is not the visible owner, so post-attach bridge arrival
+  // still makes this host the warm driver (page->native callbacks fall back to it).
   private var _uri: String? = null
   override var uri: String?
     get() = _uri
-    set(value) { _uri = value; applySourceIfOwner() }
+    set(value) { _uri = value; applySource() }
 
   private var _localBundle: String? = null
   override var localBundle: String?
     get() = _localBundle
-    set(value) { _localBundle = value; applySourceIfOwner() }
+    set(value) { _localBundle = value; applySource() }
 
   private var _entry: String? = null
   override var entry: String?
     get() = _entry
-    set(value) { _entry = value; applySourceIfOwner() }
+    set(value) { _entry = value; applySource() }
 
   private var _paramsJson: String? = null
   override var paramsJson: String?
     get() = _paramsJson
-    set(value) { _paramsJson = value; applySourceIfOwner() }
+    set(value) { _paramsJson = value; applySource() }
 
   // Document-start bridge JS (single source of truth in the TS layer). Stored and
   // handed to the pooled WebView when we claim it, before its first load.
   private var _bridgeScript: String? = null
   override var bridgeScript: String?
     get() = _bridgeScript
-    // Re-apply the source: if this prop lands after the source props (a load can't
-    // run before the bridge is registered, so setSource deferred), this triggers it.
-    set(value) { _bridgeScript = value; applySourceIfOwner() }
+    set(value) { _bridgeScript = value; applySource() }
 
   // --- Singleton props ---
   // `pooled` + non-empty `reuseKey` => the backing WebView is shared (keyed by
@@ -160,6 +163,22 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
         awaitContentReveal()
       }
       scheduleReconcile()
+    }
+
+  // --- Debugging ---
+  // Make the backing WebView inspectable via chrome://inspect. Driven by the
+  // app's "Enable Native Webview Debugging" dev-mode toggle, mirroring the main
+  // react-native-webview (which calls WebView.setWebContentsDebuggingEnabled).
+  // Stored and applied to the backing WebView both here (on prop change) and at
+  // host claim, since `backing` is null until the first reconcile assigns it.
+  // CAVEAT: setWebContentsDebuggingEnabled is PROCESS-GLOBAL — see
+  // PooledChartWebView.setInspectable.
+  private var _webviewDebuggingEnabled: Boolean? = null
+  override var webviewDebuggingEnabled: Boolean?
+    get() = _webviewDebuggingEnabled
+    set(value) {
+      _webviewDebuggingEnabled = value
+      backing?.setInspectable(value)
     }
 
   // --- Event callbacks ---
@@ -219,6 +238,9 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     val key = effectiveKey()
     val entry = ChartWebviewPool.acquireShared(key, context)
     backing = entry
+    // Apply this host's debug preference to the (possibly freshly created) backing
+    // WebView. Mirrors the main react-native-webview's setWebContentsDebuggingEnabled.
+    entry.setInspectable(_webviewDebuggingEnabled)
     // Refcount the pool entry once per host (reconcile runs many times). Balanced
     // by releaseShared in dispose(). If the reuseKey changed, release the old one.
     if (adoptedPoolKey != key) {
@@ -226,13 +248,24 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
       ChartWebviewPool.adopt(key)
       adoptedPoolKey = key
     }
+    // WARM-BOOT (mirror of iOS): boot the shared offline page + register as the
+    // warm DRIVER as soon as ANY referencing host has the bridge, even when not
+    // the visible owner (offscreen prewarm runs with attached=false/active=false).
+    // page->native callbacks fall back to warmDriver when there's no owner, so the
+    // bars-state / load-end signals aren't dropped during warm — otherwise the
+    // chart stays on the loading mask. Idempotent: setSource dedupes on same URL,
+    // setBridgeScript no-ops once registered.
+    val bs = _bridgeScript
+    if (!bs.isNullOrEmpty()) {
+      entry.setBridgeScript(bs)
+      entry.warmDriver = this
+      entry.setSource(_uri, _localBundle, _entry, _paramsJson)
+    }
     if (wantsOwnership()) {
       entry.owner = this
-      // Register the document-start bridge before the first load (the prop is set
-      // by now; the pool may have been created earlier by a window-attach reconcile).
-      entry.setBridgeScript(_bridgeScript ?: "")
+      // PERF: a host is now showing the chart — make sure the renderer is running.
+      entry.resume()
       entry.attachTo(container)
-      entry.setSource(_uri, _localBundle, _entry, _paramsJson)
       // Keep a fresh frame of OUR content while we own the WebView, so that when
       // we later go inactive (and the shared WebView reloads the other slot's
       // chart) our slot freezes to its own last frame, not the other content.
@@ -248,6 +281,11 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
       if (wasOwner) entry.owner = null
       stopOwnCapture()
       showPlaceholder(ownSnapshot)
+      // PERF: if nobody owns the shared WebView now, pause its renderer so it
+      // doesn't keep burning a CPU core + GPU + RAM in the background (Android
+      // doesn't auto-throttle offscreen WebViews like iOS does). Resumed on the
+      // next CLAIM. No-op until the page's first load completed.
+      entry.pauseIfIdle()
     }
   }
 
@@ -257,17 +295,28 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     if (!wantsOwnership()) return
     val pooled = backing ?: PooledChartWebView.create(context, effectiveKey())
     backing = pooled
+    pooled.setInspectable(_webviewDebuggingEnabled)
     pooled.owner = this
     pooled.setBridgeScript(_bridgeScript ?: "")
     pooled.attachTo(container)
     pooled.setSource(_uri, _localBundle, _entry, _paramsJson)
   }
 
-  private fun applySourceIfOwner() {
+  // Apply the source synchronously when a source/bridge prop changes. For a
+  // pooled host this ALSO registers it as the warmDriver and warm-boots the page
+  // even when it is not the visible owner, so page->native callbacks (bars-state /
+  // load-end) fall back to it when no host owns the pool. No scheduleReconcile —
+  // that looped. backing is null until the first reconcile assigns it (the
+  // reuseKey/pooled/active setters still scheduleReconcile), so warmDriver is set
+  // on the first prop change after the pool entry is acquired.
+  private fun applySource() {
     val pooled = backing ?: return
-    if (pooled.owner == this) {
-      // Register the bridge before any load setSource may trigger (setSource
-      // defers loading until the bridge is registered).
+    val bs = _bridgeScript
+    if (isPooled() && !bs.isNullOrEmpty()) {
+      pooled.setBridgeScript(bs)
+      pooled.warmDriver = this
+      pooled.setSource(_uri, _localBundle, _entry, _paramsJson)
+    } else if (pooled.owner == this) {
       pooled.setBridgeScript(_bridgeScript ?: "")
       pooled.setSource(_uri, _localBundle, _entry, _paramsJson)
     }
@@ -359,7 +408,7 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
   // WebView so it doesn't leak a Chromium renderer + JavascriptInterface per
   // mount/unmount. Pooled (shared) backing is intentionally left alive in the
   // warm pool — other hosts may still share it; its lifetime is the pool's.
-  fun dispose() {
+  override fun dispose() {
     stopOwnCapture()
     container.removeCallbacks(reconcileRunnable)
     container.removeCallbacks(revealFallbackRunnable)
@@ -368,10 +417,19 @@ class HybridChartWebview(val context: ThemedReactContext) : HybridChartWebviewSp
     if (pendingRevealHost == this) pendingRevealHost = null
     val entry = backing
     if (entry != null && entry.owner == this) entry.owner = null
+    if (entry != null && entry.warmDriver == this) entry.warmDriver = null
     // Balance the pool adopt() if this host ever joined a pooled key. Kept warm by
     // default (single-instance cache); the release path makes destroy() reachable.
     adoptedPoolKey?.let { ChartWebviewPool.releaseShared(it) }
     adoptedPoolKey = null
+    // Pooled host going away: release the shared WebView from THIS host's
+    // container, which is about to be dropped from the view tree. The pool keeps
+    // the WebView alive (warm) for the next host, but if we leave it parented to
+    // our dropped container the next host's attach can't clear that stale parent
+    // (removeView on a detached container isn't applied synchronously) and retries
+    // forever → blank/white chart. detachFrom is parent-checked, so if another host
+    // already re-claimed the WebView we leave it where it is.
+    if (entry != null && isPooled()) entry.detachFrom(container)
     // A private (non-pooled) instance is owned solely by this host — tear it down
     // so it doesn't leak a Chromium renderer + JavascriptInterface.
     if (entry != null && !isPooled()) entry.destroy()

@@ -21,6 +21,9 @@ Pod::Spec.new do |s|
 
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
+  # DEBUG instrumentation: route native chart lifecycle logs into the shared
+  # OneKeyLog file (app-latest.log) via `import ReactNativeNativeLogger`.
+  s.dependency 'ReactNativeNativeLogger'
 
   load 'nitrogen/generated/ios/ChartWebview+autolinking.rb'
   add_nitrogen_files(s)

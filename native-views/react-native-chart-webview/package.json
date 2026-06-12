@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-chart-webview",
-  "version": "3.0.54",
+  "version": "3.0.56",
   "description": "react-native-chart-webview",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

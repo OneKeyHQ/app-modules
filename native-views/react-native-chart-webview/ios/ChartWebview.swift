@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import WebKit
+import ReactNativeNativeLogger
 
 // MARK: - Constants (shared)
 
@@ -11,6 +12,25 @@ private enum ChartWebviewConst {
   static let virtualHost = "chart"
   /// Name of the page -> native message handler.
   static let messageHandlerName = "onekeyChart"
+}
+
+// MARK: - Diagnostic logging (DEBUG instrumentation)
+//
+// Routes the chart-webview native lifecycle into the shared OneKeyLog file
+// (app-latest.log) so the offline / prewarm / pool-ownership chain is visible
+// alongside the JS `market => chart => *` events. Tag is "ChartWV". Raw NSLog
+// is NOT enough — it never reaches app-latest.log, which is why the native side
+// was previously invisible during log analysis. Truncates payloads to keep the
+// file readable and avoid leaking message bodies.
+enum ChartWVLog {
+  static func i(_ msg: String) { OneKeyLog.info("ChartWV", msg) }
+  static func w(_ msg: String) { OneKeyLog.warn("ChartWV", msg) }
+  static func e(_ msg: String) { OneKeyLog.error("ChartWV", msg) }
+  /// Truncate a (possibly large / sensitive) payload for logging.
+  static func clip(_ s: String?, _ n: Int = 120) -> String {
+    guard let s = s else { return "nil" }
+    return s.count <= n ? s : String(s.prefix(n)) + "…(\(s.count))"
+  }
 }
 
 // MARK: - ChartContainerView (window-attach detection)
@@ -69,9 +89,12 @@ class HybridChartWebview: HybridChartWebviewSpec {
 
   override init() {
     super.init()
+    ChartWVLog.i("host.init id=\(instanceId)")
     container.onWindowChange = { [weak self] attached in
-      self?.attached = attached
-      self?.scheduleReconcile()
+      guard let self = self else { return }
+      ChartWVLog.i("host.windowChange id=\(self.instanceId) attached=\(attached) reuseKey=\(self.reuseKey ?? "nil") pooled=\(String(describing: self.pooled)) active=\(String(describing: self.active))")
+      self.attached = attached
+      self.scheduleReconcile()
     }
   }
 
@@ -97,15 +120,19 @@ class HybridChartWebview: HybridChartWebviewSpec {
 
   // MARK: - Props (source)
 
-  var uri: String? { didSet { applySourceIfOwner() } }
-  var localBundle: String? { didSet { applySourceIfOwner() } }
-  var entry: String? { didSet { applySourceIfOwner() } }
-  var paramsJson: String? { didSet { applySourceIfOwner() } }
+  // Source/bridge setters call applySource (synchronous) — NOT scheduleReconcile,
+  // which loops (reconcile -> setSource -> prop re-apply -> reconcile ...).
+  // applySource sets warmDriver + warm-boots the page even when this host is not
+  // the visible owner, so a bridge prop arriving after the window-attach reconcile
+  // still makes this host the warm driver (page->native callbacks fall back to it).
+  var uri: String? { didSet { applySource() } }
+  var localBundle: String? { didSet { applySource() } }
+  var entry: String? { didSet { applySource() } }
+  var paramsJson: String? { didSet { applySource() } }
 
   // Document-start bridge JS (single source of truth in the TS layer). Handed to
-  // the pooled WebView when we claim it, before its first load. Re-applying the
-  // source on change triggers a deferred load if this prop lands after the source.
-  var bridgeScript: String? { didSet { applySourceIfOwner() } }
+  // the pooled WebView when we claim it, before its first load.
+  var bridgeScript: String? { didSet { applySource() } }
 
   // MARK: - Props (singleton)
 
@@ -132,6 +159,20 @@ class HybridChartWebview: HybridChartWebviewSpec {
     }
   }
 
+  // MARK: - Props (debugging)
+
+  // Make the backing WKWebView inspectable (Safari Web Inspector). Driven by the
+  // app's "Enable Native Webview Debugging" dev-mode toggle, mirroring the main
+  // react-native-webview (which sets WKWebView.isInspectable). nil => default to
+  // the DEBUG build behavior (see PooledChartWebView.applyInspectable). Applied to
+  // the backing WebView both here (on prop change) and at WebView creation, since
+  // `backing` is nil until the first reconcile assigns it.
+  var webviewDebuggingEnabled: Bool? {
+    didSet {
+      backing?.setInspectable(webviewDebuggingEnabled)
+    }
+  }
+
   // MARK: - Props (events)
 
   var onMessage: ((_ message: String) -> Void)?
@@ -140,6 +181,10 @@ class HybridChartWebview: HybridChartWebviewSpec {
 
   // Called by the backing PooledChartWebView while this host is the owner.
   func handleMessage(_ message: String) {
+    // page -> native. Truncated; OneKeyLog rate-limits/dedups repeats so streaming
+    // data won't flood. Key for Q2 (market chart no data): shows the page's
+    // $private kline requests and whether replies come back.
+    ChartWVLog.i("msg.in id=\(instanceId) \(ChartWVLog.clip(message, 200))")
     // The chart reports it has painted the new symbol after a switch; that's our
     // cue to drop the snapshot we held over the switch and reveal the live chart.
     if message.contains(HybridChartWebview.renderReadyMarker) { onContentRendered() }
@@ -166,6 +211,25 @@ class HybridChartWebview: HybridChartWebviewSpec {
   }
 
   private func wantsOwnership() -> Bool { attached && (active != false) }
+
+  // Apply the source synchronously on a source/bridge prop change. For a pooled
+  // host this ALSO registers it as the warmDriver and warm-boots the page even
+  // when it is not the visible owner, so page->native callbacks (bars-state /
+  // load-end) fall back to it when no host owns the pool. No scheduleReconcile —
+  // that loops. `backing` is nil until the first reconcile assigns it (reuseKey /
+  // pooled / active setters still scheduleReconcile), so warmDriver is set on the
+  // first prop change after the pool entry is acquired.
+  private func applySource() {
+    guard let pooled = backing else { return }
+    if isPooled(), let bs = bridgeScript, !bs.isEmpty {
+      pooled.setBridgeScript(bs)
+      pooled.warmDriver = self
+      pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
+    } else if pooled.owner === self {
+      pooled.setBridgeScript(bridgeScript ?? "")
+      pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
+    }
+  }
 
   // A single React commit applies props one at a time, so the intermediate
   // states are inconsistent (e.g. `pooled` re-applied while `active` is still
@@ -194,6 +258,9 @@ class HybridChartWebview: HybridChartWebviewSpec {
     let key = effectiveKey()
     let pooled = ChartWebviewPool.shared.acquireShared(key: key)
     backing = pooled
+    // Apply this host's debug preference to the (possibly freshly created) backing
+    // WebView. Mirrors the main react-native-webview toggling WKWebView.isInspectable.
+    pooled.setInspectable(webviewDebuggingEnabled)
     // Refcount the entry once per host (reconcile runs many times). Balanced by
     // releaseShared in deinit. If the reuseKey changed, release the old one first.
     if adoptedPoolKey != key {
@@ -201,13 +268,36 @@ class HybridChartWebview: HybridChartWebviewSpec {
       ChartWebviewPool.shared.adopt(key: key)
       adoptedPoolKey = key
     }
-    if wantsOwnership() {
-      pooled.owner = self
-      // Register the document-start bridge before the first load (the prop is set
-      // by now; the pool may have been created earlier by a window-attach reconcile).
-      pooled.setBridgeScript(bridgeScript ?? "")
-      pooled.attach(to: container)
+    ChartWVLog.i("reconcilePooled id=\(instanceId) key=\(key) wantsOwnership=\(wantsOwnership()) (attached=\(attached) active=\(String(describing: active))) bridgeLen=\((bridgeScript ?? "").count) localBundle=\(localBundle ?? "nil") entry=\(entry ?? "nil")")
+
+    // Q1 FIX: WARM-BOOT the shared offline page as soon as ANY referencing host
+    // has the document-start bridge + a source — even when this host is NOT the
+    // visible owner (the offscreen prewarm runs with attached=false/active=false,
+    // so the old code, which only loaded inside `wantsOwnership()`, never booted
+    // the page until a real chart screen attached+focused). LOAD is now decoupled
+    // from view ownership: ownership below still governs attach / reveal / snapshot.
+    // Idempotent across hosts — the unified URL is constant (setSource logs
+    // SAME_URL), and setBridgeScript no-ops once registered.
+    if let bs = bridgeScript, !bs.isEmpty {
+      ChartWVLog.i("reconcilePooled.WARM id=\(instanceId) key=\(key) (owner-independent boot; wantsOwnership=\(wantsOwnership()))")
+      pooled.setBridgeScript(bs)
+      // Q1 FIX (data): register as the warm DRIVER (NOT owner — the YIELD branch
+      // below clears `owner`, which is why the previous provisional-owner attempt
+      // was wiped in the same reconcile). didFinish / page messages fall back to
+      // warmDriver when there's no visible owner, so the page is driven its symbol
+      // the instant it loads instead of waiting ~5s for a focused host to claim.
+      pooled.warmDriver = self
+      ChartWVLog.i("reconcilePooled.WARM_DRIVER id=\(instanceId) key=\(key)")
+      // setSource internally guards (bridgeRegistered / SAME_URL / NO_URL), so this
+      // is idempotent and a no-op when there is nothing new to load.
       pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
+    }
+
+    if wantsOwnership() {
+      let wasOwner = pooled.owner === self
+      pooled.owner = self
+      ChartWVLog.i("reconcilePooled.CLAIM id=\(instanceId) key=\(key) wasOwner=\(wasOwner)")
+      pooled.attach(to: container)
       // Keep a fresh frame of OUR content while we own the WebView, so that when
       // we later go inactive (and the shared WebView reloads the other slot's
       // chart) our slot freezes to its own last frame, not the other content.
@@ -224,6 +314,7 @@ class HybridChartWebview: HybridChartWebviewSpec {
       // Inactive: give up ownership only if we still hold it, and freeze to our
       // own last captured frame. We do NOT detach (that races a rapid re-claim).
       let wasOwner = pooled.owner === self
+      ChartWVLog.i("reconcilePooled.YIELD id=\(instanceId) key=\(key) wasOwner=\(wasOwner) (attached=\(attached) active=\(String(describing: active)))")
       if wasOwner { pooled.owner = nil }
       stopOwnCapture()
       showPlaceholder(ownSnapshot)
@@ -262,19 +353,13 @@ class HybridChartWebview: HybridChartWebviewSpec {
     guard wantsOwnership() else { return }
     let pooled = backing ?? PooledChartWebView(key: effectiveKey())
     backing = pooled
+    pooled.setInspectable(webviewDebuggingEnabled)
     pooled.owner = self
     pooled.setBridgeScript(bridgeScript ?? "")
     pooled.attach(to: container)
     pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
   }
 
-  private func applySourceIfOwner() {
-    guard let pooled = backing, pooled.owner === self else { return }
-    // Register the bridge before any load setSource may trigger (setSource defers
-    // loading until the bridge is registered).
-    pooled.setBridgeScript(bridgeScript ?? "")
-    pooled.setSource(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson)
-  }
 
   // MARK: - Snapshot placeholder (shown while this host is inactive)
 
@@ -352,6 +437,13 @@ final class PooledChartWebView {
 
   let key: String
   weak var owner: HybridChartWebview?
+  // Q1 FIX (data): the host that warm-booted the page and can drive its symbol /
+  // service its callbacks while there is no VISIBLE owner yet. Separate from
+  // `owner` because the reconcile YIELD branch clears `owner` to nil (so a
+  // provisional owner never survived to nav.didFinish). Callbacks fall back to
+  // this when `owner` is nil, so the page is told its symbol the instant it loads
+  // instead of waiting ~5s for a focused host to attach/claim.
+  weak var warmDriver: HybridChartWebview?
 
   // The page's user-content controller, kept so the document-start bridge can be
   // added lazily (see setBridgeScript) once the host has the prop value.
@@ -366,6 +458,11 @@ final class PooledChartWebView {
   private var lastLoadedUrl: String?
   private var attachGeneration = 0
 
+  // Whether the backing WKWebView should be inspectable (Safari Web Inspector).
+  // nil until a host applies its debug preference; defaults to the DEBUG build
+  // behavior (see resolvedInspectable), mirroring the main react-native-webview.
+  private var inspectablePreference: Bool?
+
   /// Read by the scheme handler to resolve offline files.
   fileprivate var currentLocalBundle: String?
 
@@ -379,7 +476,7 @@ final class PooledChartWebView {
   init(key: String) {
     self.key = key
     PooledChartWebView.liveCount += 1
-    NSLog("[ChartWebviewPool] WebView CREATED key=\(key) liveCount=\(PooledChartWebView.liveCount)")
+    ChartWVLog.i("pool.CREATE key=\(key) liveCount=\(PooledChartWebView.liveCount)")
     setupWebView()
   }
 
@@ -388,7 +485,10 @@ final class PooledChartWebView {
   // subsequent calls are no-ops. Done lazily because the first reconcile
   // (window-attach) can run before the bridgeScript prop is applied.
   func setBridgeScript(_ bridgeScript: String) {
-    guard !bridgeScript.isEmpty, let userContent = userContent else { return }
+    guard !bridgeScript.isEmpty, let userContent = userContent else {
+      ChartWVLog.w("setBridgeScript.SKIP key=\(key) empty=\(bridgeScript.isEmpty) hasUserContent=\(userContent != nil) -> bridgeRegistered stays \(bridgeRegistered)")
+      return
+    }
     // Re-register if a second host sharing the reuseKey supplies a DIFFERENT script
     // instead of silently dropping it (fix #4). In the app's single-reuseKey +
     // constant-bridge reality this never fires; not latching keeps it correct.
@@ -399,6 +499,7 @@ final class PooledChartWebView {
     }
     bridgeRegistered = true
     registeredBridgeScript = bridgeScript
+    ChartWVLog.i("setBridgeScript.REGISTERED key=\(key) len=\(bridgeScript.count)")
     let handlerName = ChartWebviewConst.messageHandlerName
     let shim = "(function(){window.__chartNativePost=function(s){"
       + "window.webkit.messageHandlers.\(handlerName).postMessage(s);};})();"
@@ -442,10 +543,37 @@ final class PooledChartWebView {
     webView.navigationDelegate = proxy
     webView.uiDelegate = proxy
     webView.scrollView.bounces = false
-    if #available(iOS 16.4, *) {
-      webView.isInspectable = true
-    }
     self.webView = webView
+    // Honor the app's dev-mode webview-debug toggle instead of an unconditional
+    // `true`. nil (no preference applied yet) falls back to the DEBUG build default.
+    applyInspectable()
+  }
+
+  // Set the host-driven debug preference and apply it to the live WebView. Called
+  // both on the prop change and at host claim, so the (possibly newly created)
+  // WebView always reflects the latest toggle value.
+  func setInspectable(_ enabled: Bool?) {
+    inspectablePreference = enabled
+    applyInspectable()
+  }
+
+  // Resolve the effective inspectable value: explicit preference if set, otherwise
+  // the DEBUG build default (mirrors the main react-native-webview, which is
+  // inspectable in dev builds even without the toggle).
+  private func resolvedInspectable() -> Bool {
+    if let pref = inspectablePreference { return pref }
+    #if DEBUG
+    return true
+    #else
+    return false
+    #endif
+  }
+
+  private func applyInspectable() {
+    guard let webView = webView else { return }
+    if #available(iOS 16.4, *) {
+      webView.isInspectable = resolvedInspectable()
+    }
   }
 
   // MARK: - Reparenting
@@ -498,7 +626,7 @@ final class PooledChartWebView {
       self.userContent = nil
       self.webView = nil
       PooledChartWebView.liveCount -= 1
-      NSLog("[ChartWebviewPool] WebView DESTROYED key=\(self.key) liveCount=\(PooledChartWebView.liveCount)")
+      ChartWVLog.i("pool.DESTROY key=\(self.key) liveCount=\(PooledChartWebView.liveCount)")
     }
   }
 
@@ -570,15 +698,26 @@ final class PooledChartWebView {
     // Never load before the document-start bridge is registered — otherwise the
     // page boots without the bridge and its first $private requests are lost. The
     // host re-calls setSource once the bridgeScript prop arrives.
-    guard bridgeRegistered else { return }
+    guard bridgeRegistered else {
+      ChartWVLog.w("setSource.BLOCKED key=\(key) bridgeRegistered=false -> NOT loading (will retry when bridgeScript arrives). uri=\(ChartWVLog.clip(uri)) localBundle=\(localBundle ?? "nil")")
+      return
+    }
     currentLocalBundle = localBundle
-    guard let urlString = computeTargetUrl(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson) else { return }
-    guard urlString != lastLoadedUrl else { return }
+    guard let urlString = computeTargetUrl(uri: uri, localBundle: localBundle, entry: entry, paramsJson: paramsJson) else {
+      ChartWVLog.w("setSource.NO_URL key=\(key) uri=\(ChartWVLog.clip(uri)) localBundle=\(localBundle ?? "nil") entry=\(entry ?? "nil") -> nothing to load")
+      return
+    }
+    guard urlString != lastLoadedUrl else {
+      ChartWVLog.i("setSource.SAME_URL key=\(key) skip reload url=\(ChartWVLog.clip(urlString))")
+      return
+    }
     guard let url = URL(string: urlString) else {
+      ChartWVLog.e("setSource.INVALID_URL key=\(key) url=\(ChartWVLog.clip(urlString))")
       owner?.handleError("Invalid url: \(urlString)")
       return
     }
     lastLoadedUrl = urlString
+    ChartWVLog.i("setSource.LOAD key=\(key) url=\(ChartWVLog.clip(urlString))")
     runOnMain { [weak self] in self?.webView?.load(URLRequest(url: url)) }
   }
 
@@ -622,8 +761,12 @@ final class PooledChartWebView {
   // MARK: - Bridge methods
 
   func postMessage(_ message: String) {
+    ChartWVLog.i("msg.out key=\(key) \(ChartWVLog.clip(message, 200))")
     runOnMain { [weak self] in
-      guard let self = self, let webView = self.webView else { return }
+      guard let self = self, let webView = self.webView else {
+        ChartWVLog.w("msg.out.DROPPED no webView")
+        return
+      }
       let jsStringLiteral = self.jsStringLiteral(from: message)
       let js = "window.postMessage(JSON.parse(\(jsStringLiteral)), '*')"
       webView.evaluateJavaScript(js, completionHandler: nil)
@@ -677,7 +820,9 @@ extension ChartWebViewProxy: WKScriptMessageHandler {
     didReceive message: WKScriptMessage
   ) {
     guard message.name == ChartWebviewConst.messageHandlerName else { return }
-    let owner = pooled?.owner
+    // Q1 FIX: route page->native messages ($private data requests) to the warm
+    // driver when there's no visible owner, so they aren't dropped during warm.
+    let owner = pooled?.owner ?? pooled?.warmDriver
     if let body = message.body as? String {
       owner?.handleMessage(body)
     } else if let data = try? JSONSerialization.data(withJSONObject: message.body, options: []),
@@ -693,16 +838,22 @@ extension ChartWebViewProxy: WKScriptMessageHandler {
 
 extension ChartWebViewProxy: WKNavigationDelegate {
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-    pooled?.owner?.handleLoadEnd()
+    // Q1 FIX: fall back to warmDriver when there's no visible owner yet, so the
+    // page's load-complete callback (-> JS onLoadEnd -> SYMBOL_CHANGE) fires now.
+    let target = pooled?.owner ?? pooled?.warmDriver
+    ChartWVLog.i("nav.didFinish url=\(ChartWVLog.clip(webView.url?.absoluteString)) hasOwner=\(pooled?.owner != nil) viaWarmDriver=\(pooled?.owner == nil && pooled?.warmDriver != nil)")
+    target?.handleLoadEnd()
     // Prime the snapshot so the first move already has a frame to mask with.
     pooled?.refreshSnapshotSoon()
   }
 
   func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    ChartWVLog.e("nav.didFail url=\(ChartWVLog.clip(webView.url?.absoluteString)) error=\(error.localizedDescription)")
     pooled?.owner?.handleError(error.localizedDescription)
   }
 
   func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    ChartWVLog.e("nav.didFailProvisional url=\(ChartWVLog.clip(webView.url?.absoluteString)) error=\(error.localizedDescription)")
     pooled?.owner?.handleError(error.localizedDescription)
   }
 }
@@ -723,6 +874,7 @@ extension ChartWebViewProxy: WKURLSchemeHandler {
     }
 
     guard let localBundle = pooled?.currentLocalBundle, !localBundle.isEmpty else {
+      ChartWVLog.e("scheme.NO_BUNDLE url=\(ChartWVLog.clip(url.absoluteString)) -> 404 (currentLocalBundle empty)")
       respondNotFound(url: url, task: urlSchemeTask)
       return
     }
@@ -733,9 +885,11 @@ extension ChartWebViewProxy: WKURLSchemeHandler {
 
     guard let fileURL = resolveBundleFileURL(localBundle: localBundle, relativePath: relativePath),
           let data = try? Data(contentsOf: fileURL) else {
+      ChartWVLog.e("scheme.404 bundle=\(localBundle) path=\(relativePath) (resolved=\(resolveBundleFileURL(localBundle: localBundle, relativePath: relativePath)?.path ?? "nil")) -> Not Found")
       respondNotFound(url: url, task: urlSchemeTask)
       return
     }
+    ChartWVLog.i("scheme.serve bundle=\(localBundle) path=\(relativePath) bytes=\(data.count)")
 
     let headers: [String: String] = [
       "Content-Type": mimeTypeForPath(fileURL.pathExtension),

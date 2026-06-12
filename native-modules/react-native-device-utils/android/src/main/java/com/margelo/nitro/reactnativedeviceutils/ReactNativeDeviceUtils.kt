@@ -907,6 +907,13 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         }
     }
 
+    // iOS-only: cold-start LOCAL notification deep-link payload. Android delivers
+    // notification taps through the launching Intent's extras, a separate path,
+    // so there is nothing to hand back here.
+    override fun getAndClearColdStartLocalNotification(): Promise<String> {
+        return Promise.resolved("")
+    }
+
     // MARK: - ExitModule
 
     override fun exitApp() {

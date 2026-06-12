@@ -59,6 +59,10 @@ export interface ReactNativeDeviceUtils
   saveDeviceToken(token: string): Promise<void>;
   registerDeviceToken(): Promise<boolean>;
   getStartupTime(): Promise<number>;
+  // Returns the JSON userInfo of a LOCAL notification the user tapped to launch
+  // the (killed) app, then clears it so it is delivered exactly once. Empty
+  // string when there is none. iOS-only meaningful; Android returns "".
+  getAndClearColdStartLocalNotification(): Promise<string>;
 
   // ExitModule
   exitApp(): void;
