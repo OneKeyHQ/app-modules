@@ -20,6 +20,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -1083,6 +1084,12 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     companion object {
         private const val PREFS_NAME = "BundleUpdatePrefs"
+
+        // Number of concurrent segment files (`<partial>.seg0..seg{N-1}`) the
+        // ConcurrentRangeDownloader produces. MUST equal the segmentCount passed
+        // to ConcurrentRangeDownloader (currently the default 8). Every place
+        // that cleans up `.segN` files must iterate `0 until CONCURRENT_SEGMENT_COUNT`.
+        private const val CONCURRENT_SEGMENT_COUNT = 8
     }
 
     private val listeners = CopyOnWriteArrayList<BundleListener>()
@@ -1234,9 +1241,12 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 if (verifyBundleSHA256(filePath, sha256)) {
                     OneKeyLog.info("BundleUpdate", "downloadBundle: existing file SHA256 valid, skipping download")
                     // Final file is authoritative — drop any stale concurrent
-                    // partial/manifest left by an earlier interrupted attempt.
+                    // partial + segment files left by an earlier interrupted
+                    // attempt. (".progress" is a legacy manifest from the old
+                    // pre-allocated model; deleting it is a harmless no-op now.)
                     if (partialFile.exists()) partialFile.delete()
                     File("$partialFilePath.progress").delete()
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
                     // Keep isDownloading held across the skip delay below. Clearing
                     // it before the sleep opens a ~1s window where a second
                     // downloadBundle could pass the getAndSet guard and run
@@ -1248,8 +1258,11 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 } else {
                     OneKeyLog.warn("BundleUpdate", "downloadBundle: existing file SHA256 mismatch, re-downloading")
                     downloadedFile.delete()
-                    // Stale completed file invalidates any partial too.
+                    // Stale completed file invalidates any partial too — including
+                    // the concurrent segment files, otherwise the next resume would
+                    // pick up bytes belonging to the rejected build.
                     if (partialFile.exists()) partialFile.delete()
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
                 }
             }
 
@@ -1261,16 +1274,22 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             // downloader keeps its partial + manifest for resume).
             sendEvent("update/start")
             run {
-                var concurrentProgress = -1
+                // onProgress is invoked concurrently by all 8 worker threads, so
+                // a plain `var` read-compare-write races (duplicate/out-of-order
+                // progress events). Use AtomicInteger + CAS: only the thread that
+                // wins the compareAndSet to a strictly higher value emits, which
+                // also keeps progress monotonic. (Worst case a race only affects
+                // progress eventing, never file bytes.)
+                val concurrentProgress = AtomicInteger(-1)
                 val concurrentOutcome = ConcurrentRangeDownloader(
                     httpClient = httpClient,
                     log = { msg -> OneKeyLog.info("BundleUpdate", msg) },
                 ).download(downloadUrl, partialFilePath) { transferred, total ->
                     if (total > 0) {
                         val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
-                        if (p != concurrentProgress) {
+                        val prev = concurrentProgress.get()
+                        if (p > prev && concurrentProgress.compareAndSet(prev, p)) {
                             sendEvent("update/downloading", progress = p)
-                            concurrentProgress = p
                         }
                     }
                 }
@@ -1304,7 +1323,14 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             // before discarding so we save a full re-download.
             val expectedSize = if (params.fileSize > 0) params.fileSize.toLong() else 0L
             var partialBytes = 0L
-            if (partialFile.exists()) {
+            // If any concurrent `.segN` files survive, the `.partial` here is the
+            // concurrent committed cursor, not a single-stream partial. Defer to
+            // the concurrent downloader (which already ran above and may resume on
+            // a later attempt) and skip size-based promote/discard, which would
+            // otherwise misjudge a bare `.partial` when the concurrent path
+            // returned FALLBACK but left `.segN` residue. Mirrors app-update.
+            val hasConcurrentSegments = (0 until CONCURRENT_SEGMENT_COUNT).any { File("$partialFilePath.seg$it").exists() }
+            if (partialFile.exists() && !hasConcurrentSegments) {
                 val partialSize = partialFile.length()
                 when {
                     expectedSize > 0 && partialSize == expectedSize -> {
@@ -1325,6 +1351,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     expectedSize > 0 && partialSize > expectedSize -> {
                         OneKeyLog.warn("BundleUpdate", "downloadBundle: stale partial (>expected), discarding: $partialSize/$expectedSize")
                         partialFile.delete()
+                        for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
                     }
                     partialSize > 0 -> {
                         partialBytes = partialSize
@@ -1369,6 +1396,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: HTTP 416 (range not satisfiable), discarding partial and failing this attempt")
                 if (partialFile.exists()) partialFile.delete()
+                for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
                 // Don't pre-emit update/error here; the outer catch is the
                 // single source of error events. sanitizeErrorMessageForEvent
                 // recognizes "HTTP " prefix and forwards this string verbatim.
@@ -1376,7 +1404,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             }
 
             val expectsResume = partialBytes > 0
-            val isPartialResponse = response.code == 206
+            var isPartialResponse = response.code == 206
 
             if (!response.isSuccessful || (response.code != 200 && response.code != 206)) {
                 OneKeyLog.error("BundleUpdate", "downloadBundle: HTTP error, statusCode=${response.code}")
@@ -1390,7 +1418,34 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             if (expectsResume && !isPartialResponse) {
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: requested Range but server returned 200, restarting from scratch")
                 if (partialFile.exists()) partialFile.delete()
+                for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
                 partialBytes = 0L
+            }
+
+            // On a 206 the server's `Content-Range` start MUST equal the offset
+            // we asked to resume from (`partialBytes`). A misconfigured server or
+            // proxy can return a 206 whose range starts somewhere else; appending
+            // that slice onto our `.partial` would splice mismatched bytes and the
+            // final SHA256 would fail only after a full download. Guard here: if
+            // the start is missing or != partialBytes, drop the partial+segments
+            // and abort this attempt. We must NOT reuse this body as a 200-style
+            // full rewrite: a mismatched 206 body is still a range slice, not the
+            // whole file, so writing it would produce a corrupt bundle. Close the
+            // response and throw a retryable error — with partial+segN already
+            // gone, the next attempt naturally restarts from 0.
+            if (isPartialResponse && partialBytes > 0) {
+                val contentRangeStart = response.header("Content-Range")
+                    ?.let { Regex("""bytes\s+(\d+)-\d+/\d+""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
+                if (contentRangeStart == null || contentRangeStart != partialBytes) {
+                    OneKeyLog.warn(
+                        "BundleUpdate",
+                        "downloadBundle: 206 Content-Range start=$contentRangeStart != partialBytes=$partialBytes, discarding partial and aborting attempt"
+                    )
+                    if (partialFile.exists()) partialFile.delete()
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
+                    response.close()
+                    throw java.io.IOException("206 Content-Range start mismatch (got=$contentRangeStart, want=$partialBytes); discarded partial, retry from scratch")
+                }
             }
 
             // Close the response before throwing on a null body — OkHttp
@@ -1844,8 +1899,12 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 downloadDir.listFiles()?.forEach { file ->
                     val name = file.name
                     // Strip the trailing extension chain to recover the
-                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial").
+                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial", or a
+                    // concurrent segment file "6.3.0-123.zip.partial.seg3").
                     var stem = name
+                    // Concurrent segment files end in ".segN" — peel that off
+                    // first so the rest of the chain strips as usual.
+                    stem = stem.replace(Regex("""\.seg\d+$"""), "")
                     for (suffix in listOf(".resume", ".progress", ".partial", ".zip")) {
                         if (stem.endsWith(suffix)) {
                             stem = stem.substring(0, stem.length - suffix.length)

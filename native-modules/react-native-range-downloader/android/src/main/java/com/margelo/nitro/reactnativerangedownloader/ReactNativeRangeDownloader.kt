@@ -10,20 +10,23 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 
-// P1: faithful migration of the Android concurrent multi-range downloader.
+// P1: Nitro adapter for the Android concurrent multi-range downloader.
 //
-// The core algorithm (.partial preallocation + .progress manifest resume +
-// 8-segment thread pool + If-Range/200 fallback) lives unchanged in the
-// in-module ConcurrentRangeDownloader helper, copied byte-for-byte from
-// react-native-bundle-update. This class is the Nitro adapter: it builds the
-// HTTPS-only OkHttpClient, drives the helper, finalizes on COMPLETED (promote
-// .partial -> dest + optional SHA256 self-check), and bridges progress to the
-// shared listener registry as RangeDownloadEvent (tagged with channel/taskId).
+// The core algorithm lives in the in-module ConcurrentRangeDownloader helper:
+// each of the N segments streams into its own sibling file
+// `<dest>.partial.seg0` .. `<dest>.partial.segN-1` (no whole-file preallocation,
+// no `.progress` manifest), and on success the segments are concatenated in
+// order into `<dest>.partial`. Resume re-uses whatever bytes each `.segN`
+// already holds. An 8-segment thread pool plus a 200-to-a-Range fallback round
+// it out (object identity is not pinned — no ETag/If-Range; the optional
+// whole-file SHA256 self-check below is the correctness backstop). This class
+// builds the HTTPS-only OkHttpClient, drives the helper,
+// finalizes on COMPLETED (promote .partial -> dest + optional SHA256
+// self-check), and bridges progress to the shared listener registry as
+// RangeDownloadEvent (tagged with channel/taskId).
 //
 // Android has no background-session concept: `channel` is only an event label
-// + artifact-directory tag and does not change the download mechanism. The
-// on-disk format (.partial + .progress) is kept exactly as shipped so existing
-// interrupted downloads resume cleanly.
+// + artifact-directory tag and does not change the download mechanism.
 @DoNotStrip
 class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
@@ -83,7 +86,12 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
       val cancelHandle = ConcurrentRangeDownloader.CancelHandle()
       activeDownloads[runKey] = cancelHandle
 
-      var lastProgress = -1
+      // The progress callback is invoked concurrently by the helper's worker
+      // threads, so guard lastProgress with an AtomicInteger + CAS: only the
+      // thread that advances the percentage to a strictly higher value wins the
+      // CAS and emits the event, which keeps progress monotonic and de-duped
+      // without a lock (this only affects event ordering, never file bytes).
+      val lastProgress = java.util.concurrent.atomic.AtomicInteger(-1)
       val outcome = try {
         ConcurrentRangeDownloader(
           httpClient = httpClient,
@@ -93,9 +101,9 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
         ).download(downloadUrl, partialFilePath, cancelHandle) { transferred, total ->
           if (total > 0) {
             val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
-            if (p != lastProgress) {
+            val prev = lastProgress.get()
+            if (p > prev && lastProgress.compareAndSet(prev, p)) {
               sendEvent(channel, taskId, type = "progress", progress = p)
-              lastProgress = p
             }
           }
         }
@@ -158,9 +166,11 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
       // files, otherwise a still-running segment could re-create the .partial we
       // just deleted.
       cancelActive(channel, taskId)
-      // Manifest first so it never outlives the partial it describes.
-      File("$destFilePath.partial.progress").delete()
-      File("$destFilePath.partial").delete()
+      // Sweep the per-segment `.segN` files plus the concatenated `.partial` so a
+      // future resume can't re-trust stale bytes (no `.progress` manifest exists
+      // anymore in the segmented model). Glob by filename prefix so any custom
+      // segmentCount is fully cleared, not just the shipped default of 8.
+      sweepPartialArtifacts(destFilePath)
       OneKeyLog.info("RangeDownloader", "discardArtifacts: channel=$channel taskId=$taskId")
       Unit
     }
@@ -174,8 +184,9 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
     return Promise.async {
       // Stop workers first, then delete artifacts so nothing resurrects them.
       cancelActive(channel, taskId)
-      File("$destFilePath.partial.progress").delete()
-      File("$destFilePath.partial").delete()
+      // Same segmented-artifact sweep as discardArtifacts: glob every per-segment
+      // `.segN` file by prefix plus the concatenated `.partial`.
+      sweepPartialArtifacts(destFilePath)
       OneKeyLog.info("RangeDownloader", "cancel: channel=$channel taskId=$taskId")
       Unit
     }
@@ -184,6 +195,17 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   // Flip the abort flag + shutdown the pool for an in-flight download (if any).
   private fun cancelActive(channel: DownloadChannel, taskId: String) {
     activeDownloads.remove(runKey(channel, taskId))?.cancel()
+  }
+
+  // Delete every sibling artifact for [destFilePath]: all `<dest>.partial.seg<N>`
+  // segment files (matched by filename prefix, so any segmentCount is swept, not
+  // just the shipped default) plus the concatenated `<dest>.partial` itself.
+  private fun sweepPartialArtifacts(destFilePath: String) {
+    val partial = File("$destFilePath.partial")
+    partial.parentFile
+      ?.listFiles { f -> f.name.startsWith(partial.name + ".seg") }
+      ?.forEach { it.delete() }
+    partial.delete()
   }
 
   // Atomically replace [dest] with [src] so a kill mid-finalize never leaves

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <!-- Primary APK download location (filesDir/apks). MUST match getApkDownloadDir(). -->
+    <files-path name="apks_files" path="apks/" />
+    <!-- Legacy location: an APK already downloaded into cacheDir/apks by an older
+         build can still be exposed to the installer during the transition. -->
     <cache-path name="apks" path="apks/" />
 </paths>

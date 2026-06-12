@@ -28,6 +28,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import com.margelo.nitro.reactnativebundlecrypto.BundleCryptoCore
+// Shared 8-range concurrent downloader (segment-file model, no whole-file
+// pre-allocation). Previously app-update bundled its own private copy; it now
+// consumes the single shared implementation in react-native-range-downloader
+// so a fix lands once for both APK and JS-bundle downloads.
+import com.margelo.nitro.reactnativerangedownloader.ConcurrentRangeDownloader
 
 private data class Listener(
     val id: Double,
@@ -40,6 +45,12 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     companion object {
         private const val CHANNEL_ID = "updateApp"
         private const val NOTIFICATION_ID = 1
+
+        // Must match ConcurrentRangeDownloader's default segmentCount: the
+        // concurrent downloader writes sibling segment files
+        // "<partial>.seg0".."<partial>.seg${N-1}", and Phase 2 below scans this
+        // range to detect an in-flight concurrent download.
+        private const val CONCURRENT_SEGMENT_COUNT = 8
     }
 
     private val listeners = CopyOnWriteArrayList<Listener>()
@@ -68,10 +79,21 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         listeners.removeAll { it.id == id }
     }
 
-    private fun getApkCacheDir(): File {
+    /**
+     * Directory for downloaded APK artifacts (.apk / .partial / .segN / .asc).
+     *
+     * Uses filesDir, NOT cacheDir: cacheDir is system-reclaimable — under
+     * storage pressure Android can purge it or make it unwritable mid-download,
+     * surfacing as EROFS/ENOSPC when opening a new segment file. filesDir is
+     * persistent app data and is the same location react-native-bundle-update
+     * downloads to. It is still installable: the APK is handed to the system
+     * installer via FileProvider, whose <paths> exposes this dir
+     * (see res/xml/app_update_file_paths.xml: <files-path name="apks_files" .../>).
+     */
+    private fun getApkDownloadDir(): File {
         val context = NitroModules.applicationContext
             ?: throw SecurityException("Application context unavailable")
-        val apkDir = File(context.cacheDir, "apks")
+        val apkDir = File(context.filesDir, "apks")
         if (!apkDir.exists()) apkDir.mkdirs()
         return apkDir
     }
@@ -97,7 +119,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         val file = if (stripped.startsWith("/")) {
             File(stripped)
         } else {
-            File(getApkCacheDir(), stripped)
+            File(getApkDownloadDir(), stripped)
         }
 
         // Validate the resolved path is within the app's cache or files directory
@@ -147,16 +169,17 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
             .followSslRedirects(false)
             .build()
         val request = Request.Builder().url(ascUrl).build()
-        val response = client.newCall(request).execute()
-        if (!response.isSuccessful) return null
         val content = StringBuilder()
         val maxAscSize = 10 * 1024
-        val body = response.body ?: return null
-        BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                content.append(line).append("\n")
-                if (content.length > maxAscSize) return null
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return null
+            val body = response.body ?: return null
+            BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    content.append(line).append("\n")
+                    if (content.length > maxAscSize) return null
+                }
             }
         }
         val ascContent = content.toString()
@@ -482,10 +505,24 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         expectedSize > 0 && existingSize > expectedSize -> {
                             OneKeyLog.warn("AppUpdate", "downloadAPK: existing APK larger than expected, deleting")
                             downloadedFile.delete()
+                            // Oversized final means local state is untrustworthy. A stale
+                            // single-stream .partial and any sibling .segN left by an earlier
+                            // concurrent run could otherwise be picked up below and reused —
+                            // wipe them so this restarts cleanly from byte zero.
+                            if (partialFile.exists()) partialFile.delete()
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
                         }
                         expectedSize > 0 && existingSize < expectedSize -> {
                             OneKeyLog.info("AppUpdate", "downloadAPK: existing APK smaller than expected, promoting to .partial for resume")
                             if (partialFile.exists()) partialFile.delete()
+                            // Drop any sibling .segN BEFORE the promotion. The promoted final
+                            // must become a clean single-stream resume cursor: if .segN
+                            // survived, Phase 2's hasConcurrentSegments check would fire and
+                            // the concurrent downloader would treat this legacy .partial as a
+                            // concat committed-cursor, risking a mixed file. With no .segN,
+                            // Phase 2 takes the single-stream size-based path and Range-resumes
+                            // from the partial's length.
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
                             if (!downloadedFile.renameTo(partialFile)) {
                                 OneKeyLog.warn("AppUpdate", "downloadAPK: rename to .partial failed, deleting stale final")
                                 downloadedFile.delete()
@@ -502,6 +539,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                                     OneKeyLog.info("AppUpdate", "downloadAPK: existing APK hash mismatch, deleting and re-downloading")
                                     downloadedFile.delete()
                                     if (partialFile.exists()) partialFile.delete()
+                                    // Final was stale → start from byte zero. Wipe any
+                                    // sibling .segN left by an earlier concurrent run so
+                                    // it can't be mistaken for trustworthy in-flight bytes.
+                                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
                                 }
                                 ApkVerifyOutcome.Indeterminate -> {
                                     // ASC could not be fetched (offline) or could
@@ -520,23 +561,21 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
                 // Phase 2 — pick up an in-flight partial.
                 //
-                // A concurrent (multi-range) partial is pre-allocated to the FULL
-                // size up front (RandomAccessFile.setLength(total)) and tracks the
-                // real, durably-written cursor only in its sidecar
-                // "<partial>.progress" manifest — the .partial itself is zero-filled
-                // past the real data. The size-based classification below is blind
-                // to that: it would see partialSize == expectedSize and try to
-                // promote+SHA-verify a mostly-zeroed file, hit HashMismatch, and
-                // DELETE it — nuking every interrupted concurrent download back to
-                // byte 0. So when the manifest exists, skip the size-based
+                // The concurrent (multi-range) downloader stores in-flight bytes in
+                // sibling segment files "<partial>.seg0".."<partial>.segN" — NOT in
+                // the .partial (the .partial only ever holds real, fully-assembled
+                // bytes, written by the concurrent downloader's final concat or by
+                // the single-stream path). When any segment file exists, an
+                // interrupted concurrent download owns the slot: skip the size-based
                 // promote/discard branches entirely and let the concurrent
-                // downloader below own the file: it resumes from the manifest (or
-                // returns FALLBACK and hands the bytes back to single-stream).
-                // The path must match exactly what ConcurrentRangeDownloader writes:
-                // File("$partialFilePath.progress").
-                val hasConcurrentManifest = buildFile("$partialFilePath.progress").exists()
+                // downloader below resume (it picks up each .segN, or returns
+                // FALLBACK and hands the bytes back to single-stream). The segment
+                // path must match exactly what ConcurrentRangeDownloader writes:
+                // File("$partialFilePath.seg$i").
+                val hasConcurrentSegments =
+                    (0 until CONCURRENT_SEGMENT_COUNT).any { buildFile("$partialFilePath.seg$it").exists() }
                 var partialBytes = 0L
-                if (partialFile.exists() && !hasConcurrentManifest) {
+                if (partialFile.exists() && !hasConcurrentSegments) {
                     val partialSize = partialFile.length()
                     when {
                         expectedSize > 0 && partialSize == expectedSize -> {
@@ -568,6 +607,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         expectedSize > 0 && partialSize > expectedSize -> {
                             OneKeyLog.warn("AppUpdate", "downloadAPK: stale partial (>expected $partialSize/$expectedSize), discarding")
                             partialFile.delete()
+                            // Partial bytes are untrustworthy → restart from zero; drop any sibling .segN too.
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
                         }
                         partialSize > 0 -> {
                             partialBytes = partialSize
@@ -605,7 +646,14 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     val concurrentOutcome = ConcurrentRangeDownloader(
                         httpClient = concurrentClient,
                         log = { msg -> OneKeyLog.info("AppUpdate", msg) },
-                    ).download(url, partialFilePath) { transferred, total ->
+                        // MUST be the ABSOLUTE path. partialFilePath is just a
+                        // file NAME ("<apk>.partial"); the downloader does
+                        // File(path) on it, which resolves a relative name
+                        // against the process CWD ("/") and writes the segment
+                        // files to the read-only root fs → EROFS. Resolve it to
+                        // the real apks dir (filesDir/apks) first, exactly like
+                        // react-native-bundle-update passes an absolute path.
+                    ).download(url, partialFile.absolutePath) { transferred, total ->
                         if (total > 0) {
                             val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
                             // Only the thread that advances the percent emits; a
@@ -694,6 +742,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                                 // anyone reading the error.
                                 OneKeyLog.warn("AppUpdate", "downloadAPK: 416 recovery hash mismatch — server build changed mid-download")
                                 if (partialFile.exists()) partialFile.delete()
+                                // Server build changed → these bytes are worthless; drop sibling .segN too.
+                                for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
                                 throw java.io.IOException("Server build changed mid-download (size matches but hash differs)")
                             }
                             PromoteOutcome.Deferred -> {
@@ -710,6 +760,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     }
                     OneKeyLog.warn("AppUpdate", "downloadAPK: HTTP 416 (range not satisfiable), discarding partial and failing attempt")
                     if (partialFile.exists()) partialFile.delete()
+                    // Partial discarded as unusable → drop sibling .segN too so the next attempt starts clean.
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
                     throw Exception("HTTP 416 (range not satisfiable)")
                 }
 
@@ -728,6 +780,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 if (expectsResume && !serverWillResume) {
                     OneKeyLog.warn("AppUpdate", "downloadAPK: requested Range but server returned 200, restarting from scratch")
                     if (partialFile.exists()) partialFile.delete()
+                    // Restarting from byte zero → drop any sibling .segN too.
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
                     partialBytes = 0L
                 }
 
@@ -744,10 +798,20 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 if (serverWillResume) {
                     val rangeStart = rangeMatch?.groupValues?.getOrNull(1)?.toLongOrNull()
                     if (rangeStart == null || rangeStart != partialBytes) {
-                        OneKeyLog.warn("AppUpdate", "downloadAPK: 206 Content-Range start mismatch (header='${response.header("Content-Range")}', requested=$partialBytes); treating as full restart")
+                        // This 206 body is a slice starting at the wrong offset (CDN bug /
+                        // proxy rewrite). It is NOT a full file, so we must not consume it as
+                        // one — doing so would write mis-aligned bytes (caught only later at
+                        // SHA/GPG, after a bogus "downloaded" event). Wipe the partial + any
+                        // .segN so the next attempt starts clean from byte zero, close the
+                        // bad response, and throw a retryable error. The outer
+                        // catch(Exception) emits update/error and rethrows; finally resets
+                        // isDownloading, so this won't wedge.
+                        val contentRangeHeader = response.header("Content-Range")
+                        OneKeyLog.warn("AppUpdate", "downloadAPK: 206 Content-Range start mismatch (header='$contentRangeHeader', requested=$partialBytes); discarding partial and retrying from scratch")
                         if (partialFile.exists()) partialFile.delete()
-                        partialBytes = 0L
-                        serverWillResume = false
+                        for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                        response.close()
+                        throw java.io.IOException("206 Content-Range start mismatch (header='$contentRangeHeader', requested=$partialBytes); discarded partial, retry from scratch")
                     }
                 }
 
@@ -866,33 +930,37 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 .followSslRedirects(false)
                 .build()
             val request = Request.Builder().url(ascFileUrl).build()
-            val response = client.newCall(request).execute()
+            // Wrap in .use so the Response (and its connection) is released on every
+            // exit path — including the !isSuccessful / empty-body / oversize throws,
+            // which previously leaked the connection back to the pool unclosed.
+            val ascContent = client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    OneKeyLog.error("AppUpdate", "downloadASC: HTTP error, statusCode=${response.code}")
+                    throw Exception(response.code.toString())
+                }
 
-            if (!response.isSuccessful) {
-                OneKeyLog.error("AppUpdate", "downloadASC: HTTP error, statusCode=${response.code}")
-                throw Exception(response.code.toString())
-            }
+                OneKeyLog.info("AppUpdate", "downloadASC: HTTP 200, reading ASC content...")
 
-            OneKeyLog.info("AppUpdate", "downloadASC: HTTP 200, reading ASC content...")
-
-            val content = StringBuilder()
-            val maxAscSize = 10 * 1024 // 10 KB max for ASC files
-            val body = response.body ?: throw Exception("Empty ASC response body")
-            BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    content.append(line).append("\n")
-                    if (content.length > maxAscSize) {
-                        OneKeyLog.error("AppUpdate", "downloadASC: ASC file exceeds max size ($maxAscSize bytes)")
-                        throw Exception("ASC file exceeds maximum allowed size")
+                val content = StringBuilder()
+                val maxAscSize = 10 * 1024 // 10 KB max for ASC files
+                val body = response.body ?: throw Exception("Empty ASC response body")
+                BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        content.append(line).append("\n")
+                        if (content.length > maxAscSize) {
+                            OneKeyLog.error("AppUpdate", "downloadASC: ASC file exceeds max size ($maxAscSize bytes)")
+                            throw Exception("ASC file exceeds maximum allowed size")
+                        }
                     }
                 }
-            }
 
-            val ascContent = content.toString()
-            if (ascContent.isEmpty()) {
-                OneKeyLog.error("AppUpdate", "downloadASC: ASC content is empty")
-                throw Exception("Empty ASC file")
+                val parsed = content.toString()
+                if (parsed.isEmpty()) {
+                    OneKeyLog.error("AppUpdate", "downloadASC: ASC content is empty")
+                    throw Exception("Empty ASC file")
+                }
+                parsed
             }
 
             OneKeyLog.info("AppUpdate", "downloadASC: ASC content size=${ascContent.length} bytes")
@@ -1207,7 +1275,8 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
             OneKeyLog.warn("AppUpdate", "$tag: application context unavailable, skipping file cleanup")
             return
         }
-        val apkDir = File(context.cacheDir, "apks")
+        // Must match getApkDownloadDir() (filesDir/apks).
+        val apkDir = File(context.filesDir, "apks")
         if (!apkDir.exists()) {
             OneKeyLog.info("AppUpdate", "$tag: apks cache directory does not exist, nothing to clean")
             return
