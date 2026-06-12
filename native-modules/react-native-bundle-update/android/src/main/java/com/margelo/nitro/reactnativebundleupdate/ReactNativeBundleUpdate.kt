@@ -1084,6 +1084,12 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     companion object {
         private const val PREFS_NAME = "BundleUpdatePrefs"
+
+        // Number of concurrent segment files (`<partial>.seg0..seg{N-1}`) the
+        // ConcurrentRangeDownloader produces. MUST equal the segmentCount passed
+        // to ConcurrentRangeDownloader (currently the default 8). Every place
+        // that cleans up `.segN` files must iterate `0 until CONCURRENT_SEGMENT_COUNT`.
+        private const val CONCURRENT_SEGMENT_COUNT = 8
     }
 
     private val listeners = CopyOnWriteArrayList<BundleListener>()
@@ -1240,8 +1246,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     // pre-allocated model; deleting it is a harmless no-op now.)
                     if (partialFile.exists()) partialFile.delete()
                     File("$partialFilePath.progress").delete()
-                    // ConcurrentRangeDownloader's default segmentCount is 8.
-                    for (i in 0 until 8) File("$partialFilePath.seg$i").delete()
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
                     // Keep isDownloading held across the skip delay below. Clearing
                     // it before the sleep opens a ~1s window where a second
                     // downloadBundle could pass the getAndSet guard and run
@@ -1257,7 +1262,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     // the concurrent segment files, otherwise the next resume would
                     // pick up bytes belonging to the rejected build.
                     if (partialFile.exists()) partialFile.delete()
-                    for (i in 0 until 8) File("$partialFilePath.seg$i").delete()
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
                 }
             }
 
@@ -1318,7 +1323,14 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             // before discarding so we save a full re-download.
             val expectedSize = if (params.fileSize > 0) params.fileSize.toLong() else 0L
             var partialBytes = 0L
-            if (partialFile.exists()) {
+            // If any concurrent `.segN` files survive, the `.partial` here is the
+            // concurrent committed cursor, not a single-stream partial. Defer to
+            // the concurrent downloader (which already ran above and may resume on
+            // a later attempt) and skip size-based promote/discard, which would
+            // otherwise misjudge a bare `.partial` when the concurrent path
+            // returned FALLBACK but left `.segN` residue. Mirrors app-update.
+            val hasConcurrentSegments = (0 until CONCURRENT_SEGMENT_COUNT).any { File("$partialFilePath.seg$it").exists() }
+            if (partialFile.exists() && !hasConcurrentSegments) {
                 val partialSize = partialFile.length()
                 when {
                     expectedSize > 0 && partialSize == expectedSize -> {
@@ -1339,7 +1351,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     expectedSize > 0 && partialSize > expectedSize -> {
                         OneKeyLog.warn("BundleUpdate", "downloadBundle: stale partial (>expected), discarding: $partialSize/$expectedSize")
                         partialFile.delete()
-                        for (i in 0 until 8) File("$partialFilePath.seg$i").delete()
+                        for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
                     }
                     partialSize > 0 -> {
                         partialBytes = partialSize
@@ -1384,7 +1396,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 }
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: HTTP 416 (range not satisfiable), discarding partial and failing this attempt")
                 if (partialFile.exists()) partialFile.delete()
-                for (i in 0 until 8) File("$partialFilePath.seg$i").delete()
+                for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
                 // Don't pre-emit update/error here; the outer catch is the
                 // single source of error events. sanitizeErrorMessageForEvent
                 // recognizes "HTTP " prefix and forwards this string verbatim.
@@ -1406,6 +1418,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             if (expectsResume && !isPartialResponse) {
                 OneKeyLog.warn("BundleUpdate", "downloadBundle: requested Range but server returned 200, restarting from scratch")
                 if (partialFile.exists()) partialFile.delete()
+                for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
                 partialBytes = 0L
             }
 
@@ -1414,20 +1427,24 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             // proxy can return a 206 whose range starts somewhere else; appending
             // that slice onto our `.partial` would splice mismatched bytes and the
             // final SHA256 would fail only after a full download. Guard here: if
-            // the start is missing or != partialBytes, drop the partial and treat
-            // this response as a fresh full rewrite (200 semantics).
+            // the start is missing or != partialBytes, drop the partial+segments
+            // and abort this attempt. We must NOT reuse this body as a 200-style
+            // full rewrite: a mismatched 206 body is still a range slice, not the
+            // whole file, so writing it would produce a corrupt bundle. Close the
+            // response and throw a retryable error — with partial+segN already
+            // gone, the next attempt naturally restarts from 0.
             if (isPartialResponse && partialBytes > 0) {
                 val contentRangeStart = response.header("Content-Range")
                     ?.let { Regex("""bytes\s+(\d+)-\d+/\d+""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
                 if (contentRangeStart == null || contentRangeStart != partialBytes) {
                     OneKeyLog.warn(
                         "BundleUpdate",
-                        "downloadBundle: 206 Content-Range start=$contentRangeStart != partialBytes=$partialBytes, discarding partial and restarting from scratch"
+                        "downloadBundle: 206 Content-Range start=$contentRangeStart != partialBytes=$partialBytes, discarding partial and aborting attempt"
                     )
                     if (partialFile.exists()) partialFile.delete()
-                    for (i in 0 until 8) File("$partialFilePath.seg$i").delete()
-                    partialBytes = 0L
-                    isPartialResponse = false
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
+                    response.close()
+                    throw java.io.IOException("206 Content-Range start mismatch (got=$contentRangeStart, want=$partialBytes); discarded partial, retry from scratch")
                 }
             }
 

@@ -505,10 +505,24 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         expectedSize > 0 && existingSize > expectedSize -> {
                             OneKeyLog.warn("AppUpdate", "downloadAPK: existing APK larger than expected, deleting")
                             downloadedFile.delete()
+                            // Oversized final means local state is untrustworthy. A stale
+                            // single-stream .partial and any sibling .segN left by an earlier
+                            // concurrent run could otherwise be picked up below and reused —
+                            // wipe them so this restarts cleanly from byte zero.
+                            if (partialFile.exists()) partialFile.delete()
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
                         }
                         expectedSize > 0 && existingSize < expectedSize -> {
                             OneKeyLog.info("AppUpdate", "downloadAPK: existing APK smaller than expected, promoting to .partial for resume")
                             if (partialFile.exists()) partialFile.delete()
+                            // Drop any sibling .segN BEFORE the promotion. The promoted final
+                            // must become a clean single-stream resume cursor: if .segN
+                            // survived, Phase 2's hasConcurrentSegments check would fire and
+                            // the concurrent downloader would treat this legacy .partial as a
+                            // concat committed-cursor, risking a mixed file. With no .segN,
+                            // Phase 2 takes the single-stream size-based path and Range-resumes
+                            // from the partial's length.
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
                             if (!downloadedFile.renameTo(partialFile)) {
                                 OneKeyLog.warn("AppUpdate", "downloadAPK: rename to .partial failed, deleting stale final")
                                 downloadedFile.delete()
@@ -784,12 +798,20 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 if (serverWillResume) {
                     val rangeStart = rangeMatch?.groupValues?.getOrNull(1)?.toLongOrNull()
                     if (rangeStart == null || rangeStart != partialBytes) {
-                        OneKeyLog.warn("AppUpdate", "downloadAPK: 206 Content-Range start mismatch (header='${response.header("Content-Range")}', requested=$partialBytes); treating as full restart")
+                        // This 206 body is a slice starting at the wrong offset (CDN bug /
+                        // proxy rewrite). It is NOT a full file, so we must not consume it as
+                        // one — doing so would write mis-aligned bytes (caught only later at
+                        // SHA/GPG, after a bogus "downloaded" event). Wipe the partial + any
+                        // .segN so the next attempt starts clean from byte zero, close the
+                        // bad response, and throw a retryable error. The outer
+                        // catch(Exception) emits update/error and rethrows; finally resets
+                        // isDownloading, so this won't wedge.
+                        val contentRangeHeader = response.header("Content-Range")
+                        OneKeyLog.warn("AppUpdate", "downloadAPK: 206 Content-Range start mismatch (header='$contentRangeHeader', requested=$partialBytes); discarding partial and retrying from scratch")
                         if (partialFile.exists()) partialFile.delete()
-                        // Full restart from byte zero → drop any sibling .segN too.
                         for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
-                        partialBytes = 0L
-                        serverWillResume = false
+                        response.close()
+                        throw java.io.IOException("206 Content-Range start mismatch (header='$contentRangeHeader', requested=$partialBytes); discarded partial, retry from scratch")
                     }
                 }
 
@@ -908,33 +930,37 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 .followSslRedirects(false)
                 .build()
             val request = Request.Builder().url(ascFileUrl).build()
-            val response = client.newCall(request).execute()
+            // Wrap in .use so the Response (and its connection) is released on every
+            // exit path — including the !isSuccessful / empty-body / oversize throws,
+            // which previously leaked the connection back to the pool unclosed.
+            val ascContent = client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    OneKeyLog.error("AppUpdate", "downloadASC: HTTP error, statusCode=${response.code}")
+                    throw Exception(response.code.toString())
+                }
 
-            if (!response.isSuccessful) {
-                OneKeyLog.error("AppUpdate", "downloadASC: HTTP error, statusCode=${response.code}")
-                throw Exception(response.code.toString())
-            }
+                OneKeyLog.info("AppUpdate", "downloadASC: HTTP 200, reading ASC content...")
 
-            OneKeyLog.info("AppUpdate", "downloadASC: HTTP 200, reading ASC content...")
-
-            val content = StringBuilder()
-            val maxAscSize = 10 * 1024 // 10 KB max for ASC files
-            val body = response.body ?: throw Exception("Empty ASC response body")
-            BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    content.append(line).append("\n")
-                    if (content.length > maxAscSize) {
-                        OneKeyLog.error("AppUpdate", "downloadASC: ASC file exceeds max size ($maxAscSize bytes)")
-                        throw Exception("ASC file exceeds maximum allowed size")
+                val content = StringBuilder()
+                val maxAscSize = 10 * 1024 // 10 KB max for ASC files
+                val body = response.body ?: throw Exception("Empty ASC response body")
+                BufferedReader(InputStreamReader(body.byteStream())).use { reader ->
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        content.append(line).append("\n")
+                        if (content.length > maxAscSize) {
+                            OneKeyLog.error("AppUpdate", "downloadASC: ASC file exceeds max size ($maxAscSize bytes)")
+                            throw Exception("ASC file exceeds maximum allowed size")
+                        }
                     }
                 }
-            }
 
-            val ascContent = content.toString()
-            if (ascContent.isEmpty()) {
-                OneKeyLog.error("AppUpdate", "downloadASC: ASC content is empty")
-                throw Exception("Empty ASC file")
+                val parsed = content.toString()
+                if (parsed.isEmpty()) {
+                    OneKeyLog.error("AppUpdate", "downloadASC: ASC content is empty")
+                    throw Exception("Empty ASC file")
+                }
+                parsed
             }
 
             OneKeyLog.info("AppUpdate", "downloadASC: ASC content size=${ascContent.length} bytes")

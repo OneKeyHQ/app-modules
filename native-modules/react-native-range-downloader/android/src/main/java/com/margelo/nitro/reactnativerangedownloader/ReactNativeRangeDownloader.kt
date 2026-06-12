@@ -30,17 +30,6 @@ import java.util.concurrent.atomic.AtomicLong
 @DoNotStrip
 class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
-  companion object {
-    // Segment count used by cancel/discardArtifacts when sweeping the sibling
-    // `<dest>.partial.segN` files. download() lets callers override segmentCount,
-    // but cancel/discard don't receive params, so we sweep the shipped default
-    // (matches ConcurrentRangeDownloader's default and download()'s `?: 8`),
-    // which covers the overwhelming majority of runs. A larger custom count
-    // would leave a few high-index `.segN` behind, but the next resume only
-    // trusts segments it re-reads, so the worst case is a little stale disk.
-    private const val DEFAULT_SEGMENT_COUNT = 8
-  }
-
   private class Listener(val id: Double, val callback: (RangeDownloadEvent) -> Unit)
 
   private val listeners = CopyOnWriteArrayList<Listener>()
@@ -97,7 +86,12 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
       val cancelHandle = ConcurrentRangeDownloader.CancelHandle()
       activeDownloads[runKey] = cancelHandle
 
-      var lastProgress = -1
+      // The progress callback is invoked concurrently by the helper's worker
+      // threads, so guard lastProgress with an AtomicInteger + CAS: only the
+      // thread that advances the percentage to a strictly higher value wins the
+      // CAS and emits the event, which keeps progress monotonic and de-duped
+      // without a lock (this only affects event ordering, never file bytes).
+      val lastProgress = java.util.concurrent.atomic.AtomicInteger(-1)
       val outcome = try {
         ConcurrentRangeDownloader(
           httpClient = httpClient,
@@ -107,9 +101,9 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
         ).download(downloadUrl, partialFilePath, cancelHandle) { transferred, total ->
           if (total > 0) {
             val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
-            if (p != lastProgress) {
+            val prev = lastProgress.get()
+            if (p > prev && lastProgress.compareAndSet(prev, p)) {
               sendEvent(channel, taskId, type = "progress", progress = p)
-              lastProgress = p
             }
           }
         }
@@ -174,9 +168,9 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
       cancelActive(channel, taskId)
       // Sweep the per-segment `.segN` files plus the concatenated `.partial` so a
       // future resume can't re-trust stale bytes (no `.progress` manifest exists
-      // anymore in the segmented model).
-      for (i in 0 until DEFAULT_SEGMENT_COUNT) File("$destFilePath.partial.seg$i").delete()
-      File("$destFilePath.partial").delete()
+      // anymore in the segmented model). Glob by filename prefix so any custom
+      // segmentCount is fully cleared, not just the shipped default of 8.
+      sweepPartialArtifacts(destFilePath)
       OneKeyLog.info("RangeDownloader", "discardArtifacts: channel=$channel taskId=$taskId")
       Unit
     }
@@ -190,10 +184,9 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
     return Promise.async {
       // Stop workers first, then delete artifacts so nothing resurrects them.
       cancelActive(channel, taskId)
-      // Same segmented-artifact sweep as discardArtifacts: per-segment `.segN`
-      // files plus the concatenated `.partial`.
-      for (i in 0 until DEFAULT_SEGMENT_COUNT) File("$destFilePath.partial.seg$i").delete()
-      File("$destFilePath.partial").delete()
+      // Same segmented-artifact sweep as discardArtifacts: glob every per-segment
+      // `.segN` file by prefix plus the concatenated `.partial`.
+      sweepPartialArtifacts(destFilePath)
       OneKeyLog.info("RangeDownloader", "cancel: channel=$channel taskId=$taskId")
       Unit
     }
@@ -202,6 +195,17 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   // Flip the abort flag + shutdown the pool for an in-flight download (if any).
   private fun cancelActive(channel: DownloadChannel, taskId: String) {
     activeDownloads.remove(runKey(channel, taskId))?.cancel()
+  }
+
+  // Delete every sibling artifact for [destFilePath]: all `<dest>.partial.seg<N>`
+  // segment files (matched by filename prefix, so any segmentCount is swept, not
+  // just the shipped default) plus the concatenated `<dest>.partial` itself.
+  private fun sweepPartialArtifacts(destFilePath: String) {
+    val partial = File("$destFilePath.partial")
+    partial.parentFile
+      ?.listFiles { f -> f.name.startsWith(partial.name + ".seg") }
+      ?.forEach { it.delete() }
+    partial.delete()
   }
 
   // Atomically replace [dest] with [src] so a kill mid-finalize never leaves
