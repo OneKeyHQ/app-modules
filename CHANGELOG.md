@@ -2,6 +2,128 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.66] - 2026-06-12
+
+### Features
+- **range-downloader**: Unified shared `ConcurrentRangeDownloader` implementation used by both `app-update` and `bundle-update`; segments stream into `<partial>.segN` files and are concatenated into the final `.partial`, removing full-file pre-allocation and EROFS/ENOSPC risk on near-full devices.
+- **app-update (Android)**: APK downloads moved from `cacheDir/apks` to `filesDir/apks` to avoid system cache reclamation (EROFS/ENOSPC) during downloads; `FileProvider` path updated while keeping legacy cache-path compatibility.
+
+### Bug Fixes
+- **app-update / bundle-update / range-downloader**: Harden concurrent range downloader and resume logic — use OkHttp `.use()` to close responses, validate 206 `Content-Range` start bounds, sweep stale sibling `.segN` artifacts, make progress reporting thread-safe via `AtomicInteger` + CAS, and remove unconditional ETag/`If-Range` pinning so final SHA256/GPG verify remains the correctness backstop.
+- **app-update / bundle-update / range-downloader**: Clean up partial `.segN` files on promote/discard, close leaked ASC responses, fix duplicate progress events, and treat 206 `Content-Range` mismatches as retryable errors that wipe partial artifacts.
+- **app-update (Android)**: Pass absolute path to the concurrent downloader so segment files are written under `filesDir` instead of the read-only root filesystem.
+
+### Chores
+- Bump all packages to 3.0.66.
+
+## [3.0.65] - 2026-06-12
+
+### Bug Fixes
+- **split-bundle-loader (iOS)**: Replace the bare `dispatch_after` segment-eval watchdog with `SBLActiveWatchdog`, a `CLOCK_UPTIME_RAW` active-time accumulator that pauses on `WillResignActive` and resumes with a 500 ms grace on `DidBecomeActive`, preventing false `SPLIT_BUNDLE_TIMEOUT` white-screens when the app is suspended during cold start.
+- **split-bundle-loader (iOS)**: Pause the active-time watchdog synchronously on lifecycle transitions so a pending timer tick cannot fold suspended time into the active interval.
+
+### Chores
+- Bump all packages to 3.0.65.
+
+## [3.0.64] - 2026-06-12
+
+### Bug Fixes
+- **background-thread (Android)**: Harden coalesced runtime work against five concurrency issues — guard `gBgTimerExecutor` assignment under the timer mutex, keep queue items intact across transient `ptr==0` drains, clear orphaned `gPendingWork` entries after `nativeInvalidateSharedRpc`, re-arm drains on bridge install when the queue is non-empty, and guard against stale-id reschedules on empty queues.
+- **background-thread (Android)**: Prevent background segment-eval replay and latch-stall across reload by treating an already-erased `gPendingBgEvals` entry as "drain claimed" and force-arming a drain whenever the coalesced queue is non-empty after bridge install.
+
+### Chores
+- Bump all packages to 3.0.64.
+
+## [3.0.63] - 2026-06-12
+
+### Bug Fixes
+- **background-thread**: Coalesce background-thread runtime work so multiple `SharedRPC` calls and timer callbacks are batched into a single JS executor drain, reducing native→JS thread hopping and closing races where rapid consecutive calls could overrun the executor.
+
+### Chores
+- Bump all packages to 3.0.63.
+
+## [3.0.61] - 2026-06-12
+
+### Features
+- **split-bundle-loader / background-thread**: Evaluate split-bundle segments before resolving `loadSegment` promises on iOS main/background and Android main/background, fixing the uncatchable "Requiring unknown module" Hermes fatal when Metro `import()` ran before the segment's `__d` definitions; adds a watchdog, retryable-vs-fatal error codes, and off-JS-thread file reads.
+
+### Chores
+- **example**: Wire every native module into the example app for iOS/Android build verification.
+- Bump all packages to 3.0.61.
+
+## [3.0.60] - 2026-06-11
+
+### Chores
+- Refresh example iOS `Podfile.lock` checksums and clarify bundle directory comments.
+- Bump all packages to 3.0.60.
+
+## [3.0.59] - 2026-06-11
+
+### Features
+- **app-update (Android) / bundle-update**: Add cache-pruning APIs — `clearApkCache` and `pruneStaleAppVersionBundles` — to safely reclaim disk space from old APK and OTA-bundle artifacts while protecting the current app/bundle versions and in-progress downloads.
+
+### Bug Fixes
+- **app-update (Android)**: Protect verified/pending-install APKs during cache cleanup; abort cleanup while a download is active and log skipped files to avoid delete races.
+- **bundle-update (Android)**: Make `deleteDirectory` report real success/failure and warn on incomplete deletes instead of always reporting success.
+- **bundle-update (iOS)**: Fix `appVersionFromStem` static method scope reference.
+
+### Chores
+- Bump all packages to 3.0.59.
+
+## [3.0.58] - 2026-06-10
+
+### Bug Fixes
+- **device-utils (iOS)**: Guard `getAndClearColdStartLocalNotification` with `os_unfair_lock` so the deep-link payload is read exactly once even under concurrent calls.
+- **chart-webview (Android)**: Harden pooled WebView reuse — use weak owner/warm-driver refs to avoid pinning disposed host contexts, validate `assetHost` to a bare hostname before it becomes the privileged-bridge origin, normalize `localBundle` to avoid double-slash URLs, and retry `forceDetach` before giving up on a stuck parent.
+
+### Chores
+- Bump all packages to 3.0.58.
+
+## [3.0.57] - 2026-06-10
+
+### Features
+- **chart-webview**: Add configurable `androidAssetHost` prop so the WebView asset-loader domain can be overridden instead of hard-coded.
+
+### Chores
+- Bump all packages to 3.0.57.
+
+## [3.0.56] - 2026-06-10
+
+### Features
+- **chart-webview**: Add warm-driver support so the pooled offline page boots off-screen and page→native callbacks are routed to the owner or warm-driver; source/bridge setters now apply synchronously, dropping the reconcile loop that caused infinite loops on Android.
+- **chart-webview (Android)**: Pause the pooled WebView renderer when no host owns it and resume on claim, stopping off-screen WebView CPU/RAM growth; add `webviewDebuggingEnabled` prop and retry reparenting up to 12 frames.
+
+### Bug Fixes
+- **chart-webview (Android)**: Fix pooled WebView re-parenting white-screen/stuck-loading by forcefully clearing the parent on dispose before re-attaching.
+- **chart-webview (Android)**: Remove ChartDBG diagnostic instrumentation while keeping operational pool logs.
+
+### Chores
+- Bump all packages to 3.0.56.
+
+## [3.0.55] - 2026-06-09
+
+### Features
+- **device-utils (iOS)**: Add `getAndClearColdStartLocalNotification()` to read and clear a killed-app local-notification tap payload exactly once, enabling cold-start deep-link routing; the slot is in-memory only so a fresh process cannot replay a stale tap.
+
+### Chores
+- Bump all packages to 3.0.55.
+
+## [3.0.54] - 2026-06-09
+
+### Features
+- **segment-slider**: Migrate to an uncontrolled model — `value` is replaced by `defaultValue` plus an imperative `setValue(value)` ref method, removing the controlled-value-vs-drag conflict and avoiding Fabric prop commits for programmatic updates.
+
+### Bug Fixes
+- **range-downloader / app-update**: Address concurrent-download audit findings — detect concurrent `.partial` via the `.progress` sidecar before size classification, terminate iOS `download()` completion when a segment goes missing/truncated, stream segment concatenation, require 206 + `Content-Range` match before stashing, and add `cancel(channel, taskId)`.
+- **bundle-crypto**: Audit fixes — exact-basename skip rules, `removePrefix` relative paths, iOS path-traversal separator boundary, and RFC 4880 cleartext canonicalization/framing.
+- **bundle-update**: Audit fixes — fail-closed on unlistable dirs, exact-basename skip, `removePrefix`, path-confinement separator boundary, hold `isDownloading` across skip delay, and signature-first atomic version persistence.
+- **chart-webview**: Scope the privileged bridge to trusted origins / main frame only, refcount the pool, and wire teardown so the WebView is destroyed on host drop.
+- **zip-archive (iOS)**: Preserve zip unzip error details in thrown messages.
+
+### Chores
+- **example**: Remove the TradingView asset fetch script.
+- Bump all packages to 3.0.54.
+
 ## [3.0.53] - 2026-06-08
 
 ### Features
