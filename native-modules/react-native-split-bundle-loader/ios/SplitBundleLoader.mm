@@ -314,16 +314,25 @@ static uint64_t SBLNowUptimeNs(void) {
 }
 
 - (void)handleWillResignActive {
-  // Sample the resign instant SYNCHRONOUSLY here (main thread), BEFORE the app
-  // can suspend. The _queue block below may not run until the app is resumed
-  // minutes later; if it sampled the clock then (via currentIntervalMsLocked),
-  // it would fold all the suspended-but-awake wall time — during which
-  // CLOCK_UPTIME_RAW keeps advancing — into _accumulatedActiveMs, and the
-  // watchdog could fire right after the 500ms resume grace, re-introducing the
-  // exact false-fire this watchdog exists to prevent. Capturing resignAt up
-  // front caps the accrued interval at the moment the app actually went inactive.
+  // Sample the resign instant on the main thread BEFORE the app can suspend.
   uint64_t resignAtUptimeNs = SBLNowUptimeNs();
-  dispatch_async(_queue, ^{
+  // Fold + pause SYNCHRONOUSLY (dispatch_sync, not async). The pause must take
+  // effect before this lifecycle callback returns — i.e. before the app is
+  // suspended. Why sync is required, not just a synchronous timestamp:
+  //   - the polling timer fires on _queue; a tick may already be PENDING on
+  //     _queue when we resign. tickLocked recomputes `now` at EXECUTION time, so
+  //     if that pending tick doesn't run until the app RESUMES (minutes later),
+  //     it would see _isActive==YES + the old interval start and fold all the
+  //     suspended-but-awake time (CLOCK_UPTIME_RAW keeps advancing) → fire a
+  //     false SPLIT_BUNDLE_TIMEOUT before the resume grace is even armed.
+  //   - dispatch_sync drains the serial queue first: any pending tick runs NOW
+  //     (at resign time, pre-suspension, with a valid small interval — no false
+  //     fire), then this fold runs and sets _isActive=NO. So by the time the app
+  //     suspends, the clock is stopped and no stale tick can fire on resume.
+  // Safe from deadlock: _queue blocks never dispatch_sync back to the main
+  // thread (observer removal uses dispatch_async), and the queue's blocks are
+  // all O(1).
+  dispatch_sync(_queue, ^{
     if (self->_finished || !self->_isActive) {
       return;  // idempotent: already inactive or already settled.
     }
