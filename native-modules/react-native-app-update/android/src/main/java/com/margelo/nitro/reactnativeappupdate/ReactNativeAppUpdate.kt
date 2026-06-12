@@ -28,6 +28,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import com.margelo.nitro.reactnativebundlecrypto.BundleCryptoCore
+// Shared 8-range concurrent downloader (segment-file model, no whole-file
+// pre-allocation). Previously app-update bundled its own private copy; it now
+// consumes the single shared implementation in react-native-range-downloader
+// so a fix lands once for both APK and JS-bundle downloads.
+import com.margelo.nitro.reactnativerangedownloader.ConcurrentRangeDownloader
 
 private data class Listener(
     val id: Double,
@@ -40,6 +45,12 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     companion object {
         private const val CHANNEL_ID = "updateApp"
         private const val NOTIFICATION_ID = 1
+
+        // Must match ConcurrentRangeDownloader's default segmentCount: the
+        // concurrent downloader writes sibling segment files
+        // "<partial>.seg0".."<partial>.seg${N-1}", and Phase 2 below scans this
+        // range to detect an in-flight concurrent download.
+        private const val CONCURRENT_SEGMENT_COUNT = 8
     }
 
     private val listeners = CopyOnWriteArrayList<Listener>()
@@ -520,23 +531,21 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
 
                 // Phase 2 — pick up an in-flight partial.
                 //
-                // A concurrent (multi-range) partial is pre-allocated to the FULL
-                // size up front (RandomAccessFile.setLength(total)) and tracks the
-                // real, durably-written cursor only in its sidecar
-                // "<partial>.progress" manifest — the .partial itself is zero-filled
-                // past the real data. The size-based classification below is blind
-                // to that: it would see partialSize == expectedSize and try to
-                // promote+SHA-verify a mostly-zeroed file, hit HashMismatch, and
-                // DELETE it — nuking every interrupted concurrent download back to
-                // byte 0. So when the manifest exists, skip the size-based
+                // The concurrent (multi-range) downloader stores in-flight bytes in
+                // sibling segment files "<partial>.seg0".."<partial>.segN" — NOT in
+                // the .partial (the .partial only ever holds real, fully-assembled
+                // bytes, written by the concurrent downloader's final concat or by
+                // the single-stream path). When any segment file exists, an
+                // interrupted concurrent download owns the slot: skip the size-based
                 // promote/discard branches entirely and let the concurrent
-                // downloader below own the file: it resumes from the manifest (or
-                // returns FALLBACK and hands the bytes back to single-stream).
-                // The path must match exactly what ConcurrentRangeDownloader writes:
-                // File("$partialFilePath.progress").
-                val hasConcurrentManifest = buildFile("$partialFilePath.progress").exists()
+                // downloader below resume (it picks up each .segN, or returns
+                // FALLBACK and hands the bytes back to single-stream). The segment
+                // path must match exactly what ConcurrentRangeDownloader writes:
+                // File("$partialFilePath.seg$i").
+                val hasConcurrentSegments =
+                    (0 until CONCURRENT_SEGMENT_COUNT).any { buildFile("$partialFilePath.seg$it").exists() }
                 var partialBytes = 0L
-                if (partialFile.exists() && !hasConcurrentManifest) {
+                if (partialFile.exists() && !hasConcurrentSegments) {
                     val partialSize = partialFile.length()
                     when {
                         expectedSize > 0 && partialSize == expectedSize -> {

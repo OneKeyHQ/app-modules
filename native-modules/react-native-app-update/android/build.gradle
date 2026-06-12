@@ -142,6 +142,11 @@ dependencies {
   // own GPG public key + BouncyCastle verify implementation.
   implementation project(":onekeyfe_react-native-bundle-crypto")
 
+  // Shared 8-range concurrent downloader (segment-file model). app-update no
+  // longer carries its own copy of ConcurrentRangeDownloader — it consumes the
+  // single shared implementation here, same as react-native-bundle-update.
+  implementation project(":onekeyfe_react-native-range-downloader")
+
   implementation "com.squareup.okhttp3:okhttp:4.12.0"
   implementation "com.squareup.okio:okio:3.9.0"
   implementation "androidx.core:core-ktx:1.15.0"

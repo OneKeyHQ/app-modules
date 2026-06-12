@@ -1234,9 +1234,13 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 if (verifyBundleSHA256(filePath, sha256)) {
                     OneKeyLog.info("BundleUpdate", "downloadBundle: existing file SHA256 valid, skipping download")
                     // Final file is authoritative — drop any stale concurrent
-                    // partial/manifest left by an earlier interrupted attempt.
+                    // partial + segment files left by an earlier interrupted
+                    // attempt. (".progress" is a legacy manifest from the old
+                    // pre-allocated model; deleting it is a harmless no-op now.)
                     if (partialFile.exists()) partialFile.delete()
                     File("$partialFilePath.progress").delete()
+                    // ConcurrentRangeDownloader's default segmentCount is 8.
+                    for (i in 0 until 8) File("$partialFilePath.seg$i").delete()
                     // Keep isDownloading held across the skip delay below. Clearing
                     // it before the sleep opens a ~1s window where a second
                     // downloadBundle could pass the getAndSet guard and run
@@ -1844,8 +1848,12 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 downloadDir.listFiles()?.forEach { file ->
                     val name = file.name
                     // Strip the trailing extension chain to recover the
-                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial").
+                    // "{appV}-{bV}" stem (e.g. "6.3.0-123.zip.partial", or a
+                    // concurrent segment file "6.3.0-123.zip.partial.seg3").
                     var stem = name
+                    // Concurrent segment files end in ".segN" — peel that off
+                    // first so the rest of the chain strips as usual.
+                    stem = stem.replace(Regex("""\.seg\d+$"""), "")
                     for (suffix in listOf(".resume", ".progress", ".partial", ".zip")) {
                         if (stem.endsWith(suffix)) {
                             stem = stem.substring(0, stem.length - suffix.length)

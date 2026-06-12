@@ -3,7 +3,8 @@ package com.margelo.nitro.reactnativerangedownloader
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
-import java.io.RandomAccessFile
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -11,26 +12,37 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Splits a Range-capable download into [segmentCount] byte ranges fetched in
- * parallel, each written directly into its own offset of ONE pre-allocated
- * `.partial` file (no merge pass, 1x disk). A sidecar `<partial>.progress`
- * manifest records each segment's durably-written cursor so an interrupted
- * download resumes by re-requesting only the unfinished tail of each segment.
+ * parallel, each STREAMED INTO ITS OWN sibling file `<partial>.segN` with plain
+ * sequential `FileOutputStream` appends (O_WRONLY). Once every segment file is
+ * fully present, the segments are concatenated in order into the `.partial`
+ * (and freed as they are consumed, so the peak footprint stays ~1x the file
+ * plus one segment). Mirrors the iOS RangeDownloader segment-file model.
  *
- * Mirrors the desktop DesktopApiBundleUpdate concurrent path. This class is
- * intentionally free of Android/OneKey dependencies (logging is injected) so
- * it can be unit/type-checked standalone; the whole-file SHA256 check the
- * caller already performs after promotion is the final correctness backstop.
+ * Why segment files instead of one pre-allocated `.partial` with positioned
+ * writes: the previous design pre-allocated the full size up front via
+ * `RandomAccessFile(partial, "rw").setLength(total)`. That O_RDWR open +
+ * large reservation fails with EROFS/ENOSPC on near-full f2fs devices (and any
+ * storage that rejects a large up-front reservation), aborting the WHOLE
+ * download before a byte is fetched. This design only ever does plain O_WRONLY
+ * sequential writes (segment fetch + concat) and O_RDONLY reads — the same I/O
+ * shape as the caller's proven single-stream path — so it grows incrementally
+ * up to the real space limit instead of reserving everything at once.
  *
- * Invariant: the manifest is only meaningful as metadata for an existing
- * `.partial`. Either both exist (resume) or neither does (fresh) — any other
- * combination is treated as "no resumable state".
+ * Resume across kill/suspend is simply "which `<partial>.segN` already exist
+ * and how big": a full-sized segment is kept; a short one resumes from its
+ * current length via `Range` + `If-Range`; with no strong validator (ETag)
+ * leftover segments can't be pinned to the server object and are wiped. The
+ * caller's whole-file SHA256 + GPG verify after promotion remains the final
+ * correctness backstop.
+ *
+ * This class is intentionally free of Android/OneKey dependencies (logging is
+ * injected) so it can be unit/type-checked standalone.
  */
 class ConcurrentRangeDownloader(
     private val httpClient: OkHttpClient,
     private val segmentCount: Int = 8,
     private val minConcurrentBytes: Long = 2L * 1024 * 1024,
     private val maxPartRetry: Int = 3,
-    private val manifestFlushBytes: Long = 4L * 1024 * 1024,
     private val log: (String) -> Unit = {},
 ) {
     enum class Outcome {
@@ -48,7 +60,7 @@ class ConcurrentRangeDownloader(
      * Cooperative-cancel handle the caller can register a download against. The
      * adapter keeps these in a per-taskId registry so `cancel`/`discardArtifacts`
      * can flip [aborted] and `shutdownNow()` the worker pool BEFORE deleting the
-     * `.partial`/`.progress`, so no in-flight worker resurrects a deleted file.
+     * segment files, so no in-flight worker resurrects a deleted file.
      */
     class CancelHandle {
         val aborted = AtomicBoolean(false)
@@ -69,10 +81,7 @@ class ConcurrentRangeDownloader(
         }
     }
 
-    private class Part(val index: Int, val start: Long, val end: Long, done: Long) {
-        // AtomicLong so manifest snapshots read a consistent value even if the
-        // owning thread ever changes (cross-thread reads in flushManifest).
-        val done = AtomicLong(done)
+    private class Part(val index: Int, val start: Long, val end: Long) {
         val length: Long get() = end - start + 1
     }
 
@@ -81,8 +90,8 @@ class ConcurrentRangeDownloader(
     /**
      * Fills [partialFilePath] completely with the resource at [url] using
      * concurrent ranges. See [Outcome]. Throws on a transient/IO error after
-     * per-segment retries, leaving the partial + manifest in place so a later
-     * attempt resumes.
+     * per-segment retries, leaving the segment files in place so a later attempt
+     * resumes.
      */
     fun download(
         url: String,
@@ -91,11 +100,12 @@ class ConcurrentRangeDownloader(
         onProgress: (transferred: Long, total: Long) -> Unit,
     ): Outcome {
         val partialFile = File(partialFilePath)
-        val manifestFile = File("$partialFilePath.progress")
+        val segFile: (Int) -> File = { index -> File("$partialFilePath.seg$index") }
 
-        // A bare `.partial` with no manifest is a single-stream leftover; let
-        // the caller's single-stream path resume it instead of discarding it.
-        if (partialFile.exists() && !manifestFile.exists()) {
+        // A bare `.partial` with NO segment files is a single-stream leftover;
+        // let the caller's single-stream path resume it instead of touching it.
+        val anyLeftoverSeg = (0 until segmentCount).any { segFile(it).exists() }
+        if (partialFile.exists() && !anyLeftoverSeg) {
             log("concurrent: single-stream partial present, deferring to single-stream")
             return Outcome.FALLBACK
         }
@@ -107,18 +117,31 @@ class ConcurrentRangeDownloader(
         }
         val total = probe.totalSize
         val etag = probe.etag
-        // A strong validator (ETag) is what lets If-Range pin a resumed range to
-        // the exact object the partial was started against. Without it we cannot
-        // safely trust or persist `.partial`/`.progress` across attempts, so we
-        // start fresh and skip manifest persistence (the caller's whole-file
-        // SHA256 check after promotion remains the final correctness backstop).
+        // A strong validator (ETag) is what lets If-Range pin a resumed segment
+        // to the exact object the segments were started against. Without it,
+        // leftover segments are untrustworthy — start fresh.
         val hasValidator = !etag.isNullOrEmpty()
 
         partialFile.parentFile?.let { if (!it.exists()) it.mkdirs() }
-        dropOrphanManifest(partialFile, manifestFile)
-        val parts = loadOrInitManifest(manifestFile, partialFile, total, etag, hasValidator)
 
-        val transferred = AtomicLong(parts.sumOf { it.done.get() })
+        val parts = planRanges(total)
+
+        if (!hasValidator) {
+            wipeArtifacts(partialFile, segFile)
+        }
+        // Discard any leftover segment that can't belong to this plan (wrong
+        // length = different object/range, or an index beyond the plan).
+        for (i in 0 until segmentCount) {
+            val f = segFile(i)
+            if (!f.exists()) continue
+            val expected = parts.getOrNull(i)?.length
+            if (expected == null || f.length() > expected) {
+                log("concurrent: discarding stale/oversized segment $i")
+                f.delete()
+            }
+        }
+
+        val transferred = AtomicLong(parts.sumOf { segFile(it.index).length() })
         onProgress(transferred.get(), total)
 
         // Share the abort flag with the cancel handle so an external cancel() is
@@ -126,74 +149,71 @@ class ConcurrentRangeDownloader(
         val aborted = cancelHandle?.aborted ?: AtomicBoolean(false)
         val fallback = AtomicBoolean(false)
         val firstError = AtomicReference<Exception?>(null)
-        val lastFlushed = LongArray(parts.size) { parts[it].done.get() }
 
-        val pool = Executors.newFixedThreadPool(minOf(segmentCount, parts.size))
-        cancelHandle?.attach(pool)
-        try {
-            val futures = parts.map { part ->
-                pool.submit {
-                    try {
-                        downloadPart(url, etag, partialFile, part, aborted) { delta ->
-                            val t = transferred.addAndGet(delta)
-                            if (hasValidator) {
-                                synchronized(lastFlushed) {
-                                    if (part.done.get() - lastFlushed[part.index] >= manifestFlushBytes) {
-                                        lastFlushed[part.index] = part.done.get()
-                                        flushManifest(manifestFile, total, etag, parts)
-                                    }
-                                }
+        // Only segments not yet fully on disk need fetching.
+        val pending = parts.filter { segFile(it.index).length() < it.length }
+        if (pending.isNotEmpty()) {
+            val pool = Executors.newFixedThreadPool(minOf(segmentCount, pending.size))
+            cancelHandle?.attach(pool)
+            try {
+                val futures = pending.map { part ->
+                    pool.submit {
+                        try {
+                            downloadSegment(url, etag, segFile(part.index), part, aborted) { delta ->
+                                onProgress(transferred.addAndGet(delta), total)
                             }
-                            onProgress(t, total)
+                        } catch (e: FallbackException) {
+                            fallback.set(true)
+                            aborted.set(true)
+                            firstError.compareAndSet(null, e)
+                        } catch (e: Exception) {
+                            aborted.set(true)
+                            firstError.compareAndSet(null, e)
                         }
-                    } catch (e: FallbackException) {
-                        fallback.set(true)
-                        aborted.set(true)
-                        firstError.compareAndSet(null, e)
-                    } catch (e: Exception) {
-                        aborted.set(true)
-                        firstError.compareAndSet(null, e)
                     }
                 }
+                futures.forEach { it.get() }
+            } finally {
+                pool.shutdownNow()
             }
-            futures.forEach { it.get() }
-        } finally {
-            pool.shutdownNow()
         }
 
         if (fallback.get()) {
             // Stale/unusable bytes — clear before the caller falls back.
-            discard(partialFile, manifestFile)
+            wipeArtifacts(partialFile, segFile)
             return Outcome.FALLBACK
         }
         val err = firstError.get()
         if (err != null) {
-            if (hasValidator) {
-                // Transient — persist progress so the next attempt resumes, then bubble up.
-                flushManifest(manifestFile, total, etag, parts)
-            } else {
-                // No validator: resume state is untrustworthy, so don't persist
-                // it — discard and let the next attempt start clean.
-                discard(partialFile, manifestFile)
-            }
+            // Transient. Keep the segment files so the next attempt resumes when
+            // we have a validator; otherwise they can't be trusted — wipe them.
+            if (!hasValidator) wipeArtifacts(partialFile, segFile)
             throw err
         }
-        val got = parts.sumOf { it.done.get() }
-        if (got < total) {
-            if (hasValidator) {
-                flushManifest(manifestFile, total, etag, parts)
-            } else {
-                discard(partialFile, manifestFile)
-            }
-            throw java.io.IOException("Concurrent download incomplete ($got/$total)")
+        val incomplete = parts.firstOrNull { segFile(it.index).length() != it.length }
+        if (incomplete != null) {
+            if (!hasValidator) wipeArtifacts(partialFile, segFile)
+            throw java.io.IOException("Concurrent download incomplete (segment ${incomplete.index})")
         }
 
-        // Success: `.partial` is fully filled. The manifest's job is done and it
-        // must never outlive the `.partial` it describes (caller is about to
-        // promote it), so drop it now.
-        manifestFile.delete()
+        // All segments complete → assemble the `.partial`.
+        concatenate(partialFile, parts, segFile, total)
         log("concurrent: completed ($total bytes)")
         return Outcome.COMPLETED
+    }
+
+    private fun planRanges(total: Long): List<Part> {
+        val parts = ArrayList<Part>()
+        val chunk = (total + segmentCount - 1) / segmentCount
+        var i = 0
+        while (i < segmentCount) {
+            val start = i * chunk
+            if (start >= total) break
+            val end = minOf(start + chunk - 1, total - 1)
+            parts.add(Part(parts.size, start, end))
+            i += 1
+        }
+        return parts
     }
 
     // Single round-trip probe: a one-byte Range request that confirms Range
@@ -224,113 +244,69 @@ class ConcurrentRangeDownloader(
         }
     }
 
-    private fun dropOrphanManifest(partialFile: File, manifestFile: File) {
-        if (!partialFile.exists() && manifestFile.exists()) {
-            log("concurrent: dropping orphan manifest")
-            manifestFile.delete()
-        }
-    }
-
-    private fun discard(partialFile: File, manifestFile: File) {
-        // Manifest first so it never outlives the partial it describes.
-        manifestFile.delete()
+    private fun wipeArtifacts(partialFile: File, segFile: (Int) -> File) {
         partialFile.delete()
+        for (i in 0 until segmentCount) segFile(i).delete()
     }
 
-    // Resume from a manifest whose size/ETag still match, else (re)create a
-    // fresh pre-allocated partial + manifest. Manifest is removed before the
-    // partial is (re)created, and written only after the partial exists.
-    private fun loadOrInitManifest(
-        manifestFile: File,
+    // Concatenate the completed segment files, in order, into the `.partial`.
+    // Append-mode + the `.partial`'s current length as the resume cursor make
+    // this idempotent and crash-safe: an interrupted concat resumes where it
+    // left off, and each segment is deleted only after it has been fully
+    // appended, so the peak footprint stays ~1x the file plus one segment
+    // (critical on near-full devices — a 2x "all segs + full copy" peak would
+    // re-introduce the out-of-space failure this design exists to avoid).
+    private fun concatenate(
         partialFile: File,
+        parts: List<Part>,
+        segFile: (Int) -> File,
         total: Long,
-        etag: String?,
-        hasValidator: Boolean,
-    ): List<Part> {
-        // Only trust an existing manifest when a strong validator pins it to the
-        // server object; otherwise always start fresh.
-        if (hasValidator && manifestFile.exists() && partialFile.exists()) {
-            val parsed = parseManifest(manifestFile, total, etag, partialFile.length())
-            if (parsed != null) {
-                log("concurrent: resuming, transferred=${parsed.sumOf { it.done.get() }}/$total")
-                return parsed
+    ) {
+        var written = if (partialFile.exists()) partialFile.length() else 0L
+        if (written > total) {
+            // Corrupt/over-long prior concat — restart clean.
+            partialFile.delete()
+            written = 0L
+        }
+        FileOutputStream(partialFile, /* append = */ true).use { out ->
+            var cursor = 0L
+            for (part in parts) {
+                val segEndInFinal = cursor + part.length
+                if (written < segEndInFinal) {
+                    val seg = segFile(part.index)
+                    // Skip the prefix of this segment that a prior interrupted
+                    // concat already appended (append always writes at EOF).
+                    val skip = (written - cursor).coerceAtLeast(0L)
+                    FileInputStream(seg).use { input ->
+                        var toSkip = skip
+                        while (toSkip > 0) {
+                            val s = input.skip(toSkip)
+                            if (s <= 0) break
+                            toSkip -= s
+                        }
+                        input.copyTo(out)
+                    }
+                    out.flush()
+                    written = segEndInFinal
+                }
+                cursor = segEndInFinal
+                segFile(part.index).delete()
             }
         }
-        discard(partialFile, manifestFile)
-        RandomAccessFile(partialFile, "rw").use { it.setLength(total) }
-        val parts = ArrayList<Part>()
-        val chunk = (total + segmentCount - 1) / segmentCount
-        var i = 0
-        while (i < segmentCount) {
-            val start = i * chunk
-            if (start >= total) break
-            val end = minOf(start + chunk - 1, total - 1)
-            parts.add(Part(parts.size, start, end, 0))
-            i += 1
-        }
-        // Persist the manifest only when it can be safely resumed later.
-        if (hasValidator) writeManifest(manifestFile, total, etag, parts)
-        return parts
-    }
-
-    // Manifest format (dependency-free, internal): line 0 "<size>|<etag>",
-    // then one "<index>,<start>,<end>,<done>" line per segment.
-    private fun writeManifest(manifestFile: File, total: Long, etag: String?, parts: List<Part>) {
-        val sb = StringBuilder()
-        sb.append(total).append('|').append(etag ?: "").append('\n')
-        for (p in parts) {
-            sb.append(p.index).append(',').append(p.start).append(',')
-                .append(p.end).append(',').append(p.done.get()).append('\n')
-        }
-        manifestFile.writeText(sb.toString())
-    }
-
-    @Synchronized
-    private fun flushManifest(manifestFile: File, total: Long, etag: String?, parts: List<Part>) {
-        try {
-            writeManifest(manifestFile, total, etag, parts)
-        } catch (e: Exception) {
-            log("concurrent: manifest flush failed: ${e.javaClass.simpleName}")
+        if (partialFile.length() != total) {
+            partialFile.delete()
+            throw java.io.IOException("Concat size mismatch (${partialFile.length()}/$total)")
         }
     }
 
-    private fun parseManifest(manifestFile: File, total: Long, etag: String?, partialSize: Long): List<Part>? {
-        return try {
-            val lines = manifestFile.readText().trim().split('\n')
-            if (lines.isEmpty()) return null
-            val head = lines[0].split('|')
-            val savedSize = head.getOrNull(0)?.toLongOrNull() ?: return null
-            val savedEtag = head.getOrNull(1)?.takeIf { it.isNotEmpty() }
-            // Object must be identical to what's on disk and on the CDN.
-            if (savedSize != total || partialSize != total) return null
-            if (etag != null && savedEtag != null && etag != savedEtag) return null
-            val parts = ArrayList<Part>()
-            for (idx in 1 until lines.size) {
-                val cols = lines[idx].split(',')
-                if (cols.size != 4) return null
-                val i = cols[0].toIntOrNull() ?: return null
-                val s = cols[1].toLongOrNull() ?: return null
-                val e = cols[2].toLongOrNull() ?: return null
-                var d = cols[3].toLongOrNull() ?: return null
-                val segLen = e - s + 1
-                if (d < 0) d = 0
-                if (d > segLen) d = segLen
-                parts.add(Part(i, s, e, d))
-            }
-            if (parts.isEmpty()) null else parts
-        } catch (e: Exception) {
-            log("concurrent: manifest parse failed: ${e.javaClass.simpleName}")
-            null
-        }
-    }
-
-    // Download [start+done, end] of [part] into its own RandomAccessFile handle
-    // (each segment gets its own fd so concurrent positioned writes don't race),
-    // resuming from part.done and retrying transient failures in place.
-    private fun downloadPart(
+    // Fetch [start+have, end] of [part] into its OWN segment file via plain
+    // sequential O_WRONLY appends (no positioned writes, no pre-allocation),
+    // resuming from the segment file's current length and retrying transient
+    // failures in place.
+    private fun downloadSegment(
         url: String,
         etag: String?,
-        partialFile: File,
+        segFile: File,
         part: Part,
         aborted: AtomicBoolean,
         onBytes: (delta: Long) -> Unit,
@@ -338,10 +314,11 @@ class ConcurrentRangeDownloader(
         var retry = 0
         while (true) {
             if (aborted.get()) throw java.io.IOException("aborted")
-            val rangeStart = part.start + part.done.get()
-            if (rangeStart > part.end) return
+            val have = segFile.length()
+            if (have >= part.length) return
+            val rangeStart = part.start + have
             try {
-                fetchSegment(url, etag, partialFile, part, rangeStart, aborted, onBytes)
+                fetchSegment(url, etag, segFile, part, rangeStart, aborted, onBytes)
                 return
             } catch (e: FallbackException) {
                 throw e
@@ -356,7 +333,7 @@ class ConcurrentRangeDownloader(
     private fun fetchSegment(
         url: String,
         etag: String?,
-        partialFile: File,
+        segFile: File,
         part: Part,
         rangeStart: Long,
         aborted: AtomicBoolean,
@@ -365,7 +342,8 @@ class ConcurrentRangeDownloader(
         val builder = Request.Builder().url(url)
             .addHeader("Range", "bytes=$rangeStart-${part.end}")
         // If-Range: a mismatched ETag makes the CDN reply 200 (full body)
-        // instead of 206, which we treat as a fallback signal.
+        // instead of 206, which we treat as a fallback signal — appending a
+        // from-zero body onto a partially-filled segment would corrupt it.
         if (etag != null) builder.addHeader("If-Range", etag)
         httpClient.newCall(builder.build()).execute().use { response ->
             if (response.code == 200) {
@@ -375,16 +353,16 @@ class ConcurrentRangeDownloader(
                 throw java.io.IOException("HTTP ${response.code}")
             }
             val body = response.body ?: throw java.io.IOException("Empty segment body")
-            RandomAccessFile(partialFile, "rw").use { raf ->
-                raf.seek(rangeStart)
+            // Append the fetched tail to the segment file. Append mode keeps
+            // resume correct: we only ever request the bytes not yet on disk.
+            FileOutputStream(segFile, /* append = */ true).use { out ->
                 body.byteStream().use { input ->
                     val buffer = ByteArray(8192)
                     while (true) {
                         if (aborted.get()) throw java.io.IOException("aborted")
                         val read = input.read(buffer)
                         if (read == -1) break
-                        raf.write(buffer, 0, read)
-                        part.done.addAndGet(read.toLong())
+                        out.write(buffer, 0, read)
                         onBytes(read.toLong())
                     }
                 }
