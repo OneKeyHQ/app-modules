@@ -124,15 +124,19 @@ class BackgroundThreadManager private constructor() {
     )
 
     /**
-     * Settle every in-flight bg segment eval as a retryable NO_RUNTIME failure
-     * without tearing the runtime down. Called from [scheduleOnJSThread] when
-     * the bg runtime is momentarily unreachable (context == null / ptr == 0) so
-     * any eval enqueued onto the native pending-work map — which will never be
-     * drained on the JS thread in that state — releases its JNI global ref and
-     * settles the JS promise immediately, instead of leaking until the next
-     * teardown or relying on the bg watchdog. Exactly-once on the native side.
+     * Clean up after a SUCCESSFUL scheduleOnJSThread post that nonetheless can
+     * never run: called from [scheduleOnJSThread]'s ptr == 0 branch (we are
+     * already on the stale/torn-down JS thread, so C++ saw scheduled == true and
+     * will not clean up on its own). For the given runtime ([isMain]) the native
+     * side erases gPendingWork[workId] (frees the captured segment source
+     * buffer), leak+clears the coalesced RuntimeWorkQueue, and resets
+     * drainScheduled so a recovered runtime re-arms a fresh drain on the next
+     * enqueue. For the bg runtime only, it also settles every in-flight bg
+     * segment eval as a retryable NO_RUNTIME failure so each JNI global ref is
+     * released and the JS promise resolves immediately instead of leaking until
+     * teardown or the bg watchdog. Exactly-once on the native side.
      */
-    private external fun nativeDropScheduledWork(workId: Long)
+    private external fun nativeDropScheduledWork(isMain: Boolean, workId: Long)
 
     /**
      * Synchronously mark the SharedRPC listener for `runtimeId` as dead
@@ -456,42 +460,52 @@ class BackgroundThreadManager private constructor() {
      * Routes to main or background runtime's JS queue thread, then calls nativeExecuteWork.
      */
     @DoNotStrip
-    fun scheduleOnJSThread(isMain: Boolean, workId: Long) {
+    fun scheduleOnJSThread(isMain: Boolean, workId: Long): Boolean {
         val context = if (isMain) mainReactContext else bgReactHost?.currentReactContext
         BTLogger.info("scheduleOnJSThread: isMain=$isMain, workId=$workId, context=${context != null}")
         if (context == null) {
             BTLogger.error("scheduleOnJSThread: context is null! isMain=$isMain, mainCtx=${mainReactContext != null}, bgHost=${bgReactHost != null}, bgCtx=${bgReactHost?.currentReactContext != null}")
-            // The just-enqueued native work will never reach the bg JS thread.
-            // Drop it now: erase gPendingWork[workId] (frees the captured segment
-            // source buffer) and, if it was a bg segment eval, settle it
-            // (retryable NO_RUNTIME) so its JNI global ref is released and the JS
-            // promise resolves instead of leaking until teardown / the bg watchdog.
-            if (!isMain) {
-                nativeDropScheduledWork(workId)
-            }
-            return
+            // The just-enqueued native work will never reach the JS thread.
+            // Return false so the C++ coalesced scheduler
+            // (callScheduleOnJSThread → scheduleRuntimeDrain's !scheduled branch)
+            // does the FULL cleanup itself: erase gPendingWork[workId], leak+clear
+            // the coalesced RuntimeWorkQueue, reset drainScheduled, and (bg only)
+            // settle any in-flight bg eval as retryable NO_RUNTIME. No
+            // nativeDropScheduledWork call is needed here.
+            return false
         }
-        context.runOnJSQueueThread {
-            // Re-read ptr inside the block — if a reload happened between
-            // scheduling and execution, the old ptr may be stale.
-            val ptr = if (isMain) mainRuntimePtr else bgRuntimePtr
-            BTLogger.info("scheduleOnJSThread runOnJSQueueThread: isMain=$isMain, workId=$workId, ptr=$ptr")
-            if (ptr != 0L) {
-                try {
-                    nativeExecuteWork(ptr, workId)
-                } catch (e: Exception) {
-                    BTLogger.error("Error executing work on JS thread: ${e.message}")
-                }
-            } else {
-                BTLogger.error("scheduleOnJSThread: ptr is 0! isMain=$isMain")
-                // Same as the null-context case: the work won't run on this
-                // (stale/torn-down) bg runtime. Drop gPendingWork[workId] (frees
-                // the source buffer) and settle any pending bg eval so it doesn't
-                // leak its global ref / hang the JS promise.
-                if (!isMain) {
-                    nativeDropScheduledWork(workId)
+        return try {
+            val posted = context.runOnJSQueueThread {
+                // Re-read ptr inside the block — if a reload happened between
+                // scheduling and execution, the old ptr may be stale.
+                val ptr = if (isMain) mainRuntimePtr else bgRuntimePtr
+                BTLogger.info("scheduleOnJSThread runOnJSQueueThread: isMain=$isMain, workId=$workId, ptr=$ptr")
+                if (ptr != 0L) {
+                    try {
+                        nativeExecuteWork(ptr, workId)
+                    } catch (e: Exception) {
+                        BTLogger.error("Error executing work on JS thread: ${e.message}")
+                    }
+                } else {
+                    BTLogger.error("scheduleOnJSThread: ptr is 0! isMain=$isMain")
+                    // We are already on the (stale/torn-down) JS thread after a
+                    // SUCCESSFUL post (C++ saw scheduled==true), so the work won't
+                    // run and C++ won't clean up on its own. Drop it for THIS
+                    // runtime (main or bg): erase gPendingWork[workId] (frees the
+                    // source buffer), leak+clear the coalesced RuntimeWorkQueue,
+                    // and reset drainScheduled so a recovered runtime re-arms a
+                    // fresh drain. drainPendingBgEvals inside the native fn is
+                    // gated to !isMain, so settling bg evals only happens for bg.
+                    nativeDropScheduledWork(isMain, workId)
                 }
             }
+            if (!posted) {
+                BTLogger.error("scheduleOnJSThread: runOnJSQueueThread rejected workId=$workId isMain=$isMain")
+            }
+            posted
+        } catch (e: Exception) {
+            BTLogger.error("scheduleOnJSThread: failed to post workId=$workId isMain=$isMain error=${e.message}")
+            false
         }
     }
 

@@ -71,6 +71,193 @@ static std::mutex gWorkMutex;
 static std::unordered_map<int64_t, std::function<void(jsi::Runtime &)>> gPendingWork;
 static int64_t gNextWorkId = 0;
 
+using JavaObjectRef = std::shared_ptr<_jobject>;
+
+static constexpr size_t kRuntimeDrainBatchSize = 64;
+static constexpr size_t kRuntimeQueueWarnThreshold = 128;
+static constexpr size_t kRuntimeQueueWarnInterval = 128;
+
+struct RuntimeWorkQueue {
+    std::deque<std::function<void(jsi::Runtime &)>> items;
+    bool drainScheduled = false;
+};
+
+static RuntimeWorkQueue gMainRuntimeWorkQueue;
+static RuntimeWorkQueue gBgRuntimeWorkQueue;
+
+static RuntimeWorkQueue &getRuntimeWorkQueue(bool isMain) {
+    return isMain ? gMainRuntimeWorkQueue : gBgRuntimeWorkQueue;
+}
+
+// Caller MUST hold gWorkMutex. Intentionally leak (abandon) each queued functor
+// — its ~jsi::Function must not run off the JS thread / on a dead runtime — then
+// clear the queue and disarm the drain latch so a recovered runtime re-arms a
+// fresh drain on the next enqueue instead of stranding work behind a stale
+// drainScheduled==true.
+static void leakAndClearRuntimeQueue(RuntimeWorkQueue &queue) {
+    for (auto &work : queue.items) {
+        new std::function<void(jsi::Runtime &)>(std::move(work));
+    }
+    queue.items.clear();
+    queue.drainScheduled = false;
+}
+
+static bool callScheduleOnJSThread(const JavaObjectRef &ref, bool isMain, int64_t workId) {
+    JNIEnv *env = getJNIEnv();
+    if (!env || !ref) {
+        LOGE("executor: env=%p, ref=%p — aborting", env, ref.get());
+        return false;
+    }
+
+    jclass cls = env->GetObjectClass(ref.get());
+    if (!cls) {
+        LOGE("executor: GetObjectClass failed");
+        if (env->ExceptionCheck()) {
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+        }
+        return false;
+    }
+
+    jmethodID mid = env->GetMethodID(cls, "scheduleOnJSThread", "(ZJ)Z");
+    if (!mid) {
+        LOGE("executor: scheduleOnJSThread method not found!");
+        if (env->ExceptionCheck()) {
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+        }
+        env->DeleteLocalRef(cls);
+        return false;
+    }
+
+    LOGI("executor: calling scheduleOnJSThread(isMain=%d, workId=%ld)", isMain, (long)workId);
+    jboolean scheduled = env->CallBooleanMethod(
+        ref.get(),
+        mid,
+        static_cast<jboolean>(isMain),
+        static_cast<jlong>(workId));
+    if (env->ExceptionCheck()) {
+        LOGE("executor: JNI exception after scheduleOnJSThread");
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        env->DeleteLocalRef(cls);
+        return false;
+    }
+    env->DeleteLocalRef(cls);
+    return scheduled == JNI_TRUE;
+}
+
+static void drainPendingBgEvals(const std::string &reason);
+
+static void scheduleRuntimeDrain(const JavaObjectRef &ref, bool isMain);
+
+static void drainRuntimeWorkQueue(jsi::Runtime &rt, JavaObjectRef ref, bool isMain) {
+    size_t drained = 0;
+
+    while (drained < kRuntimeDrainBatchSize) {
+        std::function<void(jsi::Runtime &)> work;
+        {
+            std::lock_guard<std::mutex> lock(gWorkMutex);
+            auto &queue = getRuntimeWorkQueue(isMain);
+            if (queue.items.empty()) {
+                break;
+            }
+            work = std::move(queue.items.front());
+            queue.items.pop_front();
+        }
+
+        try {
+            work(rt);
+        } catch (const jsi::JSError &e) {
+            LOGE("JSError in runtime drain work: %s", e.getMessage().c_str());
+        } catch (const std::exception &e) {
+            LOGE("Error in runtime drain work: %s", e.what());
+        } catch (...) {
+            LOGE("Unknown error in runtime drain work");
+        }
+        drained += 1;
+    }
+
+    bool shouldReschedule = false;
+    size_t remaining = 0;
+    {
+        std::lock_guard<std::mutex> lock(gWorkMutex);
+        auto &queue = getRuntimeWorkQueue(isMain);
+        remaining = queue.items.size();
+        if (remaining == 0) {
+            queue.drainScheduled = false;
+        } else {
+            shouldReschedule = true;
+        }
+    }
+
+    if (drained > 1 || remaining > 0) {
+        LOGI("executor: drained runtime queue isMain=%d, drained=%zu, remaining=%zu",
+             isMain, drained, remaining);
+    }
+
+    if (shouldReschedule) {
+        scheduleRuntimeDrain(ref, isMain);
+    }
+}
+
+static void scheduleRuntimeDrain(const JavaObjectRef &ref, bool isMain) {
+    int64_t workId;
+    size_t queued = 0;
+    {
+        std::lock_guard<std::mutex> lock(gWorkMutex);
+        workId = gNextWorkId++;
+        queued = getRuntimeWorkQueue(isMain).items.size();
+        gPendingWork[workId] = [ref, isMain](jsi::Runtime &rt) {
+            drainRuntimeWorkQueue(rt, ref, isMain);
+        };
+    }
+
+    bool scheduled = callScheduleOnJSThread(ref, isMain, workId);
+    if (!scheduled) {
+        {
+            std::lock_guard<std::mutex> lock(gWorkMutex);
+            gPendingWork.erase(workId);
+            leakAndClearRuntimeQueue(getRuntimeWorkQueue(isMain));
+            LOGE("executor: failed to schedule runtime drain isMain=%d, workId=%ld, queued=%zu",
+                 isMain, (long)workId, queued);
+        }
+        // The bg JS thread is unreachable, so the queued bg-eval lambdas will
+        // never run. Settle any in-flight bg eval (retryable NO_RUNTIME) so its
+        // JNI global ref is released and the JS promise resolves now instead of
+        // hanging on the Kotlin 30s watchdog. Gated on !isMain — a main-thread
+        // schedule hiccup must never falsely reject healthy bg evals. Called
+        // outside gWorkMutex: drainPendingBgEvals takes gBgEvalMutex and does a
+        // Java upcall, so it must not run under a native lock.
+        if (!isMain) {
+            drainPendingBgEvals("Background JS thread unreachable when scheduling segment eval");
+        }
+    }
+}
+
+static void enqueueRuntimeWork(JavaObjectRef ref, bool isMain, std::function<void(jsi::Runtime &)> work) {
+    bool shouldSchedule = false;
+    size_t queued = 0;
+    {
+        std::lock_guard<std::mutex> lock(gWorkMutex);
+        auto &queue = getRuntimeWorkQueue(isMain);
+        queue.items.push_back(std::move(work));
+        queued = queue.items.size();
+        if (!queue.drainScheduled) {
+            queue.drainScheduled = true;
+            shouldSchedule = true;
+        }
+    }
+
+    if (queued >= kRuntimeQueueWarnThreshold && queued % kRuntimeQueueWarnInterval == 0) {
+        LOGE("executor: runtime queue backlog isMain=%d, queued=%zu", isMain, queued);
+    }
+
+    if (shouldSchedule) {
+        scheduleRuntimeDrain(ref, isMain);
+    }
+}
+
 // Called from Kotlin after runOnJSQueueThread dispatches to the correct thread.
 extern "C" JNIEXPORT void JNICALL
 Java_com_backgroundthread_BackgroundThreadManager_nativeExecuteWork(
@@ -743,26 +930,36 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeEvaluateSegmentInBackgro
 }
 
 // nativeDropScheduledWork: clean up after a scheduleOnJSThread drop path where
-// CallVoidMethod itself SUCCEEDED but Kotlin then found the bg runtime
-// unreachable (context==null / ptr==0) and returned WITHOUT calling
-// nativeExecuteWork for this `workId`. Two things must be released:
+// CallVoidMethod itself SUCCEEDED but Kotlin then found the runtime unreachable
+// (context==null / ptr==0) and returned WITHOUT calling nativeExecuteWork for
+// this `workId`. Several things must be released for the given runtime:
 //   1. gPendingWork[workId] — the stored work lambda (holding the segment
 //      SOURCE BUFFER). nativeExecuteWork is the only other eraser and it will
 //      never run for this id, so without this it leaks until nativeDestroy.
-//   2. The in-flight bg eval(s) — settle as retryable NO_RUNTIME so the JNI
-//      global ref is released and the JS promise resolves now instead of
+//   2. The coalesced RuntimeWorkQueue for this runtime — under the coalesced
+//      model a successful post (scheduled==true) that never reaches the JS
+//      thread leaves the queue stranded with drainScheduled==true, so a
+//      recovered runtime would never re-arm a drain. Leak+clear the queued
+//      functors (their ~jsi::Function must not run on a dead runtime) and reset
+//      the drain latch so the next enqueue re-arms a fresh drain. Applies to
+//      BOTH runtimes (isMain selects which queue).
+//   3. (bg only) The in-flight bg eval(s) — settle as retryable NO_RUNTIME so
+//      the JNI global ref is released and the JS promise resolves now instead of
 //      hanging on the 30s watchdog. drain-all is sound: an unreachable bg JS
 //      thread dooms every enqueued bg eval equally.
 // Exactly-once via the shared `settled` flag, so a recovered runtime that later
 // DOES run stale work (it can't — we erased it) would be a harmless no-op.
 extern "C" JNIEXPORT void JNICALL
 Java_com_backgroundthread_BackgroundThreadManager_nativeDropScheduledWork(
-    JNIEnv * /* env */, jobject /* thiz */, jlong workId) {
+    JNIEnv * /* env */, jobject /* thiz */, jboolean isMain, jlong workId) {
     {
         std::lock_guard<std::mutex> lock(gWorkMutex);
         gPendingWork.erase(static_cast<int64_t>(workId));
+        leakAndClearRuntimeQueue(getRuntimeWorkQueue(static_cast<bool>(isMain)));
     }
-    drainPendingBgEvals("Background runtime unreachable when scheduling segment eval");
+    if (!isMain) {
+        drainPendingBgEvals("Background runtime unreachable when scheduling segment eval");
+    }
 }
 
 // ── nativeInstallSharedBridge ───────────────────────────────────────────
@@ -788,71 +985,12 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
     bool capturedIsMain = static_cast<bool>(isMain);
 
     RPCRuntimeExecutor executor = [ref, capturedIsMain](std::function<void(jsi::Runtime &)> work) {
-        JNIEnv *env = getJNIEnv();
-
-        // Settle any enqueued-but-now-unrunnable bg eval when this work will NOT
-        // reach nativeExecuteWork. Bg eval lambdas are only ever dispatched via
-        // the bg executor, so this is gated on !capturedIsMain — a main-thread
-        // schedule hiccup must never falsely reject healthy bg evals. This
-        // mirrors the existing context==null / ptr==0 (nativeDropScheduledWork)
-        // and nativeDestroy drop paths: drain-all is sound because a failed bg
-        // schedule means the bg JS thread is unreachable, so every enqueued bg
-        // eval is equally doomed. NO_RUNTIME is retryable, so JS re-attempts.
-        auto drainBgEvalsIfBg = [capturedIsMain](const char *reason) {
-            if (!capturedIsMain) {
-                drainPendingBgEvals(reason);
-            }
-        };
-
-        if (!env || !ref) {
-            LOGE("executor: env=%p, ref=%p — aborting", env, ref.get());
-            drainBgEvalsIfBg("Background executor env/ref unavailable when scheduling segment eval");
-            return;
-        }
-
-        int64_t workId;
-        {
-            std::lock_guard<std::mutex> lock(gWorkMutex);
-            workId = gNextWorkId++;
-            gPendingWork[workId] = std::move(work);
-        }
-
-        jclass cls = env->GetObjectClass(ref.get());
-        jmethodID mid = env->GetMethodID(cls, "scheduleOnJSThread", "(ZJ)V");
-        bool scheduled = false;
-        if (mid) {
-            LOGI("executor: calling scheduleOnJSThread(isMain=%d, workId=%ld)", capturedIsMain, (long)workId);
-            env->CallVoidMethod(ref.get(), mid, static_cast<jboolean>(capturedIsMain), static_cast<jlong>(workId));
-            if (env->ExceptionCheck()) {
-                LOGE("executor: JNI exception after scheduleOnJSThread");
-                env->ExceptionDescribe();
-                env->ExceptionClear();
-            } else {
-                scheduled = true;
-            }
-        } else {
-            LOGE("executor: scheduleOnJSThread method not found!");
-            if (env->ExceptionCheck()) {
-                env->ExceptionDescribe();
-                env->ExceptionClear();
-            }
-        }
-        env->DeleteLocalRef(cls);
-
-        // Schedule failed (JNI exception or missing method): nativeExecuteWork
-        // will never run this workId, so erase it now to free the stored work
-        // (and its captured segment source buffer) instead of leaking it until
-        // nativeDestroy. Then settle the corresponding bg eval(s) so the JNI
-        // global ref is released and the JS promise resolves immediately rather
-        // than hanging on the Kotlin 30s watchdog. Erasing also makes a late
-        // Kotlin enqueue (if scheduleOnJSThread threw AFTER posting) a no-op.
-        if (!scheduled) {
-            {
-                std::lock_guard<std::mutex> lock(gWorkMutex);
-                gPendingWork.erase(workId);
-            }
-            drainBgEvalsIfBg("Background JS thread unreachable when scheduling segment eval");
-        }
+        // Coalesce per-runtime work into a single batched drain (see
+        // enqueueRuntimeWork) instead of one Kotlin scheduleOnJSThread hop per
+        // item. The bg-eval failure-drain that previously lived inline here now
+        // runs in scheduleRuntimeDrain's schedule-failure path — under the
+        // coalesced model that is the single place a schedule can fail.
+        enqueueRuntimeWork(ref, capturedIsMain, std::move(work));
     };
 
     std::string runtimeId = isMain ? "main" : "background";
@@ -1009,6 +1147,13 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeDestroy(
             new std::function<void(jsi::Runtime &)>(std::move(entry.second));
         }
         gPendingWork.clear();
+        for (auto *queue : {&gMainRuntimeWorkQueue, &gBgRuntimeWorkQueue}) {
+            for (auto &work : queue->items) {
+                new std::function<void(jsi::Runtime &)>(std::move(work));
+            }
+            queue->items.clear();
+            queue->drainScheduled = false;
+        }
     }
 
     // Drain pending bg-eval callbacks: the bg runtime is gone, so any eval that

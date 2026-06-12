@@ -4,7 +4,7 @@ export interface ISharedRPC {
   // the payload value, so there is no read-back. `read`/`has`/`pendingCount`
   // (the old slot-map introspection) are gone.
   onWrite(
-    callback: (callId: string, value: string | number | boolean) => void,
+    callback: (callId: string, value: string | number | boolean) => void
   ): void;
   // The calling runtime declares which SharedStore key holds its readiness
   // payload, so the native invalidate path clears exactly that key on teardown
