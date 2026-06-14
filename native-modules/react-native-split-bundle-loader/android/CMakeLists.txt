@@ -26,6 +26,12 @@ add_library(
   src/main/cpp/SplitBundleLoaderJSI.cpp
 )
 
+# Android 15 (API 35) 16KB page-size support: align the .so's LOAD segments to
+# 16384 bytes. This is a link-time only flag, so it belongs on the target's link
+# step — not in CMAKE_C/CXX_FLAGS (which also reach the compile step, where -Wl
+# is ignored and warns).
+target_link_options(splitbundleloader PRIVATE "-Wl,-z,max-page-size=16384")
+
 target_include_directories(
   splitbundleloader
   PRIVATE
