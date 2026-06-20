@@ -107,10 +107,30 @@ class ConcurrentRangeDownloader(
             if (aborted.get()) pool.shutdownNow()
         }
 
-        /** Flip the abort flag and stop the worker pool. Idempotent. */
+        /**
+         * Flip the abort flag and stop the worker pool, then wait (bounded) for
+         * in-flight workers to actually terminate. `shutdownNow()` only
+         * *interrupts*; a worker blocked in a native `write()` may run a moment
+         * longer, so without this wait the caller's subsequent `.segN` delete
+         * could be resurrected by that straggler — the exact race §5.8 forbids.
+         * Idempotent.
+         */
         fun cancel() {
             aborted.set(true)
-            pool?.shutdownNow()
+            pool?.let { p ->
+                p.shutdownNow()
+                try {
+                    p.awaitTermination(AWAIT_TERMINATION_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                } catch (e: InterruptedException) {
+                    // Preserve the interrupt status; the bounded wait is best-effort.
+                    Thread.currentThread().interrupt()
+                }
+            }
+        }
+
+        private companion object {
+            /** Bounded wait for worker termination on cancel (cancel-then-delete). */
+            const val AWAIT_TERMINATION_SECONDS = 3L
         }
     }
 
