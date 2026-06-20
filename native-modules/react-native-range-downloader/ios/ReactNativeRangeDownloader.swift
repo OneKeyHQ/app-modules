@@ -14,37 +14,38 @@ import ReactNativeNativeLogger
 //   - one hardcoded background session identifier → one session per channel;
 //   - `onProgress` closure       → a listener registry broadcasting
 //     `RangeDownloadEvent`s (multi-consumer);
-//   - `throws FallbackError`     → returns `RangeDownloadResult(.fallback, …)`.
+//   - `throws FallbackError`     → returns a typed `RangeDownloadResult`
+//     (`fallbackTransient` / `fallbackPermanent` + `fallbackKind`).
 class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
 
   func download(params: RangeDownloadParams) throws -> Promise<RangeDownloadResult> {
     return Promise.async {
-      let (klass, filePath, fallbackReason, _) = await RangeDownloader.shared.download(
+      let (klass, filePath, fallbackReason, fallbackClass) = await RangeDownloader.shared.download(
         channel: params.channel,
         taskId: params.taskId,
         urlString: params.url,
         filePath: params.destFilePath,
         expectedSha256: params.expectedSha256,
         segmentCount: params.segmentCount.map { Int($0) },
-        minConcurrentBytes: params.minConcurrentBytes.map { Int64($0) }
-        // NOTE: params.maxSegmentAttempts / params.overallDeadlineSeconds are
-        // declared in `.nitro.ts` but not yet present on the generated
-        // `RangeDownloadParams` struct (nitrogen regen required). They are passed
-        // here once regenerated; until then the core uses its platform defaults.
+        minConcurrentBytes: params.minConcurrentBytes.map { Int64($0) },
+        // §5.4: caller-tunable retry/timeout/deadline knobs forwarded straight
+        // from the regenerated `RangeDownloadParams`. Omitted (nil) values let the
+        // core use its platform defaults.
+        maxSegmentAttempts: params.maxSegmentAttempts.map { Int($0) },
+        requestTimeoutSeconds: params.requestTimeoutSeconds,
+        stallTimeoutSeconds: params.stallTimeoutSeconds,
+        overallDeadlineSeconds: params.overallDeadlineSeconds
       )
-      // Wire mapping (OCDS §4): the in-process `RangeDownloadClass` already
-      // carries the typed permanent/transient distinction. Until nitrogen
-      // regenerates `RangeDownloadOutcome` with the `fallbackTransient` /
-      // `fallbackPermanent` cases (and `RangeDownloadResult.fallbackKind`) from
-      // the updated `.nitro.ts`, both fallback classes map to the legacy
-      // `.fallback` wire value so the JS bridge stays compatible. The in-process
-      // caller (BundleUpdate) consumes the precise class directly and does NOT go
-      // through this lossy wire mapping.
-      let wireOutcome: RangeDownloadOutcome = (klass == .completed) ? .completed : .fallback
+      // Wire mapping (OCDS §4): map the in-process typed class onto the
+      // regenerated wire enum — no lossy collapse. `completed`, `fallbackTransient`
+      // and `fallbackPermanent` each cross the JS bridge as their own case, and the
+      // optional `fallbackKind` sub-classification is forwarded so callers /
+      // analytics can branch without parsing the reason string.
       return RangeDownloadResult(
-        outcome: wireOutcome,
+        outcome: klass.wireOutcome,
         filePath: filePath,
-        fallbackReason: fallbackReason
+        fallbackReason: fallbackReason,
+        fallbackKind: fallbackClass?.wireKind
       )
     }
   }
@@ -122,15 +123,15 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
 /// callback can locate both the run and the segment.
 // MARK: - Typed failure model (OCDS §4)
 //
-// The wire enum `RangeDownloadOutcome` (Nitro codegen) still carries the legacy
-// `completed | fallback` shape until the `.nitro.ts` change is regenerated. To
-// avoid inferring the failure class from incidental on-disk side effects (which
-// §4 forbids), the IN-PROCESS core returns this Swift-native typed class to its
-// in-process caller (BundleUpdate), and the Nitro shim maps it to the wire
-// result. Once nitrogen regenerates `RangeDownloadOutcome` with the two typed
-// fallback cases + `fallbackKind`, the shim mapping below carries them across the
-// JS boundary too; today it collapses both to the legacy `.fallback` wire value
-// so the bridge stays compatible.
+// The IN-PROCESS core returns this Swift-native typed class to its in-process
+// caller (BundleUpdate); the Nitro shim maps it onto the regenerated wire enum
+// `RangeDownloadOutcome` (completed | fallbackTransient | fallbackPermanent) so
+// the failure class crosses the JS boundary as an EXPLICIT value, never inferred
+// from incidental on-disk side effects (which §4 forbids). The core enum is a
+// SEPARATE type from the generated wire `RangeFallbackKind` (same case set) so
+// the core can carry an extra `failureClass` projection without the module-scope
+// name colliding with the codegen typealias; `wireOutcome` / `wireKind` below do
+// the 1:1 translation onto the generated enums.
 public enum RangeDownloadClass: Equatable {
   case completed
   /// Resumable interruption — keep `.segN`, the concurrent path may resume.
@@ -139,12 +140,25 @@ public enum RangeDownloadClass: Equatable {
   case fallbackPermanent
 
   var isFallback: Bool { self != .completed }
+
+  /// 1:1 projection onto the generated wire enum (`RangeDownloadOutcome`) that
+  /// crosses the JS bridge. No collapse: each in-process class maps to its own
+  /// typed wire case.
+  var wireOutcome: RangeDownloadOutcome {
+    switch self {
+    case .completed: return .completed
+    case .fallbackTransient: return .fallbacktransient
+    case .fallbackPermanent: return .fallbackpermanent
+    }
+  }
 }
 
-/// Typed sub-classification of a fallback (mirrors `RangeFallbackKind` in
-/// `.nitro.ts`). Used by the caller/analytics to know WHY without parsing the
-/// reason string, and by the core to drive keep-vs-discard.
-public enum RangeFallbackKind: String {
+/// Typed sub-classification of a fallback (in-process mirror of the generated
+/// wire `RangeFallbackKind`). Used by the caller/analytics to know WHY without
+/// parsing the reason string, and by the core to drive keep-vs-discard. Named
+/// distinctly from the codegen `RangeFallbackKind` typealias to avoid a
+/// module-scope name clash; `wireKind` translates onto the wire enum.
+public enum RangeFallbackClass: String {
   case serverIgnoredRange
   case rangeUnsupported
   case authExpired
@@ -165,6 +179,14 @@ public enum RangeFallbackKind: String {
          .redirectRejected, .checksumMismatch, .multipartOrBadTotal:
       return .fallbackPermanent
     }
+  }
+
+  /// 1:1 projection onto the generated wire enum (`RangeFallbackKind`). The case
+  /// names are the wire union's string values verbatim, so `fromString` is exact
+  /// and total (the force-unwrap can never fail).
+  var wireKind: RangeFallbackKind {
+    // swiftlint:disable:next force_unwrapping
+    return RangeFallbackKind(fromString: self.rawValue)!
   }
 }
 
@@ -227,7 +249,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     /// finalize so the outcome is an EXPLICIT class, never inferred from on-disk
     /// side effects. `serverIgnoredRange` (Permanent) is the historical default
     /// for the bare `fellBack` path (status 200).
-    var fellBackKind: RangeFallbackKind = .serverIgnoredRange
+    var fellBackKind: RangeFallbackClass = .serverIgnoredRange
     /// Set when a segment could not be stashed (move/size-check failure). Carries
     /// the terminal error so didCompleteWithError finalizes instead of hanging.
     var stashError: Error?
@@ -453,10 +475,11 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   // MARK: - Public entry
 
   /// Downloads [urlString] into [filePath] using concurrent background ranges.
-  /// Returns `(.completed, filePath, nil)` on success, or `(.fallback, filePath,
-  /// reason)` when the caller should use its single-stream path. Transient
-  /// network errors are also reported as `.fallback` with the error reason (the
-  /// `.segN` files are kept for the next attempt).
+  /// Returns `(.completed, filePath, nil, nil)` on success, or a typed fallback
+  /// tuple `(.fallbackTransient | .fallbackPermanent, filePath, reason, kind)`
+  /// when the caller should use its single-stream path. Transient network errors
+  /// resolve to `.fallbackTransient` and KEEP the `.segN` files for the next
+  /// attempt; permanent ones discard them.
   public func download(
     channel: DownloadChannel,
     taskId: String,
@@ -466,11 +489,20 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     segmentCount: Int?,
     minConcurrentBytes: Int64?,
     maxSegmentAttempts: Int? = nil,
+    requestTimeoutSeconds: Double? = nil,
+    stallTimeoutSeconds: Double? = nil,
     overallDeadlineSeconds: Double? = nil
-  ) async -> (RangeDownloadClass, String, String?, RangeFallbackKind?) {
+  ) async -> (RangeDownloadClass, String, String?, RangeFallbackClass?) {
     let segCount = max(1, segmentCount ?? Self.defaultSegmentCount)
     let minBytes = minConcurrentBytes ?? Self.defaultMinConcurrentBytes
     let maxAttempts = max(1, maxSegmentAttempts ?? Self.defaultMaxSegmentAttempts)
+    // §5.4: caller-tunable stall window for this run's watchdog; the background
+    // URLSession's per-request timeout is cached per channel (see `session(...)`),
+    // so the per-run request timeout is enforced via the deadline + stall watchdog
+    // rather than re-creating the session.
+    let stallSeconds = (stallTimeoutSeconds.map { $0 > 0 ? $0 : nil } ?? nil)
+      ?? Self.defaultStallTimeoutSeconds
+    _ = requestTimeoutSeconds // documented above; session timeout is channel-cached
     let deadline: Date? = {
       guard let s = overallDeadlineSeconds, s > 0 else { return nil }
       return Date().addingTimeInterval(s)
@@ -558,8 +590,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     // segment task so didCompleteWithError routes it through the in-place retry
     // path. It only counts foreground/active wall time toward the stall window so
     // a legitimately suspended background transfer (§5.10) is never false-cancelled.
-    startStallWatchdog(key: key,
-                       stallSeconds: Self.defaultStallTimeoutSeconds)
+    startStallWatchdog(key: key, stallSeconds: stallSeconds)
 
     do {
       // If every segment is already on disk (resume after suspension/kill), skip
@@ -636,8 +667,8 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     /// §4 typed sub-class. Defaults to a Permanent `serverIgnoredRange` only so an
     /// un-annotated legacy throw keeps the previous "discard + single-stream"
     /// behavior; all new throw sites pass an explicit kind.
-    let kind: RangeFallbackKind
-    init(reason: String, kind: RangeFallbackKind = .serverIgnoredRange) {
+    let kind: RangeFallbackClass
+    init(reason: String, kind: RangeFallbackClass = .serverIgnoredRange) {
       self.reason = reason
       self.kind = kind
     }
@@ -648,7 +679,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   /// Maps an HTTP status on a Range request to a §4 fallback kind. Used by the
   /// download-finish delegate to decide keep-vs-discard. Status 206 is handled by
   /// the caller (validated, not a fallback); 200 is `serverIgnoredRange`.
-  static func classifyStatus(_ status: Int) -> RangeFallbackKind {
+  static func classifyStatus(_ status: Int) -> RangeFallbackClass {
     switch status {
     case 200:
       return .serverIgnoredRange

@@ -113,14 +113,22 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
       }
 
       if (outcome == ConcurrentRangeDownloader.Outcome.FALLBACK) {
-        // Concurrency unusable. The helper has already cleaned up its own
-        // artifacts where appropriate; the caller runs its single-stream path.
-        OneKeyLog.info("RangeDownloader", "download: concurrent not used, returning fallback")
+        // OCDS §4 wire mapping (parity with the iOS shim). On Android the core
+        // helper splits the two §4 classes by RETURN vs THROW: a RESUMABLE
+        // (transient) interruption — network drop / incomplete segment — is thrown
+        // and surfaces below as a promise rejection (the `.segN`/`.partial` are
+        // kept). `Outcome.FALLBACK` is therefore the PERMANENT class only: range
+        // unsupported / a 200 to a Range request / the object is too small / a
+        // single-stream leftover. The helper has already wiped its concurrent
+        // artifacts on this path, so it maps to `FALLBACKPERMANENT` with the
+        // `RANGEUNSUPPORTED` sub-kind, and the caller restarts single-stream.
+        OneKeyLog.info("RangeDownloader", "download: concurrent not used, returning permanent fallback")
         sendEvent(channel, taskId, type = "fallback", message = "concurrent unavailable")
         return@async RangeDownloadResult(
-          outcome = RangeDownloadOutcome.FALLBACK,
+          outcome = RangeDownloadOutcome.FALLBACKPERMANENT,
           filePath = destFilePath,
           fallbackReason = "concurrent unavailable (range unsupported / 200 / too small / single-stream partial)",
+          fallbackKind = RangeFallbackKind.RANGEUNSUPPORTED,
         )
       }
 
@@ -152,6 +160,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
         outcome = RangeDownloadOutcome.COMPLETED,
         filePath = destFilePath,
         fallbackReason = null,
+        fallbackKind = null,
       )
     }
   }
