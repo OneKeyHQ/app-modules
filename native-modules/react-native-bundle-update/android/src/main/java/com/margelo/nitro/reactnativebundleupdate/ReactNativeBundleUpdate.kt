@@ -18,8 +18,9 @@ import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipEntry
@@ -1094,8 +1095,27 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     private val listeners = CopyOnWriteArrayList<BundleListener>()
     private val nextListenerId = AtomicLong(1)
-    private val isDownloading = AtomicBoolean(false)
+
+    // Per-destination single-flight (OCDS §5.8): one in-flight run per final
+    // bundle path, keyed by `filePath`. `putIfAbsent` makes a second
+    // downloadBundle for the SAME dest fail fast ("Already downloading"), while
+    // different dests now run concurrently (the old global boolean serialized
+    // everything). The value is the live CancelHandle so clearDownload/clearBundle
+    // can stop the 8 workers BEFORE deleting the directory (cancel-then-delete),
+    // preventing a worker from re-creating a just-deleted `.segN`. Being an
+    // in-memory map, a crashed run leaves no stale lock — the entry is gone on
+    // relaunch, giving inherent stale-lock recovery (OCDS §5.8).
+    private val activeDownloads =
+        ConcurrentHashMap<String, ConcurrentRangeDownloader.CancelHandle>()
     private val httpClient = OkHttpClient.Builder()
+        // OCDS §5.4 timeouts. `readTimeout` is the primary inter-byte stall
+        // window: OkHttp raises SocketTimeoutException when no bytes arrive within
+        // it, which the segment loop classifies transient and retries. We do NOT
+        // set callTimeout — it bounds the WHOLE call and would cut a legitimately
+        // slow large segment mid-stream; the overall run deadline is owned by the
+        // shared-JS retry budget (ServiceAppUpdate), not this socket layer.
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .addNetworkInterceptor { chain ->
             val req = chain.request()
             if (!req.url.isHttps) {
@@ -1191,10 +1211,13 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
 
     override fun downloadBundle(params: BundleDownloadParams): Promise<BundleDownloadResult> {
         return Promise.async {
-            if (isDownloading.getAndSet(true)) {
-                OneKeyLog.warn("BundleUpdate", "downloadBundle: rejected, already downloading")
-                throw Exception("Already downloading")
-            }
+            // Per-dest single-flight is acquired below once `filePath` is known.
+            // Input validation (version/HTTPS) runs FIRST and is intentionally
+            // NOT gated by the lock — a malformed request must fail the same way
+            // whether or not a download is in flight, and must never register a
+            // lock entry it then has to unwind.
+            var acquiredKey: String? = null
+            var cancelHandle: ConcurrentRangeDownloader.CancelHandle? = null
 
             try {
             val context = getContext()
@@ -1224,6 +1247,19 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             // "exists at filePath -> already valid" cache check above.
             val partialFilePath = "$filePath.partial"
 
+            // OCDS §5.8 per-destination single-flight. Register a CancelHandle for
+            // THIS dest; a second downloadBundle for the same `filePath` fails fast
+            // ("Already downloading"). Different dests are allowed to run
+            // concurrently. The handle is passed to the concurrent downloader so
+            // clearDownload/clearBundle can stop its workers before deleting files.
+            val handle = ConcurrentRangeDownloader.CancelHandle()
+            if (activeDownloads.putIfAbsent(filePath, handle) != null) {
+                OneKeyLog.warn("BundleUpdate", "downloadBundle: rejected, already downloading $filePath")
+                throw Exception("Already downloading")
+            }
+            acquiredKey = filePath
+            cancelHandle = handle
+
             val result = BundleDownloadResult(
                 downloadedFile = filePath,
                 downloadUrl = downloadUrl,
@@ -1247,12 +1283,12 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     if (partialFile.exists()) partialFile.delete()
                     File("$partialFilePath.progress").delete()
                     for (i in 0 until CONCURRENT_SEGMENT_COUNT) File("$partialFilePath.seg$i").delete()
-                    // Keep isDownloading held across the skip delay below. Clearing
-                    // it before the sleep opens a ~1s window where a second
-                    // downloadBundle could pass the getAndSet guard and run
-                    // concurrently. Reset only after the delay completes.
+                    // Keep the per-dest lock held across the skip delay below.
+                    // The `finally` removes the lock entry AFTER this return runs,
+                    // so the lock spans the whole sleep — closing the ~1s window
+                    // where a second downloadBundle for this dest could otherwise
+                    // pass the single-flight guard and run concurrently.
                     Thread.sleep(1000)
-                    isDownloading.set(false)
                     sendEvent("update/complete")
                     return@async result
                 } else {
@@ -1284,7 +1320,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 val concurrentOutcome = ConcurrentRangeDownloader(
                     httpClient = httpClient,
                     log = { msg -> OneKeyLog.info("BundleUpdate", msg) },
-                ).download(downloadUrl, partialFilePath) { transferred, total ->
+                ).download(downloadUrl, partialFilePath, cancelHandle) { transferred, total ->
                     if (total > 0) {
                         val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
                         val prev = concurrentProgress.get()
@@ -1338,7 +1374,9 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                         if (downloadedFile.exists()) downloadedFile.delete()
                         if (partialFile.renameTo(downloadedFile) && verifyBundleSHA256(filePath, sha256)) {
                             OneKeyLog.info("BundleUpdate", "downloadBundle: recovered crashed-before-rename bundle, skipping download")
-                            isDownloading.set(false)
+                            // The `finally` removes the per-dest lock after this
+                            // return; the lock therefore spans the skip delay,
+                            // same as the existing-file cache-hit path above.
                             Thread.sleep(1000)
                             sendEvent("update/complete")
                             return@async result
@@ -1545,7 +1583,26 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 // sanitizeErrorMessageForEvent.
                 OneKeyLog.error("BundleUpdate", "downloadBundle: failed: ${e.javaClass.simpleName}: ${e.message}")
                 val sanitized = sanitizeErrorMessageForEvent(e)
-                sendEvent("update/error", message = sanitized)
+                // An INTENTIONAL cancel (clearDownload/clearBundle flipped THIS
+                // run's CancelHandle, which aborts the workers → they throw
+                // IOException("aborted")) is NOT a download failure — the caller
+                // deliberately tore the run down. Before the cancel-then-delete
+                // path existed, clearing never aborted an in-flight run, so no
+                // `update/error` was emitted; preserve that. Detect it off the
+                // handle's `aborted` flag rather than the message, because
+                // sanitizeErrorMessageForEvent collapses "aborted" to the generic
+                // "IO_IOException" tag and would be indistinguishable from a real
+                // I/O failure.
+                val intentionallyCancelled = cancelHandle?.aborted?.get() == true
+                // A duplicate-dest single-flight rejection ("Already downloading")
+                // is NOT a failure of any in-flight download — it means another
+                // run already owns this dest. The original global-boolean guard
+                // threw this BEFORE the try, so no `update/error` was emitted;
+                // preserve that so listeners don't observe a spurious error for the
+                // rejected caller while the real download is still progressing.
+                if (sanitized != "Already downloading" && !intentionallyCancelled) {
+                    sendEvent("update/error", message = sanitized)
+                }
                 // Rethrow with the same sanitized message so the Promise
                 // rejection surfacing to JS carries no /data/user/<u>/<pkg>/
                 // paths. Without this rewrap, FileNotFoundException etc.
@@ -1555,7 +1612,16 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 // native crash reporter) still sees the full chain.
                 throw Exception(sanitized, e)
             } finally {
-                isDownloading.set(false)
+                // Release THIS run's per-dest single-flight lock. Keyed remove
+                // (only if we actually acquired it — input-validation failures
+                // throw before acquisition, leaving acquiredKey null). The
+                // value-checked remove avoids deleting an entry a later run for
+                // the same dest may have re-registered after a concurrent cancel.
+                val key = acquiredKey
+                val handle = cancelHandle
+                if (key != null && handle != null) {
+                    activeDownloads.remove(key, handle)
+                }
             }
         }
     }
@@ -1784,10 +1850,28 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         }
     }
 
+    // OCDS §5.8 cancel-then-delete. Stop every in-flight concurrent run's worker
+    // pool (flip its abort flag + shutdownNow) BEFORE the caller deletes the
+    // download directory. Without this, a live segment worker could re-create a
+    // `.segN` we just deleted (CRD streams into `.segN` via append). Removing each
+    // entry here also makes the dest immediately re-acquirable. The in-flight
+    // download's own `finally` does a value-checked remove, so racing it is safe.
+    private fun cancelAllActiveDownloads() {
+        val keys = activeDownloads.keys.toList()
+        for (key in keys) {
+            activeDownloads.remove(key)?.let {
+                OneKeyLog.info("BundleUpdate", "cancelling in-flight download: $key")
+                it.cancel()
+            }
+        }
+    }
+
     override fun clearDownload(): Promise<Unit> {
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "clearDownload: clearing download directory...")
             val context = getContext()
+            // Cancel-then-delete: stop live workers before removing files.
+            cancelAllActiveDownloads()
             val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
             if (downloadDir.exists()) {
                 BundleUpdateStoreAndroid.deleteDir(downloadDir)
@@ -1795,7 +1879,6 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
             } else {
                 OneKeyLog.info("BundleUpdate", "clearDownload: download directory does not exist, skipping")
             }
-            isDownloading.set(false)
             OneKeyLog.info("BundleUpdate", "clearDownload: completed")
         }
     }
@@ -1805,6 +1888,8 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
         return Promise.async {
             OneKeyLog.info("BundleUpdate", "clearBundle: clearing download and bundle directories...")
             val context = getContext()
+            // Cancel-then-delete: stop live workers before removing files.
+            cancelAllActiveDownloads()
             // Clear download directory
             val downloadDir = File(BundleUpdateStoreAndroid.getDownloadBundleDir(context))
             if (downloadDir.exists()) {
@@ -1817,7 +1902,6 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                 BundleUpdateStoreAndroid.deleteDir(bundleDir)
                 OneKeyLog.info("BundleUpdate", "clearBundle: bundle directory deleted")
             }
-            isDownloading.set(false)
             OneKeyLog.info("BundleUpdate", "clearBundle: completed")
         }
     }
