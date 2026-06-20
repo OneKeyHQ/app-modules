@@ -1,0 +1,3 @@
+module RangeDownloadLogic {
+    header "/Users/huhuanming/Project/app-modules/native-modules/react-native-range-downloader/tests/swiftpm/.build/arm64-apple-macosx/debug/RangeDownloadLogic.build/include/RangeDownloadLogic-Swift.h"
+}

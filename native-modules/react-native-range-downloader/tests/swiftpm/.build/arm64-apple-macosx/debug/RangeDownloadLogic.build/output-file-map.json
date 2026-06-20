@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/huhuanming/Project/app-modules/native-modules/react-native-range-downloader/tests/swiftpm/.build/arm64-apple-macosx/debug/RangeDownloadLogic.build/primary.swiftdeps"
+  },
+  "/Users/huhuanming/Project/app-modules/native-modules/react-native-range-downloader/tests/swiftpm/Sources/RangeDownloadLogic/RangeDownloadLogic.swift": {
+    "dependencies": "/Users/huhuanming/Project/app-modules/native-modules/react-native-range-downloader/tests/swiftpm/.build/arm64-apple-macosx/debug/RangeDownloadLogic.build/RangeDownloadLogic.d",
+    "object": "/Users/huhuanming/Project/app-modules/native-modules/react-native-range-downloader/tests/swiftpm/.build/arm64-apple-macosx/debug/RangeDownloadLogic.build/RangeDownloadLogic.swift.o",
+    "swiftmodule": "/Users/huhuanming/Project/app-modules/native-modules/react-native-range-downloader/tests/swiftpm/.build/arm64-apple-macosx/debug/RangeDownloadLogic.build/RangeDownloadLogic~partial.swiftmodule",
+    "swift-dependencies": "/Users/huhuanming/Project/app-modules/native-modules/react-native-range-downloader/tests/swiftpm/.build/arm64-apple-macosx/debug/RangeDownloadLogic.build/RangeDownloadLogic.swiftdeps",
+    "diagnostics": "/Users/huhuanming/Project/app-modules/native-modules/react-native-range-downloader/tests/swiftpm/.build/arm64-apple-macosx/debug/RangeDownloadLogic.build/RangeDownloadLogic.dia"
+  }
+}

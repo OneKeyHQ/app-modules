@@ -1,5 +1,4 @@
 import Foundation
-import CommonCrypto
 import NitroModules
 import ReactNativeNativeLogger
 
@@ -121,26 +120,20 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
 /// "channel|taskId" so multiple channels can download at once. Each running
 /// task's `taskDescription` encodes "channel|taskId|segIndex" so a delegate
 /// callback can locate both the run and the segment.
-// MARK: - Typed failure model (OCDS §4)
+// MARK: - Typed failure model (OCDS §4) — wire projections
 //
-// The IN-PROCESS core returns this Swift-native typed class to its in-process
+// The dependency-free enum bodies for `RangeDownloadClass` / `RangeFallbackClass`
+// (plus the deterministic logic funcs) live in `RangeDownloadLogic.swift` so they
+// can be unit-tested without the Nitro / NativeLogger deps. Only the wire
+// projections — which depend on the codegen enums (`RangeDownloadOutcome` /
+// `RangeFallbackKind`) — remain here, in the module that has those generated types.
+//
+// The IN-PROCESS core returns the Swift-native typed class to its in-process
 // caller (BundleUpdate); the Nitro shim maps it onto the regenerated wire enum
 // `RangeDownloadOutcome` (completed | fallbackTransient | fallbackPermanent) so
 // the failure class crosses the JS boundary as an EXPLICIT value, never inferred
-// from incidental on-disk side effects (which §4 forbids). The core enum is a
-// SEPARATE type from the generated wire `RangeFallbackKind` (same case set) so
-// the core can carry an extra `failureClass` projection without the module-scope
-// name colliding with the codegen typealias; `wireOutcome` / `wireKind` below do
-// the 1:1 translation onto the generated enums.
-public enum RangeDownloadClass: Equatable {
-  case completed
-  /// Resumable interruption — keep `.segN`, the concurrent path may resume.
-  case fallbackTransient
-  /// Concurrency fundamentally unusable for this object — segments discarded.
-  case fallbackPermanent
-
-  var isFallback: Bool { self != .completed }
-
+// from incidental on-disk side effects (which §4 forbids).
+extension RangeDownloadClass {
   /// 1:1 projection onto the generated wire enum (`RangeDownloadOutcome`) that
   /// crosses the JS bridge. No collapse: each in-process class maps to its own
   /// typed wire case.
@@ -153,34 +146,7 @@ public enum RangeDownloadClass: Equatable {
   }
 }
 
-/// Typed sub-classification of a fallback (in-process mirror of the generated
-/// wire `RangeFallbackKind`). Used by the caller/analytics to know WHY without
-/// parsing the reason string, and by the core to drive keep-vs-discard. Named
-/// distinctly from the codegen `RangeFallbackKind` typealias to avoid a
-/// module-scope name clash; `wireKind` translates onto the wire enum.
-public enum RangeFallbackClass: String {
-  case serverIgnoredRange
-  case rangeUnsupported
-  case authExpired
-  case notFound
-  case redirectRejected
-  case checksumMismatch
-  case multipartOrBadTotal
-  case transientNetwork
-  case throttled
-  case budgetExhausted
-
-  /// The §4 recovery class implied by this kind.
-  var failureClass: RangeDownloadClass {
-    switch self {
-    case .transientNetwork, .throttled, .budgetExhausted:
-      return .fallbackTransient
-    case .serverIgnoredRange, .rangeUnsupported, .authExpired, .notFound,
-         .redirectRejected, .checksumMismatch, .multipartOrBadTotal:
-      return .fallbackPermanent
-    }
-  }
-
+extension RangeFallbackClass {
   /// 1:1 projection onto the generated wire enum (`RangeFallbackKind`). The case
   /// names are the wire union's string values verbatim, so `fromString` is exact
   /// and total (the force-unwrap can never fail).
@@ -323,8 +289,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   private static let defaultMaxSegmentAttempts = 4
   private static let defaultRequestTimeoutSeconds: Double = 60
   private static let defaultStallTimeoutSeconds: Double = 30
-  private static let retryBaseDelaySeconds: Double = 1.0
-  private static let retryMaxDelaySeconds: Double = 30.0
+  // §5.4 backoff knobs now live on `RangeDownloadLogic` (used only by backoffDelay).
 
   override init() {
     super.init()
@@ -555,7 +520,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     state.etag = probe.etag
     state.url = url
     state.hasValidator = (probe.etag?.isEmpty == false)
-    state.ranges = Self.planRanges(total: probe.total, segments: segCount)
+    state.ranges = RangeDownloadLogic.planRanges(total: probe.total, segments: segCount)
     state.segmentWritten = [Int64](repeating: 0, count: state.ranges.count)
 
     // §5.8 (G7): claim the destination slot atomically. Re-check membership under
@@ -625,7 +590,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     // verifies after the fact. A whole-file checksum mismatch is Permanent (§4):
     // the assembled bytes are unsalvageable, so discard final + artifacts.
     if let expected = expectedSha256, !expected.isEmpty {
-      let actual = Self.calculateSHA256(filePath)
+      let actual = RangeDownloadLogic.calculateSHA256(filePath)
       if actual?.lowercased() != expected.lowercased() {
         try? FileManager.default.removeItem(atPath: filePath)
         discardArtifacts(filePath: filePath)
@@ -646,20 +611,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   // MARK: - Range planning / probing
 
-  static func planRanges(total: Int64, segments: Int) -> [(start: Int64, end: Int64)] {
-    var out: [(Int64, Int64)] = []
-    let chunk = (total + Int64(segments) - 1) / Int64(segments)
-    var i = 0
-    while i < segments {
-      let start = Int64(i) * chunk
-      if start >= total { break }
-      let end = min(start + chunk - 1, total - 1)
-      out.append((start, end))
-      i += 1
-    }
-    return out
-  }
-
   private struct ProbeResult { let total: Int64; let etag: String?; let supportsRange: Bool }
 
   struct FallbackError: Error {
@@ -674,45 +625,9 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     }
   }
 
-  // MARK: - HTTP status classification (OCDS §4 table + catch-all)
-
-  /// Maps an HTTP status on a Range request to a §4 fallback kind. Used by the
-  /// download-finish delegate to decide keep-vs-discard. Status 206 is handled by
-  /// the caller (validated, not a fallback); 200 is `serverIgnoredRange`.
-  static func classifyStatus(_ status: Int) -> RangeFallbackClass {
-    switch status {
-    case 200:
-      return .serverIgnoredRange
-    case 416:
-      // §4: 416 to a resume request → Transient (re-evaluate size, keep segments).
-      return .transientNetwork
-    case 401, 403:
-      return .authExpired
-    case 404, 410:
-      return .notFound
-    case 408, 429:
-      return .throttled
-    case 501, 505:
-      // Explicit Permanent carve-outs from the 5xx → Transient default.
-      return .rangeUnsupported
-    case 500...599:
-      return .throttled
-    case 400...499:
-      // Default 4xx → Permanent (408/429 handled above).
-      return .rangeUnsupported
-    default:
-      // Anything else / unknown → Permanent per the §4 catch-all.
-      return .rangeUnsupported
-    }
-  }
-
-  /// Parses a `Retry-After` header value (delta-seconds form only; HTTP-date form
-  /// is treated as absent). Returns nil when missing/unparseable.
-  static func parseRetryAfterSeconds(_ value: String?) -> Double? {
-    guard let value = value?.trimmingCharacters(in: .whitespaces), !value.isEmpty,
-          let seconds = Double(value), seconds >= 0 else { return nil }
-    return seconds
-  }
+  // HTTP status classification (classifyStatus), Retry-After parsing
+  // (parseRetryAfterSeconds), Content-Range parsing and backoff math now live on
+  // `RangeDownloadLogic` (OCDS §4 / §5). Callsites use `RangeDownloadLogic.<fn>`.
 
   /// One-byte Range request on a default (foreground) session to learn total
   /// size + ETag + Range support. Background sessions can't do data tasks, so
@@ -734,7 +649,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
         let etag = http.value(forHTTPHeaderField: "ETag")
         if http.statusCode == 206,
            let cr = http.value(forHTTPHeaderField: "Content-Range"),
-           let total = Self.parseContentRangeTotal(cr) {
+           let total = RangeDownloadLogic.parseContentRangeTotal(cr) {
           cont.resume(returning: ProbeResult(total: total, etag: etag, supportsRange: true))
         } else {
           // 200 (Range ignored) or anything else → single-stream.
@@ -743,29 +658,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       }
       task.resume()
     }
-  }
-
-  static func parseContentRangeTotal(_ header: String) -> Int64? {
-    // "bytes 0-0/65226095"
-    guard let slash = header.lastIndex(of: "/") else { return nil }
-    let tail = header[header.index(after: slash)...]
-    return Int64(tail.trimmingCharacters(in: .whitespaces))
-  }
-
-  /// Parses the start/end of a "bytes <start>-<end>/<total>" Content-Range.
-  static func parseContentRangeBounds(_ header: String) -> (start: Int64, end: Int64)? {
-    // Drop the leading "bytes " and the trailing "/<total>".
-    let trimmed = header.trimmingCharacters(in: .whitespaces)
-    guard let spaceIdx = trimmed.firstIndex(of: " ") else { return nil }
-    var rangePart = String(trimmed[trimmed.index(after: spaceIdx)...])
-    if let slash = rangePart.firstIndex(of: "/") {
-      rangePart = String(rangePart[..<slash])
-    }
-    let bounds = rangePart.split(separator: "-", maxSplits: 1).map { String($0) }
-    guard bounds.count == 2,
-          let start = Int64(bounds[0].trimmingCharacters(in: .whitespaces)),
-          let end = Int64(bounds[1].trimmingCharacters(in: .whitespaces)) else { return nil }
-    return (start, end)
   }
 
   // MARK: - Task reconciliation (handles app relaunch)
@@ -895,7 +787,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       return false
     }
     let range = ranges[idx]
-    let delay = Self.backoffDelay(attempt: attempts, retryAfter: retryAfter)
+    let delay = RangeDownloadLogic.backoffDelay(attempt: attempts, retryAfter: retryAfter)
     let session = session(forChannel: state.channel, segmentCount: state.segmentCount)
     let channelStr = state.channel.stringValue
     let taskId = state.taskId
@@ -1006,15 +898,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     }
   }
 
-  /// §5.4: exponential backoff base*2^(attempt-1), capped, with full jitter so N
-  /// segments don't retry in lockstep. A server `Retry-After` overrides it.
-  static func backoffDelay(attempt: Int, retryAfter: Double?) -> Double {
-    if let retryAfter = retryAfter { return min(retryAfter, retryMaxDelaySeconds * 2) }
-    let exp = retryBaseDelaySeconds * pow(2.0, Double(max(0, attempt - 1)))
-    let capped = min(exp, retryMaxDelaySeconds)
-    // Full jitter in [0, capped].
-    return Double.random(in: 0...capped)
-  }
+  // backoffDelay (§5.4) now lives on `RangeDownloadLogic`.
 
   // MARK: - Stall watchdog (§5.4)
 
@@ -1137,7 +1021,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       return
     }
     if http.statusCode != 206 {
-      let kind = Self.classifyStatus(http.statusCode)
+      let kind = RangeDownloadLogic.classifyStatus(http.statusCode)
       if kind.failureClass == .fallbackTransient {
         // §4 (416): a 416 is transient but the requested range may no longer be
         // satisfiable (the object shrank/changed). Flag this segment for a size
@@ -1146,7 +1030,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
         if http.statusCode == 416 {
           lock.lock(); state.sizeReevalIndexes.insert(idx); lock.unlock()
         }
-        let retryAfter = Self.parseRetryAfterSeconds(
+        let retryAfter = RangeDownloadLogic.parseRetryAfterSeconds(
           http.value(forHTTPHeaderField: "Retry-After"))
         markSegmentTransient(state: state, idx: idx, retryAfter: retryAfter)
       } else {
@@ -1165,13 +1049,13 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     // stashed `.segN` can't be a slice of a different object/range; and (§5.5)
     // verify the total matches the probe total (reject absent / `*` / mismatch).
     if let cr = http.value(forHTTPHeaderField: "Content-Range") {
-      guard let parsed = Self.parseContentRangeBounds(cr),
+      guard let parsed = RangeDownloadLogic.parseContentRangeBounds(cr),
             parsed.start == range.start, parsed.end == range.end else {
         lock.lock(); state.fellBack = true; state.fellBackKind = .multipartOrBadTotal; lock.unlock()
         return
       }
       let expectedTotal = lock.withLockValue { state.totalSize }
-      guard let total = Self.parseContentRangeTotal(cr), total == expectedTotal else {
+      guard let total = RangeDownloadLogic.parseContentRangeTotal(cr), total == expectedTotal else {
         // Absent / `*` / disagreeing total → the object changed or is non-conforming.
         lock.lock(); state.fellBack = true; state.fellBackKind = .multipartOrBadTotal; lock.unlock()
         return
@@ -1537,23 +1421,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   // MARK: - SHA256 (streaming backstop)
 
-  static func calculateSHA256(_ filePath: String) -> String? {
-    let fm = FileManager.default
-    guard fm.fileExists(atPath: filePath),
-          let fileHandle = FileHandle(forReadingAtPath: filePath) else { return nil }
-    defer { try? fileHandle.close() }
-    var context = CC_SHA256_CTX()
-    CC_SHA256_Init(&context)
-    while autoreleasepool(invoking: { () -> Bool in
-      let data = fileHandle.readData(ofLength: 8192)
-      if data.isEmpty { return false }
-      data.withUnsafeBytes { CC_SHA256_Update(&context, $0.baseAddress, CC_LONG(data.count)) }
-      return true
-    }) {}
-    var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
-    CC_SHA256_Final(&hash, &context)
-    return hash.map { String(format: "%02x", $0) }.joined()
-  }
+  // calculateSHA256 (§5.5) now lives on `RangeDownloadLogic`.
 }
 
 private extension NSLock {
