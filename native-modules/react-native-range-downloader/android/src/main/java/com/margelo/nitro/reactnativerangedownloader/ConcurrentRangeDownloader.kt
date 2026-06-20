@@ -547,40 +547,14 @@ class ConcurrentRangeDownloader(
         return Triple(start, end, total)
     }
 
-    // OCDS §4 status classifier. Returns the exception to throw for a non-206,
-    // non-200 status: a [PermanentHttpException] (bypasses the per-segment retry
-    // loop) or a [TransientHttpException] (retried with backoff/Retry-After).
-    //   - 401/403/404/410      → permanent (auth / expired signed URL / gone)
-    //   - 408/429              → transient (timeout / throttling)
-    //   - 416                  → transient (resume size re-evaluated by caller)
-    //   - other 4xx            → permanent (catch-all default)
-    //   - 501/505              → permanent
-    //   - other 5xx            → transient (back off and retry)
-    //   - anything else        → permanent (unknown → permanent, per §4)
-    // The 206 (proceed) and 200 (fallback) cases are handled by the caller before
-    // this is reached.
+    // OCDS §4 status classifier for a non-206, non-200 status: returns a
+    // [PermanentHttpException] (bypasses the per-segment retry loop) or a
+    // [TransientHttpException] (retried with backoff/Retry-After). The pure
+    // status→class decision lives in the module-visible [isPermanentHttpStatus]
+    // top-level function so it can be unit-tested without an okhttp Response.
     private fun classifyHttpFailure(response: okhttp3.Response): Exception {
         val code = response.code
-        val permanent = when (code) {
-            401, 403, 404, 410 -> true
-            408, 429 -> false
-            // 416 (Range Not Satisfiable) is TRANSIENT, not permanent. It happens
-            // when a resume request's `have` offset is at/past the object's end —
-            // typically because the object changed size behind us. Treating it as
-            // permanent (via the `in 400..499` catch-all below) would discard the
-            // already-downloaded `.segN` artifacts and restart from byte 0, the
-            // §4 "most damaging mistake". Instead keep the bytes; the per-segment
-            // retry loop re-requests from the same offset, and the single-stream
-            // 416 recovery in the caller re-evaluates total size. This case MUST
-            // stay above `in 400..499` — `when` matches top-to-bottom and 416 is a
-            // member of that range.
-            416 -> false
-            in 400..499 -> true
-            501, 505 -> true
-            in 500..599 -> false
-            else -> true
-        }
-        if (permanent) return PermanentHttpException(code)
+        if (isPermanentHttpStatus(code)) return PermanentHttpException(code)
         return TransientHttpException(code, parseRetryAfterMillis(response.header("Retry-After")))
     }
 
@@ -593,4 +567,32 @@ class ConcurrentRangeDownloader(
         if (seconds < 0) return null
         return (seconds * 1000L).coerceAtMost(retryMaxDelayMillis)
     }
+}
+
+/**
+ * OCDS §4 HTTP-status classification. `true` = permanent (concurrency is
+ * fundamentally unusable for this object → discard artifacts, fall back to
+ * single-stream); `false` = transient (keep artifacts, retry). Pure and
+ * module-visible so it is unit-tested without constructing an okhttp Response.
+ * 200 (fallback) and 206 (proceed) are handled before a failure reaches the
+ * classifier, so they are not represented here.
+ *
+ *   401/403/404/410 → permanent (auth / expired signed URL / gone)
+ *   408/429         → transient (timeout / throttling)
+ *   416             → transient (resume; total size re-evaluated by the caller)
+ *   other 4xx       → permanent (catch-all default)
+ *   501/505         → permanent;  other 5xx → transient (back off and retry)
+ *   anything else   → permanent (unknown → permanent, per §4)
+ */
+internal fun isPermanentHttpStatus(code: Int): Boolean = when (code) {
+    401, 403, 404, 410 -> true
+    408, 429 -> false
+    // 416 MUST stay above `in 400..499` (when matches top-to-bottom; 416 is a
+    // member of that range). Treating 416 as permanent would discard resumable
+    // `.segN` bytes and restart from byte 0 — the §4 "most damaging mistake".
+    416 -> false
+    in 400..499 -> true
+    501, 505 -> true
+    in 500..599 -> false
+    else -> true
 }
