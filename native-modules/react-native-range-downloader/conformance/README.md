@@ -31,6 +31,17 @@ Verified on a real `-configuration Release` build (iPhone 17 Pro sim) against th
 local fault server. **9 of 11 SPEC §6 rows pass on-simulator**; 1 confirmed
 deviation; 2 not reachable without a temporary shim.
 
+> **Scope:** this is a *fake update task running through real download code*. The
+> app's own native downloader, its silent-auto-download trigger, segmentation,
+> resume, retry, fallback and SHA-256 verification are all **real**; the update
+> server, manifest, version, and the 16 MB bundle payload are **synthetic** (the
+> payload is filler bytes, not a signed zip). It therefore verifies the
+> **download layer only** — the post-download unzip → signature-verify → install →
+> relaunch chain is **not** exercised (the synthetic payload fails `verifyASC`
+> after a successful download, which is expected and out of OCDS scope). See
+> [`ios-simulator/README.md`](./ios-simulator/README.md) → "What is real vs.
+> synthetic" for the full boundary and how to extend it to a real signed bundle.
+
 | SPEC §6 | Behavior | Result |
 |---|---|---|
 | #1 | Transient error → backoff retry, no restart | ✅ PASS |

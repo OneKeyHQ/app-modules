@@ -5,6 +5,24 @@ scenario against a local HTTP fault server, and adversarially verifies the
 result. The app's *own* native concurrent downloader runs — this is not a
 re-implementation.
 
+## What is real vs. synthetic (READ THIS — scope & honesty)
+
+This is a **fake update task running through real download code.** Be clear on
+the boundary before trusting a result:
+
+**Real (the thing under test):**
+- The app itself and its native concurrent downloader (`RangeDownloader.swift`, `ReactNativeBundleUpdate.swift`).
+- The trigger path: on launch the app does its normal update check → because the manifest declares `updateStrategy: silent`, `AppUpdateForeground` **auto-calls `downloadPackage()`** — the same code path a real silent update uses. No UI is poked; **every launch auto-starts one download.**
+- 8-way concurrent Range fetch, `.segN` segment files, concatenation, SHA-256 verification, and all retry / fallback / stall / resume logic.
+
+**Synthetic (faked by this harness):**
+- The update server, the manifest, and the version number (`localhost:8788` impersonates the update backend; version `202699999` is invented).
+- The downloaded "bundle" is **16 MB of deterministic filler bytes, NOT a real signed OneKey bundle.** The manifest's `sha256` is the sha of those filler bytes, so the integrity check passes legitimately.
+
+**What this does NOT verify (out of OCDS scope):**
+- Post-download **unzip → signature/ASC verification → install → relaunch**. Because the payload is not a valid signed zip, `verifyBundleASC` (SSZipArchive) fails *after* a successful download. That is expected and does **not** affect any download-layer conclusion — but it means the full "download a real bundle and boot into it" chain is unproven here.
+- To also cover install/verify/relaunch, point the server at a **real signed test bundle** (a genuine bundle + its true `sha256`/`signature` from a test channel) instead of the filler payload.
+
 ## Files
 
 | File | Role |
