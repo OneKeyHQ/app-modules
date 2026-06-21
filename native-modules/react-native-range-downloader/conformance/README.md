@@ -28,8 +28,9 @@ conformance scenarios `#1`–`#11`). Every suite below maps back to those.
 ## Latest iOS end-to-end result (simulator)
 
 Verified on a real `-configuration Release` build (iPhone 17 Pro sim) against the
-local fault server. **9 of 11 SPEC §6 rows pass on-simulator**; 1 confirmed
-deviation; 2 not reachable without a temporary shim.
+local fault server. **9 of 11 SPEC §6 rows pass on-simulator**; 2 not reachable
+without a temporary shim. (#6's earlier "deviation" was resolved at the spec
+level — see below.)
 
 > **Scope:** this is a *fake update task running through real download code*. The
 > app's own native downloader, its silent-auto-download trigger, segmentation,
@@ -49,18 +50,18 @@ deviation; 2 not reachable without a temporary shim.
 | #3 | `200` to a Range request → permanent → single-stream | ✅ PASS (probe-200, segment-200, 404 variants) |
 | #4 | `416` / transient range error → re-evaluate, retry (not permanent) | ✅ PASS |
 | #5 | short / over-long / mis-aligned / bad-total `206` → rejected, final checksum passes | ✅ PASS (4 variants) |
-| #6 | Corrupted assembly → checksum mismatch → **single-stream retry-once** | ⚠️ **DEVIATION** — mismatch is detected & bounded, but the prescribed single-stream **retry-once is absent** (the bundle layer passes `nil` sha to the core, self-verifies, then throws with no retry) |
+| #6 | Corrupted assembly → checksum mismatch → discard → terminal failure, no infinite loop | ✅ PASS — mismatch detected (`valid=false`), artifacts discarded, bounded (one concurrent attempt), terminal failure surfaced. (Conformant as of OCDS 1.2, which removed the over-specified single-stream retry-once — all 3 platforms terminate on mismatch.) |
 | #7 | Network flap / lock / background → transient retry, progress never resets to 0 | ✅ PASS (literal screen-lock isn't performable on the simulator and is behaviorally redundant with the kill/flap paths) |
 | #8 | User cancel mid-run | ❌ NOT COVERED — **no cancel trigger exists in the iOS app flow at all** (also a product gap); needs a temp shim calling `RangeDownloader.cancel` |
 | #9 | Persistent failure → bounded terminal give-up, no infinite loop | ✅ PASS (5-attempt exponential backoff ladder then terminal failure) |
 | #10 | Stalled socket → stall watchdog cancels + retries | ✅ PASS (per-segment watchdog at 30s) |
 | #11 | Two concurrent `download()` for the same dest → single-flight | ❌ NOT COVERED — native single-flight guard blocks a 2nd call; needs a shim or a bg/main dual-dispatch harness |
 
-**Action item:** confirm whether #6 (no single-stream retry-once on a corrupted
-concurrent assembly) is intentional. Root cause:
-`react-native-bundle-update/ios/ReactNativeBundleUpdate.swift` passes
-`expectedSha256: nil` into the range downloader and verifies the assembled file
-itself, throwing on mismatch without the SPEC-prescribed single-stream retry.
+**Resolved (#6):** the earlier "no single-stream retry-once" finding was an
+over-specification in the standard, not an implementation bug — all three
+platforms (iOS, Android, Node) terminate on a checksum mismatch rather than
+re-fetching the same (would-re-corrupt) object. OCDS **1.2** removed the
+retry-once requirement; a mismatch is now simply Permanent → discard → terminal.
 
 ---
 

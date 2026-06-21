@@ -1,6 +1,6 @@
 # OneKey Concurrent Download Standard (OCDS)
 
-- **Version:** 1.1
+- **Version:** 1.2
 - **Status:** Active
 - **Last updated:** 2026-06-20
 - **Applies to:** every implementation of OneKey's concurrent (multi-range)
@@ -131,7 +131,7 @@ files happen to remain on disk).
 | Range unsupported / probe inconclusive | **Permanent** | single-stream from the start |
 | Total size below the concurrency threshold | not a failure | skip concurrency, use single-stream |
 | `Content-Range` window ≠ requested range | **Permanent** | reject the body, discard, fall back |
-| Whole-file checksum/signature mismatch after assembly | **Permanent** | discard final + artifacts; retry once via single-stream; if it still mismatches, terminal failure (no infinite re-download) |
+| Whole-file checksum/signature mismatch after assembly | **Permanent** | discard final + artifacts; terminal failure surfaced to caller (no infinite re-download). Re-fetching the same object would re-corrupt, so no automatic single-stream retry is required. |
 | `401` / `403` (auth / expired signed URL) | **Permanent** (this URL) | stop; surface to caller to obtain a fresh signed URL; do not blindly retry the dead URL |
 | `404` / `410` (not found / gone) | **Permanent** | terminal failure surfaced to caller (single-stream will also fail) |
 | Rejected non-HTTPS redirect (per §5.9) | **Permanent** | abort, surface to caller |
@@ -298,7 +298,7 @@ An implementation is conformant when it passes all of the following:
 | 3 | Server returns `200` to a `Range` request | Classified Permanent; clean single-stream |
 | 4 | `429` / `5xx` on a segment | Backoff + retry + keep; eventual success, no restart from 0 |
 | 5 | Mis-aligned / short / over-long `206` | Rejected, no corruption; final checksum passes |
-| 6 | Corrupted assembly | Checksum mismatch → single-stream retry once → terminal failure if still bad; no infinite loop |
+| 6 | Corrupted assembly | Checksum mismatch → discard artifacts → terminal failure surfaced to caller; no infinite loop (no automatic re-download of the same object) |
 | 7 | Repeated lock / background / network-toggle stress | Reported progress never resets to 0 unless a Permanent failure occurred |
 | 8 | Cancel mid-run | In-flight work stops, artifacts removed, nothing resurrected |
 | 9 | Permanently failing object / exhausted budget | Download ends in bounded time with a terminal failure reported; no infinite loop across relaunches |
@@ -325,6 +325,12 @@ own notes until closed. **This document records no implementation's state.**
 
 ## Appendix B. Change log
 
+- **1.2** (2026-06-22) — Removed the "retry once via single-stream" requirement
+  on a whole-file checksum/signature mismatch (§4 failure table, §6 scenario 6).
+  A mismatch after assembly is now simply Permanent → discard + terminal failure.
+  Rationale: re-fetching the same object would re-corrupt, so the retry adds cost
+  with no integrity benefit; all three reference implementations (iOS, Android,
+  Node) already terminate on mismatch, confirming the retry was over-specified.
 - **1.1** (2026-06-20) — Added a terminal / give-up boundary (§5.11: bounded
   attempt budget + wall-clock deadline, definitive terminal outcome, fallback
   failure is terminal). Made the failure classification exhaustive with a

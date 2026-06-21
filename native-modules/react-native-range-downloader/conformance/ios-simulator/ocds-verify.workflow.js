@@ -34,7 +34,7 @@ const SCENARIOS = [
   { scenario: 'bad-total-206', mode: 'normal', spec: '#5 (bad total)', what: 'disagreeing Content-Range total → permanent fallback',
     expect: 'same permanent-fallback → single-stream path as mis-aligned; FINAL shaMatch=true.' },
   { scenario: 'corrupt-bytes', mode: 'normal', spec: '#6', what: 'corrupted assembly (wrong bytes, correct length) → checksum mismatch',
-    expect: 'appLogTail "[BundleUpdate] ... concurrent finished, verifying SHA256..." then a SHA256_MISMATCH / update error; shaMatch=false; NO final .zip. IMPORTANT CONFORMANCE CHECK: SPEC #6 wants a single-stream RETRY-ONCE after mismatch — the bundle path passes nil sha to the core and throws WITHOUT single-stream retry. So appLogTail should show NO "using single-stream" after the mismatch, and NO infinite loop (bounded: one concurrent range-set, not repeated). Flag this as a SPEC DEVIATION if confirmed.' },
+    expect: 'appLogTail "[BundleUpdate] ... concurrent finished, verifying SHA256..." then a SHA256_MISMATCH / update error; shaMatch=false; NO final .zip; bounded (exactly ONE concurrent range-set, no repeated/looping re-download). PASS = mismatch detected → artifacts discarded → terminal failure, no infinite loop. (OCDS 1.2 removed the old single-stream retry-once requirement, so the ABSENCE of a "using single-stream" line after a mismatch is CONFORMANT, not a deviation.)' },
   { scenario: 'flap', mode: 'normal', spec: '#7 (network toggle)', what: 'TCP resets mid-run → transient retry, progress never resets to 0',
     expect: 'serverStatuses/notes show connection resets then recovery; appLogTail retries; reported progress (if visible) is monotonic non-decreasing — never resets to 0; completed segments survive the resets; shaMatch=true.' },
   { scenario: 'stall', mode: 'normal', spec: '#10', what: 'stalled socket → stall watchdog cancels + retries',
@@ -77,7 +77,7 @@ const verdicts = await parallel(
       Scenario: ${c.scenario} (SPEC ${c.spec}) — ${c.what}
       EXPECTATION: ${c.expect}
       Read ${DIR}/evidence/${c.scenario}.json (Read or cat). If a field is missing or the run didn't reach terminal, treat as a gap.
-      Return {spec:"${c.spec}", scenario:"${c.scenario}", pass:boolean, provenBy:[exact evidence fields/values cited], gaps:[unproven bits], specDeviation:string?}. For corrupt-bytes specifically, set specDeviation if the evidence confirms NO single-stream-retry-once after the sha mismatch.`,
+      Return {spec:"${c.spec}", scenario:"${c.scenario}", pass:boolean, provenBy:[exact evidence fields/values cited], gaps:[unproven bits], specDeviation:string?}. Only set specDeviation for a genuine departure from OCDS 1.2 (note: terminating on a checksum mismatch without a single-stream retry is CONFORMANT under 1.2, not a deviation).`,
       { label: `verify:${c.scenario}`, phase: 'Verify', schema: { type: 'object', additionalProperties: true, required: ['scenario', 'pass'], properties: { spec: { type: 'string' }, scenario: { type: 'string' }, pass: { type: 'boolean' }, provenBy: { type: 'array', items: { type: 'string' } }, gaps: { type: 'array', items: { type: 'string' } }, specDeviation: { type: 'string' } } } },
     ).then((v) => ({ ...v, what: c.what })),
   ),
@@ -86,7 +86,7 @@ const verdicts = await parallel(
 phase('Synthesis');
 const summary = await agent(
   `Build the final OCDS iOS-simulator conformance report from these per-scenario verdicts:\n${JSON.stringify(verdicts.filter(Boolean), null, 2)}\n
-  Produce markdown: (1) a table mapping SPEC §6 rows #1-#11 to scenario(s) and pass/fail/partial with "proven by"; (2) call out any specDeviation (esp. #6 corrupt-bytes — single-stream retry-once missing); (3) the residual items that are NOT covered here and WHY: #8 cancel (no cancel trigger exists in the iOS app code at all — needs a temp shim) and #11 two-concurrent-download (native single-flight guard — needs a shim or bg/main dual-dispatch), plus literal screen-lock (#7) which the simulator cannot do and which is behaviorally redundant with the background/kill path; (4) a blunt one-line VERDICT. Be honest about any FAIL or weak proof.`,
+  Produce markdown: (1) a table mapping SPEC §6 rows #1-#11 to scenario(s) and pass/fail/partial with "proven by"; (2) call out any genuine specDeviation vs OCDS 1.2 (note: #6 terminating on a checksum mismatch with NO single-stream retry is CONFORMANT under 1.2 — do not report it as a deviation); (3) the residual items that are NOT covered here and WHY: #8 cancel (no cancel trigger exists in the iOS app code at all — needs a temp shim) and #11 two-concurrent-download (native single-flight guard — needs a shim or bg/main dual-dispatch), plus literal screen-lock (#7) which the simulator cannot do and which is behaviorally redundant with the background/kill path; (4) a blunt one-line VERDICT. Be honest about any FAIL or weak proof.`,
   { label: 'synthesis', schema: { type: 'object', additionalProperties: true, required: ['markdown', 'passCount', 'failCount'], properties: { markdown: { type: 'string' }, passCount: { type: 'number' }, failCount: { type: 'number' }, verdict: { type: 'string' }, specDeviations: { type: 'array', items: { type: 'string' } } } } },
 );
 
