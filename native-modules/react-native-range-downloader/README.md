@@ -50,6 +50,10 @@ and any future platform) MUST conform to:
 Any change to download behavior on any platform must be checked against OCDS.
 When an implementation and the standard disagree, the implementation is wrong.
 
+How each platform (Node / Android / iOS) is verified against OCDS — and the
+runnable verification code to re-run after any downloader change — lives in
+**→ [`conformance/`](./conformance/README.md)**.
+
 ## Contributing
 
 - [Development workflow](CONTRIBUTING.md#development-workflow)
