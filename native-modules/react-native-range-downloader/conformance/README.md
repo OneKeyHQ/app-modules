@@ -112,6 +112,50 @@ adapter and are genuinely not JVM-unit-testable (no JSI stand-in).
 - **Node #9 give-up budget** — lives in the kit caller (`runDownloadWithRetry`/`ServiceAppUpdate`), tested in `useAppUpdate.test.ts`, not a downloader concern.
 - **True cross-restart resume (#2)** — a real SIGKILL-mid-write cannot be reproduced in jest (an in-process interrupt either persists an empty manifest below the 4 MiB flush threshold, or hangs on a stalled socket). The realistic case is covered by the `seedResumeState` resume test (manifest persisted) + the OCDS-T1 intra-call resume; a faithful kill-resume needs a process-level harness.
 
+## Android APK updater (react-native-app-update)
+
+The APK download path (`native-modules/react-native-app-update`) shares the OCDS
+core (`ConcurrentRangeDownloader`) with the bundle path, but its ~1346-line caller
+(`ReactNativeAppUpdate.kt`) was **never audited and had ZERO tests**. An
+adversarial audit found 4 issues; 3 were fixed and the dependency-free pure logic
+was extracted + unit-tested.
+
+**Bugs found & fixed:**
+| # | Severity | SPEC | What | Fix | Commit |
+|---|---|---|---|---|---|
+| 1 | HIGH | §5.8 | Concurrent download invoked with **no `cancelHandle`** → `clearCache`/`clearApkCache` deleted `.segN` while 8 worker threads were still streaming into them (the cancel-then-delete resurrection race the standard forbids) | Wired a `CancelHandle` (mirror the bundle caller) + `cancel()` (`shutdownNow`+`awaitTermination`) before any `.segN` delete | `213acf0f3` |
+| 2a | MEDIUM | — | Once cancel was wired, an intentional `clearCache`-cancel surfaced as a spurious update/error | Suppressed via `cancelHandle.aborted` (mirror bundle's `intentionallyCancelled`) | `24d5973cb` |
+| 2b | MEDIUM | — | When `SHA256SUMS.asc` is offline, verification returns Indeterminate/Deferred (`ApkVerificationDeferredException`) — was mis-reported as update/error on every retry | Suppressed (type-based); byte-preservation untouched; Promise still rejects so the awaited JS caller still retries | `011c24a58` |
+
+**Coverage added** (`b9caf71f9`) — extracted the dependency-free pure logic to
+`AppUpdateLogic.kt` (adapter delegates, pure move); added junit + **17 JVM unit
+tests**; all 10 planted mutants killed (mutation-proven):
+| Extracted logic | Mutation-proven |
+|---|---|
+| segment-name template + `CONCURRENT_SEGMENT_COUNT == 8` | ✅ |
+| `416` Content-Range total parse + `is416Complete` | ✅ |
+| `206` Content-Range parse + `is206StartAligned` | ✅ |
+
+Also wired the adapter's inline `206` parse through `parse206ContentRange` (was an
+untested inline duplicate — coverage theater).
+
+**Still device/Robolectric-ONLY (honest boundary):**
+- the JNI `downloadAPK` streaming loop (`206`-resume vs `200`-full, append-to-`.partial`),
+- the actual `.segN` deletion + the §5.8 cancel-race **execution**,
+- promote/verify/install File-I/O
+
+— all need a live `Context`.
+
+**Backlog (not fixed):**
+- **BUG #3** — single-flight is one process-global `AtomicBoolean`, not per-dest.
+  Stricter (so it doesn't corrupt) but diverges from the bundle's per-dest registry
+  and has no per-dest cancel.
+- **BUG #4** — concurrent `COMPLETED` promotes to final **before** whole-file
+  integrity verify; relies on JS calling `verifyAPK`. The `installAPK` TOCTOU guard
+  mitigates.
+
+---
+
 ## How to re-test after a code change
 
 - **Touching `ConcurrentRangeDownloader.kt` / Android segment logic** → run the Android suite.
