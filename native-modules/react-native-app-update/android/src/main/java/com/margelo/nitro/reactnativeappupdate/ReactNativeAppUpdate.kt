@@ -296,9 +296,22 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 OneKeyLog.warn("AppUpdate", "verifyExistingApk: SHA256 mismatch, expected=${expectedSha256.take(16)}..., got=${actualSha256.take(16)}...")
                 ApkVerifyOutcome.HashMismatch
             }
-        } catch (e: Exception) {
-            OneKeyLog.warn("AppUpdate", "verifyExistingApk: unexpected failure: ${e.javaClass.simpleName}: ${e.message}")
+        } catch (e: java.io.IOException) {
+            // Offline / disk-I/O transient (ASC fetch or APK read): we genuinely
+            // cannot decide validity right now, so preserve the bytes and defer to
+            // the next online retry (Indeterminate → caller rolls back to .partial).
+            OneKeyLog.warn("AppUpdate", "verifyExistingApk: transient I/O failure, indeterminate: ${e.javaClass.simpleName}: ${e.message}")
             ApkVerifyOutcome.Indeterminate
+        } catch (e: Exception) {
+            // A non-I/O failure (corrupt local state, path/security rejection,
+            // runtime fault) is NOT a "can't tell because offline" case — it is a
+            // genuine local error. Do NOT collapse it into a benign Deferred verify:
+            // downloadAPK's catch suppresses ApkVerificationDeferredException from
+            // `update/error`, which would silently hide this real failure and keep
+            // retrying a permanently-bad file until the JS budget is spent. Rethrow
+            // so it surfaces to the caller as an error.
+            OneKeyLog.error("AppUpdate", "verifyExistingApk: non-I/O failure, surfacing: ${e.javaClass.simpleName}: ${e.message}")
+            throw e
         }
     }
 
