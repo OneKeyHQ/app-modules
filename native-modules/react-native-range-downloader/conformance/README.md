@@ -93,8 +93,22 @@ its own regression is not load-bearing).
 | `e2e.transient416` — 416 single-stream | #4 | ✅ break the single-stream 416 finalize |
 | `e2e.handoff` — concurrent→single-stream | #3 | ✅ `isConcurrentFallback`→false |
 
+**Android adapter layer** (`ReactNativeRangeDownloader.kt`) — **now CLOSED** via a
+behavior-preserving extraction. The adapter's dependency-free pieces were moved
+verbatim into `RangeDownloadLogic.kt` (the adapter delegates; diff +11/−21, pure
+move) and unit-tested with **39 new pure-JVM tests** (`RangeDownloadLogicTest`,
+`RunRegistrySingleFlightTest`, `MonotonicProgressGateTest`, `SegmentArtifactSweepTest`):
+| Behavior | Extracted symbol | Mutation-proven |
+|---|---|---|
+| single-flight registry (dedup + identity-checked finish) | `RangeDownloadLogic.RunRegistry` | ✅ identity-drop mutant killed |
+| progress clamp/guard feeding the (unchanged) CAS gate | `RangeDownloadLogic.progressPercent` | ✅ clamp-removal mutant killed |
+| `.segN`/`.partial` artifact sweep | `RangeDownloadLogic.sweepPartialArtifacts` | ✅ glob-narrow mutant killed |
+Behavior preservation is proven by the pre-existing OCDS/HTTP/Smoke suite (which
+drives the real download paths) staying green. The CAS gate primitive itself and
+the JNI `Promise.async`/`NitroModules.applicationContext` boundary remain in the
+adapter and are genuinely not JVM-unit-testable (no JSI stand-in).
+
 **Still open (and why):**
-- **Android adapter layer** (`ReactNativeRangeDownloader.kt`: single-flight registry, monotonic-progress CAS, cancel/discard) — **not JVM-unit-testable** (Nitro/Promise/JNI). Needs Robolectric or an instrumented/androidTest run, or a refactor extracting a dependency-free `RunRegistry`/`MonotonicProgress`.
 - **Node #9 give-up budget** — lives in the kit caller (`runDownloadWithRetry`/`ServiceAppUpdate`), tested in `useAppUpdate.test.ts`, not a downloader concern.
 - **True cross-restart resume (#2)** — a real SIGKILL-mid-write cannot be reproduced in jest (an in-process interrupt either persists an empty manifest below the 4 MiB flush threshold, or hangs on a stalled socket). The realistic case is covered by the `seedResumeState` resume test (manifest persisted) + the OCDS-T1 intra-call resume; a faithful kill-resume needs a process-level harness.
 
