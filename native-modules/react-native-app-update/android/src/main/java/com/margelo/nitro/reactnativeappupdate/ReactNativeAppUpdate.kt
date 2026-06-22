@@ -447,6 +447,9 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 throw Exception("Download already in progress")
             }
 
+            // Hoisted so the catch can tell an intentional clearCache-cancel from a
+            // real failure (a cancel must NOT surface as an `update/error`).
+            var cancelHandle: ConcurrentRangeDownloader.CancelHandle? = null
             try {
                 val url = params.downloadUrl
                 val filePath = filePathFromUrl(url)
@@ -652,7 +655,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     val notifyLock = Any()
                     // Wire a cancel handle so clearCache can stop these workers
                     // before deleting .segN (OCDS §5.8). Cleared in the finally below.
-                    val cancelHandle = ConcurrentRangeDownloader.CancelHandle()
+                    cancelHandle = ConcurrentRangeDownloader.CancelHandle()
                     activeDownload.set(cancelHandle)
                     val concurrentOutcome = ConcurrentRangeDownloader(
                         httpClient = concurrentClient,
@@ -909,8 +912,14 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     notifyManager.notify(NOTIFICATION_ID, builder.build())
                 }
             } catch (e: Exception) {
+                // A clearCache/clearApkCache cancel aborts the core workers, which
+                // surfaces here as an exception — that's intentional, not a download
+                // failure, so don't fire `update/error` (mirrors react-native-bundle-update).
+                val intentionallyCancelled = cancelHandle?.aborted?.get() == true
                 OneKeyLog.error("AppUpdate", "downloadAPK: failed: ${e.javaClass.simpleName}: ${e.message}")
-                sendEvent("update/error", message = "${e.javaClass.simpleName}: ${e.message}")
+                if (!intentionallyCancelled) {
+                    sendEvent("update/error", message = "${e.javaClass.simpleName}: ${e.message}")
+                }
                 throw e
             } finally {
                 activeDownload.set(null)
