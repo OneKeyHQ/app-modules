@@ -56,6 +56,13 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
     private val listeners = CopyOnWriteArrayList<Listener>()
     private val nextListenerId = AtomicLong(1)
     private val isDownloading = AtomicBoolean(false)
+    // The in-flight concurrent download's cancel handle, so clearCache can stop
+    // its workers (shutdownNow + awaitTermination) BEFORE deleting .segN files.
+    // Without this a still-running worker resurrects a just-deleted segment / writes
+    // to a deleted FD — the cancel-then-delete race OCDS §5.8 forbids. Mirrors
+    // react-native-bundle-update's activeDownloads cancel wiring.
+    private val activeDownload =
+        java.util.concurrent.atomic.AtomicReference<ConcurrentRangeDownloader.CancelHandle?>(null)
     // downloadThread removed: downloads use coroutine-based Promise.async, not raw threads
 
     private fun sendEvent(type: String, progress: Int = 0, message: String = "") {
@@ -643,6 +650,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     // the thread that actually moved the percent forward proceeds.
                     val concurrentProgress = AtomicInteger(-1)
                     val notifyLock = Any()
+                    // Wire a cancel handle so clearCache can stop these workers
+                    // before deleting .segN (OCDS §5.8). Cleared in the finally below.
+                    val cancelHandle = ConcurrentRangeDownloader.CancelHandle()
+                    activeDownload.set(cancelHandle)
                     val concurrentOutcome = ConcurrentRangeDownloader(
                         httpClient = concurrentClient,
                         log = { msg -> OneKeyLog.info("AppUpdate", msg) },
@@ -653,7 +664,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         // files to the read-only root fs → EROFS. Resolve it to
                         // the real apks dir (filesDir/apks) first, exactly like
                         // react-native-bundle-update passes an absolute path.
-                    ).download(url, partialFile.absolutePath) { transferred, total ->
+                    ).download(url, partialFile.absolutePath, cancelHandle) { transferred, total ->
                         if (total > 0) {
                             val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
                             // Only the thread that advances the percent emits; a
@@ -902,6 +913,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 sendEvent("update/error", message = "${e.javaClass.simpleName}: ${e.message}")
                 throw e
             } finally {
+                activeDownload.set(null)
                 isDownloading.set(false)
             }
         }
@@ -1270,6 +1282,15 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
      * log lines so the two callers stay distinguishable in logcat.
      */
     private fun wipeApkCacheFiles(tag: String, protectedPaths: Set<String> = emptySet()) {
+        // OCDS §5.8: stop any in-flight concurrent download (shutdownNow +
+        // awaitTermination) BEFORE deleting its .segN, so a still-running worker
+        // cannot resurrect a just-deleted segment or write to a deleted FD. Only
+        // the two external cleanup paths (clearCache / clearApkCache) call this;
+        // it is never invoked mid-download.
+        activeDownload.getAndSet(null)?.let {
+            OneKeyLog.info("AppUpdate", "$tag: cancelling in-flight download before wipe")
+            it.cancel()
+        }
         val context = NitroModules.applicationContext
         if (context == null) {
             OneKeyLog.warn("AppUpdate", "$tag: application context unavailable, skipping file cleanup")
