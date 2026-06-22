@@ -46,11 +46,11 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         private const val CHANNEL_ID = "updateApp"
         private const val NOTIFICATION_ID = 1
 
-        // Must match ConcurrentRangeDownloader's default segmentCount: the
-        // concurrent downloader writes sibling segment files
-        // "<partial>.seg0".."<partial>.seg${N-1}", and Phase 2 below scans this
-        // range to detect an in-flight concurrent download.
-        private const val CONCURRENT_SEGMENT_COUNT = 8
+        // Segment-count + segment-file naming live in AppUpdateLogic (pure,
+        // unit-testable). The concurrent downloader writes sibling segment
+        // files "<partial>.seg0".."<partial>.seg${N-1}", and Phase 2 below
+        // scans this range to detect an in-flight concurrent download.
+        private const val CONCURRENT_SEGMENT_COUNT = AppUpdateLogic.CONCURRENT_SEGMENT_COUNT
     }
 
     private val listeners = CopyOnWriteArrayList<Listener>()
@@ -520,7 +520,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                             // concurrent run could otherwise be picked up below and reused —
                             // wipe them so this restarts cleanly from byte zero.
                             if (partialFile.exists()) partialFile.delete()
-                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                         }
                         expectedSize > 0 && existingSize < expectedSize -> {
                             OneKeyLog.info("AppUpdate", "downloadAPK: existing APK smaller than expected, promoting to .partial for resume")
@@ -532,7 +532,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                             // concat committed-cursor, risking a mixed file. With no .segN,
                             // Phase 2 takes the single-stream size-based path and Range-resumes
                             // from the partial's length.
-                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                             if (!downloadedFile.renameTo(partialFile)) {
                                 OneKeyLog.warn("AppUpdate", "downloadAPK: rename to .partial failed, deleting stale final")
                                 downloadedFile.delete()
@@ -552,7 +552,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                                     // Final was stale → start from byte zero. Wipe any
                                     // sibling .segN left by an earlier concurrent run so
                                     // it can't be mistaken for trustworthy in-flight bytes.
-                                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                                 }
                                 ApkVerifyOutcome.Indeterminate -> {
                                     // ASC could not be fetched (offline) or could
@@ -583,7 +583,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 // path must match exactly what ConcurrentRangeDownloader writes:
                 // File("$partialFilePath.seg$i").
                 val hasConcurrentSegments =
-                    (0 until CONCURRENT_SEGMENT_COUNT).any { buildFile("$partialFilePath.seg$it").exists() }
+                    (0 until CONCURRENT_SEGMENT_COUNT).any { buildFile(AppUpdateLogic.segmentFileName(partialFilePath, it)).exists() }
                 var partialBytes = 0L
                 if (partialFile.exists() && !hasConcurrentSegments) {
                     val partialSize = partialFile.length()
@@ -618,7 +618,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                             OneKeyLog.warn("AppUpdate", "downloadAPK: stale partial (>expected $partialSize/$expectedSize), discarding")
                             partialFile.delete()
                             // Partial bytes are untrustworthy → restart from zero; drop any sibling .segN too.
-                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                         }
                         partialSize > 0 -> {
                             partialBytes = partialSize
@@ -738,9 +738,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 if (response.code == 416) {
                     val contentRange = response.header("Content-Range")
                     response.close()
-                    val totalFromHeader = contentRange
-                        ?.let { Regex("""bytes\s+\*\s*/\s*(\d+)""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
-                    if (totalFromHeader != null && totalFromHeader == partialBytes && partialFile.exists()) {
+                    val totalFromHeader = AppUpdateLogic.parse416Total(contentRange)
+                    if (AppUpdateLogic.is416Complete(totalFromHeader, partialBytes) && partialFile.exists()) {
                         OneKeyLog.info("AppUpdate", "downloadAPK: HTTP 416 with total=$totalFromHeader matches partial, attempting promote+verify")
                         when (tryPromoteAndVerify(url, filePath, partialFile, downloadedFile)) {
                             PromoteOutcome.Valid -> {
@@ -757,7 +756,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                                 OneKeyLog.warn("AppUpdate", "downloadAPK: 416 recovery hash mismatch — server build changed mid-download")
                                 if (partialFile.exists()) partialFile.delete()
                                 // Server build changed → these bytes are worthless; drop sibling .segN too.
-                                for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                                for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                                 throw java.io.IOException("Server build changed mid-download (size matches but hash differs)")
                             }
                             PromoteOutcome.Deferred -> {
@@ -775,7 +774,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     OneKeyLog.warn("AppUpdate", "downloadAPK: HTTP 416 (range not satisfiable), discarding partial and failing attempt")
                     if (partialFile.exists()) partialFile.delete()
                     // Partial discarded as unusable → drop sibling .segN too so the next attempt starts clean.
-                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                     throw Exception("HTTP 416 (range not satisfiable)")
                 }
 
@@ -795,7 +794,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     OneKeyLog.warn("AppUpdate", "downloadAPK: requested Range but server returned 200, restarting from scratch")
                     if (partialFile.exists()) partialFile.delete()
                     // Restarting from byte zero → drop any sibling .segN too.
-                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                     partialBytes = 0L
                 }
 
@@ -805,13 +804,14 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 // be appending mis-aligned bytes and only catching it later
                 // at the SHA step — with the partial now corrupted. Demote to
                 // a full restart instead.
-                val rangeRegex = Regex("""bytes\s+(\d+)\s*-\s*(\d+)\s*/\s*(\d+|\*)""")
-                val rangeMatch = if (serverWillResume) {
-                    response.header("Content-Range")?.let { rangeRegex.find(it) }
+                // Parse the 206 Content-Range via the unit-tested helper (was an
+                // inline duplicate of AppUpdateLogic.parse206ContentRange's regex).
+                val parsed206 = if (serverWillResume) {
+                    AppUpdateLogic.parse206ContentRange(response.header("Content-Range"))
                 } else null
                 if (serverWillResume) {
-                    val rangeStart = rangeMatch?.groupValues?.getOrNull(1)?.toLongOrNull()
-                    if (rangeStart == null || rangeStart != partialBytes) {
+                    val rangeStart = parsed206?.first
+                    if (!AppUpdateLogic.is206StartAligned(rangeStart, partialBytes)) {
                         // This 206 body is a slice starting at the wrong offset (CDN bug /
                         // proxy rewrite). It is NOT a full file, so we must not consume it as
                         // one — doing so would write mis-aligned bytes (caught only later at
@@ -823,7 +823,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         val contentRangeHeader = response.header("Content-Range")
                         OneKeyLog.warn("AppUpdate", "downloadAPK: 206 Content-Range start mismatch (header='$contentRangeHeader', requested=$partialBytes); discarding partial and retrying from scratch")
                         if (partialFile.exists()) partialFile.delete()
-                        for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                        for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                         response.close()
                         throw java.io.IOException("206 Content-Range start mismatch (header='$contentRangeHeader', requested=$partialBytes); discarded partial, retry from scratch")
                     }
@@ -835,7 +835,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
                 val contentLength = body.contentLength()
                 val totalSize: Long = if (serverWillResume) {
-                    val parsedTotal = rangeMatch?.groupValues?.getOrNull(3)?.toLongOrNull()
+                    val parsedTotal = parsed206?.third
                     parsedTotal ?: (partialBytes + contentLength.coerceAtLeast(0L))
                 } else {
                     if (contentLength > 0) contentLength else expectedSize

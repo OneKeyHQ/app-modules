@@ -153,4 +153,9 @@ dependencies {
 
   // MMKV for reading DevSettings (compileOnly: provided by the host app via react-native-mmkv)
   compileOnly "io.github.zhongwuzw:mmkv:2.2.4"
+
+  // Pure-logic unit tests (AppUpdateLogic) run on the local JVM via
+  // :onekeyfe_react-native-app-update:testDebugUnitTest. No Robolectric: the
+  // extracted logic is dependency-free (no Context / Nitro / OkHttp).
+  testImplementation "junit:junit:4.13.2"
 }
