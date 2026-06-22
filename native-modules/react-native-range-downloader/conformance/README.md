@@ -23,6 +23,16 @@ conformance scenarios `#1`–`#11`). Every suite below maps back to those.
 > authoritative pointer. Android + iOS native downloaders live in **this** repo,
 > so their suites live here.
 
+> **Out of OCDS scope (sanctioned non-OCDS downloaders).** Not every binary the app
+> downloads goes through the concurrent core. The **desktop full-installer**
+> (DMG/exe/AppImage) is downloaded by `electron-updater`
+> (`DesktopApiAppUpdate.downloadUpdate`), **not** the OCDS path — only the desktop
+> **OTA JS bundle** (`DesktopApiBundleUpdate`) is OCDS-conformant on desktop.
+> electron-updater provides its own resume/verify/signature flow; OCDS's §4
+> classification, §5.3 per-segment resume, §5.8 single-flight and §5.11 give-up do
+> **not** apply to it. If the installer download is ever required to be
+> OCDS-conformant, it must be re-pointed at the concurrent core.
+
 ---
 
 ## Latest iOS end-to-end result (simulator)
@@ -150,9 +160,14 @@ untested inline duplicate — coverage theater).
 - **BUG #3** — single-flight is one process-global `AtomicBoolean`, not per-dest.
   Stricter (so it doesn't corrupt) but diverges from the bundle's per-dest registry
   and has no per-dest cancel.
-- **BUG #4** — concurrent `COMPLETED` promotes to final **before** whole-file
-  integrity verify; relies on JS calling `verifyAPK`. The `installAPK` TOCTOU guard
-  mitigates.
+- **BUG #4** — concurrent `COMPLETED` promotes to final **before** any whole-file
+  checksum verify. Note the mitigation is NOT a whole-file SHA/GPG check: `verifyAPK`
+  (called later in the JS chain) verifies the downloaded APK's **package name +
+  signing certificate** against the installed app (anti-tamper / anti-substitution),
+  and `installAPK` adds a TOCTOU re-check. There is no verification of the assembled
+  bytes against a manifest-supplied SHA256/GPG signature on the APK path, unlike the
+  bundle path. A corrupt download is therefore caught only if the corruption breaks
+  the APK's signature/cert, not by a byte-checksum.
 
 ---
 
