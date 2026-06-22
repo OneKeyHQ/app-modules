@@ -70,6 +70,9 @@ class RangeFaultServer(private val content: ByteArray) {
     /** 206 with a Content-Range window that does NOT match the request. */
     MISALIGNED_CONTENT_RANGE,
 
+    /** 206 with the correct window but a total that DISAGREES with the probe (core → FALLBACK). */
+    BAD_TOTAL_206,
+
     /** 206 whose body has MORE bytes than the requested range. */
     OVER_LONG_BODY,
 
@@ -146,6 +149,16 @@ class RangeFaultServer(private val content: ByteArray) {
             .setResponseCode(206)
             .addHeader("ETag", etag)
             .addHeader("Content-Range", "bytes $badStart-$badEnd/$total")
+            .setBody(bufferFor(start, end))
+        }
+
+        FaultMode.BAD_TOTAL_206 -> {
+          // Serve the correct window + body, but advertise a total that disagrees
+          // with the probe total → core must reject (Content-Range total check).
+          MockResponse()
+            .setResponseCode(206)
+            .addHeader("ETag", etag)
+            .addHeader("Content-Range", "bytes $start-$end/${total + 1}")
             .setBody(bufferFor(start, end))
         }
 
