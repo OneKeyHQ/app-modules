@@ -912,12 +912,32 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     notifyManager.notify(NOTIFICATION_ID, builder.build())
                 }
             } catch (e: Exception) {
-                // A clearCache/clearApkCache cancel aborts the core workers, which
-                // surfaces here as an exception — that's intentional, not a download
-                // failure, so don't fire `update/error` (mirrors react-native-bundle-update).
+                // Two conditions reach this catch that are NOT download failures and
+                // must therefore be suppressed from `update/error`:
+                //
+                //   1. A clearCache/clearApkCache cancel aborts the core workers,
+                //      which surfaces here as an exception — intentional, not a
+                //      failure (mirrors react-native-bundle-update).
+                //   2. A deferred verification (ApkVerificationDeferredException):
+                //      the detached ASC was temporarily unreachable, so we couldn't
+                //      decide whether the on-disk bytes are still the right APK. The
+                //      bytes are preserved (rolled back to .partial) for the next
+                //      online retry; this is a "retry later", not a download error.
+                //      Detect it by TYPE, never by message string — the message is a
+                //      constant today but type-matching can't silently rot.
+                //
+                // Both still rethrow so the JS Promise rejects (the caller learns the
+                // attempt didn't complete); only the spurious `update/error` event is
+                // withheld. For the deferred case we also downgrade the log to info so
+                // logs don't read like a failure.
                 val intentionallyCancelled = cancelHandle?.aborted?.get() == true
-                OneKeyLog.error("AppUpdate", "downloadAPK: failed: ${e.javaClass.simpleName}: ${e.message}")
-                if (!intentionallyCancelled) {
+                val verificationDeferred = e is ApkVerificationDeferredException
+                if (verificationDeferred) {
+                    OneKeyLog.info("AppUpdate", "downloadAPK: verification deferred (ASC unavailable); bytes preserved for next online retry: ${e.message}")
+                } else {
+                    OneKeyLog.error("AppUpdate", "downloadAPK: failed: ${e.javaClass.simpleName}: ${e.message}")
+                }
+                if (!intentionallyCancelled && !verificationDeferred) {
                     sendEvent("update/error", message = "${e.javaClass.simpleName}: ${e.message}")
                 }
                 throw e
