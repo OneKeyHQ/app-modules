@@ -14,7 +14,7 @@ conformance scenarios `#1`–`#11`). Every suite below maps back to those.
 | Platform | How it's verified | Where the code lives | How to run |
 |---|---|---|---|
 | **Node / Desktop** | Jest e2e against a real local Range HTTP/HTTPS server driving the **real** `DesktopApiBundleUpdate` downloader (positioned writes + `.partial` manifest) | app-monorepo `packages/kit-bg/src/desktopApis/DesktopApiBundleUpdate.e2e*.test.ts` + `__e2e__/desktopBundleUpdateE2eHarness.ts` | `cd app-monorepo && yarn jest packages/kit-bg/src/desktopApis/DesktopApiBundleUpdate.e2e` |
-| **Android** | Pure-JVM unit + OkHttp **MockWebServer** fault injection against the real `ConcurrentRangeDownloader` (segment-file model) | this module: `android/src/test/java/com/margelo/nitro/reactnativerangedownloader/` (`ConcurrentRangeDownloaderOcdsTest.kt`, `FaultServer.kt`, `IsPermanentHttpStatusTest.kt`, `SmokeTest.kt`) | `cd android && ANDROID_HOME=~/Library/Android/sdk ./gradlew test` |
+| **Android** | Pure-JVM unit + OkHttp **MockWebServer** fault injection against the real `ConcurrentRangeDownloader` (segment-file model) | this module: `android/src/test/java/com/margelo/nitro/reactnativerangedownloader/` (`ConcurrentRangeDownloaderOcdsTest.kt`, `FaultServer.kt`, `IsPermanentHttpStatusTest.kt`, `SmokeTest.kt`, `Ocds*.kt`) | the module has **no own `gradlew`** — build via the example host: `cd example/react-native/android && ANDROID_HOME=~/Library/Android/sdk ./gradlew :onekeyfe_react-native-range-downloader:testDebugUnitTest` |
 | **iOS (logic)** | SwiftPM unit tests over the dependency-free logic (`RangeDownloadLogic`), source-symlinked so tests exercise the real shipping code | this module: `tests/swiftpm/` | `swift test --package-path tests/swiftpm` |
 | **iOS (end-to-end)** | Real Release `.app` on a booted **simulator**, driven by a local HTTP fault server + a multi-agent workflow; asserts on the app's `.segN`/`app-latest.log`/server log | this module: [`conformance/ios-simulator/`](./ios-simulator/) | see [`ios-simulator/README.md`](./ios-simulator/README.md) |
 
@@ -64,6 +64,39 @@ re-fetching the same (would-re-corrupt) object. OCDS **1.2** removed the
 retry-once requirement; a mismatch is now simply Permanent → discard → terminal.
 
 ---
+
+## Audit gap closure (coverage delta)
+
+An adversarial audit of the Android + Node suites found gaps (dead fault modes
+never armed, behaviors only asserted by decision/log not outcome, and missing
+malformed-response cases). New tests were added to close the testable ones, and
+each was **mutation-verified** — a targeted regression was injected into the
+production code to confirm the test actually goes red (a green test that survives
+its own regression is not load-bearing).
+
+**Android** (`android/src/test/.../Ocds*.kt`, 9 cases) — full module suite green:
+| Test | SPEC | Mutation-proven |
+|---|---|---|
+| `OcdsTransient5xxTest` — 503 retry-in-place | #4 | ✅ 503→permanent |
+| `OcdsTransient5xxTest` — budget exhaustion throws | #4/#9 | ✅ retry budget +2 |
+| `OcdsTransient5xxTest` — 501 permanent bypass | #4 | ✅ remove `501,505→true` |
+| `Ocds416ResumeTest` — 416 transient resume | #4/#6 | ✅ remove `416→false` |
+| `Ocds416ResumeTest` — never discards seeded segs | #6 | ⚠️ green, no clean single-line regression (overlaps the resume test; only breaks under an insertion) |
+| `OcdsMultipartRejectTest` | #5 | ✅ bypass multipart detection |
+| `OcdsBadTotalRejectTest` | #5 | ✅ drop Content-Range total check |
+| `OcdsReadOnlyFsTest` (a6a/a6b) | §5.2 | ⚠️ green, no clean single-line regression (read-only-fs guard needs an insertion-type mutation) |
+
+**Node** (`packages/kit-bg/src/desktopApis/DesktopApiBundleUpdate.e2e.*.test.ts`):
+| Test | SPEC | Mutation-proven |
+|---|---|---|
+| `e2e.transient416` — 416 concurrent | #4 | ✅ 416→permanent in `classifyHttpStatus` |
+| `e2e.transient416` — 416 single-stream | #4 | ✅ break the single-stream 416 finalize |
+| `e2e.handoff` — concurrent→single-stream | #3 | ✅ `isConcurrentFallback`→false |
+
+**Still open (and why):**
+- **Android adapter layer** (`ReactNativeRangeDownloader.kt`: single-flight registry, monotonic-progress CAS, cancel/discard) — **not JVM-unit-testable** (Nitro/Promise/JNI). Needs Robolectric or an instrumented/androidTest run, or a refactor extracting a dependency-free `RunRegistry`/`MonotonicProgress`.
+- **Node #9 give-up budget** — lives in the kit caller (`runDownloadWithRetry`/`ServiceAppUpdate`), tested in `useAppUpdate.test.ts`, not a downloader concern.
+- **True cross-restart resume (#2)** — a real SIGKILL-mid-write cannot be reproduced in jest (an in-process interrupt either persists an empty manifest below the 4 MiB flush threshold, or hangs on a stalled socket). The realistic case is covered by the `seedResumeState` resume test (manifest persisted) + the OCDS-T1 intra-call resume; a faithful kill-resume needs a process-level harness.
 
 ## How to re-test after a code change
 
