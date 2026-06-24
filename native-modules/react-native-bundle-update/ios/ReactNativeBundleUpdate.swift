@@ -985,6 +985,11 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
     /// Read by the background-snapshot handler so it knows where to drop the
     /// `.resume` sidecar.
     private var activeDownloadFilePath: String?
+    /// OCDS §5.7: the highest progress percent already reported to JS for the
+    /// in-flight download. Used to floor single-stream progress so the bar never
+    /// moves backward at the concurrent→single-stream seam. Guarded by
+    /// `stateQueue`. Reset to 0 only on a genuine restart (permanent fallback).
+    private var lastReportedProgress: Int = 0
     private var didEnterBackgroundObserver: NSObjectProtocol?
 
     override init() {
@@ -1228,7 +1233,13 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             // below; the range downloader keeps its `.segN` files for the next
             // attempt (its background session resumes them by taskId).
             self.sendEvent(type: "update/start")
-            self.stateQueue.sync { self.activeDownloadFilePath = filePath }
+            // §5.7: a fresh downloadBundle starts the progress floor at 0; the
+            // concurrent path raises it as bytes land (below), and a transient
+            // single-stream fallback keeps it.
+            self.stateQueue.sync {
+                self.activeDownloadFilePath = filePath
+                self.lastReportedProgress = 0
+            }
 
             // Stable, unique task id for this bundle. Same value across retry
             // attempts so the range downloader can resume its `.segN` files, and
@@ -1241,31 +1252,88 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
             // "fallback" are surfaced by this method's own sendEvent calls and
             // the download outcome below, so we don't double-emit them here.
             let progressListenerId = RangeDownloader.shared.addListener { [weak self] event in
-                guard event.channel.stringValue == DownloadChannel.bundle.stringValue,
+                guard let self = self,
+                      event.channel.stringValue == DownloadChannel.bundle.stringValue,
                       event.taskId == rangeTaskId,
                       event.type == "progress" else { return }
-                self?.sendEvent(type: "update/downloading", progress: Int(event.progress))
+                // §5.7: record the concurrent floor so a later single-stream
+                // transient fallback resumes the bar from here, not from 0.
+                let floored: Int = self.stateQueue.sync {
+                    let clamped = max(self.lastReportedProgress, Int(event.progress))
+                    self.lastReportedProgress = clamped
+                    return clamped
+                }
+                self.sendEvent(type: "update/downloading", progress: floored)
             }
 
-            let (rangeOutcome, _, rangeReason) = await RangeDownloader.shared.download(
-                channel: .bundle,
-                taskId: rangeTaskId,
-                urlString: downloadUrl,
-                filePath: filePath,
-                // SHA256 is verified by this module right after assembly (below),
-                // so we don't double-hash inside the range downloader.
-                expectedSha256: nil,
-                segmentCount: nil,
-                minConcurrentBytes: nil
-            )
+            // A `.fallback` outcome covers two very different situations whose
+            // recovery must NOT be the same:
+            //   • Permanent — Range unsupported / file too small / server 200 /
+            //     SHA mismatch. The downloader has already cleaned its `.segN`
+            //     segments, so none survive; single-stream is the only way.
+            //   • Transient — a network drop or app suspend interrupted a segment
+            //     mid-flight ("segment N missing/truncated"). The downloader
+            //     RETAINS the segments that DID complete; the next concurrent
+            //     attempt resumes only the missing one(s).
+            // This method used to `discardArtifacts` on EVERY fallback and restart
+            // single-stream from byte 0, so any background/lock/network blip threw
+            // away tens of MB and the user saw progress reset to 0. We now retry
+            // the concurrent path while resumable segments survive, and fall back
+            // to single-stream only as a last resort — WITHOUT deleting those
+            // segments, so a later attempt can still resume them.
+            let maxConcurrentAttempts = 3
+            var concurrentAttempt = 0
+            // OCDS §4: consume the EXPLICIT typed class from the in-process core
+            // (`RangeDownloadClass`) instead of inferring transient-vs-permanent
+            // from whether `.segN` happens to survive on disk. The wire enum stays
+            // `completed | fallback` until nitrogen regen; we call the in-process
+            // `download(...)` directly, so we get the precise class here.
+            var rangeClass: RangeDownloadClass = .fallbackPermanent
+            var rangeReason: String?
+            while true {
+                concurrentAttempt += 1
+                (rangeClass, _, rangeReason, _) = await RangeDownloader.shared.download(
+                    channel: .bundle,
+                    taskId: rangeTaskId,
+                    urlString: downloadUrl,
+                    filePath: filePath,
+                    // SHA256 is verified by this module right after assembly (below),
+                    // so we don't double-hash inside the range downloader.
+                    expectedSha256: nil,
+                    segmentCount: nil,
+                    minConcurrentBytes: nil
+                )
+                if rangeClass == .completed {
+                    break // completed
+                }
+                // §4: a Transient class is resumable — retry the concurrent path.
+                // The core keeps `.segN`; the next call resumes only what's missing.
+                if rangeClass == .fallbackTransient,
+                   concurrentAttempt < maxConcurrentAttempts {
+                    OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent transient fallback (\(rangeReason ?? "")), resuming surviving segments (attempt \(concurrentAttempt)/\(maxConcurrentAttempts))")
+                    // Brief backoff so a flapping network / suspend settles before
+                    // we re-probe and resume the missing segment(s).
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    continue
+                }
+                break // permanent, or transient retries exhausted
+            }
             RangeDownloader.shared.removeListener(progressListenerId)
 
-            if rangeOutcome.stringValue == RangeDownloadOutcome.fallback.stringValue {
-                // Concurrent path unavailable (Range unsupported / file too small /
-                // server returned 200 / transient error). Hand off to the
-                // single-stream path, leaving a clean slot.
-                OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent fallback (\(rangeReason ?? "")), using single-stream")
-                RangeDownloader.shared.discardArtifacts(filePath: filePath)
+            if rangeClass != .completed {
+                if rangeClass == .fallbackTransient {
+                    // §4 Transient that outlived our concurrent retries: KEEP the
+                    // segments so the next downloadBundle call's concurrent path can
+                    // resume them. Single-stream is just this call's safety net, and
+                    // its progress is floored (below) so the bar never drops to 0.
+                    OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent transient fallback persists (\(rangeReason ?? "")), using single-stream (segments preserved for resume)")
+                } else {
+                    // §4 Permanent (segments already cleaned by the downloader):
+                    // clear any residue and hand off to single-stream from a clean
+                    // slot; this is a genuine restart, so the progress floor resets.
+                    OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent permanent fallback (\(rangeReason ?? "")), using single-stream")
+                    RangeDownloader.shared.discardArtifacts(filePath: filePath)
+                }
                 // fall through to the single-stream path below
             } else {
                 OneKeyLog.info("BundleUpdate", "downloadBundle: concurrent finished, verifying SHA256...")
@@ -1312,8 +1380,24 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                 throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Download delegate not initialized"])
             }
             delegate.reset()
+            // OCDS §5.7: reported progress is monotonic non-decreasing within a
+            // run, and resets only on a GENUINE restart. The single-stream
+            // delegate emits its own 0→100, which would jump the bar backward at
+            // the concurrent→single-stream seam. Floor it: a transient fallback
+            // KEEPS the floor (the concurrent path already reported ~N%), a
+            // permanent fallback is a genuine restart so the floor resets to 0.
+            let progressFloor = (rangeClass == .fallbackTransient)
+                ? self.stateQueue.sync { self.lastReportedProgress }
+                : 0
+            self.stateQueue.sync { self.lastReportedProgress = progressFloor }
             delegate.onProgress = { [weak self] progress in
-                self?.sendEvent(type: "update/downloading", progress: progress)
+                guard let self = self else { return }
+                let floored: Int = self.stateQueue.sync {
+                    let clamped = max(self.lastReportedProgress, progress)
+                    self.lastReportedProgress = clamped
+                    return clamped
+                }
+                self.sendEvent(type: "update/downloading", progress: floored)
             }
 
             // Anchor for the background-snapshot handler. Set BEFORE
@@ -1420,6 +1504,11 @@ class ReactNativeBundleUpdate: HybridReactNativeBundleUpdateSpec {
                     self.sendEvent(type: "update/error", message: "SHA256_\(reason)")
                     throw NSError(domain: "BundleUpdate", code: -1, userInfo: [NSLocalizedDescriptionKey: "Bundle SHA256 verification failed: \(reason)"])
                 }
+
+                // A verified single-stream file is authoritative — drop any
+                // concurrent `.segN` segments we intentionally kept across a
+                // transient fallback so they don't linger as orphans.
+                RangeDownloader.shared.discardArtifacts(filePath: filePath)
 
                 self.sendEvent(type: "update/complete")
                 OneKeyLog.info("BundleUpdate", "downloadBundle: completed successfully, appVersion=\(appVersion), bundleVersion=\(bundleVersion)")

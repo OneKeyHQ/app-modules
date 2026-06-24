@@ -49,6 +49,12 @@ class ConcurrentRangeDownloader(
     private val segmentCount: Int = 8,
     private val minConcurrentBytes: Long = 2L * 1024 * 1024,
     private val maxPartRetry: Int = 3,
+    // Per-segment retry backoff (OCDS §5.4). Doubles each attempt up to a cap,
+    // with full jitter so N segments do not retry in lockstep. A server
+    // `Retry-After` overrides these. Caller-tunable; defaults are config, not
+    // part of the standard.
+    private val retryBaseDelayMillis: Long = 500L,
+    private val retryMaxDelayMillis: Long = 8_000L,
     private val log: (String) -> Unit = {},
 ) {
     enum class Outcome {
@@ -61,6 +67,27 @@ class ConcurrentRangeDownloader(
 
     /** Thrown internally when a segment proves concurrency can't be used. */
     private class FallbackException(message: String) : Exception(message)
+
+    /**
+     * Thrown for an HTTP status that is permanently unrecoverable for this URL
+     * (auth/expired-signed-URL `401`/`403`, gone `404`/`410`, `501`/`505`, and
+     * any other non-retryable 4xx per OCDS §4's catch-all). Unlike a generic
+     * transient [java.io.IOException], this MUST bypass the per-segment retry
+     * loop ([downloadSegment]) — retrying a dead URL only wastes the attempt
+     * budget. The `HTTP <code>` message shape is preserved so the JS error
+     * taxonomy ([updateErrorTaxonomy.ts]) maps it to `HTTP_<code>`.
+     */
+    private class PermanentHttpException(val code: Int) :
+        Exception("HTTP $code")
+
+    /**
+     * Typed transient carrying an optional `Retry-After` delay (milliseconds)
+     * the server asked us to wait before retrying (`429`/`503`). The retry loop
+     * in [downloadSegment] prefers this over its computed backoff. Keeps the
+     * `HTTP <code>` message shape for the JS taxonomy.
+     */
+    private class TransientHttpException(val code: Int, val retryAfterMillis: Long?) :
+        java.io.IOException("HTTP $code")
 
     /**
      * Cooperative-cancel handle the caller can register a download against. The
@@ -80,10 +107,30 @@ class ConcurrentRangeDownloader(
             if (aborted.get()) pool.shutdownNow()
         }
 
-        /** Flip the abort flag and stop the worker pool. Idempotent. */
+        /**
+         * Flip the abort flag and stop the worker pool, then wait (bounded) for
+         * in-flight workers to actually terminate. `shutdownNow()` only
+         * *interrupts*; a worker blocked in a native `write()` may run a moment
+         * longer, so without this wait the caller's subsequent `.segN` delete
+         * could be resurrected by that straggler — the exact race §5.8 forbids.
+         * Idempotent.
+         */
         fun cancel() {
             aborted.set(true)
-            pool?.shutdownNow()
+            pool?.let { p ->
+                p.shutdownNow()
+                try {
+                    p.awaitTermination(AWAIT_TERMINATION_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                } catch (e: InterruptedException) {
+                    // Preserve the interrupt status; the bounded wait is best-effort.
+                    Thread.currentThread().interrupt()
+                }
+            }
+        }
+
+        private companion object {
+            /** Bounded wait for worker termination on cancel (cancel-then-delete). */
+            const val AWAIT_TERMINATION_SECONDS = 3L
         }
     }
 
@@ -181,7 +228,7 @@ class ConcurrentRangeDownloader(
                 val futures = pending.map { part ->
                     pool.submit {
                         try {
-                            downloadSegment(url, segFile(part.index), part, aborted) { delta ->
+                            downloadSegment(url, segFile(part.index), part, total, aborted) { delta ->
                                 onProgress(transferred.addAndGet(delta), total)
                             }
                         } catch (e: FallbackException) {
@@ -318,6 +365,13 @@ class ConcurrentRangeDownloader(
                 cursor = segEndInFinal
                 segFile(part.index).delete()
             }
+            // Force the assembled `.partial` durable before the caller renames it
+            // to the final path (OCDS §5.2: assemble → durable flush → atomic
+            // rename). `out.flush()` above only pushes the JVM/libc buffers to the
+            // kernel; without this fsync a power loss between the rename and the
+            // kernel's writeback could promote a `.partial` whose tail bytes never
+            // reached the platter, yielding a final file that fails SHA256.
+            out.fd.sync()
         }
         if (partialFile.length() != total) {
             partialFile.delete()
@@ -333,6 +387,7 @@ class ConcurrentRangeDownloader(
         url: String,
         segFile: File,
         part: Part,
+        total: Long,
         aborted: AtomicBoolean,
         onBytes: (delta: Long) -> Unit,
     ) {
@@ -343,15 +398,52 @@ class ConcurrentRangeDownloader(
             if (have >= part.length) return
             val rangeStart = part.start + have
             try {
-                fetchSegment(url, segFile, part, rangeStart, aborted, onBytes)
+                fetchSegment(url, segFile, part, total, rangeStart, aborted, onBytes)
                 return
             } catch (e: FallbackException) {
+                throw e
+            } catch (e: PermanentHttpException) {
+                // Dead URL (auth/gone/non-retryable) — retrying only burns the
+                // attempt budget. Surface immediately; the caller maps the
+                // `HTTP <code>` message to a permanent JS taxonomy bucket.
                 throw e
             } catch (e: Exception) {
                 if (aborted.get() || retry >= maxPartRetry) throw e
                 retry += 1
-                log("concurrent: segment ${part.index} retry $retry: ${e.javaClass.simpleName}")
+                // Prefer the server's Retry-After; otherwise exponential backoff
+                // with full jitter so the 8 segments do not retry in lockstep.
+                val retryAfter = (e as? TransientHttpException)?.retryAfterMillis
+                val delay = retryAfter ?: computeBackoffMillis(retry)
+                log("concurrent: segment ${part.index} retry $retry in ${delay}ms: ${e.javaClass.simpleName}")
+                sleepAbortable(delay, aborted)
             }
+        }
+    }
+
+    // Exponential backoff (base * 2^(attempt-1), capped) with full jitter:
+    // a uniformly random delay in [0, ceiling]. Full jitter is what actually
+    // de-correlates the N segments — without it they would retry in lockstep.
+    private fun computeBackoffMillis(attempt: Int): Long {
+        val exp = retryBaseDelayMillis shl (attempt - 1).coerceIn(0, 16)
+        val ceiling = exp.coerceAtMost(retryMaxDelayMillis).coerceAtLeast(1L)
+        return (Math.random() * ceiling).toLong().coerceAtLeast(0L)
+    }
+
+    // Sleep in short slices so an external cancel() (which flips `aborted` and
+    // shutdownNow()s the pool) is observed promptly instead of after a multi-
+    // second backoff. Throws on abort so the loop bails immediately.
+    private fun sleepAbortable(totalMillis: Long, aborted: AtomicBoolean) {
+        var remaining = totalMillis
+        while (remaining > 0) {
+            if (aborted.get()) throw java.io.IOException("aborted")
+            val slice = minOf(remaining, 100L)
+            try {
+                Thread.sleep(slice)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw java.io.IOException("aborted")
+            }
+            remaining -= slice
         }
     }
 
@@ -359,6 +451,7 @@ class ConcurrentRangeDownloader(
         url: String,
         segFile: File,
         part: Part,
+        total: Long,
         rangeStart: Long,
         aborted: AtomicBoolean,
         onBytes: (delta: Long) -> Unit,
@@ -374,7 +467,19 @@ class ConcurrentRangeDownloader(
                 throw FallbackException("server returned 200 to a Range request")
             }
             if (response.code != 206) {
-                throw java.io.IOException("HTTP ${response.code}")
+                // OCDS §4 classification. Anything that is not a usable 206 is
+                // either a permanently-dead URL (bypass retries) or a transient
+                // condition (retry with backoff). The `HTTP <code>` message shape
+                // is preserved on both so the JS taxonomy maps it to HTTP_<code>.
+                throw classifyHttpFailure(response)
+            }
+            // Reject a multipart/byteranges body: it carries range delimiters and
+            // (potentially) more than the single window we asked for, so streaming
+            // it raw into the segment file would splice in boundary bytes. This is
+            // not a usable single-range 206 — fall back to single-stream.
+            val contentType = response.header("Content-Type")?.lowercase()
+            if (contentType != null && contentType.startsWith("multipart/byteranges")) {
+                throw FallbackException("server returned multipart/byteranges to a single Range request")
             }
             // Verify the 206 covers exactly the slice we asked for. This guards
             // against a proxy/CDN returning a mis-aligned 206 (wrong window),
@@ -390,6 +495,17 @@ class ConcurrentRangeDownloader(
                 throw java.io.IOException(
                     "Content-Range mismatch: got ${bounds.first}-${bounds.second}, " +
                         "expected $rangeStart-${part.end}"
+                )
+            }
+            // The 206's `Content-Range` total (the `/<total>` tail) MUST agree
+            // with the probe total. A disagreeing concrete total means the object
+            // changed size behind us (different build) — that is permanent for
+            // this window; an unknown `*` total cannot be reconciled either. Both
+            // make concurrency unusable → fall back to single-stream.
+            val parsedTotal = bounds.third
+            if (parsedTotal == null || parsedTotal != total) {
+                throw FallbackException(
+                    "Content-Range total mismatch: got ${parsedTotal ?: "*"}, expected $total"
                 )
             }
             val body = response.body ?: throw java.io.IOException("Empty segment body")
@@ -419,12 +535,64 @@ class ConcurrentRangeDownloader(
         }
     }
 
-    // Parse "bytes <start>-<end>/<total>" → (start, end). Returns null when the
-    // header is absent-of-bounds (e.g. "bytes */1234") or otherwise unparseable.
-    private fun parseContentRangeBounds(value: String): Pair<Long, Long>? {
-        val m = Regex("""bytes\s+(\d+)-(\d+)/""").find(value) ?: return null
+    // Parse "bytes <start>-<end>/<total>" → (start, end, total). Returns null
+    // when the header lacks concrete bounds (e.g. "bytes */1234") or is otherwise
+    // unparseable. `total` is null when the total is the unknown `*` form
+    // ("bytes <start>-<end>/*"), which the caller treats as a disagreeing total.
+    private fun parseContentRangeBounds(value: String): Triple<Long, Long, Long?>? {
+        val m = Regex("""bytes\s+(\d+)-(\d+)/(\d+|\*)""").find(value) ?: return null
         val start = m.groupValues[1].toLongOrNull() ?: return null
         val end = m.groupValues[2].toLongOrNull() ?: return null
-        return start to end
+        val total = m.groupValues[3].let { if (it == "*") null else it.toLongOrNull() }
+        return Triple(start, end, total)
     }
+
+    // OCDS §4 status classifier for a non-206, non-200 status: returns a
+    // [PermanentHttpException] (bypasses the per-segment retry loop) or a
+    // [TransientHttpException] (retried with backoff/Retry-After). The pure
+    // status→class decision lives in the module-visible [isPermanentHttpStatus]
+    // top-level function so it can be unit-tested without an okhttp Response.
+    private fun classifyHttpFailure(response: okhttp3.Response): Exception {
+        val code = response.code
+        if (isPermanentHttpStatus(code)) return PermanentHttpException(code)
+        return TransientHttpException(code, parseRetryAfterMillis(response.header("Retry-After")))
+    }
+
+    // Parse a `Retry-After` header into milliseconds. Only the delta-seconds form
+    // is honored (the absolute HTTP-date form is rarely sent for 429/503 and not
+    // worth a date parser here); an unparseable/absent value yields null so the
+    // caller falls back to its computed backoff.
+    private fun parseRetryAfterMillis(value: String?): Long? {
+        val seconds = value?.trim()?.toLongOrNull() ?: return null
+        if (seconds < 0) return null
+        return (seconds * 1000L).coerceAtMost(retryMaxDelayMillis)
+    }
+}
+
+/**
+ * OCDS §4 HTTP-status classification. `true` = permanent (concurrency is
+ * fundamentally unusable for this object → discard artifacts, fall back to
+ * single-stream); `false` = transient (keep artifacts, retry). Pure and
+ * module-visible so it is unit-tested without constructing an okhttp Response.
+ * 200 (fallback) and 206 (proceed) are handled before a failure reaches the
+ * classifier, so they are not represented here.
+ *
+ *   401/403/404/410 → permanent (auth / expired signed URL / gone)
+ *   408/429         → transient (timeout / throttling)
+ *   416             → transient (resume; total size re-evaluated by the caller)
+ *   other 4xx       → permanent (catch-all default)
+ *   501/505         → permanent;  other 5xx → transient (back off and retry)
+ *   anything else   → permanent (unknown → permanent, per §4)
+ */
+internal fun isPermanentHttpStatus(code: Int): Boolean = when (code) {
+    401, 403, 404, 410 -> true
+    408, 429 -> false
+    // 416 MUST stay above `in 400..499` (when matches top-to-bottom; 416 is a
+    // member of that range). Treating 416 as permanent would discard resumable
+    // `.segN` bytes and restart from byte 0 — the §4 "most damaging mistake".
+    416 -> false
+    in 400..499 -> true
+    501, 505 -> true
+    in 500..599 -> false
+    else -> true
 }

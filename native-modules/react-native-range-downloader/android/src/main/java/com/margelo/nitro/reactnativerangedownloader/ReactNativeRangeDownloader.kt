@@ -6,7 +6,6 @@ import com.margelo.nitro.core.Promise
 import com.margelo.nitro.nativelogger.OneKeyLog
 import java.io.File
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 
@@ -37,12 +36,10 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
   // Active downloads keyed by "channel|taskId" so cancel/discardArtifacts can
   // flip the abort flag + stop the worker pool BEFORE deleting files, instead of
-  // racing live workers that would resurrect a just-deleted .partial.
-  private val activeDownloads =
-    ConcurrentHashMap<String, ConcurrentRangeDownloader.CancelHandle>()
-
-  private fun runKey(channel: DownloadChannel, taskId: String): String =
-    "${channel.name}|$taskId"
+  // racing live workers that would resurrect a just-deleted .partial. The keyed
+  // single-flight logic lives in RangeDownloadLogic.RunRegistry (dependency-free,
+  // unit-tested); this class only supplies the channel/taskId.
+  private val activeDownloads = RangeDownloadLogic.RunRegistry()
 
   // HTTPS-only client: reject any redirect to a non-HTTPS hop. Mirrors the
   // existing react-native-bundle-update configuration verbatim.
@@ -82,9 +79,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
       sendEvent(channel, taskId, type = "start")
 
-      val runKey = runKey(channel, taskId)
-      val cancelHandle = ConcurrentRangeDownloader.CancelHandle()
-      activeDownloads[runKey] = cancelHandle
+      val cancelHandle = activeDownloads.start(channel.name, taskId)
 
       // The progress callback is invoked concurrently by the helper's worker
       // threads, so guard lastProgress with an AtomicInteger + CAS: only the
@@ -99,8 +94,8 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
           minConcurrentBytes = minConcurrentBytes,
           log = { msg -> OneKeyLog.info("RangeDownloader", msg) },
         ).download(downloadUrl, partialFilePath, cancelHandle) { transferred, total ->
-          if (total > 0) {
-            val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
+          val p = RangeDownloadLogic.progressPercent(transferred, total)
+          if (p != null) {
             val prev = lastProgress.get()
             if (p > prev && lastProgress.compareAndSet(prev, p)) {
               sendEvent(channel, taskId, type = "progress", progress = p)
@@ -109,18 +104,26 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
         }
       } finally {
         // Only deregister our own handle (a concurrent cancel may have replaced it).
-        activeDownloads.remove(runKey, cancelHandle)
+        activeDownloads.finish(channel.name, taskId, cancelHandle)
       }
 
       if (outcome == ConcurrentRangeDownloader.Outcome.FALLBACK) {
-        // Concurrency unusable. The helper has already cleaned up its own
-        // artifacts where appropriate; the caller runs its single-stream path.
-        OneKeyLog.info("RangeDownloader", "download: concurrent not used, returning fallback")
+        // OCDS §4 wire mapping (parity with the iOS shim). On Android the core
+        // helper splits the two §4 classes by RETURN vs THROW: a RESUMABLE
+        // (transient) interruption — network drop / incomplete segment — is thrown
+        // and surfaces below as a promise rejection (the `.segN`/`.partial` are
+        // kept). `Outcome.FALLBACK` is therefore the PERMANENT class only: range
+        // unsupported / a 200 to a Range request / the object is too small / a
+        // single-stream leftover. The helper has already wiped its concurrent
+        // artifacts on this path, so it maps to `FALLBACKPERMANENT` with the
+        // `RANGEUNSUPPORTED` sub-kind, and the caller restarts single-stream.
+        OneKeyLog.info("RangeDownloader", "download: concurrent not used, returning permanent fallback")
         sendEvent(channel, taskId, type = "fallback", message = "concurrent unavailable")
         return@async RangeDownloadResult(
-          outcome = RangeDownloadOutcome.FALLBACK,
+          outcome = RangeDownloadOutcome.FALLBACKPERMANENT,
           filePath = destFilePath,
           fallbackReason = "concurrent unavailable (range unsupported / 200 / too small / single-stream partial)",
+          fallbackKind = RangeFallbackKind.RANGEUNSUPPORTED,
         )
       }
 
@@ -152,6 +155,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
         outcome = RangeDownloadOutcome.COMPLETED,
         filePath = destFilePath,
         fallbackReason = null,
+        fallbackKind = null,
       )
     }
   }
@@ -194,19 +198,14 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
   // Flip the abort flag + shutdown the pool for an in-flight download (if any).
   private fun cancelActive(channel: DownloadChannel, taskId: String) {
-    activeDownloads.remove(runKey(channel, taskId))?.cancel()
+    activeDownloads.cancel(channel.name, taskId)
   }
 
   // Delete every sibling artifact for [destFilePath]: all `<dest>.partial.seg<N>`
   // segment files (matched by filename prefix, so any segmentCount is swept, not
   // just the shipped default) plus the concatenated `<dest>.partial` itself.
-  private fun sweepPartialArtifacts(destFilePath: String) {
-    val partial = File("$destFilePath.partial")
-    partial.parentFile
-      ?.listFiles { f -> f.name.startsWith(partial.name + ".seg") }
-      ?.forEach { it.delete() }
-    partial.delete()
-  }
+  private fun sweepPartialArtifacts(destFilePath: String) =
+    RangeDownloadLogic.sweepPartialArtifacts(destFilePath)
 
   // Atomically replace [dest] with [src] so a kill mid-finalize never leaves
   // NEITHER file. On API 26+ uses Files.move with ATOMIC_MOVE/REPLACE_EXISTING

@@ -14,16 +14,50 @@ export interface RangeDownloadParams {
   expectedSha256?: string; // optional: in-module post-download self-check; else caller verifies later
   segmentCount?: number; // default 8 (mirrors current behavior)
   minConcurrentBytes?: number; // default 2MB (below this falls straight back to single stream)
+  // OCDS §5.4: caller-tunable retry/backoff/deadline knobs. Defaults are platform
+  // configuration (filled in by the native module when omitted), not part of the
+  // standard. These let the OTA / APK / asset callers tune behavior per channel.
+  maxSegmentAttempts?: number; // per-segment transient retry budget within a single run (default 4)
+  requestTimeoutSeconds?: number; // connection/request timeout per segment task (default 60)
+  stallTimeoutSeconds?: number; // bytes-stalled (no-progress) watchdog window (default 30)
+  overallDeadlineSeconds?: number; // single-run wall-clock bound before giving up (default 0 = none)
 }
 
+// OCDS §4: the failure class is an EXPLICIT, typed outcome of the operation, never
+// inferred from incidental on-disk side effects (e.g. whether `.segN` survives).
+//   - `completed`         — destFilePath fully on disk (and expectedSha256, if passed, has passed)
+//   - `fallbackTransient` — concurrent path interrupted but RESUMABLE; segments kept; caller
+//                           should retry the concurrent path / keep its progress floor
+//   - `fallbackPermanent` — concurrency fundamentally unusable for this object; segments are
+//                           unsalvageable and have been discarded; caller restarts single-stream
+//   - `fallback`          — DEPRECATED legacy alias kept for wire/back-compat during the
+//                           transition; new callers consume the two typed classes above
 export type RangeDownloadOutcome =
-  | 'completed' // destFilePath fully on disk (and expectedSha256, if passed, has passed)
-  | 'fallback'; // concurrent unavailable, caller should run its own single-stream path
+  | 'completed'
+  | 'fallbackTransient'
+  | 'fallbackPermanent'
+  | 'fallback';
+
+// OCDS §4: optional sub-classification of a fallback, so the caller (and analytics)
+// can distinguish WHY the concurrent path was abandoned without parsing the reason
+// string. Present only when outcome is a fallback class.
+export type RangeFallbackKind =
+  | 'serverIgnoredRange' // server answered 200 to a Range request (Permanent)
+  | 'rangeUnsupported' // probe inconclusive / range not supported (Permanent)
+  | 'authExpired' // 401/403: signed URL dead; caller must fetch a fresh URL (Permanent)
+  | 'notFound' // 404/410: object gone (Permanent)
+  | 'redirectRejected' // non-HTTPS redirect rejected per §5.9 (Permanent)
+  | 'checksumMismatch' // whole-file checksum mismatch after assembly (Permanent)
+  | 'multipartOrBadTotal' // multipart/byteranges or Content-Range total disagrees (Permanent)
+  | 'transientNetwork' // connection lost / timeout / DNS / TLS / stall (Transient)
+  | 'throttled' // 429 / 5xx (except 501/505) (Transient)
+  | 'budgetExhausted'; // per-segment attempts / deadline exhausted while still resumable (Transient)
 
 export interface RangeDownloadResult {
   outcome: RangeDownloadOutcome;
   filePath: string;
   fallbackReason?: string; // filled when outcome=fallback (range unsupported / 200 / too small ...)
+  fallbackKind?: RangeFallbackKind; // typed sub-class of the fallback (see §4); omitted on completed
 }
 
 export interface RangeDownloadEvent {

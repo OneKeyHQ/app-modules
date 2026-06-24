@@ -46,16 +46,23 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
         private const val CHANNEL_ID = "updateApp"
         private const val NOTIFICATION_ID = 1
 
-        // Must match ConcurrentRangeDownloader's default segmentCount: the
-        // concurrent downloader writes sibling segment files
-        // "<partial>.seg0".."<partial>.seg${N-1}", and Phase 2 below scans this
-        // range to detect an in-flight concurrent download.
-        private const val CONCURRENT_SEGMENT_COUNT = 8
+        // Segment-count + segment-file naming live in AppUpdateLogic (pure,
+        // unit-testable). The concurrent downloader writes sibling segment
+        // files "<partial>.seg0".."<partial>.seg${N-1}", and Phase 2 below
+        // scans this range to detect an in-flight concurrent download.
+        private const val CONCURRENT_SEGMENT_COUNT = AppUpdateLogic.CONCURRENT_SEGMENT_COUNT
     }
 
     private val listeners = CopyOnWriteArrayList<Listener>()
     private val nextListenerId = AtomicLong(1)
     private val isDownloading = AtomicBoolean(false)
+    // The in-flight concurrent download's cancel handle, so clearCache can stop
+    // its workers (shutdownNow + awaitTermination) BEFORE deleting .segN files.
+    // Without this a still-running worker resurrects a just-deleted segment / writes
+    // to a deleted FD — the cancel-then-delete race OCDS §5.8 forbids. Mirrors
+    // react-native-bundle-update's activeDownloads cancel wiring.
+    private val activeDownload =
+        java.util.concurrent.atomic.AtomicReference<ConcurrentRangeDownloader.CancelHandle?>(null)
     // downloadThread removed: downloads use coroutine-based Promise.async, not raw threads
 
     private fun sendEvent(type: String, progress: Int = 0, message: String = "") {
@@ -289,9 +296,22 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 OneKeyLog.warn("AppUpdate", "verifyExistingApk: SHA256 mismatch, expected=${expectedSha256.take(16)}..., got=${actualSha256.take(16)}...")
                 ApkVerifyOutcome.HashMismatch
             }
-        } catch (e: Exception) {
-            OneKeyLog.warn("AppUpdate", "verifyExistingApk: unexpected failure: ${e.javaClass.simpleName}: ${e.message}")
+        } catch (e: java.io.IOException) {
+            // Offline / disk-I/O transient (ASC fetch or APK read): we genuinely
+            // cannot decide validity right now, so preserve the bytes and defer to
+            // the next online retry (Indeterminate → caller rolls back to .partial).
+            OneKeyLog.warn("AppUpdate", "verifyExistingApk: transient I/O failure, indeterminate: ${e.javaClass.simpleName}: ${e.message}")
             ApkVerifyOutcome.Indeterminate
+        } catch (e: Exception) {
+            // A non-I/O failure (corrupt local state, path/security rejection,
+            // runtime fault) is NOT a "can't tell because offline" case — it is a
+            // genuine local error. Do NOT collapse it into a benign Deferred verify:
+            // downloadAPK's catch suppresses ApkVerificationDeferredException from
+            // `update/error`, which would silently hide this real failure and keep
+            // retrying a permanently-bad file until the JS budget is spent. Rethrow
+            // so it surfaces to the caller as an error.
+            OneKeyLog.error("AppUpdate", "verifyExistingApk: non-I/O failure, surfacing: ${e.javaClass.simpleName}: ${e.message}")
+            throw e
         }
     }
 
@@ -440,6 +460,9 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 throw Exception("Download already in progress")
             }
 
+            // Hoisted so the catch can tell an intentional clearCache-cancel from a
+            // real failure (a cancel must NOT surface as an `update/error`).
+            var cancelHandle: ConcurrentRangeDownloader.CancelHandle? = null
             try {
                 val url = params.downloadUrl
                 val filePath = filePathFromUrl(url)
@@ -510,7 +533,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                             // concurrent run could otherwise be picked up below and reused —
                             // wipe them so this restarts cleanly from byte zero.
                             if (partialFile.exists()) partialFile.delete()
-                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                         }
                         expectedSize > 0 && existingSize < expectedSize -> {
                             OneKeyLog.info("AppUpdate", "downloadAPK: existing APK smaller than expected, promoting to .partial for resume")
@@ -522,7 +545,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                             // concat committed-cursor, risking a mixed file. With no .segN,
                             // Phase 2 takes the single-stream size-based path and Range-resumes
                             // from the partial's length.
-                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                             if (!downloadedFile.renameTo(partialFile)) {
                                 OneKeyLog.warn("AppUpdate", "downloadAPK: rename to .partial failed, deleting stale final")
                                 downloadedFile.delete()
@@ -542,7 +565,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                                     // Final was stale → start from byte zero. Wipe any
                                     // sibling .segN left by an earlier concurrent run so
                                     // it can't be mistaken for trustworthy in-flight bytes.
-                                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                                 }
                                 ApkVerifyOutcome.Indeterminate -> {
                                     // ASC could not be fetched (offline) or could
@@ -573,7 +596,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 // path must match exactly what ConcurrentRangeDownloader writes:
                 // File("$partialFilePath.seg$i").
                 val hasConcurrentSegments =
-                    (0 until CONCURRENT_SEGMENT_COUNT).any { buildFile("$partialFilePath.seg$it").exists() }
+                    (0 until CONCURRENT_SEGMENT_COUNT).any { buildFile(AppUpdateLogic.segmentFileName(partialFilePath, it)).exists() }
                 var partialBytes = 0L
                 if (partialFile.exists() && !hasConcurrentSegments) {
                     val partialSize = partialFile.length()
@@ -608,7 +631,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                             OneKeyLog.warn("AppUpdate", "downloadAPK: stale partial (>expected $partialSize/$expectedSize), discarding")
                             partialFile.delete()
                             // Partial bytes are untrustworthy → restart from zero; drop any sibling .segN too.
-                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                            for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                         }
                         partialSize > 0 -> {
                             partialBytes = partialSize
@@ -643,6 +666,10 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     // the thread that actually moved the percent forward proceeds.
                     val concurrentProgress = AtomicInteger(-1)
                     val notifyLock = Any()
+                    // Wire a cancel handle so clearCache can stop these workers
+                    // before deleting .segN (OCDS §5.8). Cleared in the finally below.
+                    cancelHandle = ConcurrentRangeDownloader.CancelHandle()
+                    activeDownload.set(cancelHandle)
                     val concurrentOutcome = ConcurrentRangeDownloader(
                         httpClient = concurrentClient,
                         log = { msg -> OneKeyLog.info("AppUpdate", msg) },
@@ -653,7 +680,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         // files to the read-only root fs → EROFS. Resolve it to
                         // the real apks dir (filesDir/apks) first, exactly like
                         // react-native-bundle-update passes an absolute path.
-                    ).download(url, partialFile.absolutePath) { transferred, total ->
+                    ).download(url, partialFile.absolutePath, cancelHandle) { transferred, total ->
                         if (total > 0) {
                             val p = ((transferred * 100) / total).toInt().coerceIn(0, 100)
                             // Only the thread that advances the percent emits; a
@@ -724,9 +751,8 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 if (response.code == 416) {
                     val contentRange = response.header("Content-Range")
                     response.close()
-                    val totalFromHeader = contentRange
-                        ?.let { Regex("""bytes\s+\*\s*/\s*(\d+)""").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
-                    if (totalFromHeader != null && totalFromHeader == partialBytes && partialFile.exists()) {
+                    val totalFromHeader = AppUpdateLogic.parse416Total(contentRange)
+                    if (AppUpdateLogic.is416Complete(totalFromHeader, partialBytes) && partialFile.exists()) {
                         OneKeyLog.info("AppUpdate", "downloadAPK: HTTP 416 with total=$totalFromHeader matches partial, attempting promote+verify")
                         when (tryPromoteAndVerify(url, filePath, partialFile, downloadedFile)) {
                             PromoteOutcome.Valid -> {
@@ -743,7 +769,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                                 OneKeyLog.warn("AppUpdate", "downloadAPK: 416 recovery hash mismatch — server build changed mid-download")
                                 if (partialFile.exists()) partialFile.delete()
                                 // Server build changed → these bytes are worthless; drop sibling .segN too.
-                                for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                                for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                                 throw java.io.IOException("Server build changed mid-download (size matches but hash differs)")
                             }
                             PromoteOutcome.Deferred -> {
@@ -761,7 +787,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     OneKeyLog.warn("AppUpdate", "downloadAPK: HTTP 416 (range not satisfiable), discarding partial and failing attempt")
                     if (partialFile.exists()) partialFile.delete()
                     // Partial discarded as unusable → drop sibling .segN too so the next attempt starts clean.
-                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                     throw Exception("HTTP 416 (range not satisfiable)")
                 }
 
@@ -781,7 +807,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     OneKeyLog.warn("AppUpdate", "downloadAPK: requested Range but server returned 200, restarting from scratch")
                     if (partialFile.exists()) partialFile.delete()
                     // Restarting from byte zero → drop any sibling .segN too.
-                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                    for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                     partialBytes = 0L
                 }
 
@@ -791,13 +817,14 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 // be appending mis-aligned bytes and only catching it later
                 // at the SHA step — with the partial now corrupted. Demote to
                 // a full restart instead.
-                val rangeRegex = Regex("""bytes\s+(\d+)\s*-\s*(\d+)\s*/\s*(\d+|\*)""")
-                val rangeMatch = if (serverWillResume) {
-                    response.header("Content-Range")?.let { rangeRegex.find(it) }
+                // Parse the 206 Content-Range via the unit-tested helper (was an
+                // inline duplicate of AppUpdateLogic.parse206ContentRange's regex).
+                val parsed206 = if (serverWillResume) {
+                    AppUpdateLogic.parse206ContentRange(response.header("Content-Range"))
                 } else null
                 if (serverWillResume) {
-                    val rangeStart = rangeMatch?.groupValues?.getOrNull(1)?.toLongOrNull()
-                    if (rangeStart == null || rangeStart != partialBytes) {
+                    val rangeStart = parsed206?.first
+                    if (!AppUpdateLogic.is206StartAligned(rangeStart, partialBytes)) {
                         // This 206 body is a slice starting at the wrong offset (CDN bug /
                         // proxy rewrite). It is NOT a full file, so we must not consume it as
                         // one — doing so would write mis-aligned bytes (caught only later at
@@ -809,7 +836,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                         val contentRangeHeader = response.header("Content-Range")
                         OneKeyLog.warn("AppUpdate", "downloadAPK: 206 Content-Range start mismatch (header='$contentRangeHeader', requested=$partialBytes); discarding partial and retrying from scratch")
                         if (partialFile.exists()) partialFile.delete()
-                        for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile("$partialFilePath.seg$i").delete()
+                        for (i in 0 until CONCURRENT_SEGMENT_COUNT) buildFile(AppUpdateLogic.segmentFileName(partialFilePath, i)).delete()
                         response.close()
                         throw java.io.IOException("206 Content-Range start mismatch (header='$contentRangeHeader', requested=$partialBytes); discarded partial, retry from scratch")
                     }
@@ -821,7 +848,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 }
                 val contentLength = body.contentLength()
                 val totalSize: Long = if (serverWillResume) {
-                    val parsedTotal = rangeMatch?.groupValues?.getOrNull(3)?.toLongOrNull()
+                    val parsedTotal = parsed206?.third
                     parsedTotal ?: (partialBytes + contentLength.coerceAtLeast(0L))
                 } else {
                     if (contentLength > 0) contentLength else expectedSize
@@ -898,10 +925,37 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                     notifyManager.notify(NOTIFICATION_ID, builder.build())
                 }
             } catch (e: Exception) {
-                OneKeyLog.error("AppUpdate", "downloadAPK: failed: ${e.javaClass.simpleName}: ${e.message}")
-                sendEvent("update/error", message = "${e.javaClass.simpleName}: ${e.message}")
+                // Two conditions reach this catch that are NOT download failures and
+                // must therefore be suppressed from `update/error`:
+                //
+                //   1. A clearCache/clearApkCache cancel aborts the core workers,
+                //      which surfaces here as an exception — intentional, not a
+                //      failure (mirrors react-native-bundle-update).
+                //   2. A deferred verification (ApkVerificationDeferredException):
+                //      the detached ASC was temporarily unreachable, so we couldn't
+                //      decide whether the on-disk bytes are still the right APK. The
+                //      bytes are preserved (rolled back to .partial) for the next
+                //      online retry; this is a "retry later", not a download error.
+                //      Detect it by TYPE, never by message string — the message is a
+                //      constant today but type-matching can't silently rot.
+                //
+                // Both still rethrow so the JS Promise rejects (the caller learns the
+                // attempt didn't complete); only the spurious `update/error` event is
+                // withheld. For the deferred case we also downgrade the log to info so
+                // logs don't read like a failure.
+                val intentionallyCancelled = cancelHandle?.aborted?.get() == true
+                val verificationDeferred = e is ApkVerificationDeferredException
+                if (verificationDeferred) {
+                    OneKeyLog.info("AppUpdate", "downloadAPK: verification deferred (ASC unavailable); bytes preserved for next online retry: ${e.message}")
+                } else {
+                    OneKeyLog.error("AppUpdate", "downloadAPK: failed: ${e.javaClass.simpleName}: ${e.message}")
+                }
+                if (!intentionallyCancelled && !verificationDeferred) {
+                    sendEvent("update/error", message = "${e.javaClass.simpleName}: ${e.message}")
+                }
                 throw e
             } finally {
+                activeDownload.set(null)
                 isDownloading.set(false)
             }
         }
@@ -1270,6 +1324,15 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
      * log lines so the two callers stay distinguishable in logcat.
      */
     private fun wipeApkCacheFiles(tag: String, protectedPaths: Set<String> = emptySet()) {
+        // OCDS §5.8: stop any in-flight concurrent download (shutdownNow +
+        // awaitTermination) BEFORE deleting its .segN, so a still-running worker
+        // cannot resurrect a just-deleted segment or write to a deleted FD. Only
+        // the two external cleanup paths (clearCache / clearApkCache) call this;
+        // it is never invoked mid-download.
+        activeDownload.getAndSet(null)?.let {
+            OneKeyLog.info("AppUpdate", "$tag: cancelling in-flight download before wipe")
+            it.cancel()
+        }
         val context = NitroModules.applicationContext
         if (context == null) {
             OneKeyLog.warn("AppUpdate", "$tag: application context unavailable, skipping file cleanup")
