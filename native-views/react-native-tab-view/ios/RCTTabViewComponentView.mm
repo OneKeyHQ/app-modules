@@ -239,6 +239,19 @@ static NSArray<NSDictionary *>* convertItemsToArray(const std::vector<RNCTabView
     [_containerView setValue:iconsArray forKey:@"icons"];
   }
 
+  if (oldViewProps.selectedIcons != newViewProps.selectedIcons) {
+    auto selectedIconsArray = [[NSMutableArray alloc] init];
+    for (auto &source: newViewProps.selectedIcons) {
+      NSMutableDictionary *iconDict = [NSMutableDictionary dictionary];
+      iconDict[@"uri"] = [NSString stringWithUTF8String:source.uri.c_str()];
+      iconDict[@"width"] = @(source.size.width);
+      iconDict[@"height"] = @(source.size.height);
+      iconDict[@"scale"] = @(source.scale);
+      [selectedIconsArray addObject:iconDict];
+    }
+    [_containerView setValue:selectedIconsArray forKey:@"selectedIcons"];
+  }
+
   if (oldViewProps.sidebarAdaptable != newViewProps.sidebarAdaptable) {
     [_containerView setValue:@(newViewProps.sidebarAdaptable) forKey:@"sidebarAdaptable"];
   }

@@ -193,6 +193,9 @@ class RCTTabViewManager(context: ReactApplicationContext) :
   }
 
   // iOS-only props (no-ops on Android)
+  // selectedIcons feeds UITabBarItem.selectedImage on iOS; Android keeps
+  // swapping the icon in JS via the focusedKey-driven `icons` array.
+  override fun setSelectedIcons(view: ReactBottomNavigationView?, value: ReadableArray?) {}
   override fun setTranslucent(view: ReactBottomNavigationView?, value: Boolean) {}
   override fun setSidebarAdaptable(view: ReactBottomNavigationView?, value: Boolean) {}
   override fun setScrollEdgeAppearance(view: ReactBottomNavigationView?, value: String?) {}
