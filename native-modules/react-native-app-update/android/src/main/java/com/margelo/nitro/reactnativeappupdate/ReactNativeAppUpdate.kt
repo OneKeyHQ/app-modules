@@ -1143,7 +1143,18 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 OneKeyLog.info("AppUpdate", "verifyAPK: package name matches installed app")
             }
 
-            // Verify APK signing certificate matches the installed app
+            // Verify APK signing certificate matches the installed app.
+            //
+            // This cross-check is defense-in-depth ONLY: by the time verifyAPK
+            // runs, verifyASC has already proven the bytes on disk are the
+            // authentic OneKey APK via GPG + SHA-256, and Android's own
+            // PackageInstaller re-verifies the signing certificate at install
+            // time. So a genuine MISMATCH is still hard-failed, but when the
+            // platform can't read the archive's signers (null) we just log it
+            // and silently skip — on some OEM ROMs (Huawei/EMUI Android 9–10)
+            // and for large APKs getPackageArchiveInfo returns null signers
+            // even for a perfectly valid APK, and blocking on that bricks the
+            // update for those users.
             OneKeyLog.info("AppUpdate", "verifyAPK: verifying APK signing certificate (API level=${Build.VERSION.SDK_INT})...")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 val apkInfo = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
@@ -1151,9 +1162,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val apkSigners = apkInfo?.signingInfo?.apkContentsSigners
                 val installedSigners = installedInfo?.signingInfo?.apkContentsSigners
                 if (apkSigners == null || installedSigners == null) {
-                    OneKeyLog.error("AppUpdate", "verifyAPK: signing info unavailable (apkSigners=${apkSigners != null}, installedSigners=${installedSigners != null})")
-                    if (!debugBuild) throw Exception("SIGNATURE_UNAVAILABLE")
-                    OneKeyLog.warn("AppUpdate", "verifyAPK: DEBUG build — ignoring unavailable signatures")
+                    OneKeyLog.info("AppUpdate", "verifyAPK: signing info unavailable (apkSigners=${apkSigners != null}, installedSigners=${installedSigners != null}), skipping signing certificate check")
                 } else {
                     OneKeyLog.info("AppUpdate", "verifyAPK: APK signers count=${apkSigners.size}, installed signers count=${installedSigners.size}")
                     if (apkSigners.toSet() != installedSigners.toSet()) {
@@ -1172,9 +1181,7 @@ class ReactNativeAppUpdate : HybridReactNativeAppUpdateSpec() {
                 val apkSignatures = apkInfo?.signatures
                 val installedSignatures = installedInfo?.signatures
                 if (apkSignatures == null || installedSignatures == null) {
-                    OneKeyLog.error("AppUpdate", "verifyAPK: legacy signatures unavailable")
-                    if (!debugBuild) throw Exception("SIGNATURE_UNAVAILABLE")
-                    OneKeyLog.warn("AppUpdate", "verifyAPK: DEBUG build — ignoring unavailable signatures")
+                    OneKeyLog.info("AppUpdate", "verifyAPK: legacy signatures unavailable (apkSignatures=${apkSignatures != null}, installedSignatures=${installedSignatures != null}), skipping signing certificate check")
                 } else {
                     OneKeyLog.info("AppUpdate", "verifyAPK: APK signatures count=${apkSignatures.size}, installed signatures count=${installedSignatures.size}")
                     if (apkSignatures.toSet() != installedSignatures.toSet()) {
