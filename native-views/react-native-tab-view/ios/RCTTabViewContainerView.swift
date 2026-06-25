@@ -56,6 +56,11 @@ class RCTTabViewContainerView: UIView {
   private var childViews: [UIView] = []
   private var bottomAccessoryView: UIView?
   private var loadedIcons: [Int: UIImage] = [:]
+  // Solid/focused icons shown for the selected tab via UITabBarItem.selectedImage.
+  // Loaded once and swapped natively by UIKit on selection, so the focused
+  // artwork rides the system selection animation instead of waiting for a JS
+  // round-trip + async reload.
+  private var loadedSelectedIcons: [Int: UIImage] = [:]
   private var imageLoader: RCTImageLoaderProtocol?
   private let iconSize = CGSize(width: 27, height: 27)
   private var longPressHandler: LongPressGestureHandler?
@@ -74,6 +79,10 @@ class RCTTabViewContainerView: UIView {
 
   @objc var icons: [NSDictionary]? {
     didSet { loadIconsFromSources() }
+  }
+
+  @objc var selectedIcons: [NSDictionary]? {
+    didSet { loadSelectedIconsFromSources() }
   }
 
   @objc var labeled: NSNumber? {
@@ -109,11 +118,13 @@ class RCTTabViewContainerView: UIView {
   }
 
   @objc var activeTintColor: UIColor? {
-    didSet { updateTintColors() }
+    // Rebuild so the baked selectedImage tint follows light/dark theme changes.
+    didSet { updateTintColors(); rebuildViewControllers() }
   }
 
   @objc var inactiveTintColor: UIColor? {
-    didSet { updateTabBarAppearance() }
+    // Rebuild so the baked unselected-image tint follows theme changes.
+    didSet { updateTabBarAppearance(); rebuildViewControllers() }
   }
 
   @objc var rippleColor: UIColor? // Android only
@@ -291,6 +302,7 @@ class RCTTabViewContainerView: UIView {
 
       // Configure tab bar item
       let icon = loadedIcons[originalIndex]
+      let selectedIcon = loadedSelectedIcons[originalIndex]
       let sfSymbol = tabData.sfSymbol ?? ""
 
       var tabImage: UIImage?
@@ -300,9 +312,29 @@ class RCTTabViewContainerView: UIView {
         tabImage = UIImage(systemName: sfSymbol)
       }
 
+      // Focused (solid) artwork for the selected state. Fall back to the
+      // unfocused image when no selected icon was provided so the selected
+      // tab still renders something.
+      var selectedTabImage: UIImage?
+      if let selectedIcon {
+        selectedTabImage = selectedIcon
+      } else if !sfSymbol.isEmpty {
+        selectedTabImage = UIImage(systemName: sfSymbol)
+      }
+
+      // Bake the inactive/active colors directly into the images as
+      // .alwaysOriginal. iOS 26 Liquid Glass ignores appearance.normal.iconColor
+      // and washes every icon to a single near-white tint, which is why the
+      // unselected tabs never render the gray `iconSubdued`. Pre-tinting the
+      // artwork and marking it .alwaysOriginal stops the system from re-tinting,
+      // restoring the gray(unselected) → active(selected) color change natively.
+      let normalImage = bakeTint(tabImage, inactiveTintColor)
+      let selectedImage = bakeTint(selectedTabImage ?? tabImage, activeTintColor)
+
       let isLabeled = labeled?.boolValue ?? true
       let title = isLabeled ? tabData.title : nil
-      vc.tabBarItem = UITabBarItem(title: title, image: tabImage, tag: originalIndex)
+      vc.tabBarItem = UITabBarItem(title: title, image: normalImage, selectedImage: selectedImage)
+      vc.tabBarItem.tag = originalIndex
       vc.tabBarItem.badgeValue = tabData.badge
       vc.tabBarItem.accessibilityIdentifier = tabData.testID
 
@@ -359,6 +391,21 @@ class RCTTabViewContainerView: UIView {
     let filtered = filteredItems
     guard let index = filtered.firstIndex(where: { $0.key == selectedPage }) else { return }
 
+    // Common case: the user tapped the tab. UIKit's delegate already selected
+    // it optimistically and started the iOS 26 Liquid Glass capsule animation.
+    // Re-assigning selectedIndex here — especially wrapped in
+    // performWithoutAnimation — would cancel that in-flight animation, which is
+    // what made the icon/color change lag a beat behind the glass. When the
+    // selection is already correct, just refresh tint and leave the native
+    // animation alone.
+    if tbc.selectedIndex == index {
+      updateTintColors()
+      return
+    }
+
+    // Programmatic selection (deep link, external navigation, preventsDefault
+    // tabs): keep the existing no-animation behavior to avoid the historically
+    // reverted tab-switch animation regression.
     if disablePageAnimations {
       UIView.performWithoutAnimation {
         tbc.selectedIndex = index
@@ -525,11 +572,25 @@ class RCTTabViewContainerView: UIView {
     }
   }
 
+  // MARK: - Icon tinting
+
+  /// Returns a copy of `image` recolored to `color` and marked
+  /// `.alwaysOriginal`, so iOS 26 Liquid Glass won't override the icon color.
+  /// Falls back to the untinted image when no color is provided.
+  private func bakeTint(_ image: UIImage?, _ color: UIColor?) -> UIImage? {
+    guard let image else { return nil }
+    guard let color else { return image }
+    return image
+      .withRenderingMode(.alwaysTemplate)
+      .withTintColor(color, renderingMode: .alwaysOriginal)
+  }
+
   // MARK: - Icon loading
 
   @objc func setImageLoader(_ loader: RCTImageLoaderProtocol) {
     self.imageLoader = loader
     loadIconsFromSources()
+    loadSelectedIconsFromSources()
   }
 
   private func loadIconsFromSources() {
@@ -560,6 +621,40 @@ class RCTTabViewContainerView: UIView {
           guard let image, let self else { return }
           DispatchQueue.main.async {
             self.loadedIcons[index] = image.resizeImageTo(size: self.iconSize)
+            self.rebuildViewControllers()
+          }
+        })
+    }
+  }
+
+  private func loadSelectedIconsFromSources() {
+    guard let imageLoader, let iconDicts = selectedIcons else { return }
+
+    let iconSources = iconDicts.map { IconSource(dict: $0) }
+
+    for (index, source) in iconSources.enumerated() {
+      guard !source.uri.isEmpty else { continue }
+
+      let url = URL(string: source.uri)
+      guard let url else { continue }
+
+      let request = URLRequest(url: url)
+      let size = CGSize(width: source.width, height: source.height)
+      let scale = CGFloat(source.scale)
+
+      imageLoader.loadImage(
+        with: request,
+        size: size,
+        scale: scale,
+        clipped: true,
+        resizeMode: RCTResizeMode.contain,
+        progressBlock: { _, _ in },
+        partialLoad: { _ in },
+        completionBlock: { [weak self] error, image in
+          if error != nil { return }
+          guard let image, let self else { return }
+          DispatchQueue.main.async {
+            self.loadedSelectedIcons[index] = image.resizeImageTo(size: self.iconSize)
             self.rebuildViewControllers()
           }
         })

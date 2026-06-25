@@ -260,7 +260,22 @@ const TabView = <Route extends BaseRoute>({
     setLoaded((loaded) => [...loaded, focusedKey]);
   }
 
-  const icons = React.useMemo(
+  const isIOS = Platform.OS === 'ios';
+
+  // Unfocused (outline) icons — independent of focusedKey so the array stays
+  // stable across tab switches and the native side never reloads on switch.
+  const unfocusedIcons = React.useMemo(
+    () => trimmedRoutes.map((route) => getIcon({ route, focused: false })),
+    [getIcon, trimmedRoutes]
+  );
+  // Focused (solid) icons — also stable; handed to iOS as selectedImage.
+  const focusedIcons = React.useMemo(
+    () => trimmedRoutes.map((route) => getIcon({ route, focused: true })),
+    [getIcon, trimmedRoutes]
+  );
+  // Legacy single array driven by focusedKey. Android still swaps the icon in
+  // JS (it has no selectedImage equivalent).
+  const focusKeyedIcons = React.useMemo(
     () =>
       trimmedRoutes.map((route) =>
         getIcon({
@@ -270,6 +285,11 @@ const TabView = <Route extends BaseRoute>({
       ),
     [focusedKey, getIcon, trimmedRoutes]
   );
+
+  // iOS hands both states to UIKit (image + selectedImage) so the focused
+  // artwork swaps natively, in sync with the selection animation, instead of
+  // waiting for a JS round-trip. Android keeps the focusedKey-driven array.
+  const icons = isIOS ? unfocusedIcons : focusKeyedIcons;
 
   const items: TabViewItems[number][] = React.useMemo(
     () =>
@@ -336,6 +356,26 @@ const TabView = <Route extends BaseRoute>({
     [icons]
   );
 
+  // Focused (solid) assets passed to iOS as selectedImage. iOS only — Android
+  // ignores selectedIcons and keeps swapping via the focusedKey array above.
+  const resolvedSelectedIconAssets = React.useMemo(
+    () =>
+      focusedIcons.map((icon) => {
+        if (icon && !isAppleSymbol(icon)) {
+          // @ts-ignore - resolveAssetSource accepts ImageSourcePropType
+          const resolved = Image.resolveAssetSource(icon);
+          return {
+            uri: resolved?.uri ?? '',
+            width: resolved?.width ?? 0,
+            height: resolved?.height ?? 0,
+            scale: resolved?.scale ?? 1,
+          };
+        }
+        return { uri: '', width: 0, height: 0, scale: 1 };
+      }),
+    [focusedIcons]
+  );
+
   const jumpTo = useLatestCallback((key: string) => {
     const index = trimmedRoutes.findIndex((route) => route.key === key);
     if (index === -1) {
@@ -394,6 +434,9 @@ const TabView = <Route extends BaseRoute>({
         style={styles.fullWidth}
         items={items}
         icons={renderCustomTabBar ? undefined : resolvedIconAssets}
+        selectedIcons={
+          isIOS && !renderCustomTabBar ? resolvedSelectedIconAssets : undefined
+        }
         selectedPage={focusedKey}
         tabBarHidden={props.tabBarHidden ?? !!renderCustomTabBar}
         onTabLongPress={handleTabLongPress}
