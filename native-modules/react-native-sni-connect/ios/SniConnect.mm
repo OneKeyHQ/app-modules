@@ -18,6 +18,9 @@
                    reject:(RCTPromiseRejectBlock)reject;
 - (void)clearDNSCache:(RCTPromiseResolveBlock)resolve
                reject:(RCTPromiseRejectBlock)reject;
+- (void)isProxyActiveForUrl:(NSString *)url
+                    resolve:(RCTPromiseResolveBlock)resolve
+                     reject:(RCTPromiseRejectBlock)reject;
 @end
 
 @interface SniConnect : NSObject
@@ -86,6 +89,12 @@ RCT_EXPORT_MODULE(SniConnect)
   [_implementation clearDNSCache:resolve reject:reject];
 }
 
+- (void)isProxyActiveForUrl:(NSString *)url
+                    resolve:(RCTPromiseResolveBlock)resolve
+                     reject:(RCTPromiseRejectBlock)reject {
+  [_implementation isProxyActiveForUrl:url resolve:resolve reject:reject];
+}
+
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
 {
@@ -113,6 +122,12 @@ RCT_EXPORT_METHOD(cancelAllRequests:(RCTPromiseResolveBlock)resolver
 RCT_EXPORT_METHOD(clearDNSCache:(RCTPromiseResolveBlock)resolver
                   rejecter:(RCTPromiseRejectBlock)rejecter) {
   [_implementation clearDNSCache:resolver reject:rejecter];
+}
+
+RCT_EXPORT_METHOD(isProxyActiveForUrl:(NSString *)url
+                  resolver:(RCTPromiseResolveBlock)resolver
+                  rejecter:(RCTPromiseRejectBlock)rejecter) {
+  [_implementation isProxyActiveForUrl:url resolve:resolver reject:rejecter];
 }
 #endif
 

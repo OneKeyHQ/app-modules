@@ -5,6 +5,7 @@ jest.mock('../NativeSniConnect', () => ({
     cancelRequest: jest.fn(),
     cancelAllRequests: jest.fn(),
     clearDNSCache: jest.fn(),
+    isProxyActiveForUrl: jest.fn(),
   },
 }));
 
@@ -12,6 +13,7 @@ import {
   cancelAllRequests,
   cancelRequest,
   clearDNSCache,
+  isProxyActiveForUrl,
   request,
 } from '../index';
 import NativeSniConnect, {
@@ -23,6 +25,7 @@ const mockNativeModule = NativeSniConnect as unknown as {
   cancelRequest: jest.Mock;
   cancelAllRequests: jest.Mock;
   clearDNSCache: jest.Mock;
+  isProxyActiveForUrl: jest.Mock;
 };
 
 describe('react-native-sni-connect public API', () => {
@@ -62,5 +65,13 @@ describe('react-native-sni-connect public API', () => {
     mockNativeModule.clearDNSCache.mockResolvedValue({ success: true });
     await expect(clearDNSCache()).resolves.toEqual({ success: true });
     expect(mockNativeModule.clearDNSCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards isProxyActiveForUrl()', async () => {
+    mockNativeModule.isProxyActiveForUrl.mockResolvedValue(false);
+    await expect(isProxyActiveForUrl('https://example.com')).resolves.toBe(false);
+    expect(mockNativeModule.isProxyActiveForUrl).toHaveBeenCalledWith(
+      'https://example.com'
+    );
   });
 });

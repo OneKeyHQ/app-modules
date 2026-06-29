@@ -1,5 +1,7 @@
 package com.sniconnect
 
+import android.content.Context
+import android.net.ConnectivityManager
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -15,19 +17,54 @@ import okhttp3.Dns
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody
+import okio.Buffer
 import java.io.IOException
 import java.net.InetAddress
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.URI
+import java.net.UnknownHostException
+import java.nio.charset.StandardCharsets
+import java.security.cert.CertificateException
+import java.util.Collections
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLException
+import javax.net.ssl.SSLPeerUnverifiedException
 
 private const val TAG = "SniConnect"
+
+internal fun classifySniFailureCode(error: Throwable): String {
+  if (hasCause(error, SSLPeerUnverifiedException::class.java) ||
+    hasCause(error, CertificateException::class.java)
+  ) {
+    return "SNI_CERT_FAILED"
+  }
+  if (hasCause(error, UnknownHostException::class.java)) {
+    return "SNI_SECURITY_POLICY_FAILED"
+  }
+  if (hasCause(error, SSLException::class.java)) {
+    return "SNI_TLS_FAILED"
+  }
+  return "SNI_REQUEST_FAILED"
+}
+
+private fun hasCause(error: Throwable, type: Class<out Throwable>): Boolean {
+  var current: Throwable? = error
+  while (current != null) {
+    if (type.isInstance(current)) return true
+    current = current.cause
+  }
+  return false
+}
 
 @ReactModule(name = SniConnectModule.NAME)
 class SniConnectModule(reactContext: ReactApplicationContext) :
@@ -42,7 +79,10 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
 
     // A single dispatcher + connection pool shared across all cached clients so we
     // don't spawn a thread pool / connection pool per (hostname, ip) pair.
-    private val sharedDispatcher = Dispatcher()
+    private val sharedDispatcher = Dispatcher().apply {
+      maxRequests = 64
+      maxRequestsPerHost = 64
+    }
     private val sharedConnectionPool = ConnectionPool()
   }
 
@@ -68,6 +108,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   }
 
   private val activeCalls = ConcurrentHashMap<String, Call>()
+  private val allActiveCalls = Collections.newSetFromMap(ConcurrentHashMap<Call, Boolean>())
+  private val activeCallsLock = Any()
+  private val requestLimiter = SniConnectRequestLimiter()
 
   override fun getName(): String = NAME
 
@@ -83,7 +126,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   override fun cancelRequest(requestId: String, promise: Promise) {
-    val call = activeCalls.remove(requestId)
+    val call = synchronized(activeCallsLock) {
+      activeCalls.remove(requestId)
+    }
     if (call != null) {
       call.cancel()
       SniConnectLogger.info("Cancelled request: $requestId")
@@ -95,10 +140,14 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   override fun cancelAllRequests(promise: Promise) {
-    val count = activeCalls.size
-    activeCalls.forEach { (_, call) -> call.cancel() }
-    activeCalls.clear()
-    SniConnectLogger.info("Cancelled $count active requests")
+    val calls = synchronized(activeCallsLock) {
+      val snapshot = allActiveCalls.toList()
+      activeCalls.clear()
+      allActiveCalls.clear()
+      snapshot
+    }
+    calls.forEach { call -> call.cancel() }
+    SniConnectLogger.info("Cancelled ${calls.size} active requests")
     promise.resolve(Arguments.createMap().apply { putBoolean("success", true) })
   }
 
@@ -113,8 +162,20 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     promise.resolve(Arguments.createMap().apply { putBoolean("success", true) })
   }
 
-  private fun performRequest(config: RequestConfig, promise: Promise) {
+  @ReactMethod
+  override fun isProxyActiveForUrl(url: String, promise: Promise) {
     try {
+      promise.resolve(isProxyActiveForUrl(url))
+    } catch (error: Exception) {
+      promise.reject("SNI_INVALID_URL", error.message, error)
+    }
+  }
+
+  private fun performRequest(config: RequestConfig, promise: Promise) {
+    var requestSlot: SniConnectRequestLimiter.Token? = null
+    var registeredCall: Call? = null
+    try {
+      requestSlot = requestLimiter.acquire(config.hostname, config.ip)
       val client = getOrCreateClient(config)
       val request = buildRequest(config)
       val call = client.newCall(request)
@@ -122,59 +183,102 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       // Apply per-request timeout
       call.timeout().timeout(config.timeoutMillis, TimeUnit.MILLISECONDS)
 
-      // Register the call if requestId is provided
-      config.requestId?.let { requestId ->
-        activeCalls[requestId] = call
-      }
+      registerCall(config.requestId, call)
+      registerActiveCall(call)
+      registeredCall = call
 
       // Guard against double-settling the promise (RN hard-crashes otherwise).
       val settled = AtomicBoolean(false)
 
       call.enqueue(object : Callback {
         override fun onFailure(call: Call, e: IOException) {
-          config.requestId?.let { activeCalls.remove(it) }
+          unregisterCall(config.requestId, call)
+          unregisterActiveCall(call)
+          requestSlot?.release()
           if (!settled.compareAndSet(false, true)) return
 
           if (call.isCanceled()) {
             promise.reject("SNI_CANCELLED", "Request cancelled", null)
           } else {
             SniConnectLogger.error("Request failed: ${e.message}")
-            promise.reject("SNI_REQUEST_FAILED", e.message, e)
+            promise.reject(classifySniFailureCode(e), e.message, e)
           }
         }
 
         override fun onResponse(call: Call, response: Response) {
-          config.requestId?.let { activeCalls.remove(it) }
-
-          val result: WritableMap = try {
-            response.use {
-              val bodyString = response.body.safeString()
-              val headerMap = headersToMap(response.headers)
+          try {
+            response.use { currentResponse ->
+              val bodyString = currentResponse.body.safeString()
+              val headerMaps = headersToMaps(currentResponse.headers)
               Arguments.createMap().apply {
                 putString("data", bodyString)
-                putInt("status", response.code)
-                putString("statusText", response.message)
-                putMap("headers", headerMap.toWritableMap())
+                putInt("status", currentResponse.code)
+                putString("statusText", currentResponse.message)
+                putMap("headers", headerMaps.singleValueHeaders.toWritableMap())
+                putMap("multiValueHeaders", headerMaps.multiValueHeaders.toWritableArrayMap())
+              }.also { result ->
+                if (currentResponse.code >= 400) {
+                  SniConnectLogger.warn("HTTP ${currentResponse.code} for ${config.hostname}")
+                }
+                if (settled.compareAndSet(false, true)) {
+                  promise.resolve(result)
+                }
               }
             }
           } catch (error: Exception) {
             if (!settled.compareAndSet(false, true)) return
             SniConnectLogger.error("Response processing failed: ${error.message}")
             promise.reject("SNI_RESPONSE_FAILED", error.message, error)
-            return
-          }
-
-          if (response.code >= 400) {
-            SniConnectLogger.warn("HTTP ${response.code} for ${config.hostname}")
-          }
-          if (settled.compareAndSet(false, true)) {
-            promise.resolve(result)
+          } finally {
+            unregisterCall(config.requestId, call)
+            unregisterActiveCall(call)
+            requestSlot?.release()
           }
         }
       })
     } catch (error: Exception) {
+      registeredCall?.let { call ->
+        unregisterCall(config.requestId, call)
+        unregisterActiveCall(call)
+      }
+      requestSlot?.release()
       SniConnectLogger.error("Request setup failed: ${error.message}")
-      promise.reject("SNI_REQUEST_FAILED", error.message, error)
+      val code = if (error is SniConnectValidation.ValidationException) {
+        "SNI_RESOURCE_LIMIT"
+      } else {
+        "SNI_REQUEST_FAILED"
+      }
+      promise.reject(code, error.message, error)
+    }
+  }
+
+  private fun registerCall(requestId: String?, call: Call) {
+    if (requestId == null) return
+    val previousCall = synchronized(activeCallsLock) {
+      activeCalls.put(requestId, call)
+    }
+    if (previousCall != null && previousCall != call) {
+      previousCall.cancel()
+      SniConnectLogger.warn("Cancelled previous request with duplicate ID: $requestId")
+    }
+  }
+
+  private fun registerActiveCall(call: Call) {
+    synchronized(activeCallsLock) {
+      allActiveCalls.add(call)
+    }
+  }
+
+  private fun unregisterCall(requestId: String?, call: Call) {
+    if (requestId == null) return
+    synchronized(activeCallsLock) {
+      activeCalls.remove(requestId, call)
+    }
+  }
+
+  private fun unregisterActiveCall(call: Call) {
+    synchronized(activeCallsLock) {
+      allActiveCalls.remove(call)
     }
   }
 
@@ -185,16 +289,17 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     synchronized(clientCache) {
       clientCache[key]?.let { return it }
 
-      // 60s defaults at the client level; the real deadline is the per-call timeout.
-      val defaultTimeout = 60_000L
-
       val client = OkHttpClient.Builder()
         .dispatcher(sharedDispatcher)
         .connectionPool(sharedConnectionPool)
-        .connectTimeout(defaultTimeout, TimeUnit.MILLISECONDS)
-        .readTimeout(defaultTimeout, TimeUnit.MILLISECONDS)
-        .writeTimeout(defaultTimeout, TimeUnit.MILLISECONDS)
+        .proxy(Proxy.NO_PROXY)
+        .protocols(listOf(Protocol.HTTP_1_1))
+        .connectTimeout(0, TimeUnit.MILLISECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .writeTimeout(0, TimeUnit.MILLISECONDS)
         .callTimeout(0, TimeUnit.MILLISECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
         // TLS is validated normally: cert chain via the default trust manager and
         // hostname verification against the REAL hostname (not the pinned IP).
         .hostnameVerifier { _, session ->
@@ -218,7 +323,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
         return if (requestedHost.lowercase(Locale.US) == expectedHost) {
           listOf(pinnedAddress)
         } else {
-          Dns.SYSTEM.lookup(requestedHost)
+          throw UnknownHostException("Unexpected host for pinned SNI request: $requestedHost")
         }
       }
     }
@@ -232,11 +337,10 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     val builder = Request.Builder().url(url)
 
     config.headers.forEach { (key, value) ->
-      if (!key.equals("host", ignoreCase = true)) {
-        builder.addHeader(key, value)
-      }
+      builder.addHeader(key, value)
     }
     builder.header("Host", config.hostname)
+    builder.header("Accept-Encoding", "identity")
 
     val method = config.method
     val bodyContent = config.body ?: ""
@@ -267,18 +371,36 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   private fun ResponseBody?.safeString(): String {
     if (this == null) return ""
     return try {
-      this.string()
+      val source = source()
+      val buffer = Buffer()
+      var totalBytes = 0L
+      while (true) {
+        val read = source.read(buffer, 8 * 1024)
+        if (read == -1L) break
+        totalBytes += read
+        if (totalBytes > SniConnectValidation.MAX_RESPONSE_BODY_BYTES) {
+          throw IOException("Response body too large")
+        }
+      }
+      val charset = contentType()?.charset(StandardCharsets.UTF_8) ?: StandardCharsets.UTF_8
+      buffer.readString(charset)
     } catch (error: IOException) {
       throw IOException("Failed to read response body", error)
     }
   }
 
-  private fun headersToMap(headers: Headers): Map<String, String> {
-    val map = mutableMapOf<String, String>()
-    for (name in headers.names()) {
-      map[name] = headers[name] ?: ""
+  private fun headersToMaps(headers: Headers): HeaderMaps {
+    val singleValueHeaders = linkedMapOf<String, String>()
+    val multiValueHeaders = linkedMapOf<String, MutableList<String>>()
+
+    for (index in 0 until headers.size) {
+      val name = headers.name(index).lowercase(Locale.US)
+      val value = headers.value(index)
+      singleValueHeaders[name] = value
+      multiValueHeaders.getOrPut(name) { mutableListOf() }.add(value)
     }
-    return map
+
+    return HeaderMaps(singleValueHeaders, multiValueHeaders)
   }
 
   private fun Map<String, String>.toWritableMap(): WritableMap {
@@ -287,8 +409,18 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  private fun Map<String, List<String>>.toWritableArrayMap(): WritableMap {
+    return Arguments.createMap().apply {
+      forEach { (key, values) ->
+        val array = Arguments.createArray()
+        values.forEach { value -> array.pushString(value) }
+        putArray(key, array)
+      }
+    }
+  }
+
   private fun ReadableMap.toRequestConfig(): RequestConfig {
-    val headersMap = if (hasKey("headers") && !isNull("headers")) {
+    val rawHeadersMap = if (hasKey("headers") && !isNull("headers")) {
       getMap("headers")?.toHashMap()
         ?.mapValues { (_, value) -> value?.toString() ?: "" }
         ?: emptyMap()
@@ -297,7 +429,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
 
     val timeoutMillis = if (hasKey("timeout") && !isNull("timeout")) {
-      getDouble("timeout").toLong().coerceAtLeast(1L)
+      SniConnectValidation.parseTimeoutMillis(getDouble("timeout"))
     } else {
       30_000L
     }
@@ -308,13 +440,17 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     val hostname = getString("hostname") ?: throw IllegalArgumentException("hostname is required")
     val method = getString("method") ?: "GET"
     val path = getString("path") ?: "/"
+    val body = if (hasKey("body") && !isNull("body")) getString("body") else null
 
     // Validate every caller-controlled field at the boundary.
+    SniConnectValidation.validateRequestId(requestId)
     SniConnectValidation.validatePublicIp(ip)
     SniConnectValidation.validateHostname(hostname)
-    SniConnectValidation.validateHeaders(headersMap)
+    val headersMap = SniConnectValidation.normalizeHeaders(rawHeadersMap)
     val normalizedMethod = SniConnectValidation.normalizeMethod(method)
     val normalizedPath = SniConnectValidation.normalizePath(path)
+    SniConnectValidation.validateTimeout(timeoutMillis)
+    SniConnectValidation.validateBody(body)
 
     return RequestConfig(
       requestId = requestId,
@@ -323,7 +459,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       method = normalizedMethod,
       path = normalizedPath,
       headers = headersMap,
-      body = if (hasKey("body") && !isNull("body")) getString("body") else null,
+      body = body,
       timeoutMillis = timeoutMillis,
     )
   }
@@ -338,4 +474,35 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     val body: String?,
     val timeoutMillis: Long,
   )
+
+  private data class HeaderMaps(
+    val singleValueHeaders: Map<String, String>,
+    val multiValueHeaders: Map<String, List<String>>,
+  )
+
+  private fun isProxyActiveForUrl(url: String): Boolean {
+    val uri = URI(url)
+    val scheme = uri.scheme?.lowercase(Locale.US)
+      ?: throw IllegalArgumentException("URL must include a scheme")
+    if (scheme != "http" && scheme != "https") {
+      throw IllegalArgumentException("Only http and https URLs are supported")
+    }
+    if (uri.host.isNullOrBlank()) {
+      throw IllegalArgumentException("URL must include a host")
+    }
+
+    val selector = ProxySelector.getDefault()
+    val selectorHasProxy = selector?.select(uri)
+      ?.any { proxy -> proxy != Proxy.NO_PROXY && proxy.type() != Proxy.Type.DIRECT }
+      ?: false
+    if (selectorHasProxy) return true
+
+    val connectivityManager = reactApplicationContext.getSystemService(Context.CONNECTIVITY_SERVICE)
+      as? ConnectivityManager
+      ?: return false
+    val activeNetworkProxy = connectivityManager.activeNetwork
+      ?.let { network -> connectivityManager.getLinkProperties(network)?.httpProxy }
+    val proxyInfo = activeNetworkProxy ?: connectivityManager.defaultProxy
+    return proxyInfo?.host?.isNotBlank() == true && proxyInfo.port > 0
+  }
 }

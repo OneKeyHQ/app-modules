@@ -10,6 +10,10 @@ type HeaderMap = {
   [key: string]: string;
 };
 
+type MultiValueHeaderMap = {
+  [key: string]: string[];
+};
+
 export type SniConnectRequest = {
   requestId?: string;
   ip: string;
@@ -26,6 +30,7 @@ export type SniConnectResponse = {
   status: Int32;
   statusText: string;
   headers: HeaderMap;
+  multiValueHeaders?: MultiValueHeaderMap;
 };
 
 export interface Spec extends TurboModule {
@@ -33,6 +38,7 @@ export interface Spec extends TurboModule {
   cancelRequest(requestId: string): Promise<{ success: boolean }>;
   cancelAllRequests(): Promise<{ success: boolean }>;
   clearDNSCache(): Promise<{ success: boolean }>;
+  isProxyActiveForUrl(url: string): Promise<boolean>;
 }
 
 const LINKING_ERROR =

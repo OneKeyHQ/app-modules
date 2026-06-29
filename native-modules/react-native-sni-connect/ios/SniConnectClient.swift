@@ -1,13 +1,84 @@
 import Foundation
+import ObjectiveC
 import UIKit
 import EMASCurl
+
+@objc(SniConnectPinnedDNSResolverBase)
+private class SniConnectPinnedDNSResolverBase: NSObject, EMASCurlProtocolDNSResolver {
+  @objc class func resolveDomain(_ domain: String) -> String? {
+    PinnedDNSResolverFactory.resolve(domain: domain, resolverClass: self)
+  }
+}
+
+private enum PinnedDNSResolverFactory {
+  private static let queue = DispatchQueue(label: "com.onekey.sni.connect.pinned-dns-resolvers")
+  private static var nextClassID = 0
+  private static let registry = SniConnectPinnedResolverRegistry()
+
+  static func resolverClass(hostname: String, ip: String) throws -> EMASCurlProtocolDNSResolver.Type {
+    return try queue.sync {
+      let resolverClass = try registry.resolverClass(
+        hostname: hostname,
+        ip: ip,
+        allocateClass: allocateResolverClass
+      )
+      return resolverClass as! EMASCurlProtocolDNSResolver.Type
+    }
+  }
+
+  static func resolve(domain: String, resolverClass: AnyClass) -> String? {
+    return queue.sync {
+      registry.resolve(domain: domain, resolverClass: resolverClass)
+    }
+  }
+
+  static func remove(hostname: String, ip: String) {
+    queue.sync {
+      registry.remove(hostname: hostname, ip: ip)
+    }
+  }
+
+  static func clear() {
+    queue.sync {
+      registry.clear()
+    }
+  }
+
+  private static func allocateResolverClass() -> AnyClass {
+    while true {
+      nextClassID += 1
+      let className = "SniConnectPinnedDNSResolver_\(nextClassID)"
+      if let resolverClass = objc_allocateClassPair(
+        SniConnectPinnedDNSResolverBase.self,
+        className,
+        0
+      ) {
+        objc_registerClassPair(resolverClass)
+        return resolverClass
+      }
+    }
+  }
+}
 
 /// Core HTTPS client that enforces IP direct connection with SNI.
 final class SniConnectClient {
 
-  // Active requests tracking for cancellation support
-  private var activeTasks: [String: Task<Response, Error>] = [:]
+  // Active requests tracking for cancellation support. Every task is tracked by
+  // token so cancelAllRequests() also covers requests that do not have a requestId.
+  private var activeTasksByToken: [UUID: Task<Response, Error>] = [:]
+  private var requestTokensById: [String: UUID] = [:]
   private let tasksQueue = DispatchQueue(label: "com.onekey.sni.connect.tasks", attributes: .concurrent)
+  private let requestLimiter = SniConnectRequestLimiter()
+
+  private struct SessionKey: Hashable {
+    let hostname: String
+    let ip: String
+  }
+
+  private static let maxCachedSessions = SniConnectPinnedResolverRegistry.defaultMaxEntries
+  private var sessionCache: [SessionKey: URLSession] = [:]
+  private var sessionAccessOrder: [SessionKey] = []
+  private let sessionsQueue = DispatchQueue(label: "com.onekey.sni.connect.sessions")
 
   // Token for the memory-warning observer (block-based observers are not removed
   // by `removeObserver(self)`, so the token must be retained and removed explicitly).
@@ -19,9 +90,9 @@ final class SniConnectClient {
       forName: UIApplication.didReceiveMemoryWarningNotification,
       object: nil,
       queue: .main
-    ) { _ in
+    ) { [weak self] _ in
       SniConnectLog.info("Memory warning received, cleaning DNS cache")
-      DNSResolver.cleanExpiredEntries()
+      self?.clearDNSCache()
     }
   }
 
@@ -55,7 +126,7 @@ final class SniConnectClient {
   }
 
   struct Response {
-    let data: Any
+    let data: String
     let status: Int
     let statusText: String
     let headers: [String: String] // Single-value headers (backward compatible)
@@ -72,7 +143,9 @@ final class SniConnectClient {
     case connectionRefused
     case networkUnreachable
     case requestTimeout
+    case resourceLimit(String)
     case httpError(code: Int, message: String)
+    case responseProcessingFailed(String)
     case cancelled
     case unknown(Error)
 
@@ -87,7 +160,9 @@ final class SniConnectClient {
       case .connectionRefused: return "SNI_CONNECTION_REFUSED"
       case .networkUnreachable: return "SNI_NETWORK_UNREACHABLE"
       case .requestTimeout: return "SNI_REQUEST_TIMEOUT"
+      case .resourceLimit: return "SNI_RESOURCE_LIMIT"
       case .httpError: return "SNI_HTTP_ERROR"
+      case .responseProcessingFailed: return "SNI_RESPONSE_FAILED"
       case .cancelled: return "SNI_CANCELLED"
       case .unknown: return "SNI_UNKNOWN_ERROR"
       }
@@ -113,8 +188,12 @@ final class SniConnectClient {
         return "Network unreachable"
       case .requestTimeout:
         return "Request timeout"
+      case .resourceLimit(let details):
+        return "Resource limit exceeded: \(details)"
       case .httpError(let code, let message):
         return "HTTP error \(code): \(message)"
+      case .responseProcessingFailed(let details):
+        return "Response processing failed: \(details)"
       case .cancelled:
         return "Request cancelled"
       case .unknown(let error):
@@ -153,19 +232,20 @@ final class SniConnectClient {
     }
   }
 
-  private static let urlSession: URLSession = {
+  private static func makeURLSession(for key: SessionKey) throws -> URLSession {
     let configuration = URLSessionConfiguration.default
     configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
     configuration.urlCache = nil
     configuration.httpCookieStorage = nil
     configuration.httpShouldSetCookies = false
+    configuration.connectionProxyDictionary = [:]
     configuration.shouldUseExtendedBackgroundIdleMode = false
 
     let curlConfig = EMASCurlConfiguration.default()
-    curlConfig.httpVersion = .HTTP2
+    curlConfig.httpVersion = .HTTP1
     curlConfig.connectTimeoutInterval = 2.5
-    curlConfig.enableBuiltInGzip = true
-    curlConfig.enableBuiltInRedirection = true
+    curlConfig.enableBuiltInGzip = false
+    curlConfig.enableBuiltInRedirection = false
     curlConfig.cacheEnabled = false
 
     // Enable full certificate validation for security.
@@ -174,140 +254,112 @@ final class SniConnectClient {
     // original hostname for SNI and certificate CN/SAN matching.
     curlConfig.certificateValidationEnabled = true
     curlConfig.domainNameVerificationEnabled = true
-    curlConfig.dnsResolver = DNSResolver.self
+    curlConfig.dnsResolver = try PinnedDNSResolverFactory.resolverClass(
+      hostname: key.hostname,
+      ip: key.ip
+    )
 
     EMASCurlProtocol.install(into: configuration, with: curlConfig)
     return URLSession(configuration: configuration)
-  }()
+  }
 
-  @objc private final class DNSResolver: NSObject, EMASCurlProtocolDNSResolver {
-    private static let queue = DispatchQueue(label: "com.onekey.sni.connect.dns", attributes: .concurrent)
-    private static let cache = DNSCache()
-
-    /// Thread-safe hostname -> IP pin with TTL.
-    ///
-    /// LIMITATION: EMASCurl only exposes a process-global DNS resolver
-    /// (`setDNSResolver:`), which receives only the hostname. There is no
-    /// per-request DNS API, so the pin is keyed by hostname and the most recent
-    /// IP for a hostname wins. Concurrent requests to the SAME hostname targeting
-    /// DIFFERENT IPs are therefore not guaranteed to each hit their own IP. Normal
-    /// usage (one IP per hostname at a time) is unaffected.
-    private final class DNSCache {
-      private struct Entry {
-        let ip: String
-        let timestamp: TimeInterval
+  private func session(for config: RequestConfig) throws -> URLSession {
+    let key = SessionKey(hostname: config.hostname.lowercased(), ip: config.ip)
+    return try sessionsQueue.sync {
+      if let session = sessionCache[key] {
+        markSessionUsed(key)
+        return session
       }
 
-      private var hostnameToEntry: [String: Entry] = [:]
-      private let maxSize = 100
-      private let ttl: TimeInterval = 300 // 5 minutes
-
-      func get(_ domain: String) -> String? {
-        let key = domain.lowercased()
-        guard let entry = hostnameToEntry[key] else { return nil }
-        if Date().timeIntervalSince1970 - entry.timestamp > ttl {
-          return nil
-        }
-        return entry.ip
-      }
-
-      func set(_ ip: String, for domain: String) {
-        let key = domain.lowercased()
-        // Evict the oldest entry when at capacity (and this is a new host).
-        if hostnameToEntry.count >= maxSize && hostnameToEntry[key] == nil {
-          if let oldest = hostnameToEntry.min(by: { $0.value.timestamp < $1.value.timestamp })?.key {
-            hostnameToEntry.removeValue(forKey: oldest)
-          }
-        }
-        hostnameToEntry[key] = Entry(ip: ip, timestamp: Date().timeIntervalSince1970)
-      }
-
-      func clear() {
-        hostnameToEntry.removeAll()
-      }
-
-      func cleanExpired() {
-        let now = Date().timeIntervalSince1970
-        let expired = hostnameToEntry.filter { now - $0.value.timestamp > ttl }.map { $0.key }
-        for key in expired {
-          hostnameToEntry.removeValue(forKey: key)
-        }
-      }
+      evictSessionsIfNeeded(forPendingInsert: true)
+      let session = try Self.makeURLSession(for: key)
+      sessionCache[key] = session
+      markSessionUsed(key)
+      return session
     }
+  }
 
-    @objc static func resolveDomain(_ domain: String) -> String? {
-      var result: String?
-      queue.sync {
-        result = cache.get(domain)
-      }
-      return result
-    }
+  private func markSessionUsed(_ key: SessionKey) {
+    sessionAccessOrder.removeAll { $0 == key }
+    sessionAccessOrder.append(key)
+  }
 
-    static func setIP(_ ip: String, for host: String) {
-      queue.sync(flags: .barrier) {
-        cache.set(ip, for: host)
-      }
-    }
-
-    /// Clear all DNS cache entries
-    static func clearCache() {
-      queue.sync(flags: .barrier) {
-        cache.clear()
-      }
-    }
-
-    /// Clean expired DNS cache entries
-    static func cleanExpiredEntries() {
-      queue.sync(flags: .barrier) {
-        cache.cleanExpired()
-      }
+  private func evictSessionsIfNeeded(forPendingInsert: Bool = false) {
+    let limit = forPendingInsert ? Self.maxCachedSessions - 1 : Self.maxCachedSessions
+    while sessionCache.count > limit, let evictedKey = sessionAccessOrder.first {
+      sessionAccessOrder.removeFirst()
+      sessionCache.removeValue(forKey: evictedKey)?.finishTasksAndInvalidate()
+      PinnedDNSResolverFactory.remove(hostname: evictedKey.hostname, ip: evictedKey.ip)
     }
   }
 
   /// Clear all DNS cache entries
   func clearDNSCache() {
-    DNSResolver.clearCache()
+    let sessions = sessionsQueue.sync { () -> [URLSession] in
+      let sessions = Array(sessionCache.values)
+      sessionCache.removeAll()
+      sessionAccessOrder.removeAll()
+      return sessions
+    }
+    PinnedDNSResolverFactory.clear()
+    for session in sessions {
+      session.finishTasksAndInvalidate()
+    }
     SniConnectLog.info("DNS cache cleared")
   }
 
   /// Cancel a request by ID
-  func cancelRequest(requestId: String) {
-    tasksQueue.async(flags: .barrier) { [weak self] in
-      guard let task = self?.activeTasks[requestId] else {
+  func cancelRequest(requestId: String) -> Bool {
+    return tasksQueue.sync(flags: .barrier) { [weak self] in
+      guard let self = self, let token = self.requestTokensById.removeValue(forKey: requestId),
+            let task = self.activeTasksByToken.removeValue(forKey: token) else {
         SniConnectLog.warn("No active request found with ID: \(requestId)")
-        return
+        return false
       }
       task.cancel()
-      self?.activeTasks.removeValue(forKey: requestId)
       SniConnectLog.info("Request cancelled: \(requestId)")
+      return true
     }
   }
 
   /// Cancel all active requests
   func cancelAllRequests() {
-    tasksQueue.async(flags: .barrier) { [weak self] in
+    tasksQueue.sync(flags: .barrier) { [weak self] in
       guard let self = self else { return }
-      let count = self.activeTasks.count
-      for (_, task) in self.activeTasks {
+      let tasks = Array(self.activeTasksByToken.values)
+      for task in tasks {
         task.cancel()
       }
-      self.activeTasks.removeAll()
-      SniConnectLog.info("Cancelled \(count) active requests")
+      self.activeTasksByToken.removeAll()
+      self.requestTokensById.removeAll()
+      SniConnectLog.info("Cancelled \(tasks.count) active requests")
     }
   }
 
   /// Register an active task immediately after creation, before JS can cancel it.
-  func registerTask(_ task: Task<Response, Error>, for requestId: String) {
+  func registerTask(_ task: Task<Response, Error>, for requestId: String?) -> UUID {
+    let token = UUID()
     tasksQueue.sync(flags: .barrier) { [weak self] in
-      self?.activeTasks[requestId] = task
+      guard let self = self else { return }
+      if let requestId = requestId, let previousToken = self.requestTokensById[requestId],
+         let previousTask = self.activeTasksByToken.removeValue(forKey: previousToken) {
+        previousTask.cancel()
+      }
+      self.activeTasksByToken[token] = task
+      if let requestId = requestId {
+        self.requestTokensById[requestId] = token
+      }
     }
+    return token
   }
 
   /// Unregister a completed or failed task
-  private func unregisterTask(requestId: String?) {
-    guard let requestId = requestId else { return }
+  func unregisterTask(requestId: String?, token: UUID) {
     tasksQueue.async(flags: .barrier) { [weak self] in
-      self?.activeTasks.removeValue(forKey: requestId)
+      self?.activeTasksByToken.removeValue(forKey: token)
+      if let requestId = requestId, self?.requestTokensById[requestId] == token {
+        self?.requestTokensById.removeValue(forKey: requestId)
+      }
     }
   }
 
@@ -315,24 +367,32 @@ final class SniConnectClient {
     // Check if task is cancelled
     try Task.checkCancellation()
 
-    defer {
-      unregisterTask(requestId: config.requestId)
-    }
-
     // Validate every caller-controlled field before it reaches the network layer.
     let method: String
     let normalizedPath: String
+    let normalizedHeaders: [String: String]
     do {
+      try SniConnectValidation.validateRequestId(config.requestId)
       try SniConnectValidation.validatePublicIP(config.ip)
       try SniConnectValidation.validateHostname(config.hostname)
-      try SniConnectValidation.validateHeaders(config.headers)
+      normalizedHeaders = try SniConnectValidation.normalizeHeaders(config.headers)
       method = try SniConnectValidation.normalizeMethod(config.method)
       normalizedPath = try SniConnectValidation.normalizePath(config.path)
+      try SniConnectValidation.validateTimeout(config.effectiveTotalTimeout)
+      try SniConnectValidation.validateBody(config.body)
     } catch {
       throw SniConnectError.invalidConfig("\(error)")
     }
 
-    DNSResolver.setIP(config.ip, for: config.hostname)
+    let requestSlot: SniConnectRequestLimiter.Token
+    do {
+      requestSlot = try requestLimiter.acquire(hostname: config.hostname, ip: config.ip)
+    } catch {
+      throw SniConnectError.resourceLimit("\(error)")
+    }
+    defer {
+      requestSlot.release()
+    }
 
     let url = try Self.buildURL(hostname: config.hostname, normalizedPath: normalizedPath)
 
@@ -347,16 +407,11 @@ final class SniConnectClient {
     mutableRequest.timeoutInterval = totalTimeoutSeconds
     mutableRequest.cachePolicy = .reloadIgnoringLocalCacheData
 
-    // Explicitly set Host header for SNI
-    mutableRequest.setValue(config.hostname, forHTTPHeaderField: "Host")
-
-    for (key, value) in config.headers {
-      if key.caseInsensitiveCompare("host") == .orderedSame {
-        // Host header is already set above, skip duplicate
-        continue
-      }
+    for (key, value) in normalizedHeaders {
       mutableRequest.setValue(value, forHTTPHeaderField: key)
     }
+    mutableRequest.setValue(config.hostname, forHTTPHeaderField: "Host")
+    mutableRequest.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
 
     if let bodyString = config.body, let bodyData = bodyString.data(using: .utf8) {
       mutableRequest.httpBody = bodyData
@@ -365,17 +420,22 @@ final class SniConnectClient {
     // Per-request connect timeout (avoids the process-global setter race).
     EMASCurlProtocol.setConnectTimeoutIntervalFor(mutableRequest, connectTimeoutInterval: connectTimeoutSeconds)
     let request = mutableRequest as URLRequest
+    let session = try session(for: config)
 
     do {
-      let (data, response) = try await Self.urlSession.data(for: request)
+      let (bodyBytes, response) = try await session.bytes(for: request)
       guard let httpResponse = response as? HTTPURLResponse else {
         let errorMsg = "Invalid HTTP response type"
         SniConnectLog.error(errorMsg)
-        throw SniConnectError.invalidConfig(errorMsg)
+        throw SniConnectError.responseProcessingFailed(errorMsg)
       }
 
       let status = httpResponse.statusCode
-      let parsedData = Self.parseResponseData(data)
+      let data = try await Self.readResponseBody(
+        bodyBytes,
+        expectedLength: httpResponse.expectedContentLength
+      )
+      let responseText = SniConnectResponseText.decode(data)
       let (headers, multiValueHeaders) = Self.extractHeaders(from: httpResponse)
       let statusText = HTTPURLResponse.localizedString(forStatusCode: status)
 
@@ -386,7 +446,7 @@ final class SniConnectClient {
       }
 
       return Response(
-        data: parsedData,
+        data: responseText,
         status: status,
         statusText: statusText,
         headers: headers,
@@ -425,20 +485,29 @@ final class SniConnectClient {
     return url
   }
 
-  private static func parseResponseData(_ data: Data) -> Any {
-    guard !data.isEmpty else {
-      return ""
+  private static func readResponseBody(
+    _ bodyBytes: URLSession.AsyncBytes,
+    expectedLength: Int64
+  ) async throws -> Data {
+    let maxBytes = SniConnectValidation.maxResponseBodyBytes
+    if expectedLength > Int64(maxBytes) {
+      throw SniConnectError.responseProcessingFailed("Response body too large")
     }
 
-    if let jsonObject = try? JSONSerialization.jsonObject(with: data, options: []) {
-      return jsonObject
+    var data = Data()
+    if expectedLength > 0 {
+      data.reserveCapacity(min(Int(expectedLength), maxBytes))
     }
 
-    if let text = String(data: data, encoding: .utf8) {
-      return text
+    for try await byte in bodyBytes {
+      try Task.checkCancellation()
+      if data.count >= maxBytes {
+        throw SniConnectError.responseProcessingFailed("Response body too large")
+      }
+      var nextByte = byte
+      data.append(&nextByte, count: 1)
     }
-
-    return data.base64EncodedString()
+    return data
   }
 
   /// Extract headers from HTTP response

@@ -1,4 +1,5 @@
 import Foundation
+import CFNetwork
 import React
 
 private enum SniConnectError: Error {
@@ -44,23 +45,24 @@ final class SniConnectImpl: NSObject {
     }
 
     // Create the task and register it synchronously before JS can cancel it.
+    // Unregistering is owned by the result waiter below, so even a task that
+    // completes immediately cannot unregister before it has been registered.
     let task = Task { () -> SniConnectClient.Response in
       return try await client.performRequest(config: config)
     }
 
-    // Register task if requestId is provided
-    if let requestId = config.requestId {
-      client.registerTask(task, for: requestId)
-    }
+    let registrationToken = client.registerTask(task, for: config.requestId)
 
     // Handle the task result asynchronously
     Task {
+      defer {
+        client.unregisterTask(requestId: config.requestId, token: registrationToken)
+      }
+
       do {
         let result = try await task.value
-        let responseBody = Self.serializeResponseData(result.data)
-
         resolve([
-          "data": responseBody,
+          "data": result.data,
           "status": result.status,
           "statusText": result.statusText,
           "headers": result.headers,
@@ -83,8 +85,8 @@ final class SniConnectImpl: NSObject {
     resolve: @escaping RCTPromiseResolveBlock,
     reject: @escaping RCTPromiseRejectBlock
   ) {
-    client.cancelRequest(requestId: requestId)
-    resolve(["success": true])
+    let success = client.cancelRequest(requestId: requestId)
+    resolve(["success": success])
   }
 
   @objc
@@ -103,6 +105,19 @@ final class SniConnectImpl: NSObject {
   ) {
     client.clearDNSCache()
     resolve(["success": true])
+  }
+
+  @objc
+  public func isProxyActiveForUrl(
+    _ url: String,
+    resolve: @escaping RCTPromiseResolveBlock,
+    reject: @escaping RCTPromiseRejectBlock
+  ) {
+    do {
+      resolve(try Self.isProxyActive(forUrl: url))
+    } catch {
+      reject("SNI_INVALID_URL", "\(error)", error)
+    }
   }
 
   private static func parseDictionary(_ dictionary: NSDictionary) throws -> SniConnectClient.RequestConfig {
@@ -141,22 +156,36 @@ final class SniConnectImpl: NSObject {
   private static func validate(_ config: SniConnectClient.RequestConfig) throws {
     try SniConnectValidation.validatePublicIP(config.ip)
     try SniConnectValidation.validateHostname(config.hostname)
-    try SniConnectValidation.validateHeaders(config.headers)
+    _ = try SniConnectValidation.normalizeHeaders(config.headers)
     _ = try SniConnectValidation.normalizeMethod(config.method)
     _ = try SniConnectValidation.normalizePath(config.path)
+    try SniConnectValidation.validateRequestId(config.requestId)
+    try SniConnectValidation.validateTimeout(config.effectiveTotalTimeout)
+    try SniConnectValidation.validateBody(config.body)
   }
 
-  private static func serializeResponseData(_ data: Any) -> String {
-    if let stringValue = data as? String {
-      return stringValue
+  private static func isProxyActive(forUrl urlString: String) throws -> Bool {
+    guard let url = URL(string: urlString),
+          let scheme = url.scheme?.lowercased(),
+          ["http", "https"].contains(scheme),
+          url.host != nil else {
+      throw SniConnectError.invalidConfig("Invalid URL")
     }
 
-    if JSONSerialization.isValidJSONObject(data),
-       let jsonData = try? JSONSerialization.data(withJSONObject: data, options: []),
-       let jsonString = String(data: jsonData, encoding: .utf8) {
-      return jsonString
+    guard let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue() else {
+      return false
     }
 
-    return String(describing: data)
+    let proxies = CFNetworkCopyProxiesForURL(url as CFURL, settings).takeRetainedValue() as NSArray
+    for proxy in proxies {
+      guard let proxyDictionary = proxy as? NSDictionary,
+            let type = proxyDictionary[kCFProxyTypeKey] as? String else {
+        continue
+      }
+      if type != (kCFProxyTypeNone as String) {
+        return true
+      }
+    }
+    return false
   }
 }

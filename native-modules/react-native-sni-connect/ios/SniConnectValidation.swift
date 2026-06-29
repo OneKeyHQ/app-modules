@@ -15,15 +15,74 @@ enum SniConnectValidation {
     case invalidMethod(String)
     case invalidPath(String)
     case invalidHeader(String)
+    case invalidRequestId(String)
+    case invalidTimeout(Double)
+    case invalidBody
+    case resourceLimit(String)
   }
+
+  static let maxRequestIdBytes = 128
+  static let maxTimeoutMillis = 120_000.0
+  static let maxPathBytes = 8 * 1024
+  static let maxRequestBodyBytes = 1024 * 1024
+  static let maxResponseBodyBytes = 10 * 1024 * 1024
+  static let maxHeaderCount = 64
+  static let maxHeaderNameBytes = 128
+  static let maxHeaderValueBytes = 8 * 1024
+  static let maxTotalHeaderBytes = 32 * 1024
+  static let maxActiveRequests = 64
+  static let maxActiveRequestsPerPair = 16
 
   /// HTTP methods the module is allowed to issue.
   private static let allowedMethods: Set<String> = [
     "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS",
   ]
 
+  private static let moduleOwnedHeaders: Set<String> = [
+    "host",
+    "content-length",
+    "accept-encoding",
+    "x-emascurl-config-id",
+  ]
+
+  private static let unsafeHeaders: Set<String> = [
+    "connection",
+    "keep-alive",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "expect",
+  ]
+
+  private static let headerTokenPattern = "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"
+
+  static func validateRequestId(_ requestId: String?) throws {
+    guard let requestId = requestId else { return }
+    if requestId.isEmpty ||
+       containsControlCharacters(requestId) ||
+       byteCount(requestId) > maxRequestIdBytes {
+      throw ValidationError.invalidRequestId(requestId)
+    }
+  }
+
+  static func validateTimeout(_ timeout: Double) throws {
+    if !timeout.isFinite || timeout < 1 || timeout > maxTimeoutMillis {
+      throw ValidationError.invalidTimeout(timeout)
+    }
+  }
+
+  static func validateBody(_ body: String?) throws {
+    if let body = body, byteCount(body) > maxRequestBodyBytes {
+      throw ValidationError.invalidBody
+    }
+  }
+
   /// Validate and uppercase the HTTP method.
   static func normalizeMethod(_ method: String) throws -> String {
+    if containsControlCharacters(method) {
+      throw ValidationError.invalidMethod(method)
+    }
     let upper = method.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     guard allowedMethods.contains(upper) else {
       throw ValidationError.invalidMethod(method)
@@ -41,6 +100,9 @@ enum SniConnectValidation {
     guard hostname.range(of: pattern, options: .regularExpression) != nil else {
       throw ValidationError.invalidHostname(hostname)
     }
+    if parseIPv4(hostname) != nil || parseIPv6(hostname) != nil {
+      throw ValidationError.invalidHostname(hostname)
+    }
   }
 
   /// Validate `path`: must be a relative path/query only. Reject absolute URLs
@@ -49,6 +111,9 @@ enum SniConnectValidation {
   static func normalizePath(_ path: String) throws -> String {
     let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
     if containsControlCharacters(trimmed) {
+      throw ValidationError.invalidPath(path)
+    }
+    if byteCount(trimmed) > maxPathBytes {
       throw ValidationError.invalidPath(path)
     }
     // Reject anything that looks like it carries a scheme or authority.
@@ -67,15 +132,51 @@ enum SniConnectValidation {
   /// Validate header names/values: reject CR/LF/control characters (header
   /// injection) and the Host header (the module sets Host itself).
   static func validateHeaders(_ headers: [String: String]) throws {
+    _ = try normalizeHeaders(headers)
+  }
+
+  static func normalizeHeaders(_ headers: [String: String]) throws -> [String: String] {
+    if headers.count > maxHeaderCount {
+      throw ValidationError.invalidHeader("too many headers")
+    }
+
+    var totalBytes = 0
+    var normalizedHeaders: [String: String] = [:]
     for (key, value) in headers {
-      if key.isEmpty || containsControlCharacters(key) || containsControlCharacters(value) {
+      let keyBytes = byteCount(key)
+      let valueBytes = byteCount(value)
+      totalBytes += keyBytes + valueBytes
+
+      if key.isEmpty ||
+         containsControlCharacters(key) ||
+         containsControlCharacters(value) ||
+         keyBytes > maxHeaderNameBytes ||
+         valueBytes > maxHeaderValueBytes ||
+         key.range(of: headerTokenPattern, options: .regularExpression) == nil {
         throw ValidationError.invalidHeader(key)
       }
+
+      let lowerKey = key.lowercased()
+      if lowerKey.hasPrefix(":") || lowerKey.hasPrefix("proxy-") || unsafeHeaders.contains(lowerKey) {
+        throw ValidationError.invalidHeader(key)
+      }
+      if moduleOwnedHeaders.contains(lowerKey) {
+        continue
+      }
+      normalizedHeaders[key] = value
     }
+    if totalBytes > maxTotalHeaderBytes {
+      throw ValidationError.invalidHeader("headers too large")
+    }
+    return normalizedHeaders
   }
 
   static func containsControlCharacters(_ s: String) -> Bool {
     return s.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
+  }
+
+  private static func byteCount(_ s: String) -> Int {
+    return s.lengthOfBytes(using: .utf8)
   }
 
   // MARK: - IP validation
@@ -84,6 +185,13 @@ enum SniConnectValidation {
   /// to a public/global-unicast destination. Rejects loopback, private,
   /// link-local (incl. 169.254.169.254 metadata), CGNAT, multicast and reserved.
   static func validatePublicIP(_ ip: String) throws {
+    if ip.isEmpty ||
+       ip.trimmingCharacters(in: .whitespacesAndNewlines) != ip ||
+       ip.contains("[") ||
+       ip.contains("]") ||
+       ip.contains("%") {
+      throw ValidationError.invalidIP(ip)
+    }
     if let v4 = parseIPv4(ip) {
       if isForbiddenIPv4(v4) { throw ValidationError.forbiddenIP(ip) }
       return
@@ -142,10 +250,119 @@ enum SniConnectValidation {
     if b[0] == 0xFE && (b[1] & 0xC0) == 0x80 { return true }
     // Unique local fc00::/7
     if (b[0] & 0xFE) == 0xFC { return true }
+    // Discard-only 100::/64
+    if b[0] == 0x01 && b[1] == 0x00 && b[2...7].allSatisfy({ $0 == 0 }) { return true }
+    // IETF protocol assignments that should not be accepted as public endpoints.
+    if b[0] == 0x20 && b[1] == 0x01 {
+      if b[2] == 0x00 && b[3] == 0x00 { return true } // 2001::/32 Teredo
+      if b[2] == 0x00 && (b[3] & 0xF0) == 0x10 { return true } // 2001:10::/28 ORCHID
+      if b[2] == 0x00 && b[3] == 0x02 { return true } // 2001:2::/48 benchmarking
+      if b[2] == 0x0D && b[3] == 0xB8 { return true } // 2001:db8::/32 docs
+    }
+    // 6to4 embeds an IPv4 route target and is deprecated.
+    if b[0] == 0x20 && b[1] == 0x02 { return true }
+    // NAT64 well-known prefix. Allow only when the embedded IPv4 is public.
+    if isNat64WellKnown(b) { return isForbiddenIPv4([b[12], b[13], b[14], b[15]]) }
+    // NAT64 local-use prefix can route through operator-specific private policy.
+    if isNat64LocalUse(b) { return true }
+    // Deprecated IPv4-compatible IPv6 addresses.
+    if b[0...11].allSatisfy({ $0 == 0 }) { return true }
     // IPv4-mapped ::ffff:0:0/96 — validate the embedded IPv4
     if b[0...9].allSatisfy({ $0 == 0 }) && b[10] == 0xFF && b[11] == 0xFF {
       return isForbiddenIPv4([b[12], b[13], b[14], b[15]])
     }
     return false
+  }
+
+  private static func isNat64WellKnown(_ b: [UInt8]) -> Bool {
+    return b[0] == 0x00 &&
+      b[1] == 0x64 &&
+      b[2] == 0xFF &&
+      b[3] == 0x9B &&
+      b[4...11].allSatisfy({ $0 == 0 })
+  }
+
+  private static func isNat64LocalUse(_ b: [UInt8]) -> Bool {
+    return b[0] == 0x00 &&
+      b[1] == 0x64 &&
+      b[2] == 0xFF &&
+      b[3] == 0x9B &&
+      b[4] == 0x00 &&
+      b[5] == 0x01
+  }
+}
+
+final class SniConnectRequestLimiter {
+  final class Token {
+    private weak var limiter: SniConnectRequestLimiter?
+    private let key: String
+    private let lock = NSLock()
+    private var released = false
+
+    fileprivate init(limiter: SniConnectRequestLimiter, key: String) {
+      self.limiter = limiter
+      self.key = key
+    }
+
+    func release() {
+      lock.lock()
+      if released {
+        lock.unlock()
+        return
+      }
+      released = true
+      lock.unlock()
+      limiter?.release(key: key)
+    }
+
+    deinit {
+      release()
+    }
+  }
+
+  private let maxActiveRequests: Int
+  private let maxActiveRequestsPerPair: Int
+  private let queue = DispatchQueue(label: "com.onekey.sni.connect.request-limiter")
+  private var activeRequests = 0
+  private var activeRequestsByPair: [String: Int] = [:]
+
+  init(
+    maxActiveRequests: Int = SniConnectValidation.maxActiveRequests,
+    maxActiveRequestsPerPair: Int = SniConnectValidation.maxActiveRequestsPerPair
+  ) {
+    self.maxActiveRequests = maxActiveRequests
+    self.maxActiveRequestsPerPair = maxActiveRequestsPerPair
+  }
+
+  func acquire(hostname: String, ip: String) throws -> Token {
+    let key = pairKey(hostname: hostname, ip: ip)
+    return try queue.sync {
+      if activeRequests >= maxActiveRequests {
+        throw SniConnectValidation.ValidationError.resourceLimit("Too many active SNI requests")
+      }
+      let pairCount = activeRequestsByPair[key] ?? 0
+      if pairCount >= maxActiveRequestsPerPair {
+        throw SniConnectValidation.ValidationError.resourceLimit("Too many active SNI requests for destination")
+      }
+      activeRequests += 1
+      activeRequestsByPair[key] = pairCount + 1
+      return Token(limiter: self, key: key)
+    }
+  }
+
+  private func release(key: String) {
+    queue.sync {
+      activeRequests = max(0, activeRequests - 1)
+      guard let pairCount = activeRequestsByPair[key] else { return }
+      if pairCount <= 1 {
+        activeRequestsByPair.removeValue(forKey: key)
+      } else {
+        activeRequestsByPair[key] = pairCount - 1
+      }
+    }
+  }
+
+  private func pairKey(hostname: String, ip: String) -> String {
+    return "\(hostname.lowercased())|\(ip)"
   }
 }

@@ -23,4 +23,8 @@ export function clearDNSCache(): Promise<{ success: boolean }> {
   return NativeSniConnect.clearDNSCache();
 }
 
+export function isProxyActiveForUrl(url: string): Promise<boolean> {
+  return NativeSniConnect.isProxyActiveForUrl(url);
+}
+
 export type { SniConnectRequest, SniConnectResponse } from './NativeSniConnect';

@@ -24,7 +24,14 @@ import {
   cancelRequest,
   cancelAllRequests,
   clearDNSCache,
+  isProxyActiveForUrl,
 } from '@onekeyfe/react-native-sni-connect';
+
+const proxyActive = await isProxyActiveForUrl('https://example.com/api/v1/ping');
+if (proxyActive) {
+  // Product adapters should avoid entering SNI mode when a per-URL/system proxy
+  // is active. Low-level SNI requests still bypass proxies directly.
+}
 
 const res = await request({
   // requestId is optional; required only if you want to cancel the request.
@@ -47,9 +54,24 @@ await cancelAllRequests();
 await clearDNSCache();
 ```
 
+## Specification
+
+The behavior of the SNI connect module is governed by a normative,
+platform-agnostic standard that all implementations (iOS, Android, Node/Desktop,
+shared JS adapters, and any future platform) must conform to:
+
+**-> [OneKey SNI Connect Standard (OSCS)](./SPEC.md)**
+
+Any change to request validation, destination pinning, TLS validation, redirect
+handling, cancellation, response shape, or cache behavior must be checked
+against OSCS.
+When an implementation and the standard disagree, the implementation is wrong.
+
 ### Security notes
 
 - The request scheme is always `https` on port `443`; `path` cannot override scheme, host or port.
+- `isProxyActiveForUrl(url)` is a preflight probe for adapters. It does not enable proxying;
+  native SNI transport still bypasses system proxy configuration.
 - `ip` must be an IPv4/IPv6 literal that routes to a public destination; loopback, private,
   link-local (incl. cloud metadata), CGNAT, multicast and reserved ranges are rejected.
 - Header names/values containing CR/LF/control characters are rejected; the `Host` header is

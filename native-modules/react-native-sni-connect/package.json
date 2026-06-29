@@ -36,6 +36,9 @@
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
+    "test:android": "cd ../../example/react-native/android && ./gradlew :onekeyfe_react-native-sni-connect:testDebugUnitTest --no-daemon",
+    "test:ios": "swift test",
+    "test:native": "yarn test:ios && yarn test:android",
     "release": "yarn prepare && npm whoami && npm publish --access public"
   },
   "keywords": [
