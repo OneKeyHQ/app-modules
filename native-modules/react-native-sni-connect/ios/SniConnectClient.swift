@@ -206,7 +206,6 @@ final class SniConnectClient {
         let key = domain.lowercased()
         guard let entry = hostnameToEntry[key] else { return nil }
         if Date().timeIntervalSince1970 - entry.timestamp > ttl {
-          hostnameToEntry.removeValue(forKey: key)
           return nil
         }
         return entry.ip
@@ -297,9 +296,9 @@ final class SniConnectClient {
     }
   }
 
-  /// Register an active task (async barrier; the task is already running).
+  /// Register an active task immediately after creation, before JS can cancel it.
   func registerTask(_ task: Task<Response, Error>, for requestId: String) {
-    tasksQueue.async(flags: .barrier) { [weak self] in
+    tasksQueue.sync(flags: .barrier) { [weak self] in
       self?.activeTasks[requestId] = task
     }
   }

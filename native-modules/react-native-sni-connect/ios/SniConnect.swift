@@ -35,7 +35,15 @@ final class SniConnectImpl: NSObject {
     resolve: @escaping RCTPromiseResolveBlock,
     reject: @escaping RCTPromiseRejectBlock
   ) {
-    // Create task and register it synchronously before it starts executing
+    do {
+      try Self.validate(config)
+    } catch {
+      SniConnectLog.error("Config validation failed: \(error)")
+      reject("SNI_INVALID_CONFIG", "\(error)", error)
+      return
+    }
+
+    // Create the task and register it synchronously before JS can cancel it.
     let task = Task { () -> SniConnectClient.Response in
       return try await client.performRequest(config: config)
     }
@@ -128,6 +136,14 @@ final class SniConnectImpl: NSObject {
       connectTimeout: connectTimeout,
       totalTimeout: totalTimeout
     )
+  }
+
+  private static func validate(_ config: SniConnectClient.RequestConfig) throws {
+    try SniConnectValidation.validatePublicIP(config.ip)
+    try SniConnectValidation.validateHostname(config.hostname)
+    try SniConnectValidation.validateHeaders(config.headers)
+    _ = try SniConnectValidation.normalizeMethod(config.method)
+    _ = try SniConnectValidation.normalizePath(config.path)
   }
 
   private static func serializeResponseData(_ data: Any) -> String {
