@@ -46,7 +46,7 @@ final class SniConnectClient {
     let totalTimeout: TimeInterval? // Total request timeout (overrides `timeout`)
 
     var effectiveConnectTimeout: TimeInterval {
-      connectTimeout ?? min(timeout / 3, 10.0)
+      connectTimeout ?? min(timeout / 3, 10_000.0)
     }
 
     var effectiveTotalTimeout: TimeInterval {

@@ -23,7 +23,6 @@ Pod::Spec.new do |s|
   s.dependency 'React-Core'
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
-  s.dependency 'React-Codegen'
   s.dependency 'EMASCurl', '1.5.5'
 
   s.pod_target_xcconfig = {
