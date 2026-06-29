@@ -338,10 +338,26 @@ final class SniConnectRequestLimiter {
     let key = pairKey(hostname: hostname, ip: ip)
     return try queue.sync {
       if activeRequests >= maxActiveRequests {
+        SniConnectCoreDiagnostics.warn(SniConnectCoreDiagnostics.event("sni_resource_limit", [
+          ("activeCount", activeRequests),
+          ("pairCount", activeRequestsByPair[key] ?? 0),
+          ("limit", maxActiveRequests),
+          ("reason", "max_active_requests"),
+          ("hostname", hostname.lowercased()),
+          ("ipHash", SniConnectCoreDiagnostics.shortHash(ip)),
+        ]))
         throw SniConnectValidation.ValidationError.resourceLimit("Too many active SNI requests")
       }
       let pairCount = activeRequestsByPair[key] ?? 0
       if pairCount >= maxActiveRequestsPerPair {
+        SniConnectCoreDiagnostics.warn(SniConnectCoreDiagnostics.event("sni_resource_limit", [
+          ("activeCount", activeRequests),
+          ("pairCount", pairCount),
+          ("limit", maxActiveRequestsPerPair),
+          ("reason", "max_active_requests_per_pair"),
+          ("hostname", hostname.lowercased()),
+          ("ipHash", SniConnectCoreDiagnostics.shortHash(ip)),
+        ]))
         throw SniConnectValidation.ValidationError.resourceLimit("Too many active SNI requests for destination")
       }
       activeRequests += 1

@@ -317,10 +317,32 @@ internal class SniConnectRequestLimiter(
     val key = pairKey(hostname, ip)
     synchronized(lock) {
       if (activeRequests >= maxActiveRequests) {
+        SniConnectLogger.warn(
+          SniConnectLogger.event(
+            "sni_resource_limit",
+            "activeCount" to activeRequests,
+            "pairCount" to (activeRequestsByPair[key] ?: 0),
+            "limit" to maxActiveRequests,
+            "reason" to "max_active_requests",
+            "hostname" to hostname.lowercase(Locale.US),
+            "ipHash" to SniConnectLogger.shortHash(ip),
+          ),
+        )
         throw SniConnectValidation.ValidationException("Too many active SNI requests")
       }
       val pairCount = activeRequestsByPair[key] ?: 0
       if (pairCount >= maxActiveRequestsPerPair) {
+        SniConnectLogger.warn(
+          SniConnectLogger.event(
+            "sni_resource_limit",
+            "activeCount" to activeRequests,
+            "pairCount" to pairCount,
+            "limit" to maxActiveRequestsPerPair,
+            "reason" to "max_active_requests_per_pair",
+            "hostname" to hostname.lowercase(Locale.US),
+            "ipHash" to SniConnectLogger.shortHash(ip),
+          ),
+        )
         throw SniConnectValidation.ValidationException("Too many active SNI requests for destination")
       }
       activeRequests += 1

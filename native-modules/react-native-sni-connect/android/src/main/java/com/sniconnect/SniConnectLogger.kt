@@ -40,6 +40,26 @@ internal object SniConnectLogger {
   @JvmStatic
   fun error(message: String) = log("error", message, android.util.Log.ERROR)
 
+  fun event(name: String, vararg fields: Pair<String, Any?>): String =
+    (listOf("event" to name) + fields).joinToString(separator = " ") { (key, value) ->
+      "$key=${sanitize(value)}"
+    }
+
+  fun shortHash(value: String?): String {
+    if (value.isNullOrEmpty()) return "none"
+    var hash = 0xcbf29ce484222325UL
+    value.encodeToByteArray().forEach { byte ->
+      hash = hash xor byte.toUByte().toULong()
+      hash *= 0x100000001b3UL
+    }
+    return hash.toString(16).padStart(16, '0').take(12)
+  }
+
+  fun elapsedMs(startedAtMs: Long): Long =
+    (android.os.SystemClock.elapsedRealtime() - startedAtMs).coerceAtLeast(0)
+
+  fun ipFamily(ip: String): String = if (ip.contains(":")) "ipv6" else "ipv4"
+
   private fun log(level: String, message: String, androidLogLevel: Int) {
     val method = methods?.get(level)
     if (method != null) {
@@ -50,6 +70,17 @@ internal object SniConnectLogger {
         // Fall through to android.util.Log
       }
     }
-    android.util.Log.println(androidLogLevel, TAG, message)
+    try {
+      android.util.Log.println(androidLogLevel, TAG, message)
+    } catch (_: RuntimeException) {
+      // Android JVM unit tests do not mock android.util.Log.
+    }
   }
+
+  private fun sanitize(value: Any?): String =
+    value?.toString()
+      ?.replace('\n', '_')
+      ?.replace('\r', '_')
+      ?.replace(' ', '_')
+      ?: "none"
 }

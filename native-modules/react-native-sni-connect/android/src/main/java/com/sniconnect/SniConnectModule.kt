@@ -103,7 +103,20 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   // LinkedHashMap is not thread-safe.
   private val clientCache = object : LinkedHashMap<ClientKey, OkHttpClient>(16, 0.75f, true) {
     override fun removeEldestEntry(eldest: MutableMap.MutableEntry<ClientKey, OkHttpClient>): Boolean {
-      return size > MAX_CLIENTS
+      val shouldEvict = size > MAX_CLIENTS
+      if (shouldEvict) {
+        SniConnectLogger.info(
+          SniConnectLogger.event(
+            "sni_cache_evict",
+            "hostname" to eldest.key.hostname,
+            "ipHash" to SniConnectLogger.shortHash(eldest.key.ip),
+            "cacheSize" to size,
+            "limit" to MAX_CLIENTS,
+            "reason" to "max_cached_clients",
+          ),
+        )
+      }
+      return shouldEvict
     }
   }
 
@@ -119,7 +132,15 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       val requestConfig = config.toRequestConfig()
       performRequest(requestConfig, promise)
     } catch (error: Exception) {
-      SniConnectLogger.error("Config parsing failed: ${error.message}")
+      SniConnectLogger.error(
+        SniConnectLogger.event(
+          "sni_request_result",
+          "result" to "error",
+          "code" to "SNI_INVALID_CONFIG",
+          "nativeErrorClass" to error.javaClass.simpleName,
+          "stage" to "parse_config",
+        ),
+      )
       promise.reject("SNI_INVALID_CONFIG", error.message, error)
     }
   }
@@ -131,9 +152,22 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
     if (call != null) {
       call.cancel()
-      SniConnectLogger.info("Cancelled request: $requestId")
+      SniConnectLogger.info(
+        SniConnectLogger.event(
+          "sni_cancel",
+          "requestIdHash" to SniConnectLogger.shortHash(requestId),
+          "success" to true,
+        ),
+      )
       promise.resolve(Arguments.createMap().apply { putBoolean("success", true) })
     } else {
+      SniConnectLogger.warn(
+        SniConnectLogger.event(
+          "sni_cancel",
+          "requestIdHash" to SniConnectLogger.shortHash(requestId),
+          "success" to false,
+        ),
+      )
       promise.resolve(Arguments.createMap().apply { putBoolean("success", false) })
     }
   }
@@ -147,7 +181,13 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       snapshot
     }
     calls.forEach { call -> call.cancel() }
-    SniConnectLogger.info("Cancelled ${calls.size} active requests")
+    SniConnectLogger.info(
+      SniConnectLogger.event(
+        "sni_cancel_all",
+        "cancelledCount" to calls.size,
+        "success" to true,
+      ),
+    )
     promise.resolve(Arguments.createMap().apply { putBoolean("success", true) })
   }
 
@@ -158,7 +198,13 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
     // Drop pinned-IP connections from the shared pool.
     sharedConnectionPool.evictAll()
-    SniConnectLogger.info("DNS cache cleared")
+    SniConnectLogger.info(
+      SniConnectLogger.event(
+        "sni_lifecycle",
+        "action" to "clear_dns_cache",
+        "success" to true,
+      ),
+    )
     promise.resolve(Arguments.createMap().apply { putBoolean("success", true) })
   }
 
@@ -172,6 +218,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   }
 
   private fun performRequest(config: RequestConfig, promise: Promise) {
+    val startedAtMs = android.os.SystemClock.elapsedRealtime()
     var requestSlot: SniConnectRequestLimiter.Token? = null
     var registeredCall: Call? = null
     try {
@@ -187,6 +234,20 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       registerActiveCall(call)
       registeredCall = call
 
+      SniConnectLogger.info(
+        SniConnectLogger.event(
+          "sni_request_start",
+          "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+          "hostname" to config.hostname.lowercase(Locale.US),
+          "ipHash" to SniConnectLogger.shortHash(config.ip),
+          "ipFamily" to SniConnectLogger.ipFamily(config.ip),
+          "method" to config.method,
+          "timeoutMs" to config.timeoutMillis,
+          "headerCount" to config.headers.size,
+          "bodyBytes" to (config.body?.toByteArray(StandardCharsets.UTF_8)?.size ?: 0),
+        ),
+      )
+
       // Guard against double-settling the promise (RN hard-crashes otherwise).
       val settled = AtomicBoolean(false)
 
@@ -200,8 +261,23 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           if (call.isCanceled()) {
             promise.reject("SNI_CANCELLED", "Request cancelled", null)
           } else {
-            SniConnectLogger.error("Request failed: ${e.message}")
-            promise.reject(classifySniFailureCode(e), e.message, e)
+            val code = classifySniFailureCode(e)
+            SniConnectLogger.error(
+              SniConnectLogger.event(
+                "sni_request_result",
+                "result" to "error",
+                "code" to code,
+                "nativeErrorClass" to e.javaClass.simpleName,
+                "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+                "hostname" to config.hostname.lowercase(Locale.US),
+                "ipHash" to SniConnectLogger.shortHash(config.ip),
+                "ipFamily" to SniConnectLogger.ipFamily(config.ip),
+                "method" to config.method,
+                "timeoutMs" to config.timeoutMillis,
+                "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+              ),
+            )
+            promise.reject(code, e.message, e)
           }
         }
 
@@ -210,6 +286,19 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
             response.use { currentResponse ->
               val bodyString = currentResponse.body.safeString()
               val headerMaps = headersToMaps(currentResponse.headers)
+              val resultLog = SniConnectLogger.event(
+                "sni_request_result",
+                "result" to "response",
+                "status" to currentResponse.code,
+                "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+                "hostname" to config.hostname.lowercase(Locale.US),
+                "ipHash" to SniConnectLogger.shortHash(config.ip),
+                "ipFamily" to SniConnectLogger.ipFamily(config.ip),
+                "method" to config.method,
+                "timeoutMs" to config.timeoutMillis,
+                "responseBytes" to bodyString.toByteArray(StandardCharsets.UTF_8).size,
+                "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+              )
               Arguments.createMap().apply {
                 putString("data", bodyString)
                 putInt("status", currentResponse.code)
@@ -218,7 +307,9 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
                 putMap("multiValueHeaders", headerMaps.multiValueHeaders.toWritableArrayMap())
               }.also { result ->
                 if (currentResponse.code >= 400) {
-                  SniConnectLogger.warn("HTTP ${currentResponse.code} for ${config.hostname}")
+                  SniConnectLogger.warn(resultLog)
+                } else {
+                  SniConnectLogger.info(resultLog)
                 }
                 if (settled.compareAndSet(false, true)) {
                   promise.resolve(result)
@@ -227,7 +318,21 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
             }
           } catch (error: Exception) {
             if (!settled.compareAndSet(false, true)) return
-            SniConnectLogger.error("Response processing failed: ${error.message}")
+            SniConnectLogger.error(
+              SniConnectLogger.event(
+                "sni_request_result",
+                "result" to "error",
+                "code" to "SNI_RESPONSE_FAILED",
+                "nativeErrorClass" to error.javaClass.simpleName,
+                "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+                "hostname" to config.hostname.lowercase(Locale.US),
+                "ipHash" to SniConnectLogger.shortHash(config.ip),
+                "ipFamily" to SniConnectLogger.ipFamily(config.ip),
+                "method" to config.method,
+                "timeoutMs" to config.timeoutMillis,
+                "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+              ),
+            )
             promise.reject("SNI_RESPONSE_FAILED", error.message, error)
           } finally {
             unregisterCall(config.requestId, call)
@@ -242,12 +347,26 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
         unregisterActiveCall(call)
       }
       requestSlot?.release()
-      SniConnectLogger.error("Request setup failed: ${error.message}")
       val code = if (error is SniConnectValidation.ValidationException) {
         "SNI_RESOURCE_LIMIT"
       } else {
         "SNI_REQUEST_FAILED"
       }
+      SniConnectLogger.error(
+        SniConnectLogger.event(
+          "sni_request_result",
+          "result" to "error",
+          "code" to code,
+          "nativeErrorClass" to error.javaClass.simpleName,
+          "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
+          "hostname" to config.hostname.lowercase(Locale.US),
+          "ipHash" to SniConnectLogger.shortHash(config.ip),
+          "ipFamily" to SniConnectLogger.ipFamily(config.ip),
+          "method" to config.method,
+          "timeoutMs" to config.timeoutMillis,
+          "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+        ),
+      )
       promise.reject(code, error.message, error)
     }
   }
@@ -259,7 +378,13 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
     if (previousCall != null && previousCall != call) {
       previousCall.cancel()
-      SniConnectLogger.warn("Cancelled previous request with duplicate ID: $requestId")
+      SniConnectLogger.warn(
+        SniConnectLogger.event(
+          "sni_duplicate_request_id",
+          "requestIdHash" to SniConnectLogger.shortHash(requestId),
+          "action" to "cancel_previous",
+        ),
+      )
     }
   }
 
@@ -309,6 +434,19 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
         .build()
 
       clientCache[key] = client
+      SniConnectLogger.info(
+        SniConnectLogger.event(
+          "sni_transport_config",
+          "hostname" to key.hostname,
+          "ipHash" to SniConnectLogger.shortHash(key.ip),
+          "ipFamily" to SniConnectLogger.ipFamily(key.ip),
+          "proxyMode" to "no_proxy",
+          "pinnedResolver" to true,
+          "protocol" to "http1",
+          "followRedirects" to false,
+          "cacheSize" to clientCache.size,
+        ),
+      )
       return client
     }
   }
@@ -323,6 +461,14 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
         return if (requestedHost.lowercase(Locale.US) == expectedHost) {
           listOf(pinnedAddress)
         } else {
+          SniConnectLogger.warn(
+            SniConnectLogger.event(
+              "sni_pinned_dns_unexpected_host",
+              "expectedHost" to expectedHost,
+              "requestedHostHash" to SniConnectLogger.shortHash(requestedHost.lowercase(Locale.US)),
+              "result" to "fail_closed",
+            ),
+          )
           throw UnknownHostException("Unexpected host for pinned SNI request: $requestedHost")
         }
       }
@@ -481,28 +627,157 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   )
 
   private fun isProxyActiveForUrl(url: String): Boolean {
-    val uri = URI(url)
+    val startedAtMs = android.os.SystemClock.elapsedRealtime()
+    val uri = try {
+      URI(url)
+    } catch (error: Exception) {
+      SniConnectLogger.warn(
+        SniConnectLogger.event(
+          "proxy_preflight",
+          "platform" to "android",
+          "scheme" to "unknown",
+          "host" to "unknown",
+          "result" to "invalid_url",
+          "source" to "validation",
+          "proxyTypeCount" to 0,
+          "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+        ),
+      )
+      throw error
+    }
     val scheme = uri.scheme?.lowercase(Locale.US)
-      ?: throw IllegalArgumentException("URL must include a scheme")
+      ?: run {
+        SniConnectLogger.warn(
+          SniConnectLogger.event(
+            "proxy_preflight",
+            "platform" to "android",
+            "scheme" to "unknown",
+            "host" to "unknown",
+            "result" to "invalid_url",
+            "source" to "validation",
+            "proxyTypeCount" to 0,
+            "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+          ),
+        )
+        throw IllegalArgumentException("URL must include a scheme")
+      }
     if (scheme != "http" && scheme != "https") {
+      SniConnectLogger.warn(
+        SniConnectLogger.event(
+          "proxy_preflight",
+          "platform" to "android",
+          "scheme" to scheme,
+          "host" to "unknown",
+          "result" to "invalid_url",
+          "source" to "validation",
+          "proxyTypeCount" to 0,
+          "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+        ),
+      )
       throw IllegalArgumentException("Only http and https URLs are supported")
     }
-    if (uri.host.isNullOrBlank()) {
+    val host = uri.host
+    if (host.isNullOrBlank()) {
+      SniConnectLogger.warn(
+        SniConnectLogger.event(
+          "proxy_preflight",
+          "platform" to "android",
+          "scheme" to scheme,
+          "host" to "unknown",
+          "result" to "invalid_url",
+          "source" to "validation",
+          "proxyTypeCount" to 0,
+          "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+        ),
+      )
       throw IllegalArgumentException("URL must include a host")
     }
 
     val selector = ProxySelector.getDefault()
-    val selectorHasProxy = selector?.select(uri)
-      ?.any { proxy -> proxy != Proxy.NO_PROXY && proxy.type() != Proxy.Type.DIRECT }
-      ?: false
-    if (selectorHasProxy) return true
+    val selectorProxies = selector?.select(uri).orEmpty()
+    val selectorHasProxy = selectorProxies.any { proxy ->
+      proxy != Proxy.NO_PROXY && proxy.type() != Proxy.Type.DIRECT
+    }
+    if (selectorHasProxy) {
+      SniConnectLogger.info(
+        SniConnectLogger.event(
+          "proxy_preflight",
+          "platform" to "android",
+          "scheme" to scheme,
+          "host" to host,
+          "result" to true,
+          "source" to "ProxySelector",
+          "proxyTypeCount" to selectorProxies.map { proxy -> proxy.type().name }.toSet().size,
+          "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+        ),
+      )
+      return true
+    }
 
     val connectivityManager = reactApplicationContext.getSystemService(Context.CONNECTIVITY_SERVICE)
       as? ConnectivityManager
-      ?: return false
+      ?: run {
+        SniConnectLogger.info(
+          SniConnectLogger.event(
+            "proxy_preflight",
+            "platform" to "android",
+            "scheme" to scheme,
+            "host" to host,
+            "result" to false,
+            "source" to "none",
+            "proxyTypeCount" to selectorProxies.size,
+            "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+          ),
+        )
+        return false
+      }
     val activeNetworkProxy = connectivityManager.activeNetwork
       ?.let { network -> connectivityManager.getLinkProperties(network)?.httpProxy }
-    val proxyInfo = activeNetworkProxy ?: connectivityManager.defaultProxy
-    return proxyInfo?.host?.isNotBlank() == true && proxyInfo.port > 0
+    if (activeNetworkProxy?.host?.isNotBlank() == true && activeNetworkProxy.port > 0) {
+      SniConnectLogger.info(
+        SniConnectLogger.event(
+          "proxy_preflight",
+          "platform" to "android",
+          "scheme" to scheme,
+          "host" to host,
+          "result" to true,
+          "source" to "LinkProperties",
+          "proxyTypeCount" to selectorProxies.size,
+          "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+        ),
+      )
+      return true
+    }
+
+    val defaultProxy = connectivityManager.defaultProxy
+    if (defaultProxy?.host?.isNotBlank() == true && defaultProxy.port > 0) {
+      SniConnectLogger.info(
+        SniConnectLogger.event(
+          "proxy_preflight",
+          "platform" to "android",
+          "scheme" to scheme,
+          "host" to host,
+          "result" to true,
+          "source" to "defaultProxy",
+          "proxyTypeCount" to selectorProxies.size,
+          "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+        ),
+      )
+      return true
+    }
+
+    SniConnectLogger.info(
+      SniConnectLogger.event(
+        "proxy_preflight",
+        "platform" to "android",
+        "scheme" to scheme,
+        "host" to host,
+        "result" to false,
+        "source" to "none",
+        "proxyTypeCount" to selectorProxies.size,
+        "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+      ),
+    )
+    return false
   }
 }

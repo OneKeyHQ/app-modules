@@ -26,7 +26,12 @@ final class SniConnectImpl: NSObject {
       let parsed = try Self.parseDictionary(config)
       handleRequest(config: parsed, resolve: resolve, reject: reject)
     } catch {
-      SniConnectLog.error("Config parsing failed: \(error)")
+      SniConnectLog.error(SniConnectLog.event("sni_request_result", [
+        ("result", "error"),
+        ("code", "SNI_INVALID_CONFIG"),
+        ("nativeErrorClass", String(describing: type(of: error))),
+        ("stage", "parse_config"),
+      ]))
       reject("SNI_INVALID_CONFIG", "\(error)", error)
     }
   }
@@ -39,7 +44,18 @@ final class SniConnectImpl: NSObject {
     do {
       try Self.validate(config)
     } catch {
-      SniConnectLog.error("Config validation failed: \(error)")
+      SniConnectLog.error(SniConnectLog.event("sni_request_result", [
+        ("result", "error"),
+        ("code", "SNI_INVALID_CONFIG"),
+        ("nativeErrorClass", String(describing: type(of: error))),
+        ("stage", "validate_config"),
+        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("hostname", config.hostname.lowercased()),
+        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ipFamily", SniConnectLog.ipFamily(config.ip)),
+        ("method", config.method.uppercased()),
+        ("timeoutMs", Int(config.effectiveTotalTimeout)),
+      ]))
       reject("SNI_INVALID_CONFIG", "\(error)", error)
       return
     }
@@ -73,7 +89,17 @@ final class SniConnectImpl: NSObject {
       } catch is CancellationError {
         reject("SNI_CANCELLED", "Request cancelled", nil)
       } catch {
-        SniConnectLog.error("Request failed: \(error.localizedDescription)")
+        SniConnectLog.error(SniConnectLog.event("sni_request_result", [
+          ("result", "error"),
+          ("code", "SNI_UNKNOWN_ERROR"),
+          ("nativeErrorClass", String(describing: type(of: error))),
+          ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+          ("hostname", config.hostname.lowercased()),
+          ("ipHash", SniConnectLog.shortHash(config.ip)),
+          ("ipFamily", SniConnectLog.ipFamily(config.ip)),
+          ("method", config.method.uppercased()),
+          ("timeoutMs", Int(config.effectiveTotalTimeout)),
+        ]))
         reject("SNI_UNKNOWN_ERROR", error.localizedDescription, error)
       }
     }
@@ -165,27 +191,68 @@ final class SniConnectImpl: NSObject {
   }
 
   private static func isProxyActive(forUrl urlString: String) throws -> Bool {
+    let startedAt = Date()
     guard let url = URL(string: urlString),
           let scheme = url.scheme?.lowercased(),
           ["http", "https"].contains(scheme),
-          url.host != nil else {
+          let host = url.host else {
+      SniConnectLog.warn(SniConnectLog.event("proxy_preflight", [
+        ("platform", "ios"),
+        ("scheme", "unknown"),
+        ("host", "unknown"),
+        ("result", "invalid_url"),
+        ("source", "CFNetwork"),
+        ("proxyCount", 0),
+        ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
+      ]))
       throw SniConnectError.invalidConfig("Invalid URL")
     }
 
     guard let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue() else {
+      SniConnectLog.info(SniConnectLog.event("proxy_preflight", [
+        ("platform", "ios"),
+        ("scheme", scheme),
+        ("host", host),
+        ("result", false),
+        ("source", "CFNetwork"),
+        ("proxyCount", 0),
+        ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
+      ]))
       return false
     }
 
     let proxies = CFNetworkCopyProxiesForURL(url as CFURL, settings).takeRetainedValue() as NSArray
+    var proxyTypes: [String] = []
     for proxy in proxies {
       guard let proxyDictionary = proxy as? NSDictionary,
             let type = proxyDictionary[kCFProxyTypeKey] as? String else {
         continue
       }
+      proxyTypes.append(type)
       if type != (kCFProxyTypeNone as String) {
+        SniConnectLog.info(SniConnectLog.event("proxy_preflight", [
+          ("platform", "ios"),
+          ("scheme", scheme),
+          ("host", host),
+          ("result", true),
+          ("source", "CFNetwork"),
+          ("proxyCount", proxies.count),
+          ("proxyTypes", proxyTypes.joined(separator: ",")),
+          ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
+        ]))
         return true
       }
     }
+    SniConnectLog.info(SniConnectLog.event("proxy_preflight", [
+      ("platform", "ios"),
+      ("scheme", scheme),
+      ("host", host),
+      ("result", false),
+      ("source", "CFNetwork"),
+      ("proxyCount", proxies.count),
+      ("proxyTypes", proxyTypes.joined(separator: ",")),
+      ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
+    ]))
     return false
   }
 }

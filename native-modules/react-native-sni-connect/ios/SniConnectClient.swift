@@ -85,13 +85,20 @@ final class SniConnectClient {
   private var memoryWarningObserver: NSObjectProtocol?
 
   init() {
+    SniConnectCoreDiagnostics.warnSink = { message in
+      SniConnectLog.warn(message)
+    }
+
     // Register for memory warnings to clean cache
     memoryWarningObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.didReceiveMemoryWarningNotification,
       object: nil,
       queue: .main
     ) { [weak self] _ in
-      SniConnectLog.info("Memory warning received, cleaning DNS cache")
+      SniConnectLog.info(SniConnectLog.event("sni_lifecycle", [
+        ("action", "memory_warning"),
+        ("cacheAction", "clear_dns_cache"),
+      ]))
       self?.clearDNSCache()
     }
   }
@@ -260,6 +267,16 @@ final class SniConnectClient {
     )
 
     EMASCurlProtocol.install(into: configuration, with: curlConfig)
+    SniConnectLog.info(SniConnectLog.event("sni_transport_config", [
+      ("hostname", key.hostname),
+      ("ipHash", SniConnectLog.shortHash(key.ip)),
+      ("ipFamily", SniConnectLog.ipFamily(key.ip)),
+      ("proxyMode", "no_proxy"),
+      ("pinnedResolver", true),
+      ("protocol", "http1"),
+      ("followRedirects", false),
+      ("cacheEnabled", false),
+    ]))
     return URLSession(configuration: configuration)
   }
 
@@ -290,6 +307,13 @@ final class SniConnectClient {
       sessionAccessOrder.removeFirst()
       sessionCache.removeValue(forKey: evictedKey)?.finishTasksAndInvalidate()
       PinnedDNSResolverFactory.remove(hostname: evictedKey.hostname, ip: evictedKey.ip)
+      SniConnectLog.info(SniConnectLog.event("sni_cache_evict", [
+        ("hostname", evictedKey.hostname),
+        ("ipHash", SniConnectLog.shortHash(evictedKey.ip)),
+        ("cacheSize", sessionCache.count),
+        ("limit", Self.maxCachedSessions),
+        ("reason", forPendingInsert ? "max_cached_sessions_pending_insert" : "max_cached_sessions"),
+      ]))
     }
   }
 
@@ -305,7 +329,11 @@ final class SniConnectClient {
     for session in sessions {
       session.finishTasksAndInvalidate()
     }
-    SniConnectLog.info("DNS cache cleared")
+    SniConnectLog.info(SniConnectLog.event("sni_lifecycle", [
+      ("action", "clear_dns_cache"),
+      ("sessionCount", sessions.count),
+      ("success", true),
+    ]))
   }
 
   /// Cancel a request by ID
@@ -313,11 +341,17 @@ final class SniConnectClient {
     return tasksQueue.sync(flags: .barrier) { [weak self] in
       guard let self = self, let token = self.requestTokensById.removeValue(forKey: requestId),
             let task = self.activeTasksByToken.removeValue(forKey: token) else {
-        SniConnectLog.warn("No active request found with ID: \(requestId)")
+        SniConnectLog.warn(SniConnectLog.event("sni_cancel", [
+          ("requestIdHash", SniConnectLog.shortHash(requestId)),
+          ("success", false),
+        ]))
         return false
       }
       task.cancel()
-      SniConnectLog.info("Request cancelled: \(requestId)")
+      SniConnectLog.info(SniConnectLog.event("sni_cancel", [
+        ("requestIdHash", SniConnectLog.shortHash(requestId)),
+        ("success", true),
+      ]))
       return true
     }
   }
@@ -332,7 +366,10 @@ final class SniConnectClient {
       }
       self.activeTasksByToken.removeAll()
       self.requestTokensById.removeAll()
-      SniConnectLog.info("Cancelled \(tasks.count) active requests")
+      SniConnectLog.info(SniConnectLog.event("sni_cancel_all", [
+        ("cancelledCount", tasks.count),
+        ("success", true),
+      ]))
     }
   }
 
@@ -344,6 +381,10 @@ final class SniConnectClient {
       if let requestId = requestId, let previousToken = self.requestTokensById[requestId],
          let previousTask = self.activeTasksByToken.removeValue(forKey: previousToken) {
         previousTask.cancel()
+        SniConnectLog.warn(SniConnectLog.event("sni_duplicate_request_id", [
+          ("requestIdHash", SniConnectLog.shortHash(requestId)),
+          ("action", "cancel_previous"),
+        ]))
       }
       self.activeTasksByToken[token] = task
       if let requestId = requestId {
@@ -364,6 +405,7 @@ final class SniConnectClient {
   }
 
   func performRequest(config: RequestConfig) async throws -> Response {
+    let startedAt = Date()
     // Check if task is cancelled
     try Task.checkCancellation()
 
@@ -381,14 +423,40 @@ final class SniConnectClient {
       try SniConnectValidation.validateTimeout(config.effectiveTotalTimeout)
       try SniConnectValidation.validateBody(config.body)
     } catch {
-      throw SniConnectError.invalidConfig("\(error)")
+      let sniError = SniConnectError.invalidConfig("\(error)")
+      SniConnectLog.error(SniConnectLog.event("sni_request_result", [
+        ("result", "error"),
+        ("code", sniError.code),
+        ("nativeErrorClass", String(describing: type(of: error))),
+        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("hostname", config.hostname.lowercased()),
+        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ipFamily", SniConnectLog.ipFamily(config.ip)),
+        ("method", config.method.uppercased()),
+        ("timeoutMs", Int(config.effectiveTotalTimeout)),
+        ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
+      ]))
+      throw sniError
     }
 
     let requestSlot: SniConnectRequestLimiter.Token
     do {
       requestSlot = try requestLimiter.acquire(hostname: config.hostname, ip: config.ip)
     } catch {
-      throw SniConnectError.resourceLimit("\(error)")
+      let sniError = SniConnectError.resourceLimit("\(error)")
+      SniConnectLog.error(SniConnectLog.event("sni_request_result", [
+        ("result", "error"),
+        ("code", sniError.code),
+        ("nativeErrorClass", String(describing: type(of: error))),
+        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("hostname", config.hostname.lowercased()),
+        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ipFamily", SniConnectLog.ipFamily(config.ip)),
+        ("method", method),
+        ("timeoutMs", Int(config.effectiveTotalTimeout)),
+        ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
+      ]))
+      throw sniError
     }
     defer {
       requestSlot.release()
@@ -420,14 +488,24 @@ final class SniConnectClient {
     // Per-request connect timeout (avoids the process-global setter race).
     EMASCurlProtocol.setConnectTimeoutIntervalFor(mutableRequest, connectTimeoutInterval: connectTimeoutSeconds)
     let request = mutableRequest as URLRequest
-    let session = try session(for: config)
+
+    SniConnectLog.info(SniConnectLog.event("sni_request_start", [
+      ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+      ("hostname", config.hostname.lowercased()),
+      ("ipHash", SniConnectLog.shortHash(config.ip)),
+      ("ipFamily", SniConnectLog.ipFamily(config.ip)),
+      ("method", method),
+      ("timeoutMs", Int(config.effectiveTotalTimeout)),
+      ("connectTimeoutMs", Int(config.effectiveConnectTimeout)),
+      ("headerCount", normalizedHeaders.count),
+      ("bodyBytes", config.body?.data(using: .utf8)?.count ?? 0),
+    ]))
 
     do {
+      let session = try session(for: config)
       let (bodyBytes, response) = try await session.bytes(for: request)
       guard let httpResponse = response as? HTTPURLResponse else {
-        let errorMsg = "Invalid HTTP response type"
-        SniConnectLog.error(errorMsg)
-        throw SniConnectError.responseProcessingFailed(errorMsg)
+        throw SniConnectError.responseProcessingFailed("Invalid HTTP response type")
       }
 
       let status = httpResponse.statusCode
@@ -441,8 +519,22 @@ final class SniConnectClient {
 
       // 4xx/5xx are returned to JS as a normal response (the caller inspects
       // `status`); we only record it for diagnostics.
+      let resultLog = SniConnectLog.event("sni_request_result", [
+        ("result", "response"),
+        ("status", status),
+        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("hostname", config.hostname.lowercased()),
+        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ipFamily", SniConnectLog.ipFamily(config.ip)),
+        ("method", method),
+        ("timeoutMs", Int(config.effectiveTotalTimeout)),
+        ("responseBytes", data.count),
+        ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
+      ])
       if status >= 400 {
-        SniConnectLog.warn("HTTP \(status) for \(config.hostname)")
+        SniConnectLog.warn(resultLog)
+      } else {
+        SniConnectLog.info(resultLog)
       }
 
       return Response(
@@ -453,12 +545,34 @@ final class SniConnectClient {
         multiValueHeaders: multiValueHeaders
       )
     } catch let error as SniConnectError {
-      SniConnectLog.error("[\(error.code)] \(error.message)")
+      SniConnectLog.error(SniConnectLog.event("sni_request_result", [
+        ("result", "error"),
+        ("code", error.code),
+        ("nativeErrorClass", String(describing: type(of: error))),
+        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("hostname", config.hostname.lowercased()),
+        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ipFamily", SniConnectLog.ipFamily(config.ip)),
+        ("method", method),
+        ("timeoutMs", Int(config.effectiveTotalTimeout)),
+        ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
+      ]))
       throw error
     } catch {
       // Convert generic errors to specific SniConnectError types
       let sniError = SniConnectError.from(error)
-      SniConnectLog.error("[\(sniError.code)] \(sniError.message)")
+      SniConnectLog.error(SniConnectLog.event("sni_request_result", [
+        ("result", "error"),
+        ("code", sniError.code),
+        ("nativeErrorClass", String(describing: type(of: error))),
+        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+        ("hostname", config.hostname.lowercased()),
+        ("ipHash", SniConnectLog.shortHash(config.ip)),
+        ("ipFamily", SniConnectLog.ipFamily(config.ip)),
+        ("method", method),
+        ("timeoutMs", Int(config.effectiveTotalTimeout)),
+        ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
+      ]))
       throw sniError
     }
   }
