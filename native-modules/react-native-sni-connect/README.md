@@ -54,6 +54,13 @@ await cancelAllRequests();
 await clearDNSCache();
 ```
 
+`multiValueHeaders` preserves repeated response headers when the native transport
+exposes them as raw entries. On iOS, EMASCurl 1.5.5 currently hands this module a
+`HTTPURLResponse` dictionary view, so duplicate header names may already be
+collapsed by the transport before this adapter can observe them. Full duplicate
+header preservation on iOS requires an EMASCurl version that exposes the raw
+response header list.
+
 ## Specification
 
 The behavior of the SNI connect module is governed by a normative,

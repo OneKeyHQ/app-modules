@@ -674,7 +674,10 @@ blocker unless the platform does not advertise SNI support.
 - **iOS** uses `URLSession` configured through EMASCurl/libcurl. DNS pinning is
   implemented with EMASCurl DNS resolver classes. Resolver state MUST be
   isolated per `(hostname, ip)` because resolver classes are shared by the
-  transport.
+  transport. EMASCurl 1.5.5 exposes responses to this module through
+  `HTTPURLResponse`, whose header fields are already a dictionary view; iOS can
+  only preserve repeated response header values when the transport exposes raw
+  repeated header entries.
 - **Android** uses OkHttp. DNS pinning is implemented with a custom `Dns`
   instance per cached `(hostname, ip)` client. OkHttp redirect defaults MUST be
   overridden or constrained so redirects do not bypass the pinned endpoint.
