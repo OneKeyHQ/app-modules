@@ -240,6 +240,36 @@ final class SniConnectValidationTests: XCTestCase {
     XCTAssertEqual(SniConnectResponseText.decode(Data()), "")
   }
 
+  func testResponseHeaderMapsPreserveRawRepeatedSetCookieHeaders() throws {
+    let headerMaps = SniConnectResponseHeaders.make(rawHeaderFields: [
+      (name: "Content-Type", value: "application/json"),
+      (name: "Set-Cookie", value: "session=one; Path=/; HttpOnly"),
+      (name: "set-cookie", value: "theme=dark; Path=/; Secure"),
+    ])
+
+    XCTAssertEqual(headerMaps.singleValueHeaders["content-type"], "application/json")
+    XCTAssertEqual(headerMaps.singleValueHeaders["set-cookie"], "theme=dark; Path=/; Secure")
+    XCTAssertEqual(headerMaps.multiValueHeaders["set-cookie"], [
+      "session=one; Path=/; HttpOnly",
+      "theme=dark; Path=/; Secure",
+    ])
+  }
+
+  func testResponseHeaderMapsPreserveArrayBackedHeaderFields() throws {
+    let headerMaps = SniConnectResponseHeaders.make(from: [
+      "Set-Cookie": [
+        "session=one; Path=/; HttpOnly",
+        "theme=dark; Path=/; Secure",
+      ],
+    ])
+
+    XCTAssertEqual(headerMaps.singleValueHeaders["set-cookie"], "theme=dark; Path=/; Secure")
+    XCTAssertEqual(headerMaps.multiValueHeaders["set-cookie"], [
+      "session=one; Path=/; HttpOnly",
+      "theme=dark; Path=/; Secure",
+    ])
+  }
+
   private func assertValidationFails(_ block: () throws -> Void, file: StaticString = #filePath, line: UInt = #line) {
     XCTAssertThrowsError(try block(), file: file, line: line)
   }

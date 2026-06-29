@@ -317,7 +317,8 @@ final class SniConnectClient {
     }
   }
 
-  /// Clear all DNS cache entries
+  /// Clear pinned DNS resolver entries and cached sessions so future requests
+  /// cannot reuse keep-alive connections from a previously pinned destination.
   func clearDNSCache() {
     let sessions = sessionsQueue.sync { () -> [URLSession] in
       let sessions = Array(sessionCache.values)
@@ -514,7 +515,7 @@ final class SniConnectClient {
         expectedLength: httpResponse.expectedContentLength
       )
       let responseText = SniConnectResponseText.decode(data)
-      let (headers, multiValueHeaders) = Self.extractHeaders(from: httpResponse)
+      let headerMaps = SniConnectResponseHeaders.make(from: httpResponse.allHeaderFields)
       let statusText = HTTPURLResponse.localizedString(forStatusCode: status)
 
       // 4xx/5xx are returned to JS as a normal response (the caller inspects
@@ -541,8 +542,8 @@ final class SniConnectClient {
         data: responseText,
         status: status,
         statusText: statusText,
-        headers: headers,
-        multiValueHeaders: multiValueHeaders
+        headers: headerMaps.singleValueHeaders,
+        multiValueHeaders: headerMaps.multiValueHeaders
       )
     } catch let error as SniConnectError {
       SniConnectLog.error(SniConnectLog.event("sni_request_result", [
@@ -624,32 +625,4 @@ final class SniConnectClient {
     return data
   }
 
-  /// Extract headers from HTTP response
-  /// Returns both single-value headers (for backward compatibility) and multi-value headers
-  private static func extractHeaders(from response: HTTPURLResponse) -> ([String: String], [String: [String]]) {
-    var singleValueHeaders: [String: String] = [:]
-    var multiValueHeaders: [String: [String]] = [:]
-
-    // Group headers by normalized key (lowercase)
-    var headerGroups: [String: [String]] = [:]
-
-    for (key, value) in response.allHeaderFields {
-      let headerKey = String(describing: key).lowercased()
-      let headerValue = String(describing: value)
-
-      if headerGroups[headerKey] == nil {
-        headerGroups[headerKey] = []
-      }
-      headerGroups[headerKey]?.append(headerValue)
-    }
-
-    // Process grouped headers
-    for (key, values) in headerGroups {
-      // For backward compatibility, single-value headers use the last value
-      singleValueHeaders[key] = values.last
-      multiValueHeaders[key] = values
-    }
-
-    return (singleValueHeaders, multiValueHeaders)
-  }
 }

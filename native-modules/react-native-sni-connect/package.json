@@ -112,6 +112,11 @@
     "jsSrcsDir": "src",
     "android": {
       "javaPackageName": "com.sniconnect"
+    },
+    "ios": {
+      "modulesProvider": {
+        "SniConnect": "SniConnect"
+      }
     }
   },
   "prettier": {

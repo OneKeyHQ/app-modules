@@ -137,3 +137,46 @@ enum SniConnectResponseText {
     return String(decoding: data, as: UTF8.self)
   }
 }
+
+struct SniConnectHeaderMaps: Equatable {
+  let singleValueHeaders: [String: String]
+  let multiValueHeaders: [String: [String]]
+}
+
+enum SniConnectResponseHeaders {
+  static func make(rawHeaderFields: [(name: String, value: String)]) -> SniConnectHeaderMaps {
+    var singleValueHeaders: [String: String] = [:]
+    var multiValueHeaders: [String: [String]] = [:]
+
+    for header in rawHeaderFields {
+      let name = header.name.lowercased()
+      guard !name.isEmpty else { continue }
+
+      singleValueHeaders[name] = header.value
+      multiValueHeaders[name, default: []].append(header.value)
+    }
+
+    return SniConnectHeaderMaps(
+      singleValueHeaders: singleValueHeaders,
+      multiValueHeaders: multiValueHeaders
+    )
+  }
+
+  static func make(from headerFields: [AnyHashable: Any]) -> SniConnectHeaderMaps {
+    let rawHeaderFields = headerFields.flatMap { key, value -> [(name: String, value: String)] in
+      let name = String(describing: key)
+      return values(from: value).map { (name: name, value: $0) }
+    }
+    return make(rawHeaderFields: rawHeaderFields)
+  }
+
+  private static func values(from value: Any) -> [String] {
+    if let values = value as? [String] {
+      return values
+    }
+    if let values = value as? NSArray {
+      return values.map { String(describing: $0) }
+    }
+    return [String(describing: value)]
+  }
+}
