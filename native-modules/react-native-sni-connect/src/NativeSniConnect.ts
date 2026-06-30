@@ -14,16 +14,41 @@ type MultiValueHeaderMap = {
   [key: string]: string[];
 };
 
-export type SniConnectRequest = {
+type SniConnectRequestBase = {
   requestId?: string;
   ip: string;
   hostname: string;
-  method: string;
   path: string;
   headers: HeaderMap;
-  body?: string | null;
   timeout: Double;
 };
+
+type NativeSniConnectRequest = SniConnectRequestBase & {
+  method: string;
+  body?: string | null;
+};
+
+export type SniConnectBodylessMethod = 'GET' | 'HEAD';
+export type SniConnectRequiredBodyMethod = 'POST' | 'PUT' | 'PATCH';
+export type SniConnectOptionalBodyMethod = 'DELETE' | 'OPTIONS';
+export type SniConnectMethod =
+  | SniConnectBodylessMethod
+  | SniConnectRequiredBodyMethod
+  | SniConnectOptionalBodyMethod;
+
+export type SniConnectRequest =
+  | (SniConnectRequestBase & {
+      method: SniConnectBodylessMethod;
+      body?: never;
+    })
+  | (SniConnectRequestBase & {
+      method: SniConnectRequiredBodyMethod;
+      body: string;
+    })
+  | (SniConnectRequestBase & {
+      method: SniConnectOptionalBodyMethod;
+      body?: string | null;
+    });
 
 export type SniConnectResponse = {
   data: string;
@@ -34,7 +59,7 @@ export type SniConnectResponse = {
 };
 
 export interface Spec extends TurboModule {
-  request(config: SniConnectRequest): Promise<SniConnectResponse>;
+  request(config: NativeSniConnectRequest): Promise<SniConnectResponse>;
   cancelRequest(requestId: string): Promise<{ success: boolean }>;
   cancelAllRequests(): Promise<{ success: boolean }>;
   clearDNSCache(): Promise<{ success: boolean }>;

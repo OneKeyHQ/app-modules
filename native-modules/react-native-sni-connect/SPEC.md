@@ -107,16 +107,22 @@ headers.
 ### 3.1 Request
 
 ```ts
-export type SniConnectRequest = {
+type SniConnectRequestBase = {
   requestId?: string;
   ip: string;
   hostname: string;
-  method: string;
   path: string;
   headers: Record<string, string>;
-  body?: string | null;
   timeout: number;
 };
+
+export type SniConnectRequest =
+  | (SniConnectRequestBase & { method: 'GET' | 'HEAD'; body?: never })
+  | (SniConnectRequestBase & { method: 'POST' | 'PUT' | 'PATCH'; body: string })
+  | (SniConnectRequestBase & {
+      method: 'DELETE' | 'OPTIONS';
+      body?: string | null;
+    });
 ```
 
 - `requestId` is optional. It is required only if the caller wants cancellation.

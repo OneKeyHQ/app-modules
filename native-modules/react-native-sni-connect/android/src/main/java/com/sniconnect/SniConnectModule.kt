@@ -235,7 +235,6 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       call.timeout().timeout(config.timeoutMillis, TimeUnit.MILLISECONDS)
 
       registerCall(config.requestId, call)
-      registerActiveCall(call)
       registeredCall = call
 
       SniConnectLogger.info(
@@ -258,7 +257,6 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       call.enqueue(object : Callback {
         override fun onFailure(call: Call, e: IOException) {
           unregisterCall(config.requestId, call)
-          unregisterActiveCall(call)
           requestSlot?.release()
           if (!settled.compareAndSet(false, true)) return
 
@@ -340,7 +338,6 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
             promise.reject("SNI_RESPONSE_FAILED", error.message, error)
           } finally {
             unregisterCall(config.requestId, call)
-            unregisterActiveCall(call)
             requestSlot?.release()
           }
         }
@@ -348,7 +345,6 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     } catch (error: Exception) {
       registeredCall?.let { call ->
         unregisterCall(config.requestId, call)
-        unregisterActiveCall(call)
       }
       requestSlot?.release()
       val code = if (error is SniConnectValidation.ValidationException) {
@@ -376,9 +372,10 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   }
 
   private fun registerCall(requestId: String?, call: Call) {
-    if (requestId == null) return
     val previousCall = synchronized(activeCallsLock) {
-      activeCalls.put(requestId, call)
+      val previous = requestId?.let { activeCalls.put(it, call) }
+      allActiveCalls.add(call)
+      previous
     }
     if (previousCall != null && previousCall != call) {
       previousCall.cancel()
@@ -392,21 +389,11 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  private fun registerActiveCall(call: Call) {
-    synchronized(activeCallsLock) {
-      allActiveCalls.add(call)
-    }
-  }
-
   private fun unregisterCall(requestId: String?, call: Call) {
-    if (requestId == null) return
     synchronized(activeCallsLock) {
-      activeCalls.remove(requestId, call)
-    }
-  }
-
-  private fun unregisterActiveCall(call: Call) {
-    synchronized(activeCallsLock) {
+      if (requestId != null) {
+        activeCalls.remove(requestId, call)
+      }
       allActiveCalls.remove(call)
     }
   }

@@ -27,4 +27,11 @@ export function isProxyActiveForUrl(url: string): Promise<boolean> {
   return NativeSniConnect.isProxyActiveForUrl(url);
 }
 
-export type { SniConnectRequest, SniConnectResponse } from './NativeSniConnect';
+export type {
+  SniConnectBodylessMethod,
+  SniConnectMethod,
+  SniConnectOptionalBodyMethod,
+  SniConnectRequest,
+  SniConnectRequiredBodyMethod,
+  SniConnectResponse,
+} from './NativeSniConnect';

@@ -75,3 +75,37 @@ describe('react-native-sni-connect public API', () => {
     );
   });
 });
+
+const validPostRequest: SniConnectRequest = {
+  ip: '93.184.216.34',
+  hostname: 'example.com',
+  method: 'POST',
+  path: '/',
+  headers: {},
+  body: '',
+  timeout: 30_000,
+};
+void validPostRequest;
+
+// @ts-expect-error POST requests must carry an explicit string body.
+const invalidPostWithoutBody: SniConnectRequest = {
+  ip: '93.184.216.34',
+  hostname: 'example.com',
+  method: 'POST',
+  path: '/',
+  headers: {},
+  timeout: 30_000,
+};
+void invalidPostWithoutBody;
+
+// @ts-expect-error GET requests must not carry a body.
+const invalidGetWithBody: SniConnectRequest = {
+  ip: '93.184.216.34',
+  hostname: 'example.com',
+  method: 'GET',
+  path: '/',
+  headers: {},
+  body: '',
+  timeout: 30_000,
+};
+void invalidGetWithBody;
