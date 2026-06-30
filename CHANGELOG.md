@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.73] - 2026-06-30
+
+### Features
+- **network-throttle**: Publish the merged `@onekeyfe/react-native-network-throttle` native module from main.
+
+### Chores
+- Bump packages to 3.0.73 after 3.0.72 was already published.
+
 ## [3.0.72] - 2026-06-30
 
 ### Chores
