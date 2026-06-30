@@ -73,19 +73,27 @@ internal object NetworkThrottle {
 
     private class LatencyInterceptor : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
+            val requestStartNanos = System.nanoTime()
             val delayNanos = getLatencyNanos()
+            val response = chain.proceed(chain.request())
             if (delayNanos > 0) {
                 try {
-                    val delayMs = TimeUnit.NANOSECONDS.toMillis(delayNanos)
+                    val elapsedNanos = System.nanoTime() - requestStartNanos
+                    val remainingDelayNanos = delayNanos - elapsedNanos
+                    if (remainingDelayNanos <= 0) {
+                        return response
+                    }
+                    val delayMs = TimeUnit.NANOSECONDS.toMillis(remainingDelayNanos)
                     val remainingNanos =
-                        (delayNanos - TimeUnit.MILLISECONDS.toNanos(delayMs)).toInt()
+                        (remainingDelayNanos - TimeUnit.MILLISECONDS.toNanos(delayMs)).toInt()
                     Thread.sleep(delayMs, remainingNanos)
                 } catch (error: InterruptedException) {
+                    response.close()
                     Thread.currentThread().interrupt()
                     throw IOException("Interrupted while applying OneKey network throttle", error)
                 }
             }
-            return chain.proceed(chain.request())
+            return response
         }
     }
 }

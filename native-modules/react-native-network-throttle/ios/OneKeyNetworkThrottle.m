@@ -66,6 +66,15 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
 @property (nonatomic, strong) NSURLSessionDataTask *task;
 @property (nonatomic, strong) NSURLSession *session;
 @property (atomic, assign) BOOL stopped;
+@property (nonatomic, assign) CFAbsoluteTime requestStartTime;
+@property (nonatomic, assign) NSTimeInterval latencySeconds;
+@property (atomic, assign) BOOL responseDelivered;
+@property (nonatomic, strong) NSMutableArray<NSData *> *pendingData;
+@property (nonatomic, copy) void (^pendingResponseCompletionHandler)(NSURLSessionResponseDisposition disposition);
+- (NSTimeInterval)remainingLatencyDelay;
+- (void)deliverResponse:(NSURLResponse *)response;
+- (void)flushPendingData;
+- (void)cancelPendingResponseCompletionHandler;
 - (void)invalidateSessionAndClearTaskWithCancel:(BOOL)cancel;
 @end
 
@@ -93,25 +102,82 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
   NSMutableURLRequest *request = [self.request mutableCopy];
   [NSURLProtocol setProperty:@YES forKey:OneKeyNetworkThrottleHandledKey inRequest:request];
 
-  NSTimeInterval delay = [OneKeyNetworkThrottleState latencyMs] / 1000.0;
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-    if (self.stopped) {
-      return;
-    }
-    NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
-    configuration.HTTPShouldSetCookies = YES;
-    configuration.HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicyAlways;
-    configuration.HTTPCookieStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
-    self.session = [NSURLSession sessionWithConfiguration:configuration delegate:self delegateQueue:nil];
-    self.task = [self.session dataTaskWithRequest:request];
-    [self.task resume];
-  });
+  self.requestStartTime = CFAbsoluteTimeGetCurrent();
+  self.latencySeconds = [OneKeyNetworkThrottleState latencyMs] / 1000.0;
+  self.pendingData = [NSMutableArray array];
+
+  NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
+  NSNumber *useWifiOnly = [[NSBundle mainBundle].infoDictionary objectForKey:@"ReactNetworkForceWifiOnly"];
+  if (useWifiOnly) {
+    configuration.allowsCellularAccess = ![useWifiOnly boolValue];
+  }
+  configuration.HTTPShouldSetCookies = YES;
+  configuration.HTTPCookieAcceptPolicy = NSHTTPCookieAcceptPolicyAlways;
+  configuration.HTTPCookieStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
+  self.session = [NSURLSession sessionWithConfiguration:configuration delegate:self delegateQueue:nil];
+  self.task = [self.session dataTaskWithRequest:request];
+  [self.task resume];
 }
 
 - (void)stopLoading
 {
   self.stopped = YES;
+  [self cancelPendingResponseCompletionHandler];
   [self invalidateSessionAndClearTaskWithCancel:YES];
+}
+
+- (NSTimeInterval)remainingLatencyDelay
+{
+  NSTimeInterval elapsed = CFAbsoluteTimeGetCurrent() - self.requestStartTime;
+  NSTimeInterval remainingDelay = self.latencySeconds - elapsed;
+  return remainingDelay > 0 ? remainingDelay : 0;
+}
+
+- (void)deliverResponse:(NSURLResponse *)response
+{
+  void (^completionHandler)(NSURLSessionResponseDisposition disposition) = nil;
+  @synchronized (self) {
+    completionHandler = self.pendingResponseCompletionHandler;
+    self.pendingResponseCompletionHandler = nil;
+  }
+  if (!completionHandler) {
+    return;
+  }
+  if (self.stopped) {
+    completionHandler(NSURLSessionResponseCancel);
+    return;
+  }
+  self.responseDelivered = YES;
+  [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+  [self flushPendingData];
+  completionHandler(NSURLSessionResponseAllow);
+}
+
+- (void)flushPendingData
+{
+  NSArray<NSData *> *pendingData = nil;
+  @synchronized (self) {
+    pendingData = [self.pendingData copy];
+    [self.pendingData removeAllObjects];
+  }
+  for (NSData *data in pendingData) {
+    if (self.stopped) {
+      return;
+    }
+    [self.client URLProtocol:self didLoadData:data];
+  }
+}
+
+- (void)cancelPendingResponseCompletionHandler
+{
+  void (^completionHandler)(NSURLSessionResponseDisposition disposition) = nil;
+  @synchronized (self) {
+    completionHandler = self.pendingResponseCompletionHandler;
+    self.pendingResponseCompletionHandler = nil;
+  }
+  if (completionHandler) {
+    completionHandler(NSURLSessionResponseCancel);
+  }
 }
 
 - (void)invalidateSessionAndClearTaskWithCancel:(BOOL)cancel
@@ -147,17 +213,38 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
 didReceiveResponse:(NSURLResponse *)response
  completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler
 {
-  [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
-  completionHandler(NSURLSessionResponseAllow);
+  @synchronized (self) {
+    self.pendingResponseCompletionHandler = completionHandler;
+  }
+  NSTimeInterval delay = [self remainingLatencyDelay];
+  if (delay <= 0) {
+    [self deliverResponse:response];
+    return;
+  }
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    [self deliverResponse:response];
+  });
 }
 
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data
 {
-  [self.client URLProtocol:self didLoadData:data];
+  if (self.stopped) {
+    return;
+  }
+  if (self.responseDelivered) {
+    [self.client URLProtocol:self didLoadData:data];
+  } else {
+    @synchronized (self) {
+      [self.pendingData addObject:data];
+    }
+  }
 }
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
 {
+  if (!self.responseDelivered) {
+    [self cancelPendingResponseCompletionHandler];
+  }
   if (!self.stopped) {
     if (error) {
       [self.client URLProtocol:self didFailWithError:error];
