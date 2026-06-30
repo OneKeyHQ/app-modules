@@ -24,6 +24,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody
 import okio.Buffer
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.net.InetAddress
 import java.net.Proxy
 import java.net.ProxySelector
@@ -50,6 +51,9 @@ internal fun classifySniFailureCode(error: Throwable): String {
   }
   if (hasCause(error, UnknownHostException::class.java)) {
     return "SNI_SECURITY_POLICY_FAILED"
+  }
+  if (hasCause(error, InterruptedIOException::class.java)) {
+    return "SNI_REQUEST_TIMEOUT"
   }
   if (hasCause(error, SSLException::class.java)) {
     return "SNI_TLS_FAILED"

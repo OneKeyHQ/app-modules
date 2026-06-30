@@ -516,7 +516,7 @@ final class SniConnectClient {
       )
       let responseText = SniConnectResponseText.decode(data)
       let headerMaps = SniConnectResponseHeaders.make(from: httpResponse.allHeaderFields)
-      let statusText = HTTPURLResponse.localizedString(forStatusCode: status)
+      let statusText = ""
 
       // 4xx/5xx are returned to JS as a normal response (the caller inspects
       // `status`); we only record it for diagnostics.

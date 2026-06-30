@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.cert.CertificateException
 import javax.net.ssl.SSLHandshakeException
@@ -214,6 +216,16 @@ class SniConnectValidationTest {
     assertEquals(
       "SNI_SECURITY_POLICY_FAILED",
       classifySniFailureCode(UnknownHostException("Unexpected host for pinned SNI request")),
+    )
+    assertEquals(
+      "SNI_REQUEST_TIMEOUT",
+      classifySniFailureCode(SocketTimeoutException("timeout")),
+    )
+    assertEquals(
+      "SNI_REQUEST_TIMEOUT",
+      classifySniFailureCode(IOException("call timeout").apply {
+        initCause(InterruptedIOException("timeout"))
+      }),
     )
     assertEquals(
       "SNI_REQUEST_FAILED",

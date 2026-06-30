@@ -14,7 +14,21 @@ This package is published as part of the OneKey `app-modules` workspace:
 yarn add @onekeyfe/react-native-sni-connect
 ```
 
-iOS: run `pod install`. Android autolinks.
+iOS: add Aliyun's spec repo and make `EMASCurl` modular in your app Podfile,
+then run `pod install`:
+
+```ruby
+source 'https://github.com/CocoaPods/Specs.git'
+source 'https://github.com/aliyun/aliyun-specs.git'
+
+target 'YourApp' do
+  # React Native autolinks SniConnect. This explicit pod keeps Swift
+  # `import EMASCurl` visible when building static libraries.
+  pod 'EMASCurl', :modular_headers => true
+end
+```
+
+Android autolinks.
 
 ## Usage
 
