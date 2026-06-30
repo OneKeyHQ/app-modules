@@ -28,13 +28,52 @@ enum SniConnectCoreDiagnostics {
   }
 
   private static func sanitize(_ value: Any?) -> String {
+    SniConnectLogRedaction.sanitize(value)
+  }
+}
+
+enum SniConnectLogRedaction {
+  private static let bracketedIpv6Pattern =
+    #"\[([0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*)\](?=$|:\d{1,5}\b|[^0-9A-Fa-f:.\]])"#
+  private static let compressedIpv6Pattern =
+    #"(^|[^0-9A-Fa-f:.\[])([0-9A-Fa-f:.]*::[0-9A-Fa-f:.]*)(?=$|[^0-9A-Fa-f:.\]])"#
+  private static let fullIpv6Pattern =
+    #"(^|[^0-9A-Fa-f:.\[])([0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){7})(?=$|[^0-9A-Fa-f:.\]])"#
+  private static let ipv4Pattern =
+    #"(^|[^\d.])((?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3})(?=$|[^\d.])"#
+
+  static func sanitize(_ value: Any?) -> String {
     guard let value else {
       return "none"
     }
-    return String(describing: value)
+    return redactIpLiterals(String(describing: value))
       .replacingOccurrences(of: "\n", with: "_")
       .replacingOccurrences(of: "\r", with: "_")
       .replacingOccurrences(of: " ", with: "_")
+  }
+
+  static func redactIpLiterals(_ value: String) -> String {
+    value
+      .replacingOccurrences(
+        of: bracketedIpv6Pattern,
+        with: "<ip6>",
+        options: .regularExpression
+      )
+      .replacingOccurrences(
+        of: compressedIpv6Pattern,
+        with: "$1<ip6>",
+        options: .regularExpression
+      )
+      .replacingOccurrences(
+        of: fullIpv6Pattern,
+        with: "$1<ip6>",
+        options: .regularExpression
+      )
+      .replacingOccurrences(
+        of: ipv4Pattern,
+        with: "$1<ip>",
+        options: .regularExpression
+      )
   }
 }
 

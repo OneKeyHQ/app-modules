@@ -9,6 +9,14 @@ package com.sniconnect
  */
 internal object SniConnectLogger {
   private const val TAG = "SniConnect"
+  private val bracketedIpv6Regex =
+    Regex("""\[([0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*)\](?=$|:\d{1,5}\b|[^0-9A-Fa-f:.\]])""")
+  private val compressedIpv6Regex =
+    Regex("""(^|[^0-9A-Fa-f:.\[])([0-9A-Fa-f:.]*::[0-9A-Fa-f:.]*)(?=$|[^0-9A-Fa-f:.\]])""")
+  private val fullIpv6Regex =
+    Regex("""(^|[^0-9A-Fa-f:.\[])([0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){7})(?=$|[^0-9A-Fa-f:.\]])""")
+  private val ipv4Regex =
+    Regex("""(^|[^\d.])((?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3})(?=$|[^\d.])""")
 
   private val logClass: Class<*>? by lazy {
     try {
@@ -79,8 +87,16 @@ internal object SniConnectLogger {
 
   private fun sanitize(value: Any?): String =
     value?.toString()
+      ?.let(::redactIpLiterals)
       ?.replace('\n', '_')
       ?.replace('\r', '_')
       ?.replace(' ', '_')
       ?: "none"
+
+  private fun redactIpLiterals(value: String): String =
+    value
+      .replace(bracketedIpv6Regex, "<ip6>")
+      .replace(compressedIpv6Regex) { "${it.groupValues[1]}<ip6>" }
+      .replace(fullIpv6Regex) { "${it.groupValues[1]}<ip6>" }
+      .replace(ipv4Regex) { "${it.groupValues[1]}<ip>" }
 }

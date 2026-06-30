@@ -57,12 +57,6 @@ enum SniConnectLog {
   }
 
   private static func sanitize(_ value: Any?) -> String {
-    guard let value else {
-      return "none"
-    }
-    return String(describing: value)
-      .replacingOccurrences(of: "\n", with: "_")
-      .replacingOccurrences(of: "\r", with: "_")
-      .replacingOccurrences(of: " ", with: "_")
+    SniConnectLogRedaction.sanitize(value)
   }
 }

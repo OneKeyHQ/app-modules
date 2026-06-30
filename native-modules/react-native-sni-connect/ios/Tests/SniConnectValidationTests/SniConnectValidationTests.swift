@@ -16,6 +16,20 @@ final class SniConnectValidationTests: XCTestCase {
     XCTAssertEqual(try SniConnectValidation.normalizePath("v1?q=1"), "/v1?q=1")
   }
 
+  func testDiagnosticsRedactsIpLiteralsFromStructuredLogs() {
+    let log = SniConnectCoreDiagnostics.event("sni_request_result", [
+      ("errorMessage", "connect ECONNREFUSED 93.184.216.34:443"),
+      ("ipv6Error", "connect [2001:4860:4860::8888]:443"),
+      ("timestamp", "10:12:35"),
+    ])
+
+    XCTAssertTrue(log.contains("errorMessage=connect_ECONNREFUSED_<ip>:443"))
+    XCTAssertTrue(log.contains("ipv6Error=connect_<ip6>:443"))
+    XCTAssertTrue(log.contains("timestamp=10:12:35"))
+    XCTAssertFalse(log.contains("93.184.216.34"))
+    XCTAssertFalse(log.contains("2001:4860:4860::8888"))
+  }
+
   func testRejectsIpLiteralHostnames() {
     assertValidationFails {
       try SniConnectValidation.validateHostname("93.184.216.34")

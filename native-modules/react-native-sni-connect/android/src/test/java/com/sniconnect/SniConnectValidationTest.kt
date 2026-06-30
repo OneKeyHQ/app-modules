@@ -29,6 +29,22 @@ class SniConnectValidationTest {
   }
 
   @Test
+  fun loggerRedactsIpLiteralsFromStructuredLogs() {
+    val log = SniConnectLogger.event(
+      "sni_request_result",
+      "errorMessage" to "connect ECONNREFUSED 93.184.216.34:443",
+      "ipv6Error" to "connect [2001:4860:4860::8888]:443",
+      "timestamp" to "10:12:35",
+    )
+
+    assertTrue(log.contains("errorMessage=connect_ECONNREFUSED_<ip>:443"))
+    assertTrue(log.contains("ipv6Error=connect_<ip6>:443"))
+    assertTrue(log.contains("timestamp=10:12:35"))
+    assertFalse(log.contains("93.184.216.34"))
+    assertFalse(log.contains("2001:4860:4860::8888"))
+  }
+
+  @Test
   fun rejectsIpLiteralHostnames() {
     assertValidationFails { SniConnectValidation.validateHostname("93.184.216.34") }
     assertValidationFails { SniConnectValidation.validateHostname("2001:4860:4860::8888") }
