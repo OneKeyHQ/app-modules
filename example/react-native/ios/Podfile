@@ -1,3 +1,8 @@
+# Spec sources. The default CDN plus Aliyun's repo, which hosts EMASCurl
+# (a transitive native dependency of @onekeyfe/react-native-sni-connect).
+source 'https://github.com/CocoaPods/Specs.git'
+source 'https://github.com/aliyun/aliyun-specs.git'
+
 # Resolve react_native_pods.rb with node to allow for hoisting
 ENV['RCT_NEW_ARCH_ENABLED'] = '1'
 
@@ -26,6 +31,10 @@ target 'example' do
     # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
+
+  # Enable modular headers for EMASCurl so SniConnect's Swift `import EMASCurl`
+  # works when building as static libraries (matches app-monorepo).
+  pod 'EMASCurl', :modular_headers => true
 
   # Copy optional offline TradingView chart material into the app bundle as
   # `tradingview-assets/`, preserving the
