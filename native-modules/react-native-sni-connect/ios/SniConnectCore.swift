@@ -53,6 +53,7 @@ final class SniConnectPinnedResolverRegistry {
   private let maxEntries: Int
   private var classesByKey: [String: AnyClass] = [:]
   private var configsByClassName: [String: SniConnectResolverConfig] = [:]
+  private var referenceCountsByKey: [String: Int] = [:]
   private var reusableClasses: [AnyClass] = []
   private var allocatedClassNames: Set<String> = []
 
@@ -76,6 +77,7 @@ final class SniConnectPinnedResolverRegistry {
     let normalizedHost = hostname.lowercased()
     let key = Self.key(hostname: normalizedHost, ip: ip)
     if let resolverClass = classesByKey[key] {
+      referenceCountsByKey[key, default: 0] += 1
       return resolverClass
     }
 
@@ -88,6 +90,7 @@ final class SniConnectPinnedResolverRegistry {
     allocatedClassNames.insert(className)
     classesByKey[key] = resolverClass
     configsByClassName[className] = SniConnectResolverConfig(hostname: normalizedHost, ip: ip)
+    referenceCountsByKey[key] = 1
     return resolverClass
   }
 
@@ -106,8 +109,17 @@ final class SniConnectPinnedResolverRegistry {
     return config.ip
   }
 
-  func remove(hostname: String, ip: String) {
+  func release(hostname: String, ip: String) {
     let key = Self.key(hostname: hostname.lowercased(), ip: ip)
+    guard let referenceCount = referenceCountsByKey[key] else {
+      return
+    }
+    if referenceCount > 1 {
+      referenceCountsByKey[key] = referenceCount - 1
+      return
+    }
+
+    referenceCountsByKey.removeValue(forKey: key)
     guard let resolverClass = classesByKey.removeValue(forKey: key) else {
       return
     }
@@ -119,6 +131,7 @@ final class SniConnectPinnedResolverRegistry {
     reusableClasses.append(contentsOf: classesByKey.values)
     classesByKey.removeAll()
     configsByClassName.removeAll()
+    referenceCountsByKey.removeAll()
   }
 
   private static func key(hostname: String, ip: String) -> String {
@@ -135,6 +148,39 @@ enum SniConnectResponseText {
       return text
     }
     return String(decoding: data, as: UTF8.self)
+  }
+}
+
+enum SniConnectTimeout: Error, Equatable {
+  case deadlineExceeded
+}
+
+enum SniConnectWallClockDeadline {
+  static func run<T>(
+    timeoutMilliseconds: TimeInterval,
+    operation: @escaping @Sendable () async throws -> T
+  ) async throws -> T {
+    let timeoutNanoseconds = UInt64(max(1.0, timeoutMilliseconds) * 1_000_000.0)
+    return try await withThrowingTaskGroup(of: T.self) { group in
+      group.addTask {
+        try await operation()
+      }
+      group.addTask {
+        try await Task.sleep(nanoseconds: timeoutNanoseconds)
+        throw SniConnectTimeout.deadlineExceeded
+      }
+
+      do {
+        guard let result = try await group.next() else {
+          throw SniConnectTimeout.deadlineExceeded
+        }
+        group.cancelAll()
+        return result
+      } catch {
+        group.cancelAll()
+        throw error
+      }
+    }
   }
 }
 

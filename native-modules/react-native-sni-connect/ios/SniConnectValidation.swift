@@ -78,6 +78,15 @@ enum SniConnectValidation {
     }
   }
 
+  static func validateMethodBody(method: String, body: String?) throws {
+    if (method == "GET" || method == "HEAD") && body != nil {
+      throw ValidationError.invalidBody
+    }
+    if (method == "POST" || method == "PUT" || method == "PATCH") && body == nil {
+      throw ValidationError.invalidBody
+    }
+  }
+
   /// Validate and uppercase the HTTP method.
   static func normalizeMethod(_ method: String) throws -> String {
     if containsControlCharacters(method) {

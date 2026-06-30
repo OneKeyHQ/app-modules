@@ -493,23 +493,29 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     builder.header("Accept-Encoding", "identity")
 
     val method = config.method
-    val bodyContent = config.body ?: ""
-    val mediaType = config.headers.entries
-      .firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
-      ?.value
-      ?.toMediaTypeOrNull()
-      ?: "application/json; charset=utf-8".toMediaTypeOrNull()
+    val requestBody = config.body?.let { bodyContent ->
+      val mediaType = config.headers.entries
+        .firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
+        ?.value
+        ?.toMediaTypeOrNull()
+      bodyContent.toRequestBody(mediaType)
+    }
 
     when (method) {
       "GET" -> builder.get()
       "HEAD" -> builder.head()
+      "DELETE" -> {
+        if (requestBody == null) {
+          builder.delete()
+        } else {
+          builder.delete(requestBody)
+        }
+      }
       else -> {
-        val requestBody = bodyContent.toRequestBody(mediaType)
         when (method) {
-          "POST" -> builder.post(requestBody)
-          "PUT" -> builder.put(requestBody)
-          "PATCH" -> builder.patch(requestBody)
-          "DELETE" -> builder.delete(requestBody)
+          "POST" -> builder.post(requireNotNull(requestBody))
+          "PUT" -> builder.put(requireNotNull(requestBody))
+          "PATCH" -> builder.patch(requireNotNull(requestBody))
           else -> builder.method(method, requestBody)
         }
       }
@@ -601,6 +607,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     val normalizedPath = SniConnectValidation.normalizePath(path)
     SniConnectValidation.validateTimeout(timeoutMillis)
     SniConnectValidation.validateBody(body)
+    SniConnectValidation.validateMethodBody(normalizedMethod, body)
 
     return RequestConfig(
       requestId = requestId,

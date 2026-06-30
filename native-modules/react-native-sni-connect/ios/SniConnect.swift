@@ -183,11 +183,12 @@ final class SniConnectImpl: NSObject {
     try SniConnectValidation.validatePublicIP(config.ip)
     try SniConnectValidation.validateHostname(config.hostname)
     _ = try SniConnectValidation.normalizeHeaders(config.headers)
-    _ = try SniConnectValidation.normalizeMethod(config.method)
+    let method = try SniConnectValidation.normalizeMethod(config.method)
     _ = try SniConnectValidation.normalizePath(config.path)
     try SniConnectValidation.validateRequestId(config.requestId)
     try SniConnectValidation.validateTimeout(config.effectiveTotalTimeout)
     try SniConnectValidation.validateBody(config.body)
+    try SniConnectValidation.validateMethodBody(method: method, body: config.body)
   }
 
   private static func isProxyActive(forUrl urlString: String) throws -> Bool {

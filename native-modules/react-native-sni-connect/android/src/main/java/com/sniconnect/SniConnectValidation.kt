@@ -85,6 +85,15 @@ internal object SniConnectValidation {
     }
   }
 
+  fun validateMethodBody(method: String, body: String?) {
+    if ((method == "GET" || method == "HEAD") && body != null) {
+      throw ValidationException("Body not allowed for method: $method")
+    }
+    if ((method == "POST" || method == "PUT" || method == "PATCH") && body == null) {
+      throw ValidationException("Body required for method: $method")
+    }
+  }
+
   fun normalizeMethod(method: String): String {
     if (containsControlChars(method)) {
       throw ValidationException("Invalid method: $method")

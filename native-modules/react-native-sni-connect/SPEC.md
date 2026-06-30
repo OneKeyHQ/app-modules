@@ -133,6 +133,8 @@ export type SniConnectRequest = {
 - `headers` are caller headers except for module-owned headers described in
   Section 4.4.
 - `body` is an optional UTF-8 string request body.
+  `GET` and `HEAD` MUST NOT carry a body. `POST`, `PUT`, and `PATCH` MUST carry
+  an explicit body; callers that need an empty payload MUST pass an empty string.
 - `timeout` is a total request deadline in milliseconds. It includes pinned
   destination setup, connect, TLS, request upload, response headers, and
   response body read.

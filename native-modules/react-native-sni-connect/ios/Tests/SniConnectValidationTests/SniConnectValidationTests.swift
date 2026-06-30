@@ -173,6 +173,28 @@ final class SniConnectValidationTests: XCTestCase {
     }
   }
 
+  func testRejectsAmbiguousMethodBodyCombinations() throws {
+    assertValidationFails {
+      try SniConnectValidation.validateMethodBody(method: "GET", body: "")
+    }
+    assertValidationFails {
+      try SniConnectValidation.validateMethodBody(method: "HEAD", body: "payload")
+    }
+    assertValidationFails {
+      try SniConnectValidation.validateMethodBody(method: "POST", body: nil)
+    }
+    assertValidationFails {
+      try SniConnectValidation.validateMethodBody(method: "PUT", body: nil)
+    }
+    assertValidationFails {
+      try SniConnectValidation.validateMethodBody(method: "PATCH", body: nil)
+    }
+
+    XCTAssertNoThrow(try SniConnectValidation.validateMethodBody(method: "POST", body: ""))
+    XCTAssertNoThrow(try SniConnectValidation.validateMethodBody(method: "DELETE", body: nil))
+    XCTAssertNoThrow(try SniConnectValidation.validateMethodBody(method: "OPTIONS", body: nil))
+  }
+
   func testRequestLimiterEnforcesGlobalAndPerDestinationLimits() throws {
     let limiter = SniConnectRequestLimiter(maxActiveRequests: 2, maxActiveRequestsPerPair: 1)
     let firstToken = try limiter.acquire(hostname: "Example.com", ip: "93.184.216.34")
@@ -193,7 +215,7 @@ final class SniConnectValidationTests: XCTestCase {
     replacementToken.release()
   }
 
-  func testResolverRegistryIsBoundedReusedAndClearable() throws {
+  func testResolverRegistryKeepsResolverClassUntilAllSessionsReleaseIt() throws {
     final class ResolverA: NSObject {}
     final class ResolverB: NSObject {}
     var classes: [AnyClass] = [ResolverA.self, ResolverB.self]
@@ -223,7 +245,14 @@ final class SniConnectValidationTests: XCTestCase {
       }
     }
 
-    registry.clear()
+    registry.release(hostname: "example.com", ip: "93.184.216.34")
+    XCTAssertEqual(registry.entryCount, 2)
+    XCTAssertEqual(registry.resolve(domain: "example.com", resolverClass: first), "93.184.216.34")
+
+    registry.release(hostname: "example.com", ip: "93.184.216.34")
+    XCTAssertEqual(registry.entryCount, 1)
+
+    registry.release(hostname: "example.com", ip: "93.184.216.35")
     XCTAssertEqual(registry.entryCount, 0)
     let reused: AnyClass = try registry.resolverClass(hostname: "example.net", ip: "93.184.216.36") {
       XCTFail("Expected cleared resolver class to be reused")
@@ -238,6 +267,26 @@ final class SniConnectValidationTests: XCTestCase {
     let json = "{  \"b\": 1, \"a\": [true, null] }\n"
     XCTAssertEqual(SniConnectResponseText.decode(Data(json.utf8)), json)
     XCTAssertEqual(SniConnectResponseText.decode(Data()), "")
+  }
+
+  func testWallClockDeadlineReturnsFastOperation() async throws {
+    let value = try await SniConnectWallClockDeadline.run(timeoutMilliseconds: 1_000) {
+      return "ok"
+    }
+
+    XCTAssertEqual(value, "ok")
+  }
+
+  func testWallClockDeadlineTimesOutSlowOperation() async throws {
+    do {
+      _ = try await SniConnectWallClockDeadline.run(timeoutMilliseconds: 10) {
+        try await Task.sleep(nanoseconds: 100_000_000)
+        return "late"
+      }
+      XCTFail("Expected wall-clock deadline to throw")
+    } catch let error as SniConnectTimeout {
+      XCTAssertEqual(error, .deadlineExceeded)
+    }
   }
 
   func testResponseHeaderMapsPreserveRawRepeatedSetCookieHeaders() throws {

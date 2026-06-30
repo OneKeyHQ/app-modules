@@ -172,6 +172,19 @@ class SniConnectValidationTest {
   }
 
   @Test
+  fun rejectsAmbiguousMethodBodyCombinations() {
+    assertValidationFails { SniConnectValidation.validateMethodBody("GET", "") }
+    assertValidationFails { SniConnectValidation.validateMethodBody("HEAD", "payload") }
+    assertValidationFails { SniConnectValidation.validateMethodBody("POST", null) }
+    assertValidationFails { SniConnectValidation.validateMethodBody("PUT", null) }
+    assertValidationFails { SniConnectValidation.validateMethodBody("PATCH", null) }
+
+    SniConnectValidation.validateMethodBody("POST", "")
+    SniConnectValidation.validateMethodBody("DELETE", null)
+    SniConnectValidation.validateMethodBody("OPTIONS", null)
+  }
+
+  @Test
   fun requestLimiterEnforcesGlobalAndPerDestinationLimits() {
     val limiter = SniConnectRequestLimiter(
       maxActiveRequests = 2,

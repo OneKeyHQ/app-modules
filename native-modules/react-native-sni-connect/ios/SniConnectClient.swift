@@ -34,13 +34,7 @@ private enum PinnedDNSResolverFactory {
 
   static func remove(hostname: String, ip: String) {
     queue.sync {
-      registry.remove(hostname: hostname, ip: ip)
-    }
-  }
-
-  static func clear() {
-    queue.sync {
-      registry.clear()
+      registry.release(hostname: hostname, ip: ip)
     }
   }
 
@@ -57,6 +51,25 @@ private enum PinnedDNSResolverFactory {
         return resolverClass
       }
     }
+  }
+}
+
+private final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionDelegate {
+  private let hostname: String
+  private let ip: String
+
+  init(hostname: String, ip: String) {
+    self.hostname = hostname
+    self.ip = ip
+  }
+
+  func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
+    PinnedDNSResolverFactory.remove(hostname: hostname, ip: ip)
+    SniConnectLog.info(SniConnectLog.event("sni_session_invalidated", [
+      ("hostname", hostname),
+      ("ipHash", SniConnectLog.shortHash(ip)),
+      ("success", error == nil),
+    ]))
   }
 }
 
@@ -210,6 +223,10 @@ final class SniConnectClient {
 
     /// Convert NSError to SniConnectError with detailed classification
     static func from(_ error: Error) -> SniConnectError {
+      if let timeout = error as? SniConnectTimeout, timeout == .deadlineExceeded {
+        return .requestTimeout
+      }
+
       let nsError = error as NSError
 
       // Check for URL-related errors
@@ -277,7 +294,8 @@ final class SniConnectClient {
       ("followRedirects", false),
       ("cacheEnabled", false),
     ]))
-    return URLSession(configuration: configuration)
+    let delegate = SniConnectSessionInvalidationDelegate(hostname: key.hostname, ip: key.ip)
+    return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
   }
 
   private func session(for config: RequestConfig) throws -> URLSession {
@@ -306,7 +324,6 @@ final class SniConnectClient {
     while sessionCache.count > limit, let evictedKey = sessionAccessOrder.first {
       sessionAccessOrder.removeFirst()
       sessionCache.removeValue(forKey: evictedKey)?.finishTasksAndInvalidate()
-      PinnedDNSResolverFactory.remove(hostname: evictedKey.hostname, ip: evictedKey.ip)
       SniConnectLog.info(SniConnectLog.event("sni_cache_evict", [
         ("hostname", evictedKey.hostname),
         ("ipHash", SniConnectLog.shortHash(evictedKey.ip)),
@@ -317,8 +334,9 @@ final class SniConnectClient {
     }
   }
 
-  /// Clear pinned DNS resolver entries and cached sessions so future requests
-  /// cannot reuse keep-alive connections from a previously pinned destination.
+  /// Drop cached sessions so future requests cannot reuse keep-alive connections
+  /// from a previously pinned destination. Resolver classes are released only
+  /// after each old URLSession is fully invalidated.
   func clearDNSCache() {
     let sessions = sessionsQueue.sync { () -> [URLSession] in
       let sessions = Array(sessionCache.values)
@@ -326,7 +344,6 @@ final class SniConnectClient {
       sessionAccessOrder.removeAll()
       return sessions
     }
-    PinnedDNSResolverFactory.clear()
     for session in sessions {
       session.finishTasksAndInvalidate()
     }
@@ -423,6 +440,7 @@ final class SniConnectClient {
       normalizedPath = try SniConnectValidation.normalizePath(config.path)
       try SniConnectValidation.validateTimeout(config.effectiveTotalTimeout)
       try SniConnectValidation.validateBody(config.body)
+      try SniConnectValidation.validateMethodBody(method: method, body: config.body)
     } catch {
       let sniError = SniConnectError.invalidConfig("\(error)")
       SniConnectLog.error(SniConnectLog.event("sni_request_result", [
@@ -472,7 +490,9 @@ final class SniConnectClient {
     let totalTimeoutSeconds = config.effectiveTotalTimeout / 1000.0
     let connectTimeoutSeconds = config.effectiveConnectTimeout / 1000.0
 
-    // Set total request timeout
+    // URLRequest.timeoutInterval is not a full request deadline. Keep it aligned
+    // with the caller timeout as a transport guard; the wall-clock deadline below
+    // enforces total request time including response body reads.
     mutableRequest.timeoutInterval = totalTimeoutSeconds
     mutableRequest.cachePolicy = .reloadIgnoringLocalCacheData
 
@@ -504,47 +524,49 @@ final class SniConnectClient {
 
     do {
       let session = try session(for: config)
-      let (bodyBytes, response) = try await session.bytes(for: request)
-      guard let httpResponse = response as? HTTPURLResponse else {
-        throw SniConnectError.responseProcessingFailed("Invalid HTTP response type")
+      return try await SniConnectWallClockDeadline.run(timeoutMilliseconds: config.effectiveTotalTimeout) {
+        let (bodyBytes, response) = try await session.bytes(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+          throw SniConnectError.responseProcessingFailed("Invalid HTTP response type")
+        }
+
+        let status = httpResponse.statusCode
+        let data = try await Self.readResponseBody(
+          bodyBytes,
+          expectedLength: httpResponse.expectedContentLength
+        )
+        let responseText = SniConnectResponseText.decode(data)
+        let headerMaps = SniConnectResponseHeaders.make(from: httpResponse.allHeaderFields)
+        let statusText = ""
+
+        // 4xx/5xx are returned to JS as a normal response (the caller inspects
+        // `status`); we only record it for diagnostics.
+        let resultLog = SniConnectLog.event("sni_request_result", [
+          ("result", "response"),
+          ("status", status),
+          ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
+          ("hostname", config.hostname.lowercased()),
+          ("ipHash", SniConnectLog.shortHash(config.ip)),
+          ("ipFamily", SniConnectLog.ipFamily(config.ip)),
+          ("method", method),
+          ("timeoutMs", Int(config.effectiveTotalTimeout)),
+          ("responseBytes", data.count),
+          ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
+        ])
+        if status >= 400 {
+          SniConnectLog.warn(resultLog)
+        } else {
+          SniConnectLog.info(resultLog)
+        }
+
+        return Response(
+          data: responseText,
+          status: status,
+          statusText: statusText,
+          headers: headerMaps.singleValueHeaders,
+          multiValueHeaders: headerMaps.multiValueHeaders
+        )
       }
-
-      let status = httpResponse.statusCode
-      let data = try await Self.readResponseBody(
-        bodyBytes,
-        expectedLength: httpResponse.expectedContentLength
-      )
-      let responseText = SniConnectResponseText.decode(data)
-      let headerMaps = SniConnectResponseHeaders.make(from: httpResponse.allHeaderFields)
-      let statusText = ""
-
-      // 4xx/5xx are returned to JS as a normal response (the caller inspects
-      // `status`); we only record it for diagnostics.
-      let resultLog = SniConnectLog.event("sni_request_result", [
-        ("result", "response"),
-        ("status", status),
-        ("requestIdHash", SniConnectLog.shortHash(config.requestId)),
-        ("hostname", config.hostname.lowercased()),
-        ("ipHash", SniConnectLog.shortHash(config.ip)),
-        ("ipFamily", SniConnectLog.ipFamily(config.ip)),
-        ("method", method),
-        ("timeoutMs", Int(config.effectiveTotalTimeout)),
-        ("responseBytes", data.count),
-        ("elapsedMs", SniConnectLog.elapsedMs(since: startedAt)),
-      ])
-      if status >= 400 {
-        SniConnectLog.warn(resultLog)
-      } else {
-        SniConnectLog.info(resultLog)
-      }
-
-      return Response(
-        data: responseText,
-        status: status,
-        statusText: statusText,
-        headers: headerMaps.singleValueHeaders,
-        multiValueHeaders: headerMaps.multiValueHeaders
-      )
     } catch let error as SniConnectError {
       SniConnectLog.error(SniConnectLog.event("sni_request_result", [
         ("result", "error"),
