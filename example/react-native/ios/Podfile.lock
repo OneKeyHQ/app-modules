@@ -1,5 +1,5 @@
 PODS:
-  - AesCrypto (3.0.71):
+  - AesCrypto (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -27,7 +27,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - AsyncStorage (3.0.71):
+  - AsyncStorage (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -55,7 +55,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - AutoSizeInput (3.0.71):
+  - AutoSizeInput (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -85,7 +85,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - BackgroundThread (3.0.71):
+  - BackgroundThread (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -115,7 +115,7 @@ PODS:
     - SocketRocket
     - Yoga
   - boost (1.84.0)
-  - ChartWebview (3.0.71):
+  - ChartWebview (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -146,7 +146,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - CloudFs (3.0.71):
+  - CloudFs (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -174,7 +174,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - CloudKitModule (3.0.71):
+  - CloudKitModule (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -208,7 +208,7 @@ PODS:
   - CocoaLumberjack/Core (3.9.0)
   - CocoaLumberjack/Swift (3.9.0):
     - CocoaLumberjack/Core
-  - DnsLookup (3.0.71):
+  - DnsLookup (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -247,7 +247,7 @@ PODS:
   - hermes-engine (0.14.0):
     - hermes-engine/Pre-built (= 0.14.0)
   - hermes-engine/Pre-built (0.14.0)
-  - KeychainModule (3.0.71):
+  - KeychainModule (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -281,7 +281,7 @@ PODS:
   - MMKV (2.2.4):
     - MMKVCore (~> 2.2.4)
   - MMKVCore (2.2.4)
-  - NetworkInfo (3.0.71):
+  - NetworkInfo (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -369,7 +369,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - Pbkdf2 (3.0.71):
+  - Pbkdf2 (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -397,7 +397,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - PerpDepthBar (3.0.71):
+  - PerpDepthBar (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -427,7 +427,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - Ping (3.0.71):
+  - Ping (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -2339,7 +2339,7 @@ PODS:
     - React-RCTFBReactNativeSpec
     - ReactCommon/turbomodule/core
     - SocketRocket
-  - react-native-pager-view (3.0.71):
+  - react-native-pager-view (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -2454,7 +2454,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - react-native-tab-view (3.0.71):
+  - react-native-tab-view (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -2472,7 +2472,7 @@ PODS:
     - React-graphics
     - React-ImageManager
     - React-jsi
-    - react-native-tab-view/common (= 3.0.71)
+    - react-native-tab-view/common (= 3.0.72)
     - React-NativeModulesApple
     - React-RCTFabric
     - React-renderercss
@@ -2483,7 +2483,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - react-native-tab-view/common (3.0.71):
+  - react-native-tab-view/common (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3068,7 +3068,7 @@ PODS:
     - React-perflogger (= 0.83.0)
     - React-utils (= 0.83.0)
     - SocketRocket
-  - ReactNativeAppUpdate (3.0.71):
+  - ReactNativeAppUpdate (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3099,7 +3099,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - ReactNativeBundleCrypto (3.0.71):
+  - ReactNativeBundleCrypto (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3130,7 +3130,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - ReactNativeBundleUpdate (3.0.71):
+  - ReactNativeBundleUpdate (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3165,7 +3165,7 @@ PODS:
     - SocketRocket
     - SSZipArchive (>= 2.5.4)
     - Yoga
-  - ReactNativeCheckBiometricAuthChanged (3.0.71):
+  - ReactNativeCheckBiometricAuthChanged (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3196,7 +3196,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - ReactNativeDeviceUtils (3.0.71):
+  - ReactNativeDeviceUtils (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3227,7 +3227,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - ReactNativeGetRandomValues (3.0.71):
+  - ReactNativeGetRandomValues (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3258,7 +3258,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - ReactNativeLiteCard (3.0.71):
+  - ReactNativeLiteCard (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3287,7 +3287,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - ReactNativeNativeLogger (3.0.71):
+  - ReactNativeNativeLogger (3.0.72):
     - boost
     - CocoaLumberjack/Swift (~> 3.8)
     - DoubleConversion
@@ -3318,7 +3318,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - ReactNativePerfMemory (3.0.71):
+  - ReactNativePerfMemory (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3349,7 +3349,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - ReactNativePerfStats (3.0.71):
+  - ReactNativePerfStats (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3380,7 +3380,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - ReactNativeRangeDownloader (3.0.71):
+  - ReactNativeRangeDownloader (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3411,7 +3411,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - ReactNativeSplashScreen (3.0.71):
+  - ReactNativeSplashScreen (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3442,7 +3442,7 @@ PODS:
     - ReactNativeNativeLogger
     - SocketRocket
     - Yoga
-  - ReactNativeZipArchive (3.0.71):
+  - ReactNativeZipArchive (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3531,7 +3531,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - ScrollGuard (3.0.71):
+  - ScrollGuard (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3561,7 +3561,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - SegmentSlider (3.0.71):
+  - SegmentSlider (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3591,7 +3591,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - Skeleton (3.0.71):
+  - Skeleton (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3621,7 +3621,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - SniConnect (3.0.71):
+  - SniConnect (3.0.72):
     - boost
     - DoubleConversion
     - EMASCurl (= 1.5.5)
@@ -3652,7 +3652,7 @@ PODS:
     - SocketRocket
     - Yoga
   - SocketRocket (0.7.1)
-  - SplitBundleLoader (3.0.71):
+  - SplitBundleLoader (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
@@ -3682,7 +3682,7 @@ PODS:
     - SocketRocket
     - Yoga
   - SSZipArchive (2.6.0)
-  - TcpSocket (3.0.71):
+  - TcpSocket (3.0.72):
     - boost
     - DoubleConversion
     - fast_float
