@@ -38,9 +38,16 @@ internal object NetworkThrottle {
     }
 
     fun setConfig(config: ReadableMap): WritableMap {
-        val nextEnabled = config.hasKey("enabled") && config.getBoolean("enabled")
+        val hasEnabled = config.hasKey("enabled") && !config.isNull("enabled")
+        val hasLatencyMs = config.hasKey("latencyMs") && !config.isNull("latencyMs")
+        val nextEnabled =
+            if (hasEnabled) config.getBoolean("enabled") else enabled.get()
         var nextLatencyMs =
-            if (config.hasKey("latencyMs")) config.getDouble("latencyMs") else DEFAULT_LATENCY_MS
+            if (hasLatencyMs) {
+                config.getDouble("latencyMs")
+            } else {
+                latencyNanos.get() / 1_000_000.0
+            }
         if (nextLatencyMs <= 0) {
             nextLatencyMs = DEFAULT_LATENCY_MS
         }

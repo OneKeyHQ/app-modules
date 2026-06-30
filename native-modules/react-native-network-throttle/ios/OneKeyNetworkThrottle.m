@@ -66,6 +66,7 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
 @property (nonatomic, strong) NSURLSessionDataTask *task;
 @property (nonatomic, strong) NSURLSession *session;
 @property (atomic, assign) BOOL stopped;
+- (void)invalidateSessionAndClearTaskWithCancel:(BOOL)cancel;
 @end
 
 @implementation OneKeyNetworkThrottleURLProtocol
@@ -110,10 +111,25 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
 - (void)stopLoading
 {
   self.stopped = YES;
-  [self.task cancel];
-  [self.session invalidateAndCancel];
-  self.task = nil;
-  self.session = nil;
+  [self invalidateSessionAndClearTaskWithCancel:YES];
+}
+
+- (void)invalidateSessionAndClearTaskWithCancel:(BOOL)cancel
+{
+  NSURLSessionDataTask *task = nil;
+  NSURLSession *session = nil;
+  @synchronized (self) {
+    task = self.task;
+    session = self.session;
+    self.task = nil;
+    self.session = nil;
+  }
+  if (cancel) {
+    [task cancel];
+    [session invalidateAndCancel];
+  } else {
+    [session finishTasksAndInvalidate];
+  }
 }
 
 - (void)URLSession:(NSURLSession *)session
@@ -142,11 +158,14 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
 {
-  if (error) {
-    [self.client URLProtocol:self didFailWithError:error];
-  } else {
-    [self.client URLProtocolDidFinishLoading:self];
+  if (!self.stopped) {
+    if (error) {
+      [self.client URLProtocol:self didFailWithError:error];
+    } else {
+      [self.client URLProtocolDidFinishLoading:self];
+    }
   }
+  [self invalidateSessionAndClearTaskWithCancel:NO];
 }
 
 @end
@@ -197,9 +216,12 @@ RCT_REMAP_METHOD(getConfig, getConfigWithResolver:(RCTPromiseResolveBlock)resolv
 
 RCT_REMAP_METHOD(setConfig, setConfig:(NSDictionary *)config resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 {
-  BOOL enabled = [config[@"enabled"] boolValue];
-  NSNumber *latencyValue = config[@"latencyMs"];
-  NSTimeInterval latencyMs = latencyValue != nil ? [latencyValue doubleValue] : OneKeyNetworkThrottleDefaultLatencyMs;
+  id enabledValue = config[@"enabled"];
+  BOOL enabled =
+    enabledValue != nil && enabledValue != [NSNull null] ? [enabledValue boolValue] : [OneKeyNetworkThrottleState isEnabled];
+  id latencyValue = config[@"latencyMs"];
+  NSTimeInterval latencyMs =
+    latencyValue != nil && latencyValue != [NSNull null] ? [latencyValue doubleValue] : [OneKeyNetworkThrottleState latencyMs];
   resolve([OneKeyNetworkThrottleState setEnabled:enabled latencyMs:latencyMs]);
 }
 

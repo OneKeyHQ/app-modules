@@ -12,6 +12,11 @@ export const NETWORK_THROTTLE_SLOW_4G_LATENCY_MS = 562.5;
 
 type NativeNetworkThrottleModule = {
   getConfig: () => Promise<NetworkThrottleConfig>;
+  setConfig: (config: NetworkThrottleConfig) => Promise<NetworkThrottleConfig>;
+};
+
+export type NetworkThrottleModule = {
+  getConfig: () => Promise<NetworkThrottleConfig>;
   setConfig: (
     config: Partial<NetworkThrottleConfig>
   ) => Promise<NetworkThrottleConfig>;
@@ -26,8 +31,18 @@ const nativeModule = NativeModules.OneKeyNetworkThrottle as
   | NativeNetworkThrottleModule
   | undefined;
 
-export const NetworkThrottle: NativeNetworkThrottleModule = nativeModule
-  ? nativeModule
+export const NetworkThrottle: NetworkThrottleModule = nativeModule
+  ? {
+      getConfig: () => nativeModule.getConfig(),
+      setConfig: async (config) => {
+        const currentConfig = await nativeModule.getConfig();
+        return nativeModule.setConfig({
+          enabled: config.enabled ?? currentConfig.enabled,
+          profile: config.profile ?? currentConfig.profile,
+          latencyMs: config.latencyMs ?? currentConfig.latencyMs,
+        });
+      },
+    }
   : (new Proxy(
       {},
       {
@@ -35,6 +50,6 @@ export const NetworkThrottle: NativeNetworkThrottleModule = nativeModule
           throw new Error(LINKING_ERROR);
         },
       }
-    ) as NativeNetworkThrottleModule);
+    ) as NetworkThrottleModule);
 
 export default NetworkThrottle;
