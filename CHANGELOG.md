@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.72] - 2026-06-30
+
+### Chores
+- Bump packages to 3.0.72.
+
+## [3.0.71] - 2026-06-29
+
+### Features
+- **sni-connect**: Add `@onekeyfe/react-native-sni-connect`, a native module for direct-IP HTTPS requests with SNI/certificate hostname verification, cancellation APIs, DNS cache cleanup, proxy detection, timeout controls, and multi-value response headers.
+- **sni-connect (iOS)**: Implement EMASCurl-backed requests with a custom DNS resolver, request cancellation, DNS cache cleanup on memory warnings, and Pod integration for the example app.
+- **sni-connect (Android)**: Implement OkHttp-backed direct-IP requests with hostname validation, pinned DNS resolution, request lifecycle tracking, cancellation, and proxy preflight support.
+
+### Bug Fixes
+- **sni-connect**: Harden request validation and safety checks across both platforms, including hostname/IP/path/method/header validation, private/reserved IP rejection, proxy preflight behavior, request-slot cleanup, and structured diagnostic logging.
+
+### Documentation
+- **sni-connect**: Add README, SPEC, SwiftPM test harness, and platform validation tests covering the SNI request contract.
+
+### Chores
+- **example**: Wire `@onekeyfe/react-native-sni-connect` into the example app and refresh iOS Pods.
+- Bump all packages to 3.0.71.
+
+## [3.0.70] - 2026-06-29
+
+### Chores
+- Republish packages as 3.0.70; no code changes.
+
+## [3.0.69] - 2026-06-28
+
+### Features
+- **network-throttle**: Publish the short-lived `@onekeyfe/react-native-network-throttle` native development helper with `getConfig` / `setConfig` APIs and a slow-4G latency profile for iOS/Android request throttling.
+- **sni-connect**: Publish the initial `@onekeyfe/react-native-sni-connect` release line with direct-IP HTTPS request support, cancellation, DNS cache cleanup, proxy detection, and native iOS/Android implementations.
+
+### Chores
+- Bump packages to 3.0.69.
+
+## [3.0.68] - 2026-06-24
+
+### Features
+- **range-downloader**: Add OCDS v1.1 conformance support for iOS and Android concurrent downloads, including typed outcomes, monotonic progress gating, retry classification, segment artifact sweeping, and pure range-download logic shared with tests.
+- **app-update / bundle-update**: Adopt the OCDS concurrent downloader path for APK and JS-bundle downloads, wiring typed failure handling and segment-file resume behavior through the module integrations.
+- **tab-view**: Add `selectedIcons` support so native iOS tab-bar items can use a distinct selected image or SF Symbol.
+
+### Bug Fixes
+- **app-update (Android)**: Do not block APK update flow when package signing information is unavailable; treat unverifiable existing APK state as indeterminate instead of deleting or rejecting usable downloads.
+- **app-update (Android)**: Await concurrent downloader cancellation before cache cleanup deletes `.segN` artifacts, preventing workers from racing deleted segment files.
+- **range-downloader**: Reject malformed/multipart range responses, handle transient 5xx and 416 resume paths, guard read-only filesystem failures, and add single-flight run registry coverage.
+- **bundle-update**: Carry OCDS-compatible concurrent-download handling through Android and iOS bundle installation paths.
+
+### Documentation
+- **range-downloader**: Add the OneKey Concurrent Download Standard (OCDS) spec, conformance README, iOS simulator harness, and Android/iOS unit-test coverage for the downloader contract.
+
+### Chores
+- **example**: Refresh iOS `Podfile.lock` after downloader changes.
+- Bump all packages to 3.0.68.
+
+## [3.0.67] - 2026-06-14
+
+### Bug Fixes
+- **split-bundle-loader (Android)**: Align the native `.so` LOAD segments to 16 KB pages with `target_link_options`, fixing Android 15 / API 35 page-size compatibility for the split-bundle JSI library.
+
+### Chores
+- Bump all packages to 3.0.67.
+
 ## [3.0.66] - 2026-06-12
 
 ### Features
