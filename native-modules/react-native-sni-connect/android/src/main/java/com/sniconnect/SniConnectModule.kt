@@ -729,8 +729,25 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
         )
         return false
       }
-    val activeNetworkProxy = connectivityManager.activeNetwork
-      ?.let { network -> connectivityManager.getLinkProperties(network)?.httpProxy }
+    val activeNetworkProxy = try {
+      connectivityManager.activeNetwork
+        ?.let { network -> connectivityManager.getLinkProperties(network)?.httpProxy }
+    } catch (error: SecurityException) {
+      SniConnectLogger.warn(
+        SniConnectLogger.event(
+          "proxy_preflight",
+          "platform" to "android",
+          "scheme" to scheme,
+          "host" to host,
+          "result" to false,
+          "source" to "LinkProperties",
+          "reason" to "missing_access_network_state",
+          "proxyTypeCount" to selectorProxies.size,
+          "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
+        ),
+      )
+      return false
+    }
     if (activeNetworkProxy?.host?.isNotBlank() == true && activeNetworkProxy.port > 0) {
       SniConnectLogger.info(
         SniConnectLogger.event(
