@@ -680,9 +680,9 @@ final class SniConnectClient {
 
     do {
       return try await SniConnectWallClockDeadline.run(timeoutMilliseconds: config.effectiveTotalTimeout) {
-        let lease = try await sessionLease(for: config)
+        let lease = try await self.sessionLease(for: config)
         defer {
-          releaseSessionLease(lease)
+          self.releaseSessionLease(lease)
         }
         let (bodyBytes, response) = try await lease.session.bytes(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {

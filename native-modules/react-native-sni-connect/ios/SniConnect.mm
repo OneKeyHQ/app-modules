@@ -50,7 +50,7 @@ RCT_EXPORT_MODULE(SniConnect)
 
 #ifdef RCT_NEW_ARCH_ENABLED
 // TurboModule interface implementation
-- (void)request:(JS::NativeSniConnect::SniConnectRequest &)config
+- (void)request:(JS::NativeSniConnect::NativeSniConnectRequest &)config
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject {
   // Convert Codegen struct to NSDictionary for the Swift implementation.
