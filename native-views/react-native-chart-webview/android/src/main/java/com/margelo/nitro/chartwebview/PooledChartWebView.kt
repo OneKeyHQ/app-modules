@@ -109,21 +109,28 @@ class PooledChartWebView private constructor(
   // trusted origins we load. allowedOriginRules of setOf("*") would leak the
   // privileged bridge into every cross-origin subframe; here we pass only the
   // offline asset origin and (in online mode) the configured chart origin.
-  private fun registerBridgeForOrigins(origins: Set<String>) {
-    if (outboundBridgeJs.isEmpty() || origins.isEmpty()) return
-    if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+  private fun registerBridgeForOrigins(origins: Set<String>): Boolean {
+    if (outboundBridgeJs.isEmpty() || origins.isEmpty()) return false
+    if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+      android.util.Log.e(
+        TAG,
+        "Document-start JavaScript is not supported; refusing to load chart without bridge",
+      )
+      return false
+    }
     // No-op if nothing changed (same script + same origin set already registered).
     if (bridgeScriptHandler != null &&
       registeredBridgeJs == outboundBridgeJs &&
       registeredOrigins == origins
     ) {
-      return
+      return true
     }
     bridgeScriptHandler?.remove()
     bridgeScriptHandler =
       WebViewCompat.addDocumentStartJavaScript(webView, outboundBridgeJs, origins)
     registeredBridgeJs = outboundBridgeJs
     registeredOrigins = origins
+    return true
   }
 
   // The trusted origin set for the current source: the offline asset origin
@@ -575,7 +582,12 @@ class PooledChartWebView private constructor(
     // uses (offline asset origin, plus the online `uri` origin when present) before
     // navigating, so the page boots with the bridge but cross-origin subframes /
     // untrusted pages don't receive it.
-    registerBridgeForOrigins(trustedOriginsFor(uri))
+    if (!registerBridgeForOrigins(trustedOriginsFor(uri))) {
+      (owner ?: warmDriver)?.dispatchError(
+        "Document-start JavaScript is not supported; chart bridge was not installed",
+      )
+      return
+    }
     val target = computeTargetUrl(uri, localBundle, entry, paramsJson) ?: return
     if (target == lastLoadedUrl) return
     lastLoadedUrl = target

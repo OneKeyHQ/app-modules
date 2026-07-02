@@ -24,4 +24,5 @@ export const CHART_BRIDGE_JS = `(function(){
   window.addEventListener('message', function(e){
     try { var d = e && e.data; if (d && d.scope === '$private') fwd(d); } catch (err) {}
   });
+  fwd({scope:'$private',method:'onekey_chartBridgeReady',data:{version:1,href:String(window.location && window.location.href || '')}});
 })();`;
