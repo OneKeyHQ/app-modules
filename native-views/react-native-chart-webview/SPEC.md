@@ -201,12 +201,12 @@ non-empty.
 
 The final offline URL is platform-specific:
 
-| Platform | Effective origin | Entry URL shape |
-| --- | --- | --- |
-| iOS | `onekey-chart://chart` | `onekey-chart://chart/<entry>?<params>` |
-| Android default | `https://appassets.androidplatform.net` | `https://appassets.androidplatform.net/<localBundle>/<entry>?<params>` |
-| Android with `assetHost` | `https://<assetHost>` | `https://<assetHost>/<localBundle>/<entry>?<params>` |
-| Desktop equivalent | `onekey-chart://local` | `onekey-chart://local/index.html?<params>` |
+| Platform                 | Effective origin                        | Entry URL shape                                                        |
+| ------------------------ | --------------------------------------- | ---------------------------------------------------------------------- |
+| iOS                      | `onekey-chart://chart`                  | `onekey-chart://chart/<entry>?<params>`                                |
+| Android default          | `https://appassets.androidplatform.net` | `https://appassets.androidplatform.net/<localBundle>/<entry>?<params>` |
+| Android with `assetHost` | `https://<assetHost>`                   | `https://<assetHost>/<localBundle>/<entry>?<params>`                   |
+| Desktop equivalent       | `onekey-chart://local`                  | `onekey-chart://local/index.html?<params>`                             |
 
 The offline origin MUST be a secure, stable virtual origin. Implementations MUST
 NOT load the bundle through `file://`, because `file://` creates an opaque/null
@@ -305,41 +305,42 @@ sequenceDiagram
     Host-->>App: onMessage($private.onekey_chartBridgeReady)
   end
 
-  Page->>TV: boot chart runtime
+  Page->>Page: install v1 chart protocol listener
   Page-->>Host: $private request, storage, kline, settings
   Host-->>App: page-to-app message
   App->>Host: postMessage(response or command)
   Host->>Page: window.postMessage(...)
 
-  TV-->>Page: runtime initialized
-  Page-->>Host: tradingview_chartReady
-  Host-->>App: chart ready
+  Page-->>Host: protocol event chart.runtimeReady { capabilities }
+  Host-->>App: protocol event chart.runtimeReady
 
-  App->>Host: postMessage({ type, payload, requestId, seq })
+  App->>Host: postMessage(onekey-chart v1 request chart.applyConfig)
   Host->>Page: window.postMessage(command)
-  Page->>Page: validate ready state and ignore stale seq
-  Page->>TV: apply command, for example SYMBOL_CHANGE or CONFIG_CHANGE
-  Page-->>Host: onekey_chartCommandResult { requestId, seq, type, ok, error? }
-  Host-->>App: command result
+  Page->>Page: validate protocol, mode, seq, and offline capability
+  Page->>TV: boot or update TradingView runtime
+  Page->>TV: reset session if mode=replace, then apply runtime config
+  Page-->>Host: protocol response { id, ok, result | error }
+  Host-->>App: protocol response
 
   TV-->>Page: visual state painted
-  Page-->>Host: tradingview_renderReady
-  Host-->>App: render ready
+  Page-->>Host: protocol event chart.renderReady { correlationId? }
+  Host-->>App: protocol event chart.renderReady
 ```
 
 ```mermaid
 flowchart TB
-  URL["URL query params<br/>boot-only params"]
+  URL["Stable offline URL<br/>environment params only"]
   Transport["Transport ready<br/>onekey_chartBridgeReady"]
-  Runtime["Runtime ready<br/>tradingview_chartReady"]
-  Feature["Feature ready<br/>tradingview_perpsReady / feature-specific ready"]
-  Command["Commands<br/>SYMBOL_CHANGE / CONFIG_CHANGE / RESTORE_STORAGE"]
-  Result["Ack / result<br/>onekey_chartCommandResult"]
-  Render["Render ready<br/>tradingview_renderReady"]
+  Runtime["Protocol ready<br/>chart.runtimeReady"]
+  Apply["Initial request<br/>chart.applyConfig(mode=replace)"]
+  Response["Request response<br/>id + ok/result/error"]
+  Feature["Feature ready<br/>chart.featureReady"]
+  Render["Render ready<br/>chart.renderReady"]
+  Legacy["Current remote chart<br/>legacy URL params + legacy messages"]
 
-  URL --> Transport --> Runtime --> Feature
-  Feature --> Command --> Result --> Render
-  URL -. "Persistent WebViews do not observe paramsJson mutation" .-> Command
+  URL --> Transport --> Runtime --> Apply --> Response --> Feature --> Render
+  URL -. "MUST NOT carry offline business state" .-> Apply
+  Legacy -. "app-monorepo fallback path" .-> Transport
 ```
 
 ### 6.0.1 Implementation ownership
@@ -347,26 +348,26 @@ flowchart TB
 The communication stack has three layers. Specs and reviews SHOULD identify
 which layer a change belongs to before implementation:
 
-| Layer | Responsibility | Local implementation |
-| --- | --- | --- |
-| Transport bridge | Exposes page-to-host and host-to-page message pipes; owns document-start timing, origin scoping, owner/warm-driver routing, and same-URL reload dedupe. It MUST NOT know chart business commands. | `native-views/react-native-chart-webview/src/bridge.ts`, `ios/ChartWebview.swift`, `android/src/main/java/com/margelo/nitro/chartwebview/PooledChartWebView.kt` |
-| Desktop equivalent transport | Provides the Electron equivalent of document-start injection and message routing. This lives outside the native module but must match the same timing and fail-closed behavior. | `app-monorepo/packages/kit/src/components/WebView/DesktopWebView.tsx` plus `preload.js` or chart-only `desktop-chart-preload.js` selected by WebView preload kind |
-| Chart app-layer protocol | Defines chart-specific commands, readiness states, request/result semantics, and idempotency rules such as `SYMBOL_CHANGE`, `CONFIG_CHANGE`, `RESTORE_STORAGE`, and `onekey_chartCommandResult`. | `app-monorepo/packages/kit/src/components/TradingView/**` and the TradingView chart page bundle |
+| Layer                        | Responsibility                                                                                                                                                                                                                                                      | Local implementation                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Transport bridge             | Exposes page-to-host and host-to-page message pipes; owns document-start timing, origin scoping, owner/warm-driver routing, and same-URL reload dedupe. It MUST NOT know chart business commands.                                                                   | `native-views/react-native-chart-webview/src/bridge.ts`, `ios/ChartWebview.swift`, `android/src/main/java/com/margelo/nitro/chartwebview/PooledChartWebView.kt`   |
+| Desktop equivalent transport | Provides the Electron equivalent of document-start injection and message routing. This lives outside the native module but must match the same timing and fail-closed behavior.                                                                                     | `app-monorepo/packages/kit/src/components/WebView/DesktopWebView.tsx` plus `preload.js` or chart-only `desktop-chart-preload.js` selected by WebView preload kind |
+| Chart app-layer protocol     | Defines chart-specific commands, readiness states, request/result semantics, and idempotency rules such as `chart.applyConfig`, `chart.resetSession`, `chart.restoreStorage`, and protocol responses. The v1 protocol is mandatory for bundled/offline chart pages. | `app-monorepo/packages/kit/src/components/TradingView/**` and the TradingView chart page bundle                                                                   |
 
 Native iOS/Android and the desktop WebView host implement only the transport
 contract. Chart-specific command handling belongs to the app-layer protocol and
 the chart page. For example, `onekey_chartBridgeReady` is a transport signal,
-while `tradingview_chartReady`, `tradingview_perpsReady`, `SYMBOL_CHANGE`, and
-`onekey_chartCommandResult` are chart protocol signals.
+while `chart.runtimeReady`, `chart.applyConfig`, and `chart.renderReady` are
+chart protocol signals.
 
 ### 6.0.2 Desktop preload strategy
 
 Desktop has two possible transport implementations:
 
-| Strategy | Intended use | Tradeoff |
-| --- | --- | --- |
-| Generic dapp preload | Discovery / dapp WebViews that need the full OneKey inpage provider and wallet bridge. | Reuses mature infrastructure, but loads a broad provider surface and a large preload into a first-party chart page. |
-| Lightweight chart preload | First-party TradingView chart WebViews that only need `$private` page-to-app requests, `window.postMessage` app-to-page commands, and chart transport readiness. | Smaller and narrower trust boundary, but needs a dedicated desktop chart transport implementation and tests. |
+| Strategy                  | Intended use                                                                                                                                                     | Tradeoff                                                                                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Generic dapp preload      | Discovery / dapp WebViews that need the full OneKey inpage provider and wallet bridge.                                                                           | Reuses mature infrastructure, but loads a broad provider surface and a large preload into a first-party chart page. |
+| Lightweight chart preload | First-party TradingView chart WebViews that only need `$private` page-to-app requests, `window.postMessage` app-to-page commands, and chart transport readiness. | Smaller and narrower trust boundary, but needs a dedicated desktop chart transport implementation and tests.        |
 
 The generic dapp preload returned by `DesktopApiWebview.getPreloadJsContent()`
 is acceptable as a compatibility transport, but it is heavier than the chart
@@ -402,7 +403,7 @@ The shared JS bridge MUST run at document start before the chart page code. It
 defines or uses one platform hook:
 
 ```js
-window.__chartNativePost(payloadString)
+window.__chartNativePost(payloadString);
 ```
 
 The shared bridge MUST forward all supported outbound channels to that hook:
@@ -465,81 +466,157 @@ TradingView messages such as `SYMBOL_CHANGE`, `RESTORE_STORAGE`, perps line
 sync, or websocket recovery are app-layer protocol messages and are out of scope
 for the native module.
 
-### 6.5 App-layer protocol recommendations
+### 6.5 Chart app-layer protocol
 
-The chart page and app SHOULD use a small, explicit message protocol on top of
-the raw transport. Existing integrations already use two envelope shapes:
+The v1 chart app-layer protocol is mandatory for bundled/offline chart pages.
+It is intentionally above the transport bridge: the bridge only moves strings
+between app and page, while this protocol defines chart-specific readiness,
+commands, results, and error handling.
 
-Page to app:
+The protocol is enabled only after the page sends `chart.runtimeReady`. The app
+MUST NOT send v1 chart commands to a page that has not advertised this
+capability. app-monorepo MUST keep the current remote chart path as a fallback:
+remote/current chart URLs continue to use existing URL params and legacy
+messages until that chart page also advertises v1 support.
+
+All protocol messages are JSON-serializable objects. Callers SHOULD pass them
+through the transport as JSON strings for native parity.
 
 ```ts
-type ChartPageMessage = {
-  scope: '$private';
+type ChartProtocolDirection = 'app-to-page' | 'page-to-app';
+
+type ChartProtocolBase = {
+  protocol: 'onekey-chart';
+  version: 1;
+  direction: ChartProtocolDirection;
+  seq: number;
+};
+
+type ChartProtocolRequest = ChartProtocolBase & {
+  id: string;
   method: string;
-  data?: unknown;
-  requestId?: string;
+  params?: unknown;
 };
-```
 
-App to page:
-
-```ts
-type ChartAppCommand = {
-  type: string;
-  payload?: unknown;
-  requestId?: string;
-  seq?: number;
+type ChartProtocolNotification = ChartProtocolBase & {
+  method: string;
+  params?: unknown;
 };
-```
 
-Recommended lifecycle signals:
-
-- `onekey_chartBridgeReady`: transport bridge installed at document start.
-- `tradingview_chartReady`: chart runtime has initialized enough to accept
-  general commands.
-- domain-specific ready messages such as `tradingview_perpsReady`: a feature
-  listener is ready to accept its own commands.
-- `tradingview_renderReady`: the requested visual state has painted and native
-  snapshot overlays may be removed.
-
-Commands that have observable side effects SHOULD include `requestId` or `seq`.
-The page SHOULD reply with either a command-specific result method or a generic
-result envelope:
-
-```ts
-type ChartCommandResult = {
-  scope: '$private';
-  method: 'onekey_chartCommandResult';
-  data: {
-    requestId?: string;
-    seq?: number;
-    type: string;
-    ok: boolean;
-    error?: string;
+type ChartProtocolResponse = ChartProtocolBase & {
+  id: string;
+  ok: boolean;
+  result?: unknown;
+  error?: {
+    code: string;
+    message: string;
+    data?: unknown;
   };
 };
 ```
 
-Idempotent commands such as `SYMBOL_CHANGE` MAY be sent eagerly before a
-feature-ready signal, but the app MUST re-assert them after the relevant ready
-signal and the page MUST ignore stale or duplicate commands.
+Rules:
+
+- `protocol` MUST be `onekey-chart`.
+- `version` MUST be `1`.
+- `seq` is monotonic per sender. The receiver MUST ignore stale commands for a
+  state domain when a newer command has already been accepted.
+- A request has `id` and MUST receive exactly one response.
+- A notification has no `id` and MUST NOT receive a response.
+- The page MUST reject unknown methods with `METHOD_NOT_FOUND`.
+- The page MUST reject malformed params with `INVALID_PARAMS`.
+- The page MUST reject v1 commands when it is not in bundled/offline mode with
+  `UNSUPPORTED_RUNTIME`.
+
+Lifecycle notifications:
+
+| Method               | Direction   | Meaning                                                                                       |
+| -------------------- | ----------- | --------------------------------------------------------------------------------------------- |
+| `chart.runtimeReady` | Page to app | Protocol listener is installed and ready to accept offline commands. Includes `capabilities`. |
+| `chart.widgetReady`  | Page to app | TradingView widget exists and can accept widget-scoped commands.                              |
+| `chart.featureReady` | Page to app | A feature listener is ready, for example `{ feature: 'perps-lines' }`.                        |
+| `chart.renderReady`  | Page to app | The requested visual state has painted and native snapshot overlays may be removed.           |
+| `chart.log`          | Page to app | Optional diagnostic event for development builds.                                             |
+
+App-to-page methods:
+
+| Method                               | Request or notification | Required response semantics                                                                                                                                                                                                                                                                                        |
+| ------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `chart.applyConfig`                  | Request                 | Applies the complete or partial runtime config. `mode: 'replace'` resets session state first, then applies `config`. `mode: 'patch'` updates only supplied fields. Response means the command has been accepted and applied to the chart runtime; visual completion is reported separately by `chart.renderReady`. |
+| `chart.resetSession`                 | Request                 | Returns the offline chart to the empty default runtime state, equivalent to loading the bundle without business params.                                                                                                                                                                                            |
+| `chart.resetLayout`                  | Request                 | Resets TradingView studies/layout to defaults without changing the runtime business config.                                                                                                                                                                                                                        |
+| `chart.restoreStorage`               | Request                 | Restores storage migration payloads. Response MUST report per-key failures.                                                                                                                                                                                                                                        |
+| `chart.setInterval`                  | Request                 | Sets chart interval.                                                                                                                                                                                                                                                                                               |
+| `chart.selectIndicator`              | Request                 | Opens or applies the requested indicator action.                                                                                                                                                                                                                                                                   |
+| `chart.setChartType`                 | Request                 | Sets TradingView chart type.                                                                                                                                                                                                                                                                                       |
+| `chart.setPriceScale`                | Request                 | Switches price scale mode.                                                                                                                                                                                                                                                                                         |
+| `chart.setPriceMarketCap`            | Request                 | Switches price/market-cap display mode.                                                                                                                                                                                                                                                                            |
+| `chart.setExpandState`               | Notification            | Mirrors native expand/collapse state.                                                                                                                                                                                                                                                                              |
+| `chart.perpsLines.sync`              | Request or notification | Replaces perps line state. Use a request when the app needs delivery confirmation.                                                                                                                                                                                                                                 |
+| `chart.perpsLines.patch`             | Request or notification | Applies an idempotent perps line patch. Include a revision when available.                                                                                                                                                                                                                                         |
+| `chart.perpsLines.clear`             | Request or notification | Clears perps line state.                                                                                                                                                                                                                                                                                           |
+| `chart.perpsOrder.rejectPriceUpdate` | Notification            | Notifies the page that a drag price update was rejected.                                                                                                                                                                                                                                                           |
+| `chart.forceRecoverWs`               | Notification            | Requests chart-side websocket/datafeed recovery after the app detects recovery.                                                                                                                                                                                                                                    |
+
+`chart.applyConfig` uses this config shape. Fields are optional so `patch` can
+be small, but the first offline config SHOULD be sent as `mode: 'replace'` and
+include every field needed to construct the chart.
+
+```ts
+type ChartRuntimeConfig = {
+  symbol?: string;
+  displayPair?: string;
+  displayCoin?: string;
+  type?: 'market' | 'perps';
+  scene?: 'default' | 'market-hyperliquid';
+  networkId?: string;
+  address?: string;
+  decimal?: number;
+  timezone?: string;
+  locale?: string;
+  theme?: 'light' | 'dark';
+  storageNamespace?: string;
+  disabledFeatures?: string[];
+  nativeChartControls?: boolean;
+  nativeIntervalSelector?: boolean;
+  enablePerpsTradingUi?: boolean;
+};
+```
+
+Response timing:
+
+- `chart.applyConfig` response means the command was validated and applied to
+  page runtime state. It does not imply the final candles have painted.
+- `chart.renderReady` is the visual completion marker. When possible, it SHOULD
+  include `correlationId` equal to the request `id` that caused the render.
+- Fire-and-forget UI mirroring events SHOULD be notifications. Commands whose
+  failure affects app state MUST be requests.
 
 ### 6.6 URL params and persistent WebViews
 
-URL query params are boot parameters. A persistent or pooled WebView does not
-observe React prop changes to `paramsJson` unless those changes produce a new
-effective URL and the host intentionally reloads the page.
+For bundled/offline chart pages, URL query params are environment bootstrap
+only. They MUST NOT be the source of chart business state.
 
-Therefore:
+Allowed offline URL params are limited to stable environment values such as
+`platform`, `locale`, `timezone`, `theme`, `appVersion`, debug flags, and
+transport/bootstrap flags. Values such as `symbol`, `displayPair`,
+`displayCoin`, `type`, `scene`, `networkId`, `address`, `decimal`,
+`storageNamespace`, `disabledFeatures`, native control flags, and perps trading
+flags MUST be delivered through `chart.applyConfig`.
 
-- values that can change during the lifetime of a warm WebView MUST be sent as
-  messages, not only as URL params,
-- a reload-free unified source MUST keep its effective URL stable and move
-  dynamic state such as symbol, source, display labels, perps lines, and account
-  scoped data through app-to-page commands,
-- changing query params is a reload boundary, not a live update mechanism,
-- if the chart page needs live config updates, define an explicit command such
-  as `CONFIG_CHANGE` and an ack/result message.
+If a bundled/offline page receives business query params, it MUST ignore them.
+This avoids stale configuration when a persistent or pooled WebView keeps the
+same document alive while React props change.
+
+The current remote chart fallback may continue to use the existing URL-param
+contract. app-monorepo MUST choose the sender/URL strategy by runtime
+capability:
+
+- bundled/offline chart with `chart.runtimeReady`: stable URL plus v1 protocol,
+- current remote chart or local dev chart without v1 capability: existing URL
+  params plus legacy messages,
+- feature rollback: disabling the offline bundle returns app-monorepo to the
+  current remote path without requiring chart protocol changes.
 
 ---
 
@@ -559,7 +636,7 @@ but eviction MUST destroy the backing WebView cleanly.
 A host wants ownership when:
 
 ```ts
-attachedToWindow && active !== false
+attachedToWindow && active !== false;
 ```
 
 The active host MUST claim and attach the shared backing WebView to its
@@ -742,18 +819,19 @@ means the platform satisfies the requirement in this spec. `Partial` means the
 transport or host behavior exists but a product-level chart integration still
 needs to adopt the app-layer convention.
 
-| Requirement | iOS native host | Android native host | Desktop equivalent | Status |
-| --- | --- | --- | --- | --- |
-| Document-start bridge before page code | Uses `WKUserScript` with `.atDocumentStart`; `setSource` blocks until the bridge is registered. | Uses `WebViewCompat.addDocumentStartJavaScript(...)` before `loadUrl`. | Uses Electron `<webview preload=...>`; the local desktop worktree waits for preload URL resolution before creating `<webview>`. | Implemented |
-| Fail closed when a document-start bridge cannot be installed | `WKUserScript` is the platform document-start API; empty scripts block load until a script arrives. | Fails and dispatches `onError` if `DOCUMENT_START_SCRIPT` is unavailable or the bridge/origins are missing. | Does not mount a bridged `<webview>` until preload is available. | Implemented |
-| Origin-scoped privileged bridge | Main-frame-only `WKUserScript`; caller trust-gates top-level URL. | Scopes document-start script to the offline asset origin plus remote chart origin. | `DesktopWebView` validates the reported origin against the current `<webview>` URL, including custom-scheme origins such as `onekey-chart://local`. | Implemented with platform-specific boundaries |
-| Transport-ready control message | Shared `CHART_BRIDGE_JS` emits `onekey_chartBridgeReady`. | Shared `CHART_BRIDGE_JS` emits `onekey_chartBridgeReady`. | `desktop-chart-preload.js` emits `onekey_chartBridgeReady`; generic dapp preload is compatibility-only for chart pages. | Implemented for chart preload |
-| App-to-page command transport | `postMessage` dispatches `window.postMessage(...)`. | `postMessage` dispatches `window.postMessage(...)`. | `sendMessageViaInjectedScript` posts to `window.postMessage(...)`. | Implemented |
-| Page-to-app command transport | `$private` / ReactNativeWebView / `message` events route to native owner or warm driver. | `$private` / ReactNativeWebView / `message` events route to native owner or warm driver. | `desktop-chart-preload.js` forwards `$private`, ReactNativeWebView, and `$private` `message` events to `JsBridgeDesktopHost` through Electron `ipc-message`. | Implemented |
-| Command ack/result envelope | Spec defines `onekey_chartCommandResult` recommendation. | Spec defines `onekey_chartCommandResult` recommendation. | Spec defines `onekey_chartCommandResult` recommendation. | Partial: chart bundle/app-layer adoption required |
-| URL params are boot parameters | `paramsJson` changes affect the effective URL; same URL is deduped. | `paramsJson` changes affect the effective URL; same URL is deduped. | TradingView URL hooks compute a final URL; persistent webviews only see new params through reload or app-layer messages. | Implemented |
-| Reload-free dynamic chart state | Host preserves WebView when effective URL is unchanged; app must use messages for dynamic state. | Host preserves WebView when effective URL is unchanged; app must use messages for dynamic state. | Local worktree has message-based perps symbol sync; broader PR #11922 used unified source plus `SYMBOL_CHANGE`. | Partial by product integration |
-| Same-URL no reload | `lastLoadedUrl` dedupe. | `lastLoadedUrl` dedupe. | React source/preload identity is preserved unless `src` changes or caller reloads. | Implemented |
+| Requirement                                                  | iOS native host                                                                                     | Android native host                                                                                         | Desktop equivalent                                                                                                                                           | Status                                        |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------- |
+| Document-start bridge before page code                       | Uses `WKUserScript` with `.atDocumentStart`; `setSource` blocks until the bridge is registered.     | Uses `WebViewCompat.addDocumentStartJavaScript(...)` before `loadUrl`.                                      | Uses Electron `<webview preload=...>`; the local desktop worktree waits for preload URL resolution before creating `<webview>`.                              | Implemented                                   |
+| Fail closed when a document-start bridge cannot be installed | `WKUserScript` is the platform document-start API; empty scripts block load until a script arrives. | Fails and dispatches `onError` if `DOCUMENT_START_SCRIPT` is unavailable or the bridge/origins are missing. | Does not mount a bridged `<webview>` until preload is available.                                                                                             | Implemented                                   |
+| Origin-scoped privileged bridge                              | Main-frame-only `WKUserScript`; caller trust-gates top-level URL.                                   | Scopes document-start script to the offline asset origin plus remote chart origin.                          | `DesktopWebView` validates the reported origin against the current `<webview>` URL, including custom-scheme origins such as `onekey-chart://local`.          | Implemented with platform-specific boundaries |
+| Transport-ready control message                              | Shared `CHART_BRIDGE_JS` emits `onekey_chartBridgeReady`.                                           | Shared `CHART_BRIDGE_JS` emits `onekey_chartBridgeReady`.                                                   | `desktop-chart-preload.js` emits `onekey_chartBridgeReady`; generic dapp preload is compatibility-only for chart pages.                                      | Implemented for chart preload                 |
+| App-to-page command transport                                | `postMessage` dispatches `window.postMessage(...)`.                                                 | `postMessage` dispatches `window.postMessage(...)`.                                                         | `sendMessageViaInjectedScript` posts to `window.postMessage(...)`.                                                                                           | Implemented                                   |
+| Page-to-app command transport                                | `$private` / ReactNativeWebView / `message` events route to native owner or warm driver.            | `$private` / ReactNativeWebView / `message` events route to native owner or warm driver.                    | `desktop-chart-preload.js` forwards `$private`, ReactNativeWebView, and `$private` `message` events to `JsBridgeDesktopHost` through Electron `ipc-message`. | Implemented                                   |
+| Chart protocol v1 envelope                                   | Transport accepts opaque strings; app-layer parser lives in chart page.                             | Transport accepts opaque strings; app-layer parser lives in chart page.                                     | app-monorepo sends v1 only after bundled/offline `chart.runtimeReady`; current remote chart keeps the legacy path.                                           | Implemented in local product worktrees        |
+| Command ack/result envelope                                  | Requests with `id` require one v1 response; notifications have no response.                         | Requests with `id` require one v1 response; notifications have no response.                                 | app-monorepo tracks pending v1 requests only for offline-capable charts and keeps legacy result handling for current chart.                                  | Implemented in local product worktrees        |
+| Offline URL params are environment-only                      | Offline source may receive encoded environment params, but business state is protocol-only.         | Offline source may receive encoded environment params, but business state is protocol-only.                 | Offline URL is stable; current remote fallback keeps existing business query params.                                                                         | Implemented in local product worktrees        |
+| Reload-free dynamic chart state                              | Host preserves WebView when effective URL is unchanged; app must use messages for dynamic state.    | Host preserves WebView when effective URL is unchanged; app must use messages for dynamic state.            | Offline bundle uses `chart.applyConfig`; current remote chart keeps legacy `SYMBOL_CHANGE` and URL behavior for rollback.                                    | Implemented in local product worktrees        |
+| Same-URL no reload                                           | `lastLoadedUrl` dedupe.                                                                             | `lastLoadedUrl` dedupe.                                                                                     | React source/preload identity is preserved unless `src` changes or caller reloads.                                                                           | Implemented                                   |
 
 ## 15. Conformance checklist
 
@@ -768,6 +846,10 @@ requirements below:
 - Document-start bridge is installed before chart page code runs.
 - The implementation fails closed instead of loading when document-start bridge
   installation is unavailable.
+- Bundled/offline chart pages ignore URL business params and receive initial
+  business state through `chart.applyConfig`.
+- app-monorepo keeps a runtime fallback: bundled/offline v1 protocol when
+  available, current remote URL/legacy messages otherwise.
 - The bridge emits `onekey_chartBridgeReady` after installation.
 - Page-to-native channels route through `window.__chartNativePost`.
 - App-to-page messages use `window.postMessage`.
