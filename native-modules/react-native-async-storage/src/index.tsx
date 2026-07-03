@@ -1,6 +1,26 @@
 import NativeModule from './NativeAsyncStorage';
 import { forwardAsyncStorageWriteIfNeeded } from './runtimeConfig';
+import type {
+  AsyncStorageWriteArgs,
+  AsyncStorageWriteMethod,
+} from './runtimeConfig';
 import type { AsyncStorageStatic } from './types';
+
+async function forwardWriteAndReloadManifestIfNeeded<
+  T extends AsyncStorageWriteMethod
+>(method: T, args: AsyncStorageWriteArgs<T>) {
+  if (!(await forwardAsyncStorageWriteIfNeeded(method, args))) {
+    return false;
+  }
+
+  await NativeModule.reloadManifest();
+  return true;
+}
+
+async function runLocalWriteWithFreshManifest(write: () => Promise<void>) {
+  await NativeModule.reloadManifest();
+  await write();
+}
 
 function createAsyncStorage(): AsyncStorageStatic {
   const getItem: AsyncStorageStatic['getItem'] = async (key, callback) => {
@@ -23,9 +43,13 @@ function createAsyncStorage(): AsyncStorageStatic {
   ) => {
     try {
       if (
-        !(await forwardAsyncStorageWriteIfNeeded('multiSet', [[[key, value]]]))
+        !(await forwardWriteAndReloadManifestIfNeeded('multiSet', [
+          [[key, value]],
+        ]))
       ) {
-        await NativeModule.multiSet([[key, value]]);
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiSet([[key, value]])
+        );
       }
       callback?.(null);
     } catch (e) {
@@ -40,8 +64,12 @@ function createAsyncStorage(): AsyncStorageStatic {
     callback
   ) => {
     try {
-      if (!(await forwardAsyncStorageWriteIfNeeded('multiRemove', [[key]]))) {
-        await NativeModule.multiRemove([key]);
+      if (
+        !(await forwardWriteAndReloadManifestIfNeeded('multiRemove', [[key]]))
+      ) {
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiRemove([key])
+        );
       }
       callback?.(null);
     } catch (e) {
@@ -58,11 +86,13 @@ function createAsyncStorage(): AsyncStorageStatic {
   ) => {
     try {
       if (
-        !(await forwardAsyncStorageWriteIfNeeded('multiMerge', [
+        !(await forwardWriteAndReloadManifestIfNeeded('multiMerge', [
           [[key, value]],
         ]))
       ) {
-        await NativeModule.multiMerge([[key, value]]);
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiMerge([[key, value]])
+        );
       }
       callback?.(null);
     } catch (e) {
@@ -74,7 +104,7 @@ function createAsyncStorage(): AsyncStorageStatic {
 
   const clear: AsyncStorageStatic['clear'] = async (callback) => {
     try {
-      if (!(await forwardAsyncStorageWriteIfNeeded('clear', []))) {
+      if (!(await forwardWriteAndReloadManifestIfNeeded('clear', []))) {
         await NativeModule.clear();
       }
       callback?.(null);
@@ -122,9 +152,13 @@ function createAsyncStorage(): AsyncStorageStatic {
         ([k, v]) => [k, v] as [string, string]
       );
       if (
-        !(await forwardAsyncStorageWriteIfNeeded('multiSet', [mutablePairs]))
+        !(await forwardWriteAndReloadManifestIfNeeded('multiSet', [
+          mutablePairs,
+        ]))
       ) {
-        await NativeModule.multiSet(mutablePairs);
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiSet(mutablePairs)
+        );
       }
       callback?.(null);
     } catch (e) {
@@ -141,9 +175,13 @@ function createAsyncStorage(): AsyncStorageStatic {
     try {
       const mutableKeys = [...keys];
       if (
-        !(await forwardAsyncStorageWriteIfNeeded('multiRemove', [mutableKeys]))
+        !(await forwardWriteAndReloadManifestIfNeeded('multiRemove', [
+          mutableKeys,
+        ]))
       ) {
-        await NativeModule.multiRemove(mutableKeys);
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiRemove(mutableKeys)
+        );
       }
       callback?.(null);
     } catch (e) {
@@ -159,9 +197,13 @@ function createAsyncStorage(): AsyncStorageStatic {
   ) => {
     try {
       if (
-        !(await forwardAsyncStorageWriteIfNeeded('multiMerge', [keyValuePairs]))
+        !(await forwardWriteAndReloadManifestIfNeeded('multiMerge', [
+          keyValuePairs,
+        ]))
       ) {
-        await NativeModule.multiMerge(keyValuePairs);
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiMerge(keyValuePairs)
+        );
       }
       callback?.(null);
     } catch (e) {
