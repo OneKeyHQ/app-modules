@@ -1,4 +1,5 @@
 import NativeModule from './NativeAsyncStorage';
+import { forwardAsyncStorageWriteIfNeeded } from './runtimeConfig';
 import type { AsyncStorageStatic } from './types';
 
 function createAsyncStorage(): AsyncStorageStatic {
@@ -21,7 +22,11 @@ function createAsyncStorage(): AsyncStorageStatic {
     callback
   ) => {
     try {
-      await NativeModule.multiSet([[key, value]]);
+      if (
+        !(await forwardAsyncStorageWriteIfNeeded('multiSet', [[[key, value]]]))
+      ) {
+        await NativeModule.multiSet([[key, value]]);
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -35,7 +40,9 @@ function createAsyncStorage(): AsyncStorageStatic {
     callback
   ) => {
     try {
-      await NativeModule.multiRemove([key]);
+      if (!(await forwardAsyncStorageWriteIfNeeded('multiRemove', [[key]]))) {
+        await NativeModule.multiRemove([key]);
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -50,7 +57,13 @@ function createAsyncStorage(): AsyncStorageStatic {
     callback
   ) => {
     try {
-      await NativeModule.multiMerge([[key, value]]);
+      if (
+        !(await forwardAsyncStorageWriteIfNeeded('multiMerge', [
+          [[key, value]],
+        ]))
+      ) {
+        await NativeModule.multiMerge([[key, value]]);
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -61,7 +74,9 @@ function createAsyncStorage(): AsyncStorageStatic {
 
   const clear: AsyncStorageStatic['clear'] = async (callback) => {
     try {
-      await NativeModule.clear();
+      if (!(await forwardAsyncStorageWriteIfNeeded('clear', []))) {
+        await NativeModule.clear();
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -106,7 +121,11 @@ function createAsyncStorage(): AsyncStorageStatic {
       const mutablePairs = keyValuePairs.map(
         ([k, v]) => [k, v] as [string, string]
       );
-      await NativeModule.multiSet(mutablePairs);
+      if (
+        !(await forwardAsyncStorageWriteIfNeeded('multiSet', [mutablePairs]))
+      ) {
+        await NativeModule.multiSet(mutablePairs);
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -120,7 +139,12 @@ function createAsyncStorage(): AsyncStorageStatic {
     callback
   ) => {
     try {
-      await NativeModule.multiRemove([...keys]);
+      const mutableKeys = [...keys];
+      if (
+        !(await forwardAsyncStorageWriteIfNeeded('multiRemove', [mutableKeys]))
+      ) {
+        await NativeModule.multiRemove(mutableKeys);
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -134,7 +158,11 @@ function createAsyncStorage(): AsyncStorageStatic {
     callback
   ) => {
     try {
-      await NativeModule.multiMerge(keyValuePairs);
+      if (
+        !(await forwardAsyncStorageWriteIfNeeded('multiMerge', [keyValuePairs]))
+      ) {
+        await NativeModule.multiMerge(keyValuePairs);
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -163,6 +191,13 @@ const AsyncStorage = createAsyncStorage();
 export default AsyncStorage;
 
 export type {
+  AsyncStorageShouldForwardWriteGetter,
+  AsyncStorageWriteArgs,
+  AsyncStorageWriteArgsByMethod,
+  AsyncStorageWriteForwarder,
+  AsyncStorageWriteMethod,
+} from './runtimeConfig';
+export type {
   AsyncStorageStatic,
   Callback,
   CallbackWithResult,
@@ -170,3 +205,7 @@ export type {
   MultiCallback,
   MultiGetCallback,
 } from './types';
+export {
+  setAsyncStorageShouldForwardWriteGetter,
+  setAsyncStorageWriteForwarder,
+} from './runtimeConfig';
