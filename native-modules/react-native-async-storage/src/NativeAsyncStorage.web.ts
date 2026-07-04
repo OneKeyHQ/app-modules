@@ -17,6 +17,9 @@ import type {
 type OnMultiResult = Function;
 // eslint-disable-next-line @typescript-eslint/ban-types
 type OnResult = Function;
+type AsyncStorageWebStatic = AsyncStorageStatic & {
+  reloadManifest: () => Promise<void>;
+};
 
 const merge = mergeOptions.bind({
   concatArrays: true,
@@ -73,7 +76,7 @@ function createPromiseAll<
   );
 }
 
-const AsyncStorage: AsyncStorageStatic = {
+const AsyncStorage: AsyncStorageWebStatic = {
   /**
    * Fetches `key` value.
    */
@@ -176,6 +179,8 @@ const AsyncStorage: AsyncStorageStatic = {
     );
     return createPromiseAll(promises, callback);
   },
+
+  reloadManifest: () => Promise.resolve(),
 };
 
 export default AsyncStorage;

@@ -59,18 +59,28 @@ function shouldForwardWriteToBackground() {
   return getShouldForwardWriteGetter()?.() ?? false;
 }
 
-export async function forwardAsyncStorageWriteIfNeeded<
-  T extends AsyncStorageWriteMethod
->(method: T, args: AsyncStorageWriteArgs<T>): Promise<boolean> {
-  if (!shouldForwardWriteToBackground()) {
-    return false;
-  }
+export function shouldForwardAsyncStorageWrite() {
+  return shouldForwardWriteToBackground();
+}
 
+export async function forwardAsyncStorageWrite<
+  T extends AsyncStorageWriteMethod
+>(method: T, args: AsyncStorageWriteArgs<T>): Promise<void> {
   const forwarder = getWriteForwarder();
   if (!forwarder) {
     throw new Error('AsyncStorage write forwarder is not configured.');
   }
 
   await forwarder(method, args);
+}
+
+export async function forwardAsyncStorageWriteIfNeeded<
+  T extends AsyncStorageWriteMethod
+>(method: T, args: AsyncStorageWriteArgs<T>): Promise<boolean> {
+  if (!shouldForwardAsyncStorageWrite()) {
+    return false;
+  }
+
+  await forwardAsyncStorageWrite(method, args);
   return true;
 }
