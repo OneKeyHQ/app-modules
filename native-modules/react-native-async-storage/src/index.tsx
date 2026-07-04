@@ -1,9 +1,5 @@
 import NativeModule from './NativeAsyncStorage';
-import {
-  forwardAsyncStorageWrite,
-  forwardAsyncStorageWriteIfNeeded,
-  shouldForwardAsyncStorageWrite,
-} from './runtimeConfig';
+import { forwardAsyncStorageWriteIfNeeded } from './runtimeConfig';
 import type {
   AsyncStorageWriteArgs,
   AsyncStorageWriteMethod,
@@ -21,11 +17,20 @@ async function forwardWriteAndReloadManifestIfNeeded<
   return true;
 }
 
+async function reloadManifestBestEffort() {
+  try {
+    await NativeModule.reloadManifest();
+  } catch {
+    // Keep using this runtime's current manifest when a refresh is temporarily
+    // unavailable, for example while iOS data-protected files are locked.
+  }
+}
+
 async function runLocalWriteWithFreshManifest(write: () => Promise<void>) {
   // This narrows the local-write stale manifest window, but it does not make
   // uninjected writes cross-runtime serialized. Writes that already completed
   // before forwarder installation keep the legacy local-write semantics.
-  await NativeModule.reloadManifest();
+  await reloadManifestBestEffort();
   await write();
 }
 
@@ -34,22 +39,8 @@ async function runReadWithFreshManifest<T>(read: () => Promise<T>): Promise<T> {
   // disk are shared. Refresh before reads so main can observe bg-origin writes
   // without routing reads through the bg runtime. Android/web implementations
   // expose reloadManifest as a no-op.
-  await NativeModule.reloadManifest();
+  await reloadManifestBestEffort();
   return read();
-}
-
-async function forwardClearAsMultiRemoveIfNeeded() {
-  if (!shouldForwardAsyncStorageWrite()) {
-    return false;
-  }
-
-  await NativeModule.reloadManifest();
-  const keys = [...(await NativeModule.getAllKeys())];
-  // Use the fresh main-runtime key list; bg clear may enumerate from a stale
-  // manifest.
-  await forwardAsyncStorageWrite('multiRemove', [keys]);
-  await NativeModule.reloadManifest();
-  return true;
 }
 
 function createAsyncStorage(): AsyncStorageStatic {
@@ -136,7 +127,7 @@ function createAsyncStorage(): AsyncStorageStatic {
 
   const clear: AsyncStorageStatic['clear'] = async (callback) => {
     try {
-      if (!(await forwardClearAsMultiRemoveIfNeeded())) {
+      if (!(await forwardWriteAndReloadManifestIfNeeded('clear', []))) {
         await NativeModule.clear();
       }
       callback?.(null);

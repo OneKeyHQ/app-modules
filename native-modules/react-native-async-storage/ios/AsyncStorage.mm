@@ -715,9 +715,13 @@ static void RCTStorageDirectoryMigrationCheck(NSString *fromStorageDirectory,
                 reject:(RCTPromiseRejectBlock)reject
 {
     dispatch_async(RCTGetMethodQueue(), ^{
+        BOOL previousHaveSetup = self->_haveSetup;
+        NSMutableDictionary<NSString *, NSString *> *previousManifest = self->_manifest;
         self->_haveSetup = NO;
         NSDictionary *ensureSetupError = [self _ensureSetup];
         if (ensureSetupError) {
+            self->_haveSetup = previousHaveSetup;
+            self->_manifest = previousManifest;
             reject(@"ASYNC_STORAGE_ERROR",
                    ensureSetupError[@"message"] ?: @"Storage setup failed",
                    nil);
