@@ -292,6 +292,10 @@ class RNCAsyncStorageModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    override fun reloadManifest(promise: Promise) {
+        promise.resolve(null)
+    }
+
     // --- Private helpers (ported from AsyncLocalStorageUtil.java) ---
 
     private fun ensureDatabase(): Boolean {

@@ -1,10 +1,54 @@
 import NativeModule from './NativeAsyncStorage';
+import { forwardAsyncStorageWriteIfNeeded } from './runtimeConfig';
+import type {
+  AsyncStorageWriteArgs,
+  AsyncStorageWriteMethod,
+} from './runtimeConfig';
 import type { AsyncStorageStatic } from './types';
+
+async function forwardWriteAndReloadManifestIfNeeded<
+  T extends AsyncStorageWriteMethod
+>(method: T, args: AsyncStorageWriteArgs<T>) {
+  if (!(await forwardAsyncStorageWriteIfNeeded(method, args))) {
+    return false;
+  }
+
+  await NativeModule.reloadManifest();
+  return true;
+}
+
+async function reloadManifestBestEffort() {
+  try {
+    await NativeModule.reloadManifest();
+  } catch {
+    // Keep using this runtime's current manifest when a refresh is temporarily
+    // unavailable, for example while iOS data-protected files are locked.
+  }
+}
+
+async function runLocalWriteWithFreshManifest(write: () => Promise<void>) {
+  // This narrows the local-write stale manifest window, but it does not make
+  // uninjected writes cross-runtime serialized. Writes that already completed
+  // before forwarder installation keep the legacy local-write semantics.
+  await reloadManifestBestEffort();
+  await write();
+}
+
+async function runReadWithFreshManifest<T>(read: () => Promise<T>): Promise<T> {
+  // iOS keeps one manifest cache per runtime/module instance while the files on
+  // disk are shared. Refresh before reads so main can observe bg-origin writes
+  // without routing reads through the bg runtime. Android/web implementations
+  // expose reloadManifest as a no-op.
+  await reloadManifestBestEffort();
+  return read();
+}
 
 function createAsyncStorage(): AsyncStorageStatic {
   const getItem: AsyncStorageStatic['getItem'] = async (key, callback) => {
     try {
-      const result = await NativeModule.multiGet([key]);
+      const result = await runReadWithFreshManifest(() =>
+        NativeModule.multiGet([key])
+      );
       const value = result?.[0]?.[1] ?? null;
       callback?.(null, value);
       return value;
@@ -21,7 +65,15 @@ function createAsyncStorage(): AsyncStorageStatic {
     callback
   ) => {
     try {
-      await NativeModule.multiSet([[key, value]]);
+      if (
+        !(await forwardWriteAndReloadManifestIfNeeded('multiSet', [
+          [[key, value]],
+        ]))
+      ) {
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiSet([[key, value]])
+        );
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -35,7 +87,13 @@ function createAsyncStorage(): AsyncStorageStatic {
     callback
   ) => {
     try {
-      await NativeModule.multiRemove([key]);
+      if (
+        !(await forwardWriteAndReloadManifestIfNeeded('multiRemove', [[key]]))
+      ) {
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiRemove([key])
+        );
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -50,7 +108,15 @@ function createAsyncStorage(): AsyncStorageStatic {
     callback
   ) => {
     try {
-      await NativeModule.multiMerge([[key, value]]);
+      if (
+        !(await forwardWriteAndReloadManifestIfNeeded('multiMerge', [
+          [[key, value]],
+        ]))
+      ) {
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiMerge([[key, value]])
+        );
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -61,7 +127,9 @@ function createAsyncStorage(): AsyncStorageStatic {
 
   const clear: AsyncStorageStatic['clear'] = async (callback) => {
     try {
-      await NativeModule.clear();
+      if (!(await forwardWriteAndReloadManifestIfNeeded('clear', []))) {
+        await NativeModule.clear();
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -72,7 +140,9 @@ function createAsyncStorage(): AsyncStorageStatic {
 
   const getAllKeys: AsyncStorageStatic['getAllKeys'] = async (callback) => {
     try {
-      const keys = await NativeModule.getAllKeys();
+      const keys = await runReadWithFreshManifest(() =>
+        NativeModule.getAllKeys()
+      );
       callback?.(null, keys);
       return keys;
     } catch (e) {
@@ -88,7 +158,9 @@ function createAsyncStorage(): AsyncStorageStatic {
 
   const multiGet: AsyncStorageStatic['multiGet'] = async (keys, callback) => {
     try {
-      const result = await NativeModule.multiGet([...keys]);
+      const result = await runReadWithFreshManifest(() =>
+        NativeModule.multiGet([...keys])
+      );
       callback?.(null, result);
       return result;
     } catch (e) {
@@ -106,7 +178,15 @@ function createAsyncStorage(): AsyncStorageStatic {
       const mutablePairs = keyValuePairs.map(
         ([k, v]) => [k, v] as [string, string]
       );
-      await NativeModule.multiSet(mutablePairs);
+      if (
+        !(await forwardWriteAndReloadManifestIfNeeded('multiSet', [
+          mutablePairs,
+        ]))
+      ) {
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiSet(mutablePairs)
+        );
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -120,7 +200,16 @@ function createAsyncStorage(): AsyncStorageStatic {
     callback
   ) => {
     try {
-      await NativeModule.multiRemove([...keys]);
+      const mutableKeys = [...keys];
+      if (
+        !(await forwardWriteAndReloadManifestIfNeeded('multiRemove', [
+          mutableKeys,
+        ]))
+      ) {
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiRemove(mutableKeys)
+        );
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -134,7 +223,15 @@ function createAsyncStorage(): AsyncStorageStatic {
     callback
   ) => {
     try {
-      await NativeModule.multiMerge(keyValuePairs);
+      if (
+        !(await forwardWriteAndReloadManifestIfNeeded('multiMerge', [
+          keyValuePairs,
+        ]))
+      ) {
+        await runLocalWriteWithFreshManifest(() =>
+          NativeModule.multiMerge(keyValuePairs)
+        );
+      }
       callback?.(null);
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e));
@@ -163,6 +260,13 @@ const AsyncStorage = createAsyncStorage();
 export default AsyncStorage;
 
 export type {
+  AsyncStorageShouldForwardWriteGetter,
+  AsyncStorageWriteArgs,
+  AsyncStorageWriteArgsByMethod,
+  AsyncStorageWriteForwarder,
+  AsyncStorageWriteMethod,
+} from './runtimeConfig';
+export type {
   AsyncStorageStatic,
   Callback,
   CallbackWithResult,
@@ -170,3 +274,7 @@ export type {
   MultiCallback,
   MultiGetCallback,
 } from './types';
+export {
+  setAsyncStorageShouldForwardWriteGetter,
+  setAsyncStorageWriteForwarder,
+} from './runtimeConfig';
