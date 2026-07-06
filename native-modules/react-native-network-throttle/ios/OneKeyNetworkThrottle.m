@@ -8,6 +8,7 @@ static NSString *const OneKeyNetworkThrottleHandledKey = @"OneKeyNetworkThrottle
 static NSString *const OneKeyNetworkThrottleProfileSlow4G = @"slow4g";
 static const NSTimeInterval OneKeyNetworkThrottleDefaultLatencyMs = 562.5;
 static const NSInteger OneKeyNetworkThrottleDefaultThroughputBps = 102 * 1024;
+static const NSUInteger OneKeyNetworkThrottleMaxPendingDownloadBytes = 256 * 1024;
 
 @interface OneKeyNetworkThrottleState : NSObject
 + (NSDictionary *)currentConfig;
@@ -111,7 +112,9 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
 @property (atomic, assign) BOOL upstreamCompleted;
 @property (nonatomic, strong) NSError *upstreamError;
 @property (nonatomic, strong) NSMutableArray<NSData *> *pendingData;
+@property (nonatomic, assign) NSUInteger pendingDataBytes;
 @property (nonatomic, copy) void (^pendingResponseCompletionHandler)(NSURLSessionResponseDisposition disposition);
+@property (atomic, assign) BOOL upstreamSuspendedForBackpressure;
 - (NSTimeInterval)remainingLatencyDelay;
 - (NSTimeInterval)uploadDelayForRequest:(NSURLRequest *)request;
 - (NSTimeInterval)downloadDelayForDataLength:(NSUInteger)dataLength;
@@ -119,6 +122,8 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
 - (void)flushPendingData;
 - (void)finishIfPossible;
 - (void)cancelPendingResponseCompletionHandler;
+- (void)applyUpstreamBackpressureIfNeeded;
+- (void)clearPendingData;
 - (void)invalidateSessionAndClearTaskWithCancel:(BOOL)cancel;
 @end
 
@@ -155,6 +160,8 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
   self.upstreamCompleted = NO;
   self.upstreamError = nil;
   self.pendingData = [NSMutableArray array];
+  self.pendingDataBytes = 0;
+  self.upstreamSuspendedForBackpressure = NO;
 
   NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
   NSNumber *useWifiOnly = [[NSBundle mainBundle].infoDictionary objectForKey:@"ReactNetworkForceWifiOnly"];
@@ -182,6 +189,7 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
 {
   self.stopped = YES;
   [self cancelPendingResponseCompletionHandler];
+  [self clearPendingData];
   [self invalidateSessionAndClearTaskWithCancel:YES];
 }
 
@@ -273,8 +281,14 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
     [self.client URLProtocol:self didLoadData:data];
     @synchronized (self) {
       self.downloadedBytes += (long long)data.length;
+      if (self.pendingDataBytes >= data.length) {
+        self.pendingDataBytes -= data.length;
+      } else {
+        self.pendingDataBytes = 0;
+      }
       self.flushingData = NO;
     }
+    [self applyUpstreamBackpressureIfNeeded];
     [self flushPendingData];
   });
 }
@@ -306,6 +320,7 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
     [self.client URLProtocolDidFinishLoading:self];
   }
   self.stopped = YES;
+  [self clearPendingData];
   [self invalidateSessionAndClearTaskWithCancel:NO];
 }
 
@@ -318,6 +333,40 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
   }
   if (completionHandler) {
     completionHandler(NSURLSessionResponseCancel);
+  }
+}
+
+- (void)applyUpstreamBackpressureIfNeeded
+{
+  NSURLSessionDataTask *taskToSuspend = nil;
+  NSURLSessionDataTask *taskToResume = nil;
+  @synchronized (self) {
+    if (self.stopped || !self.task || self.downloadBps <= 0) {
+      return;
+    }
+    BOOL shouldSuspend = self.pendingDataBytes >= OneKeyNetworkThrottleMaxPendingDownloadBytes;
+    if (shouldSuspend && !self.upstreamSuspendedForBackpressure) {
+      self.upstreamSuspendedForBackpressure = YES;
+      taskToSuspend = self.task;
+    } else if (!shouldSuspend && self.upstreamSuspendedForBackpressure) {
+      self.upstreamSuspendedForBackpressure = NO;
+      taskToResume = self.task;
+    }
+  }
+  if (taskToSuspend) {
+    [taskToSuspend suspend];
+  }
+  if (taskToResume) {
+    [taskToResume resume];
+  }
+}
+
+- (void)clearPendingData
+{
+  @synchronized (self) {
+    [self.pendingData removeAllObjects];
+    self.pendingDataBytes = 0;
+    self.upstreamSuspendedForBackpressure = NO;
   }
 }
 
@@ -374,7 +423,9 @@ didReceiveResponse:(NSURLResponse *)response
   }
   @synchronized (self) {
     [self.pendingData addObject:data];
+    self.pendingDataBytes += data.length;
   }
+  [self applyUpstreamBackpressureIfNeeded];
   if (self.responseDelivered) {
     [self flushPendingData];
   }
@@ -390,6 +441,7 @@ didReceiveResponse:(NSURLResponse *)response
       [self.client URLProtocol:self didFailWithError:error];
       self.stopped = YES;
     }
+    [self clearPendingData];
     [self invalidateSessionAndClearTaskWithCancel:NO];
     return;
   }
