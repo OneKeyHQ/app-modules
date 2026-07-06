@@ -8,6 +8,7 @@ export interface Spec extends TurboModule {
   multiMerge(keyValuePairs: [string, string][]): Promise<void>;
   getAllKeys(): Promise<string[]>;
   clear(): Promise<void>;
+  reloadManifest(): Promise<void>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('RNCAsyncStorage');

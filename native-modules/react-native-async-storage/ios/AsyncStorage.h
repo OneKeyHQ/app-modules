@@ -24,4 +24,7 @@
 - (void)clear:(RCTPromiseResolveBlock)resolve
        reject:(RCTPromiseRejectBlock)reject;
 
+- (void)reloadManifest:(RCTPromiseResolveBlock)resolve
+                reject:(RCTPromiseRejectBlock)reject;
+
 @end
