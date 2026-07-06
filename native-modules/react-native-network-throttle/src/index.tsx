@@ -6,9 +6,15 @@ export type NetworkThrottleConfig = {
   enabled: boolean;
   profile: NetworkThrottleProfile;
   latencyMs: number;
+  downloadBps: number;
+  uploadBps: number;
 };
 
 export const NETWORK_THROTTLE_SLOW_4G_LATENCY_MS = 562.5;
+export const NETWORK_THROTTLE_102_KIB_BPS = 102 * 1024;
+export const NETWORK_THROTTLE_SLOW_4G_DOWNLOAD_BPS =
+  NETWORK_THROTTLE_102_KIB_BPS;
+export const NETWORK_THROTTLE_SLOW_4G_UPLOAD_BPS = NETWORK_THROTTLE_102_KIB_BPS;
 
 type NativeNetworkThrottleModule = {
   getConfig: () => Promise<NetworkThrottleConfig>;
@@ -40,6 +46,8 @@ export const NetworkThrottle: NetworkThrottleModule = nativeModule
           enabled: config.enabled ?? currentConfig.enabled,
           profile: config.profile ?? currentConfig.profile,
           latencyMs: config.latencyMs ?? currentConfig.latencyMs,
+          downloadBps: config.downloadBps ?? currentConfig.downloadBps,
+          uploadBps: config.uploadBps ?? currentConfig.uploadBps,
         });
       },
     }
