@@ -7,18 +7,27 @@
 static NSString *const OneKeyNetworkThrottleHandledKey = @"OneKeyNetworkThrottleHandled";
 static NSString *const OneKeyNetworkThrottleProfileSlow4G = @"slow4g";
 static const NSTimeInterval OneKeyNetworkThrottleDefaultLatencyMs = 562.5;
+static const NSInteger OneKeyNetworkThrottleDefaultThroughputBps = 102 * 1024;
+static const NSUInteger OneKeyNetworkThrottleMaxPendingDownloadBytes = 256 * 1024;
 
 @interface OneKeyNetworkThrottleState : NSObject
 + (NSDictionary *)currentConfig;
 + (BOOL)isEnabled;
 + (NSTimeInterval)latencyMs;
-+ (NSDictionary *)setEnabled:(BOOL)enabled latencyMs:(NSTimeInterval)latencyMs;
++ (NSInteger)downloadBps;
++ (NSInteger)uploadBps;
++ (NSDictionary *)setEnabled:(BOOL)enabled
+                    latencyMs:(NSTimeInterval)latencyMs
+                   downloadBps:(NSInteger)downloadBps
+                      uploadBps:(NSInteger)uploadBps;
 @end
 
 @implementation OneKeyNetworkThrottleState
 
 static atomic_bool _oneKeyNetworkThrottleEnabled = ATOMIC_VAR_INIT(false);
 static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500);
+static atomic_llong _oneKeyNetworkThrottleDownloadBps = ATOMIC_VAR_INIT(102 * 1024);
+static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024);
 
 + (NSDictionary *)currentConfig
 {
@@ -28,7 +37,9 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
   return @{
     @"enabled": @(enabled),
     @"profile": OneKeyNetworkThrottleProfileSlow4G,
-    @"latencyMs": @(latencyMs)
+    @"latencyMs": @(latencyMs),
+    @"downloadBps": @([self downloadBps]),
+    @"uploadBps": @([self uploadBps])
   };
 }
 
@@ -42,20 +53,44 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
   return ((NSTimeInterval)atomic_load_explicit(&_oneKeyNetworkThrottleLatencyMicros, memory_order_relaxed)) / 1000.0;
 }
 
-+ (NSDictionary *)setEnabled:(BOOL)enabled latencyMs:(NSTimeInterval)latencyMs
++ (NSInteger)downloadBps
+{
+  return (NSInteger)atomic_load_explicit(&_oneKeyNetworkThrottleDownloadBps, memory_order_relaxed);
+}
+
++ (NSInteger)uploadBps
+{
+  return (NSInteger)atomic_load_explicit(&_oneKeyNetworkThrottleUploadBps, memory_order_relaxed);
+}
+
++ (NSInteger)normalizeThroughputBps:(NSInteger)throughputBps
+{
+  return throughputBps > 0 ? throughputBps : OneKeyNetworkThrottleDefaultThroughputBps;
+}
+
++ (NSDictionary *)setEnabled:(BOOL)enabled
+                    latencyMs:(NSTimeInterval)latencyMs
+                   downloadBps:(NSInteger)downloadBps
+                      uploadBps:(NSInteger)uploadBps
 {
   NSTimeInterval normalizedLatencyMs = latencyMs > 0 ? latencyMs : OneKeyNetworkThrottleDefaultLatencyMs;
+  NSInteger normalizedDownloadBps = [self normalizeThroughputBps:downloadBps];
+  NSInteger normalizedUploadBps = [self normalizeThroughputBps:uploadBps];
   atomic_store_explicit(
     &_oneKeyNetworkThrottleLatencyMicros,
     (long long)llround(normalizedLatencyMs * 1000.0),
     memory_order_relaxed
   );
+  atomic_store_explicit(&_oneKeyNetworkThrottleDownloadBps, (long long)normalizedDownloadBps, memory_order_relaxed);
+  atomic_store_explicit(&_oneKeyNetworkThrottleUploadBps, (long long)normalizedUploadBps, memory_order_relaxed);
   atomic_store_explicit(&_oneKeyNetworkThrottleEnabled, enabled, memory_order_release);
   NSLog(
-    @"[onekey-network-throttle] native config enabled=%@ profile=%@ latencyMs=%.1f",
+    @"[onekey-network-throttle] native config enabled=%@ profile=%@ latencyMs=%.1f downloadBps=%ld uploadBps=%ld",
     enabled ? @"true" : @"false",
     OneKeyNetworkThrottleProfileSlow4G,
-    normalizedLatencyMs
+    normalizedLatencyMs,
+    (long)normalizedDownloadBps,
+    (long)normalizedUploadBps
   );
   return [self currentConfig];
 }
@@ -68,13 +103,27 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
 @property (atomic, assign) BOOL stopped;
 @property (nonatomic, assign) CFAbsoluteTime requestStartTime;
 @property (nonatomic, assign) NSTimeInterval latencySeconds;
+@property (nonatomic, assign) NSInteger downloadBps;
+@property (nonatomic, assign) NSInteger uploadBps;
+@property (nonatomic, assign) CFAbsoluteTime downloadStartTime;
+@property (nonatomic, assign) long long downloadedBytes;
 @property (atomic, assign) BOOL responseDelivered;
+@property (atomic, assign) BOOL flushingData;
+@property (atomic, assign) BOOL upstreamCompleted;
+@property (nonatomic, strong) NSError *upstreamError;
 @property (nonatomic, strong) NSMutableArray<NSData *> *pendingData;
+@property (nonatomic, assign) NSUInteger pendingDataBytes;
 @property (nonatomic, copy) void (^pendingResponseCompletionHandler)(NSURLSessionResponseDisposition disposition);
+@property (atomic, assign) BOOL upstreamSuspendedForBackpressure;
 - (NSTimeInterval)remainingLatencyDelay;
+- (NSTimeInterval)uploadDelayForRequest:(NSURLRequest *)request;
+- (NSTimeInterval)downloadDelayForDataLength:(NSUInteger)dataLength;
 - (void)deliverResponse:(NSURLResponse *)response;
 - (void)flushPendingData;
+- (void)finishIfPossible;
 - (void)cancelPendingResponseCompletionHandler;
+- (void)applyUpstreamBackpressureIfNeeded;
+- (void)clearPendingData;
 - (void)invalidateSessionAndClearTaskWithCancel:(BOOL)cancel;
 @end
 
@@ -104,7 +153,15 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
 
   self.requestStartTime = CFAbsoluteTimeGetCurrent();
   self.latencySeconds = [OneKeyNetworkThrottleState latencyMs] / 1000.0;
+  self.downloadBps = [OneKeyNetworkThrottleState downloadBps];
+  self.uploadBps = [OneKeyNetworkThrottleState uploadBps];
+  self.downloadStartTime = 0;
+  self.downloadedBytes = 0;
+  self.upstreamCompleted = NO;
+  self.upstreamError = nil;
   self.pendingData = [NSMutableArray array];
+  self.pendingDataBytes = 0;
+  self.upstreamSuspendedForBackpressure = NO;
 
   NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
   NSNumber *useWifiOnly = [[NSBundle mainBundle].infoDictionary objectForKey:@"ReactNetworkForceWifiOnly"];
@@ -116,13 +173,23 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
   configuration.HTTPCookieStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
   self.session = [NSURLSession sessionWithConfiguration:configuration delegate:self delegateQueue:nil];
   self.task = [self.session dataTaskWithRequest:request];
-  [self.task resume];
+  NSTimeInterval uploadDelay = [self uploadDelayForRequest:request];
+  if (uploadDelay <= 0) {
+    [self.task resume];
+    return;
+  }
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(uploadDelay * NSEC_PER_SEC)), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    if (!self.stopped) {
+      [self.task resume];
+    }
+  });
 }
 
 - (void)stopLoading
 {
   self.stopped = YES;
   [self cancelPendingResponseCompletionHandler];
+  [self clearPendingData];
   [self invalidateSessionAndClearTaskWithCancel:YES];
 }
 
@@ -131,6 +198,34 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
   NSTimeInterval elapsed = CFAbsoluteTimeGetCurrent() - self.requestStartTime;
   NSTimeInterval remainingDelay = self.latencySeconds - elapsed;
   return remainingDelay > 0 ? remainingDelay : 0;
+}
+
+- (NSTimeInterval)uploadDelayForRequest:(NSURLRequest *)request
+{
+  if (self.uploadBps <= 0) {
+    return 0;
+  }
+  long long bodyLength = (long long)request.HTTPBody.length;
+  if (bodyLength <= 0) {
+    NSString *contentLength = [request valueForHTTPHeaderField:@"Content-Length"];
+    bodyLength = contentLength != nil ? contentLength.longLongValue : 0;
+  }
+  return bodyLength > 0 ? ((NSTimeInterval)bodyLength) / ((NSTimeInterval)self.uploadBps) : 0;
+}
+
+- (NSTimeInterval)downloadDelayForDataLength:(NSUInteger)dataLength
+{
+  if (self.downloadBps <= 0 || dataLength == 0) {
+    return 0;
+  }
+  if (self.downloadStartTime <= 0) {
+    self.downloadStartTime = CFAbsoluteTimeGetCurrent();
+  }
+  long long bytesAfterData = self.downloadedBytes + (long long)dataLength;
+  NSTimeInterval expectedElapsed = ((NSTimeInterval)bytesAfterData) / ((NSTimeInterval)self.downloadBps);
+  NSTimeInterval actualElapsed = CFAbsoluteTimeGetCurrent() - self.downloadStartTime;
+  NSTimeInterval delay = expectedElapsed - actualElapsed;
+  return delay > 0 ? delay : 0;
 }
 
 - (void)deliverResponse:(NSURLResponse *)response
@@ -148,24 +243,85 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
     return;
   }
   self.responseDelivered = YES;
+  self.downloadStartTime = CFAbsoluteTimeGetCurrent();
   [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
-  [self flushPendingData];
   completionHandler(NSURLSessionResponseAllow);
+  [self flushPendingData];
+  [self finishIfPossible];
 }
 
 - (void)flushPendingData
 {
-  NSArray<NSData *> *pendingData = nil;
-  @synchronized (self) {
-    pendingData = [self.pendingData copy];
-    [self.pendingData removeAllObjects];
+  if (self.stopped || !self.responseDelivered) {
+    return;
   }
-  for (NSData *data in pendingData) {
+  NSData *data = nil;
+  @synchronized (self) {
+    if (self.flushingData) {
+      return;
+    }
+    data = self.pendingData.firstObject;
+    if (data) {
+      [self.pendingData removeObjectAtIndex:0];
+      self.flushingData = YES;
+    }
+  }
+  if (!data) {
+    [self finishIfPossible];
+    return;
+  }
+  NSTimeInterval delay = [self downloadDelayForDataLength:data.length];
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
     if (self.stopped) {
+      @synchronized (self) {
+        self.flushingData = NO;
+      }
       return;
     }
     [self.client URLProtocol:self didLoadData:data];
+    @synchronized (self) {
+      self.downloadedBytes += (long long)data.length;
+      if (self.pendingDataBytes >= data.length) {
+        self.pendingDataBytes -= data.length;
+      } else {
+        self.pendingDataBytes = 0;
+      }
+      self.flushingData = NO;
+    }
+    [self applyUpstreamBackpressureIfNeeded];
+    [self flushPendingData];
+  });
+}
+
+- (void)finishIfPossible
+{
+  NSError *error = nil;
+  BOOL shouldFinish = NO;
+  @synchronized (self) {
+    if (
+      self.stopped ||
+      !self.upstreamCompleted ||
+      !self.responseDelivered ||
+      self.flushingData ||
+      self.pendingData.count > 0
+    ) {
+      return;
+    }
+    error = self.upstreamError;
+    self.upstreamCompleted = NO;
+    shouldFinish = YES;
   }
+  if (!shouldFinish || self.stopped) {
+    return;
+  }
+  if (error) {
+    [self.client URLProtocol:self didFailWithError:error];
+  } else {
+    [self.client URLProtocolDidFinishLoading:self];
+  }
+  self.stopped = YES;
+  [self clearPendingData];
+  [self invalidateSessionAndClearTaskWithCancel:NO];
 }
 
 - (void)cancelPendingResponseCompletionHandler
@@ -177,6 +333,40 @@ static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500
   }
   if (completionHandler) {
     completionHandler(NSURLSessionResponseCancel);
+  }
+}
+
+- (void)applyUpstreamBackpressureIfNeeded
+{
+  NSURLSessionDataTask *taskToSuspend = nil;
+  NSURLSessionDataTask *taskToResume = nil;
+  @synchronized (self) {
+    if (self.stopped || !self.task || self.downloadBps <= 0) {
+      return;
+    }
+    BOOL shouldSuspend = self.pendingDataBytes >= OneKeyNetworkThrottleMaxPendingDownloadBytes;
+    if (shouldSuspend && !self.upstreamSuspendedForBackpressure) {
+      self.upstreamSuspendedForBackpressure = YES;
+      taskToSuspend = self.task;
+    } else if (!shouldSuspend && self.upstreamSuspendedForBackpressure) {
+      self.upstreamSuspendedForBackpressure = NO;
+      taskToResume = self.task;
+    }
+  }
+  if (taskToSuspend) {
+    [taskToSuspend suspend];
+  }
+  if (taskToResume) {
+    [taskToResume resume];
+  }
+}
+
+- (void)clearPendingData
+{
+  @synchronized (self) {
+    [self.pendingData removeAllObjects];
+    self.pendingDataBytes = 0;
+    self.upstreamSuspendedForBackpressure = NO;
   }
 }
 
@@ -231,28 +421,36 @@ didReceiveResponse:(NSURLResponse *)response
   if (self.stopped) {
     return;
   }
+  @synchronized (self) {
+    [self.pendingData addObject:data];
+    self.pendingDataBytes += data.length;
+  }
+  [self applyUpstreamBackpressureIfNeeded];
   if (self.responseDelivered) {
-    [self.client URLProtocol:self didLoadData:data];
-  } else {
-    @synchronized (self) {
-      [self.pendingData addObject:data];
-    }
+    [self flushPendingData];
   }
 }
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
 {
-  if (!self.responseDelivered) {
-    [self cancelPendingResponseCompletionHandler];
-  }
-  if (!self.stopped) {
-    if (error) {
-      [self.client URLProtocol:self didFailWithError:error];
-    } else {
-      [self.client URLProtocolDidFinishLoading:self];
+  if (error) {
+    if (!self.responseDelivered) {
+      [self cancelPendingResponseCompletionHandler];
     }
+    if (!self.stopped) {
+      [self.client URLProtocol:self didFailWithError:error];
+      self.stopped = YES;
+    }
+    [self clearPendingData];
+    [self invalidateSessionAndClearTaskWithCancel:NO];
+    return;
   }
-  [self invalidateSessionAndClearTaskWithCancel:NO];
+
+  @synchronized (self) {
+    self.upstreamCompleted = YES;
+    self.upstreamError = error;
+  }
+  [self finishIfPossible];
 }
 
 @end
@@ -309,7 +507,17 @@ RCT_REMAP_METHOD(setConfig, setConfig:(NSDictionary *)config resolver:(RCTPromis
   id latencyValue = config[@"latencyMs"];
   NSTimeInterval latencyMs =
     latencyValue != nil && latencyValue != [NSNull null] ? [latencyValue doubleValue] : [OneKeyNetworkThrottleState latencyMs];
-  resolve([OneKeyNetworkThrottleState setEnabled:enabled latencyMs:latencyMs]);
+  id downloadBpsValue = config[@"downloadBps"];
+  NSInteger downloadBps =
+    downloadBpsValue != nil && downloadBpsValue != [NSNull null]
+      ? [downloadBpsValue integerValue]
+      : [OneKeyNetworkThrottleState downloadBps];
+  id uploadBpsValue = config[@"uploadBps"];
+  NSInteger uploadBps =
+    uploadBpsValue != nil && uploadBpsValue != [NSNull null]
+      ? [uploadBpsValue integerValue]
+      : [OneKeyNetworkThrottleState uploadBps];
+  resolve([OneKeyNetworkThrottleState setEnabled:enabled latencyMs:latencyMs downloadBps:downloadBps uploadBps:uploadBps]);
 }
 
 @end
