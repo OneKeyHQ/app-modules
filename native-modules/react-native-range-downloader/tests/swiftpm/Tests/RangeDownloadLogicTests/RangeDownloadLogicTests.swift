@@ -318,6 +318,25 @@ final class RangeDownloadLogicTests: XCTestCase {
   }
 }
 
+final class FirmwareArtifactRunOwnershipTests: XCTestCase {
+  func testConcurrentDifferentTasksCannotOwnTheSameArtifact() {
+    let ownership = FirmwareArtifactRunOwnership<String>()
+    XCTAssertTrue(ownership.acquire(artifactId: "firmware-main", owner: "task-1"))
+
+    let attempted = expectation(description: "second owner attempted")
+    DispatchQueue.global().async {
+      XCTAssertFalse(
+        ownership.acquire(artifactId: "firmware-main", owner: "task-2")
+      )
+      attempted.fulfill()
+    }
+    wait(for: [attempted], timeout: 1)
+
+    ownership.release(artifactId: "firmware-main", owner: "task-1")
+    XCTAssertTrue(ownership.acquire(artifactId: "firmware-main", owner: "task-2"))
+  }
+}
+
 // MARK: - Local SHA helper (independent reference, not the unit under test)
 
 import CommonCrypto

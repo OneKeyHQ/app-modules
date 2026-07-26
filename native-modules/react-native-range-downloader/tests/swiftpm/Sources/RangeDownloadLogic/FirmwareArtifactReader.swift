@@ -1,0 +1,1 @@
+../../../../ios/FirmwareArtifactReader.swift

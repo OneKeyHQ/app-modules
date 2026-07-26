@@ -291,32 +291,21 @@ class SegmentArtifactSweepTest {
   // same gate driven by the REAL progressPercent + AtomicInteger CAS.
   @Test
   fun progressGateNeverGoesBackwardUnderConcurrency() {
-    val last = AtomicInteger(-1)
     val emissions = java.util.concurrent.ConcurrentLinkedQueue<Int>()
+    val progressEmitter = RangeDownloadLogic.MonotonicProgressEmitter(emissions::add)
     val total = 1_000L
     val threads = 16
     val pool = Executors.newFixedThreadPool(threads)
     val start = CountDownLatch(1)
     val done = CountDownLatch(threads)
-    val regress = AtomicInteger(0)
 
-    repeat(threads) { t ->
+    repeat(threads) {
       pool.submit {
         start.await()
         // Each thread fires the full 0..1000 transferred sweep (heavy overlap), so
-        // the gate sees the same percentages racing from many threads at once.
+        // the real emitter sees the same percentages racing from many threads.
         for (transferred in 0L..total) {
-          val p = RangeDownloadLogic.progressPercent(transferred, total) ?: continue
-          while (true) {
-            val prev = last.get()
-            if (p <= prev) break // not an advance → no emit (de-dup / monotone)
-            if (last.compareAndSet(prev, p)) {
-              emissions.add(p)
-              break
-            }
-          }
-          // A reader must NEVER observe the shared published max regress.
-          if (prevMaxRegressed(last)) regress.incrementAndGet()
+          progressEmitter.publish(transferred, total)
         }
         done.countDown()
       }
@@ -325,26 +314,11 @@ class SegmentArtifactSweepTest {
     assertTrue("workers must finish", done.await(20, TimeUnit.SECONDS))
     pool.shutdownNow()
 
-    // The published max ends at exactly 100 and never regressed.
-    assertEquals("gate must settle at 100%", 100, last.get())
-    assertEquals("published max must never regress", 0, regress.get())
-    // Each emitted percentage is unique (CAS de-dup) and the stream is sorted
-    // ascending (monotone): emissions are appended only on a successful advance.
+    // Each emitted percentage is unique and the callback stream is sorted
+    // ascending because state update + callback execution are serialized.
     val list = emissions.toList()
     assertEquals("every emission must be unique (no re-emit of an equal value)", list.toSet().size, list.size)
     assertEquals("emissions must be monotone non-decreasing", list.sorted(), list)
     assertTrue("the terminal 100% must be emitted exactly once", list.count { it == 100 } == 1)
-  }
-
-  // Tracks the running max in a thread-confined way to detect any regression of the
-  // shared published value. Returns true if the AtomicInteger's value ever dropped
-  // below a previously observed value on this thread.
-  private val perThreadSeenMax = ThreadLocal.withInitial { -1 }
-  private fun prevMaxRegressed(last: AtomicInteger): Boolean {
-    val now = last.get()
-    val seen = perThreadSeenMax.get()
-    if (now < seen) return true
-    if (now > seen) perThreadSeenMax.set(now)
-    return false
   }
 }
