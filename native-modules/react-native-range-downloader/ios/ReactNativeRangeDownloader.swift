@@ -95,6 +95,199 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
     }
     return NSTemporaryDirectory()
   }
+
+  func getFirmwareArtifactCapabilities() throws -> FirmwareArtifactCapabilities {
+    return FirmwareArtifactCapabilities(
+      firmwareArtifactProtocolVersion: 2,
+      supportedRouteTypes: ["domain", "pinnedIp"],
+      supportsArchiveMaterialization: true,
+      maxReadBytes: Double(256 * 1024)
+    )
+  }
+
+  func downloadFirmwareArtifact(
+    params: FirmwareArtifactDownloadParams
+  ) throws -> Promise<FirmwareArtifactReceipt> {
+    return Promise.async {
+      let metadata = try await FirmwareArtifactDownloader.shared.download(
+        try FirmwareArtifactDownloader.validate(params)
+      )
+      return try metadata.firmwareArtifactReceipt
+    }
+  }
+
+  func getFirmwareArtifactStatus(
+    params: FirmwareArtifactStatusParams
+  ) throws -> Promise<FirmwareArtifactStatus> {
+    return Promise.async {
+      let snapshot = try FirmwareArtifactDownloader.shared.status(
+        leaseRef: params.leaseRef,
+        taskId: params.taskId
+      )
+      return FirmwareArtifactStatus(
+        state: snapshot.state.wireState,
+        downloadedBytes: Double(snapshot.downloadedBytes),
+        expectedSize: snapshot.expectedSize > 0
+          ? Double(snapshot.expectedSize)
+          : nil,
+        receipt: try snapshot.artifact?.firmwareArtifactReceipt,
+        errorCode: snapshot.errorCode,
+        errorMessage: snapshot.errorMessage,
+        retryable: snapshot.retryable
+      )
+    }
+  }
+
+  func cancelFirmwareArtifact(
+    params: FirmwareArtifactTaskParams
+  ) throws -> Promise<Void> {
+    return Promise.async {
+      await FirmwareArtifactDownloader.shared.cancel(
+        leaseRef: params.leaseRef,
+        taskId: params.taskId
+      )
+    }
+  }
+
+  func discardFirmwareArtifact(
+    params: FirmwareArtifactRefParams
+  ) throws -> Promise<Void> {
+    return Promise.async {
+      try FirmwareArtifactStore.shared.discardArtifact(params.artifactRef)
+    }
+  }
+
+  func quarantineFirmwareArtifact(
+    params: FirmwareArtifactRefParams
+  ) throws -> Promise<Void> {
+    return Promise.async {
+      try FirmwareArtifactStore.shared.quarantineArtifact(params.artifactRef)
+    }
+  }
+
+  func openFirmwareArtifact(
+    params: FirmwareArtifactReaderOpenParams
+  ) throws -> Promise<FirmwareArtifactReaderInfo> {
+    return Promise.async {
+      let info = try FirmwareArtifactReader.shared.open(
+        artifactRef: params.artifactRef,
+        immutableToken: params.immutableToken
+      )
+      return FirmwareArtifactReaderInfo(
+        readerId: info.readerId,
+        size: Double(info.size),
+        immutableToken: info.immutableToken,
+        maxReadBytes: Double(FirmwareArtifactReader.maxReadBytes)
+      )
+    }
+  }
+
+  func readFirmwareArtifact(
+    params: FirmwareArtifactReaderReadParams
+  ) throws -> Promise<ArrayBuffer> {
+    return Promise.async {
+      let data = try FirmwareArtifactReader.shared.read(
+        readerId: params.readerId,
+        offset: params.offset,
+        length: params.length
+      )
+      return try ArrayBuffer.copy(data: data)
+    }
+  }
+
+  func closeFirmwareArtifact(
+    params: FirmwareArtifactReaderCloseParams
+  ) throws -> Promise<Void> {
+    return Promise.async {
+      try FirmwareArtifactReader.shared.close(readerId: params.readerId)
+    }
+  }
+
+  func materializeFirmwareArchive(
+    params: FirmwareArchiveMaterializeParams
+  ) throws -> Promise<FirmwareArchiveMaterializeResult> {
+    return Promise.async {
+      let entries = try FirmwareArchiveMaterializer.shared.materialize(
+        leaseRef: params.leaseRef,
+        parentArtifactId: params.parentArtifactId,
+        archiveArtifactRef: params.archiveArtifactRef,
+        archiveImmutableToken: params.archiveImmutableToken,
+        materializationPolicy: params.materializationPolicy
+      )
+      return FirmwareArchiveMaterializeResult(
+        artifacts: try entries.map { entry in
+          FirmwareArchiveMaterializedArtifact(
+            entryId: entry.entryId,
+            logicalName: entry.logicalName,
+            receipt: try entry.artifact.firmwareArtifactReceipt
+          )
+        }
+      )
+    }
+  }
+
+  func createFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseCreateParams
+  ) throws -> Promise<FirmwareArtifactLease> {
+    return Promise.async {
+      let lease = try FirmwareArtifactStore.shared.createLease(
+        transactionId: params.transactionId
+      )
+      return FirmwareArtifactLease(leaseRef: lease.leaseRef)
+    }
+  }
+
+  func retainFirmwareArtifact(
+    params: FirmwareArtifactRetainParams
+  ) throws -> Promise<Void> {
+    return Promise.async {
+      try FirmwareArtifactStore.shared.retainArtifact(
+        leaseRef: params.leaseRef,
+        artifactRef: params.artifactRef
+      )
+    }
+  }
+
+  func releaseFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseReleaseParams
+  ) throws -> Promise<Void> {
+    return Promise.async {
+      let disposition: StoredFirmwareLeaseDisposition
+      switch params.disposition {
+      case .completed:
+        disposition = .completed
+      case .safecancelled:
+        disposition = .safeCancelled
+      case .safeabandoned:
+        disposition = .safeAbandoned
+      }
+      try FirmwareArtifactStore.shared.releaseLease(
+        leaseRef: params.leaseRef,
+        disposition: disposition
+      )
+    }
+  }
+
+  func reconcileFirmwareArtifactLeases(
+    params: FirmwareArtifactLeaseReconcileParams
+  ) throws -> Promise<Void> {
+    return Promise.async {
+      try FirmwareArtifactStore.shared.reconcileLeases(
+        activeLeaseRefs: params.activeLeaseRefs
+      )
+    }
+  }
+
+  func sweepFirmwareArtifactOrphans() throws -> Promise<FirmwareArtifactSweepResult> {
+    return Promise.async {
+      let result = try FirmwareArtifactStore.shared.sweepOrphans()
+      return FirmwareArtifactSweepResult(
+        deletedFiles: Double(result.deletedFiles),
+        deletedBytes: Double(result.deletedBytes)
+      )
+    }
+  }
+
 }
 
 // MARK: - RangeDownloader (migrated core)
@@ -392,7 +585,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   private func emit(channel: DownloadChannel, taskId: String, type: String,
                     progress: Double, message: String) {
-    let snapshot: [(RangeDownloadEvent) -> Void] = lock.withLockValue {
+    let snapshot: [(RangeDownloadEvent) -> Void] = lock.withFirmwareLock {
       Array(self.listeners.values)
     }
     guard !snapshot.isEmpty else { return }
@@ -427,7 +620,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   }
 
   private func run(forKey key: String) -> RunState? {
-    lock.withLockValue { self.runs[key] }
+    lock.withFirmwareLock { self.runs[key] }
   }
 
   private func run(for desc: String) -> (run: RunState, segIndex: Int)? {
@@ -760,7 +953,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     // completion driving the missing-segment re-enqueue — must NOT bump the
     // counter again nor arm a duplicate asyncAfter. Returning `true` here reports
     // "a retry is in flight for this segment" without scheduling a second one.
-    let claim: (alreadyPending: Bool, attempts: Int) = lock.withLockValue {
+    let claim: (alreadyPending: Bool, attempts: Int) = lock.withFirmwareLock {
       if state.pendingRetryIndexes.contains(idx) {
         return (true, state.segmentAttempts[idx] ?? 0)
       }
@@ -774,16 +967,16 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     if attempts > state.maxSegmentAttempts {
       // Over budget: release the slot we just claimed so a later genuine retry
       // (if any) isn't blocked, and report exhausted.
-      lock.withLockValue { _ = state.pendingRetryIndexes.remove(idx) }
+      lock.withFirmwareLock { _ = state.pendingRetryIndexes.remove(idx) }
       return false
     }
-    guard let url = lock.withLockValue({ state.url }) else {
-      lock.withLockValue { _ = state.pendingRetryIndexes.remove(idx) }
+    guard let url = lock.withFirmwareLock({ state.url }) else {
+      lock.withFirmwareLock { _ = state.pendingRetryIndexes.remove(idx) }
       return false
     }
-    let ranges = lock.withLockValue { state.ranges }
+    let ranges = lock.withFirmwareLock { state.ranges }
     guard idx < ranges.count else {
-      lock.withLockValue { _ = state.pendingRetryIndexes.remove(idx) }
+      lock.withFirmwareLock { _ = state.pendingRetryIndexes.remove(idx) }
       return false
     }
     let range = ranges[idx]
@@ -801,11 +994,11 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       // is moot (run gone / segment landed) or a real task already exists.
       guard let live = self.run(forKey: Self.runKey(channel: state.channel, taskId: state.taskId)),
             live === state else {
-        self.lock.withLockValue { _ = state.pendingRetryIndexes.remove(idx) }
+        self.lock.withFirmwareLock { _ = state.pendingRetryIndexes.remove(idx) }
         return
       }
       if FileManager.default.fileExists(atPath: state.segPath(idx)) {
-        self.lock.withLockValue { _ = state.pendingRetryIndexes.remove(idx) }
+        self.lock.withFirmwareLock { _ = state.pendingRetryIndexes.remove(idx) }
         return
       }
       session.getAllTasks { tasks in
@@ -818,7 +1011,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
           return t.state == .running || t.state == .suspended
         }
         if alreadyLive {
-          self.lock.withLockValue { _ = state.pendingRetryIndexes.remove(idx) }
+          self.lock.withFirmwareLock { _ = state.pendingRetryIndexes.remove(idx) }
           return
         }
         // enqueueSegment clears the pending marker once the real task exists.
@@ -843,13 +1036,13 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   private func reevaluateSizeThenRetry(state: RunState, session: URLSession,
                                        idx: Int, retryAfter: Double?,
                                        ranges: [(start: Int64, end: Int64)]) {
-    guard let url = lock.withLockValue({ state.url }) else {
+    guard let url = lock.withFirmwareLock({ state.url }) else {
       finalizeTransientFallback(state: state, idx: idx,
                                 reason: "segment \(idx) 416 but url missing", ranges: ranges)
       return
     }
-    let priorTotal = lock.withLockValue { state.totalSize }
-    let priorEtag = lock.withLockValue { state.etag }
+    let priorTotal = lock.withFirmwareLock { state.totalSize }
+    let priorEtag = lock.withFirmwareLock { state.etag }
     let channelStr = state.channel.stringValue
     let taskId = state.taskId
     OneKeyLog.info("RangeDownloader",
@@ -919,10 +1112,10 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   private func stallWatchdogTick(key: String, stallSeconds: Double, interval: Double) {
     guard let state = run(forKey: key),
-          lock.withLockValue({ state.continuation != nil }) else {
+          lock.withFirmwareLock({ state.continuation != nil }) else {
       return // run finalized / cancelled — stop.
     }
-    let last = lock.withLockValue { state.lastProgressAt }
+    let last = lock.withFirmwareLock { state.lastProgressAt }
     let stalled = Date().timeIntervalSince(last) >= stallSeconds
     if stalled {
       let channelStr = state.channel.stringValue
@@ -1004,7 +1197,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
                   didFinishDownloadingTo location: URL) {
     guard let desc = downloadTask.taskDescription,
           let (state, idx) = run(for: desc) else { return }
-    let ranges = lock.withLockValue { state.ranges }
+    let ranges = lock.withFirmwareLock { state.ranges }
     guard idx < ranges.count else { return }
     let range = ranges[idx]
     let expectedLen = range.end - range.start + 1
@@ -1054,7 +1247,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
         lock.lock(); state.fellBack = true; state.fellBackKind = .multipartOrBadTotal; lock.unlock()
         return
       }
-      let expectedTotal = lock.withLockValue { state.totalSize }
+      let expectedTotal = lock.withFirmwareLock { state.totalSize }
       guard let total = RangeDownloadLogic.parseContentRangeTotal(cr), total == expectedTotal else {
         // Absent / `*` / disagreeing total → the object changed or is non-conforming.
         lock.lock(); state.fellBack = true; state.fellBackKind = .multipartOrBadTotal; lock.unlock()
@@ -1102,11 +1295,11 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     guard let desc = task.taskDescription,
           let (state, idx) = run(for: desc) else { return }
-    let ranges = lock.withLockValue { state.ranges }
+    let ranges = lock.withFirmwareLock { state.ranges }
 
     // A Permanent classification anywhere in the run (didFinishDownloadingTo set
     // `fellBack`) wins over per-segment retries: discard and single-stream.
-    if lock.withLockValue({ state.fellBack }) {
+    if lock.withFirmwareLock({ state.fellBack }) {
       finalizePermanentFallback(state: state, session: session, ranges: ranges)
       return
     }
@@ -1117,7 +1310,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
         // Distinguish a stall-watchdog cancel (transient → retry this segment)
         // from an external/user cancel or our own permanent-fallback sibling
         // cancel (swallow). A genuine cancel never set stallCancelledIndexes.
-        let wasStall = lock.withLockValue { state.stallCancelledIndexes.remove(idx) != nil }
+        let wasStall = lock.withFirmwareLock { state.stallCancelledIndexes.remove(idx) != nil }
         if wasStall {
           if retrySegmentIfUnderBudget(state: state, idx: idx, retryAfter: nil) { return }
           finalizeTransientFallback(state: state, idx: idx, reason: "segment \(idx) stalled; retry budget exhausted", ranges: ranges)
@@ -1134,7 +1327,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
     // §4: this segment's finished body was a Transient HTTP status (429/5xx/408/
     // 416). Discard the body and re-enqueue just this segment under its budget.
-    let transientRetryAfter = lock.withLockValue { () -> (present: Bool, retryAfter: Double?) in
+    let transientRetryAfter = lock.withFirmwareLock { () -> (present: Bool, retryAfter: Double?) in
       if let ra = state.transientSegmentRetryAfter[idx] {
         state.transientSegmentRetryAfter.removeValue(forKey: idx)
         return (true, ra)
@@ -1145,7 +1338,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       // §4 (416): a 416 segment must re-evaluate the total/validator (re-probe)
       // BEFORE re-requesting the same range. If the object changed → object-change
       // (wipe + restart, Permanent); otherwise keep `.segN` and retry normally.
-      let needsSizeReeval = lock.withLockValue { state.sizeReevalIndexes.remove(idx) != nil }
+      let needsSizeReeval = lock.withFirmwareLock { state.sizeReevalIndexes.remove(idx) != nil }
       if needsSizeReeval {
         reevaluateSizeThenRetry(state: state, session: session, idx: idx,
                                 retryAfter: transientRetryAfter.retryAfter, ranges: ranges)
@@ -1160,7 +1353,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     // A segment failed to stash (move/size-check failure in didFinishDownloadingTo).
     // A short/truncated body is transient (the bytes will be re-fetched), so retry
     // this segment under budget rather than failing the whole run.
-    if lock.withLockValue({ state.stashError }) != nil {
+    if lock.withFirmwareLock({ state.stashError }) != nil {
       lock.lock(); state.stashError = nil; lock.unlock()
       if retrySegmentIfUnderBudget(state: state, idx: idx, retryAfter: nil) { return }
       finalizeTransientFallback(state: state, idx: idx,
@@ -1194,7 +1387,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       // above. If one is pending, that scheduled retry will re-drive completion;
       // bail now rather than double-incrementing its attempt counter and arming
       // a duplicate retry.
-      let pendingRetry = self.lock.withLockValue { !state.pendingRetryIndexes.isEmpty }
+      let pendingRetry = self.lock.withFirmwareLock { !state.pendingRetryIndexes.isEmpty }
       if pendingRetry { return }
       // Re-check under no-in-flight: a just-finished stash may have completed.
       if self.allSegmentsPresent(state: state, ranges: ranges) {
@@ -1230,7 +1423,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
                                          ranges: [(start: Int64, end: Int64)]) {
     let channel = state.channel
     let taskId = state.taskId
-    let kind = lock.withLockValue { state.fellBackKind }
+    let kind = lock.withFirmwareLock { state.fellBackKind }
     session.getAllTasks { tasks in
       for t in tasks {
         if let d = t.taskDescription,
@@ -1306,7 +1499,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   private func finishContinuation(state: RunState, with error: Error?,
                                   ranges: [(start: Int64, end: Int64)]) {
-    let cont: CheckedContinuation<Void, Error>? = lock.withLockValue {
+    let cont: CheckedContinuation<Void, Error>? = lock.withFirmwareLock {
       let c = state.continuation
       state.continuation = nil
       return c
@@ -1424,9 +1617,41 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   // calculateSHA256 (§5.5) now lives on `RangeDownloadLogic`.
 }
 
-private extension NSLock {
-  func withLockValue<T>(_ body: () -> T) -> T {
-    lock(); defer { unlock() }
-    return body()
+private extension StoredFirmwareArtifactMetadata {
+  var firmwareArtifactReceipt: FirmwareArtifactReceipt {
+    get throws {
+      guard let actualSize,
+            let actualSha256,
+            let immutableToken else {
+        throw FirmwareArtifactStoreError.invalidMetadata
+      }
+      return FirmwareArtifactReceipt(
+        artifactRef: artifactRef,
+        size: Double(actualSize),
+        sha256: actualSha256,
+        immutableToken: immutableToken
+      )
+    }
+  }
+}
+
+private extension FirmwareArtifactRegistryState {
+  var wireState: FirmwareArtifactStatusState {
+    switch self {
+    case .notFound:
+      return .notfound
+    case .queued:
+      return .queued
+    case .downloading:
+      return .downloading
+    case .verifying:
+      return .verifying
+    case .completed:
+      return .completed
+    case .cancelled:
+      return .cancelled
+    case .failed:
+      return .failed
+    }
   }
 }

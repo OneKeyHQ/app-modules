@@ -2,6 +2,7 @@ package com.margelo.nitro.reactnativerangedownloader
 
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.NitroModules
+import com.margelo.nitro.core.ArrayBuffer
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.nativelogger.OneKeyLog
 import java.io.File
@@ -81,12 +82,12 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
       val cancelHandle = activeDownloads.start(channel.name, taskId)
 
-      // The progress callback is invoked concurrently by the helper's worker
-      // threads, so guard lastProgress with an AtomicInteger + CAS: only the
-      // thread that advances the percentage to a strictly higher value wins the
-      // CAS and emits the event, which keeps progress monotonic and de-duped
-      // without a lock (this only affects event ordering, never file bytes).
-      val lastProgress = java.util.concurrent.atomic.AtomicInteger(-1)
+      // Worker callbacks are concurrent. Keep the high-water update and event
+      // emission in one serialized critical section so the observed callback
+      // order cannot regress after a lower-percentage thread is descheduled.
+      val progressEmitter = RangeDownloadLogic.MonotonicProgressEmitter { progress ->
+        sendEvent(channel, taskId, type = "progress", progress = progress)
+      }
       val outcome = try {
         ConcurrentRangeDownloader(
           httpClient = httpClient,
@@ -94,13 +95,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
           minConcurrentBytes = minConcurrentBytes,
           log = { msg -> OneKeyLog.info("RangeDownloader", msg) },
         ).download(downloadUrl, partialFilePath, cancelHandle) { transferred, total ->
-          val p = RangeDownloadLogic.progressPercent(transferred, total)
-          if (p != null) {
-            val prev = lastProgress.get()
-            if (p > prev && lastProgress.compareAndSet(prev, p)) {
-              sendEvent(channel, taskId, type = "progress", progress = p)
-            }
-          }
+          progressEmitter.publish(transferred, total)
         }
       } finally {
         // Only deregister our own handle (a concurrent cancel may have replaced it).
@@ -264,6 +259,224 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
     val ctx = NitroModules.applicationContext ?: return ""
     return ctx.cacheDir.absolutePath
   }
+
+  override fun getFirmwareArtifactCapabilities(): FirmwareArtifactCapabilities =
+    FirmwareArtifactCapabilities(
+      firmwareArtifactProtocolVersion = 2.0,
+      supportedRouteTypes = arrayOf(
+        "domain",
+        "pinnedIp",
+      ),
+      supportsArchiveMaterialization = true,
+      maxReadBytes = (256 * 1024).toDouble(),
+    )
+
+  override fun downloadFirmwareArtifact(
+    params: FirmwareArtifactDownloadParams,
+  ): Promise<FirmwareArtifactReceipt> =
+    Promise.async {
+      val metadata = firmwareArtifactDownloader().download(
+        FirmwareArtifactDownloader.validate(params)
+      )
+      metadata.toFirmwareArtifactReceipt()
+    }
+
+  override fun getFirmwareArtifactStatus(
+    params: FirmwareArtifactStatusParams,
+  ): Promise<FirmwareArtifactStatus> =
+    Promise.async {
+      val snapshot = firmwareArtifactDownloader().status(
+        leaseRef = params.leaseRef,
+        taskId = params.taskId,
+      )
+      FirmwareArtifactStatus(
+        state = snapshot.state.toWireState(),
+        downloadedBytes = snapshot.downloadedBytes.toDouble(),
+        expectedSize = snapshot.expectedSize.takeIf { it > 0 }?.toDouble(),
+        receipt = snapshot.artifact?.toFirmwareArtifactReceipt(),
+        errorCode = snapshot.errorCode,
+        errorMessage = snapshot.errorMessage,
+        retryable = snapshot.retryable,
+      )
+    }
+
+  override fun cancelFirmwareArtifact(
+    params: FirmwareArtifactTaskParams,
+  ): Promise<Unit> =
+    Promise.async {
+      firmwareArtifactDownloader().cancel(
+        leaseRef = params.leaseRef,
+        taskId = params.taskId,
+      )
+      Unit
+    }
+
+  override fun discardFirmwareArtifact(
+    params: FirmwareArtifactRefParams,
+  ): Promise<Unit> =
+    Promise.async {
+      firmwareArtifactStore().discardArtifact(params.artifactRef)
+      Unit
+    }
+
+  override fun quarantineFirmwareArtifact(
+    params: FirmwareArtifactRefParams,
+  ): Promise<Unit> =
+    Promise.async {
+      firmwareArtifactStore().quarantineArtifact(params.artifactRef)
+      Unit
+    }
+
+  override fun openFirmwareArtifact(
+    params: FirmwareArtifactReaderOpenParams,
+  ): Promise<FirmwareArtifactReaderInfo> =
+    Promise.async {
+      val info = firmwareArtifactReader().open(
+        artifactRef = params.artifactRef,
+        immutableToken = params.immutableToken,
+      )
+      FirmwareArtifactReaderInfo(
+        readerId = info.readerId,
+        size = info.size.toDouble(),
+        immutableToken = info.immutableToken,
+        maxReadBytes = FirmwareArtifactReader.MAX_READ_BYTES.toDouble(),
+      )
+    }
+
+  override fun readFirmwareArtifact(
+    params: FirmwareArtifactReaderReadParams,
+  ): Promise<ArrayBuffer> =
+    Promise.async {
+      ArrayBuffer.copy(
+        firmwareArtifactReader().read(
+          readerId = params.readerId,
+          offset = params.offset,
+          length = params.length,
+        )
+      )
+    }
+
+  override fun closeFirmwareArtifact(
+    params: FirmwareArtifactReaderCloseParams,
+  ): Promise<Unit> =
+    Promise.async {
+      firmwareArtifactReader().close(params.readerId)
+      Unit
+    }
+
+  override fun materializeFirmwareArchive(
+    params: FirmwareArchiveMaterializeParams,
+  ): Promise<FirmwareArchiveMaterializeResult> =
+    Promise.async {
+      val entries = firmwareArchiveMaterializer().materialize(
+        leaseRef = params.leaseRef,
+        parentArtifactId = params.parentArtifactId,
+        archiveArtifactRef = params.archiveArtifactRef,
+        archiveImmutableToken = params.archiveImmutableToken,
+        materializationPolicy = params.materializationPolicy,
+      )
+      FirmwareArchiveMaterializeResult(
+        artifacts = entries.map { entry ->
+          FirmwareArchiveMaterializedArtifact(
+            entryId = entry.entryId,
+            logicalName = entry.logicalName,
+            receipt = entry.artifact.toFirmwareArtifactReceipt(),
+          )
+        }.toTypedArray(),
+      )
+    }
+
+  override fun createFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseCreateParams,
+  ): Promise<FirmwareArtifactLease> =
+    Promise.async {
+      val lease = firmwareArtifactStore().createLease(params.transactionId)
+      FirmwareArtifactLease(leaseRef = lease.leaseRef)
+    }
+
+  override fun retainFirmwareArtifact(
+    params: FirmwareArtifactRetainParams,
+  ): Promise<Unit> =
+    Promise.async {
+      firmwareArtifactStore().retainArtifact(
+        leaseRef = params.leaseRef,
+        artifactRef = params.artifactRef,
+      )
+      Unit
+    }
+
+  override fun releaseFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseReleaseParams,
+  ): Promise<Unit> =
+    Promise.async {
+      val disposition = when (params.disposition) {
+        FirmwareArtifactLeaseDisposition.COMPLETED -> StoredLeaseDisposition.COMPLETED
+        FirmwareArtifactLeaseDisposition.SAFECANCELLED -> StoredLeaseDisposition.SAFE_CANCELLED
+        FirmwareArtifactLeaseDisposition.SAFEABANDONED -> StoredLeaseDisposition.SAFE_ABANDONED
+      }
+      firmwareArtifactStore().releaseLease(
+        leaseRef = params.leaseRef,
+        disposition = disposition,
+      )
+      Unit
+    }
+
+  override fun reconcileFirmwareArtifactLeases(
+    params: FirmwareArtifactLeaseReconcileParams,
+  ): Promise<Unit> =
+    Promise.async {
+      firmwareArtifactStore().reconcileLeases(params.activeLeaseRefs.toList())
+      Unit
+    }
+
+  override fun sweepFirmwareArtifactOrphans(): Promise<FirmwareArtifactSweepResult> =
+    Promise.async {
+      val result = firmwareArtifactStore().sweepOrphans()
+      FirmwareArtifactSweepResult(
+        deletedFiles = result.deletedFiles.toDouble(),
+        deletedBytes = result.deletedBytes.toDouble(),
+      )
+    }
+
+  private fun firmwareArtifactStore(): FirmwareArtifactStore {
+    val context = NitroModules.applicationContext
+      ?: throw IllegalStateException("ARTIFACT_APPLICATION_CONTEXT_UNAVAILABLE")
+    return FirmwareArtifactStore.processInstance(
+      File(context.filesDir, "onekey-firmware-artifacts-v1"),
+    )
+  }
+
+  private fun firmwareArtifactDownloader(): FirmwareArtifactDownloader =
+    FirmwareArtifactDownloader(firmwareArtifactStore())
+
+  private fun firmwareArtifactReader(): FirmwareArtifactReader =
+    FirmwareArtifactReader.processInstance(firmwareArtifactStore())
+
+  private fun firmwareArchiveMaterializer(): FirmwareArchiveMaterializer =
+    FirmwareArchiveMaterializer.processInstance(firmwareArtifactStore())
+
+  private fun StoredArtifactMetadata.toFirmwareArtifactReceipt(): FirmwareArtifactReceipt {
+    val size = actualSize ?: throw FirmwareArtifactStoreException.invalidMetadata()
+    val digest = actualSha256 ?: throw FirmwareArtifactStoreException.invalidMetadata()
+    val token = immutableToken ?: throw FirmwareArtifactStoreException.invalidMetadata()
+    return FirmwareArtifactReceipt(
+      artifactRef = artifactRef,
+      size = size.toDouble(),
+      sha256 = digest,
+      immutableToken = token,
+    )
+  }
+
+  private fun FirmwareArtifactRegistryState.toWireState(): FirmwareArtifactStatusState =
+    when (this) {
+      FirmwareArtifactRegistryState.NOT_FOUND -> FirmwareArtifactStatusState.NOTFOUND
+      FirmwareArtifactRegistryState.QUEUED -> FirmwareArtifactStatusState.QUEUED
+      FirmwareArtifactRegistryState.DOWNLOADING -> FirmwareArtifactStatusState.DOWNLOADING
+      FirmwareArtifactRegistryState.VERIFYING -> FirmwareArtifactStatusState.VERIFYING
+      FirmwareArtifactRegistryState.COMPLETED -> FirmwareArtifactStatusState.COMPLETED
+      FirmwareArtifactRegistryState.CANCELLED -> FirmwareArtifactStatusState.CANCELLED
+      FirmwareArtifactRegistryState.FAILED -> FirmwareArtifactStatusState.FAILED
+    }
 
   // Broadcast one event to every registered listener. Listeners filter by
   // channel/taskId on their side (shared registry, per the design).

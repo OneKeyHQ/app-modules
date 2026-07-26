@@ -68,6 +68,143 @@ export interface RangeDownloadEvent {
   message: string;
 }
 
+export interface FirmwareArtifactDownloadParams {
+  taskId: string;
+  leaseRef: string;
+  artifactId: string;
+  url: string;
+  // Kept as a string on the generated bridge because Nitro turns string unions
+  // into C++ enum identifiers; the required `domain` value collides with
+  // Darwin's `DOMAIN` macro. The package entry point narrows this to the public
+  // FirmwareArtifactRouteType union, and native code validates the value.
+  routeType: string;
+  resolvedIp?: string;
+  expectedSize: number;
+  expectedSha256: string;
+  maxBytes: number;
+  segmentCount?: number;
+  overallDeadlineSeconds?: number;
+}
+
+export interface FirmwareArtifactReceipt {
+  artifactRef: string;
+  size: number;
+  sha256: string;
+  immutableToken: string;
+}
+
+export type FirmwareArtifactStatusState =
+  | 'notFound'
+  | 'queued'
+  | 'downloading'
+  | 'verifying'
+  | 'completed'
+  | 'cancelled'
+  | 'failed';
+
+export interface FirmwareArtifactStatusParams {
+  leaseRef: string;
+  taskId: string;
+}
+
+export interface FirmwareArtifactStatus {
+  state: FirmwareArtifactStatusState;
+  downloadedBytes: number;
+  expectedSize?: number;
+  receipt?: FirmwareArtifactReceipt;
+  errorCode?: string;
+  errorMessage?: string;
+  retryable?: boolean;
+}
+
+export interface FirmwareArtifactCapabilities {
+  firmwareArtifactProtocolVersion: number;
+  supportedRouteTypes: string[];
+  supportsArchiveMaterialization: boolean;
+  maxReadBytes: number;
+}
+
+export interface FirmwareArtifactTaskParams {
+  leaseRef: string;
+  taskId: string;
+}
+
+export interface FirmwareArtifactRefParams {
+  artifactRef: string;
+}
+
+export interface FirmwareArtifactReaderOpenParams {
+  artifactRef: string;
+  immutableToken: string;
+}
+
+export interface FirmwareArtifactReaderInfo {
+  readerId: string;
+  size: number;
+  immutableToken: string;
+  maxReadBytes: number;
+}
+
+export interface FirmwareArtifactReaderReadParams {
+  readerId: string;
+  offset: number;
+  length: number;
+}
+
+export interface FirmwareArtifactReaderCloseParams {
+  readerId: string;
+}
+
+export interface FirmwareArchiveMaterializeParams {
+  leaseRef: string;
+  parentArtifactId: string;
+  archiveArtifactRef: string;
+  archiveImmutableToken: string;
+  materializationPolicy: string;
+}
+
+export interface FirmwareArchiveMaterializedArtifact {
+  entryId: string;
+  logicalName: string;
+  receipt: FirmwareArtifactReceipt;
+}
+
+export interface FirmwareArchiveMaterializeResult {
+  artifacts: FirmwareArchiveMaterializedArtifact[];
+}
+
+export interface FirmwareArtifactLease {
+  leaseRef: string;
+}
+
+export interface FirmwareArtifactLeaseCreateParams {
+  transactionId: string;
+}
+
+export interface FirmwareArtifactRetainParams {
+  leaseRef: string;
+  artifactRef: string;
+}
+
+export type FirmwareArtifactLeaseDisposition =
+  | 'completed'
+  | 'safeCancelled'
+  | 'safeAbandoned';
+
+export interface FirmwareArtifactLeaseReleaseParams {
+  leaseRef: string;
+  disposition: FirmwareArtifactLeaseDisposition;
+}
+
+export interface FirmwareArtifactLeaseReconcileParams {
+  activeLeaseRefs: string[];
+}
+
+export interface FirmwareArtifactSweepResult {
+  deletedFiles: number;
+  deletedBytes: number;
+}
+
 export interface ReactNativeRangeDownloader
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   // Main entry: concurrent ranged download (iOS background session / Android thread pool).
@@ -102,4 +239,43 @@ export interface ReactNativeRangeDownloader
   // not own directory layout for real consumers, but exposes this so demos/simple
   // callers have a valid absolute destination without hardcoding sandbox paths.
   getDownloadsDir(): string;
+
+  // Firmware methods never expose native paths. All persistent resources are
+  // addressed by opaque refs owned and validated by the native artifact store.
+  getFirmwareArtifactCapabilities(): FirmwareArtifactCapabilities;
+  downloadFirmwareArtifact(
+    params: FirmwareArtifactDownloadParams
+  ): Promise<FirmwareArtifactReceipt>;
+  getFirmwareArtifactStatus(
+    params: FirmwareArtifactStatusParams
+  ): Promise<FirmwareArtifactStatus>;
+  cancelFirmwareArtifact(params: FirmwareArtifactTaskParams): Promise<void>;
+  discardFirmwareArtifact(params: FirmwareArtifactRefParams): Promise<void>;
+  quarantineFirmwareArtifact(params: FirmwareArtifactRefParams): Promise<void>;
+
+  openFirmwareArtifact(
+    params: FirmwareArtifactReaderOpenParams
+  ): Promise<FirmwareArtifactReaderInfo>;
+  readFirmwareArtifact(
+    params: FirmwareArtifactReaderReadParams
+  ): Promise<ArrayBuffer>;
+  closeFirmwareArtifact(
+    params: FirmwareArtifactReaderCloseParams
+  ): Promise<void>;
+
+  materializeFirmwareArchive(
+    params: FirmwareArchiveMaterializeParams
+  ): Promise<FirmwareArchiveMaterializeResult>;
+
+  createFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseCreateParams
+  ): Promise<FirmwareArtifactLease>;
+  retainFirmwareArtifact(params: FirmwareArtifactRetainParams): Promise<void>;
+  releaseFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseReleaseParams
+  ): Promise<void>;
+  reconcileFirmwareArtifactLeases(
+    params: FirmwareArtifactLeaseReconcileParams
+  ): Promise<void>;
+  sweepFirmwareArtifactOrphans(): Promise<FirmwareArtifactSweepResult>;
 }
