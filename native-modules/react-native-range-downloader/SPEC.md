@@ -1,8 +1,8 @@
 # OneKey Concurrent Download Standard (OCDS)
 
-- **Version:** 1.2
+- **Version:** 1.3
 - **Status:** Active
-- **Last updated:** 2026-06-20
+- **Last updated:** 2026-07-25
 - **Applies to:** every implementation of OneKey's concurrent (multi-range)
   downloader — iOS (Swift), Android (Kotlin), Desktop (Node/Electron), and any
   future platform.
@@ -32,6 +32,53 @@ cancellation, security, and background execution.
 
 **Out of scope:** the single-stream downloader's internals, the OTA install
 pipeline, signature/key management, and UI.
+
+### 1.1 Firmware artifact profile
+
+Firmware downloads use a dedicated artifact profile in this module. The legacy
+`download(url, dest)` API for OTA bundles, APKs, and assets remains compatible;
+firmware callers use opaque artifact and reader references and never choose an
+absolute destination path.
+
+The firmware profile supports two routes:
+
+- `domain`: connect through normal platform DNS and HTTPS routing;
+- `pinnedIp`: derive the canonical hostname from the HTTPS URL and connect the
+  socket to a validated public `resolvedIp:443`.
+
+For `pinnedIp`, URL authority, `Host`, TLS SNI, and certificate hostname
+verification MUST all use the same canonical URL hostname. JavaScript MUST NOT
+provide a second hostname field. Redirects MUST NOT change the canonical
+hostname or escape the pinned destination policy.
+
+The tuple `(canonical URL, expected size, expected SHA-256)` defines object
+identity. Persisted segments, partial files, verified artifacts, materialized
+archive children, and resume metadata MUST remain bound to that identity.
+State from a different identity MUST NOT be reused.
+
+A firmware artifact is not observable through the public API until all bytes
+are durable, the exact size and SHA-256 match, and an atomic promotion succeeds.
+Verification always happens before promotion. A checksum mismatch invalidates
+all bytes for that object identity and is terminal for the current source.
+
+Active firmware tasks, readers, leases, metadata, and file locks are
+process-shared native state managed by one process singleton. Independent
+React Native JS runtimes MUST NOT create separate native download truths. The
+native layer is authoritative when JS runtimes initialize in either order.
+
+iOS route behavior is intentionally different:
+
+- `domain` uses a background `URLSession`, allowing the OS to continue eligible
+  transfers while the app is suspended or terminated;
+- `pinnedIp` uses a foreground session with the pinned transport protocol,
+  because background sessions cannot use a custom `URLProtocol`. Process
+  termination stops transport but preserves durable segments for resume after
+  the next launch.
+
+Android `domain` and `pinnedIp` routes use process-local streaming. Process
+death stops transport and the next background bootstrap resumes from durable
+state. This profile does not promise an Android foreground service or
+WorkManager continuation.
 
 ---
 

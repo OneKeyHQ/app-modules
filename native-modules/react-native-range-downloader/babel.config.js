@@ -1,13 +1,3 @@
 module.exports = {
-  presets: ['@react-native/babel-preset'],
-  plugins: [
-    [
-      'module-resolver',
-      {
-        alias: {
-          'react-native-range-downloader': './src/index',
-        },
-      },
-    ],
-  ],
+  presets: ['module:react-native-builder-bob/babel-preset'],
 };

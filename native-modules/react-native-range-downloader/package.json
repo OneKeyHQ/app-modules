@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-range-downloader",
-  "version": "3.0.80",
+  "version": "3.0.81",
   "description": "react-native-range-downloader",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -28,6 +28,8 @@
     "!android/gradlew",
     "!android/gradlew.bat",
     "!android/local.properties",
+    "!android/src/test",
+    "!ios/Tests",
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
@@ -40,6 +42,10 @@
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
+    "test:swift-logic": "swift test --package-path tests/swiftpm",
+    "test:android-jvm": "cd ../../example/react-native/android && ./gradlew :onekeyfe_react-native-range-downloader:testDebugUnitTest --no-daemon",
+    "test:ios-host": "cd ../../example/react-native/ios && xcodebuild -quiet -workspace example.xcworkspace -scheme example -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+    "test:native": "yarn test:swift-logic && yarn test:android-jvm",
     "release": "yarn prepare && npm whoami && npm publish --access public"
   },
   "keywords": [
