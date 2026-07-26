@@ -92,6 +92,27 @@ public enum RangeDownloadLogic {
     return out
   }
 
+  static func sameArtifactObjectIdentity(
+    leftSupportsRange: Bool,
+    leftTotal: Int64,
+    leftStrongETag: String?,
+    leftLastModified: String?,
+    rightSupportsRange: Bool,
+    rightTotal: Int64,
+    rightStrongETag: String?,
+    rightLastModified: String?
+  ) -> Bool {
+    guard leftSupportsRange == rightSupportsRange,
+          leftTotal == rightTotal else {
+      return false
+    }
+    if leftStrongETag != nil || rightStrongETag != nil {
+      return leftStrongETag == rightStrongETag
+    }
+    return leftLastModified?.trimmingCharacters(in: .whitespacesAndNewlines) ==
+      rightLastModified?.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
   // MARK: - HTTP status classification (OCDS §4 table + catch-all)
 
   /// Maps an HTTP status on a Range request to a §4 fallback kind. Used by the
@@ -183,5 +204,236 @@ public enum RangeDownloadLogic {
     var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
     CC_SHA256_Final(&hash, &context)
     return hash.map { String(format: "%02x", $0) }.joined()
+  }
+
+  static func secureHexEquals(_ lhs: String, _ rhs: String) -> Bool {
+    let left = Array(lhs.lowercased().utf8)
+    let right = Array(rhs.lowercased().utf8)
+    guard left.count == right.count else { return false }
+    var difference: UInt8 = 0
+    for index in left.indices {
+      difference |= left[index] ^ right[index]
+    }
+    return difference == 0
+  }
+}
+
+enum FirmwarePinnedRouteValidation {
+  static func isValid(hostname: String, resolvedIP: String) -> Bool {
+    return isValidHostname(hostname) && isPublicIP(resolvedIP)
+  }
+
+  private static func isValidHostname(_ hostname: String) -> Bool {
+    guard !hostname.isEmpty, hostname.count <= 253 else {
+      return false
+    }
+    let pattern =
+      "^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)" +
+      "(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
+    guard hostname.range(of: pattern, options: .regularExpression) != nil else {
+      return false
+    }
+    return parseIPv4(hostname) == nil && parseIPv6(hostname) == nil
+  }
+
+  private static func isPublicIP(_ ip: String) -> Bool {
+    guard !ip.isEmpty,
+          ip.trimmingCharacters(in: .whitespacesAndNewlines) == ip,
+          !ip.contains("["),
+          !ip.contains("]"),
+          !ip.contains("%") else {
+      return false
+    }
+    if let bytes = parseIPv4(ip) {
+      return !isForbiddenIPv4(bytes)
+    }
+    if let bytes = parseIPv6(ip) {
+      return !isForbiddenIPv6(bytes)
+    }
+    return false
+  }
+
+  private static func parseIPv4(_ ip: String) -> [UInt8]? {
+    var address = in_addr()
+    guard ip.withCString({
+      inet_pton(AF_INET, $0, &address)
+    }) == 1 else {
+      return nil
+    }
+    return withUnsafeBytes(of: &address) {
+      Array($0.bindMemory(to: UInt8.self))
+    }
+  }
+
+  private static func parseIPv6(_ ip: String) -> [UInt8]? {
+    var address = in6_addr()
+    guard ip.withCString({
+      inet_pton(AF_INET6, $0, &address)
+    }) == 1 else {
+      return nil
+    }
+    return withUnsafeBytes(of: &address) {
+      Array($0.bindMemory(to: UInt8.self))
+    }
+  }
+
+  private static func isForbiddenIPv4(_ bytes: [UInt8]) -> Bool {
+    let first = bytes[0]
+    let second = bytes[1]
+    let third = bytes[2]
+    if first == 0 || first == 10 || first == 127 { return true }
+    if first == 100 && (second & 0xC0) == 0x40 { return true }
+    if first == 169 && second == 254 { return true }
+    if first == 172 && (16...31).contains(second) { return true }
+    if first == 192 && second == 168 { return true }
+    if first == 192 && second == 0 && (third == 0 || third == 2) {
+      return true
+    }
+    if first == 198 && (second == 18 || second == 19) { return true }
+    if first == 198 && second == 51 && third == 100 { return true }
+    if first == 203 && second == 0 && third == 113 { return true }
+    return first >= 224
+  }
+
+  private static func isForbiddenIPv6(_ bytes: [UInt8]) -> Bool {
+    if bytes.allSatisfy({ $0 == 0 }) { return true }
+    if bytes[0...14].allSatisfy({ $0 == 0 }) && bytes[15] == 1 {
+      return true
+    }
+    if bytes[0] == 0xFF { return true }
+    if bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80 { return true }
+    if (bytes[0] & 0xFE) == 0xFC { return true }
+    if bytes[0] == 0x01 &&
+       bytes[1] == 0x00 &&
+       bytes[2...7].allSatisfy({ $0 == 0 }) {
+      return true
+    }
+    if bytes[0] == 0x20 && bytes[1] == 0x01 {
+      if bytes[2] == 0x00 && bytes[3] == 0x00 { return true }
+      if bytes[2] == 0x00 && (bytes[3] & 0xF0) == 0x10 { return true }
+      if bytes[2] == 0x00 && bytes[3] == 0x02 { return true }
+      if bytes[2] == 0x0D && bytes[3] == 0xB8 { return true }
+    }
+    if bytes[0] == 0x20 && bytes[1] == 0x02 { return true }
+    if isNat64WellKnown(bytes) {
+      return isForbiddenIPv4(Array(bytes[12...15]))
+    }
+    if isNat64LocalUse(bytes) { return true }
+    if bytes[0...11].allSatisfy({ $0 == 0 }) { return true }
+    if bytes[0...9].allSatisfy({ $0 == 0 }) &&
+       bytes[10] == 0xFF &&
+       bytes[11] == 0xFF {
+      return isForbiddenIPv4(Array(bytes[12...15]))
+    }
+    return false
+  }
+
+  private static func isNat64WellKnown(_ bytes: [UInt8]) -> Bool {
+    return bytes[0] == 0x00 &&
+      bytes[1] == 0x64 &&
+      bytes[2] == 0xFF &&
+      bytes[3] == 0x9B &&
+      bytes[4...11].allSatisfy({ $0 == 0 })
+  }
+
+  private static func isNat64LocalUse(_ bytes: [UInt8]) -> Bool {
+    return bytes[0] == 0x00 &&
+      bytes[1] == 0x64 &&
+      bytes[2] == 0xFF &&
+      bytes[3] == 0x9B &&
+      bytes[4] == 0x00 &&
+      bytes[5] == 0x01
+  }
+}
+
+final class FirmwarePinnedResolverRegistry {
+  struct Route: Equatable {
+    let hostname: String
+    let resolvedIP: String
+  }
+
+  private let maxEntries: Int
+  private var routes: [ObjectIdentifier: Route] = [:]
+  private var reusableClasses: [AnyClass] = []
+  private var allocatedClasses = 0
+
+  init(maxEntries: Int = 32) {
+    self.maxEntries = maxEntries
+  }
+
+  func acquire(
+    hostname: String,
+    resolvedIP: String,
+    allocateClass: () -> AnyClass
+  ) -> AnyClass? {
+    let resolverClass: AnyClass
+    if let reusableClass = reusableClasses.popLast() {
+      resolverClass = reusableClass
+    } else {
+      guard allocatedClasses < maxEntries else {
+        return nil
+      }
+      resolverClass = allocateClass()
+      allocatedClasses += 1
+    }
+    routes[ObjectIdentifier(resolverClass)] = Route(
+      hostname: hostname.lowercased(),
+      resolvedIP: resolvedIP
+    )
+    return resolverClass
+  }
+
+  func resolve(domain: String, resolverClass: AnyClass) -> String? {
+    guard let route = routes[ObjectIdentifier(resolverClass)],
+          domain.caseInsensitiveCompare(route.hostname) == .orderedSame else {
+      return nil
+    }
+    return route.resolvedIP
+  }
+
+  func release(resolverClass: AnyClass) {
+    let identifier = ObjectIdentifier(resolverClass)
+    guard routes.removeValue(forKey: identifier) != nil else {
+      return
+    }
+    reusableClasses.append(resolverClass)
+  }
+
+  var activeEntryCount: Int {
+    routes.count
+  }
+
+  var allocatedEntryCount: Int {
+    allocatedClasses
+  }
+}
+
+final class FirmwareArtifactRunOwnership<Owner: Hashable> {
+  private let lock = NSLock()
+  private var owners: [String: Owner] = [:]
+
+  func acquire(artifactId: String, owner: Owner) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    if let existing = owners[artifactId] {
+      return existing == owner
+    }
+    owners[artifactId] = owner
+    return true
+  }
+
+  func release(artifactId: String, owner: Owner) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard owners[artifactId] == owner else { return }
+    owners.removeValue(forKey: artifactId)
+  }
+}
+
+extension NSLock {
+  func withFirmwareLock<T>(_ body: () throws -> T) rethrows -> T {
+    lock()
+    defer { unlock() }
+    return try body()
   }
 }

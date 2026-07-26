@@ -1,6 +1,8 @@
 package com.margelo.nitro.reactnativerangedownloader
 
 import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 // Dependency-free RangeDownloader adapter logic.
@@ -18,6 +20,50 @@ import java.util.concurrent.ConcurrentHashMap
 // behaviors via `RangeDownloadLogic.<fn>`. Mirrors the iOS `RangeDownloadLogic`
 // extraction. Everything here is pure Kotlin + java.io.File.
 object RangeDownloadLogic {
+
+  fun sameArtifactObjectIdentity(
+    leftSupportsRange: Boolean,
+    leftTotal: Long,
+    leftStrongETag: String?,
+    leftLastModified: String?,
+    rightSupportsRange: Boolean,
+    rightTotal: Long,
+    rightStrongETag: String?,
+    rightLastModified: String?,
+  ): Boolean {
+    if (leftSupportsRange != rightSupportsRange || leftTotal != rightTotal) {
+      return false
+    }
+    if (leftStrongETag != null || rightStrongETag != null) {
+      return leftStrongETag == rightStrongETag
+    }
+    return leftLastModified?.trim()?.takeIf(String::isNotEmpty) ==
+      rightLastModified?.trim()?.takeIf(String::isNotEmpty)
+  }
+
+  /**
+   * Serializes both the high-water-mark update and the callback invocation.
+   *
+   * An AtomicInteger alone keeps the stored maximum monotonic, but it does not
+   * order callbacks after a successful CAS: a thread that wins 40 can pause
+   * before emitting while another thread wins and emits 50 first. Keeping the
+   * callback inside this monitor makes the observable event stream monotonic.
+   */
+  class MonotonicProgressEmitter(
+    private val emit: (Int) -> Unit,
+  ) {
+    private val monitor = Any()
+    private var previousProgress = -1
+
+    fun publish(transferred: Long, total: Long) {
+      val progress = progressPercent(transferred, total) ?: return
+      synchronized(monitor) {
+        if (progress <= previousProgress) return
+        previousProgress = progress
+        emit(progress)
+      }
+    }
+  }
 
   // Single-flight key: active downloads are keyed by "channel|taskId" so
   // cancel/discardArtifacts can flip the abort flag + stop the worker pool
@@ -69,18 +115,35 @@ object RangeDownloadLogic {
     }
   }
 
-  // CAS gate for progress events. The progress callback is invoked concurrently
-  // by the helper's worker threads; only the thread that advances the
-  // percentage to a strictly higher value should emit, which keeps progress
-  // monotonic and de-duped without a lock (this only affects event ordering,
-  // never file bytes).
-  //
-  // Returns the percentage to emit, or null when this transfer/total tuple does
-  // not advance past [previousProgress] (no event). Callers feed the result
-  // back as the new previous via their AtomicInteger CAS.
+  // Converts byte progress to a bounded percentage. Observable event ordering
+  // is owned by [MonotonicProgressEmitter].
   fun progressPercent(transferred: Long, total: Long): Int? {
     if (total <= 0) return null
     return ((transferred * 100) / total).toInt().coerceIn(0, 100)
+  }
+
+  fun calculateSHA256(file: File): String? {
+    if (!file.isFile) return null
+    return try {
+      val digest = MessageDigest.getInstance("SHA-256")
+      FileInputStream(file).use { input ->
+        val buffer = ByteArray(8 * 1024)
+        while (true) {
+          val read = input.read(buffer)
+          if (read < 0) break
+          if (read > 0) digest.update(buffer, 0, read)
+        }
+      }
+      digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  fun secureHexEquals(lhs: String, rhs: String): Boolean {
+    val left = lhs.lowercase().toByteArray(Charsets.US_ASCII)
+    val right = rhs.lowercase().toByteArray(Charsets.US_ASCII)
+    return MessageDigest.isEqual(left, right)
   }
 
   // Delete every sibling artifact for [destFilePath]: all `<dest>.partial.seg<N>`

@@ -14,14 +14,21 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/OneKeyHQ/app-modules/react-native-range-downloader.git", :tag => "#{s.version}" }
 
   s.source_files = [
-    "ios/**/*.{swift}",
+    "ios/**/*.{h,swift}",
     "ios/**/*.{m,mm}",
     "cpp/**/*.{hpp,cpp}",
   ]
+  s.exclude_files = "ios/Tests/**/*"
+  s.public_header_files = "ios/FirmwareArchiveMinizipBridge.h"
 
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
   s.dependency 'ReactNativeNativeLogger'
+  s.dependency 'EMASCurl', '1.5.5'
+  s.dependency 'SSZipArchive', '2.5.5'
+  s.pod_target_xcconfig = {
+    'HEADER_SEARCH_PATHS' => '$(inherited) "$(PODS_ROOT)/SSZipArchive/SSZipArchive"',
+  }
 
   load 'nitrogen/generated/ios/ReactNativeRangeDownloader+autolinking.rb'
   add_nitrogen_files(s)
