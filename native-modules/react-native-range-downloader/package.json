@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-range-downloader",
-  "version": "3.0.81-alpha.0",
+  "version": "3.0.81-alpha.1",
   "description": "react-native-range-downloader",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -88,7 +88,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-sni-connect": "3.0.81",
+    "@onekeyfe/react-native-sni-connect": "3.0.81-alpha.1",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.33.2"

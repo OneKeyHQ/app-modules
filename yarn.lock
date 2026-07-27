@@ -3688,7 +3688,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-sni-connect": 3.0.81
+    "@onekeyfe/react-native-sni-connect": 3.0.81-alpha.1
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.33.2
