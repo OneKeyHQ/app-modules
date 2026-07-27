@@ -1,6 +1,16 @@
 name: package-publish
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      npm_dist_tag:
+        description: npm dist-tag
+        required: true
+        default: next
+        type: choice
+        options:
+          - next
+          - latest
 
 jobs:
   package-publish:
@@ -9,11 +19,11 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: '24.x'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "24.x"
+          registry-url: "https://registry.npmjs.org"
       - name: Install Package
         run: corepack enable && yarn install
-      - name:
+      - name: Publish packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run:  yarn version:publish
+        run: yarn version:publish --tag "${{ inputs.npm_dist_tag }}"
