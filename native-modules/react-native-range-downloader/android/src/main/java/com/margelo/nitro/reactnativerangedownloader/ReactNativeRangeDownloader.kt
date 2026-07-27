@@ -288,6 +288,14 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
     }
   }
 
+  override fun cancelFirmwareArtifactDownloads(
+    params: FirmwareArtifactCancelParams,
+  ): Promise<Unit> {
+    return Promise.async {
+      FirmwareArtifactStore.cancelDownloads(params.transactionId)
+    }
+  }
+
   override fun discardFirmwareArtifact(
     params: FirmwareArtifactRefParams,
   ): Promise<Unit> {

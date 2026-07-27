@@ -14,6 +14,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -41,6 +42,11 @@ private data class StagedFirmwareArchiveEntry(
   val file: File,
 )
 
+private data class FirmwareDownloadKey(
+  val transactionId: String,
+  val expectedSha256: String,
+)
+
 internal object FirmwareArtifactStore {
   const val MAX_READ_BYTES = 256 * 1024
 
@@ -53,7 +59,11 @@ internal object FirmwareArtifactStore {
   private val artifactRefPattern = Regex("^fw:[a-f0-9]{64}$")
   private val leaseRefPattern = Regex("^fwlease:[a-f0-9-]{36}$")
   private val identifierPattern = Regex("^[A-Za-z0-9._:-]{1,160}$")
-  private val downloadLocks = ConcurrentHashMap<String, Any>()
+  private val downloadLocks = ConcurrentHashMap<FirmwareDownloadKey, Any>()
+  private val activeCalls =
+    ConcurrentHashMap<String, MutableSet<Call>>()
+  private val cancelledTransactions =
+    ConcurrentHashMap.newKeySet<String>()
   private val activeDownloadLock = Any()
   private val activeDownloadCounts = mutableMapOf<String, Int>()
   private val leaseLock = Any()
@@ -84,20 +94,40 @@ internal object FirmwareArtifactStore {
 
   fun download(params: FirmwareArtifactDownloadParams): StoredFirmwareArtifact {
     val validated = validateDownloadParams(params)
+    check(!cancelledTransactions.contains(params.transactionId)) {
+      "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
+    }
     retainExpectedArtifact(
       leaseRef = params.leaseRef,
       transactionId = params.transactionId,
       artifactRef = "fw:${validated.expectedSha256}",
     )
-    val lock = downloadLocks.computeIfAbsent(validated.expectedSha256) { Any() }
+    val lockKey = FirmwareDownloadKey(
+      params.transactionId,
+      validated.expectedSha256,
+    )
+    val lock = downloadLocks.computeIfAbsent(lockKey) { Any() }
     markDownloadActive(validated.expectedSha256, 1)
     try {
       return synchronized(lock) {
+        check(!cancelledTransactions.contains(params.transactionId)) {
+          "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
+        }
         downloadLocked(params, validated)
       }
     } finally {
       markDownloadActive(validated.expectedSha256, -1)
     }
+  }
+
+  fun cancelDownloads(transactionId: String) {
+    require(identifierPattern.matches(transactionId)) {
+      "Invalid firmware transactionId"
+    }
+    cancelledTransactions.add(transactionId)
+    activeCalls[transactionId]
+      ?.toList()
+      ?.forEach { it.cancel() }
   }
 
   fun discard(artifactRef: String) {
@@ -377,22 +407,36 @@ internal object FirmwareArtifactStore {
       call.timeout().timeout(deadline.toLong().coerceAtLeast(1), TimeUnit.SECONDS)
     }
 
-    val response = try {
-      call.execute()
+    registerCall(params.transactionId, call)
+    try {
+      call.execute().use {
+        writeResponseToPartial(
+          it,
+          partialFile,
+          resumeOffset,
+          validated.expectedSize,
+          validated.maxBytes,
+        )
+      }
     } catch (error: IOException) {
+      if (
+        call.isCanceled() ||
+        cancelledTransactions.contains(params.transactionId)
+      ) {
+        throw IllegalStateException(
+          "ARTIFACT_CANCELLED: firmware artifact download was cancelled",
+          error,
+        )
+      }
       throw IllegalStateException(
         "ARTIFACT_NETWORK_FAILED: firmware request failed",
         error,
       )
+    } finally {
+      unregisterCall(params.transactionId, call)
     }
-    response.use {
-      writeResponseToPartial(
-        it,
-        partialFile,
-        resumeOffset,
-        validated.expectedSize,
-        validated.maxBytes,
-      )
+    check(!cancelledTransactions.contains(params.transactionId)) {
+      "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
     }
 
     val artifact = try {
@@ -547,13 +591,17 @@ internal object FirmwareArtifactStore {
     ) {
       "Invalid firmware lease disposition"
     }
-    synchronized(leaseLock) {
+    val transactionId = synchronized(leaseLock) {
       val leases = loadLeasesLocked()
-      require(leases.remove(validateLeaseRef(leaseRef)) != null) {
+      val removed = leases.remove(validateLeaseRef(leaseRef))
+      require(removed != null) {
         "Firmware artifact lease is unavailable"
       }
       saveLeasesLocked(leases)
+      removed.transactionId
     }
+    cancelledTransactions.remove(transactionId)
+    downloadLocks.keys.removeIf { it.transactionId == transactionId }
   }
 
   fun reconcileLeases(activeLeaseRefs: Array<String>) {
@@ -772,5 +820,23 @@ internal object FirmwareArtifactStore {
 
   private fun ByteArray.toHex(): String = joinToString("") {
     "%02x".format(it)
+  }
+
+  private fun registerCall(transactionId: String, call: Call) {
+    val calls = activeCalls.computeIfAbsent(transactionId) {
+      ConcurrentHashMap.newKeySet()
+    }
+    calls.add(call)
+    if (cancelledTransactions.contains(transactionId)) {
+      call.cancel()
+    }
+  }
+
+  private fun unregisterCall(transactionId: String, call: Call) {
+    val calls = activeCalls[transactionId] ?: return
+    calls.remove(call)
+    if (calls.isEmpty()) {
+      activeCalls.remove(transactionId, calls)
+    }
   }
 }

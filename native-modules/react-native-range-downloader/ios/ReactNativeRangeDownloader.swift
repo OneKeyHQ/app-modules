@@ -118,6 +118,16 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
     }
   }
 
+  func cancelFirmwareArtifactDownloads(
+    params: FirmwareArtifactCancelParams
+  ) throws -> Promise<Void> {
+    Promise.async {
+      try await FirmwareArtifactStore.shared.cancelDownloads(
+        transactionId: params.transactionId
+      )
+    }
+  }
+
   func discardFirmwareArtifact(
     params: FirmwareArtifactRefParams
   ) throws -> Promise<Void> {
@@ -340,6 +350,7 @@ private struct FirmwareBackgroundTaskDescriptor: Codable, Equatable {
 }
 
 private enum FirmwareBackgroundDownloadError: LocalizedError {
+  case cancelled
   case invalidTask
   case deadlineExceeded
   case redirectRejected
@@ -349,6 +360,8 @@ private enum FirmwareBackgroundDownloadError: LocalizedError {
 
   var errorDescription: String? {
     switch self {
+    case .cancelled:
+      return "ARTIFACT_CANCELLED: firmware background download was cancelled"
     case .invalidTask:
       return "ARTIFACT_PROTOCOL_INVALID: firmware background task is invalid"
     case .deadlineExceeded:
@@ -763,6 +776,11 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       hostname: hostname,
       deadlineAt: Date().timeIntervalSince1970 + deadlineSeconds
     )
+    guard !FirmwareArtifactStore.shared.isTransactionCancelled(
+      descriptor.transactionId
+    ) else {
+      throw FirmwareBackgroundDownloadError.cancelled
+    }
     if let stored = try FirmwareArtifactStore.shared.storedArtifact(
       expectedSize: descriptor.expectedSize,
       expectedSha256: descriptor.expectedSha256
@@ -783,10 +801,47 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     }
   }
 
+  func cancelFirmwareArtifactDownloads(
+    transactionId: String
+  ) async throws {
+    guard transactionId.range(
+      of: "^[A-Za-z0-9._:-]{1,160}$",
+      options: .regularExpression
+    ) != nil else {
+      throw FirmwareBackgroundDownloadError.invalidTask
+    }
+    let session = session(forChannel: .firmware, segmentCount: 1)
+    let tasks = await allTasks(in: session)
+    for task in tasks {
+      guard
+        let descriptor = Self.decodeFirmwareTaskDescription(
+          task.taskDescription
+        ),
+        descriptor.transactionId == transactionId
+      else {
+        continue
+      }
+      recordFirmwareTaskError(
+        taskIdentifier: task.taskIdentifier,
+        error: FirmwareBackgroundDownloadError.cancelled
+      )
+      task.cancel()
+    }
+  }
+
   private func reconcileOrStartFirmwareTask(
     descriptor: FirmwareBackgroundTaskDescriptor,
     url: URL
   ) async {
+    guard !FirmwareArtifactStore.shared.isTransactionCancelled(
+      descriptor.transactionId
+    ) else {
+      finishFirmwareTask(
+        key: descriptor.key,
+        result: .failure(FirmwareBackgroundDownloadError.cancelled)
+      )
+      return
+    }
     let session = session(forChannel: .firmware, segmentCount: 1)
     let tasks = await allTasks(in: session)
     var matchingTaskFound = false
@@ -820,6 +875,11 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       }
       guard Date().timeIntervalSince1970 < descriptor.deadlineAt else {
         throw FirmwareBackgroundDownloadError.deadlineExceeded
+      }
+      guard !FirmwareArtifactStore.shared.isTransactionCancelled(
+        descriptor.transactionId
+      ) else {
+        throw FirmwareBackgroundDownloadError.cancelled
       }
       var request = URLRequest(url: url)
       request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -1465,6 +1525,9 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       }
       do {
         guard
+          !FirmwareArtifactStore.shared.isTransactionCancelled(
+            descriptor.transactionId
+          ),
           Date().timeIntervalSince1970 < descriptor.deadlineAt,
           let response = downloadTask.response as? HTTPURLResponse,
           response.statusCode == 200,
@@ -1617,6 +1680,13 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
         key: descriptor.key,
         result: .failure(
           completion.error ??
+            (
+              FirmwareArtifactStore.shared.isTransactionCancelled(
+                descriptor.transactionId
+              )
+                ? FirmwareBackgroundDownloadError.cancelled
+                : nil
+            ) ??
             error ??
             FirmwareBackgroundDownloadError.transferFailed
         )

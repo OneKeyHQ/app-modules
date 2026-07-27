@@ -99,6 +99,10 @@ export interface FirmwareArtifactRefParams {
   artifactRef: string;
 }
 
+export interface FirmwareArtifactCancelParams {
+  transactionId: string;
+}
+
 export interface FirmwareArtifactReaderInfo {
   readerId: string;
   size: number;
@@ -202,6 +206,9 @@ export interface ReactNativeRangeDownloader
   downloadFirmwareArtifact(
     params: FirmwareArtifactDownloadParams
   ): Promise<FirmwareArtifactReceipt>;
+  cancelFirmwareArtifactDownloads(
+    params: FirmwareArtifactCancelParams
+  ): Promise<void>;
   discardFirmwareArtifact(params: FirmwareArtifactRefParams): Promise<void>;
   openFirmwareArtifact(
     params: FirmwareArtifactRefParams

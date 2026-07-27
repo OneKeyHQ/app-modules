@@ -42,21 +42,37 @@ private final class FirmwareArtifactRedirectDelegate: NSObject, URLSessionTaskDe
 }
 
 private actor FirmwareArtifactDownloadCoordinator {
-  private var tasks: [String: Task<StoredFirmwareArtifact, Error>] = [:]
+  private struct ActiveDownload {
+    let transactionId: String
+    let task: Task<StoredFirmwareArtifact, Error>
+  }
+
+  private var downloads: [String: ActiveDownload] = [:]
 
   func run(
     key: String,
+    transactionId: String,
     operation: @escaping () async throws -> StoredFirmwareArtifact
   ) async throws -> StoredFirmwareArtifact {
-    if let task = tasks[key] {
-      return try await task.value
+    if let download = downloads[key] {
+      return try await download.task.value
     }
     let task = Task {
       try await operation()
     }
-    tasks[key] = task
-    defer { tasks[key] = nil }
+    downloads[key] = ActiveDownload(
+      transactionId: transactionId,
+      task: task
+    )
+    defer { downloads[key] = nil }
     return try await task.value
+  }
+
+  func cancel(transactionId: String) {
+    for download in downloads.values
+    where download.transactionId == transactionId {
+      download.task.cancel()
+    }
   }
 }
 
@@ -89,6 +105,8 @@ final class FirmwareArtifactStore {
   private let leaseLock = NSLock()
   private let activeDownloadLock = NSLock()
   private var activeDownloadCounts: [String: Int] = [:]
+  private let cancellationLock = NSLock()
+  private var cancelledTransactions: Set<String> = []
   private let readerLock = NSLock()
   private var readers: [String: OpenReader] = [:]
 
@@ -163,24 +181,54 @@ final class FirmwareArtifactStore {
 
   func download(_ params: FirmwareArtifactDownloadParams) async throws -> StoredFirmwareArtifact {
     try Self.validateDownloadParams(params)
+    try rejectIfCancelled(transactionId: params.transactionId)
     let expectedSha256 = params.expectedSha256.lowercased()
     try retainExpectedArtifact(
       leaseRef: params.leaseRef,
       transactionId: params.transactionId,
       artifactRef: "fw:\(expectedSha256)"
     )
-    let key = "\(expectedSha256):\(Int64(params.expectedSize))"
+    let key =
+      "\(params.transactionId):\(expectedSha256):\(Int64(params.expectedSize))"
     markDownloadActive(expectedSha256, delta: 1)
     do {
-      let artifact = try await downloadCoordinator.run(key: key) { [self] in
-        try await downloadLocked(params, expectedSha256: expectedSha256)
+      let artifact = try await downloadCoordinator.run(
+        key: key,
+        transactionId: params.transactionId
+      ) { [self] in
+        try rejectIfCancelled(transactionId: params.transactionId)
+        return try await downloadLocked(
+          params,
+          expectedSha256: expectedSha256
+        )
       }
       markDownloadActive(expectedSha256, delta: -1)
       return artifact
     } catch {
       markDownloadActive(expectedSha256, delta: -1)
+      if error is CancellationError ||
+        isTransactionCancelled(params.transactionId) {
+        throw FirmwareArtifactStoreError.downloadFailed(
+          "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
+        )
+      }
       throw error
     }
+  }
+
+  func cancelDownloads(transactionId: String) async throws {
+    guard Self.isSafeIdentifier(transactionId) else {
+      throw FirmwareArtifactStoreError.invalidInput(
+        "Invalid firmware transactionId"
+      )
+    }
+    cancellationLock.withFirmwareArtifactLock {
+      cancelledTransactions.insert(transactionId)
+    }
+    await downloadCoordinator.cancel(transactionId: transactionId)
+    try await RangeDownloader.shared.cancelFirmwareArtifactDownloads(
+      transactionId: transactionId
+    )
   }
 
   private func downloadLocked(
@@ -552,15 +600,25 @@ final class FirmwareArtifactStore {
         "Invalid firmware lease disposition"
       )
     }
-    leaseLock.lock()
-    defer { leaseLock.unlock() }
-    var envelope = try loadLeasesLocked()
-    guard envelope.leases.removeValue(forKey: try validateLeaseRef(leaseRef)) != nil else {
-      throw FirmwareArtifactStoreError.invalidInput(
-        "Firmware artifact lease is unavailable"
-      )
+    let transactionId: String = try {
+      leaseLock.lock()
+      defer { leaseLock.unlock() }
+      var envelope = try loadLeasesLocked()
+      guard
+        let lease = envelope.leases.removeValue(
+          forKey: try validateLeaseRef(leaseRef)
+        )
+      else {
+        throw FirmwareArtifactStoreError.invalidInput(
+          "Firmware artifact lease is unavailable"
+        )
+      }
+      try saveLeasesLocked(envelope)
+      return lease.transactionId
+    }()
+    cancellationLock.withFirmwareArtifactLock {
+      cancelledTransactions.remove(transactionId)
     }
-    try saveLeasesLocked(envelope)
   }
 
   func reconcileLeases(activeLeaseRefs: [String]) throws {
@@ -984,6 +1042,14 @@ final class FirmwareArtifactStore {
     do {
       (bytes, response) = try await session.bytes(for: request)
     } catch {
+      if isCancellationError(
+        error,
+        transactionId: params.transactionId
+      ) {
+        throw FirmwareArtifactStoreError.downloadFailed(
+          "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
+        )
+      }
       throw FirmwareArtifactStoreError.downloadFailed(
         "ARTIFACT_NETWORK_FAILED: firmware request failed"
       )
@@ -1039,6 +1105,14 @@ final class FirmwareArtifactStore {
     } catch let error as FirmwareArtifactStoreError {
       throw error
     } catch {
+      if isCancellationError(
+        error,
+        transactionId: params.transactionId
+      ) {
+        throw FirmwareArtifactStoreError.downloadFailed(
+          "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
+        )
+      }
       throw FirmwareArtifactStoreError.downloadFailed(
         "ARTIFACT_NETWORK_FAILED: firmware response stream failed"
       )
@@ -1053,6 +1127,34 @@ final class FirmwareArtifactStore {
       try handle.write(contentsOf: buffer)
     }
     try handle.synchronize()
+    try rejectIfCancelled(transactionId: params.transactionId)
+  }
+
+  private func rejectIfCancelled(transactionId: String) throws {
+    if isTransactionCancelled(transactionId) {
+      throw FirmwareArtifactStoreError.downloadFailed(
+        "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
+      )
+    }
+  }
+
+  func isTransactionCancelled(_ transactionId: String) -> Bool {
+    cancellationLock.withFirmwareArtifactLock {
+      cancelledTransactions.contains(transactionId)
+    }
+  }
+
+  private func isCancellationError(
+    _ error: Error,
+    transactionId: String
+  ) -> Bool {
+    if error is CancellationError ||
+      isTransactionCancelled(transactionId) {
+      return true
+    }
+    let nsError = error as NSError
+    return nsError.domain == NSURLErrorDomain &&
+      nsError.code == NSURLErrorCancelled
   }
 
   private func validateContentRange(
@@ -1162,5 +1264,13 @@ final class FirmwareArtifactStore {
     } else {
       try fileManager.moveItem(at: stagingURL, to: destination)
     }
+  }
+}
+
+private extension NSLock {
+  func withFirmwareArtifactLock<T>(_ body: () -> T) -> T {
+    lock()
+    defer { unlock() }
+    return body()
   }
 }
