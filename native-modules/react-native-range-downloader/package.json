@@ -166,5 +166,6 @@
       "release-it"
     ],
     "version": "0.56.0"
-  }
+  },
+  "stableVersion": "3.0.80"
 }
