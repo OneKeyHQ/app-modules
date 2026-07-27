@@ -6,7 +6,8 @@ const ReactNativeRangeDownloaderHybridObject =
     'ReactNativeRangeDownloader'
   );
 
-export const ReactNativeRangeDownloader = ReactNativeRangeDownloaderHybridObject;
+export const ReactNativeRangeDownloader =
+  ReactNativeRangeDownloaderHybridObject;
 
 // Closed set of download channels (design decision 10.1). The native side builds the
 // background session identifier as `so.onekey.rangedownloader.bg.<channel>`. New channels
@@ -15,6 +16,7 @@ export const RangeDownloadChannel = {
   Bundle: 'bundle',
   Apk: 'apk',
   Chart: 'chart',
+  Firmware: 'firmware',
 } as const;
 
 export type * from './ReactNativeRangeDownloader.nitro';

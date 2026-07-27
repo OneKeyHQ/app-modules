@@ -4,13 +4,13 @@ import UIKit
 import EMASCurl
 
 @objc(SniConnectPinnedDNSResolverBase)
-private class SniConnectPinnedDNSResolverBase: NSObject, EMASCurlProtocolDNSResolver {
+class SniConnectPinnedDNSResolverBase: NSObject, EMASCurlProtocolDNSResolver {
   @objc class func resolveDomain(_ domain: String) -> String? {
     PinnedDNSResolverFactory.resolve(domain: domain, resolverClass: self)
   }
 }
 
-private enum PinnedDNSResolverFactory {
+enum PinnedDNSResolverFactory {
   private static let queue = DispatchQueue(label: "com.onekey.sni.connect.pinned-dns-resolvers")
   private static var nextClassID = 0
   private static let registry = SniConnectPinnedResolverRegistry()
@@ -54,7 +54,7 @@ private enum PinnedDNSResolverFactory {
   }
 }
 
-private final class SniConnectPinnedResolverLease {
+final class SniConnectPinnedResolverLease {
   private let hostname: String
   private let ip: String
   private let queue = DispatchQueue(label: "com.onekey.sni.connect.resolver-lease")
@@ -90,7 +90,7 @@ private final class SniConnectPinnedResolverLease {
   }
 }
 
-private final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionDelegate {
+final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionDelegate {
   private let hostname: String
   private let ip: String
   private let resolverLease: SniConnectPinnedResolverLease
@@ -334,33 +334,10 @@ final class SniConnectClient {
   }
 
   private static func makeURLSession(for key: SessionKey) throws -> ManagedSession {
-    let configuration = URLSessionConfiguration.default
-    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-    configuration.urlCache = nil
-    configuration.httpCookieStorage = nil
-    configuration.httpShouldSetCookies = false
-    configuration.connectionProxyDictionary = [:]
-    configuration.shouldUseExtendedBackgroundIdleMode = false
-
-    let curlConfig = EMASCurlConfiguration.default()
-    curlConfig.httpVersion = .HTTP1
-    curlConfig.connectTimeoutInterval = 2.5
-    curlConfig.enableBuiltInGzip = false
-    curlConfig.enableBuiltInRedirection = false
-    curlConfig.cacheEnabled = false
-
-    // Enable full certificate validation for security.
-    // The certificate is validated against the SNI hostname, not the IP, because
-    // the custom DNS resolver only overrides address resolution — libcurl keeps the
-    // original hostname for SNI and certificate CN/SAN matching.
-    curlConfig.certificateValidationEnabled = true
-    curlConfig.domainNameVerificationEnabled = true
-    curlConfig.dnsResolver = try PinnedDNSResolverFactory.resolverClass(
+    let resources = try SniConnectPinnedTransport.makeResources(
       hostname: key.hostname,
       ip: key.ip
     )
-
-    EMASCurlProtocol.install(into: configuration, with: curlConfig)
     SniConnectLog.info(SniConnectLog.event("sni_transport_config", [
       ("hostname", key.hostname),
       ("ipHash", SniConnectLog.shortHash(key.ip)),
@@ -371,15 +348,13 @@ final class SniConnectClient {
       ("followRedirects", false),
       ("cacheEnabled", false),
     ]))
-    let resolverLease = SniConnectPinnedResolverLease(hostname: key.hostname, ip: key.ip)
-    let delegate = SniConnectSessionInvalidationDelegate(
-      hostname: key.hostname,
-      ip: key.ip,
-      resolverLease: resolverLease
-    )
     return ManagedSession(
-      session: URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil),
-      resolverLease: resolverLease
+      session: URLSession(
+        configuration: resources.configuration,
+        delegate: resources.delegate,
+        delegateQueue: nil
+      ),
+      resolverLease: resources.resolverLease
     )
   }
 
