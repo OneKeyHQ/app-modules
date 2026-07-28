@@ -2,6 +2,33 @@ import CryptoKit
 import Foundation
 import SniConnect
 
+func isFirmwareArtifactTLSError(_ error: Error) -> Bool {
+  var current: NSError? = error as NSError
+  var visited = Set<ObjectIdentifier>()
+  while let candidate = current {
+    let identifier = ObjectIdentifier(candidate)
+    guard visited.insert(identifier).inserted else {
+      break
+    }
+    if candidate.domain == NSURLErrorDomain,
+      [
+        NSURLErrorSecureConnectionFailed,
+        NSURLErrorServerCertificateHasBadDate,
+        NSURLErrorServerCertificateUntrusted,
+        NSURLErrorServerCertificateHasUnknownRoot,
+        NSURLErrorServerCertificateNotYetValid,
+        NSURLErrorClientCertificateRejected,
+        NSURLErrorClientCertificateRequired,
+        NSURLErrorAppTransportSecurityRequiresSecureConnection,
+      ].contains(candidate.code)
+    {
+      return true
+    }
+    current = candidate.userInfo[NSUnderlyingErrorKey] as? NSError
+  }
+  return false
+}
+
 enum FirmwareArtifactStoreError: Error {
   case invalidInput(String)
   case downloadFailed(String)
@@ -188,8 +215,7 @@ final class FirmwareArtifactStore {
       transactionId: params.transactionId,
       artifactRef: "fw:\(expectedSha256)"
     )
-    let key =
-      "\(params.transactionId):\(expectedSha256):\(Int64(params.expectedSize))"
+    let key = "\(expectedSha256):\(Int64(params.expectedSize))"
     markDownloadActive(expectedSha256, delta: 1)
     do {
       let artifact = try await downloadCoordinator.run(
@@ -202,6 +228,7 @@ final class FirmwareArtifactStore {
           expectedSha256: expectedSha256
         )
       }
+      try rejectIfCancelled(transactionId: params.transactionId)
       markDownloadActive(expectedSha256, delta: -1)
       return artifact
     } catch {
@@ -1050,6 +1077,11 @@ final class FirmwareArtifactStore {
           "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
         )
       }
+      if isFirmwareArtifactTLSError(error) {
+        throw FirmwareArtifactStoreError.downloadFailed(
+          "ARTIFACT_TLS_FAILED: firmware TLS validation failed"
+        )
+      }
       throw FirmwareArtifactStoreError.downloadFailed(
         "ARTIFACT_NETWORK_FAILED: firmware request failed"
       )
@@ -1111,6 +1143,11 @@ final class FirmwareArtifactStore {
       ) {
         throw FirmwareArtifactStoreError.downloadFailed(
           "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
+        )
+      }
+      if isFirmwareArtifactTLSError(error) {
+        throw FirmwareArtifactStoreError.downloadFailed(
+          "ARTIFACT_TLS_FAILED: firmware TLS validation failed"
         )
       }
       throw FirmwareArtifactStoreError.downloadFailed(

@@ -17,10 +17,8 @@ export default [
     ignores: [
       '**/node_modules',
       '**/android/build',
-      '**/conformance',
       '**/ios/build',
       '**/lib',
-      '**/nitrogen',
       '**/*.config.js',
       '**/*.config.mjs',
     ],

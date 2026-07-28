@@ -14,6 +14,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
+import javax.net.ssl.SSLException
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -43,9 +44,13 @@ private data class StagedFirmwareArchiveEntry(
 )
 
 private data class FirmwareDownloadKey(
-  val transactionId: String,
   val expectedSha256: String,
 )
+
+private class FirmwareDownloadLock {
+  val monitor = Any()
+  var references = 0
+}
 
 internal object FirmwareArtifactStore {
   const val MAX_READ_BYTES = 256 * 1024
@@ -59,7 +64,8 @@ internal object FirmwareArtifactStore {
   private val artifactRefPattern = Regex("^fw:[a-f0-9]{64}$")
   private val leaseRefPattern = Regex("^fwlease:[a-f0-9-]{36}$")
   private val identifierPattern = Regex("^[A-Za-z0-9._:-]{1,160}$")
-  private val downloadLocks = ConcurrentHashMap<FirmwareDownloadKey, Any>()
+  private val downloadLocks =
+    ConcurrentHashMap<FirmwareDownloadKey, FirmwareDownloadLock>()
   private val activeCalls =
     ConcurrentHashMap<String, MutableSet<Call>>()
   private val cancelledTransactions =
@@ -102,14 +108,15 @@ internal object FirmwareArtifactStore {
       transactionId = params.transactionId,
       artifactRef = "fw:${validated.expectedSha256}",
     )
-    val lockKey = FirmwareDownloadKey(
-      params.transactionId,
-      validated.expectedSha256,
-    )
-    val lock = downloadLocks.computeIfAbsent(lockKey) { Any() }
+    val lockKey = FirmwareDownloadKey(validated.expectedSha256)
+    val downloadLock = downloadLocks.compute(lockKey) { _, current ->
+      (current ?: FirmwareDownloadLock()).also {
+        it.references += 1
+      }
+    } ?: error("Firmware artifact lock is unavailable")
     markDownloadActive(validated.expectedSha256, 1)
     try {
-      return synchronized(lock) {
+      return synchronized(downloadLock.monitor) {
         check(!cancelledTransactions.contains(params.transactionId)) {
           "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
         }
@@ -117,6 +124,14 @@ internal object FirmwareArtifactStore {
       }
     } finally {
       markDownloadActive(validated.expectedSha256, -1)
+      downloadLocks.compute(lockKey) { _, current ->
+        if (current !== downloadLock) {
+          current
+        } else {
+          current.references -= 1
+          current.takeIf { it.references > 0 }
+        }
+      }
     }
   }
 
@@ -428,6 +443,12 @@ internal object FirmwareArtifactStore {
           error,
         )
       }
+      if (generateSequence<Throwable>(error) { it.cause }.any { it is SSLException }) {
+        throw IllegalStateException(
+          "ARTIFACT_TLS_FAILED: firmware TLS validation failed",
+          error,
+        )
+      }
       throw IllegalStateException(
         "ARTIFACT_NETWORK_FAILED: firmware request failed",
         error,
@@ -601,7 +622,6 @@ internal object FirmwareArtifactStore {
       removed.transactionId
     }
     cancelledTransactions.remove(transactionId)
-    downloadLocks.keys.removeIf { it.transactionId == transactionId }
   }
 
   fun reconcileLeases(activeLeaseRefs: Array<String>) {

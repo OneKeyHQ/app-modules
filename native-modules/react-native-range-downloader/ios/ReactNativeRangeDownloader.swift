@@ -334,18 +334,14 @@ private struct FirmwareBackgroundTaskDescriptor: Codable, Equatable {
   let deadlineAt: TimeInterval
 
   var key: String {
-    "\(leaseRef)|\(taskId)|\(expectedSha256)"
+    "\(expectedSize)|\(expectedSha256)"
   }
 
   func hasSameArtifactIdentity(
     as other: FirmwareBackgroundTaskDescriptor
   ) -> Bool {
-    taskId == other.taskId &&
-      transactionId == other.transactionId &&
-      leaseRef == other.leaseRef &&
-      expectedSize == other.expectedSize &&
-      expectedSha256 == other.expectedSha256 &&
-      hostname == other.hostname
+    expectedSize == other.expectedSize &&
+      expectedSha256 == other.expectedSha256
   }
 }
 
@@ -356,6 +352,7 @@ private enum FirmwareBackgroundDownloadError: LocalizedError {
   case redirectRejected
   case responseRejected
   case sizeRejected
+  case tlsRejected
   case transferFailed
 
   var errorDescription: String? {
@@ -372,6 +369,8 @@ private enum FirmwareBackgroundDownloadError: LocalizedError {
       return "ARTIFACT_PROTOCOL_INVALID: firmware response is invalid"
     case .sizeRejected:
       return "ARTIFACT_PROTOCOL_INVALID: firmware artifact size is invalid"
+    case .tlsRejected:
+      return "ARTIFACT_TLS_FAILED: firmware TLS validation failed"
     case .transferFailed:
       return "ARTIFACT_NETWORK_FAILED: firmware background transfer failed"
     }
@@ -1687,7 +1686,11 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
                 ? FirmwareBackgroundDownloadError.cancelled
                 : nil
             ) ??
-            error ??
+            error.map {
+              isFirmwareArtifactTLSError($0)
+                ? FirmwareBackgroundDownloadError.tlsRejected
+                : FirmwareBackgroundDownloadError.transferFailed
+            } ??
             FirmwareBackgroundDownloadError.transferFailed
         )
       )
