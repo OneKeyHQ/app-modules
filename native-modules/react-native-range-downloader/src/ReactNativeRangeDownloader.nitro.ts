@@ -158,10 +158,6 @@ export interface FirmwareArtifactLeaseReleaseParams {
   disposition: string;
 }
 
-export interface FirmwareArtifactLeaseReconcileParams {
-  activeLeaseRefs: string[];
-}
-
 export interface FirmwareArtifactSweepResult {
   deletedFiles: number;
   deletedBytes: number;
@@ -230,9 +226,6 @@ export interface ReactNativeRangeDownloader
   ): Promise<void>;
   releaseFirmwareArtifactLease(
     params: FirmwareArtifactLeaseReleaseParams
-  ): Promise<void>;
-  reconcileFirmwareArtifactLeases(
-    params: FirmwareArtifactLeaseReconcileParams
   ): Promise<void>;
   sweepFirmwareArtifactOrphans(): Promise<FirmwareArtifactSweepResult>;
 }

@@ -106,8 +106,6 @@ private actor FirmwareArtifactDownloadCoordinator {
 final class FirmwareArtifactStore {
   static let shared = FirmwareArtifactStore()
   static let maxReadBytes = 256 * 1024
-  private static let maxLeaseMetadataBytes: Int64 = 1024 * 1024
-  private static let maxTotalLeaseRefs = 8192
   private static let finalArtifactGrace: TimeInterval = 24 * 60 * 60
   private static let partialArtifactGrace: TimeInterval = 7 * 24 * 60 * 60
 
@@ -117,14 +115,9 @@ final class FirmwareArtifactStore {
     let size: Int64
   }
 
-  private struct LeaseState: Codable {
+  private struct LeaseState {
     let transactionId: String
     var artifactRefs: Set<String>
-  }
-
-  private struct LeaseEnvelope: Codable {
-    let schemaVersion: Int
-    var leases: [String: LeaseState]
   }
 
   private let fileManager = FileManager.default
@@ -136,6 +129,7 @@ final class FirmwareArtifactStore {
   private var cancelledTransactions: Set<String> = []
   private let readerLock = NSLock()
   private var readers: [String: OpenReader] = [:]
+  private var leases: [String: LeaseState] = [:]
 
   private lazy var rootURL: URL = {
     let base = fileManager.urls(
@@ -336,17 +330,12 @@ final class FirmwareArtifactStore {
 
   func acceptBackgroundDownload(
     temporaryURL: URL,
-    leaseRef: String,
     transactionId: String,
     expectedSize: Int64,
     expectedSha256: String
   ) throws -> StoredFirmwareArtifact {
     let normalizedExpectedSha256 = expectedSha256.lowercased()
-    try retainExpectedArtifact(
-      leaseRef: leaseRef,
-      transactionId: transactionId,
-      artifactRef: "fw:\(normalizedExpectedSha256)"
-    )
+    try rejectIfCancelled(transactionId: transactionId)
     let finalURL = artifactURL(sha256: normalizedExpectedSha256)
     if let existing = try? validateStoredArtifact(
       fileURL: finalURL,
@@ -387,14 +376,8 @@ final class FirmwareArtifactStore {
   func discard(artifactRef: String) throws {
     let fileURL = try resolveArtifactURL(artifactRef)
     leaseLock.lock()
-    let isRetained: Bool
-    do {
-      isRetained = try loadLeasesLocked().leases.values.contains {
-        $0.artifactRefs.contains(artifactRef)
-      }
-    } catch {
-      leaseLock.unlock()
-      throw error
+    let isRetained = leases.values.contains {
+      $0.artifactRefs.contains(artifactRef)
     }
     leaseLock.unlock()
     guard !isRetained else {
@@ -593,18 +576,16 @@ final class FirmwareArtifactStore {
     }
     leaseLock.lock()
     defer { leaseLock.unlock() }
-    var envelope = try loadLeasesLocked()
-    guard envelope.leases.count < 32 else {
+    guard leases.count < 32 else {
       throw FirmwareArtifactStoreError.invalidInput(
         "Too many firmware artifact leases"
       )
     }
     let leaseRef = "fwlease:\(UUID().uuidString.lowercased())"
-    envelope.leases[leaseRef] = LeaseState(
+    leases[leaseRef] = LeaseState(
       transactionId: transactionId,
       artifactRefs: []
     )
-    try saveLeasesLocked(envelope)
     return leaseRef
   }
 
@@ -630,9 +611,8 @@ final class FirmwareArtifactStore {
     let transactionId: String = try {
       leaseLock.lock()
       defer { leaseLock.unlock() }
-      var envelope = try loadLeasesLocked()
       guard
-        let lease = envelope.leases.removeValue(
+        let lease = leases.removeValue(
           forKey: try validateLeaseRef(leaseRef)
         )
       else {
@@ -640,7 +620,6 @@ final class FirmwareArtifactStore {
           "Firmware artifact lease is unavailable"
         )
       }
-      try saveLeasesLocked(envelope)
       return lease.transactionId
     }()
     cancellationLock.withFirmwareArtifactLock {
@@ -648,43 +627,13 @@ final class FirmwareArtifactStore {
     }
   }
 
-  func reconcileLeases(activeLeaseRefs: [String]) throws {
-    guard activeLeaseRefs.count <= 32 else {
-      throw FirmwareArtifactStoreError.invalidInput(
-        "Too many active firmware artifact leases"
-      )
-    }
-    let active = try Set(activeLeaseRefs.map(validateLeaseRef))
-    guard active.count == activeLeaseRefs.count else {
-      throw FirmwareArtifactStoreError.invalidInput(
-        "Duplicate active firmware artifact lease"
-      )
-    }
-    leaseLock.lock()
-    defer { leaseLock.unlock() }
-    var envelope = try loadLeasesLocked()
-    guard active.allSatisfy({ envelope.leases[$0] != nil }) else {
-      throw FirmwareArtifactStoreError.invalidInput(
-        "Firmware artifact lease reconciliation is incomplete"
-      )
-    }
-    envelope.leases = envelope.leases.filter { active.contains($0.key) }
-    try saveLeasesLocked(envelope)
-  }
-
   func sweepOrphans() throws -> (deletedFiles: Int, deletedBytes: Int64) {
     leaseLock.lock()
-    let retained: Set<String>
-    do {
-      retained = Set(
-        try loadLeasesLocked().leases.values
-          .flatMap(\.artifactRefs)
-          .map { String($0.dropFirst(3)) }
-      )
-    } catch {
-      leaseLock.unlock()
-      throw error
-    }
+    let retained = Set(
+      leases.values
+        .flatMap(\.artifactRefs)
+        .map { String($0.dropFirst(3)) }
+    )
     leaseLock.unlock()
     activeDownloadLock.lock()
     let active = Set(activeDownloadCounts.filter { $0.value > 0 }.keys)
@@ -703,7 +652,7 @@ final class FirmwareArtifactStore {
     )
     for fileURL in files {
       let name = fileURL.lastPathComponent
-      guard name != "leases.json", name.count >= 64 else { continue }
+      guard name.count >= 64 else { continue }
       let sha256 = String(name.prefix(64))
       guard
         sha256.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
@@ -741,7 +690,7 @@ final class FirmwareArtifactStore {
   private func requireLease(_ leaseRef: String) throws {
     leaseLock.lock()
     defer { leaseLock.unlock() }
-    guard try loadLeasesLocked().leases[validateLeaseRef(leaseRef)] != nil else {
+    guard leases[try validateLeaseRef(leaseRef)] != nil else {
       throw FirmwareArtifactStoreError.invalidInput(
         "Firmware artifact lease is unavailable"
       )
@@ -763,9 +712,8 @@ final class FirmwareArtifactStore {
     }
     leaseLock.lock()
     defer { leaseLock.unlock() }
-    var envelope = try loadLeasesLocked()
     let validatedLeaseRef = try validateLeaseRef(leaseRef)
-    guard var lease = envelope.leases[validatedLeaseRef] else {
+    guard var lease = leases[validatedLeaseRef] else {
       throw FirmwareArtifactStoreError.invalidInput(
         "Firmware artifact lease is unavailable"
       )
@@ -776,8 +724,7 @@ final class FirmwareArtifactStore {
       )
     }
     if lease.artifactRefs.insert(artifactRef).inserted {
-      envelope.leases[validatedLeaseRef] = lease
-      try saveLeasesLocked(envelope)
+      leases[validatedLeaseRef] = lease
     }
   }
 
@@ -802,79 +749,6 @@ final class FirmwareArtifactStore {
       of: "^[A-Za-z0-9._:-]{1,160}$",
       options: .regularExpression
     ) != nil
-  }
-
-  private func loadLeasesLocked() throws -> LeaseEnvelope {
-    let url = rootURL.appendingPathComponent("leases.json", isDirectory: false)
-    guard fileManager.fileExists(atPath: url.path) else {
-      return LeaseEnvelope(schemaVersion: 1, leases: [:])
-    }
-    let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-    guard fileSize > 0, Int64(fileSize) <= Self.maxLeaseMetadataBytes else {
-      throw FirmwareArtifactStoreError.invalidInput(
-        "Firmware lease metadata is too large"
-      )
-    }
-    let envelope = try JSONDecoder().decode(
-      LeaseEnvelope.self,
-      from: Data(contentsOf: url)
-    )
-    guard envelope.schemaVersion == 1, envelope.leases.count <= 32 else {
-      throw FirmwareArtifactStoreError.invalidInput(
-        "Unsupported firmware lease schema"
-      )
-    }
-    guard
-      envelope.leases.values.reduce(0, { $0 + $1.artifactRefs.count })
-        <= Self.maxTotalLeaseRefs
-    else {
-      throw FirmwareArtifactStoreError.invalidInput(
-        "Firmware lease metadata is too large"
-      )
-    }
-    for (leaseRef, lease) in envelope.leases {
-      guard
-        Self.isValidLeaseRef(leaseRef),
-        Self.isSafeIdentifier(lease.transactionId),
-        lease.artifactRefs.count <= 4096,
-        lease.artifactRefs.allSatisfy({
-          $0.range(
-            of: "^fw:[a-f0-9]{64}$",
-            options: .regularExpression
-          ) != nil
-        })
-      else {
-        throw FirmwareArtifactStoreError.invalidInput(
-          "Invalid persisted firmware lease"
-        )
-      }
-    }
-    return envelope
-  }
-
-  private func saveLeasesLocked(_ envelope: LeaseEnvelope) throws {
-    guard
-      envelope.schemaVersion == 1,
-      envelope.leases.count <= 32,
-      envelope.leases.values.allSatisfy({
-        $0.artifactRefs.count <= 4096
-      }),
-      envelope.leases.values.reduce(0, {
-        $0 + $1.artifactRefs.count
-      }) <= Self.maxTotalLeaseRefs
-    else {
-      throw FirmwareArtifactStoreError.invalidInput(
-        "Firmware lease metadata is too large"
-      )
-    }
-    let data = try JSONEncoder().encode(envelope)
-    guard Int64(data.count) <= Self.maxLeaseMetadataBytes else {
-      throw FirmwareArtifactStoreError.invalidInput(
-        "Firmware lease metadata is too large"
-      )
-    }
-    let url = rootURL.appendingPathComponent("leases.json", isDirectory: false)
-    try data.write(to: url, options: [.atomic])
   }
 
   private func markDownloadActive(_ sha256: String, delta: Int) {

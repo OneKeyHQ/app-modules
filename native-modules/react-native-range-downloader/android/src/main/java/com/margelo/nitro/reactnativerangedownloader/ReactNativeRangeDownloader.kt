@@ -268,7 +268,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
   override fun getFirmwareArtifactCapabilities(): FirmwareArtifactCapabilities {
     return FirmwareArtifactCapabilities(
-      firmwareArtifactProtocolVersion = 1.0,
+      firmwareArtifactProtocolVersion = 2.0,
       supportedRouteTypes = arrayOf("domain", "pinnedIp"),
       supportsArchiveMaterialization = true,
       maxReadBytes = FirmwareArtifactStore.MAX_READ_BYTES.toDouble(),
@@ -392,14 +392,6 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   ): Promise<Unit> {
     return Promise.async {
       FirmwareArtifactStore.releaseLease(params.leaseRef, params.disposition)
-    }
-  }
-
-  override fun reconcileFirmwareArtifactLeases(
-    params: FirmwareArtifactLeaseReconcileParams,
-  ): Promise<Unit> {
-    return Promise.async {
-      FirmwareArtifactStore.reconcileLeases(params.activeLeaseRefs)
     }
   }
 

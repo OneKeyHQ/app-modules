@@ -6,7 +6,6 @@ import com.sniconnect.SniPinnedTransport
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.RandomAccessFile
 import java.security.MessageDigest
@@ -21,8 +20,6 @@ import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import org.json.JSONArray
-import org.json.JSONObject
 
 internal data class StoredFirmwareArtifact(
   val artifactRef: String,
@@ -56,8 +53,6 @@ internal object FirmwareArtifactStore {
   const val MAX_READ_BYTES = 256 * 1024
 
   private const val MAX_ARTIFACT_BYTES = 512L * 1024 * 1024
-  private const val MAX_LEASE_METADATA_BYTES = 1024L * 1024
-  private const val MAX_TOTAL_LEASE_REFS = 8192
   private const val FINAL_ARTIFACT_GRACE_MS = 24L * 60 * 60 * 1000
   private const val PARTIAL_ARTIFACT_GRACE_MS = 7L * 24 * 60 * 60 * 1000
   private val sha256Pattern = Regex("^[a-fA-F0-9]{64}$")
@@ -75,6 +70,7 @@ internal object FirmwareArtifactStore {
   private val leaseLock = Any()
   private val readerLock = Any()
   private val readers = mutableMapOf<String, OpenReader>()
+  private val leases = mutableMapOf<String, LeaseState>()
 
   private data class LeaseState(
     val transactionId: String,
@@ -148,7 +144,7 @@ internal object FirmwareArtifactStore {
   fun discard(artifactRef: String) {
     val file = resolveArtifactFile(artifactRef)
     synchronized(leaseLock) {
-      require(loadLeasesLocked().values.none { artifactRef in it.artifactRefs }) {
+      require(leases.values.none { artifactRef in it.artifactRefs }) {
         "ARTIFACT_LEASED: firmware artifact is retained"
       }
     }
@@ -584,13 +580,11 @@ internal object FirmwareArtifactStore {
       "Invalid firmware transactionId"
     }
     return synchronized(leaseLock) {
-      val leases = loadLeasesLocked()
       require(leases.size < 32) {
         "Too many firmware artifact leases"
       }
       val leaseRef = "fwlease:${UUID.randomUUID()}"
       leases[leaseRef] = LeaseState(transactionId, mutableSetOf())
-      saveLeasesLocked(leases)
       leaseRef
     }
   }
@@ -613,40 +607,18 @@ internal object FirmwareArtifactStore {
       "Invalid firmware lease disposition"
     }
     val transactionId = synchronized(leaseLock) {
-      val leases = loadLeasesLocked()
       val removed = leases.remove(validateLeaseRef(leaseRef))
       require(removed != null) {
         "Firmware artifact lease is unavailable"
       }
-      saveLeasesLocked(leases)
       removed.transactionId
     }
     cancelledTransactions.remove(transactionId)
   }
 
-  fun reconcileLeases(activeLeaseRefs: Array<String>) {
-    require(activeLeaseRefs.size <= 32) {
-      "Too many active firmware artifact leases"
-    }
-    val active = activeLeaseRefs.mapTo(mutableSetOf()) {
-      validateLeaseRef(it)
-    }
-    require(active.size == activeLeaseRefs.size) {
-      "Duplicate active firmware artifact lease"
-    }
-    synchronized(leaseLock) {
-      val leases = loadLeasesLocked()
-      require(active.all { leases.containsKey(it) }) {
-        "Firmware artifact lease reconciliation is incomplete"
-      }
-      leases.keys.retainAll(active)
-      saveLeasesLocked(leases)
-    }
-  }
-
   fun sweepOrphans(): Pair<Int, Long> {
     val retainedSha256 = synchronized(leaseLock) {
-      loadLeasesLocked().values
+      leases.values
         .flatMap { it.artifactRefs }
         .mapTo(mutableSetOf()) { it.removePrefix("fw:") }
     }
@@ -660,7 +632,7 @@ internal object FirmwareArtifactStore {
     var deletedFiles = 0
     var deletedBytes = 0L
     root.listFiles()?.forEach { file ->
-      if (!file.isFile || file.name == "leases.json") return@forEach
+      if (!file.isFile) return@forEach
       val sha256 = file.name.take(64)
       if (
         !sha256Pattern.matches(sha256) ||
@@ -689,7 +661,7 @@ internal object FirmwareArtifactStore {
 
   private fun requireLease(leaseRef: String) {
     synchronized(leaseLock) {
-      require(loadLeasesLocked().containsKey(validateLeaseRef(leaseRef))) {
+      require(leases.containsKey(validateLeaseRef(leaseRef))) {
         "Firmware artifact lease is unavailable"
       }
     }
@@ -704,7 +676,6 @@ internal object FirmwareArtifactStore {
       "Invalid firmware artifactRef"
     }
     synchronized(leaseLock) {
-      val leases = loadLeasesLocked()
       val lease = leases[validateLeaseRef(leaseRef)]
         ?: error("Firmware artifact lease is unavailable")
       if (transactionId != null) {
@@ -712,9 +683,7 @@ internal object FirmwareArtifactStore {
           "Firmware artifact lease transaction mismatch"
         }
       }
-      if (lease.artifactRefs.add(artifactRef)) {
-        saveLeasesLocked(leases)
-      }
+      lease.artifactRefs.add(artifactRef)
     }
   }
 
@@ -723,81 +692,6 @@ internal object FirmwareArtifactStore {
       "Invalid firmware leaseRef"
     }
     return leaseRef
-  }
-
-  private fun loadLeasesLocked(): MutableMap<String, LeaseState> {
-    val file = File(root, "leases.json")
-    if (!file.exists()) return mutableMapOf()
-    require(file.length() in 1..MAX_LEASE_METADATA_BYTES) {
-      "Firmware lease metadata is too large"
-    }
-    val envelope = JSONObject(file.readText(Charsets.UTF_8))
-    require(envelope.optInt("schemaVersion") == 1) {
-      "Unsupported firmware lease schema"
-    }
-    val result = mutableMapOf<String, LeaseState>()
-    val jsonLeases = envelope.getJSONObject("leases")
-    val keys = jsonLeases.keys()
-    while (keys.hasNext()) {
-      val leaseRef = validateLeaseRef(keys.next())
-      val jsonLease = jsonLeases.getJSONObject(leaseRef)
-      val transactionId = jsonLease.getString("transactionId")
-      require(identifierPattern.matches(transactionId)) {
-        "Invalid persisted firmware transactionId"
-      }
-      val jsonRefs = jsonLease.getJSONArray("artifactRefs")
-      require(jsonRefs.length() <= 4096) {
-        "Too many persisted firmware artifact refs"
-      }
-      val refs = mutableSetOf<String>()
-      for (index in 0 until jsonRefs.length()) {
-        val artifactRef = jsonRefs.getString(index)
-        require(artifactRefPattern.matches(artifactRef) && refs.add(artifactRef)) {
-          "Invalid persisted firmware artifact ref"
-        }
-      }
-      result[leaseRef] = LeaseState(transactionId, refs)
-    }
-    require(result.size <= 32) {
-      "Too many persisted firmware artifact leases"
-    }
-    require(result.values.sumOf { it.artifactRefs.size } <= MAX_TOTAL_LEASE_REFS) {
-      "Too many persisted firmware artifact refs"
-    }
-    return result
-  }
-
-  private fun saveLeasesLocked(leases: Map<String, LeaseState>) {
-    require(
-      leases.size <= 32 &&
-        leases.values.sumOf { it.artifactRefs.size } <= MAX_TOTAL_LEASE_REFS
-    ) {
-      "Firmware lease metadata is too large"
-    }
-    val jsonLeases = JSONObject()
-    leases.toSortedMap().forEach { (leaseRef, lease) ->
-      jsonLeases.put(
-        leaseRef,
-        JSONObject()
-          .put("transactionId", lease.transactionId)
-          .put("artifactRefs", JSONArray(lease.artifactRefs.sorted())),
-      )
-    }
-    val bytes = JSONObject()
-      .put("schemaVersion", 1)
-      .put("leases", jsonLeases)
-      .toString()
-      .toByteArray(Charsets.UTF_8)
-    require(bytes.size.toLong() <= MAX_LEASE_METADATA_BYTES) {
-      "Firmware lease metadata is too large"
-    }
-    val destination = File(root, "leases.json")
-    val temporary = File(root, ".leases-${UUID.randomUUID()}.tmp")
-    FileOutputStream(temporary).use { output ->
-      output.write(bytes)
-      output.fd.sync()
-    }
-    Os.rename(temporary.absolutePath, destination.absolutePath)
   }
 
   private fun markDownloadActive(sha256: String, delta: Int) {

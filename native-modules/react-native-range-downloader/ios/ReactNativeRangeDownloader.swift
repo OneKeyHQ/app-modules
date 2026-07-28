@@ -98,7 +98,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
 
   func getFirmwareArtifactCapabilities() throws -> FirmwareArtifactCapabilities {
     FirmwareArtifactCapabilities(
-      firmwareArtifactProtocolVersion: 1,
+      firmwareArtifactProtocolVersion: 2,
       supportedRouteTypes: ["domain", "pinnedIp"],
       supportsArchiveMaterialization: true,
       maxReadBytes: Double(FirmwareArtifactStore.maxReadBytes)
@@ -243,16 +243,6 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
     }
   }
 
-  func reconcileFirmwareArtifactLeases(
-    params: FirmwareArtifactLeaseReconcileParams
-  ) throws -> Promise<Void> {
-    Promise.async {
-      try FirmwareArtifactStore.shared.reconcileLeases(
-        activeLeaseRefs: params.activeLeaseRefs
-      )
-    }
-  }
-
   func sweepFirmwareArtifactOrphans() throws -> Promise<FirmwareArtifactSweepResult> {
     Promise.async {
       let result = try FirmwareArtifactStore.shared.sweepOrphans()
@@ -327,7 +317,6 @@ private struct FirmwareBackgroundTaskDescriptor: Codable, Equatable {
   let schemaVersion: Int
   let taskId: String
   let transactionId: String
-  let leaseRef: String
   let expectedSize: Int64
   let expectedSha256: String
   let hostname: String
@@ -693,7 +682,7 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     return (r, decoded.segIndex)
   }
 
-  private static let firmwareTaskDescriptionPrefix = "firmware-v1:"
+  private static let firmwareTaskDescriptionPrefix = "firmware-v2:"
 
   private static func encodeFirmwareTaskDescription(
     _ descriptor: FirmwareBackgroundTaskDescriptor
@@ -718,17 +707,13 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
         FirmwareBackgroundTaskDescriptor.self,
         from: data
       ),
-      descriptor.schemaVersion == 1,
+      descriptor.schemaVersion == 2,
       descriptor.taskId.range(
         of: "^[A-Za-z0-9._-]{1,100}$",
         options: .regularExpression
       ) != nil,
       descriptor.transactionId.range(
         of: "^[A-Za-z0-9._:-]{1,160}$",
-        options: .regularExpression
-      ) != nil,
-      descriptor.leaseRef.range(
-        of: "^fwlease:[a-f0-9-]{36}$",
         options: .regularExpression
       ) != nil,
       descriptor.expectedSize > 0,
@@ -766,10 +751,9 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       throw FirmwareBackgroundDownloadError.invalidTask
     }
     let descriptor = FirmwareBackgroundTaskDescriptor(
-      schemaVersion: 1,
+      schemaVersion: 2,
       taskId: params.taskId,
       transactionId: params.transactionId,
-      leaseRef: params.leaseRef,
       expectedSize: Int64(params.expectedSize),
       expectedSha256: params.expectedSha256.lowercased(),
       hostname: hostname,
@@ -1538,7 +1522,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
         }
         let artifact = try FirmwareArtifactStore.shared.acceptBackgroundDownload(
           temporaryURL: location,
-          leaseRef: descriptor.leaseRef,
           transactionId: descriptor.transactionId,
           expectedSize: descriptor.expectedSize,
           expectedSha256: descriptor.expectedSha256
