@@ -219,7 +219,11 @@ final class FirmwareArtifactStore {
       transactionId: params.transactionId,
       artifactRef: "fw:\(expectedSha256)"
     )
-    let key = "\(expectedSha256):\(Int64(params.expectedSize))"
+    let key = firmwareArtifactDownloadKey(
+      transactionId: params.transactionId,
+      expectedSize: Int64(params.expectedSize),
+      expectedSha256: expectedSha256
+    )
     markDownloadActive(expectedSha256, delta: 1)
     do {
       let artifact = try await downloadCoordinator.run(
@@ -914,6 +918,29 @@ final class FirmwareArtifactStore {
     partialURL: URL,
     resumeOffset: Int64
   ) async throws {
+    do {
+      try await FirmwareArtifactWallClockDeadline.run(
+        timeoutSeconds:
+          params.overallDeadlineSeconds ?? Self.defaultDownloadDeadline
+      ) { [self] in
+        try await streamDownloadWithinDeadline(
+          params,
+          partialURL: partialURL,
+          resumeOffset: resumeOffset
+        )
+      }
+    } catch FirmwareArtifactDeadlineError.exceeded {
+      throw FirmwareArtifactStoreError.downloadFailed(
+        "ARTIFACT_DEADLINE_EXCEEDED: firmware download exceeded its deadline"
+      )
+    }
+  }
+
+  private func streamDownloadWithinDeadline(
+    _ params: FirmwareArtifactDownloadParams,
+    partialURL: URL,
+    resumeOffset: Int64
+  ) async throws {
     guard let url = URL(string: params.url), let hostname = url.host else {
       throw FirmwareArtifactStoreError.invalidInput("Invalid firmware URL")
     }
@@ -949,10 +976,10 @@ final class FirmwareArtifactStore {
       }
     }
 
-    let bytes: URLSession.AsyncBytes
+    let downloadedURL: URL
     let response: URLResponse
     do {
-      (bytes, response) = try await session.bytes(for: request)
+      (downloadedURL, response) = try await session.download(for: request)
     } catch {
       if isCancellationError(
         error,
@@ -971,8 +998,19 @@ final class FirmwareArtifactStore {
         "ARTIFACT_NETWORK_FAILED: firmware request failed"
       )
     }
+    defer { try? fileManager.removeItem(at: downloadedURL) }
     guard let httpResponse = response as? HTTPURLResponse else {
       throw FirmwareArtifactStoreError.downloadFailed("Firmware response is not HTTP")
+    }
+    guard
+      let responseURL = httpResponse.url,
+      responseURL.scheme?.lowercased() == "https",
+      responseURL.host?.lowercased() == hostname.lowercased(),
+      responseURL.port == nil || responseURL.port == 443
+    else {
+      throw FirmwareArtifactStoreError.downloadFailed(
+        "ARTIFACT_REDIRECT_REJECTED: firmware response changed canonical identity"
+      )
     }
     guard httpResponse.statusCode == 200 || httpResponse.statusCode == 206 else {
       throw FirmwareArtifactStoreError.downloadFailed(
@@ -1003,21 +1041,25 @@ final class FirmwareArtifactStore {
     }
 
     var written = append ? resumeOffset : 0
-    var buffer = Data()
-    buffer.reserveCapacity(64 * 1024)
+    let source = try FileHandle(forReadingFrom: downloadedURL)
+    defer { try? source.close() }
     do {
-      for try await byte in bytes {
-        buffer.append(byte)
-        if buffer.count >= 64 * 1024 {
-          written += Int64(buffer.count)
-          guard written <= Int64(params.maxBytes) else {
-            throw FirmwareArtifactStoreError.downloadFailed(
-              "ARTIFACT_PROTOCOL_INVALID: firmware artifact exceeds maxBytes"
-            )
-          }
-          try handle.write(contentsOf: buffer)
-          buffer.removeAll(keepingCapacity: true)
+      while true {
+        try Task.checkCancellation()
+        try rejectIfCancelled(transactionId: params.transactionId)
+        guard
+          let buffer = try source.read(upToCount: 64 * 1024),
+          !buffer.isEmpty
+        else {
+          break
         }
+        written += Int64(buffer.count)
+        guard written <= Int64(params.maxBytes) else {
+          throw FirmwareArtifactStoreError.downloadFailed(
+            "ARTIFACT_PROTOCOL_INVALID: firmware artifact exceeds maxBytes"
+          )
+        }
+        try handle.write(contentsOf: buffer)
       }
     } catch let error as FirmwareArtifactStoreError {
       throw error
@@ -1038,15 +1080,6 @@ final class FirmwareArtifactStore {
       throw FirmwareArtifactStoreError.downloadFailed(
         "ARTIFACT_NETWORK_FAILED: firmware response stream failed"
       )
-    }
-    if !buffer.isEmpty {
-      written += Int64(buffer.count)
-      guard written <= Int64(params.maxBytes) else {
-        throw FirmwareArtifactStoreError.downloadFailed(
-          "ARTIFACT_PROTOCOL_INVALID: firmware artifact exceeds maxBytes"
-        )
-      }
-      try handle.write(contentsOf: buffer)
     }
     try handle.synchronize()
     try rejectIfCancelled(transactionId: params.transactionId)

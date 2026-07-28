@@ -26,6 +26,50 @@ import Foundation
 // ───────────────────────────────────────────────────────────────────────────
 final class RangeDownloadLogicTests: XCTestCase {
 
+  func testFirmwareArtifactDownloadKeyIsolatesTransactions() {
+    let first = firmwareArtifactDownloadKey(
+      transactionId: "fwtx:first",
+      expectedSize: 42,
+      expectedSha256: String(repeating: "a", count: 64)
+    )
+    let second = firmwareArtifactDownloadKey(
+      transactionId: "fwtx:second",
+      expectedSize: 42,
+      expectedSha256: String(repeating: "a", count: 64)
+    )
+
+    XCTAssertNotEqual(first, second)
+  }
+
+  func testFirmwareArtifactWallClockDeadlineRejectsSlowOperation() async {
+    do {
+      _ = try await FirmwareArtifactWallClockDeadline.run(
+        timeoutSeconds: 0.01
+      ) {
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        return true
+      }
+      XCTFail("Expected the wall-clock deadline to reject")
+    } catch FirmwareArtifactDeadlineError.exceeded {
+      // Expected.
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+  }
+
+  func testFirmwareBackgroundErrorsKeepArtifactCodesInDescriptions() {
+    XCTAssertTrue(
+      String(
+        describing: FirmwareBackgroundDownloadError.transferFailed
+      ).contains("ARTIFACT_NETWORK_FAILED")
+    )
+    XCTAssertTrue(
+      String(
+        describing: FirmwareBackgroundDownloadError.deadlineExceeded
+      ).contains("ARTIFACT_DEADLINE_EXCEEDED")
+    )
+  }
+
   // MARK: §4 — HTTP status classification
   //
   // OCDS §4. Mirrors Android's IsPermanentHttpStatusTest matrix. Asserts BOTH the

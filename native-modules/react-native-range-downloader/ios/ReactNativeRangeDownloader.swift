@@ -323,46 +323,19 @@ private struct FirmwareBackgroundTaskDescriptor: Codable, Equatable {
   let deadlineAt: TimeInterval
 
   var key: String {
-    "\(expectedSize)|\(expectedSha256)"
+    firmwareArtifactDownloadKey(
+      transactionId: transactionId,
+      expectedSize: expectedSize,
+      expectedSha256: expectedSha256
+    )
   }
 
-  func hasSameArtifactIdentity(
+  func hasSameDownloadIdentity(
     as other: FirmwareBackgroundTaskDescriptor
   ) -> Bool {
-    expectedSize == other.expectedSize &&
+    transactionId == other.transactionId &&
+      expectedSize == other.expectedSize &&
       expectedSha256 == other.expectedSha256
-  }
-}
-
-private enum FirmwareBackgroundDownloadError: LocalizedError {
-  case cancelled
-  case invalidTask
-  case deadlineExceeded
-  case redirectRejected
-  case responseRejected
-  case sizeRejected
-  case tlsRejected
-  case transferFailed
-
-  var errorDescription: String? {
-    switch self {
-    case .cancelled:
-      return "ARTIFACT_CANCELLED: firmware background download was cancelled"
-    case .invalidTask:
-      return "ARTIFACT_PROTOCOL_INVALID: firmware background task is invalid"
-    case .deadlineExceeded:
-      return "ARTIFACT_DEADLINE_EXCEEDED: firmware download exceeded its deadline"
-    case .redirectRejected:
-      return "ARTIFACT_REDIRECT_REJECTED: firmware redirect changed canonical identity"
-    case .responseRejected:
-      return "ARTIFACT_PROTOCOL_INVALID: firmware response is invalid"
-    case .sizeRejected:
-      return "ARTIFACT_PROTOCOL_INVALID: firmware artifact size is invalid"
-    case .tlsRejected:
-      return "ARTIFACT_TLS_FAILED: firmware TLS validation failed"
-    case .transferFailed:
-      return "ARTIFACT_NETWORK_FAILED: firmware background transfer failed"
-    }
   }
 }
 
@@ -836,9 +809,12 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       else {
         continue
       }
-      if candidate.hasSameArtifactIdentity(as: descriptor) {
+      if candidate.hasSameDownloadIdentity(as: descriptor) {
         matchingTaskFound = true
-      } else if candidate.taskId == descriptor.taskId {
+      } else if
+        candidate.transactionId == descriptor.transactionId &&
+        candidate.taskId == descriptor.taskId
+      {
         task.cancel()
       }
     }

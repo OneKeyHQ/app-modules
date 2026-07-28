@@ -9,6 +9,9 @@ import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 // P1: Nitro adapter for the Android concurrent multi-range downloader.
 //
@@ -34,6 +37,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
   private val listeners = CopyOnWriteArrayList<Listener>()
   private val nextListenerId = AtomicLong(1)
+  private val firmwareArtifactScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
   // Active downloads keyed by "channel|taskId" so cancel/discardArtifacts can
   // flip the abort flag + stop the worker pool BEFORE deleting files, instead of
@@ -278,7 +282,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   override fun downloadFirmwareArtifact(
     params: FirmwareArtifactDownloadParams,
   ): Promise<FirmwareArtifactReceipt> {
-    return Promise.async {
+    return Promise.async(firmwareArtifactScope) {
       val artifact = FirmwareArtifactStore.download(params)
       FirmwareArtifactReceipt(
         artifactRef = artifact.artifactRef,
@@ -291,7 +295,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   override fun cancelFirmwareArtifactDownloads(
     params: FirmwareArtifactCancelParams,
   ): Promise<Unit> {
-    return Promise.async {
+    return Promise.async(firmwareArtifactScope) {
       FirmwareArtifactStore.cancelDownloads(params.transactionId)
     }
   }
@@ -299,7 +303,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   override fun discardFirmwareArtifact(
     params: FirmwareArtifactRefParams,
   ): Promise<Unit> {
-    return Promise.async {
+    return Promise.async(firmwareArtifactScope) {
       FirmwareArtifactStore.discard(params.artifactRef)
     }
   }
@@ -307,7 +311,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   override fun openFirmwareArtifact(
     params: FirmwareArtifactRefParams,
   ): Promise<FirmwareArtifactReaderInfo> {
-    return Promise.async {
+    return Promise.async(firmwareArtifactScope) {
       val (readerId, size) = FirmwareArtifactStore.open(params.artifactRef)
       FirmwareArtifactReaderInfo(readerId = readerId, size = size.toDouble())
     }
@@ -316,7 +320,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   override fun readFirmwareArtifact(
     params: FirmwareArtifactReaderReadParams,
   ): Promise<ArrayBuffer> {
-    return Promise.async {
+    return Promise.async(firmwareArtifactScope) {
       require(
         params.offset.isFinite() &&
           params.offset >= 0 &&
@@ -340,7 +344,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   override fun closeFirmwareArtifact(
     params: FirmwareArtifactReaderCloseParams,
   ): Promise<Unit> {
-    return Promise.async {
+    return Promise.async(firmwareArtifactScope) {
       FirmwareArtifactStore.close(params.readerId)
     }
   }
@@ -348,7 +352,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   override fun materializeFirmwareArchive(
     params: FirmwareArchiveMaterializeParams,
   ): Promise<FirmwareArchiveMaterializeResult> {
-    return Promise.async {
+    return Promise.async(firmwareArtifactScope) {
       val artifacts = FirmwareArtifactStore.materializeArchive(
         params.leaseRef,
         params.archiveArtifactRef,
@@ -372,7 +376,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   override fun createFirmwareArtifactLease(
     params: FirmwareArtifactLeaseCreateParams,
   ): Promise<FirmwareArtifactLease> {
-    return Promise.async {
+    return Promise.async(firmwareArtifactScope) {
       FirmwareArtifactLease(
         leaseRef = FirmwareArtifactStore.createLease(params.transactionId),
       )
@@ -382,7 +386,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   override fun retainFirmwareArtifact(
     params: FirmwareArtifactLeaseRetainParams,
   ): Promise<Unit> {
-    return Promise.async {
+    return Promise.async(firmwareArtifactScope) {
       FirmwareArtifactStore.retain(params.leaseRef, params.artifactRef)
     }
   }
@@ -390,13 +394,13 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   override fun releaseFirmwareArtifactLease(
     params: FirmwareArtifactLeaseReleaseParams,
   ): Promise<Unit> {
-    return Promise.async {
+    return Promise.async(firmwareArtifactScope) {
       FirmwareArtifactStore.releaseLease(params.leaseRef, params.disposition)
     }
   }
 
   override fun sweepFirmwareArtifactOrphans(): Promise<FirmwareArtifactSweepResult> {
-    return Promise.async {
+    return Promise.async(firmwareArtifactScope) {
       val (deletedFiles, deletedBytes) = FirmwareArtifactStore.sweepOrphans()
       FirmwareArtifactSweepResult(
         deletedFiles = deletedFiles.toDouble(),

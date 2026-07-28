@@ -90,7 +90,7 @@ final class SniConnectPinnedResolverLease {
   }
 }
 
-final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionDelegate {
+final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionTaskDelegate {
   private let hostname: String
   private let ip: String
   private let resolverLease: SniConnectPinnedResolverLease
@@ -109,6 +109,16 @@ final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionDelegate 
       ("releasedResolver", releasedResolver),
       ("success", error == nil),
     ]))
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse,
+    newRequest request: URLRequest,
+    completionHandler: @escaping (URLRequest?) -> Void
+  ) {
+    completionHandler(nil)
   }
 }
 
