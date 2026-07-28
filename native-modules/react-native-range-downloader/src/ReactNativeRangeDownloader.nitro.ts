@@ -79,7 +79,7 @@ export interface FirmwareArtifactDownloadParams {
   expectedSize: number;
   expectedSha256: string;
   maxBytes: number;
-  overallDeadlineSeconds?: number;
+  overallDeadlineSeconds?: number; // defaults to 180; must be > 0 and <= 24 hours
 }
 
 export interface FirmwareArtifactReceipt {

@@ -14,12 +14,28 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
 import javax.net.ssl.SSLException
+import kotlin.math.ceil
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
+private const val DEFAULT_FIRMWARE_DOWNLOAD_DEADLINE_SECONDS = 180.0
+private const val MAX_FIRMWARE_DOWNLOAD_DEADLINE_SECONDS = 24.0 * 60 * 60
+
+internal fun validateFirmwareDownloadDeadlineSeconds(value: Double?): Double {
+  val deadline = value ?: DEFAULT_FIRMWARE_DOWNLOAD_DEADLINE_SECONDS
+  require(
+    deadline.isFinite() &&
+      deadline > 0 &&
+      deadline <= MAX_FIRMWARE_DOWNLOAD_DEADLINE_SECONDS
+  ) {
+    "Invalid firmware download deadline"
+  }
+  return deadline
+}
 
 internal data class StoredFirmwareArtifact(
   val artifactRef: String,
@@ -295,6 +311,7 @@ internal object FirmwareArtifactStore {
     val maxBytes: Long,
     val expectedSha256: String,
     val hostname: String,
+    val overallDeadlineSeconds: Double,
   )
 
   private fun validateDownloadParams(
@@ -335,6 +352,8 @@ internal object FirmwareArtifactStore {
     require(sha256Pattern.matches(params.expectedSha256)) {
       "Invalid firmware artifact SHA-256"
     }
+    val overallDeadlineSeconds =
+      validateFirmwareDownloadDeadlineSeconds(params.overallDeadlineSeconds)
     require(params.routeType == "domain" || params.routeType == "pinnedIp") {
       "Invalid firmware route type"
     }
@@ -352,6 +371,7 @@ internal object FirmwareArtifactStore {
       maxBytes = maxBytes,
       expectedSha256 = params.expectedSha256.lowercase(),
       hostname = url.host,
+      overallDeadlineSeconds = overallDeadlineSeconds,
     )
   }
 
@@ -411,12 +431,10 @@ internal object FirmwareArtifactStore {
         .build()
     }
     val call = client.newCall(requestBuilder.build())
-    params.overallDeadlineSeconds?.let { deadline ->
-      require(deadline.isFinite() && deadline > 0) {
-        "Invalid firmware download deadline"
-      }
-      call.timeout().timeout(deadline.toLong().coerceAtLeast(1), TimeUnit.SECONDS)
-    }
+    call.timeout().timeout(
+      ceil(validated.overallDeadlineSeconds * 1000).toLong(),
+      TimeUnit.MILLISECONDS,
+    )
 
     registerCall(params.transactionId, call)
     try {

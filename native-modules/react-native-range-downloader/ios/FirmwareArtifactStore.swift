@@ -106,6 +106,8 @@ private actor FirmwareArtifactDownloadCoordinator {
 final class FirmwareArtifactStore {
   static let shared = FirmwareArtifactStore()
   static let maxReadBytes = 256 * 1024
+  private static let defaultDownloadDeadline: TimeInterval = 180
+  private static let maxDownloadDeadline: TimeInterval = 24 * 60 * 60
   private static let finalArtifactGrace: TimeInterval = 24 * 60 * 60
   private static let partialArtifactGrace: TimeInterval = 7 * 24 * 60 * 60
 
@@ -190,6 +192,14 @@ final class FirmwareArtifactStore {
     }
     guard params.routeType == "domain" || params.routeType == "pinnedIp" else {
       throw FirmwareArtifactStoreError.invalidInput("Invalid firmware route type")
+    }
+    let deadline = params.overallDeadlineSeconds ?? defaultDownloadDeadline
+    guard
+      deadline.isFinite,
+      deadline > 0,
+      deadline <= maxDownloadDeadline
+    else {
+      throw FirmwareArtifactStoreError.invalidInput("Invalid firmware download deadline")
     }
     if params.routeType == "pinnedIp" {
       guard let resolvedIp = params.resolvedIp, !resolvedIp.isEmpty else {
@@ -909,7 +919,8 @@ final class FirmwareArtifactStore {
     }
     var request = URLRequest(url: url)
     request.cachePolicy = .reloadIgnoringLocalCacheData
-    request.timeoutInterval = params.overallDeadlineSeconds ?? 180
+    request.timeoutInterval =
+      params.overallDeadlineSeconds ?? Self.defaultDownloadDeadline
     request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
     if resumeOffset > 0 {
       request.setValue("bytes=\(resumeOffset)-", forHTTPHeaderField: "Range")
