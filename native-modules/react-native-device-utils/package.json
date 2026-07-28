@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-device-utils",
-  "version": "3.0.81-alpha.3",
+  "version": "3.0.81-alpha.4",
   "description": "react-native-device-utils",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
