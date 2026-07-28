@@ -30,7 +30,8 @@ public final class SniConnectPinnedSession {
 public enum SniConnectPinnedTransport {
   static func makeResources(
     hostname: String,
-    ip: String
+    ip: String,
+    dataDelegate: URLSessionDataDelegate? = nil
   ) throws -> SniConnectPinnedTransportResources {
     try SniConnectValidation.validateHostname(hostname)
     try SniConnectValidation.validatePublicIP(ip)
@@ -65,7 +66,8 @@ public enum SniConnectPinnedTransport {
     let delegate = SniConnectSessionInvalidationDelegate(
       hostname: normalizedHostname,
       ip: ip,
-      resolverLease: resolverLease
+      resolverLease: resolverLease,
+      forwardingDataDelegate: dataDelegate
     )
     return SniConnectPinnedTransportResources(
       configuration: configuration,
@@ -76,10 +78,15 @@ public enum SniConnectPinnedTransport {
 
   public static func makeSession(
     hostname: String,
-    ip: String
+    ip: String,
+    dataDelegate: URLSessionDataDelegate? = nil
   ) throws -> SniConnectPinnedSession {
     SniConnectPinnedSession(
-      resources: try makeResources(hostname: hostname, ip: ip)
+      resources: try makeResources(
+        hostname: hostname,
+        ip: ip,
+        dataDelegate: dataDelegate
+      )
     )
   }
 }

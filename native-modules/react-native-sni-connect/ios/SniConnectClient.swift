@@ -90,15 +90,22 @@ final class SniConnectPinnedResolverLease {
   }
 }
 
-final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionTaskDelegate {
+final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionDataDelegate {
   private let hostname: String
   private let ip: String
   private let resolverLease: SniConnectPinnedResolverLease
+  private weak var forwardingDataDelegate: URLSessionDataDelegate?
 
-  init(hostname: String, ip: String, resolverLease: SniConnectPinnedResolverLease) {
+  init(
+    hostname: String,
+    ip: String,
+    resolverLease: SniConnectPinnedResolverLease,
+    forwardingDataDelegate: URLSessionDataDelegate? = nil
+  ) {
     self.hostname = hostname
     self.ip = ip
     self.resolverLease = resolverLease
+    self.forwardingDataDelegate = forwardingDataDelegate
   }
 
   func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
@@ -118,7 +125,55 @@ final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionTaskDeleg
     newRequest request: URLRequest,
     completionHandler: @escaping (URLRequest?) -> Void
   ) {
-    completionHandler(nil)
+    if let forwardingDataDelegate {
+      forwardingDataDelegate.urlSession?(
+        session,
+        task: task,
+        willPerformHTTPRedirection: response,
+        newRequest: request,
+        completionHandler: completionHandler
+      )
+    } else {
+      completionHandler(nil)
+    }
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    dataTask: URLSessionDataTask,
+    didReceive response: URLResponse,
+    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+  ) {
+    forwardingDataDelegate?.urlSession?(
+      session,
+      dataTask: dataTask,
+      didReceive: response,
+      completionHandler: completionHandler
+    ) ?? completionHandler(.cancel)
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    dataTask: URLSessionDataTask,
+    didReceive data: Data
+  ) {
+    forwardingDataDelegate?.urlSession?(
+      session,
+      dataTask: dataTask,
+      didReceive: data
+    )
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didCompleteWithError error: Error?
+  ) {
+    forwardingDataDelegate?.urlSession?(
+      session,
+      task: task,
+      didCompleteWithError: error
+    )
   }
 }
 

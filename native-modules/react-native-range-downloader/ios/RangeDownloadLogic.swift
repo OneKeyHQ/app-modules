@@ -36,6 +36,55 @@ func firmwareArtifactDownloadKey(
   "\(transactionId)|\(expectedSize)|\(expectedSha256)"
 }
 
+func firmwareArtifactPartialFileName(
+  transactionId: String,
+  taskId: String,
+  expectedSha256: String
+) -> String {
+  let transactionData = Data(transactionId.utf8)
+  var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+  transactionData.withUnsafeBytes {
+    _ = CC_SHA256($0.baseAddress, CC_LONG(transactionData.count), &hash)
+  }
+  let transactionToken = hash
+    .prefix(8)
+    .map { String(format: "%02x", $0) }
+    .joined()
+  return "\(expectedSha256).\(taskId).\(transactionToken).partial"
+}
+
+func firmwareArtifactContentRangeIsValid(
+  _ value: String,
+  expectedStart: Int64,
+  expectedTotal: Int64
+) -> Bool {
+  guard value.lowercased().hasPrefix("bytes ") else {
+    return false
+  }
+  guard
+    let bounds = RangeDownloadLogic.parseContentRangeBounds(value),
+    let total = RangeDownloadLogic.parseContentRangeTotal(value)
+  else {
+    return false
+  }
+  return bounds.start == expectedStart &&
+    bounds.end >= bounds.start &&
+    bounds.end < total &&
+    total == expectedTotal
+}
+
+func firmwareArtifactResponseFits(
+  expectedContentLength: Int64,
+  baseOffset: Int64,
+  maxBytes: Int64
+) -> Bool {
+  guard baseOffset >= 0, baseOffset <= maxBytes else {
+    return false
+  }
+  return expectedContentLength < 0 ||
+    expectedContentLength <= maxBytes - baseOffset
+}
+
 enum FirmwareBackgroundDownloadError: LocalizedError, CustomStringConvertible {
   case cancelled
   case invalidTask

@@ -41,6 +41,79 @@ final class RangeDownloadLogicTests: XCTestCase {
     XCTAssertNotEqual(first, second)
   }
 
+  func testFirmwareArtifactPartialFileNameIsolatesTransactions() {
+    let sha256 = String(repeating: "a", count: 64)
+    let first = firmwareArtifactPartialFileName(
+      transactionId: "fwtx:first",
+      taskId: "firmware",
+      expectedSha256: sha256
+    )
+    let second = firmwareArtifactPartialFileName(
+      transactionId: "fwtx:second",
+      taskId: "firmware",
+      expectedSha256: sha256
+    )
+
+    XCTAssertNotEqual(first, second)
+    XCTAssertTrue(first.hasPrefix("\(sha256).firmware."))
+    XCTAssertTrue(first.hasSuffix(".partial"))
+  }
+
+  func testFirmwareArtifactContentRangeValidation() {
+    XCTAssertTrue(
+      firmwareArtifactContentRangeIsValid(
+        "bytes 128-255/256",
+        expectedStart: 128,
+        expectedTotal: 256
+      )
+    )
+    XCTAssertFalse(
+      firmwareArtifactContentRangeIsValid(
+        "bytes 0-255/256",
+        expectedStart: 128,
+        expectedTotal: 256
+      )
+    )
+    XCTAssertFalse(
+      firmwareArtifactContentRangeIsValid(
+        "bytes 128-256/256",
+        expectedStart: 128,
+        expectedTotal: 256
+      )
+    )
+    XCTAssertFalse(
+      firmwareArtifactContentRangeIsValid(
+        "items 128-255/256",
+        expectedStart: 128,
+        expectedTotal: 256
+      )
+    )
+  }
+
+  func testFirmwareArtifactResponseSizeIsBoundedBeforeStreaming() {
+    XCTAssertTrue(
+      firmwareArtifactResponseFits(
+        expectedContentLength: 128,
+        baseOffset: 128,
+        maxBytes: 256
+      )
+    )
+    XCTAssertFalse(
+      firmwareArtifactResponseFits(
+        expectedContentLength: 129,
+        baseOffset: 128,
+        maxBytes: 256
+      )
+    )
+    XCTAssertTrue(
+      firmwareArtifactResponseFits(
+        expectedContentLength: -1,
+        baseOffset: 128,
+        maxBytes: 256
+      )
+    )
+  }
+
   func testFirmwareArtifactWallClockDeadlineRejectsSlowOperation() async {
     do {
       _ = try await FirmwareArtifactWallClockDeadline.run(

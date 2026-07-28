@@ -56,7 +56,100 @@ private struct StagedFirmwareArchiveEntry {
   let stagingURL: URL
 }
 
-private final class FirmwareArtifactRedirectDelegate: NSObject, URLSessionTaskDelegate {
+private final class FirmwareArtifactStreamDelegate: NSObject, URLSessionDataDelegate {
+  private let partialURL: URL
+  private let hostname: String
+  private let resumeOffset: Int64
+  private let expectedSize: Int64
+  private let maxBytes: Int64
+  private let isCancelled: () -> Bool
+  private let stateLock = NSLock()
+  private var continuation: CheckedContinuation<Void, Error>?
+  private var dataTask: URLSessionDataTask?
+  private var cancellationRequested = false
+  private var completed = false
+  private var responseAccepted = false
+  private var handle: FileHandle?
+  private var written: Int64 = 0
+
+  init(
+    partialURL: URL,
+    hostname: String,
+    resumeOffset: Int64,
+    expectedSize: Int64,
+    maxBytes: Int64,
+    isCancelled: @escaping () -> Bool
+  ) {
+    self.partialURL = partialURL
+    self.hostname = hostname
+    self.resumeOffset = resumeOffset
+    self.expectedSize = expectedSize
+    self.maxBytes = maxBytes
+    self.isCancelled = isCancelled
+  }
+
+  func run(session: URLSession, request: URLRequest) async throws {
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<Void, Error>) in
+        let task = session.dataTask(with: request)
+        stateLock.lock()
+        if cancellationRequested || completed {
+          stateLock.unlock()
+          task.cancel()
+          continuation.resume(throwing: CancellationError())
+          return
+        }
+        self.continuation = continuation
+        dataTask = task
+        stateLock.unlock()
+        task.resume()
+      }
+    } onCancel: {
+      self.cancel()
+    }
+  }
+
+  private func cancel() {
+    stateLock.lock()
+    cancellationRequested = true
+    let task = dataTask
+    stateLock.unlock()
+    task?.cancel()
+  }
+
+  private func finish(_ result: Result<Void, Error>) {
+    stateLock.lock()
+    guard !completed else {
+      stateLock.unlock()
+      return
+    }
+    completed = true
+    let continuation = continuation
+    self.continuation = nil
+    dataTask = nil
+    let handle = handle
+    self.handle = nil
+    stateLock.unlock()
+
+    try? handle?.close()
+    continuation?.resume(with: result)
+  }
+
+  private func reject(
+    _ dataTask: URLSessionDataTask,
+    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void,
+    message: String
+  ) {
+    completionHandler(.cancel)
+    fail(dataTask, message: message)
+  }
+
+  private func fail(_ task: URLSessionTask, message: String) {
+    task.cancel()
+    finish(.failure(FirmwareArtifactStoreError.downloadFailed(message)))
+  }
+
   func urlSession(
     _ session: URLSession,
     task: URLSessionTask,
@@ -65,6 +158,192 @@ private final class FirmwareArtifactRedirectDelegate: NSObject, URLSessionTaskDe
     completionHandler: @escaping (URLRequest?) -> Void
   ) {
     completionHandler(nil)
+    fail(
+      task,
+      message:
+        "ARTIFACT_REDIRECT_REJECTED: firmware response changed canonical identity"
+    )
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    dataTask: URLSessionDataTask,
+    didReceive response: URLResponse,
+    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+  ) {
+    guard !isCancelled() else {
+      reject(
+        dataTask,
+        completionHandler: completionHandler,
+        message: "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
+      )
+      return
+    }
+    guard let httpResponse = response as? HTTPURLResponse else {
+      reject(
+        dataTask,
+        completionHandler: completionHandler,
+        message: "Firmware response is not HTTP"
+      )
+      return
+    }
+    guard
+      let responseURL = httpResponse.url,
+      responseURL.scheme?.lowercased() == "https",
+      responseURL.host?.lowercased() == hostname.lowercased(),
+      responseURL.port == nil || responseURL.port == 443
+    else {
+      reject(
+        dataTask,
+        completionHandler: completionHandler,
+        message:
+          "ARTIFACT_REDIRECT_REJECTED: firmware response changed canonical identity"
+      )
+      return
+    }
+    guard httpResponse.statusCode == 200 || httpResponse.statusCode == 206 else {
+      reject(
+        dataTask,
+        completionHandler: completionHandler,
+        message:
+          "ARTIFACT_HTTP_\(httpResponse.statusCode): firmware request failed"
+      )
+      return
+    }
+
+    let append = resumeOffset > 0 && httpResponse.statusCode == 206
+    if httpResponse.statusCode == 206 {
+      guard
+        let contentRange = httpResponse.value(
+          forHTTPHeaderField: "Content-Range"
+        ),
+        firmwareArtifactContentRangeIsValid(
+          contentRange,
+          expectedStart: append ? resumeOffset : 0,
+          expectedTotal: expectedSize
+        )
+      else {
+        reject(
+          dataTask,
+          completionHandler: completionHandler,
+          message:
+            "ARTIFACT_PROTOCOL_INVALID: firmware resume Content-Range is invalid"
+        )
+        return
+      }
+    }
+
+    let baseOffset = append ? resumeOffset : 0
+    guard
+      firmwareArtifactResponseFits(
+        expectedContentLength: httpResponse.expectedContentLength,
+        baseOffset: baseOffset,
+        maxBytes: maxBytes
+      )
+    else {
+      reject(
+        dataTask,
+        completionHandler: completionHandler,
+        message:
+          "ARTIFACT_PROTOCOL_INVALID: firmware artifact exceeds maxBytes"
+      )
+      return
+    }
+
+    do {
+      let handle = try FileHandle(forWritingTo: partialURL)
+      if append {
+        try handle.seekToEnd()
+      } else {
+        try handle.truncate(atOffset: 0)
+      }
+      self.handle = handle
+      written = baseOffset
+      responseAccepted = true
+      completionHandler(.allow)
+    } catch {
+      reject(
+        dataTask,
+        completionHandler: completionHandler,
+        message:
+          "ARTIFACT_NETWORK_FAILED: firmware partial file could not be opened"
+      )
+    }
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    dataTask: URLSessionDataTask,
+    didReceive data: Data
+  ) {
+    guard responseAccepted, let handle else {
+      fail(
+        dataTask,
+        message:
+          "ARTIFACT_PROTOCOL_INVALID: firmware response stream was not accepted"
+      )
+      return
+    }
+    guard !isCancelled() else {
+      fail(
+        dataTask,
+        message: "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
+      )
+      return
+    }
+    guard
+      firmwareArtifactResponseFits(
+        expectedContentLength: Int64(data.count),
+        baseOffset: written,
+        maxBytes: maxBytes
+      )
+    else {
+      fail(
+        dataTask,
+        message:
+          "ARTIFACT_PROTOCOL_INVALID: firmware artifact exceeds maxBytes"
+      )
+      return
+    }
+    do {
+      try handle.write(contentsOf: data)
+      written += Int64(data.count)
+    } catch {
+      fail(
+        dataTask,
+        message:
+          "ARTIFACT_NETWORK_FAILED: firmware response stream could not be persisted"
+      )
+    }
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didCompleteWithError error: Error?
+  ) {
+    if let error {
+      finish(.failure(error))
+      return
+    }
+    guard responseAccepted, let handle else {
+      finish(
+        .failure(FirmwareArtifactStoreError.downloadFailed(
+          "ARTIFACT_PROTOCOL_INVALID: firmware response stream was not accepted"
+        ))
+      )
+      return
+    }
+    do {
+      try handle.synchronize()
+      finish(.success(()))
+    } catch {
+      finish(
+        .failure(FirmwareArtifactStoreError.downloadFailed(
+          "ARTIFACT_NETWORK_FAILED: firmware partial file could not be synchronized"
+        ))
+      )
+    }
   }
 }
 
@@ -286,7 +565,11 @@ final class FirmwareArtifactStore {
     }
 
     let partialURL = rootURL.appendingPathComponent(
-      "\(expectedSha256).\(params.taskId).partial",
+      firmwareArtifactPartialFileName(
+        transactionId: params.transactionId,
+        taskId: params.taskId,
+        expectedSha256: expectedSha256
+      ),
       isDirectory: false
     )
     if !fileManager.fileExists(atPath: partialURL.path) {
@@ -953,19 +1236,30 @@ final class FirmwareArtifactStore {
       request.setValue("bytes=\(resumeOffset)-", forHTTPHeaderField: "Range")
     }
 
+    let streamDelegate = FirmwareArtifactStreamDelegate(
+      partialURL: partialURL,
+      hostname: hostname,
+      resumeOffset: resumeOffset,
+      expectedSize: Int64(params.expectedSize),
+      maxBytes: Int64(params.maxBytes),
+      isCancelled: { [weak self] in
+        Task.isCancelled ||
+          self?.isTransactionCancelled(params.transactionId) == true
+      }
+    )
     let pinnedSession: SniConnectPinnedSession?
     if params.routeType == "pinnedIp" {
       pinnedSession = try SniConnectPinnedTransport.makeSession(
           hostname: hostname,
-          ip: params.resolvedIp!
+          ip: params.resolvedIp!,
+          dataDelegate: streamDelegate
         )
     } else {
       pinnedSession = nil
     }
-    let domainDelegate = FirmwareArtifactRedirectDelegate()
     let session = pinnedSession?.session ?? URLSession(
       configuration: .ephemeral,
-      delegate: domainDelegate,
+      delegate: streamDelegate,
       delegateQueue: nil
     )
     defer {
@@ -976,10 +1270,10 @@ final class FirmwareArtifactStore {
       }
     }
 
-    let downloadedURL: URL
-    let response: URLResponse
     do {
-      (downloadedURL, response) = try await session.download(for: request)
+      try await streamDelegate.run(session: session, request: request)
+    } catch let error as FirmwareArtifactStoreError {
+      throw error
     } catch {
       if isCancellationError(
         error,
@@ -998,90 +1292,6 @@ final class FirmwareArtifactStore {
         "ARTIFACT_NETWORK_FAILED: firmware request failed"
       )
     }
-    defer { try? fileManager.removeItem(at: downloadedURL) }
-    guard let httpResponse = response as? HTTPURLResponse else {
-      throw FirmwareArtifactStoreError.downloadFailed("Firmware response is not HTTP")
-    }
-    guard
-      let responseURL = httpResponse.url,
-      responseURL.scheme?.lowercased() == "https",
-      responseURL.host?.lowercased() == hostname.lowercased(),
-      responseURL.port == nil || responseURL.port == 443
-    else {
-      throw FirmwareArtifactStoreError.downloadFailed(
-        "ARTIFACT_REDIRECT_REJECTED: firmware response changed canonical identity"
-      )
-    }
-    guard httpResponse.statusCode == 200 || httpResponse.statusCode == 206 else {
-      throw FirmwareArtifactStoreError.downloadFailed(
-        "ARTIFACT_HTTP_\(httpResponse.statusCode): firmware request failed"
-      )
-    }
-    let append = resumeOffset > 0 && httpResponse.statusCode == 206
-    if httpResponse.statusCode == 206 {
-      guard
-        let contentRange = httpResponse.value(forHTTPHeaderField: "Content-Range"),
-        validateContentRange(
-          contentRange,
-          expectedStart: append ? resumeOffset : 0,
-          expectedTotal: Int64(params.expectedSize)
-        )
-      else {
-        throw FirmwareArtifactStoreError.downloadFailed(
-          "ARTIFACT_PROTOCOL_INVALID: firmware resume Content-Range is invalid"
-        )
-      }
-    }
-    let handle = try FileHandle(forWritingTo: partialURL)
-    defer { try? handle.close() }
-    if append {
-      try handle.seekToEnd()
-    } else {
-      try handle.truncate(atOffset: 0)
-    }
-
-    var written = append ? resumeOffset : 0
-    let source = try FileHandle(forReadingFrom: downloadedURL)
-    defer { try? source.close() }
-    do {
-      while true {
-        try Task.checkCancellation()
-        try rejectIfCancelled(transactionId: params.transactionId)
-        guard
-          let buffer = try source.read(upToCount: 64 * 1024),
-          !buffer.isEmpty
-        else {
-          break
-        }
-        written += Int64(buffer.count)
-        guard written <= Int64(params.maxBytes) else {
-          throw FirmwareArtifactStoreError.downloadFailed(
-            "ARTIFACT_PROTOCOL_INVALID: firmware artifact exceeds maxBytes"
-          )
-        }
-        try handle.write(contentsOf: buffer)
-      }
-    } catch let error as FirmwareArtifactStoreError {
-      throw error
-    } catch {
-      if isCancellationError(
-        error,
-        transactionId: params.transactionId
-      ) {
-        throw FirmwareArtifactStoreError.downloadFailed(
-          "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
-        )
-      }
-      if isFirmwareArtifactTLSError(error) {
-        throw FirmwareArtifactStoreError.downloadFailed(
-          "ARTIFACT_TLS_FAILED: firmware TLS validation failed"
-        )
-      }
-      throw FirmwareArtifactStoreError.downloadFailed(
-        "ARTIFACT_NETWORK_FAILED: firmware response stream failed"
-      )
-    }
-    try handle.synchronize()
     try rejectIfCancelled(transactionId: params.transactionId)
   }
 
@@ -1110,34 +1320,6 @@ final class FirmwareArtifactStore {
     let nsError = error as NSError
     return nsError.domain == NSURLErrorDomain &&
       nsError.code == NSURLErrorCancelled
-  }
-
-  private func validateContentRange(
-    _ value: String,
-    expectedStart: Int64,
-    expectedTotal: Int64
-  ) -> Bool {
-    let pattern = #"^bytes ([0-9]+)-([0-9]+)/([0-9]+)$"#
-    guard
-      let expression = try? NSRegularExpression(pattern: pattern),
-      let match = expression.firstMatch(
-        in: value.lowercased(),
-        range: NSRange(value.startIndex..., in: value)
-      ),
-      match.range.location != NSNotFound,
-      let startRange = Range(match.range(at: 1), in: value),
-      let endRange = Range(match.range(at: 2), in: value),
-      let totalRange = Range(match.range(at: 3), in: value),
-      let start = Int64(value[startRange]),
-      let end = Int64(value[endRange]),
-      let total = Int64(value[totalRange])
-    else {
-      return false
-    }
-    return start == expectedStart &&
-      end >= start &&
-      end < total &&
-      total == expectedTotal
   }
 
   private func validateStoredArtifact(
