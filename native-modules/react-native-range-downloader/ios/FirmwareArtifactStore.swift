@@ -530,6 +530,29 @@ final class FirmwareArtifactStore {
     }
   }
 
+  func cachedArtifact(
+    _ params: FirmwareArtifactDownloadParams
+  ) throws -> StoredFirmwareArtifact? {
+    try Self.validateDownloadParams(params)
+    try rejectIfCancelled(transactionId: params.transactionId)
+    let expectedSha256 = params.expectedSha256.lowercased()
+    let finalURL = artifactURL(sha256: expectedSha256)
+    guard let artifact = try? validateStoredArtifact(
+      fileURL: finalURL,
+      expectedSize: Int64(params.expectedSize),
+      expectedSha256: expectedSha256
+    ) else {
+      return nil
+    }
+    try retainExpectedArtifact(
+      leaseRef: params.leaseRef,
+      transactionId: params.transactionId,
+      artifactRef: artifact.artifactRef
+    )
+    try rejectIfCancelled(transactionId: params.transactionId)
+    return artifact
+  }
+
   func cancelDownloads(transactionId: String) async throws {
     guard Self.isSafeIdentifier(transactionId) else {
       throw FirmwareArtifactStoreError.invalidInput(

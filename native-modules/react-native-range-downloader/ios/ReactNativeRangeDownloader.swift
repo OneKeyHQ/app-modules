@@ -2,6 +2,16 @@ import Foundation
 import NitroModules
 import ReactNativeNativeLogger
 
+private func settledFirmwareArtifactPromise<T>(
+  _ operation: () throws -> T
+) -> Promise<T> {
+  do {
+    return Promise.resolved(withResult: try operation())
+  } catch {
+    return Promise.rejected(withError: error)
+  }
+}
+
 // MARK: - Nitro HybridObject entry point
 //
 // Thin Nitro shim over `RangeDownloader.shared`. The heavy lifting — concurrent
@@ -108,7 +118,20 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   func downloadFirmwareArtifact(
     params: FirmwareArtifactDownloadParams
   ) throws -> Promise<FirmwareArtifactReceipt> {
-    Promise.async {
+    do {
+      if let artifact = try FirmwareArtifactStore.shared.cachedArtifact(params) {
+        return Promise.resolved(
+          withResult: FirmwareArtifactReceipt(
+            artifactRef: artifact.artifactRef,
+            size: Double(artifact.size),
+            sha256: artifact.sha256
+          )
+        )
+      }
+    } catch {
+      return Promise.rejected(withError: error)
+    }
+    return Promise.async {
       let artifact = try await FirmwareArtifactStore.shared.download(params)
       return FirmwareArtifactReceipt(
         artifactRef: artifact.artifactRef,
@@ -131,7 +154,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   func discardFirmwareArtifact(
     params: FirmwareArtifactRefParams
   ) throws -> Promise<Void> {
-    Promise.async {
+    settledFirmwareArtifactPromise {
       try FirmwareArtifactStore.shared.discard(artifactRef: params.artifactRef)
     }
   }
@@ -139,7 +162,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   func openFirmwareArtifact(
     params: FirmwareArtifactRefParams
   ) throws -> Promise<FirmwareArtifactReaderInfo> {
-    Promise.async {
+    settledFirmwareArtifactPromise {
       let reader = try FirmwareArtifactStore.shared.open(
         artifactRef: params.artifactRef
       )
@@ -153,7 +176,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   func readFirmwareArtifact(
     params: FirmwareArtifactReaderReadParams
   ) throws -> Promise<ArrayBuffer> {
-    Promise.async {
+    settledFirmwareArtifactPromise {
       guard
         params.offset.isFinite,
         params.offset >= 0,
@@ -180,7 +203,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   func closeFirmwareArtifact(
     params: FirmwareArtifactReaderCloseParams
   ) throws -> Promise<Void> {
-    Promise.async {
+    settledFirmwareArtifactPromise {
       try FirmwareArtifactStore.shared.close(readerId: params.readerId)
     }
   }
@@ -188,7 +211,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   func materializeFirmwareArchive(
     params: FirmwareArchiveMaterializeParams
   ) throws -> Promise<FirmwareArchiveMaterializeResult> {
-    Promise.async {
+    settledFirmwareArtifactPromise {
       let entries = try FirmwareArtifactStore.shared.materializeArchive(
         leaseRef: params.leaseRef,
         artifactRef: params.archiveArtifactRef,
@@ -212,7 +235,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   func createFirmwareArtifactLease(
     params: FirmwareArtifactLeaseCreateParams
   ) throws -> Promise<FirmwareArtifactLease> {
-    Promise.async {
+    settledFirmwareArtifactPromise {
       FirmwareArtifactLease(
         leaseRef: try FirmwareArtifactStore.shared.createLease(
           transactionId: params.transactionId
@@ -224,7 +247,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   func retainFirmwareArtifact(
     params: FirmwareArtifactLeaseRetainParams
   ) throws -> Promise<Void> {
-    Promise.async {
+    settledFirmwareArtifactPromise {
       try FirmwareArtifactStore.shared.retain(
         leaseRef: params.leaseRef,
         artifactRef: params.artifactRef
@@ -235,7 +258,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   func releaseFirmwareArtifactLease(
     params: FirmwareArtifactLeaseReleaseParams
   ) throws -> Promise<Void> {
-    Promise.async {
+    settledFirmwareArtifactPromise {
       try FirmwareArtifactStore.shared.releaseLease(
         leaseRef: params.leaseRef,
         disposition: params.disposition
@@ -244,7 +267,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   }
 
   func sweepFirmwareArtifactOrphans() throws -> Promise<FirmwareArtifactSweepResult> {
-    Promise.async {
+    settledFirmwareArtifactPromise {
       let result = try FirmwareArtifactStore.shared.sweepOrphans()
       return FirmwareArtifactSweepResult(
         deletedFiles: Double(result.deletedFiles),
