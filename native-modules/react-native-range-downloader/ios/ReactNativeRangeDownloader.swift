@@ -1634,24 +1634,24 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       if completion.completed {
         return
       }
+      let failure: Error
+      if let recordedError = completion.error {
+        failure = recordedError
+      } else if FirmwareArtifactStore.shared.isTransactionCancelled(
+        descriptor.transactionId
+      ) {
+        failure = FirmwareBackgroundDownloadError.cancelled
+      } else if let taskError = error {
+        failure =
+          isFirmwareArtifactTLSError(taskError)
+            ? FirmwareBackgroundDownloadError.tlsRejected
+            : FirmwareBackgroundDownloadError.transferFailed
+      } else {
+        failure = FirmwareBackgroundDownloadError.transferFailed
+      }
       finishFirmwareTask(
         key: descriptor.key,
-        result: .failure(
-          completion.error ??
-            (
-              FirmwareArtifactStore.shared.isTransactionCancelled(
-                descriptor.transactionId
-              )
-                ? FirmwareBackgroundDownloadError.cancelled
-                : nil
-            ) ??
-            error.map {
-              isFirmwareArtifactTLSError($0)
-                ? FirmwareBackgroundDownloadError.tlsRejected
-                : FirmwareBackgroundDownloadError.transferFailed
-            } ??
-            FirmwareBackgroundDownloadError.transferFailed
-        )
+        result: .failure(failure)
       )
       return
     }
