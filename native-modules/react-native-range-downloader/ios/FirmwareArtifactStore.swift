@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import ReactNativeNativeLogger
 import SniConnect
 
 func isFirmwareArtifactTLSError(_ error: Error) -> Bool {
@@ -520,6 +521,10 @@ final class FirmwareArtifactStore {
       return artifact
     } catch {
       markDownloadActive(expectedSha256, delta: -1)
+      OneKeyLog.error(
+        "FirmwareArtifact",
+        "event=download_failed transactionId=\(params.transactionId) artifactId=\(params.artifactId) route=\(params.routeType) errorType=\(String(describing: type(of: error)))"
+      )
       if error is CancellationError ||
         isTransactionCancelled(params.transactionId) {
         throw FirmwareArtifactStoreError.downloadFailed(
@@ -581,12 +586,8 @@ final class FirmwareArtifactStore {
       return existing
     }
 
-    if params.routeType == "domain" {
-      return try await RangeDownloader.shared.downloadFirmwareArtifact(
-        params: params
-      )
-    }
-
+    // Firmware preflight is foreground-bound, so both routes use the same
+    // cancellable stream instead of waiting on process-owned background tasks.
     let partialURL = rootURL.appendingPathComponent(
       firmwareArtifactPartialFileName(
         transactionId: params.transactionId,
@@ -623,10 +624,18 @@ final class FirmwareArtifactStore {
       currentSize = 0
     }
 
+    OneKeyLog.info(
+      "FirmwareArtifact",
+      "event=stream_start transactionId=\(params.transactionId) artifactId=\(params.artifactId) route=\(params.routeType) expectedBytes=\(Int64(params.expectedSize)) resumeBytes=\(currentSize)"
+    )
     try await streamDownload(
       params,
       partialURL: partialURL,
       resumeOffset: min(currentSize, Int64(params.expectedSize))
+    )
+    OneKeyLog.info(
+      "FirmwareArtifact",
+      "event=stream_complete transactionId=\(params.transactionId) artifactId=\(params.artifactId) route=\(params.routeType) expectedBytes=\(Int64(params.expectedSize))"
     )
     let artifact: StoredFirmwareArtifact
     do {
