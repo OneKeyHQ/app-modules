@@ -223,14 +223,45 @@ class SniConnectRequestAdmissionTest {
     }
   }
 
+  @Test
+  fun admittedRequestReceivesOnlyTheRemainingTimeout() {
+    var nowNanos = 0L
+    val admission = admission(
+      maxActive = 1,
+      maxPerPair = 1,
+      nanoTime = { nowNanos },
+    )
+    val remainingTimeouts = mutableListOf<Long>()
+    try {
+      val active = ticket(admission, "example.com", "93.184.216.34").also { it.submit() }
+      val pending = admission.createTicket(
+        hostname = "example.com",
+        ip = "93.184.216.34",
+        timeoutMillis = 1_000,
+        onAdmitted = { remainingTimeout -> remainingTimeouts += remainingTimeout },
+        onPendingFailure = { code, _ -> throw AssertionError("Unexpected failure: $code") },
+      ).also { it.submit() }
+
+      nowNanos = TimeUnit.MILLISECONDS.toNanos(250)
+      active.release()
+
+      assertEquals(listOf(750L), remainingTimeouts)
+      pending.release()
+    } finally {
+      admission.shutdownForTests()
+    }
+  }
+
   private fun admission(
     maxActive: Int,
     maxPerPair: Int,
     maxPending: Int = 10,
+    nanoTime: () -> Long = System::nanoTime,
   ) = SniConnectRequestAdmission(
     maxActiveRequests = maxActive,
     maxActiveRequestsPerPair = maxPerPair,
     maxPendingRequests = maxPending,
+    nanoTime = nanoTime,
   )
 
   private fun submit(

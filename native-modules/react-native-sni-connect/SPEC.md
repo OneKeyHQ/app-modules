@@ -183,6 +183,7 @@ export type SniConnectResponse = {
 - `cancelAllRequests(): Promise<{ success: boolean }>`
 - `clearDNSCache(): Promise<{ success: boolean }>`
 - `getDebugSnapshot({ hostname, ip }): Promise<SniConnectDebugSnapshot>`
+  (required for native React Native implementations; optional elsewhere)
 - `isProxyActiveForUrl(url): Promise<boolean>`
 
 Adapters MAY additionally expose `isSupported()`. It is a capability probe only
@@ -458,11 +459,11 @@ only the remaining timeout after admission. Implementations MUST NOT create
 unbounded native threads, Node sockets, sessions, clients, promises, or task
 records.
 
-The active and pending counters are process-shared across RN runtimes. Pair keys
-MUST use a lowercased hostname and a canonical IP representation, so equivalent
-IPv4 or IPv6 spellings cannot bypass limits. Debug snapshots MUST validate the
-target hostname/public IP and read counters plus request IDs while holding the
-admission/limiter lock.
+On native React Native implementations, the active and pending counters are
+process-shared across RN runtimes. Their pair keys MUST use a lowercased hostname
+and a canonical IP representation, so equivalent IPv4 or IPv6 spellings cannot
+bypass limits. Native debug snapshots MUST validate the target hostname/public IP
+and read counters plus request IDs while holding the admission/limiter lock.
 
 ---
 

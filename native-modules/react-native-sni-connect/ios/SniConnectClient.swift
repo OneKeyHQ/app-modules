@@ -622,8 +622,13 @@ final class SniConnectClient {
     do {
       // Admission wait and transport share one total wall-clock deadline.
       let limiter = requestLimiter
+      let admissionTimeoutMilliseconds =
+        config.effectiveTotalTimeout - Date().timeIntervalSince(startedAt) * 1_000.0
+      guard admissionTimeoutMilliseconds > 0 else {
+        throw SniConnectTimeout.deadlineExceeded
+      }
       requestSlot = try await SniConnectWallClockDeadline.run(
-        timeoutMilliseconds: config.effectiveTotalTimeout
+        timeoutMilliseconds: admissionTimeoutMilliseconds
       ) {
         try await limiter.acquire(
           hostname: config.hostname,
