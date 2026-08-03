@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-range-downloader",
-  "version": "3.0.80",
+  "version": "3.0.81",
   "description": "react-native-range-downloader",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
