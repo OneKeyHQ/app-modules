@@ -61,6 +61,15 @@ internal fun classifySniFailureCode(error: Throwable): String {
   return "SNI_REQUEST_FAILED"
 }
 
+internal fun classifySniResponseFailureCode(
+  error: Throwable,
+  explicitlyCancelled: Boolean,
+): String = when {
+  explicitlyCancelled -> "SNI_CANCELLED"
+  hasCause(error, InterruptedIOException::class.java) -> "SNI_REQUEST_TIMEOUT"
+  else -> "SNI_RESPONSE_FAILED"
+}
+
 private fun hasCause(error: Throwable, type: Class<out Throwable>): Boolean {
   var current: Throwable? = error
   while (current != null) {
@@ -81,12 +90,12 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     // from JS-controlled host/IP pairs (e.g. speed-testing many endpoints).
     private const val MAX_CLIENTS = 32
 
-    // A single dispatcher + connection pool shared across all cached clients so we
-    // don't spawn a thread pool / connection pool per (hostname, ip) pair.
+    // Native resources are process-shared across the main and background RN runtimes.
     private val sharedDispatcher = Dispatcher().apply {
-      maxRequests = 64
-      maxRequestsPerHost = 64
+      maxRequests = SniConnectValidation.MAX_ACTIVE_REQUESTS
+      maxRequestsPerHost = SniConnectValidation.MAX_ACTIVE_REQUESTS
     }
+    private val sharedAdmission = SniConnectRequestAdmission()
     private val sharedConnectionPool = ConnectionPool()
   }
 
@@ -124,10 +133,33 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  private val activeCalls = ConcurrentHashMap<String, Call>()
-  private val allActiveCalls = Collections.newSetFromMap(ConcurrentHashMap<Call, Boolean>())
+  private class ManagedRequest(
+    val call: Call,
+    val settled: AtomicBoolean,
+  ) {
+    lateinit var admissionTicket: SniConnectRequestAdmission.Ticket
+    private val explicitlyCancelled = AtomicBoolean(false)
+
+    fun cancel() {
+      explicitlyCancelled.set(true)
+      if (!admissionTicket.cancelPending()) {
+        call.cancel()
+      }
+    }
+
+    fun release() {
+      admissionTicket.release()
+    }
+
+    fun wasExplicitlyCancelled(): Boolean = explicitlyCancelled.get()
+  }
+
+  // Cancellation ownership is per module, so cancelAllRequests only affects its RN runtime.
+  private val activeCalls = ConcurrentHashMap<String, ManagedRequest>()
+  private val allActiveCalls = Collections.newSetFromMap(
+    ConcurrentHashMap<ManagedRequest, Boolean>(),
+  )
   private val activeCallsLock = Any()
-  private val requestLimiter = SniConnectRequestLimiter()
 
   override fun getName(): String = NAME
 
@@ -151,11 +183,11 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   override fun cancelRequest(requestId: String, promise: Promise) {
-    val call = synchronized(activeCallsLock) {
+    val request = synchronized(activeCallsLock) {
       activeCalls.remove(requestId)
     }
-    if (call != null) {
-      call.cancel()
+    if (request != null) {
+      request.cancel()
       SniConnectLogger.info(
         SniConnectLogger.event(
           "sni_cancel",
@@ -178,17 +210,17 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   override fun cancelAllRequests(promise: Promise) {
-    val calls = synchronized(activeCallsLock) {
+    val requests = synchronized(activeCallsLock) {
       val snapshot = allActiveCalls.toList()
       activeCalls.clear()
       allActiveCalls.clear()
       snapshot
     }
-    calls.forEach { call -> call.cancel() }
+    requests.forEach { request -> request.cancel() }
     SniConnectLogger.info(
       SniConnectLogger.event(
         "sni_cancel_all",
-        "cancelledCount" to calls.size,
+        "cancelledCount" to requests.size,
         "success" to true,
       ),
     )
@@ -213,6 +245,29 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
+  override fun getDebugSnapshot(target: ReadableMap, promise: Promise) {
+    try {
+      val ip = target.getString("ip") ?: throw IllegalArgumentException("ip is required")
+      val hostname = target.getString("hostname")
+        ?: throw IllegalArgumentException("hostname is required")
+      val canonicalIp = SniConnectValidation.canonicalizePublicIp(ip)
+      SniConnectValidation.validateHostname(hostname)
+      val snapshot = sharedAdmission.snapshot(hostname, canonicalIp)
+
+      promise.resolve(Arguments.createMap().apply {
+        putInt("activeRequests", snapshot.activeRequests)
+        putInt("activeRequestsForPair", snapshot.activeRequestsForPair)
+        putInt("pendingRequests", snapshot.pendingRequests)
+        putInt("pendingRequestsForPair", snapshot.pendingRequestsForPair)
+        putArray("activeRequestIdsForPair", snapshot.activeRequestIdsForPair.toWritableArray())
+        putArray("pendingRequestIdsForPair", snapshot.pendingRequestIdsForPair.toWritableArray())
+      })
+    } catch (error: Exception) {
+      promise.reject("SNI_INVALID_CONFIG", error.message, error)
+    }
+  }
+
+  @ReactMethod
   override fun isProxyActiveForUrl(url: String, promise: Promise) {
     try {
       promise.resolve(isProxyActiveForUrl(url))
@@ -223,19 +278,14 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
 
   private fun performRequest(config: RequestConfig, promise: Promise) {
     val startedAtMs = android.os.SystemClock.elapsedRealtime()
-    var requestSlot: SniConnectRequestLimiter.Token? = null
-    var registeredCall: Call? = null
+    val startedAtNanos = System.nanoTime()
+    var registeredRequest: ManagedRequest? = null
     try {
-      requestSlot = requestLimiter.acquire(config.hostname, config.ip)
       val client = getOrCreateClient(config)
       val request = buildRequest(config)
       val call = client.newCall(request)
-
-      // Apply per-request timeout
-      call.timeout().timeout(config.timeoutMillis, TimeUnit.MILLISECONDS)
-
-      registerCall(config.requestId, call)
-      registeredCall = call
+      val settled = AtomicBoolean(false)
+      lateinit var managedRequest: ManagedRequest
 
       SniConnectLogger.info(
         SniConnectLogger.event(
@@ -251,16 +301,13 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
         ),
       )
 
-      // Guard against double-settling the promise (RN hard-crashes otherwise).
-      val settled = AtomicBoolean(false)
-
-      call.enqueue(object : Callback {
+      val callback = object : Callback {
         override fun onFailure(call: Call, e: IOException) {
-          unregisterCall(config.requestId, call)
-          requestSlot?.release()
+          unregisterRequest(config.requestId, managedRequest)
+          managedRequest.release()
           if (!settled.compareAndSet(false, true)) return
 
-          if (call.isCanceled()) {
+          if (managedRequest.wasExplicitlyCancelled()) {
             promise.reject("SNI_CANCELLED", "Request cancelled", null)
           } else {
             val code = classifySniFailureCode(e)
@@ -314,17 +361,29 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
                   SniConnectLogger.info(resultLog)
                 }
                 if (settled.compareAndSet(false, true)) {
-                  promise.resolve(result)
+                  if (managedRequest.wasExplicitlyCancelled()) {
+                    promise.reject("SNI_CANCELLED", "Request cancelled", null)
+                  } else {
+                    promise.resolve(result)
+                  }
                 }
               }
             }
           } catch (error: Exception) {
             if (!settled.compareAndSet(false, true)) return
+            val code = classifySniResponseFailureCode(
+              error,
+              managedRequest.wasExplicitlyCancelled(),
+            )
+            if (code == "SNI_CANCELLED") {
+              promise.reject(code, "Request cancelled", null)
+              return
+            }
             SniConnectLogger.error(
               SniConnectLogger.event(
                 "sni_request_result",
                 "result" to "error",
-                "code" to "SNI_RESPONSE_FAILED",
+                "code" to code,
                 "nativeErrorClass" to error.javaClass.simpleName,
                 "requestIdHash" to SniConnectLogger.shortHash(config.requestId),
                 "hostname" to config.hostname.lowercase(Locale.US),
@@ -335,22 +394,57 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
                 "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
               ),
             )
-            promise.reject("SNI_RESPONSE_FAILED", error.message, error)
+            promise.reject(code, error.message, error)
           } finally {
-            unregisterCall(config.requestId, call)
-            requestSlot?.release()
+            unregisterRequest(config.requestId, managedRequest)
+            managedRequest.release()
           }
         }
-      })
-    } catch (error: Exception) {
-      registeredCall?.let { call ->
-        unregisterCall(config.requestId, call)
       }
-      requestSlot?.release()
-      val code = if (error is SniConnectValidation.ValidationException) {
-        "SNI_RESOURCE_LIMIT"
-      } else {
-        "SNI_REQUEST_FAILED"
+
+      val timeoutBeforeAdmission = remainingTimeoutMillis(
+        config.timeoutMillis,
+        startedAtNanos,
+      )
+      val admissionTicket = sharedAdmission.createTicket(
+        hostname = config.hostname,
+        ip = config.ip,
+        requestId = config.requestId,
+        timeoutMillis = timeoutBeforeAdmission,
+        onAdmitted = { remainingTimeoutMillis ->
+          try {
+            call.timeout().timeout(remainingTimeoutMillis, TimeUnit.MILLISECONDS)
+            call.enqueue(callback)
+          } catch (error: Exception) {
+            unregisterRequest(config.requestId, managedRequest)
+            managedRequest.release()
+            if (settled.compareAndSet(false, true)) {
+              promise.reject("SNI_REQUEST_FAILED", error.message, error)
+            }
+          }
+        },
+        onPendingFailure = { code, message ->
+          unregisterRequest(config.requestId, managedRequest)
+          if (settled.compareAndSet(false, true)) {
+            promise.reject(code, message, null)
+          }
+        },
+      )
+      managedRequest = ManagedRequest(call, settled).apply {
+        this.admissionTicket = admissionTicket
+      }
+      registerRequest(config.requestId, managedRequest)
+      registeredRequest = managedRequest
+      admissionTicket.submit()
+    } catch (error: Exception) {
+      registeredRequest?.let { request ->
+        unregisterRequest(config.requestId, request)
+        request.release()
+      }
+      val code = when {
+        error is SniConnectValidation.ValidationException -> "SNI_RESOURCE_LIMIT"
+        hasCause(error, InterruptedIOException::class.java) -> "SNI_REQUEST_TIMEOUT"
+        else -> "SNI_REQUEST_FAILED"
       }
       SniConnectLogger.error(
         SniConnectLogger.event(
@@ -367,18 +461,21 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
           "elapsedMs" to SniConnectLogger.elapsedMs(startedAtMs),
         ),
       )
-      promise.reject(code, error.message, error)
+      val shouldReject = registeredRequest?.settled?.compareAndSet(false, true) ?: true
+      if (shouldReject) {
+        promise.reject(code, error.message, error)
+      }
     }
   }
 
-  private fun registerCall(requestId: String?, call: Call) {
-    val previousCall = synchronized(activeCallsLock) {
-      val previous = requestId?.let { activeCalls.put(it, call) }
-      allActiveCalls.add(call)
+  private fun registerRequest(requestId: String?, request: ManagedRequest) {
+    val previousRequest = synchronized(activeCallsLock) {
+      val previous = requestId?.let { activeCalls.put(it, request) }
+      allActiveCalls.add(request)
       previous
     }
-    if (previousCall != null && previousCall != call) {
-      previousCall.cancel()
+    if (previousRequest != null && previousRequest != request) {
+      previousRequest.cancel()
       SniConnectLogger.warn(
         SniConnectLogger.event(
           "sni_duplicate_request_id",
@@ -389,18 +486,30 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  private fun unregisterCall(requestId: String?, call: Call) {
+  private fun unregisterRequest(requestId: String?, request: ManagedRequest) {
     synchronized(activeCallsLock) {
       if (requestId != null) {
-        activeCalls.remove(requestId, call)
+        activeCalls.remove(requestId, request)
       }
-      allActiveCalls.remove(call)
+      allActiveCalls.remove(request)
     }
+  }
+
+  private fun remainingTimeoutMillis(totalTimeoutMillis: Long, startedAtNanos: Long): Long {
+    val elapsedNanos = (System.nanoTime() - startedAtNanos).coerceAtLeast(0L)
+    val remainingNanos = TimeUnit.MILLISECONDS.toNanos(totalTimeoutMillis) - elapsedNanos
+    if (remainingNanos <= 0L) {
+      throw java.net.SocketTimeoutException("Request timed out before admission")
+    }
+    return ((remainingNanos + 999_999L) / 1_000_000L).coerceAtLeast(1L)
   }
 
   private fun getOrCreateClient(config: RequestConfig): OkHttpClient {
     val normalizedHost = config.hostname.lowercase(Locale.US)
-    val key = ClientKey(normalizedHost, config.ip)
+    val key = ClientKey(
+      normalizedHost,
+      SniConnectValidation.canonicalizePublicIp(config.ip),
+    )
 
     synchronized(clientCache) {
       clientCache[key]?.let { return it }
@@ -421,7 +530,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
         .hostnameVerifier { _, session ->
           HttpsURLConnection.getDefaultHostnameVerifier().verify(config.hostname, session)
         }
-        .dns(createPinnedDns(config.ip, config.hostname))
+        .dns(createPinnedDns(key.ip, config.hostname))
         .build()
 
       clientCache[key] = client
@@ -562,6 +671,10 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  private fun List<String>.toWritableArray() = Arguments.createArray().apply {
+    forEach { value -> pushString(value) }
+  }
+
   private fun ReadableMap.toRequestConfig(): RequestConfig {
     val rawHeadersMap = if (hasKey("headers") && !isNull("headers")) {
       getMap("headers")?.toHashMap()
@@ -579,7 +692,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
 
     val requestId = if (hasKey("requestId") && !isNull("requestId")) getString("requestId") else null
 
-    val ip = getString("ip") ?: throw IllegalArgumentException("ip is required")
+    val rawIp = getString("ip") ?: throw IllegalArgumentException("ip is required")
     val hostname = getString("hostname") ?: throw IllegalArgumentException("hostname is required")
     val method = getString("method") ?: "GET"
     val path = getString("path") ?: "/"
@@ -587,7 +700,7 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
 
     // Validate every caller-controlled field at the boundary.
     SniConnectValidation.validateRequestId(requestId)
-    SniConnectValidation.validatePublicIp(ip)
+    val ip = SniConnectValidation.canonicalizePublicIp(rawIp)
     SniConnectValidation.validateHostname(hostname)
     val headersMap = SniConnectValidation.normalizeHeaders(rawHeadersMap)
     val normalizedMethod = SniConnectValidation.normalizeMethod(method)

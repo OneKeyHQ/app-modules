@@ -1,8 +1,8 @@
 # OneKey SNI Connect Standard (OSCS)
 
-- **Version:** 1.2
+- **Version:** 1.3
 - **Status:** Active
-- **Last updated:** 2026-06-30
+- **Last updated:** 2026-08-03
 - **Applies to:** every implementation of OneKey's SNI connect module: iOS
   (Swift + EMASCurl), Android (Kotlin + OkHttp), Node/Desktop (Electron main
   process + Node HTTPS), the React Native JS surface, app-monorepo shared
@@ -182,6 +182,7 @@ export type SniConnectResponse = {
 - `cancelRequest(requestId): Promise<{ success: boolean }>`
 - `cancelAllRequests(): Promise<{ success: boolean }>`
 - `clearDNSCache(): Promise<{ success: boolean }>`
+- `getDebugSnapshot({ hostname, ip }): Promise<SniConnectDebugSnapshot>`
 - `isProxyActiveForUrl(url): Promise<boolean>`
 
 Adapters MAY additionally expose `isSupported()`. It is a capability probe only
@@ -410,11 +411,14 @@ Timeout state MUST NOT be stored in process-global mutable configuration.
 Cancellation is request-id based.
 
 - A request with no `requestId` cannot be cancelled individually.
-- `cancelRequest(requestId)` cancels the active platform task/call/request for
+- `cancelRequest(requestId)` cancels the pending or active platform
+  task/call/request for
   that id and resolves `{ success: true }` when one was found.
-- It resolves `{ success: false }` when no active request exists for that id.
-- `cancelAllRequests()` cancels every request that is active at the time the
-  cancellation snapshot is taken.
+- It resolves `{ success: false }` when no pending or active request exists for
+  that id.
+- `cancelAllRequests()` cancels every pending or active request owned by the
+  calling native-module/RN runtime at the time the cancellation snapshot is
+  taken. It MUST NOT cancel requests created by another runtime.
 
 Every runtime that supports SNI requests, including Node/Desktop, MUST expose
 the cancellation API. Unsupported platforms MAY return `null` from a higher
@@ -443,13 +447,22 @@ MUST be bounded and clearable.
 
 Baseline concurrency limits:
 
-- active SNI requests per runtime: 64,
+- active SNI requests per process: 64,
 - active SNI requests per `(hostname, ip)` pair: 16,
-- queued SNI requests, if supported: 64.
+- queued SNI requests per process: 256.
 
-Implementations MUST either reject work that exceeds these limits with a stable
-error or queue it within the bounded queue. They MUST NOT create unbounded native
-threads, Node sockets, sessions, clients, promises, or task records.
+Requests that cannot enter the active set MUST wait in the bounded, cancellable
+queue. Only pending-queue overflow is rejected with `SNI_RESOURCE_LIMIT`.
+Queue time counts against the caller's total timeout, and the transport receives
+only the remaining timeout after admission. Implementations MUST NOT create
+unbounded native threads, Node sockets, sessions, clients, promises, or task
+records.
+
+The active and pending counters are process-shared across RN runtimes. Pair keys
+MUST use a lowercased hostname and a canonical IP representation, so equivalent
+IPv4 or IPv6 spellings cannot bypass limits. Debug snapshots MUST validate the
+target hostname/public IP and read counters plus request IDs while holding the
+admission/limiter lock.
 
 ---
 

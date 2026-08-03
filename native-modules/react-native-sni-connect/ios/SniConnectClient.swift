@@ -120,7 +120,7 @@ final class SniConnectClient {
   private var activeTasksByToken: [UUID: Task<Response, Error>] = [:]
   private var requestTokensById: [String: UUID] = [:]
   private let tasksQueue = DispatchQueue(label: "com.onekey.sni.connect.tasks", attributes: .concurrent)
-  private let requestLimiter = SniConnectRequestLimiter()
+  private let requestLimiter = SniConnectRequestLimiter.shared
 
   private struct SessionKey: Hashable {
     let hostname: String
@@ -510,6 +510,10 @@ final class SniConnectClient {
     ]))
   }
 
+  func debugSnapshot(hostname: String, ip: String) -> SniConnectRequestLimiter.Snapshot {
+    requestLimiter.snapshot(hostname: hostname, ip: ip)
+  }
+
   /// Cancel a request by ID
   func cancelRequest(requestId: String) -> Bool {
     return tasksQueue.sync(flags: .barrier) { [weak self] in
@@ -616,9 +620,19 @@ final class SniConnectClient {
 
     let requestSlot: SniConnectRequestLimiter.Token
     do {
-      requestSlot = try requestLimiter.acquire(hostname: config.hostname, ip: config.ip)
+      // Admission wait and transport share one total wall-clock deadline.
+      let limiter = requestLimiter
+      requestSlot = try await SniConnectWallClockDeadline.run(
+        timeoutMilliseconds: config.effectiveTotalTimeout
+      ) {
+        try await limiter.acquire(
+          hostname: config.hostname,
+          ip: config.ip,
+          requestId: config.requestId
+        )
+      }
     } catch {
-      let sniError = SniConnectError.resourceLimit("\(error)")
+      let sniError = SniConnectError.from(error)
       SniConnectLog.error(SniConnectLog.event("sni_request_result", [
         ("result", "error"),
         ("code", sniError.code),
@@ -636,6 +650,14 @@ final class SniConnectClient {
     defer {
       requestSlot.release()
     }
+    try Task.checkCancellation()
+
+    let queueWaitMilliseconds = SniConnectLog.elapsedMs(since: startedAt)
+    let remainingTimeoutMilliseconds =
+      config.effectiveTotalTimeout - Double(queueWaitMilliseconds)
+    guard remainingTimeoutMilliseconds > 0 else {
+      throw SniConnectError.requestTimeout
+    }
 
     let url = try Self.buildURL(hostname: config.hostname, normalizedPath: normalizedPath)
 
@@ -643,8 +665,9 @@ final class SniConnectClient {
     mutableRequest.httpMethod = method
 
     // Convert milliseconds to seconds for timeout values
-    let totalTimeoutSeconds = config.effectiveTotalTimeout / 1000.0
-    let connectTimeoutSeconds = config.effectiveConnectTimeout / 1000.0
+    let totalTimeoutSeconds = remainingTimeoutMilliseconds / 1000.0
+    let connectTimeoutSeconds =
+      min(config.effectiveConnectTimeout, remainingTimeoutMilliseconds) / 1000.0
 
     // URLRequest.timeoutInterval is not a full request deadline. Keep it aligned
     // with the caller timeout as a transport guard; the wall-clock deadline below
@@ -674,12 +697,15 @@ final class SniConnectClient {
       ("method", method),
       ("timeoutMs", Int(config.effectiveTotalTimeout)),
       ("connectTimeoutMs", Int(config.effectiveConnectTimeout)),
+      ("queueWaitMs", queueWaitMilliseconds),
       ("headerCount", normalizedHeaders.count),
       ("bodyBytes", config.body?.data(using: .utf8)?.count ?? 0),
     ]))
 
     do {
-      return try await SniConnectWallClockDeadline.run(timeoutMilliseconds: config.effectiveTotalTimeout) {
+      return try await SniConnectWallClockDeadline.run(
+        timeoutMilliseconds: remainingTimeoutMilliseconds
+      ) {
         let lease = try await self.sessionLease(for: config)
         defer {
           self.releaseSessionLease(lease)

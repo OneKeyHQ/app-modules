@@ -32,6 +32,7 @@ enum SniConnectValidation {
   static let maxTotalHeaderBytes = 32 * 1024
   static let maxActiveRequests = 64
   static let maxActiveRequestsPerPair = 16
+  static let maxPendingRequests = 256
 
   /// HTTP methods the module is allowed to issue.
   private static let allowedMethods: Set<String> = [
@@ -212,6 +213,16 @@ enum SniConnectValidation {
     throw ValidationError.invalidIP(ip)
   }
 
+  static func canonicalIPKey(_ ip: String) -> String {
+    if let v4 = parseIPv4(ip) {
+      return "4:" + v4.map { String($0) }.joined(separator: ".")
+    }
+    if let v6 = parseIPv6(ip) {
+      return "6:" + v6.map { String($0) }.joined(separator: ".")
+    }
+    return ip
+  }
+
   private static func parseIPv4(_ ip: String) -> [UInt8]? {
     var addr = in_addr()
     guard ip.withCString({ inet_pton(AF_INET, $0, &addr) }) == 1 else { return nil }
@@ -301,16 +312,27 @@ enum SniConnectValidation {
   }
 }
 
-final class SniConnectRequestLimiter {
-  final class Token {
+final class SniConnectRequestLimiter: @unchecked Sendable {
+  static let shared = SniConnectRequestLimiter()
+
+  struct Snapshot {
+    let activeRequests: Int
+    let activeRequestsForPair: Int
+    let pendingRequests: Int
+    let pendingRequestsForPair: Int
+    let activeRequestIdsForPair: [String]
+    let pendingRequestIdsForPair: [String]
+  }
+
+  final class Token: @unchecked Sendable {
     private weak var limiter: SniConnectRequestLimiter?
-    private let key: String
+    private let id: UUID
     private let lock = NSLock()
     private var released = false
 
-    fileprivate init(limiter: SniConnectRequestLimiter, key: String) {
+    fileprivate init(limiter: SniConnectRequestLimiter, id: UUID) {
       self.limiter = limiter
-      self.key = key
+      self.id = id
     }
 
     func release() {
@@ -321,7 +343,7 @@ final class SniConnectRequestLimiter {
       }
       released = true
       lock.unlock()
-      limiter?.release(key: key)
+      limiter?.release(id: id)
     }
 
     deinit {
@@ -329,65 +351,216 @@ final class SniConnectRequestLimiter {
     }
   }
 
+  private final class CancellationState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var isCancelled: Bool {
+      lock.lock()
+      defer { lock.unlock() }
+      return cancelled
+    }
+
+    func cancel() {
+      lock.lock()
+      cancelled = true
+      lock.unlock()
+    }
+  }
+
+  private struct PendingRequest {
+    let id: UUID
+    let key: String
+    let requestId: String?
+    let continuation: CheckedContinuation<Token, Error>
+  }
+
+  private struct ActiveRequest {
+    let key: String
+    let requestId: String?
+  }
+
   private let maxActiveRequests: Int
   private let maxActiveRequestsPerPair: Int
+  private let maxPendingRequests: Int
   private let queue = DispatchQueue(label: "com.onekey.sni.connect.request-limiter")
   private var activeRequests = 0
   private var activeRequestsByPair: [String: Int] = [:]
+  private var activeRequestsByID: [UUID: ActiveRequest] = [:]
+  private var pendingRequests: [PendingRequest] = []
 
   init(
     maxActiveRequests: Int = SniConnectValidation.maxActiveRequests,
-    maxActiveRequestsPerPair: Int = SniConnectValidation.maxActiveRequestsPerPair
+    maxActiveRequestsPerPair: Int = SniConnectValidation.maxActiveRequestsPerPair,
+    maxPendingRequests: Int = SniConnectValidation.maxPendingRequests
   ) {
     self.maxActiveRequests = maxActiveRequests
     self.maxActiveRequestsPerPair = maxActiveRequestsPerPair
+    self.maxPendingRequests = maxPendingRequests
   }
 
-  func acquire(hostname: String, ip: String) throws -> Token {
-    let key = pairKey(hostname: hostname, ip: ip)
-    return try queue.sync {
-      if activeRequests >= maxActiveRequests {
-        SniConnectCoreDiagnostics.warn(SniConnectCoreDiagnostics.event("sni_resource_limit", [
-          ("activeCount", activeRequests),
-          ("pairCount", activeRequestsByPair[key] ?? 0),
-          ("limit", maxActiveRequests),
-          ("reason", "max_active_requests"),
-          ("hostname", hostname.lowercased()),
-          ("ipHash", SniConnectCoreDiagnostics.shortHash(ip)),
-        ]))
-        throw SniConnectValidation.ValidationError.resourceLimit("Too many active SNI requests")
-      }
-      let pairCount = activeRequestsByPair[key] ?? 0
-      if pairCount >= maxActiveRequestsPerPair {
-        SniConnectCoreDiagnostics.warn(SniConnectCoreDiagnostics.event("sni_resource_limit", [
-          ("activeCount", activeRequests),
-          ("pairCount", pairCount),
-          ("limit", maxActiveRequestsPerPair),
-          ("reason", "max_active_requests_per_pair"),
-          ("hostname", hostname.lowercased()),
-          ("ipHash", SniConnectCoreDiagnostics.shortHash(ip)),
-        ]))
-        throw SniConnectValidation.ValidationError.resourceLimit("Too many active SNI requests for destination")
-      }
-      activeRequests += 1
-      activeRequestsByPair[key] = pairCount + 1
-      return Token(limiter: self, key: key)
-    }
-  }
-
-  private func release(key: String) {
+  var pendingRequestCount: Int {
     queue.sync {
-      activeRequests = max(0, activeRequests - 1)
-      guard let pairCount = activeRequestsByPair[key] else { return }
-      if pairCount <= 1 {
-        activeRequestsByPair.removeValue(forKey: key)
-      } else {
-        activeRequestsByPair[key] = pairCount - 1
+      pendingRequests.count
+    }
+  }
+
+  func snapshot(hostname: String, ip: String) -> Snapshot {
+    let key = pairKey(hostname: hostname, ip: ip)
+    return queue.sync {
+      let activeForPair = activeRequestsByID.values.filter { $0.key == key }
+      let pendingForPair = pendingRequests.filter { $0.key == key }
+      return Snapshot(
+        activeRequests: activeRequests,
+        activeRequestsForPair: activeForPair.count,
+        pendingRequests: pendingRequests.count,
+        pendingRequestsForPair: pendingForPair.count,
+        activeRequestIdsForPair: activeForPair.compactMap { $0.requestId }.sorted(),
+        pendingRequestIdsForPair: pendingForPair.compactMap { $0.requestId }.sorted()
+      )
+    }
+  }
+
+  func acquire(hostname: String, ip: String, requestId: String? = nil) async throws -> Token {
+    try Task.checkCancellation()
+
+    let id = UUID()
+    let key = pairKey(hostname: hostname, ip: ip)
+    let trackedRequestId = requestId.flatMap { $0.isEmpty ? nil : $0 }
+    let cancellationState = CancellationState()
+
+    let token = try await withTaskCancellationHandler {
+      try Task.checkCancellation()
+      return try await withCheckedThrowingContinuation { continuation in
+        var immediateToken: Token?
+        var immediateError: Error?
+
+        queue.sync {
+          if cancellationState.isCancelled {
+            immediateError = CancellationError()
+            return
+          }
+
+          if hasCapacity(for: key) {
+            retainSlot(id: id, key: key, requestId: trackedRequestId)
+            immediateToken = Token(limiter: self, id: id)
+            return
+          }
+
+          if pendingRequests.count >= maxPendingRequests {
+            SniConnectCoreDiagnostics.warn(SniConnectCoreDiagnostics.event("sni_resource_limit", [
+              ("activeCount", activeRequests),
+              ("pairCount", activeRequestsByPair[key] ?? 0),
+              ("pendingCount", pendingRequests.count),
+              ("limit", maxPendingRequests),
+              ("reason", "max_pending_requests"),
+              ("hostname", hostname.lowercased()),
+              ("ipHash", SniConnectCoreDiagnostics.shortHash(ip)),
+            ]))
+            immediateError = SniConnectValidation.ValidationError.resourceLimit(
+              "Too many pending SNI requests"
+            )
+            return
+          }
+
+          pendingRequests.append(PendingRequest(
+            id: id,
+            key: key,
+            requestId: trackedRequestId,
+            continuation: continuation
+          ))
+        }
+
+        if let immediateToken {
+          continuation.resume(returning: immediateToken)
+        } else if let immediateError {
+          continuation.resume(throwing: immediateError)
+        }
+      }
+    } onCancel: {
+      cancellationState.cancel()
+      self.cancelPendingRequest(id: id)
+    }
+
+    // Cancellation can race with a pending-to-active handoff. Never return a
+    // token to an already-cancelled caller without releasing its retained slot.
+    do {
+      try Task.checkCancellation()
+      return token
+    } catch {
+      token.release()
+      throw error
+    }
+  }
+
+  private func release(id: UUID) {
+    var nextRequest: PendingRequest?
+
+    queue.sync {
+      guard releaseSlot(id: id) else { return }
+
+      guard activeRequests < maxActiveRequests,
+            let index = pendingRequests.firstIndex(where: { hasCapacity(for: $0.key) }) else {
+        return
+      }
+
+      nextRequest = pendingRequests.remove(at: index)
+      if let nextRequest {
+        retainSlot(
+          id: nextRequest.id,
+          key: nextRequest.key,
+          requestId: nextRequest.requestId
+        )
       }
     }
+
+    if let nextRequest {
+      nextRequest.continuation.resume(returning: Token(limiter: self, id: nextRequest.id))
+    }
+  }
+
+  private func cancelPendingRequest(id: UUID) {
+    var cancelledRequest: PendingRequest?
+
+    queue.sync {
+      guard let index = pendingRequests.firstIndex(where: { $0.id == id }) else {
+        return
+      }
+      cancelledRequest = pendingRequests.remove(at: index)
+    }
+
+    cancelledRequest?.continuation.resume(throwing: CancellationError())
+  }
+
+  private func hasCapacity(for key: String) -> Bool {
+    activeRequests < maxActiveRequests &&
+      (activeRequestsByPair[key] ?? 0) < maxActiveRequestsPerPair
+  }
+
+  private func retainSlot(id: UUID, key: String, requestId: String?) {
+    activeRequestsByID[id] = ActiveRequest(key: key, requestId: requestId)
+    activeRequests += 1
+    activeRequestsByPair[key, default: 0] += 1
+  }
+
+  private func releaseSlot(id: UUID) -> Bool {
+    guard let activeRequest = activeRequestsByID.removeValue(forKey: id) else {
+      return false
+    }
+    let key = activeRequest.key
+    activeRequests = max(0, activeRequests - 1)
+    guard let pairCount = activeRequestsByPair[key] else {
+      return true
+    }
+    if pairCount <= 1 {
+      activeRequestsByPair.removeValue(forKey: key)
+    } else {
+      activeRequestsByPair[key] = pairCount - 1
+    }
+    return true
   }
 
   private func pairKey(hostname: String, ip: String) -> String {
-    return "\(hostname.lowercased())|\(ip)"
+    return "\(hostname.lowercased())|\(SniConnectValidation.canonicalIPKey(ip))"
   }
 }

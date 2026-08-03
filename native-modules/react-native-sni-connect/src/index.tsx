@@ -1,4 +1,6 @@
 import NativeSniConnect, {
+  type SniConnectDebugSnapshot,
+  type SniConnectDebugTarget,
   type SniConnectRequest,
   type SniConnectResponse,
 } from './NativeSniConnect';
@@ -23,12 +25,20 @@ export function clearDNSCache(): Promise<{ success: boolean }> {
   return NativeSniConnect.clearDNSCache();
 }
 
+export function getDebugSnapshot(
+  target: SniConnectDebugTarget
+): Promise<SniConnectDebugSnapshot> {
+  return NativeSniConnect.getDebugSnapshot(target);
+}
+
 export function isProxyActiveForUrl(url: string): Promise<boolean> {
   return NativeSniConnect.isProxyActiveForUrl(url);
 }
 
 export type {
   SniConnectBodylessMethod,
+  SniConnectDebugSnapshot,
+  SniConnectDebugTarget,
   SniConnectMethod,
   SniConnectOptionalBodyMethod,
   SniConnectRequest,

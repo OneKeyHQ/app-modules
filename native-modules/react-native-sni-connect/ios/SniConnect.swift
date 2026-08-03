@@ -134,6 +134,35 @@ final class SniConnectImpl: NSObject {
   }
 
   @objc
+  public func getDebugSnapshot(
+    _ target: NSDictionary,
+    resolve: @escaping RCTPromiseResolveBlock,
+    reject: @escaping RCTPromiseRejectBlock
+  ) {
+    do {
+      guard let ip = target["ip"] as? String, !ip.isEmpty else {
+        throw SniConnectError.invalidConfig("Missing ip")
+      }
+      guard let hostname = target["hostname"] as? String, !hostname.isEmpty else {
+        throw SniConnectError.invalidConfig("Missing hostname")
+      }
+      try SniConnectValidation.validatePublicIP(ip)
+      try SniConnectValidation.validateHostname(hostname)
+      let snapshot = client.debugSnapshot(hostname: hostname, ip: ip)
+      resolve([
+        "activeRequests": snapshot.activeRequests,
+        "activeRequestsForPair": snapshot.activeRequestsForPair,
+        "pendingRequests": snapshot.pendingRequests,
+        "pendingRequestsForPair": snapshot.pendingRequestsForPair,
+        "activeRequestIdsForPair": snapshot.activeRequestIdsForPair,
+        "pendingRequestIdsForPair": snapshot.pendingRequestIdsForPair,
+      ])
+    } catch {
+      reject("SNI_INVALID_CONFIG", "\(error)", error)
+    }
+  }
+
+  @objc
   public func isProxyActiveForUrl(
     _ url: String,
     resolve: @escaping RCTPromiseResolveBlock,

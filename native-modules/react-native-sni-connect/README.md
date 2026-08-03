@@ -38,6 +38,7 @@ import {
   cancelRequest,
   cancelAllRequests,
   clearDNSCache,
+  getDebugSnapshot,
   isProxyActiveForUrl,
 } from '@onekeyfe/react-native-sni-connect';
 
@@ -66,6 +67,12 @@ await cancelAllRequests();
 
 // Drop pinned-IP connections / cached clients
 await clearDNSCache();
+
+// Diagnostics for one validated hostname/IP pair
+const snapshot = await getDebugSnapshot({
+  hostname: 'example.com',
+  ip: '93.184.216.34',
+});
 ```
 
 `multiValueHeaders` preserves repeated response headers when the native transport

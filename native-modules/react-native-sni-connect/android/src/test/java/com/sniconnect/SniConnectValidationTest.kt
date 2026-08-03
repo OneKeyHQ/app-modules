@@ -29,6 +29,18 @@ class SniConnectValidationTest {
   }
 
   @Test
+  fun canonicalizesEquivalentPublicIpLiterals() {
+    assertEquals(
+      "93.184.216.34",
+      SniConnectValidation.canonicalizePublicIp("093.184.216.034"),
+    )
+    assertEquals(
+      SniConnectValidation.canonicalizePublicIp("2001:4860:4860::8888"),
+      SniConnectValidation.canonicalizePublicIp("2001:4860:4860:0:0:0:0:8888"),
+    )
+  }
+
+  @Test
   fun rejectsIpLiteralHostnames() {
     assertValidationFails { SniConnectValidation.validateHostname("93.184.216.34") }
     assertValidationFails { SniConnectValidation.validateHostname("2001:4860:4860::8888") }
@@ -117,8 +129,10 @@ class SniConnectValidationTest {
 
   @Test
   fun enforcesRequestIdTimeoutAndBodyLimits() {
+    SniConnectValidation.validateRequestId("界".repeat(42))
     assertValidationFails { SniConnectValidation.validateRequestId("") }
     assertValidationFails { SniConnectValidation.validateRequestId("x".repeat(129)) }
+    assertValidationFails { SniConnectValidation.validateRequestId("界".repeat(43)) }
     assertValidationFails { SniConnectValidation.validateRequestId("req\n1") }
     assertValidationFails { SniConnectValidation.validateTimeout(0) }
     assertValidationFails { SniConnectValidation.validateTimeout(120_001) }
@@ -185,32 +199,6 @@ class SniConnectValidationTest {
   }
 
   @Test
-  fun requestLimiterEnforcesGlobalAndPerDestinationLimits() {
-    val limiter = SniConnectRequestLimiter(
-      maxActiveRequests = 2,
-      maxActiveRequestsPerPair = 1,
-    )
-
-    val firstToken = limiter.acquire("Example.com", "93.184.216.34")
-    assertValidationFails {
-      limiter.acquire("example.com", "93.184.216.34")
-    }
-
-    val secondToken = limiter.acquire("example.com", "93.184.216.35")
-    assertValidationFails {
-      limiter.acquire("example.net", "93.184.216.36")
-    }
-
-    firstToken.release()
-    val replacementToken = limiter.acquire("example.com", "93.184.216.34")
-    firstToken.release()
-    secondToken.release()
-    replacementToken.release()
-
-    assertTrue(true)
-  }
-
-  @Test
   fun classifiesSecurityFailuresAsFailClosedErrorCodes() {
     assertEquals(
       "SNI_CERT_FAILED",
@@ -243,6 +231,18 @@ class SniConnectValidationTest {
     assertEquals(
       "SNI_REQUEST_FAILED",
       classifySniFailureCode(IOException("connection reset")),
+    )
+    assertEquals(
+      "SNI_CANCELLED",
+      classifySniResponseFailureCode(IOException("cancelled"), true),
+    )
+    assertEquals(
+      "SNI_REQUEST_TIMEOUT",
+      classifySniResponseFailureCode(SocketTimeoutException("timeout"), false),
+    )
+    assertEquals(
+      "SNI_RESPONSE_FAILED",
+      classifySniResponseFailureCode(IOException("bad body"), false),
     )
   }
 
