@@ -69,8 +69,6 @@ internal object FirmwareArtifactStore {
   const val MAX_READ_BYTES = 256 * 1024
 
   private const val MAX_ARTIFACT_BYTES = 512L * 1024 * 1024
-  private const val FINAL_ARTIFACT_GRACE_MS = 24L * 60 * 60 * 1000
-  private const val PARTIAL_ARTIFACT_GRACE_MS = 7L * 24 * 60 * 60 * 1000
   private val sha256Pattern = Regex("^[a-fA-F0-9]{64}$")
   private val artifactRefPattern = Regex("^fw:[a-f0-9]{64}$")
   private val leaseRefPattern = Regex("^fwlease:[a-f0-9-]{36}$")
@@ -646,35 +644,12 @@ internal object FirmwareArtifactStore {
     val openFiles = synchronized(readerLock) {
       readers.values.mapTo(mutableSetOf()) { it.file.absolutePath }
     }
-    val now = System.currentTimeMillis()
-    var deletedFiles = 0
-    var deletedBytes = 0L
-    root.listFiles()?.forEach { file ->
-      if (!file.isFile) return@forEach
-      val sha256 = file.name.take(64)
-      if (
-        !sha256Pattern.matches(sha256) ||
-        sha256 in retainedSha256 ||
-        sha256 in activeSha256 ||
-        file.absolutePath in openFiles
-      ) {
-        return@forEach
-      }
-      val grace = if (file.name.endsWith(".bin")) {
-        FINAL_ARTIFACT_GRACE_MS
-      } else if (file.name.endsWith(".partial")) {
-        PARTIAL_ARTIFACT_GRACE_MS
-      } else {
-        return@forEach
-      }
-      if (now - file.lastModified() < grace) return@forEach
-      val size = file.length()
-      if (file.delete()) {
-        deletedFiles += 1
-        deletedBytes += size
-      }
-    }
-    return deletedFiles to deletedBytes
+    return sweepFirmwareArtifactOrphansAtRoot(
+      root = root,
+      retainedSha256 = retainedSha256,
+      activeSha256 = activeSha256,
+      openPaths = openFiles,
+    )
   }
 
   private fun requireLease(leaseRef: String) {

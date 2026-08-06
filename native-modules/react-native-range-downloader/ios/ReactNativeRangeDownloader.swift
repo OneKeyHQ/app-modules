@@ -144,7 +144,14 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   func cancelFirmwareArtifactDownloads(
     params: FirmwareArtifactCancelParams
   ) throws -> Promise<Void> {
-    Promise.async {
+    guard FirmwareArtifactStore.isSafeIdentifier(params.transactionId) else {
+      return Promise.rejected(
+        withError: FirmwareArtifactStoreError.invalidInput(
+          "Invalid firmware transactionId"
+        )
+      )
+    }
+    return Promise.async {
       try await FirmwareArtifactStore.shared.cancelDownloads(
         transactionId: params.transactionId
       )

@@ -114,6 +114,153 @@ final class RangeDownloadLogicTests: XCTestCase {
     )
   }
 
+  func testFirmwareArtifactStoreErrorsHaveStableDescriptions() {
+    XCTAssertEqual(
+      String(describing: FirmwareArtifactStoreError.invalidInput("ARTIFACT_INVALID_INPUT")),
+      "ARTIFACT_INVALID_INPUT"
+    )
+    XCTAssertEqual(
+      String(describing: FirmwareArtifactStoreError.downloadFailed("ARTIFACT_CANCELLED")),
+      "ARTIFACT_CANCELLED"
+    )
+    XCTAssertEqual(
+      String(
+        describing: FirmwareArtifactStoreError.integrityMismatch(
+          "ARTIFACT_INTEGRITY_FAILED"
+        )
+      ),
+      "ARTIFACT_INTEGRITY_FAILED"
+    )
+    XCTAssertEqual(
+      String(describing: FirmwareArtifactStoreError.readerInvalid("ARTIFACT_READER_INVALID")),
+      "ARTIFACT_READER_INVALID"
+    )
+    XCTAssertEqual(
+      String(describing: FirmwareArtifactStoreError.archiveInvalid("ARTIFACT_ARCHIVE_INVALID")),
+      "ARTIFACT_ARCHIVE_INVALID"
+    )
+  }
+
+  func testFirmwareArtifactIdentifierValidationForSynchronousCancelRejection() {
+    XCTAssertTrue(firmwareArtifactIdentifierIsSafe("fwtx:valid-1"))
+    XCTAssertFalse(firmwareArtifactIdentifierIsSafe(""))
+    XCTAssertFalse(firmwareArtifactIdentifierIsSafe("invalid/path"))
+    XCTAssertFalse(
+      firmwareArtifactIdentifierIsSafe(String(repeating: "a", count: 161))
+    )
+  }
+
+  func testFirmwareArtifactOrphanSweepRemovesOnlyStaleRootScratchEntries() throws {
+    let fileManager = FileManager.default
+    let rootURL = fileManager.temporaryDirectory.appendingPathComponent(
+      "firmware-artifact-sweep-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+    defer { try? fileManager.removeItem(at: rootURL) }
+
+    let now = Date(timeIntervalSince1970: 2_000_000_000)
+    let staleDate = now.addingTimeInterval(-firmwareArtifactScratchGrace - 1)
+    let freshDate = now.addingTimeInterval(-firmwareArtifactScratchGrace + 1)
+    let staleArchive = rootURL.appendingPathComponent(
+      "archive-00000000-0000-4000-8000-000000000001",
+      isDirectory: true
+    )
+    let stalePromote = rootURL.appendingPathComponent(
+      ".promote-00000000-0000-4000-8000-000000000002"
+    )
+    let freshArchive = rootURL.appendingPathComponent(
+      "archive-00000000-0000-4000-8000-000000000003",
+      isDirectory: true
+    )
+    let freshPromote = rootURL.appendingPathComponent(
+      ".promote-00000000-0000-4000-8000-000000000004"
+    )
+    let malformedArchive = rootURL.appendingPathComponent(
+      "archive-00000000-0000-4000-8000-000000000005.extra",
+      isDirectory: true
+    )
+    let malformedPromote = rootURL.appendingPathComponent(
+      ".promote-00000000-0000-4000-8000-000000000006.tmp"
+    )
+    let archiveNamedFile = rootURL.appendingPathComponent(
+      "archive-00000000-0000-4000-8000-000000000007"
+    )
+    let promoteNamedDirectory = rootURL.appendingPathComponent(
+      ".promote-00000000-0000-4000-8000-000000000008",
+      isDirectory: true
+    )
+    let nestedContainer = rootURL.appendingPathComponent("nested", isDirectory: true)
+    let nestedArchive = nestedContainer.appendingPathComponent(
+      "archive-00000000-0000-4000-8000-000000000009",
+      isDirectory: true
+    )
+
+    for directory in [
+      staleArchive,
+      freshArchive,
+      malformedArchive,
+      promoteNamedDirectory,
+      nestedArchive,
+    ] {
+      try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    try Data("archive".utf8).write(
+      to: staleArchive.appendingPathComponent("0.entry")
+    )
+    for file in [stalePromote, freshPromote, malformedPromote, archiveNamedFile] {
+      try Data("promote".utf8).write(to: file)
+    }
+    for entry in [
+      staleArchive,
+      stalePromote,
+      malformedArchive,
+      malformedPromote,
+      archiveNamedFile,
+      promoteNamedDirectory,
+      nestedArchive,
+    ] {
+      try fileManager.setAttributes(
+        [.modificationDate: staleDate],
+        ofItemAtPath: entry.path
+      )
+    }
+    for entry in [freshArchive, freshPromote] {
+      try fileManager.setAttributes(
+        [.modificationDate: freshDate],
+        ofItemAtPath: entry.path
+      )
+    }
+
+    let result = try sweepFirmwareArtifactOrphansAtRoot(
+      rootURL,
+      retainedSha256: [],
+      activeSha256: [],
+      openPaths: [],
+      now: now,
+      fileManager: fileManager
+    )
+
+    XCTAssertEqual(result.deletedFiles, 2)
+    XCTAssertEqual(result.deletedBytes, 14)
+    XCTAssertFalse(fileManager.fileExists(atPath: staleArchive.path))
+    XCTAssertFalse(fileManager.fileExists(atPath: stalePromote.path))
+    for retainedEntry in [
+      freshArchive,
+      freshPromote,
+      malformedArchive,
+      malformedPromote,
+      archiveNamedFile,
+      promoteNamedDirectory,
+      nestedArchive,
+    ] {
+      XCTAssertTrue(
+        fileManager.fileExists(atPath: retainedEntry.path),
+        "Unexpectedly removed \(retainedEntry.lastPathComponent)"
+      )
+    }
+  }
+
   func testFirmwareArtifactWallClockDeadlineRejectsSlowOperation() async {
     do {
       _ = try await FirmwareArtifactWallClockDeadline.run(

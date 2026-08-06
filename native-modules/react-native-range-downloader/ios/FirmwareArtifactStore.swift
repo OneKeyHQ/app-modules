@@ -30,14 +30,6 @@ func isFirmwareArtifactTLSError(_ error: Error) -> Bool {
   return false
 }
 
-enum FirmwareArtifactStoreError: Error {
-  case invalidInput(String)
-  case downloadFailed(String)
-  case integrityMismatch(String)
-  case readerInvalid(String)
-  case archiveInvalid(String)
-}
-
 struct StoredFirmwareArtifact: Sendable {
   let artifactRef: String
   let size: Int64
@@ -388,8 +380,6 @@ final class FirmwareArtifactStore {
   static let maxReadBytes = 256 * 1024
   private static let defaultDownloadDeadline: TimeInterval = 180
   private static let maxDownloadDeadline: TimeInterval = 24 * 60 * 60
-  private static let finalArtifactGrace: TimeInterval = 24 * 60 * 60
-  private static let partialArtifactGrace: TimeInterval = 7 * 24 * 60 * 60
 
   private struct OpenReader {
     let handle: FileHandle
@@ -971,49 +961,13 @@ final class FirmwareArtifactStore {
     let openPaths = Set(readers.values.map(\.fileURL.path))
     readerLock.unlock()
 
-    let now = Date()
-    var deletedFiles = 0
-    var deletedBytes: Int64 = 0
-    let files = try fileManager.contentsOfDirectory(
-      at: rootURL,
-      includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
-      options: [.skipsHiddenFiles]
+    return try sweepFirmwareArtifactOrphansAtRoot(
+      rootURL,
+      retainedSha256: retained,
+      activeSha256: active,
+      openPaths: openPaths,
+      fileManager: fileManager
     )
-    for fileURL in files {
-      let name = fileURL.lastPathComponent
-      guard name.count >= 64 else { continue }
-      let sha256 = String(name.prefix(64))
-      guard
-        sha256.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
-        !retained.contains(sha256),
-        !active.contains(sha256),
-        !openPaths.contains(fileURL.path)
-      else {
-        continue
-      }
-      let grace: TimeInterval
-      if name.hasSuffix(".bin") {
-        grace = Self.finalArtifactGrace
-      } else if name.hasSuffix(".partial") {
-        grace = Self.partialArtifactGrace
-      } else {
-        continue
-      }
-      let values = try fileURL.resourceValues(
-        forKeys: [.contentModificationDateKey, .fileSizeKey]
-      )
-      guard
-        let modifiedAt = values.contentModificationDate,
-        now.timeIntervalSince(modifiedAt) >= grace
-      else {
-        continue
-      }
-      let size = Int64(values.fileSize ?? 0)
-      try fileManager.removeItem(at: fileURL)
-      deletedFiles += 1
-      deletedBytes += size
-    }
-    return (deletedFiles, deletedBytes)
   }
 
   private func requireLease(_ leaseRef: String) throws {
@@ -1073,11 +1027,8 @@ final class FirmwareArtifactStore {
     ) != nil
   }
 
-  private static func isSafeIdentifier(_ value: String) -> Bool {
-    value.range(
-      of: "^[A-Za-z0-9._:-]{1,160}$",
-      options: .regularExpression
-    ) != nil
+  static func isSafeIdentifier(_ value: String) -> Bool {
+    firmwareArtifactIdentifierIsSafe(value)
   }
 
   private func markDownloadActive(_ sha256: String, delta: Int) {

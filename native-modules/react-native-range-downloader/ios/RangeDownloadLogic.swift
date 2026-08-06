@@ -1,6 +1,23 @@
 import Foundation
 import CommonCrypto
 
+enum FirmwareArtifactStoreError: Error, CustomStringConvertible {
+  case invalidInput(String)
+  case downloadFailed(String)
+  case integrityMismatch(String)
+  case readerInvalid(String)
+  case archiveInvalid(String)
+
+  var description: String {
+    switch self {
+    case let .invalidInput(message), let .downloadFailed(message),
+      let .integrityMismatch(message), let .readerInvalid(message),
+      let .archiveInvalid(message):
+      return message
+    }
+  }
+}
+
 enum FirmwareArtifactDeadlineError: Error {
   case exceeded
 }
@@ -83,6 +100,165 @@ func firmwareArtifactResponseFits(
   }
   return expectedContentLength < 0 ||
     expectedContentLength <= maxBytes - baseOffset
+}
+
+let firmwareArtifactFinalGrace: TimeInterval = 24 * 60 * 60
+let firmwareArtifactPartialGrace: TimeInterval = 7 * 24 * 60 * 60
+let firmwareArtifactScratchGrace: TimeInterval = firmwareArtifactPartialGrace
+
+func firmwareArtifactIdentifierIsSafe(_ value: String) -> Bool {
+  value.range(
+    of: "^[A-Za-z0-9._:-]{1,160}$",
+    options: .regularExpression
+  ) != nil
+}
+
+private func firmwareArtifactScratchNameIsValid(
+  _ name: String,
+  prefix: String
+) -> Bool {
+  guard name.hasPrefix(prefix) else {
+    return false
+  }
+  let rawUUID = String(name.dropFirst(prefix.count))
+  guard
+    rawUUID.count == 36,
+    let uuid = UUID(uuidString: rawUUID)
+  else {
+    return false
+  }
+  return uuid.uuidString.caseInsensitiveCompare(rawUUID) == .orderedSame
+}
+
+private func firmwareArtifactEntrySize(
+  _ entryURL: URL,
+  values: URLResourceValues,
+  fileManager: FileManager
+) -> Int64 {
+  if values.isRegularFile == true {
+    return Int64(values.fileSize ?? 0)
+  }
+  guard
+    values.isDirectory == true,
+    let enumerator = fileManager.enumerator(
+      at: entryURL,
+      includingPropertiesForKeys: [
+        .isRegularFileKey,
+        .isSymbolicLinkKey,
+        .fileSizeKey,
+      ],
+      options: [],
+      errorHandler: nil
+    )
+  else {
+    return 0
+  }
+  var size: Int64 = 0
+  for case let childURL as URL in enumerator {
+    guard
+      let childValues = try? childURL.resourceValues(
+        forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+      ),
+      childValues.isRegularFile == true,
+      childValues.isSymbolicLink != true
+    else {
+      continue
+    }
+    size += Int64(childValues.fileSize ?? 0)
+  }
+  return size
+}
+
+func sweepFirmwareArtifactOrphansAtRoot(
+  _ rootURL: URL,
+  retainedSha256: Set<String>,
+  activeSha256: Set<String>,
+  openPaths: Set<String>,
+  now: Date = Date(),
+  fileManager: FileManager = .default
+) throws -> (deletedFiles: Int, deletedBytes: Int64) {
+  var deletedFiles = 0
+  var deletedBytes: Int64 = 0
+  let resourceKeys: Set<URLResourceKey> = [
+    .isRegularFileKey,
+    .isDirectoryKey,
+    .isSymbolicLinkKey,
+    .contentModificationDateKey,
+    .fileSizeKey,
+  ]
+  let entries = try fileManager.contentsOfDirectory(
+    at: rootURL,
+    includingPropertiesForKeys: Array(resourceKeys),
+    options: []
+  )
+  for entryURL in entries {
+    let name = entryURL.lastPathComponent
+    let values = try entryURL.resourceValues(forKeys: resourceKeys)
+    let isArchiveScratch = firmwareArtifactScratchNameIsValid(
+      name,
+      prefix: "archive-"
+    )
+    let isPromoteScratch = firmwareArtifactScratchNameIsValid(
+      name,
+      prefix: ".promote-"
+    )
+    let isScratchCandidate = values.isSymbolicLink != true &&
+      ((isArchiveScratch && values.isDirectory == true) ||
+        (isPromoteScratch && values.isRegularFile == true))
+    if isScratchCandidate {
+      guard
+        let modifiedAt = values.contentModificationDate,
+        now.timeIntervalSince(modifiedAt) >= firmwareArtifactScratchGrace
+      else {
+        continue
+      }
+      let size = firmwareArtifactEntrySize(
+        entryURL,
+        values: values,
+        fileManager: fileManager
+      )
+      try fileManager.removeItem(at: entryURL)
+      deletedFiles += 1
+      deletedBytes += size
+      continue
+    }
+
+    guard
+      values.isRegularFile == true,
+      values.isSymbolicLink != true,
+      name.count >= 64
+    else {
+      continue
+    }
+    let sha256 = String(name.prefix(64))
+    guard
+      sha256.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+      !retainedSha256.contains(sha256),
+      !activeSha256.contains(sha256),
+      !openPaths.contains(entryURL.path)
+    else {
+      continue
+    }
+    let grace: TimeInterval
+    if name.hasSuffix(".bin") {
+      grace = firmwareArtifactFinalGrace
+    } else if name.hasSuffix(".partial") {
+      grace = firmwareArtifactPartialGrace
+    } else {
+      continue
+    }
+    guard
+      let modifiedAt = values.contentModificationDate,
+      now.timeIntervalSince(modifiedAt) >= grace
+    else {
+      continue
+    }
+    let size = Int64(values.fileSize ?? 0)
+    try fileManager.removeItem(at: entryURL)
+    deletedFiles += 1
+    deletedBytes += size
+  }
+  return (deletedFiles, deletedBytes)
 }
 
 enum FirmwareBackgroundDownloadError: LocalizedError, CustomStringConvertible {
