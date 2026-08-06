@@ -49,11 +49,17 @@ private struct StagedFirmwareArchiveEntry {
   let stagingURL: URL
 }
 
+private struct FirmwareArchiveRequirement {
+  let entryName: String
+  let expectedSize: Int64
+  let expectedSha256: String?
+}
+
 private final class FirmwareArtifactStreamDelegate: NSObject, URLSessionDataDelegate {
   private let partialURL: URL
   private let hostname: String
   private let resumeOffset: Int64
-  private let expectedSize: Int64
+  private let expectedSize: Int64?
   private let maxBytes: Int64
   private let isCancelled: () -> Bool
   private let stateLock = NSLock()
@@ -69,7 +75,7 @@ private final class FirmwareArtifactStreamDelegate: NSObject, URLSessionDataDele
     partialURL: URL,
     hostname: String,
     resumeOffset: Int64,
-    expectedSize: Int64,
+    expectedSize: Int64?,
     maxBytes: Int64,
     isCancelled: @escaping () -> Bool
   ) {
@@ -213,7 +219,8 @@ private final class FirmwareArtifactStreamDelegate: NSObject, URLSessionDataDele
         firmwareArtifactContentRangeIsValid(
           contentRange,
           expectedStart: append ? resumeOffset : 0,
-          expectedTotal: expectedSize
+          expectedTotal: expectedSize,
+          maxBytes: maxBytes
         )
       else {
         reject(
@@ -415,7 +422,16 @@ final class FirmwareArtifactStore {
 
   private init() {}
 
-  static func validateDownloadParams(_ params: FirmwareArtifactDownloadParams) throws {
+  private struct ValidatedDownload {
+    let expectedSize: Int64?
+    let expectedSha256: String?
+    let maxBytes: Int64
+    let downloadToken: String
+  }
+
+  private static func validateDownloadParams(
+    _ params: FirmwareArtifactDownloadParams
+  ) throws -> ValidatedDownload {
     guard
       !params.taskId.isEmpty,
       params.taskId.count <= 100,
@@ -443,22 +459,47 @@ final class FirmwareArtifactStore {
     else {
       throw FirmwareArtifactStoreError.invalidInput("Firmware URL must use HTTPS port 443")
     }
+    let expectedSize: Int64?
+    if let value = params.expectedSize {
+      guard
+        value.isFinite,
+        value > 0,
+        value <= Double(Int64.max),
+        value.rounded() == value
+      else {
+        throw FirmwareArtifactStoreError.invalidInput(
+          "Invalid firmware artifact expected size"
+        )
+      }
+      expectedSize = Int64(value)
+    } else {
+      expectedSize = nil
+    }
     guard
-      params.expectedSize.isFinite,
-      params.expectedSize > 0,
-      params.expectedSize <= Double(Int64.max),
-      params.expectedSize.rounded() == params.expectedSize,
       params.maxBytes.isFinite,
-      params.maxBytes == params.expectedSize,
+      params.maxBytes > 0,
+      params.maxBytes <= Double(Int64.max),
+      params.maxBytes.rounded() == params.maxBytes,
       params.maxBytes <= Double(512 * 1024 * 1024)
     else {
       throw FirmwareArtifactStoreError.invalidInput("Invalid firmware artifact size")
     }
-    guard params.expectedSha256.range(
-      of: "^[a-fA-F0-9]{64}$",
-      options: .regularExpression
-    ) != nil else {
-      throw FirmwareArtifactStoreError.invalidInput("Invalid firmware artifact SHA-256")
+    let maxBytes = Int64(params.maxBytes)
+    guard expectedSize.map({ $0 <= maxBytes }) ?? true else {
+      throw FirmwareArtifactStoreError.invalidInput(
+        "Firmware artifact expected size exceeds maxBytes"
+      )
+    }
+    let expectedSha256 = params.expectedSha256?.lowercased()
+    if let expectedSha256 {
+      guard expectedSha256.range(
+        of: "^[a-f0-9]{64}$",
+        options: .regularExpression
+      ) != nil else {
+        throw FirmwareArtifactStoreError.invalidInput(
+          "Invalid firmware artifact SHA-256"
+        )
+      }
     }
     guard params.routeType == "domain" || params.routeType == "pinnedIp" else {
       throw FirmwareArtifactStoreError.invalidInput("Invalid firmware route type")
@@ -478,23 +519,39 @@ final class FirmwareArtifactStore {
     } else if params.resolvedIp != nil {
       throw FirmwareArtifactStoreError.invalidInput("Domain route must not include resolvedIp")
     }
+    return ValidatedDownload(
+      expectedSize: expectedSize,
+      expectedSha256: expectedSha256,
+      maxBytes: maxBytes,
+      downloadToken: firmwareArtifactDownloadToken(
+        expectedSha256: expectedSha256,
+        url: params.url
+      )
+    )
   }
 
   func download(_ params: FirmwareArtifactDownloadParams) async throws -> StoredFirmwareArtifact {
-    try Self.validateDownloadParams(params)
+    let validated = try Self.validateDownloadParams(params)
     try rejectIfCancelled(transactionId: params.transactionId)
-    let expectedSha256 = params.expectedSha256.lowercased()
-    try retainExpectedArtifact(
-      leaseRef: params.leaseRef,
-      transactionId: params.transactionId,
-      artifactRef: "fw:\(expectedSha256)"
-    )
+    if let expectedSha256 = validated.expectedSha256 {
+      try retainExpectedArtifact(
+        leaseRef: params.leaseRef,
+        transactionId: params.transactionId,
+        artifactRef: "fw:\(expectedSha256)"
+      )
+    } else {
+      try requireLeaseTransaction(
+        leaseRef: params.leaseRef,
+        transactionId: params.transactionId
+      )
+    }
     let key = firmwareArtifactDownloadKey(
       transactionId: params.transactionId,
-      expectedSize: Int64(params.expectedSize),
-      expectedSha256: expectedSha256
+      taskId: params.taskId,
+      expectedSize: validated.expectedSize,
+      expectedSha256: validated.expectedSha256
     )
-    markDownloadActive(expectedSha256, delta: 1)
+    markDownloadActive(validated.downloadToken, delta: 1)
     do {
       let artifact = try await downloadCoordinator.run(
         key: key,
@@ -503,14 +560,19 @@ final class FirmwareArtifactStore {
         try rejectIfCancelled(transactionId: params.transactionId)
         return try await downloadLocked(
           params,
-          expectedSha256: expectedSha256
+          validated: validated
         )
       }
       try rejectIfCancelled(transactionId: params.transactionId)
-      markDownloadActive(expectedSha256, delta: -1)
+      try retainExpectedArtifact(
+        leaseRef: params.leaseRef,
+        transactionId: params.transactionId,
+        artifactRef: artifact.artifactRef
+      )
+      markDownloadActive(validated.downloadToken, delta: -1)
       return artifact
     } catch {
-      markDownloadActive(expectedSha256, delta: -1)
+      markDownloadActive(validated.downloadToken, delta: -1)
       OneKeyLog.error(
         "FirmwareArtifact",
         "event=download_failed transactionId=\(params.transactionId) artifactId=\(params.artifactId) route=\(params.routeType) errorType=\(String(describing: type(of: error)))"
@@ -528,14 +590,17 @@ final class FirmwareArtifactStore {
   func cachedArtifact(
     _ params: FirmwareArtifactDownloadParams
   ) throws -> StoredFirmwareArtifact? {
-    try Self.validateDownloadParams(params)
+    let validated = try Self.validateDownloadParams(params)
     try rejectIfCancelled(transactionId: params.transactionId)
-    let expectedSha256 = params.expectedSha256.lowercased()
+    guard let expectedSha256 = validated.expectedSha256 else {
+      return nil
+    }
     let finalURL = artifactURL(sha256: expectedSha256)
-    guard let artifact = try? validateStoredArtifact(
+    guard let artifact = try? validateDownloadedArtifact(
       fileURL: finalURL,
-      expectedSize: Int64(params.expectedSize),
-      expectedSha256: expectedSha256
+      expectedSize: validated.expectedSize,
+      expectedSha256: expectedSha256,
+      maxBytes: validated.maxBytes
     ) else {
       return nil
     }
@@ -562,15 +627,18 @@ final class FirmwareArtifactStore {
 
   private func downloadLocked(
     _ params: FirmwareArtifactDownloadParams,
-    expectedSha256: String
+    validated: ValidatedDownload
   ) async throws -> StoredFirmwareArtifact {
-    let finalURL = artifactURL(sha256: expectedSha256)
-    if let existing = try? validateStoredArtifact(
-      fileURL: finalURL,
-      expectedSize: Int64(params.expectedSize),
-      expectedSha256: expectedSha256
-    ) {
-      return existing
+    if let expectedSha256 = validated.expectedSha256 {
+      let finalURL = artifactURL(sha256: expectedSha256)
+      if let existing = try? validateDownloadedArtifact(
+        fileURL: finalURL,
+        expectedSize: validated.expectedSize,
+        expectedSha256: expectedSha256,
+        maxBytes: validated.maxBytes
+      ) {
+        return existing
+      }
     }
 
     // Firmware preflight is foreground-bound, so both routes use the same
@@ -579,7 +647,7 @@ final class FirmwareArtifactStore {
       firmwareArtifactPartialFileName(
         transactionId: params.transactionId,
         taskId: params.taskId,
-        expectedSha256: expectedSha256
+        downloadToken: validated.downloadToken
       ),
       isDirectory: false
     )
@@ -587,17 +655,23 @@ final class FirmwareArtifactStore {
       fileManager.createFile(atPath: partialURL.path, contents: nil)
     }
     var currentSize = try fileSize(partialURL)
-    if currentSize > Int64(params.expectedSize) {
+    if validated.expectedSha256 == nil && currentSize > 0 {
+      try fileManager.removeItem(at: partialURL)
+      fileManager.createFile(atPath: partialURL.path, contents: nil)
+      currentSize = 0
+    } else if currentSize > validated.maxBytes {
       try fileManager.removeItem(at: partialURL)
       fileManager.createFile(atPath: partialURL.path, contents: nil)
       currentSize = 0
     }
-    if currentSize == Int64(params.expectedSize) {
-      if let completed = try? validateStoredArtifact(
+    if let expectedSize = validated.expectedSize, currentSize == expectedSize {
+      if let completed = try? validateDownloadedArtifact(
         fileURL: partialURL,
-        expectedSize: Int64(params.expectedSize),
-        expectedSha256: expectedSha256
+        expectedSize: expectedSize,
+        expectedSha256: validated.expectedSha256,
+        maxBytes: validated.maxBytes
       ) {
+        let finalURL = artifactURL(sha256: completed.sha256)
         try promote(source: partialURL, destination: finalURL)
         return StoredFirmwareArtifact(
           artifactRef: completed.artifactRef,
@@ -613,28 +687,31 @@ final class FirmwareArtifactStore {
 
     OneKeyLog.info(
       "FirmwareArtifact",
-      "event=stream_start transactionId=\(params.transactionId) artifactId=\(params.artifactId) route=\(params.routeType) expectedBytes=\(Int64(params.expectedSize)) resumeBytes=\(currentSize)"
+      "event=stream_start transactionId=\(params.transactionId) artifactId=\(params.artifactId) route=\(params.routeType) expectedBytes=\(validated.expectedSize ?? -1) resumeBytes=\(currentSize)"
     )
     try await streamDownload(
       params,
       partialURL: partialURL,
-      resumeOffset: min(currentSize, Int64(params.expectedSize))
+      resumeOffset: min(currentSize, validated.maxBytes),
+      validated: validated
     )
     OneKeyLog.info(
       "FirmwareArtifact",
-      "event=stream_complete transactionId=\(params.transactionId) artifactId=\(params.artifactId) route=\(params.routeType) expectedBytes=\(Int64(params.expectedSize))"
+      "event=stream_complete transactionId=\(params.transactionId) artifactId=\(params.artifactId) route=\(params.routeType) expectedBytes=\(validated.expectedSize ?? -1)"
     )
     let artifact: StoredFirmwareArtifact
     do {
-      artifact = try validateStoredArtifact(
+      artifact = try validateDownloadedArtifact(
         fileURL: partialURL,
-        expectedSize: Int64(params.expectedSize),
-        expectedSha256: expectedSha256
+        expectedSize: validated.expectedSize,
+        expectedSha256: validated.expectedSha256,
+        maxBytes: validated.maxBytes
       )
     } catch {
       try? fileManager.removeItem(at: partialURL)
       throw error
     }
+    let finalURL = artifactURL(sha256: artifact.sha256)
     try promote(source: partialURL, destination: finalURL)
     return StoredFirmwareArtifact(
       artifactRef: artifact.artifactRef,
@@ -728,7 +805,7 @@ final class FirmwareArtifactStore {
   func materializeArchive(
     leaseRef: String,
     artifactRef: String,
-    expectedEntries: [FirmwareArchiveExpectedEntry]
+    expectedEntries: [FirmwareArchiveExpectedEntry]?
   ) throws -> [StoredFirmwareArchiveEntry] {
     try requireLease(leaseRef)
     let archiveURL = try resolveArtifactURL(artifactRef)
@@ -739,9 +816,12 @@ final class FirmwareArtifactStore {
     try fileManager.createDirectory(at: scratchURL, withIntermediateDirectories: true)
     defer { try? fileManager.removeItem(at: scratchURL) }
 
-    let requirements = try validateArchiveRequirements(expectedEntries)
     let archiveEntries = try FirmwareArchiveMinizipBridge.scanArchive(
       atPath: archiveURL.path
+    )
+    let requirements = try resolveArchiveRequirements(
+      expectedEntries,
+      archiveEntries: archiveEntries
     )
     try validateArchiveEntries(
       archiveEntries,
@@ -769,7 +849,7 @@ final class FirmwareArtifactStore {
           }
           do {
             actualSize += Int64(chunk.count)
-            guard actualSize <= Int64(requirement.expectedSize) else {
+            guard actualSize <= requirement.expectedSize else {
               throw FirmwareArtifactStoreError.archiveInvalid(
                 "Firmware archive entry exceeds its expected size"
               )
@@ -795,8 +875,8 @@ final class FirmwareArtifactStore {
         String(format: "%02x", $0)
       }.joined()
       guard
-        actualSize == Int64(requirement.expectedSize),
-        sha256 == requirement.expectedSha256.lowercased()
+        actualSize == requirement.expectedSize,
+        requirement.expectedSha256.map({ sha256 == $0 }) ?? true
       else {
         throw FirmwareArtifactStoreError.archiveInvalid(
           "Firmware archive entry integrity mismatch"
@@ -932,6 +1012,22 @@ final class FirmwareArtifactStore {
     }
   }
 
+  private func requireLeaseTransaction(
+    leaseRef: String,
+    transactionId: String
+  ) throws {
+    leaseLock.lock()
+    defer { leaseLock.unlock() }
+    guard
+      let lease = leases[try validateLeaseRef(leaseRef)],
+      lease.transactionId == transactionId
+    else {
+      throw FirmwareArtifactStoreError.invalidInput(
+        "Firmware artifact lease transaction mismatch"
+      )
+    }
+  }
+
   private func retainExpectedArtifact(
     leaseRef: String,
     transactionId: String?,
@@ -996,7 +1092,7 @@ final class FirmwareArtifactStore {
 
   private func validateArchiveRequirements(
     _ expectedEntries: [FirmwareArchiveExpectedEntry]
-  ) throws -> [FirmwareArchiveExpectedEntry] {
+  ) throws -> [FirmwareArchiveRequirement] {
     guard !expectedEntries.isEmpty, expectedEntries.count <= 4096 else {
       throw FirmwareArtifactStoreError.archiveInvalid(
         "Firmware archive expected entry count is invalid"
@@ -1037,12 +1133,34 @@ final class FirmwareArtifactStore {
         )
       }
     }
-    return expectedEntries
+    return expectedEntries.map {
+      FirmwareArchiveRequirement(
+        entryName: $0.entryName,
+        expectedSize: Int64($0.expectedSize),
+        expectedSha256: $0.expectedSha256.lowercased()
+      )
+    }
+  }
+
+  private func resolveArchiveRequirements(
+    _ expectedEntries: [FirmwareArchiveExpectedEntry]?,
+    archiveEntries: [FirmwareArchiveEntryInfo]
+  ) throws -> [FirmwareArchiveRequirement] {
+    if let expectedEntries {
+      return try validateArchiveRequirements(expectedEntries)
+    }
+    return archiveEntries.map {
+      FirmwareArchiveRequirement(
+        entryName: $0.name,
+        expectedSize: $0.uncompressedSize,
+        expectedSha256: nil
+      )
+    }
   }
 
   private func validateArchiveEntries(
     _ entries: [FirmwareArchiveEntryInfo],
-    requirements: [FirmwareArchiveExpectedEntry]
+    requirements: [FirmwareArchiveRequirement]
   ) throws {
     guard entries.count == requirements.count else {
       throw FirmwareArtifactStoreError.archiveInvalid(
@@ -1054,16 +1172,32 @@ final class FirmwareArtifactStore {
     )
     var names = Set<String>()
     var canonicalNames = Set<String>()
+    var totalSize: Int64 = 0
     for entry in entries {
+      guard let requirement = requirementsByName[entry.name] else {
+        throw FirmwareArtifactStoreError.archiveInvalid(
+          "Firmware archive contains an unexpected entry"
+        )
+      }
+      let (nextTotalSize, overflowed) = totalSize.addingReportingOverflow(
+        entry.uncompressedSize
+      )
+      guard !overflowed else {
+        throw FirmwareArtifactStoreError.archiveInvalid(
+          "Firmware archive expanded size is invalid"
+        )
+      }
+      totalSize = nextTotalSize
       guard
         names.insert(entry.name).inserted,
         isPortableArchiveEntryName(
           entry.name,
           canonicalNames: &canonicalNames
         ),
-        let requirement = requirementsByName[entry.name],
-        entry.uncompressedSize == Int64(requirement.expectedSize),
+        entry.uncompressedSize == requirement.expectedSize,
         entry.uncompressedSize > 0,
+        entry.uncompressedSize <= 128 * 1024 * 1024,
+        totalSize <= 512 * 1024 * 1024,
         entry.compressedSize >= 0,
         entry.compressedSize <= 512 * 1024 * 1024,
         entry.uncompressedSize <= max(entry.compressedSize, 1) * 1000,
@@ -1134,7 +1268,8 @@ final class FirmwareArtifactStore {
   private func streamDownload(
     _ params: FirmwareArtifactDownloadParams,
     partialURL: URL,
-    resumeOffset: Int64
+    resumeOffset: Int64,
+    validated: ValidatedDownload
   ) async throws {
     do {
       try await FirmwareArtifactWallClockDeadline.run(
@@ -1144,7 +1279,8 @@ final class FirmwareArtifactStore {
         try await streamDownloadWithinDeadline(
           params,
           partialURL: partialURL,
-          resumeOffset: resumeOffset
+          resumeOffset: resumeOffset,
+          validated: validated
         )
       }
     } catch FirmwareArtifactDeadlineError.exceeded {
@@ -1157,7 +1293,8 @@ final class FirmwareArtifactStore {
   private func streamDownloadWithinDeadline(
     _ params: FirmwareArtifactDownloadParams,
     partialURL: URL,
-    resumeOffset: Int64
+    resumeOffset: Int64,
+    validated: ValidatedDownload
   ) async throws {
     guard let url = URL(string: params.url), let hostname = url.host else {
       throw FirmwareArtifactStoreError.invalidInput("Invalid firmware URL")
@@ -1175,8 +1312,8 @@ final class FirmwareArtifactStore {
       partialURL: partialURL,
       hostname: hostname,
       resumeOffset: resumeOffset,
-      expectedSize: Int64(params.expectedSize),
-      maxBytes: Int64(params.maxBytes),
+      expectedSize: validated.expectedSize,
+      maxBytes: validated.maxBytes,
       isCancelled: { [weak self] in
         Task.isCancelled ||
           self?.isTransactionCancelled(params.transactionId) == true
@@ -1270,6 +1407,36 @@ final class FirmwareArtifactStore {
     }
     let sha256 = try hashFile(fileURL)
     guard sha256 == expectedSha256 else {
+      throw FirmwareArtifactStoreError.integrityMismatch(
+        "ARTIFACT_INTEGRITY_FAILED: firmware artifact SHA-256 mismatch"
+      )
+    }
+    return StoredFirmwareArtifact(
+      artifactRef: "fw:\(sha256)",
+      size: size,
+      sha256: sha256,
+      fileURL: fileURL
+    )
+  }
+
+  private func validateDownloadedArtifact(
+    fileURL: URL,
+    expectedSize: Int64?,
+    expectedSha256: String?,
+    maxBytes: Int64
+  ) throws -> StoredFirmwareArtifact {
+    let size = try fileSize(fileURL)
+    guard
+      size > 0,
+      size <= maxBytes,
+      expectedSize.map({ size == $0 }) ?? true
+    else {
+      throw FirmwareArtifactStoreError.integrityMismatch(
+        "ARTIFACT_INTEGRITY_FAILED: firmware artifact size mismatch"
+      )
+    }
+    let sha256 = try hashFile(fileURL)
+    guard expectedSha256.map({ sha256 == $0 }) ?? true else {
       throw FirmwareArtifactStoreError.integrityMismatch(
         "ARTIFACT_INTEGRITY_FAILED: firmware artifact SHA-256 mismatch"
       )

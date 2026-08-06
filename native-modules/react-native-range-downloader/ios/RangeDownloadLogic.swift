@@ -47,16 +47,32 @@ enum FirmwareArtifactWallClockDeadline {
 
 func firmwareArtifactDownloadKey(
   transactionId: String,
-  expectedSize: Int64,
-  expectedSha256: String
+  taskId: String,
+  expectedSize: Int64?,
+  expectedSha256: String?
 ) -> String {
-  "\(transactionId)|\(expectedSize)|\(expectedSha256)"
+  "\(transactionId)|\(taskId)|\(expectedSize.map(String.init) ?? "unknown")|\(expectedSha256 ?? "unknown")"
+}
+
+func firmwareArtifactDownloadToken(
+  expectedSha256: String?,
+  url: String
+) -> String {
+  if let expectedSha256 {
+    return expectedSha256.lowercased()
+  }
+  let urlData = Data(url.utf8)
+  var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+  urlData.withUnsafeBytes {
+    _ = CC_SHA256($0.baseAddress, CC_LONG(urlData.count), &hash)
+  }
+  return hash.map { String(format: "%02x", $0) }.joined()
 }
 
 func firmwareArtifactPartialFileName(
   transactionId: String,
   taskId: String,
-  expectedSha256: String
+  downloadToken: String
 ) -> String {
   let transactionData = Data(transactionId.utf8)
   var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
@@ -67,13 +83,14 @@ func firmwareArtifactPartialFileName(
     .prefix(8)
     .map { String(format: "%02x", $0) }
     .joined()
-  return "\(expectedSha256).\(taskId).\(transactionToken).partial"
+  return "\(downloadToken).\(taskId).\(transactionToken).partial"
 }
 
 func firmwareArtifactContentRangeIsValid(
   _ value: String,
   expectedStart: Int64,
-  expectedTotal: Int64
+  expectedTotal: Int64?,
+  maxBytes: Int64
 ) -> Bool {
   guard value.lowercased().hasPrefix("bytes ") else {
     return false
@@ -84,10 +101,11 @@ func firmwareArtifactContentRangeIsValid(
   else {
     return false
   }
+  let totalMatches = expectedTotal.map { total == $0 } ?? (total > 0 && total <= maxBytes)
   return bounds.start == expectedStart &&
     bounds.end >= bounds.start &&
     bounds.end < total &&
-    total == expectedTotal
+    totalMatches
 }
 
 func firmwareArtifactResponseFits(

@@ -108,7 +108,7 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
 
   func getFirmwareArtifactCapabilities() throws -> FirmwareArtifactCapabilities {
     FirmwareArtifactCapabilities(
-      firmwareArtifactProtocolVersion: 2,
+      firmwareArtifactProtocolVersion: 3,
       supportedRouteTypes: ["domain", "pinnedIp"],
       supportsArchiveMaterialization: true,
       maxReadBytes: Double(FirmwareArtifactStore.maxReadBytes)

@@ -76,8 +76,8 @@ export interface FirmwareArtifactDownloadParams {
   url: string;
   routeType: string;
   resolvedIp?: string;
-  expectedSize: number;
-  expectedSha256: string;
+  expectedSize?: number;
+  expectedSha256?: string;
   maxBytes: number;
   overallDeadlineSeconds?: number; // defaults to 180; must be > 0 and <= 24 hours
 }
@@ -121,7 +121,7 @@ export interface FirmwareArtifactReaderCloseParams {
 export interface FirmwareArchiveMaterializeParams {
   leaseRef: string;
   archiveArtifactRef: string;
-  expectedEntries: FirmwareArchiveExpectedEntry[];
+  expectedEntries?: FirmwareArchiveExpectedEntry[];
 }
 
 export interface FirmwareArchiveExpectedEntry {

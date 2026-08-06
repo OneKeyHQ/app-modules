@@ -57,7 +57,9 @@ private data class StagedFirmwareArchiveEntry(
 )
 
 private data class FirmwareDownloadKey(
-  val expectedSha256: String,
+  val transactionId: String,
+  val taskId: String,
+  val downloadToken: String,
 )
 
 private class FirmwareDownloadLock {
@@ -113,27 +115,39 @@ internal object FirmwareArtifactStore {
     check(!cancelledTransactions.contains(params.transactionId)) {
       "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
     }
-    retainExpectedArtifact(
-      leaseRef = params.leaseRef,
-      transactionId = params.transactionId,
-      artifactRef = "fw:${validated.expectedSha256}",
+    validated.expectedSha256?.let {
+      retainExpectedArtifact(
+        leaseRef = params.leaseRef,
+        transactionId = params.transactionId,
+        artifactRef = "fw:$it",
+      )
+    } ?: requireLeaseTransaction(params.leaseRef, params.transactionId)
+    val lockKey = FirmwareDownloadKey(
+      params.transactionId,
+      params.taskId,
+      validated.downloadToken,
     )
-    val lockKey = FirmwareDownloadKey(validated.expectedSha256)
     val downloadLock = downloadLocks.compute(lockKey) { _, current ->
       (current ?: FirmwareDownloadLock()).also {
         it.references += 1
       }
     } ?: error("Firmware artifact lock is unavailable")
-    markDownloadActive(validated.expectedSha256, 1)
+    markDownloadActive(validated.downloadToken, 1)
     try {
-      return synchronized(downloadLock.monitor) {
+      val artifact = synchronized(downloadLock.monitor) {
         check(!cancelledTransactions.contains(params.transactionId)) {
           "ARTIFACT_CANCELLED: firmware artifact download was cancelled"
         }
         downloadLocked(params, validated)
       }
+      retainExpectedArtifact(
+        leaseRef = params.leaseRef,
+        transactionId = params.transactionId,
+        artifactRef = artifact.artifactRef,
+      )
+      return artifact
     } finally {
-      markDownloadActive(validated.expectedSha256, -1)
+      markDownloadActive(validated.downloadToken, -1)
       downloadLocks.compute(lockKey) { _, current ->
         if (current !== downloadLock) {
           current
@@ -211,16 +225,19 @@ internal object FirmwareArtifactStore {
   fun materializeArchive(
     leaseRef: String,
     artifactRef: String,
-    expectedEntries: Array<FirmwareArchiveExpectedEntry>,
+    expectedEntries: Array<FirmwareArchiveExpectedEntry>?,
   ): List<StoredFirmwareArchiveEntry> {
     requireLease(leaseRef)
     val archiveFile = resolveArtifactFile(artifactRef)
-    val requirements = FirmwareArchiveRules.validateRequirements(expectedEntries)
+    val requirements = expectedEntries?.let {
+      FirmwareArchiveRules.validateRequirements(it)
+    }
     val centralEntries = FirmwareArchiveRules.validateCentralDirectory(
       archiveFile,
       requirements,
     )
-    val requirementsByName = requirements.associateBy { it.entryName }
+    val requirementsByName = requirements?.associateBy { it.entryName }.orEmpty()
+    val centralEntriesByName = centralEntries.associateBy { it.name }
     val centralNames = centralEntries.mapTo(mutableSetOf()) { it.name }
     val scratchDir = File(root, "archive-${UUID.randomUUID()}")
     check(scratchDir.mkdirs()) { "Firmware archive scratch directory cannot be created" }
@@ -233,16 +250,18 @@ internal object FirmwareArtifactStore {
           require(!zipEntry.isDirectory) {
             "Firmware archive contains an unexpected directory"
           }
-          val requirement = requirementsByName[zipEntry.name]
+          val centralEntry = centralEntriesByName[zipEntry.name]
             ?: error("Firmware archive contains an unexpected entry")
+          val requirement = requirementsByName[zipEntry.name]
           require(
             centralNames.contains(zipEntry.name) &&
               entryNames.add(zipEntry.name)
           ) {
             "Firmware archive contains a duplicate or mismatched entry"
           }
-          val expectedSize = requirement.expectedSize.toLong()
-          val expectedSha256 = requirement.expectedSha256.lowercase()
+          val expectedSize = requirement?.expectedSize?.toLong()
+            ?: centralEntry.uncompressedSize
+          val expectedSha256 = requirement?.expectedSha256?.lowercase()
           val scratchFile = File(scratchDir, "${staged.size}.entry")
           val digest = MessageDigest.getInstance("SHA-256")
           var entrySize = 0L
@@ -262,11 +281,14 @@ internal object FirmwareArtifactStore {
             output.fd.sync()
           }
           val sha256 = digest.digest().toHex()
-          require(entrySize == expectedSize && sha256 == expectedSha256) {
+          require(
+            entrySize == expectedSize &&
+              (expectedSha256 == null || sha256 == expectedSha256)
+          ) {
             "Firmware archive entry integrity mismatch"
           }
           staged += StagedFirmwareArchiveEntry(
-            entryName = requirement.entryName,
+            entryName = zipEntry.name,
             size = entrySize,
             sha256 = sha256,
             file = scratchFile,
@@ -305,9 +327,10 @@ internal object FirmwareArtifactStore {
   }
 
   private data class ValidatedDownload(
-    val expectedSize: Long,
+    val expectedSize: Long?,
     val maxBytes: Long,
-    val expectedSha256: String,
+    val expectedSha256: String?,
+    val downloadToken: String,
     val hostname: String,
     val overallDeadlineSeconds: Double,
   )
@@ -342,12 +365,16 @@ internal object FirmwareArtifactStore {
     ) {
       "Firmware URL must use HTTPS port 443"
     }
-    val expectedSize = params.expectedSize.toExactPositiveLong("expectedSize")
+    val expectedSize = params.expectedSize?.toExactPositiveLong("expectedSize")
     val maxBytes = params.maxBytes.toExactPositiveLong("maxBytes")
-    require(maxBytes == expectedSize && maxBytes <= MAX_ARTIFACT_BYTES) {
+    require(
+      maxBytes <= MAX_ARTIFACT_BYTES &&
+        (expectedSize == null || expectedSize <= maxBytes)
+    ) {
       "Invalid firmware maxBytes"
     }
-    require(sha256Pattern.matches(params.expectedSha256)) {
+    val expectedSha256 = params.expectedSha256?.lowercase()
+    require(expectedSha256 == null || sha256Pattern.matches(expectedSha256)) {
       "Invalid firmware artifact SHA-256"
     }
     val overallDeadlineSeconds =
@@ -367,7 +394,8 @@ internal object FirmwareArtifactStore {
     return ValidatedDownload(
       expectedSize = expectedSize,
       maxBytes = maxBytes,
-      expectedSha256 = params.expectedSha256.lowercase(),
+      expectedSha256 = expectedSha256,
+      downloadToken = expectedSha256 ?: sha256(params.url),
       hostname = url.host,
       overallDeadlineSeconds = overallDeadlineSeconds,
     )
@@ -377,26 +405,37 @@ internal object FirmwareArtifactStore {
     params: FirmwareArtifactDownloadParams,
     validated: ValidatedDownload,
   ): StoredFirmwareArtifact {
-    val finalFile = artifactFile(validated.expectedSha256)
-    validateStoredArtifactOrNull(
-      finalFile,
-      validated.expectedSize,
-      validated.expectedSha256,
-    )?.let { return it }
+    validated.expectedSha256?.let { expectedSha256 ->
+      val finalFile = artifactFile(expectedSha256)
+      validateDownloadedArtifactOrNull(
+        finalFile,
+        validated.expectedSize,
+        expectedSha256,
+        validated.maxBytes,
+      )?.let { return it }
+    }
 
+    val transactionToken = sha256(params.transactionId).take(16)
     val partialFile = File(
       root,
-      "${validated.expectedSha256}.${params.taskId}.partial",
+      "${validated.downloadToken}.${params.taskId}.$transactionToken.partial",
     )
-    if (partialFile.length() > validated.expectedSize) {
+    if (validated.expectedSha256 == null && partialFile.length() > 0) {
+      check(partialFile.delete()) { "Unverified firmware partial cannot be removed" }
+    } else if (partialFile.length() > validated.maxBytes) {
       check(partialFile.delete()) { "Invalid firmware partial cannot be removed" }
     }
-    if (partialFile.length() == validated.expectedSize) {
-      validateStoredArtifactOrNull(
+    if (
+      validated.expectedSize != null &&
+      partialFile.length() == validated.expectedSize
+    ) {
+      validateDownloadedArtifactOrNull(
         partialFile,
         validated.expectedSize,
         validated.expectedSha256,
+        validated.maxBytes,
       )?.let {
+        val finalFile = artifactFile(it.sha256)
         promoteAtomically(partialFile, finalFile)
         return StoredFirmwareArtifact(
           it.artifactRef,
@@ -473,15 +512,17 @@ internal object FirmwareArtifactStore {
     }
 
     val artifact = try {
-      validateStoredArtifact(
+      validateDownloadedArtifact(
         partialFile,
         validated.expectedSize,
         validated.expectedSha256,
+        validated.maxBytes,
       )
     } catch (error: Throwable) {
       partialFile.delete()
       throw error
     }
+    val finalFile = artifactFile(artifact.sha256)
     promoteAtomically(partialFile, finalFile)
     return StoredFirmwareArtifact(
       artifact.artifactRef,
@@ -495,7 +536,7 @@ internal object FirmwareArtifactStore {
     response: Response,
     partialFile: File,
     resumeOffset: Long,
-    expectedSize: Long,
+    expectedSize: Long?,
     maxBytes: Long,
   ) {
     require(response.code == 200 || response.code == 206) {
@@ -508,6 +549,7 @@ internal object FirmwareArtifactStore {
           response.header("Content-Range"),
           if (append) resumeOffset else 0,
           expectedSize,
+          maxBytes,
         )
       ) {
         "ARTIFACT_PROTOCOL_INVALID: firmware resume Content-Range is invalid"
@@ -540,7 +582,8 @@ internal object FirmwareArtifactStore {
   private fun validateContentRange(
     value: String?,
     expectedStart: Long,
-    expectedTotal: Long,
+    expectedTotal: Long?,
+    maxBytes: Long,
   ): Boolean {
     val match = value
       ?.lowercase()
@@ -552,7 +595,39 @@ internal object FirmwareArtifactStore {
     return start == expectedStart &&
       end >= start &&
       end < total &&
-      total == expectedTotal
+      (expectedTotal?.let { total == it } ?: (total in 1..maxBytes))
+  }
+
+  private fun validateDownloadedArtifactOrNull(
+    file: File,
+    expectedSize: Long?,
+    expectedSha256: String?,
+    maxBytes: Long,
+  ): StoredFirmwareArtifact? = try {
+    validateDownloadedArtifact(file, expectedSize, expectedSha256, maxBytes)
+  } catch (_: Throwable) {
+    null
+  }
+
+  private fun validateDownloadedArtifact(
+    file: File,
+    expectedSize: Long?,
+    expectedSha256: String?,
+    maxBytes: Long,
+  ): StoredFirmwareArtifact {
+    val size = file.length()
+    require(
+      file.isFile &&
+        size in 1..maxBytes &&
+        (expectedSize == null || size == expectedSize)
+    ) {
+      "ARTIFACT_INTEGRITY_FAILED: firmware artifact size mismatch"
+    }
+    val sha256 = hashFile(file)
+    require(expectedSha256 == null || sha256 == expectedSha256) {
+      "ARTIFACT_INTEGRITY_FAILED: firmware artifact SHA-256 mismatch"
+    }
+    return StoredFirmwareArtifact("fw:$sha256", size, sha256, file)
   }
 
   private fun validateStoredArtifactOrNull(
@@ -660,6 +735,15 @@ internal object FirmwareArtifactStore {
     }
   }
 
+  private fun requireLeaseTransaction(leaseRef: String, transactionId: String) {
+    synchronized(leaseLock) {
+      val lease = leases[validateLeaseRef(leaseRef)]
+      require(lease?.transactionId == transactionId) {
+        "Firmware artifact lease transaction mismatch"
+      }
+    }
+  }
+
   private fun retainExpectedArtifact(
     leaseRef: String,
     transactionId: String?,
@@ -710,6 +794,11 @@ internal object FirmwareArtifactStore {
     }
     return digest.digest().toHex()
   }
+
+  private fun sha256(value: String): String =
+    MessageDigest.getInstance("SHA-256")
+      .digest(value.toByteArray(Charsets.UTF_8))
+      .toHex()
 
   private fun promoteAtomically(source: File, destination: File) {
     destination.parentFile?.mkdirs()

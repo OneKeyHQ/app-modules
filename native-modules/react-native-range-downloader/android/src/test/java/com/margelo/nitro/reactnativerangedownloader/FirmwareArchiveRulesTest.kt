@@ -1,10 +1,19 @@
 package com.margelo.nitro.reactnativerangedownloader
 
+import java.io.File
+import java.io.FileOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class FirmwareArchiveRulesTest {
+  @get:Rule
+  val temporaryFolder = TemporaryFolder()
+
   private fun entry(
     artifactId: String = "resource-entry",
     entryName: String = "assets/icon.png",
@@ -71,5 +80,35 @@ class FirmwareArchiveRulesTest {
         arrayOf(entry(expectedSha256 = "not-a-digest")),
       )
     }
+  }
+
+  @Test
+  fun acceptsPortableEntriesWithoutExpectedIntegrityMetadata() {
+    val archive = createArchive("assets/icon.png", byteArrayOf(1, 2, 3))
+
+    val entries = FirmwareArchiveRules.validateCentralDirectory(archive, null)
+
+    assertEquals(1, entries.size)
+    assertEquals("assets/icon.png", entries.single().name)
+    assertEquals(3, entries.single().uncompressedSize)
+  }
+
+  @Test
+  fun rejectsTraversalWithoutExpectedIntegrityMetadata() {
+    val archive = createArchive("../icon.png", byteArrayOf(1))
+
+    assertThrows(IllegalArgumentException::class.java) {
+      FirmwareArchiveRules.validateCentralDirectory(archive, null)
+    }
+  }
+
+  private fun createArchive(entryName: String, content: ByteArray): File {
+    val archive = temporaryFolder.newFile("firmware.zip")
+    ZipOutputStream(FileOutputStream(archive)).use { zip ->
+      zip.putNextEntry(ZipEntry(entryName))
+      zip.write(content)
+      zip.closeEntry()
+    }
+    return archive
   }
 }

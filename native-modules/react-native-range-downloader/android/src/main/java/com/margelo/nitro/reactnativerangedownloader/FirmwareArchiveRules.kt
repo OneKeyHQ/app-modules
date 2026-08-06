@@ -78,24 +78,31 @@ internal object FirmwareArchiveRules {
 
   fun validateCentralDirectory(
     file: File,
-    requirements: List<FirmwareArchiveExpectedEntry>,
+    requirements: List<FirmwareArchiveExpectedEntry>?,
   ): List<FirmwareArchiveCentralEntry> {
     val entries = scanCentralDirectory(file)
-    require(entries.size == requirements.size) {
+    require(requirements == null || entries.size == requirements.size) {
       "Firmware archive has missing or extra entries"
     }
-    val requirementsByName = requirements.associateBy { it.entryName }
+    val requirementsByName = requirements?.associateBy { it.entryName }.orEmpty()
     val names = mutableSetOf<String>()
     val canonicalNames = mutableSetOf<String>()
+    var totalSize = 0L
     entries.forEach { entry ->
       val requirement = requirementsByName[entry.name]
-        ?: error("Firmware archive contains an unexpected entry")
-      val expectedSize = requirement.expectedSize.toLong()
+      require(requirements == null || requirement != null) {
+        "Firmware archive contains an unexpected entry"
+      }
+      val expectedSize = requirement?.expectedSize?.toLong()
+        ?: entry.uncompressedSize
+      totalSize = Math.addExact(totalSize, entry.uncompressedSize)
       require(
         names.add(entry.name) &&
           validatePortableName(entry.name, canonicalNames) &&
           entry.uncompressedSize == expectedSize &&
           entry.uncompressedSize > 0 &&
+          entry.uncompressedSize <= MAX_ARCHIVE_ENTRY_BYTES &&
+          totalSize <= MAX_ARCHIVE_EXPANDED_BYTES &&
           entry.compressedSize in 0..MAX_ARCHIVE_EXPANDED_BYTES &&
           entry.uncompressedSize <=
           Math.multiplyExact(entry.compressedSize.coerceAtLeast(1), 1000) &&

@@ -29,11 +29,13 @@ final class RangeDownloadLogicTests: XCTestCase {
   func testFirmwareArtifactDownloadKeyIsolatesTransactions() {
     let first = firmwareArtifactDownloadKey(
       transactionId: "fwtx:first",
+      taskId: "firmware",
       expectedSize: 42,
       expectedSha256: String(repeating: "a", count: 64)
     )
     let second = firmwareArtifactDownloadKey(
       transactionId: "fwtx:second",
+      taskId: "firmware",
       expectedSize: 42,
       expectedSha256: String(repeating: "a", count: 64)
     )
@@ -46,12 +48,12 @@ final class RangeDownloadLogicTests: XCTestCase {
     let first = firmwareArtifactPartialFileName(
       transactionId: "fwtx:first",
       taskId: "firmware",
-      expectedSha256: sha256
+      downloadToken: sha256
     )
     let second = firmwareArtifactPartialFileName(
       transactionId: "fwtx:second",
       taskId: "firmware",
-      expectedSha256: sha256
+      downloadToken: sha256
     )
 
     XCTAssertNotEqual(first, second)
@@ -64,29 +66,68 @@ final class RangeDownloadLogicTests: XCTestCase {
       firmwareArtifactContentRangeIsValid(
         "bytes 128-255/256",
         expectedStart: 128,
-        expectedTotal: 256
+        expectedTotal: 256,
+        maxBytes: 256
       )
     )
     XCTAssertFalse(
       firmwareArtifactContentRangeIsValid(
         "bytes 0-255/256",
         expectedStart: 128,
-        expectedTotal: 256
+        expectedTotal: 256,
+        maxBytes: 256
       )
     )
     XCTAssertFalse(
       firmwareArtifactContentRangeIsValid(
         "bytes 128-256/256",
         expectedStart: 128,
-        expectedTotal: 256
+        expectedTotal: 256,
+        maxBytes: 256
       )
     )
     XCTAssertFalse(
       firmwareArtifactContentRangeIsValid(
         "items 128-255/256",
         expectedStart: 128,
-        expectedTotal: 256
+        expectedTotal: 256,
+        maxBytes: 256
       )
+    )
+  }
+
+  func testFirmwareArtifactContentRangeAcceptsUnknownExpectedTotalWithinBound() {
+    XCTAssertTrue(
+      firmwareArtifactContentRangeIsValid(
+        "bytes 128-255/256",
+        expectedStart: 128,
+        expectedTotal: nil,
+        maxBytes: 512
+      )
+    )
+    XCTAssertFalse(
+      firmwareArtifactContentRangeIsValid(
+        "bytes 128-1023/1024",
+        expectedStart: 128,
+        expectedTotal: nil,
+        maxBytes: 512
+      )
+    )
+  }
+
+  func testFirmwareArtifactDownloadTokenFallsBackToStableUrlHash() {
+    let url = "https://common.onekey-asset.com/firmware.bin"
+    let first = firmwareArtifactDownloadToken(expectedSha256: nil, url: url)
+    let second = firmwareArtifactDownloadToken(expectedSha256: nil, url: url)
+
+    XCTAssertEqual(first, second)
+    XCTAssertEqual(first.count, 64)
+    XCTAssertEqual(
+      firmwareArtifactDownloadToken(
+        expectedSha256: String(repeating: "A", count: 64),
+        url: url
+      ),
+      String(repeating: "a", count: 64)
     )
   }
 

@@ -272,7 +272,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
   override fun getFirmwareArtifactCapabilities(): FirmwareArtifactCapabilities {
     return FirmwareArtifactCapabilities(
-      firmwareArtifactProtocolVersion = 2.0,
+      firmwareArtifactProtocolVersion = 3.0,
       supportedRouteTypes = arrayOf("domain", "pinnedIp"),
       supportsArchiveMaterialization = true,
       maxReadBytes = FirmwareArtifactStore.MAX_READ_BYTES.toDouble(),
