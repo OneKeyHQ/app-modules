@@ -261,42 +261,6 @@ func sweepFirmwareArtifactOrphansAtRoot(
   return (deletedFiles, deletedBytes)
 }
 
-enum FirmwareBackgroundDownloadError: LocalizedError, CustomStringConvertible {
-  case cancelled
-  case invalidTask
-  case deadlineExceeded
-  case redirectRejected
-  case responseRejected
-  case sizeRejected
-  case tlsRejected
-  case transferFailed
-
-  var errorDescription: String? {
-    switch self {
-    case .cancelled:
-      return "ARTIFACT_CANCELLED: firmware background download was cancelled"
-    case .invalidTask:
-      return "ARTIFACT_PROTOCOL_INVALID: firmware background task is invalid"
-    case .deadlineExceeded:
-      return "ARTIFACT_DEADLINE_EXCEEDED: firmware download exceeded its deadline"
-    case .redirectRejected:
-      return "ARTIFACT_REDIRECT_REJECTED: firmware redirect changed canonical identity"
-    case .responseRejected:
-      return "ARTIFACT_PROTOCOL_INVALID: firmware response is invalid"
-    case .sizeRejected:
-      return "ARTIFACT_PROTOCOL_INVALID: firmware artifact size is invalid"
-    case .tlsRejected:
-      return "ARTIFACT_TLS_FAILED: firmware TLS validation failed"
-    case .transferFailed:
-      return "ARTIFACT_NETWORK_FAILED: firmware background transfer failed"
-    }
-  }
-
-  var description: String {
-    errorDescription ?? "ARTIFACT_NETWORK_FAILED: firmware background transfer failed"
-  }
-}
-
 // MARK: - Dependency-free RangeDownloader logic (OCDS §4 / §5)
 //
 // This file holds the DETERMINISTIC, dependency-light pieces of the range

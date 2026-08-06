@@ -558,9 +558,6 @@ final class FirmwareArtifactStore {
       cancelledTransactions.insert(transactionId)
     }
     await downloadCoordinator.cancel(transactionId: transactionId)
-    try await RangeDownloader.shared.cancelFirmwareArtifactDownloads(
-      transactionId: transactionId
-    )
   }
 
   private func downloadLocked(
@@ -644,51 +641,6 @@ final class FirmwareArtifactStore {
       size: artifact.size,
       sha256: artifact.sha256,
       fileURL: finalURL
-    )
-  }
-
-  func acceptBackgroundDownload(
-    temporaryURL: URL,
-    transactionId: String,
-    expectedSize: Int64,
-    expectedSha256: String
-  ) throws -> StoredFirmwareArtifact {
-    let normalizedExpectedSha256 = expectedSha256.lowercased()
-    try rejectIfCancelled(transactionId: transactionId)
-    let finalURL = artifactURL(sha256: normalizedExpectedSha256)
-    if let existing = try? validateStoredArtifact(
-      fileURL: finalURL,
-      expectedSize: expectedSize,
-      expectedSha256: normalizedExpectedSha256
-    ) {
-      return existing
-    }
-    let artifact = try validateStoredArtifact(
-      fileURL: temporaryURL,
-      expectedSize: expectedSize,
-      expectedSha256: normalizedExpectedSha256
-    )
-    try promote(source: temporaryURL, destination: finalURL)
-    return StoredFirmwareArtifact(
-      artifactRef: artifact.artifactRef,
-      size: artifact.size,
-      sha256: artifact.sha256,
-      fileURL: finalURL
-    )
-  }
-
-  func storedArtifact(
-    expectedSize: Int64,
-    expectedSha256: String
-  ) throws -> StoredFirmwareArtifact? {
-    let finalURL = artifactURL(sha256: expectedSha256)
-    guard fileManager.fileExists(atPath: finalURL.path) else {
-      return nil
-    }
-    return try validateStoredArtifact(
-      fileURL: finalURL,
-      expectedSize: expectedSize,
-      expectedSha256: expectedSha256
     )
   }
 

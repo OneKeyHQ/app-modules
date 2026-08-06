@@ -277,19 +277,6 @@ final class RangeDownloadLogicTests: XCTestCase {
     }
   }
 
-  func testFirmwareBackgroundErrorsKeepArtifactCodesInDescriptions() {
-    XCTAssertTrue(
-      String(
-        describing: FirmwareBackgroundDownloadError.transferFailed
-      ).contains("ARTIFACT_NETWORK_FAILED")
-    )
-    XCTAssertTrue(
-      String(
-        describing: FirmwareBackgroundDownloadError.deadlineExceeded
-      ).contains("ARTIFACT_DEADLINE_EXCEEDED")
-    )
-  }
-
   // MARK: §4 — HTTP status classification
   //
   // OCDS §4. Mirrors Android's IsPermanentHttpStatusTest matrix. Asserts BOTH the

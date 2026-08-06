@@ -343,49 +343,9 @@ extension RangeFallbackClass {
   }
 }
 
-private struct FirmwareBackgroundTaskDescriptor: Codable, Equatable {
-  let schemaVersion: Int
-  let taskId: String
-  let transactionId: String
-  let expectedSize: Int64
-  let expectedSha256: String
-  let hostname: String
-  let deadlineAt: TimeInterval
-
-  var key: String {
-    firmwareArtifactDownloadKey(
-      transactionId: transactionId,
-      expectedSize: expectedSize,
-      expectedSha256: expectedSha256
-    )
-  }
-
-  func hasSameDownloadIdentity(
-    as other: FirmwareBackgroundTaskDescriptor
-  ) -> Bool {
-    transactionId == other.transactionId &&
-      expectedSize == other.expectedSize &&
-      expectedSha256 == other.expectedSha256
-  }
-}
-
 public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   public static let shared = RangeDownloader()
-
-  public static func routeFirmwareBackgroundEvents(
-    identifier: String,
-    completionHandler: @escaping () -> Void
-  ) -> Bool {
-    guard identifier == sessionIdentifier(for: .firmware) else {
-      return false
-    }
-    shared.attachBackgroundEvents(
-      identifier: identifier,
-      completionHandler: completionHandler
-    )
-    return true
-  }
 
   /// Posted by the AppDelegate from
   /// application(_:handleEventsForBackgroundURLSession:completionHandler:).
@@ -423,11 +383,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   /// notification), keyed by session identifier, so we can call each back once
   /// all its queued background events have been delivered.
   private var backgroundCompletionHandlers: [String: () -> Void] = [:]
-  private var firmwareWaiters: [
-    String: [CheckedContinuation<StoredFirmwareArtifact, Error>]
-  ] = [:]
-  private var firmwareTaskErrors: [Int: Error] = [:]
-  private var completedFirmwareTasks: Set<Int> = []
 
   // Per-run mutable state.
   private final class RunState {
@@ -683,238 +638,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
     let key = Self.runKey(channel: decoded.channel, taskId: decoded.taskId)
     guard let r = run(forKey: key) else { return nil }
     return (r, decoded.segIndex)
-  }
-
-  private static let firmwareTaskDescriptionPrefix = "firmware-v2:"
-
-  private static func encodeFirmwareTaskDescription(
-    _ descriptor: FirmwareBackgroundTaskDescriptor
-  ) throws -> String {
-    let data = try JSONEncoder().encode(descriptor)
-    return firmwareTaskDescriptionPrefix + data.base64EncodedString()
-  }
-
-  private static func decodeFirmwareTaskDescription(
-    _ description: String?
-  ) -> FirmwareBackgroundTaskDescriptor? {
-    guard
-      let description,
-      description.hasPrefix(firmwareTaskDescriptionPrefix),
-      let data = Data(
-        base64Encoded: String(
-          description.dropFirst(firmwareTaskDescriptionPrefix.count)
-        )
-      ),
-      data.count <= 2048,
-      let descriptor = try? JSONDecoder().decode(
-        FirmwareBackgroundTaskDescriptor.self,
-        from: data
-      ),
-      descriptor.schemaVersion == 2,
-      descriptor.taskId.range(
-        of: "^[A-Za-z0-9._-]{1,100}$",
-        options: .regularExpression
-      ) != nil,
-      descriptor.transactionId.range(
-        of: "^[A-Za-z0-9._:-]{1,160}$",
-        options: .regularExpression
-      ) != nil,
-      descriptor.expectedSize > 0,
-      descriptor.expectedSize <= 512 * 1024 * 1024,
-      descriptor.expectedSha256.range(
-        of: "^[a-f0-9]{64}$",
-        options: .regularExpression
-      ) != nil,
-      !descriptor.hostname.isEmpty,
-      descriptor.hostname.count <= 253,
-      descriptor.deadlineAt.isFinite,
-      descriptor.deadlineAt > 0
-    else {
-      return nil
-    }
-    return descriptor
-  }
-
-  func downloadFirmwareArtifact(
-    params: FirmwareArtifactDownloadParams
-  ) async throws -> StoredFirmwareArtifact {
-    guard
-      params.routeType == "domain",
-      let url = URL(string: params.url),
-      let hostname = url.host?.lowercased()
-    else {
-      throw FirmwareBackgroundDownloadError.invalidTask
-    }
-    let deadlineSeconds = params.overallDeadlineSeconds ?? 180
-    guard
-      deadlineSeconds.isFinite,
-      deadlineSeconds > 0,
-      deadlineSeconds <= 24 * 60 * 60
-    else {
-      throw FirmwareBackgroundDownloadError.invalidTask
-    }
-    let descriptor = FirmwareBackgroundTaskDescriptor(
-      schemaVersion: 2,
-      taskId: params.taskId,
-      transactionId: params.transactionId,
-      expectedSize: Int64(params.expectedSize),
-      expectedSha256: params.expectedSha256.lowercased(),
-      hostname: hostname,
-      deadlineAt: Date().timeIntervalSince1970 + deadlineSeconds
-    )
-    guard !FirmwareArtifactStore.shared.isTransactionCancelled(
-      descriptor.transactionId
-    ) else {
-      throw FirmwareBackgroundDownloadError.cancelled
-    }
-    if let stored = try FirmwareArtifactStore.shared.storedArtifact(
-      expectedSize: descriptor.expectedSize,
-      expectedSha256: descriptor.expectedSha256
-    ) {
-      return stored
-    }
-
-    return try await withCheckedThrowingContinuation { continuation in
-      lock.withLockValue {
-        firmwareWaiters[descriptor.key, default: []].append(continuation)
-      }
-      Task { [weak self] in
-        await self?.reconcileOrStartFirmwareTask(
-          descriptor: descriptor,
-          url: url
-        )
-      }
-    }
-  }
-
-  func cancelFirmwareArtifactDownloads(
-    transactionId: String
-  ) async throws {
-    guard transactionId.range(
-      of: "^[A-Za-z0-9._:-]{1,160}$",
-      options: .regularExpression
-    ) != nil else {
-      throw FirmwareBackgroundDownloadError.invalidTask
-    }
-    let session = session(forChannel: .firmware, segmentCount: 1)
-    let tasks = await allTasks(in: session)
-    for task in tasks {
-      guard
-        let descriptor = Self.decodeFirmwareTaskDescription(
-          task.taskDescription
-        ),
-        descriptor.transactionId == transactionId
-      else {
-        continue
-      }
-      recordFirmwareTaskError(
-        taskIdentifier: task.taskIdentifier,
-        error: FirmwareBackgroundDownloadError.cancelled
-      )
-      task.cancel()
-    }
-  }
-
-  private func reconcileOrStartFirmwareTask(
-    descriptor: FirmwareBackgroundTaskDescriptor,
-    url: URL
-  ) async {
-    guard !FirmwareArtifactStore.shared.isTransactionCancelled(
-      descriptor.transactionId
-    ) else {
-      finishFirmwareTask(
-        key: descriptor.key,
-        result: .failure(FirmwareBackgroundDownloadError.cancelled)
-      )
-      return
-    }
-    let session = session(forChannel: .firmware, segmentCount: 1)
-    let tasks = await allTasks(in: session)
-    var matchingTaskFound = false
-    for task in tasks {
-      guard
-        let candidate = Self.decodeFirmwareTaskDescription(
-          task.taskDescription
-        )
-      else {
-        continue
-      }
-      if candidate.hasSameDownloadIdentity(as: descriptor) {
-        matchingTaskFound = true
-      } else if
-        candidate.transactionId == descriptor.transactionId &&
-        candidate.taskId == descriptor.taskId
-      {
-        task.cancel()
-      }
-    }
-    if matchingTaskFound {
-      return
-    }
-    do {
-      if let stored = try FirmwareArtifactStore.shared.storedArtifact(
-        expectedSize: descriptor.expectedSize,
-        expectedSha256: descriptor.expectedSha256
-      ) {
-        finishFirmwareTask(
-          key: descriptor.key,
-          result: .success(stored)
-        )
-        return
-      }
-      guard Date().timeIntervalSince1970 < descriptor.deadlineAt else {
-        throw FirmwareBackgroundDownloadError.deadlineExceeded
-      }
-      guard !FirmwareArtifactStore.shared.isTransactionCancelled(
-        descriptor.transactionId
-      ) else {
-        throw FirmwareBackgroundDownloadError.cancelled
-      }
-      var request = URLRequest(url: url)
-      request.cachePolicy = .reloadIgnoringLocalCacheData
-      request.timeoutInterval = max(
-        1,
-        descriptor.deadlineAt - Date().timeIntervalSince1970
-      )
-      request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-      let task = session.downloadTask(with: request)
-      task.taskDescription = try Self.encodeFirmwareTaskDescription(
-        descriptor
-      )
-      task.resume()
-    } catch {
-      finishFirmwareTask(
-        key: descriptor.key,
-        result: .failure(error)
-      )
-    }
-  }
-
-  private func allTasks(in session: URLSession) async -> [URLSessionTask] {
-    await withCheckedContinuation { continuation in
-      session.getAllTasks { tasks in
-        continuation.resume(returning: tasks)
-      }
-    }
-  }
-
-  private func finishFirmwareTask(
-    key: String,
-    result: Result<StoredFirmwareArtifact, Error>
-  ) {
-    let continuations: [
-      CheckedContinuation<StoredFirmwareArtifact, Error>
-    ] = lock.withLockValue {
-      firmwareWaiters.removeValue(forKey: key) ?? []
-    }
-    for continuation in continuations {
-      switch result {
-      case let .success(artifact):
-        continuation.resume(returning: artifact)
-      case let .failure(error):
-        continuation.resume(throwing: error)
-      }
-    }
   }
 
   // MARK: - Public entry
@@ -1452,28 +1175,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                   didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
                   totalBytesExpectedToWrite: Int64) {
-    if let descriptor = Self.decodeFirmwareTaskDescription(
-      downloadTask.taskDescription
-    ) {
-      let exceedsBound =
-        totalBytesWritten > descriptor.expectedSize ||
-        (
-          totalBytesExpectedToWrite != NSURLSessionTransferSizeUnknown &&
-            totalBytesExpectedToWrite != descriptor.expectedSize
-        )
-      let expired =
-        Date().timeIntervalSince1970 >= descriptor.deadlineAt
-      if exceedsBound || expired {
-        recordFirmwareTaskError(
-          taskIdentifier: downloadTask.taskIdentifier,
-          error: exceedsBound
-            ? FirmwareBackgroundDownloadError.sizeRejected
-            : FirmwareBackgroundDownloadError.deadlineExceeded
-        )
-        downloadTask.cancel()
-      }
-      return
-    }
     guard let desc = downloadTask.taskDescription,
           let (state, idx) = run(for: desc) else { return }
     lock.lock()
@@ -1504,52 +1205,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
 
   public func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                   didFinishDownloadingTo location: URL) {
-    if let descriptor = Self.decodeFirmwareTaskDescription(
-      downloadTask.taskDescription
-    ) {
-      guard firmwareTaskError(
-        taskIdentifier: downloadTask.taskIdentifier
-      ) == nil else {
-        return
-      }
-      do {
-        guard
-          !FirmwareArtifactStore.shared.isTransactionCancelled(
-            descriptor.transactionId
-          ),
-          Date().timeIntervalSince1970 < descriptor.deadlineAt,
-          let response = downloadTask.response as? HTTPURLResponse,
-          response.statusCode == 200,
-          response.url?.scheme?.lowercased() == "https",
-          response.url?.host?.lowercased() == descriptor.hostname,
-          response.url?.port == nil || response.url?.port == 443
-        else {
-          throw FirmwareBackgroundDownloadError.responseRejected
-        }
-        let artifact = try FirmwareArtifactStore.shared.acceptBackgroundDownload(
-          temporaryURL: location,
-          transactionId: descriptor.transactionId,
-          expectedSize: descriptor.expectedSize,
-          expectedSha256: descriptor.expectedSha256
-        )
-        lock.withLockValue {
-          firmwareTaskErrors.removeValue(
-            forKey: downloadTask.taskIdentifier
-          )
-          completedFirmwareTasks.insert(downloadTask.taskIdentifier)
-        }
-        finishFirmwareTask(
-          key: descriptor.key,
-          result: .success(artifact)
-        )
-      } catch {
-        recordFirmwareTaskError(
-          taskIdentifier: downloadTask.taskIdentifier,
-          error: error
-        )
-      }
-      return
-    }
     guard let desc = downloadTask.taskDescription,
           let (state, idx) = run(for: desc) else { return }
     let ranges = lock.withLockValue { state.ranges }
@@ -1648,43 +1303,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   }
 
   public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-    if let descriptor = Self.decodeFirmwareTaskDescription(
-      task.taskDescription
-    ) {
-      let completion: (completed: Bool, error: Error?) =
-        lock.withLockValue {
-          let completed = completedFirmwareTasks.remove(
-            task.taskIdentifier
-          ) != nil
-          let recordedError = firmwareTaskErrors.removeValue(
-            forKey: task.taskIdentifier
-          )
-          return (completed, recordedError)
-        }
-      if completion.completed {
-        return
-      }
-      let failure: Error
-      if let recordedError = completion.error {
-        failure = recordedError
-      } else if FirmwareArtifactStore.shared.isTransactionCancelled(
-        descriptor.transactionId
-      ) {
-        failure = FirmwareBackgroundDownloadError.cancelled
-      } else if let taskError = error {
-        failure =
-          isFirmwareArtifactTLSError(taskError)
-            ? FirmwareBackgroundDownloadError.tlsRejected
-            : FirmwareBackgroundDownloadError.transferFailed
-      } else {
-        failure = FirmwareBackgroundDownloadError.transferFailed
-      }
-      finishFirmwareTask(
-        key: descriptor.key,
-        result: .failure(failure)
-      )
-      return
-    }
     guard let desc = task.taskDescription,
           let (state, idx) = run(for: desc) else { return }
     let ranges = lock.withLockValue { state.ranges }
@@ -1860,26 +1478,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
                          willPerformHTTPRedirection response: HTTPURLResponse,
                          newRequest request: URLRequest,
                          completionHandler: @escaping (URLRequest?) -> Void) {
-    if let descriptor = Self.decodeFirmwareTaskDescription(
-      task.taskDescription
-    ) {
-      guard
-        request.url?.scheme?.lowercased() == "https",
-        request.url?.host?.lowercased() == descriptor.hostname,
-        request.url?.port == nil || request.url?.port == 443,
-        request.url?.user == nil,
-        request.url?.password == nil
-      else {
-        recordFirmwareTaskError(
-          taskIdentifier: task.taskIdentifier,
-          error: FirmwareBackgroundDownloadError.redirectRejected
-        )
-        completionHandler(nil)
-        return
-      }
-      completionHandler(request)
-      return
-    }
     if request.url?.scheme?.lowercased() != "https" {
       OneKeyLog.error("RangeDownloader", "blocked redirect to non-HTTPS URL")
       if let desc = task.taskDescription, let (state, _) = run(for: desc) {
@@ -1888,25 +1486,6 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
       completionHandler(nil)
     } else {
       completionHandler(request)
-    }
-  }
-
-  private func recordFirmwareTaskError(
-    taskIdentifier: Int,
-    error: Error
-  ) {
-    lock.withLockValue {
-      if firmwareTaskErrors[taskIdentifier] == nil {
-        firmwareTaskErrors[taskIdentifier] = error
-      }
-    }
-  }
-
-  private func firmwareTaskError(
-    taskIdentifier: Int
-  ) -> Error? {
-    lock.withLockValue {
-      firmwareTaskErrors[taskIdentifier]
     }
   }
 
