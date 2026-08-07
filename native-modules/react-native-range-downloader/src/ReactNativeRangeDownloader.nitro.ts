@@ -86,6 +86,9 @@ export interface FirmwareArtifactReceipt {
   artifactRef: string;
   size: number;
   sha256: string;
+  // True only when sha256 was compared with expectedSha256 supplied by the caller.
+  // A locally computed content-address digest without that expectation is not trusted integrity.
+  expectedSha256Verified: boolean;
 }
 
 export interface FirmwareArtifactCapabilities {

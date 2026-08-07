@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 import ReactNativeNativeLogger
-import SniConnect
 
 func isFirmwareArtifactTLSError(_ error: Error) -> Bool {
   var current: NSError? = error as NSError
@@ -384,7 +383,8 @@ private actor FirmwareArtifactDownloadCoordinator {
 
 final class FirmwareArtifactStore {
   static let shared = FirmwareArtifactStore()
-  static let maxReadBytes = 256 * 1024
+  static let maxReadBytes = Int(firmwareArtifactMaxReadBytes)
+  static let maxArtifactBytes = firmwareArtifactMaxBytes
   private static let defaultDownloadDeadline: TimeInterval = 180
   private static let maxDownloadDeadline: TimeInterval = 24 * 60 * 60
 
@@ -461,30 +461,26 @@ final class FirmwareArtifactStore {
     }
     let expectedSize: Int64?
     if let value = params.expectedSize {
-      guard
-        value.isFinite,
-        value > 0,
-        value <= Double(Int64.max),
-        value.rounded() == value
-      else {
+      guard let converted = firmwareArtifactExactInt64(
+        value,
+        minimum: 1,
+        maximum: Self.maxArtifactBytes
+      ) else {
         throw FirmwareArtifactStoreError.invalidInput(
           "Invalid firmware artifact expected size"
         )
       }
-      expectedSize = Int64(value)
+      expectedSize = converted
     } else {
       expectedSize = nil
     }
-    guard
-      params.maxBytes.isFinite,
-      params.maxBytes > 0,
-      params.maxBytes <= Double(Int64.max),
-      params.maxBytes.rounded() == params.maxBytes,
-      params.maxBytes <= Double(512 * 1024 * 1024)
-    else {
+    guard let maxBytes = firmwareArtifactExactInt64(
+      params.maxBytes,
+      minimum: 1,
+      maximum: Self.maxArtifactBytes
+    ) else {
       throw FirmwareArtifactStoreError.invalidInput("Invalid firmware artifact size")
     }
-    let maxBytes = Int64(params.maxBytes)
     guard expectedSize.map({ $0 <= maxBytes }) ?? true else {
       throw FirmwareArtifactStoreError.invalidInput(
         "Firmware artifact expected size exceeds maxBytes"
@@ -501,7 +497,7 @@ final class FirmwareArtifactStore {
         )
       }
     }
-    guard params.routeType == "domain" || params.routeType == "pinnedIp" else {
+    guard params.routeType == "domain" else {
       throw FirmwareArtifactStoreError.invalidInput("Invalid firmware route type")
     }
     let deadline = params.overallDeadlineSeconds ?? defaultDownloadDeadline
@@ -512,11 +508,7 @@ final class FirmwareArtifactStore {
     else {
       throw FirmwareArtifactStoreError.invalidInput("Invalid firmware download deadline")
     }
-    if params.routeType == "pinnedIp" {
-      guard let resolvedIp = params.resolvedIp, !resolvedIp.isEmpty else {
-        throw FirmwareArtifactStoreError.invalidInput("Pinned route requires resolvedIp")
-      }
-    } else if params.resolvedIp != nil {
+    if params.resolvedIp != nil {
       throw FirmwareArtifactStoreError.invalidInput("Domain route must not include resolvedIp")
     }
     return ValidatedDownload(
@@ -1334,27 +1326,13 @@ final class FirmwareArtifactStore {
           self?.isTransactionCancelled(params.transactionId) == true
       }
     )
-    let pinnedSession: SniConnectPinnedSession?
-    if params.routeType == "pinnedIp" {
-      pinnedSession = try SniConnectPinnedTransport.makeSession(
-          hostname: hostname,
-          ip: params.resolvedIp!,
-          dataDelegate: streamDelegate
-        )
-    } else {
-      pinnedSession = nil
-    }
-    let session = pinnedSession?.session ?? URLSession(
+    let session = URLSession(
       configuration: .ephemeral,
       delegate: streamDelegate,
       delegateQueue: nil
     )
     defer {
-      if let pinnedSession {
-        pinnedSession.close()
-      } else {
-        session.finishTasksAndInvalidate()
-      }
+      session.finishTasksAndInvalidate()
     }
 
     do {

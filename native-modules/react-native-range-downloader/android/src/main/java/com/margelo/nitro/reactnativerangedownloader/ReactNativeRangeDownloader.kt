@@ -272,8 +272,8 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
   override fun getFirmwareArtifactCapabilities(): FirmwareArtifactCapabilities {
     return FirmwareArtifactCapabilities(
-      firmwareArtifactProtocolVersion = 3.0,
-      supportedRouteTypes = arrayOf("domain", "pinnedIp"),
+      firmwareArtifactProtocolVersion = 4.0,
+      supportedRouteTypes = arrayOf("domain"),
       supportsArchiveMaterialization = true,
       maxReadBytes = FirmwareArtifactStore.MAX_READ_BYTES.toDouble(),
     )
@@ -288,6 +288,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
         artifactRef = artifact.artifactRef,
         size = artifact.size.toDouble(),
         sha256 = artifact.sha256,
+        expectedSha256Verified = params.expectedSha256 != null,
       )
     }
   }
@@ -324,9 +325,11 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
       require(
         params.offset.isFinite() &&
           params.offset >= 0 &&
+          params.offset <= FirmwareArtifactStore.MAX_ARTIFACT_BYTES.toDouble() &&
           params.offset.toLong().toDouble() == params.offset &&
           params.length.isFinite() &&
           params.length > 0 &&
+          params.length <= FirmwareArtifactStore.MAX_READ_BYTES.toDouble() &&
           params.length.toInt().toDouble() == params.length
       ) {
         "Invalid firmware artifact read"
@@ -366,6 +369,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
               artifactRef = entry.artifact.artifactRef,
               size = entry.artifact.size.toDouble(),
               sha256 = entry.artifact.sha256,
+              expectedSha256Verified = params.expectedEntries != null,
             ),
           )
         }.toTypedArray(),

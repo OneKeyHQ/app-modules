@@ -23,13 +23,12 @@ Pod::Spec.new do |s|
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
   s.dependency 'ReactNativeNativeLogger'
-  s.dependency 'SniConnect', package["peerDependencies"]["@onekeyfe/react-native-sni-connect"]
   s.public_header_files = "ios/FirmwareArchiveMinizipBridge.h"
   s.pod_target_xcconfig = {
     'HEADER_SEARCH_PATHS' => '"$(PODS_ROOT)/SSZipArchive/SSZipArchive/minizip"',
   }
 
-  s.dependency 'SSZipArchive', '>= 2.5.4'
+  s.dependency 'SSZipArchive', '2.5.5'
 
   load 'nitrogen/generated/ios/ReactNativeRangeDownloader+autolinking.rb'
   add_nitrogen_files(s)

@@ -127,7 +127,6 @@ dependencies {
   implementation project(":react-native-nitro-modules")
 
   implementation project(":onekeyfe_react-native-native-logger")
-  implementation project(":onekeyfe_react-native-sni-connect")
 
   implementation "com.squareup.okhttp3:okhttp:4.12.0"
 

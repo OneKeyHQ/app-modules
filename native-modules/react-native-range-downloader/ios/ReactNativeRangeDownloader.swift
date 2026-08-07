@@ -108,8 +108,8 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
 
   func getFirmwareArtifactCapabilities() throws -> FirmwareArtifactCapabilities {
     FirmwareArtifactCapabilities(
-      firmwareArtifactProtocolVersion: 3,
-      supportedRouteTypes: ["domain", "pinnedIp"],
+      firmwareArtifactProtocolVersion: 4,
+      supportedRouteTypes: ["domain"],
       supportsArchiveMaterialization: true,
       maxReadBytes: Double(FirmwareArtifactStore.maxReadBytes)
     )
@@ -124,7 +124,8 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
           withResult: FirmwareArtifactReceipt(
             artifactRef: artifact.artifactRef,
             size: Double(artifact.size),
-            sha256: artifact.sha256
+            sha256: artifact.sha256,
+            expectedSha256Verified: params.expectedSha256 != nil
           )
         )
       }
@@ -136,7 +137,8 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
       return FirmwareArtifactReceipt(
         artifactRef: artifact.artifactRef,
         size: Double(artifact.size),
-        sha256: artifact.sha256
+        sha256: artifact.sha256,
+        expectedSha256Verified: params.expectedSha256 != nil
       )
     }
   }
@@ -185,14 +187,16 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
   ) throws -> Promise<ArrayBuffer> {
     settledFirmwareArtifactPromise {
       guard
-        params.offset.isFinite,
-        params.offset >= 0,
-        params.offset <= Double(Int64.max),
-        params.offset.rounded() == params.offset,
-        params.length.isFinite,
-        params.length > 0,
-        params.length <= Double(Int.max),
-        params.length.rounded() == params.length
+        let offset = firmwareArtifactExactInt64(
+          params.offset,
+          minimum: 0,
+          maximum: FirmwareArtifactStore.maxArtifactBytes
+        ),
+        let length = firmwareArtifactExactInt64(
+          params.length,
+          minimum: 1,
+          maximum: firmwareArtifactMaxReadBytes
+        )
       else {
         throw FirmwareArtifactStoreError.readerInvalid(
           "Invalid firmware artifact read"
@@ -200,8 +204,8 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
       }
       let data = try FirmwareArtifactStore.shared.read(
         readerId: params.readerId,
-        offset: Int64(params.offset),
-        length: Int(params.length)
+        offset: offset,
+        length: Int(length)
       )
       return try ArrayBuffer.copy(data: data)
     }
@@ -231,7 +235,8 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
             receipt: FirmwareArtifactReceipt(
               artifactRef: entry.artifact.artifactRef,
               size: Double(entry.artifact.size),
-              sha256: entry.artifact.sha256
+              sha256: entry.artifact.sha256,
+              expectedSha256Verified: params.expectedEntries != nil
             )
           )
         }

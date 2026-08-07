@@ -229,6 +229,46 @@ final class RangeDownloadLogicTests: XCTestCase {
     )
   }
 
+  func testFirmwareArtifactExactInt64RejectsRoundedOverflowAndOutOfBoundsValues() {
+    XCTAssertNil(
+      firmwareArtifactExactInt64(
+        pow(2.0, 63.0),
+        minimum: 1,
+        maximum: firmwareArtifactMaxBytes
+      )
+    )
+    XCTAssertNil(
+      firmwareArtifactExactInt64(
+        Double(firmwareArtifactMaxBytes) + 1,
+        minimum: 1,
+        maximum: firmwareArtifactMaxBytes
+      )
+    )
+    XCTAssertNil(
+      firmwareArtifactExactInt64(
+        1.5,
+        minimum: 1,
+        maximum: firmwareArtifactMaxBytes
+      )
+    )
+    XCTAssertEqual(
+      firmwareArtifactExactInt64(
+        Double(firmwareArtifactMaxBytes),
+        minimum: 1,
+        maximum: firmwareArtifactMaxBytes
+      ),
+      firmwareArtifactMaxBytes
+    )
+    XCTAssertEqual(
+      firmwareArtifactExactInt64(
+        Double(firmwareArtifactMaxReadBytes),
+        minimum: 1,
+        maximum: firmwareArtifactMaxReadBytes
+      ),
+      firmwareArtifactMaxReadBytes
+    )
+  }
+
   func testFirmwareArtifactOrphanSweepRemovesOnlyStaleRootScratchEntries() throws {
     let fileManager = FileManager.default
     let rootURL = fileManager.temporaryDirectory.appendingPathComponent(

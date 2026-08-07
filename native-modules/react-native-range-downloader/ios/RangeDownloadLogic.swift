@@ -142,6 +142,26 @@ func firmwareArtifactResponseFits(
 let firmwareArtifactFinalGrace: TimeInterval = 24 * 60 * 60
 let firmwareArtifactPartialGrace: TimeInterval = 7 * 24 * 60 * 60
 let firmwareArtifactScratchGrace: TimeInterval = firmwareArtifactPartialGrace
+let firmwareArtifactMaxBytes: Int64 = 512 * 1024 * 1024
+let firmwareArtifactMaxReadBytes: Int64 = 256 * 1024
+
+func firmwareArtifactExactInt64(
+  _ value: Double,
+  minimum: Int64,
+  maximum: Int64
+) -> Int64? {
+  guard
+    minimum <= maximum,
+    value.isFinite,
+    value.rounded() == value,
+    let converted = Int64(exactly: value),
+    converted >= minimum,
+    converted <= maximum
+  else {
+    return nil
+  }
+  return converted
+}
 
 func firmwareArtifactIdentifierIsSafe(_ value: String) -> Bool {
   value.range(

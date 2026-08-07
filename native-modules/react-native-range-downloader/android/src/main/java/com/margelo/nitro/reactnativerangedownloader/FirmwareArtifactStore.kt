@@ -2,7 +2,6 @@ package com.margelo.nitro.reactnativerangedownloader
 
 import android.system.Os
 import com.margelo.nitro.NitroModules
-import com.sniconnect.SniPinnedTransport
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -70,7 +69,7 @@ private class FirmwareDownloadLock {
 internal object FirmwareArtifactStore {
   const val MAX_READ_BYTES = 256 * 1024
 
-  private const val MAX_ARTIFACT_BYTES = 512L * 1024 * 1024
+  const val MAX_ARTIFACT_BYTES = 512L * 1024 * 1024
   private val sha256Pattern = Regex("^[a-fA-F0-9]{64}$")
   private val artifactRefPattern = Regex("^fw:[a-f0-9]{64}$")
   private val leaseRefPattern = Regex("^fwlease:[a-f0-9-]{36}$")
@@ -331,7 +330,6 @@ internal object FirmwareArtifactStore {
     val maxBytes: Long,
     val expectedSha256: String?,
     val downloadToken: String,
-    val hostname: String,
     val overallDeadlineSeconds: Double,
   )
 
@@ -379,24 +377,17 @@ internal object FirmwareArtifactStore {
     }
     val overallDeadlineSeconds =
       validateFirmwareDownloadDeadlineSeconds(params.overallDeadlineSeconds)
-    require(params.routeType == "domain" || params.routeType == "pinnedIp") {
+    require(params.routeType == "domain") {
       "Invalid firmware route type"
     }
-    if (params.routeType == "pinnedIp") {
-      require(!params.resolvedIp.isNullOrEmpty()) {
-        "Pinned route requires resolvedIp"
-      }
-    } else {
-      require(params.resolvedIp == null) {
-        "Domain route must not include resolvedIp"
-      }
+    require(params.resolvedIp == null) {
+      "Domain route must not include resolvedIp"
     }
     return ValidatedDownload(
       expectedSize = expectedSize,
       maxBytes = maxBytes,
       expectedSha256 = expectedSha256,
       downloadToken = expectedSha256 ?: sha256(params.url),
-      hostname = url.host,
       overallDeadlineSeconds = overallDeadlineSeconds,
     )
   }
@@ -455,18 +446,11 @@ internal object FirmwareArtifactStore {
       requestBuilder.header("Range", "bytes=$resumeOffset-")
     }
 
-    val client = if (params.routeType == "pinnedIp") {
-      SniPinnedTransport.createClient(
-        ip = checkNotNull(params.resolvedIp),
-        hostname = validated.hostname,
-      )
-    } else {
-      OkHttpClient.Builder()
-        .protocols(listOf(Protocol.HTTP_1_1))
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .build()
-    }
+    val client = OkHttpClient.Builder()
+      .protocols(listOf(Protocol.HTTP_1_1))
+      .followRedirects(false)
+      .followSslRedirects(false)
+      .build()
     val call = client.newCall(requestBuilder.build())
     call.timeout().timeout(
       ceil(validated.overallDeadlineSeconds * 1000).toLong(),

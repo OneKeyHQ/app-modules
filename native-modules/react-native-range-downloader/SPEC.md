@@ -1,6 +1,6 @@
 # OneKey Concurrent Download Standard (OCDS)
 
-- **Version:** 1.3
+- **Version:** 1.4
 - **Status:** Active
 - **Last updated:** 2026-08-07
 - **Applies to:** every implementation of OneKey's concurrent (multi-range)
@@ -297,6 +297,9 @@ into a trusted expectation:
   safety checks remain mandatory.
 - Without `expectedSha256`, the module computes SHA-256 only as a content-addressed
   local artifact reference. It does not prove publisher integrity or authenticity.
+- Every artifact receipt exposes `expectedSha256Verified`; it is `true` only when
+  the returned digest was compared with caller-supplied `expectedSha256`. A locally
+  computed digest returned without that expectation is explicitly marked `false`.
 - Without `expectedEntries`, archive names, types, uniqueness, non-emptiness, and
   size/expansion bounds are still validated, but entry digests are not compared
   with publisher-supplied values.
@@ -345,6 +348,8 @@ own notes until closed. **This document records no implementation's state.**
 
 ## Appendix B. Change log
 
+- **1.4** (2026-08-07) — Added an explicit receipt signal distinguishing a
+  caller-supplied SHA-256 match from a locally computed content-address digest.
 - **1.3** (2026-08-07) — Documented the optional integrity boundary for firmware
   artifact staging. Missing expectations retain transport and structural safety
   checks but delegate publisher integrity/authenticity acceptance to the caller.
