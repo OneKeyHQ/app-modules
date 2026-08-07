@@ -49,9 +49,28 @@ func firmwareArtifactDownloadKey(
   transactionId: String,
   taskId: String,
   expectedSize: Int64?,
-  expectedSha256: String?
+  expectedSha256: String?,
+  downloadToken: String
 ) -> String {
-  "\(transactionId)|\(taskId)|\(expectedSize.map(String.init) ?? "unknown")|\(expectedSha256 ?? "unknown")"
+  "\(transactionId)|\(taskId)|\(expectedSize.map(String.init) ?? "unknown")|\(expectedSha256 ?? "unknown")|\(downloadToken)"
+}
+
+enum FirmwareArchiveDiscoveredEntriesIssue: Equatable {
+  case empty
+  case duplicateName
+}
+
+func firmwareArchiveDiscoveredEntriesIssue(
+  _ entryNames: [String]
+) -> FirmwareArchiveDiscoveredEntriesIssue? {
+  guard !entryNames.isEmpty else {
+    return .empty
+  }
+  var names = Set<String>()
+  guard entryNames.allSatisfy({ names.insert($0).inserted }) else {
+    return .duplicateName
+  }
+  return nil
 }
 
 func firmwareArtifactDownloadToken(

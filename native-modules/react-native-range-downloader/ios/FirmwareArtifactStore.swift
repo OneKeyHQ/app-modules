@@ -549,7 +549,8 @@ final class FirmwareArtifactStore {
       transactionId: params.transactionId,
       taskId: params.taskId,
       expectedSize: validated.expectedSize,
-      expectedSha256: validated.expectedSha256
+      expectedSha256: validated.expectedSha256,
+      downloadToken: validated.downloadToken
     )
     markDownloadActive(validated.downloadToken, delta: 1)
     do {
@@ -1148,6 +1149,20 @@ final class FirmwareArtifactStore {
   ) throws -> [FirmwareArchiveRequirement] {
     if let expectedEntries {
       return try validateArchiveRequirements(expectedEntries)
+    }
+    if let issue = firmwareArchiveDiscoveredEntriesIssue(
+      archiveEntries.map(\.name)
+    ) {
+      switch issue {
+      case .empty:
+        throw FirmwareArtifactStoreError.archiveInvalid(
+          "Firmware archive must contain at least one entry"
+        )
+      case .duplicateName:
+        throw FirmwareArtifactStoreError.archiveInvalid(
+          "Firmware archive contains duplicate entry names"
+        )
+      }
     }
     return archiveEntries.map {
       FirmwareArchiveRequirement(

@@ -31,16 +31,54 @@ final class RangeDownloadLogicTests: XCTestCase {
       transactionId: "fwtx:first",
       taskId: "firmware",
       expectedSize: 42,
-      expectedSha256: String(repeating: "a", count: 64)
+      expectedSha256: String(repeating: "a", count: 64),
+      downloadToken: String(repeating: "a", count: 64)
     )
     let second = firmwareArtifactDownloadKey(
       transactionId: "fwtx:second",
       taskId: "firmware",
       expectedSize: 42,
-      expectedSha256: String(repeating: "a", count: 64)
+      expectedSha256: String(repeating: "a", count: 64),
+      downloadToken: String(repeating: "a", count: 64)
     )
 
     XCTAssertNotEqual(first, second)
+  }
+
+  func testFirmwareArtifactDownloadKeyIsolatesUnverifiedURLs() {
+    let first = firmwareArtifactDownloadKey(
+      transactionId: "fwtx:same",
+      taskId: "firmware",
+      expectedSize: nil,
+      expectedSha256: nil,
+      downloadToken: firmwareArtifactDownloadToken(
+        expectedSha256: nil,
+        url: "https://common.onekey-asset.com/first.bin"
+      )
+    )
+    let second = firmwareArtifactDownloadKey(
+      transactionId: "fwtx:same",
+      taskId: "firmware",
+      expectedSize: nil,
+      expectedSha256: nil,
+      downloadToken: firmwareArtifactDownloadToken(
+        expectedSha256: nil,
+        url: "https://common.onekey-asset.com/second.bin"
+      )
+    )
+
+    XCTAssertNotEqual(first, second)
+  }
+
+  func testFirmwareArchiveDiscoveredEntriesRejectEmptyAndDuplicateNames() {
+    XCTAssertEqual(firmwareArchiveDiscoveredEntriesIssue([]), .empty)
+    XCTAssertEqual(
+      firmwareArchiveDiscoveredEntriesIssue(["fw.bin", "fw.bin"]),
+      .duplicateName
+    )
+    XCTAssertNil(
+      firmwareArchiveDiscoveredEntriesIssue(["fw.bin", "resource.bin"])
+    )
   }
 
   func testFirmwareArtifactPartialFileNameIsolatesTransactions() {
