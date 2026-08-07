@@ -149,7 +149,9 @@ final class SniConnectSessionInvalidationDelegate: NSObject, URLSessionDataDeleg
       dataTask: dataTask,
       didReceive: response,
       completionHandler: completionHandler
-    ) ?? completionHandler(.cancel)
+    ) ?? completionHandler(
+      SniConnectSessionDelegatePolicy.responseDispositionWithoutForwardingDelegate
+    )
   }
 
   func urlSession(

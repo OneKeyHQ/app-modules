@@ -21,6 +21,10 @@ jobs:
         with:
           node-version: "24.x"
           registry-url: "https://registry.npmjs.org"
+      - name: Validate npm dist-tag
+        env:
+          NPM_DIST_TAG: ${{ inputs.npm_dist_tag }}
+        run: node scripts/validate-npm-dist-tag.mjs "$NPM_DIST_TAG"
       - name: Install Package
         run: corepack enable && yarn install
       - name: Publish packages
