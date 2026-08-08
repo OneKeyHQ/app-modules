@@ -1,5 +1,9 @@
 import Foundation
 
+enum SniConnectSessionDelegatePolicy {
+  static let responseDispositionWithoutForwardingDelegate: URLSession.ResponseDisposition = .allow
+}
+
 enum SniConnectCoreDiagnostics {
   static var warnSink: ((String) -> Void)?
 
