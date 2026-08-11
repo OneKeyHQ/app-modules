@@ -10,16 +10,32 @@ static const NSTimeInterval OneKeyNetworkThrottleDefaultLatencyMs = 562.5;
 static const NSInteger OneKeyNetworkThrottleDefaultThroughputBps = 102 * 1024;
 static const NSUInteger OneKeyNetworkThrottleMaxPendingDownloadBytes = 256 * 1024;
 
+static NSString *OneKeyNetworkThrottleCanonicalOrigin(NSURL *url)
+{
+  NSString *scheme = url.scheme.lowercaseString;
+  NSString *host = url.host.lowercaseString;
+  if ((!([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"])) || host.length == 0) {
+    return nil;
+  }
+  NSURLComponents *components = [[NSURLComponents alloc] init];
+  components.scheme = scheme;
+  components.host = host;
+  components.port = url.port ?: @([scheme isEqualToString:@"https"] ? 443 : 80);
+  return components.string;
+}
+
 @interface OneKeyNetworkThrottleState : NSObject
 + (NSDictionary *)currentConfig;
 + (BOOL)isEnabled;
 + (NSTimeInterval)latencyMs;
 + (NSInteger)downloadBps;
 + (NSInteger)uploadBps;
++ (BOOL)shouldBypassURL:(NSURL *)url;
 + (NSDictionary *)setEnabled:(BOOL)enabled
                     latencyMs:(NSTimeInterval)latencyMs
                    downloadBps:(NSInteger)downloadBps
-                      uploadBps:(NSInteger)uploadBps;
+                      uploadBps:(NSInteger)uploadBps
+                bypassUrlOrigins:(NSArray *)bypassUrlOrigins;
 @end
 
 @implementation OneKeyNetworkThrottleState
@@ -28,18 +44,25 @@ static atomic_bool _oneKeyNetworkThrottleEnabled = ATOMIC_VAR_INIT(false);
 static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500);
 static atomic_llong _oneKeyNetworkThrottleDownloadBps = ATOMIC_VAR_INIT(102 * 1024);
 static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024);
+static NSSet<NSString *> *_oneKeyNetworkThrottleBypassOrigins;
 
 + (NSDictionary *)currentConfig
 {
   BOOL enabled = atomic_load_explicit(&_oneKeyNetworkThrottleEnabled, memory_order_acquire);
   NSTimeInterval latencyMs =
     ((NSTimeInterval)atomic_load_explicit(&_oneKeyNetworkThrottleLatencyMicros, memory_order_relaxed)) / 1000.0;
+  NSArray<NSString *> *bypassUrlOrigins = nil;
+  @synchronized (self) {
+    bypassUrlOrigins = [[_oneKeyNetworkThrottleBypassOrigins ?: [NSSet set] allObjects]
+      sortedArrayUsingSelector:@selector(compare:)];
+  }
   return @{
     @"enabled": @(enabled),
     @"profile": OneKeyNetworkThrottleProfileSlow4G,
     @"latencyMs": @(latencyMs),
     @"downloadBps": @([self downloadBps]),
-    @"uploadBps": @([self uploadBps])
+    @"uploadBps": @([self uploadBps]),
+    @"bypassUrlOrigins": bypassUrlOrigins
   };
 }
 
@@ -63,6 +86,17 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
   return (NSInteger)atomic_load_explicit(&_oneKeyNetworkThrottleUploadBps, memory_order_relaxed);
 }
 
++ (BOOL)shouldBypassURL:(NSURL *)url
+{
+  NSString *origin = OneKeyNetworkThrottleCanonicalOrigin(url);
+  if (origin == nil) {
+    return NO;
+  }
+  @synchronized (self) {
+    return [_oneKeyNetworkThrottleBypassOrigins containsObject:origin];
+  }
+}
+
 + (NSInteger)normalizeThroughputBps:(NSInteger)throughputBps
 {
   return throughputBps > 0 ? throughputBps : OneKeyNetworkThrottleDefaultThroughputBps;
@@ -72,10 +106,29 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
                     latencyMs:(NSTimeInterval)latencyMs
                    downloadBps:(NSInteger)downloadBps
                       uploadBps:(NSInteger)uploadBps
+                bypassUrlOrigins:(NSArray *)bypassUrlOrigins
 {
   NSTimeInterval normalizedLatencyMs = latencyMs > 0 ? latencyMs : OneKeyNetworkThrottleDefaultLatencyMs;
   NSInteger normalizedDownloadBps = [self normalizeThroughputBps:downloadBps];
   NSInteger normalizedUploadBps = [self normalizeThroughputBps:uploadBps];
+  if ([bypassUrlOrigins isKindOfClass:[NSArray class]]) {
+    NSMutableSet<NSString *> *normalizedOrigins = [NSMutableSet set];
+    for (id value in bypassUrlOrigins) {
+      if (![value isKindOfClass:[NSString class]]) {
+        continue;
+      }
+      NSString *origin = OneKeyNetworkThrottleCanonicalOrigin([NSURL URLWithString:(NSString *)value]);
+      if (origin != nil) {
+        [normalizedOrigins addObject:origin];
+      }
+    }
+    @synchronized (self) {
+      NSMutableSet<NSString *> *nextOrigins =
+        [_oneKeyNetworkThrottleBypassOrigins mutableCopy] ?: [NSMutableSet set];
+      [nextOrigins unionSet:normalizedOrigins];
+      _oneKeyNetworkThrottleBypassOrigins = [nextOrigins copy];
+    }
+  }
   atomic_store_explicit(
     &_oneKeyNetworkThrottleLatencyMicros,
     (long long)llround(normalizedLatencyMs * 1000.0),
@@ -135,6 +188,9 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
     return NO;
   }
   if ([NSURLProtocol propertyForKey:OneKeyNetworkThrottleHandledKey inRequest:request]) {
+    return NO;
+  }
+  if ([OneKeyNetworkThrottleState shouldBypassURL:request.URL]) {
     return NO;
   }
   NSString *scheme = request.URL.scheme.lowercaseString;
@@ -517,7 +573,14 @@ RCT_REMAP_METHOD(setConfig, setConfig:(NSDictionary *)config resolver:(RCTPromis
     uploadBpsValue != nil && uploadBpsValue != [NSNull null]
       ? [uploadBpsValue integerValue]
       : [OneKeyNetworkThrottleState uploadBps];
-  resolve([OneKeyNetworkThrottleState setEnabled:enabled latencyMs:latencyMs downloadBps:downloadBps uploadBps:uploadBps]);
+  id bypassUrlOriginsValue = config[@"bypassUrlOrigins"];
+  NSArray *bypassUrlOrigins = [bypassUrlOriginsValue isKindOfClass:[NSArray class]] ? bypassUrlOriginsValue : nil;
+  resolve([OneKeyNetworkThrottleState
+    setEnabled:enabled
+    latencyMs:latencyMs
+    downloadBps:downloadBps
+    uploadBps:uploadBps
+    bypassUrlOrigins:bypassUrlOrigins]);
 }
 
 @end

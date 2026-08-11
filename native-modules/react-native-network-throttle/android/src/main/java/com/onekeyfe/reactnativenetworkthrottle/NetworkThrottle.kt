@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.ReadableType
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.network.OkHttpClientProvider
 import java.io.IOException
@@ -11,6 +12,9 @@ import java.io.InterruptedIOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.MediaType
 import okhttp3.OkHttpClient
@@ -36,6 +40,7 @@ internal object NetworkThrottle {
     private val downloadBps = AtomicLong(DEFAULT_THROUGHPUT_BPS.toLong())
     private val uploadBps = AtomicLong(DEFAULT_THROUGHPUT_BPS.toLong())
     private val installed = AtomicBoolean(false)
+    private val bypassUrlOrigins = AtomicReference<Set<String>>(emptySet())
 
     fun install(context: Context) {
         if (!installed.compareAndSet(false, true)) {
@@ -85,6 +90,19 @@ internal object NetworkThrottle {
         if (nextUploadBps <= 0) {
             nextUploadBps = DEFAULT_THROUGHPUT_BPS.toLong()
         }
+        if (config.hasKey("bypassUrlOrigins") && !config.isNull("bypassUrlOrigins")) {
+            val origins = config.getArray("bypassUrlOrigins")
+            val normalizedOrigins = buildSet {
+                if (origins != null) {
+                    for (index in 0 until origins.size()) {
+                        if (origins.getType(index) == ReadableType.String) {
+                            normalizeOrigin(origins.getString(index))?.let(::add)
+                        }
+                    }
+                }
+            }
+            bypassUrlOrigins.updateAndGet { current -> current + normalizedOrigins }
+        }
 
         enabled.set(nextEnabled)
         latencyNanos.set((nextLatencyMs * 1_000_000.0).toLong())
@@ -104,12 +122,30 @@ internal object NetworkThrottle {
         map.putDouble("latencyMs", latencyNanos.get() / 1_000_000.0)
         map.putDouble("downloadBps", downloadBps.get().toDouble())
         map.putDouble("uploadBps", uploadBps.get().toDouble())
+        val origins = Arguments.createArray()
+        bypassUrlOrigins.get().sorted().forEach(origins::pushString)
+        map.putArray("bypassUrlOrigins", origins)
         return map
     }
 
     private fun getLatencyNanos(): Long = if (enabled.get()) latencyNanos.get() else 0L
     private fun getDownloadBps(): Long = if (enabled.get()) downloadBps.get() else 0L
     private fun getUploadBps(): Long = if (enabled.get()) uploadBps.get() else 0L
+
+    private fun canonicalOrigin(url: HttpUrl): String =
+        HttpUrl.Builder()
+            .scheme(url.scheme)
+            .host(url.host)
+            .port(url.port)
+            .build()
+            .toString()
+            .removeSuffix("/")
+
+    private fun normalizeOrigin(value: String?): String? =
+        value?.toHttpUrlOrNull()?.let(::canonicalOrigin)
+
+    private fun shouldBypass(requestUrl: HttpUrl): Boolean =
+        bypassUrlOrigins.get().contains(canonicalOrigin(requestUrl))
 
     private fun sleepNanos(delayNanos: Long) {
         if (delayNanos <= 0) {
@@ -201,9 +237,12 @@ internal object NetworkThrottle {
 
     private class ThrottleInterceptor : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
+            val request = chain.request()
+            if (shouldBypass(request.url)) {
+                return chain.proceed(request)
+            }
             val requestStartNanos = System.nanoTime()
             val delayNanos = getLatencyNanos()
-            val request = chain.request()
             val requestBody = request.body
             val activeUploadBps = getUploadBps()
             val throttledRequest =
