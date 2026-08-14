@@ -64,29 +64,42 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     }
   }
 
+  // Last text JS requested (cached even when the update is rejected as
+  // stale): a sanitize-to-same-string edit is acknowledged with a count-only
+  // prop update, and the reapply below is what rolls the view back.
+  private var lastJsText: String? = null
+
   // Props
   override var mostRecentEventCount: Double?
     get() = textUpdateEventCounter.mostRecentEventCount?.toDouble()
     set(value) {
       // null keeps the caller out of stale-update filtering (legacy callers
       // that never send the count must not have their text updates dropped).
-      textUpdateEventCounter.mostRecentEventCount = value?.toInt()
+      if (textUpdateEventCounter.acknowledge(value?.toInt())) {
+        lastJsText?.let { applyJsText(it) }
+      }
     }
 
   override var text: String?
     get() = inputView.text?.toString()
     set(value) {
-      if (isDisposed || !textUpdateEventCounter.canApplyJsUpdate()) return
-      val nextText = value ?: ""
-      if (inputView.text?.toString() == nextText) return
-      isUpdatingFromJS = true
-      inputView.removeTextChangedListener(textWatcher)
-      inputView.setText(nextText)
-      inputView.setSelection(inputView.text?.length ?: 0)
-      inputView.addTextChangedListener(textWatcher)
-      isUpdatingFromJS = false
-      recalculateFontSize()
+      if (isDisposed) return
+      lastJsText = value ?: ""
+      if (!textUpdateEventCounter.canApplyJsUpdate()) return
+      applyJsText(value ?: "")
     }
+
+  private fun applyJsText(nextText: String) {
+    if (isDisposed) return
+    if (inputView.text?.toString() == nextText) return
+    isUpdatingFromJS = true
+    inputView.removeTextChangedListener(textWatcher)
+    inputView.setText(nextText)
+    inputView.setSelection(inputView.text?.length ?: 0)
+    inputView.addTextChangedListener(textWatcher)
+    isUpdatingFromJS = false
+    recalculateFontSize()
+  }
 
   override var prefix: String?
     get() = prefixView.text?.toString()

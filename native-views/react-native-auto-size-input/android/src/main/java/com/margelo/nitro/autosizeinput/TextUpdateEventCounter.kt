@@ -18,4 +18,14 @@ internal class TextUpdateEventCounter {
     val acknowledged = mostRecentEventCount ?: return true
     return acknowledged >= nativeEventCount
   }
+
+  // Records the JS acknowledgement and reports whether the cached controlled
+  // text must be reapplied now: when JS sanitizes an edit back to the SAME
+  // string, React re-sends only the count (unchanged props are not re-sent),
+  // so catching up on a count-only update is the signal to roll the view back
+  // to the last requested JS text.
+  fun acknowledge(count: Int?): Boolean {
+    mostRecentEventCount = count
+    return count != null && canApplyJsUpdate()
+  }
 }

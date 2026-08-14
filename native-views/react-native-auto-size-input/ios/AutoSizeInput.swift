@@ -27,21 +27,40 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
   // mostRecentEventCount do not participate and their updates always apply.
   private var nativeEventCount = 0
 
-  var mostRecentEventCount: Double?
+  // Last text JS requested (cached even when the update is rejected as
+  // stale): a sanitize-to-same-string edit is acknowledged with a count-only
+  // prop update, and the reapply in mostRecentEventCount.didSet is what rolls
+  // the view back.
+  private var lastJsText: String?
+
+  var mostRecentEventCount: Double? {
+    didSet {
+      // React does not re-send an unchanged text prop, so a count-only
+      // acknowledgement that catches up must reapply the cached JS text.
+      guard mostRecentEventCount != nil, canApplyJsUpdate,
+            let pending = lastJsText, pending != currentInputText else { return }
+      text = pending
+    }
+  }
 
   private var canApplyJsUpdate: Bool {
     guard let acknowledged = mostRecentEventCount else { return true }
     return Int(acknowledged) >= nativeEventCount
   }
 
+  private var currentInputText: String {
+    (multiline == true ? multiLineInput.text : singleLineInput.text) ?? ""
+  }
+
   var text: String? {
     didSet {
       guard !isUpdatingFromJS else { return }
+      lastJsText = text ?? ""
       guard canApplyJsUpdate else {
         // Stale controlled update: keep the freshly typed value and realign
         // the stored prop with what is actually displayed. (Assigning here
         // does not re-trigger didSet.)
-        text = multiline == true ? multiLineInput.text : singleLineInput.text
+        text = currentInputText
         return
       }
       isUpdatingFromJS = true

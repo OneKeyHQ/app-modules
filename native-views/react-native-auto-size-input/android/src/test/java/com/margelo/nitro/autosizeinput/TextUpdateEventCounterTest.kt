@@ -27,6 +27,29 @@ class TextUpdateEventCounterTest {
   }
 
   @Test
+  fun countOnlyAcknowledgementRequestsReapplyOnceCaughtUp() {
+    // Sanitize-to-same-string edit: the user's rejected character bumped the
+    // native count, JS keeps its (unchanged) text and acknowledges via the
+    // count prop only — catching up must request a reapply of the cached
+    // JS text, a stale acknowledgement must not.
+    val counter = TextUpdateEventCounter()
+    counter.recordNativeChange()
+    counter.recordNativeChange()
+
+    assertFalse(counter.acknowledge(1))
+    assertTrue(counter.acknowledge(2))
+  }
+
+  @Test
+  fun nullAcknowledgementNeverRequestsReapply() {
+    val counter = TextUpdateEventCounter()
+    counter.recordNativeChange()
+
+    assertFalse(counter.acknowledge(null))
+    assertTrue(counter.canApplyJsUpdate())
+  }
+
+  @Test
   fun optsIntoStaleFilteringOnlyOnceACountIsSupplied() {
     val counter = TextUpdateEventCounter()
     counter.recordNativeChange()
