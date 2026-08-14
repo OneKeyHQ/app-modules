@@ -8,7 +8,6 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Looper
 import android.text.Editable
 import android.text.InputType
-import android.view.inputmethod.EditorInfo
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextWatcher
@@ -16,6 +15,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.TextView
 import com.facebook.proguard.annotations.DoNotStrip
@@ -36,6 +36,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
   private var isDisposed = false
   private var maxFontSizeProp: Double? = null
   private var minFontSizeProp: Double? = null
+  private val textUpdateEventCounter = TextUpdateEventCounter()
 
   // Container view
   override val view: View = object : ViewGroup(context) {
@@ -57,19 +58,28 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
     override fun afterTextChanged(s: Editable?) {
       if (isUpdatingFromJS || isDisposed) return
+      textUpdateEventCounter.recordNativeChange()
       recalculateFontSize()
       onChangeText?.invoke(s?.toString() ?: "")
     }
   }
 
   // Props
+  override var mostRecentEventCount: Double?
+    get() = textUpdateEventCounter.mostRecentEventCount.toDouble()
+    set(value) {
+      textUpdateEventCounter.mostRecentEventCount = value?.toInt() ?: 0
+    }
+
   override var text: String?
     get() = inputView.text?.toString()
     set(value) {
-      if (isDisposed) return
+      if (isDisposed || !textUpdateEventCounter.canApplyJsUpdate()) return
+      val nextText = value ?: ""
+      if (inputView.text?.toString() == nextText) return
       isUpdatingFromJS = true
       inputView.removeTextChangedListener(textWatcher)
-      inputView.setText(value ?: "")
+      inputView.setText(nextText)
       inputView.setSelection(inputView.text?.length ?: 0)
       inputView.addTextChangedListener(textWatcher)
       isUpdatingFromJS = false

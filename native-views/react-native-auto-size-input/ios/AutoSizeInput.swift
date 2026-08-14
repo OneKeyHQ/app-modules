@@ -20,6 +20,8 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
   var view: UIView = UIView()
 
   // MARK: - Props
+  var mostRecentEventCount: Double?
+
   var text: String? {
     didSet {
       guard !isUpdatingFromJS else { return }
