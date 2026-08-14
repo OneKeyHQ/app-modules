@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-ping",
-  "version": "3.0.81-alpha.8",
+  "version": "3.0.82",
   "description": "react-native-ping TurboModule for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -89,6 +89,5 @@
         "RNReactNativePing": "Ping"
       }
     }
-  },
-  "stableVersion": "3.0.80"
+  }
 }
