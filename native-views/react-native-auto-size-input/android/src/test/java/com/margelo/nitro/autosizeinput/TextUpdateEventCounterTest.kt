@@ -27,6 +27,27 @@ class TextUpdateEventCounterTest {
   }
 
   @Test
+  fun sanitizesAcknowledgementsToExactNonNegativeInts() {
+    // Valid: exact non-negative integral doubles in the Int range.
+    assertEquals(0, TextUpdateEventCounter.sanitizeAcknowledgement(0.0))
+    assertEquals(3, TextUpdateEventCounter.sanitizeAcknowledgement(3.0))
+    assertEquals(
+      Int.MAX_VALUE,
+      TextUpdateEventCounter.sanitizeAcknowledgement(Int.MAX_VALUE.toDouble()),
+    )
+    // Everything else degrades to uncounted — fractional values must NOT be
+    // truncated or rounded (1.6 with a native count of 2 would otherwise be
+    // stale on Android yet current on iOS).
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(null))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(1.6))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(-1.0))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(Double.NaN))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(Double.POSITIVE_INFINITY))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(Double.NEGATIVE_INFINITY))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(Int.MAX_VALUE.toDouble() + 1.0))
+  }
+
+  @Test
   fun countOnlyAcknowledgementRequestsReapplyOnceCaughtUp() {
     // Sanitize-to-same-string edit: the user's rejected character bumped the
     // native count, JS keeps its (unchanged) text and acknowledges via the

@@ -44,11 +44,18 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
   }
 
   // JS supplies the count as a Double; Int(_:) traps on NaN/infinity/
-  // out-of-range, so validate via Int(exactly:) and treat a malformed
-  // counter as uncounted (nil) instead of crashing.
+  // out-of-range. Valid acknowledgements are exact, non-negative values in
+  // the Android Int range — identical to the Android sanitization, so the
+  // same prop value can never be stale on one platform and current on the
+  // other. Anything else degrades to uncounted (nil).
   private var acknowledgedEventCount: Int? {
-    guard let acknowledged = mostRecentEventCount else { return nil }
-    return Int(exactly: acknowledged.rounded())
+    guard let acknowledged = mostRecentEventCount,
+          acknowledged.isFinite,
+          acknowledged >= 0,
+          acknowledged <= Double(Int32.max),
+          acknowledged.rounded(.down) == acknowledged
+    else { return nil }
+    return Int(acknowledged)
   }
 
   private var canApplyJsUpdate: Bool {

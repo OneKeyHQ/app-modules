@@ -75,9 +75,9 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     set(value) {
       // null keeps the caller out of stale-update filtering (legacy callers
       // that never send the count must not have their text updates dropped).
-      // Non-finite doubles (NaN would coerce to 0 and wrongly opt the caller
-      // in) are treated as uncounted too, matching iOS.
-      val count = value?.takeIf { it.isFinite() }?.toInt()
+      // Sanitization (finite, integral, non-negative, Int-range — identical
+      // to iOS) also degrades malformed values to uncounted.
+      val count = TextUpdateEventCounter.sanitizeAcknowledgement(value)
       if (textUpdateEventCounter.acknowledge(count)) {
         lastJsText?.let { applyJsText(it) }
       }

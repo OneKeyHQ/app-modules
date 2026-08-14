@@ -1,6 +1,21 @@
 package com.margelo.nitro.autosizeinput
 
+import kotlin.math.floor
+
 internal class TextUpdateEventCounter {
+  companion object {
+    // Valid acknowledgements are exact, non-negative Int values; anything
+    // else from the JS Double prop (NaN, infinities, fractional, negative,
+    // beyond Int.MAX_VALUE) degrades to null = uncounted. Must stay in
+    // lockstep with the iOS validation so the same prop value can never be
+    // stale on one platform and current on the other.
+    fun sanitizeAcknowledgement(value: Double?): Int? {
+      if (value == null || !value.isFinite()) return null
+      if (value < 0 || value > Int.MAX_VALUE.toDouble()) return null
+      if (value != floor(value)) return null
+      return value.toInt()
+    }
+  }
   var nativeEventCount: Int = 0
     private set
 
