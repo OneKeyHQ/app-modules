@@ -37,15 +37,23 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     didSet {
       // React does not re-send an unchanged text prop, so a count-only
       // acknowledgement that catches up must reapply the cached JS text.
-      guard mostRecentEventCount != nil, canApplyJsUpdate,
+      guard acknowledgedEventCount != nil, canApplyJsUpdate,
             let pending = lastJsText, pending != currentInputText else { return }
       text = pending
     }
   }
 
+  // JS supplies the count as a Double; Int(_:) traps on NaN/infinity/
+  // out-of-range, so validate via Int(exactly:) and treat a malformed
+  // counter as uncounted (nil) instead of crashing.
+  private var acknowledgedEventCount: Int? {
+    guard let acknowledged = mostRecentEventCount else { return nil }
+    return Int(exactly: acknowledged.rounded())
+  }
+
   private var canApplyJsUpdate: Bool {
-    guard let acknowledged = mostRecentEventCount else { return true }
-    return Int(acknowledged) >= nativeEventCount
+    guard let acknowledged = acknowledgedEventCount else { return true }
+    return acknowledged >= nativeEventCount
   }
 
   private var currentInputText: String {
