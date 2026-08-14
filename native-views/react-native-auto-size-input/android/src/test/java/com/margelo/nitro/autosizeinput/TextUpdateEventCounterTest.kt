@@ -14,6 +14,33 @@ class TextUpdateEventCounterTest {
   }
 
   @Test
+  fun allowsUncountedProgrammaticResetAfterNativeEdits() {
+    // Regression: callers that never supply mostRecentEventCount must keep
+    // full control — a native edit followed by an uncounted reset (clear,
+    // sanitization, form restore) has to apply.
+    val counter = TextUpdateEventCounter()
+    repeat(3) {
+      counter.recordNativeChange()
+    }
+
+    assertTrue(counter.canApplyJsUpdate())
+  }
+
+  @Test
+  fun optsIntoStaleFilteringOnlyOnceACountIsSupplied() {
+    val counter = TextUpdateEventCounter()
+    counter.recordNativeChange()
+
+    assertTrue(counter.canApplyJsUpdate())
+
+    counter.mostRecentEventCount = 0
+    assertFalse(counter.canApplyJsUpdate())
+
+    counter.mostRecentEventCount = 1
+    assertTrue(counter.canApplyJsUpdate())
+  }
+
+  @Test
   fun rejectsJsUpdatesThatAreOlderThanNativeInput() {
     val counter = TextUpdateEventCounter()
     counter.recordNativeChange()

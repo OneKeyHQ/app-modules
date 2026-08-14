@@ -20,11 +20,30 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
   var view: UIView = UIView()
 
   // MARK: - Props
+  // Mirrors Android's TextUpdateEventCounter: every user edit bumps
+  // nativeEventCount, and a controlled `text` update only applies once the
+  // caller's acknowledged count has caught up — otherwise a delayed JS value
+  // would overwrite newer typed input. Callers that never supply
+  // mostRecentEventCount do not participate and their updates always apply.
+  private var nativeEventCount = 0
+
   var mostRecentEventCount: Double?
+
+  private var canApplyJsUpdate: Bool {
+    guard let acknowledged = mostRecentEventCount else { return true }
+    return Int(acknowledged) >= nativeEventCount
+  }
 
   var text: String? {
     didSet {
       guard !isUpdatingFromJS else { return }
+      guard canApplyJsUpdate else {
+        // Stale controlled update: keep the freshly typed value and realign
+        // the stored prop with what is actually displayed. (Assigning here
+        // does not re-trigger didSet.)
+        text = multiline == true ? multiLineInput.text : singleLineInput.text
+        return
+      }
       isUpdatingFromJS = true
       if multiline == true {
         multiLineInput.text = text ?? ""
@@ -549,6 +568,7 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
 
   fileprivate func handleTextFieldChange(_ textField: UITextField) {
     guard !isUpdatingFromJS else { return }
+    nativeEventCount += 1
     view.setNeedsLayout()
     recalculateFontSize()
     onChangeText?(textField.text ?? "")
@@ -556,6 +576,7 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
 
   fileprivate func handleTextViewChange(_ textView: UITextView) {
     guard !isUpdatingFromJS else { return }
+    nativeEventCount += 1
     view.setNeedsLayout()
     recalculateFontSize()
     onChangeText?(textView.text ?? "")

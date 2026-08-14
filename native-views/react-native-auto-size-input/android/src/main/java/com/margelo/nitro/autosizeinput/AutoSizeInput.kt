@@ -66,9 +66,11 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
 
   // Props
   override var mostRecentEventCount: Double?
-    get() = textUpdateEventCounter.mostRecentEventCount.toDouble()
+    get() = textUpdateEventCounter.mostRecentEventCount?.toDouble()
     set(value) {
-      textUpdateEventCounter.mostRecentEventCount = value?.toInt() ?: 0
+      // null keeps the caller out of stale-update filtering (legacy callers
+      // that never send the count must not have their text updates dropped).
+      textUpdateEventCounter.mostRecentEventCount = value?.toInt()
     }
 
   override var text: String?
