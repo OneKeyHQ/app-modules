@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-sni-connect",
-  "version": "3.0.81-alpha.9",
+  "version": "3.0.82",
   "description": "A React Native library for SNI-based HTTP requests with DNS caching and request management",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -161,6 +161,5 @@
     "languages": "kotlin-objc",
     "type": "turbo-module",
     "version": "0.54.8"
-  },
-  "stableVersion": "3.0.80"
+  }
 }

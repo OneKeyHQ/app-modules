@@ -2797,8 +2797,8 @@ __metadata:
     prettier: "npm:2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
-    react-native-mmkv: "npm:^4.1.2"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-mmkv: "npm:4.2.0"
+    react-native-nitro-modules: "npm:0.35.2"
     react-native-safe-area-context: "npm:^5.5.2"
     react-native-screens: "npm:^4.24.0"
     react-test-renderer: "npm:19.2.0"
@@ -2827,19 +2827,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -2896,19 +2896,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -2966,19 +2966,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3036,19 +3036,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3072,19 +3072,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3108,19 +3108,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3144,19 +3144,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3195,19 +3195,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3231,19 +3231,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3300,19 +3300,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3336,19 +3336,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3405,19 +3405,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3555,19 +3555,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3591,19 +3591,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3627,19 +3627,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3678,19 +3678,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3700,16 +3700,16 @@ __metadata:
   dependencies:
     "@react-native/babel-preset": "npm:0.83.0"
     del-cli: "npm:^6.0.0"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3733,19 +3733,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3769,19 +3769,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3838,19 +3838,19 @@ __metadata:
     eslint-plugin-prettier: "npm:^5.5.4"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.13"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -3944,16 +3944,16 @@ __metadata:
   resolution: "@onekeyfe/react-native-zip-archive@workspace:native-modules/react-native-zip-archive"
   dependencies:
     "@react-native/babel-preset": "npm:0.83.0"
-    nitrogen: "npm:0.31.10"
+    nitrogen: "npm:0.35.2"
     react: "npm:19.2.0"
     react-native: "patch:react-native@npm%3A0.83.0#~/.yarn/patches/react-native-npm-0.83.0-577d0f2d83.patch"
     react-native-builder-bob: "npm:^0.40.17"
-    react-native-nitro-modules: "npm:0.33.2"
+    react-native-nitro-modules: "npm:0.35.2"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-    react-native-nitro-modules: 0.33.2
+    react-native-nitro-modules: 0.35.2
   languageName: unknown
   linkType: soft
 
@@ -10703,18 +10703,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nitrogen@npm:0.31.10":
-  version: 0.31.10
-  resolution: "nitrogen@npm:0.31.10"
+"nitrogen@npm:0.35.2":
+  version: 0.35.2
+  resolution: "nitrogen@npm:0.35.2"
   dependencies:
     chalk: "npm:^5.3.0"
-    react-native-nitro-modules: "npm:^0.31.10"
+    react-native-nitro-modules: "npm:^0.35.2"
     ts-morph: "npm:^27.0.0"
     yargs: "npm:^18.0.0"
     zod: "npm:^4.0.5"
   bin:
     nitrogen: lib/index.js
-  checksum: 10/a75fc9619df65c6ec7d2ce982d015ec47b81862a42ced16f9b6bba8192f17ecb0c5fa497a5e809e64cbcfd1f498d4c764bdf3a58c4e172d59f8d64da70af831a
+  checksum: 10/2925b3e65f67a946efd3cdcc69a6ee229a53984114fb7f28079de282e34d6d163067d75facfe9e98ead9ace844ebfd765cccd888fe3286bd1718ee7ed4054f60
   languageName: node
   linkType: hard
 
@@ -11688,14 +11688,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-mmkv@npm:^4.1.2":
-  version: 4.1.2
-  resolution: "react-native-mmkv@npm:4.1.2"
+"react-native-mmkv@npm:4.2.0":
+  version: 4.2.0
+  resolution: "react-native-mmkv@npm:4.2.0"
   peerDependencies:
     react: "*"
     react-native: "*"
     react-native-nitro-modules: "*"
-  checksum: 10/45f990de6d58acc3a76c82fe0dbe8e4922116c12433d0bbd0813cb0d825c9201dfee5f470c9118b017b24fcdede336cbd6eb2a0186292d7fea1c11d4407d5fe0
+  checksum: 10/8f0e919eb3add26d47a9d5e171672928c322c89ef92108375ffcc2829d40a5d1727f6b9bed771d1fc7abf76f80695e522d47699c8a891c36a98b04afd3a8d1d1
   languageName: node
   linkType: hard
 
@@ -11709,23 +11709,23 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-nitro-modules@npm:0.33.2":
-  version: 0.33.2
-  resolution: "react-native-nitro-modules@npm:0.33.2"
+"react-native-nitro-modules@npm:0.35.2":
+  version: 0.35.2
+  resolution: "react-native-nitro-modules@npm:0.35.2"
   peerDependencies:
     react: "*"
     react-native: "*"
-  checksum: 10/fece339c9f69b256d4e18e6fbf29bc52a16e2e8ea7e70551d8265dbaf455402a67fd8ca9f4e8abe5b6e6d3e33bf6c598d4e980dbbed00a3b791f6fa49c98be17
+  checksum: 10/22977e5e22c63fb91526c90fa59fcfe5c7f97978c583400f433a1d3ef8ee32fbceb0ad1b009b5bf0d1794e94a11716ad752fd7702c2d67fc808a0256c6e35488
   languageName: node
   linkType: hard
 
-"react-native-nitro-modules@npm:^0.31.10":
-  version: 0.31.10
-  resolution: "react-native-nitro-modules@npm:0.31.10"
+"react-native-nitro-modules@npm:^0.35.2":
+  version: 0.35.10
+  resolution: "react-native-nitro-modules@npm:0.35.10"
   peerDependencies:
     react: "*"
     react-native: "*"
-  checksum: 10/b0dabcc7c251660d39c712898a2147fcb14bf99cbf2a1a4ff0bc2c8798e4d72b4d3a2ee03e684a1454aaee6a17d665ab38c3f445234a2e17aced32b776ecac38
+  checksum: 10/b0600cea67c37ca10e47d3f80ad9fef5c24451a5b5e7a2f92ca81e0e51279323371f8bd42a3ce82e6bf1c5fffe53409644ee5c49fe6ccab09e41977ce8e28884
   languageName: node
   linkType: hard
 

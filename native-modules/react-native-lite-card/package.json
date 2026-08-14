@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-lite-card",
-  "version": "3.0.81-alpha.8",
+  "version": "3.0.82",
   "description": "lite card",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -168,6 +168,5 @@
       "release-it"
     ],
     "version": "0.56.0"
-  },
-  "stableVersion": "3.0.80"
+  }
 }

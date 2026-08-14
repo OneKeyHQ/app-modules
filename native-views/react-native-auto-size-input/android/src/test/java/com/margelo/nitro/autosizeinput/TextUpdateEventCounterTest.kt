@@ -1,0 +1,147 @@
+package com.margelo.nitro.autosizeinput
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class TextUpdateEventCounterTest {
+  @Test
+  fun allowsJsUpdatesBeforeNativeInput() {
+    val counter = TextUpdateEventCounter()
+
+    assertTrue(counter.canApplyJsUpdate())
+  }
+
+  @Test
+  fun allowsUncountedProgrammaticResetAfterNativeEdits() {
+    // Regression: callers that never supply mostRecentEventCount must keep
+    // full control — a native edit followed by an uncounted reset (clear,
+    // sanitization, form restore) has to apply.
+    val counter = TextUpdateEventCounter()
+    repeat(3) {
+      counter.recordNativeChange()
+    }
+
+    assertTrue(counter.canApplyJsUpdate())
+  }
+
+  @Test
+  fun sanitizesAcknowledgementsToExactNonNegativeInts() {
+    // Valid: exact non-negative integral doubles in the Int range.
+    assertEquals(0, TextUpdateEventCounter.sanitizeAcknowledgement(0.0))
+    assertEquals(3, TextUpdateEventCounter.sanitizeAcknowledgement(3.0))
+    assertEquals(
+      Int.MAX_VALUE,
+      TextUpdateEventCounter.sanitizeAcknowledgement(Int.MAX_VALUE.toDouble()),
+    )
+    // Everything else degrades to uncounted — fractional values must NOT be
+    // truncated or rounded (1.6 with a native count of 2 would otherwise be
+    // stale on Android yet current on iOS).
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(null))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(1.6))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(-1.0))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(Double.NaN))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(Double.POSITIVE_INFINITY))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(Double.NEGATIVE_INFINITY))
+    assertEquals(null, TextUpdateEventCounter.sanitizeAcknowledgement(Int.MAX_VALUE.toDouble() + 1.0))
+  }
+
+  @Test
+  fun countOnlyAcknowledgementRequestsReapplyOnceCaughtUp() {
+    // Sanitize-to-same-string edit: the user's rejected character bumped the
+    // native count, JS keeps its (unchanged) text and acknowledges via the
+    // count prop only — catching up must request a reapply of the cached
+    // JS text, a stale acknowledgement must not.
+    val counter = TextUpdateEventCounter()
+    counter.recordNativeChange()
+    counter.recordNativeChange()
+
+    assertFalse(counter.acknowledge(1))
+    assertTrue(counter.acknowledge(2))
+  }
+
+  @Test
+  fun nullAcknowledgementNeverRequestsReapply() {
+    val counter = TextUpdateEventCounter()
+    counter.recordNativeChange()
+
+    assertFalse(counter.acknowledge(null))
+    assertTrue(counter.canApplyJsUpdate())
+  }
+
+  @Test
+  fun optsIntoStaleFilteringOnlyOnceACountIsSupplied() {
+    val counter = TextUpdateEventCounter()
+    counter.recordNativeChange()
+
+    assertTrue(counter.canApplyJsUpdate())
+
+    counter.mostRecentEventCount = 0
+    assertFalse(counter.canApplyJsUpdate())
+
+    counter.mostRecentEventCount = 1
+    assertTrue(counter.canApplyJsUpdate())
+  }
+
+  @Test
+  fun rejectsJsUpdatesThatAreOlderThanNativeInput() {
+    val counter = TextUpdateEventCounter()
+    counter.recordNativeChange()
+    counter.recordNativeChange()
+    counter.mostRecentEventCount = 1
+
+    assertFalse(counter.canApplyJsUpdate())
+  }
+
+  @Test
+  fun allowsTheLatestAcknowledgedJsUpdate() {
+    val counter = TextUpdateEventCounter()
+    counter.recordNativeChange()
+    counter.recordNativeChange()
+    counter.mostRecentEventCount = 2
+
+    assertTrue(counter.canApplyJsUpdate())
+  }
+
+  @Test
+  fun tracksEveryNativeTextChange() {
+    val counter = TextUpdateEventCounter()
+
+    repeat(10) {
+      counter.recordNativeChange()
+    }
+
+    assertEquals(10, counter.nativeEventCount)
+  }
+
+  @Test
+  fun allowsAnAcknowledgedDeletionWithoutNewerInput() {
+    val counter = TextUpdateEventCounter()
+    repeat(4) {
+      counter.recordNativeChange()
+    }
+    counter.mostRecentEventCount = 4
+    counter.recordNativeChange()
+    counter.mostRecentEventCount = 5
+
+    assertTrue(counter.canApplyJsUpdate())
+  }
+
+  @Test
+  fun rejectsAStaleDeletionUpdateAfterTheNextDigit() {
+    val counter = TextUpdateEventCounter()
+    repeat(4) {
+      counter.recordNativeChange()
+    }
+    counter.mostRecentEventCount = 4
+    counter.recordNativeChange()
+    counter.recordNativeChange()
+    counter.mostRecentEventCount = 5
+
+    assertFalse(counter.canApplyJsUpdate())
+
+    counter.mostRecentEventCount = 6
+    assertTrue(counter.canApplyJsUpdate())
+  }
+}
