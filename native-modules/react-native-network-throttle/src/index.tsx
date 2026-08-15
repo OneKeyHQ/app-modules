@@ -8,7 +8,7 @@ export type NetworkThrottleConfig = {
   latencyMs: number;
   downloadBps: number;
   uploadBps: number;
-  bypassUrlOrigins: string[];
+  throttleUrlHosts: string[];
 };
 
 export const NETWORK_THROTTLE_SLOW_4G_LATENCY_MS = 562.5;
@@ -19,9 +19,9 @@ export const NETWORK_THROTTLE_SLOW_4G_UPLOAD_BPS = NETWORK_THROTTLE_102_KIB_BPS;
 
 type NativeNetworkThrottleConfig = Omit<
   NetworkThrottleConfig,
-  'bypassUrlOrigins'
+  'throttleUrlHosts'
 > & {
-  bypassUrlOrigins?: string[];
+  throttleUrlHosts?: string[];
 };
 
 type NativeNetworkThrottleModule = {
@@ -52,7 +52,7 @@ function normalizeNativeConfig(
 ): NetworkThrottleConfig {
   return {
     ...config,
-    bypassUrlOrigins: config.bypassUrlOrigins ?? [],
+    throttleUrlHosts: config.throttleUrlHosts ?? [],
   };
 }
 
@@ -70,8 +70,8 @@ export const NetworkThrottle: NetworkThrottleModule = nativeModule
           latencyMs: config.latencyMs ?? currentConfig.latencyMs,
           downloadBps: config.downloadBps ?? currentConfig.downloadBps,
           uploadBps: config.uploadBps ?? currentConfig.uploadBps,
-          bypassUrlOrigins:
-            config.bypassUrlOrigins ?? currentConfig.bypassUrlOrigins ?? [],
+          throttleUrlHosts:
+            config.throttleUrlHosts ?? currentConfig.throttleUrlHosts ?? [],
         });
         return normalizeNativeConfig(nativeConfig);
       },

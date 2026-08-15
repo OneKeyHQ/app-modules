@@ -5,16 +5,13 @@ React Native native network throttle for OneKey iOS and Android development sett
 Current scope is RN HTTP(S) latency and upload/download throughput. It does not
 emulate offline mode, WebView traffic, or third-party native networking stacks.
 
-`bypassUrlOrigins` excludes exact HTTP(S) origins from all throttling. Origins
-are canonicalized with their effective port and registered additively for the
-lifetime of the native process. This allows independently initialized React
-Native runtimes to register local development servers without clearing each
-other's configuration.
+`throttleUrlHosts` is an allowlist: when it is non-empty, only requests whose
+host matches are throttled, and everything else is left untouched. An entry is
+either an exact host or `*.example.com`, which matches sub-domains at any depth
+but not the bare apex. An empty allowlist throttles nothing.
 
-Known limitation: on Android the bypass decision is made once per logical
-request (OkHttp application interceptor), so a cross-origin redirect keeps the
-initial request's bypass decision; iOS re-evaluates each request. Exact-origin
-bypasses target local development servers, which do not redirect across
-origins.
+Hosts are registered additively for the lifetime of the native process, so
+independently initialized React Native runtimes cannot clear each other's
+configuration.
 
 This package only owns native request throttling. Product settings, persistence, and UI controls should remain in the host app.

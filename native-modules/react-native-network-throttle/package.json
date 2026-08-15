@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-network-throttle",
-  "version": "3.0.83-alpha.0",
+  "version": "3.0.84-alpha.0",
   "description": "react-native-network-throttle",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
