@@ -140,7 +140,7 @@ internal object NetworkThrottle {
      * patterns the desktop app installs, so both platforms throttle the same
      * traffic.
      */
-    private fun matchesHost(host: String, pattern: String): Boolean =
+    internal fun matchesHost(host: String, pattern: String): Boolean =
         if (pattern.startsWith("*.")) {
             host.endsWith(pattern.substring(1))
         } else {

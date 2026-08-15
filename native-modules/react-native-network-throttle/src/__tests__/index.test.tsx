@@ -77,27 +77,3 @@ describe('NetworkThrottle', () => {
     expect(mockSetConfig).toHaveBeenCalledWith(expectedConfig);
   });
 });
-
-// The native side implements this matching in Kotlin and Objective-C; this
-// pins the contract both must satisfy, and mirrors the desktop URL patterns.
-describe('throttle host matching contract', () => {
-  const matches = (host: string, pattern: string) =>
-    pattern.startsWith('*.')
-      ? host.endsWith(pattern.slice(1))
-      : host === pattern;
-
-  it.each([
-    ['wallet.onekeycn.com', '*.onekeycn.com', true],
-    ['a.b.onekeycn.com', '*.onekeycn.com', true],
-    ['uni.onekey-asset.com', '*.onekey-asset.com', true],
-    ['app-assets.onekey.so', 'app-assets.onekey.so', true],
-    // the bare apex is not a sub-domain
-    ['onekeycn.com', '*.onekeycn.com', false],
-    // look-alike hosts must not match
-    ['evil-onekeycn.com', '*.onekeycn.com', false],
-    ['mainnet.infura.io', '*.onekeycn.com', false],
-    ['localhost', '*.onekeycn.com', false],
-  ])('%s vs %s -> %s', (host, pattern, expected) => {
-    expect(matches(host, pattern)).toBe(expected);
-  });
-});
