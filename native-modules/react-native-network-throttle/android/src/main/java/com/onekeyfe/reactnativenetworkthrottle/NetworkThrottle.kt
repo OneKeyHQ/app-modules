@@ -144,8 +144,15 @@ internal object NetworkThrottle {
     private fun normalizeOrigin(value: String?): String? =
         value?.toHttpUrlOrNull()?.let(::canonicalOrigin)
 
-    private fun shouldBypass(requestUrl: HttpUrl): Boolean =
-        bypassUrlOrigins.get().contains(canonicalOrigin(requestUrl))
+    private fun shouldBypass(requestUrl: HttpUrl): Boolean {
+        // The interceptor is installed in every build; skip the per-request
+        // canonicalization allocation while no origin is registered.
+        val origins = bypassUrlOrigins.get()
+        if (origins.isEmpty()) {
+            return false
+        }
+        return origins.contains(canonicalOrigin(requestUrl))
+    }
 
     private fun sleepNanos(delayNanos: Long) {
         if (delayNanos <= 0) {
