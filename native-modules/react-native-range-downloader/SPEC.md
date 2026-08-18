@@ -1,11 +1,12 @@
 # OneKey Concurrent Download Standard (OCDS)
 
-- **Version:** 1.2
+- **Version:** 1.4
 - **Status:** Active
-- **Last updated:** 2026-06-20
+- **Last updated:** 2026-08-07
 - **Applies to:** every implementation of OneKey's concurrent (multi-range)
   downloader — iOS (Swift), Android (Kotlin), Desktop (Node/Electron), and any
-  future platform.
+  future platform — plus the firmware artifact staging APIs described under the
+  trust boundary.
 
 This document defines the behavior a concurrent downloader is expected to
 provide. It is platform-agnostic: implementations differ in language and
@@ -285,6 +286,28 @@ existing obligations made explicit here, not new mechanism inside this module:
 - Artifacts are stored in an app-private location.
 - Anti-rollback / version-monotonicity is the consumer's responsibility.
 
+### Firmware artifact staging APIs
+
+The firmware artifact APIs permit `expectedSize`, `expectedSha256`, and archive
+`expectedEntries` to be omitted for legacy inputs. Omitting these fields changes
+which checks the module can perform; it does not turn a locally computed digest
+into a trusted expectation:
+
+- `maxBytes`, HTTPS/TLS validation, bounded streaming, and archive structural
+  safety checks remain mandatory.
+- Without `expectedSha256`, the module computes SHA-256 only as a content-addressed
+  local artifact reference. It does not prove publisher integrity or authenticity.
+- Every artifact receipt exposes `expectedSha256Verified`; it is `true` only when
+  the returned digest was compared with caller-supplied `expectedSha256`. A locally
+  computed digest returned without that expectation is explicitly marked `false`.
+- Without `expectedEntries`, archive names, types, uniqueness, non-emptiness, and
+  size/expansion bounds are still validated, but entry digests are not compared
+  with publisher-supplied values.
+- A caller may omit trusted expectations only when a downstream consumer performs
+  an independent authenticity check before use, or when an explicit product
+  policy accepts that legacy artifact. The native module does not make that
+  product-policy decision.
+
 ---
 
 ## 6. Conformance scenarios
@@ -325,6 +348,11 @@ own notes until closed. **This document records no implementation's state.**
 
 ## Appendix B. Change log
 
+- **1.4** (2026-08-07) — Added an explicit receipt signal distinguishing a
+  caller-supplied SHA-256 match from a locally computed content-address digest.
+- **1.3** (2026-08-07) — Documented the optional integrity boundary for firmware
+  artifact staging. Missing expectations retain transport and structural safety
+  checks but delegate publisher integrity/authenticity acceptance to the caller.
 - **1.2** (2026-06-22) — Removed the "retry once via single-stream" requirement
   on a whole-file checksum/signature mismatch (§4 failure table, §6 scenario 6).
   A mismatch after assembly is now simply Permanent → discard + terminal failure.

@@ -6,6 +6,7 @@ import type {
 
 export interface AutoSizeInputProps extends HybridViewProps {
   // Text content
+  mostRecentEventCount?: number;
   text?: string;
   prefix?: string;
   suffix?: string;

@@ -4,7 +4,7 @@ import type { HybridObject } from 'react-native-nitro-modules';
 // The channel decides the iOS background URLSession identifier suffix and the
 // event-routing key, so different consumers never cross-talk. Closed set per
 // design decision 10.1 (constant enum, not a bare string).
-export type DownloadChannel = 'bundle' | 'apk' | 'chart';
+export type DownloadChannel = 'bundle' | 'apk' | 'chart' | 'firmware';
 
 export interface RangeDownloadParams {
   channel: DownloadChannel;
@@ -68,6 +68,104 @@ export interface RangeDownloadEvent {
   message: string;
 }
 
+export interface FirmwareArtifactDownloadParams {
+  taskId: string;
+  transactionId: string;
+  leaseRef: string;
+  artifactId: string;
+  url: string;
+  routeType: string;
+  resolvedIp?: string;
+  expectedSize?: number;
+  expectedSha256?: string;
+  maxBytes: number;
+  overallDeadlineSeconds?: number; // defaults to 180; must be > 0 and <= 24 hours
+}
+
+export interface FirmwareArtifactReceipt {
+  artifactRef: string;
+  size: number;
+  sha256: string;
+  // True only when sha256 was compared with expectedSha256 supplied by the caller.
+  // A locally computed content-address digest without that expectation is not trusted integrity.
+  expectedSha256Verified: boolean;
+}
+
+export interface FirmwareArtifactCapabilities {
+  firmwareArtifactProtocolVersion: number;
+  supportedRouteTypes: string[];
+  supportsArchiveMaterialization: boolean;
+  maxReadBytes: number;
+}
+
+export interface FirmwareArtifactRefParams {
+  artifactRef: string;
+}
+
+export interface FirmwareArtifactCancelParams {
+  transactionId: string;
+}
+
+export interface FirmwareArtifactReaderInfo {
+  readerId: string;
+  size: number;
+}
+
+export interface FirmwareArtifactReaderReadParams {
+  readerId: string;
+  offset: number;
+  length: number;
+}
+
+export interface FirmwareArtifactReaderCloseParams {
+  readerId: string;
+}
+
+export interface FirmwareArchiveMaterializeParams {
+  leaseRef: string;
+  archiveArtifactRef: string;
+  expectedEntries?: FirmwareArchiveExpectedEntry[];
+}
+
+export interface FirmwareArchiveExpectedEntry {
+  artifactId: string;
+  entryName: string;
+  expectedSize: number;
+  expectedSha256: string;
+}
+
+export interface FirmwareArchiveMaterializedArtifact {
+  entryName: string;
+  receipt: FirmwareArtifactReceipt;
+}
+
+export interface FirmwareArchiveMaterializeResult {
+  artifacts: FirmwareArchiveMaterializedArtifact[];
+}
+
+export interface FirmwareArtifactLeaseCreateParams {
+  transactionId: string;
+}
+
+export interface FirmwareArtifactLease {
+  leaseRef: string;
+}
+
+export interface FirmwareArtifactLeaseRetainParams {
+  leaseRef: string;
+  artifactRef: string;
+}
+
+export interface FirmwareArtifactLeaseReleaseParams {
+  leaseRef: string;
+  disposition: string;
+}
+
+export interface FirmwareArtifactSweepResult {
+  deletedFiles: number;
+  deletedBytes: number;
+}
+
 export interface ReactNativeRangeDownloader
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   // Main entry: concurrent ranged download (iOS background session / Android thread pool).
@@ -102,4 +200,35 @@ export interface ReactNativeRangeDownloader
   // not own directory layout for real consumers, but exposes this so demos/simple
   // callers have a valid absolute destination without hardcoding sandbox paths.
   getDownloadsDir(): string;
+
+  getFirmwareArtifactCapabilities(): FirmwareArtifactCapabilities;
+  downloadFirmwareArtifact(
+    params: FirmwareArtifactDownloadParams
+  ): Promise<FirmwareArtifactReceipt>;
+  cancelFirmwareArtifactDownloads(
+    params: FirmwareArtifactCancelParams
+  ): Promise<void>;
+  discardFirmwareArtifact(params: FirmwareArtifactRefParams): Promise<void>;
+  openFirmwareArtifact(
+    params: FirmwareArtifactRefParams
+  ): Promise<FirmwareArtifactReaderInfo>;
+  readFirmwareArtifact(
+    params: FirmwareArtifactReaderReadParams
+  ): Promise<ArrayBuffer>;
+  closeFirmwareArtifact(
+    params: FirmwareArtifactReaderCloseParams
+  ): Promise<void>;
+  materializeFirmwareArchive(
+    params: FirmwareArchiveMaterializeParams
+  ): Promise<FirmwareArchiveMaterializeResult>;
+  createFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseCreateParams
+  ): Promise<FirmwareArtifactLease>;
+  retainFirmwareArtifact(
+    params: FirmwareArtifactLeaseRetainParams
+  ): Promise<void>;
+  releaseFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseReleaseParams
+  ): Promise<void>;
+  sweepFirmwareArtifactOrphans(): Promise<FirmwareArtifactSweepResult>;
 }

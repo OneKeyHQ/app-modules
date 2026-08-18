@@ -2,12 +2,16 @@ package com.margelo.nitro.reactnativerangedownloader
 
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.NitroModules
+import com.margelo.nitro.core.ArrayBuffer
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.nativelogger.OneKeyLog
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 // P1: Nitro adapter for the Android concurrent multi-range downloader.
 //
@@ -33,6 +37,7 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
 
   private val listeners = CopyOnWriteArrayList<Listener>()
   private val nextListenerId = AtomicLong(1)
+  private val firmwareArtifactScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
   // Active downloads keyed by "channel|taskId" so cancel/discardArtifacts can
   // flip the abort flag + stop the worker pool BEFORE deleting files, instead of
@@ -263,6 +268,149 @@ class ReactNativeRangeDownloader : HybridReactNativeRangeDownloaderSpec() {
   override fun getDownloadsDir(): String {
     val ctx = NitroModules.applicationContext ?: return ""
     return ctx.cacheDir.absolutePath
+  }
+
+  override fun getFirmwareArtifactCapabilities(): FirmwareArtifactCapabilities {
+    return FirmwareArtifactCapabilities(
+      firmwareArtifactProtocolVersion = 4.0,
+      supportedRouteTypes = arrayOf("domain"),
+      supportsArchiveMaterialization = true,
+      maxReadBytes = FirmwareArtifactStore.MAX_READ_BYTES.toDouble(),
+    )
+  }
+
+  override fun downloadFirmwareArtifact(
+    params: FirmwareArtifactDownloadParams,
+  ): Promise<FirmwareArtifactReceipt> {
+    return Promise.async(firmwareArtifactScope) {
+      val artifact = FirmwareArtifactStore.download(params)
+      FirmwareArtifactReceipt(
+        artifactRef = artifact.artifactRef,
+        size = artifact.size.toDouble(),
+        sha256 = artifact.sha256,
+        expectedSha256Verified = params.expectedSha256 != null,
+      )
+    }
+  }
+
+  override fun cancelFirmwareArtifactDownloads(
+    params: FirmwareArtifactCancelParams,
+  ): Promise<Unit> {
+    return Promise.async(firmwareArtifactScope) {
+      FirmwareArtifactStore.cancelDownloads(params.transactionId)
+    }
+  }
+
+  override fun discardFirmwareArtifact(
+    params: FirmwareArtifactRefParams,
+  ): Promise<Unit> {
+    return Promise.async(firmwareArtifactScope) {
+      FirmwareArtifactStore.discard(params.artifactRef)
+    }
+  }
+
+  override fun openFirmwareArtifact(
+    params: FirmwareArtifactRefParams,
+  ): Promise<FirmwareArtifactReaderInfo> {
+    return Promise.async(firmwareArtifactScope) {
+      val (readerId, size) = FirmwareArtifactStore.open(params.artifactRef)
+      FirmwareArtifactReaderInfo(readerId = readerId, size = size.toDouble())
+    }
+  }
+
+  override fun readFirmwareArtifact(
+    params: FirmwareArtifactReaderReadParams,
+  ): Promise<ArrayBuffer> {
+    return Promise.async(firmwareArtifactScope) {
+      require(
+        params.offset.isFinite() &&
+          params.offset >= 0 &&
+          params.offset <= FirmwareArtifactStore.MAX_ARTIFACT_BYTES.toDouble() &&
+          params.offset.toLong().toDouble() == params.offset &&
+          params.length.isFinite() &&
+          params.length > 0 &&
+          params.length <= FirmwareArtifactStore.MAX_READ_BYTES.toDouble() &&
+          params.length.toInt().toDouble() == params.length
+      ) {
+        "Invalid firmware artifact read"
+      }
+      ArrayBuffer.copy(
+        FirmwareArtifactStore.read(
+          readerId = params.readerId,
+          offset = params.offset.toLong(),
+          length = params.length.toInt(),
+        ),
+      )
+    }
+  }
+
+  override fun closeFirmwareArtifact(
+    params: FirmwareArtifactReaderCloseParams,
+  ): Promise<Unit> {
+    return Promise.async(firmwareArtifactScope) {
+      FirmwareArtifactStore.close(params.readerId)
+    }
+  }
+
+  override fun materializeFirmwareArchive(
+    params: FirmwareArchiveMaterializeParams,
+  ): Promise<FirmwareArchiveMaterializeResult> {
+    return Promise.async(firmwareArtifactScope) {
+      val artifacts = FirmwareArtifactStore.materializeArchive(
+        params.leaseRef,
+        params.archiveArtifactRef,
+        params.expectedEntries,
+      )
+      FirmwareArchiveMaterializeResult(
+        artifacts = artifacts.map { entry ->
+          FirmwareArchiveMaterializedArtifact(
+            entryName = entry.entryName,
+            receipt = FirmwareArtifactReceipt(
+              artifactRef = entry.artifact.artifactRef,
+              size = entry.artifact.size.toDouble(),
+              sha256 = entry.artifact.sha256,
+              expectedSha256Verified = params.expectedEntries != null,
+            ),
+          )
+        }.toTypedArray(),
+      )
+    }
+  }
+
+  override fun createFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseCreateParams,
+  ): Promise<FirmwareArtifactLease> {
+    return Promise.async(firmwareArtifactScope) {
+      FirmwareArtifactLease(
+        leaseRef = FirmwareArtifactStore.createLease(params.transactionId),
+      )
+    }
+  }
+
+  override fun retainFirmwareArtifact(
+    params: FirmwareArtifactLeaseRetainParams,
+  ): Promise<Unit> {
+    return Promise.async(firmwareArtifactScope) {
+      FirmwareArtifactStore.retain(params.leaseRef, params.artifactRef)
+    }
+  }
+
+  override fun releaseFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseReleaseParams,
+  ): Promise<Unit> {
+    return Promise.async(firmwareArtifactScope) {
+      FirmwareArtifactStore.releaseLease(params.leaseRef, params.disposition)
+    }
+  }
+
+  override fun sweepFirmwareArtifactOrphans(): Promise<FirmwareArtifactSweepResult> {
+    return Promise.async(firmwareArtifactScope) {
+      val (deletedFiles, deletedBytes) = FirmwareArtifactStore.sweepOrphans()
+      FirmwareArtifactSweepResult(
+        deletedFiles = deletedFiles.toDouble(),
+        deletedBytes = deletedBytes.toDouble(),
+      )
+    }
   }
 
   // Broadcast one event to every registered listener. Listeners filter by

@@ -3,6 +3,15 @@ import XCTest
 
 final class SniConnectValidationTests: XCTestCase {
 
+  func testSessionWithoutForwardingDataDelegateAllowsResponse() {
+    switch SniConnectSessionDelegatePolicy.responseDispositionWithoutForwardingDelegate {
+    case .allow:
+      break
+    default:
+      XCTFail("A session without a forwarding data delegate must allow its response")
+    }
+  }
+
   func testAcceptsValidRequestBoundaryValues() throws {
     XCTAssertNoThrow(try SniConnectValidation.validateRequestId("req-1"))
     XCTAssertNoThrow(try SniConnectValidation.validateTimeout(120_000))

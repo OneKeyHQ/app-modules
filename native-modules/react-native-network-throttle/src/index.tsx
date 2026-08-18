@@ -8,6 +8,7 @@ export type NetworkThrottleConfig = {
   latencyMs: number;
   downloadBps: number;
   uploadBps: number;
+  throttleUrlHosts: string[];
 };
 
 export const NETWORK_THROTTLE_SLOW_4G_LATENCY_MS = 562.5;
@@ -16,9 +17,18 @@ export const NETWORK_THROTTLE_SLOW_4G_DOWNLOAD_BPS =
   NETWORK_THROTTLE_102_KIB_BPS;
 export const NETWORK_THROTTLE_SLOW_4G_UPLOAD_BPS = NETWORK_THROTTLE_102_KIB_BPS;
 
+type NativeNetworkThrottleConfig = Omit<
+  NetworkThrottleConfig,
+  'throttleUrlHosts'
+> & {
+  throttleUrlHosts?: string[];
+};
+
 type NativeNetworkThrottleModule = {
-  getConfig: () => Promise<NetworkThrottleConfig>;
-  setConfig: (config: NetworkThrottleConfig) => Promise<NetworkThrottleConfig>;
+  getConfig: () => Promise<NativeNetworkThrottleConfig>;
+  setConfig: (
+    config: NativeNetworkThrottleConfig
+  ) => Promise<NativeNetworkThrottleConfig>;
 };
 
 export type NetworkThrottleModule = {
@@ -37,18 +47,33 @@ const nativeModule = NativeModules.OneKeyNetworkThrottle as
   | NativeNetworkThrottleModule
   | undefined;
 
+function normalizeNativeConfig(
+  config: NativeNetworkThrottleConfig
+): NetworkThrottleConfig {
+  return {
+    ...config,
+    throttleUrlHosts: config.throttleUrlHosts ?? [],
+  };
+}
+
 export const NetworkThrottle: NetworkThrottleModule = nativeModule
   ? {
-      getConfig: () => nativeModule.getConfig(),
+      getConfig: async () =>
+        normalizeNativeConfig(await nativeModule.getConfig()),
       setConfig: async (config) => {
-        const currentConfig = await nativeModule.getConfig();
-        return nativeModule.setConfig({
+        const currentConfig = normalizeNativeConfig(
+          await nativeModule.getConfig()
+        );
+        const nativeConfig = await nativeModule.setConfig({
           enabled: config.enabled ?? currentConfig.enabled,
           profile: config.profile ?? currentConfig.profile,
           latencyMs: config.latencyMs ?? currentConfig.latencyMs,
           downloadBps: config.downloadBps ?? currentConfig.downloadBps,
           uploadBps: config.uploadBps ?? currentConfig.uploadBps,
+          throttleUrlHosts:
+            config.throttleUrlHosts ?? currentConfig.throttleUrlHosts ?? [],
         });
+        return normalizeNativeConfig(nativeConfig);
       },
     }
   : (new Proxy(

@@ -8,7 +8,6 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Looper
 import android.text.Editable
 import android.text.InputType
-import android.view.inputmethod.EditorInfo
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.TextWatcher
@@ -16,6 +15,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.TextView
 import com.facebook.proguard.annotations.DoNotStrip
@@ -36,6 +36,7 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
   private var isDisposed = false
   private var maxFontSizeProp: Double? = null
   private var minFontSizeProp: Double? = null
+  private val textUpdateEventCounter = TextUpdateEventCounter()
 
   // Container view
   override val view: View = object : ViewGroup(context) {
@@ -57,24 +58,51 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
     override fun afterTextChanged(s: Editable?) {
       if (isUpdatingFromJS || isDisposed) return
+      textUpdateEventCounter.recordNativeChange()
       recalculateFontSize()
       onChangeText?.invoke(s?.toString() ?: "")
     }
   }
 
+  // Last text JS requested (cached even when the update is rejected as
+  // stale): a sanitize-to-same-string edit is acknowledged with a count-only
+  // prop update, and the reapply below is what rolls the view back.
+  private var lastJsText: String? = null
+
   // Props
+  override var mostRecentEventCount: Double?
+    get() = textUpdateEventCounter.mostRecentEventCount?.toDouble()
+    set(value) {
+      // null keeps the caller out of stale-update filtering (legacy callers
+      // that never send the count must not have their text updates dropped).
+      // Sanitization (finite, integral, non-negative, Int-range — identical
+      // to iOS) also degrades malformed values to uncounted.
+      val count = TextUpdateEventCounter.sanitizeAcknowledgement(value)
+      if (textUpdateEventCounter.acknowledge(count)) {
+        lastJsText?.let { applyJsText(it) }
+      }
+    }
+
   override var text: String?
     get() = inputView.text?.toString()
     set(value) {
       if (isDisposed) return
-      isUpdatingFromJS = true
-      inputView.removeTextChangedListener(textWatcher)
-      inputView.setText(value ?: "")
-      inputView.setSelection(inputView.text?.length ?: 0)
-      inputView.addTextChangedListener(textWatcher)
-      isUpdatingFromJS = false
-      recalculateFontSize()
+      lastJsText = value ?: ""
+      if (!textUpdateEventCounter.canApplyJsUpdate()) return
+      applyJsText(value ?: "")
     }
+
+  private fun applyJsText(nextText: String) {
+    if (isDisposed) return
+    if (inputView.text?.toString() == nextText) return
+    isUpdatingFromJS = true
+    inputView.removeTextChangedListener(textWatcher)
+    inputView.setText(nextText)
+    inputView.setSelection(inputView.text?.length ?: 0)
+    inputView.addTextChangedListener(textWatcher)
+    isUpdatingFromJS = false
+    recalculateFontSize()
+  }
 
   override var prefix: String?
     get() = prefixView.text?.toString()

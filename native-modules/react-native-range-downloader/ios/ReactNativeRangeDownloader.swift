@@ -2,6 +2,16 @@ import Foundation
 import NitroModules
 import ReactNativeNativeLogger
 
+private func settledFirmwareArtifactPromise<T>(
+  _ operation: () throws -> T
+) -> Promise<T> {
+  do {
+    return Promise.resolved(withResult: try operation())
+  } catch {
+    return Promise.rejected(withError: error)
+  }
+}
+
 // MARK: - Nitro HybridObject entry point
 //
 // Thin Nitro shim over `RangeDownloader.shared`. The heavy lifting — concurrent
@@ -94,6 +104,188 @@ class ReactNativeRangeDownloader: HybridReactNativeRangeDownloaderSpec {
       return caches.path
     }
     return NSTemporaryDirectory()
+  }
+
+  func getFirmwareArtifactCapabilities() throws -> FirmwareArtifactCapabilities {
+    FirmwareArtifactCapabilities(
+      firmwareArtifactProtocolVersion: 4,
+      supportedRouteTypes: ["domain"],
+      supportsArchiveMaterialization: true,
+      maxReadBytes: Double(FirmwareArtifactStore.maxReadBytes)
+    )
+  }
+
+  func downloadFirmwareArtifact(
+    params: FirmwareArtifactDownloadParams
+  ) throws -> Promise<FirmwareArtifactReceipt> {
+    do {
+      if let artifact = try FirmwareArtifactStore.shared.cachedArtifact(params) {
+        return Promise.resolved(
+          withResult: FirmwareArtifactReceipt(
+            artifactRef: artifact.artifactRef,
+            size: Double(artifact.size),
+            sha256: artifact.sha256,
+            expectedSha256Verified: params.expectedSha256 != nil
+          )
+        )
+      }
+    } catch {
+      return Promise.rejected(withError: error)
+    }
+    return Promise.async {
+      let artifact = try await FirmwareArtifactStore.shared.download(params)
+      return FirmwareArtifactReceipt(
+        artifactRef: artifact.artifactRef,
+        size: Double(artifact.size),
+        sha256: artifact.sha256,
+        expectedSha256Verified: params.expectedSha256 != nil
+      )
+    }
+  }
+
+  func cancelFirmwareArtifactDownloads(
+    params: FirmwareArtifactCancelParams
+  ) throws -> Promise<Void> {
+    guard FirmwareArtifactStore.isSafeIdentifier(params.transactionId) else {
+      return Promise.rejected(
+        withError: FirmwareArtifactStoreError.invalidInput(
+          "Invalid firmware transactionId"
+        )
+      )
+    }
+    return Promise.async {
+      try await FirmwareArtifactStore.shared.cancelDownloads(
+        transactionId: params.transactionId
+      )
+    }
+  }
+
+  func discardFirmwareArtifact(
+    params: FirmwareArtifactRefParams
+  ) throws -> Promise<Void> {
+    settledFirmwareArtifactPromise {
+      try FirmwareArtifactStore.shared.discard(artifactRef: params.artifactRef)
+    }
+  }
+
+  func openFirmwareArtifact(
+    params: FirmwareArtifactRefParams
+  ) throws -> Promise<FirmwareArtifactReaderInfo> {
+    settledFirmwareArtifactPromise {
+      let reader = try FirmwareArtifactStore.shared.open(
+        artifactRef: params.artifactRef
+      )
+      return FirmwareArtifactReaderInfo(
+        readerId: reader.readerId,
+        size: Double(reader.size)
+      )
+    }
+  }
+
+  func readFirmwareArtifact(
+    params: FirmwareArtifactReaderReadParams
+  ) throws -> Promise<ArrayBuffer> {
+    settledFirmwareArtifactPromise {
+      guard
+        let offset = firmwareArtifactExactInt64(
+          params.offset,
+          minimum: 0,
+          maximum: FirmwareArtifactStore.maxArtifactBytes
+        ),
+        let length = firmwareArtifactExactInt64(
+          params.length,
+          minimum: 1,
+          maximum: firmwareArtifactMaxReadBytes
+        )
+      else {
+        throw FirmwareArtifactStoreError.readerInvalid(
+          "Invalid firmware artifact read"
+        )
+      }
+      let data = try FirmwareArtifactStore.shared.read(
+        readerId: params.readerId,
+        offset: offset,
+        length: Int(length)
+      )
+      return try ArrayBuffer.copy(data: data)
+    }
+  }
+
+  func closeFirmwareArtifact(
+    params: FirmwareArtifactReaderCloseParams
+  ) throws -> Promise<Void> {
+    settledFirmwareArtifactPromise {
+      try FirmwareArtifactStore.shared.close(readerId: params.readerId)
+    }
+  }
+
+  func materializeFirmwareArchive(
+    params: FirmwareArchiveMaterializeParams
+  ) throws -> Promise<FirmwareArchiveMaterializeResult> {
+    settledFirmwareArtifactPromise {
+      let entries = try FirmwareArtifactStore.shared.materializeArchive(
+        leaseRef: params.leaseRef,
+        artifactRef: params.archiveArtifactRef,
+        expectedEntries: params.expectedEntries
+      )
+      return FirmwareArchiveMaterializeResult(
+        artifacts: entries.map { entry in
+          FirmwareArchiveMaterializedArtifact(
+            entryName: entry.entryName,
+            receipt: FirmwareArtifactReceipt(
+              artifactRef: entry.artifact.artifactRef,
+              size: Double(entry.artifact.size),
+              sha256: entry.artifact.sha256,
+              expectedSha256Verified: params.expectedEntries != nil
+            )
+          )
+        }
+      )
+    }
+  }
+
+  func createFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseCreateParams
+  ) throws -> Promise<FirmwareArtifactLease> {
+    settledFirmwareArtifactPromise {
+      FirmwareArtifactLease(
+        leaseRef: try FirmwareArtifactStore.shared.createLease(
+          transactionId: params.transactionId
+        )
+      )
+    }
+  }
+
+  func retainFirmwareArtifact(
+    params: FirmwareArtifactLeaseRetainParams
+  ) throws -> Promise<Void> {
+    settledFirmwareArtifactPromise {
+      try FirmwareArtifactStore.shared.retain(
+        leaseRef: params.leaseRef,
+        artifactRef: params.artifactRef
+      )
+    }
+  }
+
+  func releaseFirmwareArtifactLease(
+    params: FirmwareArtifactLeaseReleaseParams
+  ) throws -> Promise<Void> {
+    settledFirmwareArtifactPromise {
+      try FirmwareArtifactStore.shared.releaseLease(
+        leaseRef: params.leaseRef,
+        disposition: params.disposition
+      )
+    }
+  }
+
+  func sweepFirmwareArtifactOrphans() throws -> Promise<FirmwareArtifactSweepResult> {
+    settledFirmwareArtifactPromise {
+      let result = try FirmwareArtifactStore.shared.sweepOrphans()
+      return FirmwareArtifactSweepResult(
+        deletedFiles: Double(result.deletedFiles),
+        deletedBytes: Double(result.deletedBytes)
+      )
+    }
   }
 }
 
@@ -326,14 +518,30 @@ public final class RangeDownloader: NSObject, URLSessionDownloadDelegate {
   @objc private func handleBackgroundEventsNotification(_ note: Notification) {
     guard let identifier = note.userInfo?["identifier"] as? String,
           Self.channel(forIdentifier: identifier) != nil else { return }
-    // Re-create the session with this delegate so queued completion events are
-    // delivered here on a background relaunch.
-    _ = session(forIdentifier: identifier)
     if let handler = note.userInfo?["completionHandler"] as? () -> Void {
-      lock.lock()
-      backgroundCompletionHandlers[identifier] = handler
-      lock.unlock()
+      attachBackgroundEvents(
+        identifier: identifier,
+        completionHandler: handler
+      )
     }
+  }
+
+  private func attachBackgroundEvents(
+    identifier: String,
+    completionHandler: @escaping () -> Void
+  ) {
+    let replacedHandler: (() -> Void)? = lock.withLockValue {
+      backgroundCompletionHandlers.updateValue(
+        completionHandler,
+        forKey: identifier
+      )
+    }
+    // UIKit should provide one live handler per session. Complete an older
+    // handler instead of leaking it if the callback is unexpectedly repeated.
+    replacedHandler?()
+    // Store the handler before creating the session. Delegate delivery can
+    // begin immediately when a background relaunch reattaches this identifier.
+    _ = session(forIdentifier: identifier)
   }
 
   // MARK: - Session cache
