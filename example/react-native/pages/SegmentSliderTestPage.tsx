@@ -59,6 +59,7 @@ function Demo({
   showBubble = false,
   centerOrigin = false,
   disabled = false,
+  alignSegmentMarksToIntegerValues = false,
 }: {
   title: string;
   initial?: number;
@@ -68,6 +69,7 @@ function Demo({
   showBubble?: boolean;
   centerOrigin?: boolean;
   disabled?: boolean;
+  alignSegmentMarksToIntegerValues?: boolean;
 }) {
   // `value` here is display-only (header label), kept fresh by the native
   // view's onChange. The slider is UNCONTROLLED: the initial value is seeded
@@ -112,6 +114,7 @@ function Demo({
           showBubble={showBubble}
           centerOrigin={centerOrigin}
           snapTapToSegment={segments > 0}
+          alignSegmentMarksToIntegerValues={alignSegmentMarksToIntegerValues}
           onChange={setValue}
           onSlideStart={() => console.log(`[${title}] start`)}
           onSlideComplete={() => console.log(`[${title}] complete @`, value)}
@@ -119,7 +122,7 @@ function Demo({
         />
       </View>
       <View style={styles.buttonRow}>
-        {[min, mid, max].map((v) => (
+        {[min, mid, max].map(v => (
           <Pressable
             key={v}
             style={styles.button}
@@ -141,6 +144,15 @@ export function SegmentSliderTestPage() {
       <Demo title="4 segments" segments={4} initial={50} />
       <Demo title="10 segments" segments={10} initial={70} />
       <Demo title="With bubble" segments={4} initial={25} showBubble />
+      <Demo
+        title="Integer-aligned (10..100)"
+        min={10}
+        max={100}
+        segments={4}
+        initial={55}
+        showBubble
+        alignSegmentMarksToIntegerValues
+      />
       <Demo
         title="Center origin (-100..100)"
         min={-100}

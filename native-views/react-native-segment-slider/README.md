@@ -15,6 +15,12 @@ once on mount), read live changes through `onChange`, and set the value
 imperatively via the `setValue` method on the hybrid ref. This keeps reset/programmatic
 updates off the Fabric prop-commit path and avoids any controlled-value-vs-drag conflict.
 
+Set `alignSegmentMarksToIntegerValues` when an evenly divided segment lands on
+a fractional value but the slider emits integers. Marks, tap snapping, hover
+halos, and active states then share the same half-to-even integer values. For
+example, `min={10}`, `max={100}`, and `segments={4}` use
+`10 / 32 / 55 / 78 / 100`.
+
 ```tsx
 import { useMemo, useRef } from 'react';
 import {
@@ -30,8 +36,11 @@ type ISegmentSliderRef = HybridView<SegmentSliderProps, SegmentSliderMethods>;
 
 const sliderRef = useRef<ISegmentSliderRef | null>(null);
 const hybridRef = useMemo(
-  () => callback((node: ISegmentSliderRef) => { sliderRef.current = node; }),
-  [],
+  () =>
+    callback((node: ISegmentSliderRef) => {
+      sliderRef.current = node;
+    }),
+  []
 );
 
 // Programmatically move the thumb (does NOT fire onChange):
@@ -49,6 +58,7 @@ const hybridRef = useMemo(
   showBubble={true}
   centerOrigin={false}
   snapTapToSegment={true}
+  alignSegmentMarksToIntegerValues={false}
   fillColor="#000000df"
   trackColor="#0000001f"
   thumbColor="#ffffff"
@@ -59,7 +69,7 @@ const hybridRef = useMemo(
   bubbleColor="#000000df"
   bubbleTextColor="#ffffff"
   onChange={(nextValue) => console.log(nextValue)}
-/>
+/>;
 ```
 
 ## Contributing

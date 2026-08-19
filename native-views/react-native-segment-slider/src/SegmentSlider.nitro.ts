@@ -19,6 +19,7 @@ import type {
  *   pct        = (clamp(value,min,max) - min) / (max - min)
  *   thumb x    = 8 + pct * W'
  *   mark i x   = 8 + (i / segments) * W'   (i in 0..segments)
+ *   aligned mark i uses pct(roundHalfToEven(min + i * step))
  *
  * Colors are resolved from the Tamagui theme in the JS wrapper and passed in as
  * hex / rgba() strings so the native side never depends on the theme system.
@@ -55,6 +56,13 @@ export interface SegmentSliderProps extends HybridViewProps {
    * callers keep the free-tap behavior.
    */
   snapTapToSegment: boolean;
+  /**
+   * When true, segment marks use the same integer values emitted by the slider.
+   * This keeps a rounded thumb centered on marks whose evenly divided values
+   * would otherwise be fractional. Half steps round to even so the result is
+   * consistent with the web slider. Default false.
+   */
+  alignSegmentMarksToIntegerValues: boolean;
 
   // --- Resolved theme colors (hex `#rgb`/`#rrggbb`/`#rrggbbaa` or rgba()) ---
   /** Active fill bar color (Tamagui `bgPrimary`). */
@@ -95,4 +103,7 @@ export interface SegmentSliderMethods extends HybridViewMethods {
   setValue(value: number): void;
 }
 
-export type SegmentSlider = HybridView<SegmentSliderProps, SegmentSliderMethods>;
+export type SegmentSlider = HybridView<
+  SegmentSliderProps,
+  SegmentSliderMethods
+>;

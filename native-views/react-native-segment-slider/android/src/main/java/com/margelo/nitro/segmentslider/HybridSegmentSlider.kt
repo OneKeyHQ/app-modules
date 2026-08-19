@@ -195,6 +195,10 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     get() = field
     set(v) { field = v }
 
+  override var alignSegmentMarksToIntegerValues: Boolean = false
+    get() = field
+    set(v) { field = v; invalidateIfAlive() }
+
   override var fillColor: String = ""
     get() = field
     set(v) { field = v; cFill = parse(v); fillPaint.color = cFill; invalidateIfAlive() }
@@ -259,6 +263,29 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
   private val rangeSafe: Double get() = (max - min).let { if (it == 0.0) 1.0 else it }
   private val markCount: Int get() = if (segments >= 1) segments.toInt() + 1 else 0
 
+  private fun segmentValue(index: Int): Double {
+    if (markCount <= 1) return min
+    val fraction = index.toDouble() / (markCount - 1)
+    val value = min + fraction * (max - min)
+    return if (alignSegmentMarksToIntegerValues) Math.rint(value) else value
+  }
+
+  private fun markFraction(index: Int): Float = valueToFrac(segmentValue(index))
+
+  private fun nearestMarkIndex(value: Double): Int {
+    val valueFraction = valueToFrac(value)
+    var nearestIndex = 0
+    var nearestDistance = Float.POSITIVE_INFINITY
+    for (index in 0 until markCount) {
+      val distance = Math.abs(valueFraction - markFraction(index))
+      if (distance <= nearestDistance) {
+        nearestDistance = distance
+        nearestIndex = index
+      }
+    }
+    return nearestIndex
+  }
+
   /** True when tap-snapping should defer the value commit: enabled with marks to snap to. */
   private val snapTapsActive: Boolean get() = snapTapToSegment && markCount > 1
 
@@ -277,10 +304,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
 
   /** Snaps a value to the value of the nearest segment mark. Caller guarantees `markCount > 1`. */
   private fun snapValueToNearestMark(v: Double): Double {
-    val frac = valueToFrac(v).toDouble()
-    val idx = Math.round(frac * (markCount - 1)).toDouble()
-    val snappedFrac = idx / (markCount - 1)
-    return min + snappedFrac * (max - min)
+    return segmentValue(nearestMarkIndex(v))
   }
 
   /** Hard re-sync: snap the thumb to [v], overriding any in-flight drag. */
@@ -321,7 +345,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     var best = -1
     var bestDist = threshold
     for (i in 0 until markCount) {
-      val mf = if (markCount > 1) i.toFloat() / (markCount - 1) else 0f
+      val mf = markFraction(i)
       val mx = insetPx + mf * tw
       val d = Math.abs(thumbX - mx)
       if (d <= bestDist) { bestDist = d; best = i }
@@ -387,7 +411,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     // Node halo (drag-time highlight) — drawn under the marks so the node dot
     // stays crisp on top. Translucent markActive color (25% alpha).
     if (isDragging && hoverMarkIndex in 0 until markCount) {
-      val mf = if (markCount > 1) hoverMarkIndex.toFloat() / (markCount - 1) else 0f
+      val mf = markFraction(hoverMarkIndex)
       val hx = insetPx + mf * tw
       markHaloPaint.color = (cMarkActive and 0x00FFFFFF) or (0x3F shl 24)
       canvas.drawCircle(hx, midY, markSizePx / 2f + haloRingPx, markHaloPaint)
@@ -397,7 +421,7 @@ class HybridSegmentSlider(val context: ThemedReactContext) : HybridSegmentSlider
     val centerFrac = valueToFrac(0.0)
     val markR = markSizePx / 2f
     for (i in 0 until markCount) {
-      val markFrac = if (markCount > 1) i.toFloat() / (markCount - 1) else 0f
+      val markFrac = markFraction(i)
       val cx = insetPx + markFrac * tw
       val active = when {
         centerOrigin && currentValue == 0.0 -> false
