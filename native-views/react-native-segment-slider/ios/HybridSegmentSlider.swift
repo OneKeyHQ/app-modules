@@ -86,6 +86,8 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   var centerOrigin: Bool = false { didSet { scheduleLayout() } }
   // Gates tap snapping only; no visual change on its own, so no didSet.
   var snapTapToSegment: Bool = false
+  // Keeps marks and integer-emitting thumbs on the same value-derived geometry.
+  var alignSegmentMarksToIntegerValues: Bool = false { didSet { scheduleLayout() } }
 
   var fillColor: String = "" {
     didSet { cFill = parse(fillColor); fillLayer.backgroundColor = cFill; scheduleLayout() }
@@ -178,6 +180,33 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   private var range: Double { let r = max - min; return r == 0 ? 1 : r }
   private var markCount: Int { segments >= 1 ? Int(segments) + 1 : 0 }
 
+  private func segmentValue(at index: Int) -> Double {
+    guard markCount > 1 else { return min }
+    let fraction = Double(index) / Double(markCount - 1)
+    let value = min + fraction * (max - min)
+    return alignSegmentMarksToIntegerValues
+      ? value.rounded(.toNearestOrEven)
+      : value
+  }
+
+  private func markFraction(at index: Int) -> CGFloat {
+    valueToFrac(segmentValue(at: index))
+  }
+
+  private func nearestMarkIndex(to value: Double) -> Int {
+    let valueFraction = valueToFrac(value)
+    var nearestIndex = 0
+    var nearestDistance = CGFloat.infinity
+    for index in 0..<markCount {
+      let distance = abs(valueFraction - markFraction(at: index))
+      if distance <= nearestDistance {
+        nearestDistance = distance
+        nearestIndex = index
+      }
+    }
+    return nearestIndex
+  }
+
   /// value -> fraction 0..1
   private func valueToFrac(_ v: Double) -> CGFloat {
     let clamped = Swift.max(min, Swift.min(max, v))
@@ -213,7 +242,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     // Marks sit on the track line, centred vertically on it.
     for i in 0..<markLayers.count {
       let layer = markLayers[i]
-      let frac = markCount > 1 ? CGFloat(i) / CGFloat(markCount - 1) : 0
+      let frac = markFraction(at: i)
       let cx = trackLeft + frac * trackWidth
       layer.bounds = CGRect(x: 0, y: 0, width: markSize, height: markSize)
       layer.position = CGPoint(x: cx, y: bounds.midY)
@@ -285,7 +314,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     // Marks active states.
     let centerFrac = valueToFrac(0)
     for i in 0..<markLayers.count {
-      let markFrac = markLayers.count > 1 ? CGFloat(i) / CGFloat(markLayers.count - 1) : 0
+      let markFrac = markFraction(at: i)
       var active: Bool
       if centerOrigin {
         if v == 0 {
@@ -339,7 +368,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     var best = -1
     var bestDist = threshold
     for i in 0..<markCount {
-      let frac = markCount > 1 ? CGFloat(i) / CGFloat(markCount - 1) : 0
+      let frac = markFraction(at: i)
       let mx = trackLeft + frac * trackWidth
       let d = abs(thumbX - mx)
       if d <= bestDist { bestDist = d; best = i }
@@ -359,7 +388,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     if visible {
-      let frac = markCount > 1 ? CGFloat(index) / CGFloat(markCount - 1) : 0
+      let frac = markFraction(at: index)
       let mx = trackLeft + frac * trackWidth
       haloLayer.position = CGPoint(x: mx, y: view.bounds.midY)
       haloLayer.backgroundColor = UIColor(cgColor: cMarkActive)
@@ -428,10 +457,7 @@ final class HybridSegmentSlider: HybridSegmentSliderSpec {
   /// Snaps a value to the value of the nearest segment mark. Caller guarantees
   /// `markCount > 1`.
   private func snapValueToNearestMark(_ v: Double) -> Double {
-    let frac = Double(valueToFrac(v))
-    let idx = (frac * Double(markCount - 1)).rounded()
-    let snappedFrac = idx / Double(markCount - 1)
-    return min + snappedFrac * (max - min)
+    segmentValue(at: nearestMarkIndex(to: v))
   }
 
   /// Hard re-sync: snap the thumb to `v`, overriding any in-flight drag. An
