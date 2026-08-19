@@ -16,4 +16,4 @@ jobs:
       - name:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run:  yarn version:publish
+        run: yarn version:publish --tag next

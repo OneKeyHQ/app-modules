@@ -9,7 +9,7 @@
     "version:patch:update": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules --topological version --deferred patch",
     "version:patch:apply": "yarn version apply --all",
     "version:patch": "yarn version:patch:update && yarn version:patch:apply",
-    "version:publish": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules run release"
+    "version:publish": "yarn workspace @onekeyfe/react-native-segment-slider run release"
   },
   "workspaces": [
     "native-modules/*",
