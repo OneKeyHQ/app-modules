@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.0.81] - 2026-08-04
+## [3.0.86] - 2026-08-24
 
 ### Features
 - **sni-connect**: Add request IDs, per-runtime request cancellation APIs, and native admission debug snapshots.
@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 - **sni-connect**: Include queue wait in the request deadline, pass only the remaining timeout to the transport, canonicalize equivalent IP spellings, and make pending/active cancellation and token release race-safe.
 
 ### Chores
-- Bump all publishable packages to 3.0.81.
+- Bump all publishable packages to 3.0.86.
 
 ## [3.0.73] - 2026-06-30
 
