@@ -13,11 +13,9 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
-import okhttp3.Dns
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
-import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
@@ -25,7 +23,6 @@ import okhttp3.ResponseBody
 import okio.Buffer
 import java.io.IOException
 import java.io.InterruptedIOException
-import java.net.InetAddress
 import java.net.Proxy
 import java.net.ProxySelector
 import java.net.URI
@@ -37,7 +34,6 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLPeerUnverifiedException
 
@@ -160,8 +156,22 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     ConcurrentHashMap<ManagedRequest, Boolean>(),
   )
   private val activeCallsLock = Any()
+  private var invalidated = false
 
   override fun getName(): String = NAME
+
+  override fun invalidate() {
+    val cancelledCount = cancelOwnedRequests(markInvalidated = true)
+    SniConnectLogger.info(
+      SniConnectLogger.event(
+        "sni_lifecycle",
+        "action" to "runtime_invalidate",
+        "cancelledCount" to cancelledCount,
+        "success" to true,
+      ),
+    )
+    super.invalidate()
+  }
 
   override fun request(config: ReadableMap, promise: Promise) {
     try {
@@ -210,17 +220,11 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   override fun cancelAllRequests(promise: Promise) {
-    val requests = synchronized(activeCallsLock) {
-      val snapshot = allActiveCalls.toList()
-      activeCalls.clear()
-      allActiveCalls.clear()
-      snapshot
-    }
-    requests.forEach { request -> request.cancel() }
+    val cancelledCount = cancelOwnedRequests()
     SniConnectLogger.info(
       SniConnectLogger.event(
         "sni_cancel_all",
-        "cancelledCount" to requests.size,
+        "cancelledCount" to cancelledCount,
         "success" to true,
       ),
     )
@@ -469,10 +473,19 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
   }
 
   private fun registerRequest(requestId: String?, request: ManagedRequest) {
+    var shouldCancel = false
     val previousRequest = synchronized(activeCallsLock) {
+      if (invalidated) {
+        shouldCancel = true
+        return@synchronized null
+      }
       val previous = requestId?.let { activeCalls.put(it, request) }
       allActiveCalls.add(request)
       previous
+    }
+    if (shouldCancel) {
+      request.cancel()
+      return
     }
     if (previousRequest != null && previousRequest != request) {
       previousRequest.cancel()
@@ -495,6 +508,20 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  private fun cancelOwnedRequests(markInvalidated: Boolean = false): Int {
+    val requests = synchronized(activeCallsLock) {
+      if (markInvalidated) {
+        invalidated = true
+      }
+      val snapshot = allActiveCalls.toList()
+      activeCalls.clear()
+      allActiveCalls.clear()
+      snapshot
+    }
+    requests.forEach { request -> request.cancel() }
+    return requests.size
+  }
+
   private fun remainingTimeoutMillis(totalTimeoutMillis: Long, startedAtNanos: Long): Long {
     val elapsedNanos = (System.nanoTime() - startedAtNanos).coerceAtLeast(0L)
     val remainingNanos = TimeUnit.MILLISECONDS.toNanos(totalTimeoutMillis) - elapsedNanos
@@ -514,24 +541,12 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
     synchronized(clientCache) {
       clientCache[key]?.let { return it }
 
-      val client = OkHttpClient.Builder()
-        .dispatcher(sharedDispatcher)
-        .connectionPool(sharedConnectionPool)
-        .proxy(Proxy.NO_PROXY)
-        .protocols(listOf(Protocol.HTTP_1_1))
-        .connectTimeout(0, TimeUnit.MILLISECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS)
-        .writeTimeout(0, TimeUnit.MILLISECONDS)
-        .callTimeout(0, TimeUnit.MILLISECONDS)
-        .followRedirects(false)
-        .followSslRedirects(false)
-        // TLS is validated normally: cert chain via the default trust manager and
-        // hostname verification against the REAL hostname (not the pinned IP).
-        .hostnameVerifier { _, session ->
-          HttpsURLConnection.getDefaultHostnameVerifier().verify(config.hostname, session)
-        }
-        .dns(createPinnedDns(key.ip, config.hostname))
-        .build()
+      val client = SniPinnedTransport.createClient(
+        ip = config.ip,
+        hostname = config.hostname,
+        dispatcher = sharedDispatcher,
+        connectionPool = sharedConnectionPool,
+      )
 
       clientCache[key] = client
       SniConnectLogger.info(
@@ -550,29 +565,6 @@ class SniConnectModule(reactContext: ReactApplicationContext) :
       return client
     }
   }
-
-  private fun createPinnedDns(ip: String, hostname: String): Dns =
-    object : Dns {
-      private val expectedHost = hostname.lowercase(Locale.US)
-      // Resolve the literal IP once up front (validated; never triggers DNS).
-      private val pinnedAddress: InetAddress = SniConnectValidation.literalToInetAddress(ip)
-
-      override fun lookup(requestedHost: String): List<InetAddress> {
-        return if (requestedHost.lowercase(Locale.US) == expectedHost) {
-          listOf(pinnedAddress)
-        } else {
-          SniConnectLogger.warn(
-            SniConnectLogger.event(
-              "sni_pinned_dns_unexpected_host",
-              "expectedHost" to expectedHost,
-              "requestedHostHash" to SniConnectLogger.shortHash(requestedHost.lowercase(Locale.US)),
-              "result" to "fail_closed",
-            ),
-          )
-          throw UnknownHostException("Unexpected host for pinned SNI request: $requestedHost")
-        }
-      }
-    }
 
   /**
    * Build the request. Always `https://<hostname><path>` on the implicit port 443 —

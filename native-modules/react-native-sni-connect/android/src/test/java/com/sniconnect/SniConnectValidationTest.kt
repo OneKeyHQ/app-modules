@@ -31,10 +31,6 @@ class SniConnectValidationTest {
   @Test
   fun canonicalizesEquivalentPublicIpLiterals() {
     assertEquals(
-      "93.184.216.34",
-      SniConnectValidation.canonicalizePublicIp("093.184.216.034"),
-    )
-    assertEquals(
       SniConnectValidation.canonicalizePublicIp("2001:4860:4860::8888"),
       SniConnectValidation.canonicalizePublicIp("2001:4860:4860:0:0:0:0:8888"),
     )
@@ -69,6 +65,7 @@ class SniConnectValidationTest {
       "example.com",
       "93.184.216.34:443",
       " 93.184.216.34",
+      "093.184.216.034",
       "10.0.0.1",
       "127.0.0.1",
       "100.64.0.1",

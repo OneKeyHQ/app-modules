@@ -18,6 +18,7 @@ let package = Package(
         "SniConnect.mm",
         "SniConnectClient.swift",
         "SniConnectLog.swift",
+        "SniConnectPinnedTransport.swift",
         "Tests",
       ],
       sources: ["SniConnectValidation.swift", "SniConnectCore.swift"]

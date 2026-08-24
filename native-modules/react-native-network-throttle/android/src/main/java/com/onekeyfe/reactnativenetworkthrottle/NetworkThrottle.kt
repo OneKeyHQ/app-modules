@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.ReadableType
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.network.OkHttpClientProvider
 import java.io.IOException
@@ -11,6 +12,8 @@ import java.io.InterruptedIOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
+import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.MediaType
 import okhttp3.OkHttpClient
@@ -36,6 +39,7 @@ internal object NetworkThrottle {
     private val downloadBps = AtomicLong(DEFAULT_THROUGHPUT_BPS.toLong())
     private val uploadBps = AtomicLong(DEFAULT_THROUGHPUT_BPS.toLong())
     private val installed = AtomicBoolean(false)
+    private val throttleUrlHosts = AtomicReference<Set<String>>(emptySet())
 
     fun install(context: Context) {
         if (!installed.compareAndSet(false, true)) {
@@ -85,6 +89,19 @@ internal object NetworkThrottle {
         if (nextUploadBps <= 0) {
             nextUploadBps = DEFAULT_THROUGHPUT_BPS.toLong()
         }
+        if (config.hasKey("throttleUrlHosts") && !config.isNull("throttleUrlHosts")) {
+            val hosts = config.getArray("throttleUrlHosts")
+            val normalizedHosts = buildSet {
+                if (hosts != null) {
+                    for (index in 0 until hosts.size()) {
+                        if (hosts.getType(index) == ReadableType.String) {
+                            normalizeHost(hosts.getString(index))?.let(::add)
+                        }
+                    }
+                }
+            }
+            throttleUrlHosts.updateAndGet { current -> current + normalizedHosts }
+        }
 
         enabled.set(nextEnabled)
         latencyNanos.set((nextLatencyMs * 1_000_000.0).toLong())
@@ -104,12 +121,42 @@ internal object NetworkThrottle {
         map.putDouble("latencyMs", latencyNanos.get() / 1_000_000.0)
         map.putDouble("downloadBps", downloadBps.get().toDouble())
         map.putDouble("uploadBps", uploadBps.get().toDouble())
+        val hosts = Arguments.createArray()
+        throttleUrlHosts.get().sorted().forEach(hosts::pushString)
+        map.putArray("throttleUrlHosts", hosts)
         return map
     }
 
     private fun getLatencyNanos(): Long = if (enabled.get()) latencyNanos.get() else 0L
     private fun getDownloadBps(): Long = if (enabled.get()) downloadBps.get() else 0L
     private fun getUploadBps(): Long = if (enabled.get()) uploadBps.get() else 0L
+
+    private fun normalizeHost(value: String?): String? =
+        value?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+
+    /**
+     * Hosts are matched as exact names, or as `*.example.com` which matches
+     * sub-domains at any depth but not the bare apex. This mirrors the URL
+     * patterns the desktop app installs, so both platforms throttle the same
+     * traffic.
+     */
+    internal fun matchesHost(host: String, pattern: String): Boolean =
+        if (pattern.startsWith("*.")) {
+            host.endsWith(pattern.substring(1))
+        } else {
+            host == pattern
+        }
+
+    private fun shouldThrottle(requestUrl: HttpUrl): Boolean {
+        // The interceptor is installed in every build, so keep the empty case
+        // allocation-free. An empty allowlist throttles nothing.
+        val hosts = throttleUrlHosts.get()
+        if (hosts.isEmpty()) {
+            return false
+        }
+        val host = requestUrl.host.lowercase()
+        return hosts.any { matchesHost(host, it) }
+    }
 
     private fun sleepNanos(delayNanos: Long) {
         if (delayNanos <= 0) {
@@ -201,9 +248,12 @@ internal object NetworkThrottle {
 
     private class ThrottleInterceptor : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
+            val request = chain.request()
+            if (!shouldThrottle(request.url)) {
+                return chain.proceed(request)
+            }
             val requestStartNanos = System.nanoTime()
             val delayNanos = getLatencyNanos()
-            val request = chain.request()
             val requestBody = request.body
             val activeUploadBps = getUploadBps()
             val throttledRequest =

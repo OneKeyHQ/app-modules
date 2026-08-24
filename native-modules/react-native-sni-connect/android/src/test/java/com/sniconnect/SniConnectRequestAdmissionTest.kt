@@ -19,7 +19,11 @@ class SniConnectRequestAdmissionTest {
         val requestId = "req-${index.toString().padStart(2, '0')}"
         admission.createTicket(
           hostname = "Example.com",
-          ip = if (index % 2 == 0) "093.184.216.034" else "93.184.216.34",
+          ip = if (index % 2 == 0) {
+            "2001:4860:4860::8888"
+          } else {
+            "2001:4860:4860:0:0:0:0:8888"
+          },
           requestId = requestId,
           timeoutMillis = 10_000,
           onAdmitted = { admitted += requestId },
@@ -37,23 +41,29 @@ class SniConnectRequestAdmissionTest {
           activeRequestIdsForPair = (0 until 16).map { "req-${it.toString().padStart(2, '0')}" },
           pendingRequestIdsForPair = (16 until 20).map { "req-${it.toString().padStart(2, '0')}" },
         ),
-        admission.snapshot("EXAMPLE.COM", "93.184.216.34"),
+        admission.snapshot("EXAMPLE.COM", "2001:4860:4860::8888"),
       )
 
       tickets.drop(16).forEach { pending -> assertTrue(pending.cancelPending()) }
       assertEquals(4, failures.size)
       assertTrue(failures.all { it.first == "SNI_CANCELLED" })
-      assertEquals(0, admission.snapshot("example.com", "093.184.216.034").pendingRequests)
+      assertEquals(
+        0,
+        admission.snapshot("example.com", "2001:4860:4860:0:0:0:0:8888").pendingRequests,
+      )
 
       tickets.take(16).forEach { active -> active.release() }
       assertEquals(
         SniConnectAdmissionSnapshot(0, 0, 0, 0),
-        admission.snapshot("example.com", "93.184.216.34"),
+        admission.snapshot("example.com", "2001:4860:4860::8888"),
       )
 
-      val recovery = ticket(admission, "example.com", "93.184.216.34")
+      val recovery = ticket(admission, "example.com", "2001:4860:4860::8888")
       recovery.submit()
-      assertEquals(1, admission.snapshot("example.com", "93.184.216.34").activeRequests)
+      assertEquals(
+        1,
+        admission.snapshot("example.com", "2001:4860:4860::8888").activeRequests,
+      )
       recovery.release()
     } finally {
       admission.shutdownForTests()

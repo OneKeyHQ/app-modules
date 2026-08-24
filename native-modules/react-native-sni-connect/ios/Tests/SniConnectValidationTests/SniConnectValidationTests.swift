@@ -3,6 +3,15 @@ import XCTest
 
 final class SniConnectValidationTests: XCTestCase {
 
+  func testSessionWithoutForwardingDataDelegateAllowsResponse() {
+    switch SniConnectSessionDelegatePolicy.responseDispositionWithoutForwardingDelegate {
+    case .allow:
+      break
+    default:
+      XCTFail("A session without a forwarding data delegate must allow its response")
+    }
+  }
+
   func testAcceptsValidRequestBoundaryValues() throws {
     XCTAssertNoThrow(try SniConnectValidation.validateRequestId("req-1"))
     XCTAssertNoThrow(try SniConnectValidation.validateTimeout(120_000))
@@ -462,6 +471,20 @@ final class SniConnectValidationTests: XCTestCase {
         return "late"
       }
       XCTFail("Expected wall-clock deadline to throw")
+    } catch let error as SniConnectTimeout {
+      XCTAssertEqual(error, .deadlineExceeded)
+    }
+  }
+
+  func testWallClockDeadlineRejectsResultAfterAbsoluteDeadline() async throws {
+    let deadline = SniConnectWallClockDeadline.makeDeadline(timeoutMilliseconds: 5)
+    try await Task.sleep(nanoseconds: 20_000_000)
+
+    do {
+      _ = try await SniConnectWallClockDeadline.run(until: deadline) {
+        return "late"
+      }
+      XCTFail("Expected an operation result produced after the deadline to be rejected")
     } catch let error as SniConnectTimeout {
       XCTAssertEqual(error, .deadlineExceeded)
     }

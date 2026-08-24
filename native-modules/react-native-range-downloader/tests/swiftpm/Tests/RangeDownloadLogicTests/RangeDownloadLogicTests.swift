@@ -26,6 +26,376 @@ import Foundation
 // ───────────────────────────────────────────────────────────────────────────
 final class RangeDownloadLogicTests: XCTestCase {
 
+  func testFirmwareArtifactDownloadKeyIsolatesTransactions() {
+    let first = firmwareArtifactDownloadKey(
+      transactionId: "fwtx:first",
+      taskId: "firmware",
+      expectedSize: 42,
+      expectedSha256: String(repeating: "a", count: 64),
+      downloadToken: String(repeating: "a", count: 64)
+    )
+    let second = firmwareArtifactDownloadKey(
+      transactionId: "fwtx:second",
+      taskId: "firmware",
+      expectedSize: 42,
+      expectedSha256: String(repeating: "a", count: 64),
+      downloadToken: String(repeating: "a", count: 64)
+    )
+
+    XCTAssertNotEqual(first, second)
+  }
+
+  func testFirmwareArtifactDownloadKeyIsolatesUnverifiedURLs() {
+    let first = firmwareArtifactDownloadKey(
+      transactionId: "fwtx:same",
+      taskId: "firmware",
+      expectedSize: nil,
+      expectedSha256: nil,
+      downloadToken: firmwareArtifactDownloadToken(
+        expectedSha256: nil,
+        url: "https://common.onekey-asset.com/first.bin"
+      )
+    )
+    let second = firmwareArtifactDownloadKey(
+      transactionId: "fwtx:same",
+      taskId: "firmware",
+      expectedSize: nil,
+      expectedSha256: nil,
+      downloadToken: firmwareArtifactDownloadToken(
+        expectedSha256: nil,
+        url: "https://common.onekey-asset.com/second.bin"
+      )
+    )
+
+    XCTAssertNotEqual(first, second)
+  }
+
+  func testFirmwareArchiveDiscoveredEntriesRejectEmptyAndDuplicateNames() {
+    XCTAssertEqual(firmwareArchiveDiscoveredEntriesIssue([]), .empty)
+    XCTAssertEqual(
+      firmwareArchiveDiscoveredEntriesIssue(["fw.bin", "fw.bin"]),
+      .duplicateName
+    )
+    XCTAssertNil(
+      firmwareArchiveDiscoveredEntriesIssue(["fw.bin", "resource.bin"])
+    )
+  }
+
+  func testFirmwareArtifactPartialFileNameIsolatesTransactions() {
+    let sha256 = String(repeating: "a", count: 64)
+    let first = firmwareArtifactPartialFileName(
+      transactionId: "fwtx:first",
+      taskId: "firmware",
+      downloadToken: sha256
+    )
+    let second = firmwareArtifactPartialFileName(
+      transactionId: "fwtx:second",
+      taskId: "firmware",
+      downloadToken: sha256
+    )
+
+    XCTAssertNotEqual(first, second)
+    XCTAssertTrue(first.hasPrefix("\(sha256).firmware."))
+    XCTAssertTrue(first.hasSuffix(".partial"))
+  }
+
+  func testFirmwareArtifactContentRangeValidation() {
+    XCTAssertTrue(
+      firmwareArtifactContentRangeIsValid(
+        "bytes 128-255/256",
+        expectedStart: 128,
+        expectedTotal: 256,
+        maxBytes: 256
+      )
+    )
+    XCTAssertFalse(
+      firmwareArtifactContentRangeIsValid(
+        "bytes 0-255/256",
+        expectedStart: 128,
+        expectedTotal: 256,
+        maxBytes: 256
+      )
+    )
+    XCTAssertFalse(
+      firmwareArtifactContentRangeIsValid(
+        "bytes 128-256/256",
+        expectedStart: 128,
+        expectedTotal: 256,
+        maxBytes: 256
+      )
+    )
+    XCTAssertFalse(
+      firmwareArtifactContentRangeIsValid(
+        "items 128-255/256",
+        expectedStart: 128,
+        expectedTotal: 256,
+        maxBytes: 256
+      )
+    )
+  }
+
+  func testFirmwareArtifactContentRangeAcceptsUnknownExpectedTotalWithinBound() {
+    XCTAssertTrue(
+      firmwareArtifactContentRangeIsValid(
+        "bytes 128-255/256",
+        expectedStart: 128,
+        expectedTotal: nil,
+        maxBytes: 512
+      )
+    )
+    XCTAssertFalse(
+      firmwareArtifactContentRangeIsValid(
+        "bytes 128-1023/1024",
+        expectedStart: 128,
+        expectedTotal: nil,
+        maxBytes: 512
+      )
+    )
+  }
+
+  func testFirmwareArtifactDownloadTokenFallsBackToStableUrlHash() {
+    let url = "https://common.onekey-asset.com/firmware.bin"
+    let first = firmwareArtifactDownloadToken(expectedSha256: nil, url: url)
+    let second = firmwareArtifactDownloadToken(expectedSha256: nil, url: url)
+
+    XCTAssertEqual(first, second)
+    XCTAssertEqual(first.count, 64)
+    XCTAssertEqual(
+      firmwareArtifactDownloadToken(
+        expectedSha256: String(repeating: "A", count: 64),
+        url: url
+      ),
+      String(repeating: "a", count: 64)
+    )
+  }
+
+  func testFirmwareArtifactResponseSizeIsBoundedBeforeStreaming() {
+    XCTAssertTrue(
+      firmwareArtifactResponseFits(
+        expectedContentLength: 128,
+        baseOffset: 128,
+        maxBytes: 256
+      )
+    )
+    XCTAssertFalse(
+      firmwareArtifactResponseFits(
+        expectedContentLength: 129,
+        baseOffset: 128,
+        maxBytes: 256
+      )
+    )
+    XCTAssertTrue(
+      firmwareArtifactResponseFits(
+        expectedContentLength: -1,
+        baseOffset: 128,
+        maxBytes: 256
+      )
+    )
+  }
+
+  func testFirmwareArtifactStoreErrorsHaveStableDescriptions() {
+    XCTAssertEqual(
+      String(describing: FirmwareArtifactStoreError.invalidInput("ARTIFACT_INVALID_INPUT")),
+      "ARTIFACT_INVALID_INPUT"
+    )
+    XCTAssertEqual(
+      String(describing: FirmwareArtifactStoreError.downloadFailed("ARTIFACT_CANCELLED")),
+      "ARTIFACT_CANCELLED"
+    )
+    XCTAssertEqual(
+      String(
+        describing: FirmwareArtifactStoreError.integrityMismatch(
+          "ARTIFACT_INTEGRITY_FAILED"
+        )
+      ),
+      "ARTIFACT_INTEGRITY_FAILED"
+    )
+    XCTAssertEqual(
+      String(describing: FirmwareArtifactStoreError.readerInvalid("ARTIFACT_READER_INVALID")),
+      "ARTIFACT_READER_INVALID"
+    )
+    XCTAssertEqual(
+      String(describing: FirmwareArtifactStoreError.archiveInvalid("ARTIFACT_ARCHIVE_INVALID")),
+      "ARTIFACT_ARCHIVE_INVALID"
+    )
+  }
+
+  func testFirmwareArtifactIdentifierValidationForSynchronousCancelRejection() {
+    XCTAssertTrue(firmwareArtifactIdentifierIsSafe("fwtx:valid-1"))
+    XCTAssertFalse(firmwareArtifactIdentifierIsSafe(""))
+    XCTAssertFalse(firmwareArtifactIdentifierIsSafe("invalid/path"))
+    XCTAssertFalse(
+      firmwareArtifactIdentifierIsSafe(String(repeating: "a", count: 161))
+    )
+  }
+
+  func testFirmwareArtifactExactInt64RejectsRoundedOverflowAndOutOfBoundsValues() {
+    XCTAssertNil(
+      firmwareArtifactExactInt64(
+        pow(2.0, 63.0),
+        minimum: 1,
+        maximum: firmwareArtifactMaxBytes
+      )
+    )
+    XCTAssertNil(
+      firmwareArtifactExactInt64(
+        Double(firmwareArtifactMaxBytes) + 1,
+        minimum: 1,
+        maximum: firmwareArtifactMaxBytes
+      )
+    )
+    XCTAssertNil(
+      firmwareArtifactExactInt64(
+        1.5,
+        minimum: 1,
+        maximum: firmwareArtifactMaxBytes
+      )
+    )
+    XCTAssertEqual(
+      firmwareArtifactExactInt64(
+        Double(firmwareArtifactMaxBytes),
+        minimum: 1,
+        maximum: firmwareArtifactMaxBytes
+      ),
+      firmwareArtifactMaxBytes
+    )
+    XCTAssertEqual(
+      firmwareArtifactExactInt64(
+        Double(firmwareArtifactMaxReadBytes),
+        minimum: 1,
+        maximum: firmwareArtifactMaxReadBytes
+      ),
+      firmwareArtifactMaxReadBytes
+    )
+  }
+
+  func testFirmwareArtifactOrphanSweepRemovesOnlyStaleRootScratchEntries() throws {
+    let fileManager = FileManager.default
+    let rootURL = fileManager.temporaryDirectory.appendingPathComponent(
+      "firmware-artifact-sweep-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+    defer { try? fileManager.removeItem(at: rootURL) }
+
+    let now = Date(timeIntervalSince1970: 2_000_000_000)
+    let staleDate = now.addingTimeInterval(-firmwareArtifactScratchGrace - 1)
+    let freshDate = now.addingTimeInterval(-firmwareArtifactScratchGrace + 1)
+    let staleArchive = rootURL.appendingPathComponent(
+      "archive-00000000-0000-4000-8000-000000000001",
+      isDirectory: true
+    )
+    let stalePromote = rootURL.appendingPathComponent(
+      ".promote-00000000-0000-4000-8000-000000000002"
+    )
+    let freshArchive = rootURL.appendingPathComponent(
+      "archive-00000000-0000-4000-8000-000000000003",
+      isDirectory: true
+    )
+    let freshPromote = rootURL.appendingPathComponent(
+      ".promote-00000000-0000-4000-8000-000000000004"
+    )
+    let malformedArchive = rootURL.appendingPathComponent(
+      "archive-00000000-0000-4000-8000-000000000005.extra",
+      isDirectory: true
+    )
+    let malformedPromote = rootURL.appendingPathComponent(
+      ".promote-00000000-0000-4000-8000-000000000006.tmp"
+    )
+    let archiveNamedFile = rootURL.appendingPathComponent(
+      "archive-00000000-0000-4000-8000-000000000007"
+    )
+    let promoteNamedDirectory = rootURL.appendingPathComponent(
+      ".promote-00000000-0000-4000-8000-000000000008",
+      isDirectory: true
+    )
+    let nestedContainer = rootURL.appendingPathComponent("nested", isDirectory: true)
+    let nestedArchive = nestedContainer.appendingPathComponent(
+      "archive-00000000-0000-4000-8000-000000000009",
+      isDirectory: true
+    )
+
+    for directory in [
+      staleArchive,
+      freshArchive,
+      malformedArchive,
+      promoteNamedDirectory,
+      nestedArchive,
+    ] {
+      try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    try Data("archive".utf8).write(
+      to: staleArchive.appendingPathComponent("0.entry")
+    )
+    for file in [stalePromote, freshPromote, malformedPromote, archiveNamedFile] {
+      try Data("promote".utf8).write(to: file)
+    }
+    for entry in [
+      staleArchive,
+      stalePromote,
+      malformedArchive,
+      malformedPromote,
+      archiveNamedFile,
+      promoteNamedDirectory,
+      nestedArchive,
+    ] {
+      try fileManager.setAttributes(
+        [.modificationDate: staleDate],
+        ofItemAtPath: entry.path
+      )
+    }
+    for entry in [freshArchive, freshPromote] {
+      try fileManager.setAttributes(
+        [.modificationDate: freshDate],
+        ofItemAtPath: entry.path
+      )
+    }
+
+    let result = try sweepFirmwareArtifactOrphansAtRoot(
+      rootURL,
+      retainedSha256: [],
+      activeSha256: [],
+      openPaths: [],
+      now: now,
+      fileManager: fileManager
+    )
+
+    XCTAssertEqual(result.deletedFiles, 2)
+    XCTAssertEqual(result.deletedBytes, 14)
+    XCTAssertFalse(fileManager.fileExists(atPath: staleArchive.path))
+    XCTAssertFalse(fileManager.fileExists(atPath: stalePromote.path))
+    for retainedEntry in [
+      freshArchive,
+      freshPromote,
+      malformedArchive,
+      malformedPromote,
+      archiveNamedFile,
+      promoteNamedDirectory,
+      nestedArchive,
+    ] {
+      XCTAssertTrue(
+        fileManager.fileExists(atPath: retainedEntry.path),
+        "Unexpectedly removed \(retainedEntry.lastPathComponent)"
+      )
+    }
+  }
+
+  func testFirmwareArtifactWallClockDeadlineRejectsSlowOperation() async {
+    do {
+      _ = try await FirmwareArtifactWallClockDeadline.run(
+        timeoutSeconds: 0.01
+      ) {
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        return true
+      }
+      XCTFail("Expected the wall-clock deadline to reject")
+    } catch FirmwareArtifactDeadlineError.exceeded {
+      // Expected.
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+  }
+
   // MARK: §4 — HTTP status classification
   //
   // OCDS §4. Mirrors Android's IsPermanentHttpStatusTest matrix. Asserts BOTH the

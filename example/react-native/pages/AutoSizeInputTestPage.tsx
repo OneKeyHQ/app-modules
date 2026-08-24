@@ -9,6 +9,12 @@ export function AutoSizeInputTestPage() {
   const [singleLineText, setSingleLineText] = useState('');
   const [multiLineText, setMultiLineText] = useState('');
   const [autoWidthText, setAutoWidthText] = useState('');
+  // Event-count mirrors for the controlled inputs (mostRecentEventCount
+  // protocol): incremented on every change callback so a stale controlled
+  // echo is rejected natively instead of overwriting newer typed text.
+  const [singleLineEventCount, setSingleLineEventCount] = useState(0);
+  const [multiLineEventCount, setMultiLineEventCount] = useState(0);
+  const [autoWidthEventCount, setAutoWidthEventCount] = useState(0);
   const [focusStatus, setFocusStatus] = useState('');
   const [editable, setEditable] = useState(true);
 
@@ -25,6 +31,7 @@ export function AutoSizeInputTestPage() {
         <AutoSizeInputView
           ref={singleLineRef}
           style={styles.input}
+          mostRecentEventCount={singleLineEventCount}
           text={singleLineText}
           placeholder="Type to see font shrink..."
           fontSize={36}
@@ -32,7 +39,10 @@ export function AutoSizeInputTestPage() {
           textColor="#333333"
           placeholderColor="#AAAAAA"
           selectionColor="#007AFF"
-          onChangeText={callback(useCallback((text: string) => setSingleLineText(text), []))}
+          onChangeText={callback(useCallback((text: string) => {
+            setSingleLineEventCount((eventCount) => eventCount + 1);
+            setSingleLineText(text);
+          }, []))}
           onFocus={callback(useCallback(() => setFocusStatus('Single line focused'), []))}
           onBlur={callback(useCallback(() => setFocusStatus('Single line blurred'), []))}
         />
@@ -89,6 +99,7 @@ export function AutoSizeInputTestPage() {
       <View style={styles.autoWidthContainer}>
         <AutoSizeInputView
           style={styles.autoWidthInput}
+          mostRecentEventCount={autoWidthEventCount}
           text={autoWidthText}
           contentAutoWidth={true}
           prefix="$"
@@ -102,7 +113,10 @@ export function AutoSizeInputTestPage() {
           prefixMarginRight={4}
           suffixMarginLeft={8}
           keyboardType="decimalPad"
-          onChangeText={callback(useCallback((text: string) => setAutoWidthText(text), []))}
+          onChangeText={callback(useCallback((text: string) => {
+            setAutoWidthEventCount((eventCount) => eventCount + 1);
+            setAutoWidthText(text);
+          }, []))}
         />
       </View>
 
@@ -154,6 +168,7 @@ export function AutoSizeInputTestPage() {
         <AutoSizeInputView
           ref={multiLineRef}
           style={styles.multiLineInput}
+          mostRecentEventCount={multiLineEventCount}
           text={multiLineText}
           multiline={true}
           maxNumberOfLines={3}
@@ -163,7 +178,10 @@ export function AutoSizeInputTestPage() {
           textColor="#333333"
           placeholderColor="#AAAAAA"
           selectionColor="#34C759"
-          onChangeText={callback(useCallback((text: string) => setMultiLineText(text), []))}
+          onChangeText={callback(useCallback((text: string) => {
+            setMultiLineEventCount((eventCount) => eventCount + 1);
+            setMultiLineText(text);
+          }, []))}
           onFocus={callback(useCallback(() => setFocusStatus('Multi line focused'), []))}
           onBlur={callback(useCallback(() => setFocusStatus('Multi line blurred'), []))}
         />

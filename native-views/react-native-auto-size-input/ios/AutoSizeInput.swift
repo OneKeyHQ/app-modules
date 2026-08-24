@@ -20,9 +20,64 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
   var view: UIView = UIView()
 
   // MARK: - Props
+  // Mirrors Android's TextUpdateEventCounter: every user edit bumps
+  // nativeEventCount, and a controlled `text` update only applies once the
+  // caller's acknowledged count has caught up — otherwise a delayed JS value
+  // would overwrite newer typed input. Callers that never supply
+  // mostRecentEventCount do not participate and their updates always apply.
+  private var nativeEventCount = 0
+
+  // Last text JS requested (cached even when the update is rejected as
+  // stale): a sanitize-to-same-string edit is acknowledged with a count-only
+  // prop update, and the reapply in mostRecentEventCount.didSet is what rolls
+  // the view back.
+  private var lastJsText: String?
+
+  var mostRecentEventCount: Double? {
+    didSet {
+      // React does not re-send an unchanged text prop, so a count-only
+      // acknowledgement that catches up must reapply the cached JS text.
+      guard acknowledgedEventCount != nil, canApplyJsUpdate,
+            let pending = lastJsText, pending != currentInputText else { return }
+      text = pending
+    }
+  }
+
+  // JS supplies the count as a Double; Int(_:) traps on NaN/infinity/
+  // out-of-range. Valid acknowledgements are exact, non-negative values in
+  // the Android Int range — identical to the Android sanitization, so the
+  // same prop value can never be stale on one platform and current on the
+  // other. Anything else degrades to uncounted (nil).
+  private var acknowledgedEventCount: Int? {
+    guard let acknowledged = mostRecentEventCount,
+          acknowledged.isFinite,
+          acknowledged >= 0,
+          acknowledged <= Double(Int32.max),
+          acknowledged.rounded(.down) == acknowledged
+    else { return nil }
+    return Int(acknowledged)
+  }
+
+  private var canApplyJsUpdate: Bool {
+    guard let acknowledged = acknowledgedEventCount else { return true }
+    return acknowledged >= nativeEventCount
+  }
+
+  private var currentInputText: String {
+    (multiline == true ? multiLineInput.text : singleLineInput.text) ?? ""
+  }
+
   var text: String? {
     didSet {
       guard !isUpdatingFromJS else { return }
+      lastJsText = text ?? ""
+      guard canApplyJsUpdate else {
+        // Stale controlled update: keep the freshly typed value and realign
+        // the stored prop with what is actually displayed. (Assigning here
+        // does not re-trigger didSet.)
+        text = currentInputText
+        return
+      }
       isUpdatingFromJS = true
       if multiline == true {
         multiLineInput.text = text ?? ""
@@ -547,6 +602,7 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
 
   fileprivate func handleTextFieldChange(_ textField: UITextField) {
     guard !isUpdatingFromJS else { return }
+    nativeEventCount += 1
     view.setNeedsLayout()
     recalculateFontSize()
     onChangeText?(textField.text ?? "")
@@ -554,6 +610,7 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
 
   fileprivate func handleTextViewChange(_ textView: UITextView) {
     guard !isUpdatingFromJS else { return }
+    nativeEventCount += 1
     view.setNeedsLayout()
     recalculateFontSize()
     onChangeText?(textView.text ?? "")

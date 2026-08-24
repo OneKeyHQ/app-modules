@@ -1,5 +1,9 @@
 import Foundation
 
+enum SniConnectSessionDelegatePolicy {
+  static let responseDispositionWithoutForwardingDelegate: URLSession.ResponseDisposition = .allow
+}
+
 enum SniConnectCoreDiagnostics {
   static var warnSink: ((String) -> Void)?
 
@@ -156,11 +160,37 @@ enum SniConnectTimeout: Error, Equatable {
 }
 
 enum SniConnectWallClockDeadline {
+  struct Deadline: Sendable {
+    fileprivate let uptimeNanoseconds: UInt64
+  }
+
+  static func makeDeadline(timeoutMilliseconds: TimeInterval) -> Deadline {
+    let now = DispatchTime.now().uptimeNanoseconds
+    let (deadline, overflow) = now.addingReportingOverflow(
+      timeoutNanoseconds(milliseconds: timeoutMilliseconds)
+    )
+    return Deadline(uptimeNanoseconds: overflow ? UInt64.max : deadline)
+  }
+
+  static func remainingMilliseconds(until deadline: Deadline) -> TimeInterval {
+    Double(remainingNanoseconds(until: deadline)) / 1_000_000.0
+  }
+
   static func run<T>(
     timeoutMilliseconds: TimeInterval,
     operation: @escaping @Sendable () async throws -> T
   ) async throws -> T {
-    let timeoutNanoseconds = UInt64(max(1.0, timeoutMilliseconds) * 1_000_000.0)
+    try await run(
+      until: makeDeadline(timeoutMilliseconds: timeoutMilliseconds),
+      operation: operation
+    )
+  }
+
+  static func run<T>(
+    until deadline: Deadline,
+    operation: @escaping @Sendable () async throws -> T
+  ) async throws -> T {
+    let timeoutNanoseconds = remainingNanoseconds(until: deadline)
     return try await withThrowingTaskGroup(of: T.self) { group in
       group.addTask {
         try await operation()
@@ -170,17 +200,37 @@ enum SniConnectWallClockDeadline {
         throw SniConnectTimeout.deadlineExceeded
       }
 
+      defer {
+        group.cancelAll()
+      }
       do {
         guard let result = try await group.next() else {
           throw SniConnectTimeout.deadlineExceeded
         }
-        group.cancelAll()
+        guard !hasExpired(deadline) else {
+          throw SniConnectTimeout.deadlineExceeded
+        }
         return result
       } catch {
-        group.cancelAll()
+        if hasExpired(deadline) {
+          throw SniConnectTimeout.deadlineExceeded
+        }
         throw error
       }
     }
+  }
+
+  private static func remainingNanoseconds(until deadline: Deadline) -> UInt64 {
+    let now = DispatchTime.now().uptimeNanoseconds
+    return deadline.uptimeNanoseconds > now ? deadline.uptimeNanoseconds - now : 0
+  }
+
+  private static func hasExpired(_ deadline: Deadline) -> Bool {
+    DispatchTime.now().uptimeNanoseconds >= deadline.uptimeNanoseconds
+  }
+
+  private static func timeoutNanoseconds(milliseconds: TimeInterval) -> UInt64 {
+    UInt64(max(1.0, milliseconds) * 1_000_000.0)
   }
 }
 

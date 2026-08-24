@@ -10,16 +10,35 @@ static const NSTimeInterval OneKeyNetworkThrottleDefaultLatencyMs = 562.5;
 static const NSInteger OneKeyNetworkThrottleDefaultThroughputBps = 102 * 1024;
 static const NSUInteger OneKeyNetworkThrottleMaxPendingDownloadBytes = 256 * 1024;
 
+static NSString *OneKeyNetworkThrottleNormalizedHost(NSString *value)
+{
+  NSString *host = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]].lowercaseString;
+  return host.length > 0 ? host : nil;
+}
+
+// Hosts match as exact names, or as `*.example.com` which matches sub-domains
+// at any depth but not the bare apex. This mirrors the URL patterns the
+// desktop app installs, so both platforms throttle the same traffic.
+static BOOL OneKeyNetworkThrottleHostMatches(NSString *host, NSString *pattern)
+{
+  if ([pattern hasPrefix:@"*."]) {
+    return [host hasSuffix:[pattern substringFromIndex:1]];
+  }
+  return [host isEqualToString:pattern];
+}
+
 @interface OneKeyNetworkThrottleState : NSObject
 + (NSDictionary *)currentConfig;
 + (BOOL)isEnabled;
 + (NSTimeInterval)latencyMs;
 + (NSInteger)downloadBps;
 + (NSInteger)uploadBps;
++ (BOOL)shouldThrottleURL:(NSURL *)url;
 + (NSDictionary *)setEnabled:(BOOL)enabled
                     latencyMs:(NSTimeInterval)latencyMs
                    downloadBps:(NSInteger)downloadBps
-                      uploadBps:(NSInteger)uploadBps;
+                      uploadBps:(NSInteger)uploadBps
+                throttleUrlHosts:(NSArray *)throttleUrlHosts;
 @end
 
 @implementation OneKeyNetworkThrottleState
@@ -28,18 +47,25 @@ static atomic_bool _oneKeyNetworkThrottleEnabled = ATOMIC_VAR_INIT(false);
 static atomic_llong _oneKeyNetworkThrottleLatencyMicros = ATOMIC_VAR_INIT(562500);
 static atomic_llong _oneKeyNetworkThrottleDownloadBps = ATOMIC_VAR_INIT(102 * 1024);
 static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024);
+static NSSet<NSString *> *_oneKeyNetworkThrottleHosts;
 
 + (NSDictionary *)currentConfig
 {
   BOOL enabled = atomic_load_explicit(&_oneKeyNetworkThrottleEnabled, memory_order_acquire);
   NSTimeInterval latencyMs =
     ((NSTimeInterval)atomic_load_explicit(&_oneKeyNetworkThrottleLatencyMicros, memory_order_relaxed)) / 1000.0;
+  NSArray<NSString *> *throttleUrlHosts = nil;
+  @synchronized (self) {
+    throttleUrlHosts = [[_oneKeyNetworkThrottleHosts ?: [NSSet set] allObjects]
+      sortedArrayUsingSelector:@selector(compare:)];
+  }
   return @{
     @"enabled": @(enabled),
     @"profile": OneKeyNetworkThrottleProfileSlow4G,
     @"latencyMs": @(latencyMs),
     @"downloadBps": @([self downloadBps]),
-    @"uploadBps": @([self uploadBps])
+    @"uploadBps": @([self uploadBps]),
+    @"throttleUrlHosts": throttleUrlHosts
   };
 }
 
@@ -63,6 +89,25 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
   return (NSInteger)atomic_load_explicit(&_oneKeyNetworkThrottleUploadBps, memory_order_relaxed);
 }
 
++ (BOOL)shouldThrottleURL:(NSURL *)url
+{
+  NSString *host = OneKeyNetworkThrottleNormalizedHost(url.host);
+  if (host == nil) {
+    return NO;
+  }
+  // An empty allowlist throttles nothing.
+  NSSet<NSString *> *hosts = nil;
+  @synchronized (self) {
+    hosts = _oneKeyNetworkThrottleHosts;
+  }
+  for (NSString *pattern in hosts) {
+    if (OneKeyNetworkThrottleHostMatches(host, pattern)) {
+      return YES;
+    }
+  }
+  return NO;
+}
+
 + (NSInteger)normalizeThroughputBps:(NSInteger)throughputBps
 {
   return throughputBps > 0 ? throughputBps : OneKeyNetworkThrottleDefaultThroughputBps;
@@ -72,10 +117,29 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
                     latencyMs:(NSTimeInterval)latencyMs
                    downloadBps:(NSInteger)downloadBps
                       uploadBps:(NSInteger)uploadBps
+                throttleUrlHosts:(NSArray *)throttleUrlHosts
 {
   NSTimeInterval normalizedLatencyMs = latencyMs > 0 ? latencyMs : OneKeyNetworkThrottleDefaultLatencyMs;
   NSInteger normalizedDownloadBps = [self normalizeThroughputBps:downloadBps];
   NSInteger normalizedUploadBps = [self normalizeThroughputBps:uploadBps];
+  if ([throttleUrlHosts isKindOfClass:[NSArray class]]) {
+    NSMutableSet<NSString *> *normalizedHosts = [NSMutableSet set];
+    for (id value in throttleUrlHosts) {
+      if (![value isKindOfClass:[NSString class]]) {
+        continue;
+      }
+      NSString *host = OneKeyNetworkThrottleNormalizedHost((NSString *)value);
+      if (host != nil) {
+        [normalizedHosts addObject:host];
+      }
+    }
+    @synchronized (self) {
+      NSMutableSet<NSString *> *nextHosts =
+        [_oneKeyNetworkThrottleHosts mutableCopy] ?: [NSMutableSet set];
+      [nextHosts unionSet:normalizedHosts];
+      _oneKeyNetworkThrottleHosts = [nextHosts copy];
+    }
+  }
   atomic_store_explicit(
     &_oneKeyNetworkThrottleLatencyMicros,
     (long long)llround(normalizedLatencyMs * 1000.0),
@@ -135,6 +199,9 @@ static atomic_llong _oneKeyNetworkThrottleUploadBps = ATOMIC_VAR_INIT(102 * 1024
     return NO;
   }
   if ([NSURLProtocol propertyForKey:OneKeyNetworkThrottleHandledKey inRequest:request]) {
+    return NO;
+  }
+  if (![OneKeyNetworkThrottleState shouldThrottleURL:request.URL]) {
     return NO;
   }
   NSString *scheme = request.URL.scheme.lowercaseString;
@@ -517,7 +584,14 @@ RCT_REMAP_METHOD(setConfig, setConfig:(NSDictionary *)config resolver:(RCTPromis
     uploadBpsValue != nil && uploadBpsValue != [NSNull null]
       ? [uploadBpsValue integerValue]
       : [OneKeyNetworkThrottleState uploadBps];
-  resolve([OneKeyNetworkThrottleState setEnabled:enabled latencyMs:latencyMs downloadBps:downloadBps uploadBps:uploadBps]);
+  id throttleUrlHostsValue = config[@"throttleUrlHosts"];
+  NSArray *throttleUrlHosts = [throttleUrlHostsValue isKindOfClass:[NSArray class]] ? throttleUrlHostsValue : nil;
+  resolve([OneKeyNetworkThrottleState
+    setEnabled:enabled
+    latencyMs:latencyMs
+    downloadBps:downloadBps
+    uploadBps:uploadBps
+    throttleUrlHosts:throttleUrlHosts]);
 }
 
 @end

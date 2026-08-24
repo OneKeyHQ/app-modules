@@ -17,6 +17,11 @@ final class SniConnectImpl: NSObject {
   }
 
   @objc
+  public func invalidate() {
+    client.invalidate()
+  }
+
+  @objc
   public func request(
     _ config: NSDictionary,
     resolve: @escaping RCTPromiseResolveBlock,

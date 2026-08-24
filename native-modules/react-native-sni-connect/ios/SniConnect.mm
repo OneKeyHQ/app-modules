@@ -1,4 +1,5 @@
 #import <React/RCTBridgeModule.h>
+#import <React/RCTInvalidating.h>
 #import <React/RCTUtils.h>
 
 #ifdef RCT_NEW_ARCH_ENABLED
@@ -8,6 +9,7 @@
 // Forward declaration of the Swift implementation
 @interface SniConnectImpl : NSObject
 - (instancetype)init;
+- (void)invalidate;
 - (void)request:(NSDictionary *)config
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject;
@@ -28,9 +30,9 @@
 
 @interface SniConnect : NSObject
 #ifdef RCT_NEW_ARCH_ENABLED
-<NativeSniConnectSpec>
+<NativeSniConnectSpec, RCTInvalidating>
 #else
-<RCTBridgeModule>
+<RCTBridgeModule, RCTInvalidating>
 #endif
 @end
 
@@ -49,6 +51,10 @@ RCT_EXPORT_MODULE(SniConnect)
     _implementation = [[SniConnectImpl alloc] init];
   }
   return self;
+}
+
+- (void)invalidate {
+  [_implementation invalidate];
 }
 
 #ifdef RCT_NEW_ARCH_ENABLED

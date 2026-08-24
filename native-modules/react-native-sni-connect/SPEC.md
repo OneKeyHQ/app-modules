@@ -420,6 +420,8 @@ Cancellation is request-id based.
 - `cancelAllRequests()` cancels every pending or active request owned by the
   calling native-module/RN runtime at the time the cancellation snapshot is
   taken. It MUST NOT cancel requests created by another runtime.
+- Invalidating a native module/RN runtime MUST cancel every pending or active
+  request it owns so process-shared admission slots are released promptly.
 
 Every runtime that supports SNI requests, including Node/Desktop, MUST expose
 the cancellation API. Unsupported platforms MAY return `null` from a higher
@@ -489,6 +491,10 @@ by tests.
 Static resolver or agent registries are cache state. They MUST be bounded,
 reused, or clearable; they MUST NOT grow without limit as JS supplies new
 `(hostname, ip)` pairs.
+
+When an iOS resolver registry is process-shared, its session cache and resolver
+slot accounting MUST share the same process-wide owner so one RN runtime can
+evict or wait for idle entries created by another runtime.
 
 ---
 

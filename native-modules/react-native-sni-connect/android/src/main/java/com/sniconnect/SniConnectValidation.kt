@@ -205,8 +205,12 @@ internal object SniConnectValidation {
     ) {
       throw ValidationException("Invalid IP: $ip")
     }
-    val octets = IPV4_REGEX.matchEntire(ip)?.groupValues?.drop(1)?.map { it.toInt() }
-    if (octets != null) {
+    val octetStrings = IPV4_REGEX.matchEntire(ip)?.groupValues?.drop(1)
+    if (octetStrings != null) {
+      if (octetStrings.any { it.length > 1 && it.startsWith('0') }) {
+        throw ValidationException("Invalid IP: $ip")
+      }
+      val octets = octetStrings.map { it.toInt() }
       if (octets.any { it > 255 }) throw ValidationException("Invalid IP: $ip")
       if (isForbiddenIpv4(octets)) throw ValidationException("Forbidden IP: $ip")
       return
