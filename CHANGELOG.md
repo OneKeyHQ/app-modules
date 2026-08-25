@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.88] - 2026-08-25
+
+### Bug Fixes
+- **sni-connect (iOS)**: Canonicalize equivalent IP spellings for the shared session cache and pinned resolver registry so equivalent IPv6 addresses reuse the same bounded entry.
+
+### Chores
+- Bump all publishable packages to 3.0.88.
+
+## [3.0.87] - 2026-08-25
+
+### Chores
+- **bundle-update (iOS)**: Align the MMKV pod dependency with `react-native-mmkv` 4.3.2 by upgrading MMKV from the 2.2 line to 2.4.0.
+- **Nitro modules**: Upgrade `nitrogen` and `react-native-nitro-modules` from 0.35.2 to 0.36.5 across all Nitro packages, templates, and the example app.
+- Bump all publishable packages to 3.0.87.
+
+## [3.0.86] - 2026-08-24
+
+### Features
+- **sni-connect**: Add request IDs, per-runtime request cancellation APIs, and native admission debug snapshots.
+- **sni-connect (Android/iOS)**: Add process-shared request admission with 64 global active requests, 16 active requests per canonical hostname/IP pair, and a bounded queue of 256 pending requests.
+
+### Bug Fixes
+- **sni-connect**: Include queue wait in the request deadline, pass only the remaining timeout to the transport, canonicalize equivalent IP spellings, and make pending/active cancellation and token release race-safe.
+
+### Chores
+- Bump all publishable packages to 3.0.86.
+
 ## [3.0.73] - 2026-06-30
 
 ### Features

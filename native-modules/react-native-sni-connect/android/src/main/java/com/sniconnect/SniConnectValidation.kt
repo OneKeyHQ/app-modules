@@ -4,7 +4,6 @@ import java.net.Inet6Address
 import java.net.InetAddress
 import java.nio.charset.StandardCharsets
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Boundary validation/normalization for SNI request inputs.
@@ -29,6 +28,7 @@ internal object SniConnectValidation {
   const val MAX_TOTAL_HEADER_BYTES = 32 * 1024
   const val MAX_ACTIVE_REQUESTS = 64
   const val MAX_ACTIVE_REQUESTS_PER_PAIR = 16
+  const val MAX_PENDING_REQUESTS = 256
 
   private val ALLOWED_METHODS =
     setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
@@ -205,8 +205,12 @@ internal object SniConnectValidation {
     ) {
       throw ValidationException("Invalid IP: $ip")
     }
-    val octets = IPV4_REGEX.matchEntire(ip)?.groupValues?.drop(1)?.map { it.toInt() }
-    if (octets != null) {
+    val octetStrings = IPV4_REGEX.matchEntire(ip)?.groupValues?.drop(1)
+    if (octetStrings != null) {
+      if (octetStrings.any { it.length > 1 && it.startsWith('0') }) {
+        throw ValidationException("Invalid IP: $ip")
+      }
+      val octets = octetStrings.map { it.toInt() }
       if (octets.any { it > 255 }) throw ValidationException("Invalid IP: $ip")
       if (isForbiddenIpv4(octets)) throw ValidationException("Forbidden IP: $ip")
       return
@@ -223,6 +227,11 @@ internal object SniConnectValidation {
       return
     }
     throw ValidationException("Invalid IP: $ip")
+  }
+
+  fun canonicalizePublicIp(ip: String): String {
+    validatePublicIp(ip)
+    return literalToInetAddress(ip).hostAddress
   }
 
   private fun isForbiddenIpv4(o: List<Int>): Boolean {
@@ -311,80 +320,5 @@ internal object SniConnectValidation {
       return InetAddress.getByAddress(byteArrayOf(octets[0], octets[1], octets[2], octets[3]))
     }
     return InetAddress.getByName(ip) // safe: already validated as an IPv6 literal
-  }
-}
-
-internal class SniConnectRequestLimiter(
-  private val maxActiveRequests: Int = SniConnectValidation.MAX_ACTIVE_REQUESTS,
-  private val maxActiveRequestsPerPair: Int = SniConnectValidation.MAX_ACTIVE_REQUESTS_PER_PAIR,
-) {
-  private val lock = Any()
-  private var activeRequests = 0
-  private val activeRequestsByPair = mutableMapOf<String, Int>()
-
-  fun acquire(hostname: String, ip: String): Token {
-    val key = pairKey(hostname, ip)
-    synchronized(lock) {
-      if (activeRequests >= maxActiveRequests) {
-        SniConnectLogger.warn(
-          SniConnectLogger.event(
-            "sni_resource_limit",
-            "activeCount" to activeRequests,
-            "pairCount" to (activeRequestsByPair[key] ?: 0),
-            "limit" to maxActiveRequests,
-            "reason" to "max_active_requests",
-            "hostname" to hostname.lowercase(Locale.US),
-            "ipHash" to SniConnectLogger.shortHash(ip),
-          ),
-        )
-        throw SniConnectValidation.ValidationException("Too many active SNI requests")
-      }
-      val pairCount = activeRequestsByPair[key] ?: 0
-      if (pairCount >= maxActiveRequestsPerPair) {
-        SniConnectLogger.warn(
-          SniConnectLogger.event(
-            "sni_resource_limit",
-            "activeCount" to activeRequests,
-            "pairCount" to pairCount,
-            "limit" to maxActiveRequestsPerPair,
-            "reason" to "max_active_requests_per_pair",
-            "hostname" to hostname.lowercase(Locale.US),
-            "ipHash" to SniConnectLogger.shortHash(ip),
-          ),
-        )
-        throw SniConnectValidation.ValidationException("Too many active SNI requests for destination")
-      }
-      activeRequests += 1
-      activeRequestsByPair[key] = pairCount + 1
-    }
-    return Token(this, key)
-  }
-
-  private fun release(key: String) {
-    synchronized(lock) {
-      activeRequests = (activeRequests - 1).coerceAtLeast(0)
-      val pairCount = activeRequestsByPair[key] ?: return
-      if (pairCount <= 1) {
-        activeRequestsByPair.remove(key)
-      } else {
-        activeRequestsByPair[key] = pairCount - 1
-      }
-    }
-  }
-
-  private fun pairKey(hostname: String, ip: String): String =
-    "${hostname.lowercase(Locale.US)}|$ip"
-
-  class Token internal constructor(
-    private val limiter: SniConnectRequestLimiter,
-    private val key: String,
-  ) {
-    private val released = AtomicBoolean(false)
-
-    fun release() {
-      if (released.compareAndSet(false, true)) {
-        limiter.release(key)
-      }
-    }
   }
 }

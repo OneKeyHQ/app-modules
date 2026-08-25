@@ -58,11 +58,28 @@ export type SniConnectResponse = {
   multiValueHeaders?: MultiValueHeaderMap;
 };
 
+export type SniConnectDebugTarget = {
+  ip: string;
+  hostname: string;
+};
+
+export type SniConnectDebugSnapshot = {
+  activeRequests: Int32;
+  activeRequestsForPair: Int32;
+  pendingRequests: Int32;
+  pendingRequestsForPair: Int32;
+  activeRequestIdsForPair: string[];
+  pendingRequestIdsForPair: string[];
+};
+
 export interface Spec extends TurboModule {
   request(config: NativeSniConnectRequest): Promise<SniConnectResponse>;
   cancelRequest(requestId: string): Promise<{ success: boolean }>;
   cancelAllRequests(): Promise<{ success: boolean }>;
   clearDNSCache(): Promise<{ success: boolean }>;
+  getDebugSnapshot(
+    target: SniConnectDebugTarget
+  ): Promise<SniConnectDebugSnapshot>;
   isProxyActiveForUrl(url: string): Promise<boolean>;
 }
 

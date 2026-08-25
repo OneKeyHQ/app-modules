@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-sni-connect",
-  "version": "3.0.85",
+  "version": "3.0.88",
   "description": "A React Native library for SNI-based HTTP requests with DNS caching and request management",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

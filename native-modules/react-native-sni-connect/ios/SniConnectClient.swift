@@ -83,7 +83,7 @@ final class SniConnectPinnedResolverLease {
     }
   }
 
-  private var isReleased: Bool {
+  var isReleased: Bool {
     queue.sync {
       didRelease
     }
@@ -186,13 +186,11 @@ final class SniConnectClient {
   // token so cancelAllRequests() also covers requests that do not have a requestId.
   private var activeTasksByToken: [UUID: Task<Response, Error>] = [:]
   private var requestTokensById: [String: UUID] = [:]
+  private var invalidated = false
   private let tasksQueue = DispatchQueue(label: "com.onekey.sni.connect.tasks", attributes: .concurrent)
-  private let requestLimiter = SniConnectRequestLimiter()
+  private let requestLimiter = SniConnectRequestLimiter.shared
 
-  private struct SessionKey: Hashable {
-    let hostname: String
-    let ip: String
-  }
+  private typealias SessionKey = SniConnectEndpointKey
 
   private struct SessionLease {
     let session: URLSession
@@ -215,10 +213,13 @@ final class SniConnectClient {
   }
 
   private static let maxCachedSessions = SniConnectPinnedResolverRegistry.defaultMaxEntries
-  private var sessionCache: [SessionKey: ManagedSession] = [:]
-  private var sessionAccessOrder: [SessionKey] = []
-  private var activeSessionCounts: [ObjectIdentifier: Int] = [:]
-  private let sessionsQueue = DispatchQueue(label: "com.onekey.sni.connect.sessions")
+  // The resolver registry is process-shared, so the cache and its slot accounting
+  // must have the same owner across every RN runtime.
+  private static var sessionCache: [SessionKey: ManagedSession] = [:]
+  private static var sessionAccessOrder: [SessionKey] = []
+  private static var activeSessionCounts: [ObjectIdentifier: Int] = [:]
+  private static var pendingResolverSlots: [SniConnectPinnedResolverLease] = []
+  private static let sessionsQueue = DispatchQueue(label: "com.onekey.sni.connect.sessions")
 
   // Token for the memory-warning observer (block-based observers are not removed
   // by `removeObserver(self)`, so the token must be retained and removed explicitly).
@@ -400,15 +401,15 @@ final class SniConnectClient {
     }
   }
 
-  private static func makeURLSession(for key: SessionKey) throws -> ManagedSession {
+  private static func makeURLSession(hostname: String, ip: String) throws -> ManagedSession {
     let resources = try SniConnectPinnedTransport.makeResources(
-      hostname: key.hostname,
-      ip: key.ip
+      hostname: hostname,
+      ip: ip
     )
     SniConnectLog.info(SniConnectLog.event("sni_transport_config", [
-      ("hostname", key.hostname),
-      ("ipHash", SniConnectLog.shortHash(key.ip)),
-      ("ipFamily", SniConnectLog.ipFamily(key.ip)),
+      ("hostname", hostname),
+      ("ipHash", SniConnectLog.shortHash(ip)),
+      ("ipFamily", SniConnectLog.ipFamily(ip)),
       ("proxyMode", "no_proxy"),
       ("pinnedResolver", true),
       ("protocol", "http1"),
@@ -426,23 +427,28 @@ final class SniConnectClient {
   }
 
   private func sessionLease(for config: RequestConfig) async throws -> SessionLease {
-    let key = SessionKey(hostname: config.hostname.lowercased(), ip: config.ip)
+    let key = SessionKey(hostname: config.hostname, ip: config.ip)
     while true {
-      let acquisition = try sessionsQueue.sync { () throws -> SessionAcquisition in
-        if let managedSession = sessionCache[key] {
-          markSessionUsed(key)
-          return .ready(retainSession(managedSession.session))
+      let acquisition = try Self.sessionsQueue.sync { () throws -> SessionAcquisition in
+        Self.pendingResolverSlots.removeAll { $0.isReleased }
+        if let managedSession = Self.sessionCache[key] {
+          Self.markSessionUsed(key)
+          return .ready(Self.retainSession(managedSession.session))
+        }
+        if !Self.pendingResolverSlots.isEmpty {
+          return .waitForResolverSlots(Self.pendingResolverSlots)
         }
 
-        let pendingResolverSlots = evictSessionsIfNeeded(forPendingInsert: true)
+        let pendingResolverSlots = Self.evictSessionsIfNeeded(forPendingInsert: true)
         if !pendingResolverSlots.isEmpty {
+          Self.pendingResolverSlots.append(contentsOf: pendingResolverSlots)
           return .waitForResolverSlots(pendingResolverSlots)
         }
 
-        let managedSession = try Self.makeURLSession(for: key)
-        sessionCache[key] = managedSession
-        markSessionUsed(key)
-        return .ready(retainSession(managedSession.session))
+        let managedSession = try Self.makeURLSession(hostname: key.hostname, ip: config.ip)
+        Self.sessionCache[key] = managedSession
+        Self.markSessionUsed(key)
+        return .ready(Self.retainSession(managedSession.session))
       }
 
       switch acquisition {
@@ -451,41 +457,46 @@ final class SniConnectClient {
       case .waitForResolverSlots(let resolverLeases):
         SniConnectLog.info(SniConnectLog.event("sni_resolver_slot_wait", [
           ("hostname", key.hostname),
-          ("ipHash", SniConnectLog.shortHash(key.ip)),
+          ("ipHash", SniConnectLog.shortHash(config.ip)),
           ("waitCount", resolverLeases.count),
         ]))
         for resolverLease in resolverLeases {
           try await resolverLease.waitUntilReleased()
         }
+        Self.sessionsQueue.sync {
+          Self.pendingResolverSlots.removeAll { $0.isReleased }
+        }
       }
     }
   }
 
-  private func retainSession(_ session: URLSession) -> SessionLease {
+  private static func retainSession(_ session: URLSession) -> SessionLease {
     let sessionID = ObjectIdentifier(session)
     activeSessionCounts[sessionID, default: 0] += 1
     return SessionLease(session: session, sessionID: sessionID)
   }
 
   private func releaseSessionLease(_ lease: SessionLease) {
-    sessionsQueue.sync {
-      guard let count = activeSessionCounts[lease.sessionID] else {
+    Self.sessionsQueue.sync {
+      guard let count = Self.activeSessionCounts[lease.sessionID] else {
         return
       }
       if count > 1 {
-        activeSessionCounts[lease.sessionID] = count - 1
+        Self.activeSessionCounts[lease.sessionID] = count - 1
       } else {
-        activeSessionCounts.removeValue(forKey: lease.sessionID)
+        Self.activeSessionCounts.removeValue(forKey: lease.sessionID)
       }
     }
   }
 
-  private func markSessionUsed(_ key: SessionKey) {
+  private static func markSessionUsed(_ key: SessionKey) {
     sessionAccessOrder.removeAll { $0 == key }
     sessionAccessOrder.append(key)
   }
 
-  private func evictSessionsIfNeeded(forPendingInsert: Bool = false) -> [SniConnectPinnedResolverLease] {
+  private static func evictSessionsIfNeeded(
+    forPendingInsert: Bool = false
+  ) -> [SniConnectPinnedResolverLease] {
     var pendingResolverSlots: [SniConnectPinnedResolverLease] = []
     let limit = forPendingInsert ? Self.maxCachedSessions - 1 : Self.maxCachedSessions
     while sessionCache.count > limit, let evictedKey = sessionAccessOrder.first {
@@ -497,7 +508,7 @@ final class SniConnectClient {
       }
       SniConnectLog.info(SniConnectLog.event("sni_cache_evict", [
         ("hostname", evictedKey.hostname),
-        ("ipHash", SniConnectLog.shortHash(evictedKey.ip)),
+        ("ipHash", SniConnectLog.shortHash(evictedKey.canonicalIP)),
         ("cacheSize", sessionCache.count),
         ("limit", Self.maxCachedSessions),
         ("reason", forPendingInsert ? "max_cached_sessions_pending_insert" : "max_cached_sessions"),
@@ -506,7 +517,7 @@ final class SniConnectClient {
     return pendingResolverSlots
   }
 
-  private func invalidateSession(
+  private static func invalidateSession(
     _ managedSession: ManagedSession,
     for key: SessionKey
   ) -> SniConnectPinnedResolverLease? {
@@ -524,15 +535,21 @@ final class SniConnectClient {
   /// slot immediately; sessions with active requests release it when invalidation
   /// completes.
   func clearDNSCache() {
-    let invalidations = sessionsQueue.sync { () -> [SessionInvalidation] in
-      let invalidations = sessionCache.map { _, managedSession in
+    let invalidations = Self.sessionsQueue.sync { () -> [SessionInvalidation] in
+      let invalidations = Self.sessionCache.map { _, managedSession in
         SessionInvalidation(
           managedSession: managedSession,
-          releaseResolverImmediately: activeSessionCounts[ObjectIdentifier(managedSession.session)] == nil
+          releaseResolverImmediately:
+            Self.activeSessionCounts[ObjectIdentifier(managedSession.session)] == nil
         )
       }
-      sessionCache.removeAll()
-      sessionAccessOrder.removeAll()
+      Self.sessionCache.removeAll()
+      Self.sessionAccessOrder.removeAll()
+      // Block new cache inserts until every registry entry removed by this
+      // process-wide clear has actually released its resolver slot.
+      Self.pendingResolverSlots.append(contentsOf: invalidations.map {
+        $0.managedSession.resolverLease
+      })
       return invalidations
     }
     var releasedResolverCount = 0
@@ -550,6 +567,10 @@ final class SniConnectClient {
       ("releasedResolverCount", releasedResolverCount),
       ("success", true),
     ]))
+  }
+
+  func debugSnapshot(hostname: String, ip: String) -> SniConnectRequestLimiter.Snapshot {
+    requestLimiter.snapshot(hostname: hostname, ip: ip)
   }
 
   /// Cancel a request by ID
@@ -574,15 +595,27 @@ final class SniConnectClient {
 
   /// Cancel all active requests
   func cancelAllRequests() {
+    cancelOwnedRequests(markInvalidated: false, logAction: "sni_cancel_all")
+  }
+
+  /// Permanently stop this runtime's client and cancel work racing with teardown.
+  func invalidate() {
+    cancelOwnedRequests(markInvalidated: true, logAction: "sni_runtime_invalidate")
+  }
+
+  private func cancelOwnedRequests(markInvalidated: Bool, logAction: String) {
     tasksQueue.sync(flags: .barrier) { [weak self] in
       guard let self = self else { return }
+      if markInvalidated {
+        self.invalidated = true
+      }
       let tasks = Array(self.activeTasksByToken.values)
       for task in tasks {
         task.cancel()
       }
       self.activeTasksByToken.removeAll()
       self.requestTokensById.removeAll()
-      SniConnectLog.info(SniConnectLog.event("sni_cancel_all", [
+      SniConnectLog.info(SniConnectLog.event(logAction, [
         ("cancelledCount", tasks.count),
         ("success", true),
       ]))
@@ -592,8 +625,13 @@ final class SniConnectClient {
   /// Register an active task immediately after creation, before JS can cancel it.
   func registerTask(_ task: Task<Response, Error>, for requestId: String?) -> UUID {
     let token = UUID()
+    var shouldCancel = false
     tasksQueue.sync(flags: .barrier) { [weak self] in
       guard let self = self else { return }
+      if self.invalidated {
+        shouldCancel = true
+        return
+      }
       if let requestId = requestId, let previousToken = self.requestTokensById[requestId],
          let previousTask = self.activeTasksByToken.removeValue(forKey: previousToken) {
         previousTask.cancel()
@@ -606,6 +644,9 @@ final class SniConnectClient {
       if let requestId = requestId {
         self.requestTokensById[requestId] = token
       }
+    }
+    if shouldCancel {
+      task.cancel()
     }
     return token
   }
@@ -656,11 +697,24 @@ final class SniConnectClient {
       throw sniError
     }
 
+    let deadline = SniConnectWallClockDeadline.makeDeadline(
+      timeoutMilliseconds: config.effectiveTotalTimeout
+    )
     let requestSlot: SniConnectRequestLimiter.Token
     do {
-      requestSlot = try requestLimiter.acquire(hostname: config.hostname, ip: config.ip)
+      // Admission wait and transport share one total wall-clock deadline.
+      let limiter = requestLimiter
+      requestSlot = try await SniConnectWallClockDeadline.run(
+        until: deadline
+      ) {
+        try await limiter.acquire(
+          hostname: config.hostname,
+          ip: config.ip,
+          requestId: config.requestId
+        )
+      }
     } catch {
-      let sniError = SniConnectError.resourceLimit("\(error)")
+      let sniError = SniConnectError.from(error)
       SniConnectLog.error(SniConnectLog.event("sni_request_result", [
         ("result", "error"),
         ("code", sniError.code),
@@ -678,6 +732,14 @@ final class SniConnectClient {
     defer {
       requestSlot.release()
     }
+    try Task.checkCancellation()
+
+    let queueWaitMilliseconds = SniConnectLog.elapsedMs(since: startedAt)
+    let remainingTimeoutMilliseconds =
+      SniConnectWallClockDeadline.remainingMilliseconds(until: deadline)
+    guard remainingTimeoutMilliseconds > 0 else {
+      throw SniConnectError.requestTimeout
+    }
 
     let url = try Self.buildURL(hostname: config.hostname, normalizedPath: normalizedPath)
 
@@ -685,8 +747,9 @@ final class SniConnectClient {
     mutableRequest.httpMethod = method
 
     // Convert milliseconds to seconds for timeout values
-    let totalTimeoutSeconds = config.effectiveTotalTimeout / 1000.0
-    let connectTimeoutSeconds = config.effectiveConnectTimeout / 1000.0
+    let totalTimeoutSeconds = remainingTimeoutMilliseconds / 1000.0
+    let connectTimeoutSeconds =
+      min(config.effectiveConnectTimeout, remainingTimeoutMilliseconds) / 1000.0
 
     // URLRequest.timeoutInterval is not a full request deadline. Keep it aligned
     // with the caller timeout as a transport guard; the wall-clock deadline below
@@ -716,12 +779,15 @@ final class SniConnectClient {
       ("method", method),
       ("timeoutMs", Int(config.effectiveTotalTimeout)),
       ("connectTimeoutMs", Int(config.effectiveConnectTimeout)),
+      ("queueWaitMs", queueWaitMilliseconds),
       ("headerCount", normalizedHeaders.count),
       ("bodyBytes", config.body?.data(using: .utf8)?.count ?? 0),
     ]))
 
     do {
-      return try await SniConnectWallClockDeadline.run(timeoutMilliseconds: config.effectiveTotalTimeout) {
+      return try await SniConnectWallClockDeadline.run(
+        until: deadline
+      ) {
         let lease = try await self.sessionLease(for: config)
         defer {
           self.releaseSessionLease(lease)

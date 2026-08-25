@@ -1,4 +1,5 @@
 #import <React/RCTBridgeModule.h>
+#import <React/RCTInvalidating.h>
 #import <React/RCTUtils.h>
 
 #ifdef RCT_NEW_ARCH_ENABLED
@@ -8,6 +9,7 @@
 // Forward declaration of the Swift implementation
 @interface SniConnectImpl : NSObject
 - (instancetype)init;
+- (void)invalidate;
 - (void)request:(NSDictionary *)config
         resolve:(RCTPromiseResolveBlock)resolve
          reject:(RCTPromiseRejectBlock)reject;
@@ -18,6 +20,9 @@
                    reject:(RCTPromiseRejectBlock)reject;
 - (void)clearDNSCache:(RCTPromiseResolveBlock)resolve
                reject:(RCTPromiseRejectBlock)reject;
+- (void)getDebugSnapshot:(NSDictionary *)target
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject;
 - (void)isProxyActiveForUrl:(NSString *)url
                     resolve:(RCTPromiseResolveBlock)resolve
                      reject:(RCTPromiseRejectBlock)reject;
@@ -25,9 +30,9 @@
 
 @interface SniConnect : NSObject
 #ifdef RCT_NEW_ARCH_ENABLED
-<NativeSniConnectSpec>
+<NativeSniConnectSpec, RCTInvalidating>
 #else
-<RCTBridgeModule>
+<RCTBridgeModule, RCTInvalidating>
 #endif
 @end
 
@@ -46,6 +51,10 @@ RCT_EXPORT_MODULE(SniConnect)
     _implementation = [[SniConnectImpl alloc] init];
   }
   return self;
+}
+
+- (void)invalidate {
+  [_implementation invalidate];
 }
 
 #ifdef RCT_NEW_ARCH_ENABLED
@@ -89,6 +98,16 @@ RCT_EXPORT_MODULE(SniConnect)
   [_implementation clearDNSCache:resolve reject:reject];
 }
 
+- (void)getDebugSnapshot:(JS::NativeSniConnect::SniConnectDebugTarget &)target
+                  resolve:(RCTPromiseResolveBlock)resolve
+                   reject:(RCTPromiseRejectBlock)reject {
+  NSDictionary *targetDict = @{
+    @"ip": target.ip() ?: @"",
+    @"hostname": target.hostname() ?: @"",
+  };
+  [_implementation getDebugSnapshot:targetDict resolve:resolve reject:reject];
+}
+
 - (void)isProxyActiveForUrl:(NSString *)url
                     resolve:(RCTPromiseResolveBlock)resolve
                      reject:(RCTPromiseRejectBlock)reject {
@@ -122,6 +141,12 @@ RCT_EXPORT_METHOD(cancelAllRequests:(RCTPromiseResolveBlock)resolver
 RCT_EXPORT_METHOD(clearDNSCache:(RCTPromiseResolveBlock)resolver
                   rejecter:(RCTPromiseRejectBlock)rejecter) {
   [_implementation clearDNSCache:resolver reject:rejecter];
+}
+
+RCT_EXPORT_METHOD(getDebugSnapshot:(NSDictionary *)target
+                  resolver:(RCTPromiseResolveBlock)resolver
+                  rejecter:(RCTPromiseRejectBlock)rejecter) {
+  [_implementation getDebugSnapshot:target resolve:resolver reject:rejecter];
 }
 
 RCT_EXPORT_METHOD(isProxyActiveForUrl:(NSString *)url
