@@ -44,7 +44,7 @@ Pod::Spec.new do |s|
   # >= 2.5.4 pulls the fix for the zip-slip / symlink path-traversal CVEs
   # (CVE-2023-39139 etc.) — important since OTA unzips downloaded archives.
   s.dependency 'SSZipArchive', '>= 2.5.4'
-  s.dependency 'MMKV', '~> 2.2'
+  s.dependency 'MMKV', '2.4.0'
 
   load 'nitrogen/generated/ios/ReactNativeBundleUpdate+autolinking.rb'
   add_nitrogen_files(s)

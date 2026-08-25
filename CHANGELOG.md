@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.87] - 2026-08-25
+
+### Chores
+- **bundle-update (iOS)**: Align the MMKV pod dependency with `react-native-mmkv` 4.3.2 by upgrading MMKV from the 2.2 line to 2.4.0.
+- **Nitro modules**: Upgrade `nitrogen` and `react-native-nitro-modules` from 0.35.2 to 0.36.5 across all Nitro packages, templates, and the example app.
+- Bump all publishable packages to 3.0.87.
+
 ## [3.0.86] - 2026-08-24
 
 ### Features
