@@ -185,7 +185,8 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 
 #pragma mark - SharedBridge
 
-+ (void)installSharedBridgeInMainRuntime:(RCTHost *)host {
++ (void)installSharedBridgeInMainRuntime:(RCTHost *)host
+                              completion:(dispatch_block_t)completion {
     if (!host) {
         [BTLogger error:@"Cannot install SharedBridge: RCTHost is nil"];
         return;
@@ -225,6 +226,21 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         // reload observer reads this to detect host hostDidStart: omissions.
         [BackgroundThreadManager sharedInstance].mainSharedBridgeInstalled = YES;
         [BTLogger info:@"SharedStore and SharedRPC installed in main runtime"];
+        if (completion) {
+            completion();
+        }
+    }];
+}
+
++ (void)installSharedBridgeInMainRuntime:(RCTHost *)host {
+    [self installSharedBridgeInMainRuntime:host completion:nil];
+}
+
++ (void)installSharedBridgeInMainRuntime:(RCTHost *)host
+  thenStartBackgroundRunnerWithEntryURL:(NSString *)entryURL {
+    [self installSharedBridgeInMainRuntime:host completion:^{
+        [[BackgroundThreadManager sharedInstance]
+            startBackgroundRunnerWithEntryURL:entryURL];
     }];
 }
 

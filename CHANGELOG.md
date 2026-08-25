@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.90] - 2026-08-26
+
+### Bug Fixes
+- **background-thread (iOS)**: Add an ordered startup API that waits for the main JS runtime's shared bridge installation before creating an Expo-backed background runtime, preventing concurrent Expo module registration crashes.
+
+### Chores
+- Bump all publishable packages to 3.0.90.
+
 ## [3.0.89] - 2026-08-25
 
 ### Bug Fixes
