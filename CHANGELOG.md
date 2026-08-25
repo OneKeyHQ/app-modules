@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [3.0.89] - 2026-08-25
+
+### Bug Fixes
+- **background-thread (iOS)**: Initialize secondary runtimes through Expo's React Native factory when Expo is present, while preserving the plain React Native fallback.
+
+### Chores
+- Upgrade the development and example app baseline to React Native 0.86.2 and React 19.2.3, with a minimum iOS deployment target of 16.4.
+- Bump all publishable packages to 3.0.89.
+
 ## [3.0.88] - 2026-08-25
 
 ### Bug Fixes

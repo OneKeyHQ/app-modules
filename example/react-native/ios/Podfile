@@ -12,9 +12,8 @@ require Pod::Executable.execute_command('node', ['-p',
     {paths: [process.argv[1]]},
   )', __dir__]).strip
 
-# Raised to 15.5 to match the OneKey app (app-monorepo) and to satisfy
-# SSZipArchive >= 2.5.4 (the zip-slip CVE fix), which requires iOS 15.5.
-platform :ios, '15.5'
+# Match the OneKey app's minimum deployment target for the RN 0.86 upgrade.
+platform :ios, '16.4'
 prepare_react_native_project!
 
 linkage = ENV['USE_FRAMEWORKS']

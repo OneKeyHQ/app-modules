@@ -44,6 +44,19 @@ class BgMgrNSDataJSIBuffer : public facebook::jsi::Buffer {
 
 }  // namespace
 
+static RCTReactNativeFactory *CreateBackgroundReactNativeFactory(
+    id<RCTReactNativeFactoryDelegate> delegate) {
+  Class expoFactoryClass = NSClassFromString(@"EXReactNativeFactory");
+  if (expoFactoryClass &&
+      [expoFactoryClass isSubclassOfClass:[RCTReactNativeFactory class]]) {
+    [BTLogger info:@"Using Expo React Native factory for background runtime"];
+    return [(RCTReactNativeFactory *)[expoFactoryClass alloc]
+        initWithDelegate:delegate];
+  }
+
+  return [[RCTReactNativeFactory alloc] initWithDelegate:delegate];
+}
+
 // Exactly-once settle guard for the bg watchdog — same design as
 // SplitBundleLoader's SBLSettleGuard. An ARC object captured by both the
 // executor block and the watchdog dispatch_after; ARC keeps its lock alive
@@ -255,7 +268,7 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
         NSDictionary *initialProperties = @{};
         NSDictionary *launchOptions = @{};
         self.reactNativeFactoryDelegate = [[BackgroundReactNativeDelegate alloc] init];
-        self.reactNativeFactory = [[RCTReactNativeFactory alloc] initWithDelegate:self.reactNativeFactoryDelegate];
+        self.reactNativeFactory = CreateBackgroundReactNativeFactory(self.reactNativeFactoryDelegate);
 
         // Only set jsBundleSource for debug HTTP URLs or explicit OTA overrides.
         // Leaving the default release name ("background.bundle") unset lets the
