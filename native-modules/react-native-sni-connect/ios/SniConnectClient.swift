@@ -190,10 +190,7 @@ final class SniConnectClient {
   private let tasksQueue = DispatchQueue(label: "com.onekey.sni.connect.tasks", attributes: .concurrent)
   private let requestLimiter = SniConnectRequestLimiter.shared
 
-  private struct SessionKey: Hashable {
-    let hostname: String
-    let ip: String
-  }
+  private typealias SessionKey = SniConnectEndpointKey
 
   private struct SessionLease {
     let session: URLSession
@@ -404,15 +401,15 @@ final class SniConnectClient {
     }
   }
 
-  private static func makeURLSession(for key: SessionKey) throws -> ManagedSession {
+  private static func makeURLSession(hostname: String, ip: String) throws -> ManagedSession {
     let resources = try SniConnectPinnedTransport.makeResources(
-      hostname: key.hostname,
-      ip: key.ip
+      hostname: hostname,
+      ip: ip
     )
     SniConnectLog.info(SniConnectLog.event("sni_transport_config", [
-      ("hostname", key.hostname),
-      ("ipHash", SniConnectLog.shortHash(key.ip)),
-      ("ipFamily", SniConnectLog.ipFamily(key.ip)),
+      ("hostname", hostname),
+      ("ipHash", SniConnectLog.shortHash(ip)),
+      ("ipFamily", SniConnectLog.ipFamily(ip)),
       ("proxyMode", "no_proxy"),
       ("pinnedResolver", true),
       ("protocol", "http1"),
@@ -430,7 +427,7 @@ final class SniConnectClient {
   }
 
   private func sessionLease(for config: RequestConfig) async throws -> SessionLease {
-    let key = SessionKey(hostname: config.hostname.lowercased(), ip: config.ip)
+    let key = SessionKey(hostname: config.hostname, ip: config.ip)
     while true {
       let acquisition = try Self.sessionsQueue.sync { () throws -> SessionAcquisition in
         Self.pendingResolverSlots.removeAll { $0.isReleased }
@@ -448,7 +445,7 @@ final class SniConnectClient {
           return .waitForResolverSlots(pendingResolverSlots)
         }
 
-        let managedSession = try Self.makeURLSession(for: key)
+        let managedSession = try Self.makeURLSession(hostname: key.hostname, ip: config.ip)
         Self.sessionCache[key] = managedSession
         Self.markSessionUsed(key)
         return .ready(Self.retainSession(managedSession.session))
@@ -460,7 +457,7 @@ final class SniConnectClient {
       case .waitForResolverSlots(let resolverLeases):
         SniConnectLog.info(SniConnectLog.event("sni_resolver_slot_wait", [
           ("hostname", key.hostname),
-          ("ipHash", SniConnectLog.shortHash(key.ip)),
+          ("ipHash", SniConnectLog.shortHash(config.ip)),
           ("waitCount", resolverLeases.count),
         ]))
         for resolverLease in resolverLeases {
@@ -511,7 +508,7 @@ final class SniConnectClient {
       }
       SniConnectLog.info(SniConnectLog.event("sni_cache_evict", [
         ("hostname", evictedKey.hostname),
-        ("ipHash", SniConnectLog.shortHash(evictedKey.ip)),
+        ("ipHash", SniConnectLog.shortHash(evictedKey.canonicalIP)),
         ("cacheSize", sessionCache.count),
         ("limit", Self.maxCachedSessions),
         ("reason", forPendingInsert ? "max_cached_sessions_pending_insert" : "max_cached_sessions"),

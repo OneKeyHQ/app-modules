@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.0.88] - 2026-08-25
+
+### Bug Fixes
+- **sni-connect (iOS)**: Canonicalize equivalent IP spellings for the shared session cache and pinned resolver registry so equivalent IPv6 addresses reuse the same bounded entry.
+
+### Chores
+- Bump all publishable packages to 3.0.88.
+
 ## [3.0.87] - 2026-08-25
 
 ### Chores

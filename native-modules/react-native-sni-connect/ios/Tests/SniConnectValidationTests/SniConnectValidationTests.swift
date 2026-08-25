@@ -450,6 +450,36 @@ final class SniConnectValidationTests: XCTestCase {
     XCTAssertEqual(registry.resolve(domain: "example.net", resolverClass: reused), "93.184.216.36")
   }
 
+  func testEndpointCachesReuseEquivalentIPv6Spellings() throws {
+    final class ResolverA: NSObject {}
+    final class ResolverB: NSObject {}
+    let registry = SniConnectPinnedResolverRegistry(maxEntries: 2)
+    let compressedIP = "2606:4700:4700::1111"
+    let expandedIP = "2606:4700:4700:0:0:0:0:1111"
+
+    XCTAssertEqual(
+      SniConnectEndpointKey(hostname: "Example.com", ip: compressedIP),
+      SniConnectEndpointKey(hostname: "example.com", ip: expandedIP)
+    )
+
+    let first: AnyClass = try registry.resolverClass(hostname: "Example.com", ip: compressedIP) {
+      ResolverA.self
+    }
+    let same: AnyClass = try registry.resolverClass(hostname: "example.com", ip: expandedIP) {
+      XCTFail("Equivalent IPv6 spellings must reuse the resolver entry")
+      return ResolverB.self
+    }
+
+    XCTAssertTrue(first === same)
+    XCTAssertEqual(registry.entryCount, 1)
+    XCTAssertEqual(registry.allocatedClassCount, 1)
+
+    registry.release(hostname: "example.com", ip: expandedIP)
+    XCTAssertEqual(registry.entryCount, 1)
+    registry.release(hostname: "example.com", ip: compressedIP)
+    XCTAssertEqual(registry.entryCount, 0)
+  }
+
   func testResponseTextDecodePreservesOriginalJsonText() throws {
     let json = "{  \"b\": 1, \"a\": [true, null] }\n"
     XCTAssertEqual(SniConnectResponseText.decode(Data(json.utf8)), json)

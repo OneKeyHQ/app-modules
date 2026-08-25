@@ -47,6 +47,16 @@ struct SniConnectResolverConfig: Equatable {
   let ip: String
 }
 
+struct SniConnectEndpointKey: Hashable {
+  let hostname: String
+  let canonicalIP: String
+
+  init(hostname: String, ip: String) {
+    self.hostname = hostname.lowercased()
+    canonicalIP = SniConnectValidation.canonicalIPKey(ip)
+  }
+}
+
 enum SniConnectCoreError: Error {
   case resourceLimit(String)
 }
@@ -55,9 +65,9 @@ final class SniConnectPinnedResolverRegistry {
   static let defaultMaxEntries = 32
 
   private let maxEntries: Int
-  private var classesByKey: [String: AnyClass] = [:]
+  private var classesByKey: [SniConnectEndpointKey: AnyClass] = [:]
   private var configsByClassName: [String: SniConnectResolverConfig] = [:]
-  private var referenceCountsByKey: [String: Int] = [:]
+  private var referenceCountsByKey: [SniConnectEndpointKey: Int] = [:]
   private var reusableClasses: [AnyClass] = []
   private var allocatedClassNames: Set<String> = []
 
@@ -78,8 +88,7 @@ final class SniConnectPinnedResolverRegistry {
     ip: String,
     allocateClass: () -> AnyClass
   ) throws -> AnyClass {
-    let normalizedHost = hostname.lowercased()
-    let key = Self.key(hostname: normalizedHost, ip: ip)
+    let key = SniConnectEndpointKey(hostname: hostname, ip: ip)
     if let resolverClass = classesByKey[key] {
       referenceCountsByKey[key, default: 0] += 1
       return resolverClass
@@ -93,7 +102,7 @@ final class SniConnectPinnedResolverRegistry {
     let className = NSStringFromClass(resolverClass)
     allocatedClassNames.insert(className)
     classesByKey[key] = resolverClass
-    configsByClassName[className] = SniConnectResolverConfig(hostname: normalizedHost, ip: ip)
+    configsByClassName[className] = SniConnectResolverConfig(hostname: key.hostname, ip: ip)
     referenceCountsByKey[key] = 1
     return resolverClass
   }
@@ -114,7 +123,7 @@ final class SniConnectPinnedResolverRegistry {
   }
 
   func release(hostname: String, ip: String) {
-    let key = Self.key(hostname: hostname.lowercased(), ip: ip)
+    let key = SniConnectEndpointKey(hostname: hostname, ip: ip)
     guard let referenceCount = referenceCountsByKey[key] else {
       return
     }
@@ -136,10 +145,6 @@ final class SniConnectPinnedResolverRegistry {
     classesByKey.removeAll()
     configsByClassName.removeAll()
     referenceCountsByKey.removeAll()
-  }
-
-  private static func key(hostname: String, ip: String) -> String {
-    return "\(hostname)|\(ip)"
   }
 }
 
