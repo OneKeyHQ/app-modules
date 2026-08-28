@@ -2869,6 +2869,7 @@ __metadata:
     "@onekeyfe/react-native-split-bundle-loader": "workspace:*"
     "@onekeyfe/react-native-tab-view": "workspace:*"
     "@onekeyfe/react-native-tcp-socket": "workspace:*"
+    "@onekeyfe/react-native-text-input": "workspace:*"
     "@onekeyfe/react-native-zip-archive": "workspace:*"
     "@react-native-community/cli": "npm:20.1.0"
     "@react-native-community/cli-platform-android": "npm:20.1.0"
@@ -4025,6 +4026,23 @@ __metadata:
     react-native-builder-bob: "npm:^0.40.17"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-text-input@workspace:*, @onekeyfe/react-native-text-input@workspace:native-views/react-native-text-input":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-text-input@workspace:native-views/react-native-text-input"
+  dependencies:
+    "@react-native/babel-preset": "npm:0.86.2"
+    "@types/react": "npm:^19.2.0"
+    del-cli: "npm:^6.0.0"
+    react: "npm:19.2.3"
+    react-native: "patch:react-native@npm%3A0.86.2#~/.yarn/patches/react-native-npm-0.86.2-c9d546616f.patch"
+    react-native-builder-bob: "npm:^0.40.13"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"

@@ -44,6 +44,7 @@
     "@onekeyfe/react-native-split-bundle-loader": "workspace:*",
     "@onekeyfe/react-native-tab-view": "workspace:*",
     "@onekeyfe/react-native-tcp-socket": "workspace:*",
+    "@onekeyfe/react-native-text-input": "workspace:*",
     "@onekeyfe/react-native-zip-archive": "workspace:*",
     "@react-native/new-app-screen": "0.86.2",
     "@react-navigation/native": "^7.1.33",

@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.91] - 2026-08-28
+
+### Features
+- **text-input**: Move `@onekeyfe/react-native-text-input` into app-modules and add package-owned iOS text/image paste handling so consumers no longer patch React Native's TextInput sources.
+
+### Bug Fixes
+- **background-thread**: Integrate the app-monorepo `x` runtime-generation, background-HMR teardown, and replacement-runtime lifecycle fixes on Android and iOS.
+- **split-bundle-loader (iOS)**: Integrate dev-vendor entry loading, HMR setup, and cold-build synchronization from app-monorepo `x`.
+
+### Chores
+- Bump all publishable packages to 3.0.91.
+
 ## [3.0.90] - 2026-08-26
 
 ### Bug Fixes

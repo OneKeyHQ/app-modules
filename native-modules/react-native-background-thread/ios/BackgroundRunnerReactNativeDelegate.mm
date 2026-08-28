@@ -12,8 +12,9 @@
 #include "SharedRPC.h"
 
 #import <React/RCTBridge.h>
+#import <React/RCTAssert.h>
 #import <React/RCTBundleURLProvider.h>
-
+#import <React/RCTJavaScriptLoader.h>
 #if __has_include(<react/utils/FollyConvert.h>)
   // static libs / header maps (no use_frameworks!)
   #import <react/utils/FollyConvert.h>
@@ -42,7 +43,33 @@
 namespace jsi = facebook::jsi;
 namespace TurboModuleConvertUtils = facebook::react::TurboModuleConvertUtils;
 using namespace facebook::react;
-
+namespace {
+constexpr int64_t kDevVendorLoadTimeoutSeconds = 60;
+class BackgroundNSDataJSIBuffer : public facebook::jsi::Buffer {
+ public:
+  explicit BackgroundNSDataJSIBuffer(NSData *data) : data_(data) {}
+  size_t size() const override { return data_.length; }
+  const uint8_t *data() const override {
+    return static_cast<const uint8_t *>(data_.bytes);
+  }
+ private:
+  NSData *data_;
+};
+}  // namespace
+@interface BTDevVendorDownloadState : NSObject
+@property (nonatomic, strong, nullable) NSData *data;
+@property (nonatomic, strong, nullable) NSError *error;
+@property (nonatomic, strong) dispatch_semaphore_t ready;
+@end
+@implementation BTDevVendorDownloadState
+- (instancetype)init
+{
+  if (self = [super init]) {
+    _ready = dispatch_semaphore_create(0);
+  }
+  return self;
+}
+@end
 static void stubJsiFunction(jsi::Runtime &runtime, jsi::Object &object, const char *name)
 {
   object.setProperty(
@@ -163,6 +190,11 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   RCTInstance *_rctInstance;
   std::string _origin;
   std::string _jsBundleSource;
+  NSString *_devVendorCommonBundlePath;
+  NSURL *_devVendorEntryURL;
+  NSString *_devVendorFingerprint;
+  BOOL _devVendorBackgroundHMREnabled;
+  NSUInteger _backgroundRuntimeGeneration;
   // YES when `bundleURL` observed an active OTA main bundle on its most
   // recent invocation, regardless of whether OTA common actually resolved.
   // Captures the invariant "this delegate is locked to OTA territory; IPA
@@ -182,7 +214,11 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
 
 - (void)cleanupResources;
 - (void)setupErrorHandler:(jsi::Runtime &)runtime;
-
+- (void)finishHostStartWithBundleData:(NSData * _Nullable)bundleData
+                            sourceURL:(NSString * _Nullable)sourceURL
+                          fingerprint:(NSString * _Nullable)fingerprint
+                       evaluateEntry:(BOOL)evaluateEntry
+                        downloadState:(BTDevVendorDownloadState * _Nullable)downloadState;
 @end
 
 @implementation BackgroundReactNativeDelegate
@@ -221,7 +257,18 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
 {
   _jsBundleSource = jsBundleSource;
 }
-
+- (void)configureDevVendorCommonBundlePath:(NSString *)commonBundlePath
+                                  entryURL:(NSURL *)entryURL
+                               fingerprint:(NSString *)fingerprint
+                      backgroundHMREnabled:(BOOL)backgroundHMREnabled
+                         runtimeGeneration:(NSUInteger)runtimeGeneration
+{
+  _devVendorCommonBundlePath = [commonBundlePath copy];
+  _devVendorEntryURL = [entryURL copy];
+  _devVendorFingerprint = [fingerprint copy];
+  _devVendorBackgroundHMREnabled = backgroundHMREnabled;
+  _backgroundRuntimeGeneration = runtimeGeneration;
+}
 - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
 {
   return [self bundleURL];
@@ -232,7 +279,9 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   // Reset on every call so a re-entry (e.g. host restart) can't carry over
   // a stale OTA assertion from a previous load.
   _otaActiveAtBundleResolve = NO;
-
+  if (_devVendorCommonBundlePath.length > 0) {
+    return [NSURL fileURLWithPath:_devVendorCommonBundlePath];
+  }
   // When _jsBundleSource is set (dev mode or explicit override), use it as-is.
   // This is a single full bundle (not split), so DON'T use common+entry strategy.
   if (!_jsBundleSource.empty()) {
@@ -323,7 +372,56 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
   if (!_rctInstance) {
     return;
   }
-
+  if (_devVendorEntryURL) {
+    NSURL *entryURL = _devVendorEntryURL;
+    NSString *fingerprint = _devVendorFingerprint;
+    BTDevVendorDownloadState *downloadState = [[BTDevVendorDownloadState alloc] init];
+    [RCTJavaScriptLoader loadBundleAtURL:entryURL
+        onProgress:^(RCTLoadingProgress *progress) { (void)progress; }
+        onComplete:^(NSError *error, RCTSource *source) {
+          downloadState.error = error;
+          downloadState.data = source.data;
+          dispatch_semaphore_signal(downloadState.ready);
+        }];
+    [self finishHostStartWithBundleData:nil
+                               sourceURL:entryURL.absoluteString
+                             fingerprint:fingerprint
+                          evaluateEntry:YES
+                           downloadState:downloadState];
+    if (_devVendorBackgroundHMREnabled) {
+      NSURLComponents *hmrComponents = [NSURLComponents componentsWithURL:entryURL
+                                                   resolvingAgainstBaseURL:NO];
+      hmrComponents.path = @"/apps/mobile/background.bundle";
+      NSURL *hmrRegistrationURL = hmrComponents.URL;
+      if (!hmrRegistrationURL) {
+        [BTLogger error:@"[BackgroundHMR] failed to construct registration URL"];
+        return;
+      }
+      NSString *path = hmrRegistrationURL.path;
+      if ([path hasPrefix:@"/"]) {
+        path = [path substringFromIndex:1];
+      }
+      NSString *scheme = hmrRegistrationURL.scheme ?: @"http";
+      NSNumber *port = hmrRegistrationURL.port ?: @([scheme isEqualToString:@"https"] ? 443 : 80);
+      [host callFunctionOnJSModule:@"HMRClient"
+                           method:@"setup"
+                             args:@[
+                               @"ios",
+                               path ?: @"apps/mobile/background.bundle",
+                               hmrRegistrationURL.host ?: @"127.0.0.1",
+                               port,
+                               @YES,
+                               scheme,
+                               hmrRegistrationURL.absoluteString
+                             ]];
+      [BTLogger info:[NSString stringWithFormat:
+          @"[BackgroundHMR] client setup queued generation=%lu downloadURL=%@ registrationURL=%@",
+          (unsigned long)_backgroundRuntimeGeneration,
+          entryURL.absoluteString,
+          hmrRegistrationURL.absoluteString]];
+    }
+    return;
+  }
   // When _jsBundleSource is set, the bundle loaded in bundleURL was already
   // a full single bundle (dev mode / explicit override), so skip entry loading.
   BOOL isSplitBundle = _jsBundleSource.empty();
@@ -359,49 +457,118 @@ static NSURL *resolveBundleSourceURL(NSString *jsBundleSourceNS)
       [BTLogger warn:@"Background entry bundle not found, __setupBackgroundRPCHandler may not be defined"];
     }
   }
-
+  [self finishHostStartWithBundleData:bgBundleData
+                             sourceURL:bgBundleSourceURL
+                           fingerprint:nil
+                        evaluateEntry:isSplitBundle
+                         downloadState:nil];
+}
+- (void)finishHostStartWithBundleData:(NSData * _Nullable)bundleData
+                            sourceURL:(NSString * _Nullable)sourceURL
+                          fingerprint:(NSString * _Nullable)fingerprint
+                       evaluateEntry:(BOOL)evaluateEntry
+                        downloadState:(BTDevVendorDownloadState * _Nullable)downloadState
+{
+  RCTInstance *instance = _rctInstance;
+  if (!instance) {
+    return;
+  }
   CFAbsoluteTime bgStartTime = CFAbsoluteTimeGetCurrent();
+  __weak RCTInstance *weakBgInstance = instance;
 
-  [_rctInstance callFunctionOnBufferedRuntimeExecutor:[=](jsi::Runtime &runtime) {
-    [self setupErrorHandler:runtime];
-
-    // Install SharedStore into background runtime
-    SharedStore::install(runtime);
-
-    // Install SharedRPC with executor for cross-runtime notifications.
-    // Capture the bg RCTInstance __weak so executor lambdas still in flight
-    // when the bg host is torn down (BackgroundThread.restart mode=all,
-    // OTA bundle install) no-op cleanly instead of dispatching onto a
-    // freed instance and crashing.
-    __weak RCTInstance *weakBgInstance = _rctInstance;
-    RPCRuntimeExecutor bgExecutor = [weakBgInstance](std::function<void(jsi::Runtime &)> work) {
-        RCTInstance *strongBgInstance = weakBgInstance;
-        if (!strongBgInstance) {
-            return;
+  [instance callFunctionOnBufferedRuntimeExecutor:[=](jsi::Runtime &runtime) {
+    try {
+      NSData *entryData = bundleData;
+      if (downloadState) {
+        // Queue this executor before the background surface starts. Once the
+        // local common HBC completes, wait for Metro without blocking main.
+        dispatch_time_t deadline = dispatch_time(
+            DISPATCH_TIME_NOW, kDevVendorLoadTimeoutSeconds * NSEC_PER_SEC);
+        if (dispatch_semaphore_wait(downloadState.ready, deadline) != 0) {
+          NSError *timeoutError = [NSError errorWithDomain:@"BackgroundThread"
+                                                      code:21
+                                                  userInfo:@{
+                                                    NSLocalizedDescriptionKey:
+                                                        @"Timed out loading dev-vendor background delta"
+                                                  }];
+          [BTLogger error:@"Dev-vendor background delta timed out after 60 seconds"];
+          dispatch_async(dispatch_get_main_queue(), ^{ RCTFatal(timeoutError); });
+          return;
         }
-        [strongBgInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
-            work(rt);
-        }];
-    };
-    SharedRPC::install(runtime, std::move(bgExecutor), "background");
-    [BTLogger info:@"SharedStore and SharedRPC installed in background runtime"];
+        if (downloadState.error || downloadState.data.length == 0) {
+          NSError *loadError = downloadState.error ?: [NSError errorWithDomain:@"BackgroundThread"
+                                                                           code:20
+                                                                       userInfo:@{
+                                                                         NSLocalizedDescriptionKey:
+                                                                             @"Dev-vendor background delta is empty"
+                                                                       }];
+          [BTLogger error:[NSString stringWithFormat:
+              @"Dev-vendor background delta failed: %@", loadError.localizedDescription]];
+          dispatch_async(dispatch_get_main_queue(), ^{ RCTFatal(loadError); });
+          return;
+        }
+        entryData = downloadState.data;
+      }
 
-    // In split-bundle mode, evaluate the background entry bundle now.
-    // This must happen BEFORE invokeOptionalGlobalFunction since the entry
-    // bundle defines __setupBackgroundRPCHandler.
-    if (isSplitBundle && bgBundleData && bgBundleData.length > 0) {
-      CFAbsoluteTime bgEvalStart = CFAbsoluteTimeGetCurrent();
-      auto buffer = std::make_shared<jsi::StringBuffer>(
-        std::string(static_cast<const char *>(bgBundleData.bytes), bgBundleData.length));
-      runtime.evaluateJavaScript(std::move(buffer), [bgBundleSourceURL UTF8String]);
-      double bgEvalMs = (CFAbsoluteTimeGetCurrent() - bgEvalStart) * 1000.0;
-      [BTLogger info:[NSString stringWithFormat:@"[SplitBundle] bg entry evaluated in %.1fms", bgEvalMs]];
+      if (fingerprint.length > 0) {
+        jsi::Value marker = runtime.global().getProperty(
+            runtime, "__ONEKEY_DEV_VENDOR_FINGERPRINT__");
+        if (!marker.isString() ||
+            marker.asString(runtime).utf8(runtime) != std::string(fingerprint.UTF8String)) {
+          throw std::runtime_error("Dev-vendor common fingerprint mismatch");
+        }
+        runtime.global().setProperty(
+            runtime,
+            "__ONEKEY_DEV_VENDOR_FULL_BUNDLE_URL__",
+            jsi::String::createFromUtf8(runtime, sourceURL.UTF8String));
+        runtime.global().setProperty(
+            runtime,
+            "__ONEKEY_RUNTIME_TARGET__",
+            jsi::String::createFromUtf8(runtime, "background"));
+        runtime.global().setProperty(
+            runtime,
+            "__ONEKEY_BACKGROUND_RUNTIME_GENERATION__",
+            static_cast<double>(_backgroundRuntimeGeneration));
+      }
+
+      [self setupErrorHandler:runtime];
+      SharedStore::install(runtime);
+
+      RPCRuntimeExecutor bgExecutor = [weakBgInstance](std::function<void(jsi::Runtime &)> work) {
+          RCTInstance *strongBgInstance = weakBgInstance;
+          if (!strongBgInstance) {
+              return;
+          }
+          [strongBgInstance callFunctionOnBufferedRuntimeExecutor:[work](jsi::Runtime &rt) {
+              work(rt);
+          }];
+      };
+      SharedRPC::install(runtime, std::move(bgExecutor), "background");
+      [BTLogger info:@"SharedStore and SharedRPC installed in background runtime"];
+
+      // The entry defines __setupBackgroundRPCHandler, so it must execute
+      // before the runtime is reported ready.
+      if (evaluateEntry && entryData.length > 0 && sourceURL.length > 0) {
+        CFAbsoluteTime bgEvalStart = CFAbsoluteTimeGetCurrent();
+        auto buffer = std::make_shared<BackgroundNSDataJSIBuffer>(entryData);
+        runtime.evaluateJavaScript(buffer, sourceURL.UTF8String);
+        double bgEvalMs = (CFAbsoluteTimeGetCurrent() - bgEvalStart) * 1000.0;
+        [BTLogger info:[NSString stringWithFormat:@"[SplitBundle] bg entry evaluated in %.1fms", bgEvalMs]];
+      }
+
+      double bgTotalMs = (CFAbsoluteTimeGetCurrent() - bgStartTime) * 1000.0;
+      [BTLogger info:[NSString stringWithFormat:@"[SplitBundle] bg hostDidStart total setup in %.1fms", bgTotalMs]];
+      invokeOptionalGlobalFunction(runtime, "__setupBackgroundRPCHandler");
+    } catch (const std::exception &exception) {
+      NSString *message = [NSString stringWithUTF8String:exception.what()];
+      NSError *evaluationError = [NSError errorWithDomain:@"BackgroundThread"
+                                                      code:21
+                                                  userInfo:@{
+                                                    NSLocalizedDescriptionKey:
+                                                        message ?: @"Dev-vendor background evaluation failed"
+                                                  }];
+      dispatch_async(dispatch_get_main_queue(), ^{ RCTFatal(evaluationError); });
     }
-
-    double bgTotalMs = (CFAbsoluteTimeGetCurrent() - bgStartTime) * 1000.0;
-    [BTLogger info:[NSString stringWithFormat:@"[SplitBundle] bg hostDidStart total setup in %.1fms", bgTotalMs]];
-
-    invokeOptionalGlobalFunction(runtime, "__setupBackgroundRPCHandler");
   }];
 }
 

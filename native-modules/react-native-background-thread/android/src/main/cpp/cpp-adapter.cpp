@@ -70,6 +70,10 @@ static void invokeOptionalGlobalFunction(jsi::Runtime &runtime, const char *name
 static std::mutex gWorkMutex;
 static std::unordered_map<int64_t, std::function<void(jsi::Runtime &)>> gPendingWork;
 static int64_t gNextWorkId = 0;
+// Protected by gWorkMutex. Every background executor captures the generation
+// that installed it, so work from an outgoing Hermes runtime can be discarded
+// without ever touching its replacement runtime.
+static int64_t gBgRuntimeGeneration = 0;
 
 using JavaObjectRef = std::shared_ptr<_jobject>;
 
@@ -108,7 +112,11 @@ static void leakAndClearRuntimeQueue(RuntimeWorkQueue &queue) {
     queue.scheduledDrainWorkId = -1;
 }
 
-static bool callScheduleOnJSThread(const JavaObjectRef &ref, bool isMain, int64_t workId) {
+static bool callScheduleOnJSThread(
+    const JavaObjectRef &ref,
+    bool isMain,
+    int64_t workId,
+    int64_t runtimeGeneration) {
     JNIEnv *env = getJNIEnv();
     if (!env || !ref) {
         LOGE("executor: env=%p, ref=%p — aborting", env, ref.get());
@@ -125,7 +133,7 @@ static bool callScheduleOnJSThread(const JavaObjectRef &ref, bool isMain, int64_
         return false;
     }
 
-    jmethodID mid = env->GetMethodID(cls, "scheduleOnJSThread", "(ZJ)Z");
+    jmethodID mid = env->GetMethodID(cls, "scheduleOnJSThread", "(ZJJ)Z");
     if (!mid) {
         LOGE("executor: scheduleOnJSThread method not found!");
         if (env->ExceptionCheck()) {
@@ -136,12 +144,14 @@ static bool callScheduleOnJSThread(const JavaObjectRef &ref, bool isMain, int64_
         return false;
     }
 
-    LOGI("executor: calling scheduleOnJSThread(isMain=%d, workId=%ld)", isMain, (long)workId);
+    LOGI("executor: calling scheduleOnJSThread(isMain=%d, workId=%ld, generation=%ld)",
+         isMain, (long)workId, (long)runtimeGeneration);
     jboolean scheduled = env->CallBooleanMethod(
         ref.get(),
         mid,
         static_cast<jboolean>(isMain),
-        static_cast<jlong>(workId));
+        static_cast<jlong>(workId),
+        static_cast<jlong>(runtimeGeneration));
     if (env->ExceptionCheck()) {
         LOGE("executor: JNI exception after scheduleOnJSThread");
         env->ExceptionDescribe();
@@ -155,15 +165,25 @@ static bool callScheduleOnJSThread(const JavaObjectRef &ref, bool isMain, int64_
 
 static void drainPendingBgEvals(const std::string &reason);
 
-static void scheduleRuntimeDrain(const JavaObjectRef &ref, bool isMain);
+static void scheduleRuntimeDrain(
+    const JavaObjectRef &ref,
+    bool isMain,
+    int64_t runtimeGeneration);
 
-static void drainRuntimeWorkQueue(jsi::Runtime &rt, JavaObjectRef ref, bool isMain) {
+static void drainRuntimeWorkQueue(
+    jsi::Runtime &rt,
+    JavaObjectRef ref,
+    bool isMain,
+    int64_t runtimeGeneration) {
     size_t drained = 0;
 
     while (drained < kRuntimeDrainBatchSize) {
         std::function<void(jsi::Runtime &)> work;
         {
             std::lock_guard<std::mutex> lock(gWorkMutex);
+            if (!isMain && runtimeGeneration != gBgRuntimeGeneration) {
+                return;
+            }
             auto &queue = getRuntimeWorkQueue(isMain);
             if (queue.items.empty()) {
                 break;
@@ -188,6 +208,9 @@ static void drainRuntimeWorkQueue(jsi::Runtime &rt, JavaObjectRef ref, bool isMa
     size_t remaining = 0;
     {
         std::lock_guard<std::mutex> lock(gWorkMutex);
+        if (!isMain && runtimeGeneration != gBgRuntimeGeneration) {
+            return;
+        }
         auto &queue = getRuntimeWorkQueue(isMain);
         remaining = queue.items.size();
         if (remaining == 0) {
@@ -206,15 +229,21 @@ static void drainRuntimeWorkQueue(jsi::Runtime &rt, JavaObjectRef ref, bool isMa
     }
 
     if (shouldReschedule) {
-        scheduleRuntimeDrain(ref, isMain);
+        scheduleRuntimeDrain(ref, isMain, runtimeGeneration);
     }
 }
 
-static void scheduleRuntimeDrain(const JavaObjectRef &ref, bool isMain) {
+static void scheduleRuntimeDrain(
+    const JavaObjectRef &ref,
+    bool isMain,
+    int64_t runtimeGeneration) {
     int64_t workId;
     size_t queued = 0;
     {
         std::lock_guard<std::mutex> lock(gWorkMutex);
+        if (!isMain && runtimeGeneration != gBgRuntimeGeneration) {
+            return;
+        }
         auto &queue = getRuntimeWorkQueue(isMain);
         // Stale-id guard: drainRuntimeWorkQueue observes remaining>0, drops the
         // lock, then calls us — but a concurrent nativeInvalidateSharedRpc can
@@ -233,17 +262,21 @@ static void scheduleRuntimeDrain(const JavaObjectRef &ref, bool isMain) {
         // Track the outstanding drain's workId so a teardown path can erase its
         // orphaned gPendingWork entry if the post is dropped during reload.
         queue.scheduledDrainWorkId = workId;
-        gPendingWork[workId] = [ref, isMain](jsi::Runtime &rt) {
-            drainRuntimeWorkQueue(rt, ref, isMain);
+        gPendingWork[workId] = [ref, isMain, runtimeGeneration](jsi::Runtime &rt) {
+            drainRuntimeWorkQueue(rt, ref, isMain, runtimeGeneration);
         };
     }
 
-    bool scheduled = callScheduleOnJSThread(ref, isMain, workId);
+    bool scheduled = callScheduleOnJSThread(ref, isMain, workId, runtimeGeneration);
     if (!scheduled) {
+        bool shouldDrainBgEvals = false;
         {
             std::lock_guard<std::mutex> lock(gWorkMutex);
             gPendingWork.erase(workId);
-            leakAndClearRuntimeQueue(getRuntimeWorkQueue(isMain));
+            if (isMain || runtimeGeneration == gBgRuntimeGeneration) {
+                leakAndClearRuntimeQueue(getRuntimeWorkQueue(isMain));
+                shouldDrainBgEvals = !isMain;
+            }
             LOGE("executor: failed to schedule runtime drain isMain=%d, workId=%ld, queued=%zu",
                  isMain, (long)workId, queued);
         }
@@ -254,17 +287,25 @@ static void scheduleRuntimeDrain(const JavaObjectRef &ref, bool isMain) {
         // schedule hiccup must never falsely reject healthy bg evals. Called
         // outside gWorkMutex: drainPendingBgEvals takes gBgEvalMutex and does a
         // Java upcall, so it must not run under a native lock.
-        if (!isMain) {
+        if (shouldDrainBgEvals) {
             drainPendingBgEvals("Background JS thread unreachable when scheduling segment eval");
         }
     }
 }
 
-static void enqueueRuntimeWork(JavaObjectRef ref, bool isMain, std::function<void(jsi::Runtime &)> work) {
+static void enqueueRuntimeWork(
+    JavaObjectRef ref,
+    bool isMain,
+    int64_t runtimeGeneration,
+    std::function<void(jsi::Runtime &)> work) {
     bool shouldSchedule = false;
     size_t queued = 0;
     {
         std::lock_guard<std::mutex> lock(gWorkMutex);
+        if (!isMain && runtimeGeneration != gBgRuntimeGeneration) {
+            new std::function<void(jsi::Runtime &)>(std::move(work));
+            return;
+        }
         auto &queue = getRuntimeWorkQueue(isMain);
         queue.items.push_back(std::move(work));
         queued = queue.items.size();
@@ -279,26 +320,39 @@ static void enqueueRuntimeWork(JavaObjectRef ref, bool isMain, std::function<voi
     }
 
     if (shouldSchedule) {
-        scheduleRuntimeDrain(ref, isMain);
+        scheduleRuntimeDrain(ref, isMain, runtimeGeneration);
     }
 }
 
 // Called from Kotlin after runOnJSQueueThread dispatches to the correct thread.
 extern "C" JNIEXPORT void JNICALL
 Java_com_backgroundthread_BackgroundThreadManager_nativeExecuteWork(
-    JNIEnv *env, jobject thiz, jlong runtimePtr, jlong workId) {
-    LOGI("nativeExecuteWork: runtimePtr=%ld, workId=%ld", (long)runtimePtr, (long)workId);
-    auto *rt = reinterpret_cast<jsi::Runtime *>(runtimePtr);
-    if (!rt) return;
+    JNIEnv *env,
+    jobject thiz,
+    jlong runtimePtr,
+    jlong workId,
+    jboolean isMain,
+    jlong runtimeGeneration) {
+    LOGI("nativeExecuteWork: runtimePtr=%ld, workId=%ld, generation=%ld",
+         (long)runtimePtr, (long)workId, (long)runtimeGeneration);
 
     std::function<void(jsi::Runtime &)> work;
     {
         std::lock_guard<std::mutex> lock(gWorkMutex);
         auto it = gPendingWork.find(workId);
         if (it == gPendingWork.end()) return;
+        if (!isMain && runtimeGeneration != gBgRuntimeGeneration) {
+            new std::function<void(jsi::Runtime &)>(std::move(it->second));
+            gPendingWork.erase(it);
+            LOGI("nativeExecuteWork: dropped stale background workId=%ld generation=%ld active=%ld",
+                 (long)workId, (long)runtimeGeneration, (long)gBgRuntimeGeneration);
+            return;
+        }
         work = std::move(it->second);
         gPendingWork.erase(it);
     }
+    auto *rt = reinterpret_cast<jsi::Runtime *>(runtimePtr);
+    if (!rt) return;
     try {
         work(*rt);
     } catch (const jsi::JSError &e) {
@@ -989,18 +1043,34 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeEvaluateSegmentInBackgro
 // DOES run stale work (it can't — we erased it) would be a harmless no-op.
 extern "C" JNIEXPORT void JNICALL
 Java_com_backgroundthread_BackgroundThreadManager_nativeDropScheduledWork(
-    JNIEnv * /* env */, jobject /* thiz */, jboolean isMain, jlong workId) {
+    JNIEnv * /* env */,
+    jobject /* thiz */,
+    jboolean isMain,
+    jlong workId,
+    jlong runtimeGeneration) {
+    bool shouldDrainBgEvals = false;
     {
         std::lock_guard<std::mutex> lock(gWorkMutex);
-        gPendingWork.erase(static_cast<int64_t>(workId));
+        auto pending = gPendingWork.find(static_cast<int64_t>(workId));
+        if (!isMain && runtimeGeneration != gBgRuntimeGeneration) {
+            if (pending != gPendingWork.end()) {
+                new std::function<void(jsi::Runtime &)>(std::move(pending->second));
+                gPendingWork.erase(pending);
+            }
+            return;
+        }
+        if (pending != gPendingWork.end()) {
+            gPendingWork.erase(pending);
+        }
         // TRANSIENT ptr==0 (reload in flight): do NOT abandon queue.items — the
         // recovered runtime still needs them (main has no JS retry net). Only
         // disarm the drain latch so the next enqueue re-arms a fresh drain.
         auto &queue = getRuntimeWorkQueue(static_cast<bool>(isMain));
         queue.drainScheduled = false;
         queue.scheduledDrainWorkId = -1;
+        shouldDrainBgEvals = !isMain;
     }
-    if (!isMain) {
+    if (shouldDrainBgEvals) {
         drainPendingBgEvals("Background runtime unreachable when scheduling segment eval");
     }
 }
@@ -1009,10 +1079,31 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeDropScheduledWork(
 // Install SharedStore and SharedRPC into a runtime.
 extern "C" JNIEXPORT void JNICALL
 Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
-    JNIEnv *env, jobject thiz, jlong runtimePtr, jboolean isMain) {
+    JNIEnv *env,
+    jobject thiz,
+    jlong runtimePtr,
+    jboolean isMain,
+    jlong runtimeGeneration) {
 
     auto *rt = reinterpret_cast<jsi::Runtime *>(runtimePtr);
     if (!rt) return;
+
+    if (!isMain) {
+        std::lock_guard<std::mutex> lock(gWorkMutex);
+        if (runtimeGeneration < gBgRuntimeGeneration) {
+            LOGI("nativeInstallSharedBridge: ignored stale background generation=%ld active=%ld",
+                 (long)runtimeGeneration, (long)gBgRuntimeGeneration);
+            return;
+        }
+        if (runtimeGeneration != gBgRuntimeGeneration) {
+            auto &queue = gBgRuntimeWorkQueue;
+            if (queue.scheduledDrainWorkId >= 0) {
+                gPendingWork.erase(queue.scheduledDrainWorkId);
+            }
+            leakAndClearRuntimeQueue(queue);
+            gBgRuntimeGeneration = runtimeGeneration;
+        }
+    }
 
     SharedStore::install(*rt);
 
@@ -1027,13 +1118,19 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
     });
     bool capturedIsMain = static_cast<bool>(isMain);
 
-    RPCRuntimeExecutor executor = [ref, capturedIsMain](std::function<void(jsi::Runtime &)> work) {
+    int64_t capturedRuntimeGeneration = static_cast<int64_t>(runtimeGeneration);
+    RPCRuntimeExecutor executor = [ref, capturedIsMain, capturedRuntimeGeneration](
+                                      std::function<void(jsi::Runtime &)> work) {
         // Coalesce per-runtime work into a single batched drain (see
         // enqueueRuntimeWork) instead of one Kotlin scheduleOnJSThread hop per
         // item. The bg-eval failure-drain that previously lived inline here now
         // runs in scheduleRuntimeDrain's schedule-failure path — under the
         // coalesced model that is the single place a schedule can fail.
-        enqueueRuntimeWork(ref, capturedIsMain, std::move(work));
+        enqueueRuntimeWork(
+            ref,
+            capturedIsMain,
+            capturedRuntimeGeneration,
+            std::move(work));
     };
 
     std::string runtimeId = isMain ? "main" : "background";
@@ -1082,13 +1179,16 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInstallSharedBridge(
     {
         std::lock_guard<std::mutex> lock(gWorkMutex);
         auto &queue = getRuntimeWorkQueue(capturedIsMain);
-        if (!queue.items.empty()) {
+        if (
+            !queue.items.empty() &&
+            (capturedIsMain || capturedRuntimeGeneration == gBgRuntimeGeneration)
+        ) {
             queue.drainScheduled = true;
             shouldRecoverDrain = true;
         }
     }
     if (shouldRecoverDrain) {
-        scheduleRuntimeDrain(ref, capturedIsMain);
+        scheduleRuntimeDrain(ref, capturedIsMain, capturedRuntimeGeneration);
     }
 }
 
@@ -1164,7 +1264,10 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeSetupErrorHandler(
 // instead of dispatching onto a dying runtime (parity with iOS).
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_backgroundthread_BackgroundThreadManager_nativeInvalidateSharedRpc(
-    JNIEnv *env, jobject thiz, jstring runtimeId) {
+    JNIEnv *env,
+    jobject thiz,
+    jstring runtimeId,
+    jlong runtimeGeneration) {
 
     const char *idChars = env->GetStringUTFChars(runtimeId, nullptr);
     if (!idChars) {
@@ -1172,8 +1275,6 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInvalidateSharedRpc(
     }
     std::string id(idChars);
     env->ReleaseStringUTFChars(runtimeId, idChars);
-
-    bool found = SharedRPC::invalidate(id);
 
     // The runtime named by `id` is being torn down (restart → host.reload).
     // Its coalesced work queue must be fully quiesced: if a drain was posted
@@ -1188,13 +1289,96 @@ Java_com_backgroundthread_BackgroundThreadManager_nativeInvalidateSharedRpc(
         std::lock_guard<std::mutex> lock(gWorkMutex);
         bool isMain = (id == "main");
         auto &queue = getRuntimeWorkQueue(isMain);
+        if (!isMain) {
+            gBgRuntimeGeneration = static_cast<int64_t>(runtimeGeneration);
+        }
         if (queue.scheduledDrainWorkId >= 0) {
             gPendingWork.erase(queue.scheduledDrainWorkId);
         }
         leakAndClearRuntimeQueue(queue);
     }
 
-    LOGI("nativeInvalidateSharedRpc: id=%s found=%d", id.c_str(), found ? 1 : 0);
+    bool found = SharedRPC::invalidate(id);
+
+    if (id == "background") {
+        // Stop old timers from producing more work after the generation was
+        // invalidated. Callback wrappers are intentionally leaked because
+        // destroying a jsi::Function away from its outgoing JS thread is unsafe.
+        std::lock_guard<std::mutex> lock(gTimerMutex);
+        for (auto &entry : gTimers) {
+            if (entry.second.callback) {
+                new std::shared_ptr<jsi::Function>(std::move(entry.second.callback));
+            }
+        }
+        gTimers.clear();
+        gBgTimerExecutor = nullptr;
+        gTimerCv.notify_all();
+    }
+
+    if (id == "background") {
+        drainPendingBgEvals("Background runtime invalidated before segment eval ran");
+    }
+
+    LOGI("nativeInvalidateSharedRpc: id=%s generation=%ld found=%d",
+         id.c_str(), (long)runtimeGeneration, found ? 1 : 0);
+    return found ? JNI_TRUE : JNI_FALSE;
+}
+
+// Invalidate the outgoing background runtime while executing on that runtime's
+// JS thread. This is the normal background-HMR path: it can reclaim timer and
+// queued-work callbacks instead of leaking their jsi::Function wrappers to
+// avoid an unsafe off-thread destructor.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_backgroundthread_BackgroundThreadManager_nativeInvalidateBackgroundRuntimeOnJSThread(
+    JNIEnv *env,
+    jobject thiz,
+    jlong runtimeGeneration) {
+
+    bool found = SharedRPC::invalidate("background");
+
+    // Prevent the timer worker from capturing or enqueueing another callback
+    // while the outgoing JS thread drains the callback containers below.
+    gTimerWorkerStop.store(true);
+    gTimerCv.notify_all();
+    if (gTimerWorkerThread.joinable()) {
+        gTimerWorkerThread.join();
+    }
+    gTimerWorkerStarted.store(false);
+
+    std::vector<std::shared_ptr<jsi::Function>> timerCallbacks;
+    {
+        std::lock_guard<std::mutex> lock(gTimerMutex);
+        timerCallbacks.reserve(gTimers.size());
+        for (auto &entry : gTimers) {
+            if (entry.second.callback) {
+                timerCallbacks.push_back(std::move(entry.second.callback));
+            }
+        }
+        gTimers.clear();
+        gBgTimerExecutor = nullptr;
+    }
+
+    std::deque<std::function<void(jsi::Runtime &)>> queuedWork;
+    {
+        std::lock_guard<std::mutex> lock(gWorkMutex);
+        gBgRuntimeGeneration = static_cast<int64_t>(runtimeGeneration);
+        auto &queue = gBgRuntimeWorkQueue;
+        if (queue.scheduledDrainWorkId >= 0) {
+            gPendingWork.erase(queue.scheduledDrainWorkId);
+        }
+        queuedWork.swap(queue.items);
+        queue.drainScheduled = false;
+        queue.scheduledDrainWorkId = -1;
+    }
+
+    drainPendingBgEvals(
+        "Background runtime invalidated before segment eval ran");
+
+    // timerCallbacks and queuedWork intentionally fall out of scope here, on
+    // the outgoing runtime's JS thread, before ReactHost.destroy() begins.
+    LOGI("nativeInvalidateBackgroundRuntimeOnJSThread: generation=%ld found=%d timers=%zu work=%zu",
+         (long)runtimeGeneration, found ? 1 : 0,
+         timerCallbacks.size(), queuedWork.size());
     return found ? JNI_TRUE : JNI_FALSE;
 }
 

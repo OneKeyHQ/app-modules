@@ -1,5 +1,14 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, PanResponder, type LayoutChangeEvent } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  PanResponder,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
@@ -30,6 +39,7 @@ import { ChartSingletonTestPage } from './pages/ChartSingletonTestPage';
 import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
 import { TabViewTestPage } from './pages/TabViewTestPage';
 import { TabViewSettingsPage } from './pages/TabViewSettingsPage';
+import { TextInputTestPage } from './pages/TextInputTestPage';
 
 export type TabViewSettingsState = {
   showBadge: boolean;
@@ -69,17 +79,25 @@ export type RootStackParamList = {
   SplashScreen: undefined;
   TabView: undefined;
   TabViewSettings: undefined;
+  TextInput: undefined;
 };
 
-export type RootStackNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+export type RootStackNavigationProp =
+  NativeStackNavigationProp<RootStackParamList>;
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-const modules: { screen: keyof RootStackParamList; name: string; description: string; icon: string }[] = [
+const modules: {
+  screen: keyof RootStackParamList;
+  name: string;
+  description: string;
+  icon: string;
+}[] = [
   {
     screen: 'AutoSizeInput',
     name: 'Auto Size Input',
-    description: 'Input with auto-shrinking font size, prefix/suffix, single & multi-line',
+    description:
+      'Input with auto-shrinking font size, prefix/suffix, single & multi-line',
     icon: '⌨️',
   },
   {
@@ -103,49 +121,57 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
   {
     screen: 'BundleUpdate',
     name: 'Bundle Update',
-    description: 'JS bundle download, verification, install, and path management',
+    description:
+      'JS bundle download, verification, install, and path management',
     icon: '📥',
   },
   {
     screen: 'BundleCrypto',
     name: 'Bundle Crypto',
-    description: 'sha256OfFile, secureEqualHex, validateExtractedPathSafety, verifyGpgCleartext',
+    description:
+      'sha256OfFile, secureEqualHex, validateExtractedPathSafety, verifyGpgCleartext',
     icon: '🔏',
   },
   {
     screen: 'OtaPipeline',
     name: 'JS Bundle OTA Pipeline',
-    description: 'JS bundle OTA: download → sha256 verify → GPG cleartext verify → unzip → path-safety',
+    description:
+      'JS bundle OTA: download → sha256 verify → GPG cleartext verify → unzip → path-safety',
     icon: '🔗',
   },
   {
     screen: 'ApkOtaPipeline',
     name: 'APK OTA Pipeline',
-    description: 'APK OTA: download → sha256 → verify detached SHA256SUMS.asc → match → install',
+    description:
+      'APK OTA: download → sha256 → verify detached SHA256SUMS.asc → match → install',
     icon: '📲',
   },
   {
     screen: 'ChartWebView',
     name: 'Chart WebView',
-    description: 'Offline TradingView chart via virtual same-origin + JS↔native message bridge',
+    description:
+      'Offline TradingView chart via virtual same-origin + JS↔native message bridge',
     icon: '📈',
   },
   {
     screen: 'ChartSingleton',
     name: 'Chart Singleton',
-    description: 'One shared WebView reparented across mount slots (pooled reuseKey)',
+    description:
+      'One shared WebView reparented across mount slots (pooled reuseKey)',
     icon: '♻️',
   },
   {
     screen: 'RangeDownloader',
     name: 'Range Downloader',
-    description: 'Concurrent multi-range download with progress events and artifact discard',
+    description:
+      'Concurrent multi-range download with progress events and artifact discard',
     icon: '🚀',
   },
   {
     screen: 'ZipArchive',
     name: 'Zip Archive',
-    description: 'unzip, getUncompressedSize, isPasswordProtected for OTA bundle archives',
+    description:
+      'unzip, getUncompressedSize, isPasswordProtected for OTA bundle archives',
     icon: '🗜️',
   },
   {
@@ -187,7 +213,8 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
   {
     screen: 'PagerView',
     name: 'Pager View',
-    description: 'Native page container with swipe navigation and imperative controls',
+    description:
+      'Native page container with swipe navigation and imperative controls',
     icon: '📄',
   },
   {
@@ -199,19 +226,22 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
   {
     screen: 'PerpDepthBar',
     name: 'Perp Depth Bar',
-    description: 'Native order-book depth bars + side-ratio (replaces reanimated)',
+    description:
+      'Native order-book depth bars + side-ratio (replaces reanimated)',
     icon: '📊',
   },
   {
     screen: 'ScrollGuard',
     name: 'Scroll Guard',
-    description: 'Prevent parent PagerView from intercepting child ScrollView gestures',
+    description:
+      'Prevent parent PagerView from intercepting child ScrollView gestures',
     icon: '🛡️',
   },
   {
     screen: 'SegmentSlider',
     name: 'Segment Slider',
-    description: 'Native segmented slider — track, fill, marks, thumb, bubble drawn natively',
+    description:
+      'Native segmented slider — track, fill, marks, thumb, bubble drawn natively',
     icon: '🎚️',
   },
   {
@@ -229,8 +259,15 @@ const modules: { screen: keyof RootStackParamList; name: string; description: st
   {
     screen: 'TabView',
     name: 'Tab View',
-    description: 'Native tab bar with UIKit (iOS) / Material (Android), badges, icons, liquid glass',
+    description:
+      'Native tab bar with UIKit (iOS) / Material (Android), badges, icons, liquid glass',
     icon: '📑',
+  },
+  {
+    screen: 'TextInput',
+    name: 'Text Input',
+    description: 'Native text and image paste events on iOS and Android',
+    icon: '📝',
   },
 ];
 
@@ -243,14 +280,18 @@ function HomeScreen() {
   const sectionYRef = useRef<Record<string, number>>({});
   const sidebarRef = useRef<View>(null);
   const sidebarLayoutRef = useRef({ y: 0, height: 0 });
-  const [activeLetterState, setActiveLetterState] = useState<string | null>(null);
+  const [activeLetterState, setActiveLetterState] = useState<string | null>(
+    null,
+  );
 
   const filteredModules = useMemo(() => {
     const sorted = [...modules].sort((a, b) => a.name.localeCompare(b.name));
     if (!searchQuery) return sorted;
     const query = searchQuery.toLowerCase();
     return sorted.filter(
-      (m) => m.name.toLowerCase().includes(query) || m.description.toLowerCase().includes(query),
+      m =>
+        m.name.toLowerCase().includes(query) ||
+        m.description.toLowerCase().includes(query),
     );
   }, [searchQuery]);
 
@@ -266,15 +307,12 @@ function HomeScreen() {
 
   const activeLetters = useMemo(() => new Set(Object.keys(grouped)), [grouped]);
 
-  const scrollToLetter = useCallback(
-    (letter: string) => {
-      const y = sectionYRef.current[letter];
-      if (y != null && scrollViewRef.current) {
-        scrollViewRef.current.scrollTo({ y, animated: true });
-      }
-    },
-    [],
-  );
+  const scrollToLetter = useCallback((letter: string) => {
+    const y = sectionYRef.current[letter];
+    if (y != null && scrollViewRef.current) {
+      scrollViewRef.current.scrollTo({ y, animated: true });
+    }
+  }, []);
 
   const getLetterFromTouch = useCallback((pageY: number) => {
     const { y, height } = sidebarLayoutRef.current;
@@ -288,14 +326,14 @@ function HomeScreen() {
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (evt) => {
+        onPanResponderGrant: evt => {
           const letter = getLetterFromTouch(evt.nativeEvent.pageY);
           if (letter && activeLetters.has(letter)) {
             setActiveLetterState(letter);
             scrollToLetter(letter);
           }
         },
-        onPanResponderMove: (evt) => {
+        onPanResponderMove: evt => {
           const letter = getLetterFromTouch(evt.nativeEvent.pageY);
           if (letter && activeLetters.has(letter)) {
             setActiveLetterState(letter);
@@ -309,9 +347,12 @@ function HomeScreen() {
     [activeLetters, getLetterFromTouch, scrollToLetter],
   );
 
-  const handleSectionLayout = useCallback((letter: string, event: LayoutChangeEvent) => {
-    sectionYRef.current[letter] = event.nativeEvent.layout.y;
-  }, []);
+  const handleSectionLayout = useCallback(
+    (letter: string, event: LayoutChangeEvent) => {
+      sectionYRef.current[letter] = event.nativeEvent.layout.y;
+    },
+    [],
+  );
 
   const handleSidebarLayout = useCallback(() => {
     sidebarRef.current?.measureInWindow((_x, y, _w, height) => {
@@ -341,14 +382,11 @@ function HomeScreen() {
         </View>
 
         {sections.length > 0 ? (
-          sections.map((letter) => (
-            <View
-              key={letter}
-              onLayout={(e) => handleSectionLayout(letter, e)}
-            >
+          sections.map(letter => (
+            <View key={letter} onLayout={e => handleSectionLayout(letter, e)}>
               <Text style={styles.sectionHeader}>{letter}</Text>
               <View style={styles.moduleList}>
-                {grouped[letter]!.map((module) => (
+                {grouped[letter]!.map(module => (
                   <TouchableOpacity
                     key={module.screen}
                     style={styles.moduleRow}
@@ -358,7 +396,9 @@ function HomeScreen() {
                     <Text style={styles.moduleIcon}>{module.icon}</Text>
                     <View style={styles.moduleRowContent}>
                       <Text style={styles.moduleName}>{module.name}</Text>
-                      <Text style={styles.moduleDescription}>{module.description}</Text>
+                      <Text style={styles.moduleDescription}>
+                        {module.description}
+                      </Text>
                     </View>
                     <Text style={styles.chevron}>›</Text>
                   </TouchableOpacity>
@@ -369,7 +409,9 @@ function HomeScreen() {
         ) : (
           <View style={styles.noResultsContainer}>
             <Text style={styles.noResultsText}>No modules found</Text>
-            <Text style={styles.noResultsSubtext}>Try a different search term</Text>
+            <Text style={styles.noResultsSubtext}>
+              Try a different search term
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -381,7 +423,7 @@ function HomeScreen() {
         onLayout={handleSidebarLayout}
         {...panResponder.panHandlers}
       >
-        {ALPHABET.map((letter) => {
+        {ALPHABET.map(letter => {
           const isActive = activeLetters.has(letter);
           const isHighlighted = activeLetterState === letter;
           return (
@@ -406,34 +448,151 @@ function HomeScreen() {
 export function AppNavigator() {
   return (
     <Stack.Navigator screenOptions={{ statusBarTranslucent: true }}>
-      <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Native Modules Test Suite' }} />
-      <Stack.Screen name="AutoSizeInput" component={AutoSizeInputTestPage} options={{ title: 'Auto Size Input' }} />
-      <Stack.Screen name="AppUpdate" component={AppUpdateTestPage} options={{ title: 'App Update' }} />
-      <Stack.Screen name="BackgroundThread" component={BackgroundThreadTestPage} options={{ title: 'Background Thread' }} />
-      <Stack.Screen name="BiometricAuth" component={BiometricAuthTestPage} options={{ title: 'Biometric Auth' }} />
-      <Stack.Screen name="BundleUpdate" component={BundleUpdateTestPage} options={{ title: 'Bundle Update' }} />
-      <Stack.Screen name="BundleCrypto" component={BundleCryptoTestPage} options={{ title: 'Bundle Crypto' }} />
-      <Stack.Screen name="RangeDownloader" component={RangeDownloaderTestPage} options={{ title: 'Range Downloader' }} />
-      <Stack.Screen name="ZipArchive" component={ZipArchiveTestPage} options={{ title: 'Zip Archive' }} />
-      <Stack.Screen name="OtaPipeline" component={OtaPipelineTestPage} options={{ title: 'JS Bundle OTA Pipeline' }} />
-      <Stack.Screen name="ApkOtaPipeline" component={ApkOtaPipelineTestPage} options={{ title: 'APK OTA Pipeline' }} />
-      <Stack.Screen name="ChartWebView" component={ChartWebViewTestPage} options={{ title: 'Chart WebView' }} />
-      <Stack.Screen name="ChartSingleton" component={ChartSingletonTestPage} options={{ title: 'Chart Singleton' }} />
-      <Stack.Screen name="CloudKit" component={CloudKitTestPage} options={{ title: 'CloudKit' }} />
-      <Stack.Screen name="DeviceUtils" component={DeviceUtilsTestPage} options={{ title: 'Device Utils' }} />
-      <Stack.Screen name="Keychain" component={KeychainTestPage} options={{ title: 'Keychain' }} />
-      <Stack.Screen name="LiteCard" component={LiteCardTestPage} options={{ title: 'Lite Card' }} />
-      <Stack.Screen name="GetRandomValues" component={GetRandomValuesTestPage} options={{ title: 'Get Random Values' }} />
-      <Stack.Screen name="NativeLogger" component={NativeLoggerTestPage} options={{ title: 'Native Logger' }} />
-      <Stack.Screen name="PagerView" component={PagerViewTestPage} options={{ title: 'Pager View' }} />
-      <Stack.Screen name="PerfMemory" component={PerfMemoryTestPage} options={{ title: 'Perf Memory' }} />
-      <Stack.Screen name="PerpDepthBar" component={PerpDepthBarTestPage} options={{ title: 'Perp Depth Bar' }} />
-      <Stack.Screen name="ScrollGuard" component={ScrollGuardTestPage} options={{ title: 'Scroll Guard' }} />
-      <Stack.Screen name="SegmentSlider" component={SegmentSliderTestPage} options={{ title: 'Segment Slider' }} />
-      <Stack.Screen name="Skeleton" component={SkeletonTestPage} options={{ title: 'Skeleton' }} />
-      <Stack.Screen name="SplashScreen" component={SplashScreenTestPage} options={{ title: 'Splash Screen' }} />
-      <Stack.Screen name="TabView" component={TabViewTestPage} options={{ title: 'Tab View' }} />
-      <Stack.Screen name="TabViewSettings" component={TabViewSettingsPage} options={{ title: 'Tab View Settings' }} />
+      <Stack.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{ title: 'Native Modules Test Suite' }}
+      />
+      <Stack.Screen
+        name="AutoSizeInput"
+        component={AutoSizeInputTestPage}
+        options={{ title: 'Auto Size Input' }}
+      />
+      <Stack.Screen
+        name="AppUpdate"
+        component={AppUpdateTestPage}
+        options={{ title: 'App Update' }}
+      />
+      <Stack.Screen
+        name="BackgroundThread"
+        component={BackgroundThreadTestPage}
+        options={{ title: 'Background Thread' }}
+      />
+      <Stack.Screen
+        name="BiometricAuth"
+        component={BiometricAuthTestPage}
+        options={{ title: 'Biometric Auth' }}
+      />
+      <Stack.Screen
+        name="BundleUpdate"
+        component={BundleUpdateTestPage}
+        options={{ title: 'Bundle Update' }}
+      />
+      <Stack.Screen
+        name="BundleCrypto"
+        component={BundleCryptoTestPage}
+        options={{ title: 'Bundle Crypto' }}
+      />
+      <Stack.Screen
+        name="RangeDownloader"
+        component={RangeDownloaderTestPage}
+        options={{ title: 'Range Downloader' }}
+      />
+      <Stack.Screen
+        name="ZipArchive"
+        component={ZipArchiveTestPage}
+        options={{ title: 'Zip Archive' }}
+      />
+      <Stack.Screen
+        name="OtaPipeline"
+        component={OtaPipelineTestPage}
+        options={{ title: 'JS Bundle OTA Pipeline' }}
+      />
+      <Stack.Screen
+        name="ApkOtaPipeline"
+        component={ApkOtaPipelineTestPage}
+        options={{ title: 'APK OTA Pipeline' }}
+      />
+      <Stack.Screen
+        name="ChartWebView"
+        component={ChartWebViewTestPage}
+        options={{ title: 'Chart WebView' }}
+      />
+      <Stack.Screen
+        name="ChartSingleton"
+        component={ChartSingletonTestPage}
+        options={{ title: 'Chart Singleton' }}
+      />
+      <Stack.Screen
+        name="CloudKit"
+        component={CloudKitTestPage}
+        options={{ title: 'CloudKit' }}
+      />
+      <Stack.Screen
+        name="DeviceUtils"
+        component={DeviceUtilsTestPage}
+        options={{ title: 'Device Utils' }}
+      />
+      <Stack.Screen
+        name="Keychain"
+        component={KeychainTestPage}
+        options={{ title: 'Keychain' }}
+      />
+      <Stack.Screen
+        name="LiteCard"
+        component={LiteCardTestPage}
+        options={{ title: 'Lite Card' }}
+      />
+      <Stack.Screen
+        name="GetRandomValues"
+        component={GetRandomValuesTestPage}
+        options={{ title: 'Get Random Values' }}
+      />
+      <Stack.Screen
+        name="NativeLogger"
+        component={NativeLoggerTestPage}
+        options={{ title: 'Native Logger' }}
+      />
+      <Stack.Screen
+        name="PagerView"
+        component={PagerViewTestPage}
+        options={{ title: 'Pager View' }}
+      />
+      <Stack.Screen
+        name="PerfMemory"
+        component={PerfMemoryTestPage}
+        options={{ title: 'Perf Memory' }}
+      />
+      <Stack.Screen
+        name="PerpDepthBar"
+        component={PerpDepthBarTestPage}
+        options={{ title: 'Perp Depth Bar' }}
+      />
+      <Stack.Screen
+        name="ScrollGuard"
+        component={ScrollGuardTestPage}
+        options={{ title: 'Scroll Guard' }}
+      />
+      <Stack.Screen
+        name="SegmentSlider"
+        component={SegmentSliderTestPage}
+        options={{ title: 'Segment Slider' }}
+      />
+      <Stack.Screen
+        name="Skeleton"
+        component={SkeletonTestPage}
+        options={{ title: 'Skeleton' }}
+      />
+      <Stack.Screen
+        name="SplashScreen"
+        component={SplashScreenTestPage}
+        options={{ title: 'Splash Screen' }}
+      />
+      <Stack.Screen
+        name="TabView"
+        component={TabViewTestPage}
+        options={{ title: 'Tab View' }}
+      />
+      <Stack.Screen
+        name="TabViewSettings"
+        component={TabViewSettingsPage}
+        options={{ title: 'Tab View Settings' }}
+      />
+      <Stack.Screen
+        name="TextInput"
+        component={TextInputTestPage}
+        options={{ title: 'Text Input' }}
+      />
     </Stack.Navigator>
   );
 }

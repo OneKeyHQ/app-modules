@@ -24,5 +24,11 @@
 /// @param bundlePath Absolute filesystem path to the bundle file.
 /// @param host       The RCTHost whose runtime should evaluate the bundle.
 + (void)loadEntryBundle:(NSString *)bundlePath inHost:(id)host;
-
+/// Download and evaluate a dev-vendor modules-only entry bundle after the
+/// host has booted from its local common HBC. HMR setup is queued after the
+/// entry bundle evaluation.
++ (void)loadDevVendorEntryBundle:(NSURL *)bundleURL
+                    hmrBundleURL:(NSURL *)hmrBundleURL
+                     fingerprint:(NSString *)fingerprint
+                          inHost:(id)host;
 @end
