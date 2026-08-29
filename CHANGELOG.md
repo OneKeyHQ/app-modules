@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.93] - 2026-08-30
+
+### Bug Fixes
+- **text-input (Android)**: Restore React Native's intrinsic multiline measurement for the custom Fabric text input so `numberOfLines` determines the expected height without a JS fallback.
+
+### Chores
+- Bump all publishable packages to 3.0.93.
+
 ## [3.0.92] - 2026-08-29
 
 ### Bug Fixes
