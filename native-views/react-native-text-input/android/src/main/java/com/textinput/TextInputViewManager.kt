@@ -7,7 +7,6 @@ import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.UIManagerHelper
 import com.facebook.react.uimanager.annotations.ReactProp
-import com.facebook.react.uimanager.events.EventDispatcher
 import com.facebook.react.views.textinput.ReactEditText
 import com.facebook.react.views.textinput.ReactTextInputManager
 import so.onekey.app.wallet.pasteinput.PasteWatcher
@@ -53,19 +52,20 @@ class TextInputViewManager : ReactTextInputManager() {
 
     private class ReactPasteWatcher(editText: TextInputView) : PasteWatcher {
         private val mReactEditText: TextInputView = editText
-        private val mEventDispatcher: EventDispatcher
-        private val mSurfaceId: Int
-
-        init {
-            val reactContext = UIManagerHelper.getReactContext(editText)
-            mEventDispatcher =
-                UIManagerHelper.getEventDispatcherForReactTag(reactContext, editText.id)!!
-            mSurfaceId = UIManagerHelper.getSurfaceId(reactContext)
-        }
 
         override fun onPaste(type: String, data: String) {
-            mEventDispatcher.dispatchEvent(
-                TextInputPasteEvent(mSurfaceId, mReactEditText.id, type, data)
+            val reactContext = UIManagerHelper.getReactContext(mReactEditText) ?: return
+            val eventDispatcher =
+                UIManagerHelper.getEventDispatcherForReactTag(reactContext, mReactEditText.id)
+                    ?: return
+
+            eventDispatcher.dispatchEvent(
+                TextInputPasteEvent(
+                    UIManagerHelper.getSurfaceId(reactContext),
+                    mReactEditText.id,
+                    type,
+                    data
+                )
             )
         }
     }
