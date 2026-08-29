@@ -1,6 +1,7 @@
 package com.backgroundthread
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Handler
@@ -11,6 +12,7 @@ import com.facebook.react.ReactPackage
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.ReactInstanceEventListener
 import com.facebook.react.bridge.JSBundleLoader
+import com.facebook.react.bridge.JavaScriptModule
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContext
 import com.facebook.react.common.annotations.UnstableReactNativeAPI
@@ -18,13 +20,17 @@ import com.facebook.react.defaults.DefaultComponentsRegistry
 import com.facebook.react.defaults.DefaultReactHostDelegate
 import com.facebook.react.defaults.DefaultTurboModuleManagerDelegate
 import com.facebook.react.fabric.ComponentFactory
+import com.facebook.react.interfaces.TaskInterface
 import com.facebook.react.runtime.ReactHostImpl
 import com.facebook.react.runtime.hermes.HermesInstance
 import com.facebook.react.shell.MainReactPackage
 import java.io.File
 import java.lang.ref.WeakReference
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Singleton manager for the background React Native runtime.
@@ -36,9 +42,38 @@ import java.util.concurrent.atomic.AtomicBoolean
  * - Cross-runtime communication via SharedRPC onWrite notifications
  */
 class BackgroundThreadManager private constructor() {
+    // OneKey patch: the prebuilt RN AAR exposes the legacy six-argument HMRClient
+    // interface, while the patched JS client accepts an exact bundle URL as argument seven.
+    private interface HMRClient : JavaScriptModule {
+        fun setup(
+            platform: String?,
+            bundleEntry: String?,
+            host: String?,
+            port: Int,
+            isEnabled: Boolean,
+            scheme: String?,
+            fullBundleUrlOverride: String?,
+        )
+    }
 
+    // OneKey patch: background uses the same local dev-vendor HBC as main,
+    // then evaluates its own modulesOnly Metro delta in the isolated runtime.
+    private data class DevVendorConfig(
+        val commonAssetName: String,
+        val fingerprint: String,
+        val backgroundHMREnabled: Boolean,
+        val runtimeGeneration: Long = 0,
+    )
     private var bgReactHost: ReactHostImpl? = null
     private var reactPackages: List<ReactPackage> = emptyList()
+    private val backgroundRuntimeGeneration = AtomicLong(0)
+    private val backgroundHMRRestartInFlight = AtomicBoolean(false)
+
+    @Volatile
+    private var lastBackgroundEntryURL: String? = null
+
+    @Volatile
+    private var lastDevVendorConfig: DevVendorConfig? = null
 
     // Tracks the last resumed Activity so we can replay it onto the bg
     // ReactContext as soon as the bg host finishes initializing (covers the
@@ -59,7 +94,18 @@ class BackgroundThreadManager private constructor() {
     // full process restart in that case.
     @Volatile
     private var mainReactHost: ReactHost? = null
-    private var isStarted = false
+    private val runnerState = AtomicReference(BackgroundRunnerState.IDLE)
+
+    @Volatile
+    private var runnerStartFailureMessage: String? = null
+
+    private enum class BackgroundRunnerState {
+        IDLE,
+        STARTING,
+        RUNNING,
+        FAILED,
+        DESTROYING,
+    }
 
     companion object {
         private const val MODULE_NAME = "background"
@@ -101,10 +147,19 @@ class BackgroundThreadManager private constructor() {
 
     // ── JNI declarations ────────────────────────────────────────────────────
 
-    private external fun nativeInstallSharedBridge(runtimePtr: Long, isMain: Boolean)
+    private external fun nativeInstallSharedBridge(
+        runtimePtr: Long,
+        isMain: Boolean,
+        runtimeGeneration: Long,
+    )
     private external fun nativeSetupErrorHandler(runtimePtr: Long)
     private external fun nativeDestroy()
-    private external fun nativeExecuteWork(runtimePtr: Long, workId: Long)
+    private external fun nativeExecuteWork(
+        runtimePtr: Long,
+        workId: Long,
+        isMain: Boolean,
+        runtimeGeneration: Long,
+    )
 
     /**
      * Evaluate the segment at [segmentPath] into the BACKGROUND runtime on its
@@ -139,7 +194,11 @@ class BackgroundThreadManager private constructor() {
      * released and the JS promise resolves immediately instead of leaking until
      * teardown or the bg watchdog. Exactly-once on the native side.
      */
-    private external fun nativeDropScheduledWork(isMain: Boolean, workId: Long)
+    private external fun nativeDropScheduledWork(
+        isMain: Boolean,
+        workId: Long,
+        runtimeGeneration: Long,
+    )
 
     /**
      * Synchronously mark the SharedRPC listener for `runtimeId` as dead
@@ -147,7 +206,19 @@ class BackgroundThreadManager private constructor() {
      * SharedRPC::invalidate (cpp/SharedRPC.cpp) for the cross-runtime
      * correctness rationale.
      */
-    private external fun nativeInvalidateSharedRpc(runtimeId: String): Boolean
+    private external fun nativeInvalidateSharedRpc(
+        runtimeId: String,
+        runtimeGeneration: Long,
+    ): Boolean
+
+    /**
+     * Quiesce background-native work and release JSI callbacks while this call
+     * still runs on the outgoing background runtime's JS thread. Destroying
+     * those callbacks from the UI or teardown worker thread is unsafe.
+     */
+    private external fun nativeInvalidateBackgroundRuntimeOnJSThread(
+        runtimeGeneration: Long,
+    ): Boolean
 
     // ── SharedBridge ────────────────────────────────────────────────────────
 
@@ -183,7 +254,7 @@ class BackgroundThreadManager private constructor() {
                 val ptr = context.javaScriptContextHolder?.get() ?: 0L
                 if (ptr != 0L) {
                     mainRuntimePtr = ptr
-                    nativeInstallSharedBridge(ptr, true)
+                    nativeInstallSharedBridge(ptr, true, 0)
                     BTLogger.info("SharedBridge installed in main runtime")
                 } else {
                     BTLogger.warn("Main runtime pointer is 0, cannot install SharedBridge")
@@ -332,7 +403,77 @@ class BackgroundThreadManager private constructor() {
             }
         }
     }
-
+    private fun createDevVendorBundleLoader(
+        appContext: android.content.Context,
+        entryURL: String,
+        config: DevVendorConfig,
+    ): JSBundleLoader {
+        return object : JSBundleLoader() {
+            override fun loadScript(delegate: com.facebook.react.bridge.JSBundleLoaderDelegate): String {
+                val totalStart = System.nanoTime()
+                delegate.loadScriptFromAssets(
+                    appContext.assets,
+                    "assets://${config.commonAssetName}",
+                    false,
+                )
+                val assertionFile = File(appContext.cacheDir, "onekey-dev-vendor-assert-background.js")
+                val quotedEntryURL = org.json.JSONObject.quote(entryURL)
+                assertionFile.writeText(
+                    "if(globalThis.__ONEKEY_DEV_VENDOR_FINGERPRINT__!==\"${config.fingerprint}\")" +
+                        "{throw new Error(\"Dev-vendor common fingerprint mismatch\");}" +
+                        "globalThis.__ONEKEY_DEV_VENDOR_FULL_BUNDLE_URL__=$quotedEntryURL;" +
+                        "globalThis.__ONEKEY_RUNTIME_TARGET__=\"background\";" +
+                        "globalThis.__ONEKEY_BACKGROUND_RUNTIME_GENERATION__=${config.runtimeGeneration};",
+                )
+                delegate.loadScriptFromFile(
+                    assertionFile.absolutePath,
+                    entryURL,
+                    false,
+                )
+                val deltaFile = File(
+                    appContext.cacheDir,
+                    "onekey-dev-vendor-background-${config.fingerprint.take(12)}.bundle",
+                )
+                val temporaryFile = File.createTempFile(
+                    ".${deltaFile.name}-",
+                    ".tmp",
+                    deltaFile.parentFile,
+                )
+                try {
+                    val connection = java.net.URL(entryURL).openConnection() as java.net.HttpURLConnection
+                    try {
+                        connection.connectTimeout = 15_000
+                        connection.readTimeout = 60_000
+                        val statusCode = connection.responseCode
+                        if (statusCode !in 200..299) {
+                            throw IllegalStateException(
+                                "Dev-vendor background delta returned HTTP $statusCode",
+                            )
+                        }
+                        connection.inputStream.use { input ->
+                            temporaryFile.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    } finally {
+                        connection.disconnect()
+                    }
+                    android.system.Os.rename(
+                        temporaryFile.absolutePath,
+                        deltaFile.absolutePath,
+                    )
+                } catch (error: Exception) {
+                    temporaryFile.delete()
+                    throw RuntimeException("Failed to download dev-vendor background delta", error)
+                }
+                delegate.loadScriptFromFile(deltaFile.absolutePath, entryURL, false)
+                val totalMs = (System.nanoTime() - totalStart) / 1_000_000.0
+                BTLogger.info(
+                    "[DevVendor] background common.hbc + Metro delta loaded in " +
+                        "${String.format("%.1f", totalMs)}ms",
+                )
+                return entryURL
+            }
+        }
+    }
     private fun createLocalFileBundleLoader(localPath: String, sourceURL: String): JSBundleLoader {
         return object : JSBundleLoader() {
             override fun loadScript(delegate: com.facebook.react.bridge.JSBundleLoaderDelegate): String {
@@ -347,115 +488,332 @@ class BackgroundThreadManager private constructor() {
         }
     }
 
-    @OptIn(UnstableReactNativeAPI::class)
     fun startBackgroundRunnerWithEntryURL(context: ReactApplicationContext, entryURL: String) {
-        if (isStarted) {
-            BTLogger.warn("Background runner already started")
-            return
+        ensureBackgroundRunnerWithEntryURL(context.applicationContext, entryURL)
+    }
+
+    @OptIn(UnstableReactNativeAPI::class)
+    fun ensureBackgroundRunnerWithEntryURL(context: Context, entryURL: String): Boolean {
+        return ensureBackgroundRunner(context, entryURL, null)
+    }
+
+    @OptIn(UnstableReactNativeAPI::class)
+    fun ensureBackgroundRunnerWithDevVendor(
+        context: Context,
+        entryURL: String,
+        commonAssetName: String,
+        fingerprint: String,
+        backgroundHMREnabled: Boolean,
+    ): Boolean {
+        return ensureBackgroundRunner(
+            context,
+            entryURL,
+            DevVendorConfig(commonAssetName, fingerprint, backgroundHMREnabled),
+        )
+    }
+
+    @OptIn(UnstableReactNativeAPI::class)
+    private fun ensureBackgroundRunner(
+        context: Context,
+        entryURL: String,
+        devVendorConfig: DevVendorConfig?,
+    ): Boolean {
+        if (!runnerState.compareAndSet(BackgroundRunnerState.IDLE, BackgroundRunnerState.STARTING)) {
+            BTLogger.info("Background runner start coalesced: state=${getBackgroundRunnerState()}")
+            return false
         }
+
+        runnerStartFailureMessage = null
+        val runtimeGeneration = backgroundRuntimeGeneration.incrementAndGet()
+        val activeDevVendorConfig =
+            devVendorConfig?.copy(runtimeGeneration = runtimeGeneration)
+        lastBackgroundEntryURL = entryURL
+        lastDevVendorConfig = devVendorConfig
         val bgStartTime = System.nanoTime()
         BTLogger.info("[SplitBundle] background runner starting with entryURL: $entryURL")
 
         val appContext = context.applicationContext
-        val packages =
-            if (reactPackages.isNotEmpty()) {
-                reactPackages
-            } else {
-                BTLogger.warn("No ReactPackages registered for background runtime; call setReactPackages(...) from host before start. Falling back to MainReactPackage only.")
-                listOf(MainReactPackage())
-            }
-
-        val localBundlePath = resolveLocalBundlePath(entryURL)
-        val bundleLoader =
-            when {
-                // Debug mode: remote URL — use single bundle (Metro dev server)
-                isRemoteBundleUrl(entryURL) -> createDownloadedBundleLoader(appContext, entryURL)
-
-                // OTA / local file path — try sequential loading with common bundle
-                localBundlePath != null -> {
-                    val commonPath = resolveCommonBundlePath(localBundlePath)
-                    if (commonPath != null) {
-                        BTLogger.info("Using sequential file bundle loader: common=$commonPath, entry=$localBundlePath")
-                        createSequentialFileBundleLoader(commonPath, localBundlePath, entryURL)
-                    } else {
-                        BTLogger.info("No common bundle found for OTA path, using single bundle: $localBundlePath")
-                        createLocalFileBundleLoader(localBundlePath, entryURL)
-                    }
+        try {
+            val packages =
+                if (reactPackages.isNotEmpty()) {
+                    reactPackages
+                } else {
+                    BTLogger.warn("No ReactPackages registered for background runtime; call setReactPackages(...) from host before start. Falling back to MainReactPackage only.")
+                    listOf(MainReactPackage())
                 }
 
-                // Assets-based loading — try sequential loading with common.bundle in assets
-                entryURL.startsWith("assets://") -> {
-                    val entryAssetName = entryURL.removePrefix("assets://")
-                    if (hasCommonBundleInAssets(appContext)) {
-                        BTLogger.info("Using sequential asset bundle loader: common=common.bundle, entry=$entryAssetName")
-                        createSequentialAssetBundleLoader(appContext, "common.bundle", entryAssetName)
-                    } else {
-                        BTLogger.info("No common.bundle in assets, using single bundle: $entryURL")
-                        JSBundleLoader.createAssetLoader(appContext, entryURL, true)
-                    }
-                }
+            val localBundlePath = resolveLocalBundlePath(entryURL)
+            val bundleLoader =
+                when {
+                    activeDevVendorConfig != null && isRemoteBundleUrl(entryURL) ->
+                        createDevVendorBundleLoader(appContext, entryURL, activeDevVendorConfig)
 
-                // Bare filename (e.g. "background.bundle") — treat as asset
-                else -> {
-                    if (hasCommonBundleInAssets(appContext)) {
-                        BTLogger.info("Using sequential asset bundle loader: common=common.bundle, entry=$entryURL")
-                        createSequentialAssetBundleLoader(appContext, "common.bundle", entryURL)
-                    } else {
-                        BTLogger.info("No common.bundle in assets, using single bundle: assets://$entryURL")
-                        JSBundleLoader.createAssetLoader(appContext, "assets://$entryURL", true)
-                    }
-                }
-            }
+                    // Debug mode: remote URL — use single bundle (Metro dev server)
+                    isRemoteBundleUrl(entryURL) -> createDownloadedBundleLoader(appContext, entryURL)
 
-        val delegate = DefaultReactHostDelegate(
-            jsMainModulePath = MODULE_NAME,
-            jsBundleLoader = bundleLoader,
-            reactPackages = packages,
-            jsRuntimeFactory = HermesInstance(),
-            turboModuleManagerDelegateBuilder = DefaultTurboModuleManagerDelegate.Builder(),
-        )
-
-        val componentFactory = ComponentFactory()
-        DefaultComponentsRegistry.register(componentFactory)
-
-        val host = ReactHostImpl(
-            appContext,
-            delegate,
-            componentFactory,
-            true,  /* allowPackagerServerAccess */
-            false, /* useDevSupport */
-        )
-        bgReactHost = host
-
-        host.addReactInstanceEventListener(object : ReactInstanceEventListener {
-            override fun onReactContextInitialized(context: ReactContext) {
-                val initMs = (System.nanoTime() - bgStartTime) / 1_000_000.0
-                BTLogger.info("[SplitBundle] background ReactContext initialized in ${String.format("%.1f", initMs)}ms")
-                // Replay the most recent Activity resume so TurboModules on the
-                // bg host can see getCurrentActivity()/ActivityEventListeners
-                // from the very first call, even when the bg host finishes
-                // initializing after the Activity is already resumed.
-                replayLastResumedActivityOnUi()
-                context.runOnJSQueueThread {
-                    try {
-                        val ptr = context.javaScriptContextHolder?.get() ?: 0L
-                        if (ptr != 0L) {
-                            bgRuntimePtr = ptr
-                            nativeInstallSharedBridge(ptr, false)
-                            nativeSetupErrorHandler(ptr)
-                            BTLogger.info("SharedBridge and error handler installed in background runtime")
+                    // OTA / local file path — try sequential loading with common bundle
+                    localBundlePath != null -> {
+                        val commonPath = resolveCommonBundlePath(localBundlePath)
+                        if (commonPath != null) {
+                            BTLogger.info("Using sequential file bundle loader: common=$commonPath, entry=$localBundlePath")
+                            createSequentialFileBundleLoader(commonPath, localBundlePath, entryURL)
                         } else {
-                            BTLogger.error("Background runtime pointer is 0")
+                            BTLogger.info("No common bundle found for OTA path, using single bundle: $localBundlePath")
+                            createLocalFileBundleLoader(localBundlePath, entryURL)
                         }
-                    } catch (e: Exception) {
-                        BTLogger.error("Error installing bindings in background runtime: ${e.message}")
+                    }
+
+                    // Assets-based loading — try sequential loading with common.bundle in assets
+                    entryURL.startsWith("assets://") -> {
+                        val entryAssetName = entryURL.removePrefix("assets://")
+                        if (hasCommonBundleInAssets(appContext)) {
+                            BTLogger.info("Using sequential asset bundle loader: common=common.bundle, entry=$entryAssetName")
+                            createSequentialAssetBundleLoader(appContext, "common.bundle", entryAssetName)
+                        } else {
+                            BTLogger.info("No common.bundle in assets, using single bundle: $entryURL")
+                            JSBundleLoader.createAssetLoader(appContext, entryURL, true)
+                        }
+                    }
+
+                    // Bare filename (e.g. "background.bundle") — treat as asset
+                    else -> {
+                        if (hasCommonBundleInAssets(appContext)) {
+                            BTLogger.info("Using sequential asset bundle loader: common=common.bundle, entry=$entryURL")
+                            createSequentialAssetBundleLoader(appContext, "common.bundle", entryURL)
+                        } else {
+                            BTLogger.info("No common.bundle in assets, using single bundle: assets://$entryURL")
+                            JSBundleLoader.createAssetLoader(appContext, "assets://$entryURL", true)
+                        }
                     }
                 }
-            }
-        })
 
-        host.start()
-        isStarted = true
+            val delegate = DefaultReactHostDelegate(
+                jsMainModulePath = MODULE_NAME,
+                jsBundleLoader = bundleLoader,
+                reactPackages = packages,
+                jsRuntimeFactory = HermesInstance(),
+                turboModuleManagerDelegateBuilder = DefaultTurboModuleManagerDelegate.Builder(),
+            )
+
+            val componentFactory = ComponentFactory()
+            DefaultComponentsRegistry.register(componentFactory)
+
+            val host = ReactHostImpl(
+                appContext,
+                delegate,
+                componentFactory,
+                true,  /* allowPackagerServerAccess */
+                false, /* useDevSupport */
+            )
+            bgReactHost = host
+
+            host.addReactInstanceEventListener(object : ReactInstanceEventListener {
+                override fun onReactContextInitialized(context: ReactContext) {
+                    if (backgroundRuntimeGeneration.get() != runtimeGeneration) {
+                        BTLogger.info(
+                            "[BackgroundHMR] ignored stale ReactContext generation=$runtimeGeneration",
+                        )
+                        return
+                    }
+                    val initMs = (System.nanoTime() - bgStartTime) / 1_000_000.0
+                    BTLogger.info("[SplitBundle] background ReactContext initialized in ${String.format("%.1f", initMs)}ms")
+                    // Replay the most recent Activity resume so TurboModules on the
+                    // bg host can see getCurrentActivity()/ActivityEventListeners
+                    // from the very first call, even when the bg host finishes
+                    // initializing after the Activity is already resumed.
+                    replayLastResumedActivityOnUi()
+                    context.runOnJSQueueThread {
+                        try {
+                            if (
+                                backgroundRuntimeGeneration.get() != runtimeGeneration ||
+                                bgReactHost?.currentReactContext !== context
+                            ) {
+                                BTLogger.info(
+                                    "[BackgroundHMR] skipped stale binding install generation=$runtimeGeneration",
+                                )
+                                return@runOnJSQueueThread
+                            }
+                            val ptr = context.javaScriptContextHolder?.get() ?: 0L
+                            if (ptr != 0L) {
+                                bgRuntimePtr = ptr
+                                nativeInstallSharedBridge(ptr, false, runtimeGeneration)
+                                nativeSetupErrorHandler(ptr)
+                                BTLogger.info("SharedBridge and error handler installed in background runtime")
+                            } else {
+                                BTLogger.error("Background runtime pointer is 0")
+                            }
+                        } catch (e: Exception) {
+                            BTLogger.error("Error installing bindings in background runtime: ${e.message}")
+                        }
+                    }
+                    if (activeDevVendorConfig?.backgroundHMREnabled == true) {
+                        setupBackgroundHMRClient(context, entryURL, runtimeGeneration)
+                    }
+                }
+            })
+
+            watchBackgroundRunnerStart(host.start(), bgStartTime, runtimeGeneration)
+            return true
+        } catch (t: Throwable) {
+            markBackgroundRunnerFailed(t, bgStartTime, runtimeGeneration)
+            return false
+        }
+    }
+
+    private fun setupBackgroundHMRClient(
+        context: ReactContext,
+        entryURL: String,
+        runtimeGeneration: Long,
+    ) {
+        try {
+            val uri = Uri.parse(entryURL)
+            val hmrRegistrationUri = uri.buildUpon()
+                .path("/apps/mobile/background.bundle")
+                .build()
+            val scheme = hmrRegistrationUri.scheme ?: "http"
+            val port = if (hmrRegistrationUri.port != -1) {
+                hmrRegistrationUri.port
+            } else if (scheme == "https") {
+                443
+            } else {
+                80
+            }
+            val path = hmrRegistrationUri.path?.removePrefix("/")
+                ?: "apps/mobile/background.bundle"
+            context.getJSModule(HMRClient::class.java).setup(
+                "android",
+                path,
+                hmrRegistrationUri.host,
+                port,
+                true,
+                scheme,
+                hmrRegistrationUri.toString(),
+            )
+            BTLogger.info(
+                "[BackgroundHMR] client setup queued generation=$runtimeGeneration " +
+                    "downloadURL=$entryURL registrationURL=$hmrRegistrationUri",
+            )
+        } catch (t: Throwable) {
+            BTLogger.error("[BackgroundHMR] client setup failed: ${t.message}")
+        }
+    }
+
+    private fun watchBackgroundRunnerStart(
+        task: TaskInterface<Void>,
+        bgStartTime: Long,
+        runtimeGeneration: Long,
+    ) {
+        Thread {
+            try {
+                task.waitForCompletion()
+                if (
+                    runnerState.get() != BackgroundRunnerState.STARTING ||
+                    backgroundRuntimeGeneration.get() != runtimeGeneration
+                ) {
+                    return@Thread
+                }
+                when {
+                    task.isFaulted() -> markBackgroundRunnerFailed(
+                        task.getError() ?: RuntimeException("Background ReactHost start faulted"),
+                        bgStartTime,
+                        runtimeGeneration,
+                    )
+                    task.isCancelled() -> markBackgroundRunnerFailed(
+                        RuntimeException("Background ReactHost start cancelled"),
+                        bgStartTime,
+                        runtimeGeneration,
+                    )
+                    runnerState.compareAndSet(
+                        BackgroundRunnerState.STARTING,
+                        BackgroundRunnerState.RUNNING,
+                    ) -> {
+                        val startMs = (System.nanoTime() - bgStartTime) / 1_000_000.0
+                        BTLogger.info("Background runner start task completed in ${String.format("%.1f", startMs)}ms")
+                    }
+                }
+            } catch (t: Throwable) {
+                markBackgroundRunnerFailed(t, bgStartTime, runtimeGeneration)
+            }
+        }.apply {
+            isDaemon = true
+            name = "OneKey-BgThread-StartWatch"
+            start()
+        }
+    }
+
+    private fun markBackgroundRunnerFailed(
+        t: Throwable,
+        bgStartTime: Long,
+        runtimeGeneration: Long,
+    ) {
+        if (
+            backgroundRuntimeGeneration.get() != runtimeGeneration ||
+            !runnerState.compareAndSet(BackgroundRunnerState.STARTING, BackgroundRunnerState.FAILED)
+        ) {
+            return
+        }
+        val startMs = (System.nanoTime() - bgStartTime) / 1_000_000.0
+        runnerStartFailureMessage = t.message ?: t.javaClass.simpleName
+        bgRuntimePtr = 0
+        BTLogger.error(
+            "Background runner start failed after ${String.format("%.1f", startMs)}ms: " +
+                runnerStartFailureMessage
+        )
+        val failedHost = bgReactHost
+        val destroyTask = try {
+            failedHost?.destroy("Background runner start failed", t as? Exception)
+        } catch (destroyError: Throwable) {
+            BTLogger.error("Failed to destroy faulted background runner: ${destroyError.message}")
+            null
+        }
+        if (destroyTask == null) {
+            if (failedHost == null) {
+                runnerState.compareAndSet(
+                    BackgroundRunnerState.FAILED,
+                    BackgroundRunnerState.IDLE,
+                )
+            }
+            return
+        }
+        Thread {
+            try {
+                destroyTask.waitForCompletion()
+                if (destroyTask.isFaulted() || destroyTask.isCancelled()) {
+                    BTLogger.error(
+                        "Faulted background runner teardown did not complete cleanly " +
+                            "(faulted=${destroyTask.isFaulted()}, " +
+                            "cancelled=${destroyTask.isCancelled()}): " +
+                            destroyTask.getError()?.message,
+                    )
+                    return@Thread
+                }
+                if (
+                    runnerState.compareAndSet(
+                        BackgroundRunnerState.FAILED,
+                        BackgroundRunnerState.DESTROYING,
+                    )
+                ) {
+                    Handler(Looper.getMainLooper()).post {
+                        if (bgReactHost === failedHost) {
+                            bgReactHost = null
+                        }
+                        runnerState.set(BackgroundRunnerState.IDLE)
+                        BTLogger.info(
+                            "Faulted background runner teardown completed; retry is available",
+                        )
+                    }
+                }
+            } catch (destroyError: Throwable) {
+                BTLogger.error(
+                    "Failed to await faulted background runner teardown: " +
+                        destroyError.message,
+                )
+            }
+        }.apply {
+            isDaemon = true
+            name = "OneKey-BgThread-FailedHostDestroy"
+            start()
+        }
     }
 
     /**
@@ -463,9 +821,26 @@ class BackgroundThreadManager private constructor() {
      * Routes to main or background runtime's JS queue thread, then calls nativeExecuteWork.
      */
     @DoNotStrip
-    fun scheduleOnJSThread(isMain: Boolean, workId: Long): Boolean {
-        val context = if (isMain) mainReactContext else bgReactHost?.currentReactContext
-        BTLogger.info("scheduleOnJSThread: isMain=$isMain, workId=$workId, context=${context != null}")
+    fun scheduleOnJSThread(
+        isMain: Boolean,
+        workId: Long,
+        runtimeGeneration: Long,
+    ): Boolean {
+        val backgroundState = runnerState.get()
+        val context = if (isMain) {
+            mainReactContext
+        } else if (
+            backgroundState == BackgroundRunnerState.STARTING ||
+            backgroundState == BackgroundRunnerState.RUNNING
+        ) {
+            bgReactHost?.currentReactContext
+        } else {
+            null
+        }
+        BTLogger.info(
+            "scheduleOnJSThread: isMain=$isMain, workId=$workId, " +
+                "generation=$runtimeGeneration, context=${context != null}",
+        )
         if (context == null) {
             BTLogger.error("scheduleOnJSThread: context is null! isMain=$isMain, mainCtx=${mainReactContext != null}, bgHost=${bgReactHost != null}, bgCtx=${bgReactHost?.currentReactContext != null}")
             // The just-enqueued native work will never reach the JS thread.
@@ -479,13 +854,27 @@ class BackgroundThreadManager private constructor() {
         }
         return try {
             val posted = context.runOnJSQueueThread {
-                // Re-read ptr inside the block — if a reload happened between
-                // scheduling and execution, the old ptr may be stale.
+                if (
+                    !isMain &&
+                    (
+                        backgroundRuntimeGeneration.get() != runtimeGeneration ||
+                            bgReactHost?.currentReactContext !== context
+                    )
+                ) {
+                    BTLogger.info(
+                        "scheduleOnJSThread: dropped stale background workId=$workId " +
+                            "generation=$runtimeGeneration active=${backgroundRuntimeGeneration.get()}",
+                    )
+                    nativeDropScheduledWork(isMain, workId, runtimeGeneration)
+                    return@runOnJSQueueThread
+                }
+                // Re-read ptr only after proving this Runnable still belongs to
+                // the active context and generation.
                 val ptr = if (isMain) mainRuntimePtr else bgRuntimePtr
                 BTLogger.info("scheduleOnJSThread runOnJSQueueThread: isMain=$isMain, workId=$workId, ptr=$ptr")
                 if (ptr != 0L) {
                     try {
-                        nativeExecuteWork(ptr, workId)
+                        nativeExecuteWork(ptr, workId, isMain, runtimeGeneration)
                     } catch (e: Exception) {
                         BTLogger.error("Error executing work on JS thread: ${e.message}")
                     }
@@ -501,7 +890,7 @@ class BackgroundThreadManager private constructor() {
                     // runtime recovers and main has no JS retry net).
                     // drainPendingBgEvals inside the native fn is
                     // gated to !isMain, so settling bg evals only happens for bg.
-                    nativeDropScheduledWork(isMain, workId)
+                    nativeDropScheduledWork(isMain, workId, runtimeGeneration)
                 }
             }
             if (!posted) {
@@ -541,7 +930,7 @@ class BackgroundThreadManager private constructor() {
         path: String,
         onComplete: (code: String?, message: String?) -> Unit
     ) {
-        if (!isStarted) {
+        if (!isBackgroundStarted) {
             // Bg runtime not started yet → retryable (the loader will re-attempt
             // once the bg host is up).
             onComplete("SPLIT_BUNDLE_NO_RUNTIME", "Background runtime not started")
@@ -950,6 +1339,11 @@ class BackgroundThreadManager private constructor() {
     fun restart(context: ReactApplicationContext, mode: String, reason: String, promise: com.facebook.react.bridge.Promise) {
         val isUi = mode == "ui"
         val isAll = mode == "all"
+        val isBackgroundHMR = mode == "background"
+        if (isBackgroundHMR) {
+            restartBackgroundForHMR(context.applicationContext, reason, promise)
+            return
+        }
         if (!isUi && !isAll) {
             promise.reject(
                 "BG_RESTART_ERROR",
@@ -961,9 +1355,12 @@ class BackgroundThreadManager private constructor() {
         BTLogger.info("restart: mode=$mode reason=$reason")
 
         try {
-            nativeInvalidateSharedRpc("main")
+            nativeInvalidateSharedRpc("main", 0)
             if (isAll) {
-                nativeInvalidateSharedRpc("background")
+                nativeInvalidateSharedRpc(
+                    "background",
+                    backgroundRuntimeGeneration.incrementAndGet(),
+                )
             }
         } catch (t: Throwable) {
             // Invalidate is best-effort; not fatal if the JNI call somehow
@@ -1071,6 +1468,188 @@ class BackgroundThreadManager private constructor() {
         // any further code here is unreachable
     }
 
+    private fun restartBackgroundForHMR(
+        context: Context,
+        reason: String,
+        promise: com.facebook.react.bridge.Promise,
+    ) {
+        if (!BuildConfig.DEBUG) {
+            promise.reject(
+                "BG_RESTART_ERROR",
+                "Background HMR restart is unavailable in release builds",
+            )
+            return
+        }
+        val generation = reason
+            .removePrefix("onekey-bg-hmr:")
+            .substringBefore(':')
+            .toLongOrNull()
+        if (!reason.startsWith("onekey-bg-hmr:") || generation == null) {
+            promise.reject(
+                "BG_RESTART_ERROR",
+                "Background HMR restart is missing its runtime generation",
+            )
+            return
+        }
+
+        Handler(Looper.getMainLooper()).post {
+            val activeGeneration = backgroundRuntimeGeneration.get()
+            if (generation != activeGeneration) {
+                BTLogger.info(
+                    "[BackgroundHMR] ignored stale restart requested=$generation active=$activeGeneration",
+                )
+                promise.resolve(null)
+                return@post
+            }
+            val entryURL = lastBackgroundEntryURL
+            val config = lastDevVendorConfig
+            if (
+                entryURL == null ||
+                config?.backgroundHMREnabled != true ||
+                !backgroundHMRRestartInFlight.compareAndSet(false, true)
+            ) {
+                BTLogger.info("[BackgroundHMR] restart coalesced or disabled")
+                promise.resolve(null)
+                return@post
+            }
+
+            val outgoingHost = bgReactHost
+            val outgoingContext = outgoingHost?.currentReactContext
+            val invalidatedGeneration = backgroundRuntimeGeneration.incrementAndGet()
+            runnerState.set(BackgroundRunnerState.DESTROYING)
+            bgRuntimePtr = 0
+            val runtimeInvalidated = CountDownLatch(1)
+            val runtimeInvalidationSucceeded = AtomicBoolean(false)
+            val invalidationScheduled = try {
+                outgoingContext?.runOnJSQueueThread {
+                    try {
+                        nativeInvalidateBackgroundRuntimeOnJSThread(
+                            invalidatedGeneration,
+                        )
+                        runtimeInvalidationSucceeded.set(true)
+                    } catch (t: Throwable) {
+                        BTLogger.error(
+                            "[BackgroundHMR] JS-thread invalidation failed: ${t.message}",
+                        )
+                        try {
+                            nativeInvalidateSharedRpc("background", invalidatedGeneration)
+                            runtimeInvalidationSucceeded.set(true)
+                        } catch (fallbackError: Throwable) {
+                            BTLogger.error(
+                                "[BackgroundHMR] fallback invalidation failed: " +
+                                    fallbackError.message,
+                            )
+                        }
+                    } finally {
+                        runtimeInvalidated.countDown()
+                    }
+                } == true
+            } catch (t: Throwable) {
+                BTLogger.error(
+                    "[BackgroundHMR] failed to schedule JS-thread invalidation: ${t.message}",
+                )
+                false
+            }
+            if (!invalidationScheduled) {
+                try {
+                    // Safe fallback for a context whose JS queue is already
+                    // unavailable. This retains the old off-thread callback
+                    // disposal safeguards, but still quiesces SharedRPC.
+                    nativeInvalidateSharedRpc("background", invalidatedGeneration)
+                    runtimeInvalidationSucceeded.set(true)
+                } catch (t: Throwable) {
+                    BTLogger.error(
+                        "[BackgroundHMR] SharedRPC invalidate failed: ${t.message}",
+                    )
+                }
+                runtimeInvalidated.countDown()
+            }
+            promise.resolve(null)
+
+            Thread {
+                try {
+                    runtimeInvalidated.await()
+                } catch (t: Throwable) {
+                    BTLogger.error(
+                        "[BackgroundHMR] outgoing runtime invalidation wait failed: ${t.message}",
+                    )
+                    backgroundHMRRestartInFlight.set(false)
+                    return@Thread
+                }
+                if (!runtimeInvalidationSucceeded.get()) {
+                    BTLogger.error(
+                        "[BackgroundHMR] replacement blocked: runtime invalidation failed",
+                    )
+                    backgroundHMRRestartInFlight.set(false)
+                    return@Thread
+                }
+                val destroyTask = try {
+                    outgoingHost?.destroy("Background HMR restart", null)
+                } catch (t: Throwable) {
+                    BTLogger.error(
+                        "[BackgroundHMR] outgoing host destroy threw: ${t.message}",
+                    )
+                    null
+                }
+                if (outgoingHost != null && destroyTask == null) {
+                    backgroundHMRRestartInFlight.set(false)
+                    return@Thread
+                }
+                if (destroyTask != null) {
+                    try {
+                        destroyTask.waitForCompletion()
+                    } catch (t: Throwable) {
+                        BTLogger.error(
+                            "[BackgroundHMR] outgoing host destroy wait failed: ${t.message}",
+                        )
+                        backgroundHMRRestartInFlight.set(false)
+                        return@Thread
+                    }
+                    if (destroyTask.isFaulted() || destroyTask.isCancelled()) {
+                        BTLogger.error(
+                            "[BackgroundHMR] outgoing host destroy did not complete cleanly " +
+                                "(faulted=${destroyTask.isFaulted()}, " +
+                                "cancelled=${destroyTask.isCancelled()}): " +
+                                destroyTask.getError()?.message,
+                        )
+                        backgroundHMRRestartInFlight.set(false)
+                        return@Thread
+                    }
+                }
+                Handler(Looper.getMainLooper()).post {
+                    if (bgReactHost !== outgoingHost) {
+                        BTLogger.error(
+                            "[BackgroundHMR] replacement aborted: outgoing host changed",
+                        )
+                        backgroundHMRRestartInFlight.set(false)
+                        return@post
+                    }
+                    bgReactHost = null
+                    if (
+                        !runnerState.compareAndSet(
+                            BackgroundRunnerState.DESTROYING,
+                            BackgroundRunnerState.IDLE,
+                        )
+                    ) {
+                        BTLogger.error(
+                            "[BackgroundHMR] replacement aborted: unexpected state=" +
+                                getBackgroundRunnerState(),
+                        )
+                        backgroundHMRRestartInFlight.set(false)
+                        return@post
+                    }
+                    BTLogger.info("[BackgroundHMR] starting replacement background runtime")
+                    ensureBackgroundRunner(context, entryURL, config)
+                    backgroundHMRRestartInFlight.set(false)
+                }
+            }.apply {
+                isDaemon = true
+                name = "OneKey-BgThread-HMRRestart"
+                start()
+            }
+        }
+    }
+
     /**
      * Returns true if Runtime.exit(0) was reached (in which case the process
      * is now terminating and any code after the call site is unreachable).
@@ -1097,9 +1676,24 @@ class BackgroundThreadManager private constructor() {
 
     // ── Lifecycle ───────────────────────────────────────────────────────────
 
-    val isBackgroundStarted: Boolean get() = isStarted
+    val isBackgroundStarted: Boolean
+        get() = when (runnerState.get()) {
+            BackgroundRunnerState.STARTING, BackgroundRunnerState.RUNNING -> true
+            else -> false
+        }
+
+    fun getBackgroundRunnerState(): String = when (runnerState.get()) {
+        BackgroundRunnerState.IDLE -> "idle"
+        BackgroundRunnerState.STARTING -> "starting"
+        BackgroundRunnerState.RUNNING -> "running"
+        BackgroundRunnerState.FAILED -> "failed"
+        BackgroundRunnerState.DESTROYING -> "destroying"
+    }
+
+    fun getBackgroundRunnerFailureMessage(): String? = runnerStartFailureMessage
 
     fun destroy() {
+        runnerState.set(BackgroundRunnerState.DESTROYING)
         nativeDestroy()
         bgRuntimePtr = 0
         mainRuntimePtr = 0
@@ -1107,7 +1701,8 @@ class BackgroundThreadManager private constructor() {
         mainReactHost = null
         bgReactHost?.destroy("BackgroundThreadManager destroyed", null)
         bgReactHost = null
-        isStarted = false
+        runnerStartFailureMessage = null
+        runnerState.set(BackgroundRunnerState.IDLE)
         lastResumedActivityRef = WeakReference(null)
     }
 }

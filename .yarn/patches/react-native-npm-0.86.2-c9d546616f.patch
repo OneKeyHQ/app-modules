@@ -1,0 +1,14 @@
+diff --git a/scripts/cocoapods/new_architecture.rb b/scripts/cocoapods/new_architecture.rb
+index 3873632a7d7b88832b7e5058415734ab0a43679a..6c0683f5044903224245241afaa8369ca7711f66 100644
+--- a/scripts/cocoapods/new_architecture.rb
++++ b/scripts/cocoapods/new_architecture.rb
+@@ -171,8 +171,7 @@ class NewArchitectureHelper
+         excluded_info_plist = ["/Pods", "Tests", "metainternal", ".bundle", "build/", "DerivedData/", ".xcframework", ".framework", "watchkitapp", "today-extention"]
+         projectPaths.each do |projectPath|
+             projectFolderPath = File.dirname(projectPath)
+-            infoPlistFiles = `find #{projectFolderPath} -name "Info.plist"`
+-            infoPlistFiles = infoPlistFiles.split("\n").map { |f| f.strip }
++            infoPlistFiles = Dir.glob(File.join(projectFolderPath, "**", "Info.plist"))
+ 
+             infoPlistFiles.each do |infoPlistFile|
+                 # If infoPlistFile contains Pods or tests, skip it

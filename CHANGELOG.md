@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [3.0.92] - 2026-08-29
+
+### Bug Fixes
+- **text-input (Android)**: Resolve the React event dispatcher when a paste occurs and safely skip the custom event when the surface is not ready, avoiding a first-mount null-pointer crash without affecting the system paste action.
+
+### Chores
+- Bump all publishable packages to 3.0.92.
+
+## [3.0.91] - 2026-08-28
+
+### Features
+- **text-input**: Move `@onekeyfe/react-native-text-input` into app-modules and add package-owned iOS text/image paste handling so consumers no longer patch React Native's TextInput sources.
+
+### Bug Fixes
+- **background-thread**: Integrate the app-monorepo `x` runtime-generation, background-HMR teardown, and replacement-runtime lifecycle fixes on Android and iOS.
+- **split-bundle-loader (iOS)**: Integrate dev-vendor entry loading, HMR setup, and cold-build synchronization from app-monorepo `x`.
+
+### Chores
+- Bump all publishable packages to 3.0.91.
+
+## [3.0.90] - 2026-08-26
+
+### Bug Fixes
+- **background-thread (iOS)**: Add an ordered startup API that waits for the main JS runtime's shared bridge installation before creating an Expo-backed background runtime, preventing concurrent Expo module registration crashes.
+
+### Chores
+- Bump all publishable packages to 3.0.90.
+
+## [3.0.89] - 2026-08-25
+
+### Bug Fixes
+- **background-thread (iOS)**: Initialize secondary runtimes through Expo's React Native factory when Expo is present, while preserving the plain React Native fallback.
+
+### Chores
+- Upgrade the development and example app baseline to React Native 0.86.2 and React 19.2.3, with a minimum iOS deployment target of 16.4.
+- Bump all publishable packages to 3.0.89.
+
 ## [3.0.88] - 2026-08-25
 
 ### Bug Fixes

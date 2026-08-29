@@ -66,6 +66,20 @@ typedef NS_ENUM(NSInteger, EBgMgrSegmentEvalError) {
 /// @param host The RCTHost for the main runtime
 + (void)installSharedBridgeInMainRuntime:(RCTHost *)host;
 
+/// Install the main-runtime bridge and start the background runtime only after
+/// that installation has executed on the main JS runtime. Expo initializes its
+/// module registry on the JS thread, so this ordered entry point prevents a
+/// second Expo-backed runtime from registering modules during foreground
+/// runtime startup.
+///
+/// @param host The RCTHost for the main runtime
+/// @param entryURL The custom entry URL for the background runner
++ (void)installSharedBridgeInMainRuntime:(RCTHost *)host
+  thenStartBackgroundRunnerWithEntryURL:(NSString *)entryURL;
+/// Install the main-runtime bridge and start a background runtime from a
+/// local common HBC followed by a remote modules-only entry bundle.
++ (void)installSharedBridgeInMainRuntime:(RCTHost *)host
+  thenStartBackgroundRunnerWithDevVendorConfig:(NSDictionary<NSString *, NSString *> *)config;
 /// Start background runner with default entry URL
 - (void)startBackgroundRunner;
 

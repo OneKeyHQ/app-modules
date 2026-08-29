@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-cloud-fs",
-  "version": "3.0.88",
+  "version": "3.0.92",
   "description": "react-native-cloud-fs TurboModule for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -53,9 +53,9 @@
     "react-native": "*"
   },
   "devDependencies": {
-    "@react-native/babel-preset": "0.83.0",
-    "react": "19.2.0",
-    "react-native": "0.83.0",
+    "@react-native/babel-preset": "0.86.2",
+    "react": "19.2.3",
+    "react-native": "patch:react-native@npm%3A0.86.2#~/.yarn/patches/react-native-npm-0.86.2-c9d546616f.patch",
     "react-native-builder-bob": "^0.40.17",
     "typescript": "^5.9.2"
   },

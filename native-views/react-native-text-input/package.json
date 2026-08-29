@@ -1,0 +1,93 @@
+{
+  "name": "@onekeyfe/react-native-text-input",
+  "version": "3.0.92",
+  "description": "React Native TextInput with native paste events",
+  "source": "./src/index.tsx",
+  "main": "./lib/module/index.js",
+  "types": "./lib/typescript/src/index.d.ts",
+  "files": [
+    "src",
+    "lib",
+    "android",
+    "ios",
+    "OneKeyTextInput.podspec",
+    "react-native.config.js",
+    "!ios/build",
+    "!android/build",
+    "!android/gradle",
+    "!android/gradlew",
+    "!android/gradlew.bat",
+    "!android/local.properties",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*",
+    "!**/*.map"
+  ],
+  "scripts": {
+    "clean": "del-cli android/build lib",
+    "prepare": "rm -rf lib && bob build",
+    "typecheck": "tsc",
+    "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "test": "jest",
+    "release": "yarn prepare && npm whoami && npm publish --access public"
+  },
+  "keywords": [
+    "react-native",
+    "ios",
+    "android",
+    "text-input",
+    "paste"
+  ],
+  "homepage": "https://github.com/OneKeyHQ/app-modules#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-views/react-native-text-input"
+  },
+  "author": "@onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "@react-native/babel-preset": "0.86.2",
+    "@types/react": "^19.2.0",
+    "del-cli": "^6.0.0",
+    "react": "19.2.3",
+    "react-native": "patch:react-native@npm%3A0.86.2#~/.yarn/patches/react-native-npm-0.86.2-c9d546616f.patch",
+    "react-native-builder-bob": "^0.40.13",
+    "typescript": "^5.9.2"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  "packageManager": "yarn@4.1.0",
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
+  },
+  "codegenConfig": {
+    "name": "RNTextInputViewSpec",
+    "type": "components",
+    "jsSrcsDir": "src",
+    "android": {
+      "javaPackageName": "com.textinput"
+    }
+  }
+}
