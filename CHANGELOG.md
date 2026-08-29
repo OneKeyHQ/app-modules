@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.92] - 2026-08-29
+
+### Bug Fixes
+- **text-input (Android)**: Resolve the React event dispatcher when a paste occurs and safely skip the custom event when the surface is not ready, avoiding a first-mount null-pointer crash without affecting the system paste action.
+
+### Chores
+- Bump all publishable packages to 3.0.92.
+
 ## [3.0.91] - 2026-08-28
 
 ### Features
