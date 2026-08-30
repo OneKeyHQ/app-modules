@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.94] - 2026-08-30
+
+### Bug Fixes
+- **tab-view (iOS)**: Use the iOS 18+ tab bar controller visibility API so UIKit keeps its internal hidden state synchronized across rotation, while retaining the direct tab bar fallback on earlier iOS versions.
+
+### Chores
+- Bump all publishable packages to 3.0.94.
+
 ## [3.0.93] - 2026-08-30
 
 ### Bug Fixes
