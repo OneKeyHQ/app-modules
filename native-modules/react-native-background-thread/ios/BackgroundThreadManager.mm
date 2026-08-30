@@ -142,7 +142,11 @@ static const NSTimeInterval kBgSegmentEvalWatchdogSeconds = 30.0;
 // same reason as isStarted: written from the caller's thread (public API
 // doesn't pin start... to main) and read on main by the health-check.
 @property (atomic, copy) NSString *lastEntryURL;
-
+// Debug-only dev-vendor bootstrap contract. Retained across mode='all'
+// reloads so the self-heal path cannot fall back to a monolithic bundle.
+@property (atomic, copy, nullable) NSDictionary<NSString *, NSString *> *lastDevVendorConfig;
+@property (nonatomic, assign) NSUInteger backgroundRuntimeGeneration;
+@property (nonatomic, assign) BOOL backgroundHMRRestartInFlight;
 // Forward declaration so restartWithMode: can call it; definition lives
 // after restartWithMode: for readability (the call site is the natural
 // place to start reading the restart flow).
@@ -150,6 +154,11 @@ static const NSTimeInterval kBgSegmentEvalWatchdogSeconds = 30.0;
                                 isAll:(BOOL)isAll
                            generation:(NSUInteger)myGen
                               retried:(BOOL)retried;
+- (void)startBackgroundRunnerWithDevVendorConfig:(NSDictionary<NSString *, NSString *> *)config;
+- (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL
+                          devVendorConfig:(NSDictionary<NSString *, NSString *> * _Nullable)devVendorConfig;
+- (void)restartBackgroundForHMRReason:(NSString *)reason
+                           completion:(void (^)(NSError * _Nullable error))completion;
 @end
 
 // First-stage delay for the post-reload health-check. Picked so the host's
@@ -164,7 +173,11 @@ static BackgroundThreadManager *_sharedInstance = nil;
 static dispatch_once_t onceToken;
 static NSString *const MODULE_NAME = @"background";
 static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/background.bundle?platform=ios&dev=true&lazy=false&minify=false&inlineSourceMap=false&modulesOnly=false&runModule=true&excludeSource=true&sourcePaths=url-server&app=so.onekey.wallet&transform.routerRoot=app&transform.engine=hermes&transform.bytecode=1&unstable_transformProfile=hermes-stable";
-
+static NSString *const DEV_VENDOR_COMMON_PATH_KEY = @"commonBundlePath";
+static NSString *const DEV_VENDOR_ENTRY_URL_KEY = @"entryURL";
+static NSString *const DEV_VENDOR_FINGERPRINT_KEY = @"fingerprint";
+static NSString *const DEV_VENDOR_BACKGROUND_HMR_KEY = @"backgroundHMREnabled";
+static NSString *const BACKGROUND_HMR_REASON_PREFIX = @"onekey-bg-hmr:";
 #pragma mark - Singleton
 
 + (instancetype)sharedInstance {
@@ -258,7 +271,13 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
             startBackgroundRunnerWithEntryURL:entryURL];
     }];
 }
-
++ (void)installSharedBridgeInMainRuntime:(RCTHost *)host
+  thenStartBackgroundRunnerWithDevVendorConfig:(NSDictionary<NSString *, NSString *> *)config {
+    [self installSharedBridgeInMainRuntime:host completion:^{
+        [[BackgroundThreadManager sharedInstance]
+            startBackgroundRunnerWithDevVendorConfig:config];
+    }];
+}
 #pragma mark - Public Methods
 
 - (void)startBackgroundRunner {
@@ -271,6 +290,35 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 }
 
 - (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL {
+    [self startBackgroundRunnerWithEntryURL:entryURL devVendorConfig:nil];
+}
+
+- (void)startBackgroundRunnerWithDevVendorConfig:(NSDictionary<NSString *, NSString *> *)config {
+    NSString *commonBundlePath = config[DEV_VENDOR_COMMON_PATH_KEY];
+    NSString *entryURL = config[DEV_VENDOR_ENTRY_URL_KEY];
+    NSString *fingerprint = config[DEV_VENDOR_FINGERPRINT_KEY];
+    NSString *backgroundHMRValue = config[DEV_VENDOR_BACKGROUND_HMR_KEY];
+    NSURL *parsedEntryURL = [NSURL URLWithString:entryURL];
+    NSRegularExpression *fingerprintPattern =
+        [NSRegularExpression regularExpressionWithPattern:@"^[0-9a-f]{64}$"
+                                                  options:0
+                                                    error:nil];
+    if (commonBundlePath.length == 0 ||
+        ![[NSFileManager defaultManager] fileExistsAtPath:commonBundlePath] ||
+        parsedEntryURL.host.length == 0 ||
+        !([backgroundHMRValue isEqualToString:@"true"] ||
+          [backgroundHMRValue isEqualToString:@"false"]) ||
+        [fingerprintPattern numberOfMatchesInString:fingerprint
+                                            options:0
+                                              range:NSMakeRange(0, fingerprint.length)] != 1) {
+        [BTLogger error:@"Invalid dev-vendor background bootstrap config"];
+        return;
+    }
+    [self startBackgroundRunnerWithEntryURL:entryURL devVendorConfig:config];
+}
+
+- (void)startBackgroundRunnerWithEntryURL:(NSString *)entryURL
+                          devVendorConfig:(NSDictionary<NSString *, NSString *> * _Nullable)devVendorConfig {
     if (self.isStarted) {
         // Surface the URL mismatch when a second start... call would
         // otherwise silently drop the host's intent — most common in the
@@ -293,18 +341,27 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
     // Updated unconditionally — first-time and re-start with a new URL
     // both reflect into lastEntryURL.
     self.lastEntryURL = entryURL;
+    self.lastDevVendorConfig = devVendorConfig;
     [BTLogger info:[NSString stringWithFormat:@"Starting background runner with entryURL: %@", entryURL]];
 
     dispatch_async(dispatch_get_main_queue(), ^{
+        NSUInteger runtimeGeneration = ++self.backgroundRuntimeGeneration;
         NSDictionary *initialProperties = @{};
         NSDictionary *launchOptions = @{};
         self.reactNativeFactoryDelegate = [[BackgroundReactNativeDelegate alloc] init];
         self.reactNativeFactory = CreateBackgroundReactNativeFactory(self.reactNativeFactoryDelegate);
-
+        if (devVendorConfig) {
+            [self.reactNativeFactoryDelegate
+                configureDevVendorCommonBundlePath:devVendorConfig[DEV_VENDOR_COMMON_PATH_KEY]
+                entryURL:[NSURL URLWithString:devVendorConfig[DEV_VENDOR_ENTRY_URL_KEY]]
+                fingerprint:devVendorConfig[DEV_VENDOR_FINGERPRINT_KEY]
+                backgroundHMREnabled:[devVendorConfig[DEV_VENDOR_BACKGROUND_HMR_KEY] isEqualToString:@"true"]
+                runtimeGeneration:runtimeGeneration];
+        }
         // Only set jsBundleSource for debug HTTP URLs or explicit OTA overrides.
         // Leaving the default release name ("background.bundle") unset lets the
         // delegate fall back to split-bundle mode (common.bundle + entry).
-        if (![entryURL isEqualToString:@"background.bundle"]) {
+        if (!devVendorConfig && ![entryURL isEqualToString:@"background.bundle"]) {
             [self.reactNativeFactoryDelegate setJsBundleSource:std::string([entryURL UTF8String])];
         }
 
@@ -491,6 +548,20 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 {
     BOOL isUI = [mode isEqualToString:@"ui"];
     BOOL isAll = [mode isEqualToString:@"all"];
+    BOOL isBackgroundHMR = [mode isEqualToString:@"background"];
+
+    if (isBackgroundHMR) {
+#if DEBUG
+        [self restartBackgroundForHMRReason:reason completion:completion];
+#else
+        NSError *error = [NSError errorWithDomain:@"BackgroundThread"
+                                             code:12
+                                         userInfo:@{NSLocalizedDescriptionKey:
+                                                        @"Background HMR restart is unavailable in release builds"}];
+        if (completion) completion(error);
+#endif
+        return;
+    }
 
     if (!isUI && !isAll) {
         NSError *error = [NSError errorWithDomain:@"BackgroundThread"
@@ -565,6 +636,59 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
     } else {
         dispatch_async(dispatch_get_main_queue(), work);
     }
+}
+
+- (void)restartBackgroundForHMRReason:(NSString *)reason
+                           completion:(void (^)(NSError * _Nullable error))completion
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (![reason hasPrefix:BACKGROUND_HMR_REASON_PREFIX]) {
+            NSError *error = [NSError errorWithDomain:@"BackgroundThread"
+                                                 code:13
+                                             userInfo:@{NSLocalizedDescriptionKey:
+                                                            @"Background HMR restart is missing its runtime generation"}];
+            if (completion) completion(error);
+            return;
+        }
+        NSString *generationAndReason = [reason substringFromIndex:BACKGROUND_HMR_REASON_PREFIX.length];
+        NSRange separator = [generationAndReason rangeOfString:@":"];
+        NSString *generationText = separator.location == NSNotFound
+            ? generationAndReason
+            : [generationAndReason substringToIndex:separator.location];
+        NSScanner *scanner = [NSScanner scannerWithString:generationText];
+        unsigned long long generation = 0;
+        if (![scanner scanUnsignedLongLong:&generation] || !scanner.isAtEnd ||
+            generation != self.backgroundRuntimeGeneration) {
+            [BTLogger info:[NSString stringWithFormat:
+                @"[BackgroundHMR] ignored stale restart requested=%@ active=%lu",
+                generationText,
+                (unsigned long)self.backgroundRuntimeGeneration]];
+            if (completion) completion(nil);
+            return;
+        }
+        NSDictionary<NSString *, NSString *> *config = self.lastDevVendorConfig;
+        if (![config[DEV_VENDOR_BACKGROUND_HMR_KEY] isEqualToString:@"true"] ||
+            self.backgroundHMRRestartInFlight) {
+            [BTLogger info:@"[BackgroundHMR] restart coalesced or disabled"];
+            if (completion) completion(nil);
+            return;
+        }
+
+        self.backgroundHMRRestartInFlight = YES;
+        ++self.backgroundRuntimeGeneration;
+        SharedRPC::invalidate("background");
+        self.reactNativeFactory = nil;
+        self.reactNativeFactoryDelegate = nil;
+        self.isStarted = NO;
+        if (completion) completion(nil);
+
+        // Leave the outgoing TurboModule callback before creating its replacement.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [BTLogger info:@"[BackgroundHMR] starting replacement background runtime"];
+            [self startBackgroundRunnerWithDevVendorConfig:config];
+            self.backgroundHMRRestartInFlight = NO;
+        });
+    });
 }
 
 #pragma mark - Restart Health Check
@@ -649,6 +773,7 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
 
         if (isAll && !strongSelf.isStarted) {
             NSString *cachedURL = strongSelf.lastEntryURL;
+            NSDictionary<NSString *, NSString *> *devVendorConfig = strongSelf.lastDevVendorConfig;
             // Treat the bundled default name as "no real cache" so the
             // OTA warn still fires for hosts that initially bootstrapped
             // with the default URL and haven't yet swapped to an OTA-
@@ -656,7 +781,12 @@ static NSString *const MODULE_DEBUG_URL = @"http://localhost:8082/apps/mobile/ba
             // lastEntryURL that distinguishes them.
             BOOL hasCustomCachedURL = cachedURL.length > 0
                 && ![cachedURL isEqualToString:@"background.bundle"];
-            if (hasCustomCachedURL) {
+            if (devVendorConfig) {
+                [BTLogger info:[NSString stringWithFormat:
+                    @"restart(%@): bg not respawned by host AppDelegate; replaying dev-vendor common + delta",
+                    mode]];
+                [strongSelf startBackgroundRunnerWithDevVendorConfig:devVendorConfig];
+            } else if (hasCustomCachedURL) {
                 // Preferred path: replay the host's last entry URL. On OTA
                 // devices this is the OTA-resolved bundle, which keeps the
                 // bg moduleId table aligned with the new main bundle and

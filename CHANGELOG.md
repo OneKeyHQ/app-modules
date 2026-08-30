@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.94] - 2026-08-30
+
+### Bug Fixes
+- **tab-view (iOS)**: Use the iOS 18+ tab bar controller visibility API so UIKit keeps its internal hidden state synchronized across rotation, while retaining the direct tab bar fallback on earlier iOS versions.
+
+### Chores
+- Bump all publishable packages to 3.0.94.
+
+## [3.0.93] - 2026-08-30
+
+### Bug Fixes
+- **text-input (Android)**: Restore React Native's intrinsic multiline measurement for the custom Fabric text input so `numberOfLines` determines the expected height without a JS fallback.
+
+### Chores
+- Bump all publishable packages to 3.0.93.
+
+## [3.0.92] - 2026-08-29
+
+### Bug Fixes
+- **text-input (Android)**: Resolve the React event dispatcher when a paste occurs and safely skip the custom event when the surface is not ready, avoiding a first-mount null-pointer crash without affecting the system paste action.
+
+### Chores
+- Bump all publishable packages to 3.0.92.
+
+## [3.0.91] - 2026-08-28
+
+### Features
+- **text-input**: Move `@onekeyfe/react-native-text-input` into app-modules and add package-owned iOS text/image paste handling so consumers no longer patch React Native's TextInput sources.
+
+### Bug Fixes
+- **background-thread**: Integrate the app-monorepo `x` runtime-generation, background-HMR teardown, and replacement-runtime lifecycle fixes on Android and iOS.
+- **split-bundle-loader (iOS)**: Integrate dev-vendor entry loading, HMR setup, and cold-build synchronization from app-monorepo `x`.
+
+### Chores
+- Bump all publishable packages to 3.0.91.
+
 ## [3.0.90] - 2026-08-26
 
 ### Bug Fixes

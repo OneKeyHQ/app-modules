@@ -292,6 +292,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - OneKeyTextInput (3.0.90):
+    - React-Core
   - Pbkdf2 (3.0.90):
     - hermes-engine
     - RCTRequired
@@ -2850,6 +2852,7 @@ DEPENDENCIES:
   - "NetworkInfo (from `../../../node_modules/@onekeyfe/react-native-network-info`)"
   - NitroMmkv (from `../../../node_modules/react-native-mmkv`)
   - NitroModules (from `../../../node_modules/react-native-nitro-modules`)
+  - "OneKeyTextInput (from `../../../node_modules/@onekeyfe/react-native-text-input`)"
   - "Pbkdf2 (from `../../../node_modules/@onekeyfe/react-native-pbkdf2`)"
   - "PerpDepthBar (from `../../../node_modules/@onekeyfe/react-native-perp-depth-bar`)"
   - "Ping (from `../../../node_modules/@onekeyfe/react-native-ping`)"
@@ -2990,6 +2993,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native-mmkv"
   NitroModules:
     :path: "../../../node_modules/react-native-nitro-modules"
+  OneKeyTextInput:
+    :path: "../../../node_modules/@onekeyfe/react-native-text-input"
   Pbkdf2:
     :path: "../../../node_modules/@onekeyfe/react-native-pbkdf2"
   PerpDepthBar:
@@ -3208,6 +3213,7 @@ SPEC CHECKSUMS:
   NetworkInfo: cf0e0b1fdeb63a44bebf41b838532f42a5598af6
   NitroMmkv: 85a251e15c39d7c95fe58cf40786fa126b8d143c
   NitroModules: 452230d9b63c6c3f59dd97eeaa27ec3449271d4a
+  OneKeyTextInput: 11bdccb319723ad805b26fb9f8b0679af5295535
   Pbkdf2: 94d9510f31adf14ecde7dfff7d586567bd6d9b8a
   PerpDepthBar: 1feab81472d5737ed61e2fa8662e1cdf274620d7
   Ping: 1286aea6344805e7c331dbe1e2eaf4082ed680f2

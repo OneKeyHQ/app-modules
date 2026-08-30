@@ -509,7 +509,16 @@ class RCTTabViewContainerView: UIView {
 
   private func updateTabBarHidden() {
     guard let tbc = tabBarController else { return }
+    // Keep UIKit's tab bar visibility state in sync on iOS 18+.
+    #if compiler(>=6.0)
+    if #available(iOS 18.0, *) {
+      tbc.setTabBarHidden(tabBarHidden, animated: false)
+    } else {
+      tbc.tabBar.isHidden = tabBarHidden
+    }
+    #else
     tbc.tabBar.isHidden = tabBarHidden
+    #endif
     tbc.tabBar.isUserInteractionEnabled = !tabBarHidden
 
     if !tabBarHidden {

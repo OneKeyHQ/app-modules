@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-segment-slider",
-  "version": "3.0.90",
+  "version": "3.0.94",
   "description": "react-native-segment-slider",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

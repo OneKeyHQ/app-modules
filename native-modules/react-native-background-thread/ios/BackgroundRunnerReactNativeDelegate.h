@@ -30,7 +30,13 @@ NS_ASSUME_NONNULL_BEGIN
  * @return Initialized delegate instance with filtered module access
  */
 - (instancetype)init;
-
+/// Configure debug startup as local common HBC followed by a remote
+/// modules-only background entry bundle.
+- (void)configureDevVendorCommonBundlePath:(NSString *)commonBundlePath
+                                  entryURL:(NSURL *)entryURL
+                               fingerprint:(NSString *)fingerprint
+                      backgroundHMREnabled:(BOOL)backgroundHMREnabled
+                         runtimeGeneration:(NSUInteger)runtimeGeneration;
 /**
  * Register a HBC segment in the background runtime (Phase 2.5 spike).
  * Uses RCTInstance's registerSegmentWithId:path: API.
