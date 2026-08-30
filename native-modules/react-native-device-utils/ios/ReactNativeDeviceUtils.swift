@@ -163,6 +163,16 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         }
     }
 
+    public func setNavigationBarAppearance(
+        r: Double,
+        g: Double,
+        b: Double,
+        a: Double,
+        useDarkIcons: Bool
+    ) throws -> Void {
+        // Android-only system UI.
+    }
+
     // MARK: - LaunchOptionsManager
 
     func getLaunchOptions() throws -> Promise<LaunchOptions> {
