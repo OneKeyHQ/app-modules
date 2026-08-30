@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.95] - 2026-08-31
+
+### Features
+- **device-utils**: Add `setNavigationBarAppearance` so the Android main UI runtime can keep the system navigation bar aligned with the app theme while preserving a cross-platform no-op on iOS.
+
+### Bug Fixes
+- **device-utils (Android)**: Handle bottom and side three-button navigation on Android 15+, remove the protection view in gesture mode, and use a readable black fallback on API 24–25 when dark navigation icons are unavailable.
+
+### Chores
+- Bump all publishable packages to 3.0.95.
+
 ## [3.0.94] - 2026-08-30
 
 ### Bug Fixes
