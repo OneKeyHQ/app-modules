@@ -874,13 +874,16 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     a: Double,
     useDarkIcons: Boolean,
   ) {
+    val requestedColor = Color.argb(
+      a.toInt().coerceIn(0, 255),
+      r.toInt().coerceIn(0, 255),
+      g.toInt().coerceIn(0, 255),
+      b.toInt().coerceIn(0, 255),
+    )
     val appearance = NavigationBarAppearance(
-      color = Color.argb(
-        a.toInt().coerceIn(0, 255),
-        r.toInt().coerceIn(0, 255),
-        g.toInt().coerceIn(0, 255),
-        b.toInt().coerceIn(0, 255),
-      ),
+      color = if (
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O && useDarkIcons
+      ) Color.BLACK else requestedColor,
       useDarkIcons = useDarkIcons,
     )
     navigationBarAppearance = appearance
@@ -945,15 +948,47 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     protectionView.visibility = View.VISIBLE
     protectionView.bringToFront()
     ViewCompat.setOnApplyWindowInsetsListener(protectionView) { view, windowInsets ->
-      val navigationBarHeight = windowInsets
-        .getInsets(WindowInsetsCompat.Type.tappableElement())
-        .bottom
+      val navigationBarInsets = windowInsets.getInsets(
+        WindowInsetsCompat.Type.navigationBars()
+      )
+      val tappableElementInsets = windowInsets.getInsets(
+        WindowInsetsCompat.Type.tappableElement()
+      )
+      val leftInset = minOf(navigationBarInsets.left, tappableElementInsets.left)
+      val rightInset = minOf(navigationBarInsets.right, tappableElementInsets.right)
+      val bottomInset = minOf(navigationBarInsets.bottom, tappableElementInsets.bottom)
       val layoutParams = view.layoutParams as FrameLayout.LayoutParams
-      if (layoutParams.height != navigationBarHeight) {
-        layoutParams.height = navigationBarHeight
+      val (width, height, gravity) = when {
+        leftInset > 0 -> Triple(
+          leftInset,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          Gravity.LEFT,
+        )
+        rightInset > 0 -> Triple(
+          rightInset,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          Gravity.RIGHT,
+        )
+        bottomInset > 0 -> Triple(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          bottomInset,
+          Gravity.BOTTOM,
+        )
+        else -> Triple(0, 0, Gravity.BOTTOM)
+      }
+      if (
+        layoutParams.width != width ||
+        layoutParams.height != height ||
+        layoutParams.gravity != gravity
+      ) {
+        layoutParams.width = width
+        layoutParams.height = height
+        layoutParams.gravity = gravity
         view.layoutParams = layoutParams
       }
-      view.visibility = if (navigationBarHeight > 0) View.VISIBLE else View.INVISIBLE
+      view.visibility = if (
+        leftInset > 0 || rightInset > 0 || bottomInset > 0
+      ) View.VISIBLE else View.INVISIBLE
 
       // This view is only a visual protection; descendants still need the insets.
       windowInsets

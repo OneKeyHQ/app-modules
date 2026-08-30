@@ -51,7 +51,9 @@ export interface ReactNativeDeviceUtils
   /**
    * Updates the Android system navigation bar from the UI runtime.
    * Color channels use the [0, 255] range. `useDarkIcons` should be true for
-   * light backgrounds. This is a no-op on iOS.
+   * light backgrounds. Android API 24-25 cannot render dark navigation icons,
+   * so those versions use an opaque black background fallback when requested.
+   * This is a no-op on iOS.
    */
   setNavigationBarAppearance(
     r: number,
