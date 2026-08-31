@@ -37,7 +37,7 @@ final class BundleStorageSchemaPolicyTests: XCTestCase {
     }
 
     func testUnsupportedSchemaIsRejectedEvenWithoutMigration() {
-        for version in ["mmkv-v2", "MMKV-V1", " mmkv-v1 ", "asyncstorage-v1"] {
+        for version in ["mmkv-v2", "MMKV-V1", " mmkv-v1 ", "mmkv-v1-preview", "asyncstorage-v1"] {
             XCTAssertFalse(isCompatible(version))
             XCTAssertFalse(isCompatible(version, ledger: [ledgerKeys[0]: "complete-v1"]))
         }
@@ -47,22 +47,36 @@ final class BundleStorageSchemaPolicyTests: XCTestCase {
         XCTAssertTrue(isCompatible(nil, ledger: ["other-storage-v1": "complete-v1"]))
     }
 
-    func testLedgerChangesAreObservedWhenBundleMetadataIsCached() {
-        var ledger: [String: String] = [:]
-        let read = { (key: String) in ledger[key] }
-        XCTAssertTrue(BundleStorageSchemaPolicy.isCompatible(declaredVersion: nil, readMigrationLedger: read))
-        ledger[ledgerKeys[1]] = "migrating-v1"
-        XCTAssertFalse(BundleStorageSchemaPolicy.isCompatible(declaredVersion: nil, readMigrationLedger: read))
-        ledger[ledgerKeys[1]] = "resetting-v1"
-        XCTAssertFalse(BundleStorageSchemaPolicy.isCompatible(declaredVersion: nil, readMigrationLedger: read))
+    func testLedgerChangesAreObservedBetweenPolicyEvaluations() {
+        for key in ledgerKeys {
+            var ledger: [String: String] = [:]
+            let read = { (key: String) in ledger[key] }
+            XCTAssertTrue(BundleStorageSchemaPolicy.isCompatible(declaredVersion: nil, readMigrationLedger: read))
+            for state in ["migrating-v1", "complete-v1", "resetting-v1"] {
+                ledger[key] = state
+                XCTAssertFalse(BundleStorageSchemaPolicy.isCompatible(declaredVersion: nil, readMigrationLedger: read))
+                XCTAssertTrue(BundleStorageSchemaPolicy.isCompatible(declaredVersion: "mmkv-v1", readMigrationLedger: read))
+            }
+        }
+    }
+
+    func testMissingMarkerReadsBothHostLedgerKeys() {
+        var requestedKeys: Set<String> = []
+        let compatible = BundleStorageSchemaPolicy.isCompatible(declaredVersion: nil) { key in
+            requestedKeys.insert(key)
+            return nil
+        }
+        XCTAssertTrue(compatible)
+        XCTAssertEqual(requestedKeys, Set(ledgerKeys))
     }
 
     func testMarkedBundlesDoNotReadStorage() {
         for version in ["mmkv-v1", "mmkv-v2"] {
-            _ = BundleStorageSchemaPolicy.isCompatible(declaredVersion: version) { _ in
+            let compatible = BundleStorageSchemaPolicy.isCompatible(declaredVersion: version) { _ in
                 XCTFail("A declared schema should not need a ledger read")
                 return nil
             }
+            XCTAssertEqual(compatible, version == "mmkv-v1")
         }
     }
 }

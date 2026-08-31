@@ -34,7 +34,6 @@ From this module directory:
 
 ```sh
 swift test --scratch-path /tmp/bundle-storage-schema-swift
-node --test tests/storage-schema-wiring.test.mjs
 
 # Kotlin CLI and a JDK are required; no Android SDK, JSI, or Gradle host is needed.
 kotlinc android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleStorageSchemaPolicy.kt \
@@ -43,10 +42,24 @@ kotlinc android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleSt
 java -jar /tmp/bundle-storage-schema-tests.jar
 ```
 
-Swift and Kotlin tests exercise the shipping policy sources. Node tests check
-native call-site wiring, cached revalidation, metadata filtering, and the retained
-Android signature. They are not a substitute for a signed-OTA install/restart
-test on iOS and Android.
+Swift and Kotlin tests compile and execute the shipping policy sources. They
+assert allow/reject results for legacy and marked bundles, both migration
+ledgers, interrupted migrations, resets, unknown schemas, and ledger changes
+between evaluations. They also check the keys passed to the ledger reader and
+that marked bundles need no ledger read. Kotlin additionally verifies that a
+ledger read error propagates rather than allowing an unmarked bundle.
+
+These are policy unit tests with an in-memory ledger reader. They do not execute
+`BundleUpdateStore` / `BundleUpdateStoreAndroid`, a native runtime reload, the
+process-wide bundle cache, metadata file filtering, or a signed-OTA install.
+Calling the policy repeatedly is not a test of the production bundle cache.
+The old Node source-text assertions have been removed; matching a signature or
+call in source text cannot demonstrate that it compiles or executes correctly.
+
+Before native release, verify startup/install rejection and cached revalidation
+through the real iOS/Android bundle-update entry points. Compile legacy native
+call sites to verify source compatibility. These remain host/device checks,
+not coverage claimed by the policy unit suites above.
 
 ## Rollout
 
