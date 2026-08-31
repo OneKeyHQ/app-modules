@@ -29,6 +29,28 @@ const isSame = ReactNativeBundleCrypto.secureEqualHex(
 console.log(isSame);
 ```
 
+## Apple Gopenpgp framework
+
+The Mac Catalyst slice in the vendored `Gopenpgp.xcframework` uses Gopenpgp
+`v3.4.1`. It is a static `arm64-apple-ios15.5-macabi` build produced with Go
+`1.26.2` and `golang.org/x/mobile`
+`v0.0.0-20260821190718-4776eadac327`:
+
+```sh
+gomobile bind \
+  -tags=mobile,ios \
+  -target=ios,iossimulator,maccatalyst/arm64 \
+  -iosversion=15.5 \
+  -ldflags='-s -w' \
+  -o Gopenpgp.xcframework \
+  github.com/ProtonMail/gopenpgp/v3/crypto \
+  github.com/ProtonMail/gopenpgp/v3/armor \
+  github.com/ProtonMail/gopenpgp/v3/constants \
+  github.com/ProtonMail/gopenpgp/v3/mime \
+  github.com/ProtonMail/gopenpgp/v3/mobile \
+  github.com/ProtonMail/gopenpgp/v3/profile
+```
+
 ## Contributing
 
 - [Development workflow](CONTRIBUTING.md#development-workflow)
