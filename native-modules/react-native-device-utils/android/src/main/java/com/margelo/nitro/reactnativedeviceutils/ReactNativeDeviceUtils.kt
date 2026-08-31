@@ -6,10 +6,17 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.Build
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import com.margelo.nitro.nativelogger.OneKeyLog
 import androidx.preference.PreferenceManager
 import androidx.core.content.ContextCompat
 import androidx.core.util.Consumer
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.window.layout.FoldingFeature
 import androidx.window.layout.WindowInfoTracker
 import androidx.window.layout.WindowLayoutInfo
@@ -28,6 +35,11 @@ data class Listener(
   val callback: (Boolean) -> Unit
 )
 
+private data class NavigationBarAppearance(
+  val color: Int,
+  val useDarkIcons: Boolean,
+)
+
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
 
@@ -42,6 +54,8 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     private const val RECOVERY_PREFS_NAME = "onekey_recovery"
     private const val BOOT_FAIL_COUNT_KEY = "consecutive_boot_fail_count"
     private const val RECOVERY_ACTION_KEY = "recovery_action"
+    private const val NAVIGATION_BAR_PROTECTION_VIEW_TAG =
+      "com.onekeyfe.reactnativedeviceutils.navigationBarProtection"
 
     @JvmStatic
     var staticStartupTime: Long? = null
@@ -237,6 +251,7 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   private var isObservingLayoutChanges = false
   private var nextListenerId = 0.0
   private var isDualScreenDeviceDetected: Boolean? = null
+  @Volatile private var navigationBarAppearance: NavigationBarAppearance? = null
 
   init {
       NitroModules.applicationContext?.let { ctx ->
@@ -850,8 +865,161 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     }
   }
 
+  // MARK: - System Navigation Bar
+
+  override fun setNavigationBarAppearance(
+    r: Double,
+    g: Double,
+    b: Double,
+    a: Double,
+    useDarkIcons: Boolean,
+  ) {
+    val requestedColor = Color.argb(
+      a.toInt().coerceIn(0, 255),
+      r.toInt().coerceIn(0, 255),
+      g.toInt().coerceIn(0, 255),
+      b.toInt().coerceIn(0, 255),
+    )
+    val appearance = NavigationBarAppearance(
+      color = if (
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O && useDarkIcons
+      ) Color.BLACK else requestedColor,
+      useDarkIcons = useDarkIcons,
+    )
+    navigationBarAppearance = appearance
+    getCurrentActivity()?.let { applyNavigationBarAppearance(it, appearance) }
+  }
+
+  @Suppress("DEPRECATION")
+  private fun applyNavigationBarAppearance(
+    activity: Activity,
+    appearance: NavigationBarAppearance,
+  ) {
+    activity.runOnUiThread {
+      try {
+        val window = activity.window
+        val decorView = window.decorView
+
+        WindowCompat.getInsetsController(window, decorView)
+          .isAppearanceLightNavigationBars = appearance.useDarkIcons
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+          window.isNavigationBarContrastEnforced = false
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+          // Android 15 enforces edge-to-edge. Keep the platform bar transparent
+          // and draw the requested color only behind three-button navigation.
+          window.navigationBarColor = Color.TRANSPARENT
+          installNavigationBarProtection(decorView, appearance.color)
+        } else {
+          removeNavigationBarProtection(decorView)
+          window.navigationBarColor = appearance.color
+        }
+      } catch (e: Exception) {
+        OneKeyLog.error(
+          "DeviceUtils",
+          "Failed to update navigation bar appearance: ${e.message}",
+        )
+      }
+    }
+  }
+
+  private fun installNavigationBarProtection(decorView: View, color: Int) {
+    val decorContainer = decorView as? ViewGroup ?: return
+    val protectionView = findNavigationBarProtection(decorContainer) ?: View(
+      decorContainer.context
+    ).also { view ->
+      view.tag = NAVIGATION_BAR_PROTECTION_VIEW_TAG
+      view.isClickable = false
+      view.isFocusable = false
+      view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+      decorContainer.addView(
+        view,
+        FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          0,
+          Gravity.BOTTOM,
+        ),
+      )
+    }
+
+    protectionView.setBackgroundColor(color)
+    protectionView.visibility = View.VISIBLE
+    protectionView.bringToFront()
+    ViewCompat.setOnApplyWindowInsetsListener(protectionView) { view, windowInsets ->
+      val navigationBarInsets = windowInsets.getInsets(
+        WindowInsetsCompat.Type.navigationBars()
+      )
+      val tappableElementInsets = windowInsets.getInsets(
+        WindowInsetsCompat.Type.tappableElement()
+      )
+      val leftInset = minOf(navigationBarInsets.left, tappableElementInsets.left)
+      val rightInset = minOf(navigationBarInsets.right, tappableElementInsets.right)
+      val bottomInset = minOf(navigationBarInsets.bottom, tappableElementInsets.bottom)
+      val layoutParams = view.layoutParams as FrameLayout.LayoutParams
+      val (width, height, gravity) = when {
+        leftInset > 0 -> Triple(
+          leftInset,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          Gravity.LEFT,
+        )
+        rightInset > 0 -> Triple(
+          rightInset,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          Gravity.RIGHT,
+        )
+        bottomInset > 0 -> Triple(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          bottomInset,
+          Gravity.BOTTOM,
+        )
+        else -> Triple(0, 0, Gravity.BOTTOM)
+      }
+      if (
+        layoutParams.width != width ||
+        layoutParams.height != height ||
+        layoutParams.gravity != gravity
+      ) {
+        layoutParams.width = width
+        layoutParams.height = height
+        layoutParams.gravity = gravity
+        view.layoutParams = layoutParams
+      }
+      view.visibility = if (
+        leftInset > 0 || rightInset > 0 || bottomInset > 0
+      ) View.VISIBLE else View.INVISIBLE
+
+      // This view is only a visual protection; descendants still need the insets.
+      windowInsets
+    }
+    ViewCompat.requestApplyInsets(protectionView)
+  }
+
+  private fun findNavigationBarProtection(decorContainer: ViewGroup): View? {
+    for (index in 0 until decorContainer.childCount) {
+      val child = decorContainer.getChildAt(index)
+      if (child.tag == NAVIGATION_BAR_PROTECTION_VIEW_TAG) {
+        return child
+      }
+    }
+    return null
+  }
+
+  private fun removeNavigationBarProtection(decorView: View) {
+    val decorContainer = decorView as? ViewGroup ?: return
+    val protectionView = findNavigationBarProtection(decorContainer) ?: return
+    ViewCompat.setOnApplyWindowInsetsListener(protectionView, null)
+    decorContainer.removeView(protectionView)
+  }
+
     override fun onHostResume() {
         startObservingLayoutChanges()
+        val activity = getCurrentActivity()
+        val appearance = navigationBarAppearance
+        if (activity != null && appearance != null) {
+            applyNavigationBarAppearance(activity, appearance)
+        }
     }
 
     override fun onHostPause() {

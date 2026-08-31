@@ -48,6 +48,20 @@ export interface ReactNativeDeviceUtils
   getWindowRects(): Promise<DualScreenInfoRect[]>;
   getHingeBounds(): Promise<DualScreenInfoRect>;
   changeBackgroundColor(r: number, g: number, b: number, a: number): void;
+  /**
+   * Updates the Android system navigation bar from the UI runtime.
+   * Color channels use the [0, 255] range. `useDarkIcons` should be true for
+   * light backgrounds. Android API 24-25 cannot render dark navigation icons,
+   * so those versions use an opaque black background fallback when requested.
+   * This is a no-op on iOS.
+   */
+  setNavigationBarAppearance(
+    r: number,
+    g: number,
+    b: number,
+    a: number,
+    useDarkIcons: boolean
+  ): void;
   addSpanningChangedListener(callback: (isSpanning: boolean) => void): number;
   removeSpanningChangedListener(id: number): void;
   setUserInterfaceStyle(style: UserInterfaceStyle): void;
