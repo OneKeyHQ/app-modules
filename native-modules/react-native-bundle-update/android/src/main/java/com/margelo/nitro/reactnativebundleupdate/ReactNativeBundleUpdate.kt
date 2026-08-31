@@ -428,7 +428,8 @@ object BundleUpdateStoreAndroid {
         return key == METADATA_REQUIRES_BACKGROUND_BUNDLE_KEY ||
             key == METADATA_BACKGROUND_PROTOCOL_VERSION_KEY ||
             key == METADATA_REQUIRES_COMMON_BUNDLE_KEY ||
-            key == METADATA_BUNDLE_FORMAT_KEY
+            key == METADATA_BUNDLE_FORMAT_KEY ||
+            key == BundleStorageSchemaPolicy.METADATA_KEY
     }
 
     private fun getFileMetadataEntries(metadata: Map<String, String>): Map<String, String> {
@@ -456,6 +457,17 @@ object BundleUpdateStoreAndroid {
 
     private fun metadataBackgroundProtocolVersion(metadata: Map<String, String>): String {
         return metadata[METADATA_BACKGROUND_PROTOCOL_VERSION_KEY] ?: ""
+    }
+
+    private fun validateStorageSchemaCompatibility(context: Context, metadata: Map<String, String>): Boolean {
+        val compatible = BundleStorageSchemaPolicy.isCompatible(metadata[BundleStorageSchemaPolicy.METADATA_KEY]) { key ->
+            context.getSharedPreferences(BundleStorageSchemaPolicy.LEDGER_PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(key, null)
+        }
+        if (!compatible) {
+            OneKeyLog.error("BundleUpdate", "Bundle storage schema is incompatible with the native migration state")
+        }
+        return compatible
     }
 
     fun readMetadataFileSha256(signature: String?): String? {
@@ -635,6 +647,17 @@ object BundleUpdateStoreAndroid {
         }
     }
 
+    fun validateBundlePairCompatibility(
+        context: Context,
+        bundleDir: String,
+        metadata: Map<String, String>,
+    ): Boolean {
+        return validateStorageSchemaCompatibility(context, metadata) &&
+            validateBundlePairCompatibility(bundleDir, metadata)
+    }
+
+    // Retain the original layout-validator signature for existing native callers.
+    // Startup and extracted-bundle validation use the context overload.
     fun validateBundlePairCompatibility(bundleDir: String, metadata: Map<String, String>): Boolean {
         val mainBundleFile = File(bundleDir, MAIN_JS_BUNDLE_FILE_NAME)
         if (!mainBundleFile.exists()) {
@@ -706,6 +729,12 @@ object BundleUpdateStoreAndroid {
             // startup.
             cachedValidatedBundleInfo?.let { cached ->
                 if (cached.currentBundleVersion == currentBundleVersion) {
+                    // Migration state can change while the native bundle cache survives
+                    // a JS runtime reload. Recheck the ledger without repeating hashes.
+                    if (!validateStorageSchemaCompatibility(context, cached.metadata)) {
+                        invalidateValidatedBundleInfoCache()
+                        return null
+                    }
                     return cached
                 }
             }
@@ -774,7 +803,7 @@ object BundleUpdateStoreAndroid {
                 return null
             }
 
-            if (!validateBundlePairCompatibility(bundleDir, metadata)) {
+            if (!validateBundlePairCompatibility(context, bundleDir, metadata)) {
                 return null
             }
 
@@ -1727,7 +1756,7 @@ class ReactNativeBundleUpdate : HybridReactNativeBundleUpdateSpec() {
                     BundleUpdateStoreAndroid.deleteDir(destinationDir)
                     throw Exception("Extracted files verification against metadata failed")
                 }
-                if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(destination, metadata)) {
+                if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, destination, metadata)) {
                     OneKeyLog.error("BundleUpdate", "verifyBundleASC: bundle pair compatibility check failed")
                     BundleUpdateStoreAndroid.deleteDir(destinationDir)
                     throw Exception("Bundle pair compatibility check failed")
@@ -2308,7 +2337,7 @@ n2DMz6gqk326W6SFynYtvuiXo7wG4Cmn3SuIU8xfv9rJqunpZGYchMd7nZektmEJ
                 OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: file integrity check failed")
                 throw Exception("File integrity check failed")
             }
-            if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(bundlePath.absolutePath, metadata)) {
+            if (!BundleUpdateStoreAndroid.validateBundlePairCompatibility(context, bundlePath.absolutePath, metadata)) {
                 OneKeyLog.error("BundleUpdate", "verifyExtractedBundle: bundle pair compatibility check failed")
                 throw Exception("Bundle pair compatibility check failed")
             }

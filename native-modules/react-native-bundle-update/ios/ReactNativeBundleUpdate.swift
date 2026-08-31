@@ -439,7 +439,8 @@ public class BundleUpdateStore: NSObject {
         key == metadataRequiresBackgroundBundleKey ||
         key == metadataBackgroundProtocolVersionKey ||
         key == metadataRequiresCommonBundleKey ||
-        key == metadataBundleFormatKey
+        key == metadataBundleFormatKey ||
+        key == BundleStorageSchemaPolicy.metadataKey
     }
 
     private static func metadataStringValue(
@@ -472,6 +473,17 @@ public class BundleUpdateStore: NSObject {
             return ["1", "true", "yes"].contains(value.lowercased())
         }
         return false
+    }
+
+    private static func validateStorageSchemaCompatibility(_ metadata: [String: Any]) -> Bool {
+        let declaredVersion = metadataStringValue(metadata, key: BundleStorageSchemaPolicy.metadataKey)
+        let compatible = BundleStorageSchemaPolicy.isCompatible(declaredVersion: declaredVersion) { key in
+            UserDefaults.standard.string(forKey: key)
+        }
+        if !compatible {
+            OneKeyLog.error("BundleUpdate", "Bundle storage schema is incompatible with the native migration state")
+        }
+        return compatible
     }
 
     private static func fileMetadataEntries(
@@ -567,6 +579,9 @@ public class BundleUpdateStore: NSObject {
         bundleDirPath: String,
         metadata: [String: Any],
     ) -> Bool {
+        if !validateStorageSchemaCompatibility(metadata) {
+            return false
+        }
         let mainBundlePath = (bundleDirPath as NSString)
             .appendingPathComponent(mainBundleEntryFileName)
         guard FileManager.default.fileExists(atPath: mainBundlePath) else {
@@ -647,6 +662,12 @@ public class BundleUpdateStore: NSObject {
         cachedValidatedBundleInfoLock.lock()
         if let cached = cachedValidatedBundleInfo, cached.currentBundleVersion == currentBundleVer {
             cachedValidatedBundleInfoLock.unlock()
+            // Migration state can change while the native bundle cache survives
+            // a JS runtime reload. Recheck the ledger without repeating hashes.
+            if !validateStorageSchemaCompatibility(cached.metadata) {
+                invalidateValidatedBundleInfoCache()
+                return nil
+            }
             return cached
         }
         cachedValidatedBundleInfoLock.unlock()
