@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-bundle-crypto",
-  "version": "3.0.95",
+  "version": "3.0.96",
   "description": "react-native-bundle-crypto",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
