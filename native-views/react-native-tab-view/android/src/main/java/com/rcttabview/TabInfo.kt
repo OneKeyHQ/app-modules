@@ -8,5 +8,6 @@ data class TabInfo(
   val badgeTextColor: Int? = null,
   val activeTintColor: Int? = null,
   val hidden: Boolean = false,
-  val testID: String? = null
+  val testID: String? = null,
+  val preventsDefault: Boolean = false
 )

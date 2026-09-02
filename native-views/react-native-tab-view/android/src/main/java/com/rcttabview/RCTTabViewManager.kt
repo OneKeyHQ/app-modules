@@ -110,7 +110,8 @@ class RCTTabViewManager(context: ReactApplicationContext) :
               badgeTextColor = if (item.hasKey("badgeTextColor")) item.getInt("badgeTextColor") else null,
               activeTintColor = if (item.hasKey("activeTintColor")) item.getInt("activeTintColor") else null,
               hidden = if (item.hasKey("hidden")) item.getBoolean("hidden") else false,
-              testID = item.getString("testID")
+              testID = item.getString("testID"),
+              preventsDefault = if (item.hasKey("preventsDefault")) item.getBoolean("preventsDefault") else false
             )
           )
         }

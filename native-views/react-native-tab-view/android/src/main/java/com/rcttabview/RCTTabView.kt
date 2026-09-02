@@ -31,6 +31,8 @@ import coil3.size.Scale
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.common.assets.ReactFontManager
 import com.facebook.react.modules.core.ReactChoreographer
+import com.facebook.react.uimanager.PointerEvents
+import com.facebook.react.uimanager.ReactPointerEventsView
 import com.facebook.react.views.text.ReactTypefaceUtils
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.navigation.NavigationBarView.LABEL_VISIBILITY_AUTO
@@ -59,6 +61,11 @@ class ExtendedBottomNavigationView(context: Context) : BottomNavigationView(getM
   }
 }
 
+// OneKey patch: RN hit-testing traverses INVISIBLE native wrappers unless pointer events opt out.
+private class TabSceneContainer(context: Context) : FrameLayout(context), ReactPointerEventsView {
+  override var pointerEvents: PointerEvents = PointerEvents.NONE
+}
+
 class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   private var bottomNavigation = ExtendedBottomNavigationView(context)
   val layoutHolder = FrameLayout(context)
@@ -68,6 +75,18 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   var onNativeLayoutListener: ((width: Double, height: Double) -> Unit)? = null
   var onTabBarMeasuredListener: ((height: Int) -> Unit)? = null
   var disablePageAnimations = false
+    set(value) {
+      if (field == value) {
+        return
+      }
+      field = value
+      layoutHolder.forEachIndexed { _, view ->
+        if (view.visibility != VISIBLE) {
+          view.visibility = if (value) INVISIBLE else GONE
+        }
+      }
+      layoutHolder.requestLayout()
+    }
   var items: MutableList<TabInfo> = mutableListOf()
   private val iconSources: MutableMap<Int, ImageSource> = mutableMapOf()
   private val drawableCache: MutableMap<ImageSource, Drawable> = mutableMapOf()
@@ -78,7 +97,8 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   private var inactiveTintColor: Int? = null
   private val checkedStateSet = intArrayOf(android.R.attr.state_checked)
   private val uncheckedStateSet = intArrayOf(-android.R.attr.state_checked)
-  private var hapticFeedbackEnabled = false
+  // OneKey patch: rely on View.isHapticFeedbackEnabled as the single source of truth.
+  // private var hapticFeedbackEnabled = false
   private var fontSize: Int? = null
   private var fontFamily: String? = null
   private var fontWeight: Int? = null
@@ -191,13 +211,13 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   }
 
   private fun createContainer(): FrameLayout {
-    val container = FrameLayout(context).apply {
+    val container = TabSceneContainer(context).apply {
       layoutParams = FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.MATCH_PARENT,
         FrameLayout.LayoutParams.MATCH_PARENT
       )
       isSaveEnabled = false
-      visibility = GONE
+      visibility = if (disablePageAnimations) INVISIBLE else GONE
       isEnabled = false
     }
     return container
@@ -205,11 +225,24 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
 
   private fun setSelectedIndex(itemId: Int) {
     bottomNavigation.selectedItemId = itemId
-    if (!disablePageAnimations) {
-      val fadeThrough = MaterialFadeThrough()
-      TransitionManager.beginDelayedTransition(layoutHolder, fadeThrough)
+    if (disablePageAnimations) {
+      // INVISIBLE scenes stay laid out, so this visibility swap is atomic at
+      // the next draw boundary and does not expose an empty container frame.
+      toggleViewVisibility(layoutHolder.getChildAt(itemId), true)
+      layoutHolder.forEachIndexed { index, view ->
+        if (itemId != index) {
+          toggleViewVisibility(view, false)
+        }
+      }
+      layoutHolder.invalidate()
+      return
     }
-
+    if (layoutHolder.getChildAt(itemId)?.visibility == VISIBLE) {
+      return
+    }
+    val fadeThrough = MaterialFadeThrough()
+    TransitionManager.beginDelayedTransition(layoutHolder, fadeThrough)
+    // Apply every visibility change to the transition's captured frame.
     layoutHolder.forEachIndexed { index, view ->
       if (itemId == index) {
         toggleViewVisibility(view, true)
@@ -223,15 +256,25 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   }
 
   private fun toggleViewVisibility(view: View, isVisible: Boolean) {
-    check(view is ViewGroup) { "Native component tree is corrupted." }
+    check(view is TabSceneContainer) { "Native component tree is corrupted." }
 
-    view.visibility = if (isVisible) VISIBLE else GONE
+    view.pointerEvents = if (isVisible) PointerEvents.AUTO else PointerEvents.NONE
+    view.visibility = if (isVisible) {
+      VISIBLE
+    } else if (disablePageAnimations) {
+      INVISIBLE
+    } else {
+      GONE
+    }
     view.isEnabled = isVisible
   }
 
   private fun onTabSelected(item: MenuItem) {
     val selectedItem = items[item.itemId]
     selectedItem.let {
+      if (!selectedItem.preventsDefault) {
+        setSelectedItem(selectedItem.key)
+      }
       onTabSelectedListener?.invoke(selectedItem.key)
       emitHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
     }
@@ -489,7 +532,9 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   }
 
   private fun emitHapticFeedback(feedbackConstants: Int) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && hapticFeedbackEnabled) {
+    // OneKey patch: use the Fabric-populated View flag on every supported API level.
+    // if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && hapticFeedbackEnabled) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && isHapticFeedbackEnabled) {
       this.performHapticFeedback(feedbackConstants)
     }
   }

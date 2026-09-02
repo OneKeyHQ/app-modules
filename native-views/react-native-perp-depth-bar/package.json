@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-perp-depth-bar",
-  "version": "3.0.98",
+  "version": "3.0.99",
   "description": "react-native-perp-depth-bar",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

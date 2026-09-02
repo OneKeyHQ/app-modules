@@ -731,6 +731,27 @@ class RCTTabViewContainerView: UIView {
   }
 }
 
+// OneKey patch: keep native tab selection immediate while suppressing UIKit's content crossfade.
+private final class ImmediateTabTransitionAnimator: NSObject, UIViewControllerAnimatedTransitioning {
+  static let shared = ImmediateTabTransitionAnimator()
+
+  func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
+    0
+  }
+
+  func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
+    guard let toViewController = transitionContext.viewController(forKey: .to),
+          let toView = transitionContext.view(forKey: .to) ?? toViewController.view else {
+      transitionContext.completeTransition(false)
+      return
+    }
+
+    toView.frame = transitionContext.finalFrame(for: toViewController)
+    transitionContext.containerView.addSubview(toView)
+    transitionContext.completeTransition(!transitionContext.transitionWasCancelled)
+  }
+}
+
 // MARK: - UITabBarControllerDelegate proxy
 
 class TabViewDelegateProxy: NSObject, UITabBarControllerDelegate {
@@ -756,6 +777,19 @@ class TabViewDelegateProxy: NSObject, UITabBarControllerDelegate {
     }
 
     return false
+  }
+
+  func tabBarController(
+    _ tabBarController: UITabBarController,
+    animationControllerForTransitionFrom fromViewController: UIViewController,
+    to toViewController: UIViewController
+  ) -> UIViewControllerAnimatedTransitioning? {
+    guard let containerView = mapping[ObjectIdentifier(tabBarController)],
+          containerView.disablePageAnimations else {
+      return nil
+    }
+
+    return ImmediateTabTransitionAnimator.shared
   }
 }
 
