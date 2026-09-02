@@ -1,305 +1,91 @@
 import Foundation
 import UIKit
 
-// Animation constants
-let DEFAULT_GRADIENT_COLORS: [UIColor] = [UIColor(red: 210.0/255.0, green: 210.0/255.0, blue: 210.0/255.0, alpha: 1.0), UIColor(red: 235.0/255.0, green: 235.0/255.0, blue: 235.0/255.0, alpha: 1.0)]
+private final class SkeletonHostView: UIView {
+  var onLayout: ((CGRect) -> Void)?
+  var onWindowChanged: ((Bool) -> Void)?
 
-class HybridSkeleton : HybridSkeletonSpec {
-
-  // Shimmer layers
-  private var shimmerLayer: CAGradientLayer?
-  private var skeletonLayer: CALayer?
-  private var customGradientColors: [UIColor]?
-  private var isActive: Bool = true
-  private var retryCount: Int = 0
-  private let maxRetryCount: Int = 10
-  private var viewObserver: NSKeyValueObservation?
-
-  // Guard against high-frequency afterUpdate() animation churn (REACT-NATIVE-40K ANR).
-  // Fabric calls afterUpdate() on every prop commit; list/order-book screens update very
-  // frequently. Unconditionally restarting the shimmer tears down/rebuilds the
-  // CAGradientLayer + CABasicAnimation each time on the main thread. We cache a signature
-  // of the inputs that actually drive the animation (speed + gradient colors + bounds) and
-  // only restart when that signature changes. Otherwise the running animation is left as-is.
-  private var lastShimmerSignature: String?
-  private var isShimmerRunning: Bool = false
-
-  // Build a signature from every input that decides the shimmer animation:
-  // - shimmerSpeed -> CABasicAnimation.duration
-  // - gradient colors -> CAGradientLayer.colors
-  // - view bounds -> animation travel range (-width..width) and layer frames
-  private func currentShimmerSignature() -> String {
-    let colors: [UIColor] = customGradientColors ?? DEFAULT_GRADIENT_COLORS
-    let colorsKey = colors.map { color -> String in
-      var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-      color.getRed(&r, green: &g, blue: &b, alpha: &a)
-      return "\(r)-\(g)-\(b)-\(a)"
-    }.joined(separator: ",")
-    let speed = shimmerSpeed ?? 3
-    let bounds = view.bounds
-    return "\(speed)|\(colorsKey)|\(bounds.width)x\(bounds.height)"
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    onLayout?(bounds)
   }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    onWindowChanged?(window != nil)
+  }
+}
+
+/// Nitro adapter around OneKeySkeletonRenderer. Rendering stays view-independent
+/// so OneKeyImage can reuse it without nesting another HybridView or UIView.
+final class HybridSkeleton: HybridSkeletonSpec {
+  private let hostView = SkeletonHostView()
+  private lazy var renderer = OneKeySkeletonRenderer(hostLayer: hostView.layer)
+  private var attached = false
+  private var colors = oneKeySkeletonDefaultGradientColors
+  private var duration: Double = 3
+
+  var view: UIView { hostView }
 
   var shimmerGradientColors: [String]? {
     didSet {
-      guard isActive else { return }
-      DispatchQueue.main.async { [weak self] in
-        guard let self = self, self.isActive else { return }
-        self.customGradientColors = shimmerGradientColors?.map { self.hexStringToUIColor(hexColor: $0) }
-        self.restartShimmer()
+      if let values = shimmerGradientColors, values.count >= 2 {
+        colors = Array(values.prefix(2)).map(Self.color(from:))
+      } else {
+        colors = oneKeySkeletonDefaultGradientColors
       }
+      updateRenderer()
     }
   }
 
-  // UIView
-  var view: UIView = UIView()
-
   var shimmerSpeed: Double? {
     didSet {
-      guard isActive else { return }
-      DispatchQueue.main.async { [weak self] in
-        guard let self = self, self.isActive else { return }
-        self.restartShimmer()
-      }
+      duration = max(shimmerSpeed ?? 3, 0.1)
+      updateRenderer()
     }
   }
 
   override init() {
     super.init()
-    setupView()
-  }
-
-  deinit {
-    // Mark as inactive to prevent any new operations
-    isActive = false
-
-    // Clean up observer
-    viewObserver?.invalidate()
-    viewObserver = nil
-
-    // Stop observing app lifecycle notifications
-    NotificationCenter.default.removeObserver(self)
-
-    // Cleanup must happen on main thread, but avoid deadlock
-    // Use async if not on main thread to prevent blocking
-    if Thread.isMainThread {
-      stopShimmer()
-      // Clear view reference and ensure no dangling animations
-      view.layer.removeAllAnimations()
-      view.layer.sublayers?.removeAll()
-      view.layer.mask = nil
-    } else {
-      // Use async to avoid potential deadlock with sync
-      // All CALayer operations must happen on main thread
-      let shimmer = self.shimmerLayer
-      let skeleton = self.skeletonLayer
-      DispatchQueue.main.async { [weak view = self.view] in
-        guard let view = view else { return }
-        // Stop shimmer animations
-        shimmer?.removeAllAnimations()
-        shimmer?.removeFromSuperlayer()
-
-        // Clear mask reference
-        if view.layer.mask === skeleton {
-          view.layer.mask = nil
-        }
-
-        // Clean up remaining animations and sublayers
-        view.layer.removeAllAnimations()
-        view.layer.sublayers?.removeAll()
-      }
+    hostView.clipsToBounds = true
+    hostView.onLayout = { [weak self] bounds in
+      self?.renderer.update(width: bounds.width, height: bounds.height)
     }
-  }
-
-  private func setupView() {
-    view.clipsToBounds = true
-
-    // Observe view hierarchy changes for cleanup
-    viewObserver = view.observe(\.superview, options: [.new]) { [weak self] view, change in
-      guard let self = self else { return }
-      if change.newValue == nil {
-        // View was removed from hierarchy, clean up
-        DispatchQueue.main.async { [weak self] in
-          self?.stopShimmer()
-        }
-      }
+    hostView.onWindowChanged = { [weak self] attached in
+      guard let self else { return }
+      self.attached = attached
+      attached ? self.renderer.start() : self.renderer.stop()
     }
-
-    // Recover the shimmer when returning from background. CoreAnimation strips the running
-    // CAAnimation on backgrounding and does not re-add it on foreground, which would freeze
-    // the gradient for the view's lifetime. Re-add the animation when the app reactivates.
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(appDidBecomeActive),
-      name: UIApplication.didBecomeActiveNotification,
-      object: nil
-    )
-
-    // Start animation when view is ready
-    DispatchQueue.main.async { [weak self] in
-      guard let self = self, self.isActive else { return }
-      self.startShimmer()
-    }
-  }
-
-  @objc private func appDidBecomeActive() {
-    guard isActive else { return }
-    DispatchQueue.main.async { [weak self] in
-      guard let self = self, self.isActive else { return }
-      // Only restart if the shimmer should be running but its animation was stripped.
-      if self.isShimmerRunning, self.shimmerLayer?.animation(forKey: "shimmerAnimation") == nil {
-        self.restartShimmer()
-      }
-    }
-  }
-
-  func startShimmer() {
-    retryCount = 0 // Reset retry count when starting new shimmer
-    startShimmerInternal()
-  }
-
-  private func startShimmerInternal() {
-    guard isActive else { return }
-
-    stopShimmer()
-
-    guard !view.bounds.isEmpty else {
-      // Check if we have exceeded max retry count
-      guard retryCount < maxRetryCount else {
-        print("⚠️ Skeleton shimmer: Max retry count reached. View bounds are still empty.")
-        return
-      }
-
-      retryCount += 1
-      // Retry after a short delay if bounds are not ready
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-        guard let self = self, self.isActive else { return }
-        self.startShimmerInternal()
-      }
-      return
-    }
-
-    let colors: [UIColor] = customGradientColors ?? DEFAULT_GRADIENT_COLORS
-    let backgroundColor = colors[0].cgColor
-    let highlightColor = colors[1].cgColor
-
-    // Create skeleton layer for masking
-    let newSkeletonLayer = CALayer()
-    newSkeletonLayer.backgroundColor = backgroundColor
-    newSkeletonLayer.name = "SkeletonLayer"
-    newSkeletonLayer.anchorPoint = .zero
-    newSkeletonLayer.frame = view.bounds
-
-    // Create gradient layer for animation
-    let gradientLayer = CAGradientLayer()
-    gradientLayer.colors = [backgroundColor, highlightColor, backgroundColor]
-    gradientLayer.startPoint = CGPoint(x: 0.0, y: 0.5)
-    gradientLayer.endPoint = CGPoint(x: 1.0, y: 0.5)
-    gradientLayer.frame = view.bounds
-    gradientLayer.name = "ShimmerLayer"
-
-    // Set mask and add gradient layer (don't add skeleton layer as sublayer)
-    view.layer.mask = newSkeletonLayer
-    view.layer.addSublayer(gradientLayer)
-    view.clipsToBounds = true
-    view.backgroundColor = UIColor(cgColor: backgroundColor)
-
-    // Store references
-    skeletonLayer = newSkeletonLayer
-    shimmerLayer = gradientLayer
-
-    // Create animation
-    let width = view.bounds.width
-    let animation = CABasicAnimation(keyPath: "transform.translation.x")
-    animation.duration = shimmerSpeed ?? 3
-    animation.fromValue = -width
-    animation.toValue = width
-    animation.repeatCount = .infinity
-    animation.autoreverses = false
-    animation.fillMode = CAMediaTimingFillMode.forwards
-    animation.isRemovedOnCompletion = false // Keep animation when completed
-
-    // Use weak self pattern for potential future animation delegates/completion handlers
-    gradientLayer.add(animation, forKey: "shimmerAnimation")
-
-    // Record the inputs this running animation was built from, so afterUpdate() can skip
-    // restarting while none of them change.
-    lastShimmerSignature = currentShimmerSignature()
-    isShimmerRunning = true
-  }
-
-  func stopShimmer() {
-    // Remove animation from shimmer layer
-    shimmerLayer?.removeAllAnimations()  // Remove all animations, more comprehensive
-    shimmerLayer?.removeFromSuperlayer()
-
-    // Clear mask reference before setting to nil
-    if view.layer.mask === skeletonLayer {
-      view.layer.mask = nil
-    }
-
-    // Clean up all sublayers that might be shimmer layers
-    view.layer.sublayers?.forEach { layer in
-      if layer.name == "ShimmerLayer" {
-        layer.removeAllAnimations()
-        layer.removeFromSuperlayer()
-      }
-    }
-
-    // Nil out references
-    shimmerLayer = nil
-    skeletonLayer = nil
-    isShimmerRunning = false
   }
 
   func afterUpdate() {
-    guard isActive else { return }
-    DispatchQueue.main.async { [weak self] in
-      guard let self = self, self.isActive else { return }
+    updateRenderer()
+  }
 
-      // Defensive guard against animation churn (REACT-NATIVE-40K ANR):
-      // afterUpdate() runs on every Fabric prop commit. Only restart the shimmer when an
-      // input that actually drives the animation changed (speed / colors / bounds). If the
-      // shimmer is already running and nothing relevant changed, leave the existing
-      // CABasicAnimation alone to avoid main-thread layer teardown/rebuild churn.
-      //
-      // Verify the CAAnimation is actually still attached rather than trusting the cached
-      // signature alone: on backgrounding, CoreAnimation strips the running animation (and
-      // does not re-add it on foreground) while the layer, isShimmerRunning, and signature
-      // stay unchanged. Checking the live animation lets afterUpdate() recover by restarting.
-      let signature = self.currentShimmerSignature()
-      if self.isShimmerRunning,
-         self.shimmerLayer?.animation(forKey: "shimmerAnimation") != nil,
-         signature == self.lastShimmerSignature {
-        return
-      }
-
-      self.restartShimmer()
+  private func updateRenderer() {
+    hostView.backgroundColor = colors[0]
+    renderer.update(
+      width: hostView.bounds.width,
+      height: hostView.bounds.height,
+      colors: colors,
+      duration: duration
+    )
+    if attached {
+      renderer.start()
     }
   }
 
-  func restartShimmer() {
-    guard isActive else { return }
-    stopShimmer()
-    retryCount = 0 // Reset retry count on restart
-    startShimmerInternal()
-  }
-
-  func hexStringToUIColor(hexColor: String) -> UIColor {
-    var hexSanitized = hexColor.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    if hexSanitized.hasPrefix("#") {
-      hexSanitized.remove(at: hexSanitized.startIndex)
+  private static func color(from value: String) -> UIColor {
+    var hex = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if hex.hasPrefix("#") { hex.removeFirst() }
+    guard hex.count == 6, let raw = UInt64(hex, radix: 16) else {
+      return oneKeySkeletonDefaultGradientColors[0]
     }
-
-    var color: UInt32 = 0
-    let stringScanner = Scanner(string: hexSanitized)
-    stringScanner.scanHexInt32(&color)
-
-    let r = CGFloat(Int(color >> 16) & 0x000000FF)
-    let g = CGFloat(Int(color >> 8) & 0x000000FF)
-    let b = CGFloat(Int(color) & 0x000000FF)
-
-    return UIColor(red: r / 255.0, green: g / 255.0, blue: b / 255.0, alpha: 1)
+    return UIColor(
+      red: CGFloat((raw >> 16) & 0xff) / 255,
+      green: CGFloat((raw >> 8) & 0xff) / 255,
+      blue: CGFloat(raw & 0xff) / 255,
+      alpha: 1
+    )
   }
 }

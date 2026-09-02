@@ -1,0 +1,31 @@
+{
+  "cxxNamespace": ["onekeyimage"],
+  "ios": { "iosModuleName": "OneKeyImage" },
+  "android": {
+    "androidNamespace": ["onekeyimage"],
+    "androidCxxLibName": "onekeyimage"
+  },
+  "autolinking": {
+    "OneKeyImage": {
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "HybridOneKeyImage"
+      },
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridOneKeyImage"
+      }
+    },
+    "OneKeyImageCache": {
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "HybridOneKeyImageCache"
+      },
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridOneKeyImageCache"
+      }
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

@@ -35,6 +35,12 @@ target 'example' do
   # works when building as static libraries (matches app-monorepo).
   pod 'EMASCurl', :modular_headers => true
 
+  # OneKeyImage is a Swift pod over SDWebImage. Static-library builds require
+  # CocoaPods to generate module maps for its Objective-C dependencies.
+  pod 'SDWebImage', '5.21.7', :modular_headers => true
+  pod 'SDWebImageSVGCoder', '1.7.0', :modular_headers => true
+  pod 'SDWebImageWebPCoder', '0.14.6', :modular_headers => true
+
   # Copy optional offline TradingView chart material into the app bundle as
   # `tradingview-assets/`, preserving the
   # directory tree so react-native-chart-webview's WKURLSchemeHandler can serve it.

@@ -15,20 +15,34 @@ import com.margelo.nitro.scrollguard.views.HybridScrollGuardStateUpdater
  * is a FrameLayout that wraps child scrollable views, we need a ViewGroupManager.
  */
 class ScrollGuardViewGroupManager : ViewGroupManager<ScrollGuardFrameLayout>() {
-    private val views = hashMapOf<View, HybridScrollGuard>()
+    private class HybridViewHolder(
+        val hybridView: HybridScrollGuard,
+        var lastState: StateWrapper? = null,
+    )
+
+    private val views = hashMapOf<View, HybridViewHolder>()
 
     override fun getName(): String = "ScrollGuard"
 
     override fun createViewInstance(reactContext: ThemedReactContext): ScrollGuardFrameLayout {
         val hybridView = HybridScrollGuard(reactContext)
         val view = hybridView.view as ScrollGuardFrameLayout
-        views[view] = hybridView
+        views[view] = HybridViewHolder(hybridView)
         return view
     }
 
     override fun onDropViewInstance(view: ScrollGuardFrameLayout) {
+        views[view]?.lastState = null
         super.onDropViewInstance(view)
         views.remove(view)
+    }
+
+    override fun prepareToRecycleView(
+        reactContext: ThemedReactContext,
+        view: ScrollGuardFrameLayout,
+    ): ScrollGuardFrameLayout? {
+        views[view]?.lastState = null
+        return super.prepareToRecycleView(reactContext, view)
     }
 
     override fun updateState(
@@ -36,13 +50,17 @@ class ScrollGuardViewGroupManager : ViewGroupManager<ScrollGuardFrameLayout>() {
         props: ReactStylesDiffMap,
         stateWrapper: StateWrapper
     ): Any? {
-        val hybridView = views[view]
+        val holder = views[view]
             ?: throw Error("Couldn't find view $view in local views table!")
+        val hybridView = holder.hybridView
+        val oldState = holder.lastState
+        val newState = stateWrapper
 
         hybridView.beforeUpdate()
-        HybridScrollGuardStateUpdater.updateViewProps(hybridView, stateWrapper)
+        HybridScrollGuardStateUpdater.updateViewProps(hybridView, newState, oldState)
         hybridView.afterUpdate()
+        holder.lastState = newState
 
-        return super.updateState(view, props, stateWrapper)
+        return super.updateState(view, props, newState)
     }
 }

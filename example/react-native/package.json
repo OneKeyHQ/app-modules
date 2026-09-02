@@ -25,6 +25,7 @@
     "@onekeyfe/react-native-device-utils": "workspace:*",
     "@onekeyfe/react-native-dns-lookup": "workspace:*",
     "@onekeyfe/react-native-get-random-values": "workspace:*",
+    "@onekeyfe/react-native-image": "workspace:*",
     "@onekeyfe/react-native-keychain-module": "workspace:*",
     "@onekeyfe/react-native-lite-card": "workspace:*",
     "@onekeyfe/react-native-native-logger": "workspace:*",
@@ -74,7 +75,7 @@
     "eslint": "^8.19.0",
     "jest": "^29.6.3",
     "prettier": "2.8.8",
-    "react-native-nitro-modules": "0.36.5",
+    "react-native-nitro-modules": "0.37.0",
     "react-test-renderer": "19.2.3",
     "typescript": "^5.8.3"
   },
