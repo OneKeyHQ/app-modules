@@ -56,6 +56,12 @@ large lists conservative, and `autoplay={true}` on other native platforms. Pass
 `autoplay` explicitly whenever a screen needs the same behavior on both
 platforms.
 
+Animated-image canvas limits are intentionally platform-specific. Android caps
+the unavoidable decoded ARGB canvas at 4,194,304 pixels (16 MiB), while iOS
+allows metadata dimensions up to 16,000,000 pixels and separately caps its
+decoded animation frame buffer at 16 MiB. These limits reflect the native
+decoders' different allocation behavior.
+
 `recyclingKey` is available for recycled list cells. Changing it clears stale
 content before the next source is displayed.
 

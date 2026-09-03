@@ -364,11 +364,17 @@ export function OneKeyImage({
 
 export const OneKeyImageCache = {
   preload(sources: OneKeyImagePreloadInput[]) {
-    return nativeCache.preload(
-      sources
-        .filter((source) => Boolean(source.uri))
-        .map((source) => ({
-          uri: source.uri!,
+    const hasInvalidSource = sources.some((source) => !source.uri?.trim());
+    const validSources = sources.filter(
+      (source): source is OneKeyImagePreloadInput & { uri: string } =>
+        Boolean(source.uri?.trim())
+    );
+    if (validSources.length === 0) return Promise.resolve(false);
+
+    return nativeCache
+      .preload(
+        validSources.map((source) => ({
+          uri: source.uri,
           headersJson: source.headers
             ? JSON.stringify(source.headers)
             : undefined,
@@ -379,7 +385,8 @@ export const OneKeyImageCache = {
           overscan: source.overscan,
           optimizeTos: source.optimizeTos,
         }))
-    );
+      )
+      .then((success) => success && !hasInvalidSource);
   },
   clearMemory: () => nativeCache.clearMemory(),
   clearDisk: () => nativeCache.clearDisk(),

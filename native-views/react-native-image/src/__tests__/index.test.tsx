@@ -73,6 +73,7 @@ describe('OneKeyImage wrapper', () => {
   });
 
   it('forwards preload headers without a JS-owned cache key', async () => {
+    mockCache.preload.mockClear();
     const result = await OneKeyImageCache.preload([
       {
         uri: 'https://example.com/token.png',
@@ -103,6 +104,25 @@ describe('OneKeyImage wrapper', () => {
     const clearResult = OneKeyImageCache.clearMemory();
     expect(clearResult).toBeInstanceOf(Promise);
     await expect(clearResult).resolves.toBeUndefined();
+  });
+
+  it('returns false for blank preload sources without hiding valid work', async () => {
+    mockCache.preload.mockClear();
+
+    await expect(
+      OneKeyImageCache.preload([
+        { uri: 'https://example.com/token.png' },
+        { uri: '   ' },
+        {},
+      ])
+    ).resolves.toBe(false);
+    expect(mockCache.preload).toHaveBeenCalledWith([
+      expect.objectContaining({ uri: 'https://example.com/token.png' }),
+    ]);
+
+    mockCache.preload.mockClear();
+    await expect(OneKeyImageCache.preload([{ uri: '' }])).resolves.toBe(false);
+    expect(mockCache.preload).not.toHaveBeenCalled();
   });
 
   it.each([

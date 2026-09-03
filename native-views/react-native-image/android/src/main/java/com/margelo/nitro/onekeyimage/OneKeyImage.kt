@@ -38,6 +38,7 @@ private class OneKeyImageHostView(context: ThemedReactContext) : ImageView(conte
       syncPlayback()
     }
   var onReadyForRequest: (() -> Unit)? = null
+  var onAttachmentChanged: ((Boolean) -> Unit)? = null
 
   override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
     super.onSizeChanged(w, h, oldw, oldh)
@@ -58,11 +59,13 @@ private class OneKeyImageHostView(context: ThemedReactContext) : ImageView(conte
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
     syncPlayback()
+    onAttachmentChanged?.invoke(true)
   }
 
   override fun onDetachedFromWindow() {
     super.onDetachedFromWindow()
     syncPlayback()
+    onAttachmentChanged?.invoke(false)
   }
 
   override fun onVisibilityAggregated(isVisible: Boolean) {
@@ -129,6 +132,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private var requestActive = false
   private var displayState = DisplayState.LOADING
   private var displayRunnable: Runnable? = null
+  private var pendingDisplayGeneration: Long? = null
   private var fallbackRunnable: Runnable? = null
 
   override val view: View = hostView
@@ -202,6 +206,14 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     OneKeyImageGlideRegistry.ensureRegistered(context)
     hostView.updateSkeletonStyle()
     hostView.onReadyForRequest = { scheduleLoad() }
+    hostView.onAttachmentChanged = { attached ->
+      if (attached) {
+        schedulePendingDisplayIfNeeded()
+      } else {
+        displayRunnable?.let(hostView::removeCallbacks)
+        displayRunnable = null
+      }
+    }
     applyContentFit()
     applyVariant()
   }
@@ -229,6 +241,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     resetForReuse()
     disposed = true
     hostView.onReadyForRequest = null
+    hostView.onAttachmentChanged = null
     super.onDropView()
   }
 
@@ -236,6 +249,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     disposed = true
     cancelCurrent(invalidateGeneration = true)
     hostView.onReadyForRequest = null
+    hostView.onAttachmentChanged = null
     super.dispose()
   }
 
@@ -495,6 +509,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     loadRunnable = null
     displayRunnable?.let(hostView::removeCallbacks)
     displayRunnable = null
+    pendingDisplayGeneration = null
     fallbackRunnable?.let(hostView::removeCallbacks)
     fallbackRunnable = null
     clearCurrentTarget()
@@ -512,14 +527,26 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   }
 
   private fun scheduleOnDisplay(requestGeneration: Long) {
+    pendingDisplayGeneration = requestGeneration
+    schedulePendingDisplayIfNeeded()
+  }
+
+  private fun schedulePendingDisplayIfNeeded() {
+    val requestGeneration = pendingDisplayGeneration ?: return
     displayRunnable?.let(hostView::removeCallbacks)
+    displayRunnable = null
+    if (!hostView.isAttachedToWindow) return
     val runnable = Runnable {
       displayRunnable = null
       if (
+        pendingDisplayGeneration == requestGeneration &&
         requestGeneration == generation &&
         !disposed &&
-        displayState == DisplayState.IMAGE
+        displayState == DisplayState.IMAGE &&
+        hostView.drawable != null &&
+        hostView.isAttachedToWindow
       ) {
+        pendingDisplayGeneration = null
         onDisplay?.invoke()
       }
     }
