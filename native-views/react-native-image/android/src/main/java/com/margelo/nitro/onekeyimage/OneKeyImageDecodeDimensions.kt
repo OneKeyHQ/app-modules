@@ -147,7 +147,7 @@ internal data class OneKeyImageDecodeDimensions(
  * 16 MiB area cap. `override()` alone cannot enforce an area cap for very wide
  * or tall sources because Glide's default strategy follows target edges.
  */
-internal class OneKeyImageSafeDownsampleStrategy : DownsampleStrategy() {
+internal object OneKeyImageSafeDownsampleStrategy : DownsampleStrategy() {
   override fun getScaleFactor(
     sourceWidth: Int,
     sourceHeight: Int,

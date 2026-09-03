@@ -23,7 +23,7 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
       }
       val baseOptions = RequestOptions()
         .dontTransform()
-        .downsample(OneKeyImageSafeDownsampleStrategy())
+        .downsample(OneKeyImageSafeDownsampleStrategy)
       val options = when (source.cachePolicy ?: OneKeyImageCachePolicy.MEMORY_DISK) {
         OneKeyImageCachePolicy.MEMORY_DISK -> baseOptions
           .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)

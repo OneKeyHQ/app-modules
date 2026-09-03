@@ -466,7 +466,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private fun requestOptions(policy: OneKeyImageCachePolicy): RequestOptions {
     val options = RequestOptions()
       .dontTransform()
-      .downsample(OneKeyImageSafeDownsampleStrategy())
+      .downsample(OneKeyImageSafeDownsampleStrategy)
     return when (policy) {
       OneKeyImageCachePolicy.MEMORY_DISK -> options.diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
       OneKeyImageCachePolicy.MEMORY -> options.diskCacheStrategy(DiskCacheStrategy.NONE)

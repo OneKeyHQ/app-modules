@@ -266,6 +266,27 @@ describe('OneKeyImage wrapper', () => {
     });
   });
 
+  it('clips the native loading strategy to rounded image styles', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <OneKeyImage
+          source={{ uri: 'https://example.com/avatar.png' }}
+          loadingStrategy={OneKeyImageLoadingStrategy.SKELETON}
+          style={{ width: 40, height: 40, borderRadius: 20 }}
+        />
+      );
+    });
+
+    const native = renderer!.root.findByType('NativeOneKeyImage' as never);
+    expect(native.props.style).toBe(StyleSheet.absoluteFill);
+    const container = renderer!.root.findByProps({ collapsable: false });
+    expect(StyleSheet.flatten(container.props.style)).toMatchObject({
+      borderRadius: 20,
+      overflow: 'hidden',
+    });
+  });
+
   it('uses the documented Android autoplay default', async () => {
     const originalOS = Platform.OS;
     Object.defineProperty(Platform, 'OS', {

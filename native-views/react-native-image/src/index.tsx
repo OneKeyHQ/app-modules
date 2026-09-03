@@ -307,10 +307,27 @@ export function OneKeyImage({
     ]
   );
 
+  const flattenedStyle = StyleSheet.flatten(style);
+  const hasRoundedCorners = Boolean(
+    flattenedStyle &&
+      [
+        flattenedStyle.borderRadius,
+        flattenedStyle.borderTopLeftRadius,
+        flattenedStyle.borderTopRightRadius,
+        flattenedStyle.borderBottomLeftRadius,
+        flattenedStyle.borderBottomRightRadius,
+        flattenedStyle.borderStartStartRadius,
+        flattenedStyle.borderStartEndRadius,
+        flattenedStyle.borderEndStartRadius,
+        flattenedStyle.borderEndEndRadius,
+      ].some((radius) => typeof radius === 'number' && radius > 0)
+  );
+  const shouldWrapNative = hasOverlay || hasRoundedCorners;
+
   const native = createElement(NativeOneKeyImage, {
     ...viewProps,
     ...nativeCallbacks,
-    style: hasOverlay ? StyleSheet.absoluteFill : style,
+    style: shouldWrapNative ? StyleSheet.absoluteFill : style,
     sourceUri: normalized?.uri,
     sourceHeadersJson: normalized?.headers
       ? JSON.stringify(normalized.headers)
@@ -326,7 +343,7 @@ export function OneKeyImage({
       placeholder == null ? loadingStrategy : OneKeyImageLoadingStrategy.NONE,
   });
 
-  if (!hasOverlay) return native;
+  if (!shouldWrapNative) return native;
 
   return (
     <View style={[style, styles.overlayContainer]} collapsable={false}>

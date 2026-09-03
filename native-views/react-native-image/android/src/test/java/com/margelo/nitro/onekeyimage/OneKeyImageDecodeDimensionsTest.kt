@@ -3,6 +3,7 @@ package com.margelo.nitro.onekeyimage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.lang.reflect.Modifier
 
 class OneKeyImageDecodeDimensionsTest {
   @Test
@@ -66,5 +67,20 @@ class OneKeyImageDecodeDimensionsTest {
     val decodedBytes = 8000.0 * scale * 1000.0 * scale * 4.0
 
     assertTrue(decodedBytes <= OneKeyImageDecodeDimensions.MAX_DECODE_BYTES)
+  }
+
+  @Test
+  fun safeDownsampleStrategyIsSingletonForStableMemoryCacheIdentity() {
+    val strategyClass = Class.forName(
+      "com.margelo.nitro.onekeyimage.OneKeyImageSafeDownsampleStrategy",
+      false,
+      javaClass.classLoader,
+    )
+
+    assertTrue(
+      strategyClass.declaredFields.any { field ->
+        field.name == "INSTANCE" && Modifier.isStatic(field.modifiers)
+      },
+    )
   }
 }
