@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-image",
-  "version": "3.0.100",
+  "version": "3.0.101",
   "description": "High-performance native image view for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -81,7 +81,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-skeleton": "3.0.100",
+    "@onekeyfe/react-native-skeleton": "3.0.101",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"
