@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.102] - 2026-09-04
+
+### Bug Fixes
+- **image (Android)**: Keep Glide requests independent of temporary native-stack Fragment teardown so images retained by React remain visible after closing an opaque task modal.
+
+### Chores
+- Bump all publishable packages to 3.0.102.
+
 ## [3.0.95] - 2026-08-31
 
 ### Features
