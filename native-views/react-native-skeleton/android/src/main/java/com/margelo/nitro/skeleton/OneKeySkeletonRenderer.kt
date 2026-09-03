@@ -103,7 +103,11 @@ public class OneKeySkeletonRenderer(
       ?: ONEKEY_SKELETON_DEFAULT_COLORS.copyOf()
     val colorsChanged = !this.colors.contentEquals(nextColors)
     this.colors = nextColors
-    durationNanos = ((durationSeconds ?: 3.0).coerceAtLeast(0.1) * 1_000_000_000L).toLong()
+    val normalizedDuration = (durationSeconds ?: 3.0)
+      .takeIf { it.isFinite() }
+      ?.coerceAtLeast(0.1)
+      ?: 3.0
+    durationNanos = (normalizedDuration * 1_000_000_000L).toLong()
     if (colorsChanged) invalidateShader()
   }
 

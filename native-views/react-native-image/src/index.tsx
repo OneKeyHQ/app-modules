@@ -126,7 +126,7 @@ function normalizeSource(
 ): OneKeyImageSource | undefined {
   if (source == null) return undefined;
   const resolved = Image.resolveAssetSource(source as ImageSourcePropType);
-  if (resolved?.uri) {
+  if (resolved?.uri?.trim()) {
     const original =
       typeof source === 'object' && !Array.isArray(source)
         ? (source as OneKeyImageSource)

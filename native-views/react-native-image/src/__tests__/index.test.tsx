@@ -371,6 +371,29 @@ describe('OneKeyImage wrapper', () => {
     );
   });
 
+  it('treats a whitespace-only URI as an unavailable source', async () => {
+    const onError = jest.fn();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <OneKeyImage
+          source={{ uri: '   ' }}
+          placeholder="loading"
+          fallback="unavailable-image"
+          onError={onError}
+          style={{ width: 40, height: 40 }}
+        />
+      );
+    });
+
+    const native = renderer!.root.findByType('NativeOneKeyImage' as never);
+    const tree = JSON.stringify(renderer!.toJSON());
+    expect(native.props.sourceUri).toBeUndefined();
+    expect(tree).toContain('unavailable-image');
+    expect(tree).not.toContain('"children":["loading"]');
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it('removes a loading placeholder when the request fails without custom fallback content', async () => {
     let renderer: ReactTestRenderer.ReactTestRenderer;
     await act(() => {
