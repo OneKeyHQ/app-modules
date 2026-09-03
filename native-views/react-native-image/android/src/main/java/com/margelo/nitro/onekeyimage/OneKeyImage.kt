@@ -123,6 +123,11 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private enum class DisplayState { LOADING, IMAGE, ERROR, FALLBACK }
 
   private val hostView = OneKeyImageHostView(context)
+  // Keep requests independent of ScreenStack Fragment teardown while React
+  // retains the view.
+  private val requestManager by lazy(LazyThreadSafetyMode.NONE) {
+    Glide.with(context.applicationContext)
+  }
   private var loadRunnable: Runnable? = null
   private var currentTarget: CustomViewTarget<OneKeyImageHostView, Drawable>? = null
   private var generation = 0L
@@ -446,7 +451,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       }
     }
     currentTarget = target
-    Glide.with(hostView)
+    requestManager
       .asDrawable()
       .load(OneKeyImageModel.build(requestUrl, headersJson))
       .apply(requestOptions(policy))
@@ -523,7 +528,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     // Clear the field first so onResourceCleared from our own cancellation
     // cannot erase state belonging to the next generation/request.
     currentTarget = null
-    Glide.with(hostView).clear(target)
+    requestManager.clear(target)
   }
 
   private fun scheduleOnDisplay(requestGeneration: Long) {
