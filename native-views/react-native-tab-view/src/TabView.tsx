@@ -82,9 +82,13 @@ interface Props<Route extends BaseRoute> {
     jumpTo: (key: string) => void;
   }) => React.ReactNode | null;
   /**
+   * Function which takes a route and returns a placeholder for an unloaded lazy scene.
+   */
+  renderLazyPlaceholder?: (props: { route: Route }) => React.ReactNode | null;
+  /**
    * Callback which is called on tab change, receives the index of the new tab as argument.
    */
-  onIndexChange: (index: number) => void;
+  onIndexChange: (index: number) => boolean | void;
   /**
    * Callback which is called on long press on tab, receives the index of the tab as argument.
    */
@@ -199,6 +203,7 @@ const ANDROID_MAX_TABS = 100;
 const TabView = <Route extends BaseRoute>({
   navigationState,
   renderScene,
+  renderLazyPlaceholder,
   onIndexChange,
   onTabLongPress,
   rippleColor,
@@ -236,6 +241,7 @@ const TabView = <Route extends BaseRoute>({
   // @ts-ignore
   const focusedKey = navigationState.routes[navigationState.index].key;
   const customTabBarWrapperRef = useRef<View>(null) as React.RefObject<any>;
+  const nativeTabViewRef = useRef<React.ElementRef<typeof NativeTabView>>(null);
   const [tabBarHeight, setTabBarHeight] = React.useState<number | undefined>(0);
   const [measuredDimensions, setMeasuredDimensions] = React.useState<
     { width: DimensionValue; height: DimensionValue } | undefined
@@ -381,7 +387,7 @@ const TabView = <Route extends BaseRoute>({
     if (index === -1) {
       return;
     }
-    onIndexChange(index);
+    return onIndexChange(index);
   });
 
   const handleTabLongPress = React.useCallback(
@@ -398,9 +404,12 @@ const TabView = <Route extends BaseRoute>({
   const handlePageSelected = React.useCallback(
     (event: NativeSyntheticEvent<{ key: string }>) => {
       const { key } = event.nativeEvent;
-      jumpTo(key);
+      const accepted = jumpTo(key);
+      if (accepted === false) {
+        nativeTabViewRef.current?.setNativeProps({ selectedPage: focusedKey });
+      }
     },
-    [jumpTo]
+    [focusedKey, jumpTo],
   );
 
   const handleTabBarMeasured = React.useCallback(
@@ -429,6 +438,7 @@ const TabView = <Route extends BaseRoute>({
   return (
     <BottomTabBarHeightContext.Provider value={tabBarHeight}>
       <NativeTabView
+        ref={nativeTabViewRef}
         {...props}
         {...tabLabelStyle}
         style={styles.fullWidth}
@@ -458,7 +468,9 @@ const TabView = <Route extends BaseRoute>({
                 key={route.key}
                 collapsable={false}
                 style={styles.fullWidth}
-              />
+              >
+                {renderLazyPlaceholder?.({ route })}
+              </View>
             );
           }
 

@@ -1,232 +1,101 @@
 package com.margelo.nitro.skeleton
 
-import android.animation.ValueAnimator
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
-import android.graphics.Paint
-import android.graphics.Shader
 import android.view.View
-import android.view.animation.LinearInterpolator
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.uimanager.ThemedReactContext
-import androidx.core.graphics.toColorInt
 
-// Animation constants
-val DEFAULT_GRADIENT_COLORS = intArrayOf(
-    Color.rgb(210, 210, 210),
-    Color.rgb(235, 235, 235)
-)
+private class SkeletonHostView(context: ThemedReactContext) : View(context) {
+  private val renderer = OneKeySkeletonRenderer { postInvalidateOnAnimation() }
+  var disposed = false
+  private var aggregatedVisible = true
 
+  fun updateRenderer(colors: IntArray?, durationSeconds: Double) {
+    setBackgroundColor(colors?.firstOrNull() ?: ONEKEY_SKELETON_DEFAULT_COLORS[0])
+    renderer.updateStyle(colors, durationSeconds)
+    renderer.updateBounds(width, height)
+    syncAnimationState()
+  }
+
+  fun stopRenderer() {
+    renderer.stop()
+  }
+
+  override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+    super.onSizeChanged(w, h, oldw, oldh)
+    renderer.updateBounds(w, h)
+  }
+
+  override fun onDraw(canvas: Canvas) {
+    super.onDraw(canvas)
+    renderer.draw(canvas)
+  }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    syncAnimationState()
+  }
+
+  override fun onDetachedFromWindow() {
+    super.onDetachedFromWindow()
+    syncAnimationState()
+  }
+
+  override fun onVisibilityAggregated(isVisible: Boolean) {
+    super.onVisibilityAggregated(isVisible)
+    aggregatedVisible = isVisible
+    syncAnimationState()
+  }
+
+  private fun syncAnimationState() {
+    if (!disposed && isAttachedToWindow && aggregatedVisible) renderer.start() else renderer.stop()
+  }
+}
+
+/** Thin Nitro adapter around the reusable view-independent renderer. */
 @DoNotStrip
-class HybridSkeleton(val context: ThemedReactContext) : HybridSkeletonSpec() {
+class HybridSkeleton(context: ThemedReactContext) : HybridSkeletonSpec() {
+  private val hostView = SkeletonHostView(context)
+  private var colors: IntArray? = null
+  private var durationSeconds = 3.0
 
-  // Shimmer animation
-  private var shimmerAnimator: ValueAnimator? = null
-  private var shimmerPaint: Paint = Paint()
-  private var translateX: Float = 0f
-
-  // Animation properties
-  private var customGradientColors: IntArray? = null
-  private var animationSpeed: Long = 3000L
-
-  // Memory safety flags
-  private var isDisposed: Boolean = false
-  private var retryCount: Int = 0
-  private val maxRetryCount: Int = 10
-  private var pendingStartRunnable: Runnable? = null
-
-  // Guard against high-frequency afterUpdate() ValueAnimator churn (REACT-NATIVE-40K ANR).
-  // Fabric calls afterUpdate() on every prop commit, and list/order-book screens update
-  // very frequently. Unconditionally restarting the shimmer cancels/rebuilds the
-  // ValueAnimator each time (ValueAnimator.cancel -> AnimationHandler.removeCallback ->
-  // ArrayList.indexOf), blocking the main thread. We cache a signature of the inputs that
-  // actually drive the animation (speed + gradient colors + view size) and only restart
-  // when that signature changes. If nothing relevant changed and the shimmer is already
-  // running, we leave the existing animator untouched (no cancel, no rebuild).
-  private var lastShimmerSignature: String? = null
-  private var isShimmerRunning: Boolean = false
-
-  // Build a signature from every input that decides the shimmer animation:
-  // - animationSpeed -> ValueAnimator.duration
-  // - gradient colors -> shimmer gradient / draw output
-  // - view width/height -> animation travel range (-width..width*2) and draw bounds
-  private fun currentShimmerSignature(): String {
-    val colors = customGradientColors ?: DEFAULT_GRADIENT_COLORS
-    val colorsKey = colors.joinToString(",")
-    return "$animationSpeed|$colorsKey|${view.width}x${view.height}"
-  }
-
-  // View with shimmer effect
-  override val view: View = object : View(context) {
-    override fun onDraw(canvas: Canvas) {
-      super.onDraw(canvas)
-
-      if (width > 0 && height > 0) {
-        val colors = customGradientColors ?: DEFAULT_GRADIENT_COLORS
-        val backgroundColor = colors[0]
-        val highlightColor = colors[1]
-
-        val gradient = LinearGradient(
-          translateX - width,
-          0f,
-          translateX,
-          0f,
-          intArrayOf(backgroundColor, highlightColor, backgroundColor),
-          floatArrayOf(0f, 0.5f, 1f),
-          Shader.TileMode.CLAMP
-        )
-
-        shimmerPaint.shader = gradient
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), shimmerPaint)
-      }
-    }
-  }
+  override val view: View = hostView
 
   override var shimmerSpeed: Double?
-    get() = animationSpeed.toDouble() / 1000.0
+    get() = durationSeconds
     set(value) {
-      if (isDisposed) return
-      animationSpeed = ((value ?: 3.0) * 1000).toLong()
-      restartShimmer()
+      if (hostView.disposed) return
+      durationSeconds = (value ?: 3.0).coerceAtLeast(0.1)
+      updateRenderer()
     }
 
   override var shimmerGradientColors: Array<String>?
-    get() = customGradientColors?.map { String.format("#%06X", 0xFFFFFF and it) }?.toTypedArray()
+    get() = colors?.map { String.format("#%06X", 0xFFFFFF and it) }?.toTypedArray()
     set(value) {
-      if (isDisposed) return
-      if (value != null) {
-        customGradientColors = value.map { hexStringToColor(it) }.toIntArray()
-        restartShimmer()
-      }
+      if (hostView.disposed) return
+      colors = value?.takeIf { it.size >= 2 }?.take(2)?.map(::parseColor)?.toIntArray()
+      updateRenderer()
     }
-
-  init {
-    setupView()
-  }
-
-  private fun setupView() {
-    view.post {
-      startShimmer()
-    }
-  }
-
-  private fun startShimmer() {
-    if (isDisposed) return
-
-    stopShimmer()
-    retryCount = 0 // Reset retry count
-    startShimmerInternal()
-  }
-
-  private fun startShimmerInternal() {
-    if (isDisposed) return
-
-    if (view.width == 0 || view.height == 0) {
-      // Check if we have exceeded max retry count
-      if (retryCount >= maxRetryCount) {
-        android.util.Log.w("HybridSkeleton", "Max retry count reached. View bounds are still empty.")
-        return
-      }
-
-      retryCount++
-      // Clean up previous pending runnable
-      pendingStartRunnable?.let { view.removeCallbacks(it) }
-
-      // Create new runnable and schedule
-      val runnable = Runnable {
-        if (!isDisposed) {
-          startShimmerInternal()
-        }
-      }
-      pendingStartRunnable = runnable
-      view.postDelayed(runnable, 100)
-      return
-    }
-
-    val width = view.width.toFloat()
-
-    shimmerAnimator = ValueAnimator.ofFloat(-width, width * 2).apply {
-      duration = animationSpeed
-      repeatCount = ValueAnimator.INFINITE
-      interpolator = LinearInterpolator()
-      addUpdateListener { animation ->
-        if (!isDisposed) {
-          translateX = animation.animatedValue as Float
-          view.invalidate()
-        }
-      }
-      start()
-    }
-
-    // Record the inputs this running animator was built from, so afterUpdate() can skip
-    // restarting while none of them change.
-    lastShimmerSignature = currentShimmerSignature()
-    isShimmerRunning = true
-  }
-
-  private fun stopShimmer() {
-    // Clean up pending runnable
-    pendingStartRunnable?.let {
-      view.removeCallbacks(it)
-      pendingStartRunnable = null
-    }
-
-    // Clean up animator and its listeners
-    shimmerAnimator?.apply {
-      removeAllUpdateListeners()
-      cancel()
-    }
-    shimmerAnimator = null
-    isShimmerRunning = false
-  }
 
   override fun afterUpdate() {
     super.afterUpdate()
-    if (isDisposed) return
-
-    // Defensive guard against ValueAnimator churn (REACT-NATIVE-40K ANR):
-    // afterUpdate() runs on every Fabric prop commit. Only restart the shimmer when an
-    // input that actually drives the animation changed (speed / colors / view size).
-    // If the shimmer is already running and nothing relevant changed, leave the existing
-    // ValueAnimator alone to avoid main-thread cancel/rebuild churn.
-    val signature = currentShimmerSignature()
-    if (isShimmerRunning && shimmerAnimator != null && signature == lastShimmerSignature) {
-      return
-    }
-
-    restartShimmer()
-  }
-
-  private fun restartShimmer() {
-    if (isDisposed) return
-    stopShimmer()
-    retryCount = 0 // Reset retry count on restart
-    startShimmerInternal()
-  }
-
-  private fun hexStringToColor(hexColor: String): Int {
-    var hexSanitized = hexColor.trim()
-
-    if (hexSanitized.startsWith("#")) {
-      hexSanitized = hexSanitized.substring(1)
-    }
-
-    return try {
-      Color.parseColor("#$hexSanitized")
-    } catch (e: Exception) {
-      DEFAULT_GRADIENT_COLORS[0]
-    }
+    if (!hostView.disposed) updateRenderer()
   }
 
   override fun dispose() {
-    // Mark as disposed to prevent any new operations
-    isDisposed = true
+    hostView.disposed = true
+    hostView.stopRenderer()
+    super.dispose()
+  }
 
-    // Stop all animations and clean up
-    stopShimmer()
+  private fun updateRenderer() {
+    hostView.updateRenderer(colors, durationSeconds)
+  }
 
-    // Clear view references to prevent memory leaks
-    view.invalidate()
+  private fun parseColor(value: String): Int = try {
+    Color.parseColor(value)
+  } catch (_: IllegalArgumentException) {
+    ONEKEY_SKELETON_DEFAULT_COLORS[0]
   }
 }

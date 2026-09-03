@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-zip-archive",
-  "version": "3.0.97",
+  "version": "3.0.101",
   "description": "react-native-zip-archive Nitro HybridObject for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -59,15 +59,15 @@
   "peerDependencies": {
     "react": "*",
     "react-native": "*",
-    "react-native-nitro-modules": "0.36.5"
+    "react-native-nitro-modules": "0.37.0"
   },
   "devDependencies": {
     "@react-native/babel-preset": "0.86.2",
-    "nitrogen": "0.36.5",
+    "nitrogen": "0.37.0",
     "react": "19.2.3",
     "react-native": "patch:react-native@npm%3A0.86.2#~/.yarn/patches/react-native-npm-0.86.2-c9d546616f.patch",
     "react-native-builder-bob": "^0.40.17",
-    "react-native-nitro-modules": "0.36.5",
+    "react-native-nitro-modules": "0.37.0",
     "typescript": "^5.9.2"
   },
   "react-native-builder-bob": {

@@ -1,0 +1,24 @@
+{
+  "uiViewClassName": "OneKeyImage",
+  "supportsRawText": false,
+  "bubblingEventTypes": {},
+  "directEventTypes": {},
+  "validAttributes": {
+    "sourceUri": true,
+    "sourceHeadersJson": true,
+    "variant": true,
+    "contentFit": true,
+    "cachePolicy": true,
+    "autoplay": true,
+    "recyclingKey": true,
+    "optimizeTos": true,
+    "overscan": true,
+    "loadingStrategy": true,
+    "onLoadStart": true,
+    "onLoad": true,
+    "onDisplay": true,
+    "onError": true,
+    "onLoadEnd": true,
+    "hybridRef": true
+  }
+}

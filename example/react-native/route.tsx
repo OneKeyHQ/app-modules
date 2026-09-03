@@ -22,6 +22,7 @@ import { GetRandomValuesTestPage } from './pages/GetRandomValuesTestPage';
 import { DeviceUtilsTestPage } from './pages/DeviceUtilsTestPage';
 import { SkeletonTestPage } from './pages/SkeletonTestPage';
 import { NativeLoggerTestPage } from './pages/NativeLoggerTestPage';
+import { OneKeyImageTestPage } from './pages/OneKeyImageTestPage';
 import { PagerViewTestPage } from './pages/PagerViewTestPage';
 import { ScrollGuardTestPage } from './pages/ScrollGuardTestPage';
 import { SegmentSliderTestPage } from './pages/SegmentSliderTestPage';
@@ -63,6 +64,7 @@ export type RootStackParamList = {
   LiteCard: undefined;
   GetRandomValues: undefined;
   NativeLogger: undefined;
+  OneKeyImage: undefined;
   OtaPipeline: undefined;
   ApkOtaPipeline: undefined;
   ChartWebView: undefined;
@@ -209,6 +211,12 @@ const modules: {
     name: 'Native Logger',
     description: 'File-based logging with log directory viewer',
     icon: '📝',
+  },
+  {
+    screen: 'OneKeyImage',
+    name: 'OneKey Image',
+    description: 'SDWebImage/Glide image view with native loading states',
+    icon: '🖼️',
   },
   {
     screen: 'PagerView',
@@ -542,6 +550,11 @@ export function AppNavigator() {
         name="NativeLogger"
         component={NativeLoggerTestPage}
         options={{ title: 'Native Logger' }}
+      />
+      <Stack.Screen
+        name="OneKeyImage"
+        component={OneKeyImageTestPage}
+        options={{ title: 'OneKey Image' }}
       />
       <Stack.Screen
         name="PagerView"
