@@ -1,5 +1,7 @@
 package com.margelo.nitro.onekeyimage
 
+import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -7,6 +9,7 @@ import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
 import android.view.View
 import android.widget.ImageView
+import androidx.fragment.app.FragmentActivity
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -21,6 +24,17 @@ import com.facebook.react.uimanager.ThemedReactContext
 import com.margelo.nitro.skeleton.OneKeySkeletonRenderer
 import com.margelo.nitro.views.RecyclableView
 import kotlin.math.ceil
+
+private fun Context.findFragmentActivity(): FragmentActivity? {
+  var currentContext: Context? = this
+  while (currentContext is ContextWrapper) {
+    if (currentContext is FragmentActivity) return currentContext
+    val baseContext = currentContext.baseContext
+    if (baseContext === currentContext) return null
+    currentContext = baseContext
+  }
+  return currentContext as? FragmentActivity
+}
 
 private class OneKeyImageHostView(context: ThemedReactContext) : ImageView(context) {
   private val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -123,6 +137,13 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private enum class DisplayState { LOADING, IMAGE, ERROR, FALLBACK }
 
   private val hostView = OneKeyImageHostView(context)
+  // The Activity outlives ScreenStack Fragments but still provides bounded
+  // background and destruction lifecycle handling for image requests.
+  private val requestManager by lazy(LazyThreadSafetyMode.NONE) {
+    val activity = context.findFragmentActivity()
+      ?: (context.currentActivity as? FragmentActivity)
+    Glide.with(requireNotNull(activity) { "A FragmentActivity is required to load images" })
+  }
   private var loadRunnable: Runnable? = null
   private var currentTarget: CustomViewTarget<OneKeyImageHostView, Drawable>? = null
   private var generation = 0L
@@ -208,6 +229,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     hostView.onReadyForRequest = { scheduleLoad() }
     hostView.onAttachmentChanged = { attached ->
       if (attached) {
+        scheduleLoad()
         schedulePendingDisplayIfNeeded()
       } else {
         displayRunnable?.let(hostView::removeCallbacks)
@@ -406,6 +428,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
 
       override fun onResourceCleared(placeholder: Drawable?) {
         if (requestGeneration == generation && currentTarget === this) {
+          currentTarget = null
+          lastSignature = null
           requestActive = false
           hostView.skeletonRequested = false
           hostView.setImageDrawable(null)
@@ -446,7 +470,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       }
     }
     currentTarget = target
-    Glide.with(hostView)
+    requestManager
       .asDrawable()
       .load(OneKeyImageModel.build(requestUrl, headersJson))
       .apply(requestOptions(policy))
@@ -523,7 +547,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     // Clear the field first so onResourceCleared from our own cancellation
     // cannot erase state belonging to the next generation/request.
     currentTarget = null
-    Glide.with(hostView).clear(target)
+    requestManager.clear(target)
   }
 
   private fun scheduleOnDisplay(requestGeneration: Long) {
