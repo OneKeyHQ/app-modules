@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.104] - 2026-09-04
+
+### Bug Fixes
+- **image (Android)**: Bind rendered-image Glide requests to the host Activity so temporary ScreenStack Fragment teardown preserves visible images while backgrounding and Activity destruction retain bounded lifecycle cleanup.
+
+### Chores
+- Bump all publishable packages to 3.0.104.
+
 ## [3.0.103] - 2026-09-04
 
 ### Bug Fixes
