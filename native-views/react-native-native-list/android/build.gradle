@@ -1,0 +1,105 @@
+buildscript {
+  ext.getExtOrDefault = { name ->
+    return rootProject.ext.has(name) ? rootProject.ext.get(name) : project.properties['NativeList_' + name]
+  }
+
+  def kotlinVersion = getExtOrDefault('kotlinVersion')
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath "com.android.tools.build:gradle:8.7.2"
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion"
+  }
+}
+
+def reactNativeArchitectures() {
+  def value = rootProject.getProperties().get("reactNativeArchitectures")
+  return value ? value.split(",") : ["armeabi-v7a", "x86", "x86_64", "arm64-v8a"]
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+apply from: '../nitrogen/generated/android/nativelist+autolinking.gradle'
+apply plugin: "com.facebook.react"
+
+def getExtOrIntegerDefault(name) {
+  return rootProject.ext.has(name) ? rootProject.ext.get(name) : project.properties["NativeList_" + name].toInteger()
+}
+
+android {
+  namespace "com.margelo.nitro.nativelist"
+  compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
+
+  defaultConfig {
+    minSdkVersion getExtOrIntegerDefault("minSdkVersion")
+    targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
+
+    externalNativeBuild {
+      cmake {
+        cppFlags "-frtti -fexceptions -Wall -fstack-protector-all"
+        arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+        abiFilters (*reactNativeArchitectures())
+      }
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path "CMakeLists.txt"
+    }
+  }
+
+  packagingOptions {
+    excludes = [
+      "META-INF", "META-INF/**", "**/libc++_shared.so", "**/libfbjni.so",
+      "**/libjsi.so", "**/libfolly_json.so", "**/libfolly_runtime.so",
+      "**/libglog.so", "**/libhermes.so", "**/libhermes_executor.so",
+      "**/libreactnative.so", "**/libreactnativejni.so"
+    ]
+  }
+
+  buildFeatures {
+    buildConfig true
+    prefab true
+  }
+
+  buildTypes {
+    release {
+      minifyEnabled false
+    }
+  }
+
+  lintOptions {
+    disable "GradleCompatible"
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_1_8
+    targetCompatibility JavaVersion.VERSION_1_8
+  }
+
+  sourceSets {
+    main {
+      java.srcDirs += ["generated/java", "generated/jni"]
+      assets.srcDirs += ["../common"]
+    }
+  }
+}
+
+repositories {
+  google()
+  mavenCentral()
+}
+
+def kotlinVersion = getExtOrDefault("kotlinVersion")
+
+dependencies {
+  implementation "com.facebook.react:react-android"
+  implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
+  implementation "androidx.recyclerview:recyclerview:1.4.0"
+  implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
+  implementation project(":react-native-nitro-modules")
+  implementation project(":onekeyfe_react-native-image")
+}

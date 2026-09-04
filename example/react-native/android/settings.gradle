@@ -8,7 +8,39 @@ pluginManagement {
   includeBuild(reactNativeGradlePlugin)
 }
 plugins { id("com.facebook.react.settings") }
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+def reactNativeAppRoot = layout.rootDirectory.dir("../")
+def reactNativeCli = new File(
+  providers.exec {
+    workingDir(reactNativeAppRoot.asFile)
+    commandLine("node", "--print", "require.resolve('@react-native-community/cli/build/bin.js')")
+  }.standardOutput.asText.get().trim()
+)
+def nativeListReactNativeConfig = reactNativeAppRoot.file(
+  "../../native-views/react-native-native-list/react-native.config.js"
+).asFile
+def nativeListAutolinkingLockFile = new File(
+  rootDir,
+  "build/generated/autolinking/native-list.react-native.config.js"
+)
+if (!nativeListAutolinkingLockFile.exists() ||
+    !java.util.Arrays.equals(nativeListAutolinkingLockFile.bytes, nativeListReactNativeConfig.bytes)) {
+  nativeListAutolinkingLockFile.parentFile.mkdirs()
+  nativeListAutolinkingLockFile.bytes = nativeListReactNativeConfig.bytes
+}
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+  ex.autolinkLibrariesFromCommand(
+    ["node", reactNativeCli.absolutePath, "config"],
+    reactNativeAppRoot.asFile,
+    reactNativeAppRoot.files(
+      "yarn.lock",
+      "package-lock.json",
+      "package.json",
+      "react-native.config.js",
+      "../../native-views/react-native-native-list/nitro.json",
+      nativeListAutolinkingLockFile
+    )
+  )
+}
 rootProject.name = 'example'
 include ':app'
 

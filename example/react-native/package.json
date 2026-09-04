@@ -28,6 +28,7 @@
     "@onekeyfe/react-native-image": "workspace:*",
     "@onekeyfe/react-native-keychain-module": "workspace:*",
     "@onekeyfe/react-native-lite-card": "workspace:*",
+    "@onekeyfe/react-native-native-list": "workspace:*",
     "@onekeyfe/react-native-native-logger": "workspace:*",
     "@onekeyfe/react-native-network-info": "workspace:*",
     "@onekeyfe/react-native-pager-view": "workspace:*",
