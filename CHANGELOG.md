@@ -4,11 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.103] - 2026-09-04
+
+### Bug Fixes
+- **background-thread (Android)**: Load the reusable DevSession common HBC from its restored file path while preserving the packaged asset fallback.
+
+### Chores
+- Bump all publishable packages to 3.0.103.
+
 ## [3.0.102] - 2026-09-04
 
 ### Bug Fixes
 - **image (Android)**: Keep Glide requests independent of temporary native-stack Fragment teardown so images retained by React remain visible after closing an opaque task modal.
-- **background-thread (Android)**: Load the reusable DevSession common HBC from its restored file path while preserving the packaged asset fallback.
 
 ### Chores
 - Bump all publishable packages to 3.0.102.

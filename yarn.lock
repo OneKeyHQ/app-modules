@@ -3437,7 +3437,7 @@ __metadata:
     react-test-renderer: "npm:19.2.3"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-skeleton": 3.0.102
+    "@onekeyfe/react-native-skeleton": 3.0.103
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
