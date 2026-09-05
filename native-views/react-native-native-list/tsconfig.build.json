@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationDir": "lib/typescript",
+    "outDir": "lib/typescript",
+    "emitDeclarationOnly": true
+  },
+  "include": ["src"],
+  "exclude": ["src/__tests__"]
+}

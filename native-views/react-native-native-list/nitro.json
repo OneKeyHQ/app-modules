@@ -1,0 +1,23 @@
+{
+  "cxxNamespace": ["nativelist"],
+  "ios": {
+    "iosModuleName": "NativeListModule"
+  },
+  "android": {
+    "androidNamespace": ["nativelist"],
+    "androidCxxLibName": "nativelist"
+  },
+  "autolinking": {
+    "NativeList": {
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "HybridNativeList"
+      },
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridNativeList"
+      }
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}

@@ -135,6 +135,18 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private var pendingDisplayGeneration: Long? = null
   private var fallbackRunnable: Runnable? = null
 
+  /**
+   * Native reusable containers own their request cleanup explicitly, so their
+   * requests must not inherit a transient React Native screen Fragment lifecycle.
+   */
+  internal var usesApplicationRequestManager = false
+
+  private fun requestManager() = if (usesApplicationRequestManager) {
+    Glide.with(context.applicationContext)
+  } else {
+    Glide.with(hostView)
+  }
+
   override val view: View = hostView
 
   override var sourceUri: String? = null
@@ -446,7 +458,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       }
     }
     currentTarget = target
-    Glide.with(hostView)
+    requestManager()
       .asDrawable()
       .load(OneKeyImageModel.build(requestUrl, headersJson))
       .apply(requestOptions(policy))
@@ -523,7 +535,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     // Clear the field first so onResourceCleared from our own cancellation
     // cannot erase state belonging to the next generation/request.
     currentTarget = null
-    Glide.with(hostView).clear(target)
+    requestManager().clear(target)
   }
 
   private fun scheduleOnDisplay(requestGeneration: Long) {

@@ -23,6 +23,15 @@ import { DeviceUtilsTestPage } from './pages/DeviceUtilsTestPage';
 import { SkeletonTestPage } from './pages/SkeletonTestPage';
 import { NativeLoggerTestPage } from './pages/NativeLoggerTestPage';
 import { OneKeyImageTestPage } from './pages/OneKeyImageTestPage';
+import { NativeListTestPage } from './pages/NativeListTestPage';
+import { NativeListBenchmarkPage } from './pages/NativeListBenchmarkPage';
+import { NativeListAccountSelectorPage } from './pages/NativeListAccountSelectorPage';
+import { NativeListNetworkSelectorPage } from './pages/NativeListNetworkSelectorPage';
+import { NativeListTokenSelectorPage } from './pages/NativeListTokenSelectorPage';
+import {
+  NativeListExamplePage,
+  type NativeListExampleKey,
+} from './pages/NativeListExamplePage';
 import { PagerViewTestPage } from './pages/PagerViewTestPage';
 import { ScrollGuardTestPage } from './pages/ScrollGuardTestPage';
 import { SegmentSliderTestPage } from './pages/SegmentSliderTestPage';
@@ -65,6 +74,14 @@ export type RootStackParamList = {
   GetRandomValues: undefined;
   NativeLogger: undefined;
   OneKeyImage: undefined;
+  NativeList: undefined;
+  NativeListExample:
+    | { example: NativeListExampleKey; title: string }
+    | undefined;
+  NativeListBenchmark: undefined;
+  NativeListAccountSelector: undefined;
+  NativeListNetworkSelector: undefined;
+  NativeListTokenSelector: undefined;
   OtaPipeline: undefined;
   ApkOtaPipeline: undefined;
   ChartWebView: undefined;
@@ -87,10 +104,14 @@ export type RootStackParamList = {
 export type RootStackNavigationProp =
   NativeStackNavigationProp<RootStackParamList>;
 
+type RootModuleStackParamList = Omit<RootStackParamList, 'NativeListExample'>;
+type RootModuleStackNavigationProp =
+  NativeStackNavigationProp<RootModuleStackParamList>;
+
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const modules: {
-  screen: keyof RootStackParamList;
+  screen: keyof RootModuleStackParamList;
   name: string;
   description: string;
   icon: string;
@@ -219,6 +240,34 @@ const modules: {
     icon: '🖼️',
   },
   {
+    screen: 'NativeList',
+    name: 'Native List',
+    description:
+      'UICollectionView / RecyclerView template rows, selection, and reorder',
+    icon: '📋',
+  },
+  {
+    screen: 'NativeListBenchmark',
+    name: 'Native List Benchmark',
+    description:
+      'Reproducible 1,000 / 5,000 row load, scroll, patch, and selection checks',
+    icon: '⏱️',
+  },
+  {
+    screen: 'NativeListAccountSelector',
+    name: 'Native List Account Selector',
+    description:
+      'Two independent native lists with a 1,000 × 1,000 lazy data model',
+    icon: '👛',
+  },
+  {
+    screen: 'NativeListNetworkSelector',
+    name: 'Native List Network Selector',
+    description:
+      'Production network catalog with native sections, search, and selection',
+    icon: '🌐',
+  },
+  {
     screen: 'PagerView',
     name: 'Pager View',
     description:
@@ -282,7 +331,7 @@ const modules: {
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 function HomeScreen() {
-  const navigation = useNavigation<RootStackNavigationProp>();
+  const navigation = useNavigation<RootModuleStackNavigationProp>();
   const [searchQuery, setSearchQuery] = useState<string>('');
   const scrollViewRef = useRef<ScrollView>(null);
   const sectionYRef = useRef<Record<string, number>>({});
@@ -398,7 +447,7 @@ function HomeScreen() {
                   <TouchableOpacity
                     key={module.screen}
                     style={styles.moduleRow}
-                    onPress={() => navigation.navigate(module.screen)}
+                    onPress={() => navigation.navigate(module.screen as never)}
                     activeOpacity={0.7}
                   >
                     <Text style={styles.moduleIcon}>{module.icon}</Text>
@@ -555,6 +604,38 @@ export function AppNavigator() {
         name="OneKeyImage"
         component={OneKeyImageTestPage}
         options={{ title: 'OneKey Image' }}
+      />
+      <Stack.Screen
+        name="NativeList"
+        component={NativeListTestPage}
+        options={{ title: 'Native List' }}
+      />
+      <Stack.Screen
+        name="NativeListExample"
+        component={NativeListExamplePage}
+        options={({ route }) => ({
+          title: route.params?.title ?? 'Native List Example',
+        })}
+      />
+      <Stack.Screen
+        name="NativeListBenchmark"
+        component={NativeListBenchmarkPage}
+        options={{ title: 'Native List Benchmark' }}
+      />
+      <Stack.Screen
+        name="NativeListAccountSelector"
+        component={NativeListAccountSelectorPage}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="NativeListNetworkSelector"
+        component={NativeListNetworkSelectorPage}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="NativeListTokenSelector"
+        component={NativeListTokenSelectorPage}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="PagerView"
