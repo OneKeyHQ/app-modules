@@ -232,6 +232,45 @@ The React Native example application contains:
   corresponding list surfaces in the OneKey application.
 - **Native List Benchmark**: reproducible 1,000/5,000-row load, fast scroll,
   one-command 500-row patch, and one-command select-all paths.
+- **Native List Account Selector**: two independently scrolling native lists
+  with a fixed Add Wallet footer. The stress fixture exposes 1,000 wallets x
+  1,000 accounts while materializing only the selected wallet's 1,000 account
+  rows and retaining at most three wallets / 3,000 account rows in an LRU cache.
+
+### Account Selector performance snapshot (2026-09-05)
+
+The current acceptance run exercised five page opens, two 101-switch Wallet 1 /
+Wallet 2 batches, 25 downward plus 20 upward account-list drags, a repeated 15
+downward account-list run, and 15 downward plus 15 upward wallet-list drags. It
+also sampled process CPU and memory and verified, after momentum settled, that
+the two lists scroll independently and Add Wallet remains fixed at the bottom.
+Android additionally covered ART `speed` compilation and ten short fast flings.
+
+| Metric                    | iOS Debug Simulator                                                                                           | Android Release-mode emulator                                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Environment               | iPhone 16 Pro, iOS 18.6                                                                                       | API 35 arm64, 1080 x 2400, fixed 60 Hz, non-debuggable Hermes                                                                                    |
+| Page open, 5 runs         | External tap-to-visible median 589 ms; the initial native visible-range callback did not emit                 | 5 / 5 native callbacks; mount-to-first-visible p50 110 ms; external observation p50 202 ms                                                       |
+| Wallet switching          | 202 / 202; mean 135.3 ms, p50 134 ms, p95 143 ms, max 159 ms                                                  | 202 / 202; mean 124.4 ms, p50 118 ms, p95 155 ms, max 213 ms                                                                                     |
+| Account-list frame signal | 113.3 effective FPS; p50/p95 interval 6.67/18.33 ms; 6.6% over 17.5 ms                                        | Repeated drag runs reported 92.09-93.06% deadline-missed frames and p50 450 ms                                                                   |
+| Wallet-list frame signal  | 78.7 effective FPS; p50/p95 interval 13.33/20.00 ms; 17.8% over 17.5 ms                                       | Down/up runs reported 89.39-100% deadline-missed frames and p50 400 ms                                                                           |
+| Process CPU               | Wallet switching mean 48.9%; account scrolling mean 22.9%                                                     | Wallet switching mean 66.8%; account scrolling mean 67.1% on Android's per-core scale                                                            |
+| Retained memory           | Physical footprint 286 MB before, 275 MB after the first batch, 287 MB after the second; lifetime peak 335 MB | PSS 138,459 KiB with one wallet cached, 201,668 KiB after warming three wallets, 192,700 KiB after the second batch, 193,976 KiB after scrolling |
+| Functional checks         | Independent lists and fixed footer pass                                                                       | Independent lists and fixed footer pass, including zero-difference stable screenshot crops                                                       |
+
+These are regression snapshots, not a direct platform ranking. The iOS frame
+signal comes from variable-timestamp Simulator recordings and the Android frame
+signal comes from `gfxinfo` around ADB-injected gestures. Android's API 35
+emulator showed a heavily populated 4,950 ms GPU bucket, so its absolute scroll
+numbers cannot be treated as real-device FPS. The iOS run was Debug, while the
+Android run used a Release variant; neither closes production performance
+without physical-device Release/Profile measurements using Instruments or
+Perfetto/Macrobenchmark.
+
+The current Android Release test APK also required a manual pre-build of
+`background.bundle`: the standard example `assembleRelease` pipeline does not
+yet generate that required asset. Wallet-switch responsiveness and short-run
+retained-memory behavior pass the current simulator checks, while Android
+continuous-scroll performance and reproducible Release packaging remain open.
 
 ### Test Suite source map
 
