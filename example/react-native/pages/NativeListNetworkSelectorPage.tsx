@@ -89,6 +89,9 @@ export function NativeListNetworkSelectorPage() {
             : [],
         rowPressToggles: mode === 'portfolio',
       },
+      capabilities: {
+        sectionIndex: { enabled: true },
+      },
       emptyState: {
         type: 'system',
         key: 'network-selector-empty',

@@ -1117,6 +1117,7 @@ export function buildNetworkSelectorSections(
     {
       key: 'assets',
       title: '有资产的网络',
+      indexTitle: '#',
       networks: assetNetworks,
       assetSection: true,
     },
@@ -1227,6 +1228,7 @@ export function buildNetworkSelectorRows(
           type: 'sectionHeader',
           key: `header-${section.key}`,
           sectionKey: section.key,
+          indexTitle: section.indexTitle,
           title: section.title,
           value: `$${Object.values(NETWORK_SELECTOR_BALANCES)
             .reduce((sum, value) => sum + Number(value), 0)

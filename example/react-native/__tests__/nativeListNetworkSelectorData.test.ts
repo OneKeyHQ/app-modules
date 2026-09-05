@@ -74,6 +74,7 @@ describe('Native List network-selector data', () => {
     ]);
 
     const letterSections = sections.filter(section => section.indexTitle);
+    expect(letterSections[0]?.indexTitle).toBe('#');
     expect(letterSections.map(section => section.indexTitle)).toEqual(
       letterSections
         .map(section => section.indexTitle)
@@ -130,6 +131,7 @@ describe('Native List network-selector data', () => {
       type: 'sectionHeader',
       presentation: 'networkSelector',
       title: '有资产的网络',
+      indexTitle: '#',
     });
     expect(networkRows).toContainEqual(
       expect.objectContaining({
@@ -147,6 +149,11 @@ describe('Native List network-selector data', () => {
       type: 'sectionHeader',
       variant: 'summary',
       title: '已选择 18 个网络',
+    });
+    expect(portfolioRows[1]).toMatchObject({
+      type: 'sectionHeader',
+      title: '有资产的网络',
+      indexTitle: '#',
     });
     expect(
       portfolioRows
