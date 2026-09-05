@@ -154,7 +154,8 @@ order, skips headers without `indexTitle`, and scrolls to the header's existing
 row `key`. Titles must be unique after Unicode NFC normalization, contain no
 leading/trailing whitespace, and be at most eight Unicode code points. Set
 `hapticsEnabled: false` to follow an application-level reduced-haptics setting.
-The web fallback accepts the same model but does not render the mobile index.
+The web implementation renders the same explicit index entries as a DOM
+overlay, with click and pointer-drag navigation.
 
 The native templates bundle OneKey's Roobert Regular, Medium, SemiBold, and
 Bold faces and use them before the platform-font fallback. Their semantic
@@ -334,7 +335,8 @@ use Instruments or Android Studio Profiler for native frame and memory data.
 - A snapshot prop is the declarative baseline. Re-rendering with an older
   snapshot after imperative patches or reorder will intentionally restore the
   older state.
-- The web implementation is a basic compatibility fallback, not the native
-  performance path and not a replacement for the mobile benchmark.
+- The web implementation uses a pure DOM, windowed, recycled row engine behind
+  the React component. It mirrors the mobile data and imperative APIs, but its
+  performance must still be measured independently from iOS and Android.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the architecture and ownership model.

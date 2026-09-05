@@ -38,8 +38,10 @@ cells.
 - iOS 15.5+: `UICollectionView`, `UICollectionViewDiffableDataSource`, and a
   native flow layout.
 - Android API 24+: `RecyclerView`, `ListAdapter`, and `DiffUtil.ItemCallback`.
-- Web: a platform-resolved React fallback with the same row model and imperative
-  API. It intentionally offers only basic rendering and behavior.
+- Web: a platform-resolved React host backed by a pure DOM engine. The engine
+  owns layout, viewport windowing, recycled row elements, selection feedback,
+  section-index navigation, and the same imperative API as mobile; React does
+  not create a component subtree per row.
 - Nitro View: the generated HybridView host receives the initial snapshot as
   one string and exposes HybridView methods for subsequent snapshots, patches,
   selection reconciliation, and scrolling. Nitro callback props carry bounded
@@ -66,9 +68,10 @@ iOS and Android render a native trailing overlay, reserve a trailing content
 gutter, follow RTL layout direction, highlight the visible section, and expose
 the rail as one adjustable accessibility control. Touch-drag navigation scrolls
 immediately, shows a centered title preview, and emits selection feedback when
-the active entry changes unless `hapticsEnabled` is false. Snapshot order is
-authoritative; native code does not sort, uppercase, or synthesize missing
-entries. Web intentionally renders no index overlay.
+the active entry changes unless `hapticsEnabled` is false. Web renders the same
+explicit index entries as a DOM overlay with click and pointer-drag navigation.
+Snapshot order is authoritative; no platform sorts, uppercases, or synthesizes
+missing entries.
 
 ## Selection ownership
 
