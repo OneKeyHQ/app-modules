@@ -780,6 +780,9 @@ internal class NativeListRowView(
       )
       return
     }
+    if (item.json.optString("presentation") == "networkSelector") {
+      setPadding(dp(12), dp(7), dp(12), dp(8))
+    }
     val leading = item.json.optJSONObject("leading")
     item.json.optJSONObject("leadingAction")?.let { action ->
       leadingActionIcon.visibility = VISIBLE
@@ -1511,9 +1514,10 @@ internal class NativeListRowView(
     val isSummary = variant == "summary"
     val isGallery = variant == "gallery"
     val isTable = currentLayout == "table"
+    val isNetworkSelector = item.json.optString("presentation") == "networkSelector"
     val isHistory = variant == "history" || item.sectionKey?.startsWith("history-") == true
     val isTokenManager = item.sectionKey in setOf("linear-tokens", "action-tokens")
-    val hasDottedTitle = isSummary ||
+    val hasDottedTitle = isSummary || isNetworkSelector ||
       (item.json.optString("value").isNotEmpty() && item.json.optJSONObject("checkbox") != null)
     // Linear/sectioned snapshots reserve the ListItem mx=8 at RecyclerView
     // level, so header-local insets below are source px minus that outer inset.
@@ -1532,7 +1536,12 @@ internal class NativeListRowView(
         if (isSummary || isGallery) "#000000DF" else "#0000009B",
       ),
     )
-    if (isHistory) {
+    if (isNetworkSelector) {
+      setPadding(dp(headerHorizontalInset), dp(12), dp(headerHorizontalInset), dp(12))
+      title.textSize = sp(14f)
+      title.typeface = NativeListFonts.medium(context)
+      TextViewCompat.setLineHeight(title, dp(20))
+    } else if (isHistory) {
       setPadding(0, 0, 0, 0)
       title.text = item.json.optString("title").uppercase()
       title.textSize = sp(12f)
@@ -2099,8 +2108,12 @@ internal class NativeListRowView(
       item.type == "identity" && item.json.optString("presentation") == "walletSidebar"
     val isAccountSelectorIdentity =
       item.type == "identity" && item.json.optString("presentation") == "accountSelector"
+    val isNetworkSelectorIdentity =
+      item.type == "identity" && item.json.optString("presentation") == "networkSelector"
     val isAccountSelectorAction =
       item.type == "action" && item.json.optString("presentation") == "accountSelector"
+    val isNetworkSelectorSection =
+      item.type == "sectionHeader" && item.json.optString("presentation") == "networkSelector"
     title.textSize = sp(
       if (isWalletSidebar) {
         12f
@@ -2108,6 +2121,7 @@ internal class NativeListRowView(
         when (item.type) {
           "message" -> 14f
           "sectionHeader" -> when {
+            isNetworkSelectorSection -> 14f
             item.json.optString("variant") == "gallery" -> 18f
             item.json.optString("variant") == "summary" -> 16f
             currentLayout == "table" -> 11f
@@ -2126,6 +2140,7 @@ internal class NativeListRowView(
     } else {
       when (item.type) {
         "sectionHeader" -> when {
+          isNetworkSelectorSection -> NativeListFonts.medium(context)
           currentLayout == "table" -> NativeListFonts.regular(context)
           item.json.optString("variant") == "summary" -> NativeListFonts.medium(context)
           item.sectionKey in setOf("linear-tokens", "action-tokens") -> NativeListFonts.regular(context)
@@ -2142,7 +2157,9 @@ internal class NativeListRowView(
       else -> 14f
     })
     tertiary.textSize = sp(14f)
-    if (item.type == "sectionHeader" && item.json.optString("variant") == "gallery") {
+    if (isNetworkSelectorSection) {
+      TextViewCompat.setLineHeight(title, dp(20))
+    } else if (item.type == "sectionHeader" && item.json.optString("variant") == "gallery") {
       TextViewCompat.setLineHeight(title, dp(24))
     } else if (item.type == "sectionHeader" && item.json.optString("variant") == "summary") {
       TextViewCompat.setLineHeight(title, dp(24))
@@ -2179,6 +2196,7 @@ internal class NativeListRowView(
     }
     val baseHeight = when {
       item.type == "system" && item.json.optString("variant") == "spacer" -> item.json.optInt("height", 0)
+      isNetworkSelectorIdentity -> 47
       else -> when (item.type) {
         "rail" -> 28
         "activity" -> if ((item.json.optJSONArray("footerActions")?.length() ?: 0) > 0) 104 else 60
@@ -2190,6 +2208,7 @@ internal class NativeListRowView(
           else -> 132
         }
         "sectionHeader" -> when {
+          isNetworkSelectorSection -> 44
           currentLayout == "table" -> 28
           item.json.optString("variant") == "summary" -> 80
           item.json.optString("variant") == "gallery" -> 32
@@ -2225,7 +2244,9 @@ internal class NativeListRowView(
         }
       }
     }
-    val modifier = if (
+    val modifier = if (isNetworkSelectorIdentity) {
+      0
+    } else if (
       item.type == "sectionHeader" && item.json.optString("variant") in listOf("summary", "gallery")
     ) {
       0

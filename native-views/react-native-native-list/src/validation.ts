@@ -275,11 +275,12 @@ function assertRow(
       if (
         row.presentation !== undefined &&
         row.presentation !== 'walletSidebar' &&
-        row.presentation !== 'accountSelector'
+        row.presentation !== 'accountSelector' &&
+        row.presentation !== 'networkSelector'
       ) {
         fail(
           `${path}.presentation`,
-          'must be walletSidebar or accountSelector when provided'
+          'must be walletSidebar, accountSelector, or networkSelector when provided'
         );
       }
       assertText(row.title, `${path}.title`);
@@ -395,6 +396,12 @@ function assertRow(
       break;
     case 'sectionHeader':
       assertKey(row.sectionKey, `${path}.sectionKey`);
+      if (
+        row.presentation !== undefined &&
+        row.presentation !== 'networkSelector'
+      ) {
+        fail(`${path}.presentation`, 'must be networkSelector when provided');
+      }
       assertSectionIndexTitle(row.indexTitle, `${path}.indexTitle`);
       assertSectionHeaderVariant(row.variant, `${path}.variant`);
       assertText(row.title, `${path}.title`);

@@ -39,6 +39,10 @@ private final class NativeListDottedUnderlineLabel: UILabel {
     }
   }
 
+  var dottedUnderlineVerticalOffset: CGFloat = 0 {
+    didSet { setNeedsLayout() }
+  }
+
   private let dottedUnderlineLayer = CAShapeLayer()
 
   override init(frame: CGRect) {
@@ -73,9 +77,9 @@ private final class NativeListDottedUnderlineLabel: UILabel {
       x: 0,
       y: 0,
       width: bounds.width,
-      height: bounds.height + 2
+      height: bounds.height + 2 + dottedUnderlineVerticalOffset
     )
-    let y = bounds.height + 1
+    let y = bounds.height + 1 + dottedUnderlineVerticalOffset
     let path = UIBezierPath()
     path.move(to: CGPoint(x: 1, y: y))
     path.addLine(to: CGPoint(x: max(1, textWidth - 1), y: y))
@@ -931,6 +935,7 @@ final class NativeListCell: UICollectionViewCell {
     contentView.clipsToBounds = false
     leadingContainer.alpha = 1
     titleLabel.showsDottedUnderline = false
+    titleLabel.dottedUnderlineVerticalOffset = 0
   }
 
   func setPressed(_ pressed: Bool) {
@@ -1704,11 +1709,13 @@ final class NativeListCell: UICollectionViewCell {
     let isSummary = variant == "summary"
     let isGallery = variant == "gallery"
     let isTable = layout == "table"
+    let isNetworkSelector = item.data.string("presentation") == "networkSelector"
     let isHistory = variant == "history" ||
       item.key.hasPrefix("history-") ||
       (item.sectionKey?.hasPrefix("history-") ?? false)
     let headerWeight: NativeListFontWeight = isSummary
       ? .medium
+      : isNetworkSelector ? .medium
       : isGallery || layout == "sectioned" ? .semibold : .regular
     titleLabel.font = nativeListFont(
       ofSize: isGallery ? 18 : isSummary ? 16 : isTable ? 11 : isHistory ? 12 : 14,
@@ -1720,7 +1727,20 @@ final class NativeListCell: UICollectionViewCell {
       isSummary || isGallery ? "#202020" : "#646464"
     )
     show(titleLabel, item.data.string("title"), lines: 1)
-    if isHistory {
+    if isNetworkSelector {
+      titleLabel.showsDottedUnderline = true
+      titleLabel.dottedUnderlineVerticalOffset = 2
+      titleLabel.dottedUnderlineColor = nativeListColor(
+        theme,
+        "secondaryText",
+        "#646464"
+      )
+      rootLeadingConstraint.constant = 12
+      rootTrailingConstraint.constant = -12
+      rootTopConstraint.constant = 12
+      rootBottomConstraint.constant = -15
+      setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 20)
+    } else if isHistory {
       rootLeadingConstraint.constant = 0
       rootTrailingConstraint.constant = 0
       rootTopConstraint.constant = 0

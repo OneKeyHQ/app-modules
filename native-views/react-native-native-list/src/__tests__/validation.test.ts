@@ -40,7 +40,7 @@ describe('NativeList model validation', () => {
     expect(validateSnapshot(snapshot())).toBeDefined();
   });
 
-  it('accepts only the account-selector identity presentations', () => {
+  it('accepts only the supported identity presentations', () => {
     expect(
       validateSnapshot(
         snapshot([{ ...row('wallet'), presentation: 'walletSidebar' }])
@@ -51,6 +51,11 @@ describe('NativeList model validation', () => {
         snapshot([{ ...row('account'), presentation: 'accountSelector' }])
       ).rows[0]
     ).toMatchObject({ presentation: 'accountSelector' });
+    expect(
+      validateSnapshot(
+        snapshot([{ ...row('network'), presentation: 'networkSelector' }])
+      ).rows[0]
+    ).toMatchObject({ presentation: 'networkSelector' });
     expect(() =>
       validateSnapshot(
         snapshot([
@@ -81,6 +86,29 @@ describe('NativeList model validation', () => {
             ...action,
             presentation: 'unsupported',
           } as unknown as ActionRow,
+        ])
+      )
+    ).toThrow('presentation');
+  });
+
+  it('accepts only the network-selector section-header presentation', () => {
+    const header = {
+      type: 'sectionHeader',
+      key: 'assets',
+      sectionKey: 'assets',
+      presentation: 'networkSelector',
+      title: 'Networks with assets',
+    } as const;
+    expect(validateSnapshot(snapshot([header])).rows[0]).toMatchObject({
+      presentation: 'networkSelector',
+    });
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...header,
+            presentation: 'unsupported',
+          } as unknown as RowModel,
         ])
       )
     ).toThrow('presentation');

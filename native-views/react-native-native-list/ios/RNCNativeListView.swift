@@ -557,6 +557,9 @@ final class NativeListView: UIView {
     if item.type == "identity", item.data.string("presentation") == "walletSidebar" {
       return 68
     }
+    if item.type == "identity", item.data.string("presentation") == "networkSelector" {
+      return 47
+    }
     let base: CGFloat
     switch item.type {
     case "rail": base = 40
@@ -569,11 +572,14 @@ final class NativeListView: UIView {
         : item.data.string("variant") == "performance" ? 178 : 132
     case "sectionHeader":
       let variant = item.data.string("variant")
+      let isNetworkSelector = item.data.string("presentation") == "networkSelector"
       let isHistory = variant == "history" ||
         item.key.hasPrefix("history-") ||
         (item.sectionKey?.hasPrefix("history-") ?? false)
       base = config?.layout == "table"
         ? 28
+        : isNetworkSelector
+          ? 47
         : isHistory
           ? 16
           : variant == "summary"

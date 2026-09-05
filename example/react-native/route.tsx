@@ -26,6 +26,7 @@ import { OneKeyImageTestPage } from './pages/OneKeyImageTestPage';
 import { NativeListTestPage } from './pages/NativeListTestPage';
 import { NativeListBenchmarkPage } from './pages/NativeListBenchmarkPage';
 import { NativeListAccountSelectorPage } from './pages/NativeListAccountSelectorPage';
+import { NativeListNetworkSelectorPage } from './pages/NativeListNetworkSelectorPage';
 import {
   NativeListExamplePage,
   type NativeListExampleKey,
@@ -78,6 +79,7 @@ export type RootStackParamList = {
     | undefined;
   NativeListBenchmark: undefined;
   NativeListAccountSelector: undefined;
+  NativeListNetworkSelector: undefined;
   OtaPipeline: undefined;
   ApkOtaPipeline: undefined;
   ChartWebView: undefined;
@@ -255,6 +257,13 @@ const modules: {
     description:
       'Two independent native lists with a 1,000 × 1,000 lazy data model',
     icon: '👛',
+  },
+  {
+    screen: 'NativeListNetworkSelector',
+    name: 'Native List Network Selector',
+    description:
+      'Production network catalog with native sections, search, and selection',
+    icon: '🌐',
   },
   {
     screen: 'PagerView',
@@ -614,6 +623,11 @@ export function AppNavigator() {
       <Stack.Screen
         name="NativeListAccountSelector"
         component={NativeListAccountSelectorPage}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="NativeListNetworkSelector"
+        component={NativeListNetworkSelectorPage}
         options={{ headerShown: false }}
       />
       <Stack.Screen

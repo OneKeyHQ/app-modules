@@ -136,7 +136,7 @@ export type RowBase = Readonly<{
 export type IdentityRow = RowBase &
   Readonly<{
     type: 'identity';
-    presentation?: 'walletSidebar' | 'accountSelector';
+    presentation?: 'walletSidebar' | 'accountSelector' | 'networkSelector';
     leading: LeadingVisual;
     leadingAction?: Extract<TrailingAccessory, { kind: 'icon' }>;
     title: string;
@@ -249,6 +249,7 @@ export type SectionHeaderRow = RowBase &
   Readonly<{
     type: 'sectionHeader';
     sectionKey: string;
+    presentation?: 'networkSelector';
     indexTitle?: string;
     variant?: 'summary' | 'gallery' | 'history';
     title: string;
