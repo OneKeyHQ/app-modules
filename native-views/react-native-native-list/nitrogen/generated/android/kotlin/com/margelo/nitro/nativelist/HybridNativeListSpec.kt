@@ -118,11 +118,19 @@ abstract class HybridNativeListSpec: HybridView() {
   
   @DoNotStrip
   @Keep
-  abstract fun scrollToKey(key: String, animated: Boolean, alignment: NativeListScrollAlignment): Unit
+  abstract fun scrollToKey(key: String, animated: Boolean, alignment: NativeListScrollAlignment, viewPosition: Double, viewOffset: Double): Unit
   
   @DoNotStrip
   @Keep
-  abstract fun scrollToIndex(index: Double, animated: Boolean, alignment: NativeListScrollAlignment): Unit
+  abstract fun scrollToIndex(index: Double, animated: Boolean, alignment: NativeListScrollAlignment, viewPosition: Double, viewOffset: Double): Unit
+
+  @DoNotStrip
+  @Keep
+  abstract fun scrollToOffset(offset: Double, animated: Boolean): Unit
+
+  @DoNotStrip
+  @Keep
+  abstract fun scrollToEnd(animated: Boolean): Unit
   
   @DoNotStrip
   @Keep

@@ -3,6 +3,14 @@ export type {
   NativeListProps,
   NativeListRef,
   ScrollAlignment,
+  ScrollPositionOptions,
+  ScrollToEndParams,
+  ScrollToIndexFailedInfo,
+  ScrollToIndexParams,
+  ScrollToItemParams,
+  ScrollToKeyParams,
+  ScrollToLocationParams,
+  ScrollToOffsetParams,
 } from './NativeList';
 export type * from './models';
 export {

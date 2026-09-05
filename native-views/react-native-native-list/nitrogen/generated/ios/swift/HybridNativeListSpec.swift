@@ -21,8 +21,10 @@ public protocol HybridNativeListSpec_protocol: HybridObject, HybridView {
   func applySnapshot(snapshotJson: String) throws -> Void
   func applyPatches(patchesJson: String) throws -> Void
   func reconcileSelection(selectedKeysJson: String) throws -> Void
-  func scrollToKey(key: String, animated: Bool, alignment: NativeListScrollAlignment) throws -> Void
-  func scrollToIndex(index: Double, animated: Bool, alignment: NativeListScrollAlignment) throws -> Void
+  func scrollToKey(key: String, animated: Bool, alignment: NativeListScrollAlignment, viewPosition: Double, viewOffset: Double) throws -> Void
+  func scrollToIndex(index: Double, animated: Bool, alignment: NativeListScrollAlignment, viewPosition: Double, viewOffset: Double) throws -> Void
+  func scrollToOffset(offset: Double, animated: Bool) throws -> Void
+  func scrollToEnd(animated: Bool) throws -> Void
   func setRefreshing(refreshing: Bool) throws -> Void
 }
 

@@ -208,14 +208,40 @@ listRef.current?.applyPatches([
 ]);
 
 listRef.current?.scrollToKey('btc', true, 'center');
+listRef.current?.scrollToIndex({
+  index: 24,
+  animated: true,
+  viewPosition: 0.5,
+  viewOffset: 12,
+});
+listRef.current?.scrollToItem({ item: snapshot.rows[24] });
+listRef.current?.scrollToOffset({ offset: 320, animated: false });
+listRef.current?.scrollToEnd({ animated: true });
+listRef.current?.scrollToLocation({ sectionIndex: 2, itemIndex: 4 });
 listRef.current?.setRefreshing(false);
 ```
 
 The ref exposes `applySnapshot`, `applyPatches`, `reconcileSelection`,
-`scrollToKey`, `scrollToIndex`, and `setRefreshing`. Patches are validated as a
-batch, keyed by row key, must preserve the row discriminator, and are applied
-atomically. Prefer a new snapshot for insertions, removals, layout changes, and
-section changes; use patches for frequently changing fields.
+`scrollToKey`, `scrollToIndex`, `scrollToItem`, `scrollToOffset`, `scrollToEnd`,
+`scrollToLocation`, and `setRefreshing`. The legacy
+`scrollToIndex(index, animated, alignment)` and
+`scrollToKey(key, animated, alignment)` signatures remain supported. Object
+parameters follow React Native list semantics: `viewPosition` is from `0`
+(start) through `1` (end), and a positive `viewOffset` leaves space before the
+target row.
+
+Use `initialScrollIndex` or the stable-key extension `initialScrollKey` to set
+the first position. They are mutually exclusive, run once after the first
+snapshot and native layout are ready, and can be combined with
+`initialScrollViewPosition` and `initialScrollViewOffset`. Invalid index and
+location requests call `onScrollToIndexFailed`; native lists do not fail merely
+because a target row has not been mounted yet. `scrollToLocation` counts
+non-summary section headers, then rows carrying that header's `sectionKey`.
+
+Patches are validated as a batch, keyed by row key, must preserve the row
+discriminator, and are applied atomically. Prefer a new snapshot for insertions,
+removals, layout changes, and section changes; use patches for frequently
+changing fields.
 
 Events are `onRowAction`, `onSelectionDelta`, `onReorder`, `onEndReached`,
 `onVisibleRangeChanged`, and `onRefresh`. Visible-range events are coalesced to

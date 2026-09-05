@@ -156,13 +156,21 @@ namespace margelo::nitro::nativelist {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* selectedKeysJson */)>("reconcileSelection");
     method(_javaPart, jni::make_jstring(selectedKeysJson));
   }
-  void JHybridNativeListSpec::scrollToKey(const std::string& key, bool animated, NativeListScrollAlignment alignment) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* key */, jboolean /* animated */, jni::alias_ref<JNativeListScrollAlignment> /* alignment */)>("scrollToKey");
-    method(_javaPart, jni::make_jstring(key), animated, JNativeListScrollAlignment::fromCpp(alignment));
+  void JHybridNativeListSpec::scrollToKey(const std::string& key, bool animated, NativeListScrollAlignment alignment, double viewPosition, double viewOffset) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* key */, jboolean /* animated */, jni::alias_ref<JNativeListScrollAlignment> /* alignment */, double /* viewPosition */, double /* viewOffset */)>("scrollToKey");
+    method(_javaPart, jni::make_jstring(key), animated, JNativeListScrollAlignment::fromCpp(alignment), viewPosition, viewOffset);
   }
-  void JHybridNativeListSpec::scrollToIndex(double index, bool animated, NativeListScrollAlignment alignment) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* index */, jboolean /* animated */, jni::alias_ref<JNativeListScrollAlignment> /* alignment */)>("scrollToIndex");
-    method(_javaPart, index, animated, JNativeListScrollAlignment::fromCpp(alignment));
+  void JHybridNativeListSpec::scrollToIndex(double index, bool animated, NativeListScrollAlignment alignment, double viewPosition, double viewOffset) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* index */, jboolean /* animated */, jni::alias_ref<JNativeListScrollAlignment> /* alignment */, double /* viewPosition */, double /* viewOffset */)>("scrollToIndex");
+    method(_javaPart, index, animated, JNativeListScrollAlignment::fromCpp(alignment), viewPosition, viewOffset);
+  }
+  void JHybridNativeListSpec::scrollToOffset(double offset, bool animated) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* offset */, jboolean /* animated */)>("scrollToOffset");
+    method(_javaPart, offset, animated);
+  }
+  void JHybridNativeListSpec::scrollToEnd(bool animated) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* animated */)>("scrollToEnd");
+    method(_javaPart, animated);
   }
   void JHybridNativeListSpec::setRefreshing(bool refreshing) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* refreshing */)>("setRefreshing");

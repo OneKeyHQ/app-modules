@@ -3,6 +3,13 @@ import UIKit
 import UniformTypeIdentifiers
 
 final class NativeListView: UIView {
+  private enum ScrollRequest {
+    case key(String, Bool, String, Double, Double)
+    case index(Int, Bool, String, Double, Double)
+    case offset(Double, Bool)
+    case end(Bool)
+  }
+
   var onRowAction: ((String) -> Void)?
   var onSelectionDelta: ((String) -> Void)?
   var onReorder: ((String) -> Void)?
@@ -26,6 +33,7 @@ final class NativeListView: UIView {
   private var sectionIndexScrubbing = false
   private var sectionIndexHapticsEnabled = true
   private var lastLayoutDirection: UIUserInterfaceLayoutDirection?
+  private var pendingScrollRequest: ScrollRequest?
   private let sectionIndexFeedback = UISelectionFeedbackGenerator()
 
   private static let sectionIndexGutter: CGFloat = 44
@@ -126,6 +134,7 @@ final class NativeListView: UIView {
     if lastLayoutDirection != direction, let config {
       configureLayout(config)
     }
+    performPendingScrollIfNeeded()
   }
 
   func applySnapshotJson(_ json: String) {
@@ -155,9 +164,12 @@ final class NativeListView: UIView {
     }
     snapshot.reconfigureItems(changedKeys)
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
-      self?.emitVisibleRangeIfNeeded()
-      self?.checkEndReached()
-      self?.syncSectionIndexToVisibleRows()
+      guard let self else { return }
+      self.collectionView.layoutIfNeeded()
+      self.performPendingScrollIfNeeded()
+      self.emitVisibleRangeIfNeeded()
+      self.checkEndReached()
+      self.syncSectionIndexToVisibleRows()
     }
   }
 
@@ -210,20 +222,155 @@ final class NativeListView: UIView {
     refreshVisibleSelection()
   }
 
-  func scrollToKey(_ key: String, animated: Bool, alignment: String) {
-    guard let index = config?.items.firstIndex(where: { $0.key == key }) else { return }
-    scrollToIndex(index, animated: animated, alignment: alignment)
+  func scrollToKey(
+    _ key: String,
+    animated: Bool,
+    alignment: String,
+    viewPosition: Double = 0,
+    viewOffset: Double = 0
+  ) {
+    requestScroll(.key(key, animated, alignment, viewPosition, viewOffset))
   }
 
-  func scrollToIndex(_ index: Int, animated: Bool, alignment: String) {
-    guard let count = config?.items.count, index >= 0, index < count else { return }
-    let position: UICollectionView.ScrollPosition
-    if config?.orientation == "horizontal" {
-      position = alignment == "end" ? .right : alignment == "center" ? .centeredHorizontally : .left
+  func scrollToIndex(
+    _ index: Int,
+    animated: Bool,
+    alignment: String,
+    viewPosition: Double = 0,
+    viewOffset: Double = 0
+  ) {
+    requestScroll(.index(index, animated, alignment, viewPosition, viewOffset))
+  }
+
+  func scrollToOffset(_ offset: Double, animated: Bool) {
+    requestScroll(.offset(offset, animated))
+  }
+
+  func scrollToEnd(animated: Bool) {
+    requestScroll(.end(animated))
+  }
+
+  private func requestScroll(_ request: ScrollRequest) {
+    if performScroll(request) {
+      pendingScrollRequest = nil
     } else {
-      position = alignment == "end" ? .bottom : alignment == "center" ? .centeredVertically : .top
+      pendingScrollRequest = request
     }
-    collectionView.scrollToItem(at: IndexPath(item: index, section: 0), at: position, animated: animated)
+  }
+
+  private func performPendingScrollIfNeeded() {
+    guard let request = pendingScrollRequest, performScroll(request) else { return }
+    pendingScrollRequest = nil
+  }
+
+  private func performScroll(_ request: ScrollRequest) -> Bool {
+    guard let config else { return false }
+    guard dataSource.snapshot().numberOfItems == config.items.count else { return false }
+    let isHorizontal = config.orientation == "horizontal"
+    let viewportLength = isHorizontal
+      ? collectionView.bounds.width
+      : collectionView.bounds.height
+    guard viewportLength > 0 else { return false }
+    collectionView.layoutIfNeeded()
+
+    switch request {
+    case let .key(key, animated, alignment, viewPosition, viewOffset):
+      guard let index = config.items.firstIndex(where: { $0.key == key }) else { return true }
+      return performIndexScroll(
+        index,
+        animated: animated,
+        alignment: alignment,
+        viewPosition: viewPosition,
+        viewOffset: viewOffset
+      )
+    case let .index(index, animated, alignment, viewPosition, viewOffset):
+      guard index >= 0, index < config.items.count else { return true }
+      return performIndexScroll(
+        index,
+        animated: animated,
+        alignment: alignment,
+        viewPosition: viewPosition,
+        viewOffset: viewOffset
+      )
+    case let .offset(offset, animated):
+      let insets = collectionView.adjustedContentInset
+      let startInset = isHorizontal ? insets.left : insets.top
+      setScrollOffset(CGFloat(offset) - startInset, animated: animated)
+      return true
+    case let .end(animated):
+      let insets = collectionView.adjustedContentInset
+      let endInset = isHorizontal ? insets.right : insets.bottom
+      let contentLength = isHorizontal
+        ? collectionView.contentSize.width
+        : collectionView.contentSize.height
+      setScrollOffset(
+        max(0, contentLength - viewportLength + endInset),
+        animated: animated
+      )
+      return true
+    }
+  }
+
+  private func performIndexScroll(
+    _ index: Int,
+    animated: Bool,
+    alignment: String,
+    viewPosition: Double,
+    viewOffset: Double
+  ) -> Bool {
+    let indexPath = IndexPath(item: index, section: 0)
+    guard let attributes = collectionView.collectionViewLayout
+      .layoutAttributesForItem(at: indexPath) else { return false }
+    let isHorizontal = config?.orientation == "horizontal"
+    let insets = collectionView.adjustedContentInset
+    let viewportLength = isHorizontal
+      ? collectionView.bounds.width - insets.left - insets.right
+      : collectionView.bounds.height - insets.top - insets.bottom
+    let itemStart = isHorizontal ? attributes.frame.minX : attributes.frame.minY
+    let itemLength = isHorizontal ? attributes.frame.width : attributes.frame.height
+    let currentOffset = isHorizontal
+      ? collectionView.contentOffset.x
+      : collectionView.contentOffset.y
+    let startInset = isHorizontal ? insets.left : insets.top
+    let visibleStart = currentOffset + startInset
+    let visibleEnd = visibleStart + viewportLength
+    let resolvedPosition: CGFloat
+    if alignment == "nearest" {
+      if itemStart < visibleStart {
+        resolvedPosition = 0
+      } else if itemStart + itemLength > visibleEnd {
+        resolvedPosition = 1
+      } else {
+        return true
+      }
+    } else {
+      resolvedPosition = CGFloat(min(1, max(0, viewPosition)))
+    }
+    let target = itemStart
+      - startInset
+      - resolvedPosition * max(0, viewportLength - itemLength)
+      - CGFloat(viewOffset)
+    setScrollOffset(target, animated: animated)
+    return true
+  }
+
+  private func setScrollOffset(_ requestedOffset: CGFloat, animated: Bool) {
+    let isHorizontal = config?.orientation == "horizontal"
+    let insets = collectionView.adjustedContentInset
+    let viewportLength = isHorizontal ? collectionView.bounds.width : collectionView.bounds.height
+    let contentLength = isHorizontal
+      ? collectionView.contentSize.width
+      : collectionView.contentSize.height
+    let minimum = -(isHorizontal ? insets.left : insets.top)
+    let maximum = max(
+      minimum,
+      contentLength - viewportLength + (isHorizontal ? insets.right : insets.bottom)
+    )
+    let offset = min(maximum, max(minimum, requestedOffset))
+    let point = isHorizontal
+      ? CGPoint(x: offset, y: collectionView.contentOffset.y)
+      : CGPoint(x: collectionView.contentOffset.x, y: offset)
+    collectionView.setContentOffset(point, animated: animated)
   }
 
   func setRefreshing(_ refreshing: Bool) {

@@ -46,17 +46,46 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
     key: String,
     animated: Boolean,
     alignment: NativeListScrollAlignment,
+    viewPosition: Double,
+    viewOffset: Double,
   ) {
-    dispatchToUi { hostView.scrollToKey(key, animated, alignment.stringValue()) }
+    dispatchToUi {
+      hostView.scrollToKey(
+        key,
+        animated,
+        alignment.stringValue(),
+        viewPosition,
+        viewOffset,
+      )
+    }
   }
 
   override fun scrollToIndex(
     index: Double,
     animated: Boolean,
     alignment: NativeListScrollAlignment,
+    viewPosition: Double,
+    viewOffset: Double,
   ) {
     if (!index.isFinite() || index < 0 || index % 1.0 != 0.0 || index > Int.MAX_VALUE) return
-    dispatchToUi { hostView.scrollToIndex(index.toInt(), animated, alignment.stringValue()) }
+    dispatchToUi {
+      hostView.scrollToIndex(
+        index.toInt(),
+        animated,
+        alignment.stringValue(),
+        viewPosition,
+        viewOffset,
+      )
+    }
+  }
+
+  override fun scrollToOffset(offset: Double, animated: Boolean) {
+    if (!offset.isFinite() || offset < 0) return
+    dispatchToUi { hostView.scrollToOffset(offset, animated) }
+  }
+
+  override fun scrollToEnd(animated: Boolean) {
+    dispatchToUi { hostView.scrollToEnd(animated) }
   }
 
   override fun setRefreshing(refreshing: Boolean) {

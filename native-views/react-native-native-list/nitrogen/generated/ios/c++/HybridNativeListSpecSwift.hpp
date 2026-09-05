@@ -129,14 +129,26 @@ namespace margelo::nitro::nativelist {
         std::rethrow_exception(__result.error());
       }
     }
-    inline void scrollToKey(const std::string& key, bool animated, NativeListScrollAlignment alignment) override {
-      auto __result = _swiftPart.scrollToKey(key, std::forward<decltype(animated)>(animated), static_cast<int>(alignment));
+    inline void scrollToKey(const std::string& key, bool animated, NativeListScrollAlignment alignment, double viewPosition, double viewOffset) override {
+      auto __result = _swiftPart.scrollToKey(key, std::forward<decltype(animated)>(animated), static_cast<int>(alignment), std::forward<decltype(viewPosition)>(viewPosition), std::forward<decltype(viewOffset)>(viewOffset));
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }
     }
-    inline void scrollToIndex(double index, bool animated, NativeListScrollAlignment alignment) override {
-      auto __result = _swiftPart.scrollToIndex(std::forward<decltype(index)>(index), std::forward<decltype(animated)>(animated), static_cast<int>(alignment));
+    inline void scrollToIndex(double index, bool animated, NativeListScrollAlignment alignment, double viewPosition, double viewOffset) override {
+      auto __result = _swiftPart.scrollToIndex(std::forward<decltype(index)>(index), std::forward<decltype(animated)>(animated), static_cast<int>(alignment), std::forward<decltype(viewPosition)>(viewPosition), std::forward<decltype(viewOffset)>(viewOffset));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline void scrollToOffset(double offset, bool animated) override {
+      auto __result = _swiftPart.scrollToOffset(std::forward<decltype(offset)>(offset), std::forward<decltype(animated)>(animated));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline void scrollToEnd(bool animated) override {
+      auto __result = _swiftPart.scrollToEnd(std::forward<decltype(animated)>(animated));
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }

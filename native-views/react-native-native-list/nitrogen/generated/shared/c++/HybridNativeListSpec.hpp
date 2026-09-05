@@ -66,8 +66,10 @@ namespace margelo::nitro::nativelist {
       virtual void applySnapshot(const std::string& snapshotJson) = 0;
       virtual void applyPatches(const std::string& patchesJson) = 0;
       virtual void reconcileSelection(const std::string& selectedKeysJson) = 0;
-      virtual void scrollToKey(const std::string& key, bool animated, NativeListScrollAlignment alignment) = 0;
-      virtual void scrollToIndex(double index, bool animated, NativeListScrollAlignment alignment) = 0;
+      virtual void scrollToKey(const std::string& key, bool animated, NativeListScrollAlignment alignment, double viewPosition, double viewOffset) = 0;
+      virtual void scrollToIndex(double index, bool animated, NativeListScrollAlignment alignment, double viewPosition, double viewOffset) = 0;
+      virtual void scrollToOffset(double offset, bool animated) = 0;
+      virtual void scrollToEnd(bool animated) = 0;
       virtual void setRefreshing(bool refreshing) = 0;
 
     protected:

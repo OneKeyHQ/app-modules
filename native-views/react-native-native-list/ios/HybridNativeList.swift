@@ -46,17 +46,27 @@ final class HybridNativeList: HybridNativeListSpec {
   func scrollToKey(
     key: String,
     animated: Bool,
-    alignment: NativeListScrollAlignment
+    alignment: NativeListScrollAlignment,
+    viewPosition: Double,
+    viewOffset: Double
   ) throws {
     runOnMain { [weak self] in
-      self?.hostView.scrollToKey(key, animated: animated, alignment: alignment.stringValue)
+      self?.hostView.scrollToKey(
+        key,
+        animated: animated,
+        alignment: alignment.stringValue,
+        viewPosition: viewPosition,
+        viewOffset: viewOffset
+      )
     }
   }
 
   func scrollToIndex(
     index: Double,
     animated: Bool,
-    alignment: NativeListScrollAlignment
+    alignment: NativeListScrollAlignment,
+    viewPosition: Double,
+    viewOffset: Double
   ) throws {
     guard index.isFinite,
           index >= 0,
@@ -66,9 +76,22 @@ final class HybridNativeList: HybridNativeListSpec {
       self?.hostView.scrollToIndex(
         Int(index),
         animated: animated,
-        alignment: alignment.stringValue
+        alignment: alignment.stringValue,
+        viewPosition: viewPosition,
+        viewOffset: viewOffset
       )
     }
+  }
+
+  func scrollToOffset(offset: Double, animated: Bool) throws {
+    guard offset.isFinite, offset >= 0 else { return }
+    runOnMain { [weak self] in
+      self?.hostView.scrollToOffset(offset, animated: animated)
+    }
+  }
+
+  func scrollToEnd(animated: Bool) throws {
+    runOnMain { [weak self] in self?.hostView.scrollToEnd(animated: animated) }
   }
 
   func setRefreshing(refreshing: Bool) throws {

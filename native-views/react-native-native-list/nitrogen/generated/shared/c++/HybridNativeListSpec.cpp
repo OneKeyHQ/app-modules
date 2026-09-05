@@ -31,6 +31,8 @@ namespace margelo::nitro::nativelist {
       prototype.registerHybridMethod("reconcileSelection", &HybridNativeListSpec::reconcileSelection);
       prototype.registerHybridMethod("scrollToKey", &HybridNativeListSpec::scrollToKey);
       prototype.registerHybridMethod("scrollToIndex", &HybridNativeListSpec::scrollToIndex);
+      prototype.registerHybridMethod("scrollToOffset", &HybridNativeListSpec::scrollToOffset);
+      prototype.registerHybridMethod("scrollToEnd", &HybridNativeListSpec::scrollToEnd);
       prototype.registerHybridMethod("setRefreshing", &HybridNativeListSpec::setRefreshing);
     });
   }

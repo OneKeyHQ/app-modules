@@ -27,13 +27,19 @@ export interface NativeListMethods extends HybridViewMethods {
   scrollToKey(
     key: string,
     animated: boolean,
-    alignment: NativeListScrollAlignment
+    alignment: NativeListScrollAlignment,
+    viewPosition: number,
+    viewOffset: number
   ): void;
   scrollToIndex(
     index: number,
     animated: boolean,
-    alignment: NativeListScrollAlignment
+    alignment: NativeListScrollAlignment,
+    viewPosition: number,
+    viewOffset: number
   ): void;
+  scrollToOffset(offset: number, animated: boolean): void;
+  scrollToEnd(animated: boolean): void;
   setRefreshing(refreshing: boolean): void;
 }
 

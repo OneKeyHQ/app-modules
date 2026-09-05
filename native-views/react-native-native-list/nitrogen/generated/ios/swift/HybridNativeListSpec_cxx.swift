@@ -327,9 +327,9 @@ open class HybridNativeListSpec_cxx {
   }
   
   @inline(__always)
-  public final func scrollToKey(key: std.string, animated: Bool, alignment: Int32) -> bridge.Result_void_ {
+  public final func scrollToKey(key: std.string, animated: Bool, alignment: Int32, viewPosition: Double, viewOffset: Double) -> bridge.Result_void_ {
     do {
-      try self.__implementation.scrollToKey(key: String(key), animated: animated, alignment: margelo.nitro.nativelist.NativeListScrollAlignment(rawValue: alignment)!)
+      try self.__implementation.scrollToKey(key: String(key), animated: animated, alignment: margelo.nitro.nativelist.NativeListScrollAlignment(rawValue: alignment)!, viewPosition: viewPosition, viewOffset: viewOffset)
       return bridge.create_Result_void_()
     } catch (let __error) {
       let __exceptionPtr = __error.toCpp()
@@ -338,9 +338,31 @@ open class HybridNativeListSpec_cxx {
   }
   
   @inline(__always)
-  public final func scrollToIndex(index: Double, animated: Bool, alignment: Int32) -> bridge.Result_void_ {
+  public final func scrollToIndex(index: Double, animated: Bool, alignment: Int32, viewPosition: Double, viewOffset: Double) -> bridge.Result_void_ {
     do {
-      try self.__implementation.scrollToIndex(index: index, animated: animated, alignment: margelo.nitro.nativelist.NativeListScrollAlignment(rawValue: alignment)!)
+      try self.__implementation.scrollToIndex(index: index, animated: animated, alignment: margelo.nitro.nativelist.NativeListScrollAlignment(rawValue: alignment)!, viewPosition: viewPosition, viewOffset: viewOffset)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+
+  @inline(__always)
+  public final func scrollToOffset(offset: Double, animated: Bool) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.scrollToOffset(offset: offset, animated: animated)
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+
+  @inline(__always)
+  public final func scrollToEnd(animated: Bool) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.scrollToEnd(animated: animated)
       return bridge.create_Result_void_()
     } catch (let __error) {
       let __exceptionPtr = __error.toCpp()

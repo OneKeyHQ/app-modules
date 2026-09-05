@@ -14,6 +14,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -36,9 +37,40 @@ import {
   selectionStateFromSnapshot,
 } from './selection';
 import { applyRowPatches, validateSnapshot } from './validation';
+import {
+  calculateAlignedScrollOffset,
+  normalizeIndexScroll,
+  normalizeKeyScroll,
+  normalizePositionScroll,
+  resolveLocationIndex,
+  scrollFailure,
+  validateOffset,
+  type NormalizedPositionScroll,
+} from './scrolling';
 
 export type { NativeListProps, NativeListRef } from './NativeList.types';
-export type { ScrollAlignment } from './NativeList.types';
+export type {
+  ScrollAlignment,
+  ScrollPositionOptions,
+  ScrollToEndParams,
+  ScrollToIndexFailedInfo,
+  ScrollToIndexParams,
+  ScrollToItemParams,
+  ScrollToKeyParams,
+  ScrollToLocationParams,
+  ScrollToOffsetParams,
+} from './NativeList.types';
+
+type WebRowLayout = Readonly<{ offset: number; length: number }>;
+
+type PendingWebScroll =
+  | Readonly<{
+      kind: 'index';
+      index: number;
+      scroll: NormalizedPositionScroll;
+    }>
+  | Readonly<{ kind: 'offset'; offset: number; animated: boolean }>
+  | Readonly<{ kind: 'end'; animated: boolean }>;
 
 const defaultTheme: NativeListTheme = {
   background: '#F7F7F7',
@@ -967,6 +999,11 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       onEndReached,
       onVisibleRangeChanged,
       onRefresh,
+      onScrollToIndexFailed,
+      initialScrollIndex,
+      initialScrollKey,
+      initialScrollViewPosition,
+      initialScrollViewOffset,
       style,
       ...viewProps
     },
@@ -980,45 +1017,240 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     );
     const scrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
     const reachedGeneration = useRef<number | undefined>(undefined);
+    const snapshotRef = useRef(snapshot);
+    snapshotRef.current = snapshot;
+    const rowLayouts = useRef(new Map<string, WebRowLayout>());
+    const viewportLength = useRef(0);
+    const contentLength = useRef(0);
+    const currentOffset = useRef(0);
+    const pendingScroll = useRef<PendingWebScroll | undefined>(undefined);
+    const didApplyInitialScroll = useRef(false);
 
     useEffect(() => {
-      setSnapshot(validateSnapshot(snapshotProp));
+      const next = validateSnapshot(snapshotProp);
+      snapshotRef.current = next;
+      setSnapshot(next);
       setSelectedKeys(selectionStateFromSnapshot(snapshotProp).selectedKeys);
       reachedGeneration.current = undefined;
     }, [snapshotProp]);
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        applySnapshot(nextSnapshot) {
-          setSnapshot(validateSnapshot(nextSnapshot));
-          setSelectedKeys(
-            selectionStateFromSnapshot(nextSnapshot).selectedKeys
+    const horizontal = snapshot.layout.orientation === 'horizontal';
+
+    const averageItemLength = () => {
+      const layouts = Array.from(rowLayouts.current.values());
+      return layouts.length
+        ? layouts.reduce((sum, layout) => sum + layout.length, 0) /
+            layouts.length
+        : 0;
+    };
+
+    const emitIndexFailure = (
+      index: number,
+      reason: Parameters<typeof scrollFailure>[2]
+    ) => {
+      onScrollToIndexFailed?.(
+        scrollFailure(
+          snapshotRef.current.rows,
+          index,
+          reason,
+          averageItemLength()
+        )
+      );
+    };
+
+    const scrollToAbsoluteOffset = (offset: number, animated: boolean) => {
+      const resolvedOffset = Math.min(
+        Math.max(0, offset),
+        Math.max(0, contentLength.current - viewportLength.current)
+      );
+      currentOffset.current = resolvedOffset;
+      scrollRef.current?.scrollTo(
+        horizontal
+          ? { x: resolvedOffset, y: 0, animated }
+          : { x: 0, y: resolvedOffset, animated }
+      );
+    };
+
+    const performIndexScroll = (
+      index: number,
+      scroll: NormalizedPositionScroll
+    ) => {
+      const row = snapshotRef.current.rows[index];
+      if (!row) {
+        emitIndexFailure(index, 'index-out-of-range');
+        return;
+      }
+      const layout = rowLayouts.current.get(row.key);
+      if (
+        !layout ||
+        viewportLength.current <= 0 ||
+        contentLength.current <= 0
+      ) {
+        pendingScroll.current = { kind: 'index', index, scroll };
+        return;
+      }
+      pendingScroll.current = undefined;
+      scrollToAbsoluteOffset(
+        calculateAlignedScrollOffset({
+          itemOffset: layout.offset,
+          itemLength: layout.length,
+          viewportLength: viewportLength.current,
+          contentLength: contentLength.current,
+          currentOffset: currentOffset.current,
+          alignment: scroll.alignment,
+          viewPosition: scroll.viewPosition,
+          viewOffset: scroll.viewOffset,
+        }),
+        scroll.animated
+      );
+    };
+
+    const performPendingScroll = () => {
+      const pending = pendingScroll.current;
+      if (!pending) return;
+      if (pending.kind === 'index') {
+        performIndexScroll(pending.index, pending.scroll);
+      } else if (pending.kind === 'offset') {
+        if (viewportLength.current <= 0 || contentLength.current <= 0) return;
+        pendingScroll.current = undefined;
+        scrollToAbsoluteOffset(pending.offset, pending.animated);
+      } else {
+        if (viewportLength.current <= 0 || contentLength.current <= 0) return;
+        pendingScroll.current = undefined;
+        scrollToAbsoluteOffset(
+          contentLength.current - viewportLength.current,
+          pending.animated
+        );
+      }
+    };
+
+    const applyInitialScroll = () => {
+      if (
+        didApplyInitialScroll.current ||
+        viewportLength.current <= 0 ||
+        contentLength.current <= 0
+      )
+        return;
+      didApplyInitialScroll.current = true;
+      if (initialScrollIndex !== undefined) {
+        const { index, scroll } = normalizeIndexScroll({
+          index: initialScrollIndex,
+          animated: false,
+          viewPosition: initialScrollViewPosition,
+          viewOffset: initialScrollViewOffset,
+        });
+        performIndexScroll(index, scroll);
+      } else if (initialScrollKey !== undefined) {
+        const index = snapshotRef.current.rows.findIndex(
+          (row) => row.key === initialScrollKey
+        );
+        if (index >= 0) {
+          performIndexScroll(
+            index,
+            normalizePositionScroll(
+              {
+                animated: false,
+                viewPosition: initialScrollViewPosition,
+                viewOffset: initialScrollViewOffset,
+              },
+              'start'
+            )
           );
-        },
-        applyPatches(patches) {
-          setSnapshot((current) => applyRowPatches(current, patches));
-        },
-        reconcileSelection(keys) {
-          setSelectedKeys(new Set(keys));
-        },
-        scrollToKey(key, animated = true) {
-          const index = snapshot.rows.findIndex((row) => row.key === key);
-          if (index >= 0)
-            scrollRef.current?.scrollTo({ y: index * 64, animated });
-        },
-        scrollToIndex(index, animated = true) {
-          scrollRef.current?.scrollTo({ y: Math.max(0, index) * 64, animated });
-        },
-        setRefreshing(refreshing) {
-          setSnapshot((current) => ({
+        }
+      }
+    };
+
+    useImperativeHandle(ref, () => ({
+      applySnapshot(nextSnapshot) {
+        const next = validateSnapshot(nextSnapshot);
+        snapshotRef.current = next;
+        setSnapshot(next);
+        setSelectedKeys(selectionStateFromSnapshot(nextSnapshot).selectedKeys);
+      },
+      applyPatches(patches) {
+        setSnapshot((current) => {
+          const next = applyRowPatches(current, patches);
+          snapshotRef.current = next;
+          return next;
+        });
+      },
+      reconcileSelection(keys) {
+        setSelectedKeys(new Set(keys));
+      },
+      scrollToKey(paramsOrKey, animated, alignment) {
+        const { key, scroll } = normalizeKeyScroll(
+          paramsOrKey,
+          animated,
+          alignment
+        );
+        const index = snapshotRef.current.rows.findIndex(
+          (row) => row.key === key
+        );
+        if (index >= 0) performIndexScroll(index, scroll);
+      },
+      scrollToIndex(paramsOrIndex, animated, alignment) {
+        const { index, scroll } = normalizeIndexScroll(
+          paramsOrIndex,
+          animated,
+          alignment
+        );
+        performIndexScroll(index, scroll);
+      },
+      scrollToItem(params) {
+        const index = snapshotRef.current.rows.findIndex(
+          (row) => row.key === params.item.key
+        );
+        if (index < 0) {
+          emitIndexFailure(-1, 'item-not-found');
+          return;
+        }
+        performIndexScroll(index, normalizePositionScroll(params, 'start'));
+      },
+      scrollToOffset({ offset, animated = true }) {
+        validateOffset(offset);
+        if (viewportLength.current <= 0 || contentLength.current <= 0) {
+          pendingScroll.current = { kind: 'offset', offset, animated };
+          return;
+        }
+        scrollToAbsoluteOffset(offset, animated);
+      },
+      scrollToEnd({ animated = true } = {}) {
+        if (viewportLength.current <= 0 || contentLength.current <= 0) {
+          pendingScroll.current = { kind: 'end', animated };
+          return;
+        }
+        scrollToAbsoluteOffset(
+          contentLength.current - viewportLength.current,
+          animated
+        );
+      },
+      scrollToLocation(params) {
+        const index = resolveLocationIndex(snapshotRef.current.rows, params);
+        if (index === undefined) {
+          const sectionCount = snapshotRef.current.rows.filter(
+            (row) => row.type === 'sectionHeader' && row.variant !== 'summary'
+          ).length;
+          emitIndexFailure(
+            params.itemIndex,
+            params.sectionIndex >= sectionCount
+              ? 'section-out-of-range'
+              : 'item-out-of-range'
+          );
+          return;
+        }
+        performIndexScroll(index, normalizePositionScroll(params, 'start'));
+      },
+      setRefreshing(refreshing) {
+        setSnapshot((current) => {
+          const next = {
             ...current,
             capabilities: { ...current.capabilities, refreshing },
-          }));
-        },
-      }),
-      [snapshot.rows]
-    );
+          };
+          snapshotRef.current = next;
+          return next;
+        });
+      },
+    }));
 
     const activateSelection = (row: RowModel) => {
       if (!snapshot.selection?.rowPressToggles || !isSelectableRow(row)) {
@@ -1070,18 +1302,21 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     };
 
     const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } =
+        event.nativeEvent;
+      currentOffset.current = horizontal ? contentOffset.x : contentOffset.y;
       if (
         !snapshot.capabilities?.loadMore ||
         reachedGeneration.current === snapshot.generation
       )
         return;
-      const { contentOffset, contentSize, layoutMeasurement } =
-        event.nativeEvent;
       const threshold = snapshot.capabilities.endReachedThreshold ?? 0.2;
-      if (
-        contentOffset.y + layoutMeasurement.height >=
-        contentSize.height - layoutMeasurement.height * threshold
-      ) {
+      const offset = horizontal ? contentOffset.x : contentOffset.y;
+      const size = horizontal ? contentSize.width : contentSize.height;
+      const viewport = horizontal
+        ? layoutMeasurement.width
+        : layoutMeasurement.height;
+      if (offset + viewport >= size - viewport * threshold) {
         reachedGeneration.current = snapshot.generation;
         onEndReached?.({
           generation: snapshot.generation,
@@ -1096,7 +1331,6 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         : snapshot.emptyState
         ? [snapshot.emptyState]
         : [];
-    const horizontal = snapshot.layout.orientation === 'horizontal';
     const theme = snapshot.theme ?? defaultTheme;
     return (
       <View
@@ -1106,6 +1340,13 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         <ScrollView
           ref={scrollRef}
           horizontal={horizontal}
+          onLayout={(event: LayoutChangeEvent) => {
+            viewportLength.current = horizontal
+              ? event.nativeEvent.layout.width
+              : event.nativeEvent.layout.height;
+            applyInitialScroll();
+            performPendingScroll();
+          }}
           onScroll={handleScroll}
           scrollEventThrottle={32}
           refreshControl={
@@ -1138,7 +1379,10 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
               gap: snapshot.layout.itemSpacing ?? 0,
             },
           ]}
-          onContentSizeChange={() => {
+          onContentSizeChange={(width, height) => {
+            contentLength.current = horizontal ? width : height;
+            applyInitialScroll();
+            performPendingScroll();
             const first = content[0];
             const last = content.at(-1);
             onVisibleRangeChanged?.({
@@ -1152,6 +1396,15 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           {content.map((row, itemIndex) => (
             <View
               key={row.key}
+              onLayout={(event: LayoutChangeEvent) => {
+                const layout = event.nativeEvent.layout;
+                rowLayouts.current.set(row.key, {
+                  offset: horizontal ? layout.x : layout.y,
+                  length: horizontal ? layout.width : layout.height,
+                });
+                applyInitialScroll();
+                performPendingScroll();
+              }}
               style={
                 snapshot.layout.kind === 'grid'
                   ? { width: `${100 / (snapshot.layout.gridColumns ?? 2)}%` }
