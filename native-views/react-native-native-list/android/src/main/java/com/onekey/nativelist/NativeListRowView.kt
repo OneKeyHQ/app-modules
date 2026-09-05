@@ -11,8 +11,10 @@ import android.graphics.drawable.GradientDrawable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.TextUtils
+import android.text.style.AbsoluteSizeSpan
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -663,6 +665,7 @@ internal class NativeListRowView(
     trailingViews.forEach {
       it.visibility = GONE
       it.gravity = Gravity.END
+      it.maxLines = 1
       it.layoutParams = wrap()
       it.background = null
       it.setPadding(0, 0, 0, 0)
@@ -842,6 +845,9 @@ internal class NativeListRowView(
       trailingColumn.orientation = HORIZONTAL
       trailingColumn.gravity = Gravity.END or Gravity.CENTER_VERTICAL
       checkbox.layoutParams = LayoutParams(dp(20), dp(20)).apply { marginStart = dp(12) }
+    } else if (accessories.isValuePairMenu()) {
+      trailingColumn.orientation = HORIZONTAL
+      trailingColumn.gravity = Gravity.END or Gravity.CENTER_VERTICAL
     } else if (accessories.isBookmarkEditActions()) {
       trailingColumn.orientation = HORIZONTAL
       trailingColumn.gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -1887,22 +1893,7 @@ internal class NativeListRowView(
       val accessory = accessories.getJSONObject(index)
       when (accessory.optString("kind")) {
         "value" -> showTrailing(textIndex++, accessory.optString("text"), !accessory.optBoolean("secondary", false))
-        "valuePair" -> {
-          showTrailing(
-            textIndex++,
-            accessory.optString("primary"),
-            true,
-            textColor = accessoryTextColor(accessory.optString("primaryTone"), "primary", theme),
-          )
-          if (textIndex < trailingViews.size) {
-            showTrailing(
-              textIndex++,
-              accessory.optString("secondary"),
-              false,
-              textColor = accessoryTextColor(accessory.optString("secondaryTone"), "secondary", theme),
-            )
-          }
-        }
+        "valuePair" -> showTrailingValuePair(textIndex++, accessory, theme)
         "checkbox" -> bindCheckbox(item, accessory, checkboxState)
         "radio" -> showTrailing(
           textIndex++,
@@ -1924,7 +1915,7 @@ internal class NativeListRowView(
             if (optString("actionKey").isEmpty()) put("actionKey", "press")
           },
         )
-        "menu" -> showTrailing(textIndex++, "•••", false, accessory.optString("actionKey"))
+        "menu" -> showTrailingMenu(textIndex++, accessory.optString("actionKey"))
         "drag" -> showTrailingIcon(
           textIndex++,
           item,
@@ -2043,6 +2034,7 @@ internal class NativeListRowView(
   ) {
     if (index !in trailingViews.indices || value.isEmpty()) return
     val view = trailingViews[index]
+    view.maxLines = 1
     view.text = value
     view.textSize = sp(if (primary) 16f else 14f)
     view.typeface = if (primary) NativeListFonts.medium(context) else NativeListFonts.regular(context)
@@ -2056,6 +2048,68 @@ internal class NativeListRowView(
         (tag as? NativeListItem)
           ?.takeUnless { item -> item.json.optBoolean("disabled", false) }
           ?.let { item -> onAction?.invoke(item, actionKey, null) }
+      }
+    }
+  }
+
+  private fun showTrailingValuePair(index: Int, accessory: JSONObject, theme: JSONObject?) {
+    if (index !in trailingViews.indices) return
+    val primary = accessory.optString("primary")
+    val secondary = accessory.optString("secondary")
+    if (primary.isEmpty() && secondary.isEmpty()) return
+    val value = SpannableStringBuilder()
+    val primaryStart = value.length
+    value.append(primary)
+    value.setSpan(
+      ForegroundColorSpan(accessoryTextColor(accessory.optString("primaryTone"), "primary", theme)),
+      primaryStart,
+      value.length,
+      Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+    )
+    value.setSpan(
+      AbsoluteSizeSpan(
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp(16f), resources.displayMetrics).roundToInt(),
+      ),
+      primaryStart,
+      value.length,
+      Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+    )
+    if (primary.isNotEmpty() && secondary.isNotEmpty()) value.append('\n')
+    val secondaryStart = value.length
+    value.append(secondary)
+    value.setSpan(
+      ForegroundColorSpan(accessoryTextColor(accessory.optString("secondaryTone"), "secondary", theme)),
+      secondaryStart,
+      value.length,
+      Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+    )
+    value.setSpan(
+      AbsoluteSizeSpan(
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp(14f), resources.displayMetrics).roundToInt(),
+      ),
+      secondaryStart,
+      value.length,
+      Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+    )
+    val view = trailingViews[index]
+    view.text = value
+    view.maxLines = 2
+    view.gravity = Gravity.END
+    view.includeFontPadding = false
+    view.typeface = NativeListFonts.regular(context)
+    view.fontFeatureSettings = "tnum"
+    TextViewCompat.setLineHeight(view, dp(20))
+    view.visibility = VISIBLE
+  }
+
+  private fun showTrailingMenu(index: Int, actionKey: String) {
+    showTrailing(index, "⋮", true, actionKey)
+    if (index !in trailingViews.indices) return
+    trailingViews[index].apply {
+      gravity = Gravity.CENTER
+      textSize = sp(20f)
+      layoutParams = LayoutParams(dp(24), dp(24)).apply {
+        if (trailingColumn.orientation == HORIZONTAL && index > 0) marginStart = dp(8)
       }
     }
   }
@@ -2331,6 +2385,11 @@ internal class NativeListRowView(
       optJSONObject(0)?.optString("name") == "PencilOutline" &&
       optJSONObject(1)?.optString("kind") == "icon" &&
       optJSONObject(1)?.optString("name") == "DragOutline"
+
+  private fun JSONArray?.isValuePairMenu(): Boolean =
+    this != null && length() == 2 &&
+      optJSONObject(0)?.optString("kind") == "valuePair" &&
+      optJSONObject(1)?.optString("kind") == "menu"
 
   private fun bindImage(
     source: JSONObject,

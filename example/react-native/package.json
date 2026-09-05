@@ -5,9 +5,11 @@
   "scripts": {
     "android": "react-native run-android",
     "background": "react-native start --port 8082",
+    "build:web": "rspack build --config web/rspack.config.js",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
+    "start:web": "rspack serve --config web/rspack.config.js",
     "test": "jest"
   },
   "dependencies": {
@@ -53,10 +55,12 @@
     "@react-navigation/native-stack": "^7.14.4",
     "fast-base64-decode": "*",
     "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-native": "patch:react-native@npm%3A0.86.2#~/.yarn/patches/react-native-npm-0.86.2-c9d546616f.patch",
     "react-native-mmkv": "4.3.2",
     "react-native-safe-area-context": "^5.5.2",
-    "react-native-screens": "^4.24.0"
+    "react-native-screens": "^4.24.0",
+    "react-native-web": "0.21.2"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
@@ -70,6 +74,9 @@
     "@react-native/jest-preset": "0.86.2",
     "@react-native/metro-config": "0.86.2",
     "@react-native/typescript-config": "0.86.2",
+    "@rspack/cli": "2.1.2",
+    "@rspack/core": "2.1.2",
+    "@rspack/dev-server": "2.1.0",
     "@types/jest": "^29.5.13",
     "@types/react": "^19.2.0",
     "@types/react-test-renderer": "^19.1.0",

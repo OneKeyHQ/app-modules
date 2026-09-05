@@ -697,6 +697,10 @@ describe('NativeList model validation', () => {
           secondary: '+4.32%',
           secondaryTone: 'positive',
         },
+        {
+          kind: 'menu',
+          actionKey: 'token.menu',
+        },
       ],
     };
     const media: RowModel = {
@@ -725,6 +729,10 @@ describe('NativeList model validation', () => {
       backgroundColor: '#FFFFFF',
     });
     expect(parsed.rows[0].trailing[0].secondaryTone).toBe('positive');
+    expect(parsed.rows[0].trailing[1]).toEqual({
+      kind: 'menu',
+      actionKey: 'token.menu',
+    });
     expect(parsed.rows[1].networkImage.uri).toBe(
       'https://example.com/solana.png'
     );

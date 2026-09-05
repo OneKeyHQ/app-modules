@@ -456,6 +456,18 @@ export function visibleWebLayoutItems(
   return visible;
 }
 
+export function webLayoutItemsForMount(
+  layout: WebListLayout,
+  offset: number,
+  viewportLength: number,
+  virtualizationEnabled: boolean,
+  overscan = 0
+): readonly WebLayoutItem[] {
+  return virtualizationEnabled
+    ? visibleWebLayoutItems(layout, offset, viewportLength, overscan)
+    : layout.items;
+}
+
 function rowWithoutSelectionState(row: RowModel): unknown {
   const copy = { ...row } as Record<string, unknown>;
   delete copy.selected;
@@ -498,10 +510,11 @@ const WEB_LIST_CSS = `
 .ok-native-list-item[data-group-position="single"]>.ok-native-list-row{border-radius:12px}
 .ok-native-list-standard{padding:8px 12px}.ok-native-list-network-row{padding:0 12px}.ok-native-list-wallet-row{padding:6px 8px;flex-direction:column;justify-content:center;gap:4px}.ok-native-list-account-row{padding:4px 12px}
 .ok-native-list-flex{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-title{font-size:15px;line-height:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-secondary{font-size:13px;line-height:18px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-tertiary{color:var(--nl-secondary)}.ok-native-list-info{color:var(--nl-info)}
+.ok-native-list-identity-row .ok-native-list-title,.ok-native-list-identity-row .ok-native-list-amounts>span:first-child{font-size:16px;line-height:20px}.ok-native-list-identity-row .ok-native-list-secondary{font-size:14px;line-height:20px}
 .ok-native-list-value{font-size:14px;line-height:20px;font-weight:500;white-space:nowrap}.ok-native-list-time{font-size:11px;line-height:16px;color:var(--nl-secondary);align-self:flex-start}.ok-native-list-amounts{display:flex;flex-direction:column;align-items:flex-end;min-width:0}.ok-native-list-actions{display:flex;gap:16px;margin-top:6px}
 .ok-native-list-action-button{appearance:none;border:0;background:transparent;padding:2px;color:var(--nl-accent);font:600 12px/16px inherit;cursor:pointer}.ok-native-list-action-button[data-tone="danger"]{color:var(--nl-negative)}.ok-native-list-action-button:disabled{opacity:.5;cursor:default}
-.ok-native-list-visual{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:20px;overflow:visible;background:var(--nl-strong)}.ok-native-list-visual>img,.ok-native-list-visual-main{display:block;width:40px;height:40px;border-radius:inherit;object-fit:cover}.ok-native-list-visual-fallback{display:flex;width:100%;height:100%;align-items:center;justify-content:center;border-radius:inherit;color:var(--nl-primary);font-size:15px;font-weight:600;overflow:hidden}.ok-native-list-visual-corner{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;padding:2px;border-radius:50%;background:var(--nl-row);object-fit:cover}.ok-native-list-stacked{display:flex;align-items:center;width:48px;flex-basis:48px}.ok-native-list-stacked img{width:28px;height:28px;border:2px solid var(--nl-row);border-radius:50%;object-fit:cover;margin-left:-10px}.ok-native-list-stacked img:first-child{margin-left:0}
-.ok-native-list-accessories{display:flex;align-items:center;gap:10px;min-width:0}.ok-native-list-accessory{font-size:14px;color:var(--nl-primary);white-space:nowrap}.ok-native-list-accessory-secondary{color:var(--nl-secondary)}.ok-native-list-icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border:0;background:transparent;color:var(--nl-icon);font:500 20px/1 inherit;cursor:pointer}.ok-native-list-checkbox{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:20px;height:20px;border:2px solid color-mix(in srgb,var(--nl-primary) 19%,transparent);border-radius:5px;background:var(--nl-row);cursor:pointer}.ok-native-list-checkbox[data-state="checked"],.ok-native-list-checkbox[data-state="indeterminate"]{border-color:transparent;background:var(--nl-primary)}.ok-native-list-checkbox[data-state="checked"]::after{content:"";width:6px;height:10px;margin-top:-2px;border-right:2px solid var(--nl-row);border-bottom:2px solid var(--nl-row);transform:rotate(45deg)}.ok-native-list-checkbox[data-state="indeterminate"]::after{content:"";width:8px;height:2px;border-radius:1px;background:var(--nl-row)}.ok-native-list-spinner{width:16px;height:16px;border:2px solid var(--nl-separator);border-top-color:var(--nl-primary);border-radius:50%;animation:ok-native-list-spin .8s linear infinite}@keyframes ok-native-list-spin{to{transform:rotate(360deg)}}
+.ok-native-list-visual{position:relative;flex:0 0 40px;width:40px;height:40px;border-radius:20px;overflow:visible;background:var(--nl-strong)}.ok-native-list-visual>img,.ok-native-list-visual-main{display:block;width:40px;height:40px;border-radius:inherit;object-fit:cover}.ok-native-list-visual-fallback{display:flex;width:100%;height:100%;align-items:center;justify-content:center;border-radius:inherit;color:var(--nl-primary);font-size:15px;font-weight:600;overflow:hidden}.ok-native-list-visual>.ok-native-list-visual-corner{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;padding:2px;border-radius:50%;background:var(--nl-row);object-fit:cover}.ok-native-list-stacked{display:flex;align-items:center;width:48px;flex-basis:48px}.ok-native-list-stacked img{width:28px;height:28px;border:2px solid var(--nl-row);border-radius:50%;object-fit:cover;margin-left:-10px}.ok-native-list-stacked img:first-child{margin-left:0}
+.ok-native-list-accessories{display:flex;align-items:center;gap:10px;min-width:0}.ok-native-list-accessory{font-size:14px;color:var(--nl-primary);white-space:nowrap}.ok-native-list-accessory-secondary{color:var(--nl-secondary)}.ok-native-list-icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border:0;background:transparent;color:var(--nl-icon);font-size:20px;line-height:1;font-weight:500;font-family:inherit;cursor:pointer}.ok-native-list-checkbox{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:20px;height:20px;border:2px solid color-mix(in srgb,var(--nl-primary) 19%,transparent);border-radius:5px;background:var(--nl-row);cursor:pointer}.ok-native-list-checkbox[data-state="checked"],.ok-native-list-checkbox[data-state="indeterminate"]{border-color:transparent;background:var(--nl-primary)}.ok-native-list-checkbox[data-state="checked"]::after{content:"";width:6px;height:10px;margin-top:-2px;border-right:2px solid var(--nl-row);border-bottom:2px solid var(--nl-row);transform:rotate(45deg)}.ok-native-list-checkbox[data-state="indeterminate"]::after{content:"";width:8px;height:2px;border-radius:1px;background:var(--nl-row)}.ok-native-list-spinner{width:16px;height:16px;border:2px solid var(--nl-separator);border-top-color:var(--nl-primary);border-radius:50%;animation:ok-native-list-spin .8s linear infinite}@keyframes ok-native-list-spin{to{transform:rotate(360deg)}}
 .ok-native-list-badge{display:inline-flex;align-items:center;max-width:100%;height:18px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--nl-accent) 12%,transparent);color:var(--nl-accent);font-size:11px;line-height:18px;white-space:nowrap}.ok-native-list-badge[data-tone="danger"]{background:var(--nl-critical);color:var(--nl-negative)}.ok-native-list-badges{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
 .ok-native-list-section{padding:0 8px;background:var(--nl-bg);gap:8px}.ok-native-list-section[data-variant="summary"]{padding:0 20px}.ok-native-list-section[data-variant="gallery"]{padding:0 12px}.ok-native-list-section[data-variant="history"]{padding:0 8px}.ok-native-list-section-title{font-size:13px;line-height:18px;font-weight:700;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-section[data-variant="summary"] .ok-native-list-section-title{font-size:16px;font-weight:500;color:var(--nl-primary)}.ok-native-list-section[data-variant="gallery"] .ok-native-list-section-title{font-size:16px;color:var(--nl-primary)}.ok-native-list-section[data-variant="history"] .ok-native-list-section-title{font-size:12px;line-height:16px}.ok-native-list-section-value{margin-left:auto}
 .ok-native-list-action-row{justify-content:space-between;padding:0 16px}.ok-native-list-action-title{font-size:15px;font-weight:600;color:var(--nl-accent)}.ok-native-list-action-title[data-tone="danger"]{color:var(--nl-negative)}
@@ -875,7 +888,7 @@ function createAccessory(
       element.textContent = '›';
       break;
     case 'menu':
-      element.textContent = '•••';
+      element.textContent = '⋮';
       break;
     case 'drag':
       element.textContent = '≡';
@@ -1423,6 +1436,9 @@ function createIdentityActivityOrMessageRow(
     [
       'ok-native-list-row',
       'ok-native-list-standard',
+      row.type === 'identity' && !presentation
+        ? 'ok-native-list-identity-row'
+        : '',
       presentation === 'networkSelector' ? 'ok-native-list-network-row' : '',
       presentation === 'walletSidebar' ? 'ok-native-list-wallet-row' : '',
       presentation === 'accountSelector' ? 'ok-native-list-account-row' : '',
@@ -1597,16 +1613,19 @@ export class NativeListWebEngine {
   private dragFromIndex: number | undefined;
   private pullStartY: number | undefined;
   private pullDistance = 0;
+  private virtualizationEnabled: boolean;
   private destroyed = false;
 
   constructor(
     host: HTMLElement,
     snapshot: NativeListSnapshot,
-    callbacks: NativeListWebCallbacks
+    callbacks: NativeListWebCallbacks,
+    virtualizationEnabled = true
   ) {
     this.document = host.ownerDocument;
     this.snapshot = validateSnapshot(snapshot);
     this.callbacks = callbacks;
+    this.virtualizationEnabled = virtualizationEnabled;
     this.previousHostPosition = host.style.position;
     if (!host.style.position) host.style.position = 'relative';
 
@@ -1707,6 +1726,12 @@ export class NativeListWebEngine {
 
   updateCallbacks(callbacks: NativeListWebCallbacks) {
     this.callbacks = callbacks;
+  }
+
+  setVirtualizationEnabled(enabled: boolean) {
+    if (this.virtualizationEnabled === enabled) return;
+    this.virtualizationEnabled = enabled;
+    this.renderWindow();
   }
 
   applySnapshot(snapshot: NativeListSnapshot) {
@@ -1917,10 +1942,11 @@ export class NativeListWebEngine {
 
   private renderWindow() {
     const viewportLength = this.viewportLength();
-    const visible = visibleWebLayoutItems(
+    const visible = webLayoutItemsForMount(
       this.layout,
       this.currentOffset(),
       viewportLength,
+      this.virtualizationEnabled,
       viewportLength * OVERSCAN_VIEWPORTS
     );
     const desired = new Set(visible.map((item) => item.index));
@@ -2406,7 +2432,8 @@ export class NativeListWebEngine {
     if (this.frameHandle !== undefined || this.destroyed) return;
     this.frameHandle = this.requestFrame(() => {
       this.frameHandle = undefined;
-      this.renderWindow();
+      if (this.virtualizationEnabled) this.renderWindow();
+      else this.updateVisibleState();
     });
   }
 

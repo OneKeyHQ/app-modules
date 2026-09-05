@@ -51,6 +51,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
   function NativeList(
     {
       snapshot,
+      webVirtualizationEnabled: _webVirtualizationEnabled,
       onRowAction,
       onSelectionDelta,
       onReorder,

@@ -1,0 +1,59 @@
+@font-face {
+  font-family: 'Roobert';
+  src: url('../../../native-views/react-native-native-list/common/fonts/Roobert-Regular.ttf')
+    format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roobert-Regular';
+  src: url('../../../native-views/react-native-native-list/common/fonts/Roobert-Regular.ttf')
+    format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roobert-Medium';
+  src: url('../../../native-views/react-native-native-list/common/fonts/Roobert-Medium.ttf')
+    format('truetype');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roobert-SemiBold';
+  src: url('../../../native-views/react-native-native-list/common/fonts/Roobert-SemiBold.ttf')
+    format('truetype');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #080808;
+}
+
+#root {
+  display: flex;
+}
+
+body,
+button,
+input {
+  font-family: 'Roobert', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}

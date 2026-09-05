@@ -103,6 +103,8 @@ export type NativeListRef = Readonly<{
 export type NativeListProps = Omit<ViewProps, 'children'> &
   Readonly<{
     snapshot: NativeListSnapshot;
+    /** Web only. Defaults to true and is ignored by the native host. */
+    webVirtualizationEnabled?: boolean;
     onRowAction?: (event: RowActionEvent) => void;
     onSelectionDelta?: (event: SelectionDeltaEvent) => void;
     onReorder?: (event: ReorderEvent) => void;

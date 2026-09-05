@@ -898,6 +898,8 @@ final class NativeListCell: UICollectionViewCell {
       button.setImage(nil, for: .disabled)
       button.isEnabled = true
       button.alpha = 1
+      button.titleLabel?.numberOfLines = 1
+      button.contentHorizontalAlignment = .center
       button.backgroundColor = .clear
       button.layer.cornerRadius = 0
       button.contentEdgeInsets = .zero
@@ -1093,6 +1095,12 @@ final class NativeListCell: UICollectionViewCell {
       trailingStack.axis = .horizontal
       trailingStack.alignment = .center
       trailingStack.spacing = 12
+    } else if accessories.count == 2,
+              accessories[0].string("kind") == "valuePair",
+              accessories[1].string("kind") == "menu" {
+      trailingStack.axis = .horizontal
+      trailingStack.alignment = .center
+      trailingStack.spacing = 8
     } else if accessories.count == 2,
               accessories[0].string("kind") == "icon",
               accessories[0].string("name") == "PencilOutline",
@@ -2150,20 +2158,8 @@ final class NativeListCell: UICollectionViewCell {
         showAccessory(textIndex, accessory.string("text"))
         textIndex += 1
       case "valuePair":
-        showAccessory(
-          textIndex,
-          accessory.string("primary"),
-          color: accessoryTextColor(accessory.string("primaryTone"), defaultTone: "primary", theme: theme)
-        )
+        showValuePairAccessory(textIndex, accessory, theme: theme)
         textIndex += 1
-        if textIndex < 2 {
-          showAccessory(
-            textIndex,
-            accessory.string("secondary"),
-            color: accessoryTextColor(accessory.string("secondaryTone"), defaultTone: "secondary", theme: theme)
-          )
-          textIndex += 1
-        }
       case "checkbox": bindCheckbox(item, accessory, checkboxState)
       case "radio": showAccessory(textIndex, accessory.bool("checked") ? "●" : "○", action: accessoryAction(accessory)); textIndex += 1
       case "switch": showAccessory(textIndex, accessory.bool("value") ? "ON" : "OFF", action: accessoryAction(accessory)); textIndex += 1
@@ -2176,7 +2172,7 @@ final class NativeListCell: UICollectionViewCell {
         if icon.string("actionKey").isEmpty { icon["actionKey"] = "press" }
         showAccessoryIcon(textIndex, icon)
         textIndex += 1
-      case "menu": showAccessory(textIndex, "•••", action: accessoryAction(accessory)); textIndex += 1
+      case "menu": showMenuAccessory(textIndex, action: accessoryAction(accessory)); textIndex += 1
       case "drag":
         var icon = accessory
         icon["name"] = "DragOutline"
@@ -2313,6 +2309,75 @@ final class NativeListCell: UICollectionViewCell {
     if let color { button.setTitleColor(color, for: .normal) }
     while accessoryActions.count <= index { accessoryActions.append(("", nil)) }
     accessoryActions[index] = action ?? ("", nil)
+  }
+
+  private func showValuePairAccessory(
+    _ index: Int,
+    _ accessory: [String: Any],
+    theme: [String: Any]?
+  ) {
+    guard accessoryButtons.indices.contains(index) else { return }
+    let primary = accessory.string("primary")
+    let secondary = accessory.string("secondary")
+    guard !primary.isEmpty || !secondary.isEmpty else { return }
+    let button = accessoryButtons[index]
+    let text = NSMutableAttributedString()
+    let primaryParagraph = NSMutableParagraphStyle()
+    primaryParagraph.alignment = .right
+    primaryParagraph.minimumLineHeight = 20
+    primaryParagraph.maximumLineHeight = 20
+    text.append(NSAttributedString(
+      string: primary,
+      attributes: [
+        .font: nativeListFont(ofSize: 16, weight: .medium),
+        .foregroundColor: accessoryTextColor(
+          accessory.string("primaryTone"),
+          defaultTone: "primary",
+          theme: theme
+        ),
+        .paragraphStyle: primaryParagraph,
+      ]
+    ))
+    if !primary.isEmpty, !secondary.isEmpty { text.append(NSAttributedString(string: "\n")) }
+    let secondaryParagraph = NSMutableParagraphStyle()
+    secondaryParagraph.alignment = .right
+    secondaryParagraph.minimumLineHeight = 20
+    secondaryParagraph.maximumLineHeight = 20
+    text.append(NSAttributedString(
+      string: secondary,
+      attributes: [
+        .font: nativeListFont(ofSize: 14),
+        .foregroundColor: accessoryTextColor(
+          accessory.string("secondaryTone"),
+          defaultTone: "secondary",
+          theme: theme
+        ),
+        .paragraphStyle: secondaryParagraph,
+      ]
+    ))
+    button.isHidden = false
+    button.titleLabel?.numberOfLines = 2
+    button.contentHorizontalAlignment = .trailing
+    button.setAttributedTitle(text, for: .normal)
+    button.setContentHuggingPriority(.required, for: .horizontal)
+    button.setContentCompressionResistancePriority(.required, for: .horizontal)
+    while accessoryActions.count <= index { accessoryActions.append(("", nil)) }
+    accessoryActions[index] = ("", nil)
+  }
+
+  private func showMenuAccessory(
+    _ index: Int,
+    action: (String, NativeSelectionTarget?)?
+  ) {
+    showAccessory(index, "⋮", action: action)
+    guard accessoryButtons.indices.contains(index) else { return }
+    let button = accessoryButtons[index]
+    button.titleLabel?.font = nativeListFont(ofSize: 20, weight: .medium)
+    accessorySizeConstraints.append(contentsOf: [
+      button.widthAnchor.constraint(equalToConstant: 24),
+      button.heightAnchor.constraint(equalToConstant: 24),
+    ])
+    NSLayoutConstraint.activate(Array(accessorySizeConstraints.suffix(2)))
   }
 
   private func accessoryTextColor(

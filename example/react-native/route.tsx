@@ -27,6 +27,7 @@ import { NativeListTestPage } from './pages/NativeListTestPage';
 import { NativeListBenchmarkPage } from './pages/NativeListBenchmarkPage';
 import { NativeListAccountSelectorPage } from './pages/NativeListAccountSelectorPage';
 import { NativeListNetworkSelectorPage } from './pages/NativeListNetworkSelectorPage';
+import { NativeListTokenSelectorPage } from './pages/NativeListTokenSelectorPage';
 import {
   NativeListExamplePage,
   type NativeListExampleKey,
@@ -80,6 +81,7 @@ export type RootStackParamList = {
   NativeListBenchmark: undefined;
   NativeListAccountSelector: undefined;
   NativeListNetworkSelector: undefined;
+  NativeListTokenSelector: undefined;
   OtaPipeline: undefined;
   ApkOtaPipeline: undefined;
   ChartWebView: undefined;
@@ -628,6 +630,11 @@ export function AppNavigator() {
       <Stack.Screen
         name="NativeListNetworkSelector"
         component={NativeListNetworkSelectorPage}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="NativeListTokenSelector"
+        component={NativeListTokenSelectorPage}
         options={{ headerShown: false }}
       />
       <Stack.Screen

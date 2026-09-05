@@ -59,6 +59,24 @@ export function NativeListTestPage() {
         <Text style={styles.sectionTitle}>Performance</Text>
         <View style={styles.card}>
           <Pressable
+            testID="native-list-entry-token-selector"
+            accessibilityRole="button"
+            onPress={() => navigation.navigate('NativeListTokenSelector')}
+            style={({ pressed }) => [
+              styles.item,
+              styles.itemBorder,
+              pressed && styles.itemPressed,
+            ]}
+          >
+            <View style={styles.itemText}>
+              <Text style={styles.itemTitle}>Token selector</Text>
+              <Text style={styles.itemDescription}>
+                Production swap token sheet · full 50-token business fixture
+              </Text>
+            </View>
+            <View style={styles.chevron} />
+          </Pressable>
+          <Pressable
             testID="native-list-entry-account-selector"
             accessibilityRole="button"
             onPress={() => navigation.navigate('NativeListAccountSelector')}

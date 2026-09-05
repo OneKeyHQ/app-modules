@@ -42,6 +42,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
   function NativeList(
     {
       snapshot,
+      webVirtualizationEnabled = true,
       onRowAction,
       onSelectionDelta,
       onReorder,
@@ -59,6 +60,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
   ) {
     const [host, setHost] = useState<HTMLElement | null>(null);
     const engineRef = useRef<NativeListWebEngine | undefined>(undefined);
+    const webVirtualizationEnabledRef = useRef(webVirtualizationEnabled);
+    webVirtualizationEnabledRef.current = webVirtualizationEnabled;
     const validatedSnapshot = useMemo(
       () => validateSnapshot(snapshot),
       [snapshot]
@@ -114,7 +117,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       const engine = new NativeListWebEngine(
         host,
         snapshotRef.current,
-        callbacksRef.current
+        callbacksRef.current,
+        webVirtualizationEnabledRef.current
       );
       engineRef.current = engine;
       appliedSnapshotRef.current = snapshotRef.current;
@@ -131,6 +135,10 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         if (engineRef.current === engine) engineRef.current = undefined;
       };
     }, [host]);
+
+    useEffect(() => {
+      engineRef.current?.setVirtualizationEnabled(webVirtualizationEnabled);
+    }, [webVirtualizationEnabled]);
 
     useEffect(() => {
       engineRef.current?.updateCallbacks(callbacksRef.current);

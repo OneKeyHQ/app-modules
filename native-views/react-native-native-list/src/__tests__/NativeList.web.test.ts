@@ -3,6 +3,7 @@ import {
   computeWebListLayout,
   estimateWebRowHeight,
   visibleWebLayoutItems,
+  webLayoutItemsForMount,
   webRowRenderSignature,
 } from '../web/NativeListWebEngine';
 
@@ -215,6 +216,12 @@ describe('NativeList pure DOM web layout', () => {
     expect(visible.length).toBeGreaterThan(0);
     expect(visible.length).toBeLessThan(40);
     expect(visible[0].index).toBeGreaterThan(2_000);
+    expect(webLayoutItemsForMount(layout, 120_000, 640, true, 640)).toEqual(
+      visible
+    );
+    expect(
+      webLayoutItemsForMount(layout, 120_000, 640, false, 640)
+    ).toHaveLength(5_000);
 
     const grid = computeWebListLayout(
       snapshot({ kind: 'grid', gridColumns: 2 }, manyRows),
