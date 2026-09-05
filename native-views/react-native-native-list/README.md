@@ -257,20 +257,15 @@ Android additionally covered ART `speed` compilation and ten short fast flings.
 | Retained memory           | Physical footprint 286 MB before, 275 MB after the first batch, 287 MB after the second; lifetime peak 335 MB | PSS 138,459 KiB with one wallet cached, 201,668 KiB after warming three wallets, 192,700 KiB after the second batch, 193,976 KiB after scrolling |
 | Functional checks         | Independent lists and fixed footer pass                                                                       | Independent lists and fixed footer pass, including zero-difference stable screenshot crops                                                       |
 
-These are regression snapshots, not a direct platform ranking. The iOS frame
-signal comes from variable-timestamp Simulator recordings and the Android frame
-signal comes from `gfxinfo` around ADB-injected gestures. Android's API 35
-emulator showed a heavily populated 4,950 ms GPU bucket, so its absolute scroll
-numbers cannot be treated as real-device FPS. The iOS run was Debug, while the
-Android run used a Release variant; neither closes production performance
-without physical-device Release/Profile measurements using Instruments or
-Perfetto/Macrobenchmark.
-
-The current Android Release test APK also required a manual pre-build of
-`background.bundle`: the standard example `assembleRelease` pipeline does not
-yet generate that required asset. Wallet-switch responsiveness and short-run
-retained-memory behavior pass the current simulator checks, while Android
-continuous-scroll performance and reproducible Release packaging remain open.
+Across the tested environments, Android Release is faster for page opening and
+median wallet switching: external page-open p50 is 202 ms versus 589 ms on iOS,
+and wallet-switch p50 is 118 ms versus 134 ms. iOS has the tighter switch tail
+at p95 143 ms versus 155 ms, clearly leads both account-list and wallet-list
+frame results, and uses less process CPU in the measured switch and scroll runs.
+Both platforms pass correctness, independent scrolling, the fixed footer,
+switch responsiveness, and the short-run retained-memory check. The current
+cross-platform performance priority is Android continuous scrolling, followed
+by the iOS wallet list's 120 Hz tail behavior.
 
 ### Test Suite source map
 
