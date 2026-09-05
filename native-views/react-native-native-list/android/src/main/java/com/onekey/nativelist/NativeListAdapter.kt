@@ -5,11 +5,15 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONObject
+import java.util.Collections
+import java.util.WeakHashMap
 
 internal class NativeListAdapter(
   private val context: ThemedReactContext,
 ) : ListAdapter<NativeListItem, NativeListViewHolder>(DIFF) {
-  private val createdRows = LinkedHashSet<NativeListRowView>()
+  private val createdRows = Collections.newSetFromMap(
+    WeakHashMap<NativeListRowView, Boolean>(),
+  )
   var theme: JSONObject? = null
   var layout: String = "linear"
   var orientation: String = "vertical"

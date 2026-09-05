@@ -1,4 +1,5 @@
 import type {
+  ActionRow,
   IdentityRow,
   MetricCardRow,
   NativeListSnapshot,
@@ -37,6 +38,52 @@ const snapshot = (
 describe('NativeList model validation', () => {
   it('accepts amount plus checkbox on identity rows', () => {
     expect(validateSnapshot(snapshot())).toBeDefined();
+  });
+
+  it('accepts only the account-selector identity presentations', () => {
+    expect(
+      validateSnapshot(
+        snapshot([{ ...row('wallet'), presentation: 'walletSidebar' }])
+      ).rows[0]
+    ).toMatchObject({ presentation: 'walletSidebar' });
+    expect(
+      validateSnapshot(
+        snapshot([{ ...row('account'), presentation: 'accountSelector' }])
+      ).rows[0]
+    ).toMatchObject({ presentation: 'accountSelector' });
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...row('invalid-wallet'),
+            presentation: 'unsupported',
+          } as unknown as IdentityRow,
+        ])
+      )
+    ).toThrow('presentation');
+  });
+
+  it('accepts the account-selector action presentation', () => {
+    const action: ActionRow = {
+      type: 'action',
+      key: 'add-account',
+      presentation: 'accountSelector',
+      title: 'Add account',
+      actionKey: 'account.add',
+    };
+    expect(validateSnapshot(snapshot([action])).rows[0]).toMatchObject({
+      presentation: 'accountSelector',
+    });
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...action,
+            presentation: 'unsupported',
+          } as unknown as ActionRow,
+        ])
+      )
+    ).toThrow('presentation');
   });
 
   it('accepts the metric-card contract in grid snapshots', () => {

@@ -86,6 +86,8 @@ func nativeListIcon(named name: String) -> UIImage? {
   case "InfoCircleOutline": assetName = "onekey_info_circle"
   case "SpeakerPromoteOutline": assetName = "onekey_speaker_promote"
   case "PlusCircleOutline": assetName = "onekey_plus_circle"
+  case "PlusSmallOutline": assetName = "onekey_plus_small"
+  case "DotHorOutline": assetName = "onekey_dot_hor"
   case "PencilOutline": assetName = "onekey_pencil"
   case "MinusCircleSolid": assetName = "onekey_minus_circle_solid"
   case "MinusCircleOutline": assetName = "onekey_minus_circle"

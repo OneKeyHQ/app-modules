@@ -5,7 +5,9 @@ import com.facebook.react.uimanager.ThemedReactContext
 
 /** A native-only OneKeyImage host for reusable container views such as list cells. */
 class OneKeyImageReusableView(context: ThemedReactContext) : FrameLayout(context) {
-  private val image = HybridOneKeyImage(context)
+  private val image = HybridOneKeyImage(context).apply {
+    usesApplicationRequestManager = true
+  }
 
   init {
     addView(

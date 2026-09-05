@@ -50,7 +50,7 @@ class NativeListView(
   private var spacingDecoration: ItemSpacingDecoration? = null
   private var itemTouchHelper: ItemTouchHelper? = null
   private var endReachedGeneration: Int? = null
-  private var lastVisibleRange: Pair<Int, Int>? = null
+  private var lastVisibleRangeSignature: String? = null
   private var visibleEventScheduled = false
   private var dragFrom = RecyclerView.NO_POSITION
   private var dragTo = RecyclerView.NO_POSITION
@@ -693,14 +693,16 @@ class NativeListView(
       val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return@postFrameCallback
       val first = manager.findFirstVisibleItemPosition()
       val last = manager.findLastVisibleItemPosition()
-      val range = first to last
-      if (range == lastVisibleRange) return@postFrameCallback
-      lastVisibleRange = range
+      val firstKey = adapter.itemAt(first)?.key
+      val lastKey = adapter.itemAt(last)?.key
+      val signature = "$first:$last:${firstKey.orEmpty()}:${lastKey.orEmpty()}"
+      if (signature == lastVisibleRangeSignature) return@postFrameCallback
+      lastVisibleRangeSignature = signature
       val payload = JSONObject()
         .put("firstIndex", first)
         .put("lastIndex", last)
-      adapter.itemAt(first)?.let { payload.put("firstKey", it.key) }
-      adapter.itemAt(last)?.let { payload.put("lastKey", it.key) }
+      firstKey?.let { payload.put("firstKey", it) }
+      lastKey?.let { payload.put("lastKey", it) }
       emit(VISIBLE_RANGE_CHANGED, payload)
     }
   }

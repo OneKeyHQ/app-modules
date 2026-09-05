@@ -655,7 +655,7 @@ final class NativeListCell: UICollectionViewCell {
     accessibilityLabel = item.data.string("accessibilityLabel", default: item.data.string("title"))
 
     switch item.type {
-    case "identity": bindIdentity(item, theme: theme, checkboxState)
+    case "identity": bindIdentity(item, theme: theme, selected: selected, checkboxState)
     case "rail": bindRail(item, theme: theme)
     case "activity": bindActivity(item, theme: theme)
     case "message": bindMessage(item, theme: theme)
@@ -687,6 +687,13 @@ final class NativeListCell: UICollectionViewCell {
       selected: selected
     )
     updateBackgroundColor()
+    if item.type == "identity", item.data.string("presentation") == "walletSidebar" {
+      titleLabel.textColor = nativeListColor(
+        currentTheme,
+        selected ? "primaryText" : "secondaryText",
+        selected ? "#FFFFFFED" : "#FFFFFFAF"
+      )
+    }
     guard let data = boundCheckboxData, let target = boundCheckboxTarget else { return }
     updateCheckboxPresentation(
       item,
@@ -830,6 +837,7 @@ final class NativeListCell: UICollectionViewCell {
     mediaBadgeLabel.text = nil
     fallbackLabel.isHidden = false
     fallbackLabel.text = nil
+    fallbackLabel.font = nativeListFont(ofSize: 13, weight: .bold)
     secondaryImage.isHidden = false
     secondaryImage.layer.borderWidth = 0
     secondaryImage.layer.borderColor = nil
@@ -917,7 +925,9 @@ final class NativeListCell: UICollectionViewCell {
     leadingActionKey = nil
     layer.maskedCorners = []
     layer.cornerRadius = 0
+    layer.cornerCurve = .circular
     contentView.layer.cornerRadius = 0
+    contentView.layer.cornerCurve = .circular
     contentView.clipsToBounds = false
     leadingContainer.alpha = 1
     titleLabel.showsDottedUnderline = false
@@ -947,7 +957,14 @@ final class NativeListCell: UICollectionViewCell {
       return
     }
     if pressed {
-      let radius: CGFloat = currentItem?.type == "rail" ? 8 : 12
+      let isWalletSidebar = currentItem?.type == "identity"
+        && currentItem?.data.string("presentation") == "walletSidebar"
+      let radius: CGFloat
+      if isWalletSidebar {
+        radius = 20
+      } else {
+        radius = currentItem?.type == "rail" ? 8 : 12
+      }
       layer.maskedCorners = [
         .layerMinXMinYCorner,
         .layerMaxXMinYCorner,
@@ -955,8 +972,10 @@ final class NativeListCell: UICollectionViewCell {
         .layerMaxXMaxYCorner,
       ]
       layer.cornerRadius = radius
+      layer.cornerCurve = isWalletSidebar ? .continuous : .circular
       layer.masksToBounds = true
       contentView.layer.cornerRadius = radius
+      contentView.layer.cornerCurve = isWalletSidebar ? .continuous : .circular
       contentView.clipsToBounds = true
     } else {
       applyGroupPosition(currentItem?.data.string("groupPosition") ?? "")
@@ -969,8 +988,41 @@ final class NativeListCell: UICollectionViewCell {
   private func bindIdentity(
     _ item: NativeListItem,
     theme: [String: Any]?,
+    selected: Bool,
     _ checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    if item.data.string("presentation") == "walletSidebar" {
+      rootStack.axis = .vertical
+      rootStack.alignment = .center
+      rootStack.spacing = 4
+      rootLeadingConstraint.constant = 4
+      rootTrailingConstraint.constant = -4
+      rootTopConstraint.constant = 4
+      rootBottomConstraint.constant = -4
+      mainStack.alignment = .center
+      mainStack.spacing = 0
+      titleRowStack.setContentHuggingPriority(.required, for: .horizontal)
+      titleLabel.setContentHuggingPriority(.required, for: .horizontal)
+      titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+      titleLabel.font = nativeListFont(ofSize: 12)
+      titleLabel.textAlignment = .center
+      fallbackLabel.font = nativeListFont(ofSize: 28)
+      addLeading(item.data.dictionary("leading"), key: item.key)
+      rootStack.addArrangedSubview(mainStack)
+      show(titleLabel, item.data.string("title"), lines: 1)
+      setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 16)
+      titleLabel.textColor = nativeListColor(
+        theme,
+        selected ? "primaryText" : "secondaryText",
+        selected ? "#FFFFFFED" : "#FFFFFFAF"
+      )
+      return
+    }
+    if item.data.string("presentation") == "accountSelector" {
+      leadingWidth.constant = 32
+      leadingHeight.constant = 32
+      titleLabel.font = nativeListFont(ofSize: 16)
+    }
     if item.data.dictionary("leading")?.string("kind") == "network" {
       leadingWidth.constant = 32
       leadingHeight.constant = 32
@@ -1813,19 +1865,28 @@ final class NativeListCell: UICollectionViewCell {
     theme: [String: Any]?,
     _ checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    let isAccountSelector = item.data.string("presentation") == "accountSelector"
     if let icon = item.data.dictionary("icon") {
-      leadingWidth.constant = 40
-      leadingHeight.constant = 40
+      leadingWidth.constant = isAccountSelector ? 32 : 40
+      leadingHeight.constant = isAccountSelector ? 32 : 40
       leadingIconWidth.constant = 24
       leadingIconHeight.constant = 24
       addLeading(icon, key: item.key)
-      leadingContainer.backgroundColor = .clear
-      leadingContainer.layer.borderWidth = 0
-      leadingContainer.layer.borderColor = nil
+      if isAccountSelector {
+        leadingContainer.layer.cornerCurve = .continuous
+      }
+      if icon["backgroundColor"] == nil {
+        leadingContainer.backgroundColor = .clear
+        leadingContainer.layer.borderWidth = 0
+        leadingContainer.layer.borderColor = nil
+      }
     }
     rootStack.addArrangedSubview(mainStack)
     show(titleLabel, item.data.string("title"), lines: 1)
-    if item.data.string("tone") == "danger" {
+    if isAccountSelector {
+      titleLabel.font = nativeListFont(ofSize: 16)
+      titleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
+    } else if item.data.string("tone") == "danger" {
       titleLabel.textColor = nativeListColor(theme, "negative", "#CE2C31")
     }
     setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 24)
@@ -2334,7 +2395,10 @@ final class NativeListCell: UICollectionViewCell {
       layer.masksToBounds = false
       return
     }
-    layer.cornerRadius = 12
+    let isWalletSidebar = currentItem?.type == "identity"
+      && currentItem?.data.string("presentation") == "walletSidebar"
+    layer.cornerRadius = isWalletSidebar ? 20 : 12
+    layer.cornerCurve = isWalletSidebar ? .continuous : .circular
     layer.masksToBounds = true
   }
 

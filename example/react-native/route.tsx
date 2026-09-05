@@ -25,6 +25,7 @@ import { NativeLoggerTestPage } from './pages/NativeLoggerTestPage';
 import { OneKeyImageTestPage } from './pages/OneKeyImageTestPage';
 import { NativeListTestPage } from './pages/NativeListTestPage';
 import { NativeListBenchmarkPage } from './pages/NativeListBenchmarkPage';
+import { NativeListAccountSelectorPage } from './pages/NativeListAccountSelectorPage';
 import {
   NativeListExamplePage,
   type NativeListExampleKey,
@@ -76,6 +77,7 @@ export type RootStackParamList = {
     | { example: NativeListExampleKey; title: string }
     | undefined;
   NativeListBenchmark: undefined;
+  NativeListAccountSelector: undefined;
   OtaPipeline: undefined;
   ApkOtaPipeline: undefined;
   ChartWebView: undefined;
@@ -246,6 +248,13 @@ const modules: {
     description:
       'Reproducible 1,000 / 5,000 row load, scroll, patch, and selection checks',
     icon: '⏱️',
+  },
+  {
+    screen: 'NativeListAccountSelector',
+    name: 'Native List Account Selector',
+    description:
+      'Two independent native lists with a 1,000 × 1,000 lazy data model',
+    icon: '👛',
   },
   {
     screen: 'PagerView',
@@ -601,6 +610,11 @@ export function AppNavigator() {
         name="NativeListBenchmark"
         component={NativeListBenchmarkPage}
         options={{ title: 'Native List Benchmark' }}
+      />
+      <Stack.Screen
+        name="NativeListAccountSelector"
+        component={NativeListAccountSelectorPage}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="PagerView"

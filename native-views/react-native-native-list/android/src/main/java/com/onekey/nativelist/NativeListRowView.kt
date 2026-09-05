@@ -526,7 +526,7 @@ internal class NativeListRowView(
     contentDescription = item.json.optString("accessibilityLabel", item.json.optString("title"))
 
     when (item.type) {
-      "identity" -> bindIdentity(item, theme, checkboxState)
+      "identity" -> bindIdentity(item, theme, selected, checkboxState)
       "rail" -> bindRail(item, theme)
       "activity" -> bindActivity(item, theme)
       "message" -> bindMessage(item, theme)
@@ -560,6 +560,15 @@ internal class NativeListRowView(
   ) {
     if (boundKey != item.key) return
     applySelectionState(item, theme, layout, itemIndex, selected)
+    if (item.type == "identity" && item.json.optString("presentation") == "walletSidebar") {
+      title.setTextColor(
+        color(
+          theme,
+          if (selected) "primaryText" else "secondaryText",
+          if (selected) "#FFFFFFED" else "#FFFFFFAF",
+        ),
+      )
+    }
     boundCheckboxData?.let { bindCheckbox(item, it, checkboxState) }
   }
 
@@ -721,6 +730,8 @@ internal class NativeListRowView(
       it.outlineProvider = ViewOutlineProvider.BACKGROUND
     }
     leadingFallback.text = ""
+    leadingFallback.textSize = sp(13f)
+    leadingFallback.typeface = NativeListFonts.bold(context)
     leadingFallback.visibility = GONE
     leadingFallback.background = null
     showsSeparator = false
@@ -737,8 +748,38 @@ internal class NativeListRowView(
   private fun bindIdentity(
     item: NativeListItem,
     theme: JSONObject?,
+    selected: Boolean,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
+    if (item.json.optString("presentation") == "walletSidebar") {
+      orientation = VERTICAL
+      gravity = Gravity.CENTER
+      setPadding(dp(4), dp(4), dp(4), dp(4))
+      addLeading(item.json.optJSONObject("leading"), 40, spacingDp = 0)
+      leadingFallback.textSize = sp(28f)
+      leadingFallback.typeface = NativeListFonts.regular(context)
+      mainColumn.gravity = Gravity.CENTER
+      titleLine.gravity = Gravity.CENTER
+      titleLine.packsChildrenAtStart = false
+      titleLine.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+      title.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+      title.gravity = Gravity.CENTER
+      showText(title, item.json.optString("title"), 1)
+      title.setTextColor(
+        color(
+          theme,
+          if (selected) "primaryText" else "secondaryText",
+          if (selected) "#FFFFFFED" else "#FFFFFFAF",
+        ),
+      )
+      addView(
+        mainColumn,
+        LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+          topMargin = dp(4)
+        },
+      )
+      return
+    }
     val leading = item.json.optJSONObject("leading")
     item.json.optJSONObject("leadingAction")?.let { action ->
       leadingActionIcon.visibility = VISIBLE
@@ -759,11 +800,20 @@ internal class NativeListRowView(
       setPadding(dp(5), paddingTop, paddingRight, paddingBottom)
       addView(leadingActionIcon, LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(5) })
     }
-    addLeading(leading, if (leading?.optString("kind") == "network") 32 else 40)
+    addLeading(
+      leading,
+      if (
+        leading?.optString("kind") == "network" ||
+        item.json.optString("presentation") == "accountSelector"
+      ) 32 else 40,
+    )
     addView(mainColumn, weighted())
     titleLine.packsChildrenAtStart = true
     title.ellipsize = TextUtils.TruncateAt.END
     showText(title, item.json.optString("title"), item.json.optInt("titleLines", 1))
+    if (item.json.optString("presentation") == "accountSelector") {
+      title.typeface = NativeListFonts.regular(context)
+    }
     showText(subtitle, item.json.optString("subtitle"), item.json.optInt("subtitleLines", 2))
     showText(tertiary, item.json.optString("tertiary"), 1)
     tertiary.setTextColor(
@@ -1581,14 +1631,18 @@ internal class NativeListRowView(
     theme: JSONObject?,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
-    item.json.optJSONObject("icon")?.let {
-      addLeading(it, 40)
+    val isAccountSelector = item.json.optString("presentation") == "accountSelector"
+    item.json.optJSONObject("icon")?.let { icon ->
+      addLeading(icon, if (isAccountSelector) 32 else 40)
       leadingIcon.layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
-      leadingFrame.background = null
+      if (!icon.has("backgroundColor")) leadingFrame.background = null
     }
     addView(mainColumn, weighted())
     showText(title, item.json.optString("title"), 1)
-    if (item.json.optString("tone") == "danger") {
+    if (isAccountSelector) {
+      title.typeface = NativeListFonts.regular(context)
+      title.setTextColor(color(theme, "secondaryText", "#0000009B"))
+    } else if (item.json.optString("tone") == "danger") {
       title.setTextColor(color(theme, "negative", "#C40006D3"))
     }
     item.json.optJSONObject("checkbox")?.let {
@@ -1704,7 +1758,7 @@ internal class NativeListRowView(
       leadingFrame.background = GradientDrawable().apply {
         setColor(visualBackground)
         setStroke(1, parseNativeListColor("#0000001F"))
-        cornerRadius = dp(sizeDp) / 2f
+        cornerRadius = NativeListScale.dp(resources, leadingCornerRadius(shape, sizeDp))
       }
       leadingIcon.iconName = visual.optString("name")
       leadingIcon.tintColor = safeColor(
@@ -1937,10 +1991,13 @@ internal class NativeListRowView(
     } else if (item.type == "metricCard" && !selected) {
       rowBackground = color(theme, "subduedBackground", "#F9F9F9")
     }
-    val groupPosition = when (item.type) {
+    val groupPosition = when {
+      item.type == "identity" && item.json.optString("presentation") == "walletSidebar" -> "single"
+      else -> when (item.type) {
       "metricCard" -> "single"
       "rail" -> "rail"
       else -> item.json.optString("groupPosition")
+      }
     }
     var backgroundGroupPosition = if (item.type == "mediaTile") "mediaTile" else groupPosition
     if (layout == "sectioned") {
@@ -2038,30 +2095,46 @@ internal class NativeListRowView(
   }
 
   private fun applySize(item: NativeListItem) {
-    title.textSize = sp(when (item.type) {
-      "message" -> 14f
-      "sectionHeader" -> when {
-        item.json.optString("variant") == "gallery" -> 18f
-        item.json.optString("variant") == "summary" -> 16f
-        currentLayout == "table" -> 11f
-        item.json.optString("variant") == "history" || item.sectionKey?.startsWith("history-") == true -> 12f
-        else -> 14f
+    val isWalletSidebar =
+      item.type == "identity" && item.json.optString("presentation") == "walletSidebar"
+    val isAccountSelectorIdentity =
+      item.type == "identity" && item.json.optString("presentation") == "accountSelector"
+    val isAccountSelectorAction =
+      item.type == "action" && item.json.optString("presentation") == "accountSelector"
+    title.textSize = sp(
+      if (isWalletSidebar) {
+        12f
+      } else {
+        when (item.type) {
+          "message" -> 14f
+          "sectionHeader" -> when {
+            item.json.optString("variant") == "gallery" -> 18f
+            item.json.optString("variant") == "summary" -> 16f
+            currentLayout == "table" -> 11f
+            item.json.optString("variant") == "history" || item.sectionKey?.startsWith("history-") == true -> 12f
+            else -> 14f
+          }
+          "rail" -> 12f
+          "system" -> 14f
+          "metricCard" -> if (item.json.optString("size") == "large") 24f else 18f
+          else -> 16f
+        }
+      },
+    )
+    title.typeface = if (isWalletSidebar || isAccountSelectorIdentity || isAccountSelectorAction) {
+      NativeListFonts.regular(context)
+    } else {
+      when (item.type) {
+        "sectionHeader" -> when {
+          currentLayout == "table" -> NativeListFonts.regular(context)
+          item.json.optString("variant") == "summary" -> NativeListFonts.medium(context)
+          item.sectionKey in setOf("linear-tokens", "action-tokens") -> NativeListFonts.regular(context)
+          else -> NativeListFonts.semibold(context)
+        }
+        "system" -> NativeListFonts.regular(context)
+        "message", "metricCard" -> NativeListFonts.semibold(context)
+        else -> NativeListFonts.medium(context)
       }
-      "rail" -> 12f
-      "system" -> 14f
-      "metricCard" -> if (item.json.optString("size") == "large") 24f else 18f
-      else -> 16f
-    })
-    title.typeface = when (item.type) {
-      "sectionHeader" -> when {
-        currentLayout == "table" -> NativeListFonts.regular(context)
-        item.json.optString("variant") == "summary" -> NativeListFonts.medium(context)
-        item.sectionKey in setOf("linear-tokens", "action-tokens") -> NativeListFonts.regular(context)
-        else -> NativeListFonts.semibold(context)
-      }
-      "system" -> NativeListFonts.regular(context)
-      "message", "metricCard" -> NativeListFonts.semibold(context)
-      else -> NativeListFonts.medium(context)
     }
     subtitle.textSize = sp(when (item.type) {
       "mediaTile" -> 12f
@@ -2083,6 +2156,8 @@ internal class NativeListRowView(
       TextViewCompat.setLineHeight(title, dp(16))
     } else if (item.type == "sectionHeader" && item.sectionKey in setOf("linear-tokens", "action-tokens")) {
       TextViewCompat.setLineHeight(title, dp(20))
+    } else if (item.type == "identity" && item.json.optString("presentation") == "walletSidebar") {
+      TextViewCompat.setLineHeight(title, dp(16))
     } else if (item.type == "identity") {
       TextViewCompat.setLineHeight(title, dp(24))
       TextViewCompat.setLineHeight(subtitle, dp(20))
@@ -2128,7 +2203,11 @@ internal class NativeListRowView(
           "retry" -> 44
           else -> 56
         }
-        "action" -> if (item.json.has("icon")) 60 else 44
+        "action" -> when {
+          item.json.optString("presentation") == "accountSelector" -> 48
+          item.json.has("icon") -> 60
+          else -> 44
+        }
         "dataRow" -> if (currentLayout == "table") {
           60
         } else if ((0 until item.json.getJSONArray("columns").length()).any {
@@ -2139,6 +2218,7 @@ internal class NativeListRowView(
           56
         }
         else -> when {
+          item.type == "identity" && item.json.optString("presentation") == "walletSidebar" -> 68
           item.type == "identity" && item.json.optString("tertiary").isNotEmpty() -> 72
           item.type == "identity" && item.json.optString("subtitle").isNotEmpty() -> 60
           else -> 56
@@ -2348,6 +2428,8 @@ private class OneKeyIconView(context: android.content.Context) : View(context) {
       "ChevronRightSmallOutline" to listOf(Path.FillType.WINDING),
       "MinusCircleOutline" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
       "PlusCircleOutline" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
+      "PlusSmallOutline" to listOf(Path.FillType.WINDING),
+      "DotHorOutline" to listOf(Path.FillType.WINDING),
       "MinusCircleSolid" to listOf(Path.FillType.EVEN_ODD),
       "PencilOutline" to listOf(Path.FillType.EVEN_ODD),
       "DragOutline" to listOf(Path.FillType.WINDING),
@@ -2377,6 +2459,8 @@ private class OneKeyIconView(context: android.content.Context) : View(context) {
         "M13 11h4v2h-4v4h-2v-4l-4 .001v-2L11 11V7h2z",
         "M12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2m0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16",
       ),
+      "PlusSmallOutline" to listOf("M13 11h5v2h-5v5h-2v-5H6v-2h5V6h2z"),
+      "DotHorOutline" to listOf("M6 14H2v-4h4zm8 0h-4v-4h4zm8 0h-4v-4h4z"),
       "MinusCircleOutline" to listOf(
         "M17 13H7v-2h10z",
         "M12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2m0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16",

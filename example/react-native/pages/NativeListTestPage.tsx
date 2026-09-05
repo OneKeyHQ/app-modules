@@ -59,6 +59,24 @@ export function NativeListTestPage() {
         <Text style={styles.sectionTitle}>Performance</Text>
         <View style={styles.card}>
           <Pressable
+            testID="native-list-entry-account-selector"
+            accessibilityRole="button"
+            onPress={() => navigation.navigate('NativeListAccountSelector')}
+            style={({ pressed }) => [
+              styles.item,
+              styles.itemBorder,
+              pressed && styles.itemPressed,
+            ]}
+          >
+            <View style={styles.itemText}>
+              <Text style={styles.itemTitle}>Account selector</Text>
+              <Text style={styles.itemDescription}>
+                Two independent native lists · 1,000 wallets × 1,000 accounts
+              </Text>
+            </View>
+            <View style={styles.chevron} />
+          </Pressable>
+          <Pressable
             testID="native-list-entry-benchmark"
             accessibilityRole="button"
             onPress={() => navigation.navigate('NativeListBenchmark')}

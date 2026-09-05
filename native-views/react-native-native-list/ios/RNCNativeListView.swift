@@ -20,7 +20,7 @@ final class NativeListView: UIView {
   private var config: NativeListConfig?
   private var itemsByKey: [String: NativeListItem] = [:]
   private var endReachedGeneration: Int?
-  private var lastVisibleRange: (Int, Int)?
+  private var lastVisibleRange: (first: Int, last: Int, firstKey: String?, lastKey: String?)?
   private var visibleEventScheduled = false
   private var sectionIndexEntries: [NativeListSectionIndexEntry] = []
   private var sectionIndexScrubbing = false
@@ -554,6 +554,9 @@ final class NativeListView: UIView {
     if item.type == "system", item.data.string("variant") == "spacer" {
       return CGFloat(item.data.int("height"))
     }
+    if item.type == "identity", item.data.string("presentation") == "walletSidebar" {
+      return 68
+    }
     let base: CGFloat
     switch item.type {
     case "rail": base = 40
@@ -586,7 +589,10 @@ final class NativeListView: UIView {
       case "retry": base = 44
       default: base = 56
       }
-    case "action": base = item.data.dictionary("icon") == nil ? 44 : 60
+    case "action":
+      base = item.data.string("presentation") == "accountSelector"
+        ? 48
+        : item.data.dictionary("icon") == nil ? 44 : 60
     case "dataRow":
       base = item.data.dictionaries("columns").contains {
         !$0.string("secondaryText").isEmpty
@@ -679,11 +685,16 @@ final class NativeListView: UIView {
       let indexes = self.collectionView.indexPathsForVisibleItems.map(\.item).sorted()
       let first = indexes.first ?? -1
       let last = indexes.last ?? -1
-      guard self.lastVisibleRange?.0 != first || self.lastVisibleRange?.1 != last else { return }
-      self.lastVisibleRange = (first, last)
+      let firstKey = self.config?.items[safe: first]?.key
+      let lastKey = self.config?.items[safe: last]?.key
+      guard self.lastVisibleRange?.first != first ||
+              self.lastVisibleRange?.last != last ||
+              self.lastVisibleRange?.firstKey != firstKey ||
+              self.lastVisibleRange?.lastKey != lastKey else { return }
+      self.lastVisibleRange = (first, last, firstKey, lastKey)
       var payload: [String: Any] = ["firstIndex": first, "lastIndex": last]
-      if let firstItem = self.config?.items[safe: first] { payload["firstKey"] = firstItem.key }
-      if let lastItem = self.config?.items[safe: last] { payload["lastKey"] = lastItem.key }
+      if let firstKey { payload["firstKey"] = firstKey }
+      if let lastKey { payload["lastKey"] = lastKey }
       self.emit(self.onVisibleRangeChanged, payload)
     }
   }

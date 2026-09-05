@@ -272,6 +272,16 @@ function assertRow(
 
   switch (row.type) {
     case 'identity':
+      if (
+        row.presentation !== undefined &&
+        row.presentation !== 'walletSidebar' &&
+        row.presentation !== 'accountSelector'
+      ) {
+        fail(
+          `${path}.presentation`,
+          'must be walletSidebar or accountSelector when provided'
+        );
+      }
       assertText(row.title, `${path}.title`);
       assertText(row.subtitle, `${path}.subtitle`);
       assertText(row.tertiary, `${path}.tertiary`);
@@ -406,6 +416,12 @@ function assertRow(
       }
       break;
     case 'action':
+      if (
+        row.presentation !== undefined &&
+        row.presentation !== 'accountSelector'
+      ) {
+        fail(`${path}.presentation`, 'must be accountSelector when provided');
+      }
       assertKey(row.actionKey, `${path}.actionKey`);
       assertText(row.title, `${path}.title`);
       if ((row.trailing?.length ?? 0) > MAX_TRAILING_ACCESSORIES) {
