@@ -40,20 +40,21 @@ Recorded 2026-09-05 baseline comparison: page-open p50 is essentially unchanged 
 
 ## Drag/reorder acceptance and performance
 
-- Scope: the account-selector example contains 1,001 reorderable wallets and 1,000 logical accounts per wallet. The interaction baseline is `eb532c93501ae13d2db7fd70e61cdb96b152f672`; the frame-path optimization is `03ebb0b8e58c677e131bf2e2d46b9f3da5bc60f2`; the comparison app source is `app-monorepo` `origin/x@43b20d189228b3ef81e98a81f5dfab95543593e9`.
+- Scope: the account-selector example contains 1,001 reorderable wallets and 1,000 logical accounts per wallet. The interaction baseline is `eb532c93501ae13d2db7fd70e61cdb96b152f672`; the frame-path optimization is `03ebb0b8e58c677e131bf2e2d46b9f3da5bc60f2`; the full-height sidebar correction is `03cd67efd3557a4dc6e381d532ac090cc80a0ea3`; the comparison app source is `app-monorepo` `origin/x@43b20d189228b3ef81e98a81f5dfab95543593e9`.
 - Production parity contract: Native uses a 200 ms long press, 10 px movement allowance, 8 px horizontal placeholder inset, 12 px placeholder radius, and spring values `damping=25`, `stiffness=400`, `mass=0.4`. Web uses the production 5 px mouse threshold / stationary touch activation, `$bgHover` (`#FFFFFF12`) and `$bgActive` (`#FFFFFF1B`), a 12 px clone radius, `0 4px 24px rgba(0,0,0,0.12)` clone shadow, 200 ms sibling displacement, and 80 ms drop settle.
+- Full-height layout acceptance: Web wallet `clientHeight` is 1,098 px and its footer remains visible; Android's wallet list is `y=128, height=1982` with the footer at `y=2143`; iOS is `y=62, height=691.67` with the footer at `y=766`. The old fixed seven-row blank region is absent on all three targets.
 
 ### Web production build in Chrome
 
 - Runtime coverage: mouse, stationary touch long press, keyboard lift/move/drop/cancel, edge auto-scroll, drop/cancel, post-drop scrolling, and selection isolation all passed. The first wallet and `wallet 1001 of 1001` were each dragged and committed; the selected wallet's account list did not change.
-- Optimized 20-drag alternating real-mouse run at a 590 x 1,280 viewport on a 120 Hz browser: 1,476 sampled intervals; p50/p95/p99 8.3/9.9/10.2 ms; 1 interval above 16.7 ms (0.068%); worst 18.3 ms; no Long Tasks.
-- DOM/windowing bound: 14 of 1,001 wallet rows mounted, with `scrollHeight=78084` and `clientHeight=544`. The deep cold-open target (`wallet-999`, displayed as wallet 1,001 because the watch wallet is inserted at display position 7) moved from index 1,000 to 998 without a blank gap or selection change.
+- Post-layout 20-drag alternating real-mouse run at a 590 x 1,280 viewport on a 120 Hz browser: 1,479 sampled intervals; p50/p95/p99 8.3/9.3/9.3 ms; 1 floating-point interval above 16.7 ms (0.068%); worst 16.7 ms; no Long Tasks.
+- DOM/windowing bound: 29 of 1,001 wallet rows mounted, with `scrollHeight=78084` and `clientHeight=1098`. The deep cold-open target (`wallet-999`, displayed as wallet 1,001 because the watch wallet is inserted at display position 7) moved from index 1,000 to 998 without a blank gap or selection change.
 
 ### Android Release emulator
 
-- Environment: Android 15 / API 35 arm64-v8a emulator, 1080 x 2400, 420 dpi, 60 Hz. The final arm64 Release APK contains both Hermes bundles and `libnativelist.so`; APK SHA-256 is `cad19fbd8ef4324fd7b03a2ade4b721e849d36d53c8410a0d006823d3ae3d515`.
+- Environment: Android 15 / API 35 arm64-v8a emulator, 1080 x 2400, 420 dpi, 60 Hz. The final arm64 Release APK contains both Hermes bundles and `libnativelist.so`; APK SHA-256 is `0d44f1e19a7668863088ecc91e0a832be19e0373a7e522ce582ed157d7b41abe`.
 - Runtime coverage: movement before the 200 ms threshold cancelled without reorder; long press followed by movement displaced siblings and committed. Reordering remained functional after deep scrolling; `wallet 1001 of 1001` was moved upward by two positions while TEST / Account #1 remained unchanged.
-- Final five alternating 1.2 s native drags: 412 rendered frames; 6 deadline-missed/janky frames (1.46%). Per-sample jank was 1.23-2.20%; p50/p95 were consistently 16/17 ms and p99 ranged from 17 to 19 ms.
+- Post-layout five alternating 1.2 s native drags: 415 rendered frames; 7 deadline-missed/janky frames (1.69%). Per-sample jank was 1.23-2.44%; p50 was consistently 16 ms, p95 ranged from 17 to 18 ms, and p99 ranged from 18 to 19 ms.
 - Compared with the pre-optimization representative Debug samples (4.9-5.2% jank) and compressed stress loop (14.5%), the Release result removes the structural tail. Build mode and run shape differ, so the percentages are regression evidence rather than a controlled A/B benchmark.
 - Haptic dispatch evidence: Android's vibrator service recorded the app's drag-start `LONG_PRESS` feedback and three `CLOCK_TICK`/texture-tick position crossings during one drag. The emulator proves dispatch and system classification, not physical motor feel.
 
@@ -79,7 +80,7 @@ Recorded 2026-09-05 baseline comparison: page-open p50 is essentially unchanged 
 - Independent lists and fixed footer: PASS on both simulator environments.
 - Android continuous-scroll emulator regression: PASS and materially improved from the recorded baseline.
 - Web drag/reorder: PASS, including the 1,001st wallet and touch/keyboard paths.
-- Android drag/reorder: PASS for functional parity and Release emulator regression; final jank is 1.46%, not a literal zero-jank/full-frame claim.
+- Android drag/reorder: PASS for functional parity and Release emulator regression; final post-layout jank is 1.69%, not a literal zero-jank/full-frame claim.
 - iOS drag/reorder: PASS for simulator behavior, active long-press state, stable selection, and repeated native gestures; FPS remains OPEN.
 - Native drag haptic dispatch: PASS on both platforms; physical feel remains OPEN pending real-device acceptance.
 - iOS account-list cadence: usable, but modestly below the recorded baseline.
