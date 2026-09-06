@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.105] - 2026-09-07
+
+### Features
+- **native-list**: Add template-driven native lists for Web, iOS, and Android, including section indexing, initial scrolling, grouped wallet reordering, and action-anchor geometry.
+
+### Chores
+- Publish `@onekeyfe/react-native-native-list` for the first time and bump all publishable packages to 3.0.105.
+
 ## [3.0.104] - 2026-09-04
 
 ### Bug Fixes
