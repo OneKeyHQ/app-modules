@@ -1,8 +1,11 @@
 package com.margelo.nitro.nativelist
 
 import android.view.ViewGroup
+import androidx.recyclerview.widget.AsyncDifferConfig
+import androidx.recyclerview.widget.AsyncListDiffer
 import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.ListAdapter
+import androidx.recyclerview.widget.ListUpdateCallback
+import androidx.recyclerview.widget.RecyclerView
 import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONObject
 import java.util.Collections
@@ -10,7 +13,31 @@ import java.util.WeakHashMap
 
 internal class NativeListAdapter(
   private val context: ThemedReactContext,
-) : ListAdapter<NativeListItem, NativeListViewHolder>(DIFF) {
+) : RecyclerView.Adapter<NativeListViewHolder>() {
+  private var suppressDifferUpdates = false
+  private var reorderItems: MutableList<NativeListItem>? = null
+  private val differ = AsyncListDiffer(
+    object : ListUpdateCallback {
+      override fun onInserted(position: Int, count: Int) {
+        if (!suppressDifferUpdates) notifyItemRangeInserted(position, count)
+      }
+
+      override fun onRemoved(position: Int, count: Int) {
+        if (!suppressDifferUpdates) notifyItemRangeRemoved(position, count)
+      }
+
+      override fun onMoved(fromPosition: Int, toPosition: Int) {
+        if (!suppressDifferUpdates) notifyItemMoved(fromPosition, toPosition)
+      }
+
+      override fun onChanged(position: Int, count: Int, payload: Any?) {
+        if (!suppressDifferUpdates) notifyItemRangeChanged(position, count, payload)
+      }
+    },
+    AsyncDifferConfig.Builder(DIFF).build(),
+  )
+  val currentList: List<NativeListItem>
+    get() = differ.currentList
   private val createdRows = Collections.newSetFromMap(
     WeakHashMap<NativeListRowView, Boolean>(),
   )
@@ -21,6 +48,8 @@ internal class NativeListAdapter(
   var checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String = { _, _, fallback -> fallback }
   var onRowPress: ((NativeListItem) -> Unit)? = null
   var onAction: ((NativeListItem, String, NativeSelectionTarget?) -> Unit)? = null
+
+  override fun getItemCount(): Int = reorderItems?.size ?: differ.currentList.size
 
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NativeListViewHolder {
     val view = NativeListRowView(context)
@@ -35,7 +64,7 @@ internal class NativeListAdapter(
   }
 
   override fun onBindViewHolder(holder: NativeListViewHolder, position: Int) {
-    val item = getItem(position)
+    val item = itemAt(position) ?: return
     holder.rowView.bind(
       item,
       theme,
@@ -53,7 +82,7 @@ internal class NativeListAdapter(
     payloads: MutableList<Any>,
   ) {
     if (payloads.contains(SELECTION_PAYLOAD)) {
-      val item = getItem(position)
+      val item = itemAt(position) ?: return
       holder.rowView.bindSelection(
         item,
         theme,
@@ -72,24 +101,48 @@ internal class NativeListAdapter(
     super.onViewRecycled(holder)
   }
 
-  fun itemAt(position: Int): NativeListItem? = currentList.getOrNull(position)
+  fun itemAt(position: Int): NativeListItem? =
+    reorderItems?.getOrNull(position) ?: differ.currentList.getOrNull(position)
 
-  fun positionOfKey(key: String): Int = currentList.indexOfFirst { it.key == key }
+  fun positionOfKey(key: String): Int =
+    (reorderItems ?: differ.currentList).indexOfFirst { it.key == key }
 
-  fun move(from: Int, to: Int): List<NativeListItem>? {
-    if (from !in currentList.indices || to !in currentList.indices) return null
-    val next = currentList.toMutableList()
-    val moved = next.removeAt(from)
-    next.add(to, moved)
-    submitList(next)
-    return next
+  fun submitList(items: List<NativeListItem>, commitCallback: (() -> Unit)? = null) {
+    if (reorderItems != null) {
+      reorderItems = null
+      notifyDataSetChanged()
+    }
+    differ.submitList(items.toList()) { commitCallback?.invoke() }
   }
 
-  fun submitReordered(items: List<NativeListItem>) {
-    submitList(items)
+  fun moveReordered(from: Int, to: Int): List<NativeListItem>? {
+    val items = reorderItems ?: differ.currentList.toMutableList().also { reorderItems = it }
+    if (from !in items.indices || to !in items.indices) return null
+    val moved = items.removeAt(from)
+    items.add(to, moved)
+    notifyItemMoved(from, to)
+    return items
+  }
+
+  fun commitReordered(items: List<NativeListItem>, commitCallback: () -> Unit) {
+    val committed = items.toList()
+    suppressDifferUpdates = true
+    differ.submitList(committed) {
+      reorderItems = null
+      suppressDifferUpdates = false
+      commitCallback()
+    }
+  }
+
+  fun cancelReorder() {
+    if (reorderItems == null) return
+    reorderItems = null
+    notifyDataSetChanged()
   }
 
   fun dispose() {
+    reorderItems = null
+    suppressDifferUpdates = false
     createdRows.forEach(NativeListRowView::dispose)
     createdRows.clear()
   }

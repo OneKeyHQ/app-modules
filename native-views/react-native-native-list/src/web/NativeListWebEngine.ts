@@ -122,11 +122,21 @@ type PointerReorderState = {
   pointerId: number;
   pointerType: string;
   sourceKey: string;
+  currentIndex: number;
   startX: number;
   startY: number;
   clientX: number;
   clientY: number;
   originalRows: readonly RowModel[];
+  workingRows: RowModel[];
+  viewportRect?: Readonly<{
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    width: number;
+    height: number;
+  }>;
   previewOffsetX?: number;
   previewOffsetY?: number;
   longPressTimer?: number;
@@ -1771,6 +1781,7 @@ export class NativeListWebEngine {
   private previewTimer: number | undefined;
   private pointerReorder: PointerReorderState | undefined;
   private keyboardReorder: KeyboardReorderState | undefined;
+  private reorderMoveFrame: number | undefined;
   private reorderAutoScrollFrame: number | undefined;
   private reorderDropTimer: number | undefined;
   private reorderMovementTimer: number | undefined;
@@ -2751,6 +2762,8 @@ export class NativeListWebEngine {
   };
 
   private handleWindowResize = () => {
+    const state = this.pointerReorder;
+    if (state?.active) state.viewportRect = this.reorderViewportRect();
     this.recomputeLayout();
   };
 
@@ -2895,11 +2908,13 @@ export class NativeListWebEngine {
       pointerId: event.pointerId,
       pointerType: event.pointerType || 'mouse',
       sourceKey: row.key,
+      currentIndex: index,
       startX: event.clientX,
       startY: event.clientY,
       clientX: event.clientX,
       clientY: event.clientY,
       originalRows: this.snapshot.rows,
+      workingRows: [...this.snapshot.rows],
       active: false,
     };
     this.pointerReorder = state;
@@ -2918,6 +2933,7 @@ export class NativeListWebEngine {
     this.clearReorderLongPress(state);
     state.active = true;
     state.activatedAt = Date.now();
+    state.viewportRect = this.reorderViewportRect();
     this.captureReorderPointer(state);
     this.showReorderPreview(state);
     this.updateReorderVisualState();
@@ -2952,7 +2968,6 @@ export class NativeListWebEngine {
     if (!state || state.pointerId !== event.pointerId) return;
     state.clientX = event.clientX;
     state.clientY = event.clientY;
-    if (state.active) this.updateReorderPreview(state);
 
     if (!state.active) {
       if (state.pointerType !== 'mouse') {
@@ -2969,13 +2984,13 @@ export class NativeListWebEngine {
       this.activatePointerReorder(state);
       if (!state.active) return;
       event.preventDefault();
-      this.movePointerReorderTo(event.clientX, event.clientY);
+      this.scheduleReorderMove();
       this.scheduleReorderAutoScroll();
       return;
     }
 
     event.preventDefault();
-    this.movePointerReorderTo(event.clientX, event.clientY);
+    this.scheduleReorderMove();
     this.scheduleReorderAutoScroll();
   };
 
@@ -2987,8 +3002,7 @@ export class NativeListWebEngine {
     event.preventDefault();
     state.clientX = touch.clientX;
     state.clientY = touch.clientY;
-    this.updateReorderPreview(state);
-    this.movePointerReorderTo(touch.clientX, touch.clientY);
+    this.scheduleReorderMove();
     this.scheduleReorderAutoScroll();
   };
 
@@ -3103,8 +3117,48 @@ export class NativeListWebEngine {
       'translate3d(' + String(x) + 'px,' + String(y) + 'px,0)';
   }
 
-  private reorderIndexAtPointer(clientX: number, clientY: number): number {
-    const rect = this.viewport.getBoundingClientRect();
+  private reorderViewportRect() {
+    const { left, top, right, bottom, width, height } =
+      this.viewport.getBoundingClientRect();
+    return { left, top, right, bottom, width, height };
+  }
+
+  private scheduleReorderMove() {
+    if (this.reorderMoveFrame !== undefined || !this.pointerReorder?.active)
+      return;
+    this.reorderMoveFrame = this.requestFrame(this.runReorderMove);
+  }
+
+  private runReorderMove = () => {
+    this.reorderMoveFrame = undefined;
+    const state = this.pointerReorder;
+    if (!state?.active) return;
+    this.updateReorderPreview(state);
+    this.movePointerReorderTo(state.clientX, state.clientY);
+  };
+
+  private flushReorderMove(state: PointerReorderState) {
+    if (this.reorderMoveFrame !== undefined) {
+      this.cancelFrame(this.reorderMoveFrame);
+      this.reorderMoveFrame = undefined;
+    }
+    if (this.pointerReorder !== state || !state.active) return;
+    this.updateReorderPreview(state);
+    this.movePointerReorderTo(state.clientX, state.clientY);
+  }
+
+  private stopReorderMove() {
+    if (this.reorderMoveFrame === undefined) return;
+    this.cancelFrame(this.reorderMoveFrame);
+    this.reorderMoveFrame = undefined;
+  }
+
+  private reorderIndexAtPointer(
+    state: PointerReorderState,
+    clientX: number,
+    clientY: number
+  ): number {
+    const rect = state.viewportRect ?? this.reorderViewportRect();
     const local = this.layout.horizontal
       ? Math.max(0, Math.min(Math.max(0, rect.width - 1), clientX - rect.left))
       : Math.max(0, Math.min(Math.max(0, rect.height - 1), clientY - rect.top));
@@ -3137,12 +3191,10 @@ export class NativeListWebEngine {
   private movePointerReorderTo(clientX: number, clientY: number) {
     const state = this.pointerReorder;
     if (!state?.active) return;
-    const fromIndex = this.snapshot.rows.findIndex(
-      (row) => row.key === state.sourceKey
-    );
-    const toIndex = this.reorderIndexAtPointer(clientX, clientY);
-    const from = this.snapshot.rows[fromIndex];
-    const to = this.snapshot.rows[toIndex];
+    const fromIndex = state.currentIndex;
+    const toIndex = this.reorderIndexAtPointer(state, clientX, clientY);
+    const from = state.workingRows[fromIndex];
+    const to = state.workingRows[toIndex];
     if (
       !from ||
       !to ||
@@ -3152,17 +3204,53 @@ export class NativeListWebEngine {
       from.sectionKey !== to.sectionKey
     )
       return;
-    const rows = moveWebReorderRow(this.snapshot.rows, fromIndex, toIndex);
-    if (rows === this.snapshot.rows) return;
-    this.remapMountedRows(rows);
-    this.setSnapshot({ ...this.snapshot, rows }, this.selectedKeys);
+    const [moved] = state.workingRows.splice(fromIndex, 1);
+    if (!moved) return;
+    state.workingRows.splice(toIndex, 0, moved);
+    state.currentIndex = toIndex;
+    const canReuseLayout = this.canReuseReorderLayout(fromIndex, toIndex);
+    this.snapshot = { ...this.snapshot, rows: state.workingRows };
+    this.rows = state.workingRows;
+    this.remapMountedRowsForMove(fromIndex, toIndex);
+    if (canReuseLayout) this.renderWindow();
+    else this.recomputeLayout();
     this.updateReorderVisualState();
+  }
+
+  private canReuseReorderLayout(fromIndex: number, toIndex: number): boolean {
+    const start = Math.min(fromIndex, toIndex);
+    const end = Math.max(fromIndex, toIndex);
+    const first = this.layout.items[start];
+    if (!first || this.layout.items.length !== this.rows.length) return false;
+    for (let index = start + 1; index <= end; index += 1) {
+      const item = this.layout.items[index];
+      if (!item || item.width !== first.width || item.height !== first.height)
+        return false;
+    }
+    return true;
+  }
+
+  private remapMountedRowsForMove(fromIndex: number, toIndex: number) {
+    const remapped: Array<readonly [number, HTMLElement]> = [];
+    this.mounted.forEach((element, index) => {
+      let nextIndex = index;
+      if (index === fromIndex) nextIndex = toIndex;
+      else if (fromIndex < toIndex && index > fromIndex && index <= toIndex)
+        nextIndex = index - 1;
+      else if (fromIndex > toIndex && index >= toIndex && index < fromIndex)
+        nextIndex = index + 1;
+      setData(element, 'nativeListAnimateReorder', true);
+      setData(element, 'nativeListRowIndex', nextIndex);
+      remapped.push([nextIndex, element]);
+    });
+    this.mounted.clear();
+    remapped.forEach(([index, element]) => this.mounted.set(index, element));
   }
 
   private reorderAutoScrollVelocity(): number {
     const state = this.pointerReorder;
     if (!state?.active) return 0;
-    const rect = this.viewport.getBoundingClientRect();
+    const rect = state.viewportRect ?? this.reorderViewportRect();
     const point = this.layout.horizontal ? state.clientX : state.clientY;
     const start = this.layout.horizontal ? rect.left : rect.top;
     const end = this.layout.horizontal ? rect.right : rect.bottom;
@@ -3208,10 +3296,13 @@ export class NativeListWebEngine {
     }
 
     event.preventDefault();
+    state.clientX = event.clientX;
+    state.clientY = event.clientY;
     this.completePointerReorder(state);
   };
 
   private completePointerReorder(state: PointerReorderState) {
+    this.flushReorderMove(state);
     const finalRows = this.snapshot.rows;
     const reorderEvent = webReorderEventForRows(
       state.originalRows,
@@ -3220,6 +3311,7 @@ export class NativeListWebEngine {
     );
     this.animateReorderPreviewToCurrent(state);
     this.pointerReorder = undefined;
+    this.stopReorderMove();
     this.stopReorderAutoScroll();
     this.suppressClickUntil = Date.now() + 300;
     this.updateReorderVisualState();
@@ -3248,6 +3340,7 @@ export class NativeListWebEngine {
     this.clearReorderLongPress(state);
     this.releaseReorderPointer(state);
     this.pointerReorder = undefined;
+    this.stopReorderMove();
     this.stopReorderAutoScroll();
     if (state.active && restore) {
       this.remapMountedRows(state.originalRows);

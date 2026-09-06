@@ -498,8 +498,8 @@ final class NativeListView: UIView {
           interactiveReorderFeedbackIndex = indexPath.item
           reorderMoveFeedback.selectionChanged()
           reorderMoveFeedback.prepare()
+          showInteractiveReorderPlaceholder(at: indexPath, item: item, config: config)
         }
-        showInteractiveReorderPlaceholder(at: indexPath, item: item, config: config)
       }
     case .ended:
       guard interactiveReorderSource != nil else { return }

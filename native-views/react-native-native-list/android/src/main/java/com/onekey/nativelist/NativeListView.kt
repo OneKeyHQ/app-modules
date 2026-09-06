@@ -922,6 +922,7 @@ class NativeListView(
     reorderTouchListener = null
     itemTouchHelper?.attachToRecyclerView(null)
     itemTouchHelper = null
+    adapter.cancelReorder()
     if (!next.reorderable) return
     val callback = object : ItemTouchHelper.SimpleCallback(
       ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT,
@@ -937,7 +938,6 @@ class NativeListView(
           reorderPlaceholderDecoration.color = reorderActiveBackground(next.theme)
           recyclerView.invalidateItemDecorations()
           (viewHolder as? NativeListViewHolder)?.rowView?.setReorderActive(true)
-          relayoutRecyclerView()
         }
       }
 
@@ -965,17 +965,12 @@ class NativeListView(
         if (crossedPosition) {
           recyclerView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
         }
-        val reordered = base.toMutableList()
-        val moved = reordered.removeAt(from)
-        reordered.add(to, moved)
+        val displacedView = target.itemView
+        prepareDisplacedReorderAnimation(displacedView)
+        val reordered = adapter.moveReordered(from, to) ?: return false
         pendingReorder = reordered
         reorderPlaceholderDecoration.position = to
         recyclerView.invalidateItemDecorations()
-        val previousPositions = visibleReorderPositions()
-        adapter.submitList(reordered) {
-          relayoutRecyclerView()
-          animateVisibleReorder(previousPositions, moved.key)
-        }
         return true
       }
 
@@ -986,7 +981,6 @@ class NativeListView(
         (viewHolder as? NativeListViewHolder)?.rowView?.setReorderActive(false)
         reorderPlaceholderDecoration.position = RecyclerView.NO_POSITION
         recyclerView.invalidateItemDecorations()
-        relayoutRecyclerView()
         val from = dragFrom
         val to = dragTo
         val reordered = pendingReorder
@@ -1000,8 +994,10 @@ class NativeListView(
               .put("toIndex", to)
             reordered.getOrNull(to - 1)?.let { payload.put("beforeKey", it.key) }
             reordered.getOrNull(to + 1)?.let { payload.put("afterKey", it.key) }
-            emit(REORDER, payload)
+            adapter.commitReordered(reordered) { emit(REORDER, payload) }
           }
+        } else {
+          adapter.cancelReorder()
         }
         dragFrom = RecyclerView.NO_POSITION
         dragTo = RecyclerView.NO_POSITION
@@ -1059,40 +1055,36 @@ class NativeListView(
     }.also(recyclerView::addOnItemTouchListener)
   }
 
-  private fun visibleReorderPositions(): Map<String, Pair<Float, Float>> = buildMap {
-    for (index in 0 until recyclerView.childCount) {
-      val child = recyclerView.getChildAt(index)
-      val holder = recyclerView.getChildViewHolder(child)
-      val item = adapter.itemAt(holder.bindingAdapterPosition) ?: continue
-      put(item.key, child.x to child.y)
-    }
-  }
-
-  private fun animateVisibleReorder(
-    previousPositions: Map<String, Pair<Float, Float>>,
-    activeKey: String,
-  ) {
-    recyclerView.post {
-      for (index in 0 until recyclerView.childCount) {
-        val child = recyclerView.getChildAt(index)
-        val holder = recyclerView.getChildViewHolder(child)
-        val item = adapter.itemAt(holder.bindingAdapterPosition) ?: continue
-        if (item.key == activeKey) continue
-        val previous = previousPositions[item.key] ?: continue
-        val deltaX = previous.first - child.left.toFloat()
-        val deltaY = previous.second - child.top.toFloat()
-        if (deltaX == 0f && deltaY == 0f) continue
-        child.animate().cancel()
-        child.translationX = deltaX
-        child.translationY = deltaY
-        child.animate()
+  private fun prepareDisplacedReorderAnimation(view: View) {
+    val previousX = view.x
+    val previousY = view.y
+    view.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+      override fun onLayoutChange(
+        changedView: View,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        oldLeft: Int,
+        oldTop: Int,
+        oldRight: Int,
+        oldBottom: Int,
+      ) {
+        changedView.removeOnLayoutChangeListener(this)
+        val deltaX = previousX - changedView.x
+        val deltaY = previousY - changedView.y
+        if (deltaX == 0f && deltaY == 0f) return
+        changedView.animate().cancel()
+        changedView.translationX = deltaX
+        changedView.translationY = deltaY
+        changedView.animate()
           .translationX(0f)
           .translationY(0f)
           .setDuration(REORDER_SPRING_DURATION_MS)
           .setInterpolator(reorderSpringInterpolator)
           .start()
       }
-    }
+    })
   }
 
   private fun reorderActiveBackground(theme: JSONObject?): Int = try {
