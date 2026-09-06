@@ -65,12 +65,36 @@ Recorded 2026-09-05 baseline comparison: page-open p50 is essentially unchanged 
 - Haptic dispatch evidence: source breakpoints on the built simulator binary recorded one `UIImpactFeedbackGenerator` drag-start call and three `UISelectionFeedbackGenerator` position-crossing calls in one native hold-then-drag. The simulator proves that the native paths execute, not physical Taptic Engine feel.
 - Apple's Animation Hitches instrument reports that this trace type is unsupported on the simulator. No simulator FPS or jank percentage is claimed; physical-device Profile acceptance remains open.
 
+## Hardware-wallet grouped-row acceptance
+
+- Fixture: the top-level list remains 1,001 reorderable wallet units. `OneKey Pro` is one stable top-level unit containing three child wallets, so the 1,000 wallets x 1,000 accounts stress model is unchanged.
+- UI geometry: the settled group uses one 68 pt/dp parent row, three 68 pt/dp child rows, and three 12 pt/dp inter-row gaps for a deterministic 308 pt/dp logical height. Each child is independently selectable, while reorder treats the parent and children as one unit.
+- Compact drag contract: both the active placeholder and lifted drag card are the 68 pt/dp parent-only row with a `+3` badge. Siblings reflow around that compact unit during movement; release at the target dynamically expands the settled group back to 308 pt/dp.
+- Evidence: static, active-drag, and settled-drop captures are under `artifacts/evidence/hardware-wallet-group/`.
+
+### Web hardware-wallet drag
+
+- Runtime coverage: static grouped UI, child-wallet selection, 68 px parent-only active placeholder and drag card with `+3`, sibling reflow, edge movement, atomic drop, and dynamic expansion to 308 px all passed.
+- Synthetic development-build mouse run: 180 frames over 1,487.8 ms; effective 121 FPS; p50/p95/worst 8.3/9.2/9.3 ms; no interval above 16.7 ms and no Long Task. This is an interaction-path diagnostic, not a production browser benchmark.
+
+### Android hardware-wallet drag
+
+- Environment: Android 16 / API 36 arm64-v8a Debug emulator, 1080 x 2400; final functional acceptance used a no-logging package.
+- Runtime coverage: ordinary wallets exchanged in the actual settled order. The grouped row showed the 68 dp parent-only active placeholder and drag card with `+3`, surrounding wallets reflowed to avoid it, `OneKey Pro` moved from top-level index 2 to index 6, and release restored the parent plus all three children at the target. A subsequent ordinary-wallet reorder still exchanged correctly.
+- Isolated `gfxinfo` evidence (`/tmp/android-final-gfxinfo-isolated.txt`): 255 frames; new deadline jank 84/255 (32.94%); legacy jank 2/255 (0.78%); p50/p90/p95/p99 17/18/18/19 ms; worst 34 ms; `Missed Vsync` 0. Functional acceptance passes, but this trace does not support a strict full-frame claim.
+
+### iOS hardware-wallet drag
+
+- Simulator evidence passes the grouped row's static 308 pt state, 68 pt parent-only active placeholder and drag card with `+3`, sibling reflow, target drop, and dynamic expansion back to the parent plus three children.
+- Ordinary 68 pt wallets now move both upward and downward across the grouped row while the parent plus three children remain a complete 308 pt atomic unit. The group shifts as one unit, the final order commits correctly, and a consecutive second drag also passes. Evidence is under `artifacts/evidence/hardware-wallet-group/ios-atomic-reorder/`.
+- Runtime cancellation could not be generated reliably by the current XCTest gesture injector; its cleanup branch was source-reviewed but remains runtime-open. Simulator FPS evidence and physical haptic feel also remain open.
+
 ## Full-frame optimization result
 
 - Target budgets are 16.7 ms at 60 Hz and 8.3 ms at 120 Hz. Haptic feedback is dispatched by the native view on index changes only and is not the dominant work in the current drag path.
 - Web now coalesces pointer/touch movement to animation frames, caches the viewport, carries the current index, and remaps only mounted rows. A same-size reorder no longer rebuilds the full snapshot, theme, sections, layout, and render window on every crossed wallet.
 - Android now holds a drag-only mutable order, calls `notifyItemMoved` for each crossing, animates only the displaced view, and performs one immutable `AsyncListDiffer` reconciliation at drop. Full 1,001-row copies/diffs, visible-position snapshots, and forced RecyclerView measure/layout were removed from the per-crossing and activation paths.
-- iOS keeps UICollectionView interactive movement and restarts the placeholder spring only when the destination index changes, rather than on every gesture update inside the same row.
+- iOS keeps UICollectionView's lifted drag view and auto-scroll, but freezes UIKit's provisional destination when an ordinary wallet crosses the unequal-height grouped row. Only crossed cells translate by one 68 pt row step; the final diffable snapshot is applied once at release. The placeholder spring still restarts only when the destination index changes.
 - Web meets the measured browser budget. Android is close to the 60 Hz budget but is not literally zero-jank on this emulator. iOS cannot be called full-frame without a physical Release/Profile trace.
 
 ## Verdict
@@ -80,9 +104,10 @@ Recorded 2026-09-05 baseline comparison: page-open p50 is essentially unchanged 
 - Independent lists and fixed footer: PASS on both simulator environments.
 - Android continuous-scroll emulator regression: PASS and materially improved from the recorded baseline.
 - Web drag/reorder: PASS, including the 1,001st wallet and touch/keyboard paths.
-- Android drag/reorder: PASS for functional parity and Release emulator regression; final post-layout jank is 1.69%, not a literal zero-jank/full-frame claim.
-- iOS drag/reorder: PASS for simulator behavior, active long-press state, stable selection, and repeated native gestures; FPS remains OPEN.
+- Android drag/reorder: functional PASS for ordinary and grouped wallets, including a regular reorder after moving the group; isolated deadline jank is 32.94%, so strict full-frame remains OPEN.
+- iOS drag/reorder: grouped-row static, active, target-drop, bidirectional ordinary-wallet crossing, and consecutive second-drag behavior PASS; cancellation runtime coverage and FPS remain OPEN.
 - Native drag haptic dispatch: PASS on both platforms; physical feel remains OPEN pending real-device acceptance.
+- Hardware-wallet grouped UI and compact drag: PASS on Web, Android, and iOS, including iOS bidirectional ordinary-wallet crossing without collapsing the 308 pt grouped row.
 - iOS account-list cadence: usable, but modestly below the recorded baseline.
 - iOS wallet-list 120 Hz target: FAIL; current effective cadence is 71.9 FPS.
 - Production performance: OPEN until physical iOS/Android Release/Profile runs are completed.

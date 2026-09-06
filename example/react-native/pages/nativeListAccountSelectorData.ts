@@ -3,6 +3,7 @@ import type {
   IdentityRow,
   ReorderEvent,
   RowModel,
+  WalletGroupRow,
 } from '@onekeyfe/react-native-native-list';
 
 export const ACCOUNT_SELECTOR_WALLET_COUNT = 1_000;
@@ -14,6 +15,10 @@ export const ACCOUNT_SELECTOR_WATCH_WALLET_INDEX =
 export const ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT =
   ACCOUNT_SELECTOR_WALLET_COUNT + 1;
 export const ACCOUNT_SELECTOR_WATCH_ACCOUNT_COUNT = 2;
+export const ACCOUNT_SELECTOR_HARDWARE_PARENT_INDEX = 2;
+export const ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES = [
+  1_001, 1_002, 1_003,
+] as const;
 export const ACCOUNT_SELECTOR_ACCOUNT_CACHE_LIMIT = 3;
 export const ACCOUNT_SELECTOR_DEFAULT_WALLET_NUMBER = 3;
 export const ACCOUNT_SELECTOR_DEFAULT_ACCOUNT_NUMBER = 1;
@@ -83,6 +88,8 @@ const WATCH_WALLET_NAME = '观察钱包';
 const JUNO_NETWORK_LOGO = 'https://uni.onekey-asset.com/static/chain/juno.png';
 const ETHEREUM_NETWORK_LOGO =
   'https://uni.onekey-asset.com/static/chain/eth.png';
+const HARDWARE_WALLET_AVATAR_URI =
+  'data:image/png;base64,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';
 
 // The reference selector renders these same app-monorepo wallet avatar PNGs.
 // Data URIs keep the standalone example self-contained on both native targets.
@@ -117,11 +124,25 @@ export function walletKey(walletIndex: number): string {
   return `wallet-${walletIndex}`;
 }
 
+export function walletListRowKey(walletIndex: number): string {
+  return ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES.includes(
+    walletIndex as (typeof ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES)[number],
+  )
+    ? walletKey(ACCOUNT_SELECTOR_HARDWARE_PARENT_INDEX)
+    : walletKey(walletIndex);
+}
+
 export function accountKey(walletIndex: number, accountIndex: number): string {
   return `account-${walletIndex}-${accountIndex}`;
 }
 
 export function walletName(walletIndex: number): string {
+  if (walletIndex === ACCOUNT_SELECTOR_HARDWARE_PARENT_INDEX)
+    return 'OneKey Pro';
+  const hardwareChildIndex = ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES.indexOf(
+    walletIndex as (typeof ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES)[number],
+  );
+  if (hardwareChildIndex >= 0) return `Wallet ${hardwareChildIndex + 1}`;
   if (isWatchWalletIndex(walletIndex)) return WATCH_WALLET_NAME;
   return referenceWalletNames[walletIndex] ?? `Wallet ${walletIndex + 1}`;
 }
@@ -132,6 +153,13 @@ export function walletEmoji(walletIndex: number): string {
 }
 
 export function walletAvatarUri(walletIndex: number): string | undefined {
+  if (
+    walletIndex === ACCOUNT_SELECTOR_HARDWARE_PARENT_INDEX ||
+    ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES.includes(
+      walletIndex as (typeof ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES)[number],
+    )
+  )
+    return HARDWARE_WALLET_AVATAR_URI;
   if (isWatchWalletIndex(walletIndex)) return walletAvatarUris[6];
   if (walletIndex === 5) return polarBearAvatarUri;
   return walletIndex < WATCH_WALLET_INSERT_INDEX
@@ -157,7 +185,10 @@ export function parseWalletKey(key: string): number | undefined {
   const match = /^wallet-(\d+)$/.exec(key);
   if (!match) return undefined;
   const index = Number(match[1]);
-  return index >= 0 && index < ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT
+  return (index >= 0 && index < ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT) ||
+    ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES.includes(
+      index as (typeof ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES)[number],
+    )
     ? index
     : undefined;
 }
@@ -171,7 +202,10 @@ export function parseAccountKey(
   const accountIndex = Number(match[2]);
   if (
     walletIndex < 0 ||
-    walletIndex >= ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT ||
+    (walletIndex >= ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT &&
+      !ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES.includes(
+        walletIndex as (typeof ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES)[number],
+      )) ||
     accountIndex < 0 ||
     accountIndex >= accountCountForWallet(walletIndex)
   ) {
@@ -180,7 +214,40 @@ export function parseAccountKey(
   return { walletIndex, accountIndex };
 }
 
-export function buildWalletRows(): readonly IdentityRow[] {
+export type WalletSidebarRow = IdentityRow | WalletGroupRow;
+
+function buildWalletRow(
+  walletIndex: number,
+  displayIndex: number,
+): IdentityRow {
+  const key = walletKey(walletIndex);
+  const avatarUri = walletAvatarUri(walletIndex);
+  return {
+    type: 'identity',
+    key,
+    presentation: 'walletSidebar',
+    leading: {
+      kind: 'wallet',
+      image: avatarUri
+        ? {
+            uri: avatarUri,
+            width: 40,
+            height: 40,
+            cachePolicy: 'memory',
+            loadingStrategy: 'none',
+          }
+        : undefined,
+      fallbackText: walletEmoji(walletIndex),
+      backgroundColor: '#00000000',
+    },
+    title: walletName(walletIndex),
+    accessibilityLabel: `${walletName(walletIndex)}, wallet ${
+      displayIndex + 1
+    }`,
+  };
+}
+
+export function buildWalletRows(): readonly WalletSidebarRow[] {
   const walletIndexes = Array.from(
     { length: ACCOUNT_SELECTOR_WALLET_COUNT },
     (_, walletIndex) => walletIndex,
@@ -190,32 +257,27 @@ export function buildWalletRows(): readonly IdentityRow[] {
     0,
     ACCOUNT_SELECTOR_WATCH_WALLET_INDEX,
   );
-  return walletIndexes.map((walletIndex, displayIndex): IdentityRow => {
-    const key = walletKey(walletIndex);
-    const avatarUri = walletAvatarUri(walletIndex);
+  return walletIndexes.map((walletIndex, displayIndex): WalletSidebarRow => {
+    const parent = buildWalletRow(walletIndex, displayIndex);
+    if (walletIndex === ACCOUNT_SELECTOR_HARDWARE_PARENT_INDEX) {
+      return {
+        type: 'walletGroup',
+        key: parent.key,
+        parent,
+        children: ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES.map(
+          (childIndex, childPosition) =>
+            buildWalletRow(childIndex, displayIndex + childPosition + 1),
+        ),
+        draggable: true,
+        accessibilityLabel: `${parent.title}, hardware wallet group with ${ACCOUNT_SELECTOR_HARDWARE_CHILD_INDEXES.length} child wallets`,
+      };
+    }
     return {
-      type: 'identity',
-      key,
-      groupId: key,
+      ...parent,
+      groupId: parent.key,
       groupPosition: 'single',
-      presentation: 'walletSidebar',
-      leading: {
-        kind: 'wallet',
-        image: avatarUri
-          ? {
-              uri: avatarUri,
-              width: 40,
-              height: 40,
-              cachePolicy: 'memory',
-              loadingStrategy: 'none',
-            }
-          : undefined,
-        fallbackText: walletEmoji(walletIndex),
-        backgroundColor: '#00000000',
-      },
-      title: walletName(walletIndex),
       draggable: true,
-      accessibilityLabel: `${walletName(walletIndex)}, wallet ${
+      accessibilityLabel: `${parent.title}, wallet ${
         displayIndex + 1
       } of ${ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT}`,
     };
@@ -223,9 +285,9 @@ export function buildWalletRows(): readonly IdentityRow[] {
 }
 
 export function reorderWalletRows(
-  rows: readonly IdentityRow[],
+  rows: readonly WalletSidebarRow[],
   event: ReorderEvent,
-): readonly IdentityRow[] {
+): readonly WalletSidebarRow[] {
   const fromIndex = rows.findIndex(row => row.key === event.key);
   if (fromIndex < 0) return rows;
 

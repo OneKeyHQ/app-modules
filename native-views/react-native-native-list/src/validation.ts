@@ -6,6 +6,7 @@ import type {
   NativeListSnapshot,
   RowModel,
   RowPatch,
+  WalletGroupRow,
 } from './models';
 
 const MAX_KEY_LENGTH = 256;
@@ -256,6 +257,31 @@ function assertActivity(row: ActivityRow, path: string): void {
   });
 }
 
+function assertWalletGroup(row: WalletGroupRow, path: string): void {
+  if (row.parent.key !== row.key) {
+    fail(`${path}.parent.key`, 'must match the wallet group key');
+  }
+  if (row.children.length === 0) {
+    fail(`${path}.children`, 'must contain at least one child wallet');
+  }
+  const members = [row.parent, ...row.children];
+  const keys = new Set<string>();
+  members.forEach((member, memberIndex) => {
+    const memberPath =
+      memberIndex === 0
+        ? `${path}.parent`
+        : `${path}.children[${memberIndex - 1}]`;
+    if (member.type !== 'identity' || member.presentation !== 'walletSidebar') {
+      fail(memberPath, 'must be a walletSidebar identity row');
+    }
+    assertRow(member, memberIndex, memberPath);
+    if (keys.has(member.key)) {
+      fail(memberPath, `duplicate wallet member key "${member.key}"`);
+    }
+    keys.add(member.key);
+  });
+}
+
 function assertRow(
   row: RowModel,
   index: number,
@@ -271,6 +297,9 @@ function assertRow(
   assertVisual(row, path);
 
   switch (row.type) {
+    case 'walletGroup':
+      assertWalletGroup(row, path);
+      break;
     case 'identity':
       if (
         row.presentation !== undefined &&

@@ -39,6 +39,7 @@ import {
   walletAvatarUri,
   walletEmoji,
   walletKey,
+  walletListRowKey,
   walletName,
 } from './nativeListAccountSelectorData';
 
@@ -185,7 +186,7 @@ export function NativeListAccountSelectorPage({
   const isWatchWallet = isWatchWalletIndex(selectedWalletIndex);
   const selectedWalletAccountCount = accountCountForWallet(selectedWalletIndex);
   const initialWalletRowIndex = walletRows.findIndex(
-    row => row.key === walletKey(initialTarget.walletIndex),
+    row => row.key === walletListRowKey(initialTarget.walletIndex),
   );
   const shouldScrollToInitialWallet =
     hasExplicitInitialTarget && initialWalletRowIndex >= REFERENCE_WALLET_COUNT;
@@ -303,8 +304,9 @@ export function NativeListAccountSelectorPage({
     viewportHeight,
   ]);
 
-  const walletSnapshot = useMemo<NativeListSnapshot>(
-    () => ({
+  const walletSnapshot = useMemo<NativeListSnapshot>(() => {
+    const selectedKey = walletKey(selectedWalletIndex);
+    return {
       schemaVersion: 1,
       generation: 1,
       theme: walletListTheme,
@@ -315,16 +317,29 @@ export function NativeListAccountSelectorPage({
         contentPaddingBottom: 8,
         itemSpacing: WALLET_ROW_SPACING,
       },
-      rows: walletRows,
+      rows: walletRows.map(row =>
+        row.type === 'walletGroup'
+          ? {
+              ...row,
+              parent: {
+                ...row.parent,
+                selected: row.parent.key === selectedKey,
+              },
+              children: row.children.map(child => ({
+                ...child,
+                selected: child.key === selectedKey,
+              })),
+            }
+          : row,
+      ),
       selection: {
         mode: 'single',
-        selectedKeys: [walletKey(selectedWalletIndex)],
+        selectedKeys: [walletListRowKey(selectedWalletIndex)],
         rowPressToggles: false,
       },
       capabilities: { reorderable: true },
-    }),
-    [selectedWalletIndex, walletRows],
-  );
+    };
+  }, [selectedWalletIndex, walletRows]);
 
   const accountSnapshot = useMemo<NativeListSnapshot>(() => {
     const selectedKey = accountKey(selectedWalletIndex, selectedAccountIndex);
@@ -422,7 +437,7 @@ export function NativeListAccountSelectorPage({
             snapshot={walletSnapshot}
             initialScrollKey={
               shouldScrollToInitialWallet
-                ? walletKey(initialTarget.walletIndex)
+                ? walletListRowKey(initialTarget.walletIndex)
                 : undefined
             }
             initialScrollViewPosition={0.5}
@@ -432,7 +447,7 @@ export function NativeListAccountSelectorPage({
               recordInitialTargetVisible(
                 'wallet',
                 event,
-                walletKey(initialTarget.walletIndex),
+                walletListRowKey(initialTarget.walletIndex),
                 initialWalletRowIndex,
               );
             }}

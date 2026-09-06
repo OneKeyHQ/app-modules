@@ -15,6 +15,7 @@ import {
   reorderWalletRows,
   resolveAccountSelectorInitialTarget,
   walletKey,
+  walletListRowKey,
 } from '../pages/nativeListAccountSelectorData';
 
 describe('Native List account-selector stress data', () => {
@@ -23,10 +24,47 @@ describe('Native List account-selector stress data', () => {
     expect(ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET).toBe(1_000);
     expect(ACCOUNT_SELECTOR_LOGICAL_ACCOUNT_COUNT).toBe(1_000_000);
     expect(buildWalletRows()).toHaveLength(1_001);
+    expect(buildWalletRows()[2]).toMatchObject({
+      type: 'walletGroup',
+      key: walletKey(2),
+      children: [
+        { key: walletKey(1_001) },
+        { key: walletKey(1_002) },
+        { key: walletKey(1_003) },
+      ],
+    });
     expect(buildAccountRows(0)).toHaveLength(1_000);
     expect(buildWalletRows()[6]).toMatchObject({
       key: walletKey(ACCOUNT_SELECTOR_WATCH_WALLET_INDEX),
       title: '观察钱包',
+    });
+  });
+
+  it('maps hardware child wallets to their atomic sidebar group', () => {
+    expect(walletListRowKey(1_002)).toBe(walletKey(2));
+    expect(parseWalletKey(walletKey(1_002))).toBe(1_002);
+  });
+
+  it('reorders the hardware wallet group as one top-level unit', () => {
+    const rows = buildWalletRows();
+    const group = rows[2];
+    const reordered = reorderWalletRows(rows, {
+      key: walletKey(2),
+      fromIndex: 2,
+      toIndex: 4,
+      beforeKey: rows[4]?.key,
+      afterKey: rows[5]?.key,
+    });
+
+    expect(reordered).toHaveLength(ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT);
+    expect(reordered[4]).toBe(group);
+    expect(reordered[4]).toMatchObject({
+      type: 'walletGroup',
+      children: [
+        { key: walletKey(1_001) },
+        { key: walletKey(1_002) },
+        { key: walletKey(1_003) },
+      ],
     });
   });
 

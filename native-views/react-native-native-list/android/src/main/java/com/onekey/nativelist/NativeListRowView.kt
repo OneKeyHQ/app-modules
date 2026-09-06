@@ -1,5 +1,9 @@
 package com.margelo.nitro.nativelist
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.TimeInterpolator
+import android.animation.ValueAnimator
 import android.graphics.Color
 import android.graphics.Canvas
 import android.graphics.Outline
@@ -308,6 +312,18 @@ internal class NativeListRowView(
   private val mediaBadge = TextView(context)
   private val skeletonPrimary = View(context)
   private val skeletonSecondary = View(context)
+  private val walletGroupRows = mutableListOf<NativeListRowView>()
+  private val walletGroupDragBadgeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+  private val walletGroupDragBadgeBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.STROKE
+  }
+  private val walletGroupDragBadgeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    textAlign = Paint.Align.CENTER
+    typeface = NativeListFonts.semibold(context)
+  }
+  private var walletGroupDragChildCount = 0
+  private var walletGroupExpandedHeightPx = 0
+  private var walletGroupExpandAnimator: ValueAnimator? = null
   private var isMediaTile = false
   private var boundKey: String? = null
   private var boundCheckboxData: JSONObject? = null
@@ -443,6 +459,39 @@ internal class NativeListRowView(
       val start = if ((tag as? NativeListItem)?.type == "identity") dp(60).toFloat() else dp(12).toFloat()
       canvas.drawLine(start, height - 1f, width.toFloat(), height - 1f, separatorPaint)
     }
+    if (reorderActive && (tag as? NativeListItem)?.type == "walletGroup" && walletGroupDragChildCount > 0) {
+      val label = "+$walletGroupDragChildCount"
+      val badgeHeight = dp(24).toFloat()
+      val badgeWidth = maxOf(
+        dp(24).toFloat(),
+        walletGroupDragBadgeTextPaint.measureText(label) + dp(12),
+      )
+      val right = width - dp(4).toFloat()
+      val bottom = height - dp(4).toFloat()
+      val left = right - badgeWidth
+      val top = bottom - badgeHeight
+      canvas.drawRoundRect(
+        left,
+        top,
+        right,
+        bottom,
+        badgeHeight / 2f,
+        badgeHeight / 2f,
+        walletGroupDragBadgeBackgroundPaint,
+      )
+      canvas.drawRoundRect(
+        left,
+        top,
+        right,
+        bottom,
+        dp(12).toFloat(),
+        dp(12).toFloat(),
+        walletGroupDragBadgeBorderPaint,
+      )
+      val metrics = walletGroupDragBadgeTextPaint.fontMetrics
+      val baseline = (top + bottom - metrics.ascent - metrics.descent) / 2f
+      canvas.drawText(label, (left + right) / 2f, baseline, walletGroupDragBadgeTextPaint)
+    }
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -530,6 +579,7 @@ internal class NativeListRowView(
     contentDescription = item.json.optString("accessibilityLabel", item.json.optString("title"))
 
     when (item.type) {
+      "walletGroup" -> bindWalletGroup(item, theme, layout, listOrientation, checkboxState)
       "identity" -> bindIdentity(item, theme, selected, checkboxState)
       "rail" -> bindRail(item, theme)
       "activity" -> bindActivity(item, theme)
@@ -552,6 +602,11 @@ internal class NativeListRowView(
     secondaryImage.prepareForReuse()
     mediaNetworkImage.prepareForReuse()
     metricVisualImages.forEach(OneKeyImageReusableView::prepareForReuse)
+    walletGroupRows.forEach { row ->
+      row.visibility = VISIBLE
+      row.alpha = 1f
+      row.recycle()
+    }
   }
 
   fun bindSelection(
@@ -563,6 +618,29 @@ internal class NativeListRowView(
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
     if (boundKey != item.key) return
+    if (item.type == "walletGroup") {
+      val members = buildList {
+        add(item.json.getJSONObject("parent"))
+        item.json.getJSONArray("children").let { children ->
+          for (index in 0 until children.length()) add(children.getJSONObject(index))
+        }
+      }
+      members.forEachIndexed { index, memberJson ->
+        walletGroupRows.getOrNull(index)?.bindSelection(
+          NativeListItem.parse(memberJson),
+          theme,
+          layout,
+          null,
+          memberJson.optBoolean("selected", false),
+          checkboxState,
+        )
+      }
+      // The group owns the subdued backdrop. Selection belongs to a member;
+      // applying the translucent selected color to both levels produces dark
+      // bands in the 12dp gaps and double-composites the parent highlight.
+      background = restingRowBackground
+      return
+    }
     applySelectionState(item, theme, layout, itemIndex, selected)
     if (item.type == "identity" && item.json.optString("presentation") == "walletSidebar") {
       title.setTextColor(
@@ -596,10 +674,23 @@ internal class NativeListRowView(
     secondaryImage.dispose()
     mediaNetworkImage.dispose()
     metricVisualImages.forEach(OneKeyImageReusableView::dispose)
+    walletGroupRows.forEach(NativeListRowView::dispose)
   }
 
   private fun resetViews() {
+    walletGroupExpandAnimator?.removeAllListeners()
+    walletGroupExpandAnimator?.cancel()
+    walletGroupExpandAnimator = null
+    layoutParams?.takeIf { it.height != ViewGroup.LayoutParams.WRAP_CONTENT }?.let { params ->
+      params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+      layoutParams = params
+    }
     restoreRestingBackground()
+    walletGroupRows.forEach { row ->
+      row.visibility = VISIBLE
+      row.alpha = 1f
+      row.recycle()
+    }
     activityContentRow.removeAllViews()
     (actionLine.parent as? ViewGroup)?.removeView(actionLine)
     removeAllViews()
@@ -608,6 +699,8 @@ internal class NativeListRowView(
     minimumHeight = 0
     setPadding(dp(12), dp(8), dp(12), dp(8))
     isMediaTile = false
+    walletGroupDragChildCount = 0
+    walletGroupExpandedHeightPx = 0
     boundCheckboxData = null
     mainColumn.orientation = VERTICAL
     mainColumn.gravity = Gravity.CENTER_VERTICAL
@@ -751,8 +844,176 @@ internal class NativeListRowView(
   }
 
   fun setReorderActive(active: Boolean) {
+    if ((tag as? NativeListItem)?.type == "walletGroup" && reorderActive == active) return
     reorderActive = active
+    if ((tag as? NativeListItem)?.type == "walletGroup") {
+      walletGroupExpandAnimator?.removeAllListeners()
+      walletGroupExpandAnimator?.cancel()
+      walletGroupExpandAnimator = null
+      walletGroupRows.forEachIndexed { index, row ->
+        row.alpha = 1f
+        row.visibility = if (active && index > 0) GONE else VISIBLE
+        if (index == 0) row.setReorderActive(active)
+      }
+      minimumHeight = if (active) dp(68) else walletGroupExpandedHeightPx
+      layoutParams = layoutParams?.apply {
+        height = ViewGroup.LayoutParams.WRAP_CONTENT
+      }
+      background = restingRowBackground
+      requestLayout()
+      invalidate()
+      return
+    }
     restoreRestingBackground()
+  }
+
+  fun finishWalletGroupReorder(
+    durationMs: Long,
+    interpolator: TimeInterpolator,
+    completion: (() -> Unit)? = null,
+  ) {
+    if ((tag as? NativeListItem)?.type != "walletGroup") {
+      setReorderActive(false)
+      completion?.invoke()
+      return
+    }
+    reorderActive = false
+    walletGroupRows.firstOrNull()?.setReorderActive(false)
+    val startHeight = height.coerceAtLeast(dp(68))
+    val targetHeight = walletGroupExpandedHeightPx
+    minimumHeight = startHeight
+    layoutParams = layoutParams?.apply { height = startHeight }
+    walletGroupRows.drop(1).forEach { row ->
+      row.visibility = VISIBLE
+      row.alpha = 0f
+    }
+    background = restingRowBackground
+    if (targetHeight <= startHeight) {
+      walletGroupRows.forEach { row ->
+        row.visibility = VISIBLE
+        row.alpha = 1f
+      }
+      minimumHeight = targetHeight
+      layoutParams = layoutParams?.apply { height = ViewGroup.LayoutParams.WRAP_CONTENT }
+      requestLayout()
+      invalidate()
+      completion?.invoke()
+      return
+    }
+    walletGroupExpandAnimator = ValueAnimator.ofInt(startHeight, targetHeight).apply {
+      duration = durationMs
+      this.interpolator = interpolator
+      addUpdateListener { animator ->
+        val progress = animator.animatedFraction
+        layoutParams = layoutParams?.apply { height = animator.animatedValue as Int }
+        walletGroupRows.drop(1).forEach { it.alpha = progress }
+        requestLayout()
+        invalidate()
+      }
+      addListener(object : AnimatorListenerAdapter() {
+        override fun onAnimationEnd(animation: Animator) {
+          walletGroupExpandAnimator = null
+          walletGroupRows.forEach { row ->
+            row.visibility = VISIBLE
+            row.alpha = 1f
+          }
+          minimumHeight = targetHeight
+          layoutParams = layoutParams?.apply { height = ViewGroup.LayoutParams.WRAP_CONTENT }
+          requestLayout()
+          invalidate()
+          postOnAnimation {
+            if (!reorderActive) {
+              walletGroupRows.forEach { row ->
+                row.visibility = VISIBLE
+                row.alpha = 1f
+              }
+              requestLayout()
+              invalidate()
+            }
+          }
+          completion?.invoke()
+        }
+      })
+      start()
+    }
+  }
+
+  private fun bindWalletGroup(
+    item: NativeListItem,
+    theme: JSONObject?,
+    layout: String,
+    listOrientation: String,
+    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
+  ) {
+    orientation = VERTICAL
+    gravity = Gravity.CENTER_HORIZONTAL
+    setPadding(0, 0, 0, 0)
+    isClickable = false
+    setOnClickListener(null)
+    val members = mutableListOf<JSONObject>()
+    members.add(item.json.getJSONObject("parent"))
+    item.json.getJSONArray("children").let { children ->
+      for (index in 0 until children.length()) {
+        members.add(children.getJSONObject(index))
+      }
+    }
+    walletGroupDragChildCount = members.size - 1
+    walletGroupExpandedHeightPx =
+      dp(members.size * 68 + walletGroupDragChildCount * 12)
+    walletGroupDragBadgeBackgroundPaint.color = color(
+      theme,
+      "inverseBackground",
+      "#000000DF",
+    )
+    walletGroupDragBadgeBorderPaint.color = color(
+      theme,
+      "rowBackground",
+      "#FFFFFF",
+    )
+    walletGroupDragBadgeBorderPaint.strokeWidth = dp(1).toFloat()
+    walletGroupDragBadgeTextPaint.color = color(
+      theme,
+      "inverseText",
+      "#FCFCFC",
+    )
+    walletGroupDragBadgeTextPaint.textSize = TypedValue.applyDimension(
+      TypedValue.COMPLEX_UNIT_SP,
+      sp(12f),
+      resources.displayMetrics,
+    )
+    while (walletGroupRows.size < members.size) {
+      walletGroupRows.add(NativeListRowView(reactContext))
+    }
+    members.forEachIndexed { index, memberJson ->
+      val member = NativeListItem.parse(memberJson)
+      val memberRow = walletGroupRows[index]
+      memberRow.onRowPress = { onRowPress?.invoke(it) }
+      memberRow.onAction = { source, actionKey, target ->
+        onAction?.invoke(source, actionKey, target)
+      }
+      memberRow.bind(
+        member,
+        theme,
+        layout,
+        listOrientation,
+        null,
+        memberJson.optBoolean("selected", false),
+        checkboxState,
+      )
+      memberRow.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(68)).apply {
+        if (index > 0) topMargin = dp(12)
+      }
+      addView(memberRow)
+    }
+    val fill = color(theme, "subduedBackground", "#F9F9F9")
+    val stroke = color(theme, "separator", "#0000001F")
+    restingRowBackground = GradientDrawable().apply {
+      setColor(fill)
+      setStroke(dp(1), stroke)
+      cornerRadius = dp(12).toFloat()
+    }
+    pressedRowBackground = restingRowBackground
+    background = restingRowBackground
   }
 
   private fun bindIdentity(
@@ -2257,6 +2518,10 @@ internal class NativeListRowView(
     }
     val baseHeight = when {
       item.type == "system" && item.json.optString("variant") == "spacer" -> item.json.optInt("height", 0)
+      item.type == "walletGroup" -> {
+        val childCount = item.json.optJSONArray("children")?.length() ?: 0
+        (childCount + 1) * 68 + childCount * 12
+      }
       isNetworkSelectorIdentity -> 47
       else -> when (item.type) {
         "rail" -> 28

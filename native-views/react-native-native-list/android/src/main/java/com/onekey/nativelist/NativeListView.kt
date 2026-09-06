@@ -928,16 +928,28 @@ class NativeListView(
       ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT,
       0,
     ) {
+      private var compactWalletGroupDrag = false
+      private var compactWalletGroupTop = Float.NaN
+
       override fun isLongPressDragEnabled(): Boolean = false
 
       override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
         super.onSelectedChanged(viewHolder, actionState)
         if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
-          reorderPlaceholderDecoration.position = viewHolder?.bindingAdapterPosition
-            ?: RecyclerView.NO_POSITION
+          val position = viewHolder?.bindingAdapterPosition ?: RecyclerView.NO_POSITION
+          val item = adapter.itemAt(position)
+          reorderPlaceholderDecoration.position = position
           reorderPlaceholderDecoration.color = reorderActiveBackground(next.theme)
-          recyclerView.invalidateItemDecorations()
+          compactWalletGroupDrag = item?.type == "walletGroup" && viewHolder != null
+          recyclerView.invalidate()
           (viewHolder as? NativeListViewHolder)?.rowView?.setReorderActive(true)
+          if (compactWalletGroupDrag && viewHolder != null) {
+            recyclerView.postOnAnimation {
+              if (viewHolder.itemView.isAttachedToWindow) {
+                relayoutRecyclerViewImmediately()
+              }
+            }
+          }
         }
       }
 
@@ -970,20 +982,107 @@ class NativeListView(
         val reordered = adapter.moveReordered(from, to) ?: return false
         pendingReorder = reordered
         reorderPlaceholderDecoration.position = to
-        recyclerView.invalidateItemDecorations()
+        recyclerView.invalidate()
+        recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
         return true
       }
 
       override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
 
+      override fun onChildDraw(
+        canvas: Canvas,
+        recyclerView: RecyclerView,
+        viewHolder: RecyclerView.ViewHolder,
+        dX: Float,
+        dY: Float,
+        actionState: Int,
+        isCurrentlyActive: Boolean,
+      ) {
+        if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+          if (compactWalletGroupDrag) {
+            compactWalletGroupTop = viewHolder.itemView.top + dY
+          }
+        }
+        super.onChildDraw(canvas, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive)
+      }
+
+      override fun interpolateOutOfBoundsScroll(
+        recyclerView: RecyclerView,
+        viewSize: Int,
+        viewSizeOutOfBounds: Int,
+        totalSize: Int,
+        msSinceStartScroll: Long,
+      ): Int {
+        if (!compactWalletGroupDrag) {
+          return super.interpolateOutOfBoundsScroll(
+            recyclerView,
+            viewSize,
+            viewSizeOutOfBounds,
+            totalSize,
+            msSinceStartScroll,
+          )
+        }
+        if (compactWalletGroupTop.isNaN()) return 0
+        val compactHeight = dp(68)
+        val compactTop = compactWalletGroupTop.roundToInt()
+        val compactOutOfBounds = when {
+          compactTop < recyclerView.paddingTop -> compactTop - recyclerView.paddingTop
+          compactTop + compactHeight > recyclerView.height - recyclerView.paddingBottom ->
+            compactTop + compactHeight - (recyclerView.height - recyclerView.paddingBottom)
+          else -> 0
+        }
+        if (compactOutOfBounds == 0) return 0
+        return super.interpolateOutOfBoundsScroll(
+          recyclerView,
+          compactHeight,
+          compactOutOfBounds,
+          totalSize,
+          msSinceStartScroll,
+        )
+      }
+
       override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+        val rowView = (viewHolder as? NativeListViewHolder)?.rowView
+        val draggedGroupKey = (rowView?.tag as? NativeListItem)?.key
         super.clearView(recyclerView, viewHolder)
-        (viewHolder as? NativeListViewHolder)?.rowView?.setReorderActive(false)
+        val wasCompactWalletGroupDrag = compactWalletGroupDrag
+        if (!wasCompactWalletGroupDrag) rowView?.setReorderActive(false)
         reorderPlaceholderDecoration.position = RecyclerView.NO_POSITION
-        recyclerView.invalidateItemDecorations()
+        compactWalletGroupDrag = false
+        compactWalletGroupTop = Float.NaN
+        recyclerView.invalidate()
         val from = dragFrom
         val to = dragTo
         val reordered = pendingReorder
+        val destinationPosition = if (to != RecyclerView.NO_POSITION) {
+          to
+        } else {
+          viewHolder.bindingAdapterPosition
+        }
+        val finishCompactWalletGroup = {
+          if (wasCompactWalletGroupDrag) {
+            recyclerView.postOnAnimation {
+              relayoutRecyclerViewImmediately()
+              val resolvedPosition = draggedGroupKey
+                ?.let(adapter::positionOfKey)
+                ?.takeIf { it != RecyclerView.NO_POSITION }
+                ?: destinationPosition
+              val destinationRow = recyclerView
+                .findViewHolderForAdapterPosition(resolvedPosition)
+                ?.let { it as? NativeListViewHolder }
+                ?.rowView
+              val groupRow = destinationRow?.takeIf {
+                (it.tag as? NativeListItem)?.type == "walletGroup"
+              } ?: rowView
+              groupRow?.finishWalletGroupReorder(
+                REORDER_SPRING_DURATION_MS,
+                reorderSpringInterpolator,
+              ) {
+                recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
+              }
+            }
+          }
+        }
         if (from != RecyclerView.NO_POSITION && to != RecyclerView.NO_POSITION && from != to && reordered != null) {
           val moved = reordered.getOrNull(to)
           if (moved != null) {
@@ -994,10 +1093,17 @@ class NativeListView(
               .put("toIndex", to)
             reordered.getOrNull(to - 1)?.let { payload.put("beforeKey", it.key) }
             reordered.getOrNull(to + 1)?.let { payload.put("afterKey", it.key) }
-            adapter.commitReordered(reordered) { emit(REORDER, payload) }
+            adapter.commitReordered(reordered) {
+              finishCompactWalletGroup()
+              if (!wasCompactWalletGroupDrag) {
+                recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
+              }
+              emit(REORDER, payload)
+            }
           }
         } else {
           adapter.cancelReorder()
+          finishCompactWalletGroup()
         }
         dragFrom = RecyclerView.NO_POSITION
         dragTo = RecyclerView.NO_POSITION
@@ -1018,7 +1124,15 @@ class NativeListView(
         val position = holder.bindingAdapterPosition
         val item = adapter.itemAt(position) ?: return@Runnable
         if (!item.isReorderable) return@Runnable
+        if (item.type != "walletGroup" && recyclerView.isLayoutRequested) {
+          relayoutRecyclerViewImmediately()
+        }
         dragStarted = true
+        beginDrag(holder)
+      }
+
+      private fun beginDrag(holder: RecyclerView.ViewHolder) {
+        if (candidate !== holder || !holder.itemView.isAttachedToWindow) return
         itemTouchHelper?.startDrag(holder)
         holder.itemView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
       }
@@ -1035,10 +1149,18 @@ class NativeListView(
             dragStarted = false
             downX = event.x
             downY = event.y
-            candidate = recyclerView.findChildViewUnder(event.x, event.y)
+            val child = recyclerView.findChildViewUnder(event.x, event.y)
+            candidate = child
               ?.let(recyclerView::getChildViewHolder)
               ?.takeIf { holder ->
-                adapter.itemAt(holder.bindingAdapterPosition)?.isReorderable == true
+                adapter.itemAt(holder.bindingAdapterPosition)?.let { item ->
+                  val holderLocation = IntArray(2)
+                  holder.itemView.getLocationOnScreen(holderLocation)
+                  item.isReorderable && (
+                    item.type != "walletGroup" ||
+                      event.rawY in holderLocation[1].toFloat()..(holderLocation[1] + dp(68)).toFloat()
+                  )
+                } == true
               }
             if (candidate != null) handler.postDelayed(startDrag, REORDER_LONG_PRESS_MS)
           }
@@ -1177,6 +1299,23 @@ class NativeListView(
     }
   }
 
+  private fun relayoutRecyclerViewImmediately() {
+    if (disposed || recyclerView.isComputingLayout || recyclerView.width <= 0 || recyclerView.height <= 0) {
+      return
+    }
+    recyclerView.forceLayout()
+    recyclerView.measure(
+      MeasureSpec.makeMeasureSpec(recyclerView.width, MeasureSpec.EXACTLY),
+      MeasureSpec.makeMeasureSpec(recyclerView.height, MeasureSpec.EXACTLY),
+    )
+    recyclerView.layout(
+      recyclerView.left,
+      recyclerView.top,
+      recyclerView.right,
+      recyclerView.bottom,
+    )
+  }
+
   private fun dp(value: Int): Int = NativeListScale.dp(resources, value)
 
   companion object {
@@ -1208,10 +1347,9 @@ private class ReorderPlaceholderDecoration(
 
   override fun onDraw(canvas: Canvas, parent: RecyclerView, state: RecyclerView.State) {
     val item = adapter.itemAt(position) ?: return
-    if (
-      item.type != "identity" ||
-      item.json.optString("presentation") != "walletSidebar"
-    ) return
+    val isWalletSidebar =
+      item.type == "identity" && item.json.optString("presentation") == "walletSidebar"
+    if (!isWalletSidebar && item.type != "walletGroup") return
     val view = parent.findViewHolderForAdapterPosition(position)?.itemView ?: return
     bounds.set(
       (view.left + insetPx).toFloat(),

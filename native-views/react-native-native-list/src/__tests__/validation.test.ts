@@ -74,6 +74,43 @@ describe('NativeList model validation', () => {
     ).toThrow('presentation');
   });
 
+  it('accepts a deterministic hardware wallet group', () => {
+    const parent = {
+      ...row('hardware'),
+      presentation: 'walletSidebar' as const,
+    };
+    const child = {
+      ...row('hidden-1'),
+      presentation: 'walletSidebar' as const,
+    };
+    expect(
+      validateSnapshot(
+        snapshot([
+          {
+            type: 'walletGroup',
+            key: parent.key,
+            parent,
+            children: [child],
+            draggable: true,
+          },
+        ])
+      ).rows[0]
+    ).toMatchObject({ type: 'walletGroup', key: 'hardware' });
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            type: 'walletGroup',
+            key: parent.key,
+            parent,
+            children: [],
+            draggable: true,
+          },
+        ])
+      )
+    ).toThrow('must contain at least one child wallet');
+  });
+
   it('accepts the account-selector action presentation', () => {
     const action: ActionRow = {
       type: 'action',

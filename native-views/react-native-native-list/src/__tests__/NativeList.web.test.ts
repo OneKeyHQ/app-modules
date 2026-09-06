@@ -12,6 +12,7 @@ import {
   webReorderEventForRows,
   webLayoutItemsForMount,
   webRowRenderSignature,
+  webWalletGroupReorderBadge,
 } from '../web/NativeListWebEngine';
 
 const image = {
@@ -192,6 +193,47 @@ describe('NativeList pure DOM web layout', () => {
         draggable: false,
       })
     ).toBe(false);
+  });
+
+  it('uses deterministic hardware wallet group height and atomic reorder', () => {
+    const parent: IdentityRow = {
+      type: 'identity',
+      key: 'hardware',
+      presentation: 'walletSidebar',
+      leading: { kind: 'wallet', fallbackText: 'H' },
+      title: 'Hardware',
+    };
+    const group: RowModel = {
+      type: 'walletGroup',
+      key: parent.key,
+      parent,
+      children: [
+        { ...parent, key: 'hidden-1', title: 'Hidden 1' },
+        { ...parent, key: 'hidden-2', title: 'Hidden 2' },
+      ],
+      draggable: true,
+    };
+    const peer: RowModel = { ...parent, key: 'peer', title: 'Peer' };
+    const reorderable = snapshot({ kind: 'linear' }, [group, peer]);
+
+    expect(estimateWebRowHeight(group, reorderable, 136)).toBe(228);
+    expect(isWebRowReorderable(reorderable, group)).toBe(true);
+    expect(moveWebReorderRow([group, peer], 0, 1)).toEqual([peer, group]);
+    expect(webWalletGroupReorderBadge(group)).toBe('+2');
+
+    const compact = computeWebListLayout(reorderable, 136, 640, group.key);
+    expect(compact.items.map((item) => item.height)).toEqual([68, 68]);
+    expect(compact.items[1]?.y).toBe(68);
+
+    const movedRows = moveWebReorderRow([group, peer], 0, 1);
+    const movedCompact = computeWebListLayout(
+      snapshot({ kind: 'linear' }, movedRows),
+      136,
+      640,
+      group.key
+    );
+    expect(movedCompact.items.map((item) => item.height)).toEqual([68, 68]);
+    expect(movedCompact.items[1]?.key).toBe(group.key);
   });
 
   it('models live wallet movement, cancellation, and stable final anchors', () => {

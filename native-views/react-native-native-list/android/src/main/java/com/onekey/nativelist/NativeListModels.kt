@@ -20,6 +20,7 @@ internal data class NativeListItem(
       if (json.optBoolean("disabled", false)) return false
       if (type == "rail" && json.optBoolean("draggable", false)) return true
       if (type == "identity" && json.optBoolean("draggable", false)) return true
+      if (type == "walletGroup" && json.optBoolean("draggable", false)) return true
       val trailing = json.optJSONArray("trailing") ?: return false
       return (0 until trailing.length()).any { index ->
         trailing.optJSONObject(index)?.optString("kind") == "drag"

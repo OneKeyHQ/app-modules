@@ -284,6 +284,16 @@ final class NativeListCell: UICollectionViewCell {
   private let mediaBadgeLabel = UILabel()
   private let skeletonPrimary = UIView()
   private let skeletonSecondary = UIView()
+  private var walletGroupCells: [NativeListCell] = []
+  private var walletGroupMembers: [NativeListItem] = []
+  private let walletGroupCompactContainer = UIView()
+  private var walletGroupCompactCell: NativeListCell?
+  private let walletGroupDragBadge = NativeListInsetLabel()
+  private var walletGroupCompactAppearanceActive = false
+  private lazy var walletGroupTap = UITapGestureRecognizer(
+    target: self,
+    action: #selector(walletGroupPressed(_:))
+  )
   private let separatorView = UIView()
   private var separatorLeadingConstraint: NSLayoutConstraint!
   private var leadingWidth: NSLayoutConstraint!
@@ -330,8 +340,10 @@ final class NativeListCell: UICollectionViewCell {
     super.init(frame: frame)
     contentView.addSubview(rootStack)
     contentView.addSubview(separatorView)
+    contentView.addSubview(walletGroupCompactContainer)
     rootStack.translatesAutoresizingMaskIntoConstraints = false
     separatorView.translatesAutoresizingMaskIntoConstraints = false
+    walletGroupCompactContainer.translatesAutoresizingMaskIntoConstraints = false
     rootLeadingConstraint = rootStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12)
     rootTrailingConstraint = rootStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12)
     rootTopConstraint = rootStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8)
@@ -350,7 +362,13 @@ final class NativeListCell: UICollectionViewCell {
       separatorView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
       separatorView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
       separatorView.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
+      walletGroupCompactContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+      walletGroupCompactContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+      walletGroupCompactContainer.topAnchor.constraint(equalTo: contentView.topAnchor),
+      walletGroupCompactContainer.heightAnchor.constraint(equalToConstant: 68),
     ])
+    walletGroupCompactContainer.isHidden = true
+    walletGroupCompactContainer.isUserInteractionEnabled = false
     favoriteIconImageView.translatesAutoresizingMaskIntoConstraints = false
     favoriteIconImageView.contentMode = .scaleAspectFit
     favoriteIconImageView.image = nativeListIcon(named: "StarOutline")
@@ -373,6 +391,8 @@ final class NativeListCell: UICollectionViewCell {
       leadingActionButton.heightAnchor.constraint(equalToConstant: 36),
     ])
     separatorView.isHidden = true
+    walletGroupTap.isEnabled = false
+    addGestureRecognizer(walletGroupTap)
     rootStack.axis = .horizontal
     rootStack.alignment = .center
     rootStack.spacing = 12
@@ -582,6 +602,11 @@ final class NativeListCell: UICollectionViewCell {
     restingBackgroundColor = .clear
     contentView.backgroundColor = restingBackgroundColor
     currentItem = nil
+    walletGroupCompactAppearanceActive = false
+    walletGroupCompactContainer.isHidden = true
+    walletGroupCompactContainer.alpha = 1
+    walletGroupCompactCell?.prepareForReuse()
+    walletGroupCells.forEach { $0.prepareForReuse() }
     leadingImages.forEach { $0.prepareForReuse() }
     secondaryImage.prepareForReuse()
     mediaNetworkImage.prepareForReuse()
@@ -659,6 +684,7 @@ final class NativeListCell: UICollectionViewCell {
     accessibilityLabel = item.data.string("accessibilityLabel", default: item.data.string("title"))
 
     switch item.type {
+    case "walletGroup": bindWalletGroup(item, theme: theme, layout: layout, checkboxState)
     case "identity": bindIdentity(item, theme: theme, selected: selected, checkboxState)
     case "rail": bindRail(item, theme: theme)
     case "activity": bindActivity(item, theme: theme)
@@ -679,6 +705,32 @@ final class NativeListCell: UICollectionViewCell {
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
     guard currentItem?.key == item.key else { return }
+    if item.type == "walletGroup" {
+      currentItem = item
+      let memberData = [item.data.dictionary("parent")].compactMap { $0 }
+        + item.data.dictionaries("children")
+      walletGroupMembers = memberData.compactMap { try? NativeListItem(data: $0) }
+      walletGroupMembers.enumerated().forEach { index, member in
+        if walletGroupCells.indices.contains(index) {
+          walletGroupCells[index].updateSelection(
+            item: member,
+            selected: member.data.bool("selected"),
+            checkboxState: checkboxState
+          )
+        }
+      }
+      if let parent = walletGroupMembers.first {
+        walletGroupCompactCell?.updateSelection(
+          item: parent,
+          selected: parent.data.bool("selected"),
+          checkboxState: checkboxState
+        )
+      }
+      restingBackgroundColor = nativeListColor(currentTheme, "subduedBackground", "#F9F9F9")
+      pressedBackgroundColor = restingBackgroundColor
+      updateBackgroundColor()
+      return
+    }
     if item.type == "sectionHeader", item.data.string("variant") == "summary" {
       updateSummaryText(item)
     }
@@ -766,6 +818,16 @@ final class NativeListCell: UICollectionViewCell {
       rootStack.removeArrangedSubview($0)
       $0.removeFromSuperview()
     }
+    walletGroupMembers.removeAll()
+    walletGroupCompactAppearanceActive = false
+    walletGroupCompactContainer.isHidden = true
+    walletGroupCompactContainer.alpha = 1
+    walletGroupDragBadge.text = nil
+    rootStack.isHidden = false
+    rootStack.alpha = 1
+    walletGroupTap.isEnabled = false
+    contentView.layer.borderWidth = 0
+    contentView.layer.borderColor = nil
     rootStack.axis = .horizontal
     rootStack.alignment = .center
     rootStack.spacing = 12
@@ -940,13 +1002,202 @@ final class NativeListCell: UICollectionViewCell {
     titleLabel.dottedUnderlineVerticalOffset = 0
   }
 
+  private func bindWalletGroup(
+    _ item: NativeListItem,
+    theme: [String: Any]?,
+    layout: String,
+    _ checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+  ) {
+    let memberData = [item.data.dictionary("parent")].compactMap { $0 }
+      + item.data.dictionaries("children")
+    walletGroupMembers = memberData.compactMap { try? NativeListItem(data: $0) }
+    if walletGroupCompactCell == nil {
+      let compactCell = NativeListCell(frame: .zero)
+      compactCell.translatesAutoresizingMaskIntoConstraints = false
+      walletGroupCompactContainer.addSubview(compactCell)
+      walletGroupCompactContainer.addSubview(walletGroupDragBadge)
+      walletGroupDragBadge.translatesAutoresizingMaskIntoConstraints = false
+      walletGroupDragBadge.horizontalInset = 6
+      walletGroupDragBadge.textAlignment = .center
+      walletGroupDragBadge.font = nativeListTabularFont(ofSize: 12, weight: .semibold)
+      walletGroupDragBadge.layer.cornerRadius = 12
+      walletGroupDragBadge.layer.masksToBounds = true
+      walletGroupDragBadge.layer.borderWidth = 1
+      NSLayoutConstraint.activate([
+        compactCell.leadingAnchor.constraint(equalTo: walletGroupCompactContainer.leadingAnchor),
+        compactCell.trailingAnchor.constraint(equalTo: walletGroupCompactContainer.trailingAnchor),
+        compactCell.topAnchor.constraint(equalTo: walletGroupCompactContainer.topAnchor),
+        compactCell.bottomAnchor.constraint(equalTo: walletGroupCompactContainer.bottomAnchor),
+        walletGroupDragBadge.trailingAnchor.constraint(
+          equalTo: walletGroupCompactContainer.trailingAnchor,
+          constant: -4
+        ),
+        walletGroupDragBadge.bottomAnchor.constraint(
+          equalTo: walletGroupCompactContainer.bottomAnchor,
+          constant: -4
+        ),
+        walletGroupDragBadge.heightAnchor.constraint(equalToConstant: 24),
+        walletGroupDragBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 24),
+      ])
+      walletGroupCompactCell = compactCell
+    }
+    while walletGroupCells.count < walletGroupMembers.count {
+      let memberCell = NativeListCell(frame: .zero)
+      memberCell.translatesAutoresizingMaskIntoConstraints = false
+      memberCell.heightAnchor.constraint(equalToConstant: 68).isActive = true
+      walletGroupCells.append(memberCell)
+    }
+    rootStack.axis = .vertical
+    rootStack.alignment = .fill
+    rootStack.spacing = 12
+    rootLeadingConstraint.constant = 0
+    rootTrailingConstraint.constant = 0
+    rootTopConstraint.constant = 0
+    rootBottomConstraint.constant = 0
+    walletGroupMembers.enumerated().forEach { index, member in
+      let memberCell = walletGroupCells[index]
+      memberCell.onAction = { [weak self] source, action, target in
+        self?.onAction?(source, action, target)
+      }
+      memberCell.bind(
+        item: member,
+        theme: theme,
+        layout: layout,
+        itemIndex: nil,
+        selected: member.data.bool("selected"),
+        checkboxState: checkboxState
+      )
+      rootStack.addArrangedSubview(memberCell)
+    }
+    if let parent = walletGroupMembers.first {
+      walletGroupCompactCell?.bind(
+        item: parent,
+        theme: theme,
+        layout: layout,
+        itemIndex: nil,
+        selected: parent.data.bool("selected"),
+        checkboxState: checkboxState
+      )
+    }
+    let childCount = item.data.dictionaries("children").count
+    walletGroupDragBadge.text = childCount > 0 ? "+\(childCount)" : nil
+    walletGroupDragBadge.isHidden = childCount == 0
+    walletGroupDragBadge.backgroundColor = nativeListColor(
+      theme,
+      "inverseBackground",
+      "#202020"
+    )
+    walletGroupDragBadge.textColor = nativeListColor(theme, "inverseText", "#FCFCFC")
+    walletGroupDragBadge.layer.borderColor = nativeListColor(
+      theme,
+      "rowBackground",
+      "#FFFFFF"
+    ).cgColor
+    restingBackgroundColor = nativeListColor(theme, "subduedBackground", "#F9F9F9")
+    pressedBackgroundColor = restingBackgroundColor
+    contentView.backgroundColor = restingBackgroundColor
+    contentView.layer.borderWidth = 1
+    contentView.layer.borderColor = nativeListColor(theme, "separator", "#E0E0E0").cgColor
+    contentView.layer.cornerRadius = 20
+    contentView.layer.cornerCurve = .continuous
+    contentView.clipsToBounds = true
+    walletGroupTap.isEnabled = true
+  }
+
+  @objc private func walletGroupPressed(_ gesture: UITapGestureRecognizer) {
+    let point = gesture.location(in: rootStack)
+    for (index, cell) in walletGroupCells.prefix(walletGroupMembers.count).enumerated()
+      where cell.frame.contains(point) {
+      onAction?(walletGroupMembers[index], "press", nil)
+      return
+    }
+  }
+
   func setPressed(_ pressed: Bool) {
+    if currentItem?.type == "walletGroup", walletGroupCompactAppearanceActive {
+      walletGroupCompactCell?.setPressed(pressed)
+      isHighlighted = false
+      return
+    }
     isHighlighted = pressed && isUserInteractionEnabled
+  }
+
+  func setWalletGroupReorderCompact(_ compact: Bool) {
+    guard currentItem?.type == "walletGroup" else { return }
+    walletGroupCompactAppearanceActive = compact
+    rootStack.isHidden = compact
+    rootStack.alpha = compact ? 0 : 1
+    walletGroupCompactContainer.isHidden = !compact
+    walletGroupCompactContainer.alpha = compact ? 1 : 0
+    if compact {
+      contentView.backgroundColor = .clear
+      contentView.layer.borderWidth = 0
+      contentView.layer.borderColor = nil
+    } else {
+      restoreWalletGroupOuterAppearance()
+    }
+  }
+
+  func prepareWalletGroupReorderExpansion() {
+    guard currentItem?.type == "walletGroup" else { return }
+    walletGroupCompactAppearanceActive = false
+    rootStack.isHidden = false
+    rootStack.alpha = 0
+    walletGroupCompactContainer.isHidden = false
+    walletGroupCompactContainer.alpha = 1
+    restoreWalletGroupOuterAppearance()
+  }
+
+  func animateWalletGroupReorderExpansion() {
+    guard currentItem?.type == "walletGroup" else { return }
+    rootStack.alpha = 1
+    walletGroupCompactContainer.alpha = 0
+  }
+
+  func finishWalletGroupReorderExpansion() {
+    guard currentItem?.type == "walletGroup" else { return }
+    rootStack.isHidden = false
+    rootStack.alpha = 1
+    walletGroupCompactContainer.isHidden = true
+    walletGroupCompactContainer.alpha = 1
+    restoreWalletGroupOuterAppearance()
+  }
+
+  private func restoreWalletGroupOuterAppearance() {
+    contentView.backgroundColor = nativeListColor(currentTheme, "subduedBackground", "#F9F9F9")
+    contentView.layer.borderWidth = 1
+    contentView.layer.borderColor = nativeListColor(
+      currentTheme,
+      "separator",
+      "#E0E0E0"
+    ).cgColor
   }
 
   private func updateBackgroundColor() {
     let pressed = isHighlighted && isUserInteractionEnabled
     contentView.backgroundColor = pressed ? pressedBackgroundColor : restingBackgroundColor
+    if currentItem?.type == "walletGroup" {
+      if walletGroupCompactAppearanceActive {
+        contentView.backgroundColor = .clear
+        contentView.layer.borderWidth = 0
+        contentView.layer.borderColor = nil
+      } else {
+        restoreWalletGroupOuterAppearance()
+      }
+      layer.maskedCorners = [
+        .layerMinXMinYCorner,
+        .layerMaxXMinYCorner,
+        .layerMinXMaxYCorner,
+        .layerMaxXMaxYCorner,
+      ]
+      layer.cornerRadius = 20
+      layer.cornerCurve = .continuous
+      layer.masksToBounds = true
+      contentView.layer.cornerRadius = 20
+      contentView.layer.cornerCurve = .continuous
+      contentView.clipsToBounds = true
+      return
+    }
     if currentItem?.type == "mediaTile" {
       // NFTListItem's group hover/press style belongs to the image wrapper,
       // not to the complete card.

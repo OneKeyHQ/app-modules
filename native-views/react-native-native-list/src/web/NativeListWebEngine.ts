@@ -53,6 +53,7 @@ const REORDER_MAX_SCROLL_PX = 28;
 const REORDER_SCROLL_ACCELERATE_AT_MS = 360;
 const REORDER_SCROLL_DAMPENING_MS = 1_200;
 const REORDER_DROP_TRANSITION_MS = WEB_REORDER_ANIMATION.dropDurationMs;
+const WALLET_REORDER_COMPACT_HEIGHT = 68;
 
 const defaultTheme: NativeListTheme = {
   background: '#F7F7F7',
@@ -156,6 +157,7 @@ export function isWebRowReorderable(
   if (!snapshot.capabilities?.reorderable || row.disabled) return false;
   if (row.type === 'rail' && row.draggable) return true;
   if (row.type === 'identity' && row.draggable) return true;
+  if (row.type === 'walletGroup' && row.draggable) return true;
   return (
     (row.type === 'identity' || row.type === 'action') &&
     Boolean(row.trailing?.some((accessory) => accessory.kind === 'drag'))
@@ -310,6 +312,8 @@ export function estimateWebRowHeight(
   availableWidth: number
 ): number {
   if (row.type === 'system' && row.variant === 'spacer') return row.height;
+  if (row.type === 'walletGroup')
+    return (row.children.length + 1) * 68 + row.children.length * 12;
   if (row.type === 'identity' && row.presentation === 'walletSidebar')
     return 68;
   if (row.type === 'identity' && row.presentation === 'networkSelector')
@@ -417,7 +421,8 @@ function sectionIndexEnabled(snapshot: NativeListSnapshot): boolean {
 export function computeWebListLayout(
   snapshot: NativeListSnapshot,
   viewportWidth: number,
-  viewportHeight: number
+  viewportHeight: number,
+  compactRowKey?: string
 ): WebListLayout {
   const rows = effectiveRows(snapshot);
   const horizontal = snapshot.layout.orientation === 'horizontal';
@@ -437,7 +442,10 @@ export function computeWebListLayout(
     let x = padding.horizontal;
     rows.forEach((row, index) => {
       const itemWidth = estimateHorizontalWidth(row);
-      const rowHeight = estimateWebRowHeight(row, snapshot, availableWidth);
+      const rowHeight =
+        row.type === 'walletGroup' && row.key === compactRowKey
+          ? WALLET_REORDER_COMPACT_HEIGHT
+          : estimateWebRowHeight(row, snapshot, availableWidth);
       items.push({
         index,
         key: row.key,
@@ -466,7 +474,10 @@ export function computeWebListLayout(
   if (snapshot.layout.kind !== 'grid') {
     let y = padding.top;
     rows.forEach((row, index) => {
-      const itemHeight = estimateWebRowHeight(row, snapshot, availableWidth);
+      const itemHeight =
+        row.type === 'walletGroup' && row.key === compactRowKey
+          ? WALLET_REORDER_COMPACT_HEIGHT
+          : estimateWebRowHeight(row, snapshot, availableWidth);
       items.push({
         index,
         key: row.key,
@@ -548,6 +559,12 @@ export function computeWebListLayout(
     contentWidth: width,
     contentHeight: Math.max(height, contentHeight),
   };
+}
+
+export function webWalletGroupReorderBadge(row: RowModel): string | undefined {
+  return row.type === 'walletGroup' && row.children.length > 0
+    ? '+' + String(row.children.length)
+    : undefined;
 }
 
 function itemStart(item: WebLayoutItem, horizontal: boolean): number {
@@ -653,15 +670,24 @@ const WEB_LIST_CSS = `
 .ok-native-list-item:not([data-native-list-disabled="true"]):not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
 .ok-native-list-item:not([data-native-list-disabled="true"]):not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-selected="true"]:hover>.ok-native-list-wallet-row{background:var(--nl-selected)}
+.ok-native-list-wallet-group{display:flex;width:100%;height:100%;box-sizing:border-box;flex-direction:column;gap:12px;overflow:hidden;border:1px solid var(--nl-separator);border-radius:12px;background:var(--nl-subdued);user-select:none;-webkit-user-select:none}
+.ok-native-list-wallet-member{flex:0 0 68px;height:68px;overflow:hidden;border-radius:12px;background:transparent;cursor:pointer}
+.ok-native-list-wallet-member>.ok-native-list-wallet-row{height:100%;background:transparent}
+.ok-native-list-wallet-member[data-native-list-selected="true"]>.ok-native-list-wallet-row{background:var(--nl-selected)}
+.ok-native-list-wallet-member:not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
+.ok-native-list-wallet-member:not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
 .ok-native-list-item:focus-visible>.ok-native-list-row{outline:2px solid var(--nl-accent);outline-offset:-2px}
 .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:grab}
 .ok-native-list-root[data-native-list-dragging="true"] .ok-native-list-row{cursor:grabbing}
-.ok-native-list-item[data-native-list-animate-reorder="true"]{transition:transform ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction}}
+.ok-native-list-item[data-native-list-animate-reorder="true"]{transition:transform ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction},height ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction}}
 .ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row{overflow:hidden;border-radius:12px;background:var(--nl-row)}
 .ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row>*{visibility:hidden}
+.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group{border-color:transparent;background:var(--nl-row)}
+.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group>*{visibility:hidden}
 .ok-native-list-reorder-preview{position:fixed;left:0;top:0;z-index:100001;pointer-events:none;overflow:hidden;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.12);transform-origin:center;will-change:transform;font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .ok-native-list-reorder-preview>.ok-native-list-row{background:var(--nl-row);cursor:grabbing}
 .ok-native-list-reorder-preview[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
+.ok-native-list-reorder-count{position:absolute;right:4px;bottom:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:24px;height:24px;padding:0 6px;border:1px solid var(--nl-row);border-radius:12px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;line-height:22px;font-weight:600}
 .ok-native-list-item[data-separator="true"]>.ok-native-list-row{border-bottom:1px solid var(--nl-separator)}
 .ok-native-list-item[data-group-position="first"]>.ok-native-list-row{border-radius:12px 12px 0 0}
 .ok-native-list-item[data-group-position="last"]>.ok-native-list-row{border-radius:0 0 12px 12px}
@@ -1724,8 +1750,36 @@ function createIdentityActivityOrMessageRow(
   return body;
 }
 
+function createWalletGroupRow(
+  context: RenderContext,
+  row: Extract<RowModel, { type: 'walletGroup' }>
+): HTMLElement {
+  const body = createElement(
+    context.document,
+    'div',
+    'ok-native-list-wallet-group'
+  );
+  [row.parent, ...row.children].forEach((member, memberIndex) => {
+    const memberElement = createElement(
+      context.document,
+      'div',
+      'ok-native-list-wallet-member'
+    );
+    setData(memberElement, 'nativeListGroupMemberKey', member.key);
+    setData(memberElement, 'nativeListGroupParent', memberIndex === 0);
+    setData(memberElement, 'nativeListSelected', member.selected);
+    memberElement.appendChild(
+      createIdentityActivityOrMessageRow(context, member)
+    );
+    body.appendChild(memberElement);
+  });
+  return body;
+}
+
 function createRowBody(context: RenderContext, row: RowModel): HTMLElement {
   switch (row.type) {
+    case 'walletGroup':
+      return createWalletGroupRow(context, row);
     case 'sectionHeader':
       return createSectionHeader(context, row);
     case 'action':
@@ -1786,6 +1840,8 @@ export class NativeListWebEngine {
   private reorderDropTimer: number | undefined;
   private reorderMovementTimer: number | undefined;
   private reorderSettlingKey: string | undefined;
+  private reorderCompactKey: string | undefined;
+  private reorderExpandingKey: string | undefined;
   private suppressClickUntil = 0;
   private pullStartY: number | undefined;
   private pullDistance = 0;
@@ -2158,7 +2214,8 @@ export class NativeListWebEngine {
     this.layout = computeWebListLayout(
       this.snapshot,
       this.viewport.clientWidth,
-      this.viewport.clientHeight
+      this.viewport.clientHeight,
+      this.reorderCompactKey
     );
     this.content.style.width = String(this.layout.contentWidth) + 'px';
     this.content.style.height = String(this.layout.contentHeight) + 'px';
@@ -2556,6 +2613,7 @@ export class NativeListWebEngine {
   }
 
   private rowLabel(row: RowModel): string {
+    if (row.type === 'walletGroup') return row.parent.title;
     if ('title' in row) return row.title;
     if ('message' in row && row.message) return row.message;
     return row.type;
@@ -2629,6 +2687,15 @@ export class NativeListWebEngine {
     );
     const row = this.rowAtElement(rowElement);
     if (!row || row.disabled) return;
+    const memberKey = target.closest<HTMLElement>(
+      '[data-native-list-group-member-key]'
+    )?.dataset.nativeListGroupMemberKey;
+    const sourceRow =
+      row.type === 'walletGroup' && memberKey
+        ? [row.parent, ...row.children].find(
+            (member) => member.key === memberKey
+          ) ?? row
+        : row;
     const action = target.closest<HTMLElement>('[data-native-list-action]');
     if (action) {
       const scope = action.dataset.selectionScope;
@@ -2640,10 +2707,10 @@ export class NativeListWebEngine {
         );
       else if (scope === 'list') this.activateSelection({ scope: 'list' }, row);
       else if (action.dataset.nativeListAction)
-        this.emitRowAction(row, action.dataset.nativeListAction);
+        this.emitRowAction(sourceRow, action.dataset.nativeListAction);
       return;
     }
-    this.handleRowPress(row);
+    this.handleRowPress(sourceRow);
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
@@ -2902,6 +2969,12 @@ export class NativeListWebEngine {
     const index = Number(rowElement?.dataset.nativeListRowIndex);
     const row = this.rows[index];
     if (!row || !this.isReorderable(row)) return;
+    if (
+      row.type === 'walletGroup' &&
+      target.closest<HTMLElement>('[data-native-list-group-parent]')?.dataset
+        .nativeListGroupParent !== 'true'
+    )
+      return;
 
     const view = this.document.defaultView;
     const state: PointerReorderState = {
@@ -2936,6 +3009,16 @@ export class NativeListWebEngine {
     state.viewportRect = this.reorderViewportRect();
     this.captureReorderPointer(state);
     this.showReorderPreview(state);
+    if (
+      state.workingRows[state.currentIndex]?.type === 'walletGroup' &&
+      this.reorderCompactKey !== state.sourceKey
+    ) {
+      this.reorderCompactKey = state.sourceKey;
+      this.mounted.forEach((element) =>
+        setData(element, 'nativeListAnimateReorder', true)
+      );
+      this.recomputeLayout();
+    }
     this.updateReorderVisualState();
     this.scheduleReorderAutoScroll();
   }
@@ -3035,16 +3118,38 @@ export class NativeListWebEngine {
     const row = source?.firstElementChild;
     if (!source || !row) return;
     const rect = source.getBoundingClientRect();
+    const groupParent = row.querySelector<HTMLElement>(
+      '[data-native-list-group-parent="true"]>.ok-native-list-wallet-row'
+    );
+    const previewRow = groupParent ?? row;
+    const previewHeight = groupParent ? 68 : rect.height;
     state.previewOffsetX = state.startX - rect.left;
-    state.previewOffsetY = state.startY - rect.top;
-    this.reorderPreview.replaceChildren(row.cloneNode(true));
+    state.previewOffsetY = Math.min(
+      previewHeight,
+      Math.max(0, state.startY - rect.top)
+    );
+    this.reorderPreview.replaceChildren(previewRow.cloneNode(true));
+    const sourceRow = state.workingRows[state.currentIndex];
+    const badgeText = sourceRow
+      ? webWalletGroupReorderBadge(sourceRow)
+      : undefined;
+    if (badgeText) {
+      this.reorderPreview.appendChild(
+        createElement(
+          this.document,
+          'span',
+          'ok-native-list-reorder-count',
+          badgeText
+        )
+      );
+    }
     setData(
       this.reorderPreview,
       'nativeListSelected',
       source.dataset.nativeListSelected === 'true'
     );
     this.reorderPreview.style.width = String(rect.width) + 'px';
-    this.reorderPreview.style.height = String(rect.height) + 'px';
+    this.reorderPreview.style.height = String(previewHeight) + 'px';
     this.reorderPreview.style.transition = 'none';
     this.reorderPreview.hidden = false;
     this.updateReorderPreview(state);
@@ -3085,9 +3190,31 @@ export class NativeListWebEngine {
       'translate3d(' + String(left) + 'px,' + String(top) + 'px,0) scale(1)';
     this.reorderDropTimer = this.document.defaultView?.setTimeout(() => {
       this.reorderDropTimer = undefined;
-      this.hideReorderPreview();
-      this.updateReorderVisualState();
+      this.finishReorderDrop();
     }, REORDER_DROP_TRANSITION_MS);
+  }
+
+  private clearReorderPreviewVisual() {
+    this.reorderPreview.hidden = true;
+    this.reorderPreview.replaceChildren();
+    this.reorderPreview.style.removeProperty('transform');
+    this.reorderPreview.style.removeProperty('transition');
+    this.reorderPreview.style.removeProperty('box-shadow');
+    this.reorderPreview.removeAttribute('data-native-list-selected');
+  }
+
+  private finishReorderDrop() {
+    this.clearReorderPreviewVisual();
+    this.reorderSettlingKey = undefined;
+    if (this.reorderCompactKey) {
+      this.reorderExpandingKey = this.reorderCompactKey;
+      this.reorderCompactKey = undefined;
+      this.mounted.forEach((element) =>
+        setData(element, 'nativeListAnimateReorder', true)
+      );
+      this.recomputeLayout();
+    }
+    this.updateReorderVisualState();
   }
 
   private hideReorderPreview() {
@@ -3095,13 +3222,13 @@ export class NativeListWebEngine {
       this.document.defaultView?.clearTimeout(this.reorderDropTimer);
       this.reorderDropTimer = undefined;
     }
-    this.reorderPreview.hidden = true;
-    this.reorderPreview.replaceChildren();
-    this.reorderPreview.style.removeProperty('transform');
-    this.reorderPreview.style.removeProperty('transition');
-    this.reorderPreview.style.removeProperty('box-shadow');
-    this.reorderPreview.removeAttribute('data-native-list-selected');
+    this.clearReorderPreviewVisual();
     this.reorderSettlingKey = undefined;
+    this.reorderExpandingKey = undefined;
+    if (this.reorderCompactKey) {
+      this.reorderCompactKey = undefined;
+      this.recomputeLayout();
+    }
   }
 
   private updateReorderPreview(state: PointerReorderState) {
@@ -3384,13 +3511,20 @@ export class NativeListWebEngine {
     if (!sourceKey) {
       this.reorderMovementTimer = this.document.defaultView?.setTimeout(() => {
         this.reorderMovementTimer = undefined;
-        this.mounted.forEach((element) =>
-          setData(element, 'nativeListAnimateReorder', false)
-        );
+        this.reorderExpandingKey = undefined;
+        this.mounted.forEach((element) => {
+          setData(element, 'nativeListAnimateReorder', false);
+          setData(element, 'nativeListReorderExpanding', false);
+        });
       }, WEB_REORDER_ANIMATION.outOfWayDurationMs);
     }
     this.mounted.forEach((element) => {
       const dragging = element.dataset.nativeListRowKey === sourceKey;
+      setData(
+        element,
+        'nativeListReorderExpanding',
+        element.dataset.nativeListRowKey === this.reorderExpandingKey
+      );
       setData(element, 'nativeListDragging', dragging);
       if (dragging) element.setAttribute('aria-grabbed', 'true');
       else element.removeAttribute('aria-grabbed');

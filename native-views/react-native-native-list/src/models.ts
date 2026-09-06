@@ -150,6 +150,14 @@ export type IdentityRow = RowBase &
     draggable?: boolean;
   }>;
 
+export type WalletGroupRow = RowBase &
+  Readonly<{
+    type: 'walletGroup';
+    parent: IdentityRow;
+    children: readonly IdentityRow[];
+    draggable?: boolean;
+  }>;
+
 export type RailRow = RowBase &
   Readonly<{
     type: 'rail';
@@ -290,6 +298,7 @@ export type SystemRow = RowBase &
 
 export type RowModel =
   | IdentityRow
+  | WalletGroupRow
   | RailRow
   | ActivityRow
   | MessageRow
