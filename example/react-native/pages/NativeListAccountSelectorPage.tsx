@@ -42,11 +42,28 @@ const REFERENCE_WALLET_COUNT = 7;
 const REFERENCE_ACCOUNT_COUNT = 3;
 const WALLET_ROW_HEIGHT = 68;
 const WALLET_ROW_SPACING = 12;
-const WALLET_LIST_PADDING_TOP = 8;
+const WALLET_LIST_PADDING_TOP = 4;
 const COMPACT_WEB_WALLET_FOOTER_HEIGHT = 120;
 const ACCOUNT_ROW_HEIGHT = 60;
 const ADD_ACCOUNT_ROW_HEIGHT = 48;
 const ACCOUNT_LIST_TOP = 108;
+const MAX_SPACER_ROW_HEIGHT = 512;
+
+function buildSpacerRows(key: string, height: number) {
+  return Array.from(
+    { length: Math.ceil(height / MAX_SPACER_ROW_HEIGHT) },
+    (_, index) => ({
+      type: 'system' as const,
+      key: `${key}-${index}`,
+      variant: 'spacer' as const,
+      height: Math.min(
+        MAX_SPACER_ROW_HEIGHT,
+        height - index * MAX_SPACER_ROW_HEIGHT,
+      ),
+    }),
+  );
+}
+
 const iconUris = {
   pencil:
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAASKADAAQAAAABAAAASAAAAACQMUbvAAAB6klEQVR4Ae3YO27DMAwG4LhTpl4nN+ja0/UgGdtDdU03lyzMIAgq2rIepMVfgEAksmXpi+yYOp1QIAABCECgSGCe59eiDkY+mXDeqH5zHHmeu+a24NwocuEIJJFkjAWFwr0AiYGI4z8cUYqNtIITG2kjTkykTJxYSDtxYiDRLC9U+cFbUsZ9cJPKmepnic5yLpA2IAIJSJFvN/r1+Q35SvUsKcVz5Daq8Z5JNOnH9IEBgCSr4wmHPv4VIDEQUTyunMXmHmIjreCIUi8k3nTzszO5EacXkq/3o0yc1khD4LRCGgqnNtKQOLWQhsYpRQqBsxcpFE4uUkicHKSLpDbmkUatpQ8yqdpRfeM2R5EBGOEItm8kYxzfSE5wBOkqK7o0vpR2wOczDgUeVHKTi4/rVH7oOh+drrV+GWcrJ/Rfudw+qQiclAx9DxzgKAJKE1YOcBQBpQkrBziKgNKElQMcRUBpMls5UyqZoMHeqM1LbvU+TdNXaqwtv9eA5pYX3tg3J55mODzGKtn8xsnmHmaO4xnIBY5XIDc4HoFc4XgDcofjCcgljhcgtzgegFzjWAO5x7EEOgSOFdBhcCyADoXTG+hwOD2BDonDQMmibF7lNpltdiUnV6MhVyFx/Jg4NYDRBwQgAAEIQKC5wC+MXBEepqP9zwAAAABJRU5ErkJggg==',
@@ -132,12 +149,7 @@ export function NativeListAccountSelectorPage() {
     );
     return [
       ...rows.slice(0, REFERENCE_WALLET_COUNT),
-      {
-        type: 'system' as const,
-        key: 'account-selector-web-wallet-fold',
-        variant: 'spacer' as const,
-        height: spacerHeight,
-      },
+      ...buildSpacerRows('account-selector-web-wallet-fold', spacerHeight),
       ...rows.slice(REFERENCE_WALLET_COUNT),
     ];
   }, [isCompactWeb, sheetMarginTop, viewportHeight]);
@@ -182,12 +194,7 @@ export function NativeListAccountSelectorPage() {
     const foldIndex = REFERENCE_ACCOUNT_COUNT + 1;
     return [
       ...rows.slice(0, foldIndex),
-      {
-        type: 'system' as const,
-        key: 'account-selector-web-account-fold',
-        variant: 'spacer' as const,
-        height: spacerHeight,
-      },
+      ...buildSpacerRows('account-selector-web-account-fold', spacerHeight),
       ...rows.slice(foldIndex),
     ];
   }, [accountRows, isCompactWeb, searchText, sheetMarginTop, viewportHeight]);
@@ -200,7 +207,7 @@ export function NativeListAccountSelectorPage() {
       layout: {
         kind: 'linear',
         contentPaddingHorizontal: 8,
-        contentPaddingTop: 8,
+        contentPaddingTop: WALLET_LIST_PADDING_TOP,
         contentPaddingBottom: 8,
         itemSpacing: 12,
       },
@@ -506,7 +513,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   sidebar: {
-    width: 96,
+    width: 94,
     backgroundColor: '#191919',
     borderRightColor: '#FFFFFF12',
     borderRightWidth: StyleSheet.hairlineWidth,
