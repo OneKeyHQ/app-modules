@@ -46,10 +46,10 @@ const COMPACT_WEB_BOTTOM_INSET = 34;
 const REFERENCE_WALLET_COUNT = 7;
 const REFERENCE_ACCOUNT_COUNT = 3;
 const WALLET_ROW_HEIGHT = 68;
-const WALLET_ROW_SPACING = 12;
-const WALLET_LIST_PADDING_TOP = 4;
-const COMPACT_WEB_WALLET_FOOTER_HEIGHT = 120;
-const ACCOUNT_ROW_HEIGHT = 60;
+const WALLET_ROW_SPACING = 10;
+const WALLET_LIST_PADDING_TOP = 8;
+const WALLET_FOOTER_CONTENT_HEIGHT = 74;
+const ACCOUNT_ROW_HEIGHT = 58;
 const ADD_ACCOUNT_ROW_HEIGHT = 48;
 const ACCOUNT_LIST_TOP = 108;
 const MAX_SPACER_ROW_HEIGHT = 512;
@@ -169,10 +169,9 @@ export function NativeListAccountSelectorPage({
   const selectedAccounts = useRef(new Map<number, number>());
   const walletRows = useMemo(() => {
     const rows = buildWalletRows();
-    if (!isCompactWeb) return rows;
-
-    const listHeight =
-      viewportHeight - sheetMarginTop - COMPACT_WEB_WALLET_FOOTER_HEIGHT;
+    const walletFooterHeight =
+      WALLET_FOOTER_CONTENT_HEIGHT + Math.max(walletFooterBottomInset + 12, 20);
+    const listHeight = viewportHeight - sheetMarginTop - walletFooterHeight;
     const spacerStart =
       WALLET_LIST_PADDING_TOP +
       REFERENCE_WALLET_COUNT * (WALLET_ROW_HEIGHT + WALLET_ROW_SPACING);
@@ -182,10 +181,10 @@ export function NativeListAccountSelectorPage({
     );
     return [
       ...rows.slice(0, REFERENCE_WALLET_COUNT),
-      ...buildSpacerRows('account-selector-web-wallet-fold', spacerHeight),
+      ...buildSpacerRows('account-selector-wallet-fold', spacerHeight),
       ...rows.slice(REFERENCE_WALLET_COUNT),
     ];
-  }, [isCompactWeb, sheetMarginTop, viewportHeight]);
+  }, [sheetMarginTop, viewportHeight, walletFooterBottomInset]);
   const [selectedWalletIndex, setSelectedWalletIndex] = useState(
     initialTarget.walletIndex,
   );
@@ -201,6 +200,18 @@ export function NativeListAccountSelectorPage({
   const selectedWalletAvatarUri = walletAvatarUri(selectedWalletIndex);
   const isWatchWallet = isWatchWalletIndex(selectedWalletIndex);
   const selectedWalletAccountCount = accountCountForWallet(selectedWalletIndex);
+  const initialWalletRowIndex = walletRows.findIndex(
+    row => row.key === walletKey(initialTarget.walletIndex),
+  );
+  const shouldScrollToInitialWallet =
+    hasExplicitInitialTarget && initialWalletRowIndex >= REFERENCE_WALLET_COUNT;
+  const referenceAccountCount = Math.min(
+    REFERENCE_ACCOUNT_COUNT,
+    accountRows.length,
+  );
+  const shouldScrollToInitialAccount =
+    hasExplicitInitialTarget &&
+    initialTarget.accountIndex >= referenceAccountCount;
 
   const recordInitialTargetVisible = (
     list: 'wallet' | 'account',
@@ -290,10 +301,6 @@ export function NativeListAccountSelectorPage({
     if (!isCompactWeb || searchText) return rows;
 
     const listHeight = viewportHeight - sheetMarginTop - ACCOUNT_LIST_TOP;
-    const referenceAccountCount = Math.min(
-      REFERENCE_ACCOUNT_COUNT,
-      accountRows.length,
-    );
     const visibleRowsHeight =
       referenceAccountCount * ACCOUNT_ROW_HEIGHT + ADD_ACCOUNT_ROW_HEIGHT;
     const spacerHeight = Math.max(1, listHeight - visibleRowsHeight + 1);
@@ -303,7 +310,14 @@ export function NativeListAccountSelectorPage({
       ...buildSpacerRows('account-selector-web-account-fold', spacerHeight),
       ...rows.slice(foldIndex),
     ];
-  }, [accountRows, isCompactWeb, searchText, sheetMarginTop, viewportHeight]);
+  }, [
+    accountRows,
+    isCompactWeb,
+    referenceAccountCount,
+    searchText,
+    sheetMarginTop,
+    viewportHeight,
+  ]);
 
   const walletSnapshot = useMemo<NativeListSnapshot>(
     () => ({
@@ -315,7 +329,7 @@ export function NativeListAccountSelectorPage({
         contentPaddingHorizontal: 8,
         contentPaddingTop: WALLET_LIST_PADDING_TOP,
         contentPaddingBottom: 8,
-        itemSpacing: 12,
+        itemSpacing: WALLET_ROW_SPACING,
       },
       rows: walletRows,
       selection: {
@@ -418,7 +432,7 @@ export function NativeListAccountSelectorPage({
             style={styles.nativeList}
             snapshot={walletSnapshot}
             initialScrollKey={
-              hasExplicitInitialTarget
+              shouldScrollToInitialWallet
                 ? walletKey(initialTarget.walletIndex)
                 : undefined
             }
@@ -429,9 +443,7 @@ export function NativeListAccountSelectorPage({
                 'wallet',
                 event,
                 walletKey(initialTarget.walletIndex),
-                walletRows.findIndex(
-                  row => row.key === walletKey(initialTarget.walletIndex),
-                ),
+                initialWalletRowIndex,
               );
             }}
           />
@@ -595,7 +607,7 @@ export function NativeListAccountSelectorPage({
             style={styles.nativeList}
             snapshot={accountSnapshot}
             initialScrollKey={
-              hasExplicitInitialTarget
+              shouldScrollToInitialAccount
                 ? accountKey(
                     initialTarget.walletIndex,
                     initialTarget.accountIndex,

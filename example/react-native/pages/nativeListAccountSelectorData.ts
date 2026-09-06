@@ -220,15 +220,20 @@ export function buildWalletRows(): readonly IdentityRow[] {
   });
 }
 
+const watchAccountAvatarUris = [
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAABPUlEQVR42u3dwQ0BQRSA4beyF7WIiIsK1OG6CqAKBYirRBd62DioxUWyaniHWbN8/xlhv8wcXiamue2XQxSsX81jyq0fr6KfPwt9NQAAAAgAAAEAIAAABOC/arftNfWG+3sXU569lJ5NZZ+nFWALAiAAAAQAgAAAEAAAGrE2O9vJzjrisatqVpOdNZWelVkBtiAAAgBAAAAIAAABAKARaw7nzVDTuZ30rClZ6XNN2VmWFWALAiAAAAQAgAAAEAAAGrE2Cs9qTosu9fo+usI/OTerOT4vRb+/FWALAiAAAAQAgAAAEAAAiopnQVHZ//9M/QlZAbYgAAIAQAAACAAAAQCgEWuy94hN/V6wqGz2ZQXYggAIAAABACAAAAQAgKLiUy/ZWUd2dlTbPWLulLcFCQAAAQAgAAAEAIAA/FAfaiA06PJoaiUAAAAASUVORK5CYII=',
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAABLElEQVR42u3csQ3CMBBA0QOFAZI9MkEmQKLJVmxDwwrp6NgDJFqKMMMVBxZ5v0Yh0pNdRGfvjufbGokehyXz8xjeU1Q+P1v1+2Sfvw/9NAAAAAgAAAEAIAAABGBbddV/sF5fqd8Pp6mp94nZCrAFCQAAAQAgAAAEAIAA/E1d9dzLGq+m5oL6GJuaI7ICbEEABACAAAAQAAACAEBfbJc9I5at+ttOddlvQVaALUgAAAgAAAEAIAAABCA2PBeUrb+Mpc9/zvdo6duXFWALAiAAAAQAgAAAEAAA+mJda3cpZ8+UhbujZQsCIAAABACAAAAQAACKqrujq+eCqud2su/vjJgtSAAACAAAAQAgAAAEIJwRi6q5muozYo95cXe0AAAQAAACAACAAAAQgK32AekeROtM26yXAAAAAElFTkSuQmCC',
+] as const;
+
 const watchAccountRows = [
   {
     subtitle: '$0.00 · juno1x...c54j',
-    avatarIndex: 2,
+    avatarUri: watchAccountAvatarUris[0],
     networkImageUri: JUNO_NETWORK_LOGO,
   },
   {
     subtitle: '$1,925,480... · 0x40ec...bbDf',
-    avatarIndex: 3,
+    avatarUri: watchAccountAvatarUris[1],
     networkImageUri: ETHEREUM_NETWORK_LOGO,
   },
 ] as const;
@@ -251,7 +256,7 @@ export function buildAccountRow(
       leading: {
         kind: 'token',
         image: {
-          uri: accountAvatarUris[watchAccount.avatarIndex],
+          uri: watchAccount.avatarUri,
           width: 40,
           height: 40,
           cachePolicy: 'memory',

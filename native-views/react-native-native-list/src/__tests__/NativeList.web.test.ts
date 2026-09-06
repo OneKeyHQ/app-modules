@@ -139,6 +139,13 @@ describe('NativeList pure DOM web layout', () => {
     expect(estimateWebRowHeight(rows[8], linear, 320)).toBe(132);
     expect(estimateWebRowHeight(rows[9], linear, 320)).toBe(60);
     expect(estimateWebRowHeight(rows[10], linear, 320)).toBe(44);
+    expect(
+      estimateWebRowHeight(
+        { ...rows[2], presentation: 'accountSelector' } as RowModel,
+        linear,
+        320
+      )
+    ).toBe(58);
   });
 
   it('lays out linear, sectioned, grid, table, and horizontal examples', () => {

@@ -54,6 +54,10 @@ input {
   font-family: 'Roobert', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
+#root input[data-testid='account-selector-search']:focus {
+  outline: none;
+}
+
 * {
   box-sizing: border-box;
 }
