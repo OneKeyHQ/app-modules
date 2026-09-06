@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.104] - 2026-09-04
+
+### Bug Fixes
+- **image (Android)**: Bind rendered-image Glide requests to the host Activity so temporary ScreenStack Fragment teardown preserves visible images while backgrounding and Activity destruction retain bounded lifecycle cleanup.
+
+### Chores
+- Bump all publishable packages to 3.0.104.
+
+## [3.0.103] - 2026-09-04
+
+### Bug Fixes
+- **background-thread (Android)**: Load the reusable DevSession common HBC from its restored file path while preserving the packaged asset fallback.
+
+### Chores
+- Bump all publishable packages to 3.0.103.
+
+## [3.0.102] - 2026-09-04
+
+### Bug Fixes
+- **image (Android)**: Keep Glide requests independent of temporary native-stack Fragment teardown so images retained by React remain visible after closing an opaque task modal.
+
+### Chores
+- Bump all publishable packages to 3.0.102.
+
 ## [3.0.95] - 2026-08-31
 
 ### Features
