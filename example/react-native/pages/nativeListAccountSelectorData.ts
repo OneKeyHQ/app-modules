@@ -8,6 +8,11 @@ export const ACCOUNT_SELECTOR_WALLET_COUNT = 1_000;
 export const ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET = 1_000;
 export const ACCOUNT_SELECTOR_LOGICAL_ACCOUNT_COUNT =
   ACCOUNT_SELECTOR_WALLET_COUNT * ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET;
+export const ACCOUNT_SELECTOR_WATCH_WALLET_INDEX =
+  ACCOUNT_SELECTOR_WALLET_COUNT;
+export const ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT =
+  ACCOUNT_SELECTOR_WALLET_COUNT + 1;
+export const ACCOUNT_SELECTOR_WATCH_ACCOUNT_COUNT = 2;
 export const ACCOUNT_SELECTOR_ACCOUNT_CACHE_LIMIT = 3;
 export const ACCOUNT_SELECTOR_DEFAULT_WALLET_NUMBER = 3;
 export const ACCOUNT_SELECTOR_DEFAULT_ACCOUNT_NUMBER = 1;
@@ -43,17 +48,21 @@ export function resolveAccountSelectorInitialTarget(
   const walletNumber = resolveTargetNumber(
     input.walletNumber,
     ACCOUNT_SELECTOR_DEFAULT_WALLET_NUMBER,
-    ACCOUNT_SELECTOR_WALLET_COUNT,
+    ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT,
   );
+  const walletIndex = walletNumber - 1;
+  const isWatchWallet = walletIndex === ACCOUNT_SELECTOR_WATCH_WALLET_INDEX;
   const accountNumber = resolveTargetNumber(
     input.accountNumber,
-    ACCOUNT_SELECTOR_DEFAULT_ACCOUNT_NUMBER,
-    ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET,
+    isWatchWallet ? 2 : ACCOUNT_SELECTOR_DEFAULT_ACCOUNT_NUMBER,
+    isWatchWallet
+      ? ACCOUNT_SELECTOR_WATCH_ACCOUNT_COUNT
+      : ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET,
   );
   return {
     walletNumber,
     accountNumber,
-    walletIndex: walletNumber - 1,
+    walletIndex,
     accountIndex: accountNumber - 1,
   };
 }
@@ -65,10 +74,14 @@ const referenceWalletNames = [
   'Wallet 7',
   'Wallet 5',
   'Wallet 6',
-  '观察钱包',
 ] as const;
 
-const walletEmojis = ['🐼', '🐷', '🐺', '🐼', '🐱', '🐻', '👁️'] as const;
+const walletEmojis = ['🐼', '🐷', '🐺', '🐼', '🐱', '🐻'] as const;
+const WATCH_WALLET_INSERT_INDEX = 6;
+const WATCH_WALLET_NAME = '观察钱包';
+const JUNO_NETWORK_LOGO = 'https://uni.onekey-asset.com/static/chain/juno.png';
+const ETHEREUM_NETWORK_LOGO =
+  'https://uni.onekey-asset.com/static/chain/eth.png';
 
 // The reference selector renders these same app-monorepo wallet avatar PNGs.
 // Data URIs keep the standalone example self-contained on both native targets.
@@ -108,23 +121,42 @@ export function accountKey(walletIndex: number, accountIndex: number): string {
 }
 
 export function walletName(walletIndex: number): string {
+  if (isWatchWalletIndex(walletIndex)) return WATCH_WALLET_NAME;
   return referenceWalletNames[walletIndex] ?? `Wallet ${walletIndex + 1}`;
 }
 
 export function walletEmoji(walletIndex: number): string {
+  if (isWatchWalletIndex(walletIndex)) return '👁️';
   return walletEmojis[walletIndex % walletEmojis.length];
 }
 
 export function walletAvatarUri(walletIndex: number): string | undefined {
+  if (isWatchWalletIndex(walletIndex)) return walletAvatarUris[6];
   if (walletIndex === 5) return polarBearAvatarUri;
-  return walletAvatarUris[walletIndex];
+  return walletIndex < WATCH_WALLET_INSERT_INDEX
+    ? walletAvatarUris[walletIndex]
+    : undefined;
+}
+
+export function isWatchWalletIndex(walletIndex: number): boolean {
+  return walletIndex === ACCOUNT_SELECTOR_WATCH_WALLET_INDEX;
+}
+
+export function accountCountForWallet(walletIndex: number): number {
+  return isWatchWalletIndex(walletIndex)
+    ? ACCOUNT_SELECTOR_WATCH_ACCOUNT_COUNT
+    : ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET;
+}
+
+export function defaultAccountIndexForWallet(walletIndex: number): number {
+  return isWatchWalletIndex(walletIndex) ? 1 : 0;
 }
 
 export function parseWalletKey(key: string): number | undefined {
   const match = /^wallet-(\d+)$/.exec(key);
   if (!match) return undefined;
   const index = Number(match[1]);
-  return index >= 0 && index < ACCOUNT_SELECTOR_WALLET_COUNT
+  return index >= 0 && index < ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT
     ? index
     : undefined;
 }
@@ -138,9 +170,9 @@ export function parseAccountKey(
   const accountIndex = Number(match[2]);
   if (
     walletIndex < 0 ||
-    walletIndex >= ACCOUNT_SELECTOR_WALLET_COUNT ||
+    walletIndex >= ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT ||
     accountIndex < 0 ||
-    accountIndex >= ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET
+    accountIndex >= accountCountForWallet(walletIndex)
   ) {
     return undefined;
   }
@@ -148,45 +180,109 @@ export function parseAccountKey(
 }
 
 export function buildWalletRows(): readonly IdentityRow[] {
-  return Array.from(
+  const walletIndexes = Array.from(
     { length: ACCOUNT_SELECTOR_WALLET_COUNT },
-    (_, walletIndex): IdentityRow => {
-      const key = walletKey(walletIndex);
-      const avatarUri = walletAvatarUri(walletIndex);
-      return {
-        type: 'identity',
-        key,
-        groupId: key,
-        groupPosition: 'single',
-        presentation: 'walletSidebar',
-        leading: {
-          kind: 'wallet',
-          image: avatarUri
-            ? {
-                uri: avatarUri,
-                width: 40,
-                height: 40,
-                cachePolicy: 'memory',
-                loadingStrategy: 'none',
-              }
-            : undefined,
-          fallbackText: walletEmoji(walletIndex),
-          backgroundColor: '#00000000',
-        },
-        title: walletName(walletIndex),
-        accessibilityLabel: `${walletName(walletIndex)}, wallet ${
-          walletIndex + 1
-        } of ${ACCOUNT_SELECTOR_WALLET_COUNT}`,
-      };
-    },
+    (_, walletIndex) => walletIndex,
   );
+  walletIndexes.splice(
+    WATCH_WALLET_INSERT_INDEX,
+    0,
+    ACCOUNT_SELECTOR_WATCH_WALLET_INDEX,
+  );
+  return walletIndexes.map((walletIndex, displayIndex): IdentityRow => {
+    const key = walletKey(walletIndex);
+    const avatarUri = walletAvatarUri(walletIndex);
+    return {
+      type: 'identity',
+      key,
+      groupId: key,
+      groupPosition: 'single',
+      presentation: 'walletSidebar',
+      leading: {
+        kind: 'wallet',
+        image: avatarUri
+          ? {
+              uri: avatarUri,
+              width: 40,
+              height: 40,
+              cachePolicy: 'memory',
+              loadingStrategy: 'none',
+            }
+          : undefined,
+        fallbackText: walletEmoji(walletIndex),
+        backgroundColor: '#00000000',
+      },
+      title: walletName(walletIndex),
+      accessibilityLabel: `${walletName(walletIndex)}, wallet ${
+        displayIndex + 1
+      } of ${ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT}`,
+    };
+  });
 }
+
+const watchAccountRows = [
+  {
+    subtitle: '$0.00 · juno1x...c54j',
+    avatarIndex: 2,
+    networkImageUri: JUNO_NETWORK_LOGO,
+  },
+  {
+    subtitle: '$1,925,480... · 0x40ec...bbDf',
+    avatarIndex: 3,
+    networkImageUri: ETHEREUM_NETWORK_LOGO,
+  },
+] as const;
 
 export function buildAccountRow(
   walletIndex: number,
   accountIndex: number,
 ): IdentityRow {
   const key = accountKey(walletIndex, accountIndex);
+  const watchAccount = isWatchWalletIndex(walletIndex)
+    ? watchAccountRows[accountIndex]
+    : undefined;
+  if (watchAccount) {
+    return {
+      type: 'identity',
+      presentation: 'accountSelector',
+      key,
+      groupId: key,
+      groupPosition: 'single',
+      leading: {
+        kind: 'token',
+        image: {
+          uri: accountAvatarUris[watchAccount.avatarIndex],
+          width: 40,
+          height: 40,
+          cachePolicy: 'memory',
+          loadingStrategy: 'none',
+        },
+        networkImage: {
+          uri: watchAccount.networkImageUri,
+          width: 20,
+          height: 20,
+          cachePolicy: 'memory-disk',
+          loadingStrategy: 'none',
+        },
+        shape: 'rounded',
+      },
+      title: `Account #${accountIndex + 1}`,
+      subtitle: watchAccount.subtitle,
+      trailing: [
+        {
+          kind: 'icon',
+          name: 'DotHorOutline',
+          tintColor: '#FFFFFF64',
+          actionKey: `account.more.${walletIndex}.${accountIndex}`,
+        },
+      ],
+      accessibilityLabel: `${WATCH_WALLET_NAME}, Account #${
+        accountIndex + 1
+      }, account ${
+        accountIndex + 1
+      } of ${ACCOUNT_SELECTOR_WATCH_ACCOUNT_COUNT}, ${watchAccount.subtitle}`,
+    };
+  }
   const avatarIndex =
     walletIndex === 2 && accountIndex < 3
       ? accountIndex
@@ -254,7 +350,7 @@ export function buildAccountRows(walletIndex: number): readonly IdentityRow[] {
   const rows: IdentityRow[] = [];
   for (
     let accountIndex = 0;
-    accountIndex < ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET;
+    accountIndex < accountCountForWallet(walletIndex);
     accountIndex += 1
   ) {
     rows.push(buildAccountRow(walletIndex, accountIndex));

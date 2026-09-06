@@ -21,12 +21,16 @@ import {
 import {
   ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET,
   ACCOUNT_SELECTOR_LOGICAL_ACCOUNT_COUNT,
+  ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT,
   ACCOUNT_SELECTOR_WALLET_COUNT,
   type AccountSelectorInitialTargetInput,
   AccountRowsCache,
+  accountCountForWallet,
   accountKey,
   buildVisibleAccountRows,
   buildWalletRows,
+  defaultAccountIndexForWallet,
+  isWatchWalletIndex,
   parseAccountKey,
   parseWalletKey,
   resolveAccountSelectorInitialTarget,
@@ -151,6 +155,12 @@ export function NativeListAccountSelectorPage({
       resolveAccountSelectorInitialTarget(initialTargetProp ?? route?.params),
     [initialTargetProp, route?.params],
   );
+  const hasExplicitInitialTarget = Boolean(
+    initialTargetProp?.walletNumber !== undefined ||
+      initialTargetProp?.accountNumber !== undefined ||
+      route?.params?.walletNumber !== undefined ||
+      route?.params?.accountNumber !== undefined,
+  );
   const initialTargetVisibility = useRef<InitialTargetVisibility>({
     reported: false,
   });
@@ -189,6 +199,8 @@ export function NativeListAccountSelectorPage({
   const [searchText, setSearchText] = useState('');
   const [accountGeneration, setAccountGeneration] = useState(1);
   const selectedWalletAvatarUri = walletAvatarUri(selectedWalletIndex);
+  const isWatchWallet = isWatchWalletIndex(selectedWalletIndex);
+  const selectedWalletAccountCount = accountCountForWallet(selectedWalletIndex);
 
   const recordInitialTargetVisible = (
     list: 'wallet' | 'account',
@@ -278,10 +290,14 @@ export function NativeListAccountSelectorPage({
     if (!isCompactWeb || searchText) return rows;
 
     const listHeight = viewportHeight - sheetMarginTop - ACCOUNT_LIST_TOP;
+    const referenceAccountCount = Math.min(
+      REFERENCE_ACCOUNT_COUNT,
+      accountRows.length,
+    );
     const visibleRowsHeight =
-      REFERENCE_ACCOUNT_COUNT * ACCOUNT_ROW_HEIGHT + ADD_ACCOUNT_ROW_HEIGHT;
+      referenceAccountCount * ACCOUNT_ROW_HEIGHT + ADD_ACCOUNT_ROW_HEIGHT;
     const spacerHeight = Math.max(1, listHeight - visibleRowsHeight + 1);
-    const foldIndex = REFERENCE_ACCOUNT_COUNT + 1;
+    const foldIndex = referenceAccountCount + 1;
     return [
       ...rows.slice(0, foldIndex),
       ...buildSpacerRows('account-selector-web-account-fold', spacerHeight),
@@ -357,7 +373,10 @@ export function NativeListAccountSelectorPage({
       rowsBuildMs: Date.now() - startedAt,
     };
     setSelectedWalletIndex(walletIndex);
-    setSelectedAccountIndex(selectedAccounts.current.get(walletIndex) ?? 0);
+    setSelectedAccountIndex(
+      selectedAccounts.current.get(walletIndex) ??
+        defaultAccountIndexForWallet(walletIndex),
+    );
     setAccountRows(nextRows);
     setSearchInput('');
     setSearchText('');
@@ -398,7 +417,11 @@ export function NativeListAccountSelectorPage({
             testID="account-selector-wallet-list"
             style={styles.nativeList}
             snapshot={walletSnapshot}
-            initialScrollKey={walletKey(initialTarget.walletIndex)}
+            initialScrollKey={
+              hasExplicitInitialTarget
+                ? walletKey(initialTarget.walletIndex)
+                : undefined
+            }
             initialScrollViewPosition={0.5}
             onRowAction={handleWalletAction}
             onVisibleRangeChanged={event => {
@@ -447,7 +470,7 @@ export function NativeListAccountSelectorPage({
             style={styles.walletHeader}
             accessibilityLabel={`${walletName(
               selectedWalletIndex,
-            )}, ${ACCOUNT_SELECTOR_WALLET_COUNT} wallets, ${ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET} accounts per wallet`}
+            )}, ${ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT} wallets, ${selectedWalletAccountCount} accounts`}
           >
             <View style={styles.headerAvatarWrap}>
               {selectedWalletAvatarUri ? (
@@ -461,54 +484,60 @@ export function NativeListAccountSelectorPage({
                   {walletEmoji(selectedWalletIndex)}
                 </Text>
               )}
-              <View style={styles.headerAvatarBadge}>
-                <Image
-                  accessibilityIgnoresInvertColors
-                  source={{ uri: iconUris.menuCircle }}
-                  style={styles.headerAvatarBadgeIcon}
-                />
-              </View>
+              {!isWatchWallet ? (
+                <View style={styles.headerAvatarBadge}>
+                  <Image
+                    accessibilityIgnoresInvertColors
+                    source={{ uri: iconUris.menuCircle }}
+                    style={styles.headerAvatarBadgeIcon}
+                  />
+                </View>
+              ) : null}
             </View>
             <Text style={styles.headerTitle} numberOfLines={1}>
               {walletName(selectedWalletIndex)}
             </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="编辑钱包名称"
-              testID="account-selector-edit-wallet"
-              onPress={() =>
-                console.info('[NativeListAccountSelector] edit wallet')
-              }
-              style={({ pressed }) => [
-                styles.headerEditButton,
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Image
-                accessibilityIgnoresInvertColors
-                source={{ uri: iconUris.pencil }}
-                style={styles.pencilIcon}
-              />
-            </Pressable>
+            {!isWatchWallet ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="编辑钱包名称"
+                testID="account-selector-edit-wallet"
+                onPress={() =>
+                  console.info('[NativeListAccountSelector] edit wallet')
+                }
+                style={({ pressed }) => [
+                  styles.headerEditButton,
+                  pressed && styles.buttonPressed,
+                ]}
+              >
+                <Image
+                  accessibilityIgnoresInvertColors
+                  source={{ uri: iconUris.pencil }}
+                  style={styles.pencilIcon}
+                />
+              </Pressable>
+            ) : null}
             <View style={styles.headerSpacer} />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="钱包更多"
-              testID="account-selector-more"
-              onPress={() =>
-                console.info('[NativeListAccountSelector] wallet more')
-              }
-              style={({ pressed }) => [
-                styles.headerIconButton,
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Image
-                accessibilityIgnoresInvertColors
-                source={{ uri: iconUris.more }}
-                style={styles.moreIcon}
-              />
-            </Pressable>
+            {!isWatchWallet ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="钱包更多"
+                testID="account-selector-more"
+                onPress={() =>
+                  console.info('[NativeListAccountSelector] wallet more')
+                }
+                style={({ pressed }) => [
+                  styles.headerIconButton,
+                  pressed && styles.buttonPressed,
+                ]}
+              >
+                <Image
+                  accessibilityIgnoresInvertColors
+                  source={{ uri: iconUris.more }}
+                  style={styles.moreIcon}
+                />
+              </Pressable>
+            ) : null}
           </View>
 
           <View style={styles.searchToolbar}>
@@ -565,10 +594,14 @@ export function NativeListAccountSelectorPage({
             testID="account-selector-account-list"
             style={styles.nativeList}
             snapshot={accountSnapshot}
-            initialScrollKey={accountKey(
-              initialTarget.walletIndex,
-              initialTarget.accountIndex,
-            )}
+            initialScrollKey={
+              hasExplicitInitialTarget
+                ? accountKey(
+                    initialTarget.walletIndex,
+                    initialTarget.accountIndex,
+                  )
+                : undefined
+            }
             initialScrollViewPosition={0.5}
             onRowAction={handleAccountAction}
             onVisibleRangeChanged={event => {

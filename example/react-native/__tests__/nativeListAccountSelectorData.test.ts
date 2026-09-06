@@ -2,6 +2,8 @@ import {
   ACCOUNT_SELECTOR_ACCOUNT_CACHE_LIMIT,
   ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET,
   ACCOUNT_SELECTOR_LOGICAL_ACCOUNT_COUNT,
+  ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT,
+  ACCOUNT_SELECTOR_WATCH_WALLET_INDEX,
   ACCOUNT_SELECTOR_WALLET_COUNT,
   AccountRowsCache,
   accountKey,
@@ -10,6 +12,7 @@ import {
   buildWalletRows,
   parseAccountKey,
   resolveAccountSelectorInitialTarget,
+  walletKey,
 } from '../pages/nativeListAccountSelectorData';
 
 describe('Native List account-selector stress data', () => {
@@ -17,8 +20,12 @@ describe('Native List account-selector stress data', () => {
     expect(ACCOUNT_SELECTOR_WALLET_COUNT).toBe(1_000);
     expect(ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET).toBe(1_000);
     expect(ACCOUNT_SELECTOR_LOGICAL_ACCOUNT_COUNT).toBe(1_000_000);
-    expect(buildWalletRows()).toHaveLength(1_000);
+    expect(buildWalletRows()).toHaveLength(1_001);
     expect(buildAccountRows(0)).toHaveLength(1_000);
+    expect(buildWalletRows()[6]).toMatchObject({
+      key: walletKey(ACCOUNT_SELECTOR_WATCH_WALLET_INDEX),
+      title: '观察钱包',
+    });
   });
 
   it('resolves one-based cold-open targets and rejects invalid values', () => {
@@ -44,6 +51,49 @@ describe('Native List account-selector stress data', () => {
       walletIndex: 2,
       accountIndex: 0,
     });
+    expect(
+      resolveAccountSelectorInitialTarget({
+        walletNumber: ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT,
+      }),
+    ).toEqual({
+      walletNumber: 1_001,
+      accountNumber: 2,
+      walletIndex: ACCOUNT_SELECTOR_WATCH_WALLET_INDEX,
+      accountIndex: 1,
+    });
+  });
+
+  it('reproduces the two watch-only accounts without reducing the stress fixture', () => {
+    const rows = buildAccountRows(ACCOUNT_SELECTOR_WATCH_WALLET_INDEX);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      title: 'Account #1',
+      subtitle: '$0.00 · juno1x...c54j',
+      leading: {
+        kind: 'token',
+        networkImage: {
+          uri: 'https://uni.onekey-asset.com/static/chain/juno.png',
+        },
+      },
+    });
+    expect(rows[1]).toMatchObject({
+      title: 'Account #2',
+      subtitle: '$1,925,480... · 0x40ec...bbDf',
+      leading: {
+        kind: 'token',
+        networkImage: {
+          uri: 'https://uni.onekey-asset.com/static/chain/eth.png',
+        },
+      },
+    });
+    expect(buildVisibleAccountRows(rows, '').map(row => row.key)).toEqual([
+      accountKey(ACCOUNT_SELECTOR_WATCH_WALLET_INDEX, 0),
+      accountKey(ACCOUNT_SELECTOR_WATCH_WALLET_INDEX, 1),
+      'account-add',
+    ]);
+    expect(
+      parseAccountKey(accountKey(ACCOUNT_SELECTOR_WATCH_WALLET_INDEX, 2)),
+    ).toBeUndefined();
   });
 
   it('makes every logical wallet addressable while keeping only a bounded row cache', () => {
