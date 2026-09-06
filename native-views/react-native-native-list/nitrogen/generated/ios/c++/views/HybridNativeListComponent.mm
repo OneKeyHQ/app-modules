@@ -110,6 +110,12 @@ using namespace margelo::nitro::nativelist::views;
           : !newViewProps.onRowAction.hasSameValue(oldViewProps->onRowAction)) {
       swiftPart.setOnRowAction(newViewProps.onRowAction.get());
     }
+    // onActionAnchorInvalidated: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.onActionAnchorInvalidated.isProvided()
+          : !newViewProps.onActionAnchorInvalidated.hasSameValue(oldViewProps->onActionAnchorInvalidated)) {
+      swiftPart.setOnActionAnchorInvalidated(newViewProps.onActionAnchorInvalidated.get());
+    }
     // onSelectionDelta: optional
     if (oldViewProps == nullptr
           ? newViewProps.onSelectionDelta.isProvided()

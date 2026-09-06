@@ -80,6 +80,13 @@ namespace margelo::nitro::nativelist {
     inline void setOnRowAction(const std::optional<std::function<void(const std::string& /* payloadJson */)>>& onRowAction) noexcept override {
       _swiftPart.setOnRowAction(onRowAction);
     }
+    inline std::optional<std::function<void(const std::string& /* payloadJson */)>> getOnActionAnchorInvalidated() noexcept override {
+      auto __result = _swiftPart.getOnActionAnchorInvalidated();
+      return __result;
+    }
+    inline void setOnActionAnchorInvalidated(const std::optional<std::function<void(const std::string& /* payloadJson */)>>& onActionAnchorInvalidated) noexcept override {
+      _swiftPart.setOnActionAnchorInvalidated(onActionAnchorInvalidated);
+    }
     inline std::optional<std::function<void(const std::string& /* payloadJson */)>> getOnSelectionDelta() noexcept override {
       auto __result = _swiftPart.getOnSelectionDelta();
       return __result;
@@ -149,6 +156,12 @@ namespace margelo::nitro::nativelist {
     }
     inline void scrollToEnd(bool animated) override {
       auto __result = _swiftPart.scrollToEnd(std::forward<decltype(animated)>(animated));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline void setActionAnchorState(const std::string& stateJson) override {
+      auto __result = _swiftPart.setActionAnchorState(stateJson);
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }

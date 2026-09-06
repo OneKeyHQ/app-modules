@@ -5,6 +5,7 @@ import type {
   NativeListNativeProps,
 } from './NativeList.nitro';
 import type {
+  ActionAnchorInvalidatedEvent,
   RowActionEvent,
   SelectionDeltaEvent,
   ReorderEvent,
@@ -25,6 +26,7 @@ import { serializePatches, serializeSnapshot } from './validation';
 
 export type { NativeListProps, NativeListRef } from './NativeList.types';
 export type {
+  ActionAnchorState,
   ScrollAlignment,
   ScrollPositionOptions,
   ScrollToEndParams,
@@ -53,6 +55,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       snapshot,
       webVirtualizationEnabled: _webVirtualizationEnabled,
       onRowAction,
+      onActionAnchorInvalidated,
       onSelectionDelta,
       onReorder,
       onEndReached,
@@ -70,6 +73,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     const nativeRef = useRef<NativeListMethods | null>(null);
     const callbacksRef = useRef({
       onRowAction,
+      onActionAnchorInvalidated,
       onSelectionDelta,
       onReorder,
       onEndReached,
@@ -79,6 +83,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     });
     callbacksRef.current = {
       onRowAction,
+      onActionAnchorInvalidated,
       onSelectionDelta,
       onReorder,
       onEndReached,
@@ -233,6 +238,9 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         }
         dispatchIndexScroll(index, normalizePositionScroll(params, 'start'));
       },
+      setActionAnchorState(state) {
+        nativeRef.current?.setActionAnchorState(JSON.stringify(state));
+      },
       setRefreshing(refreshing) {
         nativeRef.current?.setRefreshing(refreshing);
       },
@@ -249,6 +257,11 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           if (payload.actionKey === 'nativeList.refresh')
             callbacksRef.current.onRefresh?.();
           callbacksRef.current.onRowAction?.(payload);
+        }),
+        onActionAnchorInvalidated: callback((payloadJson: string) => {
+          callbacksRef.current.onActionAnchorInvalidated?.(
+            parsePayload<ActionAnchorInvalidatedEvent>(payloadJson)
+          );
         }),
         onSelectionDelta: callback((payloadJson: string) => {
           callbacksRef.current.onSelectionDelta?.(

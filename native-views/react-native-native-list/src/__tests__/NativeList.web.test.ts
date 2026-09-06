@@ -1,5 +1,6 @@
 import type { IdentityRow, NativeListSnapshot, RowModel } from '../models';
 import {
+  WEB_LIST_CSS,
   WEB_REORDER_ANIMATION,
   cancelWebReorderRows,
   computeWebListLayout,
@@ -11,6 +12,7 @@ import {
   webReorderAutoScrollVelocity,
   webReorderEventForRows,
   webLayoutItemsForMount,
+  webActionAnchorPayload,
   webRowRenderSignature,
   webWalletGroupReorderBadge,
 } from '../web/NativeListWebEngine';
@@ -138,6 +140,31 @@ function snapshot(
 }
 
 describe('NativeList pure DOM web layout', () => {
+  it('keeps the disabled section-index rail out of pointer hit testing', () => {
+    expect(WEB_LIST_CSS).toContain(
+      '.ok-native-list-index-rail[hidden]{display:none}'
+    );
+  });
+
+  it('captures logical window geometry and preserves media-close source', () => {
+    expect(
+      webActionAnchorPayload(
+        'list:3:9:2',
+        { left: 12, top: 24, width: 36, height: 36 },
+        'mediaClose',
+        3,
+        'rtl'
+      )
+    ).toEqual({
+      token: 'list:3:9:2',
+      windowRect: { x: 12, y: 24, width: 36, height: 36 },
+      source: 'mediaClose',
+      slot: undefined,
+      generation: 3,
+      layoutDirection: 'rtl',
+    });
+  });
+
   it('matches native template heights for specialized examples', () => {
     const linear = snapshot({ kind: 'linear' });
     expect(estimateWebRowHeight(rows[0], linear, 320)).toBe(68);

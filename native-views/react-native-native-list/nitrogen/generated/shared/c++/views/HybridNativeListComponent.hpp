@@ -45,6 +45,7 @@ namespace margelo::nitro::nativelist::views {
   public:
     nitro::ReactProp<std::string> snapshotJson;
     nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>> onRowAction;
+    nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>> onActionAnchorInvalidated;
     nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>> onSelectionDelta;
     nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>> onReorder;
     nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>> onEndReached;
@@ -55,6 +56,7 @@ namespace margelo::nitro::nativelist::views {
     bool hasSameProps(const HybridNativeListProps& other) const noexcept {
       return snapshotJson.hasSameValue(other.snapshotJson) &&
              onRowAction.hasSameValue(other.onRowAction) &&
+             onActionAnchorInvalidated.hasSameValue(other.onActionAnchorInvalidated) &&
              onSelectionDelta.hasSameValue(other.onSelectionDelta) &&
              onReorder.hasSameValue(other.onReorder) &&
              onEndReached.hasSameValue(other.onEndReached) &&
@@ -66,6 +68,7 @@ namespace margelo::nitro::nativelist::views {
     bool hasAnyProvidedProps() const noexcept {
       return snapshotJson.isProvided() ||
              onRowAction.isProvided() ||
+             onActionAnchorInvalidated.isProvided() ||
              onSelectionDelta.isProvided() ||
              onReorder.isProvided() ||
              onEndReached.isProvided() ||

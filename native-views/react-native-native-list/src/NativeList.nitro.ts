@@ -12,6 +12,7 @@ import type {
 export interface NativeListNativeProps extends HybridViewProps {
   snapshotJson: string;
   onRowAction?: (payloadJson: string) => void;
+  onActionAnchorInvalidated?: (payloadJson: string) => void;
   onSelectionDelta?: (payloadJson: string) => void;
   onReorder?: (payloadJson: string) => void;
   onEndReached?: (payloadJson: string) => void;
@@ -40,6 +41,7 @@ export interface NativeListMethods extends HybridViewMethods {
   ): void;
   scrollToOffset(offset: number, animated: boolean): void;
   scrollToEnd(animated: boolean): void;
+  setActionAnchorState(stateJson: string): void;
   setRefreshing(refreshing: boolean): void;
 }
 

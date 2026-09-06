@@ -21,6 +21,8 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
 
   override var onRowAction: ((payloadJson: String) -> Unit)? = null
     set(value) { field = value; hostView.onRowAction = value }
+  override var onActionAnchorInvalidated: ((payloadJson: String) -> Unit)? = null
+    set(value) { field = value; hostView.onActionAnchorInvalidated = value }
   override var onSelectionDelta: ((payloadJson: String) -> Unit)? = null
     set(value) { field = value; hostView.onSelectionDelta = value }
   override var onReorder: ((payloadJson: String) -> Unit)? = null
@@ -86,6 +88,10 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
 
   override fun scrollToEnd(animated: Boolean) {
     dispatchToUi { hostView.scrollToEnd(animated) }
+  }
+
+  override fun setActionAnchorState(stateJson: String) {
+    dispatchToUi { hostView.setActionAnchorState(stateJson) }
   }
 
   override fun setRefreshing(refreshing: Boolean) {

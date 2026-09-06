@@ -1,8 +1,11 @@
 import type {
+  ActionAnchorInvalidatedEvent,
   CheckboxState,
   ImageSource,
   LeadingVisual,
   NativeListSnapshot,
+  NativeListActionAnchor,
+  NativeListActionSource,
   NativeListTheme,
   ReorderEvent,
   RowActionEvent,
@@ -15,6 +18,7 @@ import type {
   VisibleRangeChangedEvent,
 } from '../models';
 import type {
+  ActionAnchorState,
   ScrollToIndexFailedInfo,
   ScrollToLocationParams,
 } from '../NativeList.types';
@@ -54,6 +58,7 @@ const REORDER_SCROLL_ACCELERATE_AT_MS = 360;
 const REORDER_SCROLL_DAMPENING_MS = 1_200;
 const REORDER_DROP_TRANSITION_MS = WEB_REORDER_ANIMATION.dropDurationMs;
 const WALLET_REORDER_COMPACT_HEIGHT = 68;
+let webNativeListInstanceCounter = 0;
 
 const defaultTheme: NativeListTheme = {
   background: '#F7F7F7',
@@ -95,6 +100,7 @@ export type WebListLayout = Readonly<{
 
 export type NativeListWebCallbacks = Readonly<{
   onRowAction?: (event: RowActionEvent) => void;
+  onActionAnchorInvalidated?: (event: ActionAnchorInvalidatedEvent) => void;
   onSelectionDelta?: (event: SelectionDeltaEvent) => void;
   onReorder?: (event: ReorderEvent) => void;
   onEndReached?: (event: { generation: number; lastKey?: string }) => void;
@@ -102,6 +108,43 @@ export type NativeListWebCallbacks = Readonly<{
   onRefresh?: () => void;
   onScrollToIndexFailed?: (info: ScrollToIndexFailedInfo) => void;
 }>;
+
+type WebActionAnchorRecord = {
+  token: string;
+  actionElement: HTMLElement;
+  rowElement: HTMLElement;
+  bindingEpoch: string;
+  open: boolean;
+  invalidatedReason?: ActionAnchorInvalidatedEvent['reason'];
+};
+
+export function webActionAnchorPayload(
+  token: string,
+  rect: Readonly<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  }>,
+  source: NativeListActionSource,
+  generation: number,
+  layoutDirection: 'ltr' | 'rtl',
+  slot?: number
+): NativeListActionAnchor {
+  return {
+    token,
+    windowRect: {
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+    },
+    source,
+    slot,
+    generation,
+    layoutDirection,
+  };
+}
 
 type RenderContext = Readonly<{
   document: Document;
@@ -656,7 +699,7 @@ export function webRowRenderSignature(row: RowModel): string {
   return JSON.stringify(rowWithoutSelectionState(row));
 }
 
-const WEB_LIST_CSS = `
+export const WEB_LIST_CSS = `
 .ok-native-list-root{--nl-bg:#f7f7f7;--nl-row:#fff;--nl-selected:#eaf2ff;--nl-pressed:#e8e8e8;--nl-subdued:#f9f9f9;--nl-strong:#0000000f;--nl-primary:#111;--nl-secondary:#6b7280;--nl-disabled:#8d8d8d;--nl-icon:#111;--nl-icon-subdued:#8d8d8d;--nl-separator:#e5e7eb;--nl-accent:#2f6bff;--nl-positive:#15803d;--nl-negative:#dc2626;--nl-critical:#feecec;--nl-inverse:#202020;--nl-inverse-text:#fcfcfc;--nl-info:#0d74ce;position:absolute;inset:0;display:flex;min-width:0;min-height:0;overflow:hidden;background:var(--nl-bg);color:var(--nl-primary);font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-synthesis:none}
 .ok-native-list-viewport-frame{position:relative;flex:1;min-width:0;min-height:0;overflow:hidden}
 .ok-native-list-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
@@ -709,7 +752,7 @@ const WEB_LIST_CSS = `
 .ok-native-list-media{display:block;padding:0 5px;background:transparent;border-radius:16px}.ok-native-list-media-image{display:block;width:100%;aspect-ratio:1;border-radius:10px;background:var(--nl-strong);object-fit:cover}.ok-native-list-media-image[data-state="empty"]{background:transparent}.ok-native-list-media-image[data-state="error"]{display:flex;align-items:center;justify-content:center;color:var(--nl-icon-subdued);font-size:24px}.ok-native-list-media-meta{padding-top:7px}.ok-native-list-media-subtitle-row{display:flex;align-items:center;gap:6px}.ok-native-list-media-subtitle{flex:1;min-width:0;font-size:12px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-network{width:14px;height:14px;border-radius:50%}.ok-native-list-media-title{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-close{position:absolute;right:9px;top:4px;border:0;background:color-mix(in srgb,var(--nl-inverse) 72%,transparent);color:var(--nl-inverse-text);width:24px;height:24px;border-radius:50%;font:18px/20px inherit;cursor:pointer}
 .ok-native-list-metric{display:flex;flex-direction:column;align-items:flex-start;padding:12px;border-radius:12px;gap:5px;background:var(--nl-row)}.ok-native-list-metric-value{font-size:22px;line-height:28px;font-weight:700}.ok-native-list-composite{display:flex;flex-direction:column;align-items:stretch;padding:14px;border-radius:12px;gap:12px;background:var(--nl-subdued)}.ok-native-list-composite-heading{font-size:14px;letter-spacing:1px;color:var(--nl-secondary)}.ok-native-list-composite-row{display:flex;gap:12px}.ok-native-list-composite-cell{flex:1;min-width:0}.ok-native-list-composite-cell[data-shaded="true"]{padding:10px;border-radius:10px;background:color-mix(in srgb,var(--nl-primary) 5%,transparent)}.ok-native-list-composite-value{font-size:18px;font-weight:600}.ok-native-list-divider{height:1px;background:var(--nl-separator)}.ok-native-list-progress{height:4px;border-radius:2px;overflow:hidden;background:var(--nl-negative)}.ok-native-list-progress>span{display:block;height:100%;border-radius:2px;background:var(--nl-positive)}
 .ok-native-list-data{padding:6px 12px}.ok-native-list-index{flex:0 0 28px;color:var(--nl-secondary);font-size:13px}.ok-native-list-favorite{flex:0 0 24px;color:var(--nl-icon-subdued);font-size:22px}.ok-native-list-favorite[data-active="true"]{color:var(--nl-accent)}.ok-native-list-data-cell{display:flex;flex-direction:column;min-width:0}.ok-native-list-data-cell[data-align="center"]{align-items:center}.ok-native-list-data-cell[data-align="end"]{align-items:flex-end}.ok-native-list-data-primary{display:flex;align-items:center;gap:5px;max-width:100%;font-size:16px;font-weight:500;white-space:nowrap}.ok-native-list-unread{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--nl-accent)}.ok-native-list-thumbnail{width:64px;height:64px;border-radius:10px;object-fit:cover}
-.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;touch-action:none}.ok-native-list-index-button{appearance:none;border:0;background:transparent;display:flex;flex:1;max-height:22px;min-height:12px;width:100%;align-items:center;justify-content:center;padding:0;color:var(--nl-secondary);font:600 11px/1 inherit;cursor:pointer}.ok-native-list-index-button[data-active="true"]{color:var(--nl-accent)}.ok-native-list-index-preview{position:absolute;z-index:8;left:50%;top:50%;display:flex;width:72px;height:72px;align-items:center;justify-content:center;transform:translate(-50%,-50%) scale(.92);border-radius:16px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:28px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;touch-action:none}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;border:0;background:transparent;display:flex;flex:1;max-height:22px;min-height:12px;width:100%;align-items:center;justify-content:center;padding:0;color:var(--nl-secondary);font:600 11px/1 inherit;cursor:pointer}.ok-native-list-index-button[data-active="true"]{color:var(--nl-accent)}.ok-native-list-index-preview{position:absolute;z-index:8;left:50%;top:50%;display:flex;width:72px;height:72px;align-items:center;justify-content:center;transform:translate(-50%,-50%) scale(.92);border-radius:16px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:28px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translate(-50%,-50%) scale(1)}
 .ok-native-list-refresh{position:absolute;z-index:7;left:50%;top:8px;display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;opacity:0;transform:translate(-50%,-16px);transition:opacity .15s ease,transform .15s ease;pointer-events:none}.ok-native-list-refresh[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
 @media (prefers-reduced-motion:reduce){.ok-native-list-index-preview,.ok-native-list-refresh{transition:none}.ok-native-list-spinner{animation:none}}
 `;
@@ -1008,21 +1051,36 @@ function createIconAction(
   return element;
 }
 
+function markActionAnchorSource(
+  element: HTMLElement,
+  source: NativeListActionSource,
+  slot?: number
+) {
+  setData(element, 'nativeListAnchorSource', source);
+  if (slot !== undefined) setData(element, 'nativeListAnchorSlot', slot);
+}
+
 function createAccessory(
   context: RenderContext,
   rowKey: string,
-  accessory: TrailingAccessory
+  accessory: TrailingAccessory,
+  slot: number
 ): HTMLElement {
-  if (accessory.kind === 'checkbox')
-    return createCheckbox(context, rowKey, accessory);
+  if (accessory.kind === 'checkbox') {
+    const element = createCheckbox(context, rowKey, accessory);
+    markActionAnchorSource(element, 'trailingAccessory', slot);
+    return element;
+  }
   if (accessory.kind === 'icon') {
-    return createIconAction(
+    const element = createIconAction(
       context,
       accessory.name,
       accessory.actionKey,
       accessory.disabled,
       accessory.tintColor
     );
+    markActionAnchorSource(element, 'trailingAccessory', slot);
+    return element;
   }
   if (accessory.kind === 'spinner') {
     return createElement(context.document, 'span', 'ok-native-list-spinner');
@@ -1083,6 +1141,7 @@ function createAccessory(
       element.textContent = String(Math.round(accessory.value * 100)) + '%';
       break;
   }
+  if (actionKey) markActionAnchorSource(element, 'trailingAccessory', slot);
   return element;
 }
 
@@ -1098,8 +1157,8 @@ function appendAccessories(
     'span',
     'ok-native-list-accessories'
   );
-  accessories.forEach((accessory) =>
-    container.appendChild(createAccessory(context, rowKey, accessory))
+  accessories.forEach((accessory, slot) =>
+    container.appendChild(createAccessory(context, rowKey, accessory, slot))
   );
   parent.appendChild(container);
 }
@@ -1164,16 +1223,17 @@ function createSectionHeader(
     'ok-native-list-row ok-native-list-section'
   );
   setData(body, 'variant', row.variant);
-  if (row.titleIcon)
-    body.appendChild(
-      createIconAction(
-        context,
-        row.titleIcon.name,
-        row.titleIcon.actionKey,
-        row.titleIcon.disabled,
-        row.titleIcon.tintColor
-      )
+  if (row.titleIcon) {
+    const titleIcon = createIconAction(
+      context,
+      row.titleIcon.name,
+      row.titleIcon.actionKey,
+      row.titleIcon.disabled,
+      row.titleIcon.tintColor
     );
+    markActionAnchorSource(titleIcon, 'leadingAction');
+    body.appendChild(titleIcon);
+  }
   body.appendChild(createTextColumn(context, row.title, row.subtitle));
   if (row.value) {
     const value = createElement(
@@ -1187,19 +1247,21 @@ function createSectionHeader(
     if (row.valueActionKey) {
       value.setAttribute('type', 'button');
       setData(value, 'nativeListAction', row.valueActionKey);
+      markActionAnchorSource(value, 'trailingAccessory', 0);
     }
     body.appendChild(value);
   }
-  if (row.valueIcon)
-    body.appendChild(
-      createIconAction(
-        context,
-        row.valueIcon.name,
-        row.valueIcon.actionKey,
-        row.valueIcon.disabled,
-        row.valueIcon.tintColor
-      )
+  if (row.valueIcon) {
+    const valueIcon = createIconAction(
+      context,
+      row.valueIcon.name,
+      row.valueIcon.actionKey,
+      row.valueIcon.disabled,
+      row.valueIcon.tintColor
     );
+    markActionAnchorSource(valueIcon, 'trailingAccessory', 1);
+    body.appendChild(valueIcon);
+  }
   if (row.checkbox)
     body.appendChild(createCheckbox(context, row.key, row.checkbox));
   return body;
@@ -1368,6 +1430,7 @@ function createMediaRow(
     close.setAttribute('type', 'button');
     close.setAttribute('aria-label', 'Close');
     setData(close, 'nativeListAction', row.closeActionKey);
+    markActionAnchorSource(close, 'mediaClose');
     body.appendChild(close);
   }
   return body;
@@ -1641,15 +1704,15 @@ function createIdentityActivityOrMessageRow(
       .join(' ')
   );
   if (row.type === 'identity' && row.leadingAction) {
-    body.appendChild(
-      createIconAction(
-        context,
-        row.leadingAction.name,
-        row.leadingAction.actionKey,
-        row.leadingAction.disabled,
-        row.leadingAction.tintColor
-      )
+    const action = createIconAction(
+      context,
+      row.leadingAction.name,
+      row.leadingAction.actionKey,
+      row.leadingAction.disabled,
+      row.leadingAction.tintColor
     );
+    markActionAnchorSource(action, 'leadingAction');
+    body.appendChild(action);
   }
   const visual = createVisual(context, visualFromRow(row));
   if (visual) body.appendChild(visual);
@@ -1691,7 +1754,7 @@ function createIdentityActivityOrMessageRow(
       'span',
       'ok-native-list-actions'
     );
-    row.footerActions.forEach((action) => {
+    row.footerActions.forEach((action, slot) => {
       const button = createElement(
         context.document,
         'button',
@@ -1702,6 +1765,7 @@ function createIdentityActivityOrMessageRow(
       button.toggleAttribute('disabled', Boolean(action.disabled));
       setData(button, 'tone', action.tone);
       setData(button, 'nativeListAction', action.key);
+      markActionAnchorSource(button, 'footerAction', slot);
       actions.appendChild(button);
     });
     column.appendChild(actions);
@@ -1846,6 +1910,14 @@ export class NativeListWebEngine {
   private pullStartY: number | undefined;
   private pullDistance = 0;
   private virtualizationEnabled: boolean;
+  private actionAnchor: WebActionAnchorRecord | undefined;
+  private readonly actionAnchorInstanceId = String(
+    ++webNativeListInstanceCounter
+  );
+  private actionAnchorCounter = 0;
+  private bindingEpochCounter = 0;
+  private lastViewportWidth = -1;
+  private lastViewportHeight = -1;
   private destroyed = false;
 
   constructor(
@@ -1996,12 +2068,15 @@ export class NativeListWebEngine {
   }
 
   applySnapshot(snapshot: NativeListSnapshot) {
-    this.setSnapshot(validateSnapshot(snapshot));
+    const validated = validateSnapshot(snapshot);
+    this.invalidateActionAnchor('snapshot');
+    this.setSnapshot(validated);
   }
 
   applyPatches(patches: readonly RowPatch[]) {
     if (patches.length === 0) return;
     const next = applyRowPatches(this.snapshot, patches);
+    this.invalidateActionAnchor('snapshot');
     const selection = new Set(this.selectedKeys);
     patches.forEach((patch) => {
       const selected =
@@ -2106,8 +2181,31 @@ export class NativeListWebEngine {
     this.updateRefreshIndicator();
   }
 
+  setActionAnchorState(state: ActionAnchorState) {
+    const anchor = this.actionAnchor;
+    if (!anchor || anchor.token !== state.token) return;
+    if (!state.open) {
+      if (state.restoreFocus && this.isActionAnchorValid(anchor)) {
+        anchor.actionElement.focus({ preventScroll: true });
+      }
+      anchor.actionElement.removeAttribute('aria-expanded');
+      this.actionAnchor = undefined;
+      return;
+    }
+    if (anchor.invalidatedReason || !this.isActionAnchorValid(anchor)) {
+      this.emitActionAnchorInvalidated(
+        anchor,
+        anchor.invalidatedReason ?? 'rebind'
+      );
+      return;
+    }
+    anchor.open = true;
+    anchor.actionElement.setAttribute('aria-expanded', 'true');
+  }
+
   destroy() {
     if (this.destroyed) return;
+    this.invalidateActionAnchor('destroy');
     this.destroyed = true;
     if (this.frameHandle !== undefined) this.cancelFrame(this.frameHandle);
     if (this.previewTimer !== undefined)
@@ -2210,11 +2308,22 @@ export class NativeListWebEngine {
 
   private recomputeLayout = () => {
     if (this.destroyed) return;
+    const viewportWidth = this.viewport.clientWidth;
+    const viewportHeight = this.viewport.clientHeight;
+    if (
+      this.lastViewportWidth >= 0 &&
+      (viewportWidth !== this.lastViewportWidth ||
+        viewportHeight !== this.lastViewportHeight)
+    ) {
+      this.invalidateActionAnchor('layout');
+    }
+    this.lastViewportWidth = viewportWidth;
+    this.lastViewportHeight = viewportHeight;
     const previousHorizontal = this.layout.horizontal;
     this.layout = computeWebListLayout(
       this.snapshot,
-      this.viewport.clientWidth,
-      this.viewport.clientHeight,
+      viewportWidth,
+      viewportHeight,
       this.reorderCompactKey
     );
     this.content.style.width = String(this.layout.contentWidth) + 'px';
@@ -2239,6 +2348,7 @@ export class NativeListWebEngine {
     const desired = new Set(visible.map((item) => item.index));
     this.mounted.forEach((element, index) => {
       if (!desired.has(index)) {
+        this.invalidateActionAnchorForElement(element);
         this.mounted.delete(index);
         element.remove();
         this.pool.push(element);
@@ -2284,10 +2394,13 @@ export class NativeListWebEngine {
     row: RowModel,
     overlay = false
   ) {
+    this.invalidateActionAnchorForElement(element);
+    const bindingEpoch = String(++this.bindingEpochCounter);
     element.className = overlay
       ? 'ok-native-list-item ok-native-list-sticky'
       : 'ok-native-list-item';
     setData(element, 'nativeListRowKey', row.key);
+    setData(element, 'nativeListBindingEpoch', bindingEpoch);
     setData(element, 'nativeListRowIndex', index);
     setData(element, 'nativeListDisabled', Boolean(row.disabled));
     setData(element, 'nativeListReorderable', this.isReorderable(row));
@@ -2327,6 +2440,7 @@ export class NativeListWebEngine {
 
   private renderFooter() {
     const row = this.snapshot.fixedFooter;
+    this.invalidateActionAnchorForElement(this.footer);
     this.footer.replaceChildren();
     if (!row) return;
     const element = createElement(this.document, 'div', 'ok-native-list-item');
@@ -2647,15 +2761,111 @@ export class NativeListWebEngine {
     this.callbacks.onSelectionDelta?.(result.delta);
   }
 
-  private emitRowAction(row: RowModel, actionKey: string) {
+  private emitRowAction(
+    row: RowModel,
+    actionKey: string,
+    actionElement?: HTMLElement,
+    rowElement?: HTMLElement
+  ) {
+    const anchor =
+      actionElement && rowElement
+        ? this.createActionAnchor(actionElement, rowElement)
+        : undefined;
     this.callbacks.onRowAction?.({
       rowKey: row.key,
       actionKey,
       sectionKey: row.sectionKey,
+      anchor,
     });
   }
 
-  private handleRowPress(row: RowModel) {
+  private createActionAnchor(
+    actionElement: HTMLElement,
+    rowElement: HTMLElement,
+    sourceOverride?: NativeListActionSource
+  ): NativeListActionAnchor | undefined {
+    const source =
+      sourceOverride ??
+      (actionElement.dataset.nativeListAnchorSource as
+        | NativeListActionSource
+        | undefined);
+    const bindingEpoch = rowElement.dataset.nativeListBindingEpoch;
+    if (!source || !bindingEpoch || !rowElement.contains(actionElement))
+      return undefined;
+    this.invalidateActionAnchor('rebind');
+    const rect = actionElement.getBoundingClientRect();
+    const token = [
+      this.actionAnchorInstanceId,
+      this.snapshot.generation,
+      ++this.actionAnchorCounter,
+      bindingEpoch,
+    ].join(':');
+    const slotValue = actionElement.dataset.nativeListAnchorSlot;
+    const direction =
+      this.document.defaultView?.getComputedStyle(actionElement).direction ===
+        'rtl' || actionElement.closest('[dir="rtl"]')
+        ? 'rtl'
+        : 'ltr';
+    this.actionAnchor = {
+      token,
+      actionElement,
+      rowElement,
+      bindingEpoch,
+      open: false,
+    };
+    return webActionAnchorPayload(
+      token,
+      rect,
+      source,
+      this.snapshot.generation,
+      direction,
+      slotValue === undefined ? undefined : Number(slotValue)
+    );
+  }
+
+  private isActionAnchorValid(anchor: WebActionAnchorRecord): boolean {
+    return (
+      anchor.actionElement.isConnected &&
+      anchor.rowElement.isConnected &&
+      anchor.rowElement.contains(anchor.actionElement) &&
+      anchor.rowElement.dataset.nativeListBindingEpoch === anchor.bindingEpoch
+    );
+  }
+
+  private invalidateActionAnchorForElement(element: HTMLElement) {
+    const anchor = this.actionAnchor;
+    if (
+      anchor &&
+      (element === anchor.rowElement || element.contains(anchor.actionElement))
+    ) {
+      this.invalidateActionAnchor('rebind');
+    }
+  }
+
+  private invalidateActionAnchor(
+    reason: ActionAnchorInvalidatedEvent['reason']
+  ) {
+    const anchor = this.actionAnchor;
+    if (!anchor || anchor.invalidatedReason) return;
+    anchor.invalidatedReason = reason;
+    anchor.actionElement.removeAttribute('aria-expanded');
+    if (anchor.open) this.emitActionAnchorInvalidated(anchor, reason);
+  }
+
+  private emitActionAnchorInvalidated(
+    anchor: WebActionAnchorRecord,
+    reason: ActionAnchorInvalidatedEvent['reason']
+  ) {
+    if (this.actionAnchor !== anchor) return;
+    this.actionAnchor = undefined;
+    this.callbacks.onActionAnchorInvalidated?.({ token: anchor.token, reason });
+  }
+
+  private handleRowPress(
+    row: RowModel,
+    rowElement?: HTMLElement,
+    sourceElement = rowElement
+  ) {
     if (row.disabled) return;
     if (
       this.snapshot.selection?.rowPressToggles &&
@@ -2671,7 +2881,17 @@ export class NativeListWebEngine {
         : row.type === 'system' && row.variant === 'retry'
         ? row.actionKey
         : 'press';
-    this.emitRowAction(row, actionKey);
+    if (rowElement && sourceElement) {
+      const anchor = this.createActionAnchor(sourceElement, rowElement, 'row');
+      this.callbacks.onRowAction?.({
+        rowKey: row.key,
+        actionKey,
+        sectionKey: row.sectionKey,
+        anchor,
+      });
+    } else {
+      this.emitRowAction(row, actionKey);
+    }
   }
 
   private handleClick = (event: Event) => {
@@ -2687,9 +2907,10 @@ export class NativeListWebEngine {
     );
     const row = this.rowAtElement(rowElement);
     if (!row || row.disabled) return;
-    const memberKey = target.closest<HTMLElement>(
+    const memberElement = target.closest<HTMLElement>(
       '[data-native-list-group-member-key]'
-    )?.dataset.nativeListGroupMemberKey;
+    );
+    const memberKey = memberElement?.dataset.nativeListGroupMemberKey;
     const sourceRow =
       row.type === 'walletGroup' && memberKey
         ? [row.parent, ...row.children].find(
@@ -2707,10 +2928,19 @@ export class NativeListWebEngine {
         );
       else if (scope === 'list') this.activateSelection({ scope: 'list' }, row);
       else if (action.dataset.nativeListAction)
-        this.emitRowAction(sourceRow, action.dataset.nativeListAction);
+        this.emitRowAction(
+          sourceRow,
+          action.dataset.nativeListAction,
+          action,
+          rowElement ?? undefined
+        );
       return;
     }
-    this.handleRowPress(sourceRow);
+    this.handleRowPress(
+      sourceRow,
+      rowElement ?? undefined,
+      memberElement ?? rowElement ?? undefined
+    );
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
@@ -2754,7 +2984,10 @@ export class NativeListWebEngine {
       else this.startKeyboardReorder(row);
       return;
     }
-    this.handleRowPress(row);
+    this.handleRowPress(
+      row,
+      target.closest<HTMLElement>('[data-native-list-row-key]') ?? undefined
+    );
   };
 
   private startKeyboardReorder(row: RowModel) {
@@ -2825,6 +3058,7 @@ export class NativeListWebEngine {
   }
 
   private handleScroll = () => {
+    this.invalidateActionAnchor('scroll');
     this.scheduleFrame();
   };
 

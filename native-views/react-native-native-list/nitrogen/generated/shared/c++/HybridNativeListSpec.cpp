@@ -18,6 +18,8 @@ namespace margelo::nitro::nativelist {
       prototype.registerHybridSetter("snapshotJson", &HybridNativeListSpec::setSnapshotJson);
       prototype.registerHybridGetter("onRowAction", &HybridNativeListSpec::getOnRowAction);
       prototype.registerHybridSetter("onRowAction", &HybridNativeListSpec::setOnRowAction);
+      prototype.registerHybridGetter("onActionAnchorInvalidated", &HybridNativeListSpec::getOnActionAnchorInvalidated);
+      prototype.registerHybridSetter("onActionAnchorInvalidated", &HybridNativeListSpec::setOnActionAnchorInvalidated);
       prototype.registerHybridGetter("onSelectionDelta", &HybridNativeListSpec::getOnSelectionDelta);
       prototype.registerHybridSetter("onSelectionDelta", &HybridNativeListSpec::setOnSelectionDelta);
       prototype.registerHybridGetter("onReorder", &HybridNativeListSpec::getOnReorder);
@@ -33,6 +35,7 @@ namespace margelo::nitro::nativelist {
       prototype.registerHybridMethod("scrollToIndex", &HybridNativeListSpec::scrollToIndex);
       prototype.registerHybridMethod("scrollToOffset", &HybridNativeListSpec::scrollToOffset);
       prototype.registerHybridMethod("scrollToEnd", &HybridNativeListSpec::scrollToEnd);
+      prototype.registerHybridMethod("setActionAnchorState", &HybridNativeListSpec::setActionAnchorState);
       prototype.registerHybridMethod("setRefreshing", &HybridNativeListSpec::setRefreshing);
     });
   }

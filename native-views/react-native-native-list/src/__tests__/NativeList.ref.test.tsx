@@ -11,6 +11,7 @@ const mockNativeMethods = {
   scrollToIndex: jest.fn(),
   scrollToOffset: jest.fn(),
   scrollToEnd: jest.fn(),
+  setActionAnchorState: jest.fn(),
   setRefreshing: jest.fn(),
 };
 
@@ -115,6 +116,10 @@ describe('NativeList imperative ref', () => {
       ref.current?.scrollToOffset({ offset: 320, animated: false });
       ref.current?.scrollToEnd({ animated: false });
       ref.current?.scrollToLocation({ sectionIndex: 1, itemIndex: 0 });
+      ref.current?.setActionAnchorState({
+        token: 'list:1:1:1',
+        open: true,
+      });
       ref.current?.setRefreshing(true);
     });
 
@@ -173,6 +178,9 @@ describe('NativeList imperative ref', () => {
       0
     );
     expect(mockNativeMethods.setRefreshing).toHaveBeenCalledWith(true);
+    expect(mockNativeMethods.setActionAnchorState).toHaveBeenCalledWith(
+      '{"token":"list:1:1:1","open":true}'
+    );
   });
 
   it('reports invalid index and location requests', async () => {

@@ -22,6 +22,7 @@ namespace margelo::nitro::nativelist::views {
     react::ViewProps(context, sourceProps, rawProps, filterObjectKeys),
     snapshotJson(nitro::ReactProp<std::string>::fromRawValue("NativeList", "snapshotJson", rawProps, sourceProps.snapshotJson)),
     onRowAction(nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>>::fromRawValue("NativeList", "onRowAction", rawProps, sourceProps.onRowAction)),
+    onActionAnchorInvalidated(nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>>::fromRawValue("NativeList", "onActionAnchorInvalidated", rawProps, sourceProps.onActionAnchorInvalidated)),
     onSelectionDelta(nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>>::fromRawValue("NativeList", "onSelectionDelta", rawProps, sourceProps.onSelectionDelta)),
     onReorder(nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>>::fromRawValue("NativeList", "onReorder", rawProps, sourceProps.onReorder)),
     onEndReached(nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>>::fromRawValue("NativeList", "onEndReached", rawProps, sourceProps.onEndReached)),
@@ -32,6 +33,7 @@ namespace margelo::nitro::nativelist::views {
     switch (hashString(propName)) {
       case hashString("snapshotJson"): return true;
       case hashString("onRowAction"): return true;
+      case hashString("onActionAnchorInvalidated"): return true;
       case hashString("onSelectionDelta"): return true;
       case hashString("onReorder"): return true;
       case hashString("onEndReached"): return true;

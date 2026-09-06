@@ -12,6 +12,7 @@ public protocol HybridNativeListSpec_protocol: HybridObject, HybridView {
   // Properties
   var snapshotJson: String { get set }
   var onRowAction: ((_ payloadJson: String) -> Void)? { get set }
+  var onActionAnchorInvalidated: ((_ payloadJson: String) -> Void)? { get set }
   var onSelectionDelta: ((_ payloadJson: String) -> Void)? { get set }
   var onReorder: ((_ payloadJson: String) -> Void)? { get set }
   var onEndReached: ((_ payloadJson: String) -> Void)? { get set }
@@ -25,6 +26,7 @@ public protocol HybridNativeListSpec_protocol: HybridObject, HybridView {
   func scrollToIndex(index: Double, animated: Bool, alignment: NativeListScrollAlignment, viewPosition: Double, viewOffset: Double) throws -> Void
   func scrollToOffset(offset: Double, animated: Bool) throws -> Void
   func scrollToEnd(animated: Bool) throws -> Void
+  func setActionAnchorState(stateJson: String) throws -> Void
   func setRefreshing(refreshing: Bool) throws -> Void
 }
 

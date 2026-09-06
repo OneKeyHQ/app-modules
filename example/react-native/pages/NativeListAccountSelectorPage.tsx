@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
+  Modal,
   Platform,
   Pressable,
   StatusBar,
@@ -13,6 +14,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   NativeList,
+  type ActionAnchorInvalidatedEvent,
+  type NativeListActionAnchor,
+  type NativeListRef,
   type NativeListSnapshot,
   type NativeListTheme,
   type ReorderEvent,
@@ -129,6 +133,12 @@ type InitialTargetVisibility = {
   reported: boolean;
 };
 
+type AnchorDebugMenu = Readonly<{
+  rowKey: string;
+  actionKey: string;
+  anchor: NativeListActionAnchor;
+}>;
+
 export function NativeListAccountSelectorPage({
   initialTarget: initialTargetProp,
   route,
@@ -146,6 +156,8 @@ export function NativeListAccountSelectorPage({
     ? COMPACT_WEB_BOTTOM_INSET
     : insets.bottom;
   const accountCacheRef = useRef<AccountRowsCache | null>(null);
+  const accountListRef = useRef<NativeListRef>(null);
+  const anchorDebugTokenRef = useRef<string | undefined>(undefined);
   if (!accountCacheRef.current) {
     accountCacheRef.current = new AccountRowsCache();
   }
@@ -182,6 +194,7 @@ export function NativeListAccountSelectorPage({
   const [searchInput, setSearchInput] = useState('');
   const [searchText, setSearchText] = useState('');
   const [accountGeneration, setAccountGeneration] = useState(1);
+  const [anchorDebugMenu, setAnchorDebugMenu] = useState<AnchorDebugMenu>();
   const selectedWalletAvatarUri = walletAvatarUri(selectedWalletIndex);
   const isWatchWallet = isWatchWalletIndex(selectedWalletIndex);
   const selectedWalletAccountCount = accountCountForWallet(selectedWalletIndex);
@@ -408,6 +421,28 @@ export function NativeListAccountSelectorPage({
   };
 
   const handleAccountAction = (event: RowActionEvent) => {
+    if (
+      event.rowKey &&
+      event.actionKey.startsWith('account.more.') &&
+      event.anchor
+    ) {
+      const nextMenu = {
+        rowKey: event.rowKey,
+        actionKey: event.actionKey,
+        anchor: event.anchor,
+      };
+      anchorDebugTokenRef.current = event.anchor.token;
+      setAnchorDebugMenu(nextMenu);
+      accountListRef.current?.setActionAnchorState({
+        token: event.anchor.token,
+        open: true,
+      });
+      console.info(
+        '[NativeListAccountSelector] actionAnchorOpened',
+        JSON.stringify(nextMenu),
+      );
+      return;
+    }
     if (!event.rowKey || event.actionKey !== 'press') {
       console.info(
         '[NativeListAccountSelector] action',
@@ -420,6 +455,36 @@ export function NativeListAccountSelectorPage({
     if (!parsed || parsed.walletIndex !== selectedWalletIndex) return;
     selectedAccounts.current.set(selectedWalletIndex, parsed.accountIndex);
     setSelectedAccountIndex(parsed.accountIndex);
+  };
+
+  const handleActionAnchorInvalidated = (
+    event: ActionAnchorInvalidatedEvent,
+  ) => {
+    if (anchorDebugTokenRef.current !== event.token) return;
+    anchorDebugTokenRef.current = undefined;
+    console.info(
+      '[NativeListAccountSelector] actionAnchorInvalidated',
+      JSON.stringify(event),
+    );
+    setAnchorDebugMenu(undefined);
+  };
+
+  const closeAnchorDebugMenu = () => {
+    if (!anchorDebugMenu) return;
+    accountListRef.current?.setActionAnchorState({
+      token: anchorDebugMenu.anchor.token,
+      open: false,
+      restoreFocus: true,
+    });
+    anchorDebugTokenRef.current = undefined;
+    setAnchorDebugMenu(undefined);
+  };
+
+  const scrollAccountListForAnchorDebug = () => {
+    accountListRef.current?.scrollToOffset({
+      offset: ACCOUNT_ROW_HEIGHT * 4,
+      animated: false,
+    });
   };
 
   return (
@@ -608,6 +673,7 @@ export function NativeListAccountSelectorPage({
           </View>
 
           <NativeList
+            ref={accountListRef}
             testID="account-selector-account-list"
             style={styles.nativeList}
             snapshot={accountSnapshot}
@@ -621,6 +687,7 @@ export function NativeListAccountSelectorPage({
             }
             initialScrollViewPosition={0.5}
             onRowAction={handleAccountAction}
+            onActionAnchorInvalidated={handleActionAnchorInvalidated}
             onVisibleRangeChanged={event => {
               recordInitialTargetVisible(
                 'account',
@@ -671,6 +738,86 @@ export function NativeListAccountSelectorPage({
           />
         </View>
       </View>
+      {anchorDebugMenu && Platform.OS === 'web' ? (
+        <View
+          testID="account-selector-anchor-debug-menu"
+          style={[
+            styles.anchorDebugMenu,
+            {
+              left: Math.max(
+                8,
+                Math.min(
+                  anchorDebugMenu.anchor.windowRect.x,
+                  viewportWidth - 268,
+                ),
+              ),
+              top:
+                anchorDebugMenu.anchor.windowRect.y +
+                anchorDebugMenu.anchor.windowRect.height,
+            },
+          ]}
+        >
+          <Text style={styles.anchorDebugTitle}>Account action anchor</Text>
+          <Text style={styles.anchorDebugText}>{anchorDebugMenu.rowKey}</Text>
+          <Text style={styles.anchorDebugText}>
+            {anchorDebugMenu.anchor.source} · {anchorDebugMenu.anchor.token}
+          </Text>
+          <Pressable
+            testID="account-selector-anchor-debug-close"
+            accessibilityRole="button"
+            accessibilityLabel="关闭账户操作菜单"
+            onPress={closeAnchorDebugMenu}
+            style={styles.anchorDebugClose}
+          >
+            <Text style={styles.anchorDebugCloseText}>Close</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {anchorDebugMenu && Platform.OS !== 'web' ? (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={closeAnchorDebugMenu}
+        >
+          <Pressable
+            testID="account-selector-anchor-debug-menu"
+            style={styles.anchorDebugBackdrop}
+            onPress={closeAnchorDebugMenu}
+          >
+            <View style={styles.anchorDebugSheet}>
+              <Text style={styles.anchorDebugTitle}>Account action anchor</Text>
+              <Text style={styles.anchorDebugText}>
+                {anchorDebugMenu.rowKey}
+              </Text>
+              <Text style={styles.anchorDebugText}>
+                {anchorDebugMenu.anchor.source} · {anchorDebugMenu.anchor.token}
+              </Text>
+              <Pressable
+                testID="account-selector-anchor-debug-scroll"
+                accessibilityRole="button"
+                accessibilityLabel="滚动账户列表以验证锚点失效"
+                onPress={event => {
+                  event.stopPropagation();
+                  scrollAccountListForAnchorDebug();
+                }}
+                style={styles.anchorDebugClose}
+              >
+                <Text style={styles.anchorDebugCloseText}>Scroll list</Text>
+              </Pressable>
+              <Pressable
+                testID="account-selector-anchor-debug-close"
+                accessibilityRole="button"
+                accessibilityLabel="关闭账户操作菜单"
+                onPress={closeAnchorDebugMenu}
+                style={styles.anchorDebugClose}
+              >
+                <Text style={styles.anchorDebugCloseText}>Close</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Modal>
+      ) : null}
     </View>
   );
 }
@@ -693,6 +840,47 @@ const styles = StyleSheet.create({
   },
   details: { flex: 1, backgroundColor: '#0F0F0F' },
   nativeList: { flex: 1 },
+  anchorDebugMenu: {
+    position: 'absolute',
+    zIndex: 100,
+    width: 260,
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: '#292929',
+    borderColor: '#FFFFFF22',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  anchorDebugBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: '#00000066',
+  },
+  anchorDebugSheet: {
+    padding: 20,
+    paddingBottom: 36,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#292929',
+  },
+  anchorDebugTitle: {
+    color: '#FFFFFFED',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  anchorDebugText: {
+    color: '#FFFFFFAF',
+    fontSize: 12,
+    marginTop: 6,
+  },
+  anchorDebugClose: {
+    alignSelf: 'flex-start',
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFFED',
+  },
+  anchorDebugCloseText: { color: '#111111', fontWeight: '600' },
   walletFooter: {
     alignItems: 'center',
     borderTopColor: '#FFFFFF22',

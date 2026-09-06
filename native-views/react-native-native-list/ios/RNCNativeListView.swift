@@ -3,6 +3,22 @@ import UIKit
 import UniformTypeIdentifiers
 
 final class NativeListView: UIView {
+  private final class ActionAnchorRecord {
+    let token: String
+    weak var sourceView: UIView?
+    weak var ownerCell: NativeListCell?
+    let bindingEpoch: Int
+    var open = false
+    var invalidatedReason: String?
+
+    init(token: String, origin: NativeListActionOrigin) {
+      self.token = token
+      sourceView = origin.sourceView
+      ownerCell = origin.ownerCell
+      bindingEpoch = origin.bindingEpoch
+    }
+  }
+
   private enum ReorderAnimation {
     static let longPressDuration: TimeInterval = 0.2
     static let allowableMovement: CGFloat = 10
@@ -31,6 +47,7 @@ final class NativeListView: UIView {
   }
 
   var onRowAction: ((String) -> Void)?
+  var onActionAnchorInvalidated: ((String) -> Void)?
   var onSelectionDelta: ((String) -> Void)?
   var onReorder: ((String) -> Void)?
   var onEndReached: ((String) -> Void)?
@@ -53,6 +70,7 @@ final class NativeListView: UIView {
   private var sectionIndexScrubbing = false
   private var sectionIndexHapticsEnabled = true
   private var lastLayoutDirection: UIUserInterfaceLayoutDirection?
+  private var lastLayoutSize: CGSize?
   private var pendingScrollRequest: ScrollRequest?
   private let sectionIndexFeedback = UISelectionFeedbackGenerator()
   private lazy var reorderLongPress = UILongPressGestureRecognizer(
@@ -70,6 +88,9 @@ final class NativeListView: UIView {
   private let reorderStartFeedback = UIImpactFeedbackGenerator(style: .medium)
   private let reorderMoveFeedback = UISelectionFeedbackGenerator()
   private var interactiveReorderFeedbackIndex: Int?
+  private var actionAnchor: ActionAnchorRecord?
+  private let actionAnchorInstanceID = UUID().uuidString
+  private var actionAnchorCounter = 0
 
   private static let sectionIndexGutter: CGFloat = 44
 
@@ -138,8 +159,11 @@ final class NativeListView: UIView {
     sectionIndexPreview.font = nativeListFont(ofSize: 28, weight: .semibold)
     sectionIndexPreview.isAccessibilityElement = false
 
-    footerCell.onAction = { [weak self] item, action, target in
-      self?.handleAction(item: item, actionKey: action, target: target)
+    footerCell.onAction = { [weak self] item, action, target, origin in
+      self?.handleAction(item: item, actionKey: action, target: target, origin: origin)
+    }
+    footerCell.onBindingInvalidated = { [weak self] cell, epoch in
+      self?.handleBindingInvalidated(cell: cell, epoch: epoch)
     }
     let footerTap = UITapGestureRecognizer(target: self, action: #selector(footerPressed))
     footerTap.delegate = self
@@ -160,8 +184,11 @@ final class NativeListView: UIView {
               withReuseIdentifier: NativeListCell.reuseIdentifier,
               for: indexPath
             ) as? NativeListCell else { return nil }
-      cell.onAction = { [weak self] item, action, target in
-        self?.handleAction(item: item, actionKey: action, target: target)
+      cell.onAction = { [weak self] item, action, target, origin in
+        self?.handleAction(item: item, actionKey: action, target: target, origin: origin)
+      }
+      cell.onBindingInvalidated = { [weak self] cell, epoch in
+        self?.handleBindingInvalidated(cell: cell, epoch: epoch)
       }
       self.bind(cell: cell, item: item, itemIndex: indexPath.item)
       return cell
@@ -183,6 +210,11 @@ final class NativeListView: UIView {
   override func layoutSubviews() {
     super.layoutSubviews()
     let direction = effectiveUserInterfaceLayoutDirection
+    if let lastLayoutSize,
+       lastLayoutSize != bounds.size || lastLayoutDirection != nil && lastLayoutDirection != direction {
+      invalidateActionAnchor(reason: "layout")
+    }
+    lastLayoutSize = bounds.size
     if lastLayoutDirection != direction, let config {
       configureLayout(config)
     }
@@ -191,6 +223,7 @@ final class NativeListView: UIView {
 
   func applySnapshotJson(_ json: String) {
     guard let next = try? NativeListConfig.parse(json: json) else { return }
+    invalidateActionAnchor(reason: "snapshot")
     if let current = config, isControlledSelectionSnapshotUpdate(from: current, to: next) {
       config = next
       itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
@@ -254,6 +287,7 @@ final class NativeListView: UIView {
         if selected { current.selectedKeys.insert(item.key) } else { current.selectedKeys.remove(item.key) }
       }
     }
+    invalidateActionAnchor(reason: "snapshot")
     config = current
     itemsByKey = Dictionary(uniqueKeysWithValues: current.items.map { ($0.key, $0) })
     var snapshot = dataSource.snapshot()
@@ -908,32 +942,33 @@ final class NativeListView: UIView {
     }
   }
 
-  private func handleRowPress(_ item: NativeListItem) {
+  private func handleRowPress(_ item: NativeListItem, origin: NativeListActionOrigin?) {
     guard let config, !item.data.bool("disabled") else { return }
     if config.rowPressToggles && item.isSelectable && config.selectionMode != "none" {
       updateSelection(target: NativeSelectionTarget(scope: "row", key: item.key), sourceKey: item.key)
       return
     }
     if item.type == "action" {
-      emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("actionKey")))
+      emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("actionKey"), origin: origin))
     } else if item.type == "system", item.data.string("variant") == "retry" {
-      emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("actionKey")))
+      emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("actionKey"), origin: origin))
     } else {
-      emit(onRowAction, rowActionPayload(item: item, actionKey: "press"))
+      emit(onRowAction, rowActionPayload(item: item, actionKey: "press", origin: origin))
     }
   }
 
   private func handleAction(
     item: NativeListItem,
     actionKey: String,
-    target: NativeSelectionTarget?
+    target: NativeSelectionTarget?,
+    origin: NativeListActionOrigin?
   ) {
     guard !item.data.bool("disabled") else { return }
     if let target, config?.selectionMode != "none" {
       updateSelection(target: target, sourceKey: item.key)
       return
     }
-    emit(onRowAction, rowActionPayload(item: item, actionKey: actionKey))
+    emit(onRowAction, rowActionPayload(item: item, actionKey: actionKey, origin: origin))
   }
 
   private func updateSelection(target: NativeSelectionTarget, sourceKey: String) {
@@ -1184,10 +1219,102 @@ final class NativeListView: UIView {
     block?(json)
   }
 
-  private func rowActionPayload(item: NativeListItem, actionKey: String) -> [String: Any] {
+  private func rowActionPayload(
+    item: NativeListItem,
+    actionKey: String,
+    origin: NativeListActionOrigin? = nil
+  ) -> [String: Any] {
     var payload: [String: Any] = ["rowKey": item.key, "actionKey": actionKey]
     if let sectionKey = item.sectionKey { payload["sectionKey"] = sectionKey }
+    if let origin, let anchor = createActionAnchor(origin: origin) { payload["anchor"] = anchor }
     return payload
+  }
+
+  func setActionAnchorStateJson(_ json: String) {
+    guard let bytes = json.data(using: .utf8),
+          let state = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+          let token = state["token"] as? String,
+          let open = state["open"] as? Bool,
+          let anchor = actionAnchor,
+          anchor.token == token else { return }
+    if !open {
+      if state.bool("restoreFocus"), isActionAnchorValid(anchor), let sourceView = anchor.sourceView {
+        UIAccessibility.post(notification: .layoutChanged, argument: sourceView)
+      }
+      actionAnchor = nil
+      return
+    }
+    if let reason = anchor.invalidatedReason {
+      emitActionAnchorInvalidated(anchor: anchor, reason: reason)
+    } else if isActionAnchorValid(anchor) {
+      anchor.open = true
+    } else {
+      emitActionAnchorInvalidated(anchor: anchor, reason: "rebind")
+    }
+  }
+
+  func disposeActionAnchor() {
+    invalidateActionAnchor(reason: "destroy")
+    actionAnchor = nil
+  }
+
+  private func createActionAnchor(origin: NativeListActionOrigin) -> [String: Any]? {
+    guard let sourceView = origin.sourceView,
+          let ownerCell = origin.ownerCell,
+          ownerCell.bindingEpoch == origin.bindingEpoch,
+          sourceView.window != nil,
+          sourceView === ownerCell.contentView || sourceView.isDescendant(of: ownerCell.contentView) else { return nil }
+    invalidateActionAnchor(reason: "rebind")
+    actionAnchorCounter &+= 1
+    let generation = config?.generation ?? 0
+    let token = "\(actionAnchorInstanceID):\(generation):\(actionAnchorCounter):\(origin.bindingEpoch)"
+    let rect = sourceView.convert(sourceView.bounds, to: window)
+    let record = ActionAnchorRecord(token: token, origin: origin)
+    actionAnchor = record
+    var anchor: [String: Any] = [
+      "token": token,
+      "windowRect": [
+        "x": rect.minX,
+        "y": rect.minY,
+        "width": rect.width,
+        "height": rect.height,
+      ],
+      "source": origin.source,
+      "generation": generation,
+      "layoutDirection": sourceView.effectiveUserInterfaceLayoutDirection == .rightToLeft
+        ? "rtl"
+        : "ltr",
+    ]
+    if let slot = origin.slot { anchor["slot"] = slot }
+    return anchor
+  }
+
+  private func isActionAnchorValid(_ anchor: ActionAnchorRecord) -> Bool {
+    guard anchor.invalidatedReason == nil,
+          let sourceView = anchor.sourceView,
+          let ownerCell = anchor.ownerCell else { return false }
+    return ownerCell.bindingEpoch == anchor.bindingEpoch
+      && sourceView.window != nil
+      && (sourceView === ownerCell.contentView || sourceView.isDescendant(of: ownerCell.contentView))
+  }
+
+  private func handleBindingInvalidated(cell: NativeListCell, epoch: Int) {
+    guard let anchor = actionAnchor,
+          anchor.ownerCell === cell,
+          anchor.bindingEpoch == epoch else { return }
+    invalidateActionAnchor(reason: "rebind")
+  }
+
+  private func invalidateActionAnchor(reason: String) {
+    guard let anchor = actionAnchor, anchor.invalidatedReason == nil else { return }
+    anchor.invalidatedReason = reason
+    if anchor.open { emitActionAnchorInvalidated(anchor: anchor, reason: reason) }
+  }
+
+  private func emitActionAnchorInvalidated(anchor: ActionAnchorRecord, reason: String) {
+    guard actionAnchor === anchor else { return }
+    actionAnchor = nil
+    emit(onActionAnchorInvalidated, ["token": anchor.token, "reason": reason])
   }
 
   @objc private func refreshTriggered() {
@@ -1196,7 +1323,7 @@ final class NativeListView: UIView {
 
   @objc private func footerPressed() {
     guard let footer = config?.fixedFooter else { return }
-    handleRowPress(footer)
+    handleRowPress(footer, origin: footerCell.rowActionOrigin())
   }
 
   @objc private func footerHighlightChanged(_ recognizer: UILongPressGestureRecognizer) {
@@ -1328,7 +1455,8 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
     guard let item = config?.items[safe: indexPath.item] else { return }
     if item.type == "walletGroup" { return }
-    handleRowPress(item)
+    let origin = (collectionView.cellForItem(at: indexPath) as? NativeListCell)?.rowActionOrigin()
+    handleRowPress(item, origin: origin)
   }
 
   func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
@@ -1342,6 +1470,7 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
   }
 
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    invalidateActionAnchor(reason: "scroll")
     syncSectionIndexToVisibleRows()
     emitVisibleRangeIfNeeded()
     checkEndReached()

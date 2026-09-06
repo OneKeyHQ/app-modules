@@ -6,6 +6,7 @@
   "validAttributes": {
     "snapshotJson": true,
     "onRowAction": true,
+    "onActionAnchorInvalidated": true,
     "onSelectionDelta": true,
     "onReorder": true,
     "onEndReached": true,

@@ -46,8 +46,9 @@ internal class NativeListAdapter(
   var orientation: String = "vertical"
   var selectedKeys: Set<String> = emptySet()
   var checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String = { _, _, fallback -> fallback }
-  var onRowPress: ((NativeListItem) -> Unit)? = null
-  var onAction: ((NativeListItem, String, NativeSelectionTarget?) -> Unit)? = null
+  var onRowPress: ((NativeListItem, NativeListActionOrigin) -> Unit)? = null
+  var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Unit)? = null
+  var onBindingInvalidated: ((NativeListRowView, Long) -> Unit)? = null
 
   override fun getItemCount(): Int = reorderItems?.size ?: differ.currentList.size
 
@@ -57,8 +58,11 @@ internal class NativeListAdapter(
       ViewGroup.LayoutParams.MATCH_PARENT,
       ViewGroup.LayoutParams.WRAP_CONTENT,
     )
-    view.onRowPress = { onRowPress?.invoke(it) }
-    view.onAction = { item, actionKey, target -> onAction?.invoke(item, actionKey, target) }
+    view.onRowPress = { item, origin -> onRowPress?.invoke(item, origin) }
+    view.onAction = { item, actionKey, target, origin ->
+      onAction?.invoke(item, actionKey, target, origin)
+    }
+    view.onBindingInvalidated = { row, epoch -> onBindingInvalidated?.invoke(row, epoch) }
     createdRows.add(view)
     return NativeListViewHolder(view)
   }

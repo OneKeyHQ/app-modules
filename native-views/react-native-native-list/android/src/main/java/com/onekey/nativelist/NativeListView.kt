@@ -29,6 +29,8 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.lang.ref.WeakReference
+import java.util.UUID
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.exp
@@ -41,6 +43,17 @@ import kotlin.math.sqrt
 class NativeListView(
   private val reactContext: ThemedReactContext,
 ) : LinearLayout(reactContext) {
+  private class ActionAnchorRecord(
+    val token: String,
+    origin: NativeListActionOrigin,
+  ) {
+    val sourceView = WeakReference(origin.sourceView)
+    val ownerRowView = WeakReference(origin.ownerRowView)
+    val bindingEpoch = origin.bindingEpoch
+    var open = false
+    var invalidatedReason: String? = null
+  }
+
   private sealed class ScrollRequest {
     data class Key(
       val key: String,
@@ -63,6 +76,7 @@ class NativeListView(
   }
 
   var onRowAction: ((String) -> Unit)? = null
+  var onActionAnchorInvalidated: ((String) -> Unit)? = null
   var onSelectionDelta: ((String) -> Unit)? = null
   var onReorder: ((String) -> Unit)? = null
   var onEndReached: ((String) -> Unit)? = null
@@ -105,6 +119,12 @@ class NativeListView(
   private var sectionIndexHapticsEnabled = true
   private var pendingScrollRequest: ScrollRequest? = null
   private var contentScrollOffsetPx = 0
+  private val actionAnchorInstanceId = UUID.randomUUID().toString()
+  private var actionAnchorCounter = 0L
+  private var actionAnchor: ActionAnchorRecord? = null
+  private var lastLayoutWidth = -1
+  private var lastLayoutHeight = -1
+  private var lastLayoutDirection = layoutDirection
   private var disposed = false
 
   init {
@@ -158,9 +178,11 @@ class NativeListView(
 
     adapter.onRowPress = ::handleRowPress
     adapter.onAction = ::handleAction
+    adapter.onBindingInvalidated = ::handleBindingInvalidated
     adapter.checkboxState = ::resolveCheckboxState
     footerView.onRowPress = ::handleRowPress
     footerView.onAction = ::handleAction
+    footerView.onBindingInvalidated = ::handleBindingInvalidated
     sectionIndexView.onSelect = ::selectSectionIndex
     sectionIndexView.onInteractionEnded = { finishSectionIndexInteraction() }
     sectionIndexView.visibility = GONE
@@ -176,12 +198,16 @@ class NativeListView(
     recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
       override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
         when (newState) {
-          RecyclerView.SCROLL_STATE_DRAGGING -> sectionIndexProgrammaticScroll = false
+          RecyclerView.SCROLL_STATE_DRAGGING -> {
+            sectionIndexProgrammaticScroll = false
+            invalidateActionAnchor("scroll")
+          }
           RecyclerView.SCROLL_STATE_IDLE -> sectionIndexProgrammaticScroll = false
         }
       }
 
       override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+        if (dx != 0 || dy != 0) invalidateActionAnchor("scroll")
         contentScrollOffsetPx = (
           contentScrollOffsetPx +
             if (layoutManager.orientation == RecyclerView.VERTICAL) dy else dx
@@ -195,6 +221,17 @@ class NativeListView(
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
     super.onLayout(changed, left, top, right, bottom)
+    val nextWidth = right - left
+    val nextHeight = bottom - top
+    if (
+      lastLayoutWidth >= 0 &&
+      (nextWidth != lastLayoutWidth || nextHeight != lastLayoutHeight || layoutDirection != lastLayoutDirection)
+    ) {
+      invalidateActionAnchor("layout")
+    }
+    lastLayoutWidth = nextWidth
+    lastLayoutHeight = nextHeight
+    lastLayoutDirection = layoutDirection
     performPendingScrollIfNeeded()
   }
 
@@ -204,6 +241,7 @@ class NativeListView(
     } catch (_: Exception) {
       return
     }
+    invalidateActionAnchor("snapshot")
     val previous = config
     if (previous != null && canApplyStableContentUpdate(previous, next)) {
       val changedSummaryKeys = previous.items.indices.mapNotNull { index ->
@@ -348,6 +386,7 @@ class NativeListView(
     } catch (_: Exception) {
       return
     }
+    invalidateActionAnchor("snapshot")
     val next = current.copy(items = nextItems, selectedKeys = selected)
     config = next
     adapter.selectedKeys = selected
@@ -637,8 +676,37 @@ class NativeListView(
     config = config?.copy(refreshing = refreshing)
   }
 
+  fun setActionAnchorState(stateJson: String) {
+    val state = try {
+      JSONObject(stateJson)
+    } catch (_: Exception) {
+      return
+    }
+    val anchor = actionAnchor ?: return
+    if (state.optString("token") != anchor.token || !state.has("open")) return
+    if (!state.optBoolean("open")) {
+      val sourceView = anchor.sourceView.get()
+      if (state.optBoolean("restoreFocus") && isActionAnchorValid(anchor) && sourceView != null) {
+        sourceView.requestFocus()
+        sourceView.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED)
+      }
+      actionAnchor = null
+      return
+    }
+    val invalidatedReason = anchor.invalidatedReason
+    if (invalidatedReason != null) {
+      emitActionAnchorInvalidated(anchor, invalidatedReason)
+    } else if (isActionAnchorValid(anchor)) {
+      anchor.open = true
+    } else {
+      emitActionAnchorInvalidated(anchor, "rebind")
+    }
+  }
+
   fun dispose() {
     if (disposed) return
+    invalidateActionAnchor("destroy")
+    actionAnchor = null
     disposed = true
     pendingScrollRequest = null
     visibleEventScheduled = false
@@ -782,7 +850,7 @@ class NativeListView(
     }
   }
 
-  private fun handleRowPress(item: NativeListItem) {
+  private fun handleRowPress(item: NativeListItem, origin: NativeListActionOrigin) {
     val current = config ?: return
     if (current.rowPressToggles && item.isSelectable && current.selectionMode != "none") {
       updateSelection(NativeSelectionTarget("row", item.key), item.key)
@@ -796,6 +864,7 @@ class NativeListView(
         .put("rowKey", item.key)
         .put("actionKey", actionKey)
       item.sectionKey?.let { payload.put("sectionKey", it) }
+      createActionAnchor(origin)?.let { payload.put("anchor", it) }
       emit(ROW_ACTION, payload)
     }
   }
@@ -804,6 +873,7 @@ class NativeListView(
     item: NativeListItem,
     actionKey: String,
     target: NativeSelectionTarget?,
+    origin: NativeListActionOrigin?,
   ) {
     if (item.json.optBoolean("disabled", false)) return
     if (target != null && config?.selectionMode != "none") {
@@ -814,7 +884,80 @@ class NativeListView(
       .put("rowKey", item.key)
       .put("actionKey", actionKey)
     item.sectionKey?.let { payload.put("sectionKey", it) }
+    origin?.let(::createActionAnchor)?.let { payload.put("anchor", it) }
     emit(ROW_ACTION, payload)
+  }
+
+  private fun createActionAnchor(origin: NativeListActionOrigin): JSONObject? {
+    if (!isOriginValid(origin)) return null
+    invalidateActionAnchor("rebind")
+    actionAnchorCounter += 1
+    val generation = config?.generation ?: 0
+    val token = "$actionAnchorInstanceId:$generation:$actionAnchorCounter:${origin.bindingEpoch}"
+    val location = IntArray(2)
+    origin.sourceView.getLocationInWindow(location)
+    val record = ActionAnchorRecord(token, origin)
+    actionAnchor = record
+    return JSONObject()
+      .put("token", token)
+      .put(
+        "windowRect",
+        JSONObject()
+          .put("x", location[0] / density)
+          .put("y", location[1] / density)
+          .put("width", origin.sourceView.width / density)
+          .put("height", origin.sourceView.height / density),
+      )
+      .put("source", origin.source)
+      .put("generation", generation)
+      .put("layoutDirection", if (origin.sourceView.layoutDirection == LAYOUT_DIRECTION_RTL) "rtl" else "ltr")
+      .also { anchor -> origin.slot?.let { anchor.put("slot", it) } }
+  }
+
+  private fun isOriginValid(origin: NativeListActionOrigin): Boolean =
+    origin.ownerRowView.bindingEpoch == origin.bindingEpoch &&
+      origin.sourceView.isAttachedToWindow &&
+      isDescendantOf(origin.sourceView, origin.ownerRowView)
+
+  private fun isActionAnchorValid(anchor: ActionAnchorRecord): Boolean {
+    if (anchor.invalidatedReason != null) return false
+    val sourceView = anchor.sourceView.get() ?: return false
+    val ownerRowView = anchor.ownerRowView.get() ?: return false
+    return ownerRowView.bindingEpoch == anchor.bindingEpoch &&
+      sourceView.isAttachedToWindow &&
+      isDescendantOf(sourceView, ownerRowView)
+  }
+
+  private fun isDescendantOf(view: View, ancestor: View): Boolean {
+    var current: Any? = view
+    while (current is View) {
+      if (current === ancestor) return true
+      current = current.parent
+    }
+    return false
+  }
+
+  private fun handleBindingInvalidated(row: NativeListRowView, epoch: Long) {
+    val anchor = actionAnchor ?: return
+    if (anchor.ownerRowView.get() === row && anchor.bindingEpoch == epoch) {
+      invalidateActionAnchor("rebind")
+    }
+  }
+
+  private fun invalidateActionAnchor(reason: String) {
+    val anchor = actionAnchor ?: return
+    if (anchor.invalidatedReason != null) return
+    anchor.invalidatedReason = reason
+    if (anchor.open) emitActionAnchorInvalidated(anchor, reason)
+  }
+
+  private fun emitActionAnchorInvalidated(anchor: ActionAnchorRecord, reason: String) {
+    if (actionAnchor !== anchor) return
+    actionAnchor = null
+    emit(
+      ACTION_ANCHOR_INVALIDATED,
+      JSONObject().put("token", anchor.token).put("reason", reason),
+    )
   }
 
   private fun updateSelection(target: NativeSelectionTarget, sourceKey: String) {
@@ -1257,6 +1400,7 @@ class NativeListView(
     val json = payload.toString()
     when (eventName) {
       ROW_ACTION -> onRowAction?.invoke(json)
+      ACTION_ANCHOR_INVALIDATED -> onActionAnchorInvalidated?.invoke(json)
       SELECTION_DELTA -> onSelectionDelta?.invoke(json)
       REORDER -> onReorder?.invoke(json)
       END_REACHED -> onEndReached?.invoke(json)
@@ -1328,6 +1472,7 @@ class NativeListView(
     private const val REORDER_SPRING_MASS = 0.4
     private const val REORDER_SPRING_DURATION_MS = 300L
     private const val ROW_ACTION = "rowAction"
+    private const val ACTION_ANCHOR_INVALIDATED = "actionAnchorInvalidated"
     private const val SELECTION_DELTA = "selectionDelta"
     private const val REORDER = "reorder"
     private const val END_REACHED = "endReached"

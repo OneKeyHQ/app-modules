@@ -2,6 +2,28 @@ import Foundation
 import OneKeyImage
 import UIKit
 
+final class NativeListActionOrigin {
+  weak var sourceView: UIView?
+  weak var ownerCell: NativeListCell?
+  let bindingEpoch: Int
+  let source: String
+  let slot: Int?
+
+  init(
+    sourceView: UIView,
+    ownerCell: NativeListCell,
+    bindingEpoch: Int,
+    source: String,
+    slot: Int? = nil
+  ) {
+    self.sourceView = sourceView
+    self.ownerCell = ownerCell
+    self.bindingEpoch = bindingEpoch
+    self.source = source
+    self.slot = slot
+  }
+}
+
 private final class NativeListInsetLabel: UILabel {
   var horizontalInset: CGFloat = 0
   var topInset: CGFloat = 0
@@ -329,8 +351,10 @@ final class NativeListCell: UICollectionViewCell {
   private var currentLayout = "linear"
   private var currentTheme: [String: Any]?
   private var currentItemIndex: Int?
+  private(set) var bindingEpoch = 0
 
-  var onAction: ((NativeListItem, String, NativeSelectionTarget?) -> Void)?
+  var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Void)?
+  var onBindingInvalidated: ((NativeListCell, Int) -> Void)?
 
   override var isHighlighted: Bool {
     didSet { updateBackgroundColor() }
@@ -598,6 +622,7 @@ final class NativeListCell: UICollectionViewCell {
 
   override func prepareForReuse() {
     super.prepareForReuse()
+    invalidateCurrentBinding()
     isHighlighted = false
     restingBackgroundColor = .clear
     contentView.backgroundColor = restingBackgroundColor
@@ -620,6 +645,8 @@ final class NativeListCell: UICollectionViewCell {
     selected: Bool,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    invalidateCurrentBinding()
+    bindingEpoch &+= 1
     currentLayout = layout
     currentTheme = theme
     currentItemIndex = itemIndex
@@ -813,6 +840,8 @@ final class NativeListCell: UICollectionViewCell {
   }
 
   private func reset() {
+    walletGroupCompactCell?.invalidateCurrentBinding()
+    walletGroupCells.forEach { $0.invalidateCurrentBinding() }
     isHighlighted = false
     rootStack.arrangedSubviews.forEach {
       rootStack.removeArrangedSubview($0)
@@ -1056,8 +1085,11 @@ final class NativeListCell: UICollectionViewCell {
     rootBottomConstraint.constant = 0
     walletGroupMembers.enumerated().forEach { index, member in
       let memberCell = walletGroupCells[index]
-      memberCell.onAction = { [weak self] source, action, target in
-        self?.onAction?(source, action, target)
+      memberCell.onAction = { [weak self] source, action, target, origin in
+        self?.onAction?(source, action, target, origin)
+      }
+      memberCell.onBindingInvalidated = { [weak self] cell, epoch in
+        self?.onBindingInvalidated?(cell, epoch)
       }
       memberCell.bind(
         item: member,
@@ -1108,7 +1140,7 @@ final class NativeListCell: UICollectionViewCell {
     let point = gesture.location(in: rootStack)
     for (index, cell) in walletGroupCells.prefix(walletGroupMembers.count).enumerated()
       where cell.frame.contains(point) {
-      onAction?(walletGroupMembers[index], "press", nil)
+      onAction?(walletGroupMembers[index], "press", nil, cell.rowActionOrigin())
       return
     }
   }
@@ -2759,21 +2791,68 @@ final class NativeListCell: UICollectionViewCell {
     guard let item = currentItem, accessoryActions.indices.contains(sender.tag) else { return }
     let action = accessoryActions[sender.tag]
     guard !action.0.isEmpty else { return }
-    onAction?(item, action.0, action.1)
+    let source = item.type == "mediaTile" && item.data.string("closeActionKey") == action.0
+      ? "mediaClose"
+      : "trailingAccessory"
+    onAction?(
+      item,
+      action.0,
+      action.1,
+      actionOrigin(sourceView: sender, source: source, slot: sender.tag)
+    )
   }
 
   @objc private func footerActionPressed(_ sender: UIButton) {
     guard let item = currentItem, footerActionKeys.indices.contains(sender.tag) else { return }
-    onAction?(item, footerActionKeys[sender.tag], nil)
+    onAction?(
+      item,
+      footerActionKeys[sender.tag],
+      nil,
+      actionOrigin(sourceView: sender, source: "footerAction", slot: sender.tag)
+    )
   }
 
   @objc private func checkboxPressed() {
     guard let item = currentItem, let action = checkboxAction else { return }
-    onAction?(item, action.0, action.1)
+    onAction?(
+      item,
+      action.0,
+      action.1,
+      actionOrigin(sourceView: checkboxButton, source: "trailingAccessory")
+    )
   }
 
   @objc private func leadingActionPressed() {
     guard let item = currentItem, let actionKey = leadingActionKey, !actionKey.isEmpty else { return }
-    onAction?(item, actionKey, nil)
+    onAction?(
+      item,
+      actionKey,
+      nil,
+      actionOrigin(sourceView: leadingActionButton, source: "leadingAction")
+    )
+  }
+
+  private func actionOrigin(
+    sourceView: UIView,
+    source: String,
+    slot: Int? = nil
+  ) -> NativeListActionOrigin {
+    NativeListActionOrigin(
+      sourceView: sourceView,
+      ownerCell: self,
+      bindingEpoch: bindingEpoch,
+      source: source,
+      slot: slot
+    )
+  }
+
+  func rowActionOrigin() -> NativeListActionOrigin {
+    actionOrigin(sourceView: contentView, source: "row")
+  }
+
+  private func invalidateCurrentBinding() {
+    guard currentItem != nil else { return }
+    onBindingInvalidated?(self, bindingEpoch)
+    bindingEpoch &+= 1
   }
 }

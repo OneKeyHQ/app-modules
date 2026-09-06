@@ -64,6 +64,11 @@ void JHybridNativeListStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     hybridView->setOnRowAction(newProps->onRowAction.get());
   }
   if (oldProps == nullptr
+        ? newProps->onActionAnchorInvalidated.isProvided()
+        : !newProps->onActionAnchorInvalidated.hasSameValue(oldProps->onActionAnchorInvalidated)) {
+    hybridView->setOnActionAnchorInvalidated(newProps->onActionAnchorInvalidated.get());
+  }
+  if (oldProps == nullptr
         ? newProps->onSelectionDelta.isProvided()
         : !newProps->onSelectionDelta.hasSameValue(oldProps->onSelectionDelta)) {
     hybridView->setOnSelectionDelta(newProps->onSelectionDelta.get());

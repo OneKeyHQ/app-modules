@@ -74,6 +74,23 @@ namespace margelo::nitro::nativelist {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_std__string::javaobject> /* onRowAction */)>("setOnRowAction_cxx");
     method(_javaPart, onRowAction.has_value() ? JFunc_void_std__string_cxx::fromCpp(onRowAction.value()) : nullptr);
   }
+  std::optional<std::function<void(const std::string& /* payloadJson */)>> JHybridNativeListSpec::getOnActionAnchorInvalidated() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_std__string::javaobject>()>("getOnActionAnchorInvalidated_cxx");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional([&]() -> std::function<void(const std::string& /* payloadJson */)> {
+      if (__result->isInstanceOf(JFunc_void_std__string_cxx::javaClassStatic())) [[likely]] {
+        auto downcast = jni::static_ref_cast<JFunc_void_std__string_cxx::javaobject>(__result);
+        return downcast->cthis()->getFunction();
+      } else {
+        auto __resultRef = jni::make_global(__result);
+        return JNICallable<JFunc_void_std__string, void(std::string)>(std::move(__resultRef));
+      }
+    }()) : std::nullopt;
+  }
+  void JHybridNativeListSpec::setOnActionAnchorInvalidated(const std::optional<std::function<void(const std::string& /* payloadJson */)>>& onActionAnchorInvalidated) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JFunc_void_std__string::javaobject> /* onActionAnchorInvalidated */)>("setOnActionAnchorInvalidated_cxx");
+    method(_javaPart, onActionAnchorInvalidated.has_value() ? JFunc_void_std__string_cxx::fromCpp(onActionAnchorInvalidated.value()) : nullptr);
+  }
   std::optional<std::function<void(const std::string& /* payloadJson */)>> JHybridNativeListSpec::getOnSelectionDelta() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_std__string::javaobject>()>("getOnSelectionDelta_cxx");
     auto __result = method(_javaPart);
@@ -171,6 +188,10 @@ namespace margelo::nitro::nativelist {
   void JHybridNativeListSpec::scrollToEnd(bool animated) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* animated */)>("scrollToEnd");
     method(_javaPart, animated);
+  }
+  void JHybridNativeListSpec::setActionAnchorState(const std::string& stateJson) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* stateJson */)>("setActionAnchorState");
+    method(_javaPart, jni::make_jstring(stateJson));
   }
   void JHybridNativeListSpec::setRefreshing(bool refreshing) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jboolean /* refreshing */)>("setRefreshing");

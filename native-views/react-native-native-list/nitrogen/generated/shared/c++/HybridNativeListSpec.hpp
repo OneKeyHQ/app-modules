@@ -52,6 +52,8 @@ namespace margelo::nitro::nativelist {
       virtual void setSnapshotJson(const std::string& snapshotJson) = 0;
       virtual std::optional<std::function<void(const std::string& /* payloadJson */)>> getOnRowAction() = 0;
       virtual void setOnRowAction(const std::optional<std::function<void(const std::string& /* payloadJson */)>>& onRowAction) = 0;
+      virtual std::optional<std::function<void(const std::string& /* payloadJson */)>> getOnActionAnchorInvalidated() = 0;
+      virtual void setOnActionAnchorInvalidated(const std::optional<std::function<void(const std::string& /* payloadJson */)>>& onActionAnchorInvalidated) = 0;
       virtual std::optional<std::function<void(const std::string& /* payloadJson */)>> getOnSelectionDelta() = 0;
       virtual void setOnSelectionDelta(const std::optional<std::function<void(const std::string& /* payloadJson */)>>& onSelectionDelta) = 0;
       virtual std::optional<std::function<void(const std::string& /* payloadJson */)>> getOnReorder() = 0;
@@ -70,6 +72,7 @@ namespace margelo::nitro::nativelist {
       virtual void scrollToIndex(double index, bool animated, NativeListScrollAlignment alignment, double viewPosition, double viewOffset) = 0;
       virtual void scrollToOffset(double offset, bool animated) = 0;
       virtual void scrollToEnd(bool animated) = 0;
+      virtual void setActionAnchorState(const std::string& stateJson) = 0;
       virtual void setRefreshing(bool refreshing) = 0;
 
     protected:

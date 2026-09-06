@@ -532,10 +532,48 @@ export type RowPatch =
       }>;
     }>;
 
+export type NativeListActionSource =
+  | 'row'
+  | 'leadingAction'
+  | 'trailingAccessory'
+  | 'footerAction'
+  | 'mediaClose';
+
+export type NativeListWindowRect = Readonly<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}>;
+
+export type NativeListActionAnchor = Readonly<{
+  /** Opaque identity for one concrete native/DOM control binding. */
+  token: string;
+  /** Window-relative logical units: CSS px on Web, points on iOS, dp on Android. */
+  windowRect: NativeListWindowRect;
+  source: NativeListActionSource;
+  slot?: number;
+  generation: number;
+  layoutDirection: 'ltr' | 'rtl';
+}>;
+
 export type RowActionEvent = Readonly<{
   rowKey?: string;
   actionKey: string;
   sectionKey?: string;
+  anchor?: NativeListActionAnchor;
+}>;
+
+export type ActionAnchorInvalidationReason =
+  | 'scroll'
+  | 'rebind'
+  | 'snapshot'
+  | 'layout'
+  | 'destroy';
+
+export type ActionAnchorInvalidatedEvent = Readonly<{
+  token: string;
+  reason: ActionAnchorInvalidationReason;
 }>;
 
 export type SelectionDeltaEvent = Readonly<{

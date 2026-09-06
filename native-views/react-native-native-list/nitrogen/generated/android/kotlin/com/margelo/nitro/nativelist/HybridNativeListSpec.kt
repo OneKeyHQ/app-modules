@@ -32,9 +32,9 @@ abstract class HybridNativeListSpec: HybridView() {
   @set:DoNotStrip
   @set:Keep
   abstract var snapshotJson: String
-  
+
   abstract var onRowAction: ((payloadJson: String) -> Unit)?
-  
+
   private var onRowAction_cxx: Func_void_std__string?
     @Keep
     @DoNotStrip
@@ -46,9 +46,23 @@ abstract class HybridNativeListSpec: HybridView() {
     set(value) {
       onRowAction = value?.let { it }
     }
-  
+
+  abstract var onActionAnchorInvalidated: ((payloadJson: String) -> Unit)?
+
+  private var onActionAnchorInvalidated_cxx: Func_void_std__string?
+    @Keep
+    @DoNotStrip
+    get() {
+      return onActionAnchorInvalidated?.let { Func_void_std__string_java(it) }
+    }
+    @Keep
+    @DoNotStrip
+    set(value) {
+      onActionAnchorInvalidated = value?.let { it }
+    }
+
   abstract var onSelectionDelta: ((payloadJson: String) -> Unit)?
-  
+
   private var onSelectionDelta_cxx: Func_void_std__string?
     @Keep
     @DoNotStrip
@@ -60,9 +74,9 @@ abstract class HybridNativeListSpec: HybridView() {
     set(value) {
       onSelectionDelta = value?.let { it }
     }
-  
+
   abstract var onReorder: ((payloadJson: String) -> Unit)?
-  
+
   private var onReorder_cxx: Func_void_std__string?
     @Keep
     @DoNotStrip
@@ -74,9 +88,9 @@ abstract class HybridNativeListSpec: HybridView() {
     set(value) {
       onReorder = value?.let { it }
     }
-  
+
   abstract var onEndReached: ((payloadJson: String) -> Unit)?
-  
+
   private var onEndReached_cxx: Func_void_std__string?
     @Keep
     @DoNotStrip
@@ -88,9 +102,9 @@ abstract class HybridNativeListSpec: HybridView() {
     set(value) {
       onEndReached = value?.let { it }
     }
-  
+
   abstract var onVisibleRangeChanged: ((payloadJson: String) -> Unit)?
-  
+
   private var onVisibleRangeChanged_cxx: Func_void_std__string?
     @Keep
     @DoNotStrip
@@ -107,19 +121,19 @@ abstract class HybridNativeListSpec: HybridView() {
   @DoNotStrip
   @Keep
   abstract fun applySnapshot(snapshotJson: String): Unit
-  
+
   @DoNotStrip
   @Keep
   abstract fun applyPatches(patchesJson: String): Unit
-  
+
   @DoNotStrip
   @Keep
   abstract fun reconcileSelection(selectedKeysJson: String): Unit
-  
+
   @DoNotStrip
   @Keep
   abstract fun scrollToKey(key: String, animated: Boolean, alignment: NativeListScrollAlignment, viewPosition: Double, viewOffset: Double): Unit
-  
+
   @DoNotStrip
   @Keep
   abstract fun scrollToIndex(index: Double, animated: Boolean, alignment: NativeListScrollAlignment, viewPosition: Double, viewOffset: Double): Unit
@@ -131,7 +145,11 @@ abstract class HybridNativeListSpec: HybridView() {
   @DoNotStrip
   @Keep
   abstract fun scrollToEnd(animated: Boolean): Unit
-  
+
+  @DoNotStrip
+  @Keep
+  abstract fun setActionAnchorState(stateJson: String): Unit
+
   @DoNotStrip
   @Keep
   abstract fun setRefreshing(refreshing: Boolean): Unit

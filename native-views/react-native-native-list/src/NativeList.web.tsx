@@ -27,6 +27,7 @@ import {
 
 export type { NativeListProps, NativeListRef } from './NativeList.types';
 export type {
+  ActionAnchorState,
   ScrollAlignment,
   ScrollPositionOptions,
   ScrollToEndParams,
@@ -44,6 +45,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       snapshot,
       webVirtualizationEnabled = true,
       onRowAction,
+      onActionAnchorInvalidated,
       onSelectionDelta,
       onReorder,
       onEndReached,
@@ -74,6 +76,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     const callbacksRef = useRef<NativeListWebCallbacks>({});
     callbacksRef.current = {
       onRowAction,
+      onActionAnchorInvalidated,
       onSelectionDelta,
       onReorder,
       onEndReached,
@@ -234,6 +237,9 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           index,
           normalizePositionScroll(params, 'start')
         );
+      },
+      setActionAnchorState(state) {
+        engineRef.current?.setActionAnchorState(state);
       },
       setRefreshing(refreshing) {
         engineRef.current?.setRefreshing(refreshing);

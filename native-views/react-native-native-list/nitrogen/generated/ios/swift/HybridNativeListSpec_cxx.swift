@@ -84,7 +84,7 @@ open class HybridNativeListSpec_cxx {
     }
   }
 
-  
+
 
   /**
    * Get the memory size of the Swift class (plus size of any other allocations)
@@ -131,7 +131,7 @@ open class HybridNativeListSpec_cxx {
       self.__implementation.snapshotJson = String(newValue)
     }
   }
-  
+
   public final var onRowAction: bridge.std__optional_std__function_void_const_std__string_____payloadJson______ {
     @inline(__always)
     get {
@@ -163,7 +163,39 @@ open class HybridNativeListSpec_cxx {
       }()
     }
   }
-  
+
+  public final var onActionAnchorInvalidated: bridge.std__optional_std__function_void_const_std__string_____payloadJson______ {
+    @inline(__always)
+    get {
+      return { () -> bridge.std__optional_std__function_void_const_std__string_____payloadJson______ in
+        if let __unwrappedValue = self.__implementation.onActionAnchorInvalidated {
+          return bridge.create_std__optional_std__function_void_const_std__string_____payloadJson______({ () -> bridge.Func_void_std__string in
+            let __closureWrapper = Func_void_std__string(__unwrappedValue)
+            return bridge.create_Func_void_std__string(__closureWrapper.toUnsafe())
+          }())
+        } else {
+          return .init()
+        }
+      }()
+    }
+    @inline(__always)
+    set {
+      self.__implementation.onActionAnchorInvalidated = { () -> ((_ payloadJson: String) -> Void)? in
+        if bridge.has_value_std__optional_std__function_void_const_std__string_____payloadJson______(newValue) {
+          let __unwrapped = bridge.get_std__optional_std__function_void_const_std__string_____payloadJson______(newValue)
+          return { () -> (String) -> Void in
+            let __wrappedFunction = bridge.wrap_Func_void_std__string(__unwrapped)
+            return { (__payloadJson: String) -> Void in
+              __wrappedFunction.call(std.string(__payloadJson))
+            }
+          }()
+        } else {
+          return nil
+        }
+      }()
+    }
+  }
+
   public final var onSelectionDelta: bridge.std__optional_std__function_void_const_std__string_____payloadJson______ {
     @inline(__always)
     get {
@@ -195,7 +227,7 @@ open class HybridNativeListSpec_cxx {
       }()
     }
   }
-  
+
   public final var onReorder: bridge.std__optional_std__function_void_const_std__string_____payloadJson______ {
     @inline(__always)
     get {
@@ -227,7 +259,7 @@ open class HybridNativeListSpec_cxx {
       }()
     }
   }
-  
+
   public final var onEndReached: bridge.std__optional_std__function_void_const_std__string_____payloadJson______ {
     @inline(__always)
     get {
@@ -259,7 +291,7 @@ open class HybridNativeListSpec_cxx {
       }()
     }
   }
-  
+
   public final var onVisibleRangeChanged: bridge.std__optional_std__function_void_const_std__string_____payloadJson______ {
     @inline(__always)
     get {
@@ -303,7 +335,7 @@ open class HybridNativeListSpec_cxx {
       return bridge.create_Result_void_(__exceptionPtr)
     }
   }
-  
+
   @inline(__always)
   public final func applyPatches(patchesJson: std.string) -> bridge.Result_void_ {
     do {
@@ -314,7 +346,7 @@ open class HybridNativeListSpec_cxx {
       return bridge.create_Result_void_(__exceptionPtr)
     }
   }
-  
+
   @inline(__always)
   public final func reconcileSelection(selectedKeysJson: std.string) -> bridge.Result_void_ {
     do {
@@ -325,7 +357,7 @@ open class HybridNativeListSpec_cxx {
       return bridge.create_Result_void_(__exceptionPtr)
     }
   }
-  
+
   @inline(__always)
   public final func scrollToKey(key: std.string, animated: Bool, alignment: Int32, viewPosition: Double, viewOffset: Double) -> bridge.Result_void_ {
     do {
@@ -336,7 +368,7 @@ open class HybridNativeListSpec_cxx {
       return bridge.create_Result_void_(__exceptionPtr)
     }
   }
-  
+
   @inline(__always)
   public final func scrollToIndex(index: Double, animated: Bool, alignment: Int32, viewPosition: Double, viewOffset: Double) -> bridge.Result_void_ {
     do {
@@ -369,7 +401,18 @@ open class HybridNativeListSpec_cxx {
       return bridge.create_Result_void_(__exceptionPtr)
     }
   }
-  
+
+  @inline(__always)
+  public final func setActionAnchorState(stateJson: std.string) -> bridge.Result_void_ {
+    do {
+      try self.__implementation.setActionAnchorState(stateJson: String(stateJson))
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+
   @inline(__always)
   public final func setRefreshing(refreshing: Bool) -> bridge.Result_void_ {
     do {
@@ -380,24 +423,24 @@ open class HybridNativeListSpec_cxx {
       return bridge.create_Result_void_(__exceptionPtr)
     }
   }
-  
+
   public final func getView() -> UnsafeMutableRawPointer {
     return Unmanaged.passRetained(__implementation.view).toOpaque()
   }
-  
+
   public final func beforeUpdate() {
     __implementation.beforeUpdate()
   }
-  
+
   public final func afterUpdate() {
     __implementation.afterUpdate()
   }
-  
+
   public final func maybePrepareForRecycle() {
     guard let recyclable = __implementation as? any RecyclableView else { return }
     recyclable.prepareForRecycle()
   }
-  
+
   public final func onDropView() {
     __implementation.onDropView()
   }

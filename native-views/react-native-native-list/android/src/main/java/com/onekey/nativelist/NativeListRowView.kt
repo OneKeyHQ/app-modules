@@ -36,6 +36,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
 
+internal data class NativeListActionOrigin(
+  val sourceView: View,
+  val ownerRowView: NativeListRowView,
+  val bindingEpoch: Long,
+  val source: String,
+  val slot: Int? = null,
+)
+
 /** React Native color strings use CSS #RRGGBBAA ordering; Android expects #AARRGGBB. */
 internal fun parseNativeListColor(value: String): Int {
   val normalized = value.trim()
@@ -326,6 +334,8 @@ internal class NativeListRowView(
   private var walletGroupExpandAnimator: ValueAnimator? = null
   private var isMediaTile = false
   private var boundKey: String? = null
+  var bindingEpoch: Long = 0
+    private set
   private var boundCheckboxData: JSONObject? = null
   private var currentLayout = "linear"
   private var restingRowBackground: Drawable? = null
@@ -344,8 +354,9 @@ internal class NativeListRowView(
   private val separatorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private var showsSeparator = false
 
-  var onRowPress: ((NativeListItem) -> Unit)? = null
-  var onAction: ((NativeListItem, String, NativeSelectionTarget?) -> Unit)? = null
+  var onRowPress: ((NativeListItem, NativeListActionOrigin) -> Unit)? = null
+  var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Unit)? = null
+  var onBindingInvalidated: ((NativeListRowView, Long) -> Unit)? = null
 
   init {
     gravity = Gravity.CENTER_VERTICAL
@@ -449,7 +460,11 @@ internal class NativeListRowView(
       }
       false
     }
-    setOnClickListener { view -> (view.tag as? NativeListItem)?.let { onRowPress?.invoke(it) } }
+    setOnClickListener { view ->
+      (view.tag as? NativeListItem)?.let { item ->
+        onRowPress?.invoke(item, actionOrigin(view, "row"))
+      }
+    }
     setWillNotDraw(false)
   }
 
@@ -512,6 +527,8 @@ internal class NativeListRowView(
     selected: Boolean,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
+    invalidateCurrentBinding()
+    bindingEpoch += 1
     boundKey = item.key
     currentLayout = layout
     tag = item
@@ -597,6 +614,7 @@ internal class NativeListRowView(
 
   fun recycle() {
     restoreRestingBackground()
+    invalidateCurrentBinding()
     boundKey = null
     leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
     secondaryImage.prepareForReuse()
@@ -677,7 +695,31 @@ internal class NativeListRowView(
     walletGroupRows.forEach(NativeListRowView::dispose)
   }
 
+  private fun actionOrigin(
+    sourceView: View,
+    source: String,
+    slot: Int? = null,
+  ) = NativeListActionOrigin(sourceView, this, bindingEpoch, source, slot)
+
+  private fun emitAction(
+    item: NativeListItem,
+    actionKey: String,
+    target: NativeSelectionTarget?,
+    sourceView: View,
+    source: String,
+    slot: Int? = null,
+  ) {
+    onAction?.invoke(item, actionKey, target, actionOrigin(sourceView, source, slot))
+  }
+
+  private fun invalidateCurrentBinding() {
+    if (boundKey == null) return
+    onBindingInvalidated?.invoke(this, bindingEpoch)
+    bindingEpoch += 1
+  }
+
   private fun resetViews() {
+    walletGroupRows.forEach { it.invalidateCurrentBinding() }
     walletGroupExpandAnimator?.removeAllListeners()
     walletGroupExpandAnimator?.cancel()
     walletGroupExpandAnimator = null
@@ -835,7 +877,11 @@ internal class NativeListRowView(
     showsSeparator = false
     mainColumn.removeView(skeletonPrimary)
     mainColumn.removeView(skeletonSecondary)
-    setOnClickListener { view -> (view.tag as? NativeListItem)?.let { onRowPress?.invoke(it) } }
+    setOnClickListener { view ->
+      (view.tag as? NativeListItem)?.let { item ->
+        onRowPress?.invoke(item, actionOrigin(view, "row"))
+      }
+    }
   }
 
   private fun restoreRestingBackground() {
@@ -987,9 +1033,12 @@ internal class NativeListRowView(
     members.forEachIndexed { index, memberJson ->
       val member = NativeListItem.parse(memberJson)
       val memberRow = walletGroupRows[index]
-      memberRow.onRowPress = { onRowPress?.invoke(it) }
-      memberRow.onAction = { source, actionKey, target ->
-        onAction?.invoke(source, actionKey, target)
+      memberRow.onRowPress = { item, origin -> onRowPress?.invoke(item, origin) }
+      memberRow.onAction = { source, actionKey, target, origin ->
+        onAction?.invoke(source, actionKey, target, origin)
+      }
+      memberRow.onBindingInvalidated = { row, epoch ->
+        onBindingInvalidated?.invoke(row, epoch)
       }
       memberRow.bind(
         member,
@@ -1066,7 +1115,13 @@ internal class NativeListRowView(
       leadingActionIcon.isEnabled = !action.optBoolean("disabled", false)
       leadingActionIcon.alpha = if (leadingActionIcon.isEnabled) 1f else 0.4f
       leadingActionIcon.setOnClickListener {
-        onAction?.invoke(item, action.optString("actionKey"), null)
+        emitAction(
+          item,
+          action.optString("actionKey"),
+          null,
+          leadingActionIcon,
+          "leadingAction",
+        )
       }
       // ListItem.IconButton is 36dp with 6dp inner padding and m=-7. Keep the
       // full button frame but absorb its leading negative margin into the row
@@ -1204,7 +1259,9 @@ internal class NativeListRowView(
           LayoutParams.WRAP_CONTENT,
           LayoutParams.WRAP_CONTENT,
         ).apply { marginEnd = dp(8) }
-        actionView.setOnClickListener { onAction?.invoke(item, action.optString("key"), null) }
+        actionView.setOnClickListener {
+          emitAction(item, action.optString("key"), null, actionView, "footerAction", index)
+        }
       }
       // TxActionCommonListView is one column ListItem with an 8dp gap between
       // its content XStack and the pending action footer.
@@ -1485,7 +1542,9 @@ internal class NativeListRowView(
       close.textSize = sp(22f)
       close.gravity = Gravity.END
       close.visibility = VISIBLE
-      close.setOnClickListener { onAction?.invoke(item, actionKey, null) }
+      close.setOnClickListener {
+        emitAction(item, actionKey, null, close, "mediaClose")
+      }
       addView(trailingColumn, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     }
   }
@@ -1937,7 +1996,9 @@ internal class NativeListRowView(
         bindAccessories(item, accessories, theme, checkboxState)
       }
     }
-    setOnClickListener { onAction?.invoke(item, item.json.optString("actionKey"), null) }
+    setOnClickListener {
+      emitAction(item, item.json.optString("actionKey"), null, this, "row")
+    }
   }
 
   private fun bindSystem(item: NativeListItem, theme: JSONObject?) {
@@ -1992,7 +2053,9 @@ internal class NativeListRowView(
       if (variant == "retry" || variant == "noMatch") weighted() else wrap(),
     )
     if (variant == "retry") {
-      setOnClickListener { onAction?.invoke(item, item.json.optString("actionKey"), null) }
+      setOnClickListener {
+        emitAction(item, item.json.optString("actionKey"), null, this, "row")
+      }
       showTrailing(0, "Retry", true, item.json.optString("actionKey"))
       trailingViews[0].textSize = sp(14f)
       trailingViews[0].background = roundedFill(color(theme, "strongBackground", "#0000000F"), 16f)
@@ -2236,7 +2299,13 @@ internal class NativeListRowView(
       !accessoryDisabled &&
       !json.optBoolean("loading", false)
     checkbox.setOnClickListener {
-      onAction?.invoke(item, json.optString("actionKey", "selection"), target)
+      emitAction(
+        item,
+        json.optString("actionKey", "selection"),
+        target,
+        checkbox,
+        "trailingAccessory",
+      )
     }
   }
 
@@ -2315,7 +2384,9 @@ internal class NativeListRowView(
       view.setOnClickListener {
         (tag as? NativeListItem)
           ?.takeUnless { item -> item.json.optBoolean("disabled", false) }
-          ?.let { item -> onAction?.invoke(item, actionKey, null) }
+          ?.let { item ->
+            emitAction(item, actionKey, null, view, "trailingAccessory", index)
+          }
       }
     }
   }
@@ -2421,7 +2492,9 @@ internal class NativeListRowView(
     icon.alpha = if (icon.isEnabled) 1f else 0.4f
     val actionKey = data.optString("actionKey")
     if (icon.isEnabled && actionKey.isNotEmpty()) {
-      icon.setOnClickListener { onAction?.invoke(item, actionKey, null) }
+      icon.setOnClickListener {
+        emitAction(item, actionKey, null, icon, "trailingAccessory", index)
+      }
     }
   }
 

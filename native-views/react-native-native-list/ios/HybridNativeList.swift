@@ -17,6 +17,7 @@ final class HybridNativeList: HybridNativeListSpec {
   }
 
   var onRowAction: ((_ payloadJson: String) -> Void)?
+  var onActionAnchorInvalidated: ((_ payloadJson: String) -> Void)?
   var onSelectionDelta: ((_ payloadJson: String) -> Void)?
   var onReorder: ((_ payloadJson: String) -> Void)?
   var onEndReached: ((_ payloadJson: String) -> Void)?
@@ -25,6 +26,7 @@ final class HybridNativeList: HybridNativeListSpec {
   override init() {
     super.init()
     hostView.onRowAction = { [weak self] in self?.onRowAction?($0) }
+    hostView.onActionAnchorInvalidated = { [weak self] in self?.onActionAnchorInvalidated?($0) }
     hostView.onSelectionDelta = { [weak self] in self?.onSelectionDelta?($0) }
     hostView.onReorder = { [weak self] in self?.onReorder?($0) }
     hostView.onEndReached = { [weak self] in self?.onEndReached?($0) }
@@ -94,8 +96,29 @@ final class HybridNativeList: HybridNativeListSpec {
     runOnMain { [weak self] in self?.hostView.scrollToEnd(animated: animated) }
   }
 
+  func setActionAnchorState(stateJson: String) throws {
+    runOnMain { [weak self] in self?.hostView.setActionAnchorStateJson(stateJson) }
+  }
+
   func setRefreshing(refreshing: Bool) throws {
     runOnMain { [weak self] in self?.hostView.setRefreshing(refreshing) }
+  }
+
+  func onDropView() {
+    runOnMain { [weak self] in self?.hostView.disposeActionAnchor() }
+  }
+
+  func dispose() {
+    runOnMain { [weak self] in self?.hostView.disposeActionAnchor() }
+  }
+
+  deinit {
+    if Thread.isMainThread {
+      hostView.disposeActionAnchor()
+    } else {
+      let view = hostView
+      DispatchQueue.main.async { view.disposeActionAnchor() }
+    }
   }
 
   private func runOnMain(_ work: @escaping () -> Void) {

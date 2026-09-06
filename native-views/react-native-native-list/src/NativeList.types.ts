@@ -1,5 +1,6 @@
 import type { ViewProps } from 'react-native';
 import type {
+  ActionAnchorInvalidatedEvent,
   EndReachedEvent,
   NativeListSnapshot,
   ReorderEvent,
@@ -9,6 +10,12 @@ import type {
   SelectionDeltaEvent,
   VisibleRangeChangedEvent,
 } from './models';
+
+export type ActionAnchorState = Readonly<{
+  token: string;
+  open: boolean;
+  restoreFocus?: boolean;
+}>;
 
 export type ScrollAlignment = 'start' | 'center' | 'end' | 'nearest';
 
@@ -97,6 +104,7 @@ export type NativeListRef = Readonly<{
   scrollToOffset(params: ScrollToOffsetParams): void;
   scrollToEnd(params?: ScrollToEndParams): void;
   scrollToLocation(params: ScrollToLocationParams): void;
+  setActionAnchorState(state: ActionAnchorState): void;
   setRefreshing(refreshing: boolean): void;
 }>;
 
@@ -106,6 +114,7 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     /** Web only. Defaults to true and is ignored by the native host. */
     webVirtualizationEnabled?: boolean;
     onRowAction?: (event: RowActionEvent) => void;
+    onActionAnchorInvalidated?: (event: ActionAnchorInvalidatedEvent) => void;
     onSelectionDelta?: (event: SelectionDeltaEvent) => void;
     onReorder?: (event: ReorderEvent) => void;
     onEndReached?: (event: EndReachedEvent) => void;

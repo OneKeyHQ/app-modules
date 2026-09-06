@@ -1,5 +1,6 @@
 export { NativeList } from './NativeList';
 export type {
+  ActionAnchorState,
   NativeListProps,
   NativeListRef,
   ScrollAlignment,
