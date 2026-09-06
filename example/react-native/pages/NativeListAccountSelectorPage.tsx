@@ -47,14 +47,8 @@ const COMPACT_WEB_TOP_INSET = 61;
 const COMPACT_WEB_BOTTOM_INSET = 34;
 const REFERENCE_WALLET_COUNT = 7;
 const REFERENCE_ACCOUNT_COUNT = 3;
-const WALLET_ROW_HEIGHT = 68;
 const WALLET_ROW_SPACING = 10;
 const WALLET_LIST_PADDING_TOP = 8;
-const WALLET_FOOTER_CONTENT_HEIGHT = 74;
-const WALLET_FIRST_FOLD_HEIGHT =
-  WALLET_LIST_PADDING_TOP +
-  REFERENCE_WALLET_COUNT * WALLET_ROW_HEIGHT +
-  (REFERENCE_WALLET_COUNT - 1) * WALLET_ROW_SPACING;
 const ACCOUNT_ROW_HEIGHT = 58;
 const ADD_ACCOUNT_ROW_HEIGHT = 48;
 const ACCOUNT_LIST_TOP = 108;
@@ -175,16 +169,6 @@ export function NativeListAccountSelectorPage({
   const selectedAccounts = useRef(new Map<number, number>());
   const [walletRows, setWalletRows] = useState(buildWalletRows);
   const walletFooterBottomPadding = Math.max(walletFooterBottomInset + 12, 20);
-  const walletListHeight = Math.min(
-    WALLET_FIRST_FOLD_HEIGHT,
-    Math.max(
-      1,
-      viewportHeight -
-        sheetMarginTop -
-        WALLET_FOOTER_CONTENT_HEIGHT -
-        walletFooterBottomPadding,
-    ),
-  );
   const [selectedWalletIndex, setSelectedWalletIndex] = useState(
     initialTarget.walletIndex,
   );
@@ -432,30 +416,27 @@ export function NativeListAccountSelectorPage({
       />
       <View style={[styles.selectorSheet, { marginTop: sheetMarginTop }]}>
         <View style={styles.sidebar}>
-          <View style={{ height: walletListHeight }}>
-            <NativeList
-              testID="account-selector-wallet-list"
-              style={styles.nativeList}
-              snapshot={walletSnapshot}
-              initialScrollKey={
-                shouldScrollToInitialWallet
-                  ? walletKey(initialTarget.walletIndex)
-                  : undefined
-              }
-              initialScrollViewPosition={0.5}
-              onRowAction={handleWalletAction}
-              onReorder={handleWalletReorder}
-              onVisibleRangeChanged={event => {
-                recordInitialTargetVisible(
-                  'wallet',
-                  event,
-                  walletKey(initialTarget.walletIndex),
-                  initialWalletRowIndex,
-                );
-              }}
-            />
-          </View>
-          <View style={styles.walletListBlank} />
+          <NativeList
+            testID="account-selector-wallet-list"
+            style={styles.nativeList}
+            snapshot={walletSnapshot}
+            initialScrollKey={
+              shouldScrollToInitialWallet
+                ? walletKey(initialTarget.walletIndex)
+                : undefined
+            }
+            initialScrollViewPosition={0.5}
+            onRowAction={handleWalletAction}
+            onReorder={handleWalletReorder}
+            onVisibleRangeChanged={event => {
+              recordInitialTargetVisible(
+                'wallet',
+                event,
+                walletKey(initialTarget.walletIndex),
+                initialWalletRowIndex,
+              );
+            }}
+          />
           <View
             style={[
               styles.walletFooter,
@@ -697,7 +678,6 @@ const styles = StyleSheet.create({
   },
   details: { flex: 1, backgroundColor: '#0F0F0F' },
   nativeList: { flex: 1 },
-  walletListBlank: { flex: 1 },
   walletFooter: {
     alignItems: 'center',
     borderTopColor: '#FFFFFF22',
