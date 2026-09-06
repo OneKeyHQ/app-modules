@@ -1,10 +1,14 @@
 package com.margelo.nitro.nativelist
 
+import android.animation.TimeInterpolator
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.HapticFeedbackConstants
 import android.view.Choreographer
 import android.view.Gravity
@@ -26,8 +30,13 @@ import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 class NativeListView(
   private val reactContext: ThemedReactContext,
@@ -64,6 +73,17 @@ class NativeListView(
   private val contentContainer = FrameLayout(context)
   private val adapter = NativeListAdapter(reactContext)
   private val layoutManager = GridLayoutManager(context, 1)
+  private val reorderPlaceholderDecoration = ReorderPlaceholderDecoration(
+    adapter = adapter,
+    insetPx = dp(REORDER_PLACEHOLDER_INSET_DP),
+    radiusPx = dp(REORDER_PLACEHOLDER_RADIUS_DP).toFloat(),
+  )
+  private val reorderSpringInterpolator = ReorderSpringInterpolator(
+    damping = REORDER_SPRING_DAMPING,
+    stiffness = REORDER_SPRING_STIFFNESS,
+    mass = REORDER_SPRING_MASS,
+    durationSeconds = REORDER_SPRING_DURATION_MS / 1_000.0,
+  )
   private val footerView = NativeListRowView(reactContext)
   private val sectionIndexView = NativeListSectionIndexView(context)
   private val sectionIndexPreview = TextView(context)
@@ -71,6 +91,8 @@ class NativeListView(
   private var stickyDecoration: StickySectionHeaderDecoration? = null
   private var spacingDecoration: ItemSpacingDecoration? = null
   private var itemTouchHelper: ItemTouchHelper? = null
+  private var reorderTouchListener: RecyclerView.OnItemTouchListener? = null
+  private var reorderTouchHandler: Handler? = null
   private var endReachedGeneration: Int? = null
   private var lastVisibleRangeSignature: String? = null
   private var visibleEventScheduled = false
@@ -90,6 +112,7 @@ class NativeListView(
     recyclerView.adapter = adapter
     recyclerView.layoutManager = layoutManager
     recyclerView.itemAnimator = null
+    recyclerView.addItemDecoration(reorderPlaceholderDecoration)
     recyclerView.setHasFixedSize(false)
     layoutManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
       override fun getSpanSize(position: Int): Int {
@@ -619,6 +642,12 @@ class NativeListView(
     disposed = true
     pendingScrollRequest = null
     visibleEventScheduled = false
+    reorderTouchHandler?.removeCallbacksAndMessages(null)
+    reorderTouchHandler = null
+    reorderTouchListener?.let(recyclerView::removeOnItemTouchListener)
+    reorderTouchListener = null
+    itemTouchHelper?.attachToRecyclerView(null)
+    itemTouchHelper = null
     footerView.recycle()
     footerView.dispose()
     recyclerView.swapAdapter(null, false)
@@ -887,6 +916,10 @@ class NativeListView(
   }
 
   private fun updateReordering(next: NativeListConfig) {
+    reorderTouchHandler?.removeCallbacksAndMessages(null)
+    reorderTouchHandler = null
+    reorderTouchListener?.let(recyclerView::removeOnItemTouchListener)
+    reorderTouchListener = null
     itemTouchHelper?.attachToRecyclerView(null)
     itemTouchHelper = null
     if (!next.reorderable) return
@@ -894,7 +927,19 @@ class NativeListView(
       ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT,
       0,
     ) {
-      override fun isLongPressDragEnabled(): Boolean = true
+      override fun isLongPressDragEnabled(): Boolean = false
+
+      override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+        super.onSelectedChanged(viewHolder, actionState)
+        if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+          reorderPlaceholderDecoration.position = viewHolder?.bindingAdapterPosition
+            ?: RecyclerView.NO_POSITION
+          reorderPlaceholderDecoration.color = reorderActiveBackground(next.theme)
+          recyclerView.invalidateItemDecorations()
+          (viewHolder as? NativeListViewHolder)?.rowView?.setReorderActive(true)
+          relayoutRecyclerView()
+        }
+      }
 
       override fun getMovementFlags(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder): Int {
         val item = adapter.itemAt(viewHolder.bindingAdapterPosition)
@@ -914,13 +959,23 @@ class NativeListView(
         val fromItem = base.getOrNull(from) ?: return false
         val toItem = base.getOrNull(to) ?: return false
         if (!fromItem.isReorderable || !toItem.isReorderable || fromItem.sectionKey != toItem.sectionKey) return false
+        val crossedPosition = dragTo != to
         if (dragFrom == RecyclerView.NO_POSITION) dragFrom = from
         dragTo = to
+        if (crossedPosition) {
+          recyclerView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        }
         val reordered = base.toMutableList()
         val moved = reordered.removeAt(from)
         reordered.add(to, moved)
         pendingReorder = reordered
-        adapter.submitReordered(reordered)
+        reorderPlaceholderDecoration.position = to
+        recyclerView.invalidateItemDecorations()
+        val previousPositions = visibleReorderPositions()
+        adapter.submitList(reordered) {
+          relayoutRecyclerView()
+          animateVisibleReorder(previousPositions, moved.key)
+        }
         return true
       }
 
@@ -928,6 +983,10 @@ class NativeListView(
 
       override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
         super.clearView(recyclerView, viewHolder)
+        (viewHolder as? NativeListViewHolder)?.rowView?.setReorderActive(false)
+        reorderPlaceholderDecoration.position = RecyclerView.NO_POSITION
+        recyclerView.invalidateItemDecorations()
+        relayoutRecyclerView()
         val from = dragFrom
         val to = dragTo
         val reordered = pendingReorder
@@ -950,6 +1009,98 @@ class NativeListView(
       }
     }
     itemTouchHelper = ItemTouchHelper(callback).also { it.attachToRecyclerView(recyclerView) }
+    val handler = Handler(Looper.getMainLooper())
+    reorderTouchHandler = handler
+    val movementLimit = dp(REORDER_ALLOWABLE_MOVEMENT_DP).toFloat()
+    reorderTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
+      private var candidate: RecyclerView.ViewHolder? = null
+      private var downX = 0f
+      private var downY = 0f
+      private var dragStarted = false
+      private val startDrag = Runnable {
+        val holder = candidate ?: return@Runnable
+        val position = holder.bindingAdapterPosition
+        val item = adapter.itemAt(position) ?: return@Runnable
+        if (!item.isReorderable) return@Runnable
+        dragStarted = true
+        itemTouchHelper?.startDrag(holder)
+        holder.itemView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+      }
+
+      private fun cancelPending() {
+        handler.removeCallbacks(startDrag)
+        candidate = null
+      }
+
+      override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+          MotionEvent.ACTION_DOWN -> {
+            cancelPending()
+            dragStarted = false
+            downX = event.x
+            downY = event.y
+            candidate = recyclerView.findChildViewUnder(event.x, event.y)
+              ?.let(recyclerView::getChildViewHolder)
+              ?.takeIf { holder ->
+                adapter.itemAt(holder.bindingAdapterPosition)?.isReorderable == true
+              }
+            if (candidate != null) handler.postDelayed(startDrag, REORDER_LONG_PRESS_MS)
+          }
+          MotionEvent.ACTION_MOVE -> if (
+            !dragStarted && hypot(event.x - downX, event.y - downY) > movementLimit
+          ) {
+            cancelPending()
+          }
+          MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> cancelPending()
+        }
+        return false
+      }
+
+    }.also(recyclerView::addOnItemTouchListener)
+  }
+
+  private fun visibleReorderPositions(): Map<String, Pair<Float, Float>> = buildMap {
+    for (index in 0 until recyclerView.childCount) {
+      val child = recyclerView.getChildAt(index)
+      val holder = recyclerView.getChildViewHolder(child)
+      val item = adapter.itemAt(holder.bindingAdapterPosition) ?: continue
+      put(item.key, child.x to child.y)
+    }
+  }
+
+  private fun animateVisibleReorder(
+    previousPositions: Map<String, Pair<Float, Float>>,
+    activeKey: String,
+  ) {
+    recyclerView.post {
+      for (index in 0 until recyclerView.childCount) {
+        val child = recyclerView.getChildAt(index)
+        val holder = recyclerView.getChildViewHolder(child)
+        val item = adapter.itemAt(holder.bindingAdapterPosition) ?: continue
+        if (item.key == activeKey) continue
+        val previous = previousPositions[item.key] ?: continue
+        val deltaX = previous.first - child.left.toFloat()
+        val deltaY = previous.second - child.top.toFloat()
+        if (deltaX == 0f && deltaY == 0f) continue
+        child.animate().cancel()
+        child.translationX = deltaX
+        child.translationY = deltaY
+        child.animate()
+          .translationX(0f)
+          .translationY(0f)
+          .setDuration(REORDER_SPRING_DURATION_MS)
+          .setInterpolator(reorderSpringInterpolator)
+          .start()
+      }
+    }
+  }
+
+  private fun reorderActiveBackground(theme: JSONObject?): Int = try {
+    parseNativeListColor(
+      theme?.optString("rowPressedBackground", "#00000017") ?: "#00000017",
+    )
+  } catch (_: IllegalArgumentException) {
+    parseNativeListColor("#00000017")
   }
 
   private fun scheduleVisibleEvent() {
@@ -1037,11 +1188,70 @@ class NativeListView(
   private fun dp(value: Int): Int = NativeListScale.dp(resources, value)
 
   companion object {
+    private const val REORDER_LONG_PRESS_MS = 200L
+    private const val REORDER_ALLOWABLE_MOVEMENT_DP = 10
+    private const val REORDER_PLACEHOLDER_INSET_DP = 8
+    private const val REORDER_PLACEHOLDER_RADIUS_DP = 12
+    private const val REORDER_SPRING_DAMPING = 25.0
+    private const val REORDER_SPRING_STIFFNESS = 400.0
+    private const val REORDER_SPRING_MASS = 0.4
+    private const val REORDER_SPRING_DURATION_MS = 300L
     private const val ROW_ACTION = "rowAction"
     private const val SELECTION_DELTA = "selectionDelta"
     private const val REORDER = "reorder"
     private const val END_REACHED = "endReached"
     private const val VISIBLE_RANGE_CHANGED = "visibleRangeChanged"
+  }
+}
+
+private class ReorderPlaceholderDecoration(
+  private val adapter: NativeListAdapter,
+  private val insetPx: Int,
+  private val radiusPx: Float,
+) : RecyclerView.ItemDecoration() {
+  var position: Int = RecyclerView.NO_POSITION
+  var color: Int = Color.TRANSPARENT
+  private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+  private val bounds = RectF()
+
+  override fun onDraw(canvas: Canvas, parent: RecyclerView, state: RecyclerView.State) {
+    val item = adapter.itemAt(position) ?: return
+    if (
+      item.type != "identity" ||
+      item.json.optString("presentation") != "walletSidebar"
+    ) return
+    val view = parent.findViewHolderForAdapterPosition(position)?.itemView ?: return
+    bounds.set(
+      (view.left + insetPx).toFloat(),
+      view.top.toFloat(),
+      (view.right - insetPx).toFloat(),
+      view.bottom.toFloat(),
+    )
+    paint.color = color
+    canvas.drawRoundRect(bounds, radiusPx, radiusPx, paint)
+  }
+}
+
+private class ReorderSpringInterpolator(
+  damping: Double,
+  stiffness: Double,
+  mass: Double,
+  private val durationSeconds: Double,
+) : TimeInterpolator {
+  private val naturalFrequency = sqrt(stiffness / mass)
+  private val dampingRatio = damping / (2 * sqrt(stiffness * mass))
+  private val dampedFrequency = naturalFrequency * sqrt(1 - dampingRatio * dampingRatio)
+
+  override fun getInterpolation(input: Float): Float {
+    if (input <= 0f) return 0f
+    if (input >= 1f) return 1f
+    val time = input * durationSeconds
+    val decay = exp(-dampingRatio * naturalFrequency * time)
+    val displacement = decay * (
+      cos(dampedFrequency * time) +
+        dampingRatio * naturalFrequency / dampedFrequency * sin(dampedFrequency * time)
+      )
+    return (1 - displacement).toFloat()
   }
 }
 

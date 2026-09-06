@@ -147,6 +147,7 @@ export type IdentityRow = RowBase &
     subtitleLines?: 1 | 2;
     badges?: readonly BadgeModel[];
     trailing?: readonly TrailingAccessory[];
+    draggable?: boolean;
   }>;
 
 export type RailRow = RowBase &

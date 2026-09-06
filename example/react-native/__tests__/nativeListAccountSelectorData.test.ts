@@ -11,6 +11,8 @@ import {
   buildVisibleAccountRows,
   buildWalletRows,
   parseAccountKey,
+  parseWalletKey,
+  reorderWalletRows,
   resolveAccountSelectorInitialTarget,
   walletKey,
 } from '../pages/nativeListAccountSelectorData';
@@ -61,6 +63,35 @@ describe('Native List account-selector stress data', () => {
       walletIndex: ACCOUNT_SELECTOR_WATCH_WALLET_INDEX,
       accountIndex: 1,
     });
+  });
+
+  it('reorders the full wallet list by stable keys without changing wallet identity', () => {
+    const rows = buildWalletRows();
+    const watchKey = walletKey(ACCOUNT_SELECTOR_WATCH_WALLET_INDEX);
+    const reordered = reorderWalletRows(rows, {
+      key: watchKey,
+      fromIndex: 6,
+      toIndex: 500,
+      beforeKey: rows[500]?.key,
+      afterKey: rows[501]?.key,
+    });
+
+    expect(reordered).toHaveLength(ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT);
+    expect(reordered[500]?.key).toBe(watchKey);
+    expect(parseWalletKey(reordered[500]?.key ?? '')).toBe(
+      ACCOUNT_SELECTOR_WATCH_WALLET_INDEX,
+    );
+    expect(new Set(reordered.map(row => row.key)).size).toBe(
+      ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT,
+    );
+
+    const restored = reorderWalletRows(reordered, {
+      key: watchKey,
+      fromIndex: 500,
+      toIndex: 0,
+      afterKey: rows[0]?.key,
+    });
+    expect(restored[0]?.key).toBe(watchKey);
   });
 
   it('reproduces the two watch-only accounts without reducing the stress fixture', () => {

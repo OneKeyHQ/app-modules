@@ -43,9 +43,15 @@ describe('NativeList model validation', () => {
   it('accepts only the supported identity presentations', () => {
     expect(
       validateSnapshot(
-        snapshot([{ ...row('wallet'), presentation: 'walletSidebar' }])
+        snapshot([
+          {
+            ...row('wallet'),
+            presentation: 'walletSidebar',
+            draggable: true,
+          },
+        ])
       ).rows[0]
-    ).toMatchObject({ presentation: 'walletSidebar' });
+    ).toMatchObject({ presentation: 'walletSidebar', draggable: true });
     expect(
       validateSnapshot(
         snapshot([{ ...row('account'), presentation: 'accountSelector' }])

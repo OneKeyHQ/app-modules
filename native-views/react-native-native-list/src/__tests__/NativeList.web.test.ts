@@ -1,8 +1,15 @@
-import type { NativeListSnapshot, RowModel } from '../models';
+import type { IdentityRow, NativeListSnapshot, RowModel } from '../models';
 import {
+  WEB_REORDER_ANIMATION,
+  cancelWebReorderRows,
   computeWebListLayout,
   estimateWebRowHeight,
+  hasExceededWebReorderMouseThreshold,
+  isWebRowReorderable,
+  moveWebReorderRow,
   visibleWebLayoutItems,
+  webReorderAutoScrollVelocity,
+  webReorderEventForRows,
   webLayoutItemsForMount,
   webRowRenderSignature,
 } from '../web/NativeListWebEngine';
@@ -146,6 +153,112 @@ describe('NativeList pure DOM web layout', () => {
         320
       )
     ).toBe(58);
+  });
+
+  it('reorders wallet-sidebar identities without a visible drag accessory', () => {
+    const walletRows: readonly RowModel[] = [
+      {
+        type: 'identity',
+        key: 'wallet-a',
+        presentation: 'walletSidebar',
+        leading: { kind: 'wallet', fallbackText: 'A' },
+        title: 'Wallet A',
+        draggable: true,
+      },
+      {
+        type: 'identity',
+        key: 'wallet-b',
+        presentation: 'walletSidebar',
+        leading: { kind: 'wallet', fallbackText: 'B' },
+        title: 'Wallet B',
+        draggable: true,
+      },
+    ];
+    const reorderable = snapshot({ kind: 'linear' }, walletRows);
+
+    expect(walletRows[0]?.type).toBe('identity');
+    expect(
+      walletRows[0] && isWebRowReorderable(reorderable, walletRows[0])
+    ).toBe(true);
+    expect('trailing' in (walletRows[0] ?? {})).toBe(false);
+    expect(moveWebReorderRow(walletRows, 0, 1).map((row) => row.key)).toEqual([
+      'wallet-b',
+      'wallet-a',
+    ]);
+    expect(moveWebReorderRow(walletRows, 0, 0)).toBe(walletRows);
+    expect(
+      isWebRowReorderable(reorderable, {
+        ...(walletRows[0] as IdentityRow),
+        draggable: false,
+      })
+    ).toBe(false);
+  });
+
+  it('models live wallet movement, cancellation, and stable final anchors', () => {
+    const reorderRows: readonly RowModel[] = ['a', 'b', 'c', 'd'].map(
+      (key) => ({
+        type: 'identity',
+        key,
+        leading: { kind: 'wallet', fallbackText: key },
+        title: key,
+        draggable: true,
+      })
+    );
+    const moved = moveWebReorderRow(reorderRows, 0, 2);
+
+    expect(moved.map((row) => row.key)).toEqual(['b', 'c', 'a', 'd']);
+    expect(reorderRows.map((row) => row.key)).toEqual(['a', 'b', 'c', 'd']);
+    expect(cancelWebReorderRows(reorderRows)).toBe(reorderRows);
+    expect(webReorderEventForRows(reorderRows, moved, 'a')).toEqual({
+      key: 'a',
+      fromIndex: 0,
+      toIndex: 2,
+      beforeKey: 'c',
+      afterKey: 'd',
+    });
+  });
+
+  it('uses a dampened quadratic edge curve for deep-list auto-scroll', () => {
+    const top = 61;
+    const bottom = 605;
+    const edgeStart = bottom - (bottom - top) * 0.25;
+    const maxZone = bottom - (bottom - top) * 0.05;
+
+    expect(webReorderAutoScrollVelocity(300, top, bottom, 1_200)).toBe(0);
+    expect(webReorderAutoScrollVelocity(edgeStart, top, bottom, 1_200)).toBe(1);
+    expect(
+      webReorderAutoScrollVelocity(
+        (edgeStart + maxZone) / 2,
+        top,
+        bottom,
+        1_200
+      )
+    ).toBeCloseTo(7);
+    expect(
+      webReorderAutoScrollVelocity(maxZone, top, bottom, 1_200)
+    ).toBeCloseTo(28);
+    expect(webReorderAutoScrollVelocity(maxZone, top, bottom, 0)).toBe(1);
+    expect(webReorderAutoScrollVelocity(maxZone, top, bottom, 359)).toBe(1);
+    expect(webReorderAutoScrollVelocity(maxZone, top, bottom, 360)).toBe(0);
+    expect(webReorderAutoScrollVelocity(maxZone, top, bottom, 780)).toBe(7);
+    expect(
+      webReorderAutoScrollVelocity(maxZone, top, bottom, 1_200)
+    ).toBeCloseTo(28);
+  });
+
+  it('uses react-beautiful-dnd mouse sloppiness per axis', () => {
+    expect(hasExceededWebReorderMouseThreshold(3.6, 3.6)).toBe(false);
+    expect(hasExceededWebReorderMouseThreshold(5, 0)).toBe(true);
+    expect(hasExceededWebReorderMouseThreshold(0, -5)).toBe(true);
+  });
+
+  it('matches the wallet sidebar out-of-way and overridden drop animation', () => {
+    expect(WEB_REORDER_ANIMATION).toEqual({
+      outOfWayDurationMs: 200,
+      outOfWayTimingFunction: 'cubic-bezier(0.2, 0, 0, 1)',
+      dropDurationMs: 80,
+      dropTimingFunction: 'ease',
+    });
   });
 
   it('lays out linear, sectioned, grid, table, and horizontal examples', () => {

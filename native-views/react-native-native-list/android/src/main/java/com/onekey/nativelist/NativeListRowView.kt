@@ -314,6 +314,7 @@ internal class NativeListRowView(
   private var currentLayout = "linear"
   private var restingRowBackground: Drawable? = null
   private var pressedRowBackground: Drawable? = null
+  private var reorderActive = false
   private var checkboxCheckedColor = Color.rgb(32, 32, 32)
   private var checkboxUncheckedColor = Color.rgb(252, 252, 252)
   private var checkboxBorderColor = Color.rgb(206, 206, 206)
@@ -465,6 +466,7 @@ internal class NativeListRowView(
     boundKey = item.key
     currentLayout = layout
     tag = item
+    reorderActive = false
     leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
     secondaryImage.prepareForReuse()
     mediaNetworkImage.prepareForReuse()
@@ -744,8 +746,13 @@ internal class NativeListRowView(
   }
 
   private fun restoreRestingBackground() {
-    background = restingRowBackground
+    background = if (reorderActive) pressedRowBackground else restingRowBackground
     leadingFrame.alpha = 1f
+  }
+
+  fun setReorderActive(active: Boolean) {
+    reorderActive = active
+    restoreRestingBackground()
   }
 
   private fun bindIdentity(

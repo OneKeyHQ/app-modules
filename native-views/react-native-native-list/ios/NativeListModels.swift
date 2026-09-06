@@ -17,6 +17,7 @@ struct NativeListItem {
   var isReorderable: Bool {
     guard !data.bool("disabled") else { return false }
     if type == "rail", data.bool("draggable") { return true }
+    if type == "identity", data.bool("draggable") { return true }
     return data.dictionaries("trailing").contains { $0.string("kind") == "drag" }
   }
 

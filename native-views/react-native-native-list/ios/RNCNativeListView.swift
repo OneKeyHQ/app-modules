@@ -3,6 +3,26 @@ import UIKit
 import UniformTypeIdentifiers
 
 final class NativeListView: UIView {
+  private enum ReorderAnimation {
+    static let longPressDuration: TimeInterval = 0.2
+    static let allowableMovement: CGFloat = 10
+    static let duration: TimeInterval = 0.3
+    static let damping: CGFloat = 25
+    static let stiffness: CGFloat = 400
+    static let mass: CGFloat = 0.4
+    static let placeholderInset: CGFloat = 8
+    static let placeholderRadius: CGFloat = 12
+
+    static var timing: UISpringTimingParameters {
+      UISpringTimingParameters(
+        mass: mass,
+        stiffness: stiffness,
+        damping: damping,
+        initialVelocity: .zero
+      )
+    }
+  }
+
   private enum ScrollRequest {
     case key(String, Bool, String, Double, Double)
     case index(Int, Bool, String, Double, Double)
@@ -35,6 +55,17 @@ final class NativeListView: UIView {
   private var lastLayoutDirection: UIUserInterfaceLayoutDirection?
   private var pendingScrollRequest: ScrollRequest?
   private let sectionIndexFeedback = UISelectionFeedbackGenerator()
+  private lazy var reorderLongPress = UILongPressGestureRecognizer(
+    target: self,
+    action: #selector(reorderLongPressChanged(_:))
+  )
+  private var interactiveReorderSource: (key: String, index: Int)?
+  private weak var interactiveReorderCell: NativeListCell?
+  private let interactiveReorderPlaceholder = UIView()
+  private var interactiveReorderAnimator: UIViewPropertyAnimator?
+  private let reorderStartFeedback = UIImpactFeedbackGenerator(style: .medium)
+  private let reorderMoveFeedback = UISelectionFeedbackGenerator()
+  private var interactiveReorderFeedbackIndex: Int?
 
   private static let sectionIndexGutter: CGFloat = 44
 
@@ -46,6 +77,15 @@ final class NativeListView: UIView {
     collectionView.dragDelegate = self
     collectionView.dropDelegate = self
     collectionView.alwaysBounceVertical = true
+    reorderLongPress.minimumPressDuration = ReorderAnimation.longPressDuration
+    reorderLongPress.allowableMovement = ReorderAnimation.allowableMovement
+    reorderLongPress.delegate = self
+    collectionView.addGestureRecognizer(reorderLongPress)
+    interactiveReorderPlaceholder.isHidden = true
+    interactiveReorderPlaceholder.isUserInteractionEnabled = false
+    interactiveReorderPlaceholder.layer.cornerRadius = ReorderAnimation.placeholderRadius
+    interactiveReorderPlaceholder.layer.cornerCurve = .continuous
+    collectionView.insertSubview(interactiveReorderPlaceholder, at: 0)
 
     addSubview(collectionView)
     addSubview(footerContainer)
@@ -121,6 +161,13 @@ final class NativeListView: UIView {
       }
       self.bind(cell: cell, item: item, itemIndex: indexPath.item)
       return cell
+    }
+    dataSource.reorderingHandlers.canReorderItem = { [weak self] key in
+      guard let self else { return false }
+      return self.config?.reorderable == true && self.itemsByKey[key]?.isReorderable == true
+    }
+    dataSource.reorderingHandlers.didReorder = { [weak self] transaction in
+      self?.completeInteractiveReorder(transaction.finalSnapshot)
     }
   }
 
@@ -408,8 +455,153 @@ final class NativeListView: UIView {
     collectionView.alwaysBounceHorizontal = isHorizontal
     collectionView.alwaysBounceVertical = !isHorizontal
     collectionView.showsVerticalScrollIndicator = sectionIndexEntries.isEmpty
-    collectionView.dragInteractionEnabled = config.reorderable
+    collectionView.dragInteractionEnabled = false
     lastLayoutDirection = effectiveUserInterfaceLayoutDirection
+  }
+
+  @objc private func reorderLongPressChanged(_ gesture: UILongPressGestureRecognizer) {
+    switch gesture.state {
+    case .began:
+      let point = gesture.location(in: collectionView)
+      guard let current = config,
+            current.reorderable,
+            let indexPath = collectionView.indexPathForItem(at: point),
+            let item = current.items[safe: indexPath.item],
+            item.isReorderable,
+            let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell else {
+        interactiveReorderSource = nil
+        interactiveReorderCell = nil
+        return
+      }
+      cell.setPressed(true)
+      guard collectionView.beginInteractiveMovementForItem(at: indexPath) else {
+        cell.setPressed(false)
+        interactiveReorderSource = nil
+        interactiveReorderCell = nil
+        interactiveReorderFeedbackIndex = nil
+        return
+      }
+      interactiveReorderSource = (item.key, indexPath.item)
+      interactiveReorderCell = cell
+      interactiveReorderFeedbackIndex = indexPath.item
+      reorderStartFeedback.impactOccurred(intensity: 0.7)
+      reorderStartFeedback.prepare()
+      reorderMoveFeedback.prepare()
+      showInteractiveReorderPlaceholder(at: indexPath, item: item, config: current)
+    case .changed:
+      guard interactiveReorderSource != nil else { return }
+      let point = gesture.location(in: collectionView)
+      collectionView.updateInteractiveMovementTargetPosition(point)
+      if let indexPath = nearestReorderIndexPath(to: point),
+         let item = config?.items[safe: indexPath.item] {
+        if interactiveReorderFeedbackIndex != indexPath.item {
+          interactiveReorderFeedbackIndex = indexPath.item
+          reorderMoveFeedback.selectionChanged()
+          reorderMoveFeedback.prepare()
+        }
+        showInteractiveReorderPlaceholder(at: indexPath, item: item, config: config)
+      }
+    case .ended:
+      guard interactiveReorderSource != nil else { return }
+      interactiveReorderCell?.setPressed(false)
+      finishInteractiveReorder(cancelled: false)
+    case .cancelled, .failed:
+      interactiveReorderCell?.setPressed(false)
+      interactiveReorderSource = nil
+      interactiveReorderCell = nil
+      finishInteractiveReorder(cancelled: true)
+    default:
+      break
+    }
+  }
+
+  private func nearestReorderIndexPath(to point: CGPoint) -> IndexPath? {
+    collectionView.indexPathsForVisibleItems.min { lhs, rhs in
+      let lhsFrame = flowLayout.layoutAttributesForItem(at: lhs)?.frame ?? .zero
+      let rhsFrame = flowLayout.layoutAttributesForItem(at: rhs)?.frame ?? .zero
+      return abs(lhsFrame.midY - point.y) < abs(rhsFrame.midY - point.y)
+    }
+  }
+
+  private func showInteractiveReorderPlaceholder(
+    at indexPath: IndexPath,
+    item: NativeListItem,
+    config: NativeListConfig?
+  ) {
+    guard item.type == "identity",
+          item.data.string("presentation") == "walletSidebar",
+          var frame = flowLayout.layoutAttributesForItem(at: indexPath)?.frame else { return }
+    frame.origin.x += ReorderAnimation.placeholderInset
+    frame.size.width = max(0, frame.width - ReorderAnimation.placeholderInset * 2)
+    interactiveReorderPlaceholder.backgroundColor = nativeListColor(
+      config?.theme,
+      "rowPressedBackground",
+      "#00000017"
+    )
+    interactiveReorderAnimator?.stopAnimation(true)
+    if interactiveReorderPlaceholder.isHidden {
+      interactiveReorderPlaceholder.frame = frame
+      interactiveReorderPlaceholder.alpha = 1
+      interactiveReorderPlaceholder.isHidden = false
+      return
+    }
+    let animator = UIViewPropertyAnimator(
+      duration: ReorderAnimation.duration,
+      timingParameters: ReorderAnimation.timing
+    )
+    animator.addAnimations { [weak self] in self?.interactiveReorderPlaceholder.frame = frame }
+    interactiveReorderAnimator = animator
+    animator.startAnimation()
+  }
+
+  private func finishInteractiveReorder(cancelled: Bool) {
+    interactiveReorderAnimator?.stopAnimation(true)
+    interactiveReorderFeedbackIndex = nil
+    let animator = UIViewPropertyAnimator(
+      duration: ReorderAnimation.duration,
+      timingParameters: ReorderAnimation.timing
+    )
+    animator.addAnimations { [weak self] in
+      guard let self else { return }
+      if cancelled { self.collectionView.cancelInteractiveMovement() }
+      else { self.collectionView.endInteractiveMovement() }
+      self.collectionView.layoutIfNeeded()
+      self.interactiveReorderPlaceholder.alpha = 0
+    }
+    animator.addCompletion { [weak self] _ in
+      self?.interactiveReorderPlaceholder.isHidden = true
+      self?.interactiveReorderPlaceholder.alpha = 1
+      self?.interactiveReorderAnimator = nil
+    }
+    interactiveReorderAnimator = animator
+    animator.startAnimation()
+  }
+
+  private func completeInteractiveReorder(
+    _ snapshot: NSDiffableDataSourceSnapshot<Int, String>
+  ) {
+    guard var current = config,
+          let source = interactiveReorderSource else { return }
+    defer {
+      interactiveReorderSource = nil
+      interactiveReorderCell = nil
+    }
+    let keys = snapshot.itemIdentifiers
+    let items = keys.compactMap { itemsByKey[$0] }
+    guard keys.count == current.items.count,
+          let toIndex = keys.firstIndex(of: source.key),
+          items.count == keys.count else { return }
+    current.items = items
+    config = current
+    guard source.index != toIndex else { return }
+    var payload: [String: Any] = [
+      "key": source.key,
+      "fromIndex": source.index,
+      "toIndex": toIndex,
+    ]
+    if let before = items[safe: toIndex - 1] { payload["beforeKey"] = before.key }
+    if let after = items[safe: toIndex + 1] { payload["afterKey"] = after.key }
+    emit(onReorder, payload)
   }
 
   private func configureSectionIndex(_ config: NativeListConfig) {

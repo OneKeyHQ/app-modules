@@ -1,6 +1,7 @@
 import type {
   ActionRow,
   IdentityRow,
+  ReorderEvent,
   RowModel,
 } from '@onekeyfe/react-native-native-list';
 
@@ -213,11 +214,40 @@ export function buildWalletRows(): readonly IdentityRow[] {
         backgroundColor: '#00000000',
       },
       title: walletName(walletIndex),
+      draggable: true,
       accessibilityLabel: `${walletName(walletIndex)}, wallet ${
         displayIndex + 1
       } of ${ACCOUNT_SELECTOR_TOTAL_WALLET_COUNT}`,
     };
   });
+}
+
+export function reorderWalletRows(
+  rows: readonly IdentityRow[],
+  event: ReorderEvent,
+): readonly IdentityRow[] {
+  const fromIndex = rows.findIndex(row => row.key === event.key);
+  if (fromIndex < 0) return rows;
+
+  const next = [...rows];
+  const [moved] = next.splice(fromIndex, 1);
+  if (!moved) return rows;
+
+  const beforeIndex = event.beforeKey
+    ? next.findIndex(row => row.key === event.beforeKey)
+    : -1;
+  const afterIndex = event.afterKey
+    ? next.findIndex(row => row.key === event.afterKey)
+    : -1;
+  const toIndex =
+    beforeIndex >= 0
+      ? beforeIndex + 1
+      : afterIndex >= 0
+      ? afterIndex
+      : Math.max(0, Math.min(event.toIndex, next.length));
+  next.splice(toIndex, 0, moved);
+
+  return next.every((row, index) => row.key === rows[index]?.key) ? rows : next;
 }
 
 const watchAccountAvatarUris = [

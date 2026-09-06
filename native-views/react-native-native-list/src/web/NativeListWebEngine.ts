@@ -38,6 +38,21 @@ const SECTION_INDEX_GUTTER = 44;
 const DEFAULT_VIEWPORT_WIDTH = 320;
 const DEFAULT_VIEWPORT_HEIGHT = 640;
 const OVERSCAN_VIEWPORTS = 1;
+export const WEB_REORDER_ANIMATION = {
+  outOfWayDurationMs: 200,
+  outOfWayTimingFunction: 'cubic-bezier(0.2, 0, 0, 1)',
+  dropDurationMs: 80,
+  dropTimingFunction: 'ease',
+} as const;
+
+const REORDER_TOUCH_LONG_PRESS_MS = 120;
+const REORDER_MOUSE_MOVE_THRESHOLD_PX = 5;
+const REORDER_EDGE_RATIO = 0.25;
+const REORDER_MAX_SPEED_ZONE_RATIO = 0.05;
+const REORDER_MAX_SCROLL_PX = 28;
+const REORDER_SCROLL_ACCELERATE_AT_MS = 360;
+const REORDER_SCROLL_DAMPENING_MS = 1_200;
+const REORDER_DROP_TRANSITION_MS = WEB_REORDER_ANIMATION.dropDurationMs;
 
 const defaultTheme: NativeListTheme = {
   background: '#F7F7F7',
@@ -102,6 +117,126 @@ type PendingScroll =
     }>
   | Readonly<{ kind: 'offset'; offset: number; animated: boolean }>
   | Readonly<{ kind: 'end'; animated: boolean }>;
+
+type PointerReorderState = {
+  pointerId: number;
+  pointerType: string;
+  sourceKey: string;
+  startX: number;
+  startY: number;
+  clientX: number;
+  clientY: number;
+  originalRows: readonly RowModel[];
+  previewOffsetX?: number;
+  previewOffsetY?: number;
+  longPressTimer?: number;
+  activatedAt?: number;
+  active: boolean;
+};
+
+type KeyboardReorderState = {
+  sourceKey: string;
+  originalRows: readonly RowModel[];
+};
+
+export function isWebRowReorderable(
+  snapshot: NativeListSnapshot,
+  row: RowModel
+): boolean {
+  if (!snapshot.capabilities?.reorderable || row.disabled) return false;
+  if (row.type === 'rail' && row.draggable) return true;
+  if (row.type === 'identity' && row.draggable) return true;
+  return (
+    (row.type === 'identity' || row.type === 'action') &&
+    Boolean(row.trailing?.some((accessory) => accessory.kind === 'drag'))
+  );
+}
+
+export function moveWebReorderRow(
+  rows: readonly RowModel[],
+  fromIndex: number,
+  toIndex: number
+): readonly RowModel[] {
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    fromIndex >= rows.length ||
+    toIndex < 0 ||
+    toIndex >= rows.length
+  ) {
+    return rows;
+  }
+  const next = [...rows];
+  const [moved] = next.splice(fromIndex, 1);
+  if (!moved) return rows;
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
+export function cancelWebReorderRows(
+  originalRows: readonly RowModel[]
+): readonly RowModel[] {
+  return originalRows;
+}
+
+export function webReorderEventForRows(
+  originalRows: readonly RowModel[],
+  finalRows: readonly RowModel[],
+  key: string
+): ReorderEvent | undefined {
+  const fromIndex = originalRows.findIndex((row) => row.key === key);
+  const toIndex = finalRows.findIndex((row) => row.key === key);
+  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return undefined;
+  return {
+    key,
+    fromIndex,
+    toIndex,
+    beforeKey: finalRows[toIndex - 1]?.key,
+    afterKey: finalRows[toIndex + 1]?.key,
+  };
+}
+
+export function webReorderAutoScrollVelocity(
+  point: number,
+  start: number,
+  end: number,
+  elapsedMs: number
+): number {
+  const viewportLength = Math.max(1, end - start);
+  const edge = viewportLength * REORDER_EDGE_RATIO;
+  const maxZone = viewportLength * REORDER_MAX_SPEED_ZONE_RATIO;
+  const speedForDistance = (distance: number) => {
+    if (distance > edge) return 0;
+    const proposed =
+      distance <= maxZone
+        ? REORDER_MAX_SCROLL_PX
+        : distance === edge
+        ? 1
+        : Math.ceil(
+            REORDER_MAX_SCROLL_PX *
+              Math.pow((edge - distance) / Math.max(1, edge - maxZone), 2)
+          );
+    if (elapsedMs < REORDER_SCROLL_ACCELERATE_AT_MS) return 1;
+    if (elapsedMs >= REORDER_SCROLL_DAMPENING_MS) return proposed;
+    const timeProgress =
+      (elapsedMs - REORDER_SCROLL_ACCELERATE_AT_MS) /
+      (REORDER_SCROLL_DAMPENING_MS - REORDER_SCROLL_ACCELERATE_AT_MS);
+    return Math.ceil(proposed * timeProgress * timeProgress);
+  };
+  if (point <= start + edge) return -speedForDistance(point - start);
+  if (point >= end - edge) return speedForDistance(end - point);
+  return 0;
+}
+
+export function hasExceededWebReorderMouseThreshold(
+  deltaX: number,
+  deltaY: number
+): boolean {
+  return (
+    Math.abs(deltaX) >= REORDER_MOUSE_MOVE_THRESHOLD_PX ||
+    Math.abs(deltaY) >= REORDER_MOUSE_MOVE_THRESHOLD_PX
+  );
+}
 
 function effectiveRows(snapshot: NativeListSnapshot): readonly RowModel[] {
   if (snapshot.rows.length > 0) return snapshot.rows;
@@ -505,7 +640,18 @@ const WEB_LIST_CSS = `
 .ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
 .ok-native-list-item[data-native-list-disabled="true"]>.ok-native-list-row{opacity:.5;cursor:default}
 .ok-native-list-item:not([data-native-list-disabled="true"]):hover>.ok-native-list-row{background:var(--nl-pressed)}
+.ok-native-list-item:not([data-native-list-disabled="true"]):not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
+.ok-native-list-item:not([data-native-list-disabled="true"]):not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
+.ok-native-list-item[data-native-list-selected="true"]:hover>.ok-native-list-wallet-row{background:var(--nl-selected)}
 .ok-native-list-item:focus-visible>.ok-native-list-row{outline:2px solid var(--nl-accent);outline-offset:-2px}
+.ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:grab}
+.ok-native-list-root[data-native-list-dragging="true"] .ok-native-list-row{cursor:grabbing}
+.ok-native-list-item[data-native-list-animate-reorder="true"]{transition:transform ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction}}
+.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row{overflow:hidden;border-radius:12px;background:var(--nl-row)}
+.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row>*{visibility:hidden}
+.ok-native-list-reorder-preview{position:fixed;left:0;top:0;z-index:100001;pointer-events:none;overflow:hidden;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.12);transform-origin:center;will-change:transform;font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.ok-native-list-reorder-preview>.ok-native-list-row{background:var(--nl-row);cursor:grabbing}
+.ok-native-list-reorder-preview[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
 .ok-native-list-item[data-separator="true"]>.ok-native-list-row{border-bottom:1px solid var(--nl-separator)}
 .ok-native-list-item[data-group-position="first"]>.ok-native-list-row{border-radius:12px 12px 0 0}
 .ok-native-list-item[data-group-position="last"]>.ok-native-list-row{border-radius:0 0 12px 12px}
@@ -1602,6 +1748,7 @@ export class NativeListWebEngine {
   private readonly indexRail: HTMLElement;
   private readonly indexPreview: HTMLElement;
   private readonly refreshIndicator: HTMLElement;
+  private readonly reorderPreview: HTMLElement;
   private readonly previousHostPosition: string;
   private snapshot: NativeListSnapshot;
   private rows: readonly RowModel[] = [];
@@ -1622,7 +1769,13 @@ export class NativeListWebEngine {
   private reachedGeneration: number | undefined;
   private stickyKey: string | undefined;
   private previewTimer: number | undefined;
-  private dragFromIndex: number | undefined;
+  private pointerReorder: PointerReorderState | undefined;
+  private keyboardReorder: KeyboardReorderState | undefined;
+  private reorderAutoScrollFrame: number | undefined;
+  private reorderDropTimer: number | undefined;
+  private reorderMovementTimer: number | undefined;
+  private reorderSettlingKey: string | undefined;
+  private suppressClickUntil = 0;
   private pullStartY: number | undefined;
   private pullDistance = 0;
   private virtualizationEnabled: boolean;
@@ -1689,6 +1842,14 @@ export class NativeListWebEngine {
       'Refreshing'
     );
     this.refreshIndicator.setAttribute('role', 'status');
+    this.reorderPreview = createElement(
+      this.document,
+      'div',
+      'ok-native-list-reorder-preview'
+    );
+    this.reorderPreview.hidden = true;
+    this.reorderPreview.setAttribute('aria-hidden', 'true');
+    this.document.body.appendChild(this.reorderPreview);
     this.viewport.append(this.content);
     this.viewportFrame.append(
       this.viewport,
@@ -1705,10 +1866,31 @@ export class NativeListWebEngine {
     });
     this.root.addEventListener('click', this.handleClick);
     this.root.addEventListener('keydown', this.handleKeyDown);
-    this.content.addEventListener('dragstart', this.handleDragStart);
-    this.content.addEventListener('dragover', this.handleDragOver);
-    this.content.addEventListener('drop', this.handleDrop);
-    this.content.addEventListener('dragend', this.handleDragEnd);
+    this.viewport.addEventListener(
+      'pointerdown',
+      this.handleReorderPointerDown,
+      { passive: false }
+    );
+    this.viewport.addEventListener(
+      'pointermove',
+      this.handleReorderPointerMove,
+      { passive: false }
+    );
+    this.viewport.addEventListener('pointerup', this.handleReorderPointerEnd);
+    this.viewport.addEventListener(
+      'pointercancel',
+      this.handleReorderPointerCancel
+    );
+    this.viewport.addEventListener('touchmove', this.handleReorderTouchMove, {
+      passive: false,
+    });
+    this.viewport.addEventListener('touchend', this.handleReorderTouchEnd, {
+      passive: false,
+    });
+    this.viewport.addEventListener(
+      'touchcancel',
+      this.handleReorderTouchCancel
+    );
     this.indexRail.addEventListener('pointerdown', this.handleIndexPointer);
     this.indexRail.addEventListener('pointermove', this.handleIndexPointer);
     this.indexRail.addEventListener('click', this.handleIndexClick);
@@ -1863,6 +2045,8 @@ export class NativeListWebEngine {
     if (this.frameHandle !== undefined) this.cancelFrame(this.frameHandle);
     if (this.previewTimer !== undefined)
       this.document.defaultView?.clearTimeout(this.previewTimer);
+    if (this.reorderMovementTimer !== undefined)
+      this.document.defaultView?.clearTimeout(this.reorderMovementTimer);
     this.resizeObserver?.disconnect();
     this.document.defaultView?.removeEventListener(
       'resize',
@@ -1871,10 +2055,29 @@ export class NativeListWebEngine {
     this.viewport.removeEventListener('scroll', this.handleScroll);
     this.root.removeEventListener('click', this.handleClick);
     this.root.removeEventListener('keydown', this.handleKeyDown);
-    this.content.removeEventListener('dragstart', this.handleDragStart);
-    this.content.removeEventListener('dragover', this.handleDragOver);
-    this.content.removeEventListener('drop', this.handleDrop);
-    this.content.removeEventListener('dragend', this.handleDragEnd);
+    this.cancelPointerReorder(true);
+    this.viewport.removeEventListener(
+      'pointerdown',
+      this.handleReorderPointerDown
+    );
+    this.viewport.removeEventListener(
+      'pointermove',
+      this.handleReorderPointerMove
+    );
+    this.viewport.removeEventListener(
+      'pointerup',
+      this.handleReorderPointerEnd
+    );
+    this.viewport.removeEventListener(
+      'pointercancel',
+      this.handleReorderPointerCancel
+    );
+    this.viewport.removeEventListener('touchmove', this.handleReorderTouchMove);
+    this.viewport.removeEventListener('touchend', this.handleReorderTouchEnd);
+    this.viewport.removeEventListener(
+      'touchcancel',
+      this.handleReorderTouchCancel
+    );
     this.indexRail.removeEventListener('pointerdown', this.handleIndexPointer);
     this.indexRail.removeEventListener('pointermove', this.handleIndexPointer);
     this.indexRail.removeEventListener('click', this.handleIndexClick);
@@ -1884,6 +2087,8 @@ export class NativeListWebEngine {
     this.viewport.removeEventListener('pointercancel', this.handlePullEnd);
     const host = this.root.parentElement;
     this.root.remove();
+    this.hideReorderPreview();
+    this.reorderPreview.remove();
     if (host) host.style.position = this.previousHostPosition;
     this.mounted.clear();
     this.pool.length = 0;
@@ -1930,7 +2135,9 @@ export class NativeListWebEngine {
       '--nl-info': theme.info,
     };
     Object.entries(values).forEach(([name, value]) => {
-      if (value) this.root.style.setProperty(name, value);
+      if (!value) return;
+      this.root.style.setProperty(name, value);
+      this.reorderPreview.style.setProperty(name, value);
     });
   }
 
@@ -1978,6 +2185,7 @@ export class NativeListWebEngine {
         element =
           this.pool.pop() ??
           createElement(this.document, 'div', 'ok-native-list-item');
+        setData(element, 'nativeListAnimateReorder', false);
         this.mounted.set(layoutItem.index, element);
         this.content.appendChild(element);
       }
@@ -2014,6 +2222,12 @@ export class NativeListWebEngine {
     setData(element, 'nativeListRowKey', row.key);
     setData(element, 'nativeListRowIndex', index);
     setData(element, 'nativeListDisabled', Boolean(row.disabled));
+    setData(element, 'nativeListReorderable', this.isReorderable(row));
+    setData(
+      element,
+      'nativeListDragging',
+      this.pointerReorder?.active && this.pointerReorder.sourceKey === row.key
+    );
     setData(element, 'separator', row.separator);
     setData(element, 'groupPosition', row.groupPosition);
     setData(
@@ -2033,7 +2247,7 @@ export class NativeListWebEngine {
     } else {
       element.removeAttribute('tabindex');
     }
-    element.draggable = this.isReorderable(row);
+    element.draggable = false;
     const context = {
       document: this.document,
       snapshot: this.snapshot,
@@ -2337,12 +2551,7 @@ export class NativeListWebEngine {
   }
 
   private isReorderable(row: RowModel): boolean {
-    if (!this.snapshot.capabilities?.reorderable || row.disabled) return false;
-    if (row.type === 'rail' && row.draggable) return true;
-    return (
-      (row.type === 'identity' || row.type === 'action') &&
-      Boolean(row.trailing?.some((accessory) => accessory.kind === 'drag'))
-    );
+    return isWebRowReorderable(this.snapshot, row);
   }
 
   private activateSelection(target: SelectionTarget, sourceRow: RowModel) {
@@ -2397,6 +2606,11 @@ export class NativeListWebEngine {
   }
 
   private handleClick = (event: Event) => {
+    if (Date.now() < this.suppressClickUntil) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     const target = event.target;
     if (!(target instanceof Element)) return;
     const rowElement = target.closest<HTMLElement>(
@@ -2422,6 +2636,34 @@ export class NativeListWebEngine {
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      if (this.pointerReorder?.active) {
+        event.preventDefault();
+        this.cancelPointerReorder(true);
+        return;
+      }
+      if (this.keyboardReorder) {
+        event.preventDefault();
+        this.cancelKeyboardReorder();
+        return;
+      }
+    }
+    if (
+      this.keyboardReorder &&
+      (event.key === 'ArrowUp' || event.key === 'ArrowLeft')
+    ) {
+      event.preventDefault();
+      this.moveKeyboardReorder(-1);
+      return;
+    }
+    if (
+      this.keyboardReorder &&
+      (event.key === 'ArrowDown' || event.key === 'ArrowRight')
+    ) {
+      event.preventDefault();
+      this.moveKeyboardReorder(1);
+      return;
+    }
     if (event.key !== 'Enter' && event.key !== ' ') return;
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
@@ -2429,8 +2671,80 @@ export class NativeListWebEngine {
     const row = this.rowAtElement(target.closest('[data-native-list-row-key]'));
     if (!row) return;
     event.preventDefault();
+    if (event.key === ' ' && this.isReorderable(row)) {
+      if (this.keyboardReorder) this.finishKeyboardReorder();
+      else this.startKeyboardReorder(row);
+      return;
+    }
     this.handleRowPress(row);
   };
+
+  private startKeyboardReorder(row: RowModel) {
+    this.keyboardReorder = {
+      sourceKey: row.key,
+      originalRows: this.snapshot.rows,
+    };
+    this.updateReorderVisualState();
+  }
+
+  private moveKeyboardReorder(delta: -1 | 1) {
+    const state = this.keyboardReorder;
+    if (!state) return;
+    const fromIndex = this.snapshot.rows.findIndex(
+      (row) => row.key === state.sourceKey
+    );
+    const toIndex = fromIndex + delta;
+    const from = this.snapshot.rows[fromIndex];
+    const to = this.snapshot.rows[toIndex];
+    if (
+      !from ||
+      !to ||
+      !this.isReorderable(to) ||
+      from.sectionKey !== to.sectionKey
+    )
+      return;
+    const rows = moveWebReorderRow(this.snapshot.rows, fromIndex, toIndex);
+    this.remapMountedRows(rows);
+    this.setSnapshot({ ...this.snapshot, rows }, this.selectedKeys);
+    this.updateReorderVisualState();
+    this.scrollToIndex(toIndex, {
+      animated: false,
+      alignment: 'nearest',
+      viewPosition: 0,
+      viewOffset: 0,
+    });
+    [...this.mounted.values()]
+      .find((element) => element.dataset.nativeListRowKey === state.sourceKey)
+      ?.focus({ preventScroll: true });
+  }
+
+  private finishKeyboardReorder() {
+    const state = this.keyboardReorder;
+    if (!state) return;
+    const reorderEvent = webReorderEventForRows(
+      state.originalRows,
+      this.snapshot.rows,
+      state.sourceKey
+    );
+    this.keyboardReorder = undefined;
+    this.updateReorderVisualState();
+    if (reorderEvent) this.callbacks.onReorder?.(reorderEvent);
+  }
+
+  private cancelKeyboardReorder() {
+    const state = this.keyboardReorder;
+    if (!state) return;
+    this.keyboardReorder = undefined;
+    this.remapMountedRows(state.originalRows);
+    this.setSnapshot(
+      { ...this.snapshot, rows: cancelWebReorderRows(state.originalRows) },
+      this.selectedKeys
+    );
+    this.updateReorderVisualState();
+    [...this.mounted.values()]
+      .find((element) => element.dataset.nativeListRowKey === state.sourceKey)
+      ?.focus({ preventScroll: true });
+  }
 
   private handleScroll = () => {
     this.scheduleFrame();
@@ -2514,6 +2828,7 @@ export class NativeListWebEngine {
 
   private handlePullStart = (event: PointerEvent) => {
     if (
+      this.pointerReorder?.pointerId === event.pointerId ||
       !this.snapshot.capabilities?.pullToRefresh ||
       this.viewport.scrollTop > 0 ||
       (event.pointerType !== 'touch' && event.pointerType !== 'pen')
@@ -2556,81 +2871,436 @@ export class NativeListWebEngine {
     setData(this.refreshIndicator, 'visible', refreshing);
   }
 
-  private handleDragStart = (event: DragEvent) => {
+  private handleReorderPointerDown = (event: PointerEvent) => {
+    if (
+      this.pointerReorder ||
+      this.keyboardReorder ||
+      event.isPrimary === false ||
+      (event.pointerType === 'mouse' && event.button !== 0)
+    ) {
+      return;
+    }
     const target = event.target;
     if (!(target instanceof Element)) return;
+    if (target.closest('button,input,textarea,select,a')) return;
     const rowElement = target.closest<HTMLElement>(
       '[data-native-list-row-index]'
     );
     const index = Number(rowElement?.dataset.nativeListRowIndex);
     const row = this.rows[index];
-    if (!row || !this.isReorderable(row)) {
+    if (!row || !this.isReorderable(row)) return;
+
+    const view = this.document.defaultView;
+    const state: PointerReorderState = {
+      pointerId: event.pointerId,
+      pointerType: event.pointerType || 'mouse',
+      sourceKey: row.key,
+      startX: event.clientX,
+      startY: event.clientY,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      originalRows: this.snapshot.rows,
+      active: false,
+    };
+    this.pointerReorder = state;
+    if (state.pointerType === 'mouse') {
+      this.captureReorderPointer(state);
+    } else {
+      state.longPressTimer = view?.setTimeout(
+        () => this.activatePointerReorder(state),
+        REORDER_TOUCH_LONG_PRESS_MS
+      );
+    }
+  };
+
+  private activatePointerReorder(state: PointerReorderState) {
+    if (this.pointerReorder !== state) return;
+    this.clearReorderLongPress(state);
+    state.active = true;
+    state.activatedAt = Date.now();
+    this.captureReorderPointer(state);
+    this.showReorderPreview(state);
+    this.updateReorderVisualState();
+    this.scheduleReorderAutoScroll();
+  }
+
+  private captureReorderPointer(state: PointerReorderState) {
+    try {
+      this.viewport.setPointerCapture?.(state.pointerId);
+    } catch {
+      // A canceled pointer can disappear before the long-press timer fires.
+    }
+  }
+
+  private releaseReorderPointer(state: PointerReorderState) {
+    try {
+      if (this.viewport.hasPointerCapture?.(state.pointerId))
+        this.viewport.releasePointerCapture?.(state.pointerId);
+    } catch {
+      // The browser may have released capture while dispatching pointercancel.
+    }
+  }
+
+  private clearReorderLongPress(state: PointerReorderState) {
+    if (state.longPressTimer === undefined) return;
+    this.document.defaultView?.clearTimeout(state.longPressTimer);
+    state.longPressTimer = undefined;
+  }
+
+  private handleReorderPointerMove = (event: PointerEvent) => {
+    const state = this.pointerReorder;
+    if (!state || state.pointerId !== event.pointerId) return;
+    state.clientX = event.clientX;
+    state.clientY = event.clientY;
+    if (state.active) this.updateReorderPreview(state);
+
+    if (!state.active) {
+      if (state.pointerType !== 'mouse') {
+        this.cancelPointerReorder(false);
+        return;
+      }
+      if (
+        !hasExceededWebReorderMouseThreshold(
+          event.clientX - state.startX,
+          event.clientY - state.startY
+        )
+      )
+        return;
+      this.activatePointerReorder(state);
+      if (!state.active) return;
       event.preventDefault();
+      this.movePointerReorderTo(event.clientX, event.clientY);
+      this.scheduleReorderAutoScroll();
       return;
     }
-    this.dragFromIndex = index;
-    event.dataTransfer?.setData('text/plain', row.key);
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+
+    event.preventDefault();
+    this.movePointerReorderTo(event.clientX, event.clientY);
+    this.scheduleReorderAutoScroll();
   };
 
-  private handleDragOver = (event: DragEvent) => {
-    if (this.dragFromIndex === undefined) return;
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const rowElement = target.closest<HTMLElement>(
-      '[data-native-list-row-index]'
+  private handleReorderTouchMove = (event: TouchEvent) => {
+    const state = this.pointerReorder;
+    if (!state?.active || state.pointerType === 'mouse') return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    event.preventDefault();
+    state.clientX = touch.clientX;
+    state.clientY = touch.clientY;
+    this.updateReorderPreview(state);
+    this.movePointerReorderTo(touch.clientX, touch.clientY);
+    this.scheduleReorderAutoScroll();
+  };
+
+  private handleReorderTouchEnd = (event: TouchEvent) => {
+    const state = this.pointerReorder;
+    if (!state?.active || state.pointerType === 'mouse') return;
+    event.preventDefault();
+    this.completePointerReorder(state);
+  };
+
+  private handleReorderTouchCancel = () => {
+    const state = this.pointerReorder;
+    if (!state?.active || state.pointerType === 'mouse') return;
+    this.cancelPointerReorder(true);
+  };
+
+  private setCurrentOffset(offset: number) {
+    const maximum = Math.max(0, this.contentLength() - this.viewportLength());
+    const next = Math.max(0, Math.min(maximum, offset));
+    if (this.layout.horizontal) this.viewport.scrollLeft = next;
+    else this.viewport.scrollTop = next;
+    this.scheduleFrame();
+  }
+
+  private showReorderPreview(state: PointerReorderState) {
+    this.hideReorderPreview();
+    const source = [...this.mounted.values()].find(
+      (element) => element.dataset.nativeListRowKey === state.sourceKey
     );
-    const toIndex = Number(rowElement?.dataset.nativeListRowIndex);
-    const from = this.rows[this.dragFromIndex];
-    const to = this.rows[toIndex];
+    const row = source?.firstElementChild;
+    if (!source || !row) return;
+    const rect = source.getBoundingClientRect();
+    state.previewOffsetX = state.startX - rect.left;
+    state.previewOffsetY = state.startY - rect.top;
+    this.reorderPreview.replaceChildren(row.cloneNode(true));
+    setData(
+      this.reorderPreview,
+      'nativeListSelected',
+      source.dataset.nativeListSelected === 'true'
+    );
+    this.reorderPreview.style.width = String(rect.width) + 'px';
+    this.reorderPreview.style.height = String(rect.height) + 'px';
+    this.reorderPreview.style.transition = 'none';
+    this.reorderPreview.hidden = false;
+    this.updateReorderPreview(state);
+  }
+
+  private animateReorderPreviewToCurrent(state: PointerReorderState) {
+    const destination = [...this.mounted.values()].find(
+      (element) => element.dataset.nativeListRowKey === state.sourceKey
+    );
+    const destinationIndex = this.rows.findIndex(
+      (row) => row.key === state.sourceKey
+    );
+    const destinationLayout = this.layout.items.find(
+      (item) => item.index === destinationIndex
+    );
+    if (this.reorderPreview.hidden || !destination || !destinationLayout) {
+      this.hideReorderPreview();
+      return;
+    }
+    this.reorderSettlingKey = state.sourceKey;
+    const viewportRect = this.viewport.getBoundingClientRect();
+    const left =
+      viewportRect.left + destinationLayout.x - this.viewport.scrollLeft;
+    const top =
+      viewportRect.top + destinationLayout.y - this.viewport.scrollTop;
+    this.reorderPreview.getBoundingClientRect();
+    this.reorderPreview.style.transition =
+      'transform ' +
+      String(REORDER_DROP_TRANSITION_MS) +
+      'ms ' +
+      WEB_REORDER_ANIMATION.dropTimingFunction +
+      ', box-shadow ' +
+      String(REORDER_DROP_TRANSITION_MS) +
+      'ms ' +
+      WEB_REORDER_ANIMATION.dropTimingFunction;
+    this.reorderPreview.style.boxShadow = 'none';
+    this.reorderPreview.style.transform =
+      'translate3d(' + String(left) + 'px,' + String(top) + 'px,0) scale(1)';
+    this.reorderDropTimer = this.document.defaultView?.setTimeout(() => {
+      this.reorderDropTimer = undefined;
+      this.hideReorderPreview();
+      this.updateReorderVisualState();
+    }, REORDER_DROP_TRANSITION_MS);
+  }
+
+  private hideReorderPreview() {
+    if (this.reorderDropTimer !== undefined) {
+      this.document.defaultView?.clearTimeout(this.reorderDropTimer);
+      this.reorderDropTimer = undefined;
+    }
+    this.reorderPreview.hidden = true;
+    this.reorderPreview.replaceChildren();
+    this.reorderPreview.style.removeProperty('transform');
+    this.reorderPreview.style.removeProperty('transition');
+    this.reorderPreview.style.removeProperty('box-shadow');
+    this.reorderPreview.removeAttribute('data-native-list-selected');
+    this.reorderSettlingKey = undefined;
+  }
+
+  private updateReorderPreview(state: PointerReorderState) {
     if (
-      !from ||
-      !to ||
-      !this.isReorderable(to) ||
-      from.sectionKey !== to.sectionKey
+      this.reorderPreview.hidden ||
+      state.previewOffsetX === undefined ||
+      state.previewOffsetY === undefined
     )
       return;
-    event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-  };
+    const x = state.clientX - state.previewOffsetX;
+    const y = state.clientY - state.previewOffsetY;
+    this.reorderPreview.style.transform =
+      'translate3d(' + String(x) + 'px,' + String(y) + 'px,0)';
+  }
 
-  private handleDrop = (event: DragEvent) => {
-    const fromIndex = this.dragFromIndex;
-    this.dragFromIndex = undefined;
-    if (fromIndex === undefined) return;
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const rowElement = target.closest<HTMLElement>(
-      '[data-native-list-row-index]'
+  private reorderIndexAtPointer(clientX: number, clientY: number): number {
+    const rect = this.viewport.getBoundingClientRect();
+    const local = this.layout.horizontal
+      ? Math.max(0, Math.min(Math.max(0, rect.width - 1), clientX - rect.left))
+      : Math.max(0, Math.min(Math.max(0, rect.height - 1), clientY - rect.top));
+    const coordinate = this.currentOffset() + local;
+    const centerAt = (index: number) => {
+      const item = this.layout.items[index];
+      return item
+        ? (itemStart(item, this.layout.horizontal) +
+            itemEnd(item, this.layout.horizontal)) /
+            2
+        : Number.POSITIVE_INFINITY;
+    };
+    let low = 0;
+    let high = this.layout.items.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (centerAt(middle) < coordinate) low = middle + 1;
+      else high = middle;
+    }
+    const previous = Math.max(0, low - 1);
+    const next = Math.min(this.layout.items.length - 1, low);
+    const nearest =
+      Math.abs(centerAt(previous) - coordinate) <=
+      Math.abs(centerAt(next) - coordinate)
+        ? previous
+        : next;
+    return this.layout.items[nearest]?.index ?? -1;
+  }
+
+  private movePointerReorderTo(clientX: number, clientY: number) {
+    const state = this.pointerReorder;
+    if (!state?.active) return;
+    const fromIndex = this.snapshot.rows.findIndex(
+      (row) => row.key === state.sourceKey
     );
-    const toIndex = Number(rowElement?.dataset.nativeListRowIndex);
-    const from = this.rows[fromIndex];
-    const to = this.rows[toIndex];
+    const toIndex = this.reorderIndexAtPointer(clientX, clientY);
+    const from = this.snapshot.rows[fromIndex];
+    const to = this.snapshot.rows[toIndex];
     if (
       !from ||
       !to ||
+      fromIndex === toIndex ||
       !this.isReorderable(from) ||
       !this.isReorderable(to) ||
       from.sectionKey !== to.sectionKey
     )
       return;
-    event.preventDefault();
-    if (fromIndex === toIndex) return;
-    const rows = [...this.snapshot.rows];
-    const moved = rows.splice(fromIndex, 1)[0];
-    if (!moved) return;
-    rows.splice(toIndex, 0, moved);
+    const rows = moveWebReorderRow(this.snapshot.rows, fromIndex, toIndex);
+    if (rows === this.snapshot.rows) return;
+    this.remapMountedRows(rows);
     this.setSnapshot({ ...this.snapshot, rows }, this.selectedKeys);
-    this.callbacks.onReorder?.({
-      key: moved.key,
-      fromIndex,
-      toIndex,
-      beforeKey: rows[toIndex - 1]?.key,
-      afterKey: rows[toIndex + 1]?.key,
-    });
+    this.updateReorderVisualState();
+  }
+
+  private reorderAutoScrollVelocity(): number {
+    const state = this.pointerReorder;
+    if (!state?.active) return 0;
+    const rect = this.viewport.getBoundingClientRect();
+    const point = this.layout.horizontal ? state.clientX : state.clientY;
+    const start = this.layout.horizontal ? rect.left : rect.top;
+    const end = this.layout.horizontal ? rect.right : rect.bottom;
+    return webReorderAutoScrollVelocity(
+      point,
+      start,
+      end,
+      Date.now() - (state.activatedAt ?? 0)
+    );
+  }
+
+  private scheduleReorderAutoScroll() {
+    if (
+      this.reorderAutoScrollFrame !== undefined ||
+      !this.pointerReorder?.active
+    )
+      return;
+    this.reorderAutoScrollFrame = this.requestFrame(this.runReorderAutoScroll);
+  }
+
+  private runReorderAutoScroll = () => {
+    this.reorderAutoScrollFrame = undefined;
+    const state = this.pointerReorder;
+    if (!state?.active) return;
+    const velocity = this.reorderAutoScrollVelocity();
+    if (velocity === 0) return;
+    const before = this.currentOffset();
+    this.setCurrentOffset(before + velocity);
+    if (this.currentOffset() !== before) {
+      this.movePointerReorderTo(state.clientX, state.clientY);
+      this.scheduleReorderAutoScroll();
+    }
   };
 
-  private handleDragEnd = () => {
-    this.dragFromIndex = undefined;
+  private handleReorderPointerEnd = (event: PointerEvent) => {
+    const state = this.pointerReorder;
+    if (!state || state.pointerId !== event.pointerId) return;
+    this.clearReorderLongPress(state);
+    this.releaseReorderPointer(state);
+    if (!state.active) {
+      this.pointerReorder = undefined;
+      return;
+    }
+
+    event.preventDefault();
+    this.completePointerReorder(state);
   };
+
+  private completePointerReorder(state: PointerReorderState) {
+    const finalRows = this.snapshot.rows;
+    const reorderEvent = webReorderEventForRows(
+      state.originalRows,
+      finalRows,
+      state.sourceKey
+    );
+    this.animateReorderPreviewToCurrent(state);
+    this.pointerReorder = undefined;
+    this.stopReorderAutoScroll();
+    this.suppressClickUntil = Date.now() + 300;
+    this.updateReorderVisualState();
+    if (reorderEvent) this.callbacks.onReorder?.(reorderEvent);
+  }
+
+  private handleReorderPointerCancel = (event: PointerEvent) => {
+    if (this.pointerReorder?.pointerId !== event.pointerId) return;
+    if (
+      this.pointerReorder.active &&
+      this.pointerReorder.pointerType !== 'mouse'
+    )
+      return;
+    this.cancelPointerReorder(true);
+  };
+
+  private stopReorderAutoScroll() {
+    if (this.reorderAutoScrollFrame === undefined) return;
+    this.cancelFrame(this.reorderAutoScrollFrame);
+    this.reorderAutoScrollFrame = undefined;
+  }
+
+  private cancelPointerReorder(restore: boolean) {
+    const state = this.pointerReorder;
+    if (!state) return;
+    this.clearReorderLongPress(state);
+    this.releaseReorderPointer(state);
+    this.pointerReorder = undefined;
+    this.stopReorderAutoScroll();
+    if (state.active && restore) {
+      this.remapMountedRows(state.originalRows);
+      this.setSnapshot(
+        { ...this.snapshot, rows: cancelWebReorderRows(state.originalRows) },
+        this.selectedKeys
+      );
+      this.suppressClickUntil = Date.now() + 300;
+    }
+    if (state.active && restore) this.animateReorderPreviewToCurrent(state);
+    else this.hideReorderPreview();
+    this.updateReorderVisualState();
+  }
+
+  private remapMountedRows(rows: readonly RowModel[]) {
+    const elementByKey = new Map<string, HTMLElement>();
+    this.mounted.forEach((element) => {
+      const key = element.dataset.nativeListRowKey;
+      if (key) elementByKey.set(key, element);
+      setData(element, 'nativeListAnimateReorder', true);
+    });
+    this.mounted.clear();
+    rows.forEach((row, index) => {
+      const element = elementByKey.get(row.key);
+      if (element) {
+        setData(element, 'nativeListRowIndex', index);
+        this.mounted.set(index, element);
+      }
+    });
+  }
+
+  private updateReorderVisualState() {
+    const sourceKey = this.pointerReorder?.active
+      ? this.pointerReorder.sourceKey
+      : this.keyboardReorder?.sourceKey ?? this.reorderSettlingKey;
+    setData(this.root, 'nativeListDragging', Boolean(sourceKey));
+    if (this.reorderMovementTimer !== undefined) {
+      this.document.defaultView?.clearTimeout(this.reorderMovementTimer);
+      this.reorderMovementTimer = undefined;
+    }
+    if (!sourceKey) {
+      this.reorderMovementTimer = this.document.defaultView?.setTimeout(() => {
+        this.reorderMovementTimer = undefined;
+        this.mounted.forEach((element) =>
+          setData(element, 'nativeListAnimateReorder', false)
+        );
+      }, WEB_REORDER_ANIMATION.outOfWayDurationMs);
+    }
+    this.mounted.forEach((element) => {
+      const dragging = element.dataset.nativeListRowKey === sourceKey;
+      setData(element, 'nativeListDragging', dragging);
+      if (dragging) element.setAttribute('aria-grabbed', 'true');
+      else element.removeAttribute('aria-grabbed');
+    });
+  }
 }
