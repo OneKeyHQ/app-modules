@@ -505,6 +505,7 @@ class NativeListView(
 
     val provisionalOffset = (viewPosition * viewportLength(manager)).roundToInt() + offsetPx
     manager.scrollToPositionWithOffset(index, provisionalOffset)
+    relayoutRecyclerView()
     alignAfterLayout(index, viewPosition, offsetPx)
   }
 
@@ -1013,6 +1014,23 @@ class NativeListView(
         MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
       )
       layout(left, top, right, bottom)
+    }
+  }
+
+  private fun relayoutRecyclerView() {
+    recyclerView.post {
+      if (disposed || recyclerView.width <= 0 || recyclerView.height <= 0) return@post
+      recyclerView.forceLayout()
+      recyclerView.measure(
+        MeasureSpec.makeMeasureSpec(recyclerView.width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(recyclerView.height, MeasureSpec.EXACTLY),
+      )
+      recyclerView.layout(
+        recyclerView.left,
+        recyclerView.top,
+        recyclerView.right,
+        recyclerView.bottom,
+      )
     }
   }
 

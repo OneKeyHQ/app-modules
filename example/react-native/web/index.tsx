@@ -11,11 +11,21 @@ const rootElement = document.getElementById('root');
 
 if (!rootElement) throw new Error('Missing #root element');
 
+const searchParams = new URLSearchParams(window.location.search);
+const readTargetNumber = (name: string): number | undefined => {
+  const value = searchParams.get(name);
+  return value === null ? undefined : Number(value);
+};
+const initialTarget = {
+  walletNumber: readTargetNumber('wallet'),
+  accountNumber: readTargetNumber('account'),
+};
+
 createRoot(rootElement).render(
   <StrictMode>
     <SafeAreaProvider>
       <NavigationContainer>
-        <NativeListAccountSelectorPage />
+        <NativeListAccountSelectorPage initialTarget={initialTarget} />
       </NavigationContainer>
     </SafeAreaProvider>
   </StrictMode>,

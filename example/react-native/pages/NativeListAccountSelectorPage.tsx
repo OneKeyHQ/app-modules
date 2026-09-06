@@ -22,19 +22,20 @@ import {
   ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET,
   ACCOUNT_SELECTOR_LOGICAL_ACCOUNT_COUNT,
   ACCOUNT_SELECTOR_WALLET_COUNT,
+  type AccountSelectorInitialTargetInput,
   AccountRowsCache,
   accountKey,
   buildVisibleAccountRows,
   buildWalletRows,
   parseAccountKey,
   parseWalletKey,
+  resolveAccountSelectorInitialTarget,
   walletAvatarUri,
   walletEmoji,
   walletKey,
   walletName,
 } from './nativeListAccountSelectorData';
 
-const DEFAULT_WALLET_INDEX = 2;
 const COMPACT_WEB_MAX_WIDTH = 600;
 const COMPACT_WEB_TOP_INSET = 61;
 const COMPACT_WEB_BOTTOM_INSET = 34;
@@ -112,7 +113,21 @@ type PendingSwitch = Readonly<{
   rowsBuildMs: number;
 }>;
 
-export function NativeListAccountSelectorPage() {
+type NativeListAccountSelectorPageProps = Readonly<{
+  initialTarget?: AccountSelectorInitialTargetInput;
+  route?: Readonly<{ params?: AccountSelectorInitialTargetInput }>;
+}>;
+
+type InitialTargetVisibility = {
+  walletVisibleMs?: number;
+  accountVisibleMs?: number;
+  reported: boolean;
+};
+
+export function NativeListAccountSelectorPage({
+  initialTarget: initialTargetProp,
+  route,
+}: NativeListAccountSelectorPageProps = {}) {
   const insets = useSafeAreaInsets();
   const { width: viewportWidth, height: viewportHeight } =
     useWindowDimensions();
@@ -131,6 +146,14 @@ export function NativeListAccountSelectorPage() {
   }
   const accountCache = accountCacheRef.current;
   const mountedAt = useRef(Date.now());
+  const initialTarget = useMemo(
+    () =>
+      resolveAccountSelectorInitialTarget(initialTargetProp ?? route?.params),
+    [initialTargetProp, route?.params],
+  );
+  const initialTargetVisibility = useRef<InitialTargetVisibility>({
+    reported: false,
+  });
   const firstVisibleRecorded = useRef(false);
   const pendingSwitch = useRef<PendingSwitch | undefined>(undefined);
   const selectedAccounts = useRef(new Map<number, number>());
@@ -153,16 +176,83 @@ export function NativeListAccountSelectorPage() {
       ...rows.slice(REFERENCE_WALLET_COUNT),
     ];
   }, [isCompactWeb, sheetMarginTop, viewportHeight]);
-  const [selectedWalletIndex, setSelectedWalletIndex] =
-    useState(DEFAULT_WALLET_INDEX);
-  const [selectedAccountIndex, setSelectedAccountIndex] = useState(0);
+  const [selectedWalletIndex, setSelectedWalletIndex] = useState(
+    initialTarget.walletIndex,
+  );
+  const [selectedAccountIndex, setSelectedAccountIndex] = useState(
+    initialTarget.accountIndex,
+  );
   const [accountRows, setAccountRows] = useState(() =>
-    accountCache.get(DEFAULT_WALLET_INDEX),
+    accountCache.get(initialTarget.walletIndex),
   );
   const [searchInput, setSearchInput] = useState('');
   const [searchText, setSearchText] = useState('');
   const [accountGeneration, setAccountGeneration] = useState(1);
   const selectedWalletAvatarUri = walletAvatarUri(selectedWalletIndex);
+
+  const recordInitialTargetVisible = (
+    list: 'wallet' | 'account',
+    event: {
+      firstKey?: string;
+      lastKey?: string;
+      firstIndex: number;
+      lastIndex: number;
+    },
+    targetKey: string,
+    targetIndex: number,
+  ) => {
+    if (
+      targetIndex < event.firstIndex ||
+      targetIndex > event.lastIndex ||
+      initialTargetVisibility.current[
+        list === 'wallet' ? 'walletVisibleMs' : 'accountVisibleMs'
+      ] !== undefined
+    ) {
+      return;
+    }
+    const elapsedMs = Date.now() - mountedAt.current;
+    if (list === 'wallet') {
+      initialTargetVisibility.current.walletVisibleMs = elapsedMs;
+    } else {
+      initialTargetVisibility.current.accountVisibleMs = elapsedMs;
+    }
+    console.info(
+      '[NativeListAccountSelector] initialTargetListVisible',
+      JSON.stringify({
+        platform: Platform.OS,
+        list,
+        elapsedMs,
+        targetKey,
+        targetIndex,
+        firstKey: event.firstKey,
+        lastKey: event.lastKey,
+        firstIndex: event.firstIndex,
+        lastIndex: event.lastIndex,
+      }),
+    );
+    const visibility = initialTargetVisibility.current;
+    if (
+      !visibility.reported &&
+      visibility.walletVisibleMs !== undefined &&
+      visibility.accountVisibleMs !== undefined
+    ) {
+      visibility.reported = true;
+      console.info(
+        '[NativeListAccountSelector] initialTargetReady',
+        JSON.stringify({
+          platform: Platform.OS,
+          walletNumber: initialTarget.walletNumber,
+          accountNumber: initialTarget.accountNumber,
+          walletVisibleMs: visibility.walletVisibleMs,
+          accountVisibleMs: visibility.accountVisibleMs,
+          readyMs: Math.max(
+            visibility.walletVisibleMs,
+            visibility.accountVisibleMs,
+          ),
+        }),
+      );
+    }
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => setSearchText(searchInput.trim()), 300);
@@ -308,7 +398,19 @@ export function NativeListAccountSelectorPage() {
             testID="account-selector-wallet-list"
             style={styles.nativeList}
             snapshot={walletSnapshot}
+            initialScrollKey={walletKey(initialTarget.walletIndex)}
+            initialScrollViewPosition={0.5}
             onRowAction={handleWalletAction}
+            onVisibleRangeChanged={event => {
+              recordInitialTargetVisible(
+                'wallet',
+                event,
+                walletKey(initialTarget.walletIndex),
+                walletRows.findIndex(
+                  row => row.key === walletKey(initialTarget.walletIndex),
+                ),
+              );
+            }}
           />
           <View
             style={[
@@ -463,8 +565,29 @@ export function NativeListAccountSelectorPage() {
             testID="account-selector-account-list"
             style={styles.nativeList}
             snapshot={accountSnapshot}
+            initialScrollKey={accountKey(
+              initialTarget.walletIndex,
+              initialTarget.accountIndex,
+            )}
+            initialScrollViewPosition={0.5}
             onRowAction={handleAccountAction}
             onVisibleRangeChanged={event => {
+              recordInitialTargetVisible(
+                'account',
+                event,
+                accountKey(
+                  initialTarget.walletIndex,
+                  initialTarget.accountIndex,
+                ),
+                visibleAccountRows.findIndex(
+                  row =>
+                    row.key ===
+                    accountKey(
+                      initialTarget.walletIndex,
+                      initialTarget.accountIndex,
+                    ),
+                ),
+              );
               if (!firstVisibleRecorded.current && event.firstIndex >= 0) {
                 firstVisibleRecorded.current = true;
                 console.info(

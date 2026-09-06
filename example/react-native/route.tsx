@@ -26,6 +26,7 @@ import { OneKeyImageTestPage } from './pages/OneKeyImageTestPage';
 import { NativeListTestPage } from './pages/NativeListTestPage';
 import { NativeListBenchmarkPage } from './pages/NativeListBenchmarkPage';
 import { NativeListAccountSelectorPage } from './pages/NativeListAccountSelectorPage';
+import type { AccountSelectorInitialTargetInput } from './pages/nativeListAccountSelectorData';
 import { NativeListNetworkSelectorPage } from './pages/NativeListNetworkSelectorPage';
 import { NativeListTokenSelectorPage } from './pages/NativeListTokenSelectorPage';
 import {
@@ -79,7 +80,7 @@ export type RootStackParamList = {
     | { example: NativeListExampleKey; title: string }
     | undefined;
   NativeListBenchmark: undefined;
-  NativeListAccountSelector: undefined;
+  NativeListAccountSelector: AccountSelectorInitialTargetInput | undefined;
   NativeListNetworkSelector: undefined;
   NativeListTokenSelector: undefined;
   OtaPipeline: undefined;

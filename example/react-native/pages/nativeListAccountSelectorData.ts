@@ -9,6 +9,54 @@ export const ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET = 1_000;
 export const ACCOUNT_SELECTOR_LOGICAL_ACCOUNT_COUNT =
   ACCOUNT_SELECTOR_WALLET_COUNT * ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET;
 export const ACCOUNT_SELECTOR_ACCOUNT_CACHE_LIMIT = 3;
+export const ACCOUNT_SELECTOR_DEFAULT_WALLET_NUMBER = 3;
+export const ACCOUNT_SELECTOR_DEFAULT_ACCOUNT_NUMBER = 1;
+
+export type AccountSelectorInitialTargetInput = Readonly<{
+  walletNumber?: number;
+  accountNumber?: number;
+}>;
+
+export type AccountSelectorInitialTarget = Readonly<{
+  walletNumber: number;
+  accountNumber: number;
+  walletIndex: number;
+  accountIndex: number;
+}>;
+
+function resolveTargetNumber(
+  value: number | undefined,
+  fallback: number,
+  maximum: number,
+): number {
+  return Number.isInteger(value) &&
+    value !== undefined &&
+    value >= 1 &&
+    value <= maximum
+    ? value
+    : fallback;
+}
+
+export function resolveAccountSelectorInitialTarget(
+  input: AccountSelectorInitialTargetInput = {},
+): AccountSelectorInitialTarget {
+  const walletNumber = resolveTargetNumber(
+    input.walletNumber,
+    ACCOUNT_SELECTOR_DEFAULT_WALLET_NUMBER,
+    ACCOUNT_SELECTOR_WALLET_COUNT,
+  );
+  const accountNumber = resolveTargetNumber(
+    input.accountNumber,
+    ACCOUNT_SELECTOR_DEFAULT_ACCOUNT_NUMBER,
+    ACCOUNT_SELECTOR_ACCOUNTS_PER_WALLET,
+  );
+  return {
+    walletNumber,
+    accountNumber,
+    walletIndex: walletNumber - 1,
+    accountIndex: accountNumber - 1,
+  };
+}
 
 const referenceWalletNames = [
   'Wallet 1',

@@ -9,6 +9,7 @@ import {
   buildVisibleAccountRows,
   buildWalletRows,
   parseAccountKey,
+  resolveAccountSelectorInitialTarget,
 } from '../pages/nativeListAccountSelectorData';
 
 describe('Native List account-selector stress data', () => {
@@ -18,6 +19,31 @@ describe('Native List account-selector stress data', () => {
     expect(ACCOUNT_SELECTOR_LOGICAL_ACCOUNT_COUNT).toBe(1_000_000);
     expect(buildWalletRows()).toHaveLength(1_000);
     expect(buildAccountRows(0)).toHaveLength(1_000);
+  });
+
+  it('resolves one-based cold-open targets and rejects invalid values', () => {
+    expect(
+      resolveAccountSelectorInitialTarget({
+        walletNumber: 500,
+        accountNumber: 1_000,
+      }),
+    ).toEqual({
+      walletNumber: 500,
+      accountNumber: 1_000,
+      walletIndex: 499,
+      accountIndex: 999,
+    });
+    expect(
+      resolveAccountSelectorInitialTarget({
+        walletNumber: 0,
+        accountNumber: 1_001,
+      }),
+    ).toEqual({
+      walletNumber: 3,
+      accountNumber: 1,
+      walletIndex: 2,
+      accountIndex: 0,
+    });
   });
 
   it('makes every logical wallet addressable while keeping only a bounded row cache', () => {
