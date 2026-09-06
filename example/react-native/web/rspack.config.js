@@ -69,7 +69,7 @@ module.exports = {
   },
   plugins: [
     new HtmlRspackPlugin({
-      title: 'NativeList Token Selector',
+      title: 'NativeList Account Selector',
       templateContent:
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"></head><body><div id="root"></div></body></html>',
       meta: {

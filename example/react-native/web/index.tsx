@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { NativeListTokenSelectorPage } from '../pages/NativeListTokenSelectorPage';
+import { NativeListAccountSelectorPage } from '../pages/NativeListAccountSelectorPage';
 
 import './styles.css';
 
@@ -15,7 +15,7 @@ createRoot(rootElement).render(
   <StrictMode>
     <SafeAreaProvider>
       <NavigationContainer>
-        <NativeListTokenSelectorPage />
+        <NativeListAccountSelectorPage />
       </NavigationContainer>
     </SafeAreaProvider>
   </StrictMode>,

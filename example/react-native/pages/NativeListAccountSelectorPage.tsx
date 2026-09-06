@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
+  Platform,
   Pressable,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,6 +35,18 @@ import {
 } from './nativeListAccountSelectorData';
 
 const DEFAULT_WALLET_INDEX = 2;
+const COMPACT_WEB_MAX_WIDTH = 600;
+const COMPACT_WEB_TOP_INSET = 61;
+const COMPACT_WEB_BOTTOM_INSET = 34;
+const REFERENCE_WALLET_COUNT = 7;
+const REFERENCE_ACCOUNT_COUNT = 3;
+const WALLET_ROW_HEIGHT = 68;
+const WALLET_ROW_SPACING = 12;
+const WALLET_LIST_PADDING_TOP = 8;
+const COMPACT_WEB_WALLET_FOOTER_HEIGHT = 120;
+const ACCOUNT_ROW_HEIGHT = 60;
+const ADD_ACCOUNT_ROW_HEIGHT = 48;
+const ACCOUNT_LIST_TOP = 108;
 const iconUris = {
   pencil:
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAASKADAAQAAAABAAAASAAAAACQMUbvAAAB6klEQVR4Ae3YO27DMAwG4LhTpl4nN+ja0/UgGdtDdU03lyzMIAgq2rIepMVfgEAksmXpi+yYOp1QIAABCECgSGCe59eiDkY+mXDeqH5zHHmeu+a24NwocuEIJJFkjAWFwr0AiYGI4z8cUYqNtIITG2kjTkykTJxYSDtxYiDRLC9U+cFbUsZ9cJPKmepnic5yLpA2IAIJSJFvN/r1+Q35SvUsKcVz5Daq8Z5JNOnH9IEBgCSr4wmHPv4VIDEQUTyunMXmHmIjreCIUi8k3nTzszO5EacXkq/3o0yc1khD4LRCGgqnNtKQOLWQhsYpRQqBsxcpFE4uUkicHKSLpDbmkUatpQ8yqdpRfeM2R5EBGOEItm8kYxzfSE5wBOkqK7o0vpR2wOczDgUeVHKTi4/rVH7oOh+drrV+GWcrJ/Rfudw+qQiclAx9DxzgKAJKE1YOcBQBpQkrBziKgNKElQMcRUBpMls5UyqZoMHeqM1LbvU+TdNXaqwtv9eA5pYX3tg3J55mODzGKtn8xsnmHmaO4xnIBY5XIDc4HoFc4XgDcofjCcgljhcgtzgegFzjWAO5x7EEOgSOFdBhcCyADoXTG+hwOD2BDonDQMmibF7lNpltdiUnV6MhVyFx/Jg4NYDRBwQgAAEIQKC5wC+MXBEepqP9zwAAAABJRU5ErkJggg==',
@@ -83,6 +97,17 @@ type PendingSwitch = Readonly<{
 
 export function NativeListAccountSelectorPage() {
   const insets = useSafeAreaInsets();
+  const { width: viewportWidth, height: viewportHeight } =
+    useWindowDimensions();
+  const isCompactWeb =
+    Platform.OS === 'web' && viewportWidth <= COMPACT_WEB_MAX_WIDTH;
+  const sheetMarginTop = Math.max(
+    isCompactWeb ? COMPACT_WEB_TOP_INSET : insets.top,
+    16,
+  );
+  const walletFooterBottomInset = isCompactWeb
+    ? COMPACT_WEB_BOTTOM_INSET
+    : insets.bottom;
   const accountCacheRef = useRef<AccountRowsCache | null>(null);
   if (!accountCacheRef.current) {
     accountCacheRef.current = new AccountRowsCache();
@@ -92,7 +117,30 @@ export function NativeListAccountSelectorPage() {
   const firstVisibleRecorded = useRef(false);
   const pendingSwitch = useRef<PendingSwitch | undefined>(undefined);
   const selectedAccounts = useRef(new Map<number, number>());
-  const walletRows = useMemo(() => buildWalletRows(), []);
+  const walletRows = useMemo(() => {
+    const rows = buildWalletRows();
+    if (!isCompactWeb) return rows;
+
+    const listHeight =
+      viewportHeight - sheetMarginTop - COMPACT_WEB_WALLET_FOOTER_HEIGHT;
+    const spacerStart =
+      WALLET_LIST_PADDING_TOP +
+      REFERENCE_WALLET_COUNT * (WALLET_ROW_HEIGHT + WALLET_ROW_SPACING);
+    const spacerHeight = Math.max(
+      1,
+      listHeight - spacerStart - WALLET_ROW_SPACING + 1,
+    );
+    return [
+      ...rows.slice(0, REFERENCE_WALLET_COUNT),
+      {
+        type: 'system' as const,
+        key: 'account-selector-web-wallet-fold',
+        variant: 'spacer' as const,
+        height: spacerHeight,
+      },
+      ...rows.slice(REFERENCE_WALLET_COUNT),
+    ];
+  }, [isCompactWeb, sheetMarginTop, viewportHeight]);
   const [selectedWalletIndex, setSelectedWalletIndex] =
     useState(DEFAULT_WALLET_INDEX);
   const [selectedAccountIndex, setSelectedAccountIndex] = useState(0);
@@ -123,10 +171,26 @@ export function NativeListAccountSelectorPage() {
     );
   }, [accountCache, accountRows]);
 
-  const visibleAccountRows = useMemo(
-    () => buildVisibleAccountRows(accountRows, searchText),
-    [accountRows, searchText],
-  );
+  const visibleAccountRows = useMemo(() => {
+    const rows = buildVisibleAccountRows(accountRows, searchText);
+    if (!isCompactWeb || searchText) return rows;
+
+    const listHeight = viewportHeight - sheetMarginTop - ACCOUNT_LIST_TOP;
+    const visibleRowsHeight =
+      REFERENCE_ACCOUNT_COUNT * ACCOUNT_ROW_HEIGHT + ADD_ACCOUNT_ROW_HEIGHT;
+    const spacerHeight = Math.max(1, listHeight - visibleRowsHeight + 1);
+    const foldIndex = REFERENCE_ACCOUNT_COUNT + 1;
+    return [
+      ...rows.slice(0, foldIndex),
+      {
+        type: 'system' as const,
+        key: 'account-selector-web-account-fold',
+        variant: 'spacer' as const,
+        height: spacerHeight,
+      },
+      ...rows.slice(foldIndex),
+    ];
+  }, [accountRows, isCompactWeb, searchText, sheetMarginTop, viewportHeight]);
 
   const walletSnapshot = useMemo<NativeListSnapshot>(
     () => ({
@@ -231,9 +295,7 @@ export function NativeListAccountSelectorPage() {
         backgroundColor="transparent"
         translucent
       />
-      <View
-        style={[styles.selectorSheet, { marginTop: Math.max(insets.top, 16) }]}
-      >
+      <View style={[styles.selectorSheet, { marginTop: sheetMarginTop }]}>
         <View style={styles.sidebar}>
           <NativeList
             testID="account-selector-wallet-list"
@@ -244,7 +306,9 @@ export function NativeListAccountSelectorPage() {
           <View
             style={[
               styles.walletFooter,
-              { paddingBottom: Math.max(insets.bottom + 12, 20) },
+              {
+                paddingBottom: Math.max(walletFooterBottomInset + 12, 20),
+              },
             ]}
           >
             <Pressable
