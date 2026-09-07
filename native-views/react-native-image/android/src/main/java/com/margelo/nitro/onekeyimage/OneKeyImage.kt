@@ -1,5 +1,6 @@
 package com.margelo.nitro.onekeyimage
 
+import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Canvas
@@ -9,7 +10,6 @@ import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
 import android.view.View
 import android.widget.ImageView
-import androidx.fragment.app.FragmentActivity
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -25,15 +25,15 @@ import com.margelo.nitro.skeleton.OneKeySkeletonRenderer
 import com.margelo.nitro.views.RecyclableView
 import kotlin.math.ceil
 
-private fun Context.findFragmentActivity(): FragmentActivity? {
+private fun Context.findActivity(): Activity? {
   var currentContext: Context? = this
   while (currentContext is ContextWrapper) {
-    if (currentContext is FragmentActivity) return currentContext
+    if (currentContext is Activity) return currentContext
     val baseContext = currentContext.baseContext
     if (baseContext === currentContext) return null
     currentContext = baseContext
   }
-  return currentContext as? FragmentActivity
+  return currentContext as? Activity
 }
 
 private class OneKeyImageHostView(context: ThemedReactContext) : ImageView(context) {
@@ -140,9 +140,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   // The Activity outlives ScreenStack Fragments but still provides bounded
   // background and destruction lifecycle handling for image requests.
   private val activityRequestManager by lazy(LazyThreadSafetyMode.NONE) {
-    val activity = context.findFragmentActivity()
-      ?: (context.currentActivity as? FragmentActivity)
-    Glide.with(requireNotNull(activity) { "A FragmentActivity is required to load images" })
+    val activity = context.findActivity() ?: context.currentActivity
+    Glide.with(requireNotNull(activity) { "An Activity is required to load images" })
   }
   private var loadRunnable: Runnable? = null
   private var currentTarget: CustomViewTarget<OneKeyImageHostView, Drawable>? = null
