@@ -13,6 +13,7 @@ import type {
   VisibleRangeChangedEvent,
 } from './models';
 import type { NativeListProps, NativeListRef } from './NativeList.types';
+import { isSelectableRow } from './selection';
 import {
   normalizeIndexScroll,
   normalizeKeyScroll,
@@ -22,7 +23,11 @@ import {
   validateOffset,
   type NormalizedPositionScroll,
 } from './scrolling';
-import { serializePatches, serializeSnapshot } from './validation';
+import {
+  applyRowPatches,
+  serializePatches,
+  serializeSnapshot,
+} from './validation';
 
 export type { NativeListProps, NativeListRef } from './NativeList.types';
 export type {
@@ -91,8 +96,13 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       onRefresh,
       onScrollToIndexFailed,
     };
+    const snapshotJson = useMemo(() => serializeSnapshot(snapshot), [snapshot]);
     const snapshotRef = useRef(snapshot);
-    snapshotRef.current = snapshot;
+    const previousSnapshotJsonRef = useRef(snapshotJson);
+    if (previousSnapshotJsonRef.current !== snapshotJson) {
+      snapshotRef.current = snapshot;
+      previousSnapshotJsonRef.current = snapshotJson;
+    }
     const initialScrollRef = useRef<
       | Readonly<{
           index?: number;
@@ -123,7 +133,6 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           }
     );
     const didApplyInitialScroll = useRef(false);
-    const snapshotJson = useMemo(() => serializeSnapshot(snapshot), [snapshot]);
 
     const emitIndexFailure = (
       index: number,
@@ -179,15 +188,31 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
 
     useImperativeHandle(forwardedRef, () => ({
       applySnapshot(nextSnapshot) {
+        const nextSnapshotJson = serializeSnapshot(nextSnapshot);
+        nativeRef.current?.applySnapshot(nextSnapshotJson);
         snapshotRef.current = nextSnapshot;
-        nativeRef.current?.applySnapshot(serializeSnapshot(nextSnapshot));
       },
       applyPatches(patches) {
-        if (patches.length > 0)
-          nativeRef.current?.applyPatches(serializePatches(patches));
+        if (patches.length === 0) return;
+        const nextSnapshot = applyRowPatches(snapshotRef.current, patches);
+        nativeRef.current?.applyPatches(serializePatches(patches));
+        snapshotRef.current = nextSnapshot;
       },
       reconcileSelection(selectedKeys) {
         nativeRef.current?.reconcileSelection(JSON.stringify(selectedKeys));
+        const current = snapshotRef.current;
+        if (
+          current.selection &&
+          (current.selection.mode !== 'single' || selectedKeys.length <= 1) &&
+          selectedKeys.every((key) =>
+            current.rows.some((row) => row.key === key && isSelectableRow(row))
+          )
+        ) {
+          snapshotRef.current = {
+            ...current,
+            selection: { ...current.selection, selectedKeys },
+          };
+        }
       },
       scrollToKey(paramsOrKey, animated, alignment) {
         const { key, scroll } = normalizeKeyScroll(
@@ -264,9 +289,21 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           );
         }),
         onSelectionDelta: callback((payloadJson: string) => {
-          callbacksRef.current.onSelectionDelta?.(
-            parsePayload<SelectionDeltaEvent>(payloadJson)
-          );
+          const payload = parsePayload<SelectionDeltaEvent>(payloadJson);
+          const current = snapshotRef.current;
+          if (current.selection) {
+            const selectedKeys = new Set(current.selection.selectedKeys);
+            payload.removedKeys.forEach((key) => selectedKeys.delete(key));
+            payload.addedKeys.forEach((key) => selectedKeys.add(key));
+            snapshotRef.current = {
+              ...current,
+              selection: {
+                ...current.selection,
+                selectedKeys: [...selectedKeys],
+              },
+            };
+          }
+          callbacksRef.current.onSelectionDelta?.(payload);
         }),
         onReorder: callback((payloadJson: string) => {
           callbacksRef.current.onReorder?.(

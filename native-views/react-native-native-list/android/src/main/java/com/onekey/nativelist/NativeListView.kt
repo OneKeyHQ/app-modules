@@ -118,7 +118,6 @@ class NativeListView(
   private var sectionIndexProgrammaticScroll = false
   private var sectionIndexHapticsEnabled = true
   private var pendingScrollRequest: ScrollRequest? = null
-  private var contentScrollOffsetPx = 0
   private val actionAnchorInstanceId = UUID.randomUUID().toString()
   private var actionAnchorCounter = 0L
   private var actionAnchor: ActionAnchorRecord? = null
@@ -208,10 +207,6 @@ class NativeListView(
 
       override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
         if (dx != 0 || dy != 0) invalidateActionAnchor("scroll")
-        contentScrollOffsetPx = (
-          contentScrollOffsetPx +
-            if (layoutManager.orientation == RecyclerView.VERTICAL) dy else dx
-          ).coerceAtLeast(0)
         syncSectionIndexToVisibleRows()
         scheduleVisibleEvent()
         checkEndReached()
@@ -264,7 +259,7 @@ class NativeListView(
       return
     }
     config = next
-    endReachedGeneration = null
+    if (previous?.generation != next.generation) endReachedGeneration = null
     pendingReorder = null
     adapter.theme = next.theme
     adapter.layout = next.layout
@@ -574,16 +569,26 @@ class NativeListView(
   private fun performOffsetScroll(offset: Double, animated: Boolean) {
     val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return
     val target = (offset * density).roundToInt().coerceAtLeast(0)
-    if (target == 0) {
-      if (animated) recyclerView.smoothScrollToPosition(0)
-      else manager.scrollToPositionWithOffset(0, 0)
+    if (!animated) {
+      recyclerView.stopScroll()
+      manager.scrollToPositionWithOffset(0, -target)
+      relayoutRecyclerView()
       return
     }
-    val delta = target - contentScrollOffsetPx
-    if (manager.orientation == RecyclerView.VERTICAL) {
-      if (animated) recyclerView.smoothScrollBy(0, delta) else recyclerView.scrollBy(0, delta)
+    if (target == 0) {
+      recyclerView.smoothScrollToPosition(0)
+      return
+    }
+    val currentOffset = if (manager.orientation == RecyclerView.VERTICAL) {
+      recyclerView.computeVerticalScrollOffset()
     } else {
-      if (animated) recyclerView.smoothScrollBy(delta, 0) else recyclerView.scrollBy(delta, 0)
+      recyclerView.computeHorizontalScrollOffset()
+    }
+    val delta = target - currentOffset
+    if (manager.orientation == RecyclerView.VERTICAL) {
+      recyclerView.smoothScrollBy(0, delta)
+    } else {
+      recyclerView.smoothScrollBy(delta, 0)
     }
   }
 
@@ -789,6 +794,10 @@ class NativeListView(
     sectionIndexView.setActiveIndex(index)
     recyclerView.stopScroll()
     scrollToIndex(entry.position, animated = false, alignment = "start")
+    recyclerView.post {
+      sectionIndexProgrammaticScroll = false
+      syncSectionIndexToVisibleRows()
+    }
     if (interacting) {
       sectionIndexPreview.animate().cancel()
       sectionIndexPreview.text = entry.title
@@ -803,6 +812,7 @@ class NativeListView(
   private fun finishSectionIndexInteraction(immediately: Boolean = false) {
     sectionIndexScrubbing = false
     if (immediately) sectionIndexProgrammaticScroll = false
+    syncSectionIndexToVisibleRows()
     sectionIndexPreview.animate().cancel()
     if (immediately) {
       sectionIndexPreview.alpha = 0f

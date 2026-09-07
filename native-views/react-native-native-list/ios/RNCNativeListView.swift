@@ -51,7 +51,12 @@ final class NativeListView: UIView {
   var onSelectionDelta: ((String) -> Void)?
   var onReorder: ((String) -> Void)?
   var onEndReached: ((String) -> Void)?
-  var onVisibleRangeChanged: ((String) -> Void)?
+  var onVisibleRangeChanged: ((String) -> Void)? {
+    didSet {
+      lastVisibleRange = nil
+      if onVisibleRangeChanged != nil { emitVisibleRangeIfNeeded() }
+    }
+  }
 
   private let flowLayout = NativeListFlowLayout()
   private lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: flowLayout)
@@ -225,15 +230,18 @@ final class NativeListView: UIView {
     guard let next = try? NativeListConfig.parse(json: json) else { return }
     invalidateActionAnchor(reason: "snapshot")
     if let current = config, isControlledSelectionSnapshotUpdate(from: current, to: next) {
+      let changedSummaryKeys = Set(zip(current.items, next.items).compactMap { old, new in
+        old.content != new.content ? new.key : nil
+      })
       config = next
       itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
-      refreshVisibleSelection()
+      refreshVisibleSelection(changedSummaryKeys: changedSummaryKeys)
       return
     }
     let oldItems = itemsByKey
+    if config?.generation != next.generation { endReachedGeneration = nil }
     config = next
     itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
-    endReachedGeneration = nil
     configureSectionIndex(next)
     configureLayout(next)
     configureRefresh(next)
@@ -275,12 +283,14 @@ final class NativeListView: UIView {
     }
 
     var changedKeys: [String] = []
+    var sizeChanged = false
     for (index, changes) in pending {
       var merged = current.items[index].data
       changes.forEach { key, value in
         if key != "key" && key != "type" { merged[key] = value }
       }
       guard let item = try? NativeListItem(data: merged) else { return }
+      if rowHeight(current.items[index]) != rowHeight(item) { sizeChanged = true }
       current.items[index] = item
       changedKeys.append(item.key)
       if let selected = changes["selected"] as? Bool {
@@ -292,7 +302,13 @@ final class NativeListView: UIView {
     itemsByKey = Dictionary(uniqueKeysWithValues: current.items.map { ($0.key, $0) })
     var snapshot = dataSource.snapshot()
     snapshot.reconfigureItems(changedKeys.filter { snapshot.indexOfItem($0) != nil })
-    dataSource.apply(snapshot, animatingDifferences: false)
+    dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+      guard let self else { return }
+      if sizeChanged { self.flowLayout.invalidateLayout() }
+      self.collectionView.layoutIfNeeded()
+      self.emitVisibleRangeIfNeeded()
+      self.checkEndReached()
+    }
     configureFooter(current)
   }
 
@@ -1026,7 +1042,7 @@ final class NativeListView: UIView {
     return "indeterminate"
   }
 
-  private func refreshVisibleSelection() {
+  private func refreshVisibleSelection(changedSummaryKeys: Set<String> = []) {
     guard let config else { return }
     let checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String = {
       [weak self] item, target, fallback in
@@ -1035,6 +1051,10 @@ final class NativeListView: UIView {
     for indexPath in collectionView.indexPathsForVisibleItems {
       guard let item = config.items[safe: indexPath.item],
             let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell else { continue }
+      if changedSummaryKeys.contains(item.key) {
+        bind(cell: cell, item: item, itemIndex: indexPath.item)
+        continue
+      }
       cell.updateSelection(
         item: item,
         selected: config.selectedKeys.contains(item.key),
@@ -1341,6 +1361,7 @@ final class NativeListView: UIView {
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       self.visibleEventScheduled = false
+      guard let onVisibleRangeChanged = self.onVisibleRangeChanged else { return }
       let indexes = self.collectionView.indexPathsForVisibleItems.map(\.item).sorted()
       let first = indexes.first ?? -1
       let last = indexes.last ?? -1
@@ -1354,7 +1375,7 @@ final class NativeListView: UIView {
       var payload: [String: Any] = ["firstIndex": first, "lastIndex": last]
       if let firstKey { payload["firstKey"] = firstKey }
       if let lastKey { payload["lastKey"] = lastKey }
-      self.emit(self.onVisibleRangeChanged, payload)
+      self.emit(onVisibleRangeChanged, payload)
     }
   }
 

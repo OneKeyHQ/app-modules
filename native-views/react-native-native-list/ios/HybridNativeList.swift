@@ -21,7 +21,14 @@ final class HybridNativeList: HybridNativeListSpec {
   var onSelectionDelta: ((_ payloadJson: String) -> Void)?
   var onReorder: ((_ payloadJson: String) -> Void)?
   var onEndReached: ((_ payloadJson: String) -> Void)?
-  var onVisibleRangeChanged: ((_ payloadJson: String) -> Void)?
+  var onVisibleRangeChanged: ((_ payloadJson: String) -> Void)? {
+    didSet {
+      runOnMain { [weak self] in
+        guard let self else { return }
+        self.hostView.onVisibleRangeChanged = self.onVisibleRangeChanged
+      }
+    }
+  }
 
   override init() {
     super.init()
@@ -30,7 +37,6 @@ final class HybridNativeList: HybridNativeListSpec {
     hostView.onSelectionDelta = { [weak self] in self?.onSelectionDelta?($0) }
     hostView.onReorder = { [weak self] in self?.onReorder?($0) }
     hostView.onEndReached = { [weak self] in self?.onEndReached?($0) }
-    hostView.onVisibleRangeChanged = { [weak self] in self?.onVisibleRangeChanged?($0) }
   }
 
   func applySnapshot(snapshotJson: String) throws {

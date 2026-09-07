@@ -14,13 +14,16 @@ const mockNativeMethods = {
   setActionAnchorState: jest.fn(),
   setRefreshing: jest.fn(),
 };
+let mockOnSelectionDelta: (payloadJson: string) => void;
 
 jest.mock('react-native-nitro-modules', () => ({
   callback: (value: unknown) => value,
   getHostComponent: () =>
     function MockNativeListHost(props: {
       hybridRef: (ref: typeof mockNativeMethods) => void;
+      onSelectionDelta: (payloadJson: string) => void;
     }) {
+      mockOnSelectionDelta = props.onSelectionDelta;
       const ReactForMock = require('react') as typeof React;
       ReactForMock.useEffect(() => props.hybridRef(mockNativeMethods), [props]);
       return null;
@@ -262,5 +265,151 @@ describe('NativeList imperative ref', () => {
       );
     });
     expect(mockNativeMethods.scrollToKey).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects invalid merged patches before dispatch and keeps the last valid snapshot', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const ref = createRef<NativeListRef>();
+    await act(async () => {
+      TestRenderer.create(<NativeList ref={ref} snapshot={snapshot} />);
+    });
+    const selectedSnapshot: NativeListSnapshot = {
+      ...snapshot,
+      rows: [
+        {
+          type: 'identity',
+          key: 'wallet',
+          title: 'Wallet',
+          leading: { kind: 'icon', name: 'wallet' },
+        },
+      ],
+      selection: { mode: 'multiple', selectedKeys: ['wallet'] },
+    };
+    ref.current?.applySnapshot(selectedSnapshot);
+
+    expect(() =>
+      ref.current?.applyPatches([
+        { type: 'identity', key: 'wallet', changes: { disabled: true } },
+      ])
+    ).toThrow('not selectable');
+    expect(() =>
+      ref.current?.applyPatches([
+        { type: 'identity', key: 'missing', changes: { title: 'Missing' } },
+      ])
+    ).toThrow('unknown row key');
+    expect(() =>
+      ref.current?.applyPatches([
+        { type: 'system', key: 'wallet', changes: { message: 'Wrong type' } },
+      ])
+    ).toThrow('not system');
+    expect(() =>
+      ref.current?.applySnapshot({
+        ...selectedSnapshot,
+        schemaVersion: 2,
+      } as unknown as NativeListSnapshot)
+    ).toThrow('schemaVersion');
+    expect(mockNativeMethods.applyPatches).not.toHaveBeenCalled();
+    expect(mockNativeMethods.applySnapshot).toHaveBeenCalledTimes(1);
+    expect(() =>
+      ref.current?.applyPatches([
+        { type: 'identity', key: 'wallet', changes: { title: 'Updated' } },
+      ])
+    ).not.toThrow();
+    expect(mockNativeMethods.applyPatches).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains patches and selection across equivalent prop renders and resets on a new snapshot', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const ref = createRef<NativeListRef>();
+    let renderer!: TestRenderer.ReactTestRenderer;
+    const selectableSnapshot: NativeListSnapshot = {
+      ...snapshot,
+      rows: [
+        {
+          type: 'identity',
+          key: 'wallet',
+          title: 'Wallet',
+          leading: { kind: 'icon', name: 'wallet' },
+          disabled: true,
+        },
+      ],
+      selection: { mode: 'multiple', selectedKeys: [] },
+    };
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <NativeList ref={ref} snapshot={selectableSnapshot} />
+      );
+    });
+    ref.current?.applyPatches([
+      { type: 'identity', key: 'wallet', changes: { disabled: false } },
+    ]);
+    ref.current?.reconcileSelection(['wallet']);
+    await act(async () => {
+      renderer.update(
+        <NativeList ref={ref} snapshot={{ ...selectableSnapshot }} />
+      );
+    });
+    expect(() =>
+      ref.current?.applyPatches([
+        { type: 'identity', key: 'wallet', changes: { disabled: true } },
+      ])
+    ).toThrow('not selectable');
+
+    await act(async () => {
+      renderer.update(
+        <NativeList
+          ref={ref}
+          snapshot={{ ...selectableSnapshot, generation: 2 }}
+        />
+      );
+    });
+    expect(() =>
+      ref.current?.applyPatches([
+        { type: 'identity', key: 'wallet', changes: { title: 'Unselected' } },
+      ])
+    ).not.toThrow();
+  });
+
+  it('validates patches against native selection deltas before calling the consumer', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const ref = createRef<NativeListRef>();
+    const onSelectionDelta = jest.fn(() => {
+      expect(() =>
+        ref.current?.applyPatches([
+          { type: 'identity', key: 'wallet', changes: { disabled: true } },
+        ])
+      ).toThrow('not selectable');
+    });
+    await act(async () => {
+      TestRenderer.create(
+        <NativeList
+          ref={ref}
+          snapshot={{
+            ...snapshot,
+            rows: [
+              {
+                type: 'identity',
+                key: 'wallet',
+                title: 'Wallet',
+                leading: { kind: 'icon', name: 'wallet' },
+              },
+            ],
+            selection: { mode: 'multiple', selectedKeys: [] },
+          }}
+          onSelectionDelta={onSelectionDelta}
+        />
+      );
+    });
+    mockOnSelectionDelta(
+      JSON.stringify({ addedKeys: ['wallet'], removedKeys: [], source: 'row' })
+    );
+    expect(onSelectionDelta).toHaveBeenCalledTimes(1);
+    expect(mockNativeMethods.applyPatches).not.toHaveBeenCalled();
   });
 });
