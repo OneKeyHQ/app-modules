@@ -25,6 +25,7 @@ internal object OneKeyImageModel {
   }
 
   fun build(uri: String, headersJson: String?): Any {
+    if (OneKeyBlockieAvatar.isAvatarUri(uri)) return OneKeyBlockieAvatarModel(uri)
     if (uri.startsWith("data:")) return OneKeyImageDataUriModel(uri)
     if (!uri.startsWith("http://") && !uri.startsWith("https://")) {
       return OneKeyImageLocalModel(Uri.parse(uri))

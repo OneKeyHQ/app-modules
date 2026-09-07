@@ -1,4 +1,6 @@
 import Foundation
+// OneKey patch: preserve native font faces while enabling tabular number features.
+import CoreText
 import OneKeyImage
 import UIKit
 
@@ -8,19 +10,56 @@ final class NativeListActionOrigin {
   let bindingEpoch: Int
   let source: String
   let slot: Int?
+  // OneKey patch: expose the layout slot while preserving the larger hit target.
+  let anchorInset: CGFloat
 
   init(
     sourceView: UIView,
     ownerCell: NativeListCell,
     bindingEpoch: Int,
     source: String,
-    slot: Int? = nil
+    slot: Int? = nil,
+    anchorInset: CGFloat = 0
   ) {
     self.sourceView = sourceView
     self.ownerCell = ownerCell
     self.bindingEpoch = bindingEpoch
     self.source = source
     self.slot = slot
+    self.anchorInset = anchorInset
+  }
+}
+
+// OneKey patch: explicit summary actions use the source text's physical-pixel line box.
+private final class NativeListAccessoryButton: UIButton {
+  var selectorSummaryLineHeight: CGFloat? {
+    didSet { invalidateIntrinsicContentSize(); setNeedsLayout() }
+  }
+
+  private var sourcePixelScale: CGFloat {
+    max(1, window?.screen.scale ?? traitCollection.displayScale)
+  }
+
+  override var intrinsicContentSize: CGSize {
+    var size = super.intrinsicContentSize
+    guard selectorSummaryLineHeight != nil, let title = attributedTitle(for: .normal) else { return size }
+    let width = title.boundingRect(
+      with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+      options: [.usesLineFragmentOrigin, .usesFontLeading],
+      context: nil
+    ).width
+    size.width = ceil(width * sourcePixelScale) / sourcePixelScale
+    return size
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    guard let lineHeight = selectorSummaryLineHeight, let titleLabel else { return }
+    // OneKey patch: position the final source line box after UIKit has measured the button.
+    let top = ceil((bounds.height - lineHeight) / 2 * sourcePixelScale) / sourcePixelScale
+    var frame = titleLabel.frame
+    frame.origin.y = top
+    titleLabel.frame = frame
   }
 }
 
@@ -52,6 +91,24 @@ private final class NativeListInsetLabel: UILabel {
 private final class NativeListDottedUnderlineLabel: UILabel {
   var showsDottedUnderline = false {
     didSet { setNeedsLayout() }
+  }
+
+  // OneKey patch: migrated section titles include the source 3-point underline box.
+  var reservesDottedUnderlineSpace = false {
+    didSet { invalidateIntrinsicContentSize(); setNeedsLayout(); setNeedsDisplay() }
+  }
+
+  override var intrinsicContentSize: CGSize {
+    var size = super.intrinsicContentSize
+    if reservesDottedUnderlineSpace && showsDottedUnderline { size.height += 3 }
+    return size
+  }
+
+  override func drawText(in rect: CGRect) {
+    let textRect = reservesDottedUnderlineSpace && showsDottedUnderline
+      ? CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: max(0, rect.height - 3))
+      : rect
+    super.drawText(in: textRect)
   }
 
   var dottedUnderlineColor: UIColor = .clear {
@@ -101,7 +158,9 @@ private final class NativeListDottedUnderlineLabel: UILabel {
       width: bounds.width,
       height: bounds.height + 2 + dottedUnderlineVerticalOffset
     )
-    let y = bounds.height + 1 + dottedUnderlineVerticalOffset
+    // OneKey patch: explicit header underline occupies the reserved final two points.
+    // let y = bounds.height + 1 + dottedUnderlineVerticalOffset
+    let y = reservesDottedUnderlineSpace ? bounds.height - 1 : bounds.height + 1 + dottedUnderlineVerticalOffset
     let path = UIBezierPath()
     path.move(to: CGPoint(x: 1, y: y))
     path.addLine(to: CGPoint(x: max(1, textWidth - 1), y: y))
@@ -257,6 +316,9 @@ private final class NativeListTableColumnView: UIStackView {
 
   private func textColor(_ tone: String, theme: [String: Any]?) -> UIColor {
     switch tone {
+    // OneKey patch: account warnings and hidden balances use existing theme tokens.
+    case "disabled": return nativeListColor(theme, "disabledText", "#8D8D8D")
+    case "caution": return nativeListColor(theme, "caution", "#AB6400")
     case "secondary": return nativeListColor(theme, "secondaryText", "#646464")
     case "positive": return nativeListColor(theme, "positive", "#218358")
     case "negative": return nativeListColor(theme, "negative", "#CE2C31")
@@ -273,6 +335,13 @@ final class NativeListCell: UICollectionViewCell {
   private let leadingOverlayBackground = UIView()
   private let leadingCornerIconBackground = UIView()
   private let leadingCornerIconImageView = UIImageView()
+  // OneKey patch: selector-only views are reset on every native cell binding.
+  private var selectorViews: [UIView] = []
+  private var selectorConstraints: [NSLayoutConstraint] = []
+  private var selectorImages: [OneKeyImageReusableView] = []
+  private var selectorBorder: CAShapeLayer?
+  private let selectorFullWidthBackground = CALayer()
+  private lazy var selectorTitleTap = UITapGestureRecognizer(target: self, action: #selector(selectorTitlePressed))
   private let secondaryImage = OneKeyImageReusableView(frame: .zero)
   private let mediaNetworkImage = OneKeyImageReusableView(frame: .zero)
   private let fallbackLabel = UILabel()
@@ -296,7 +365,9 @@ final class NativeListCell: UICollectionViewCell {
   private let actionStack = UIStackView()
   private let actionButtons = (0..<3).map { _ in UIButton(type: .system) }
   private let trailingStack = UIStackView()
-  private let accessoryButtons = (0..<2).map { _ in UIButton(type: .system) }
+  // OneKey patch: summary actions opt into source typography while other buttons keep UIKit layout.
+  // private let accessoryButtons = (0..<2).map { _ in UIButton(type: .system) }
+  private let accessoryButtons = (0..<2).map { _ in NativeListAccessoryButton(type: .system) }
   private let checkboxButton = UIButton(type: .system)
   private let spinner = UIActivityIndicatorView(style: .medium)
   private let dataStack = UIStackView()
@@ -332,6 +403,8 @@ final class NativeListCell: UICollectionViewCell {
   private var leadingSlotConstraints: [NSLayoutConstraint] = []
   private var dataWeightConstraints: [NSLayoutConstraint] = []
   private var accessorySizeConstraints: [NSLayoutConstraint] = []
+  // OneKey patch: restore selector-only font features before a cell is reused.
+  private var selectorTypographyRestorers: [() -> Void] = []
   private var currentItem: NativeListItem?
   private var accessoryActions: [(String, NativeSelectionTarget?)] = []
   private var footerActionKeys: [String] = []
@@ -345,12 +418,15 @@ final class NativeListCell: UICollectionViewCell {
     fallback: .lightGray
   )
   private var checkboxCheckedColor = UIColor(nativeListHex: "#202020", fallback: .black)
+  private var checkboxIconColor = UIColor.white
   private var checkboxUncheckedColor = UIColor(nativeListHex: "#FCFCFC", fallback: .white)
   private var checkboxBorderColor = UIColor(nativeListHex: "#CECECE", fallback: .lightGray)
   private var visualBackdropColor = UIColor.white
   private var currentLayout = "linear"
   private var currentTheme: [String: Any]?
   private var currentItemIndex: Int?
+  // OneKey patch: delayed image retries belong to the current reusable cell binding.
+  private var selectorImageRetries: [ObjectIdentifier: DispatchWorkItem] = [:]
   private(set) var bindingEpoch = 0
 
   var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Void)?
@@ -615,12 +691,41 @@ final class NativeListCell: UICollectionViewCell {
 
   override func layoutSubviews() {
     super.layoutSubviews()
+    // OneKey patch: extend only the background across the section list outer inset.
+    if currentItem?.data.bool("backgroundFullWidth") == true {
+      selectorFullWidthBackground.frame = CGRect(x: -frame.minX, y: 0, width: superview?.bounds.width ?? bounds.width, height: bounds.height)
+    }
     if currentItem?.type == "mediaTile" {
       mediaHeight.constant = max(0, contentView.bounds.width - 20)
+    }
+    if currentItem?.type == "identity", currentItem?.data["height"] != nil,
+       currentItem?.data.string("presentation") == "accountSelector",
+       let accessory = currentItem?.data.dictionaries("trailing").first,
+       accessory.string("kind") == "icon", accessory.string("name") == "PlusSmallOutline" {
+      // OneKey patch: PlusButton's fixed top18 slot and negative7 margin place its frame at11.
+      let button = accessoryButtons[0]
+      button.transform = .identity
+      let origin = button.convert(button.bounds, to: contentView).minY
+      button.transform = CGAffineTransform(translationX: 0, y: 11 - origin)
+    }
+  }
+
+  // OneKey patch: trim only detached/recycled members, never a live compact
+  // drag proxy or an expanding group. Small groups retain eight reusable cells.
+  private func trimWalletGroupCells(keeping required: Int) {
+    let retained = max(8, required)
+    while walletGroupCells.count > retained {
+      let cell = walletGroupCells.removeLast()
+      rootStack.removeArrangedSubview(cell)
+      cell.removeFromSuperview()
+      cell.prepareForReuse()
+      cell.onAction = nil
+      cell.onBindingInvalidated = nil
     }
   }
 
   override func prepareForReuse() {
+    let canTrimMembers = !walletGroupCompactAppearanceActive && (rootStack.layer.animationKeys()?.isEmpty ?? true)
     super.prepareForReuse()
     invalidateCurrentBinding()
     isHighlighted = false
@@ -632,6 +737,8 @@ final class NativeListCell: UICollectionViewCell {
     walletGroupCompactContainer.alpha = 1
     walletGroupCompactCell?.prepareForReuse()
     walletGroupCells.forEach { $0.prepareForReuse() }
+    walletGroupMembers.removeAll()
+    if canTrimMembers { trimWalletGroupCells(keeping: 0) }
     leadingImages.forEach { $0.prepareForReuse() }
     secondaryImage.prepareForReuse()
     mediaNetworkImage.prepareForReuse()
@@ -645,6 +752,8 @@ final class NativeListCell: UICollectionViewCell {
     selected: Bool,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    // OneKey patch: a same-row snapshot refresh must not clear a touch that is still held.
+    let shouldRestoreHighlight = isHighlighted && currentItem?.key == item.key
     invalidateCurrentBinding()
     bindingEpoch &+= 1
     currentLayout = layout
@@ -664,6 +773,14 @@ final class NativeListCell: UICollectionViewCell {
     // Checkbox uses the literal neutral7 alpha token. Applying opacity to the
     // opaque primary text color produces a different RGB result.
     checkboxBorderColor = UIColor(nativeListHex: "#00000031", fallback: .lightGray)
+    checkboxIconColor = checkboxUncheckedColor
+    if item.data.string("presentation") == "networkSelector" {
+      checkboxCheckedColor = nativeListColor(theme, "checkboxBackground", "#202020")
+      checkboxBorderColor = nativeListColor(theme, "checkboxBorder", "#00000031")
+      checkboxIconColor = nativeListColor(theme, "checkboxIcon", "#FFFFFF")
+      // OneKey patch: the V1 checkbox fills even its unchecked body with iconInverse.
+      checkboxUncheckedColor = checkboxIconColor
+    }
     visualBackdropColor = nativeListColor(theme, "rowBackground", "#FFFFFF")
     titleLabel.textColor = primary
     subtitleLabel.textColor = secondary
@@ -693,6 +810,11 @@ final class NativeListCell: UICollectionViewCell {
       pressedBackgroundColor = restingBackgroundColor
     }
     updateBackgroundColor()
+    if item.data.bool("backgroundFullWidth"), let background = item.data["backgroundColor"] as? String {
+      selectorFullWidthBackground.backgroundColor = UIColor(nativeListHex: background, fallback: .clear).cgColor
+      contentView.layer.insertSublayer(selectorFullWidthBackground, at: 0)
+      clipsToBounds = false
+    }
     if layout == "table" {
       if item.type == "dataRow" {
         rootLeadingConstraint.constant = 20
@@ -707,8 +829,12 @@ final class NativeListCell: UICollectionViewCell {
     }
     applyGroupPosition(item.data.string("groupPosition"))
     isUserInteractionEnabled = !item.data.bool("disabled")
-    contentView.alpha = isUserInteractionEnabled ? 1 : 0.5
+    // OneKey patch: deprecated wallets remain interactive while dimmed.
+    // contentView.alpha = isUserInteractionEnabled ? 1 : 0.5
+    contentView.alpha = CGFloat(item.data.double("opacity", default: 1)) * (isUserInteractionEnabled ? 1 : 0.5)
     accessibilityLabel = item.data.string("accessibilityLabel", default: item.data.string("title"))
+    // OneKey patch: keep existing selector automation identifiers.
+    accessibilityIdentifier = item.data["testID"] as? String
 
     switch item.type {
     case "walletGroup": bindWalletGroup(item, theme: theme, layout: layout, checkboxState)
@@ -724,6 +850,17 @@ final class NativeListCell: UICollectionViewCell {
     case "system": bindSystem(item, theme: theme)
     default: break
     }
+    applySelectorTypography(item)
+    if shouldRestoreHighlight && isUserInteractionEnabled {
+      isHighlighted = true
+    }
+    if item.type == "sectionHeader", item.data.string("presentation") == "networkSelector", item.data["height"] != nil, item.data.dictionary("checkbox") != nil, !item.data.string("value").isEmpty {
+      // OneKey patch: UIKit must reserve only the total's intrinsic width before the checkbox.
+      let valueWidth = accessoryButtons[0].intrinsicContentSize.width
+      let width = trailingStack.widthAnchor.constraint(equalToConstant: valueWidth + 12 + 20)
+      width.isActive = true
+      selectorConstraints.append(width)
+    }
   }
 
   func updateSelection(
@@ -732,6 +869,8 @@ final class NativeListCell: UICollectionViewCell {
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
     guard currentItem?.key == item.key else { return }
+    restoreSelectorTypography()
+    defer { applySelectorTypography(item) }
     if item.type == "walletGroup" {
       currentItem = item
       let memberData = [item.data.dictionary("parent")].compactMap { $0 }
@@ -777,6 +916,13 @@ final class NativeListCell: UICollectionViewCell {
         selected ? "#FFFFFFED" : "#FFFFFFAF"
       )
     }
+    // OneKey patch: retain the latest descriptor when a controlled echo avoids full binding.
+    if boundCheckboxData != nil {
+      let latestCheckbox = item.type == "identity"
+        ? item.data.dictionaries("trailing").last { $0.string("kind") == "checkbox" }
+        : item.data.dictionary("checkbox")
+      boundCheckboxData = latestCheckbox ?? boundCheckboxData
+    }
     guard let data = boundCheckboxData, let target = boundCheckboxTarget else { return }
     updateCheckboxPresentation(
       item,
@@ -786,12 +932,55 @@ final class NativeListCell: UICollectionViewCell {
     )
   }
 
+  // OneKey patch: match SizableText TABULAR_NUMS on every selector text run, retaining its face and size.
+  private func selectorTabularFont(_ font: UIFont) -> UIFont {
+    var settings = font.fontDescriptor.fontAttributes[.featureSettings] as? [[UIFontDescriptor.FeatureKey: Int]] ?? []
+    settings.removeAll { $0[.type] == kNumberSpacingType }
+    settings.append([.type: kNumberSpacingType, .selector: kMonospacedNumbersSelector])
+    return UIFont(descriptor: font.fontDescriptor.addingAttributes([.featureSettings: settings]), size: font.pointSize)
+  }
+
+  private func selectorTabularText(_ original: NSAttributedString) -> NSAttributedString {
+    let result = NSMutableAttributedString(attributedString: original)
+    // OneKey patch: body typography explicitly supplies letterSpacing=0 in Tamagui.
+    result.addAttribute(.kern, value: 0, range: NSRange(location: 0, length: result.length))
+    original.enumerateAttribute(.font, in: NSRange(location: 0, length: original.length)) { value, range, _ in
+      if let font = value as? UIFont { result.addAttribute(.font, value: self.selectorTabularFont(font), range: range) }
+    }
+    return result
+  }
+
+  private func restoreSelectorTypography() {
+    selectorTypographyRestorers.reversed().forEach { $0() }
+    selectorTypographyRestorers.removeAll()
+  }
+
+  private func applySelectorTypography(_ item: NativeListItem) {
+    guard ["accountSelector", "networkSelector", "walletSidebar"].contains(item.data.string("presentation")) || item.type == "system" && item.data.string("variant") == "warning" else { return }
+    func visit(_ view: UIView) {
+      if let button = view as? UIButton {
+        if let original = button.attributedTitle(for: .normal) {
+          selectorTypographyRestorers.append { button.setAttributedTitle(original, for: .normal) }
+          button.setAttributedTitle(selectorTabularText(original), for: .normal)
+        }
+      } else if let label = view as? UILabel, let font = label.font {
+        let original = label.attributedText
+        selectorTypographyRestorers.append { label.font = font; label.attributedText = original }
+        label.font = selectorTabularFont(font)
+        if let original { label.attributedText = selectorTabularText(original) }
+      }
+      for child in view.subviews { visit(child) }
+    }
+    visit(contentView)
+  }
+
   private func updateSummaryText(_ item: NativeListItem) {
     let title = item.data.string("title")
     titleLabel.isHidden = title.isEmpty
     setLineHeight(titleLabel, text: title, lineHeight: 24)
 
     let value = item.data.string("value")
+    let isExplicitNetworkHeader = item.data.string("presentation") == "networkSelector" && item.data["height"] != nil
     let valueButton = accessoryButtons[0]
     valueButton.isHidden = value.isEmpty
     if value.isEmpty {
@@ -801,7 +990,7 @@ final class NativeListCell: UICollectionViewCell {
       setButtonLine(
         valueButton,
         text: value,
-        font: nativeListFont(ofSize: 16),
+        font: nativeListFont(ofSize: 16, weight: isExplicitNetworkHeader ? .medium : .regular),
         color: nativeListColor(currentTheme, "secondaryText", "#646464"),
         lineHeight: 24
       )
@@ -826,7 +1015,7 @@ final class NativeListCell: UICollectionViewCell {
       // Selection is communicated by the destination state for these source
       // components; neither has a persistent selected tile background.
       color = nativeListColor(theme, "rowBackground", "#FFFFFF")
-    } else if layout == "sectioned" {
+    } else if layout == "sectioned", !item.data.bool("selected") {
       // Checkbox-backed section lists in app-monorepo keep rows on $bg;
       // selection is represented by the checkbox itself.
       color = nativeListColor(theme, "rowBackground", "#FFFFFF")
@@ -836,10 +1025,27 @@ final class NativeListCell: UICollectionViewCell {
               !selected {
       color = nativeListColor(theme, "subduedBackground", "#F9F9F9")
     }
+    // OneKey patch: portfolio group headers retain their source background.
+    if let backgroundColor = item.data["backgroundColor"] as? String {
+      return UIColor(nativeListHex: backgroundColor, fallback: color)
+    }
     return color
   }
 
   private func reset() {
+    restoreSelectorTypography()
+    // OneKey patch: remove selector decorations before rebinding recycled cells.
+    selectorViews.forEach { $0.removeFromSuperview() }
+    selectorViews.removeAll()
+    NSLayoutConstraint.deactivate(selectorConstraints)
+    selectorConstraints.removeAll()
+    selectorImages.forEach { $0.prepareForReuse() }
+    selectorImages.removeAll()
+    selectorFullWidthBackground.removeFromSuperlayer()
+    selectorBorder?.removeFromSuperlayer()
+    selectorBorder = nil
+    titleLabel.removeGestureRecognizer(selectorTitleTap)
+    titleLabel.isUserInteractionEnabled = false
     walletGroupCompactCell?.invalidateCurrentBinding()
     walletGroupCells.forEach { $0.invalidateCurrentBinding() }
     isHighlighted = false
@@ -848,6 +1054,10 @@ final class NativeListCell: UICollectionViewCell {
       $0.removeFromSuperview()
     }
     walletGroupMembers.removeAll()
+    // OneKey patch: reset has detached the old hierarchy, including on direct
+    // large-to-small binds that do not pass through UICollectionView reuse.
+    let requiredMembers = currentItem?.type == "walletGroup" ? (currentItem?.data.dictionaries("children").count ?? 0) + 1 : 0
+    trimWalletGroupCells(keeping: requiredMembers)
     walletGroupCompactAppearanceActive = false
     walletGroupCompactContainer.isHidden = true
     walletGroupCompactContainer.alpha = 1
@@ -978,11 +1188,13 @@ final class NativeListCell: UICollectionViewCell {
       $0.backgroundColor = .clear
     }
     accessoryButtons.enumerated().forEach { index, button in
+      button.selectorSummaryLineHeight = nil
       button.titleLabel?.font = nativeListFont(
         ofSize: index == 0 ? 16 : 14,
         weight: index == 0 ? .medium : .regular
       )
       button.isHidden = true
+      button.accessibilityIdentifier = nil
       button.setTitle(nil, for: .normal)
       button.setAttributedTitle(nil, for: .normal)
       button.setImage(nil, for: .normal)
@@ -994,6 +1206,7 @@ final class NativeListCell: UICollectionViewCell {
       button.backgroundColor = .clear
       button.layer.cornerRadius = 0
       button.contentEdgeInsets = .zero
+      button.transform = .identity
     }
     checkboxButton.isHidden = true
     checkboxButton.alpha = 1
@@ -1028,6 +1241,7 @@ final class NativeListCell: UICollectionViewCell {
     contentView.clipsToBounds = false
     leadingContainer.alpha = 1
     titleLabel.showsDottedUnderline = false
+    titleLabel.reservesDottedUnderlineSpace = false
     titleLabel.dottedUnderlineVerticalOffset = 0
   }
 
@@ -1073,7 +1287,8 @@ final class NativeListCell: UICollectionViewCell {
     while walletGroupCells.count < walletGroupMembers.count {
       let memberCell = NativeListCell(frame: .zero)
       memberCell.translatesAutoresizingMaskIntoConstraints = false
-      memberCell.heightAnchor.constraint(equalToConstant: 68).isActive = true
+      // OneKey patch: each member's current height is applied when bound.
+      // memberCell.heightAnchor.constraint(equalToConstant: 68).isActive = true
       walletGroupCells.append(memberCell)
     }
     rootStack.axis = .vertical
@@ -1083,8 +1298,18 @@ final class NativeListCell: UICollectionViewCell {
     rootTrailingConstraint.constant = 0
     rootTopConstraint.constant = 0
     rootBottomConstraint.constant = 0
+    if memberData.first?["height"] != nil {
+      // OneKey patch: the source group's one-point border occupies layout space.
+      rootLeadingConstraint.constant = 1
+      rootTrailingConstraint.constant = -1
+      rootTopConstraint.constant = 1
+      rootBottomConstraint.constant = -1
+    }
     walletGroupMembers.enumerated().forEach { index, member in
       let memberCell = walletGroupCells[index]
+      // OneKey patch: badges add a second line within their logical wallet group.
+      memberCell.constraints.filter { $0.firstAttribute == .height && $0.secondItem == nil }.forEach { $0.isActive = false }
+      memberCell.heightAnchor.constraint(equalToConstant: CGFloat(member.data.double("height", default: member.data.dictionaries("badges").isEmpty ? 68 : 92))).isActive = true
       memberCell.onAction = { [weak self] source, action, target, origin in
         self?.onAction?(source, action, target, origin)
       }
@@ -1140,7 +1365,10 @@ final class NativeListCell: UICollectionViewCell {
     let point = gesture.location(in: rootStack)
     for (index, cell) in walletGroupCells.prefix(walletGroupMembers.count).enumerated()
       where cell.frame.contains(point) {
-      onAction?(walletGroupMembers[index], "press", nil, cell.rowActionOrigin())
+      // OneKey patch: group member press gating must not disable accessory controls.
+      if !walletGroupMembers[index].data.bool("pressDisabled") {
+        onAction?(walletGroupMembers[index], "press", nil, cell.rowActionOrigin())
+      }
       return
     }
   }
@@ -1269,8 +1497,14 @@ final class NativeListCell: UICollectionViewCell {
       contentView.clipsToBounds = true
     } else {
       applyGroupPosition(currentItem?.data.string("groupPosition") ?? "")
-      let restingRadius: CGFloat = currentItem?.type == "metricCard" ? 12 : 0
+      // OneKey patch: explicit account and network selectors preserve ListItem radius while idle.
+      // let restingRadius: CGFloat = currentItem?.type == "metricCard" ? 12 : 0
+      let isSelectorIdentity = currentItem?.type == "identity" && currentItem?.data["height"] != nil
+      let isAccountSelector = isSelectorIdentity && ["accountSelector", "networkSelector"].contains(currentItem?.data.string("presentation") ?? "")
+      let isWalletSidebar = isSelectorIdentity && currentItem?.data.string("presentation") == "walletSidebar"
+      let restingRadius: CGFloat = isWalletSidebar ? 20 : currentItem?.type == "metricCard" || isAccountSelector ? 12 : 0
       contentView.layer.cornerRadius = restingRadius
+      contentView.layer.cornerCurve = isWalletSidebar ? .continuous : .circular
       contentView.clipsToBounds = restingRadius > 0
     }
   }
@@ -1299,6 +1533,17 @@ final class NativeListCell: UICollectionViewCell {
       fallbackLabel.font = nativeListFont(ofSize: 28)
       addLeading(item.data.dictionary("leading"), key: item.key)
       rootStack.addArrangedSubview(mainStack)
+      // OneKey patch: activate width constraints only after both stacks share an ancestor.
+      if item.data["height"] != nil {
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleRowStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let width = mainStack.widthAnchor.constraint(equalTo: rootStack.widthAnchor)
+        width.isActive = true
+        selectorConstraints.append(width)
+        let titleWidth = titleRowStack.widthAnchor.constraint(lessThanOrEqualTo: mainStack.widthAnchor)
+        titleWidth.isActive = true
+        selectorConstraints.append(titleWidth)
+      }
       show(titleLabel, item.data.string("title"), lines: 1)
       setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 16)
       titleLabel.textColor = nativeListColor(
@@ -1306,6 +1551,32 @@ final class NativeListCell: UICollectionViewCell {
         selected ? "primaryText" : "secondaryText",
         selected ? "#FFFFFFED" : "#FFFFFFAF"
       )
+      // OneKey patch: wallet tags belong below the centered name.
+      let badges = item.data.dictionaries("badges")
+      if !badges.isEmpty {
+        let line = UIStackView()
+        line.axis = .horizontal
+        line.spacing = 4
+        line.alignment = .center
+        for badge in badges {
+          let label = NativeListInsetLabel()
+          let isSelector = item.data["height"] != nil
+          let isWarning = badge.string("tone") == "warning"
+          label.font = nativeListFont(ofSize: isSelector ? 11 : 12)
+          label.textColor = nativeListColor(theme, isSelector && isWarning ? "caution" : "secondaryText", isSelector && isWarning ? "#AB6400" : "#646464")
+          label.backgroundColor = nativeListColor(theme, isSelector ? (isWarning ? "cautionBackground" : "subduedBackground") : "strongBackground", isSelector && isWarning ? "#FFF8C5" : "#F0F0F0")
+          label.horizontalInset = isSelector ? 6 : 4
+          label.topInset = 2
+          label.bottomInset = 2
+          label.layer.cornerRadius = 4
+          label.clipsToBounds = true
+          setLineHeight(label, text: badge.string("text"), lineHeight: isSelector ? 14 : 16)
+          line.addArrangedSubview(label)
+        }
+        mainStack.spacing = 4
+        mainStack.addArrangedSubview(line)
+        selectorViews.append(line)
+      }
       return
     }
     if item.data.string("presentation") == "accountSelector" {
@@ -1344,6 +1615,12 @@ final class NativeListCell: UICollectionViewCell {
       rootStack.setCustomSpacing(5, after: leadingActionButton)
     }
     addLeading(item.data.dictionary("leading"), key: item.key)
+    // OneKey patch: custom network initials match LetterAvatar size 32.
+    if item.data.string("presentation") == "networkSelector", let leading = item.data.dictionary("leading"), leading.dictionary("image") == nil, leading.dictionary("fallbackIcon") == nil, !leading.string("fallbackText").isEmpty {
+      fallbackLabel.font = nativeListFont(ofSize: 19, weight: .semibold)
+      fallbackLabel.textColor = nativeListColor(theme, "inverseText", "#FCFCFC")
+      setLineHeight(fallbackLabel, text: leading.string("fallbackText"), lineHeight: 27)
+    }
     rootStack.addArrangedSubview(mainStack)
     show(titleLabel, item.data.string("title"), lines: item.data.int("titleLines", default: 1))
     show(subtitleLabel, item.data.string("subtitle"), lines: item.data.int("subtitleLines", default: 1))
@@ -1352,6 +1629,77 @@ final class NativeListCell: UICollectionViewCell {
       mainStack.spacing = 0
       setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 24)
       setLineHeight(subtitleLabel, text: item.data.string("subtitle"), lineHeight: 20)
+    }
+    // OneKey patch: preserve independent balance/address truncation and warning tones.
+    let segments = item.data.dictionaries("subtitleSegments")
+    if !segments.isEmpty {
+      subtitleLabel.isHidden = true
+      mainStack.spacing = 0
+      setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 24)
+      let line = UIStackView()
+      line.axis = .horizontal
+      line.alignment = .center
+      line.spacing = 0
+      for segment in segments {
+        if segment.bool("separatorBefore") {
+          let gap = UIView()
+          gap.translatesAutoresizingMaskIntoConstraints = false
+          let dot = UIView()
+          dot.translatesAutoresizingMaskIntoConstraints = false
+          dot.backgroundColor = nativeListColor(theme, "disabledText", "#8D8D8D")
+          dot.layer.cornerRadius = 2
+          gap.addSubview(dot)
+          NSLayoutConstraint.activate([
+            gap.widthAnchor.constraint(equalToConstant: 16),
+            gap.heightAnchor.constraint(equalToConstant: 20),
+            dot.widthAnchor.constraint(equalToConstant: 4),
+            dot.heightAnchor.constraint(equalToConstant: 4),
+            dot.centerXAnchor.constraint(equalTo: gap.centerXAnchor),
+            dot.centerYAnchor.constraint(equalTo: gap.centerYAnchor),
+          ])
+          line.addArrangedSubview(gap)
+        }
+        let label = UILabel()
+        label.font = nativeListFont(ofSize: 14)
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.textColor = dataTextColor(segment.string("tone", default: "secondary"), theme: theme)
+        setLineHeight(label, text: segment.string("text"), lineHeight: 20)
+        let runs = segment.dictionaries("textSegments")
+        if !runs.isEmpty {
+          let value = NSMutableAttributedString(string: "")
+          let paragraph = NSMutableParagraphStyle()
+          paragraph.minimumLineHeight = 20
+          paragraph.maximumLineHeight = 20
+          for run in runs {
+            value.append(NSAttributedString(string: run.string("text"), attributes: [
+              .font: nativeListFont(ofSize: run.string("style") == "subscript" ? 9 : 14),
+              .foregroundColor: label.textColor as Any,
+              .paragraphStyle: paragraph,
+              .baselineOffset: max(0, (20 - nativeListFont(ofSize: 14).lineHeight) / 2),
+            ]))
+          }
+          label.attributedText = value
+        }
+        line.addArrangedSubview(label)
+      }
+      let filler = UIView()
+      filler.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+      line.addArrangedSubview(filler)
+      mainStack.insertArrangedSubview(line, at: 2)
+      selectorViews.append(line)
+    }
+    let matches = item.data.dictionaries("titleMatch")
+    if !matches.isEmpty {
+      let text = NSMutableAttributedString(attributedString: titleLabel.attributedText ?? NSAttributedString(string: item.data.string("title")))
+      for match in matches {
+        let start = match.int("start")
+        let end = match.int("end")
+        if start >= 0 && end > start && end <= text.length {
+          text.addAttribute(.foregroundColor, value: nativeListColor(theme, "info", "#0D74CE"), range: NSRange(location: start, length: end - start))
+        }
+      }
+      titleLabel.attributedText = text
     }
     tertiaryLabel.textColor = nativeListColor(
       theme,
@@ -1997,15 +2345,29 @@ final class NativeListCell: UICollectionViewCell {
   ) {
     rootStack.addArrangedSubview(mainStack)
     let variant = item.data.string("variant")
+    // OneKey patch: title help is a separate target from checkbox and value actions.
+    if !item.data.string("titleActionKey").isEmpty {
+      titleLabel.isUserInteractionEnabled = true
+      titleLabel.addGestureRecognizer(selectorTitleTap)
+      titleLabel.setContentHuggingPriority(.required, for: .horizontal)
+    }
     let isSummary = variant == "summary"
     let isGallery = variant == "gallery"
     let isTable = layout == "table"
     let isNetworkSelector = item.data.string("presentation") == "networkSelector"
+    let isExplicitNetworkHeader = isNetworkSelector && item.data["height"] != nil
+    if isExplicitNetworkHeader {
+      // OneKey patch: the flexible title consumes spare space before trailing totals.
+      trailingStack.setContentHuggingPriority(.required, for: .horizontal)
+      trailingStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+    }
+    titleLabel.reservesDottedUnderlineSpace = isExplicitNetworkHeader && !item.data.string("titleActionKey").isEmpty
     let isHistory = variant == "history" ||
       item.key.hasPrefix("history-") ||
       (item.sectionKey?.hasPrefix("history-") ?? false)
     let headerWeight: NativeListFontWeight = isSummary
       ? .medium
+      : isExplicitNetworkHeader && (item.data.dictionary("checkbox") != nil || item.data.string("titleActionKey").isEmpty) ? .semibold
       : isNetworkSelector ? .medium
       : isGallery || layout == "sectioned" ? .semibold : .regular
     titleLabel.font = nativeListFont(
@@ -2019,8 +2381,8 @@ final class NativeListCell: UICollectionViewCell {
     )
     show(titleLabel, item.data.string("title"), lines: 1)
     if isNetworkSelector {
-      titleLabel.showsDottedUnderline = true
-      titleLabel.dottedUnderlineVerticalOffset = 2
+      titleLabel.showsDottedUnderline = !isExplicitNetworkHeader || !item.data.string("titleActionKey").isEmpty
+      titleLabel.dottedUnderlineVerticalOffset = isExplicitNetworkHeader ? 1 : 2
       titleLabel.dottedUnderlineColor = nativeListColor(
         theme,
         "secondaryText",
@@ -2028,8 +2390,9 @@ final class NativeListCell: UICollectionViewCell {
       )
       rootLeadingConstraint.constant = 12
       rootTrailingConstraint.constant = -12
-      rootTopConstraint.constant = 12
-      rootBottomConstraint.constant = -15
+      let isAlphabet = isExplicitNetworkHeader && item.data.string("titleActionKey").isEmpty
+      rootTopConstraint.constant = isAlphabet ? 8 : 12
+      rootBottomConstraint.constant = isAlphabet ? -8 : isExplicitNetworkHeader ? -12 : -15
       setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 20)
     } else if isHistory {
       rootLeadingConstraint.constant = 0
@@ -2095,6 +2458,7 @@ final class NativeListCell: UICollectionViewCell {
       rootTopConstraint.constant = 24
       rootBottomConstraint.constant = -20
       setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 24)
+      accessoryButtons[0].accessibilityIdentifier = item.data["valueActionTestID"] as? String
       let valueActionKey = item.data.string("valueActionKey")
       let action: (String, NativeSelectionTarget?)? = valueActionKey.isEmpty
         ? nil
@@ -2105,11 +2469,11 @@ final class NativeListCell: UICollectionViewCell {
         action: action,
         color: nativeListColor(theme, "secondaryText", "#646464")
       )
-      accessoryButtons[0].titleLabel?.font = nativeListFont(ofSize: 16)
+      accessoryButtons[0].titleLabel?.font = nativeListFont(ofSize: 16, weight: isExplicitNetworkHeader ? .medium : .regular)
       setButtonLine(
         accessoryButtons[0],
         text: item.data.string("value"),
-        font: nativeListFont(ofSize: 16),
+        font: nativeListFont(ofSize: 16, weight: isExplicitNetworkHeader ? .medium : .regular),
         color: nativeListColor(theme, "secondaryText", "#646464"),
         lineHeight: 24
       )
@@ -2169,6 +2533,28 @@ final class NativeListCell: UICollectionViewCell {
         )
       }
     }
+    applyValueSegments(item.data.dictionaries("valueSegments"), to: accessoryButtons[0], theme: theme)
+  }
+
+  // OneKey patch: small zero-count digits remain on the regular amount baseline.
+  private func applyValueSegments(_ segments: [[String: Any]], to button: UIButton, theme: [String: Any]?) {
+    guard !segments.isEmpty else { return }
+    let value = NSMutableAttributedString(string: "")
+    let color = nativeListColor(theme, "primaryText", "#202020")
+    // OneKey patch: rich currency changes font runs without dropping the established line baseline.
+    let current = button.attributedTitle(for: .normal)
+    var attributes = current.flatMap { $0.length > 0 ? $0.attributes(at: 0, effectiveRange: nil) : nil } ?? [:]
+    attributes[.foregroundColor] = color
+    if currentItem?.data.string("presentation") == "networkSelector" && currentItem?.data["height"] != nil {
+      let paragraph = (attributes[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+      paragraph.alignment = .right
+      attributes[.paragraphStyle] = paragraph
+    }
+    for segment in segments {
+      attributes[.font] = nativeListTabularFont(ofSize: segment.string("style") == "subscript" ? 10 : 16, weight: .medium)
+      value.append(NSAttributedString(string: segment.string("text"), attributes: attributes))
+    }
+    button.setAttributedTitle(value, for: .normal)
   }
 
   private func bindAction(
@@ -2185,6 +2571,8 @@ final class NativeListCell: UICollectionViewCell {
       addLeading(icon, key: item.key)
       if isAccountSelector {
         leadingContainer.layer.cornerCurve = .continuous
+        leadingContainer.layer.cornerRadius = 8
+        leadingContainer.layer.borderWidth = 0
       }
       if icon["backgroundColor"] == nil {
         leadingContainer.backgroundColor = .clear
@@ -2195,8 +2583,9 @@ final class NativeListCell: UICollectionViewCell {
     rootStack.addArrangedSubview(mainStack)
     show(titleLabel, item.data.string("title"), lines: 1)
     if isAccountSelector {
-      titleLabel.font = nativeListFont(ofSize: 16)
-      titleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
+      // OneKey patch: ListItem.Text is medium; empty-search actions use regular body text.
+      titleLabel.font = nativeListFont(ofSize: 16, weight: item.data.dictionary("icon") == nil ? .regular : .medium)
+      titleLabel.textColor = nativeListColor(theme, item.data.string("tone") == "primary" ? "primaryText" : "secondaryText", item.data.string("tone") == "primary" ? "#202020" : "#646464")
     } else if item.data.string("tone") == "danger" {
       titleLabel.textColor = nativeListColor(theme, "negative", "#CE2C31")
     }
@@ -2217,8 +2606,19 @@ final class NativeListCell: UICollectionViewCell {
     }
   }
 
+  // OneKey patch: preserve the actual title frame for Popover placement.
+  @objc private func selectorTitlePressed() {
+    guard let item = currentItem else { return }
+    let action = item.data.string("titleActionKey")
+    guard !action.isEmpty else { return }
+    onAction?(item, action, nil, actionOrigin(sourceView: titleLabel, source: "leadingAction"))
+  }
+
   private func dataTextColor(_ tone: String, theme: [String: Any]?) -> UIColor {
     switch tone.isEmpty ? "primary" : tone {
+    // OneKey patch: account warnings and hidden balances use existing theme tokens.
+    case "disabled": return nativeListColor(theme, "disabledText", "#8D8D8D")
+    case "caution": return nativeListColor(theme, "caution", "#AB6400")
     case "secondary": return nativeListColor(theme, "secondaryText", "#646464")
     case "positive": return nativeListColor(theme, "positive", "#218358")
     case "negative": return nativeListColor(theme, "negative", "#CE2C31")
@@ -2230,6 +2630,36 @@ final class NativeListCell: UICollectionViewCell {
     rootStack.alignment = .center
     rootStack.distribution = .fill
     let variant = item.data.string("variant")
+    // OneKey patch: deprecated-wallet warnings stay inside the scrolling list.
+    if variant == "warning" {
+      rootStack.addArrangedSubview(mainStack)
+      rootTopConstraint.constant = 14
+      rootBottomConstraint.constant = -14
+      mainStack.spacing = 4
+      titleLabel.font = nativeListFont(ofSize: 14, weight: .medium)
+      titleLabel.numberOfLines = 0
+      subtitleLabel.font = nativeListFont(ofSize: 14)
+      subtitleLabel.numberOfLines = 0
+      show(titleLabel, item.data.string("title"), lines: 0)
+      show(subtitleLabel, item.data.string("message"), lines: 0)
+      setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 20)
+      setLineHeight(subtitleLabel, text: item.data.string("message"), lineHeight: 20)
+      let borderColor = UIColor(nativeListHex: item.data.string("borderColor", default: "#E0E0E0"), fallback: .lightGray)
+      for top in [true, false] {
+        let border = UIView()
+        border.translatesAutoresizingMaskIntoConstraints = false
+        border.backgroundColor = borderColor
+        contentView.addSubview(border)
+        NSLayoutConstraint.activate([
+          border.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: -8),
+          border.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: 8),
+          border.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
+          top ? border.topAnchor.constraint(equalTo: contentView.topAnchor) : border.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+        ])
+        selectorViews.append(border)
+      }
+      return
+    }
     if variant == "loading" {
       leadingWidth.constant = 40
       leadingHeight.constant = 40
@@ -2357,7 +2787,105 @@ final class NativeListCell: UICollectionViewCell {
         tokenPair: tokenPair,
         shape: shape
       ))
-      bindImage(source.data, into: imageView, token: key, slot: index, variant: source.variant)
+      if currentItem?.data.string("presentation") == "networkSelector", currentItem?.data["height"] != nil, visibleSources.count == 1, cornerIcon == nil, visual.dictionaries("overlays").isEmpty {
+        // OneKey patch: a single outer mask matches NetworkAvatar's edge antialiasing.
+        imageView.layer.cornerRadius = 0
+        imageView.clipsToBounds = false
+      }
+      let fallbackIcon = index == 0 ? visual.dictionary("fallbackIcon") : nil
+      let expectedEpoch = bindingEpoch
+      bindImage(source.data, into: imageView, token: key, slot: index, variant: source.variant,
+        onLoad: fallbackIcon == nil ? nil : { [weak self, weak imageView] in
+          guard let self, self.bindingEpoch == expectedEpoch else { return }
+          imageView?.isHidden = false
+          self.leadingIconImageView.isHidden = true
+        },
+        onError: fallbackIcon == nil ? nil : { [weak self, weak imageView] in
+          guard let self, self.bindingEpoch == expectedEpoch, let fallbackIcon else { return }
+          imageView?.isHidden = true
+          self.fallbackLabel.isHidden = true
+          self.leadingIconImageView.image = nativeListIcon(named: fallbackIcon.string("name"))
+          self.leadingIconImageView.tintColor = UIColor(nativeListHex: fallbackIcon.string("tintColor", default: "#646464"), fallback: .darkGray)
+          self.leadingIconImageView.isHidden = false
+        })
+    }
+    // OneKey patch: source-derived wallet decorations may occupy both corners.
+    let overlays = visual.dictionaries("overlays")
+    if !overlays.isEmpty { leadingContainer.clipsToBounds = false }
+    for (index, overlay) in overlays.enumerated() {
+      let size = CGFloat(overlay.double("size", default: 20))
+      let isWalletText = currentItem?.data.string("presentation") == "walletSidebar" && currentItem?.data["height"] != nil && !overlay.string("text").isEmpty && overlay.dictionary("image") == nil && overlay.string("name").isEmpty
+      let inset = CGFloat(overlay.double("padding", default: 0))
+      let offsetX = CGFloat(overlay.double("offsetX", default: overlay.double("offset", default: 2)))
+      let offsetY = CGFloat(overlay.double("offsetY", default: overlay.double("offset", default: 2)))
+      let height = CGFloat(overlay.double("height", default: isWalletText ? 16 : Double(size)))
+      let textWidth = (overlay.string("text") as NSString).size(withAttributes: [.font: nativeListTabularFont(ofSize: 12), .kern: 0]).width
+      let naturalTextWidth = ceil(textWidth * UIScreen.main.scale) / UIScreen.main.scale + 4
+      let width = CGFloat(overlay.double("width", default: isWalletText ? Double(naturalTextWidth) : Double(size)))
+      let frame = UIView()
+      frame.translatesAutoresizingMaskIntoConstraints = false
+      frame.backgroundColor = UIColor(nativeListHex: overlay.string("backgroundColor", default: "#FFFFFF"), fallback: .clear)
+      frame.layer.cornerRadius = min(width, height) / 2
+      frame.clipsToBounds = true
+      leadingContainer.addSubview(frame)
+      selectorViews.append(frame)
+      let topLeft = overlay.string("position") == "topLeft"
+      leadingSlotConstraints.append(contentsOf: [
+        frame.widthAnchor.constraint(equalToConstant: width),
+        frame.heightAnchor.constraint(equalToConstant: height),
+        topLeft ? frame.leadingAnchor.constraint(equalTo: leadingContainer.leadingAnchor, constant: -offsetX) : frame.trailingAnchor.constraint(equalTo: leadingContainer.trailingAnchor, constant: offsetX),
+        topLeft ? frame.topAnchor.constraint(equalTo: leadingContainer.topAnchor, constant: -offsetY) : frame.bottomAnchor.constraint(equalTo: leadingContainer.bottomAnchor, constant: offsetY),
+      ])
+      let content: UIView
+      if let image = overlay.dictionary("image") {
+        let imageView = OneKeyImageReusableView(frame: .zero)
+        bindImage(image, into: imageView, token: key, slot: 10 + index, variant: "generic")
+        selectorImages.append(imageView)
+        content = imageView
+      } else if !overlay.string("text").isEmpty {
+        let label = UILabel()
+        label.text = overlay.string("text")
+        label.textAlignment = .center
+        label.font = nativeListFont(ofSize: isWalletText ? 12 : 10, weight: isWalletText ? .regular : .medium)
+        label.textColor = UIColor(nativeListHex: overlay.string("tintColor", default: "#646464"), fallback: .darkGray)
+        if isWalletText { setLineHeight(label, text: overlay.string("text"), lineHeight: 16) }
+        content = label
+      } else {
+        let imageView = UIImageView(image: nativeListIcon(named: overlay.string("name")))
+        imageView.contentMode = .scaleAspectFit
+        imageView.tintColor = UIColor(nativeListHex: overlay.string("tintColor", default: "#646464"), fallback: .darkGray)
+        content = imageView
+      }
+      content.translatesAutoresizingMaskIntoConstraints = false
+      frame.addSubview(content)
+      NSLayoutConstraint.activate([
+        content.leadingAnchor.constraint(equalTo: frame.leadingAnchor, constant: isWalletText ? 2 : inset),
+        content.trailingAnchor.constraint(equalTo: frame.trailingAnchor, constant: isWalletText ? -2 : -inset),
+        content.topAnchor.constraint(equalTo: frame.topAnchor, constant: isWalletText ? 0 : inset),
+        content.bottomAnchor.constraint(equalTo: frame.bottomAnchor, constant: isWalletText ? 0 : -inset),
+      ])
+    }
+    if let fallbackIcon = visual.dictionary("fallbackIcon"), sources.isEmpty {
+      fallbackLabel.isHidden = true
+      leadingIconImageView.isHidden = false
+      leadingIconImageView.image = nativeListIcon(named: fallbackIcon.string("name"))
+      leadingIconImageView.tintColor = UIColor(nativeListHex: fallbackIcon.string("tintColor", default: "#646464"), fallback: .darkGray)
+      if currentItem?.data.string("presentation") == "walletSidebar", currentItem?.data["height"] != nil, fallbackIcon.string("name") == "LockSolid" {
+        leadingIconWidth.constant = 40
+        leadingIconHeight.constant = 40
+        leadingContainer.clipsToBounds = false
+      }
+    }
+    if visual.string("borderStyle") == "dashed" {
+      let border = CAShapeLayer()
+      border.strokeColor = UIColor(nativeListHex: visual.string("borderColor", default: "#8D8D8D"), fallback: .gray).cgColor
+      border.fillColor = UIColor.clear.cgColor
+      border.lineWidth = currentItem?.data.string("presentation") == "walletSidebar" && currentItem?.data["height"] != nil ? 1 : 2
+      border.lineDashPattern = [4, 4]
+      let borderInset = border.lineWidth / 2
+      border.path = UIBezierPath(ovalIn: CGRect(x: borderInset, y: borderInset, width: leadingWidth.constant - border.lineWidth, height: leadingHeight.constant - border.lineWidth)).cgPath
+      leadingContainer.layer.addSublayer(border)
+      selectorBorder = border
     }
     NSLayoutConstraint.activate(leadingSlotConstraints)
   }
@@ -2439,6 +2967,11 @@ final class NativeListCell: UICollectionViewCell {
       switch accessory.string("kind") {
       case "value":
         showAccessory(textIndex, accessory.string("text"))
+        if item.data.string("presentation") == "networkSelector" && item.data["height"] != nil {
+          accessoryButtons[textIndex].contentHorizontalAlignment = .trailing
+          accessoryButtons[textIndex].titleLabel?.textAlignment = .right
+        }
+        applyValueSegments(accessory.dictionaries("textSegments"), to: accessoryButtons[textIndex], theme: theme)
         textIndex += 1
       case "valuePair":
         showValuePairAccessory(textIndex, accessory, theme: theme)
@@ -2519,7 +3052,7 @@ final class NativeListCell: UICollectionViewCell {
       state == "unchecked" ? nil : nativeListIcon(named: glyphName),
       for: .normal
     )
-    checkboxButton.tintColor = checkboxUncheckedColor
+    checkboxButton.tintColor = checkboxIconColor
     // A disabled ListItem already applies 0.5 to its complete content. Avoid
     // multiplying that opacity on the nested control a second time.
     checkboxButton.alpha = item.data.bool("disabled") ? 1 : accessoryDisabled ? 0.5 : 1
@@ -2543,11 +3076,24 @@ final class NativeListCell: UICollectionViewCell {
     let paragraphStyle = NSMutableParagraphStyle()
     paragraphStyle.minimumLineHeight = lineHeight
     paragraphStyle.maximumLineHeight = lineHeight
+    if currentItem?.data.string("presentation") == "walletSidebar" {
+      // OneKey patch: attributed paragraphs must preserve wallet name alignment and tail ellipsis.
+      paragraphStyle.alignment = label.textAlignment
+      paragraphStyle.lineBreakMode = label.lineBreakMode
+    }
     var attributes: [NSAttributedString.Key: Any] = [
       .font: label.font as Any,
       .foregroundColor: label.textColor as Any,
       .paragraphStyle: paragraphStyle,
     ]
+    if (currentItem?.data["height"] != nil && (["accountSelector", "walletSidebar"].contains(currentItem?.data.string("presentation") ?? "") || currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector")) || currentItem?.type == "system" && currentItem?.data.string("variant") == "warning" {
+      // OneKey patch: React Native centers font metrics inside explicit line heights.
+      let baselineOffset = max(0, (lineHeight - label.font.lineHeight) / 2)
+      // OneKey patch: TextKit's 14/20 headings align their baseline to the upper physical pixel.
+      let isSelectorHeading = currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector" && lineHeight == 20
+      let scale = window?.screen.scale ?? traitCollection.displayScale
+      attributes[.baselineOffset] = isSelectorHeading && scale > 0 ? ceil(baselineOffset * scale) / scale : baselineOffset
+    }
     if letterSpacing != 0 { attributes[.kern] = letterSpacing }
     label.attributedText = NSAttributedString(string: text, attributes: attributes)
   }
@@ -2563,7 +3109,20 @@ final class NativeListCell: UICollectionViewCell {
     let paragraphStyle = NSMutableParagraphStyle()
     paragraphStyle.minimumLineHeight = lineHeight
     paragraphStyle.maximumLineHeight = lineHeight
-    paragraphStyle.alignment = .center
+    let isSelectorValue = currentItem?.data.string("presentation") == "networkSelector" && currentItem?.data["height"] != nil && currentItem?.data.string("variant") != "summary"
+    let isSelectorSummary = currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector" && currentItem?.data["height"] != nil && currentItem?.data.string("variant") == "summary"
+    (button as? NativeListAccessoryButton)?.selectorSummaryLineHeight = isSelectorSummary ? lineHeight : nil
+    // OneKey patch: summary text uses its source line box; currency retains trailing alignment.
+    paragraphStyle.alignment = isSelectorValue ? .right : isSelectorSummary ? .natural : .center
+    if isSelectorSummary {
+      button.contentHorizontalAlignment = .leading
+      button.titleLabel?.textAlignment = .natural
+    }
+    if isSelectorValue {
+      button.contentHorizontalAlignment = .trailing
+      button.titleLabel?.textAlignment = .right
+    }
+    let baselineOffset: CGFloat = currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector" && currentItem?.data["height"] != nil ? max(0, (lineHeight - font.lineHeight) / 2) : 0
     button.setAttributedTitle(
       NSAttributedString(
         string: text,
@@ -2571,6 +3130,7 @@ final class NativeListCell: UICollectionViewCell {
           .font: font,
           .foregroundColor: color,
           .paragraphStyle: paragraphStyle,
+          .baselineOffset: baselineOffset,
         ]
       ),
       for: .normal
@@ -2671,6 +3231,9 @@ final class NativeListCell: UICollectionViewCell {
     switch tone.isEmpty ? defaultTone : tone {
     case "positive": return nativeListColor(theme, "positive", "#218358")
     case "negative": return nativeListColor(theme, "negative", "#CE2C31")
+    // OneKey patch: account warnings and hidden balances use existing theme tokens.
+    case "disabled": return nativeListColor(theme, "disabledText", "#8D8D8D")
+    case "caution": return nativeListColor(theme, "caution", "#AB6400")
     case "secondary": return nativeListColor(theme, "secondaryText", "#646464")
     default: return nativeListColor(theme, "primaryText", "#202020")
     }
@@ -2682,10 +3245,10 @@ final class NativeListCell: UICollectionViewCell {
     button.isHidden = false
     button.isEnabled = !data.bool("disabled")
     button.alpha = button.isEnabled ? 1 : 0.4
-    let tintColor = UIColor(
-      nativeListHex: data.string("tintColor", default: "#646464"),
-      fallback: .darkGray
-    )
+    let isAccountCreate = currentItem?.data.string("presentation") == "accountSelector" && currentItem?.data["height"] != nil && data.string("name") == "PlusSmallOutline"
+    let tintColor = data["tintColor"] == nil && isAccountCreate
+      ? nativeListColor(currentTheme, "iconSubdued", "#8D8D8D")
+      : UIColor(nativeListHex: data.string("tintColor", default: "#646464"), fallback: .darkGray)
     button.tintColor = tintColor
     if let image = nativeListIcon(named: data.string("name")) {
       button.setImage(image, for: .normal)
@@ -2695,7 +3258,12 @@ final class NativeListCell: UICollectionViewCell {
       )
     }
     let isDrillIn = data.string("kind") == "chevron"
-    let size: CGFloat = isDrillIn ? 24 : 36
+    let isAccountIcon = currentItem?.data.string("presentation") == "accountSelector" && !isDrillIn
+    let size: CGFloat = isDrillIn ? 24 : isAccountIcon && !isAccountCreate ? 38 : 36
+    if isAccountCreate { button.layer.cornerRadius = 8 }
+    if isAccountIcon { rootStack.setCustomSpacing(5, after: mainStack) }
+    button.accessibilityIdentifier = data["testID"] as? String
+    button.accessibilityLabel = data["accessibilityLabel"] as? String
     if !isDrillIn, !data.string("actionKey").isEmpty {
       // Reproduce the trailing edge of IconButton's m=-7 while keeping its
       // full 36-point frame for padding/highlight behavior.
@@ -2726,8 +3294,15 @@ final class NativeListCell: UICollectionViewCell {
     into imageView: OneKeyImageReusableView,
     token: String,
     slot: Int,
-    variant: String
+    variant: String,
+    onLoad: (() -> Void)? = nil,
+    onError: (() -> Void)? = nil,
+    retryAttempt: Int = 0
   ) {
+    let imageID = ObjectIdentifier(imageView)
+    selectorImageRetries.removeValue(forKey: imageID)?.cancel()
+    let expectedEpoch = bindingEpoch
+    let retryLimit = max(0, source.int("retryTimes", default: 0))
     let headersJson: String?
     if let headers = source.dictionary("headers"),
        JSONSerialization.isValidJSONObject(headers),
@@ -2743,10 +3318,27 @@ final class NativeListCell: UICollectionViewCell {
       contentFit: source.string("contentFit", default: "cover"),
       cachePolicy: source.string("cachePolicy", default: "memory-disk"),
       autoplay: source.bool("autoplay"),
-      recyclingKey: "\(token):\(slot)",
-      optimizeTos: source["optimizeTos"] == nil || source.bool("optimizeTos"),
+      recyclingKey: retryAttempt == 0 ? "\(token):\(slot)" : "\(token):\(slot):retry:\(retryAttempt)",
+      optimizeTos: retryAttempt == 0 && (source["optimizeTos"] == nil || source.bool("optimizeTos")),
       overscan: source["overscan"] == nil ? 1.1 : source.double("overscan"),
-      loadingStrategy: source.string("loadingStrategy", default: "static")
+      loadingStrategy: source.string("loadingStrategy", default: "static"),
+      onLoad: retryLimit == 0 ? onLoad : { [weak self] in
+        guard let self, self.bindingEpoch == expectedEpoch else { return }
+        self.selectorImageRetries.removeValue(forKey: imageID)?.cancel()
+        onLoad?()
+      },
+      onError: retryLimit == 0 ? onError : { [weak self, weak imageView] in
+        guard let self, self.bindingEpoch == expectedEpoch, let imageView else { return }
+        guard retryAttempt < retryLimit else { onError?(); return }
+        guard self.selectorImageRetries[imageID] == nil else { return }
+        let retry = DispatchWorkItem { [weak self, weak imageView] in
+          guard let self, self.bindingEpoch == expectedEpoch, let imageView else { return }
+          self.selectorImageRetries.removeValue(forKey: imageID)
+          self.bindImage(source, into: imageView, token: token, slot: slot, variant: variant, onLoad: onLoad, onError: onError, retryAttempt: retryAttempt + 1)
+        }
+        self.selectorImageRetries[imageID] = retry
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(Int.random(in: 0...2)), execute: retry)
+      }
     )
   }
 
@@ -2837,12 +3429,17 @@ final class NativeListCell: UICollectionViewCell {
     source: String,
     slot: Int? = nil
   ) -> NativeListActionOrigin {
-    NativeListActionOrigin(
+    let isAccountIcon = currentItem?.data.string("presentation") == "accountSelector"
+      && source == "trailingAccessory"
+      && accessoryButtons.contains { $0 === sourceView }
+      && sourceView.bounds.width == 38
+    return NativeListActionOrigin(
       sourceView: sourceView,
       ownerCell: self,
       bindingEpoch: bindingEpoch,
       source: source,
-      slot: slot
+      slot: slot,
+      anchorInset: isAccountIcon ? 7 : 0
     )
   }
 
@@ -2851,6 +3448,8 @@ final class NativeListCell: UICollectionViewCell {
   }
 
   private func invalidateCurrentBinding() {
+    selectorImageRetries.values.forEach { $0.cancel() }
+    selectorImageRetries.removeAll()
     guard currentItem != nil else { return }
     onBindingInvalidated?(self, bindingEpoch)
     bindingEpoch &+= 1

@@ -2,8 +2,6 @@ import CryptoKit
 import Foundation
 import ImageIO
 import SDWebImage
-import SDWebImageSVGCoder
-import SDWebImageWebPCoder
 import UIKit
 
 enum OneKeyImageSafetyViolation: LocalizedError, Equatable, Sendable {
@@ -467,28 +465,18 @@ enum OneKeyImageSafetyPolicy {
 }
 
 enum OneKeyImageCoderRegistry {
-  private static let svgCoder = SDImageSVGCoder.shared
-  private static let webPCoder = SDImageWebPCoder.shared
-
   static let coder: SDImageCodersManager = {
     // Keep OneKey's decoder set independent from Expo's global registrations.
     // SDImageCodersManager starts with ImageIO, GIF and APNG coders.
     let manager = SDImageCodersManager()
-    manager.addCoder(svgCoder)
-    manager.addCoder(webPCoder)
+    OneKeyImageCoderBridge.addCoders(to: manager)
     return manager
   }()
 
   private static let globalRegistration: Void = {
     // SDAnimatedImage resolves its animated coder through the global manager,
     // even when a request-local coder is provided in the SDWebImage context.
-    let global = SDImageCodersManager.shared
-    let isAlreadyRegistered = (global.coders ?? []).contains {
-      ($0 as AnyObject) === webPCoder
-    }
-    if !isAlreadyRegistered {
-      global.addCoder(webPCoder)
-    }
+    OneKeyImageCoderBridge.ensureWebPCoderRegistered()
   }()
 
   static func ensureWebPRegistered() {
@@ -697,7 +685,10 @@ enum OneKeyImageRequestContext {
     cachePolicy: OneKeyImageCachePolicy,
     thumbnailPixelSize: CGSize?,
     safetyTracker: OneKeyImageSafetyTracker?,
-    manager: SDWebImageManager
+    // OneKey patch: Scope local avatar routing to this request, preserving HTTP managers.
+    // manager: SDWebImageManager
+    manager: SDWebImageManager,
+    url: URL? = nil
   ) -> [SDWebImageContextOption: Any] {
     var context = baseContext
     context[.customManager] = manager
@@ -728,6 +719,14 @@ enum OneKeyImageRequestContext {
     context[.storeCacheType] = cacheType.rawValue
     context[.originalQueryCacheType] = cacheType.rawValue
     context[.originalStoreCacheType] = cacheType.rawValue
+    if url?.scheme == "onekey-avatar" {
+      context[.imageLoader] = OneKeyAvatarImageLoader.shared
+      context[.imageCache] = OneKeyAvatarImageLoader.cache
+      context[.originalImageCache] = OneKeyAvatarImageLoader.cache
+      context[.cacheKeyFilter] = SDWebImageCacheKeyFilter { url in
+        OneKeyBlockieDescriptor(url: url)?.cacheKey ?? url.absoluteString
+      }
+    }
     return context
   }
 

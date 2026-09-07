@@ -313,7 +313,10 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       cachePolicy: cachePolicy ?? .memoryDisk,
       thumbnailPixelSize: thumbnailPixelSize,
       safetyTracker: safetyHandle.tracker,
-      manager: safetyHandle.manager
+      // OneKey patch: Rendering and preload use the same local-avatar loader.
+      // manager: safetyHandle.manager
+      manager: safetyHandle.manager,
+      url: url
     )
     hostView.sd_setImage(
       with: url,

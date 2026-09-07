@@ -12,8 +12,9 @@ Pod::Spec.new do |s|
   s.platforms    = { :ios => min_ios_version_supported }
   s.source       = { :git => "https://github.com/OneKeyHQ/app-modules.git", :tag => "#{s.version}" }
 
-  s.source_files = ["ios/**/*.{swift,m,mm}", "cpp/**/*.{hpp,cpp}"]
+  s.source_files = ["ios/**/*.{h,swift,m,mm}", "cpp/**/*.{hpp,cpp}"]
   s.exclude_files = "ios/tests/**/*"
+  s.public_header_files = ["ios/OneKeyImageCoderBridge.h"]
 
   s.dependency "React-jsi"
   s.dependency "React-callinvoker"

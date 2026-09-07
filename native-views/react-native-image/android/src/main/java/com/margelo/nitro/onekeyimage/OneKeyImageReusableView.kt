@@ -28,7 +28,12 @@ class OneKeyImageReusableView(context: ThemedReactContext) : FrameLayout(context
     optimizeTos: Boolean,
     overscan: Double,
     loadingStrategy: String,
+    onLoad: (() -> Unit)? = null,
+    onError: (() -> Unit)? = null,
   ) {
+    // OneKey patch: Let reusable cells display their own success and fallback visuals.
+    image.onLoad = { _, _, _ -> onLoad?.invoke() }
+    image.onError = { _ -> onError?.invoke() }
     image.sourceHeadersJson = sourceHeadersJson
     image.variant = when (variant) {
       "token" -> OneKeyImageVariant.TOKEN

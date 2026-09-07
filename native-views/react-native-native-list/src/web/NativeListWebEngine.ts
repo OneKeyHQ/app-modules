@@ -37,8 +37,18 @@ import {
   type NormalizedPositionScroll,
 } from '../scrolling';
 import { applyRowPatches, validateSnapshot } from '../validation';
+import { avatarPrefetchWindow } from '../avatarPrefetch';
+import {
+  acquireNativeListAvatar,
+  canonicalNativeListAvatarUri,
+  type AvatarLease,
+} from './NativeListWebAvatarCache';
 
-const SECTION_INDEX_GUTTER = 44;
+const SECTION_INDEX_CONTENT_INSET = 16;
+const SECTION_INDEX_RAIL_WIDTH = 32;
+const SECTION_INDEX_EDGE_PADDING = 8;
+const SECTION_INDEX_MIN_LABEL_SPACING = 14;
+const SECTION_INDEX_MIN_HEIGHT = 120;
 const DEFAULT_VIEWPORT_WIDTH = 320;
 const DEFAULT_VIEWPORT_HEIGHT = 640;
 const OVERSCAN_VIEWPORTS = 1;
@@ -354,11 +364,40 @@ export function estimateWebRowHeight(
   snapshot: NativeListSnapshot,
   availableWidth: number
 ): number {
-  if (row.type === 'system' && row.variant === 'spacer') return row.height;
+  // OneKey patch: explicit selector height takes precedence over presets.
+  // if (row.type === 'system' && row.variant === 'spacer') return row.height;
+  if (row.height !== undefined) return row.height;
+  if (row.type === 'system' && row.variant === 'warning') {
+    const width = Math.max(1, availableWidth - 24);
+    const lines = (text: string) =>
+      Math.max(
+        1,
+        Math.ceil(
+          Array.from(text).reduce(
+            (length, char) => length + (char.charCodeAt(0) > 255 ? 14 : 7),
+            0
+          ) / width
+        )
+      );
+    return 32 + 20 * (lines(row.title) + lines(row.message));
+  }
   if (row.type === 'walletGroup')
-    return (row.children.length + 1) * 68 + row.children.length * 12;
+    // OneKey patch: wallet badges participate in the outer group height.
+    // return (row.children.length + 1) * 68 + row.children.length * 12;
+    return (
+      [row.parent, ...row.children].reduce(
+        (height, member) =>
+          height + estimateWebRowHeight(member, snapshot, availableWidth),
+        0
+      ) +
+      row.children.length * 12 +
+      (row.parent.height !== undefined ? 2 : 0)
+    );
+  // OneKey patch: reserve the source badge line below wallet names.
+  // if (row.type === 'identity' && row.presentation === 'walletSidebar')
+  // return 68;
   if (row.type === 'identity' && row.presentation === 'walletSidebar')
-    return 68;
+    return 68 + (row.badges?.length ? 24 : 0);
   if (row.type === 'identity' && row.presentation === 'networkSelector')
     return 47;
   if (row.type === 'identity' && row.presentation === 'accountSelector')
@@ -471,9 +510,13 @@ export function computeWebListLayout(
   const horizontal = snapshot.layout.orientation === 'horizontal';
   const spacing = snapshot.layout.itemSpacing ?? 0;
   const padding = paddingValues(snapshot);
-  const indexGutter = sectionIndexEnabled(snapshot) ? SECTION_INDEX_GUTTER : 0;
   const width = Math.max(1, viewportWidth || DEFAULT_VIEWPORT_WIDTH);
   const height = Math.max(1, viewportHeight || DEFAULT_VIEWPORT_HEIGHT);
+  // OneKey patch: the index overlays the content and only keeps a small accessory-safe inset.
+  const indexGutter =
+    sectionIndexEnabled(snapshot) && height >= SECTION_INDEX_MIN_HEIGHT
+      ? SECTION_INDEX_CONTENT_INSET
+      : 0;
   const availableWidth = Math.max(
     1,
     width - padding.horizontal * 2 - indexGutter
@@ -699,7 +742,9 @@ export function webRowRenderSignature(row: RowModel): string {
   return JSON.stringify(rowWithoutSelectionState(row));
 }
 
+// OneKey patch: selector names must shrink before the sidebar clips their contents.
 export const WEB_LIST_CSS = `
+[data-native-list-selector="walletSidebar"] .ok-native-list-title{max-width:100%;min-width:0}
 .ok-native-list-root{--nl-bg:#f7f7f7;--nl-row:#fff;--nl-selected:#eaf2ff;--nl-pressed:#e8e8e8;--nl-subdued:#f9f9f9;--nl-strong:#0000000f;--nl-primary:#111;--nl-secondary:#6b7280;--nl-disabled:#8d8d8d;--nl-icon:#111;--nl-icon-subdued:#8d8d8d;--nl-separator:#e5e7eb;--nl-accent:#2f6bff;--nl-positive:#15803d;--nl-negative:#dc2626;--nl-critical:#feecec;--nl-inverse:#202020;--nl-inverse-text:#fcfcfc;--nl-info:#0d74ce;position:absolute;inset:0;display:flex;min-width:0;min-height:0;overflow:hidden;background:var(--nl-bg);color:var(--nl-primary);font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-synthesis:none}
 .ok-native-list-viewport-frame{position:relative;flex:1;min-width:0;min-height:0;overflow:hidden}
 .ok-native-list-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
@@ -710,6 +755,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
 .ok-native-list-item[data-native-list-disabled="true"]>.ok-native-list-row{opacity:.5;cursor:default}
 .ok-native-list-item:not([data-native-list-disabled="true"]):hover>.ok-native-list-row{background:var(--nl-pressed)}
+.ok-native-list-item:not([data-native-list-disabled="true"]):active>.ok-native-list-row{background:var(--nl-pressed)}
 .ok-native-list-item:not([data-native-list-disabled="true"]):not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
 .ok-native-list-item:not([data-native-list-disabled="true"]):not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-selected="true"]:hover>.ok-native-list-wallet-row{background:var(--nl-selected)}
@@ -752,9 +798,29 @@ export const WEB_LIST_CSS = `
 .ok-native-list-media{display:block;padding:0 5px;background:transparent;border-radius:16px}.ok-native-list-media-image{display:block;width:100%;aspect-ratio:1;border-radius:10px;background:var(--nl-strong);object-fit:cover}.ok-native-list-media-image[data-state="empty"]{background:transparent}.ok-native-list-media-image[data-state="error"]{display:flex;align-items:center;justify-content:center;color:var(--nl-icon-subdued);font-size:24px}.ok-native-list-media-meta{padding-top:7px}.ok-native-list-media-subtitle-row{display:flex;align-items:center;gap:6px}.ok-native-list-media-subtitle{flex:1;min-width:0;font-size:12px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-network{width:14px;height:14px;border-radius:50%}.ok-native-list-media-title{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-close{position:absolute;right:9px;top:4px;border:0;background:color-mix(in srgb,var(--nl-inverse) 72%,transparent);color:var(--nl-inverse-text);width:24px;height:24px;border-radius:50%;font:18px/20px inherit;cursor:pointer}
 .ok-native-list-metric{display:flex;flex-direction:column;align-items:flex-start;padding:12px;border-radius:12px;gap:5px;background:var(--nl-row)}.ok-native-list-metric-value{font-size:22px;line-height:28px;font-weight:700}.ok-native-list-composite{display:flex;flex-direction:column;align-items:stretch;padding:14px;border-radius:12px;gap:12px;background:var(--nl-subdued)}.ok-native-list-composite-heading{font-size:14px;letter-spacing:1px;color:var(--nl-secondary)}.ok-native-list-composite-row{display:flex;gap:12px}.ok-native-list-composite-cell{flex:1;min-width:0}.ok-native-list-composite-cell[data-shaded="true"]{padding:10px;border-radius:10px;background:color-mix(in srgb,var(--nl-primary) 5%,transparent)}.ok-native-list-composite-value{font-size:18px;font-weight:600}.ok-native-list-divider{height:1px;background:var(--nl-separator)}.ok-native-list-progress{height:4px;border-radius:2px;overflow:hidden;background:var(--nl-negative)}.ok-native-list-progress>span{display:block;height:100%;border-radius:2px;background:var(--nl-positive)}
 .ok-native-list-data{padding:6px 12px}.ok-native-list-index{flex:0 0 28px;color:var(--nl-secondary);font-size:13px}.ok-native-list-favorite{flex:0 0 24px;color:var(--nl-icon-subdued);font-size:22px}.ok-native-list-favorite[data-active="true"]{color:var(--nl-accent)}.ok-native-list-data-cell{display:flex;flex-direction:column;min-width:0}.ok-native-list-data-cell[data-align="center"]{align-items:center}.ok-native-list-data-cell[data-align="end"]{align-items:flex-end}.ok-native-list-data-primary{display:flex;align-items:center;gap:5px;max-width:100%;font-size:16px;font-weight:500;white-space:nowrap}.ok-native-list-unread{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--nl-accent)}.ok-native-list-thumbnail{width:64px;height:64px;border-radius:10px;object-fit:cover}
-.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;touch-action:none}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;border:0;background:transparent;display:flex;flex:1;max-height:22px;min-height:12px;width:100%;align-items:center;justify-content:center;padding:0;color:var(--nl-secondary);font:600 11px/1 inherit;cursor:pointer}.ok-native-list-index-button[data-active="true"]{color:var(--nl-accent)}.ok-native-list-index-preview{position:absolute;z-index:8;left:50%;top:50%;display:flex;width:72px;height:72px;align-items:center;justify-content:center;transform:translate(-50%,-50%) scale(.92);border-radius:16px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:28px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:6px;display:flex;width:20px;height:16px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:8px;background:transparent;color:var(--nl-secondary);font:600 10px/1 inherit;cursor:pointer}.ok-native-list-index-button[data-active="true"]{background:var(--nl-accent);color:var(--nl-inverse-text)}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-accent);outline-offset:1px}.ok-native-list-index-preview{position:absolute;z-index:8;right:40px;top:50%;display:flex;width:48px;height:48px;align-items:center;justify-content:center;transform:translateY(-50%) scale(.92);border-radius:14px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:22px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translateY(-50%) scale(1)}
 .ok-native-list-refresh{position:absolute;z-index:7;left:50%;top:8px;display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;opacity:0;transform:translate(-50%,-16px);transition:opacity .15s ease,transform .15s ease;pointer-events:none}.ok-native-list-refresh[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
+.ok-native-list-warning{height:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:14px 12px;border-top:1px solid;border-bottom:1px solid;box-sizing:border-box;cursor:default}.ok-native-list-warning-title,.ok-native-list-warning-message{font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}.ok-native-list-warning-title{font-weight:500;color:var(--nl-primary)}.ok-native-list-warning-message{font-weight:400;color:var(--nl-secondary)}
+.ok-native-list-subtitle-segments{display:flex;align-items:center;min-width:0;max-width:100%;height:20px}.ok-native-list-subtitle-segments>.ok-native-list-secondary{flex:0 1 auto;min-width:0}.ok-native-list-subtitle-dot{flex:0 0 4px;width:4px;height:4px;margin:0 6px;border-radius:50%;background:var(--nl-disabled)}.ok-native-list-wallet-row>.ok-native-list-flex{flex:0 1 auto;width:100%;align-items:center}.ok-native-list-wallet-badges{display:flex;gap:4px;justify-content:center;margin-top:4px;height:20px;max-width:100%}.ok-native-list-wallet-badges>.ok-native-list-badge{background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;height:20px;box-sizing:border-box;padding:2px 4px}.ok-native-list-visual-overlay{position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;line-height:1;font-size:10px}.ok-native-list-visual-overlay img,.ok-native-list-visual-overlay svg{width:100%;height:100%;object-fit:contain}
 @media (prefers-reduced-motion:reduce){.ok-native-list-index-preview,.ok-native-list-refresh{transition:none}.ok-native-list-spinner{animation:none}}
+/* OneKey patch: selector controls follow their original semantic colors and geometry. */
+.ok-native-list-checkbox[data-selector="networkSelector"]{padding:0;border-radius:4px;border-color:var(--nl-checkbox-border,var(--nl-separator));background:var(--nl-checkbox-icon,var(--nl-inverse-text))}
+.ok-native-list-checkbox[data-selector="networkSelector"]::after{display:none}
+.ok-native-list-checkbox[data-selector="networkSelector"]>svg{display:none;width:16px;height:16px;color:var(--nl-checkbox-icon,var(--nl-inverse-text));flex-shrink:0}
+.ok-native-list-checkbox[data-selector="networkSelector"][data-state="checked"],.ok-native-list-checkbox[data-selector="networkSelector"][data-state="indeterminate"]{border-color:transparent;background:var(--nl-checkbox-background,var(--nl-primary))}
+.ok-native-list-checkbox[data-selector="networkSelector"][data-state="checked"]>svg[data-state="checked"],.ok-native-list-checkbox[data-selector="networkSelector"][data-state="indeterminate"]>svg[data-state="indeterminate"]{display:block}
+/* OneKey patch: source WalletListItem uses four-point padding on every side. */
+.ok-native-list-wallet-row[data-native-list-selector="walletSidebar"]{border-radius:12px;padding:4px}
+/* OneKey patch: selected group members use the same primary title color as standalone wallets. */
+.ok-native-list-wallet-member[data-native-list-selected="true"]>.ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-title{color:var(--nl-primary)}
+.ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-wallet-badges{height:18px}
+.ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-wallet-badges>.ok-native-list-badge{font-size:11px;line-height:14px;font-weight:400;height:18px;padding:2px 6px;border-radius:4px;background:var(--nl-subdued);color:var(--nl-secondary)}
+.ok-native-list-wallet-row[data-native-list-selector="walletSidebar"] .ok-native-list-wallet-badges>.ok-native-list-badge[data-tone="warning"]{background:var(--nl-caution-background);color:var(--nl-caution)}
+.ok-native-list-account-row[data-native-list-selector="accountSelector"] .ok-native-list-accessories>.ok-native-list-icon-button{box-sizing:border-box;flex:0 0 38px;width:38px;height:38px;margin:-7px;padding:7px}
+/* OneKey patch: AccountSelectorAccountListItem fixes the borderless Plus slot at top18/right20. */
+.ok-native-list-account-row[data-native-list-selector="accountSelector"]>.ok-native-list-accessories[data-native-list-account-control="createAddress"]{position:absolute;top:18px;right:12px}
+.ok-native-list-account-row[data-native-list-selector="accountSelector"] .ok-native-list-accessories>[data-native-list-account-control="createAddress"]{flex-basis:36px;width:36px;height:36px;padding:6px;border-radius:8px}
+.ok-native-list-account-action-row{padding-left:12px;padding-right:12px}.ok-native-list-account-action-row .ok-native-list-action-title{font-size:16px;line-height:24px;font-weight:400}.ok-native-list-account-action-row .ok-native-list-action-title[data-tone="primary"]{color:var(--nl-primary)}
 `;
 
 function createElement(
@@ -788,16 +854,132 @@ function safeImageUri(uri: string): string | undefined {
   return undefined;
 }
 
+// OneKey patch: retries belong to an image binding and must not outlive recycled rows.
+const webImageRetryCleanup = new WeakMap<HTMLImageElement, () => void>();
+const webAvatarCleanup = new WeakMap<HTMLImageElement, () => void>();
+const webAvatarSources = new WeakMap<
+  HTMLImageElement,
+  { uri: string; source: ImageSource }
+>();
+function disposeWebImageRetries(element: HTMLElement): boolean {
+  let disposed = false;
+  const images = element.matches('img')
+    ? [element as HTMLImageElement]
+    : element.querySelectorAll('img');
+  images.forEach((image) => {
+    const avatarCleanup = webAvatarCleanup.get(image);
+    const cleanup = webImageRetryCleanup.get(image);
+    if (!cleanup && !avatarCleanup) return;
+    avatarCleanup?.();
+    webAvatarCleanup.delete(image);
+    webAvatarSources.delete(image);
+    cleanup?.();
+    webImageRetryCleanup.delete(image);
+    disposed = true;
+  });
+  return disposed;
+}
+
+function configureWebImageRetry(
+  image: HTMLImageElement,
+  source: ImageSource,
+  initialUri: string
+) {
+  const fallbackUri = source.fallbackUri
+    ? safeImageUri(source.fallbackUri)
+    : undefined;
+  const retryLimit = Number.isFinite(source.retryTimes)
+    ? Math.max(0, Math.floor(source.retryTimes ?? 0))
+    : 0;
+  if (!fallbackUri && retryLimit === 0) return;
+  const view = image.ownerDocument.defaultView;
+  let currentUri = initialUri;
+  let usedFallback = false;
+  let retryCount = 0;
+  let retryTimer: number | undefined;
+  let disposed = false;
+  const clearRetry = () => {
+    if (retryTimer !== undefined) view?.clearTimeout(retryTimer);
+    retryTimer = undefined;
+  };
+  const handleError = (event: Event) => {
+    if (disposed || !image.isConnected || retryTimer !== undefined) {
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (fallbackUri && !usedFallback && fallbackUri !== currentUri) {
+      event.stopImmediatePropagation();
+      usedFallback = true;
+      currentUri = fallbackUri;
+      image.src = currentUri;
+      return;
+    }
+    if (retryCount >= retryLimit || !view) return;
+    event.stopImmediatePropagation();
+    retryCount += 1;
+    retryTimer = view.setTimeout(() => {
+      retryTimer = undefined;
+      if (disposed || !image.isConnected) return;
+      image.removeAttribute('src');
+      image.src = currentUri;
+    }, Math.floor(Math.random() * 3) * 1000);
+  };
+  image.addEventListener('error', handleError);
+  image.addEventListener('load', clearRetry);
+  webImageRetryCleanup.set(image, () => {
+    disposed = true;
+    clearRetry();
+    image.removeEventListener('error', handleError);
+    image.removeEventListener('load', clearRetry);
+  });
+}
+
+function configureWebAvatar(
+  image: HTMLImageElement,
+  source: ImageSource,
+  uri: string
+) {
+  const dispose = acquireNativeListAvatar(
+    image.ownerDocument,
+    uri,
+    (resolvedUri) => {
+      configureWebImageRetry(image, source, resolvedUri);
+      image.src = resolvedUri;
+    },
+    () => {
+      const fallbackUri = source.fallbackUri
+        ? safeImageUri(source.fallbackUri)
+        : undefined;
+      if (fallbackUri) {
+        configureWebImageRetry(image, source, fallbackUri);
+        image.src = fallbackUri;
+        return;
+      }
+      const ImageEvent = image.ownerDocument.defaultView?.Event;
+      if (ImageEvent) image.dispatchEvent(new ImageEvent('error'));
+    }
+  );
+  webAvatarSources.set(image, { uri, source });
+  webAvatarCleanup.set(image, dispose);
+}
+
 function createImage(
   context: RenderContext,
   source: ImageSource,
   className?: string
 ): HTMLImageElement | undefined {
-  const uri = safeImageUri(source.uri);
+  const avatarUri = canonicalNativeListAvatarUri(source.uri);
+  const uri = avatarUri ?? safeImageUri(source.uri);
   if (!uri) return undefined;
   const image = context.document.createElement('img');
   if (className) image.className = className;
-  image.src = uri;
+  // OneKey patch: consume recoverable errors before the visual's final fallback listener.
+  if (avatarUri) {
+    configureWebAvatar(image, source, avatarUri);
+  } else {
+    configureWebImageRetry(image, source, uri);
+    image.src = uri;
+  }
   image.alt = '';
   image.draggable = false;
   image.loading = 'lazy';
@@ -805,6 +987,324 @@ function createImage(
   image.style.objectFit =
     source.contentFit === 'fill' ? 'fill' : source.contentFit ?? 'cover';
   return image;
+}
+
+// OneKey patch: React Native Web paints selector images as centered CSS backgrounds.
+// The image keeps its loading/error lifecycle; only its replaced-element pixels are hidden.
+function paintSelectorImageBackground(
+  image: HTMLImageElement,
+  frame: HTMLElement,
+  inset = 0
+) {
+  const paint = createElement(
+    image.ownerDocument,
+    'span',
+    'ok-native-list-selector-image-background'
+  );
+  paint.style.cssText =
+    'position:absolute;pointer-events:none;border-radius:inherit;background-position:center;background-repeat:no-repeat';
+  paint.style.inset = String(inset) + 'px';
+  paint.style.backgroundSize =
+    image.style.objectFit === 'fill'
+      ? '100% 100%'
+      : image.style.objectFit === 'center'
+      ? 'auto'
+      : image.style.objectFit;
+  image.style.opacity = '0';
+  const update = () => {
+    paint.style.backgroundImage =
+      'url(' + JSON.stringify(image.currentSrc || image.src) + ')';
+  };
+  image.addEventListener('load', update);
+  image.addEventListener('error', () => {
+    paint.style.backgroundImage = 'none';
+  });
+  frame.insertBefore(paint, image);
+  if (image.complete && image.naturalWidth > 0) update();
+}
+
+// OneKey patch: use source SVG paths for selector actions and wallet provider marks.
+const selectorIcons: Readonly<
+  Record<
+    string,
+    Readonly<{
+      viewBox: string;
+      paths: readonly Readonly<{
+        d: string;
+        fill: string;
+        fillRule: string;
+        opacity: number;
+      }>[];
+    }>
+  >
+> = {
+  GlobusOutline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M12 2c5.185 0 9.448 3.947 9.95 9H22v2h-.05c-.502 5.053-4.765 9-9.95 9s-9.448-3.947-9.95-9H2v-2h.05C2.552 5.947 6.815 2 12 2M9.523 13c.09 1.982.438 3.726.934 5.002.29.746.612 1.282.917 1.614.304.331.517.384.626.384s.322-.053.626-.384c.305-.332.627-.868.917-1.614.496-1.276.845-3.02.934-5.002zm-5.459 0a8 8 0 0 0 4.8 6.36 10 10 0 0 1-.271-.633C7.994 17.187 7.61 15.189 7.52 13zm12.416 0c-.09 2.189-.474 4.187-1.073 5.727a10 10 0 0 1-.271.633 8 8 0 0 0 4.8-6.36zM8.863 4.639A8 8 0 0 0 4.064 11h3.457c.09-2.189.473-4.187 1.072-5.727q.127-.327.27-.634M12 4c-.109 0-.322.053-.626.384-.305.332-.627.868-.917 1.614-.496 1.276-.844 3.02-.934 5.002h4.954c-.09-1.982-.438-3.726-.934-5.002-.29-.746-.612-1.282-.917-1.614C12.322 4.053 12.109 4 12 4m3.136.639q.144.307.271.634c.599 1.54.982 3.538 1.073 5.727h3.456a8 8 0 0 0-4.8-6.361',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1.0,
+      },
+    ],
+  },
+  LockSolid: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M12 2a5 5 0 0 1 5 5v2h3v13H4V9h3V7a5 5 0 0 1 5-5m-1 11v5h2v-5zm1-9a3 3 0 0 0-3 3v2h6V7a3 3 0 0 0-3-3',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1.0,
+      },
+    ],
+  },
+  GoogleIllus: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09',
+        fill: '#4285F4',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+      {
+        d: 'M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23',
+        fill: '#34A853',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+      {
+        d: 'M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22z',
+        fill: '#FBBC05',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+      {
+        d: 'M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53',
+        fill: '#EA4335',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+    ],
+  },
+  AppleBrand: {
+    viewBox: '0 0 16 20',
+    paths: [
+      {
+        d: 'M11.67.834c.117 1.074-.315 2.153-.955 2.928-.64.773-1.692 1.378-2.718 1.298-.14-1.054.38-2.151.971-2.836C9.63 1.45 10.746.872 11.67.834M14.994 7.093c-.176.108-1.992 1.224-1.972 3.482.025 2.769 2.428 3.693 2.46 3.705l-.004.015a10.1 10.1 0 0 1-1.264 2.593c-.764 1.116-1.556 2.229-2.806 2.254-.598.011-1-.162-1.416-.343-.437-.19-.891-.386-1.609-.386-.751 0-1.226.203-1.683.398-.397.169-.78.333-1.32.354-1.208.047-2.124-1.207-2.895-2.32C.909 14.57-.294 10.414 1.322 7.612c.803-1.395 2.237-2.275 3.794-2.298.671-.014 1.32.244 1.89.47.434.172.821.326 1.135.326.282 0 .659-.149 1.099-.323.692-.273 1.539-.607 2.41-.518.599.026 2.276.24 3.354 1.818z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+    ],
+  },
+  BotIllus: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M11 2a1 1 0 1 1 2 0v1.8l1.6 1.6a1 1 0 1 1-1.4 1.4L12 5.6l-1.2 1.2a1 1 0 0 1-1.4-1.4L11 3.8z',
+        fill: '#8897A5',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+      {
+        d: 'M8.0 6.0h8.0a5.0 5.0 0 0 1 5.0 5.0v4.0a5.0 5.0 0 0 1 -5.0 5.0h-8.0a5.0 5.0 0 0 1 -5.0 -5.0v-4.0a5.0 5.0 0 0 1 5.0 -5.0z',
+        fill: '#3FA9F5',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+      {
+        d: 'M3.0 10.0h0.0a1.5 1.5 0 0 1 1.5 1.5v3.0a1.5 1.5 0 0 1 -1.5 1.5h0.0a1.5 1.5 0 0 1 -1.5 -1.5v-3.0a1.5 1.5 0 0 1 1.5 -1.5z',
+        fill: '#8897A5',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+      {
+        d: 'M21.0 10.0h0.0a1.5 1.5 0 0 1 1.5 1.5v3.0a1.5 1.5 0 0 1 -1.5 1.5h0.0a1.5 1.5 0 0 1 -1.5 -1.5v-3.0a1.5 1.5 0 0 1 1.5 -1.5z',
+        fill: '#8897A5',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+      {
+        d: 'M7.5 12.0a1.5 1.5 0 1 0 3.0 0a1.5 1.5 0 1 0 -3.0 0',
+        fill: '#10243E',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+      {
+        d: 'M13.5 12.0a1.5 1.5 0 1 0 3.0 0a1.5 1.5 0 1 0 -3.0 0',
+        fill: '#10243E',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+      {
+        d: 'M8.5 15.4c.9.8 2.08 1.2 3.5 1.2s2.6-.4 3.5-1.2c.24-.2.6-.18.8.06.2.23.17.6-.06.8-1.14.98-2.58 1.46-4.24 1.46s-3.1-.48-4.24-1.46a.58.58 0 0 1-.06-.8c.2-.24.56-.26.8-.06',
+        fill: '#10243E',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+    ],
+  },
+  AllNetworksSolid: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M15.333 13.998a1.335 1.335 0 1 1 0 2.67 1.335 1.335 0 0 1 0-2.67',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+      {
+        d: 'M12 0c6.627 0 12 5.373 12 12s-5.373 12-12 12S0 18.627 0 12 5.373 0 12 0M8 12.668A2 2 0 0 0 6 14.666V16c0 1.103.895 1.997 1.998 1.998h1.334A2 2 0 0 0 11.33 16v-1.334a2 2 0 0 0-1.998-1.998zm7.333 0a2.665 2.665 0 1 0 0 5.33 2.665 2.665 0 0 0 0-5.33M7.999 6.001A2 2 0 0 0 6.001 8v1.334c0 1.103.895 1.998 1.998 1.998h1.334a2 2 0 0 0 1.998-1.998V7.999a2 2 0 0 0-1.998-1.998zm6.667 0A2 2 0 0 0 12.668 8v1.334c0 1.103.895 1.998 1.998 1.998H16a2 2 0 0 0 1.998-1.998V7.999A2 2 0 0 0 16 6.001z',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1.0,
+      },
+    ],
+  },
+  CrossedSmallSolid: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M17.87 8.25 14.12 12l3.75 3.75-2.12 2.121-3.75-3.75-3.75 3.75-2.121-2.121L9.879 12l-3.75-3.75 2.12-2.121L12 9.879l3.75-3.75 2.122 2.121Z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+    ],
+  },
+  AccountErrorCustom: {
+    viewBox: '0 0 18 18',
+    paths: [
+      {
+        d: 'M12.5 12.75a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5',
+        fill: '#000',
+        fillRule: 'nonzero',
+        opacity: 0.447,
+      },
+      {
+        d: 'M0 3.5A3.5 3.5 0 0 1 3.5 0h8.088A2.41 2.41 0 0 1 14 2.412V5h1a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H4a4 4 0 0 1-4-4zm2 3.163V14a2 2 0 0 0 2 2h11a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H3.5c-.537 0-1.045-.12-1.5-.337M2 3.5A1.5 1.5 0 0 0 3.5 5H12V2.412A.41.41 0 0 0 11.588 2H3.5A1.5 1.5 0 0 0 2 3.5',
+        fill: '#000',
+        fillRule: 'evenodd',
+        opacity: 0.447,
+      },
+    ],
+  },
+  PlusSmallOutline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M13 11h5v2h-5v5h-2v-5H6v-2h5V6h2z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+    ],
+  },
+  DotHorOutline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M6 14H2v-4h4zm8 0h-4v-4h4zm8 0h-4v-4h4z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+    ],
+  },
+  ChevronRightSmallOutline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M15.414 12 10 17.414 8.586 16l4-4-4-4L10 6.586z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+    ],
+  },
+  DragOutline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M11 21H7v-4h4zm6 0h-4v-4h4zm-6-7H7v-4h4zm6 0h-4v-4h4zm-6-7H7V3h4zm6 0h-4V3h4z',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1.0,
+      },
+    ],
+  },
+  PencilOutline: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M22.414 7.5 7.914 22H2v-5.914l14.5-14.5zM4 16.914V20h3.086l9.5-9.5L13.5 7.414zM14.914 6 18 9.086 19.586 7.5 16.5 4.414z',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1.0,
+      },
+    ],
+  },
+  CheckboxCheckedCustom: {
+    viewBox: '0 0 16 16',
+    paths: [
+      {
+        d: 'M12.204 5.043a1 1 0 0 1 0 1.414l-4.5 4.5a1 1 0 0 1-1.414 0l-2-2a1 1 0 1 1 1.414-1.414l1.293 1.293 3.793-3.793a1 1 0 0 1 1.414 0',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1.0,
+      },
+    ],
+  },
+  CheckboxIndeterminateCustom: {
+    viewBox: '0 0 16 16',
+    paths: [
+      {
+        d: 'M4 8a1 1 0 0 1 1-1h6a1 1 0 0 1 0 2H5a1 1 0 0 1-1-1',
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1.0,
+      },
+    ],
+  },
+  Circle: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: 'M0 12a12 12 0 1 0 24 0a12 12 0 1 0 -24 0',
+        fill: 'currentColor',
+        fillRule: 'nonzero',
+        opacity: 1,
+      },
+    ],
+  },
+};
+function applySelectorIcon(element: HTMLElement, name: string) {
+  const icon = selectorIcons[name];
+  if (!icon) return;
+  element.textContent = '';
+  const svg = element.ownerDocument.createElementNS(
+    'http://www.w3.org/2000/svg',
+    'svg'
+  );
+  svg.setAttribute('viewBox', icon.viewBox);
+  svg.setAttribute('width', '24');
+  svg.setAttribute('height', '24');
+  svg.setAttribute('aria-hidden', 'true');
+  icon.paths.forEach((path) => {
+    const child = element.ownerDocument.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'path'
+    );
+    child.setAttribute('d', path.d);
+    child.setAttribute('fill', path.fill);
+    child.setAttribute('fill-rule', path.fillRule);
+    child.setAttribute('fill-opacity', String(path.opacity));
+    svg.appendChild(child);
+  });
+  element.appendChild(svg);
 }
 
 function iconGlyph(name: string): string {
@@ -841,7 +1341,8 @@ function visualFromRow(row: RowModel): LeadingVisual | undefined {
 
 function createVisual(
   context: RenderContext,
-  visual: LeadingVisual | undefined
+  visual: LeadingVisual | undefined,
+  selectorPresentation?: string
 ): HTMLElement | undefined {
   if (!visual) return undefined;
   if (visual.kind === 'stackedImages') {
@@ -873,6 +1374,7 @@ function createVisual(
       'ok-native-list-visual-fallback',
       iconGlyph(visual.name)
     );
+    applySelectorIcon(fallback, visual.name);
     if (visual.tintColor) fallback.style.color = visual.tintColor;
     frame.appendChild(fallback);
     return frame;
@@ -885,6 +1387,7 @@ function createVisual(
   if (image) {
     image.className = 'ok-native-list-visual-main';
     frame.appendChild(image);
+    if (selectorPresentation) paintSelectorImageBackground(image, frame);
   } else {
     frame.appendChild(
       createElement(
@@ -913,8 +1416,98 @@ function createVisual(
       corner.style.color = visual.cornerIcon.tintColor;
     if (visual.cornerIcon.backgroundColor)
       corner.style.background = visual.cornerIcon.backgroundColor;
+    applySelectorIcon(corner, visual.cornerIcon.name);
     frame.appendChild(corner);
   }
+  // OneKey patch: image failure uses the same source-derived fallback as v1.
+  if ('fallbackIcon' in visual && visual.fallbackIcon) {
+    const icon = visual.fallbackIcon;
+    const showFallback = () => {
+      if (image) {
+        disposeWebImageRetries(image);
+        image.remove();
+      }
+      frame
+        .querySelector(
+          '.ok-native-list-visual-fallback:not(.ok-native-list-visual-corner)'
+        )
+        ?.remove();
+      const fallback = createElement(
+        context.document,
+        'span',
+        'ok-native-list-visual-fallback'
+      );
+      applySelectorIcon(fallback, icon.name);
+      if (icon.tintColor) fallback.style.color = icon.tintColor;
+      frame.prepend(fallback);
+    };
+    if (image) image.addEventListener('error', showFallback, { once: true });
+    else showFallback();
+  }
+  if ('borderStyle' in visual && visual.borderStyle === 'dashed') {
+    frame.style.border =
+      '2px dashed ' + (visual.borderColor ?? 'var(--nl-disabled)');
+    frame.style.boxSizing = 'border-box';
+  }
+  if ('overlays' in visual)
+    visual.overlays?.forEach((overlay) => {
+      const corner = createElement(
+        context.document,
+        'span',
+        'ok-native-list-visual-overlay',
+        overlay.text
+      );
+      const size = overlay.size ?? 20;
+      const isWalletText =
+        selectorPresentation === 'walletSidebar' &&
+        !!overlay.text &&
+        !overlay.image &&
+        !overlay.name;
+      corner.style.width =
+        isWalletText && overlay.width === undefined
+          ? 'auto'
+          : String(overlay.width ?? size) + 'px';
+      corner.style.height =
+        String(overlay.height ?? (isWalletText ? 16 : size)) + 'px';
+      corner.style.padding = isWalletText
+        ? '0 2px'
+        : String(overlay.padding ?? 0) + 'px';
+      if (isWalletText) {
+        corner.style.fontSize = '12px';
+        corner.style.lineHeight = '16px';
+        corner.style.fontWeight = '400';
+      }
+      if (
+        isWalletText ||
+        overlay.width !== undefined ||
+        overlay.height !== undefined
+      )
+        corner.style.borderRadius = '9999px';
+      const offsetX = String(-(overlay.offsetX ?? overlay.offset ?? 2)) + 'px';
+      const offsetY = String(-(overlay.offsetY ?? overlay.offset ?? 2)) + 'px';
+      corner.style.background = overlay.backgroundColor ?? 'transparent';
+      corner.style.color = overlay.tintColor ?? 'var(--nl-secondary)';
+      if (overlay.position === 'topLeft') {
+        corner.style.left = offsetX;
+        corner.style.top = offsetY;
+      } else {
+        corner.style.right = offsetX;
+        corner.style.bottom = offsetY;
+      }
+      if (overlay.image) {
+        const overlayImage = createImage(context, overlay.image);
+        if (overlayImage) {
+          corner.appendChild(overlayImage);
+          if (selectorPresentation)
+            paintSelectorImageBackground(
+              overlayImage,
+              corner,
+              overlay.padding ?? 0
+            );
+        }
+      } else if (overlay.name) applySelectorIcon(corner, overlay.name);
+      frame.appendChild(corner);
+    });
   return frame;
 }
 
@@ -1022,6 +1615,22 @@ function createCheckbox(
   setData(element, 'checkboxFallback', accessory.state);
   setData(element, 'nativeListAction', accessory.actionKey ?? 'selection');
   setData(element, 'selectionScope', accessory.target?.scope ?? 'row');
+  const row = context.snapshot.rows[context.itemIndex];
+  if (row && 'presentation' in row && row.presentation === 'networkSelector') {
+    setData(element, 'selector', 'networkSelector');
+    for (const [state, name] of [
+      ['checked', 'CheckboxCheckedCustom'],
+      ['indeterminate', 'CheckboxIndeterminateCustom'],
+    ]) {
+      const holder = createElement(context.document, 'span');
+      applySelectorIcon(holder, name);
+      const svg = holder.firstElementChild;
+      if (svg) {
+        svg.setAttribute('data-state', state);
+        element.appendChild(svg);
+      }
+    }
+  }
   if (accessory.target?.scope === 'section')
     setData(element, 'selectionKey', accessory.target.sectionKey);
   else if (accessory.target?.scope === 'row')
@@ -1046,6 +1655,7 @@ function createIconAction(
     element.setAttribute('type', 'button');
     element.toggleAttribute('disabled', Boolean(disabled));
   }
+  applySelectorIcon(element, name);
   if (actionKey) setData(element, 'nativeListAction', actionKey);
   if (tintColor) element.style.color = tintColor;
   return element;
@@ -1058,6 +1668,36 @@ function markActionAnchorSource(
 ) {
   setData(element, 'nativeListAnchorSource', source);
   if (slot !== undefined) setData(element, 'nativeListAnchorSlot', slot);
+}
+
+// OneKey patch: the compact zero-count digits share the amount baseline.
+function applyValueSegments(
+  element: HTMLElement,
+  segments:
+    | readonly Readonly<{ text: string; style?: 'subscript' }>[]
+    | undefined,
+  fontSize = 16,
+  lineHeight = 24,
+  weight = 500
+) {
+  if (!segments?.length) return;
+  element.textContent = '';
+  element.style.fontSize = String(fontSize) + 'px';
+  element.style.lineHeight = String(lineHeight) + 'px';
+  element.style.fontWeight = String(weight);
+  segments.forEach((segment) => {
+    const span = createElement(
+      element.ownerDocument,
+      'span',
+      undefined,
+      segment.text
+    );
+    if (segment.style === 'subscript') {
+      span.style.fontSize = String(Math.ceil(fontSize * 0.6)) + 'px';
+      span.style.lineHeight = String(fontSize) + 'px';
+    }
+    element.appendChild(span);
+  });
 }
 
 function createAccessory(
@@ -1080,6 +1720,25 @@ function createAccessory(
       accessory.tintColor
     );
     markActionAnchorSource(element, 'trailingAccessory', slot);
+    setData(element, 'testid', accessory.testID);
+    if (accessory.hoverActionKey)
+      setData(element, 'nativeListHoverAction', accessory.hoverActionKey);
+    if (accessory.accessibilityLabel)
+      element.setAttribute('aria-label', accessory.accessibilityLabel);
+    const row = context.snapshot.rows[context.itemIndex];
+    if (
+      row &&
+      'presentation' in row &&
+      row.presentation === 'accountSelector'
+    ) {
+      setData(element, 'nativeListAnchorInset', 7);
+      // OneKey patch: the create-address button omits IconButton's one-point border.
+      if (row.height !== undefined && accessory.name === 'PlusSmallOutline') {
+        setData(element, 'nativeListAccountControl', 'createAddress');
+        if (!accessory.tintColor)
+          element.style.color = 'var(--nl-icon-subdued)';
+      }
+    }
     return element;
   }
   if (accessory.kind === 'spinner') {
@@ -1099,6 +1758,7 @@ function createAccessory(
   switch (accessory.kind) {
     case 'value':
       element.textContent = accessory.text;
+      applyValueSegments(element, accessory.textSegments);
       if (accessory.secondary)
         element.classList.add('ok-native-list-accessory-secondary');
       break;
@@ -1157,6 +1817,30 @@ function appendAccessories(
     'span',
     'ok-native-list-accessories'
   );
+  const row = context.snapshot.rows[context.itemIndex];
+  if (
+    row &&
+    row.height !== undefined &&
+    'presentation' in row &&
+    row.presentation === 'networkSelector'
+  ) {
+    container.style.gap = accessories.some(
+      (accessory) => accessory.kind === 'checkbox'
+    )
+      ? '12px'
+      : '20px';
+  }
+  if (
+    row &&
+    row.height !== undefined &&
+    'presentation' in row &&
+    row.presentation === 'accountSelector' &&
+    accessories.length === 1 &&
+    accessories[0]?.kind === 'icon' &&
+    accessories[0].name === 'PlusSmallOutline'
+  ) {
+    setData(container, 'nativeListAccountControl', 'createAddress');
+  }
   accessories.forEach((accessory, slot) =>
     container.appendChild(createAccessory(context, rowKey, accessory, slot))
   );
@@ -1234,7 +1918,88 @@ function createSectionHeader(
     markActionAnchorSource(titleIcon, 'leadingAction');
     body.appendChild(titleIcon);
   }
-  body.appendChild(createTextColumn(context, row.title, row.subtitle));
+  // OneKey patch: section title help has its own measurable action target.
+  // body.appendChild(createTextColumn(context, row.title, row.subtitle));
+  const column = createTextColumn(context, row.title, row.subtitle);
+  const title = column.firstElementChild as HTMLElement;
+  title.classList.add('ok-native-list-section-title');
+  if (row.titleActionKey) {
+    setData(title, 'nativeListAction', row.titleActionKey);
+    markActionAnchorSource(title, 'leadingAction');
+    title.setAttribute('role', 'button');
+    title.tabIndex = 0;
+    title.style.alignSelf = 'flex-start';
+    title.style.maxWidth = '100%';
+    // OneKey patch: explicit network headers reserve a separate 3-point underline area.
+    if (row.presentation !== 'networkSelector' || row.height === undefined) {
+      title.style.textDecoration = 'underline dotted';
+      title.style.textUnderlineOffset = '6px';
+    }
+    if (row.titleActionOnHover) setData(title, 'nativeListHoverAction', true);
+  }
+  if (row.presentation === 'networkSelector' && row.height !== undefined) {
+    body.style.padding =
+      row.variant === 'summary' ? '24px 12px 20px' : '0 12px';
+    body.style.backgroundColor = 'var(--nl-bg)';
+    body.style.gap = row.checkbox ? '12px' : '8px';
+    title.style.fontSize = row.variant === 'summary' ? '16px' : '14px';
+    title.style.lineHeight = row.variant === 'summary' ? '24px' : '20px';
+    title.style.fontWeight =
+      row.variant === 'summary' || (row.titleActionKey && !row.checkbox)
+        ? '500'
+        : '600';
+    if (row.titleActionKey) {
+      const text = createElement(
+        context.document,
+        'span',
+        'ok-native-list-section-title-text',
+        row.title
+      );
+      text.style.overflow = 'hidden';
+      text.style.textOverflow = 'ellipsis';
+      text.style.maxWidth = '100%';
+      const dotted = context.document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'svg'
+      );
+      dotted.setAttribute('height', '2');
+      dotted.style.cssText =
+        'display:block;position:absolute;left:0;bottom:0;width:100%;height:2px;color:var(--nl-secondary)';
+      const line = context.document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'line'
+      );
+      for (const [key, value] of Object.entries({
+        x1: '1',
+        y1: '1',
+        x2: '100%',
+        y2: '1',
+        stroke: 'currentColor',
+        'stroke-width': '1.5',
+        'stroke-dasharray': '0,4',
+        'stroke-linecap': 'round',
+      }))
+        line.setAttribute(key, value);
+      // OneKey patch: keep both round caps inside the original full-width viewport.
+      const lineViewport = context.document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'svg'
+      );
+      lineViewport.setAttribute('width', 'calc(100% - 1px)');
+      lineViewport.setAttribute('height', '2');
+      lineViewport.setAttribute('overflow', 'visible');
+      lineViewport.appendChild(line);
+      dotted.appendChild(lineViewport);
+      // OneKey patch: SVG intrinsic width must not expand the title action beyond its text.
+      title.style.display = 'block';
+      title.style.position = 'relative';
+      title.style.width = 'fit-content';
+      title.style.paddingBottom = '3px';
+      text.style.display = 'block';
+      title.replaceChildren(text, dotted);
+    }
+  }
+  body.appendChild(column);
   if (row.value) {
     const value = createElement(
       context.document,
@@ -1244,6 +2009,19 @@ function createSectionHeader(
         : 'ok-native-list-value ok-native-list-section-value',
       row.value
     );
+    applyValueSegments(value, row.valueSegments);
+    if (row.presentation === 'networkSelector' && row.height !== undefined) {
+      value.style.fontFamily = 'inherit';
+      value.style.fontSize = '16px';
+      value.style.lineHeight = '24px';
+      value.style.fontWeight = '500';
+      if (row.valueActionKey) {
+        value.style.color = 'var(--nl-secondary)';
+        value.style.padding = '0';
+        value.style.flexShrink = '0';
+      }
+    }
+    if (row.valueActionTestID) setData(value, 'testid', row.valueActionTestID);
     if (row.valueActionKey) {
       value.setAttribute('type', 'button');
       setData(value, 'nativeListAction', row.valueActionKey);
@@ -1292,6 +2070,8 @@ function createActionRow(
     row.title
   );
   setData(title, 'tone', row.tone);
+  if (row.presentation === 'accountSelector' && row.icon)
+    title.style.fontWeight = '500';
   body.appendChild(title);
   if (row.checkbox)
     body.appendChild(createCheckbox(context, row.key, row.checkbox));
@@ -1309,6 +2089,27 @@ function createSystemRow(
     'ok-native-list-row ok-native-list-system'
   );
   setData(body, 'variant', row.variant);
+  if (row.variant === 'warning') {
+    body.classList.add('ok-native-list-warning');
+    body.style.borderColor = row.borderColor ?? 'var(--nl-separator)';
+    body.appendChild(
+      createElement(
+        context.document,
+        'span',
+        'ok-native-list-warning-title',
+        row.title
+      )
+    );
+    body.appendChild(
+      createElement(
+        context.document,
+        'span',
+        'ok-native-list-warning-message',
+        row.message
+      )
+    );
+    return body;
+  }
   if (row.variant === 'loading')
     body.appendChild(
       createElement(context.document, 'span', 'ok-native-list-spinner')
@@ -1703,6 +2504,15 @@ function createIdentityActivityOrMessageRow(
       .filter(Boolean)
       .join(' ')
   );
+  setData(
+    body,
+    'nativeListSelector',
+    row.height !== undefined ? presentation : undefined
+  );
+  if (row.type === 'identity' && row.titleActionKey && row.titleActionOnHover) {
+    setData(body, 'nativeListHoverAction', row.titleActionKey);
+    markActionAnchorSource(body, 'leadingAction');
+  }
   if (row.type === 'identity' && row.leadingAction) {
     const action = createIconAction(
       context,
@@ -1714,7 +2524,44 @@ function createIdentityActivityOrMessageRow(
     markActionAnchorSource(action, 'leadingAction');
     body.appendChild(action);
   }
-  const visual = createVisual(context, visualFromRow(row));
+  const visual = createVisual(
+    context,
+    visualFromRow(row),
+    row.height !== undefined ? presentation : undefined
+  );
+  if (
+    visual &&
+    row.type === 'identity' &&
+    row.height !== undefined &&
+    row.presentation === 'walletSidebar' &&
+    'fallbackIcon' in row.leading &&
+    row.leading.fallbackIcon?.name === 'LockSolid'
+  ) {
+    // OneKey patch: hidden-wallet locks use WalletAvatar's full 40-point icon.
+    const icon = visual.querySelector<SVGElement>(
+      '.ok-native-list-visual-fallback svg'
+    );
+    if (icon) {
+      icon.style.width = '40px';
+      icon.style.height = '40px';
+    }
+    const fallback = visual.querySelector<HTMLElement>(
+      '.ok-native-list-visual-fallback'
+    );
+    if (fallback) {
+      fallback.style.borderRadius = '0';
+      fallback.style.overflow = 'visible';
+    }
+  }
+  if (
+    visual &&
+    row.type === 'identity' &&
+    row.height !== undefined &&
+    row.presentation === 'walletSidebar' &&
+    'borderStyle' in row.leading &&
+    row.leading.borderStyle === 'dashed'
+  )
+    visual.style.borderWidth = '1px';
   if (visual) body.appendChild(visual);
   if (row.type === 'activity' && row.secondaryLeading) {
     const secondVisual = createVisual(context, row.secondaryLeading);
@@ -1737,8 +2584,82 @@ function createIdentityActivityOrMessageRow(
     subtitle,
     row.type === 'identity' ? row.tertiary : undefined,
     row.type === 'identity' ? row.tertiaryTone : undefined,
-    row.type === 'identity' ? row.badges : undefined
+    row.type === 'identity' && presentation !== 'walletSidebar'
+      ? row.badges
+      : undefined
   );
+  // OneKey patch: match existing search, subtitle fragments, and sidebar badges.
+  if (row.type === 'identity') {
+    const titleElement = column.firstElementChild as HTMLElement;
+    if (row.titleMatch?.length) {
+      const firstText = titleElement.firstChild;
+      if (firstText) firstText.remove();
+      const fragment = context.document.createDocumentFragment();
+      let offset = 0;
+      row.titleMatch.forEach(({ start, end }) => {
+        fragment.appendChild(
+          context.document.createTextNode(row.title.slice(offset, start))
+        );
+        const match = createElement(
+          context.document,
+          'span',
+          'ok-native-list-info',
+          row.title.slice(start, end)
+        );
+        fragment.appendChild(match);
+        offset = end;
+      });
+      fragment.appendChild(
+        context.document.createTextNode(row.title.slice(offset))
+      );
+      titleElement.prepend(fragment);
+    }
+    if (row.subtitleSegments?.length) {
+      column.querySelector('.ok-native-list-secondary')?.remove();
+      const segments = createElement(
+        context.document,
+        'span',
+        'ok-native-list-subtitle-segments'
+      );
+      row.subtitleSegments.forEach((segment) => {
+        if (segment.separatorBefore)
+          segments.appendChild(
+            createElement(
+              context.document,
+              'span',
+              'ok-native-list-subtitle-dot'
+            )
+          );
+        const text = createElement(
+          context.document,
+          'span',
+          'ok-native-list-secondary',
+          segment.text
+        );
+        applyValueSegments(text, segment.textSegments, 14, 20, 400);
+        setData(text, 'tone', segment.tone);
+        text.style.color =
+          segment.tone === 'disabled'
+            ? 'var(--nl-disabled)'
+            : segment.tone === 'caution'
+            ? 'var(--nl-caution)'
+            : toneColor(segment.tone, 'secondary');
+        segments.appendChild(text);
+      });
+      column.insertBefore(segments, titleElement.nextSibling);
+    }
+    if (presentation === 'walletSidebar' && row.badges?.length) {
+      const badges = createElement(
+        context.document,
+        'span',
+        'ok-native-list-wallet-badges'
+      );
+      row.badges.forEach((badge) =>
+        badges.appendChild(createBadge(context, badge))
+      );
+      column.appendChild(badges);
+    }
+  }
   if (row.type === 'activity' && row.status)
     column.appendChild(
       createElement(
@@ -1814,6 +2735,21 @@ function createIdentityActivityOrMessageRow(
   return body;
 }
 
+// OneKey patch: SizableText enables tabular digits without replacing its font family.
+function applySelectorTabularNumbers(body: HTMLElement, row: RowModel) {
+  if (
+    !('presentation' in row) ||
+    !['accountSelector', 'networkSelector', 'walletSidebar'].includes(
+      row.presentation ?? ''
+    )
+  )
+    return;
+  body.style.fontVariantNumeric = 'tabular-nums';
+  body.querySelectorAll<HTMLElement>('span,button').forEach((text) => {
+    text.style.fontVariantNumeric = 'tabular-nums';
+  });
+}
+
 function createWalletGroupRow(
   context: RenderContext,
   row: Extract<RowModel, { type: 'walletGroup' }>
@@ -1830,11 +2766,19 @@ function createWalletGroupRow(
       'ok-native-list-wallet-member'
     );
     setData(memberElement, 'nativeListGroupMemberKey', member.key);
+    setData(memberElement, 'testid', member.testID);
     setData(memberElement, 'nativeListGroupParent', memberIndex === 0);
     setData(memberElement, 'nativeListSelected', member.selected);
-    memberElement.appendChild(
-      createIdentityActivityOrMessageRow(context, member)
-    );
+    // OneKey patch: grouped members have the same selector typography as standalone wallets.
+    // memberElement.appendChild(createIdentityActivityOrMessageRow(context, member));
+    const memberBody = createIdentityActivityOrMessageRow(context, member);
+    applySelectorTabularNumbers(memberBody, member);
+    memberElement.appendChild(memberBody);
+    // OneKey patch: group children use their own measured badge height.
+    memberElement.style.flexBasis =
+      String(member.height ?? 68 + (member.badges?.length ? 24 : 0)) + 'px';
+    memberElement.style.height = memberElement.style.flexBasis;
+    memberElement.style.opacity = String(member.opacity ?? 1);
     body.appendChild(memberElement);
   });
   return body;
@@ -1894,9 +2838,18 @@ export class NativeListWebEngine {
   private resizeObserver: ResizeObserver | undefined;
   private pendingScroll: PendingScroll | undefined;
   private lastVisibleSignature: string | undefined;
+  // OneKey patch: URI leases outlive DOM overscan only inside this bounded window.
+  private readonly avatarLeases = new Map<string, AvatarLease>();
+  private avatarOffset = 0;
+  private avatarDirection = 1;
   private reachedGeneration: number | undefined;
   private stickyKey: string | undefined;
   private previewTimer: number | undefined;
+  private sectionIndexEntries: readonly Readonly<{
+    key: string;
+    title: string;
+    position: number;
+  }>[] = [];
   private pointerReorder: PointerReorderState | undefined;
   private keyboardReorder: KeyboardReorderState | undefined;
   private reorderMoveFrame: number | undefined;
@@ -1919,6 +2872,8 @@ export class NativeListWebEngine {
   private lastViewportWidth = -1;
   private lastViewportHeight = -1;
   private destroyed = false;
+  // OneKey patch: warning banners are measured after normal browser text wrapping.
+  private measuredWarningHeights = new Map<string, number>();
 
   constructor(
     host: HTMLElement,
@@ -2004,6 +2959,9 @@ export class NativeListWebEngine {
       passive: true,
     });
     this.root.addEventListener('click', this.handleClick);
+    // OneKey patch: preserve web tooltip hover for section titles.
+    this.root.addEventListener('pointerover', this.handleTitlePointerOver);
+    this.root.addEventListener('pointerout', this.handleTitlePointerOut);
     this.root.addEventListener('keydown', this.handleKeyDown);
     this.viewport.addEventListener(
       'pointerdown',
@@ -2160,7 +3118,10 @@ export class NativeListWebEngine {
     const index = resolveLocationIndex(this.snapshot.rows, params);
     if (index === undefined) {
       const sectionCount = this.snapshot.rows.filter(
-        (row) => row.type === 'sectionHeader' && row.variant !== 'summary'
+        (row) =>
+          row.type === 'sectionHeader' &&
+          row.sticky !== false &&
+          row.variant !== 'summary'
       ).length;
       this.emitScrollFailure(
         params.itemIndex,
@@ -2219,6 +3180,8 @@ export class NativeListWebEngine {
     );
     this.viewport.removeEventListener('scroll', this.handleScroll);
     this.root.removeEventListener('click', this.handleClick);
+    this.root.removeEventListener('pointerover', this.handleTitlePointerOver);
+    this.root.removeEventListener('pointerout', this.handleTitlePointerOut);
     this.root.removeEventListener('keydown', this.handleKeyDown);
     this.cancelPointerReorder(true);
     this.viewport.removeEventListener(
@@ -2251,25 +3214,29 @@ export class NativeListWebEngine {
     this.viewport.removeEventListener('pointerup', this.handlePullEnd);
     this.viewport.removeEventListener('pointercancel', this.handlePullEnd);
     const host = this.root.parentElement;
+    disposeWebImageRetries(this.root);
+    this.pool.forEach(disposeWebImageRetries);
     this.root.remove();
     this.hideReorderPreview();
     this.reorderPreview.remove();
     if (host) host.style.position = this.previousHostPosition;
     this.mounted.clear();
     this.pool.length = 0;
+    this.avatarLeases.forEach((release) => release());
+    this.avatarLeases.clear();
   }
 
   private setSnapshot(
     snapshot: NativeListSnapshot,
     selectedKeys?: ReadonlySet<string>
   ) {
+    this.measuredWarningHeights.clear();
     this.snapshot = snapshot;
     this.rows = effectiveRows(snapshot);
     this.selectedKeys =
       selectedKeys ?? selectionStateFromSnapshot(snapshot).selectedKeys;
     if (this.reachedGeneration !== snapshot.generation)
       this.reachedGeneration = undefined;
-    this.renderSectionIndex();
     this.applyTheme();
     this.recomputeLayout();
     this.renderFooter();
@@ -2288,6 +3255,11 @@ export class NativeListWebEngine {
       '--nl-primary': theme.primaryText,
       '--nl-secondary': theme.secondaryText,
       '--nl-disabled': theme.disabledText,
+      '--nl-caution': theme.caution ?? '#AB6400',
+      '--nl-caution-background': theme.cautionBackground,
+      '--nl-checkbox-background': theme.checkboxBackground,
+      '--nl-checkbox-border': theme.checkboxBorder,
+      '--nl-checkbox-icon': theme.checkboxIcon,
       '--nl-icon': theme.icon,
       '--nl-icon-subdued': theme.iconSubdued,
       '--nl-separator': theme.separator,
@@ -2316,18 +3288,31 @@ export class NativeListWebEngine {
         viewportHeight !== this.lastViewportHeight)
     ) {
       this.invalidateActionAnchor('layout');
+      this.measuredWarningHeights.clear();
     }
     this.lastViewportWidth = viewportWidth;
     this.lastViewportHeight = viewportHeight;
     const previousHorizontal = this.layout.horizontal;
+    const measuredSnapshot: NativeListSnapshot = {
+      ...this.snapshot,
+      rows: this.snapshot.rows.map((row) =>
+        row.type === 'system' &&
+        row.variant === 'warning' &&
+        row.height === undefined &&
+        this.measuredWarningHeights.has(row.key)
+          ? { ...row, height: this.measuredWarningHeights.get(row.key) }
+          : row
+      ),
+    };
     this.layout = computeWebListLayout(
-      this.snapshot,
+      measuredSnapshot,
       viewportWidth,
       viewportHeight,
       this.reorderCompactKey
     );
     this.content.style.width = String(this.layout.contentWidth) + 'px';
     this.content.style.height = String(this.layout.contentHeight) + 'px';
+    this.renderSectionIndex(viewportHeight || DEFAULT_VIEWPORT_HEIGHT);
     if (previousHorizontal !== this.layout.horizontal) {
       this.viewport.scrollLeft = 0;
       this.viewport.scrollTop = 0;
@@ -2336,7 +3321,62 @@ export class NativeListWebEngine {
     this.performPendingScroll();
   };
 
+  private updateAvatarWindow() {
+    const offset = this.currentOffset();
+    if (offset !== this.avatarOffset)
+      this.avatarDirection = Math.sign(offset - this.avatarOffset);
+    this.avatarOffset = offset;
+    const visible = visibleWebLayoutItems(
+      this.layout,
+      offset,
+      this.viewportLength(),
+      0
+    );
+    const first = visible[0]?.index ?? -1;
+    const last = visible[visible.length - 1]?.index ?? -1;
+    const candidates = avatarPrefetchWindow(
+      this.rows,
+      first,
+      last,
+      this.avatarDirection
+    );
+    const desired = new Set(
+      candidates
+        .map(({ source }) => canonicalNativeListAvatarUri(source.uri))
+        .filter((uri) => uri !== undefined)
+    );
+    this.avatarLeases.forEach((release, uri) => {
+      if (!desired.has(uri)) {
+        release();
+        this.avatarLeases.delete(uri);
+      }
+    });
+    candidates.forEach(({ source, priority }) => {
+      const uri = canonicalNativeListAvatarUri(source.uri);
+      if (!uri) return;
+      const existing = this.avatarLeases.get(uri);
+      if (existing) existing.setPriority(priority);
+      else {
+        let lease: AvatarLease | undefined;
+        lease = acquireNativeListAvatar(
+          this.document,
+          uri,
+          () => {},
+          () => {
+            if (this.avatarLeases.get(uri) === lease) {
+              lease?.();
+              this.avatarLeases.delete(uri);
+            }
+          },
+          priority
+        );
+        this.avatarLeases.set(uri, lease);
+      }
+    });
+  }
+
   private renderWindow() {
+    this.updateAvatarWindow();
     const viewportLength = this.viewportLength();
     const visible = webLayoutItemsForMount(
       this.layout,
@@ -2350,6 +3390,8 @@ export class NativeListWebEngine {
       if (!desired.has(index)) {
         this.invalidateActionAnchorForElement(element);
         this.mounted.delete(index);
+        if (disposeWebImageRetries(element))
+          element.removeAttribute('data-render-signature');
         element.remove();
         this.pool.push(element);
       }
@@ -2377,6 +3419,27 @@ export class NativeListWebEngine {
         element.dataset.renderSignature = signature;
       }
     });
+    let measuredWarningChanged = false;
+    this.mounted.forEach((element, index) => {
+      const row = this.rows[index];
+      if (
+        row?.type !== 'system' ||
+        row.variant !== 'warning' ||
+        row.height !== undefined
+      )
+        return;
+      const height =
+        element.querySelector<HTMLElement>('.ok-native-list-warning')
+          ?.offsetHeight ?? 0;
+      if (height > 0 && height !== this.measuredWarningHeights.get(row.key)) {
+        this.measuredWarningHeights.set(row.key, height);
+        measuredWarningChanged = true;
+      }
+    });
+    if (measuredWarningChanged) {
+      this.recomputeLayout();
+      return;
+    }
     this.updateVisibleSelection();
     this.updateVisibleState();
   }
@@ -2395,6 +3458,7 @@ export class NativeListWebEngine {
     overlay = false
   ) {
     this.invalidateActionAnchorForElement(element);
+    disposeWebImageRetries(element);
     const bindingEpoch = String(++this.bindingEpochCounter);
     element.className = overlay
       ? 'ok-native-list-item ok-native-list-sticky'
@@ -2403,6 +3467,9 @@ export class NativeListWebEngine {
     setData(element, 'nativeListBindingEpoch', bindingEpoch);
     setData(element, 'nativeListRowIndex', index);
     setData(element, 'nativeListDisabled', Boolean(row.disabled));
+    setData(element, 'testid', row.testID);
+    // OneKey patch: deprecation dims a row without disabling its actions.
+    element.style.opacity = String(row.opacity ?? 1);
     setData(element, 'nativeListReorderable', this.isReorderable(row));
     setData(
       element,
@@ -2435,12 +3502,90 @@ export class NativeListWebEngine {
       selectedKeys: this.selectedKeys,
       itemIndex: index,
     };
-    element.replaceChildren(createRowBody(context, row));
+    const body = createRowBody(context, row);
+    applySelectorTabularNumbers(body, row);
+    // OneKey patch: explicit selector fields preserve original page geometry.
+    element.style.contain = row.backgroundFullWidth ? 'layout style' : '';
+    if (row.backgroundColor) body.style.backgroundColor = row.backgroundColor;
+    if (row.backgroundFullWidth && row.backgroundColor) {
+      const bleed = paddingValues(this.snapshot).horizontal;
+      body.style.position = 'relative';
+      body.style.overflow = 'visible';
+      body.style.boxShadow =
+        String(-bleed) +
+        'px 0 ' +
+        row.backgroundColor +
+        ',' +
+        String(bleed) +
+        'px 0 ' +
+        row.backgroundColor;
+    }
+    if (row.type === 'identity' && row.height !== undefined) {
+      const title = body.querySelector<HTMLElement>('.ok-native-list-title');
+      if (row.presentation === 'accountSelector') {
+        body.style.gap = '12px';
+        body.style.borderRadius = '12px';
+        if ('shape' in row.leading && row.leading.shape === 'rounded') {
+          const visual = body.querySelector<HTMLElement>(
+            '.ok-native-list-visual'
+          );
+          if (visual) visual.style.borderRadius = '8px';
+        }
+        if (title) title.style.lineHeight = '24px';
+      }
+      if (row.presentation === 'networkSelector') {
+        body.style.borderRadius = '12px';
+        const visual = body.querySelector<HTMLElement>(
+          '.ok-native-list-visual'
+        );
+        if (visual) {
+          visual.style.width = '32px';
+          visual.style.height = '32px';
+          visual.style.flexBasis = '32px';
+        }
+        if (
+          row.leading.kind === 'network' &&
+          !row.leading.image &&
+          !row.leading.fallbackIcon &&
+          row.leading.fallbackText
+        ) {
+          const fallback = visual?.querySelector<HTMLElement>(
+            '.ok-native-list-visual-fallback'
+          );
+          if (fallback) {
+            fallback.style.fontSize = '19px';
+            fallback.style.lineHeight = '27px';
+            fallback.style.fontWeight = '600';
+            fallback.style.color = 'var(--nl-inverse-text)';
+          }
+        }
+        visual
+          ?.querySelectorAll<HTMLElement>('.ok-native-list-visual-main')
+          .forEach((image) => {
+            image.style.width = '32px';
+            image.style.height = '32px';
+          });
+        if (title) {
+          title.style.fontSize = '16px';
+          title.style.lineHeight = '24px';
+          title.style.fontWeight = '500';
+        }
+        body
+          .querySelectorAll<HTMLElement>('.ok-native-list-accessory')
+          .forEach((value) => {
+            value.style.fontSize = '16px';
+            value.style.lineHeight = '24px';
+            value.style.fontWeight = '500';
+          });
+      }
+    }
+    element.replaceChildren(body);
   }
 
   private renderFooter() {
     const row = this.snapshot.fixedFooter;
     this.invalidateActionAnchorForElement(this.footer);
+    disposeWebImageRetries(this.footer);
     this.footer.replaceChildren();
     if (!row) return;
     const element = createElement(this.document, 'div', 'ok-native-list-item');
@@ -2459,25 +3604,79 @@ export class NativeListWebEngine {
     this.footer.appendChild(element);
   }
 
-  private renderSectionIndex() {
+  private sectionIndexVisibleEntryIndices(
+    viewportHeight: number
+  ): readonly number[] {
+    const entryCount = this.sectionIndexEntries.length;
+    if (entryCount <= 1) return entryCount ? [0] : [];
+    const availableHeight = Math.max(
+      0,
+      viewportHeight - SECTION_INDEX_EDGE_PADDING * 2
+    );
+    const maxVisible = Math.max(
+      2,
+      Math.floor(availableHeight / SECTION_INDEX_MIN_LABEL_SPACING) + 1
+    );
+    if (entryCount <= maxVisible) {
+      return Array.from({ length: entryCount }, (_, index) => index);
+    }
+    const result = new Set<number>();
+    for (let slot = 0; slot < maxVisible; slot += 1) {
+      result.add(Math.round((slot * (entryCount - 1)) / (maxVisible - 1)));
+    }
+    return [...result].sort((left, right) => left - right);
+  }
+
+  private renderSectionIndex(viewportHeight: number) {
     this.indexRail.replaceChildren();
     if (!sectionIndexEnabled(this.snapshot)) {
+      this.sectionIndexEntries = [];
       this.indexRail.hidden = true;
       return;
     }
+    this.sectionIndexEntries = this.snapshot.rows.flatMap((row, position) =>
+      row.type === 'sectionHeader' && row.indexTitle
+        ? [{ key: row.key, title: row.indexTitle, position }]
+        : []
+    );
+    if (
+      this.sectionIndexEntries.length === 0 ||
+      viewportHeight < SECTION_INDEX_MIN_HEIGHT
+    ) {
+      this.indexRail.hidden = true;
+      return;
+    }
+    const visibleEntryIndices =
+      this.sectionIndexVisibleEntryIndices(viewportHeight);
+    setData(
+      this.indexRail,
+      'compact',
+      visibleEntryIndices.length < this.sectionIndexEntries.length
+    );
     const fragment = this.document.createDocumentFragment();
-    this.snapshot.rows.forEach((row, index) => {
-      if (row.type !== 'sectionHeader' || !row.indexTitle) return;
+    visibleEntryIndices.forEach((entryIndex) => {
+      const entry = this.sectionIndexEntries[entryIndex];
+      if (!entry) return;
       const button = createElement(
         this.document,
         'button',
         'ok-native-list-index-button',
-        row.indexTitle
+        entry.title
       );
       button.setAttribute('type', 'button');
-      button.setAttribute('aria-label', 'Jump to ' + row.indexTitle);
-      setData(button, 'sectionPosition', index);
-      setData(button, 'sectionKey', row.key);
+      button.setAttribute('aria-label', 'Jump to ' + entry.title);
+      setData(button, 'sectionEntryIndex', entryIndex);
+      setData(button, 'sectionPosition', entry.position);
+      setData(button, 'sectionKey', entry.key);
+      const progress =
+        this.sectionIndexEntries.length === 1
+          ? 0.5
+          : entryIndex / (this.sectionIndexEntries.length - 1);
+      button.style.top =
+        String(
+          SECTION_INDEX_EDGE_PADDING +
+            progress * (viewportHeight - SECTION_INDEX_EDGE_PADDING * 2)
+        ) + 'px';
       fragment.appendChild(button);
     });
     this.indexRail.appendChild(fragment);
@@ -2487,7 +3686,9 @@ export class NativeListWebEngine {
   private updateVisibleSelection() {
     const update = (element: HTMLElement, row: RowModel | undefined) => {
       if (!row) return;
-      const selected = this.selectedKeys.has(row.key);
+      // OneKey patch: selector adapters mark active rows independently of checkbox selection.
+      // const selected = this.selectedKeys.has(row.key);
+      const selected = row.selected === true || this.selectedKeys.has(row.key);
       setData(element, 'nativeListSelected', selected);
       element.setAttribute('aria-selected', String(selected));
       element
@@ -2548,7 +3749,9 @@ export class NativeListWebEngine {
     }
     this.checkEndReached(last?.index ?? -1);
     this.updateStickyHeader(first?.index ?? -1);
-    this.updateSectionIndex(first?.index ?? -1);
+    // OneKey patch: index highlighting follows header positions at scroll boundaries.
+    // this.updateSectionIndex(first?.index ?? -1);
+    this.updateSectionIndex();
   }
 
   private updateStickyHeader(firstVisibleIndex: number) {
@@ -2564,7 +3767,11 @@ export class NativeListWebEngine {
     let index = -1;
     for (let cursor = firstVisibleIndex; cursor >= 0; cursor -= 1) {
       const row = this.rows[cursor];
-      if (row?.type === 'sectionHeader' && row.variant !== 'summary') {
+      if (
+        row?.type === 'sectionHeader' &&
+        row.sticky !== false &&
+        row.variant !== 'summary'
+      ) {
         index = cursor;
         break;
       }
@@ -2595,6 +3802,7 @@ export class NativeListWebEngine {
       const candidate = this.rows[cursor];
       if (
         candidate?.type === 'sectionHeader' &&
+        candidate.sticky !== false &&
         candidate.variant !== 'summary'
       ) {
         nextIndex = cursor;
@@ -2610,12 +3818,17 @@ export class NativeListWebEngine {
     this.updateVisibleSelection();
   }
 
-  private updateSectionIndex(firstVisibleIndex: number) {
+  // private updateSectionIndex(firstVisibleIndex: number) {
+  private updateSectionIndex() {
     let activeKey: string | undefined;
     this.snapshot.rows.forEach((row, index) => {
       if (
-        index <= firstVisibleIndex &&
+        // OneKey patch: a spacer ending exactly at the viewport is not the active section.
+        // index <= firstVisibleIndex &&
+        itemStart(this.layout.items[index], this.layout.horizontal) <=
+          this.currentOffset() &&
         row.type === 'sectionHeader' &&
+        row.sticky !== false &&
         row.indexTitle
       )
         activeKey = row.key;
@@ -2793,7 +4006,14 @@ export class NativeListWebEngine {
     if (!source || !bindingEpoch || !rowElement.contains(actionElement))
       return undefined;
     this.invalidateActionAnchor('rebind');
-    const rect = actionElement.getBoundingClientRect();
+    const actualRect = actionElement.getBoundingClientRect();
+    const inset = Number(actionElement.dataset.nativeListAnchorInset ?? 0);
+    const rect = {
+      left: actualRect.left + inset,
+      top: actualRect.top + inset,
+      width: actualRect.width - inset * 2,
+      height: actualRect.height - inset * 2,
+    };
     const token = [
       this.actionAnchorInstanceId,
       this.snapshot.generation,
@@ -2866,7 +4086,9 @@ export class NativeListWebEngine {
     rowElement?: HTMLElement,
     sourceElement = rowElement
   ) {
-    if (row.disabled) return;
+    // OneKey patch: missing-address rows keep their create-address accessory interactive.
+    // if (row.disabled) return;
+    if (row.disabled || row.pressDisabled) return;
     if (
       this.snapshot.selection?.rowPressToggles &&
       this.snapshot.selection.mode !== 'none' &&
@@ -2893,6 +4115,56 @@ export class NativeListWebEngine {
       this.emitRowAction(row, actionKey);
     }
   }
+
+  // OneKey patch: hover opens the same anchored help action as native taps.
+  private handleTitlePointerOver = (event: PointerEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const action = target.closest<HTMLElement>(
+      '[data-native-list-hover-action]'
+    );
+    if (
+      !action ||
+      (event.relatedTarget instanceof Node &&
+        action.contains(event.relatedTarget))
+    )
+      return;
+    const rowElement = action.closest<HTMLElement>(
+      '[data-native-list-row-key]'
+    );
+    const row = this.rowAtElement(rowElement);
+    const memberKey = action.closest<HTMLElement>(
+      '[data-native-list-group-member-key]'
+    )?.dataset.nativeListGroupMemberKey;
+    const sourceRow =
+      row?.type === 'walletGroup'
+        ? [row.parent, ...row.children].find(
+            (member) => member.key === memberKey
+          ) ?? row
+        : row;
+    const actionKey =
+      action.dataset.nativeListHoverAction === 'true'
+        ? action.dataset.nativeListAction
+        : action.dataset.nativeListHoverAction;
+    if (sourceRow && !sourceRow.disabled && actionKey)
+      this.emitRowAction(sourceRow, actionKey, action, rowElement ?? undefined);
+  };
+
+  private handleTitlePointerOut = (event: PointerEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const action = target.closest<HTMLElement>(
+      '[data-native-list-hover-action]'
+    );
+    if (
+      !action ||
+      (event.relatedTarget instanceof Node &&
+        action.contains(event.relatedTarget))
+    )
+      return;
+    if (this.actionAnchor?.actionElement === action)
+      this.invalidateActionAnchor('pointerLeave');
+  };
 
   private handleClick = (event: Event) => {
     if (Date.now() < this.suppressClickUntil) {
@@ -2944,6 +4216,16 @@ export class NativeListWebEngine {
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
+    // OneKey patch: non-button title help supports keyboard activation.
+    if (
+      (event.key === 'Enter' || event.key === ' ') &&
+      event.target instanceof HTMLElement &&
+      event.target.matches('[role="button"][data-native-list-action]')
+    ) {
+      event.preventDefault();
+      event.target.click();
+      return;
+    }
     if (event.key === 'Escape') {
       if (this.pointerReorder?.active) {
         event.preventDefault();
@@ -3073,7 +4355,10 @@ export class NativeListWebEngine {
     this.frameHandle = this.requestFrame(() => {
       this.frameHandle = undefined;
       if (this.virtualizationEnabled) this.renderWindow();
-      else this.updateVisibleState();
+      else {
+        this.updateAvatarWindow();
+        this.updateVisibleState();
+      }
     });
   }
 
@@ -3090,13 +4375,27 @@ export class NativeListWebEngine {
     else view?.clearTimeout(handle);
   }
 
-  private selectIndexPosition(position: number, title: string) {
+  private selectIndexPosition(
+    position: number,
+    title: string,
+    previewClientY?: number
+  ) {
     this.scrollToIndex(position, {
       animated: false,
       alignment: 'start',
       viewPosition: 0,
       viewOffset: 0,
     });
+    const frame = this.viewportFrame.getBoundingClientRect();
+    if (previewClientY !== undefined && frame.height > 0) {
+      const previewY = Math.min(
+        frame.height - 24,
+        Math.max(24, previewClientY - frame.top)
+      );
+      this.indexPreview.style.top = String(previewY) + 'px';
+    } else {
+      this.indexPreview.style.top = '50%';
+    }
     this.indexPreview.textContent = title;
     setData(this.indexPreview, 'visible', true);
     if (this.previewTimer !== undefined)
@@ -3106,37 +4405,69 @@ export class NativeListWebEngine {
     }, 180);
   }
 
-  private indexButtonAtEvent(event: PointerEvent): HTMLElement | undefined {
-    const direct = (event.target as Element | null)?.closest<HTMLElement>(
-      '[data-section-position]'
+  private sectionIndexEntryAtEvent(event: PointerEvent):
+    | Readonly<{
+        entry: NativeListWebEngine['sectionIndexEntries'][number];
+        previewClientY: number;
+      }>
+    | undefined {
+    const rail = this.indexRail.getBoundingClientRect();
+    if (this.sectionIndexEntries.length === 0 || rail.height <= 0) {
+      return undefined;
+    }
+    const availableHeight = Math.max(
+      1,
+      rail.height - SECTION_INDEX_EDGE_PADDING * 2
     );
-    if (direct) return direct;
-    return (
-      this.document
-        .elementFromPoint(event.clientX, event.clientY)
-        ?.closest<HTMLElement>('[data-section-position]') ?? undefined
+    const progress = Math.min(
+      1,
+      Math.max(
+        0,
+        (event.clientY - rail.top - SECTION_INDEX_EDGE_PADDING) /
+          availableHeight
+      )
     );
+    const entryIndex = Math.round(
+      progress * (this.sectionIndexEntries.length - 1)
+    );
+    const entry = this.sectionIndexEntries[entryIndex];
+    return entry ? { entry, previewClientY: event.clientY } : undefined;
   }
 
   private handleIndexPointer = (event: PointerEvent) => {
     if (event.type === 'pointermove' && event.buttons === 0) return;
-    const button = this.indexButtonAtEvent(event);
-    if (!button) return;
+    const selection = this.sectionIndexEntryAtEvent(event);
+    if (!selection) return;
     event.preventDefault();
+    if (event.type === 'pointerdown') {
+      this.indexRail.setPointerCapture?.(event.pointerId);
+    }
     this.selectIndexPosition(
-      Number(button.dataset.sectionPosition),
-      button.textContent ?? ''
+      selection.entry.position,
+      selection.entry.title,
+      selection.previewClientY
     );
   };
 
   private handleIndexClick = (event: Event) => {
+    if (
+      'detail' in event &&
+      typeof event.detail === 'number' &&
+      event.detail > 0
+    )
+      return;
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const button = target.closest<HTMLElement>('[data-section-position]');
+    const button = target.closest<HTMLElement>('[data-section-entry-index]');
     if (!button) return;
+    const entry =
+      this.sectionIndexEntries[Number(button.dataset.sectionEntryIndex)];
+    if (!entry) return;
+    const rect = button.getBoundingClientRect();
     this.selectIndexPosition(
-      Number(button.dataset.sectionPosition),
-      button.textContent ?? ''
+      entry.position,
+      entry.title,
+      rect.top + rect.height / 2
     );
   };
 
@@ -3203,12 +4534,13 @@ export class NativeListWebEngine {
     const index = Number(rowElement?.dataset.nativeListRowIndex);
     const row = this.rows[index];
     if (!row || !this.isReorderable(row)) return;
-    if (
-      row.type === 'walletGroup' &&
-      target.closest<HTMLElement>('[data-native-list-group-parent]')?.dataset
-        .nativeListGroupParent !== 'true'
-    )
-      return;
+    // OneKey patch: a child drag reorders its parent wallet group as one item.
+    // if (
+    // row.type === 'walletGroup' &&
+    // target.closest<HTMLElement>('[data-native-list-group-parent]')?.dataset
+    // .nativeListGroupParent !== 'true'
+    // )
+    // return;
 
     const view = this.document.defaultView;
     const state: PointerReorderState = {
@@ -3225,9 +4557,8 @@ export class NativeListWebEngine {
       active: false,
     };
     this.pointerReorder = state;
-    if (state.pointerType === 'mouse') {
-      this.captureReorderPointer(state);
-    } else {
+    // OneKey patch: normal wallet taps retain their target until a drag is activated.
+    if (state.pointerType !== 'mouse') {
       state.longPressTimer = view?.setTimeout(
         () => this.activatePointerReorder(state),
         REORDER_TOUCH_LONG_PRESS_MS
@@ -3363,6 +4694,23 @@ export class NativeListWebEngine {
       Math.max(0, state.startY - rect.top)
     );
     this.reorderPreview.replaceChildren(previewRow.cloneNode(true));
+    // Cloned previews need their own lease when a source row is recycled during dragging.
+    const originals = previewRow.querySelectorAll('img');
+    this.reorderPreview.querySelectorAll('img').forEach((image, index) => {
+      const original = originals.item(index);
+      const avatar = original ? webAvatarSources.get(original) : undefined;
+      if (!avatar) return;
+      const paint = image.previousElementSibling;
+      if (
+        paint?.classList.contains('ok-native-list-selector-image-background')
+      ) {
+        image.addEventListener('load', () => {
+          (paint as HTMLElement).style.backgroundImage =
+            'url(' + JSON.stringify(image.currentSrc || image.src) + ')';
+        });
+      }
+      configureWebAvatar(image, avatar.source, avatar.uri);
+    });
     const sourceRow = state.workingRows[state.currentIndex];
     const badgeText = sourceRow
       ? webWalletGroupReorderBadge(sourceRow)
@@ -3430,6 +4778,7 @@ export class NativeListWebEngine {
 
   private clearReorderPreviewVisual() {
     this.reorderPreview.hidden = true;
+    disposeWebImageRetries(this.reorderPreview);
     this.reorderPreview.replaceChildren();
     this.reorderPreview.style.removeProperty('transform');
     this.reorderPreview.style.removeProperty('transition');

@@ -74,6 +74,8 @@ final class HybridOneKeyImageCache: HybridOneKeyImageCacheSpec {
   func clearMemory() throws -> Promise<Void> {
     Promise.async {
       SDImageCache.shared.clearMemory()
+      // OneKey patch: Clear the dedicated local-avatar cache with public cache operations.
+      OneKeyAvatarImageLoader.cache.clearMemory()
     }
   }
 
@@ -82,11 +84,16 @@ final class HybridOneKeyImageCache: HybridOneKeyImageCacheSpec {
       await withCheckedContinuation { continuation in
         SDImageCache.shared.clearDisk { continuation.resume() }
       }
+      await withCheckedContinuation { continuation in
+        OneKeyAvatarImageLoader.cache.clearDisk { continuation.resume() }
+      }
     }
   }
 
   func clearAll() throws -> Promise<Void> {
     SDImageCache.shared.clearMemory()
+    // OneKey patch: The avatar cache is shared by render and preload requests.
+    OneKeyAvatarImageLoader.cache.clearMemory()
     return try clearDisk()
   }
 
@@ -154,7 +161,10 @@ final class HybridOneKeyImageCache: HybridOneKeyImageCacheSpec {
       cachePolicy: source.cachePolicy ?? .memoryDisk,
       thumbnailPixelSize: thumbnailPixelSize,
       safetyTracker: safetyHandle.tracker,
-      manager: safetyHandle.manager
+      // OneKey patch: Rendering and preload use the same local-avatar loader.
+      // manager: safetyHandle.manager
+      manager: safetyHandle.manager,
+      url: url
     )
     return await load(url: url, context: context, safetyHandle: safetyHandle)
   }

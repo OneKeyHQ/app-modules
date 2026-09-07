@@ -11,6 +11,12 @@ internal data class NativeListItem(
   val json: JSONObject,
 ) {
   val content: String = json.toString()
+  // OneKey patch: only a host-validated stable snapshot can request a lightweight diff payload.
+  var selectionUpdateFromContent: String? = null
+
+  // OneKey patch: migrated selectors keep source dimensions on narrow Android screens.
+  val usesSelectorSourceScale: Boolean
+    get() = if (type == "walletGroup") json.optJSONObject("parent")?.has("height") == true else json.has("height") && json.optString("presentation") in setOf("accountSelector", "networkSelector", "walletSidebar")
 
   val isSelectable: Boolean
     get() = !json.optBoolean("disabled", false) && type in SELECTABLE_TYPES

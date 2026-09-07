@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import { View } from 'react-native';
 import type { NativeListProps, NativeListRef } from './NativeList.types';
-import type { NativeListSnapshot } from './models';
+import type { NativeListSnapshot, RowPatch } from './models';
 import {
   normalizeIndexScroll,
   normalizeKeyScroll,
@@ -69,7 +69,20 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       [snapshot]
     );
     const snapshotRef = useRef(validatedSnapshot);
-    snapshotRef.current = validatedSnapshot;
+    const snapshotPropRef = useRef(validatedSnapshot);
+    // An imperative snapshot survives host mounting until the snapshot prop changes.
+    if (snapshotPropRef.current !== validatedSnapshot) {
+      snapshotPropRef.current = validatedSnapshot;
+      snapshotRef.current = validatedSnapshot;
+    }
+    // OneKey patch: React refs can be ready before the DOM engine is mounted.
+    const pendingPatchesRef = useRef<
+      | {
+          snapshot: NativeListSnapshot;
+          batches: Array<readonly RowPatch[]>;
+        }
+      | undefined
+    >(undefined);
     const appliedSnapshotRef = useRef<NativeListSnapshot | undefined>(
       undefined
     );
@@ -125,6 +138,10 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       );
       engineRef.current = engine;
       appliedSnapshotRef.current = snapshotRef.current;
+      const pending = pendingPatchesRef.current;
+      pendingPatchesRef.current = undefined;
+      if (pending?.snapshot === snapshotRef.current)
+        pending.batches.forEach((patches) => engine.applyPatches(patches));
       const initial = initialScrollRef.current;
       if (initial && !didApplyInitialScroll.current) {
         didApplyInitialScroll.current = true;
@@ -166,6 +183,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     useImperativeHandle(forwardedRef, () => ({
       applySnapshot(nextSnapshot) {
         const next = validateSnapshot(nextSnapshot);
+        pendingPatchesRef.current = undefined;
         snapshotRef.current = next;
         appliedSnapshotRef.current = next;
         engineRef.current?.applySnapshot(next);
@@ -173,7 +191,16 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       applyPatches(patches) {
         if (patches.length > 0) {
           serializePatches(patches);
-          engineRef.current?.applyPatches(patches);
+          // engineRef.current?.applyPatches(patches);
+          if (engineRef.current) engineRef.current.applyPatches(patches);
+          else {
+            if (pendingPatchesRef.current?.snapshot !== snapshotRef.current)
+              pendingPatchesRef.current = {
+                snapshot: snapshotRef.current,
+                batches: [],
+              };
+            pendingPatchesRef.current.batches.push(patches);
+          }
         }
       },
       reconcileSelection(selectedKeys) {

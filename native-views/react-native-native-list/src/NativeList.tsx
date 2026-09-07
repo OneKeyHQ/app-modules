@@ -1,4 +1,18 @@
-import React, { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
+import React, {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from 'react';
+import {
+  OneKeyImageCache,
+  OneKeyImageCachePolicy,
+} from '@onekeyfe/react-native-image';
+import {
+  NativeAvatarPrefetchModel,
+  NativeAvatarPrefetchQueue,
+} from './avatarPrefetch';
 import { callback, getHostComponent } from 'react-native-nitro-modules';
 import type {
   NativeListMethods,
@@ -99,10 +113,71 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     const snapshotJson = useMemo(() => serializeSnapshot(snapshot), [snapshot]);
     const snapshotRef = useRef(snapshot);
     const previousSnapshotJsonRef = useRef(snapshotJson);
-    if (previousSnapshotJsonRef.current !== snapshotJson) {
+    const snapshotChanged = previousSnapshotJsonRef.current !== snapshotJson;
+    if (snapshotChanged) {
       snapshotRef.current = snapshot;
       previousSnapshotJsonRef.current = snapshotJson;
     }
+    // OneKey patch: range events already cross the bridge only when row indices
+    // change. Prefetch is optional work; scrolling and visible loads stay native.
+    const avatarQueueRef = useRef<NativeAvatarPrefetchQueue | null>(null);
+    const avatarRangeRef = useRef<
+      { first: number; last: number; direction: number } | undefined
+    >(undefined);
+    // OneKey patch: a changed prop is a complete snapshot; unrelated renders must
+    // not erase image patches already dispatched through the imperative handle.
+    // const avatarPrefetchPaused = useRef(false);
+    const avatarModelRef = useRef<NativeAvatarPrefetchModel | null>(null);
+    const avatarLifecycle = useRef<'pending' | 'mounted' | 'unmounted'>(
+      'pending'
+    );
+    if (!avatarModelRef.current)
+      avatarModelRef.current = new NativeAvatarPrefetchModel(snapshot.rows);
+    else if (snapshotChanged)
+      avatarModelRef.current.replaceSnapshot(snapshot.rows);
+    const updateAvatarPrefetch = () => {
+      const range = avatarRangeRef.current;
+      if (!range) return;
+      avatarQueueRef.current?.update(
+        avatarModelRef.current?.window(
+          range.first,
+          range.last,
+          range.direction
+        ) ?? []
+      );
+    };
+    const updateAvatarPrefetchRef = useRef(updateAvatarPrefetch);
+    updateAvatarPrefetchRef.current = updateAvatarPrefetch;
+    useEffect(() => {
+      avatarLifecycle.current = 'mounted';
+      const queue = new NativeAvatarPrefetchQueue((source) =>
+        OneKeyImageCache.preload([
+          {
+            uri: source.uri,
+            headers: source.headers,
+            resizeWidth: source.width,
+            resizeHeight: source.height,
+            optimizeTos: false,
+            cachePolicy:
+              source.cachePolicy === 'memory'
+                ? OneKeyImageCachePolicy.MEMORY
+                : source.cachePolicy === 'disk'
+                ? OneKeyImageCachePolicy.DISK
+                : OneKeyImageCachePolicy.MEMORY_DISK,
+          },
+        ])
+      );
+      avatarQueueRef.current = queue;
+      updateAvatarPrefetchRef.current();
+      return () => {
+        queue.dispose();
+        avatarQueueRef.current = null;
+        avatarLifecycle.current = 'unmounted';
+      };
+    }, []);
+    useEffect(() => {
+      updateAvatarPrefetchRef.current();
+    }, [snapshot]);
     const initialScrollRef = useRef<
       | Readonly<{
           index?: number;
@@ -191,12 +266,27 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         const nextSnapshotJson = serializeSnapshot(nextSnapshot);
         nativeRef.current?.applySnapshot(nextSnapshotJson);
         snapshotRef.current = nextSnapshot;
+        if (nativeRef.current && avatarLifecycle.current !== 'unmounted') {
+          avatarModelRef.current?.replaceSnapshot(nextSnapshot.rows);
+          updateAvatarPrefetchRef.current();
+        }
       },
       applyPatches(patches) {
         if (patches.length === 0) return;
         const nextSnapshot = applyRowPatches(snapshotRef.current, patches);
-        nativeRef.current?.applyPatches(serializePatches(patches));
-        snapshotRef.current = nextSnapshot;
+        const native = nativeRef.current;
+        const dispatch = native
+          ? () => {
+              native.applyPatches(serializePatches(patches));
+              snapshotRef.current = nextSnapshot;
+            }
+          : undefined;
+        if (avatarLifecycle.current === 'unmounted') {
+          dispatch?.();
+          return;
+        }
+        if (avatarModelRef.current?.applyPatches(patches, dispatch))
+          updateAvatarPrefetchRef.current();
       },
       reconcileSelection(selectedKeys) {
         nativeRef.current?.reconcileSelection(JSON.stringify(selectedKeys));
@@ -316,9 +406,18 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           );
         }),
         onVisibleRangeChanged: callback((payloadJson: string) => {
-          callbacksRef.current.onVisibleRangeChanged?.(
-            parsePayload<VisibleRangeChangedEvent>(payloadJson)
-          );
+          const payload = parsePayload<VisibleRangeChangedEvent>(payloadJson);
+          const previous = avatarRangeRef.current;
+          avatarRangeRef.current = {
+            first: payload.firstIndex,
+            last: payload.lastIndex,
+            direction:
+              previous && payload.firstIndex !== previous.first
+                ? Math.sign(payload.firstIndex - previous.first)
+                : previous?.direction ?? 1,
+          };
+          updateAvatarPrefetchRef.current();
+          callbacksRef.current.onVisibleRangeChanged?.(payload);
         }),
       }),
       []

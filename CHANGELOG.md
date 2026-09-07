@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.106] - 2026-09-08
+
+### Features
+- **native-list**: Sync selector layouts, compact section indexing, touch interactions, and bounded avatar prefetching from the app integration patches.
+- **image**: Support local blockie avatar generation and caching on iOS and Android.
+
+### Bug Fixes
+- **native-list**: Validate effective snapshot patches, refresh iOS summaries and size-changing rows, preserve pagination generation markers, and correct native visible-range and scrolling state.
+
+### Chores
+- Bump all publishable packages to 3.0.106 and replace the integration patches with the published implementation.
+
 ## [3.0.105] - 2026-09-07
 
 ### Features

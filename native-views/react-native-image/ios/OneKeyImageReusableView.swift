@@ -27,8 +27,13 @@ public final class OneKeyImageReusableView: UIView {
     recyclingKey: String,
     optimizeTos: Bool,
     overscan: Double,
-    loadingStrategy: String
+    loadingStrategy: String,
+    onLoad: (() -> Void)? = nil,
+    onError: (() -> Void)? = nil
   ) {
+    // OneKey patch: Let reusable cells display their own success and fallback visuals.
+    image.onLoad = { _, _, _ in onLoad?() }
+    image.onError = { _ in onError?() }
     image.sourceHeadersJson = sourceHeadersJson
     image.variant = OneKeyImageVariant(fromString: variant) ?? .generic
     image.contentFit = OneKeyImageContentFit(fromString: contentFit) ?? .cover

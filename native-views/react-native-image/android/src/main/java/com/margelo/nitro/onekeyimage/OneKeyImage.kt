@@ -484,7 +484,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     requestManager()
       .asDrawable()
       .load(OneKeyImageModel.build(requestUrl, headersJson))
-      .apply(requestOptions(policy))
+      .apply(requestOptions(policy, requestUrl))
       .override(decodeDimensions.width, decodeDimensions.height)
       .listener(object : RequestListener<Drawable> {
         override fun onLoadFailed(
@@ -512,12 +512,13 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       .into(target)
   }
 
-  private fun requestOptions(policy: OneKeyImageCachePolicy): RequestOptions {
+  private fun requestOptions(policy: OneKeyImageCachePolicy, uri: String): RequestOptions {
     val options = RequestOptions()
+      .withOneKeyAvatarCache(uri)
       .dontTransform()
       .downsample(OneKeyImageSafeDownsampleStrategy)
     return when (policy) {
-      OneKeyImageCachePolicy.MEMORY_DISK -> options.diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+      OneKeyImageCachePolicy.MEMORY_DISK -> options.diskCacheStrategy(oneKeyImageMemoryDiskStrategy(uri))
       OneKeyImageCachePolicy.MEMORY -> options.diskCacheStrategy(DiskCacheStrategy.NONE)
       OneKeyImageCachePolicy.DISK -> options
         .diskCacheStrategy(DiskCacheStrategy.DATA)

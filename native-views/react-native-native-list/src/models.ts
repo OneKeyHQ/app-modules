@@ -22,6 +22,9 @@ export type ImageSource = Readonly<{
   optimizeTos?: boolean;
   overscan?: number;
   loadingStrategy?: ImageLoadingStrategy;
+  // OneKey patch: fallbackUri is Web-only; retryTimes opts all platforms into terminal retries.
+  fallbackUri?: string;
+  retryTimes?: number;
 }>;
 
 export type BadgeModel = Readonly<{
@@ -30,7 +33,34 @@ export type BadgeModel = Readonly<{
   tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 }>;
 
+// OneKey patch: keep selector decoration and text data serializable.
+export type SelectorTextSegment = Readonly<{
+  text: string;
+  textSegments?: readonly ValueTextSegment[];
+  tone?: TextTone | 'disabled' | 'caution';
+  separatorBefore?: boolean;
+}>;
+export type VisualOverlay = Readonly<{
+  position: 'topLeft' | 'bottomRight';
+  size?: number;
+  width?: number;
+  height?: number;
+  padding?: number;
+  offset?: number;
+  offsetX?: number;
+  offsetY?: number;
+  image?: ImageSource;
+  name?: string;
+  text?: string;
+  tintColor?: string;
+  backgroundColor?: string;
+}>;
+
 type VisualWithImage = Readonly<{
+  fallbackIcon?: Readonly<{ name: string; tintColor?: string }>;
+  overlays?: readonly VisualOverlay[];
+  borderStyle?: 'dashed';
+  borderColor?: string;
   image?: ImageSource;
   fallbackText?: string;
   backgroundColor?: string;
@@ -70,8 +100,16 @@ export type SelectionTarget =
   | Readonly<{ scope: 'section'; sectionKey: string }>
   | Readonly<{ scope: 'list' }>;
 
+// OneKey patch: preserve compact very-small-balance digit runs.
+export type ValueTextSegment = Readonly<{ text: string; style?: 'subscript' }>;
+
 export type TrailingAccessory =
-  | Readonly<{ kind: 'value'; text: string; secondary?: boolean }>
+  | Readonly<{
+      kind: 'value';
+      text: string;
+      secondary?: boolean;
+      textSegments?: readonly ValueTextSegment[];
+    }>
   | Readonly<{
       kind: 'valuePair';
       primary: string;
@@ -108,6 +146,9 @@ export type TrailingAccessory =
       tintColor?: string;
       disabled?: boolean;
       actionKey?: string;
+      testID?: string;
+      hoverActionKey?: string;
+      accessibilityLabel?: string;
     }>
   | Readonly<{ kind: 'spinner' }>
   | Readonly<{ kind: 'progress'; value: number }>;
@@ -120,6 +161,15 @@ export type FooterAction = Readonly<{
 }>;
 
 export type RowBase = Readonly<{
+  // OneKey patch: preserve measured selector geometry without changing defaults.
+  height?: number;
+  // OneKey patch: retain the source Android list's measured fractional-DP rounding.
+  heightRounding?: 'floor' | 'nearest';
+  testID?: string;
+  opacity?: number;
+  backgroundColor?: string;
+  backgroundFullWidth?: boolean;
+  pressDisabled?: boolean;
   key: string;
   revision?: number;
   sectionKey?: string;
@@ -136,6 +186,11 @@ export type RowBase = Readonly<{
 export type IdentityRow = RowBase &
   Readonly<{
     type: 'identity';
+    // OneKey patch: UTF-16 ranges match Fuse indices and native attributed strings.
+    titleMatch?: readonly Readonly<{ start: number; end: number }>[];
+    titleActionKey?: string;
+    titleActionOnHover?: boolean;
+    subtitleSegments?: readonly SelectorTextSegment[];
     presentation?: 'walletSidebar' | 'accountSelector' | 'networkSelector';
     leading: LeadingVisual;
     leadingAction?: Extract<TrailingAccessory, { kind: 'icon' }>;
@@ -257,6 +312,12 @@ export type MetricCardRow = RowBase &
 export type SectionHeaderRow = RowBase &
   Readonly<{
     type: 'sectionHeader';
+    // OneKey patch: title help stays independent of section selection.
+    sticky?: boolean;
+    valueActionTestID?: string;
+    valueSegments?: readonly ValueTextSegment[];
+    titleActionKey?: string;
+    titleActionOnHover?: boolean;
     sectionKey: string;
     presentation?: 'networkSelector';
     indexTitle?: string;
@@ -291,6 +352,13 @@ export type SystemRow = RowBase &
         message: string;
         actionKey: string;
       }>
+    | Readonly<{
+        type: 'system';
+        variant: 'warning';
+        title: string;
+        message: string;
+        borderColor?: string;
+      }>
     | Readonly<{ type: 'system'; variant: 'noMatch'; message: string }>
     | Readonly<{ type: 'system'; variant: 'end'; message?: string }>
     | Readonly<{ type: 'system'; variant: 'spacer'; height: number }>
@@ -310,6 +378,11 @@ export type RowModel =
   | SystemRow;
 
 export type NativeListTheme = Readonly<{
+  // OneKey patch: explicit selector controls use the original semantic theme tokens.
+  checkboxBackground?: string;
+  checkboxBorder?: string;
+  checkboxIcon?: string;
+  cautionBackground?: string;
   background: string;
   rowBackground: string;
   rowSelectedBackground: string;
@@ -329,6 +402,8 @@ export type NativeListTheme = Readonly<{
   inverseBackground?: string;
   inverseText?: string;
   info?: string;
+  // OneKey patch: match the existing account warning address tone.
+  caution?: string;
 }>;
 
 export type SectionIndexConfig = Readonly<{
@@ -369,7 +444,20 @@ export type NativeListSnapshot = Readonly<{
   theme?: NativeListTheme;
 }>;
 
-type CommonPatchFields = 'revision' | 'disabled' | 'selected' | 'separator';
+// OneKey patch: include selector-only mutable presentation fields.
+// type CommonPatchFields = 'revision' | 'disabled' | 'selected' | 'separator';
+// OneKey patch: balance patches also refresh the existing row's spoken content.
+// type CommonPatchFields = 'revision' | 'disabled' | 'selected' | 'separator' | 'height' | 'heightRounding' | 'opacity' | 'pressDisabled';
+type CommonPatchFields =
+  | 'revision'
+  | 'disabled'
+  | 'selected'
+  | 'separator'
+  | 'height'
+  | 'heightRounding'
+  | 'opacity'
+  | 'pressDisabled'
+  | 'accessibilityLabel';
 
 export type RowPatch =
   | Readonly<{
@@ -387,6 +475,10 @@ export type RowPatch =
           | 'trailing'
           | 'leading'
           | 'leadingAction'
+          | 'titleMatch'
+          | 'titleActionKey'
+          | 'titleActionOnHover'
+          | 'subtitleSegments'
         >
       >;
     }>
@@ -501,6 +593,8 @@ export type RowPatch =
           | 'subtitle'
           | 'value'
           | 'valueActionKey'
+          | 'titleActionKey'
+          | 'titleActionOnHover'
           | 'titleIcon'
           | 'valueIcon'
           | 'checkbox'
@@ -565,11 +659,8 @@ export type RowActionEvent = Readonly<{
 }>;
 
 export type ActionAnchorInvalidationReason =
-  | 'scroll'
-  | 'rebind'
-  | 'snapshot'
-  | 'layout'
-  | 'destroy';
+  // OneKey patch: close web title tooltips when their native list target is left.
+  'pointerLeave' | 'scroll' | 'rebind' | 'snapshot' | 'layout' | 'destroy';
 
 export type ActionAnchorInvalidatedEvent = Readonly<{
   token: string;

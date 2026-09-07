@@ -29,6 +29,12 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import com.facebook.react.uimanager.ThemedReactContext
+// OneKey patch: selector checkboxes share the source React Native border/background renderer.
+import com.facebook.react.uimanager.BackgroundStyleApplicator
+import com.facebook.react.uimanager.LengthPercentage
+import com.facebook.react.uimanager.LengthPercentageType
+import com.facebook.react.uimanager.style.BorderRadiusProp
+import com.facebook.react.uimanager.style.LogicalEdge
 import com.margelo.nitro.onekeyimage.OneKeyImageReusableView
 import androidx.core.graphics.PathParser
 import androidx.core.widget.TextViewCompat
@@ -42,6 +48,7 @@ internal data class NativeListActionOrigin(
   val bindingEpoch: Long,
   val source: String,
   val slot: Int? = null,
+  val anchorInsetPixels: Int = 0,
 )
 
 /** React Native color strings use CSS #RRGGBBAA ordering; Android expects #AARRGGBB. */
@@ -96,7 +103,20 @@ internal object NativeListFonts {
 
 internal data class NativeSelectionTarget(val scope: String, val key: String?)
 
+// OneKey patch: match React Native's CustomLineHeightSpan for first/last line bounds.
+private class SelectorLineHeightSpan(private val lineHeight: Int) : android.text.style.LineHeightSpan {
+  override fun chooseHeight(text: CharSequence, start: Int, end: Int, spanstartv: Int, v: Int, fm: Paint.FontMetricsInt) {
+    val leading = lineHeight - (fm.descent - fm.ascent)
+    fm.ascent -= kotlin.math.ceil(leading / 2.0).toInt()
+    fm.descent += kotlin.math.floor(leading / 2.0).toInt()
+    if (start == 0) fm.top = fm.ascent
+    if (end == text.length) fm.bottom = fm.descent
+  }
+}
+
 private class DottedUnderlineTextView(context: android.content.Context) : TextView(context) {
+  var useSourceScale = false
+  private fun scaledDp(value: Float) = if (useSourceScale) value * resources.displayMetrics.density else NativeListScale.dp(resources, value)
   var showsDottedUnderline = false
   var dottedUnderlineColor = Color.TRANSPARENT
   private val dottedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -105,11 +125,11 @@ private class DottedUnderlineTextView(context: android.content.Context) : TextVi
     super.onDraw(canvas)
     if (!showsDottedUnderline || text.isEmpty()) return
     dottedPaint.color = dottedUnderlineColor
-    val radius = NativeListScale.dp(resources, 0.75f)
-    val spacing = NativeListScale.dp(resources, 4f)
+    val radius = scaledDp(0.75f)
+    val spacing = scaledDp(4f)
     val lineWidth = paint.measureText(text.toString()).coerceAtMost(width.toFloat())
     val y = height - radius
-    var x = NativeListScale.dp(resources, 1f)
+    var x = scaledDp(1f)
     while (x <= lineWidth - radius) {
       canvas.drawCircle(x, y, radius, dottedPaint)
       x += spacing
@@ -157,6 +177,29 @@ private class PackedTitleLineLayout(context: android.content.Context) : LinearLa
     if (widthMode != MeasureSpec.UNSPECIFIED) {
       setMeasuredDimension(widthSize, measuredHeight)
     }
+  }
+}
+
+// OneKey patch: fit subtitle segments at intrinsic width, shrinking text only when necessary.
+private class SelectorSubtitleLayout(context: android.content.Context) : LinearLayout(context) {
+  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+    val available = MeasureSpec.getSize(widthMeasureSpec)
+    val labels = mutableListOf<Pair<TextView, Int>>()
+    var fixedWidth = 0
+    for (index in 0 until childCount) {
+      val child = getChildAt(index)
+      val params = child.layoutParams as LayoutParams
+      if (child is TextView) {
+        child.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), heightMeasureSpec)
+        labels.add(child to child.measuredWidth)
+      } else fixedWidth += params.width + params.leftMargin + params.rightMargin
+    }
+    val desired = labels.sumOf { it.second }
+    val textWidth = (available - fixedWidth).coerceAtLeast(0)
+    labels.forEach { (label, width) ->
+      (label.layoutParams as LayoutParams).width = if (desired <= textWidth) width else (width.toLong() * textWidth / desired.coerceAtLeast(1)).toInt()
+    }
+    super.onMeasure(widthMeasureSpec, heightMeasureSpec)
   }
 }
 
@@ -282,6 +325,21 @@ internal class NativeListRowView(
   private val reactContext: ThemedReactContext,
 ) : LinearLayout(reactContext) {
   private val leadingFrame = FrameLayout(context)
+  // OneKey patch: reset selector fragments and corner decorations on every bind.
+  private val selectorViews = mutableListOf<View>()
+  private var selectorUsesSourceScale = false
+  private val selectorAccessibilityDelegate = object : View.AccessibilityDelegate() {
+    override fun onInitializeAccessibilityNodeInfo(host: View, info: android.view.accessibility.AccessibilityNodeInfo) {
+      super.onInitializeAccessibilityNodeInfo(host, info)
+      info.viewIdResourceName = host.getTag(com.facebook.react.R.id.react_test_id) as? String
+    }
+  }
+  private val selectorOriginalFontFeatures = mutableMapOf<TextView, String?>()
+  private val selectorOriginalPaintFlags = mutableMapOf<TextView, Int>()
+  private val selectorLineHeights = mutableMapOf<TextView, Int>()
+  private val selectorFontSizes = mutableMapOf<TextView, Float>()
+  private val selectorImages = mutableListOf<OneKeyImageReusableView>()
+  private var selectorHeight: Int? = null
   private val leadingImages = List(3) { OneKeyImageReusableView(reactContext) }
   private val leadingOverlayBackground = View(context)
   private val leadingCornerIconFrame = FrameLayout(context)
@@ -334,16 +392,22 @@ internal class NativeListRowView(
   private var walletGroupExpandAnimator: ValueAnimator? = null
   private var isMediaTile = false
   private var boundKey: String? = null
+  // OneKey patch: delayed retries cannot survive cell rebinding or recycling.
+  private val selectorImageRetries = mutableMapOf<OneKeyImageReusableView, Runnable>()
   var bindingEpoch: Long = 0
     private set
   private var boundCheckboxData: JSONObject? = null
   private var currentLayout = "linear"
   private var restingRowBackground: Drawable? = null
   private var pressedRowBackground: Drawable? = null
+  // OneKey patch: preserve a held row independently from RecyclerView snapshot rebinding.
+  private var touchPressed = false
   private var reorderActive = false
   private var checkboxCheckedColor = Color.rgb(32, 32, 32)
   private var checkboxUncheckedColor = Color.rgb(252, 252, 252)
   private var checkboxBorderColor = Color.rgb(206, 206, 206)
+  private var checkboxIconColor = Color.rgb(252, 252, 252)
+  private var checkboxUsesSelectorStyle = false
   private var iconSubduedColor = Color.rgb(141, 141, 141)
   private var visualBackdropColor = Color.WHITE
   private val circleOutlineProvider = object : ViewOutlineProvider() {
@@ -445,6 +509,7 @@ internal class NativeListRowView(
     setOnTouchListener { _, event ->
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> if (isEnabled) {
+          touchPressed = true
           if ((tag as? NativeListItem)?.type == "mediaTile") {
             leadingFrame.alpha = 0.8f
           } else {
@@ -454,15 +519,20 @@ internal class NativeListRowView(
         MotionEvent.ACTION_MOVE -> if (
           event.x < 0 || event.y < 0 || event.x >= width || event.y >= height
         ) {
+          touchPressed = false
           restoreRestingBackground()
         }
-        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> restoreRestingBackground()
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+          touchPressed = false
+          restoreRestingBackground()
+        }
       }
       false
     }
     setOnClickListener { view ->
       (view.tag as? NativeListItem)?.let { item ->
-        onRowPress?.invoke(item, actionOrigin(view, "row"))
+        // OneKey patch: allow create-address accessories when whole-row press is gated.
+        if (!item.json.optBoolean("pressDisabled", false)) onRowPress?.invoke(item, actionOrigin(view, "row"))
       }
     }
     setWillNotDraw(false)
@@ -509,13 +579,64 @@ internal class NativeListRowView(
     }
   }
 
+  // OneKey patch: RecyclerView may replace item delegates during a selection update.
+  override fun onInitializeAccessibilityNodeInfo(info: android.view.accessibility.AccessibilityNodeInfo) {
+    super.onInitializeAccessibilityNodeInfo(info)
+    info.viewIdResourceName = getTag(com.facebook.react.R.id.react_test_id) as? String
+  }
+
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     if (isMediaTile) {
       val availableWidth = (MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight)
         .coerceAtLeast(0)
       leadingFrame.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, availableWidth)
     }
-    super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    // OneKey patch: RecyclerView must use the adapter's measured selector height.
+    super.onMeasure(widthMeasureSpec, selectorHeight?.let { MeasureSpec.makeMeasureSpec(it, MeasureSpec.EXACTLY) } ?: heightMeasureSpec)
+    val item = tag as? NativeListItem ?: return
+    if (item.json.has("height") && item.json.optString("presentation") == "networkSelector" && item.type in setOf("identity", "sectionHeader") && checkbox.visibility == VISIBLE && trailingColumn.parent === this) {
+      // OneKey patch: Yoga snaps the compound accessory before its children; their rounded edges can overflow it.
+      val density = resources.displayMetrics.density
+      val visibleValues = trailingViews.filter { it.visibility == VISIBLE }
+      val sourceTrailingWidth = visibleValues.sumOf { it.measuredWidth } + (20 + 12 * visibleValues.size) * density
+      val sourceTrailingLeft = (measuredWidth - 12 * density - sourceTrailingWidth).roundToInt()
+      val measuredTrailingLeft = measuredWidth - paddingRight - trailingColumn.measuredWidth
+      val mainWidth = (mainColumn.measuredWidth + sourceTrailingLeft - measuredTrailingLeft).coerceAtLeast(0)
+      mainColumn.measure(MeasureSpec.makeMeasureSpec(mainWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(mainColumn.measuredHeight, MeasureSpec.EXACTLY))
+    }
+  }
+
+  // OneKey patch: Yoga rounds a half-pixel text center upward; LinearLayout truncates it.
+  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+    super.onLayout(changed, left, top, right, bottom)
+    val item = tag as? NativeListItem ?: return
+    val accessory = item.json.optJSONArray("trailing")?.optJSONObject(0)
+    if (item.type == "identity" && item.json.has("height") && item.json.optString("presentation") == "accountSelector" && accessory?.optString("kind") == "icon" && accessory.optString("name") == "PlusSmallOutline") {
+      // OneKey patch: the borderless Plus retains the source's fixed top18/negative7 slot.
+      val icon = trailingIcons[0]
+      trailingColumn.offsetTopAndBottom(dp(18) - dp(7) - trailingColumn.top - icon.top)
+    }
+    if (item.type == "action" && item.json.has("height") && item.json.optString("presentation") == "accountSelector" && leadingIcon.visibility == VISIBLE) {
+      // OneKey patch: Yoga rounds the 4dp padding inside the 32dp Add account icon upward.
+      leadingIcon.offsetLeftAndRight((leadingFrame.width - leadingIcon.width + 1) / 2 - leadingIcon.left)
+      leadingIcon.offsetTopAndBottom((leadingFrame.height - leadingIcon.height + 1) / 2 - leadingIcon.top)
+    }
+    if (!item.json.has("height")) return
+    val isNetworkIdentity = item.type == "identity" && item.json.optString("presentation") == "networkSelector"
+    val isAccountAction = item.type == "action" && item.json.optString("presentation") == "accountSelector"
+    val isNetworkSummary = item.type == "sectionHeader" && item.json.optString("presentation") == "networkSelector" && item.json.optString("variant") == "summary"
+    val centeredColumns = when {
+      isNetworkIdentity || isAccountAction -> listOf(mainColumn, trailingColumn)
+      isNetworkSummary -> listOf(trailingColumn)
+      else -> return
+    }
+    for (column in centeredColumns) {
+      if (column.parent !== this || column.visibility == GONE) continue
+      val margins = column.layoutParams as MarginLayoutParams
+      val available = height - paddingTop - paddingBottom - margins.topMargin - margins.bottomMargin
+      val desiredTop = paddingTop + margins.topMargin + (available - column.height + 1) / 2
+      column.offsetTopAndBottom(desiredTop - column.top)
+    }
   }
 
   fun bind(
@@ -526,12 +647,16 @@ internal class NativeListRowView(
     itemIndex: Int?,
     selected: Boolean,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
+    useSourceScale: Boolean = false,
   ) {
+    val shouldRestorePressed = touchPressed && boundKey == item.key
     invalidateCurrentBinding()
     bindingEpoch += 1
     boundKey = item.key
+    touchPressed = shouldRestorePressed
     currentLayout = layout
     tag = item
+    selectorUsesSourceScale = item.usesSelectorSourceScale || useSourceScale
     reorderActive = false
     leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
     secondaryImage.prepareForReuse()
@@ -544,12 +669,21 @@ internal class NativeListRowView(
     val accent = color(theme, "accent", "#0D8200FC")
     checkboxCheckedColor = primary
     checkboxUncheckedColor = color(theme, "inverseText", "#FCFCFC")
+    checkboxIconColor = checkboxUncheckedColor
+    checkboxUsesSelectorStyle = item.json.optString("presentation") == "networkSelector"
     checkboxBorderColor = Color.argb(
       0x31,
       0,
       0,
       0,
     )
+    if (item.json.optString("presentation") == "networkSelector") {
+      checkboxCheckedColor = color(theme, "checkboxBackground", "#202020")
+      checkboxBorderColor = color(theme, "checkboxBorder", "#00000031")
+      checkboxIconColor = color(theme, "checkboxIcon", "#FFFFFF")
+      // OneKey patch: the V1 checkbox fills even its unchecked body with iconInverse.
+      checkboxUncheckedColor = checkboxIconColor
+    }
     iconSubduedColor = color(theme, "iconSubdued", "#00000072")
     visualBackdropColor = color(theme, "rowBackground", "#FFFFFF")
     unreadDot.background = roundedFill(
@@ -569,7 +703,7 @@ internal class NativeListRowView(
         if (item.type == "rail") "#0000000F" else "#00000017",
       ),
     )
-    background = restingRowBackground
+    background = if (touchPressed || reorderActive) pressedRowBackground else restingRowBackground
     if (layout == "table") {
       if (item.type == "dataRow") {
         setPadding(dp(20), dp(10), dp(20), dp(10))
@@ -592,8 +726,14 @@ internal class NativeListRowView(
     invalidate()
     trailingViews.forEach { it.setTextColor(primary) }
     isEnabled = !item.json.optBoolean("disabled", false)
-    alpha = if (isEnabled) 1f else 0.5f
+    if (!isEnabled) touchPressed = false
+    background = if (touchPressed || reorderActive) pressedRowBackground else restingRowBackground
+    // OneKey patch: deprecation dims the row without disabling menu controls.
+    // alpha = if (isEnabled) 1f else 0.5f
+    alpha = item.json.optDouble("opacity", 1.0).toFloat() * (if (isEnabled) 1f else 0.5f)
     contentDescription = item.json.optString("accessibilityLabel", item.json.optString("title"))
+    // OneKey patch: retain stable original selector test identifiers.
+    setTag(com.facebook.react.R.id.react_test_id, item.json.optString("testID").takeIf { it.isNotEmpty() })
 
     when (item.type) {
       "walletGroup" -> bindWalletGroup(item, theme, layout, listOrientation, checkboxState)
@@ -609,10 +749,34 @@ internal class NativeListRowView(
       "system" -> bindSystem(item, theme)
     }
     applySize(item)
+    if (item.type == "system" && item.json.optString("variant") == "warning") {
+      title.typeface = NativeListFonts.medium(context)
+      title.textSize = sp(14f)
+      subtitle.textSize = sp(14f)
+      TextViewCompat.setLineHeight(title, dp(20))
+      TextViewCompat.setLineHeight(subtitle, dp(20))
+      minimumHeight = 0
+    }
     applyListOrientation(item, listOrientation)
+    applySelectorTypography(item)
+  }
+
+  // OneKey patch: keep a small idle member pool after reuse or a direct rebind.
+  // The compact proxy/expansion keeps every member until it leaves that state.
+  private fun trimWalletGroupRows(required: Int) {
+    val retained = maxOf(8, required)
+    while (walletGroupRows.size > retained) {
+      val row = walletGroupRows.removeAt(walletGroupRows.lastIndex)
+      (row.parent as? ViewGroup)?.removeView(row)
+      row.dispose()
+      row.onRowPress = null
+      row.onAction = null
+      row.onBindingInvalidated = null
+    }
   }
 
   fun recycle() {
+    touchPressed = false
     restoreRestingBackground()
     invalidateCurrentBinding()
     boundKey = null
@@ -625,6 +789,7 @@ internal class NativeListRowView(
       row.alpha = 1f
       row.recycle()
     }
+    if (!reorderActive && walletGroupExpandAnimator?.isRunning != true) trimWalletGroupRows(0)
   }
 
   fun bindSelection(
@@ -636,6 +801,8 @@ internal class NativeListRowView(
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
     if (boundKey != item.key) return
+    // OneKey patch: keep row callbacks and checkbox fallback state current without resetting images.
+    tag = item
     if (item.type == "walletGroup") {
       val members = buildList {
         add(item.json.getJSONObject("parent"))
@@ -669,7 +836,18 @@ internal class NativeListRowView(
         ),
       )
     }
-    boundCheckboxData?.let { bindCheckbox(item, it, checkboxState) }
+    // OneKey patch: the comparator permits state changes only on these existing checkbox slots.
+    // boundCheckboxData?.let { bindCheckbox(item, it, checkboxState) }
+    if (boundCheckboxData != null) {
+      val latestCheckbox = if (item.type == "identity") {
+        item.json.optJSONArray("trailing")?.let { trailing ->
+          (0 until trailing.length()).mapNotNull { trailing.optJSONObject(it) }
+            .lastOrNull { it.optString("kind") == "checkbox" }
+        }
+      } else item.json.optJSONObject("checkbox")
+      boundCheckboxData = latestCheckbox ?: boundCheckboxData
+      boundCheckboxData?.let { bindCheckbox(item, it, checkboxState) }
+    }
   }
 
   fun bindStableSummary(item: NativeListItem) {
@@ -684,10 +862,14 @@ internal class NativeListRowView(
     contentDescription = item.json.optString("accessibilityLabel", item.json.optString("title"))
     title.text = item.json.optString("title")
     trailingViews[0].text = item.json.optString("value")
+    applySelectorTypography(item)
   }
 
   fun dispose() {
+    invalidateCurrentBinding()
     restoreRestingBackground()
+    selectorImages.forEach(OneKeyImageReusableView::dispose)
+    selectorImages.clear()
     leadingImages.forEach(OneKeyImageReusableView::dispose)
     secondaryImage.dispose()
     mediaNetworkImage.dispose()
@@ -699,7 +881,8 @@ internal class NativeListRowView(
     sourceView: View,
     source: String,
     slot: Int? = null,
-  ) = NativeListActionOrigin(sourceView, this, bindingEpoch, source, slot)
+  ) = NativeListActionOrigin(sourceView, this, bindingEpoch, source, slot,
+    if ((tag as? NativeListItem)?.json?.optString("presentation") == "accountSelector" && sourceView in trailingIcons && (sourceView.layoutParams as MarginLayoutParams).marginStart < 0) dp(7) else 0)
 
   private fun emitAction(
     item: NativeListItem,
@@ -712,13 +895,65 @@ internal class NativeListRowView(
     onAction?.invoke(item, actionKey, target, actionOrigin(sourceView, source, slot))
   }
 
+  // OneKey patch: match SizableText TABULAR_NUMS on dynamic labels without replacing their typeface.
+  private fun applySelectorTypography(item: NativeListItem) {
+    val usesSelectorTypography = item.json.optString("presentation") in setOf("accountSelector", "networkSelector", "walletSidebar") || item.type == "system" && item.json.optString("variant") == "warning"
+    fun visit(view: View) {
+      if (view is OneKeyIconView) view.useSourceScale = selectorUsesSourceScale
+      if (view is DottedUnderlineTextView) view.useSourceScale = selectorUsesSourceScale
+      if (view is TextView && usesSelectorTypography) {
+        val selectorLineHeight = selectorLineHeights.getOrPut(view) { view.lineHeight }
+        val original = view.fontFeatureSettings
+        if (!selectorOriginalFontFeatures.containsKey(view)) selectorOriginalFontFeatures[view] = original
+        view.fontFeatureSettings = if (original.isNullOrEmpty()) "tnum" else if (original.contains("tnum")) original else "$original, 'tnum' 1"
+        // OneKey patch: SizableText disables font scaling and rounds font sizes to whole pixels.
+        val sourceTypography = selectorUsesSourceScale || item.type == "system" && item.json.optString("variant") == "warning"
+        if (sourceTypography) {
+          // OneKey patch: React Native CustomStyleSpan disables hinting and preserves fractional advances.
+          selectorOriginalPaintFlags.putIfAbsent(view, view.paintFlags)
+          view.paintFlags = view.paintFlags or Paint.SUBPIXEL_TEXT_FLAG or Paint.LINEAR_TEXT_FLAG
+          val originalSize = selectorFontSizes.getOrPut(view) { view.textSize }
+          val sourceSize = originalSize * resources.displayMetrics.density / resources.displayMetrics.scaledDensity
+          view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, kotlin.math.ceil(sourceSize.toDouble()).toFloat())
+          view.letterSpacing = 0f
+        }
+        if (sourceTypography && view.text.isNotEmpty()) {
+          val text = SpannableStringBuilder(view.text)
+          text.getSpans(0, text.length, SelectorLineHeightSpan::class.java).forEach(text::removeSpan)
+          text.setSpan(SelectorLineHeightSpan(selectorLineHeight), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+          view.setLineSpacing(0f, 1f)
+          view.text = text
+        }
+      }
+      if (view is ViewGroup) for (index in 0 until view.childCount) visit(view.getChildAt(index))
+    }
+    visit(this)
+  }
+
   private fun invalidateCurrentBinding() {
+    selectorImageRetries.forEach { (image, retry) -> image.removeCallbacks(retry) }
+    selectorImageRetries.clear()
     if (boundKey == null) return
     onBindingInvalidated?.invoke(this, bindingEpoch)
     bindingEpoch += 1
   }
 
   private fun resetViews() {
+    clipToPadding = true
+    selectorOriginalFontFeatures.forEach { (view, original) -> view.fontFeatureSettings = original }
+    selectorOriginalFontFeatures.clear()
+    selectorOriginalPaintFlags.forEach { (view, flags) -> view.paintFlags = flags }
+    selectorOriginalPaintFlags.clear()
+    selectorLineHeights.clear()
+    selectorFontSizes.clear()
+    // OneKey patch: selector-only views cannot survive a recycled binding.
+    selectorViews.forEach { (it.parent as? ViewGroup)?.removeView(it) }
+    selectorViews.clear()
+    selectorImages.forEach(OneKeyImageReusableView::dispose)
+    selectorImages.clear()
+    selectorHeight = null
+    title.setOnClickListener(null)
+    title.isClickable = false
     walletGroupRows.forEach { it.invalidateCurrentBinding() }
     walletGroupExpandAnimator?.removeAllListeners()
     walletGroupExpandAnimator?.cancel()
@@ -736,6 +971,11 @@ internal class NativeListRowView(
     activityContentRow.removeAllViews()
     (actionLine.parent as? ViewGroup)?.removeView(actionLine)
     removeAllViews()
+    // OneKey patch: the old animator is cancelled and old children are detached.
+    // Do not trim currently needed members when re-binding an expanded group.
+    val nextItem = tag as? NativeListItem
+    val required = if (nextItem?.type == "walletGroup") (nextItem.json.optJSONArray("children")?.length() ?: 0) + 1 else 0
+    trimWalletGroupRows(required)
     orientation = HORIZONTAL
     gravity = Gravity.CENTER_VERTICAL
     minimumHeight = 0
@@ -801,6 +1041,7 @@ internal class NativeListRowView(
     trailingColumn.layoutParams = wrap()
     trailingViews.forEach {
       it.visibility = GONE
+      it.setTag(com.facebook.react.R.id.react_test_id, null)
       it.gravity = Gravity.END
       it.maxLines = 1
       it.layoutParams = wrap()
@@ -879,7 +1120,8 @@ internal class NativeListRowView(
     mainColumn.removeView(skeletonSecondary)
     setOnClickListener { view ->
       (view.tag as? NativeListItem)?.let { item ->
-        onRowPress?.invoke(item, actionOrigin(view, "row"))
+        // OneKey patch: allow create-address accessories when whole-row press is gated.
+        if (!item.json.optBoolean("pressDisabled", false)) onRowPress?.invoke(item, actionOrigin(view, "row"))
       }
     }
   }
@@ -1003,9 +1245,12 @@ internal class NativeListRowView(
         members.add(children.getJSONObject(index))
       }
     }
+    if (members.first().has("height")) setPadding(dp(1), dp(1), dp(1), dp(1))
     walletGroupDragChildCount = members.size - 1
     walletGroupExpandedHeightPx =
-      dp(members.size * 68 + walletGroupDragChildCount * 12)
+      // OneKey patch: expanded groups include individual wallet badge heights.
+      // dp(members.size * 68 + walletGroupDragChildCount * 12)
+      dp(members.sumOf { it.optInt("height", if ((it.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68) } + walletGroupDragChildCount * 12 + if (members.first().has("height")) 2 else 0)
     walletGroupDragBadgeBackgroundPaint.color = color(
       theme,
       "inverseBackground",
@@ -1048,8 +1293,11 @@ internal class NativeListRowView(
         null,
         memberJson.optBoolean("selected", false),
         checkboxState,
+        useSourceScale = selectorUsesSourceScale,
       )
-      memberRow.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(68)).apply {
+      // OneKey patch: member geometry matches the outer group height calculation.
+      // memberRow.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(68)).apply {
+      memberRow.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(memberJson.optInt("height", if ((memberJson.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68))).apply {
         if (index > 0) topMargin = dp(12)
       }
       addView(memberRow)
@@ -1082,8 +1330,11 @@ internal class NativeListRowView(
       titleLine.gravity = Gravity.CENTER
       titleLine.packsChildrenAtStart = false
       titleLine.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-      title.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+      // OneKey patch: the original wallet title ellipsizes within the full inner row width.
+      title.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
       title.gravity = Gravity.CENTER
+      // OneKey patch: this branch returns before the common identity ellipsis setup.
+      if (item.json.has("height")) title.ellipsize = TextUtils.TruncateAt.END
       showText(title, item.json.optString("title"), 1)
       title.setTextColor(
         color(
@@ -1095,13 +1346,41 @@ internal class NativeListRowView(
       addView(
         mainColumn,
         LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-          topMargin = dp(4)
+          // OneKey patch: snap the source 4 + 40 + 4 sequence once instead of rounding each gap.
+          topMargin = if (item.json.has("height")) dp(48) - dp(44) else dp(4)
         },
       )
+      // OneKey patch: wallet tags are a centered line below the wallet name.
+      item.json.optJSONArray("badges")?.takeIf { it.length() > 0 }?.let { badges ->
+        val isSelector = item.json.has("height")
+        val badgeLineHeight = if (isSelector) 14 else 16
+        val badgeHeight = badgeLineHeight + 4
+        val line = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER }
+        for (index in 0 until badges.length()) {
+          val badge = TextView(context).apply {
+            text = badges.getJSONObject(index).optString("text")
+            textSize = sp(if (isSelector) 11f else 12f)
+            typeface = NativeListFonts.regular(context)
+            includeFontPadding = false
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            val warning = isSelector && badges.getJSONObject(index).optString("tone") == "warning"
+            setTextColor(color(theme, if (warning) "caution" else "secondaryText", if (warning) "#AB6400" else "#0000009B"))
+            background = roundedFill(color(theme, if (warning) "cautionBackground" else if (isSelector) "subduedBackground" else "strongBackground", if (warning) "#FFF4D5" else "#00000006"), 4f)
+            setPadding(dp(if (isSelector) 6 else 4), dp(2), dp(if (isSelector) 6 else 4), dp(2))
+          }
+          TextViewCompat.setLineHeight(badge, dp(badgeLineHeight))
+          line.addView(badge, LayoutParams(LayoutParams.WRAP_CONTENT, dp(badgeHeight)).apply { if (index > 0) marginStart = dp(4) })
+        }
+        mainColumn.addView(line, LayoutParams(LayoutParams.WRAP_CONTENT, dp(badgeHeight)).apply { topMargin = dp(4) })
+        selectorViews.add(line)
+      }
       return
     }
     if (item.json.optString("presentation") == "networkSelector") {
-      setPadding(dp(12), dp(7), dp(12), dp(8))
+      // OneKey patch: the explicit 48-point row centers its 32-point network icon.
+      // setPadding(dp(12), dp(7), dp(12), dp(8))
+      setPadding(dp(12), dp(if (item.json.has("height")) 8 else 7), dp(12), dp(8))
     }
     val leading = item.json.optJSONObject("leading")
     item.json.optJSONObject("leadingAction")?.let { action ->
@@ -1136,6 +1415,13 @@ internal class NativeListRowView(
         item.json.optString("presentation") == "accountSelector"
       ) 32 else 40,
     )
+    // OneKey patch: custom network initials retain LetterAvatar typography.
+    if (item.json.optString("presentation") == "networkSelector" && leading?.optJSONObject("image") == null && leading?.optJSONObject("fallbackIcon") == null && !leading?.optString("fallbackText").isNullOrEmpty()) {
+      leadingFallback.textSize = sp(19f)
+      leadingFallback.typeface = NativeListFonts.semibold(context)
+      leadingFallback.setTextColor(color(theme, "inverseText", "#FCFCFC"))
+      TextViewCompat.setLineHeight(leadingFallback, dp(27))
+    }
     addView(mainColumn, weighted())
     titleLine.packsChildrenAtStart = true
     title.ellipsize = TextUtils.TruncateAt.END
@@ -1144,6 +1430,43 @@ internal class NativeListRowView(
       title.typeface = NativeListFonts.regular(context)
     }
     showText(subtitle, item.json.optString("subtitle"), item.json.optInt("subtitleLines", 2))
+    // OneKey patch: use separate labels for independently truncated balance/address.
+    item.json.optJSONArray("subtitleSegments")?.takeIf { it.length() > 0 }?.let { segments ->
+      subtitle.visibility = GONE
+      val line = SelectorSubtitleLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+      for (index in 0 until segments.length()) {
+        val segment = segments.getJSONObject(index)
+        if (segment.optBoolean("separatorBefore", false)) {
+          val dot = View(context).apply { background = roundedFill(color(theme, "disabledText", "#00000072"), 2f) }
+          line.addView(dot, LayoutParams(dp(4), dp(4)).apply { marginStart = dp(6); marginEnd = dp(6) })
+        }
+        val label = TextView(context).apply {
+          text = segment.optString("text")
+          typeface = NativeListFonts.regular(context)
+          textSize = sp(14f)
+          includeFontPadding = false
+          maxLines = 1
+          ellipsize = TextUtils.TruncateAt.END
+          val toneKey = when (segment.optString("tone")) { "primary" -> "primaryText"; "disabled" -> "disabledText"; "caution" -> "caution"; "positive" -> "positive"; "negative" -> "negative"; else -> "secondaryText" }
+          setTextColor(color(theme, toneKey, if (toneKey == "caution") "#AB6400" else "#0000009B"))
+        }
+        TextViewCompat.setLineHeight(label, dp(20))
+        applyValueSegments(label, segment.optJSONArray("textSegments"), 14, 20, false)
+        line.addView(label, LayoutParams(LayoutParams.WRAP_CONTENT, dp(20)))
+      }
+      mainColumn.addView(line, 2, LayoutParams(LayoutParams.MATCH_PARENT, dp(20)))
+      selectorViews.add(line)
+    }
+    item.json.optJSONArray("titleMatch")?.takeIf { it.length() > 0 }?.let { matches ->
+      val highlighted = SpannableStringBuilder(title.text)
+      for (index in 0 until matches.length()) {
+        val match = matches.getJSONObject(index)
+        val start = match.optInt("start")
+        val end = match.optInt("end")
+        if (start >= 0 && end > start && end <= highlighted.length) highlighted.setSpan(ForegroundColorSpan(color(theme, "info", "#0D74CE")), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+      }
+      title.text = highlighted
+    }
     showText(tertiary, item.json.optString("tertiary"), 1)
     tertiary.setTextColor(
       color(
@@ -1164,6 +1487,10 @@ internal class NativeListRowView(
     }
     addView(trailingColumn, wrap())
     val accessories = item.json.optJSONArray("trailing")
+    if (item.json.has("height") && item.json.optString("presentation") == "networkSelector" && accessories.hasAccessory("checkbox")) {
+      // OneKey patch: retain ListItem's title-to-accessory gap when measuring truncation.
+      (mainColumn.layoutParams as LayoutParams).marginEnd = dp(12)
+    }
     if (accessories.hasAccessory("checkbox") && accessories.hasAccessory("value")) {
       trailingColumn.orientation = HORIZONTAL
       trailingColumn.gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -1847,10 +2174,15 @@ internal class NativeListRowView(
     val isSummary = variant == "summary"
     val isGallery = variant == "gallery"
     val isTable = currentLayout == "table"
+    // OneKey patch: title help emits its own frame instead of toggling the section.
+    item.json.optString("titleActionKey").takeIf { it.isNotEmpty() }?.let { key ->
+      title.setOnClickListener { emitAction(item, key, null, title, "leadingAction") }
+    }
     val isNetworkSelector = item.json.optString("presentation") == "networkSelector"
     val isHistory = variant == "history" || item.sectionKey?.startsWith("history-") == true
     val isTokenManager = item.sectionKey in setOf("linear-tokens", "action-tokens")
-    val hasDottedTitle = isSummary || isNetworkSelector ||
+    val isExplicitNetworkHeader = isNetworkSelector && item.json.has("height")
+    val hasDottedTitle = isSummary || (isNetworkSelector && (!isExplicitNetworkHeader || item.json.optString("titleActionKey").isNotEmpty())) ||
       (item.json.optString("value").isNotEmpty() && item.json.optJSONObject("checkbox") != null)
     // Linear/sectioned snapshots reserve the ListItem mx=8 at RecyclerView
     // level, so header-local insets below are source px minus that outer inset.
@@ -1870,7 +2202,8 @@ internal class NativeListRowView(
       ),
     )
     if (isNetworkSelector) {
-      setPadding(dp(headerHorizontalInset), dp(12), dp(headerHorizontalInset), dp(12))
+      val verticalInset = if (isExplicitNetworkHeader && item.json.optString("titleActionKey").isEmpty()) 8 else 12
+      setPadding(dp(headerHorizontalInset), dp(verticalInset), dp(headerHorizontalInset), dp(verticalInset))
       title.textSize = sp(14f)
       title.typeface = NativeListFonts.medium(context)
       TextViewCompat.setLineHeight(title, dp(20))
@@ -1924,14 +2257,22 @@ internal class NativeListRowView(
         item.json.optString("valueActionKey"),
         color(theme, "secondaryText", "#0000009B"),
       )
+      trailingViews[0].setTag(com.facebook.react.R.id.react_test_id, item.json.optString("valueActionTestID").takeIf { it.isNotEmpty() })
+      trailingViews[0].accessibilityDelegate = selectorAccessibilityDelegate
       trailingViews[0].textSize = sp(16f)
       trailingViews[0].typeface = NativeListFonts.medium(context)
       TextViewCompat.setLineHeight(trailingViews[0], dp(24))
-      trailingViews[0].setPadding(dp(14), dp(6), dp(14), dp(6))
+      // OneKey patch: the migrated media button shares the original 24-point text box.
+      if (isExplicitNetworkHeader) trailingViews[0].setPadding(0, 0, 0, 0)
+      else trailingViews[0].setPadding(dp(14), dp(6), dp(14), dp(6))
       trailingViews[0].layoutParams = wrap()
     } else if (!isGallery && !isHistory && !isTokenManager) {
       val value = item.json.optString("value")
       val checkboxData = item.json.optJSONObject("checkbox")
+      if (isExplicitNetworkHeader && checkboxData != null) {
+        // OneKey patch: the asset section title reserves its original 8dp trailing margin.
+        (mainColumn.layoutParams as LayoutParams).marginEnd = dp(8)
+      }
       if (checkboxData != null && value.isNotEmpty()) {
         // Value and checkbox share the trailing edge as one compound accessory.
         trailingColumn.orientation = HORIZONTAL
@@ -1966,6 +2307,27 @@ internal class NativeListRowView(
       }
       checkboxData?.let { bindCheckbox(item, it, checkboxState) }
     }
+    applyValueSegments(trailingViews[0], item.json.optJSONArray("valueSegments"))
+  }
+
+  // OneKey patch: preserve compact zero-count digits without changing their baseline.
+  private fun applyValueSegments(view: TextView, segments: JSONArray?, fontSize: Int = 16, lineHeight: Int = 24, medium: Boolean = true) {
+    if (segments == null || segments.length() == 0) return
+    val value = SpannableStringBuilder()
+    for (index in 0 until segments.length()) {
+      val segment = segments.getJSONObject(index)
+      val start = value.length
+      value.append(segment.optString("text"))
+      if (segment.optString("style") == "subscript") {
+        val size = kotlin.math.ceil(fontSize * 0.6).toFloat()
+        val span = if (selectorUsesSourceScale) AbsoluteSizeSpan(kotlin.math.ceil((size * resources.displayMetrics.density).toDouble()).toInt(), false) else AbsoluteSizeSpan(sp(size).roundToInt(), true)
+        value.setSpan(span, start, value.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+      }
+    }
+    view.textSize = sp(fontSize.toFloat())
+    view.typeface = if (medium) NativeListFonts.medium(context) else NativeListFonts.regular(context)
+    TextViewCompat.setLineHeight(view, dp(lineHeight))
+    view.text = value
   }
 
   private fun bindAction(
@@ -1978,12 +2340,13 @@ internal class NativeListRowView(
       addLeading(icon, if (isAccountSelector) 32 else 40)
       leadingIcon.layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
       if (!icon.has("backgroundColor")) leadingFrame.background = null
+      if (isAccountSelector) leadingFrame.background = roundedFill(safeColor(icon.optString("backgroundColor"), color(theme, "strongBackground", "#0000000F")), 8f)
     }
     addView(mainColumn, weighted())
     showText(title, item.json.optString("title"), 1)
     if (isAccountSelector) {
-      title.typeface = NativeListFonts.regular(context)
-      title.setTextColor(color(theme, "secondaryText", "#0000009B"))
+      title.typeface = if (item.json.has("icon")) NativeListFonts.medium(context) else NativeListFonts.regular(context)
+      title.setTextColor(color(theme, if (item.json.optString("tone") == "primary") "primaryText" else "secondaryText", "#0000009B"))
     } else if (item.json.optString("tone") == "danger") {
       title.setTextColor(color(theme, "negative", "#C40006D3"))
     }
@@ -2003,6 +2366,17 @@ internal class NativeListRowView(
 
   private fun bindSystem(item: NativeListItem, theme: JSONObject?) {
     val variant = item.json.optString("variant")
+    // OneKey patch: warning title/description wrap inside the actual scroll content.
+    if (variant == "warning") {
+      setPadding(dp(12), dp(14), dp(12), dp(14))
+      addView(mainColumn, weighted())
+      showText(title, item.json.optString("title"), Int.MAX_VALUE)
+      showText(subtitle, item.json.optString("message"), Int.MAX_VALUE)
+      title.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+      subtitle.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) }
+      titleLine.packsChildrenAtStart = false
+      return
+    }
     if (variant == "spacer") {
       minimumHeight = dp(item.json.optInt("height", 0))
       return
@@ -2072,7 +2446,11 @@ internal class NativeListRowView(
     spacingDp: Int = 12,
   ) {
     leadingFrame.visibility = VISIBLE
-    leadingFrame.layoutParams = LayoutParams(dp(sizeDp), dp(sizeDp)).apply { marginEnd = dp(spacingDp) }
+    leadingFrame.layoutParams = LayoutParams(dp(sizeDp), dp(sizeDp)).apply {
+      val item = tag as? NativeListItem
+      // OneKey patch: Yoga rounds cumulative selector edges, not each 12dp gap separately.
+      marginEnd = if (item?.json?.has("height") == true && item.json.optString("presentation") in setOf("accountSelector", "networkSelector")) dp(12 + sizeDp + spacingDp) - dp(12) - dp(sizeDp) else dp(spacingDp)
+    }
     addView(leadingFrame)
     leadingFallback.layoutParams = FrameLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
     if (visual == null) return
@@ -2104,7 +2482,7 @@ internal class NativeListRowView(
       leadingFrame.background = GradientDrawable().apply {
         setColor(visualBackground)
         setStroke(1, parseNativeListColor("#0000001F"))
-        cornerRadius = NativeListScale.dp(resources, leadingCornerRadius(shape, sizeDp))
+        cornerRadius = scaledDp(leadingCornerRadius(shape, sizeDp))
       }
       leadingIcon.iconName = visual.optString("name")
       leadingIcon.tintColor = safeColor(
@@ -2161,7 +2539,89 @@ internal class NativeListRowView(
         else -> leadingOutlineProvider(shape)
       }
       image.clipToOutline = true
-      bindImage(source, image, boundKey ?: "", index, variant)
+      val fallbackIcon = if (index == 0) visual.optJSONObject("fallbackIcon") else null
+      val expectedEpoch = bindingEpoch
+      bindImage(source, image, boundKey ?: "", index, variant,
+        onLoad = if (fallbackIcon == null) null else ({
+          if (bindingEpoch == expectedEpoch) { image.visibility = VISIBLE; leadingIcon.visibility = GONE }
+        }),
+        onError = if (fallbackIcon == null) null else ({
+          if (bindingEpoch == expectedEpoch) {
+            image.visibility = GONE
+            leadingFallback.visibility = GONE
+            leadingIcon.iconName = fallbackIcon.optString("name")
+            leadingIcon.tintColor = safeColor(fallbackIcon.optString("tintColor"), parseNativeListColor("#0000009B"))
+            leadingIcon.visibility = VISIBLE
+          }
+        }),
+      )
+    }
+    // OneKey patch: wallet overlays retain source images, provider colors and QR text.
+    visual.optJSONArray("overlays")?.let { overlays ->
+      for (index in 0 until overlays.length()) {
+        val overlay = overlays.getJSONObject(index)
+        val size = overlay.optInt("size", 20)
+        val inset = dp(overlay.optInt("padding", 0))
+        val isWalletText = selectorUsesSourceScale && (tag as? NativeListItem)?.json?.optString("presentation") == "walletSidebar" && overlay.optString("text").isNotEmpty() && overlay.optJSONObject("image") == null && overlay.optString("name").isEmpty()
+        val width = overlay.optInt("width", size)
+        val height = overlay.optInt("height", if (isWalletText) 16 else size)
+        val offsetX = dp(overlay.optInt("offsetX", overlay.optInt("offset", 2)))
+        val offsetY = dp(overlay.optInt("offsetY", overlay.optInt("offset", 2)))
+        val frame = FrameLayout(context).apply {
+          setPadding(if (isWalletText) dp(2) else inset, if (isWalletText) 0 else inset, if (isWalletText) dp(2) else inset, if (isWalletText) 0 else inset)
+          background = roundedFill(safeColor(overlay.optString("backgroundColor"), Color.TRANSPARENT), minOf(width, height) / 2f)
+          outlineProvider = ViewOutlineProvider.BACKGROUND
+          clipToOutline = true
+        }
+        val image = overlay.optJSONObject("image")
+        val view = when {
+          image != null -> OneKeyImageReusableView(reactContext).also {
+            bindImage(image, it, boundKey ?: "", 10 + index, "generic")
+            selectorImages.add(it)
+          }
+          overlay.optString("text").isNotEmpty() -> TextView(context).apply {
+            text = overlay.optString("text")
+            textSize = sp(if (isWalletText) 12f else 10f)
+            typeface = if (isWalletText) NativeListFonts.regular(context) else NativeListFonts.medium(context)
+            includeFontPadding = false
+            gravity = Gravity.CENTER
+            if (isWalletText) TextViewCompat.setLineHeight(this, dp(16))
+            setTextColor(safeColor(overlay.optString("tintColor"), color(null, "secondaryText", "#0000009B")))
+          }
+          else -> OneKeyIconView(context).apply {
+            iconName = overlay.optString("name")
+            tintColor = safeColor(overlay.optString("tintColor"), parseNativeListColor("#0000009B"))
+          }
+        }
+        frame.addView(view, FrameLayout.LayoutParams(if (isWalletText && !overlay.has("width")) FrameLayout.LayoutParams.WRAP_CONTENT else FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        val topLeft = overlay.optString("position") == "topLeft"
+        leadingFrame.addView(frame, FrameLayout.LayoutParams(if (isWalletText && !overlay.has("width")) FrameLayout.LayoutParams.WRAP_CONTENT else dp(width), dp(height), if (topLeft) Gravity.START or Gravity.TOP else Gravity.END or Gravity.BOTTOM).apply {
+          if (topLeft) { marginStart = -offsetX; topMargin = -offsetY } else { marginEnd = -offsetX; bottomMargin = -offsetY }
+        })
+        selectorViews.add(frame)
+      }
+    }
+    visual.optJSONObject("fallbackIcon")?.takeIf { sources.isEmpty() }?.let { fallbackIcon ->
+      leadingFallback.visibility = GONE
+      leadingIcon.visibility = VISIBLE
+      leadingIcon.iconName = fallbackIcon.optString("name")
+      leadingIcon.tintColor = safeColor(fallbackIcon.optString("tintColor"), parseNativeListColor("#0000009B"))
+      if (selectorUsesSourceScale && (tag as? NativeListItem)?.json?.optString("presentation") == "walletSidebar" && leadingIcon.iconName == "PlusSmallOutline") {
+        leadingIcon.layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
+        leadingIcon.glyphSizeDp = 24
+      }
+      if (selectorUsesSourceScale && (tag as? NativeListItem)?.json?.optString("presentation") == "walletSidebar" && leadingIcon.iconName == "LockSolid") {
+        leadingIcon.layoutParams = FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER)
+        leadingIcon.glyphSizeDp = 40
+      }
+    }
+    if (visual.optString("borderStyle") == "dashed") {
+      leadingFrame.background = GradientDrawable().apply {
+        setColor(visualBackground)
+        cornerRadius = dp(sizeDp / 2).toFloat()
+        setStroke(dp(if (selectorUsesSourceScale && (tag as? NativeListItem)?.json?.optString("presentation") == "walletSidebar") 1 else 2), safeColor(visual.optString("borderColor"), parseNativeListColor("#00000072")), dp(4).toFloat(), dp(4).toFloat())
+      }
+      leadingFallback.background = null
     }
   }
 
@@ -2223,7 +2683,11 @@ internal class NativeListRowView(
     for (index in 0 until minOf(2, accessories.length())) {
       val accessory = accessories.getJSONObject(index)
       when (accessory.optString("kind")) {
-        "value" -> showTrailing(textIndex++, accessory.optString("text"), !accessory.optBoolean("secondary", false))
+        "value" -> {
+          showTrailing(textIndex, accessory.optString("text"), !accessory.optBoolean("secondary", false))
+          applyValueSegments(trailingViews[textIndex], accessory.optJSONArray("textSegments"))
+          textIndex++
+        }
         "valuePair" -> showTrailingValuePair(textIndex++, accessory, theme)
         "checkbox" -> bindCheckbox(item, accessory, checkboxState)
         "radio" -> showTrailing(
@@ -2285,11 +2749,25 @@ internal class NativeListRowView(
       return
     }
     checkbox.visibility = VISIBLE
-    checkbox.setState(state, checkboxUncheckedColor)
-    checkbox.background = if (state == "unchecked") {
-      roundedStroke(checkboxBorderColor, checkboxUncheckedColor, 4f)
+    checkbox.setState(state, checkboxIconColor)
+    val usesSourceCheckboxGeometry = checkboxUsesSelectorStyle && item.json.has("height")
+    checkbox.usesSelectorGeometry = usesSourceCheckboxGeometry
+    if (usesSourceCheckboxGeometry) {
+      // OneKey patch: source Yoga children may round into padding; retain their complete border.
+      clipToPadding = false
+      // OneKey patch: even a transparent source border changes RN's background clipping path.
+      checkbox.background = null
+      BackgroundStyleApplicator.setBackgroundColor(checkbox, if (state == "unchecked") checkboxUncheckedColor else checkboxCheckedColor)
+      BackgroundStyleApplicator.setBorderWidth(checkbox, LogicalEdge.ALL, 2f)
+      BackgroundStyleApplicator.setBorderColor(checkbox, LogicalEdge.ALL, if (state == "unchecked") checkboxBorderColor else Color.TRANSPARENT)
+      BackgroundStyleApplicator.setBorderRadius(checkbox, BorderRadiusProp.BORDER_RADIUS, LengthPercentage(4f, LengthPercentageType.POINT))
     } else {
-      roundedFill(checkboxCheckedColor, 4f)
+      checkbox.background = if (state == "unchecked") {
+        if (checkboxUsesSelectorStyle) GradientDrawable().apply { setColor(checkboxUncheckedColor); setStroke(dp(2), checkboxBorderColor); cornerRadius = scaledDp(4f) }
+        else roundedStroke(checkboxBorderColor, checkboxUncheckedColor, 4f)
+      } else {
+        roundedFill(checkboxCheckedColor, 4f)
+      }
     }
     // Row-level disabled opacity already applies to this child. Only apply a
     // local 0.5 when the accessory alone is disabled, never 0.5 * 0.5.
@@ -2330,6 +2808,8 @@ internal class NativeListRowView(
     }
     val groupPosition = when {
       item.type == "identity" && item.json.optString("presentation") == "walletSidebar" -> "single"
+      // OneKey patch: explicit selector rows preserve the v1 ListItem corner radius.
+      item.type == "identity" && item.json.optString("presentation") in setOf("accountSelector", "networkSelector") && item.json.has("height") -> "single"
       else -> when (item.type) {
       "metricCard" -> "single"
       "rail" -> "rail"
@@ -2337,7 +2817,7 @@ internal class NativeListRowView(
       }
     }
     var backgroundGroupPosition = if (item.type == "mediaTile") "mediaTile" else groupPosition
-    if (layout == "sectioned") {
+    if (layout == "sectioned" && !item.json.optBoolean("selected", false)) {
       // Selection in sectioned lists is represented by the OneKey checkbox,
       // matching iOS and the app-monorepo network selector.
       rowBackground = color(theme, "rowBackground", "#FFFFFF")
@@ -2351,6 +2831,8 @@ internal class NativeListRowView(
       rowBackground = color(theme, "subduedBackground", "#F9F9F9")
       backgroundGroupPosition = ""
     }
+    // OneKey patch: section heading backgrounds are independent of list rows.
+    if (item.json.has("backgroundColor")) rowBackground = safeColor(item.json.optString("backgroundColor"), rowBackground)
     restingRowBackground = groupedBackground(backgroundGroupPosition, rowBackground)
     background = restingRowBackground
   }
@@ -2466,7 +2948,26 @@ internal class NativeListRowView(
     val icon = trailingIcons[index]
     icon.iconName = data.optString("name")
     icon.tintColor = safeColor(data.optString("tintColor"), iconSubduedColor)
-    if (icon.iconName == "ChevronRightSmallOutline") {
+    // OneKey patch: preserve the original 38dp press target around its 24dp layout slot.
+    icon.setTag(com.facebook.react.R.id.react_test_id, data.optString("testID").takeIf { it.isNotEmpty() })
+    icon.accessibilityDelegate = selectorAccessibilityDelegate
+    icon.contentDescription = data.optString("accessibilityLabel").takeIf { it.isNotEmpty() }
+    if (item.json.optString("presentation") == "accountSelector") {
+      icon.glyphSizeDp = 24
+      val isSourceMenu = item.json.has("height") && icon.iconName == "DotHorOutline"
+      val size = if (isSourceMenu) 24 else if (item.json.has("height") && icon.iconName == "PlusSmallOutline") 36 else 38
+      icon.layoutParams = LayoutParams(dp(size), dp(size)).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        if (!isSourceMenu) {
+          marginStart = -dp(7)
+          marginEnd = -dp(7)
+        }
+      }
+      if (isSourceMenu) {
+        // OneKey patch: the native ActionList trigger measures 24dp; Yoga rounds its trailing edge cumulatively.
+        setPadding(paddingLeft, paddingTop, (12 * resources.displayMetrics.density).toInt(), paddingBottom)
+      }
+    } else if (icon.iconName == "ChevronRightSmallOutline") {
       icon.glyphSizeDp = null
       // ListItem.DrillIn is a 24dp icon with mx=-6, for a 12dp layout footprint.
       icon.layoutParams = LayoutParams(dp(24), dp(24)).apply {
@@ -2516,7 +3017,7 @@ internal class NativeListRowView(
         when (item.type) {
           "message" -> 14f
           "sectionHeader" -> when {
-            isNetworkSelectorSection -> 14f
+            isNetworkSelectorSection && item.json.optString("variant") != "summary" -> 14f
             item.json.optString("variant") == "gallery" -> 18f
             item.json.optString("variant") == "summary" -> 16f
             currentLayout == "table" -> 11f
@@ -2530,11 +3031,14 @@ internal class NativeListRowView(
         }
       },
     )
-    title.typeface = if (isWalletSidebar || isAccountSelectorIdentity || isAccountSelectorAction) {
+    title.typeface = if (isAccountSelectorAction && item.json.has("icon")) {
+      NativeListFonts.medium(context)
+    } else if (isWalletSidebar || isAccountSelectorIdentity || isAccountSelectorAction) {
       NativeListFonts.regular(context)
     } else {
       when (item.type) {
         "sectionHeader" -> when {
+          isNetworkSelectorSection && item.json.has("height") && item.json.optString("variant") != "summary" && (item.json.optJSONObject("checkbox") != null || item.json.optString("titleActionKey").isEmpty()) -> NativeListFonts.semibold(context)
           isNetworkSelectorSection -> NativeListFonts.medium(context)
           currentLayout == "table" -> NativeListFonts.regular(context)
           item.json.optString("variant") == "summary" -> NativeListFonts.medium(context)
@@ -2552,7 +3056,7 @@ internal class NativeListRowView(
       else -> 14f
     })
     tertiary.textSize = sp(14f)
-    if (isNetworkSelectorSection) {
+    if (isNetworkSelectorSection && item.json.optString("variant") != "summary") {
       TextViewCompat.setLineHeight(title, dp(20))
     } else if (item.type == "sectionHeader" && item.json.optString("variant") == "gallery") {
       TextViewCompat.setLineHeight(title, dp(24))
@@ -2589,11 +3093,42 @@ internal class NativeListRowView(
       column.typeface = NativeListFonts.medium(context)
       column.fontFeatureSettings = "tnum"
     }
+    // OneKey patch: exact selector row dimensions override template minimums.
+    selectorHeight = if (item.json.has("height")) dp(item.json.optInt("height")) else null
+    // OneKey patch: React Native's section spacers and letter blocks truncate physical heights.
+    val isSelectorLetter = isNetworkSelectorSection && item.json.has("height") &&
+      item.json.optString("variant") != "summary" && item.json.optString("titleActionKey").isEmpty() &&
+      item.json.optJSONObject("checkbox") == null
+    val isSelectorSectionSpacer = selectorUsesSourceScale && currentLayout == "sectioned" &&
+      item.type == "system" && item.json.optString("variant") == "spacer"
+    if (isSelectorLetter || isSelectorSectionSpacer) {
+      selectorHeight = (item.json.optInt("height") * resources.displayMetrics.density).toInt()
+    }
+    if (isSelectorLetter) {
+      val inset = (20 * resources.displayMetrics.density).toInt() - dp(8)
+      // OneKey patch: SectionHeader has a fixed height and centered text, without vertical padding.
+      setPadding(inset, 0, inset, 0)
+    }
+    if (item.json.has("height") && isNetworkSelectorSection && item.json.optString("variant") != "summary" && item.json.optString("titleActionKey").isNotEmpty() && item.json.optJSONObject("checkbox") == null) {
+      // OneKey patch: the text-and-underline header's fractional measured height rounds up in React Native.
+      selectorHeight = kotlin.math.ceil((item.json.optInt("height") * (if (selectorUsesSourceScale) 1f else NativeListScale.factor(resources)) * resources.displayMetrics.density).toDouble()).toInt()
+    }
+    // OneKey patch: an explicit per-row policy preserves each source list's measured heights.
+    if (item.json.has("height")) {
+      when (item.json.optString("heightRounding")) {
+        "floor" -> selectorHeight = (item.json.optInt("height") * resources.displayMetrics.density).toInt()
+        "nearest" -> selectorHeight = (item.json.optInt("height") * resources.displayMetrics.density).roundToInt()
+      }
+    }
     val baseHeight = when {
+      item.json.has("height") -> item.json.optInt("height")
       item.type == "system" && item.json.optString("variant") == "spacer" -> item.json.optInt("height", 0)
       item.type == "walletGroup" -> {
         val childCount = item.json.optJSONArray("children")?.length() ?: 0
-        (childCount + 1) * 68 + childCount * 12
+        // OneKey patch: include badge heights in the group layout.
+        // (childCount + 1) * 68 + childCount * 12
+        val members = listOf(item.json.getJSONObject("parent")) + (0 until childCount).map { item.json.getJSONArray("children").getJSONObject(it) }
+        members.sumOf { it.optInt("height", if ((it.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68) } + childCount * 12 + if (members.first().has("height")) 2 else 0
       }
       isNetworkSelectorIdentity -> 47
       else -> when (item.type) {
@@ -2617,6 +3152,7 @@ internal class NativeListRowView(
           else -> 36
         }
         "system" -> when (item.json.optString("variant")) {
+          "warning" -> 0
           "noMatch", "end" -> 36
           "retry" -> 44
           else -> 56
@@ -2636,14 +3172,14 @@ internal class NativeListRowView(
           56
         }
         else -> when {
-          item.type == "identity" && item.json.optString("presentation") == "walletSidebar" -> 68
+          item.type == "identity" && item.json.optString("presentation") == "walletSidebar" -> if ((item.json.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68
           item.type == "identity" && item.json.optString("tertiary").isNotEmpty() -> 72
           item.type == "identity" && item.json.optString("subtitle").isNotEmpty() -> 60
           else -> 56
         }
       }
     }
-    val modifier = if (isNetworkSelectorIdentity) {
+    val modifier = if (item.json.has("height") || isNetworkSelectorIdentity) {
       0
     } else if (
       item.type == "sectionHeader" && item.json.optString("variant") in listOf("summary", "gallery")
@@ -2713,7 +3249,12 @@ internal class NativeListRowView(
     override fun getOutline(view: View, outline: Outline) {
       when (shape) {
         "square" -> outline.setRect(0, 0, view.width, view.height)
-        "rounded" -> outline.setRoundRect(0, 0, view.width, view.height, dp(10).toFloat())
+        "rounded" -> {
+          // OneKey patch: the account avatar has an 8-point radius at its 32-point size.
+          // outline.setRoundRect(0, 0, view.width, view.height, dp(10).toFloat())
+          val radius = if ((tag as? NativeListItem)?.json?.optString("presentation") == "accountSelector" && (tag as? NativeListItem)?.json?.has("height") == true) dp(8).toFloat() else dp(10).toFloat()
+          outline.setRoundRect(0, 0, view.width, view.height, radius)
+        }
         else -> outline.setOval(0, 0, view.width, view.height)
       }
     }
@@ -2742,7 +3283,13 @@ internal class NativeListRowView(
     token: String,
     slot: Int,
     variant: String,
+    onLoad: (() -> Unit)? = null,
+    onError: (() -> Unit)? = null,
+    retryAttempt: Int = 0,
   ) {
+    selectorImageRetries.remove(imageView)?.let(imageView::removeCallbacks)
+    val expectedEpoch = bindingEpoch
+    val retryLimit = source.optInt("retryTimes", 0).coerceAtLeast(0)
     val uri = source.optString("uri").trim().takeIf(String::isNotEmpty)
     imageView.configure(
       sourceUri = uri,
@@ -2751,17 +3298,39 @@ internal class NativeListRowView(
       contentFit = source.optString("contentFit", "cover"),
       cachePolicy = source.optString("cachePolicy", "memory-disk"),
       autoplay = source.optBoolean("autoplay", false),
-      recyclingKey = "$token:$slot",
-      optimizeTos = source.optBoolean("optimizeTos", true),
+      recyclingKey = if (retryAttempt == 0) "$token:$slot" else "$token:$slot:retry:$retryAttempt",
+      optimizeTos = retryAttempt == 0 && source.optBoolean("optimizeTos", true),
       overscan = source.optDouble("overscan", 1.1),
       loadingStrategy = source.optString("loadingStrategy", "static"),
+      onLoad = if (retryLimit == 0) onLoad else ({
+        if (bindingEpoch == expectedEpoch) {
+          selectorImageRetries.remove(imageView)?.let(imageView::removeCallbacks)
+          onLoad?.invoke()
+        }
+      }),
+      onError = if (retryLimit == 0) onError else ({
+        if (bindingEpoch == expectedEpoch) {
+          if (retryAttempt >= retryLimit) onError?.invoke()
+          else if (!selectorImageRetries.containsKey(imageView)) {
+            val retry = Runnable {
+              if (bindingEpoch == expectedEpoch) {
+                selectorImageRetries.remove(imageView)
+                bindImage(source, imageView, token, slot, variant, onLoad, onError, retryAttempt + 1)
+              }
+            }
+            selectorImageRetries[imageView] = retry
+            imageView.postDelayed(retry, kotlin.random.Random.nextLong(3) * 1000L)
+          }
+        }
+      }),
     )
   }
 
   private fun weighted() = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
   private fun wrap() = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-  private fun dp(value: Int): Int = NativeListScale.dp(resources, value)
-  private fun sp(value: Float): Float = NativeListScale.font(resources, value)
+  private fun dp(value: Int): Int = if (selectorUsesSourceScale) (value * resources.displayMetrics.density).roundToInt() else NativeListScale.dp(resources, value)
+  private fun scaledDp(value: Float): Float = if (selectorUsesSourceScale) (value * resources.displayMetrics.density).roundToInt().toFloat() else NativeListScale.dp(resources, value)
+  private fun sp(value: Float): Float = if (selectorUsesSourceScale) value else NativeListScale.font(resources, value)
 
   private fun color(theme: JSONObject?, key: String, fallback: String): Int =
     safeColor(theme?.optString(key, fallback), parseNativeListColor(fallback))
@@ -2774,30 +3343,30 @@ internal class NativeListRowView(
 
   private fun roundedFill(color: Int, radiusDp: Float) = GradientDrawable().apply {
     setColor(color)
-    cornerRadius = NativeListScale.dp(resources, radiusDp)
+    cornerRadius = scaledDp(radiusDp)
   }
 
   private fun roundedStroke(stroke: Int, fill: Int, radiusDp: Float) = GradientDrawable().apply {
     setColor(fill)
     setStroke(dp(2), stroke)
-    cornerRadius = NativeListScale.dp(resources, radiusDp)
+    cornerRadius = scaledDp(radiusDp)
   }
 
   private fun roundedHairlineStroke(stroke: Int, radiusDp: Float) = GradientDrawable().apply {
     setColor(Color.TRANSPARENT)
     setStroke(1, stroke)
-    cornerRadius = NativeListScale.dp(resources, radiusDp)
+    cornerRadius = scaledDp(radiusDp)
   }
 
   private fun groupedBackground(position: String, color: Int) = GradientDrawable().apply {
     setColor(color)
-    val radius = NativeListScale.dp(resources, 12f)
+    val radius = scaledDp(12f)
     cornerRadii = when (position) {
       "first" -> floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
       "last" -> floatArrayOf(0f, 0f, 0f, 0f, radius, radius, radius, radius)
       "single" -> FloatArray(8) { radius }
-      "rail" -> FloatArray(8) { NativeListScale.dp(resources, 8f) }
-      "mediaTile" -> FloatArray(8) { NativeListScale.dp(resources, 16f) }
+      "rail" -> FloatArray(8) { scaledDp(8f) }
+      "mediaTile" -> FloatArray(8) { scaledDp(16f) }
       else -> FloatArray(8)
     }
   }
@@ -2805,6 +3374,7 @@ internal class NativeListRowView(
 }
 
 private class OneKeyIconView(context: android.content.Context) : View(context) {
+  var useSourceScale = false
   var iconName: String = ""
     set(value) {
       field = value
@@ -2828,9 +3398,11 @@ private class OneKeyIconView(context: android.content.Context) : View(context) {
     val pathData = iconPaths[iconName] ?: return
     val drawSize = minOf(
       minOf(width, height).toFloat(),
-      glyphSizeDp?.let { NativeListScale.dp(resources, it).toFloat() } ?: Float.MAX_VALUE,
+      glyphSizeDp?.let { if (useSourceScale) (it * resources.displayMetrics.density).roundToInt().toFloat() else NativeListScale.dp(resources, it).toFloat() } ?: Float.MAX_VALUE,
     )
-    val scale = drawSize / 24f
+    // OneKey patch: custom account-error artwork uses an 18-point viewBox.
+    // val scale = drawSize / 24f
+    val scale = drawSize / (selectorIconViewBoxes[iconName] ?: 24f)
     fill.color = tintColor
     canvas.save()
     canvas.translate((width - drawSize) / 2f, (height - drawSize) / 2f)
@@ -2839,6 +3411,8 @@ private class OneKeyIconView(context: android.content.Context) : View(context) {
     pathData.forEachIndexed { index, data ->
       PathParser.createPathFromPathData(data)?.let { path ->
         path.fillType = sourceFillTypes?.getOrNull(index) ?: Path.FillType.EVEN_ODD
+        // OneKey patch: provider illustration colors are part of their source asset.
+        fill.color = selectorIconColors[iconName]?.getOrNull(index) ?: tintColor
         canvas.drawPath(path, fill)
       }
     }
@@ -2846,10 +3420,42 @@ private class OneKeyIconView(context: android.content.Context) : View(context) {
   }
 
   companion object {
+    // OneKey patch: preserve provider colors and non-24 viewBoxes.
+    private val selectorIconColors: Map<String, List<Int?>> = mapOf(
+      "GlobusOutline" to listOf(null),
+      "LockSolid" to listOf(null),
+      "GoogleIllus" to listOf(parseNativeListColor("#4285F4"), parseNativeListColor("#34A853"), parseNativeListColor("#FBBC05"), parseNativeListColor("#EA4335")),
+      "AppleBrand" to listOf(null),
+      "BotIllus" to listOf(parseNativeListColor("#8897A5"), parseNativeListColor("#3FA9F5"), parseNativeListColor("#8897A5"), parseNativeListColor("#8897A5"), parseNativeListColor("#10243E"), parseNativeListColor("#10243E"), parseNativeListColor("#10243E")),
+      "AllNetworksSolid" to listOf(null, null),
+      "CrossedSmallSolid" to listOf(null),
+      "AccountErrorCustom" to listOf(Color.argb(0x72, 0, 0, 0), Color.argb(0x72, 0, 0, 0)),
+      "Circle" to listOf(null),
+    )
+    private val selectorIconViewBoxes = mapOf(
+      "GlobusOutline" to 24f,
+      "LockSolid" to 24f,
+      "GoogleIllus" to 24f,
+      "AppleBrand" to 16f,
+      "BotIllus" to 24f,
+      "AllNetworksSolid" to 24f,
+      "CrossedSmallSolid" to 24f,
+      "AccountErrorCustom" to 18f,
+      "Circle" to 24f,
+    )
     // Keep the SVG fill-rule used by each Action-row source path. React Native
     // SVG defaults to nonzero (WINDING); only paths declaring fillRule="evenodd"
     // use EVEN_ODD. Other existing icons retain their prior rendering behavior.
     private val actionIconFillTypes = mapOf(
+      "GlobusOutline" to listOf(Path.FillType.EVEN_ODD),
+      "LockSolid" to listOf(Path.FillType.EVEN_ODD),
+      "GoogleIllus" to listOf(Path.FillType.WINDING, Path.FillType.WINDING, Path.FillType.WINDING, Path.FillType.WINDING),
+      "AppleBrand" to listOf(Path.FillType.WINDING),
+      "BotIllus" to listOf(Path.FillType.WINDING, Path.FillType.WINDING, Path.FillType.WINDING, Path.FillType.WINDING, Path.FillType.WINDING, Path.FillType.WINDING, Path.FillType.WINDING),
+      "AllNetworksSolid" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
+      "CrossedSmallSolid" to listOf(Path.FillType.WINDING),
+      "AccountErrorCustom" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
+      "Circle" to listOf(Path.FillType.WINDING),
       "ChevronRightSmallOutline" to listOf(Path.FillType.WINDING),
       "MinusCircleOutline" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
       "PlusCircleOutline" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
@@ -2867,6 +3473,16 @@ private class OneKeyIconView(context: android.content.Context) : View(context) {
 
     // Exact 24x24 paths from app-monorepo packages/components Icon sources.
     private val iconPaths = mapOf(
+      // OneKey patch: official selector SVG path geometry.
+      "GlobusOutline" to listOf("M12 2c5.185 0 9.448 3.947 9.95 9H22v2h-.05c-.502 5.053-4.765 9-9.95 9s-9.448-3.947-9.95-9H2v-2h.05C2.552 5.947 6.815 2 12 2M9.523 13c.09 1.982.438 3.726.934 5.002.29.746.612 1.282.917 1.614.304.331.517.384.626.384s.322-.053.626-.384c.305-.332.627-.868.917-1.614.496-1.276.845-3.02.934-5.002zm-5.459 0a8 8 0 0 0 4.8 6.36 10 10 0 0 1-.271-.633C7.994 17.187 7.61 15.189 7.52 13zm12.416 0c-.09 2.189-.474 4.187-1.073 5.727a10 10 0 0 1-.271.633 8 8 0 0 0 4.8-6.36zM8.863 4.639A8 8 0 0 0 4.064 11h3.457c.09-2.189.473-4.187 1.072-5.727q.127-.327.27-.634M12 4c-.109 0-.322.053-.626.384-.305.332-.627.868-.917 1.614-.496 1.276-.844 3.02-.934 5.002h4.954c-.09-1.982-.438-3.726-.934-5.002-.29-.746-.612-1.282-.917-1.614C12.322 4.053 12.109 4 12 4m3.136.639q.144.307.271.634c.599 1.54.982 3.538 1.073 5.727h3.456a8 8 0 0 0-4.8-6.361"),
+      "LockSolid" to listOf("M12 2a5 5 0 0 1 5 5v2h3v13H4V9h3V7a5 5 0 0 1 5-5m-1 11v5h2v-5zm1-9a3 3 0 0 0-3 3v2h6V7a3 3 0 0 0-3-3"),
+      "GoogleIllus" to listOf("M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09", "M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23", "M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22z", "M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53"),
+      "AppleBrand" to listOf("M11.67.834c.117 1.074-.315 2.153-.955 2.928-.64.773-1.692 1.378-2.718 1.298-.14-1.054.38-2.151.971-2.836C9.63 1.45 10.746.872 11.67.834M14.994 7.093c-.176.108-1.992 1.224-1.972 3.482.025 2.769 2.428 3.693 2.46 3.705l-.004.015a10.1 10.1 0 0 1-1.264 2.593c-.764 1.116-1.556 2.229-2.806 2.254-.598.011-1-.162-1.416-.343-.437-.19-.891-.386-1.609-.386-.751 0-1.226.203-1.683.398-.397.169-.78.333-1.32.354-1.208.047-2.124-1.207-2.895-2.32C.909 14.57-.294 10.414 1.322 7.612c.803-1.395 2.237-2.275 3.794-2.298.671-.014 1.32.244 1.89.47.434.172.821.326 1.135.326.282 0 .659-.149 1.099-.323.692-.273 1.539-.607 2.41-.518.599.026 2.276.24 3.354 1.818z"),
+      "BotIllus" to listOf("M11 2a1 1 0 1 1 2 0v1.8l1.6 1.6a1 1 0 1 1-1.4 1.4L12 5.6l-1.2 1.2a1 1 0 0 1-1.4-1.4L11 3.8z", "M8.0 6.0h8.0a5.0 5.0 0 0 1 5.0 5.0v4.0a5.0 5.0 0 0 1 -5.0 5.0h-8.0a5.0 5.0 0 0 1 -5.0 -5.0v-4.0a5.0 5.0 0 0 1 5.0 -5.0z", "M3.0 10.0h0.0a1.5 1.5 0 0 1 1.5 1.5v3.0a1.5 1.5 0 0 1 -1.5 1.5h0.0a1.5 1.5 0 0 1 -1.5 -1.5v-3.0a1.5 1.5 0 0 1 1.5 -1.5z", "M21.0 10.0h0.0a1.5 1.5 0 0 1 1.5 1.5v3.0a1.5 1.5 0 0 1 -1.5 1.5h0.0a1.5 1.5 0 0 1 -1.5 -1.5v-3.0a1.5 1.5 0 0 1 1.5 -1.5z", "M7.5 12.0a1.5 1.5 0 1 0 3.0 0a1.5 1.5 0 1 0 -3.0 0", "M13.5 12.0a1.5 1.5 0 1 0 3.0 0a1.5 1.5 0 1 0 -3.0 0", "M8.5 15.4c.9.8 2.08 1.2 3.5 1.2s2.6-.4 3.5-1.2c.24-.2.6-.18.8.06.2.23.17.6-.06.8-1.14.98-2.58 1.46-4.24 1.46s-3.1-.48-4.24-1.46a.58.58 0 0 1-.06-.8c.2-.24.56-.26.8-.06"),
+      "AllNetworksSolid" to listOf("M15.333 13.998a1.335 1.335 0 1 1 0 2.67 1.335 1.335 0 0 1 0-2.67", "M12 0c6.627 0 12 5.373 12 12s-5.373 12-12 12S0 18.627 0 12 5.373 0 12 0M8 12.668A2 2 0 0 0 6 14.666V16c0 1.103.895 1.997 1.998 1.998h1.334A2 2 0 0 0 11.33 16v-1.334a2 2 0 0 0-1.998-1.998zm7.333 0a2.665 2.665 0 1 0 0 5.33 2.665 2.665 0 0 0 0-5.33M7.999 6.001A2 2 0 0 0 6.001 8v1.334c0 1.103.895 1.998 1.998 1.998h1.334a2 2 0 0 0 1.998-1.998V7.999a2 2 0 0 0-1.998-1.998zm6.667 0A2 2 0 0 0 12.668 8v1.334c0 1.103.895 1.998 1.998 1.998H16a2 2 0 0 0 1.998-1.998V7.999A2 2 0 0 0 16 6.001z"),
+      "CrossedSmallSolid" to listOf("M17.87 8.25 14.12 12l3.75 3.75-2.12 2.121-3.75-3.75-3.75 3.75-2.121-2.121L9.879 12l-3.75-3.75 2.12-2.121L12 9.879l3.75-3.75 2.122 2.121Z"),
+      "AccountErrorCustom" to listOf("M12.5 12.75a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5", "M0 3.5A3.5 3.5 0 0 1 3.5 0h8.088A2.41 2.41 0 0 1 14 2.412V5h1a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H4a4 4 0 0 1-4-4zm2 3.163V14a2 2 0 0 0 2 2h11a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H3.5c-.537 0-1.045-.12-1.5-.337M2 3.5A1.5 1.5 0 0 0 3.5 5H12V2.412A.41.41 0 0 0 11.588 2H3.5A1.5 1.5 0 0 0 2 3.5"),
+      "Circle" to listOf("M0 12a12 12 0 1 0 24 0a12 12 0 1 0 -24 0"),
       "ArrowBottomOutline" to listOf("m13 17.586 5-5L19.414 14 12 21.414 4.586 14 6 12.586l5 5V3h2z"),
       "ArrowTopOutline" to listOf("M19.414 10 18 11.414l-5-5V21h-2V6.414l-5 5L4.586 10 12 2.586z"),
       "ChartTrendingUpOutline" to listOf("M22 13h-2V9.414l-7 7-4-4-6 6L1.586 17 9 9.586l4 4L18.586 8H15V6h7z"),
@@ -2910,6 +3526,7 @@ private class OneKeyIconView(context: android.content.Context) : View(context) {
 }
 
 private class OneKeyCheckboxView(context: android.content.Context) : View(context) {
+  var usesSelectorGeometry = false
   private val glyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
   private var state = "unchecked"
 
@@ -2926,9 +3543,11 @@ private class OneKeyCheckboxView(context: android.content.Context) : View(contex
       "indeterminate" -> "M4 8a1 1 0 0 1 1-1h6a1 1 0 0 1 0 2H5a1 1 0 0 1-1-1"
       else -> return
     }
-    val drawSize = minOf(width, height) * 0.8f
+    // OneKey patch: the source icon is a 16dp child after the 2dp border, not 80% of a rounded frame.
+    val drawSize = if (usesSelectorGeometry) (16 * resources.displayMetrics.density).roundToInt().toFloat() else minOf(width, height) * 0.8f
+    val borderOffset = (2 * resources.displayMetrics.density).roundToInt().toFloat()
     canvas.save()
-    canvas.translate((width - drawSize) / 2f, (height - drawSize) / 2f)
+    canvas.translate(if (usesSelectorGeometry) borderOffset else (width - drawSize) / 2f, if (usesSelectorGeometry) borderOffset else (height - drawSize) / 2f)
     canvas.scale(drawSize / 16f, drawSize / 16f)
     PathParser.createPathFromPathData(pathData)?.let { canvas.drawPath(it, glyphPaint) }
     canvas.restore()

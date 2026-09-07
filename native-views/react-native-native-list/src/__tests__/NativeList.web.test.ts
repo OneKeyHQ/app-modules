@@ -17,6 +17,11 @@ import {
   webWalletGroupReorderBadge,
 } from '../web/NativeListWebEngine';
 
+jest.mock('../web/NativeListWebAvatarCache', () => ({
+  acquireNativeListAvatar: jest.fn(),
+  canonicalNativeListAvatarUri: jest.fn(),
+}));
+
 const image = {
   uri: 'data:image/png;base64,AA==',
   width: 40,
@@ -348,7 +353,7 @@ describe('NativeList pure DOM web layout', () => {
       360,
       640
     );
-    expect(sectioned.items[1].width).toBe(300);
+    expect(sectioned.items[1].width).toBe(328);
 
     const grid = computeWebListLayout(
       snapshot({ kind: 'grid', gridColumns: 2, contentPadding: 10 }),

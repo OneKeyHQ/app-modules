@@ -16,6 +16,15 @@ const mockNativeMethods = {
 };
 let mockOnSelectionDelta: (payloadJson: string) => void;
 
+jest.mock('@onekeyfe/react-native-image', () => ({
+  OneKeyImageCache: { preload: jest.fn().mockResolvedValue(true) },
+  OneKeyImageCachePolicy: {
+    MEMORY: 'memory',
+    DISK: 'disk',
+    MEMORY_DISK: 'memory-disk',
+  },
+}));
+
 jest.mock('react-native-nitro-modules', () => ({
   callback: (value: unknown) => value,
   getHostComponent: () =>

@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import UIKit
 import UniformTypeIdentifiers
 
@@ -82,6 +83,8 @@ final class NativeListView: UIView {
     target: self,
     action: #selector(reorderLongPressChanged(_:))
   )
+  // OneKey patch: claim only vertical drags so held rows and ancestor pagers stay responsive.
+  private lazy var listBodyGestureGuard = UIPanGestureRecognizer(target: nil, action: nil)
   private var interactiveReorderSource: (key: String, index: Int)?
   private weak var interactiveReorderCell: NativeListCell?
   private var interactiveReorderCompactKey: String?
@@ -97,7 +100,10 @@ final class NativeListView: UIView {
   private let actionAnchorInstanceID = UUID().uuidString
   private var actionAnchorCounter = 0
 
-  private static let sectionIndexGutter: CGFloat = 44
+  private static let sectionIndexContentInset: CGFloat = 16
+  private static let sectionIndexRailWidth: CGFloat = 32
+  private static let sectionIndexPreviewSize: CGFloat = 48
+  private static let sectionIndexPreviewEndMargin: CGFloat = 40
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -107,6 +113,11 @@ final class NativeListView: UIView {
     collectionView.dragDelegate = self
     collectionView.dropDelegate = self
     collectionView.alwaysBounceVertical = true
+    // OneKey patch: keep list-body drags from being claimed by an ancestor modal sheet.
+    listBodyGestureGuard.cancelsTouchesInView = false
+    listBodyGestureGuard.isEnabled = false
+    listBodyGestureGuard.delegate = self
+    collectionView.addGestureRecognizer(listBodyGestureGuard)
     reorderLongPress.minimumPressDuration = ReorderAnimation.longPressDuration
     reorderLongPress.allowableMovement = ReorderAnimation.allowableMovement
     reorderLongPress.delegate = self
@@ -141,11 +152,14 @@ final class NativeListView: UIView {
       sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
       sectionIndexView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
       sectionIndexView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
-      sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexGutter),
-      sectionIndexPreview.centerXAnchor.constraint(equalTo: collectionView.centerXAnchor),
+      sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
+      sectionIndexPreview.trailingAnchor.constraint(
+        equalTo: safeAreaLayoutGuide.trailingAnchor,
+        constant: -Self.sectionIndexPreviewEndMargin
+      ),
       sectionIndexPreview.centerYAnchor.constraint(equalTo: collectionView.centerYAnchor),
-      sectionIndexPreview.widthAnchor.constraint(equalToConstant: 72),
-      sectionIndexPreview.heightAnchor.constraint(equalToConstant: 72),
+      sectionIndexPreview.widthAnchor.constraint(equalToConstant: Self.sectionIndexPreviewSize),
+      sectionIndexPreview.heightAnchor.constraint(equalToConstant: Self.sectionIndexPreviewSize),
     ])
 
     sectionIndexView.isHidden = true
@@ -157,11 +171,11 @@ final class NativeListView: UIView {
     }
     sectionIndexPreview.isHidden = true
     sectionIndexPreview.alpha = 0
-    sectionIndexPreview.layer.cornerRadius = 16
+    sectionIndexPreview.layer.cornerRadius = 14
     sectionIndexPreview.layer.masksToBounds = true
     sectionIndexPreview.textAlignment = .center
     sectionIndexPreview.adjustsFontForContentSizeCategory = true
-    sectionIndexPreview.font = nativeListFont(ofSize: 28, weight: .semibold)
+    sectionIndexPreview.font = nativeListFont(ofSize: 22, weight: .semibold)
     sectionIndexPreview.isAccessibilityElement = false
 
     footerCell.onAction = { [weak self] item, action, target, origin in
@@ -488,7 +502,8 @@ final class NativeListView: UIView {
 
   private func configureLayout(_ config: NativeListConfig) {
     let isHorizontal = config.orientation == "horizontal"
-    let indexGutter = sectionIndexEntries.isEmpty ? 0 : Self.sectionIndexGutter
+    // OneKey patch: the section index overlays rows and keeps only an accessory-safe inset.
+    let indexGutter = sectionIndexEntries.isEmpty ? 0 : Self.sectionIndexContentInset
     let isRightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
     flowLayout.scrollDirection = isHorizontal ? .horizontal : .vertical
     flowLayout.minimumLineSpacing = config.itemSpacing
@@ -501,7 +516,7 @@ final class NativeListView: UIView {
     )
     flowLayout.stickyItemIndexes = config.stickyHeaders
       ? Set(config.items.enumerated().compactMap {
-          $0.element.type == "sectionHeader" && $0.element.data.string("variant") != "summary"
+          $0.element.type == "sectionHeader" && $0.element.data.bool("sticky", default: true) && $0.element.data.string("variant") != "summary"
             ? $0.offset
             : nil
         })
@@ -509,6 +524,7 @@ final class NativeListView: UIView {
     flowLayout.invalidateLayout()
     collectionView.alwaysBounceHorizontal = isHorizontal
     collectionView.alwaysBounceVertical = !isHorizontal
+    listBodyGestureGuard.isEnabled = !isHorizontal
     collectionView.showsVerticalScrollIndicator = sectionIndexEntries.isEmpty
     collectionView.dragInteractionEnabled = false
     lastLayoutDirection = effectiveUserInterfaceLayoutDirection
@@ -528,11 +544,12 @@ final class NativeListView: UIView {
         interactiveReorderCell = nil
         return
       }
-      if item.type == "walletGroup", gesture.location(in: cell).y > 68 {
-        interactiveReorderSource = nil
-        interactiveReorderCell = nil
-        return
-      }
+      // OneKey patch: a hidden wallet child starts dragging its whole logical group.
+      // if item.type == "walletGroup", gesture.location(in: cell).y > 68 {
+      // interactiveReorderSource = nil
+      // interactiveReorderCell = nil
+      // return
+      // }
       interactiveReorderSource = (item.key, indexPath.item)
       interactiveReorderCell = cell
       interactiveReorderUsesAtomicTargeting = item.type == "identity" &&
@@ -854,7 +871,8 @@ final class NativeListView: UIView {
     sectionIndexView.configure(
       titles: sectionIndexEntries.map(\.title),
       textColor: nativeListColor(config.theme, "secondaryText", "#646464"),
-      activeColor: nativeListColor(config.theme, "accent", "#108303")
+      activeColor: nativeListColor(config.theme, "accent", "#108303"),
+      activeTextColor: nativeListColor(config.theme, "inverseText", "#FCFCFC")
     )
     sectionIndexView.isHidden = sectionIndexEntries.isEmpty
     sectionIndexPreview.backgroundColor = nativeListColor(
@@ -948,7 +966,7 @@ final class NativeListView: UIView {
       theme: config.theme,
       layout: config.layout,
       itemIndex: itemIndex,
-      selected: config.selectedKeys.contains(item.key),
+      selected: item.data.bool("selected") || config.selectedKeys.contains(item.key),
       checkboxState: { [weak self] item, target, fallback in
         self?.resolveCheckboxState(item: item, target: target, fallback: fallback) ?? fallback
       }
@@ -959,7 +977,8 @@ final class NativeListView: UIView {
   }
 
   private func handleRowPress(_ item: NativeListItem, origin: NativeListActionOrigin?) {
-    guard let config, !item.data.bool("disabled") else { return }
+    // OneKey patch: missing-address rows keep accessory actions available.
+    guard let config, !item.data.bool("disabled"), !item.data.bool("pressDisabled") else { return }
     if config.rowPressToggles && item.isSelectable && config.selectionMode != "none" {
       updateSelection(target: NativeSelectionTarget(scope: "row", key: item.key), sourceKey: item.key)
       return
@@ -1057,7 +1076,7 @@ final class NativeListView: UIView {
       }
       cell.updateSelection(
         item: item,
-        selected: config.selectedKeys.contains(item.key),
+        selected: item.data.bool("selected") || config.selectedKeys.contains(item.key),
         checkboxState: checkboxState
       )
     }
@@ -1100,17 +1119,71 @@ final class NativeListView: UIView {
     return zip(current.items, next.items).allSatisfy { old, new in
       guard old.key == new.key, old.type == new.type else { return false }
       if old.content == new.content { return true }
-      guard old.type == "sectionHeader",
-            old.data.string("variant") == "summary",
-            new.data.string("variant") == "summary" else { return false }
-      var oldData = old.data
-      var newData = new.data
-      oldData.removeValue(forKey: "title")
-      oldData.removeValue(forKey: "value")
-      newData.removeValue(forKey: "title")
-      newData.removeValue(forKey: "value")
+      // OneKey patch: controlled echoes can also update row and checkbox selection fields.
+      // guard old.type == "sectionHeader",
+      //       old.data.string("variant") == "summary",
+      //       new.data.string("variant") == "summary" else { return false }
+      // var oldData = old.data
+      // var newData = new.data
+      // oldData.removeValue(forKey: "title")
+      // oldData.removeValue(forKey: "value")
+      // newData.removeValue(forKey: "title")
+      // newData.removeValue(forKey: "value")
+      let controlled = next.selectionMode == "single" || next.selectionMode == "multiple"
+      guard let oldData = selectionComparisonData(old.data, controlled: controlled),
+            let newData = selectionComparisonData(new.data, controlled: controlled) else { return false }
       return jsonData(oldData) == jsonData(newData)
     }
+  }
+
+  // OneKey patch: remove only fields that the existing lightweight binder refreshes.
+  private func selectionComparisonData(_ data: [String: Any], controlled: Bool) -> [String: Any]? {
+    guard let type = data["type"] as? String else { return nil }
+    var result = data
+    if let selected = result["selected"] {
+      guard CFGetTypeID(selected as CFTypeRef) == CFBooleanGetTypeID() else { return nil }
+      result.removeValue(forKey: "selected")
+    }
+    if type == "walletGroup" {
+      guard let parent = data["parent"] as? [String: Any], parent["type"] as? String == "identity",
+            let children = data["children"] as? [[String: Any]],
+            let normalizedParent = selectionComparisonData(parent, controlled: false) else { return nil }
+      var normalizedChildren: [[String: Any]] = []
+      for child in children {
+        guard child["type"] as? String == "identity",
+              let normalized = selectionComparisonData(child, controlled: false) else { return nil }
+        normalizedChildren.append(normalized)
+      }
+      result["parent"] = normalizedParent
+      result["children"] = normalizedChildren
+    }
+    if type == "sectionHeader", data["variant"] as? String == "summary" {
+      result.removeValue(forKey: "title")
+      result.removeValue(forKey: "value")
+    }
+    guard controlled else { return result }
+    func checkboxData(_ value: Any) -> [String: Any]? {
+      guard var checkbox = value as? [String: Any], checkbox["kind"] as? String == "checkbox" else { return nil }
+      if let state = checkbox["state"] {
+        guard let state = state as? String, ["checked", "unchecked", "indeterminate"].contains(state) else { return nil }
+      }
+      checkbox.removeValue(forKey: "state")
+      return checkbox
+    }
+    if ["dataRow", "sectionHeader", "action"].contains(type), let checkbox = result["checkbox"] {
+      guard let normalized = checkboxData(checkbox) else { return nil }
+      result["checkbox"] = normalized
+    }
+    if type == "identity", let trailing = result["trailing"] {
+      guard var accessories = trailing as? [[String: Any]], accessories.count <= 2,
+            accessories.filter({ $0["kind"] as? String == "checkbox" }).count <= 1 else { return nil }
+      for index in accessories.indices where accessories[index]["kind"] as? String == "checkbox" {
+        guard let normalized = checkboxData(accessories[index]) else { return nil }
+        accessories[index] = normalized
+      }
+      result["trailing"] = accessories
+    }
+    return result
   }
 
   private func dictionariesEqual(_ lhs: [String: Any]?, _ rhs: [String: Any]?) -> Bool {
@@ -1127,16 +1200,36 @@ final class NativeListView: UIView {
   }
 
   private func rowHeight(_ item: NativeListItem) -> CGFloat {
+    // OneKey patch: honor selector baseline geometry; keep compact drag sizing.
+    if item.type != "walletGroup", item.data["height"] != nil { return CGFloat(item.data.double("height")) }
     if item.type == "system", item.data.string("variant") == "spacer" {
       return CGFloat(item.data.int("height"))
+    }
+    // OneKey patch: warning height follows the current native font and available width.
+    if item.type == "system", item.data.string("variant") == "warning" {
+      let textWidth = max(1, collectionView.bounds.width - (config?.contentPaddingHorizontal ?? 0) * 2 - 24)
+      func textHeight(_ key: String, weight: NativeListFontWeight) -> CGFloat {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = 20
+        paragraph.maximumLineHeight = 20
+        return ceil((item.data.string(key) as NSString).boundingRect(with: CGSize(width: textWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: nativeListFont(ofSize: 14, weight: weight), .paragraphStyle: paragraph], context: nil).height / 20) * 20
+      }
+      return 32 + textHeight("title", weight: .medium) + textHeight("message", weight: .regular)
     }
     if item.type == "walletGroup" {
       if item.key == interactiveReorderCompactKey { return 68 }
       let childCount = item.data.dictionaries("children").count
-      return CGFloat((childCount + 1) * 68 + childCount * 12)
+      // OneKey patch: wallet badges contribute their own member heights.
+      // return CGFloat((childCount + 1) * 68 + childCount * 12)
+      let members = [item.data.dictionary("parent")].compactMap { $0 } + item.data.dictionaries("children")
+      return members.reduce(CGFloat(childCount * 12 + (members.first?["height"] != nil ? 2 : 0))) { total, data in
+        total + CGFloat(data.double("height", default: data.dictionaries("badges").isEmpty ? 68 : 92))
+      }
     }
     if item.type == "identity", item.data.string("presentation") == "walletSidebar" {
-      return 68
+      // OneKey patch: default sidebar badge geometry is 24 points taller.
+      // return 68
+      return item.data.dictionaries("badges").isEmpty ? 68 : 92
     }
     if item.type == "identity", item.data.string("presentation") == "networkSelector" {
       return 47
@@ -1288,7 +1381,7 @@ final class NativeListView: UIView {
     actionAnchorCounter &+= 1
     let generation = config?.generation ?? 0
     let token = "\(actionAnchorInstanceID):\(generation):\(actionAnchorCounter):\(origin.bindingEpoch)"
-    let rect = sourceView.convert(sourceView.bounds, to: window)
+    let rect = sourceView.convert(sourceView.bounds, to: window).insetBy(dx: origin.anchorInset, dy: origin.anchorInset)
     let record = ActionAnchorRecord(token: token, origin: origin)
     actionAnchor = record
     var anchor: [String: Any] = [
@@ -1392,10 +1485,18 @@ final class NativeListView: UIView {
     if let lastKey = config.items.last?.key { payload["lastKey"] = lastKey }
     emit(onEndReached, payload)
   }
+
+  override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    guard gestureRecognizer === listBodyGestureGuard,
+          let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
+    let velocity = pan.velocity(in: collectionView)
+    return abs(velocity.y) > abs(velocity.x)
+  }
 }
 
 extension NativeListView: UIGestureRecognizerDelegate {
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    if gestureRecognizer === listBodyGestureGuard { return true }
     var view = touch.view
     while let current = view, current !== footerCell {
       if current is UIControl { return false }
@@ -1408,7 +1509,26 @@ extension NativeListView: UIGestureRecognizerDelegate {
     _ gestureRecognizer: UIGestureRecognizer,
     shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
   ) -> Bool {
-    gestureRecognizer.view === footerCell || otherGestureRecognizer.view === footerCell
+    if gestureRecognizer === listBodyGestureGuard {
+      guard let otherView = otherGestureRecognizer.view else { return false }
+      return otherView === collectionView || otherView.isDescendant(of: collectionView)
+    }
+    if otherGestureRecognizer === listBodyGestureGuard {
+      guard let gestureView = gestureRecognizer.view else { return false }
+      return gestureView === collectionView || gestureView.isDescendant(of: collectionView)
+    }
+    return gestureRecognizer.view === footerCell || otherGestureRecognizer.view === footerCell
+  }
+
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+  ) -> Bool {
+    guard gestureRecognizer === listBodyGestureGuard,
+          otherGestureRecognizer is UIPanGestureRecognizer,
+          let otherView = otherGestureRecognizer.view,
+          otherView !== collectionView else { return false }
+    return collectionView.isDescendant(of: otherView)
   }
 }
 
@@ -1625,13 +1745,16 @@ private struct NativeListSectionIndexEntry {
   let position: Int
 }
 
-private final class NativeListSectionIndexView: UIControl {
+// OneKey patch: arbitrate index scrubbing against ancestor dismissal gestures.
+// private final class NativeListSectionIndexView: UIControl {
+private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDelegate {
   var onSelect: ((Int, Bool) -> Void)?
   var onInteractionEnded: (() -> Void)?
   private var titles: [String] = []
   private var labels: [UILabel] = []
   private var textColor: UIColor = .secondaryLabel
   private var activeColor: UIColor = .tintColor
+  private var activeTextColor: UIColor = .white
   private var lastTouchIndex: Int?
   private(set) var activeIndex: Int?
 
@@ -1641,16 +1764,43 @@ private final class NativeListSectionIndexView: UIControl {
     accessibilityLabel = "Section index"
     accessibilityTraits = [.adjustable]
     isExclusiveTouch = true
+
+    // UIControl tracking alone cannot prevent an ancestor sheet pan from taking the touch.
+    // Recognize immediately, but keep delivering touches to the existing tracking methods.
+    let scrubGesture = UILongPressGestureRecognizer(target: nil, action: nil)
+    scrubGesture.minimumPressDuration = 0
+    scrubGesture.allowableMovement = .greatestFiniteMagnitude
+    scrubGesture.cancelsTouchesInView = false
+    scrubGesture.delaysTouchesEnded = false
+    scrubGesture.delegate = self
+    addGestureRecognizer(scrubGesture)
+  }
+
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
+  ) -> Bool {
+    guard otherGestureRecognizer is UIPanGestureRecognizer,
+          let otherView = otherGestureRecognizer.view,
+          otherView !== self else { return false }
+    // The dependency applies only to touches starting in this index, including moves outside it.
+    return isDescendant(of: otherView)
   }
 
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
   }
 
-  func configure(titles: [String], textColor: UIColor, activeColor: UIColor) {
+  func configure(
+    titles: [String],
+    textColor: UIColor,
+    activeColor: UIColor,
+    activeTextColor: UIColor
+  ) {
     self.titles = titles
     self.textColor = textColor
     self.activeColor = activeColor
+    self.activeTextColor = activeTextColor
     labels.forEach { $0.removeFromSuperview() }
     labels = titles.map { title in
       let label = UILabel()
@@ -1681,9 +1831,9 @@ private final class NativeListSectionIndexView: UIControl {
     let originY = (bounds.height - height * CGFloat(labels.count)) / 2
     for (index, label) in labels.enumerated() {
       label.frame = CGRect(
-        x: 0,
+        x: 6,
         y: originY + CGFloat(index) * height,
-        width: bounds.width,
+        width: 20,
         height: height
       )
     }
@@ -1739,7 +1889,10 @@ private final class NativeListSectionIndexView: UIControl {
   private func updateLabelStyles() {
     for (index, label) in labels.enumerated() {
       let active = index == activeIndex
-      label.textColor = active ? activeColor : textColor
+      label.textColor = active ? activeTextColor : textColor
+      label.backgroundColor = active ? activeColor : .clear
+      label.layer.cornerRadius = 8
+      label.layer.masksToBounds = active
       label.font = nativeListFont(ofSize: 10, weight: active ? .semibold : .medium)
     }
   }

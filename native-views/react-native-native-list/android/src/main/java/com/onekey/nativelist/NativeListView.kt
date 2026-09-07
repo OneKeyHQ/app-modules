@@ -14,6 +14,7 @@ import android.view.Choreographer
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.FrameLayout
@@ -31,6 +32,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.lang.ref.WeakReference
 import java.util.UUID
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.exp
@@ -87,6 +89,36 @@ class NativeListView(
   private val contentContainer = FrameLayout(context)
   private val adapter = NativeListAdapter(reactContext)
   private val layoutManager = GridLayoutManager(context, 1)
+  // OneKey patch: vertical lists retain vertical drags and leave horizontal drags to a parent pager.
+  private val pagerGestureTouchSlop = ViewConfiguration.get(context).scaledTouchSlop
+  private val pagerGestureTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
+    private var downX = 0f
+    private var downY = 0f
+    private var directionResolved = false
+
+    override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+      if (layoutManager.orientation != RecyclerView.VERTICAL) return false
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          downX = event.x
+          downY = event.y
+          directionResolved = false
+        }
+        MotionEvent.ACTION_MOVE -> if (!directionResolved) {
+          val deltaX = abs(event.x - downX)
+          val deltaY = abs(event.y - downY)
+          if (max(deltaX, deltaY) > pagerGestureTouchSlop) {
+            directionResolved = true
+            recyclerView.parent?.requestDisallowInterceptTouchEvent(deltaY >= deltaX)
+          }
+        }
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+          recyclerView.parent?.requestDisallowInterceptTouchEvent(false)
+        }
+      }
+      return false
+    }
+  }
   private val reorderPlaceholderDecoration = ReorderPlaceholderDecoration(
     adapter = adapter,
     insetPx = dp(REORDER_PLACEHOLDER_INSET_DP),
@@ -102,6 +134,7 @@ class NativeListView(
   private val sectionIndexView = NativeListSectionIndexView(context)
   private val sectionIndexPreview = TextView(context)
   private var config: NativeListConfig? = null
+  private var usesSelectorSourceScale = false
   private var stickyDecoration: StickySectionHeaderDecoration? = null
   private var spacingDecoration: ItemSpacingDecoration? = null
   private var itemTouchHelper: ItemTouchHelper? = null
@@ -131,7 +164,10 @@ class NativeListView(
     recyclerView.adapter = adapter
     recyclerView.layoutManager = layoutManager
     recyclerView.itemAnimator = null
+    recyclerView.addOnItemTouchListener(pagerGestureTouchListener)
     recyclerView.addItemDecoration(reorderPlaceholderDecoration)
+    // OneKey patch: full-width selector header backgrounds do not change row content insets.
+    recyclerView.addItemDecoration(SelectorBackgroundDecoration(adapter))
     recyclerView.setHasFixedSize(false)
     layoutManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
       override fun getSpanSize(position: Int): Int {
@@ -157,11 +193,15 @@ class NativeListView(
     )
     contentContainer.addView(
       sectionIndexView,
-      FrameLayout.LayoutParams(dp(48), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.END),
+      FrameLayout.LayoutParams(
+        dp(SECTION_INDEX_RAIL_WIDTH_DP),
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        Gravity.END,
+      ),
     )
     sectionIndexPreview.apply {
       gravity = Gravity.CENTER
-      textSize = NativeListScale.font(resources, 28f)
+      textSize = NativeListScale.font(resources, 22f)
       typeface = NativeListFonts.semibold(context)
       visibility = GONE
       alpha = 0f
@@ -169,7 +209,13 @@ class NativeListView(
     }
     contentContainer.addView(
       sectionIndexPreview,
-      FrameLayout.LayoutParams(dp(72), dp(72), Gravity.CENTER),
+      FrameLayout.LayoutParams(
+        dp(SECTION_INDEX_PREVIEW_SIZE_DP),
+        dp(SECTION_INDEX_PREVIEW_SIZE_DP),
+        Gravity.CENTER_VERTICAL or Gravity.END,
+      ).apply {
+        marginEnd = dp(SECTION_INDEX_PREVIEW_END_MARGIN_DP)
+      },
     )
     addView(contentContainer, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
     footerView.visibility = GONE
@@ -239,17 +285,29 @@ class NativeListView(
     invalidateActionAnchor("snapshot")
     val previous = config
     if (previous != null && canApplyStableContentUpdate(previous, next)) {
+      // OneKey patch: authorize a diff payload only against this exact validated baseline.
+      next.items.forEachIndexed { index, item ->
+        if (item.content != previous.items[index].content &&
+          adapter.currentList.getOrNull(index) === previous.items[index]
+        ) {
+          item.selectionUpdateFromContent = previous.items[index].content
+        }
+      }
       val changedSummaryKeys = previous.items.indices.mapNotNull { index ->
         previous.items[index].key.takeIf {
           previous.items[index].content != next.items[index].content
         }
       }.toSet()
       config = next
+    usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
+    adapter.usesSelectorSourceScale = usesSelectorSourceScale
       adapter.theme = next.theme
       adapter.layout = next.layout
       adapter.orientation = next.orientation
       adapter.selectedKeys = next.selectedKeys
       adapter.submitList(next.items) {
+        // OneKey patch: DiffUtil has dispatched its payloads; release the old serialized rows.
+        next.items.forEach { it.selectionUpdateFromContent = null }
         recyclerView.post {
           bindVisibleSelection(changedSummaryKeys)
           bindFooterSelection()
@@ -259,6 +317,8 @@ class NativeListView(
       return
     }
     config = next
+    usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
+    adapter.usesSelectorSourceScale = usesSelectorSourceScale
     if (previous?.generation != next.generation) endReachedGeneration = null
     pendingReorder = null
     adapter.theme = next.theme
@@ -322,30 +382,98 @@ class NativeListView(
       val newItem = next.items[index]
       oldItem.key == newItem.key &&
         oldItem.type == newItem.type &&
-        (oldItem.content == newItem.content || isStableSummaryUpdate(oldItem, newItem))
+        // OneKey patch: controlled echoes can also carry row and checkbox selection state.
+        // (oldItem.content == newItem.content || isStableSummaryUpdate(oldItem, newItem))
+        (oldItem.content == newItem.content || isStableSelectionUpdate(
+          oldItem,
+          newItem,
+          next.selectionMode == "single" || next.selectionMode == "multiple",
+        ))
     }
   }
 
-  private fun isStableSummaryUpdate(
+  // OneKey patch: preserve the original summary-only comparison for upstream reference.
+  // private fun isStableSummaryUpdate(
+  //   previous: NativeListItem,
+  //   next: NativeListItem,
+  // ): Boolean {
+  //   if (
+  //     previous.type != "sectionHeader" ||
+  //     previous.json.optString("variant") != "summary" ||
+  //     next.json.optString("variant") != "summary"
+  //   ) {
+  //     return false
+  //   }
+  //   val previousStructure = JSONObject(previous.content).apply {
+  //     remove("title")
+  //     remove("value")
+  //   }
+  //   val nextStructure = JSONObject(next.content).apply {
+  //     remove("title")
+  //     remove("value")
+  //   }
+  //   return previousStructure.toString() == nextStructure.toString()
+  // }
+
+  private fun isStableSelectionUpdate(
     previous: NativeListItem,
     next: NativeListItem,
+    controlled: Boolean,
   ): Boolean {
-    if (
-      previous.type != "sectionHeader" ||
-      previous.json.optString("variant") != "summary" ||
-      next.json.optString("variant") != "summary"
-    ) {
-      return false
-    }
-    val previousStructure = JSONObject(previous.content).apply {
-      remove("title")
-      remove("value")
-    }
-    val nextStructure = JSONObject(next.content).apply {
-      remove("title")
-      remove("value")
-    }
+    val previousStructure = selectionComparisonData(previous.json, controlled) ?: return false
+    val nextStructure = selectionComparisonData(next.json, controlled) ?: return false
     return previousStructure.toString() == nextStructure.toString()
+  }
+
+  // OneKey patch: ignore only fields refreshed by the lightweight selection binder.
+  private fun selectionComparisonData(data: JSONObject, controlled: Boolean): JSONObject? {
+    val type = data.opt("type") as? String ?: return null
+    val result = JSONObject(data.toString())
+    if (result.has("selected")) {
+      if (result.opt("selected") !is Boolean) return null
+      result.remove("selected")
+    }
+    if (type == "walletGroup") {
+      val parent = data.optJSONObject("parent") ?: return null
+      if (parent.optString("type") != "identity") return null
+      val children = data.optJSONArray("children") ?: return null
+      result.put("parent", selectionComparisonData(parent, false) ?: return null)
+      val normalizedChildren = JSONArray()
+      for (index in 0 until children.length()) {
+        val child = children.optJSONObject(index) ?: return null
+        if (child.optString("type") != "identity") return null
+        normalizedChildren.put(selectionComparisonData(child, false) ?: return null)
+      }
+      result.put("children", normalizedChildren)
+    }
+    if (type == "sectionHeader" && data.optString("variant") == "summary") {
+      result.remove("title")
+      result.remove("value")
+    }
+    if (!controlled) return result
+    fun checkboxData(value: Any?): JSONObject? {
+      val checkbox = value as? JSONObject ?: return null
+      if (checkbox.optString("kind") != "checkbox") return null
+      if (checkbox.has("state") && checkbox.opt("state") !in setOf("checked", "unchecked", "indeterminate")) return null
+      checkbox.remove("state")
+      return checkbox
+    }
+    if (type in setOf("dataRow", "sectionHeader", "action") && result.has("checkbox")) {
+      result.put("checkbox", checkboxData(result.opt("checkbox")) ?: return null)
+    }
+    if (type == "identity" && result.has("trailing")) {
+      val accessories = result.optJSONArray("trailing") ?: return null
+      if (accessories.length() > 2) return null
+      var checkboxCount = 0
+      for (index in 0 until accessories.length()) {
+        val accessory = accessories.optJSONObject(index) ?: return null
+        if (accessory.optString("kind") == "checkbox") {
+          if (++checkboxCount > 1) return null
+          accessories.put(index, checkboxData(accessory) ?: return null)
+        }
+      }
+    }
+    return result
   }
 
   fun applyPatches(patchesJson: String) {
@@ -384,6 +512,8 @@ class NativeListView(
     invalidateActionAnchor("snapshot")
     val next = current.copy(items = nextItems, selectedKeys = selected)
     config = next
+    usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
+    adapter.usesSelectorSourceScale = usesSelectorSourceScale
     adapter.selectedKeys = selected
     adapter.submitList(nextItems) { relayoutContents() }
     bindFooter(next)
@@ -719,6 +849,7 @@ class NativeListView(
     reorderTouchHandler = null
     reorderTouchListener?.let(recyclerView::removeOnItemTouchListener)
     reorderTouchListener = null
+    recyclerView.removeOnItemTouchListener(pagerGestureTouchListener)
     itemTouchHelper?.attachToRecyclerView(null)
     itemTouchHelper = null
     footerView.recycle()
@@ -736,7 +867,8 @@ class NativeListView(
     val horizontalPadding = next.contentPaddingHorizontal ?: defaultPadding
     val topPadding = next.contentPaddingTop ?: defaultPadding
     val bottomPadding = next.contentPaddingBottom ?: defaultPadding
-    val indexGutter = if (sectionIndexEntries.isEmpty()) 0 else 48
+    // OneKey patch: the section index overlays rows and keeps only an accessory-safe inset.
+    val indexGutter = if (sectionIndexEntries.isEmpty()) 0 else SECTION_INDEX_CONTENT_INSET_DP
     recyclerView.setPaddingRelative(
       dp(horizontalPadding),
       dp(topPadding),
@@ -747,7 +879,7 @@ class NativeListView(
     recyclerView.isVerticalScrollBarEnabled = sectionIndexEntries.isEmpty()
 
     spacingDecoration?.let(recyclerView::removeItemDecoration)
-    spacingDecoration = ItemSpacingDecoration(dp(next.itemSpacing)).also(recyclerView::addItemDecoration)
+    spacingDecoration = ItemSpacingDecoration(dp(next.itemSpacing), next.itemSpacing, density).also(recyclerView::addItemDecoration)
     stickyDecoration?.let(recyclerView::removeItemDecoration)
     stickyDecoration = if (next.stickyHeaders && orientation == RecyclerView.VERTICAL) {
       StickySectionHeaderDecoration(adapter, context, next.theme, density).also(recyclerView::addItemDecoration)
@@ -774,12 +906,13 @@ class NativeListView(
       sectionIndexEntries.map { it.title },
       themeColor(next.theme, "secondaryText", "#646464"),
       themeColor(next.theme, "accent", "#108303"),
+      themeColor(next.theme, "inverseText", "#FCFCFC"),
     )
     sectionIndexView.visibility = if (sectionIndexEntries.isEmpty()) GONE else VISIBLE
     sectionIndexPreview.setTextColor(themeColor(next.theme, "inverseText", "#FCFCFC"))
     sectionIndexPreview.background = GradientDrawable().apply {
       setColor(themeColor(next.theme, "inverseBackground", "#202020"))
-      cornerRadius = dp(16).toFloat()
+      cornerRadius = dp(14).toFloat()
     }
     sectionIndexView.setActiveIndex(
       previousKey?.let { key -> sectionIndexEntries.indexOfFirst { it.key == key }.takeIf { it >= 0 } },
@@ -856,6 +989,7 @@ class NativeListView(
         null,
         next.selectedKeys.contains(footer.key),
         ::resolveCheckboxState,
+        useSourceScale = usesSelectorSourceScale,
       )
     }
   }
@@ -908,15 +1042,17 @@ class NativeListView(
     origin.sourceView.getLocationInWindow(location)
     val record = ActionAnchorRecord(token, origin)
     actionAnchor = record
+    // OneKey patch: selector menus anchor to the glyph slot, not its expanded press target.
+    val anchorInset = origin.anchorInsetPixels
     return JSONObject()
       .put("token", token)
       .put(
         "windowRect",
         JSONObject()
-          .put("x", location[0] / density)
-          .put("y", location[1] / density)
-          .put("width", origin.sourceView.width / density)
-          .put("height", origin.sourceView.height / density),
+          .put("x", (location[0] + anchorInset) / density)
+          .put("y", (location[1] + anchorInset) / density)
+          .put("width", (origin.sourceView.width - anchorInset * 2) / density)
+          .put("height", (origin.sourceView.height - anchorInset * 2) / density),
       )
       .put("source", origin.source)
       .put("generation", generation)
@@ -1047,7 +1183,9 @@ class NativeListView(
         current.theme,
         current.layout,
         position,
-        current.selectedKeys.contains(item.key),
+        // OneKey patch: match the full binder when the snapshot carries explicit row selection.
+        // current.selectedKeys.contains(item.key),
+        item.json.optBoolean("selected", false) || current.selectedKeys.contains(item.key),
         ::resolveCheckboxState,
       )
     }
@@ -1307,12 +1445,14 @@ class NativeListView(
               ?.let(recyclerView::getChildViewHolder)
               ?.takeIf { holder ->
                 adapter.itemAt(holder.bindingAdapterPosition)?.let { item ->
-                  val holderLocation = IntArray(2)
-                  holder.itemView.getLocationOnScreen(holderLocation)
-                  item.isReorderable && (
-                    item.type != "walletGroup" ||
-                      event.rawY in holderLocation[1].toFloat()..(holderLocation[1] + dp(68)).toFloat()
-                  )
+                  // OneKey patch: any wallet group member can initiate the group drag.
+                  // val holderLocation = IntArray(2)
+                  // holder.itemView.getLocationOnScreen(holderLocation)
+                  // item.isReorderable && (
+                  // item.type != "walletGroup" ||
+                  // event.rawY in holderLocation[1].toFloat()..(holderLocation[1] + dp(68)).toFloat()
+                  // )
+                  item.isReorderable
                 } == true
               }
             if (candidate != null) handler.postDelayed(startDrag, REORDER_LONG_PRESS_MS)
@@ -1470,9 +1610,13 @@ class NativeListView(
     )
   }
 
-  private fun dp(value: Int): Int = NativeListScale.dp(resources, value)
+  private fun dp(value: Int): Int = if (usesSelectorSourceScale) (value * resources.displayMetrics.density).roundToInt() else NativeListScale.dp(resources, value)
 
   companion object {
+    private const val SECTION_INDEX_CONTENT_INSET_DP = 16
+    private const val SECTION_INDEX_RAIL_WIDTH_DP = 32
+    private const val SECTION_INDEX_PREVIEW_SIZE_DP = 48
+    private const val SECTION_INDEX_PREVIEW_END_MARGIN_DP = 40
     private const val REORDER_LONG_PRESS_MS = 200L
     private const val REORDER_ALLOWABLE_MOVEMENT_DP = 10
     private const val REORDER_PLACEHOLDER_INSET_DP = 8
@@ -1556,7 +1700,9 @@ private class NativeListSectionIndexView(
   private var titles: List<String> = emptyList()
   private var normalColor = Color.GRAY
   private var activeColor = Color.BLACK
+  private var activeTextColor = Color.WHITE
   private var lastTouchIndex: Int? = null
+  private val activeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val normalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = Paint.Align.CENTER
     typeface = NativeListFonts.medium(context)
@@ -1573,10 +1719,16 @@ private class NativeListSectionIndexView(
     contentDescription = ACCESSIBILITY_LABEL
   }
 
-  fun configure(titles: List<String>, normalColor: Int, activeColor: Int) {
+  fun configure(
+    titles: List<String>,
+    normalColor: Int,
+    activeColor: Int,
+    activeTextColor: Int,
+  ) {
     this.titles = titles
     this.normalColor = normalColor
     this.activeColor = activeColor
+    this.activeTextColor = activeTextColor
     activeIndex = null
     updateContentDescription()
     invalidate()
@@ -1600,8 +1752,30 @@ private class NativeListSectionIndexView(
     activePaint.color = activeColor
     activePaint.textSize = textSize
     titles.forEachIndexed { index, title ->
-      val paint = if (index == activeIndex) activePaint else normalPaint
+      val active = index == activeIndex
+      val paint = if (active) activePaint else normalPaint
       val centerY = originY + cellHeight * (index + 0.5f)
+      if (active && cellHeight >= NativeListScale.dp(resources, 12f)) {
+        val badgeWidth = NativeListScale.dp(resources, 20f)
+        val badgeHeight = minOf(cellHeight, NativeListScale.dp(resources, 16f))
+        activeBackgroundPaint.color = activeColor
+        canvas.drawRoundRect(
+          width / 2f - badgeWidth / 2f,
+          centerY - badgeHeight / 2f,
+          width / 2f + badgeWidth / 2f,
+          centerY + badgeHeight / 2f,
+          badgeHeight / 2f,
+          badgeHeight / 2f,
+          activeBackgroundPaint,
+        )
+      }
+      paint.color = if (active && cellHeight >= NativeListScale.dp(resources, 12f)) {
+        activeTextColor
+      } else if (active) {
+        activeColor
+      } else {
+        normalColor
+      }
       val baseline = centerY - (paint.descent() + paint.ascent()) / 2f
       canvas.drawText(title, width / 2f, baseline, paint)
     }
@@ -1707,7 +1881,11 @@ private class NativeListSectionIndexView(
   }
 }
 
-private class ItemSpacingDecoration(private val spacing: Int) : RecyclerView.ItemDecoration() {
+private class ItemSpacingDecoration(
+  private val spacing: Int,
+  private val sourceSpacing: Int,
+  private val density: Float,
+) : RecyclerView.ItemDecoration() {
   override fun getItemOffsets(
     outRect: android.graphics.Rect,
     view: View,
@@ -1716,7 +1894,14 @@ private class ItemSpacingDecoration(private val spacing: Int) : RecyclerView.Ite
   ) {
     if (spacing <= 0) return
     val horizontal = (parent.layoutManager as? LinearLayoutManager)?.orientation == RecyclerView.HORIZONTAL
-    if (horizontal) outRect.right = spacing else outRect.bottom = spacing
+    val item = view.tag as? NativeListItem
+    val sourceWallet = item?.type == "identity" && item.json.optString("presentation") == "walletSidebar" && item.json.has("height")
+    // OneKey patch: V1 measures the wallet and its bottom padding as one sortable row.
+    val itemSpacing = if (!horizontal && sourceWallet) {
+      val sourceHeight = item!!.json.optInt("height")
+      ((sourceHeight + sourceSpacing) * density).roundToInt() - (sourceHeight * density).roundToInt()
+    } else spacing
+    if (horizontal) outRect.right = itemSpacing else outRect.bottom = itemSpacing
   }
 }
 
@@ -1743,22 +1928,32 @@ private class StickySectionHeaderDecoration(
     for (index in first downTo 0) {
       val candidate = adapter.itemAt(index)
       if (candidate?.type == "sectionHeader") {
-        if (candidate.json.optString("variant") == "summary") continue
+        if (candidate.json.optString("variant") == "summary" || !candidate.json.optBoolean("sticky", true)) continue
         header = candidate.takeIf(::isSimpleStickySectionHeader)
         break
       }
     }
     val item = header ?: return
+    // OneKey patch: a pinned selector heading must use the same text rasterization as its row.
+    textPaint.flags = if (item.usesSelectorSourceScale) Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG or Paint.LINEAR_TEXT_FLAG else Paint.ANTI_ALIAS_FLAG
     val isHistory = item.json.optString("variant") == "history" ||
       item.sectionKey?.startsWith("history-") == true
-    val height = NativeListScale.dp(context.resources, if (isHistory) 16 else 36)
-    val textSize = NativeListScale.font(context.resources, if (isHistory) 12f else 14f)
-    textPaint.textSize = textSize * density
-    val horizontalInset = NativeListScale.dp(context.resources, if (isHistory) 8 else 20).toFloat()
+    val sourceHeight = item.json.optInt("height", 36) * density
+    val height = if (item.usesSelectorSourceScale) {
+      if (item.json.optString("heightRounding") == "nearest") sourceHeight.roundToInt() else sourceHeight.toInt()
+    } else NativeListScale.dp(context.resources, if (isHistory) 16 else 36)
+    val textSize = if (item.usesSelectorSourceScale) 14f else NativeListScale.font(context.resources, if (isHistory) 12f else 14f)
+    textPaint.textSize = if (item.usesSelectorSourceScale) kotlin.math.ceil((textSize * density).toDouble()).toFloat() else textSize * density
+    val horizontalInset = if (item.usesSelectorSourceScale) ((20 * density).toInt() - parent.paddingLeft).toFloat() else NativeListScale.dp(context.resources, if (isHistory) 8 else 20).toFloat()
     val left = parent.paddingLeft.toFloat()
     val right = (parent.width - parent.paddingRight).toFloat()
     canvas.drawRect(left, 0f, right, height.toFloat(), backgroundPaint)
-    val baseline = height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
+    val baseline = if (item.usesSelectorSourceScale) {
+      val metrics = textPaint.fontMetricsInt
+      val lineHeight = kotlin.math.ceil(20 * density.toDouble()).toInt()
+      val leading = lineHeight - (metrics.descent - metrics.ascent)
+      (height - lineHeight) / 2 - metrics.ascent + kotlin.math.ceil(leading / 2.0).toFloat()
+    } else height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
     val value = item.json.optString("title").let { if (isHistory) it.uppercase() else it }
     val isRightToLeft = parent.layoutDirection == View.LAYOUT_DIRECTION_RTL
     val textWidth = if (isHistory) {
@@ -1799,6 +1994,29 @@ private class StickySectionHeaderDecoration(
 
 internal fun isSimpleStickySectionHeader(item: NativeListItem): Boolean =
   item.type == "sectionHeader" &&
+    item.json.optBoolean("sticky", true) &&
     item.json.optString("variant") != "summary" &&
     item.json.optString("value").isEmpty() &&
     item.json.optJSONObject("checkbox") == null
+
+// OneKey patch: paint only explicitly requested backgrounds into list side padding.
+private class SelectorBackgroundDecoration(private val adapter: NativeListAdapter) : RecyclerView.ItemDecoration() {
+  private val paint = Paint()
+  override fun onDraw(canvas: Canvas, parent: RecyclerView, state: RecyclerView.State) {
+    for (index in 0 until parent.childCount) {
+      val child = parent.getChildAt(index)
+      val item = adapter.itemAt(parent.getChildAdapterPosition(child)) ?: continue
+      if (!item.json.optBoolean("backgroundFullWidth", false)) continue
+      val color = item.json.optString("backgroundColor")
+      if (color.isEmpty()) continue
+      paint.color = try { parseNativeListColor(color) } catch (_: IllegalArgumentException) { Color.TRANSPARENT }
+      val top = child.y
+      canvas.drawRect(0f, top, parent.width.toFloat(), top + child.height, paint)
+      if (item.type == "system" && item.json.optString("variant") == "warning") {
+        paint.color = try { parseNativeListColor(item.json.optString("borderColor", "#E0E0E0")) } catch (_: IllegalArgumentException) { Color.TRANSPARENT }
+        canvas.drawRect(0f, top, parent.width.toFloat(), top + 1, paint)
+        canvas.drawRect(0f, top + child.height - 1, parent.width.toFloat(), top + child.height, paint)
+      }
+    }
+  }
+}

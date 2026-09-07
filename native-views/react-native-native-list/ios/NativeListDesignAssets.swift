@@ -76,8 +76,31 @@ func nativeListTabularFont(
 }
 
 func nativeListIcon(named name: String) -> UIImage? {
+  // OneKey patch: the connection indicator is a solid circle at its requested size.
+  if name == "Circle" {
+    return UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24)).image { _ in
+      UIColor.black.setFill()
+      UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: 24, height: 24)).fill()
+    }.withRenderingMode(.alwaysTemplate)
+  }
   let assetName: String
   switch name {
+  // OneKey patch: official selector icon geometry.
+  case "AccountErrorCustom": assetName = "onekey_selector_account_error_custom"
+  // OneKey patch: official selector icon geometry.
+  case "CrossedSmallSolid": assetName = "onekey_selector_crossed_small_solid"
+  // OneKey patch: official selector icon geometry.
+  case "AllNetworksSolid": assetName = "onekey_selector_all_networks_solid"
+  // OneKey patch: official selector icon geometry.
+  case "BotIllus": assetName = "onekey_selector_bot_illus"
+  // OneKey patch: official selector icon geometry.
+  case "AppleBrand": assetName = "onekey_selector_apple_brand"
+  // OneKey patch: official selector icon geometry.
+  case "GoogleIllus": assetName = "onekey_selector_google_illus"
+  // OneKey patch: official selector icon geometry.
+  case "LockSolid": assetName = "onekey_selector_lock_solid"
+  // OneKey patch: official selector icon geometry.
+  case "GlobusOutline": assetName = "onekey_selector_globus_outline"
   case "ArrowBottomOutline": assetName = "onekey_arrow_bottom"
   case "ArrowTopOutline": assetName = "onekey_arrow_top"
   case "ChartTrendingUpOutline": assetName = "onekey_chart_trending_up"
@@ -106,5 +129,5 @@ func nativeListIcon(named name: String) -> UIImage? {
   default: return nil
   }
   return UIImage(named: assetName, in: NativeListResources.bundle, compatibleWith: nil)?
-    .withRenderingMode(.alwaysTemplate)
+    .withRenderingMode(["GoogleIllus", "BotIllus", "AccountErrorCustom"].contains(name) ? .alwaysOriginal : .alwaysTemplate)
 }

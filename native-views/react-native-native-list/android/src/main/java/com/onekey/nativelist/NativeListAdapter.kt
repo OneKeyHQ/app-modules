@@ -41,6 +41,7 @@ internal class NativeListAdapter(
   private val createdRows = Collections.newSetFromMap(
     WeakHashMap<NativeListRowView, Boolean>(),
   )
+  var usesSelectorSourceScale = false
   var theme: JSONObject? = null
   var layout: String = "linear"
   var orientation: String = "vertical"
@@ -75,8 +76,9 @@ internal class NativeListAdapter(
       layout,
       orientation,
       position,
-      selectedKeys.contains(item.key),
+      item.json.optBoolean("selected", false) || selectedKeys.contains(item.key),
       checkboxState,
+      useSourceScale = usesSelectorSourceScale,
     )
   }
 
@@ -85,14 +87,17 @@ internal class NativeListAdapter(
     position: Int,
     payloads: MutableList<Any>,
   ) {
-    if (payloads.contains(SELECTION_PAYLOAD)) {
+    // OneKey patch: an unknown payload must retain full binding; validated echoes keep images alive.
+    // if (payloads.contains(SELECTION_PAYLOAD)) {
+    if (payloads.isNotEmpty() && payloads.all { it == SELECTION_PAYLOAD || it == SELECTION_ECHO_PAYLOAD }) {
       val item = itemAt(position) ?: return
+      if (payloads.contains(SELECTION_ECHO_PAYLOAD)) holder.rowView.bindStableSummary(item)
       holder.rowView.bindSelection(
         item,
         theme,
         layout,
         position,
-        selectedKeys.contains(item.key),
+        item.json.optBoolean("selected", false) || selectedKeys.contains(item.key),
         checkboxState,
       )
       return
@@ -158,8 +163,16 @@ internal class NativeListAdapter(
 
       override fun areContentsTheSame(oldItem: NativeListItem, newItem: NativeListItem): Boolean =
         oldItem.revision == newItem.revision && oldItem.content == newItem.content
+
+      // OneKey patch: a theme/layout update or a diff spanning another baseline stays a full bind.
+      override fun getChangePayload(oldItem: NativeListItem, newItem: NativeListItem): Any? =
+        if (oldItem.key == newItem.key && oldItem.type == newItem.type &&
+          newItem.selectionUpdateFromContent == oldItem.content
+        ) SELECTION_ECHO_PAYLOAD else null
     }
   }
 }
 
 internal const val SELECTION_PAYLOAD = "selection"
+// OneKey patch: internal payload, never exposed through the serialized row contract.
+internal const val SELECTION_ECHO_PAYLOAD = "selectionEcho"

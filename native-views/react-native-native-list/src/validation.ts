@@ -214,6 +214,69 @@ function assertLeadingVisual(
     assertImage(visual.image, `${path}.image`);
     assertVisualShape(visual.shape, `${path}.shape`);
     assertText(visual.cornerIcon?.name, `${path}.cornerIcon.name`);
+    // OneKey patch: validate optional selector overlays at the JSON boundary.
+    assertText(visual.fallbackIcon?.name, `${path}.fallbackIcon.name`);
+    if ((visual.overlays?.length ?? 0) > 2)
+      fail(`${path}.overlays`, 'supports at most two overlays');
+    visual.overlays?.forEach((overlay, index) => {
+      if (!['topLeft', 'bottomRight'].includes(overlay.position))
+        fail(
+          `${path}.overlays[${index}].position`,
+          'must be topLeft or bottomRight'
+        );
+      if (
+        overlay.size !== undefined &&
+        (overlay.size <= 0 || overlay.size > 40)
+      )
+        fail(`${path}.overlays[${index}].size`, 'must be within 1...40');
+      if (
+        overlay.padding !== undefined &&
+        (!Number.isFinite(overlay.padding) ||
+          overlay.padding < 0 ||
+          overlay.padding * 2 >= (overlay.size ?? 20))
+      )
+        fail(
+          `${path}.overlays[${index}].padding`,
+          'must fit inside the overlay'
+        );
+      if (
+        overlay.offset !== undefined &&
+        (!Number.isFinite(overlay.offset) ||
+          overlay.offset < 0 ||
+          overlay.offset > 20)
+      )
+        fail(`${path}.overlays[${index}].offset`, 'must be within 0...20');
+      for (const field of ['width', 'height'] as const) {
+        const value = overlay[field];
+        if (
+          value !== undefined &&
+          (!Number.isFinite(value) || value <= 0 || value > 40)
+        )
+          fail(`${path}.overlays[${index}].${field}`, 'must be within 1...40');
+      }
+      for (const field of ['offsetX', 'offsetY'] as const) {
+        const value = overlay[field];
+        if (
+          value !== undefined &&
+          (!Number.isFinite(value) || value < 0 || value > 20)
+        )
+          fail(`${path}.overlays[${index}].${field}`, 'must be within 0...20');
+      }
+      if (
+        overlay.padding !== undefined &&
+        overlay.padding * 2 >=
+          Math.min(
+            overlay.width ?? overlay.size ?? 20,
+            overlay.height ?? overlay.size ?? 20
+          )
+      )
+        fail(
+          `${path}.overlays[${index}].padding`,
+          'must fit inside the overlay'
+        );
+      assertImage(overlay.image, `${path}.overlays[${index}].image`);
+      assertText(overlay.text, `${path}.overlays[${index}].text`);
+    });
     if (visual.kind === 'token') {
       assertImage(visual.networkImage, `${path}.networkImage`);
     }
@@ -288,6 +351,20 @@ function assertRow(
   path = `rows[${index}]`
 ): void {
   assertKey(row.key, `${path}.key`);
+  // OneKey patch: explicit dimensions and opacity cannot corrupt list layout.
+  if (row.height !== undefined && (row.height < 0 || row.height > 4096))
+    fail(`${path}.height`, 'must be within 0...4096');
+  if (
+    row.heightRounding !== undefined &&
+    (row.height === undefined ||
+      !['floor', 'nearest'].includes(row.heightRounding))
+  )
+    fail(
+      `${path}.heightRounding`,
+      'requires an explicit height and must be floor or nearest'
+    );
+  if (row.opacity !== undefined && (row.opacity < 0 || row.opacity > 1))
+    fail(`${path}.opacity`, 'must be within 0...1');
   if (row.groupId && !row.groupPosition) {
     fail(`${path}.groupPosition`, 'is required when groupId is present');
   }
@@ -314,6 +391,43 @@ function assertRow(
       }
       assertText(row.title, `${path}.title`);
       assertText(row.subtitle, `${path}.subtitle`);
+      // OneKey patch: selector text segments truncate independently.
+      row.subtitleSegments?.forEach((segment, segmentIndex) => {
+        assertText(
+          segment.text,
+          `${path}.subtitleSegments[${segmentIndex}].text`
+        );
+        if (
+          segment.tone !== undefined &&
+          ![
+            'primary',
+            'secondary',
+            'disabled',
+            'caution',
+            'positive',
+            'negative',
+          ].includes(segment.tone)
+        )
+          fail(
+            `${path}.subtitleSegments[${segmentIndex}].tone`,
+            'invalid selector text tone'
+          );
+      });
+      let previousMatchEnd = 0;
+      row.titleMatch?.forEach((match) => {
+        if (
+          !Number.isInteger(match.start) ||
+          !Number.isInteger(match.end) ||
+          match.start < previousMatchEnd ||
+          match.end <= match.start ||
+          match.end > row.title.length
+        )
+          fail(
+            `${path}.titleMatch`,
+            'must contain ordered, non-overlapping UTF-16 ranges inside title'
+          );
+        previousMatchEnd = match.end;
+      });
       assertText(row.tertiary, `${path}.tertiary`);
       if (
         row.tertiaryTone !== undefined &&
@@ -470,13 +584,17 @@ function assertRow(
       break;
     case 'system':
       if (
-        !['loading', 'retry', 'noMatch', 'end', 'spacer'].includes(row.variant)
+        // OneKey patch: deprecated-wallet warnings retain the original scrolling semantics.
+        !['loading', 'retry', 'noMatch', 'end', 'spacer', 'warning'].includes(
+          row.variant
+        )
       ) {
         fail(
           `${path}.variant`,
-          'must be loading, retry, noMatch, end, or spacer'
+          'must be loading, retry, noMatch, end, spacer, or warning'
         );
       }
+      if (row.variant === 'warning') assertText(row.title, `${path}.title`);
       if (row.variant !== 'spacer') {
         assertText(row.message, `${path}.message`);
       }
@@ -649,6 +767,17 @@ export function validateSnapshot(
 
 function assertPatchChanges(patch: RowPatch, index: number): void {
   const path = `patches[${index}].changes`;
+  // OneKey patch: partial balance updates retain a valid, current accessibility label.
+  if ('accessibilityLabel' in patch.changes) {
+    assertText(patch.changes.accessibilityLabel, `${path}.accessibilityLabel`);
+  }
+  // OneKey patch: partial updates may refer to an existing height but still require a valid policy.
+  if (
+    'heightRounding' in patch.changes &&
+    patch.changes.heightRounding !== undefined &&
+    !['floor', 'nearest'].includes(patch.changes.heightRounding)
+  )
+    fail(`${path}.heightRounding`, 'must be floor or nearest');
   if (
     patch.changes.revision !== undefined &&
     (!Number.isSafeInteger(patch.changes.revision) ||
