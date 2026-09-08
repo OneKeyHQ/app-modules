@@ -4,8 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.109] - 2026-09-08
+
 ### Features
 - **native-list (iOS and Android)**: Add opt-in window-safe-area centering for section index rails.
+
+### Bug Fixes
+- **native-list (Android)**: Keep the centered section index stable when the software keyboard opens.
+
+### Chores
+- Bump all publishable packages to 3.0.109.
 
 ## [3.0.108] - 2026-09-08
 
