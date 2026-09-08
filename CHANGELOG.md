@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.111] - 2026-09-09
+
+### Bug Fixes
+- **text (Android)**: Preserve React Native's dedicated selectable-text host when prepared text layout is enabled.
+
+### Chores
+- Bump all publishable packages to 3.0.111.
+
 ## [3.0.110] - 2026-09-09
 
 ### Bug Fixes
