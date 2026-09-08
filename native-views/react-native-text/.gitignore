@@ -1,0 +1,8 @@
+.DS_Store
+.cxx
+.gradle
+.idea
+android/build
+android/generated
+lib
+node_modules
