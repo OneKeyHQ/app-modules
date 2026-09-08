@@ -4,7 +4,6 @@ import android.animation.TimeInterpolator
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -22,6 +21,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -1709,7 +1710,7 @@ private class NativeListSectionIndexView(
   private var activeTextColor = Color.WHITE
   private var centeredInWindow = false
   private var lastTouchIndex: Int? = null
-  private val windowVisibleFrame = Rect()
+  private val rootLocationOnScreen = IntArray(2)
   private val locationOnScreen = IntArray(2)
   private val activeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val normalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1885,10 +1886,16 @@ private class NativeListSectionIndexView(
     val totalHeight = cellHeight * count
     val centeredOriginY = (height - totalHeight) / 2f
     if (!centeredInWindow || !isAttachedToWindow) return centeredOriginY
-    rootView.getWindowVisibleDisplayFrame(windowVisibleFrame)
-    if (windowVisibleFrame.isEmpty) return centeredOriginY
+    val systemBarInsets = ViewCompat.getRootWindowInsets(rootView)
+      ?.getInsetsIgnoringVisibility(
+        WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+      ) ?: return centeredOriginY
+    rootView.getLocationOnScreen(rootLocationOnScreen)
     getLocationOnScreen(locationOnScreen)
-    val localCenterY = windowVisibleFrame.exactCenterY() - locationOnScreen[1]
+    val safeTop = rootLocationOnScreen[1] + systemBarInsets.top
+    val safeBottom = rootLocationOnScreen[1] + rootView.height - systemBarInsets.bottom
+    if (safeBottom <= safeTop) return centeredOriginY
+    val localCenterY = (safeTop + safeBottom) / 2f - locationOnScreen[1]
     return (localCenterY - totalHeight / 2f)
       .coerceIn(0f, (height - totalHeight).coerceAtLeast(0f))
   }
