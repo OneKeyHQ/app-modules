@@ -178,8 +178,8 @@ const PressableText = forwardRef<TextForwardRef, PressableTextProps>(
   }
 );
 
-function TextImpl(
-  {
+function TextImpl(props: TextProps, forwardedRef: Ref<TextForwardRef>) {
+  const {
     accessible,
     accessibilityLabel,
     accessibilityRole,
@@ -215,9 +215,7 @@ function TextImpl(
     suppressHighlighting,
     style,
     ...restProps
-  }: TextProps,
-  forwardedRef: Ref<TextForwardRef>
-) {
+  } = props;
   const hasTextAncestor = useContext(TextAncestorContext);
   if (hasTextAncestor) {
     return (
@@ -367,6 +365,13 @@ function TextImpl(
     if (overrides != null) {
       processedStyle = [processedStyle, overrides];
     }
+  }
+
+  if (
+    processedSelectable === true &&
+    ReactNativeFeatureFlags.enablePreparedTextLayout()
+  ) {
+    return <ReactNativeText {...props} ref={forwardedRef} />;
   }
 
   if (ReactNativeFeatureFlags.defaultTextToOverflowHidden()) {

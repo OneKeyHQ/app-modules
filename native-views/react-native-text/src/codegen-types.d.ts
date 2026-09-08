@@ -14,6 +14,7 @@ declare module 'react-native/Libraries/Pressability/PressabilityDebug' {
 }
 
 declare module 'react-native/src/private/featureflags/ReactNativeFeatureFlags' {
+  export function enablePreparedTextLayout(): boolean;
   export function defaultTextToOverflowHidden(): boolean;
 }
 

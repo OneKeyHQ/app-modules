@@ -1,5 +1,6 @@
 import { createRef } from 'react';
 import { Text as ReactNativeText, View } from 'react-native';
+import * as ReactNativeFeatureFlags from 'react-native/src/private/featureflags/ReactNativeFeatureFlags';
 import ReactTestRenderer, {
   type ReactTestInstance,
   type ReactTestRenderer as TestRenderer,
@@ -64,6 +65,22 @@ describe('Android Text', () => {
     expect(nativeText.props.onTextLayout).toBe(onTextLayout);
     expect(nativeText.props.selectable).toBe(true);
     expect(nativeText.props.testID).toBe('root-text');
+  });
+
+  it('uses React Native selectable text when prepared text layout is enabled', () => {
+    const preparedTextLayout = jest
+      .spyOn(ReactNativeFeatureFlags, 'enablePreparedTextLayout')
+      .mockReturnValue(true);
+
+    const root = render(
+      <Text selectable testID="selectable-text">
+        Selectable
+      </Text>
+    );
+
+    expect(root.findAllByType(NativeTextTestComponent)).toHaveLength(0);
+    expect(root.findByProps({ testID: 'selectable-text' })).toBeDefined();
+    preparedTextLayout.mockRestore();
   });
 
   it('places raw text, nested text, and attachments below RN virtual text', () => {
