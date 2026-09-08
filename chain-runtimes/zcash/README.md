@@ -17,7 +17,7 @@
 
 ## 这个项目为什么存在
 
-现有实现建在 `ChainSafe/WebZjs` 的 fork 上，而那个仓库自 2026-04-16 起没有任何分支收到过推送。
+此前的实现建在 `ChainSafe/WebZjs` 的 fork 上，而那个仓库自 2026-04-16 起没有任何分支收到过推送。
 更要紧的是它使用 `zcash_client_memory` 作为存储后端 —— 那个 crate 从未发布到 crates.io，
 2026-06-20 被从 librustzcash 切成独立仓库后只有 dependabot 在动。我们为它 vendor 了
 11,122 行代码并改动了 27 个源文件中的 22 个，且每次 `zcash_client_backend` 升版都要自己重迁一遍。
@@ -30,49 +30,24 @@
 
 ---
 
-## 拆成两个包：移动端不该为了派生地址而吃下整个扫链引擎
+## 同一套 Rust / WASM，所有 App 端共用
 
-| crate | 产物 | 内容 | 谁需要 |
-|---|---|---|---|
-| `onekey-zcash-keys` | **1.74 MB** | 派生 UFVK、地址；无存储、无网络、无 SQLite | **iOS / Android**，以及任何只需看账材料的场合 |
-| `onekey-zcash-runtime` | **4.67 MB** | 扫链、SQLite 存储、lightwalletd 网络 | Desktop / Web /（将来）插件 |
+`onekey-zcash-keys` 负责派生和签名，不依赖 SQLite、网络、扫描器或 prover。
+`onekey-zcash-runtime` 负责钱包、扫描、SQLite 和 PCZT 证明。它们是按功能拆分的两个
+WASM 产物，不是按平台维护的两套实现；Desktop、Web、扩展和 iOS/Android 都使用它们。
+`zcash-storage-benchmark` 仅用于开发者合成数据测试。
 
-依赖面完全隔开 —— keys crate 明确不依赖 `zcash_client_backend`、`zcash_client_sqlite`、
-`rusqlite`、`sqlite-wasm-rs`、`tonic`。移动端想误引扫链代码，**编译期就过不去**，
-不用靠人记着。
-
-### 但「拆开」不等于「移动端只能用 keys」
-
-`onekey-zcash-runtime` 的钱包核心（`wallet` / `account` / `storage` / `blockcache` /
-`clock` / `error`）是**全平台**的。实测三个 target 都编译通过：
-
-| target | 状态 |
-|---|---|
-| `wasm32-unknown-unknown` | ✅ |
-| `aarch64-apple-ios` | ✅ |
-| 本机原生（macOS） | ✅ |
-
-也就是说移动端有两条路，选哪条是产品决策而非技术限制：
-
-- **keys-only（1.74 MB）** —— 能收款、能显示地址，**看不到余额、没有历史、不能发送**，
-  因为那些都要扫链结果。适合「移动端暂不支持 Zcash 私密余额」这个明确的产品选择。
-- **原生完整 runtime** —— 把这个 crate 编成 `.a` / `.so` 走 RN 原生模块。
-  这正是官方 `zcash-android-wallet-sdk/backend-lib` 的做法。**绕开 WebView、绕开
-  `crossOriginIsolated`、性能最好**。缺的只有一个原生 transport（见下）。
-
-只有 `network` / `sync` / `runtime` / `bindgen` 四个模块是 wasm 专属，
-因为网络层目前只实现了浏览器的 gRPC-web 传输。移动端原生要接 tonic 的原生 transport，
-那是一个独立的 cfg 分支，`LightClient` 的签名不用变。
-
-参考：Ledger Live 在这件事上的答案是**不做** —— `ledger-live-mobile` 里 zcash/shielded
-相关文件 0 个，RN stub 直接抛 `"ZCash is not supported on React Native"`。
-他们的引擎只有 Node napi 产物，连 wasm 都没有，所以移动端没有选择。我们有。
+所有 App 载体均在 DedicatedWorker 执行公共 TypeScript SDK 和 WASM。
+移动端由 WebEmbed 创建内联 Blob Worker；其他端创建 URL Worker。
+Rust native 构建保留用于测试和诊断，不作为 App 的另一套生产后端。
+WASM 大小以当前构建产物及 App 压缩包检查为准，不沿用早期实验数字。
 
 ## 硬约束
 
 1. **不 vendor、不 fork 任何 Zcash 存储实现。** 存储层必须来自 crates.io 上未修改的
    `zcash_client_sqlite`。唯一例外是一处 Cargo.toml 改动（下节），Rust 源码零改动。
-2. **密钥材料不出 wasm。** 种子、USK、签名留在 Rust 侧（可 zeroize），不跨边界。
+2. **种子仅在授权的派生/签名调用中短暂传入 keys WASM。** Rust 清理秘密缓冲区；
+   JS 字符串及跨桥复制不能宣称可可靠擦除。扫描器持有 UFVK，不保存种子。
 3. **接口动词少、数据简单。** 只传 string / number / boolean / JSON 字符串，不把 Rust
    对象句柄交给 JS 管生命周期。每次调用是一次完整往返。
 
@@ -98,8 +73,9 @@
 已启用的 feature，只能改它的 Cargo.toml。
 
 处理方式是可审计的：`scripts/vendor-deps.sh` 下载官方发布版并施加
-`patches/zcash_client_sqlite-0.22.0-no-bundled.patch`（**1 行**）。另外，VFS 的既有持久化 barrier 补丁记录在 `patches/manifest.json`。升级版本时更新 manifest 里的
-`VERSION` 重跑即可。脚本末尾会校验没有任何 `.rs` 被改动。
+`patches/zcash_client_sqlite-0.22.0-no-bundled.patch`（**1 行**）。VFS 的公共 OPFS 修复也记录在 `patches/manifest.json`：连接锁、日志删除持久化、
+句柄清理和元数据失败后停止 I/O。`scripts/prepare-vendor.py --offline` 根据校验过的
+官方归档与补丁重建并比较全部文件，拒绝未记录的 vendor 改动。
 
 wasm 侧的 SQLite 由 `sqlite-wasm-rs` 提供（预编译，不在构建期编 C）。
 `crates/zcash-runtime/build.rs` 自动把它的 `libwsqlite3.a` 按链接器要的名字接上，
@@ -109,22 +85,18 @@ wasm 侧的 SQLite 由 `sqlite-wasm-rs` 提供（预编译，不在构建期编 
 
 ## 存储：数据存在哪
 
-SQLite 从不直接碰文件，它通过 VFS 接口读写字节，而那个接口只有五个动作：
-`read` / `write` / `truncate` / `flush` / `size`。接到哪，数据就在哪。
+所有 App 端统一使用 `sqlite-wasm-vfs` 的 OPFS SAH-pool，目录为 `.onekey-zcash-opfs`。
+SQLite 按页直接读写同步访问句柄，不再把整库预载成 WASM 内存镜像。
+每个 origin 的池由一个 Worker 独占；第二个 Worker 不能静默改用其他数据库。
+默认预留六个文件句柄，网络数据库仍为 `zcash-main.db` / `zcash-test.db`。
 
-浏览器侧接到 **IndexedDB**（`sqlite-wasm-vfs` 的 `relaxed_idb`）。选它而不是 OPFS 的
-`sahpool`，因为后者的同步访问句柄只在 Worker 里可用，而 relaxed-idb 在所有上下文都能跑 ——
-这对要覆盖的载体（桌面 renderer、浏览器页面、插件 offscreen、移动 WebView）是必要条件。
+连接明确设置 `journal_mode=DELETE`、`synchronous=FULL`。提交和日志删除的 flush
+错误必须传回宿主；元数据 I/O 失败后该 VFS 停止服务，需要重建 Worker。
+不要求 SharedArrayBuffer、COOP/COEP 或 UI 线程上的同步文件访问。
+OPFS 仍受浏览器 origin、配额和清理策略约束；App 内嵌页面的来源必须稳定。
+本次处于开发阶段，不提供旧 IndexedDB 库迁移。运行时的新交易持久化要求仍然保留。
 
-代价是它不是「完全持久」：读写在内存里同步服务，异步批量刷进 IndexedDB，崩溃可能丢掉最近一批。
-对扫链缓存可接受 —— 数据本来就能从链上重建。
-
-> 这个约束是**物理性**的：SQLite 的 VFS 接口是同步的（`read` 必须立刻返回），
-> 而浏览器存储是异步的。不要求 COI 的前提下，可行形态只有「内存同步服务 + 异步刷盘」。
-
----
-
-## 当前进度
+## 先前版本的验证记录（不替代当前 OPFS 验收）
 
 > 状态：**runtime 的看账与发送链路已在 testnet 上真实上链验证，App 适配层已接入并通过
 > 类型、单元与浏览器 runtime 检查。** App 内的有资金发送闭环与主网真实交易仍需人工验收。

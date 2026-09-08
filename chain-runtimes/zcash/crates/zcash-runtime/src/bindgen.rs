@@ -36,6 +36,12 @@ pub async fn init() -> Result<(), JsValue> {
     Ok(())
 }
 
+/// Preserve a failed call's result, then retire its poisoned storage owner.
+#[wasm_bindgen(js_name = storageRequiresWorkerRestart)]
+pub fn storage_requires_worker_restart() -> bool {
+    storage::requires_worker_restart()
+}
+
 /// panic 变成带堆栈的 console 错误，而不是一个永远不 settle 的 Promise。
 ///
 /// 必须在**每个**入口都装。曾经只装在 `init()` 里，于是走 `initMemoryStorage()`
@@ -89,8 +95,8 @@ pub fn capabilities() -> String {
         "scan": true,
         "balance": true,
         "history": true,
-        // The wallet can create the proposal, the prover package attaches proofs, and the keys
-        // package signs transparent inputs. The host must combine all three capabilities.
+        // The wallet creates proposals and proofs; the keys package signs inputs.
+        // The host must combine both packages' capabilities.
         "proveShielding": true,
         "notes": {
             // 说明为什么不通，宿主可以据此给用户不同的提示
@@ -124,17 +130,12 @@ pub async fn block_summary(height: u32) -> Result<String, JsValue> {
     )
 }
 
-/// 打开（必要时创建）钱包库并把 schema 迁移到当前版本。
-///
-/// 异步是因为要先把这个库从 IndexedDB 读进 VFS。VFS 装的是 `Preload::None`
-/// （不预载该 origin 下的全部库），代价就是必须按名字点一次 —— 漏掉这一步，
-/// 已存在的库不会出现在文件表里，SQLite 会当成新库重新建表，
-/// 于是每次启动都从 birthday 全量重扫，而扫链看上去一切正常。
+/// Open a page-backed database and apply the official SQLite migrations.
+/// No whole-database preload is required by the shared OPFS VFS.
 #[wasm_bindgen(js_name = openWallet)]
 pub async fn open_wallet(network_name: String, db_name: String) -> Result<String, JsValue> {
     let _perf = perf::span("openWallet");
     let (network_name, db_name) = (network_name.as_str(), db_name.as_str());
-    storage::preload_database(db_name).await?;
     let db = wallet::open_and_migrate(network_name, db_name)?;
     // 有异步操作在进行时这里会拒绝（WALLET_BUSY）—— 必须传播出去，
     // 否则调用方会以为库已经换了，而实际上还是旧的。
