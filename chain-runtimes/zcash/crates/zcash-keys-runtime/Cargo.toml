@@ -1,0 +1,52 @@
+[package]
+name = "onekey-zcash-keys"
+version = "0.0.1"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "OneKey Zcash — 仅密钥派生与签名。不含存储、扫链与网络。"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# 刻意保持极小的依赖面：这个 crate 会被移动端打包，
+# 每多一个依赖都是 iOS/Android 包体的直接成本。
+#
+# 明确**不**依赖：zcash_client_backend、zcash_client_sqlite、rusqlite、
+# sqlite-wasm-rs、tonic —— 那些属于 onekey-zcash-runtime。
+[dependencies]
+zcash_keys.workspace = true
+zcash_protocol.workspace = true
+zcash_address.workspace = true
+zcash_primitives = { workspace = true, features = ["transparent-inputs"] }
+zip32 = "0.2"
+bip0039 = { version = "0.12", features = ["all-languages"] }
+bs58 = { version = "0.5", features = ["check"] }
+zeroize = { version = "1", features = ["zeroize_derive"] }
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+secp256k1 = { version = "0.29", features = ["alloc"], default-features = false }
+zcash_script = { version = "0.4.3", default-features = false }
+# signer + orchard：本包唯一的职责就是给 PCZT 的 Orchard 花费签名。
+# 不开 prover/tx-extractor —— 那些属于 runtime 包。
+# transparent：屏蔽（transparent → shielded）必须签透明输入，否则打进 t 地址的钱
+# 出不来。它会连带拉入 zcash_script（0.4 起是纯 Rust，能上 wasm32）。
+pczt = { workspace = true, features = ["signer", "orchard", "transparent"] }
+transparent = { workspace = true, features = ["transparent-inputs"] }
+orchard = { version = "0.15", default-features = false }
+sapling.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+getrandom = { workspace = true, features = ["wasm_js"] }
+# 依赖树里同时存在 getrandom 0.2（被老一些的 crate 拉入），它需要旧式的 "js"
+# feature 才能在 wasm32-unknown-unknown 上编译。两个都要显式打开。
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
+
+# wasm-pack 默认跑 `wasm-opt -O`；-Oz 更激进地压体积。
+# 代价是构建慢一些，运行时性能差异对我们这类 IO 密集的负载可忽略。
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]

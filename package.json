@@ -9,7 +9,10 @@
     "version:patch:update": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules --topological version --deferred patch",
     "version:patch:apply": "yarn version apply --all",
     "version:patch": "yarn version:patch:update && yarn version:patch:apply",
-    "version:publish": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules run release"
+    "version:publish": "yarn workspaces foreach --all --exclude @onekeyfe/app-modules-example --exclude @onekeyfe/app-modules run release",
+    "zcash:prepare": "cd chain-runtimes/zcash && bash scripts/vendor-deps.sh",
+    "zcash:test": "cd chain-runtimes/zcash && cargo test --workspace --locked",
+    "zcash:build": "cd chain-runtimes/zcash && bash scripts/build-wasm.sh"
   },
   "workspaces": [
     "native-modules/*",

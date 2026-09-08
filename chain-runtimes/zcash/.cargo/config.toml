@@ -1,0 +1,4 @@
+# getrandom 0.4 在 wasm32-unknown-unknown 上必须显式指定后端，
+# 否则编译期报 "the wasm* targets are not supported by default"。
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

@@ -1,0 +1,93 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/zcash-runtime",
+  "crates/zcash-keys-runtime",
+  "crates/zcash-storage-benchmark",
+]
+exclude = ["vendor/sqlite-wasm-vfs-0.2.0"]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.85"
+
+# ── Zcash 依赖：官方稳定发布线 ───────────────────────────────────────────
+#
+# 硬约束：存储层必须来自 crates.io 上未修改的官方发布版。
+# 我们不 vendor、不 fork 任何 zcash 存储实现。
+#
+# Zcash 存储层仅有 zcash_client_sqlite 的一处 Cargo.toml 改动（见
+# scripts/vendor-deps.sh 与 patches/），它取消 rusqlite 的 "bundled" feature —
+# 那个 feature 会在构建期编译 SQLite 的 C 源码，而 wasm32 没有 libc sysroot。
+# Zcash Rust 源码零改动。VFS 的持久化补丁另见 patches/manifest.json。
+[workspace.dependencies]
+zcash_client_backend = { version = "0.24.0", default-features = false, features = ["orchard", "transparent-inputs", "lightwalletd-tonic", "sync", "pczt"] }
+# serde: create_pczt_from_proposal 要求 AccountId: Serialize
+zcash_client_sqlite = { version = "0.22.0", default-features = false, features = ["orchard", "transparent-inputs", "serde"] }
+zcash_keys = { version = "0.16.1", features = ["orchard", "sapling", "transparent-inputs"] }
+zcash_protocol = "0.10"
+# default-features = false 关键：默认带 multicore，而 wasm32 无 atomics 时
+# halo2_proofs 会直接 compile_error。
+zcash_primitives = { version = "0.30", default-features = false }
+transparent = { package = "zcash_transparent", version = "0.10" }
+zcash_address = "0.13"
+zip321 = "0.9.0"
+# 与 zcash_client_backend 完全一致的配置：默认 feature 全关。
+# 开着默认 feature 会拉到已 yank 的 core2 0.3。
+pczt = { version = "0.9.3", default-features = false }
+orchard = { version = "0.15", default-features = false }
+
+rusqlite = { version = "0.37", default-features = false }
+sqlite-wasm-rs = "0.5"
+sqlite-wasm-vfs = { version = "0.2", path = "vendor/sqlite-wasm-vfs-0.2.0" }
+
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+gloo-timers = { version = "0.3", features = ["futures"] }
+tracing = "0.1"
+tracing-wasm = "0.2"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"] }
+
+# 必须与 zcash_client_sqlite 的 rand_core 保持同一大版本（0.6 线），
+# 否则 RngCore trait 对不上，init_wallet_db 的泛型约束不满足。
+rand = "0.8"
+rand_chacha = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["js"] }
+getrandom = "0.4"
+thiserror = "2"
+schemerz = "0.2"
+schemerz-rusqlite = "0.370"
+async-trait = "0.1"
+futures-util = { version = "0.3", default-features = false }
+sapling = { package = "sapling-crypto", version = "0.7", default-features = false }
+
+# lightwalletd 走 gRPC-web：浏览器里跑不了原生 gRPC。
+# tonic-web-wasm-client 必须 >= 0.9.1 —— 0.8.0 会丢 gRPC trailer（上游已修）。
+hex = "0.4"
+prost = "0.14"
+tonic = { version = "0.14", default-features = false, features = ["codegen"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+tonic-web-wasm-client = "0.9.1"
+
+# zcash_client_sqlite 的官方发布版 + 单行 no-bundled patch。
+# 先跑 `bash scripts/vendor-deps.sh` 生成 vendor/ 目录。
+[patch.crates-io]
+zcash_client_sqlite = { path = "vendor/zcash_client_sqlite-0.22.0" }
+
+[profile.release]
+# "s" 是量过的选择，不是省事的默认：opt-level = 3 在主网扫描上快不出
+# 噪声（msScan 7350-8805 vs 8064-8218 / 1000 块），wasm 却大 31%（6.8→8.9MB）。
+opt-level = "s"
+lto = true
+codegen-units = 1
+# 不要用 panic = "abort"。
+#
+# 在 wasm 上 abort 会直接杀死实例：没有 JS 异常、没有 Promise reject、
+# 没有任何日志 —— 调用方看到的是一个永远不 settle 的 Promise，
+# 表现和「卡死」完全一样，无法区分也无法排查。
+# unwind 则会变成一条带 message 的 JS 异常，宿主能 catch、能上报。
+panic = "unwind"

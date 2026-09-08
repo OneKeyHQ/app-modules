@@ -1,0 +1,14 @@
+[
+  {
+    "name": "zcash_client_sqlite",
+    "version": "0.22.0",
+    "sha256": "dd92e4334619b1e3f67019254049318ec0d0240a3c15d853bdf2ac4bba597078",
+    "patch": "zcash_client_sqlite-0.22.0-no-bundled.patch"
+  },
+  {
+    "name": "sqlite-wasm-vfs",
+    "version": "0.2.0",
+    "sha256": "7f7a5c9ac229421d577bb5a9bb59048838509958b218dd4e0b3c1214a87c361e",
+    "patch": "sqlite-wasm-vfs-0.2.0-durability-barrier.patch"
+  }
+]

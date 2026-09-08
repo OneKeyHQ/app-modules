@@ -24,3 +24,9 @@ yarn version:apply
 Commit version changes and push to GitHub.
 
 Run publish package actions on GitHub.
+
+## Chain runtimes
+
+Rust chain libraries live in [chain-runtimes](./chain-runtimes/README.md), separately
+from React Native workspaces. Zcash is the first runtime; see its build and test
+commands there.

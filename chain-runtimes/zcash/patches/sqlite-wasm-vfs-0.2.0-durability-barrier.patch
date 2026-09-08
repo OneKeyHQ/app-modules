@@ -1,0 +1,82 @@
+--- a/src/relaxed_idb.rs
++++ b/src/relaxed_idb.rs
+@@ -130,6 +130,7 @@
+     Sync(String),
+     Delete(String),
+     Clear,
++    Barrier,
+ }
+ 
+ enum IdbFile {
+@@ -325,6 +326,7 @@
+     idb: Database,
+     name2file: RefCell<HashMap<String, IdbFile>>,
+     tx: UnboundedSender<IdbCommit>,
++    commit_error: RefCell<Option<String>>,
+ }
+ 
+ impl RelaxedIdb {
+@@ -348,6 +350,7 @@
+             idb: indexed_db,
+             name2file: RefCell::new(name2file),
+             tx,
++            commit_error: RefCell::new(None),
+         })
+     }
+ 
+@@ -469,6 +472,10 @@
+         self.send_task_with_notify(IdbCommitOp::Clear)
+     }
+ 
++    fn barrier(&self) -> Result<WaitCommit> {
++        self.send_task_with_notify(IdbCommitOp::Barrier)
++    }
++
+     fn exists(&self, file: &str) -> bool {
+         self.name2file.borrow().contains_key(file)
+     }
+@@ -542,11 +549,28 @@
+     async fn commit_loop(&self, mut rx: UnboundedReceiver<IdbCommit>) {
+         while let Some(commit) = rx.recv().await {
+             let IdbCommit { op, notify } = commit;
++            let is_sync = matches!(&op, IdbCommitOp::Sync(_));
+             let ret = match op {
+                 IdbCommitOp::Sync(file) => self.sync_db_impl(&file).await,
+                 IdbCommitOp::Delete(file) => self.delete_db_impl(&file).await,
+                 IdbCommitOp::Clear => clear_impl(&self.idb).await,
++                // A failed sync already discarded its dirty-block list, so a
++                // later successful barrier cannot make that write durable.
++                // Keep the carrier poisoned until the module is reloaded and
++                // the database is reconstructed from IndexedDB.
++                IdbCommitOp::Barrier => match self.commit_error.borrow().as_ref() {
++                    Some(error) => Err(RelaxedIdbError::Generic(error.clone())),
++                    None => Ok(()),
++                },
+             };
++            if is_sync {
++                if let Err(error) = &ret {
++                    let mut commit_error = self.commit_error.borrow_mut();
++                    if commit_error.is_none() {
++                        *commit_error = Some(error.to_string());
++                    }
++                }
++            }
+             if let Some(notify) = notify {
+                 // An unsuccessful send would be one where the corresponding receiver
+                 // has already been deallocated.
+@@ -890,6 +914,15 @@
+         self.pool.clear_all()
+     }
+ 
++    /// Wait for every earlier queued sync and surface the first sync failure.
++    ///
++    /// A failure poisons the current VFS instance because its in-memory dirty
++    /// block set can no longer prove what reached IndexedDB. Reload the VFS
++    /// before attempting more durable writes.
++    pub fn barrier(&self) -> Result<WaitCommit> {
++        self.pool.barrier()
++    }
++
+     /// Does the database exists.
+     pub fn exists(&self, filename: &str) -> bool {
+         self.pool.exists(filename)
