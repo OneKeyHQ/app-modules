@@ -1,0 +1,2025 @@
+package com.margelo.nitro.nativelist
+
+import android.animation.TimeInterpolator
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.HapticFeedbackConstants
+import android.view.Choreographer
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewConfiguration
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.SeekBar
+import android.widget.TextView
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.LinearSmoothScroller
+import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.facebook.react.uimanager.ThemedReactContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.lang.ref.WeakReference
+import java.util.UUID
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+class NativeListView(
+  private val reactContext: ThemedReactContext,
+) : LinearLayout(reactContext) {
+  private class ActionAnchorRecord(
+    val token: String,
+    origin: NativeListActionOrigin,
+  ) {
+    val sourceView = WeakReference(origin.sourceView)
+    val ownerRowView = WeakReference(origin.ownerRowView)
+    val bindingEpoch = origin.bindingEpoch
+    var open = false
+    var invalidatedReason: String? = null
+  }
+
+  private sealed class ScrollRequest {
+    data class Key(
+      val key: String,
+      val animated: Boolean,
+      val alignment: String,
+      val viewPosition: Double,
+      val viewOffset: Double,
+    ) : ScrollRequest()
+
+    data class Index(
+      val index: Int,
+      val animated: Boolean,
+      val alignment: String,
+      val viewPosition: Double,
+      val viewOffset: Double,
+    ) : ScrollRequest()
+
+    data class Offset(val offset: Double, val animated: Boolean) : ScrollRequest()
+    data class End(val animated: Boolean) : ScrollRequest()
+  }
+
+  var onRowAction: ((String) -> Unit)? = null
+  var onActionAnchorInvalidated: ((String) -> Unit)? = null
+  var onSelectionDelta: ((String) -> Unit)? = null
+  var onReorder: ((String) -> Unit)? = null
+  var onEndReached: ((String) -> Unit)? = null
+  var onVisibleRangeChanged: ((String) -> Unit)? = null
+  private val density = resources.displayMetrics.density
+  private val recyclerView = RecyclerView(context)
+  private val refreshLayout = SwipeRefreshLayout(context)
+  private val contentContainer = FrameLayout(context)
+  private val adapter = NativeListAdapter(reactContext)
+  private val layoutManager = GridLayoutManager(context, 1)
+  // OneKey patch: vertical lists retain vertical drags and leave horizontal drags to a parent pager.
+  private val pagerGestureTouchSlop = ViewConfiguration.get(context).scaledTouchSlop
+  private val pagerGestureTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
+    private var downX = 0f
+    private var downY = 0f
+    private var directionResolved = false
+
+    override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+      if (layoutManager.orientation != RecyclerView.VERTICAL) return false
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          downX = event.x
+          downY = event.y
+          directionResolved = false
+        }
+        MotionEvent.ACTION_MOVE -> if (!directionResolved) {
+          val deltaX = abs(event.x - downX)
+          val deltaY = abs(event.y - downY)
+          if (max(deltaX, deltaY) > pagerGestureTouchSlop) {
+            directionResolved = true
+            recyclerView.parent?.requestDisallowInterceptTouchEvent(deltaY >= deltaX)
+          }
+        }
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+          recyclerView.parent?.requestDisallowInterceptTouchEvent(false)
+        }
+      }
+      return false
+    }
+  }
+  private val reorderPlaceholderDecoration = ReorderPlaceholderDecoration(
+    adapter = adapter,
+    insetPx = dp(REORDER_PLACEHOLDER_INSET_DP),
+    radiusPx = dp(REORDER_PLACEHOLDER_RADIUS_DP).toFloat(),
+  )
+  private val reorderSpringInterpolator = ReorderSpringInterpolator(
+    damping = REORDER_SPRING_DAMPING,
+    stiffness = REORDER_SPRING_STIFFNESS,
+    mass = REORDER_SPRING_MASS,
+    durationSeconds = REORDER_SPRING_DURATION_MS / 1_000.0,
+  )
+  private val footerView = NativeListRowView(reactContext)
+  private val sectionIndexView = NativeListSectionIndexView(context)
+  private val sectionIndexPreview = TextView(context)
+  private var config: NativeListConfig? = null
+  private var usesSelectorSourceScale = false
+  private var stickyDecoration: StickySectionHeaderDecoration? = null
+  private var spacingDecoration: ItemSpacingDecoration? = null
+  private var itemTouchHelper: ItemTouchHelper? = null
+  private var reorderTouchListener: RecyclerView.OnItemTouchListener? = null
+  private var reorderTouchHandler: Handler? = null
+  private var endReachedGeneration: Int? = null
+  private var lastVisibleRangeSignature: String? = null
+  private var visibleEventScheduled = false
+  private var dragFrom = RecyclerView.NO_POSITION
+  private var dragTo = RecyclerView.NO_POSITION
+  private var pendingReorder: List<NativeListItem>? = null
+  private var sectionIndexEntries: List<NativeListSectionIndexEntry> = emptyList()
+  private var sectionIndexScrubbing = false
+  private var sectionIndexProgrammaticScroll = false
+  private var sectionIndexHapticsEnabled = true
+  private var pendingScrollRequest: ScrollRequest? = null
+  private val actionAnchorInstanceId = UUID.randomUUID().toString()
+  private var actionAnchorCounter = 0L
+  private var actionAnchor: ActionAnchorRecord? = null
+  private var lastLayoutWidth = -1
+  private var lastLayoutHeight = -1
+  private var lastLayoutDirection = layoutDirection
+  private var disposed = false
+
+  init {
+    orientation = VERTICAL
+    recyclerView.adapter = adapter
+    recyclerView.layoutManager = layoutManager
+    recyclerView.itemAnimator = null
+    recyclerView.addOnItemTouchListener(pagerGestureTouchListener)
+    recyclerView.addItemDecoration(reorderPlaceholderDecoration)
+    // OneKey patch: full-width selector header backgrounds do not change row content insets.
+    recyclerView.addItemDecoration(SelectorBackgroundDecoration(adapter))
+    recyclerView.setHasFixedSize(false)
+    layoutManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+      override fun getSpanSize(position: Int): Int {
+        if (config?.layout != "grid") return 1
+        val type = adapter.itemAt(position)?.type
+        return if (type == "sectionHeader" || type == "system" || type == "action") {
+          layoutManager.spanCount
+        } else {
+          1
+        }
+      }
+    }
+    refreshLayout.addView(
+      recyclerView,
+      LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+    )
+    contentContainer.addView(
+      refreshLayout,
+      FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT,
+      ),
+    )
+    contentContainer.addView(
+      sectionIndexView,
+      FrameLayout.LayoutParams(
+        dp(SECTION_INDEX_RAIL_WIDTH_DP),
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        Gravity.END,
+      ),
+    )
+    sectionIndexPreview.apply {
+      gravity = Gravity.CENTER
+      textSize = NativeListScale.font(resources, 22f)
+      typeface = NativeListFonts.semibold(context)
+      visibility = GONE
+      alpha = 0f
+      importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+    contentContainer.addView(
+      sectionIndexPreview,
+      FrameLayout.LayoutParams(
+        dp(SECTION_INDEX_PREVIEW_SIZE_DP),
+        dp(SECTION_INDEX_PREVIEW_SIZE_DP),
+        Gravity.CENTER_VERTICAL or Gravity.END,
+      ).apply {
+        marginEnd = dp(SECTION_INDEX_PREVIEW_END_MARGIN_DP)
+      },
+    )
+    addView(contentContainer, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+    footerView.visibility = GONE
+    addView(footerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+
+    adapter.onRowPress = ::handleRowPress
+    adapter.onAction = ::handleAction
+    adapter.onBindingInvalidated = ::handleBindingInvalidated
+    adapter.checkboxState = ::resolveCheckboxState
+    footerView.onRowPress = ::handleRowPress
+    footerView.onAction = ::handleAction
+    footerView.onBindingInvalidated = ::handleBindingInvalidated
+    sectionIndexView.onSelect = ::selectSectionIndex
+    sectionIndexView.onInteractionEnded = { finishSectionIndexInteraction() }
+    sectionIndexView.visibility = GONE
+
+    refreshLayout.isEnabled = false
+    refreshLayout.setOnRefreshListener {
+      emit(
+        ROW_ACTION,
+        JSONObject().put("actionKey", "nativeList.refresh"),
+      )
+    }
+
+    recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+      override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+        when (newState) {
+          RecyclerView.SCROLL_STATE_DRAGGING -> {
+            sectionIndexProgrammaticScroll = false
+            invalidateActionAnchor("scroll")
+          }
+          RecyclerView.SCROLL_STATE_IDLE -> sectionIndexProgrammaticScroll = false
+        }
+      }
+
+      override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+        if (dx != 0 || dy != 0) invalidateActionAnchor("scroll")
+        syncSectionIndexToVisibleRows()
+        scheduleVisibleEvent()
+        checkEndReached()
+      }
+    })
+  }
+
+  override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+    super.onLayout(changed, left, top, right, bottom)
+    val nextWidth = right - left
+    val nextHeight = bottom - top
+    if (
+      lastLayoutWidth >= 0 &&
+      (nextWidth != lastLayoutWidth || nextHeight != lastLayoutHeight || layoutDirection != lastLayoutDirection)
+    ) {
+      invalidateActionAnchor("layout")
+    }
+    lastLayoutWidth = nextWidth
+    lastLayoutHeight = nextHeight
+    lastLayoutDirection = layoutDirection
+    performPendingScrollIfNeeded()
+  }
+
+  fun applySnapshot(snapshotJson: String) {
+    val next = try {
+      NativeListConfig.parse(snapshotJson)
+    } catch (_: Exception) {
+      return
+    }
+    invalidateActionAnchor("snapshot")
+    val previous = config
+    if (previous != null && canApplyStableContentUpdate(previous, next)) {
+      // OneKey patch: authorize a diff payload only against this exact validated baseline.
+      next.items.forEachIndexed { index, item ->
+        if (item.content != previous.items[index].content &&
+          adapter.currentList.getOrNull(index) === previous.items[index]
+        ) {
+          item.selectionUpdateFromContent = previous.items[index].content
+        }
+      }
+      val changedSummaryKeys = previous.items.indices.mapNotNull { index ->
+        previous.items[index].key.takeIf {
+          previous.items[index].content != next.items[index].content
+        }
+      }.toSet()
+      config = next
+    usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
+    adapter.usesSelectorSourceScale = usesSelectorSourceScale
+      adapter.theme = next.theme
+      adapter.layout = next.layout
+      adapter.orientation = next.orientation
+      adapter.selectedKeys = next.selectedKeys
+      adapter.submitList(next.items) {
+        // OneKey patch: DiffUtil has dispatched its payloads; release the old serialized rows.
+        next.items.forEach { it.selectionUpdateFromContent = null }
+        recyclerView.post {
+          bindVisibleSelection(changedSummaryKeys)
+          bindFooterSelection()
+          performPendingScrollIfNeeded()
+        }
+      }
+      return
+    }
+    config = next
+    usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
+    adapter.usesSelectorSourceScale = usesSelectorSourceScale
+    if (previous?.generation != next.generation) endReachedGeneration = null
+    pendingReorder = null
+    adapter.theme = next.theme
+    adapter.layout = next.layout
+    adapter.orientation = next.orientation
+    adapter.selectedKeys = next.selectedKeys
+    configureSectionIndex(next)
+    updateLayout(next)
+    adapter.submitList(next.items) {
+      relayoutContents()
+      performPendingScrollIfNeeded()
+      syncSectionIndexToVisibleRows()
+      scheduleVisibleEvent()
+      if (next.items.isNotEmpty()) checkEndReached()
+    }
+    refreshLayout.isEnabled = next.pullToRefresh
+    refreshLayout.isRefreshing = next.refreshing
+    bindFooter(next)
+    updateReordering(next)
+  }
+
+  /**
+   * A controlled selection update sends the snapshot back after the native
+   * selection delta. Its structure is unchanged; only selectedKeys and the
+   * fixed-height summary copy may differ. Keep RecyclerView's current layout
+   * and scroll anchor for that echo instead of rebuilding decorations and
+   * forcing the host through another layout pass.
+   */
+  private fun canApplyStableContentUpdate(
+    previous: NativeListConfig,
+    next: NativeListConfig,
+  ): Boolean {
+    if (
+      previous.generation != next.generation ||
+      previous.layout != next.layout ||
+      previous.orientation != next.orientation ||
+      previous.gridColumns != next.gridColumns ||
+      previous.stickyHeaders != next.stickyHeaders ||
+      previous.contentPadding != next.contentPadding ||
+      previous.contentPaddingHorizontal != next.contentPaddingHorizontal ||
+      previous.contentPaddingTop != next.contentPaddingTop ||
+      previous.contentPaddingBottom != next.contentPaddingBottom ||
+      previous.itemSpacing != next.itemSpacing ||
+      previous.selectionMode != next.selectionMode ||
+      previous.rowPressToggles != next.rowPressToggles ||
+      previous.reorderable != next.reorderable ||
+      previous.pullToRefresh != next.pullToRefresh ||
+      previous.refreshing != next.refreshing ||
+      previous.loadMore != next.loadMore ||
+      previous.endReachedThreshold != next.endReachedThreshold ||
+      previous.sectionIndexEnabled != next.sectionIndexEnabled ||
+      previous.sectionIndexHapticsEnabled != next.sectionIndexHapticsEnabled ||
+      previous.theme?.toString() != next.theme?.toString() ||
+      previous.fixedFooter?.content != next.fixedFooter?.content ||
+      previous.items.size != next.items.size
+    ) {
+      return false
+    }
+    return previous.items.indices.all { index ->
+      val oldItem = previous.items[index]
+      val newItem = next.items[index]
+      oldItem.key == newItem.key &&
+        oldItem.type == newItem.type &&
+        // OneKey patch: controlled echoes can also carry row and checkbox selection state.
+        // (oldItem.content == newItem.content || isStableSummaryUpdate(oldItem, newItem))
+        (oldItem.content == newItem.content || isStableSelectionUpdate(
+          oldItem,
+          newItem,
+          next.selectionMode == "single" || next.selectionMode == "multiple",
+        ))
+    }
+  }
+
+  // OneKey patch: preserve the original summary-only comparison for upstream reference.
+  // private fun isStableSummaryUpdate(
+  //   previous: NativeListItem,
+  //   next: NativeListItem,
+  // ): Boolean {
+  //   if (
+  //     previous.type != "sectionHeader" ||
+  //     previous.json.optString("variant") != "summary" ||
+  //     next.json.optString("variant") != "summary"
+  //   ) {
+  //     return false
+  //   }
+  //   val previousStructure = JSONObject(previous.content).apply {
+  //     remove("title")
+  //     remove("value")
+  //   }
+  //   val nextStructure = JSONObject(next.content).apply {
+  //     remove("title")
+  //     remove("value")
+  //   }
+  //   return previousStructure.toString() == nextStructure.toString()
+  // }
+
+  private fun isStableSelectionUpdate(
+    previous: NativeListItem,
+    next: NativeListItem,
+    controlled: Boolean,
+  ): Boolean {
+    val previousStructure = selectionComparisonData(previous.json, controlled) ?: return false
+    val nextStructure = selectionComparisonData(next.json, controlled) ?: return false
+    return previousStructure.toString() == nextStructure.toString()
+  }
+
+  // OneKey patch: ignore only fields refreshed by the lightweight selection binder.
+  private fun selectionComparisonData(data: JSONObject, controlled: Boolean): JSONObject? {
+    val type = data.opt("type") as? String ?: return null
+    val result = JSONObject(data.toString())
+    if (result.has("selected")) {
+      if (result.opt("selected") !is Boolean) return null
+      result.remove("selected")
+    }
+    if (type == "walletGroup") {
+      val parent = data.optJSONObject("parent") ?: return null
+      if (parent.optString("type") != "identity") return null
+      val children = data.optJSONArray("children") ?: return null
+      result.put("parent", selectionComparisonData(parent, false) ?: return null)
+      val normalizedChildren = JSONArray()
+      for (index in 0 until children.length()) {
+        val child = children.optJSONObject(index) ?: return null
+        if (child.optString("type") != "identity") return null
+        normalizedChildren.put(selectionComparisonData(child, false) ?: return null)
+      }
+      result.put("children", normalizedChildren)
+    }
+    if (type == "sectionHeader" && data.optString("variant") == "summary") {
+      result.remove("title")
+      result.remove("value")
+    }
+    if (!controlled) return result
+    fun checkboxData(value: Any?): JSONObject? {
+      val checkbox = value as? JSONObject ?: return null
+      if (checkbox.optString("kind") != "checkbox") return null
+      if (checkbox.has("state") && checkbox.opt("state") !in setOf("checked", "unchecked", "indeterminate")) return null
+      checkbox.remove("state")
+      return checkbox
+    }
+    if (type in setOf("dataRow", "sectionHeader", "action") && result.has("checkbox")) {
+      result.put("checkbox", checkboxData(result.opt("checkbox")) ?: return null)
+    }
+    if (type == "identity" && result.has("trailing")) {
+      val accessories = result.optJSONArray("trailing") ?: return null
+      if (accessories.length() > 2) return null
+      var checkboxCount = 0
+      for (index in 0 until accessories.length()) {
+        val accessory = accessories.optJSONObject(index) ?: return null
+        if (accessory.optString("kind") == "checkbox") {
+          if (++checkboxCount > 1) return null
+          accessories.put(index, checkboxData(accessory) ?: return null)
+        }
+      }
+    }
+    return result
+  }
+
+  fun applyPatches(patchesJson: String) {
+    val current = config ?: return
+    val patches = try {
+      JSONArray(patchesJson)
+    } catch (_: Exception) {
+      return
+    }
+    val indexByKey = current.items.withIndex().associate { it.value.key to it.index }
+    val pending = ArrayList<Pair<Int, JSONObject>>(patches.length())
+    val seen = HashSet<String>()
+    for (index in 0 until patches.length()) {
+      val patch = patches.optJSONObject(index) ?: return
+      val key = patch.optString("key")
+      val itemIndex = indexByKey[key] ?: return
+      if (!seen.add(key)) return
+      if (patch.optString("type") != current.items[itemIndex].type) return
+      val changes = patch.optJSONObject("changes") ?: return
+      pending.add(itemIndex to changes)
+    }
+    val nextItems = current.items.toMutableList()
+    val selected = LinkedHashSet(current.selectedKeys)
+    try {
+      pending.forEach { (index, changes) ->
+        val previous = nextItems[index]
+        val merged = NativeListItem.parse(mergeRow(previous.json, changes))
+        nextItems[index] = merged
+        if (changes.has("selected")) {
+          if (changes.optBoolean("selected")) selected.add(merged.key) else selected.remove(merged.key)
+        }
+      }
+    } catch (_: Exception) {
+      return
+    }
+    invalidateActionAnchor("snapshot")
+    val next = current.copy(items = nextItems, selectedKeys = selected)
+    config = next
+    usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
+    adapter.usesSelectorSourceScale = usesSelectorSourceScale
+    adapter.selectedKeys = selected
+    adapter.submitList(nextItems) { relayoutContents() }
+    bindFooter(next)
+  }
+
+  fun reconcileSelection(selectedKeysJson: String) {
+    val current = config ?: return
+    val array = try {
+      JSONArray(selectedKeysJson)
+    } catch (_: Exception) {
+      return
+    }
+    val known = current.items.filter { it.isSelectable }.mapTo(HashSet()) { it.key }
+    val next = LinkedHashSet<String>()
+    for (index in 0 until array.length()) {
+      val key = array.optString(index)
+      if (!known.contains(key)) return
+      next.add(key)
+    }
+    if (current.selectionMode == "single" && next.size > 1) return
+    config = current.copy(selectedKeys = next)
+    adapter.selectedKeys = next
+    notifySelectionChanged()
+  }
+
+  fun scrollToKey(
+    key: String,
+    animated: Boolean,
+    alignment: String,
+    viewPosition: Double = 0.0,
+    viewOffset: Double = 0.0,
+  ) {
+    requestScroll(ScrollRequest.Key(key, animated, alignment, viewPosition, viewOffset))
+  }
+
+  fun scrollToIndex(
+    index: Int,
+    animated: Boolean,
+    alignment: String,
+    viewPosition: Double = 0.0,
+    viewOffset: Double = 0.0,
+  ) {
+    requestScroll(ScrollRequest.Index(index, animated, alignment, viewPosition, viewOffset))
+  }
+
+  fun scrollToOffset(offset: Double, animated: Boolean) {
+    requestScroll(ScrollRequest.Offset(offset, animated))
+  }
+
+  fun scrollToEnd(animated: Boolean) {
+    requestScroll(ScrollRequest.End(animated))
+  }
+
+  private fun requestScroll(request: ScrollRequest) {
+    if (performScroll(request)) {
+      pendingScrollRequest = null
+    } else {
+      pendingScrollRequest = request
+    }
+  }
+
+  private fun performPendingScrollIfNeeded() {
+    val request = pendingScrollRequest ?: return
+    if (performScroll(request)) pendingScrollRequest = null
+  }
+
+  private fun performScroll(request: ScrollRequest): Boolean {
+    val current = config ?: return false
+    if (adapter.itemCount != current.items.size) return false
+    if (recyclerView.width <= 0 || recyclerView.height <= 0) return false
+    return when (request) {
+      is ScrollRequest.Key -> {
+        val index = current.items.indexOfFirst { it.key == request.key }
+        if (index >= 0) {
+          performIndexScroll(
+            index,
+            request.animated,
+            request.alignment,
+            request.viewPosition,
+            request.viewOffset,
+          )
+        }
+        true
+      }
+      is ScrollRequest.Index -> {
+        if (request.index in current.items.indices) {
+          performIndexScroll(
+            request.index,
+            request.animated,
+            request.alignment,
+            request.viewPosition,
+            request.viewOffset,
+          )
+        }
+        true
+      }
+      is ScrollRequest.Offset -> {
+        performOffsetScroll(request.offset, request.animated)
+        true
+      }
+      is ScrollRequest.End -> {
+        if (current.items.isNotEmpty()) {
+          performIndexScroll(
+            current.items.lastIndex,
+            request.animated,
+            "end",
+            1.0,
+            0.0,
+          )
+        }
+        true
+      }
+    }
+  }
+
+  private fun performIndexScroll(
+    index: Int,
+    animated: Boolean,
+    alignment: String,
+    requestedViewPosition: Double,
+    viewOffset: Double,
+  ) {
+    val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+    val visibleView = manager.findViewByPosition(index)
+    val viewPosition = if (alignment == "nearest") {
+      val viewportStart = if (manager.orientation == RecyclerView.VERTICAL) {
+        manager.paddingTop
+      } else {
+        manager.paddingLeft
+      }
+      val viewportEnd = if (manager.orientation == RecyclerView.VERTICAL) {
+        manager.height - manager.paddingBottom
+      } else {
+        manager.width - manager.paddingRight
+      }
+      if (visibleView != null) {
+        val itemStart = decoratedStart(manager, visibleView)
+        val itemEnd = decoratedEnd(manager, visibleView)
+        when {
+          itemStart < viewportStart -> 0.0
+          itemEnd > viewportEnd -> 1.0
+          else -> return
+        }
+      } else {
+        val firstVisible = manager.findFirstVisibleItemPosition()
+        if (firstVisible != RecyclerView.NO_POSITION && index < firstVisible) 0.0 else 1.0
+      }
+    } else {
+      requestedViewPosition.coerceIn(0.0, 1.0)
+    }
+    val offsetPx = (viewOffset * density).roundToInt()
+
+    if (visibleView != null) {
+      alignVisibleView(manager, visibleView, viewPosition, offsetPx, animated)
+      return
+    }
+    if (animated) {
+      val smoothScroller = object : LinearSmoothScroller(context) {
+        override fun getVerticalSnapPreference(): Int = SNAP_TO_START
+        override fun getHorizontalSnapPreference(): Int = SNAP_TO_START
+
+        override fun calculateDyToMakeVisible(view: View, snapPreference: Int): Int {
+          if (manager.orientation != RecyclerView.VERTICAL) return 0
+          return smoothAlignmentDelta(manager, view, viewPosition, offsetPx)
+        }
+
+        override fun calculateDxToMakeVisible(view: View, snapPreference: Int): Int {
+          if (manager.orientation != RecyclerView.HORIZONTAL) return 0
+          return smoothAlignmentDelta(manager, view, viewPosition, offsetPx)
+        }
+      }
+      smoothScroller.targetPosition = index
+      manager.startSmoothScroll(smoothScroller)
+      return
+    }
+
+    val provisionalOffset = (viewPosition * viewportLength(manager)).roundToInt() + offsetPx
+    manager.scrollToPositionWithOffset(index, provisionalOffset)
+    relayoutRecyclerView()
+    alignAfterLayout(index, viewPosition, offsetPx)
+  }
+
+  private fun performOffsetScroll(offset: Double, animated: Boolean) {
+    val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+    val target = (offset * density).roundToInt().coerceAtLeast(0)
+    if (!animated) {
+      recyclerView.stopScroll()
+      manager.scrollToPositionWithOffset(0, -target)
+      relayoutRecyclerView()
+      return
+    }
+    if (target == 0) {
+      recyclerView.smoothScrollToPosition(0)
+      return
+    }
+    val currentOffset = if (manager.orientation == RecyclerView.VERTICAL) {
+      recyclerView.computeVerticalScrollOffset()
+    } else {
+      recyclerView.computeHorizontalScrollOffset()
+    }
+    val delta = target - currentOffset
+    if (manager.orientation == RecyclerView.VERTICAL) {
+      recyclerView.smoothScrollBy(0, delta)
+    } else {
+      recyclerView.smoothScrollBy(delta, 0)
+    }
+  }
+
+  private fun alignAfterLayout(
+    index: Int,
+    viewPosition: Double,
+    viewOffset: Int,
+    attemptsRemaining: Int = 2,
+  ) {
+    recyclerView.post {
+      val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return@post
+      val view = manager.findViewByPosition(index)
+      if (view == null) {
+        if (attemptsRemaining > 0) {
+          alignAfterLayout(index, viewPosition, viewOffset, attemptsRemaining - 1)
+        }
+        return@post
+      }
+      alignVisibleView(manager, view, viewPosition, viewOffset, false)
+    }
+  }
+
+  private fun alignVisibleView(
+    manager: LinearLayoutManager,
+    view: View,
+    viewPosition: Double,
+    viewOffset: Int,
+    animated: Boolean,
+  ) {
+    val itemStart = decoratedStart(manager, view)
+    val itemLength = decoratedEnd(manager, view) - itemStart
+    val viewportStart = if (manager.orientation == RecyclerView.VERTICAL) {
+      manager.paddingTop
+    } else {
+      manager.paddingLeft
+    }
+    val targetStart = viewportStart +
+      (viewPosition * (viewportLength(manager) - itemLength).coerceAtLeast(0)).roundToInt() +
+      viewOffset
+    val delta = itemStart - targetStart
+    if (manager.orientation == RecyclerView.VERTICAL) {
+      if (animated) recyclerView.smoothScrollBy(0, delta) else recyclerView.scrollBy(0, delta)
+    } else {
+      if (animated) recyclerView.smoothScrollBy(delta, 0) else recyclerView.scrollBy(delta, 0)
+    }
+  }
+
+  private fun smoothAlignmentDelta(
+    manager: LinearLayoutManager,
+    view: View,
+    viewPosition: Double,
+    viewOffset: Int,
+  ): Int {
+    val itemStart = decoratedStart(manager, view)
+    val itemLength = decoratedEnd(manager, view) - itemStart
+    val viewportStart = if (manager.orientation == RecyclerView.VERTICAL) {
+      manager.paddingTop
+    } else {
+      manager.paddingLeft
+    }
+    val targetStart = viewportStart +
+      (viewPosition * (viewportLength(manager) - itemLength).coerceAtLeast(0)).roundToInt() +
+      viewOffset
+    return targetStart - itemStart
+  }
+
+  private fun decoratedStart(manager: LinearLayoutManager, view: View): Int =
+    if (manager.orientation == RecyclerView.VERTICAL) {
+      manager.getDecoratedTop(view)
+    } else {
+      manager.getDecoratedLeft(view)
+    }
+
+  private fun decoratedEnd(manager: LinearLayoutManager, view: View): Int =
+    if (manager.orientation == RecyclerView.VERTICAL) {
+      manager.getDecoratedBottom(view)
+    } else {
+      manager.getDecoratedRight(view)
+    }
+
+  private fun viewportLength(manager: LinearLayoutManager): Int =
+    if (manager.orientation == RecyclerView.VERTICAL) {
+      manager.height - manager.paddingTop - manager.paddingBottom
+    } else {
+      manager.width - manager.paddingLeft - manager.paddingRight
+    }
+
+  fun setRefreshing(refreshing: Boolean) {
+    refreshLayout.isRefreshing = refreshing
+    config = config?.copy(refreshing = refreshing)
+  }
+
+  fun setActionAnchorState(stateJson: String) {
+    val state = try {
+      JSONObject(stateJson)
+    } catch (_: Exception) {
+      return
+    }
+    val anchor = actionAnchor ?: return
+    if (state.optString("token") != anchor.token || !state.has("open")) return
+    if (!state.optBoolean("open")) {
+      val sourceView = anchor.sourceView.get()
+      if (state.optBoolean("restoreFocus") && isActionAnchorValid(anchor) && sourceView != null) {
+        sourceView.requestFocus()
+        sourceView.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED)
+      }
+      actionAnchor = null
+      return
+    }
+    val invalidatedReason = anchor.invalidatedReason
+    if (invalidatedReason != null) {
+      emitActionAnchorInvalidated(anchor, invalidatedReason)
+    } else if (isActionAnchorValid(anchor)) {
+      anchor.open = true
+    } else {
+      emitActionAnchorInvalidated(anchor, "rebind")
+    }
+  }
+
+  fun dispose() {
+    if (disposed) return
+    invalidateActionAnchor("destroy")
+    actionAnchor = null
+    disposed = true
+    pendingScrollRequest = null
+    visibleEventScheduled = false
+    reorderTouchHandler?.removeCallbacksAndMessages(null)
+    reorderTouchHandler = null
+    reorderTouchListener?.let(recyclerView::removeOnItemTouchListener)
+    reorderTouchListener = null
+    recyclerView.removeOnItemTouchListener(pagerGestureTouchListener)
+    itemTouchHelper?.attachToRecyclerView(null)
+    itemTouchHelper = null
+    footerView.recycle()
+    footerView.dispose()
+    recyclerView.swapAdapter(null, false)
+    adapter.dispose()
+  }
+
+  private fun updateLayout(next: NativeListConfig) {
+    val orientation = if (next.orientation == "horizontal") RecyclerView.HORIZONTAL else RecyclerView.VERTICAL
+    layoutManager.orientation = orientation
+    layoutManager.spanCount = if (next.layout == "grid") next.gridColumns else 1
+    layoutManager.spanSizeLookup.invalidateSpanIndexCache()
+    val defaultPadding = next.contentPadding
+    val horizontalPadding = next.contentPaddingHorizontal ?: defaultPadding
+    val topPadding = next.contentPaddingTop ?: defaultPadding
+    val bottomPadding = next.contentPaddingBottom ?: defaultPadding
+    // OneKey patch: the section index overlays rows and keeps only an accessory-safe inset.
+    val indexGutter = if (sectionIndexEntries.isEmpty()) 0 else SECTION_INDEX_CONTENT_INSET_DP
+    recyclerView.setPaddingRelative(
+      dp(horizontalPadding),
+      dp(topPadding),
+      dp(horizontalPadding + indexGutter),
+      dp(bottomPadding),
+    )
+    recyclerView.clipToPadding = false
+    recyclerView.isVerticalScrollBarEnabled = sectionIndexEntries.isEmpty()
+
+    spacingDecoration?.let(recyclerView::removeItemDecoration)
+    spacingDecoration = ItemSpacingDecoration(dp(next.itemSpacing), next.itemSpacing, density).also(recyclerView::addItemDecoration)
+    stickyDecoration?.let(recyclerView::removeItemDecoration)
+    stickyDecoration = if (next.stickyHeaders && orientation == RecyclerView.VERTICAL) {
+      StickySectionHeaderDecoration(adapter, context, next.theme, density).also(recyclerView::addItemDecoration)
+    } else null
+  }
+
+  private fun configureSectionIndex(next: NativeListConfig) {
+    val previousKey = sectionIndexView.activeIndex?.let { sectionIndexEntries.getOrNull(it) }?.key
+    finishSectionIndexInteraction(immediately = true)
+    val enabled = next.sectionIndexEnabled &&
+      next.layout == "sectioned" &&
+      next.orientation != "horizontal"
+    sectionIndexEntries = if (enabled) {
+      next.items.mapIndexedNotNull { position, item ->
+        if (item.type != "sectionHeader") return@mapIndexedNotNull null
+        val title = item.json.optString("indexTitle")
+        if (title.isEmpty()) null else NativeListSectionIndexEntry(item.key, title, position)
+      }
+    } else {
+      emptyList()
+    }
+    sectionIndexHapticsEnabled = next.sectionIndexHapticsEnabled
+    sectionIndexView.configure(
+      sectionIndexEntries.map { it.title },
+      themeColor(next.theme, "secondaryText", "#646464"),
+      themeColor(next.theme, "accent", "#108303"),
+      themeColor(next.theme, "inverseText", "#FCFCFC"),
+    )
+    sectionIndexView.visibility = if (sectionIndexEntries.isEmpty()) GONE else VISIBLE
+    sectionIndexPreview.setTextColor(themeColor(next.theme, "inverseText", "#FCFCFC"))
+    sectionIndexPreview.background = GradientDrawable().apply {
+      setColor(themeColor(next.theme, "inverseBackground", "#202020"))
+      cornerRadius = dp(14).toFloat()
+    }
+    sectionIndexView.setActiveIndex(
+      previousKey?.let { key -> sectionIndexEntries.indexOfFirst { it.key == key }.takeIf { it >= 0 } },
+    )
+  }
+
+  private fun selectSectionIndex(index: Int, interacting: Boolean) {
+    val entry = sectionIndexEntries.getOrNull(index) ?: return
+    val changed = sectionIndexView.activeIndex != index
+    sectionIndexScrubbing = interacting
+    sectionIndexProgrammaticScroll = true
+    sectionIndexView.setActiveIndex(index)
+    recyclerView.stopScroll()
+    scrollToIndex(entry.position, animated = false, alignment = "start")
+    recyclerView.post {
+      sectionIndexProgrammaticScroll = false
+      syncSectionIndexToVisibleRows()
+    }
+    if (interacting) {
+      sectionIndexPreview.animate().cancel()
+      sectionIndexPreview.text = entry.title
+      sectionIndexPreview.visibility = VISIBLE
+      sectionIndexPreview.alpha = 1f
+      if (changed && sectionIndexHapticsEnabled) {
+        sectionIndexView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+      }
+    }
+  }
+
+  private fun finishSectionIndexInteraction(immediately: Boolean = false) {
+    sectionIndexScrubbing = false
+    if (immediately) sectionIndexProgrammaticScroll = false
+    syncSectionIndexToVisibleRows()
+    sectionIndexPreview.animate().cancel()
+    if (immediately) {
+      sectionIndexPreview.alpha = 0f
+      sectionIndexPreview.visibility = GONE
+    } else {
+      sectionIndexPreview.animate()
+        .alpha(0f)
+        .setDuration(150)
+        .withEndAction { sectionIndexPreview.visibility = GONE }
+        .start()
+    }
+  }
+
+  private fun syncSectionIndexToVisibleRows() {
+    if (sectionIndexScrubbing || sectionIndexProgrammaticScroll || sectionIndexEntries.isEmpty()) return
+    val firstVisible = layoutManager.findFirstVisibleItemPosition()
+    if (firstVisible == RecyclerView.NO_POSITION) return
+    sectionIndexView.setActiveIndex(
+      sectionIndexEntries.indexOfLast { it.position <= firstVisible }.takeIf { it >= 0 },
+    )
+  }
+
+  private fun themeColor(theme: JSONObject?, key: String, fallback: String): Int = try {
+    parseNativeListColor(theme?.optString(key)?.takeIf(String::isNotEmpty) ?: fallback)
+  } catch (_: IllegalArgumentException) {
+    parseNativeListColor(fallback)
+  }
+
+  private fun bindFooter(next: NativeListConfig) {
+    val footer = next.fixedFooter
+    if (footer == null) {
+      footerView.visibility = GONE
+      footerView.recycle()
+    } else {
+      footerView.visibility = VISIBLE
+      footerView.bind(
+        footer,
+        next.theme,
+        next.layout,
+        "vertical",
+        null,
+        next.selectedKeys.contains(footer.key),
+        ::resolveCheckboxState,
+        useSourceScale = usesSelectorSourceScale,
+      )
+    }
+  }
+
+  private fun handleRowPress(item: NativeListItem, origin: NativeListActionOrigin) {
+    val current = config ?: return
+    if (current.rowPressToggles && item.isSelectable && current.selectionMode != "none") {
+      updateSelection(NativeSelectionTarget("row", item.key), item.key)
+    } else {
+      val actionKey = when {
+        item.type == "action" -> item.json.optString("actionKey")
+        item.type == "system" && item.json.optString("variant") == "retry" -> item.json.optString("actionKey")
+        else -> "press"
+      }
+      val payload = JSONObject()
+        .put("rowKey", item.key)
+        .put("actionKey", actionKey)
+      item.sectionKey?.let { payload.put("sectionKey", it) }
+      createActionAnchor(origin)?.let { payload.put("anchor", it) }
+      emit(ROW_ACTION, payload)
+    }
+  }
+
+  private fun handleAction(
+    item: NativeListItem,
+    actionKey: String,
+    target: NativeSelectionTarget?,
+    origin: NativeListActionOrigin?,
+  ) {
+    if (item.json.optBoolean("disabled", false)) return
+    if (target != null && config?.selectionMode != "none") {
+      updateSelection(target, item.key)
+      return
+    }
+    val payload = JSONObject()
+      .put("rowKey", item.key)
+      .put("actionKey", actionKey)
+    item.sectionKey?.let { payload.put("sectionKey", it) }
+    origin?.let(::createActionAnchor)?.let { payload.put("anchor", it) }
+    emit(ROW_ACTION, payload)
+  }
+
+  private fun createActionAnchor(origin: NativeListActionOrigin): JSONObject? {
+    if (!isOriginValid(origin)) return null
+    invalidateActionAnchor("rebind")
+    actionAnchorCounter += 1
+    val generation = config?.generation ?: 0
+    val token = "$actionAnchorInstanceId:$generation:$actionAnchorCounter:${origin.bindingEpoch}"
+    val location = IntArray(2)
+    origin.sourceView.getLocationInWindow(location)
+    val record = ActionAnchorRecord(token, origin)
+    actionAnchor = record
+    // OneKey patch: selector menus anchor to the glyph slot, not its expanded press target.
+    val anchorInset = origin.anchorInsetPixels
+    return JSONObject()
+      .put("token", token)
+      .put(
+        "windowRect",
+        JSONObject()
+          .put("x", (location[0] + anchorInset) / density)
+          .put("y", (location[1] + anchorInset) / density)
+          .put("width", (origin.sourceView.width - anchorInset * 2) / density)
+          .put("height", (origin.sourceView.height - anchorInset * 2) / density),
+      )
+      .put("source", origin.source)
+      .put("generation", generation)
+      .put("layoutDirection", if (origin.sourceView.layoutDirection == LAYOUT_DIRECTION_RTL) "rtl" else "ltr")
+      .also { anchor -> origin.slot?.let { anchor.put("slot", it) } }
+  }
+
+  private fun isOriginValid(origin: NativeListActionOrigin): Boolean =
+    origin.ownerRowView.bindingEpoch == origin.bindingEpoch &&
+      origin.sourceView.isAttachedToWindow &&
+      isDescendantOf(origin.sourceView, origin.ownerRowView)
+
+  private fun isActionAnchorValid(anchor: ActionAnchorRecord): Boolean {
+    if (anchor.invalidatedReason != null) return false
+    val sourceView = anchor.sourceView.get() ?: return false
+    val ownerRowView = anchor.ownerRowView.get() ?: return false
+    return ownerRowView.bindingEpoch == anchor.bindingEpoch &&
+      sourceView.isAttachedToWindow &&
+      isDescendantOf(sourceView, ownerRowView)
+  }
+
+  private fun isDescendantOf(view: View, ancestor: View): Boolean {
+    var current: Any? = view
+    while (current is View) {
+      if (current === ancestor) return true
+      current = current.parent
+    }
+    return false
+  }
+
+  private fun handleBindingInvalidated(row: NativeListRowView, epoch: Long) {
+    val anchor = actionAnchor ?: return
+    if (anchor.ownerRowView.get() === row && anchor.bindingEpoch == epoch) {
+      invalidateActionAnchor("rebind")
+    }
+  }
+
+  private fun invalidateActionAnchor(reason: String) {
+    val anchor = actionAnchor ?: return
+    if (anchor.invalidatedReason != null) return
+    anchor.invalidatedReason = reason
+    if (anchor.open) emitActionAnchorInvalidated(anchor, reason)
+  }
+
+  private fun emitActionAnchorInvalidated(anchor: ActionAnchorRecord, reason: String) {
+    if (actionAnchor !== anchor) return
+    actionAnchor = null
+    emit(
+      ACTION_ANCHOR_INVALIDATED,
+      JSONObject().put("token", anchor.token).put("reason", reason),
+    )
+  }
+
+  private fun updateSelection(target: NativeSelectionTarget, sourceKey: String) {
+    val current = config ?: return
+    if (current.selectionMode == "none") return
+    val targets = selectionKeys(target, current.items)
+    if (targets.isEmpty()) return
+    val before = LinkedHashSet(current.selectedKeys)
+    val after = LinkedHashSet(before)
+    if (current.selectionMode == "single") {
+      val key = targets.first()
+      after.clear()
+      if (!before.contains(key)) after.add(key)
+    } else {
+      val allSelected = targets.all(before::contains)
+      targets.forEach { if (allSelected) after.remove(it) else after.add(it) }
+    }
+    if (before == after) return
+    config = current.copy(selectedKeys = after)
+    adapter.selectedKeys = after
+    notifySelectionChanged()
+
+    val added = after.filterNot(before::contains)
+    val removed = before.filterNot(after::contains)
+    val payload = JSONObject()
+      .put("addedKeys", JSONArray(added))
+      .put("removedKeys", JSONArray(removed))
+      .put("source", target.scope)
+      .put("sourceKey", target.key ?: sourceKey)
+    emit(SELECTION_DELTA, payload)
+  }
+
+  private fun selectionKeys(
+    target: NativeSelectionTarget,
+    items: List<NativeListItem>,
+  ): List<String> = when (target.scope) {
+    "row" -> items.filter { it.key == target.key && it.isSelectable }.map { it.key }
+    "section" -> items.filter { it.sectionKey == target.key && it.isSelectable }.map { it.key }
+    "list" -> items.filter { it.isSelectable }.map { it.key }
+    else -> emptyList()
+  }
+
+  private fun resolveCheckboxState(
+    item: NativeListItem,
+    target: NativeSelectionTarget?,
+    fallback: String,
+  ): String {
+    val current = config ?: return fallback
+    val resolvedTarget = target ?: NativeSelectionTarget("row", item.key)
+    val keys = selectionKeys(resolvedTarget, current.items)
+    if (keys.isEmpty()) return fallback
+    val count = keys.count(current.selectedKeys::contains)
+    return when {
+      count == 0 -> "unchecked"
+      count == keys.size -> "checked"
+      else -> "indeterminate"
+    }
+  }
+
+  private fun notifySelectionChanged() {
+    adapter.notifyItemRangeChanged(0, adapter.itemCount, SELECTION_PAYLOAD)
+    recyclerView.post { bindVisibleSelection() }
+    bindFooterSelection()
+  }
+
+  private fun bindVisibleSelection(changedSummaryKeys: Set<String> = emptySet()) {
+    val current = config ?: return
+    for (index in 0 until recyclerView.childCount) {
+      val holder = recyclerView.getChildViewHolder(recyclerView.getChildAt(index)) as? NativeListViewHolder
+        ?: continue
+      val boundKey = (holder.rowView.tag as? NativeListItem)?.key ?: continue
+      val position = adapter.positionOfKey(boundKey)
+      val item = adapter.itemAt(position) ?: continue
+      if (item.key in changedSummaryKeys) holder.rowView.bindStableSummary(item)
+      holder.rowView.bindSelection(
+        item,
+        current.theme,
+        current.layout,
+        position,
+        // OneKey patch: match the full binder when the snapshot carries explicit row selection.
+        // current.selectedKeys.contains(item.key),
+        item.json.optBoolean("selected", false) || current.selectedKeys.contains(item.key),
+        ::resolveCheckboxState,
+      )
+    }
+  }
+
+  private fun bindFooterSelection() {
+    config?.let { current ->
+      current.fixedFooter?.let { footer ->
+        footerView.bindSelection(
+          footer,
+          current.theme,
+          current.layout,
+          null,
+          current.selectedKeys.contains(footer.key),
+          ::resolveCheckboxState,
+        )
+      }
+    }
+  }
+
+  private fun updateReordering(next: NativeListConfig) {
+    reorderTouchHandler?.removeCallbacksAndMessages(null)
+    reorderTouchHandler = null
+    reorderTouchListener?.let(recyclerView::removeOnItemTouchListener)
+    reorderTouchListener = null
+    itemTouchHelper?.attachToRecyclerView(null)
+    itemTouchHelper = null
+    adapter.cancelReorder()
+    if (!next.reorderable) return
+    val callback = object : ItemTouchHelper.SimpleCallback(
+      ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT,
+      0,
+    ) {
+      private var compactWalletGroupDrag = false
+      private var compactWalletGroupTop = Float.NaN
+
+      override fun isLongPressDragEnabled(): Boolean = false
+
+      override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+        super.onSelectedChanged(viewHolder, actionState)
+        if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+          val position = viewHolder?.bindingAdapterPosition ?: RecyclerView.NO_POSITION
+          val item = adapter.itemAt(position)
+          reorderPlaceholderDecoration.position = position
+          reorderPlaceholderDecoration.color = reorderActiveBackground(next.theme)
+          compactWalletGroupDrag = item?.type == "walletGroup" && viewHolder != null
+          recyclerView.invalidate()
+          (viewHolder as? NativeListViewHolder)?.rowView?.setReorderActive(true)
+          if (compactWalletGroupDrag && viewHolder != null) {
+            recyclerView.postOnAnimation {
+              if (viewHolder.itemView.isAttachedToWindow) {
+                relayoutRecyclerViewImmediately()
+              }
+            }
+          }
+        }
+      }
+
+      override fun getMovementFlags(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder): Int {
+        val item = adapter.itemAt(viewHolder.bindingAdapterPosition)
+        if (item == null || !item.isReorderable) return makeMovementFlags(0, 0)
+        val dragFlags = if (next.orientation == "horizontal") ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT else ItemTouchHelper.UP or ItemTouchHelper.DOWN
+        return makeMovementFlags(dragFlags, 0)
+      }
+
+      override fun onMove(
+        recyclerView: RecyclerView,
+        source: RecyclerView.ViewHolder,
+        target: RecyclerView.ViewHolder,
+      ): Boolean {
+        val from = source.bindingAdapterPosition
+        val to = target.bindingAdapterPosition
+        val base = pendingReorder ?: adapter.currentList
+        val fromItem = base.getOrNull(from) ?: return false
+        val toItem = base.getOrNull(to) ?: return false
+        if (!fromItem.isReorderable || !toItem.isReorderable || fromItem.sectionKey != toItem.sectionKey) return false
+        val crossedPosition = dragTo != to
+        if (dragFrom == RecyclerView.NO_POSITION) dragFrom = from
+        dragTo = to
+        if (crossedPosition) {
+          recyclerView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        }
+        val displacedView = target.itemView
+        prepareDisplacedReorderAnimation(displacedView)
+        val reordered = adapter.moveReordered(from, to) ?: return false
+        pendingReorder = reordered
+        reorderPlaceholderDecoration.position = to
+        recyclerView.invalidate()
+        recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
+        return true
+      }
+
+      override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
+
+      override fun onChildDraw(
+        canvas: Canvas,
+        recyclerView: RecyclerView,
+        viewHolder: RecyclerView.ViewHolder,
+        dX: Float,
+        dY: Float,
+        actionState: Int,
+        isCurrentlyActive: Boolean,
+      ) {
+        if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+          if (compactWalletGroupDrag) {
+            compactWalletGroupTop = viewHolder.itemView.top + dY
+          }
+        }
+        super.onChildDraw(canvas, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive)
+      }
+
+      override fun interpolateOutOfBoundsScroll(
+        recyclerView: RecyclerView,
+        viewSize: Int,
+        viewSizeOutOfBounds: Int,
+        totalSize: Int,
+        msSinceStartScroll: Long,
+      ): Int {
+        if (!compactWalletGroupDrag) {
+          return super.interpolateOutOfBoundsScroll(
+            recyclerView,
+            viewSize,
+            viewSizeOutOfBounds,
+            totalSize,
+            msSinceStartScroll,
+          )
+        }
+        if (compactWalletGroupTop.isNaN()) return 0
+        val compactHeight = dp(68)
+        val compactTop = compactWalletGroupTop.roundToInt()
+        val compactOutOfBounds = when {
+          compactTop < recyclerView.paddingTop -> compactTop - recyclerView.paddingTop
+          compactTop + compactHeight > recyclerView.height - recyclerView.paddingBottom ->
+            compactTop + compactHeight - (recyclerView.height - recyclerView.paddingBottom)
+          else -> 0
+        }
+        if (compactOutOfBounds == 0) return 0
+        return super.interpolateOutOfBoundsScroll(
+          recyclerView,
+          compactHeight,
+          compactOutOfBounds,
+          totalSize,
+          msSinceStartScroll,
+        )
+      }
+
+      override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+        val rowView = (viewHolder as? NativeListViewHolder)?.rowView
+        val draggedGroupKey = (rowView?.tag as? NativeListItem)?.key
+        super.clearView(recyclerView, viewHolder)
+        val wasCompactWalletGroupDrag = compactWalletGroupDrag
+        if (!wasCompactWalletGroupDrag) rowView?.setReorderActive(false)
+        reorderPlaceholderDecoration.position = RecyclerView.NO_POSITION
+        compactWalletGroupDrag = false
+        compactWalletGroupTop = Float.NaN
+        recyclerView.invalidate()
+        val from = dragFrom
+        val to = dragTo
+        val reordered = pendingReorder
+        var reorderPayload: JSONObject? = null
+        val destinationPosition = if (to != RecyclerView.NO_POSITION) {
+          to
+        } else {
+          viewHolder.bindingAdapterPosition
+        }
+        val finishCompactWalletGroup = {
+          if (wasCompactWalletGroupDrag) {
+            recyclerView.postOnAnimation {
+              relayoutRecyclerViewImmediately()
+              val resolvedPosition = draggedGroupKey
+                ?.let(adapter::positionOfKey)
+                ?.takeIf { it != RecyclerView.NO_POSITION }
+                ?: destinationPosition
+              val destinationRow = recyclerView
+                .findViewHolderForAdapterPosition(resolvedPosition)
+                ?.let { it as? NativeListViewHolder }
+                ?.rowView
+              val groupRow = destinationRow?.takeIf {
+                (it.tag as? NativeListItem)?.type == "walletGroup"
+              } ?: rowView
+              groupRow?.finishWalletGroupReorder(
+                REORDER_SPRING_DURATION_MS,
+                reorderSpringInterpolator,
+              ) {
+                recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
+              }
+            }
+          }
+        }
+        if (from != RecyclerView.NO_POSITION && to != RecyclerView.NO_POSITION && from != to && reordered != null) {
+          val moved = reordered.getOrNull(to)
+          if (moved != null) {
+            config = config?.copy(items = reordered)
+            val payload = JSONObject()
+              .put("key", moved.key)
+              .put("fromIndex", from)
+              .put("toIndex", to)
+            reordered.getOrNull(to - 1)?.let { payload.put("beforeKey", it.key) }
+            reordered.getOrNull(to + 1)?.let { payload.put("afterKey", it.key) }
+            reorderPayload = payload
+            adapter.commitReordered(reordered) {
+              finishCompactWalletGroup()
+              if (!wasCompactWalletGroupDrag) {
+                recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
+              }
+            }
+          }
+        } else {
+          adapter.cancelReorder()
+          finishCompactWalletGroup()
+        }
+        dragFrom = RecyclerView.NO_POSITION
+        dragTo = RecyclerView.NO_POSITION
+        pendingReorder = null
+        // The gesture is committed now; a later snapshot may supersede its async diff.
+        reorderPayload?.let { emit(REORDER, it) }
+      }
+    }
+    itemTouchHelper = ItemTouchHelper(callback).also { it.attachToRecyclerView(recyclerView) }
+    val handler = Handler(Looper.getMainLooper())
+    reorderTouchHandler = handler
+    val movementLimit = dp(REORDER_ALLOWABLE_MOVEMENT_DP).toFloat()
+    reorderTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
+      private var candidate: RecyclerView.ViewHolder? = null
+      private var downX = 0f
+      private var downY = 0f
+      private var dragStarted = false
+      private val startDrag = Runnable {
+        val holder = candidate ?: return@Runnable
+        val position = holder.bindingAdapterPosition
+        val item = adapter.itemAt(position) ?: return@Runnable
+        if (!item.isReorderable) return@Runnable
+        if (item.type != "walletGroup" && recyclerView.isLayoutRequested) {
+          relayoutRecyclerViewImmediately()
+        }
+        dragStarted = true
+        beginDrag(holder)
+      }
+
+      private fun beginDrag(holder: RecyclerView.ViewHolder) {
+        if (candidate !== holder || !holder.itemView.isAttachedToWindow) return
+        itemTouchHelper?.startDrag(holder)
+        holder.itemView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+      }
+
+      private fun cancelPending() {
+        handler.removeCallbacks(startDrag)
+        candidate = null
+      }
+
+      override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+          MotionEvent.ACTION_DOWN -> {
+            cancelPending()
+            dragStarted = false
+            downX = event.x
+            downY = event.y
+            val child = recyclerView.findChildViewUnder(event.x, event.y)
+            candidate = child
+              ?.let(recyclerView::getChildViewHolder)
+              ?.takeIf { holder ->
+                adapter.itemAt(holder.bindingAdapterPosition)?.let { item ->
+                  // OneKey patch: any wallet group member can initiate the group drag.
+                  // val holderLocation = IntArray(2)
+                  // holder.itemView.getLocationOnScreen(holderLocation)
+                  // item.isReorderable && (
+                  // item.type != "walletGroup" ||
+                  // event.rawY in holderLocation[1].toFloat()..(holderLocation[1] + dp(68)).toFloat()
+                  // )
+                  item.isReorderable
+                } == true
+              }
+            if (candidate != null) handler.postDelayed(startDrag, REORDER_LONG_PRESS_MS)
+          }
+          MotionEvent.ACTION_MOVE -> if (
+            !dragStarted && hypot(event.x - downX, event.y - downY) > movementLimit
+          ) {
+            cancelPending()
+          }
+          MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> cancelPending()
+        }
+        return false
+      }
+
+    }.also(recyclerView::addOnItemTouchListener)
+  }
+
+  private fun prepareDisplacedReorderAnimation(view: View) {
+    val previousX = view.x
+    val previousY = view.y
+    view.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+      override fun onLayoutChange(
+        changedView: View,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        oldLeft: Int,
+        oldTop: Int,
+        oldRight: Int,
+        oldBottom: Int,
+      ) {
+        changedView.removeOnLayoutChangeListener(this)
+        val deltaX = previousX - changedView.x
+        val deltaY = previousY - changedView.y
+        if (deltaX == 0f && deltaY == 0f) return
+        changedView.animate().cancel()
+        changedView.translationX = deltaX
+        changedView.translationY = deltaY
+        changedView.animate()
+          .translationX(0f)
+          .translationY(0f)
+          .setDuration(REORDER_SPRING_DURATION_MS)
+          .setInterpolator(reorderSpringInterpolator)
+          .start()
+      }
+    })
+  }
+
+  private fun reorderActiveBackground(theme: JSONObject?): Int = try {
+    parseNativeListColor(
+      theme?.optString("rowPressedBackground", "#00000017") ?: "#00000017",
+    )
+  } catch (_: IllegalArgumentException) {
+    parseNativeListColor("#00000017")
+  }
+
+  private fun scheduleVisibleEvent() {
+    if (visibleEventScheduled) return
+    visibleEventScheduled = true
+    Choreographer.getInstance().postFrameCallback {
+      visibleEventScheduled = false
+      val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return@postFrameCallback
+      val first = manager.findFirstVisibleItemPosition()
+      val last = manager.findLastVisibleItemPosition()
+      val firstKey = adapter.itemAt(first)?.key
+      val lastKey = adapter.itemAt(last)?.key
+      val signature = "$first:$last:${firstKey.orEmpty()}:${lastKey.orEmpty()}"
+      if (signature == lastVisibleRangeSignature) return@postFrameCallback
+      lastVisibleRangeSignature = signature
+      val payload = JSONObject()
+        .put("firstIndex", first)
+        .put("lastIndex", last)
+      firstKey?.let { payload.put("firstKey", it) }
+      lastKey?.let { payload.put("lastKey", it) }
+      emit(VISIBLE_RANGE_CHANGED, payload)
+    }
+  }
+
+  private fun checkEndReached() {
+    val current = config ?: return
+    if (!current.loadMore || current.generation == endReachedGeneration || adapter.itemCount == 0) return
+    val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+    val lastVisible = manager.findLastVisibleItemPosition()
+    val thresholdItems = max(1, ceil(adapter.itemCount * current.endReachedThreshold).toInt())
+    if (lastVisible >= adapter.itemCount - thresholdItems) {
+      endReachedGeneration = current.generation
+      val payload = JSONObject().put("generation", current.generation)
+      adapter.itemAt(adapter.itemCount - 1)?.let { payload.put("lastKey", it.key) }
+      emit(END_REACHED, payload)
+    }
+  }
+
+  private fun emit(eventName: String, payload: JSONObject) {
+    val json = payload.toString()
+    when (eventName) {
+      ROW_ACTION -> onRowAction?.invoke(json)
+      ACTION_ANCHOR_INVALIDATED -> onActionAnchorInvalidated?.invoke(json)
+      SELECTION_DELTA -> onSelectionDelta?.invoke(json)
+      REORDER -> onReorder?.invoke(json)
+      END_REACHED -> onEndReached?.invoke(json)
+      VISIBLE_RANGE_CHANGED -> onVisibleRangeChanged?.invoke(json)
+    }
+  }
+
+  /**
+   * React Native owns the outer view's layout pass and does not always honor a
+   * nested RecyclerView's requestLayout after the first mount. Re-run this
+   * already-sized host once after a committed data update so the native rows
+   * are measured and rebound without rebuilding the adapter.
+   */
+  private fun relayoutContents() {
+    post {
+      if (disposed || width <= 0 || height <= 0) return@post
+      forceLayout()
+      measure(
+        MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
+      )
+      layout(left, top, right, bottom)
+    }
+  }
+
+  private fun relayoutRecyclerView() {
+    recyclerView.post {
+      if (disposed || recyclerView.width <= 0 || recyclerView.height <= 0) return@post
+      recyclerView.forceLayout()
+      recyclerView.measure(
+        MeasureSpec.makeMeasureSpec(recyclerView.width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(recyclerView.height, MeasureSpec.EXACTLY),
+      )
+      recyclerView.layout(
+        recyclerView.left,
+        recyclerView.top,
+        recyclerView.right,
+        recyclerView.bottom,
+      )
+    }
+  }
+
+  private fun relayoutRecyclerViewImmediately() {
+    if (disposed || recyclerView.isComputingLayout || recyclerView.width <= 0 || recyclerView.height <= 0) {
+      return
+    }
+    recyclerView.forceLayout()
+    recyclerView.measure(
+      MeasureSpec.makeMeasureSpec(recyclerView.width, MeasureSpec.EXACTLY),
+      MeasureSpec.makeMeasureSpec(recyclerView.height, MeasureSpec.EXACTLY),
+    )
+    recyclerView.layout(
+      recyclerView.left,
+      recyclerView.top,
+      recyclerView.right,
+      recyclerView.bottom,
+    )
+  }
+
+  private fun dp(value: Int): Int = if (usesSelectorSourceScale) (value * resources.displayMetrics.density).roundToInt() else NativeListScale.dp(resources, value)
+
+  companion object {
+    private const val SECTION_INDEX_CONTENT_INSET_DP = 16
+    private const val SECTION_INDEX_RAIL_WIDTH_DP = 32
+    private const val SECTION_INDEX_PREVIEW_SIZE_DP = 48
+    private const val SECTION_INDEX_PREVIEW_END_MARGIN_DP = 40
+    private const val REORDER_LONG_PRESS_MS = 200L
+    private const val REORDER_ALLOWABLE_MOVEMENT_DP = 10
+    private const val REORDER_PLACEHOLDER_INSET_DP = 8
+    private const val REORDER_PLACEHOLDER_RADIUS_DP = 12
+    private const val REORDER_SPRING_DAMPING = 25.0
+    private const val REORDER_SPRING_STIFFNESS = 400.0
+    private const val REORDER_SPRING_MASS = 0.4
+    private const val REORDER_SPRING_DURATION_MS = 300L
+    private const val ROW_ACTION = "rowAction"
+    private const val ACTION_ANCHOR_INVALIDATED = "actionAnchorInvalidated"
+    private const val SELECTION_DELTA = "selectionDelta"
+    private const val REORDER = "reorder"
+    private const val END_REACHED = "endReached"
+    private const val VISIBLE_RANGE_CHANGED = "visibleRangeChanged"
+  }
+}
+
+private class ReorderPlaceholderDecoration(
+  private val adapter: NativeListAdapter,
+  private val insetPx: Int,
+  private val radiusPx: Float,
+) : RecyclerView.ItemDecoration() {
+  var position: Int = RecyclerView.NO_POSITION
+  var color: Int = Color.TRANSPARENT
+  private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+  private val bounds = RectF()
+
+  override fun onDraw(canvas: Canvas, parent: RecyclerView, state: RecyclerView.State) {
+    val item = adapter.itemAt(position) ?: return
+    val isWalletSidebar =
+      item.type == "identity" && item.json.optString("presentation") == "walletSidebar"
+    if (!isWalletSidebar && item.type != "walletGroup") return
+    val view = parent.findViewHolderForAdapterPosition(position)?.itemView ?: return
+    bounds.set(
+      (view.left + insetPx).toFloat(),
+      view.top.toFloat(),
+      (view.right - insetPx).toFloat(),
+      view.bottom.toFloat(),
+    )
+    paint.color = color
+    canvas.drawRoundRect(bounds, radiusPx, radiusPx, paint)
+  }
+}
+
+private class ReorderSpringInterpolator(
+  damping: Double,
+  stiffness: Double,
+  mass: Double,
+  private val durationSeconds: Double,
+) : TimeInterpolator {
+  private val naturalFrequency = sqrt(stiffness / mass)
+  private val dampingRatio = damping / (2 * sqrt(stiffness * mass))
+  private val dampedFrequency = naturalFrequency * sqrt(1 - dampingRatio * dampingRatio)
+
+  override fun getInterpolation(input: Float): Float {
+    if (input <= 0f) return 0f
+    if (input >= 1f) return 1f
+    val time = input * durationSeconds
+    val decay = exp(-dampingRatio * naturalFrequency * time)
+    val displacement = decay * (
+      cos(dampedFrequency * time) +
+        dampingRatio * naturalFrequency / dampedFrequency * sin(dampedFrequency * time)
+      )
+    return (1 - displacement).toFloat()
+  }
+}
+
+private data class NativeListSectionIndexEntry(
+  val key: String,
+  val title: String,
+  val position: Int,
+)
+
+private class NativeListSectionIndexView(
+  context: android.content.Context,
+) : View(context) {
+  var onSelect: ((Int, Boolean) -> Unit)? = null
+  var onInteractionEnded: (() -> Unit)? = null
+  var activeIndex: Int? = null
+    private set
+  private var titles: List<String> = emptyList()
+  private var normalColor = Color.GRAY
+  private var activeColor = Color.BLACK
+  private var activeTextColor = Color.WHITE
+  private var lastTouchIndex: Int? = null
+  private val activeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+  private val normalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    textAlign = Paint.Align.CENTER
+    typeface = NativeListFonts.medium(context)
+  }
+  private val activePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    textAlign = Paint.Align.CENTER
+    typeface = NativeListFonts.semibold(context)
+  }
+
+  init {
+    isClickable = true
+    isFocusable = true
+    importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+    contentDescription = ACCESSIBILITY_LABEL
+  }
+
+  fun configure(
+    titles: List<String>,
+    normalColor: Int,
+    activeColor: Int,
+    activeTextColor: Int,
+  ) {
+    this.titles = titles
+    this.normalColor = normalColor
+    this.activeColor = activeColor
+    this.activeTextColor = activeTextColor
+    activeIndex = null
+    updateContentDescription()
+    invalidate()
+  }
+
+  fun setActiveIndex(index: Int?) {
+    if (activeIndex == index) return
+    activeIndex = index
+    updateContentDescription()
+    invalidate()
+  }
+
+  override fun onDraw(canvas: Canvas) {
+    super.onDraw(canvas)
+    if (titles.isEmpty()) return
+    val cellHeight = cellHeight()
+    val originY = (height - cellHeight * titles.size) / 2f
+    val textSize = NativeListScale.font(resources, 10f) * resources.displayMetrics.scaledDensity
+    normalPaint.color = normalColor
+    normalPaint.textSize = textSize
+    activePaint.color = activeColor
+    activePaint.textSize = textSize
+    titles.forEachIndexed { index, title ->
+      val active = index == activeIndex
+      val paint = if (active) activePaint else normalPaint
+      val centerY = originY + cellHeight * (index + 0.5f)
+      if (active && cellHeight >= NativeListScale.dp(resources, 12f)) {
+        val badgeWidth = NativeListScale.dp(resources, 20f)
+        val badgeHeight = minOf(cellHeight, NativeListScale.dp(resources, 16f))
+        activeBackgroundPaint.color = activeColor
+        canvas.drawRoundRect(
+          width / 2f - badgeWidth / 2f,
+          centerY - badgeHeight / 2f,
+          width / 2f + badgeWidth / 2f,
+          centerY + badgeHeight / 2f,
+          badgeHeight / 2f,
+          badgeHeight / 2f,
+          activeBackgroundPaint,
+        )
+      }
+      paint.color = if (active && cellHeight >= NativeListScale.dp(resources, 12f)) {
+        activeTextColor
+      } else if (active) {
+        activeColor
+      } else {
+        normalColor
+      }
+      val baseline = centerY - (paint.descent() + paint.ascent()) / 2f
+      canvas.drawText(title, width / 2f, baseline, paint)
+    }
+  }
+
+  override fun onTouchEvent(event: MotionEvent): Boolean {
+    if (titles.isEmpty() || !isEnabled) return false
+    when (event.actionMasked) {
+      MotionEvent.ACTION_DOWN -> {
+        parent?.requestDisallowInterceptTouchEvent(true)
+        lastTouchIndex = null
+        selectAt(event.y, interacting = true)
+        return true
+      }
+      MotionEvent.ACTION_MOVE -> {
+        selectAt(event.y, interacting = true)
+        return true
+      }
+      MotionEvent.ACTION_UP -> {
+        selectAt(event.y, interacting = true)
+        lastTouchIndex = null
+        parent?.requestDisallowInterceptTouchEvent(false)
+        performClick()
+        onInteractionEnded?.invoke()
+        return true
+      }
+      MotionEvent.ACTION_CANCEL -> {
+        lastTouchIndex = null
+        parent?.requestDisallowInterceptTouchEvent(false)
+        onInteractionEnded?.invoke()
+        return true
+      }
+    }
+    return super.onTouchEvent(event)
+  }
+
+  override fun performClick(): Boolean {
+    super.performClick()
+    return true
+  }
+
+  override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+    super.onInitializeAccessibilityNodeInfo(info)
+    info.className = SeekBar::class.java.name
+    info.isScrollable = titles.size > 1
+    if (titles.isNotEmpty()) {
+      info.rangeInfo = AccessibilityNodeInfo.RangeInfo.obtain(
+        AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_INT,
+        0f,
+        (titles.size - 1).toFloat(),
+        (activeIndex ?: 0).toFloat(),
+      )
+      info.addAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+      info.addAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)
+      info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS)
+    }
+  }
+
+  override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
+    if (titles.isEmpty()) return super.performAccessibilityAction(action, arguments)
+    val next = when (action) {
+      AccessibilityNodeInfo.ACTION_SCROLL_FORWARD ->
+        ((activeIndex ?: -1) + 1).coerceAtMost(titles.lastIndex)
+      AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD ->
+        ((activeIndex ?: 1) - 1).coerceAtLeast(0)
+      AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id ->
+        arguments?.getFloat(AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE)?.roundToInt()
+          ?.coerceIn(0, titles.lastIndex)
+      else -> null
+    } ?: return super.performAccessibilityAction(action, arguments)
+    select(next, interacting = false)
+    sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SELECTED)
+    return true
+  }
+
+  private fun selectAt(y: Float, interacting: Boolean) {
+    val cellHeight = cellHeight()
+    val originY = (height - cellHeight * titles.size) / 2f
+    val index = ((y - originY) / cellHeight).toInt().coerceIn(0, titles.lastIndex)
+    if (interacting && lastTouchIndex == index) return
+    lastTouchIndex = index.takeIf { interacting }
+    select(index, interacting)
+  }
+
+  private fun select(index: Int, interacting: Boolean) {
+    onSelect?.invoke(index, interacting)
+    setActiveIndex(index)
+  }
+
+  private fun cellHeight(): Float =
+    (height.toFloat() / titles.size.coerceAtLeast(1))
+      .coerceAtMost(NativeListScale.dp(resources, 16f))
+      .coerceAtLeast(1f)
+
+  private fun updateContentDescription() {
+    contentDescription = activeIndex?.let { titles.getOrNull(it) }
+      ?.let { "$ACCESSIBILITY_LABEL, $it" }
+      ?: ACCESSIBILITY_LABEL
+  }
+
+  companion object {
+    private const val ACCESSIBILITY_LABEL = "Section index"
+  }
+}
+
+private class ItemSpacingDecoration(
+  private val spacing: Int,
+  private val sourceSpacing: Int,
+  private val density: Float,
+) : RecyclerView.ItemDecoration() {
+  override fun getItemOffsets(
+    outRect: android.graphics.Rect,
+    view: View,
+    parent: RecyclerView,
+    state: RecyclerView.State,
+  ) {
+    if (spacing <= 0) return
+    val horizontal = (parent.layoutManager as? LinearLayoutManager)?.orientation == RecyclerView.HORIZONTAL
+    val item = view.tag as? NativeListItem
+    val sourceWallet = item?.type == "identity" && item.json.optString("presentation") == "walletSidebar" && item.json.has("height")
+    // OneKey patch: V1 measures the wallet and its bottom padding as one sortable row.
+    val itemSpacing = if (!horizontal && sourceWallet) {
+      val sourceHeight = item!!.json.optInt("height")
+      ((sourceHeight + sourceSpacing) * density).roundToInt() - (sourceHeight * density).roundToInt()
+    } else spacing
+    if (horizontal) outRect.right = itemSpacing else outRect.bottom = itemSpacing
+  }
+}
+
+private class StickySectionHeaderDecoration(
+  private val adapter: NativeListAdapter,
+  private val context: android.content.Context,
+  theme: JSONObject?,
+  private val density: Float,
+) : RecyclerView.ItemDecoration() {
+  private val backgroundPaint = Paint().apply {
+    color = parseColor(theme?.optString("rowBackground"), "#FFFFFF")
+  }
+  private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    color = parseColor(theme?.optString("secondaryText"), "#0000009B")
+    textSize = NativeListScale.font(context.resources, 14f) * density
+    typeface = NativeListFonts.semibold(context)
+  }
+
+  override fun onDrawOver(canvas: Canvas, parent: RecyclerView, state: RecyclerView.State) {
+    val manager = parent.layoutManager as? LinearLayoutManager ?: return
+    val first = manager.findFirstVisibleItemPosition()
+    if (first == RecyclerView.NO_POSITION) return
+    var header: NativeListItem? = null
+    for (index in first downTo 0) {
+      val candidate = adapter.itemAt(index)
+      if (candidate?.type == "sectionHeader") {
+        if (candidate.json.optString("variant") == "summary" || !candidate.json.optBoolean("sticky", true)) continue
+        header = candidate.takeIf(::isSimpleStickySectionHeader)
+        break
+      }
+    }
+    val item = header ?: return
+    // OneKey patch: a pinned selector heading must use the same text rasterization as its row.
+    textPaint.flags = if (item.usesSelectorSourceScale) Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG or Paint.LINEAR_TEXT_FLAG else Paint.ANTI_ALIAS_FLAG
+    val isHistory = item.json.optString("variant") == "history" ||
+      item.sectionKey?.startsWith("history-") == true
+    val sourceHeight = item.json.optInt("height", 36) * density
+    val height = if (item.usesSelectorSourceScale) {
+      if (item.json.optString("heightRounding") == "nearest") sourceHeight.roundToInt() else sourceHeight.toInt()
+    } else NativeListScale.dp(context.resources, if (isHistory) 16 else 36)
+    val textSize = if (item.usesSelectorSourceScale) 14f else NativeListScale.font(context.resources, if (isHistory) 12f else 14f)
+    textPaint.textSize = if (item.usesSelectorSourceScale) kotlin.math.ceil((textSize * density).toDouble()).toFloat() else textSize * density
+    val horizontalInset = if (item.usesSelectorSourceScale) ((20 * density).toInt() - parent.paddingLeft).toFloat() else NativeListScale.dp(context.resources, if (isHistory) 8 else 20).toFloat()
+    val left = parent.paddingLeft.toFloat()
+    val right = (parent.width - parent.paddingRight).toFloat()
+    canvas.drawRect(left, 0f, right, height.toFloat(), backgroundPaint)
+    val baseline = if (item.usesSelectorSourceScale) {
+      val metrics = textPaint.fontMetricsInt
+      val lineHeight = kotlin.math.ceil(20 * density.toDouble()).toInt()
+      val leading = lineHeight - (metrics.descent - metrics.ascent)
+      (height - lineHeight) / 2 - metrics.ascent + kotlin.math.ceil(leading / 2.0).toFloat()
+    } else height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
+    val value = item.json.optString("title").let { if (isHistory) it.uppercase() else it }
+    val isRightToLeft = parent.layoutDirection == View.LAYOUT_DIRECTION_RTL
+    val textWidth = if (isHistory) {
+      spacedTextWidth(value, NativeListScale.dp(context.resources, 1).toFloat())
+    } else {
+      textPaint.measureText(value)
+    }
+    val x = if (isRightToLeft) right - horizontalInset - textWidth else left + horizontalInset
+    if (isHistory) {
+      drawSpacedText(canvas, value, x, baseline, NativeListScale.dp(context.resources, 1).toFloat())
+    } else {
+      canvas.drawText(value, x, baseline, textPaint)
+    }
+  }
+
+  private fun drawSpacedText(canvas: Canvas, value: String, x: Float, baseline: Float, spacing: Float) {
+    var cursor = x
+    value.forEachIndexed { index, character ->
+      val glyph = character.toString()
+      canvas.drawText(glyph, cursor, baseline, textPaint)
+      cursor += textPaint.measureText(glyph)
+      if (index < value.lastIndex) cursor += spacing * 0.8f
+    }
+  }
+
+  private fun spacedTextWidth(value: String, spacing: Float): Float =
+    value.sumOf { textPaint.measureText(it.toString()).toDouble() }.toFloat() +
+      max(0, value.length - 1) * spacing * 0.8f
+
+  companion object {
+    private fun parseColor(value: String?, fallback: String): Int = try {
+      parseNativeListColor(if (value.isNullOrEmpty()) fallback else value)
+    } catch (_: IllegalArgumentException) {
+      parseNativeListColor(fallback)
+    }
+  }
+}
+
+internal fun isSimpleStickySectionHeader(item: NativeListItem): Boolean =
+  item.type == "sectionHeader" &&
+    item.json.optBoolean("sticky", true) &&
+    item.json.optString("variant") != "summary" &&
+    item.json.optString("value").isEmpty() &&
+    item.json.optJSONObject("checkbox") == null
+
+// OneKey patch: paint only explicitly requested backgrounds into list side padding.
+private class SelectorBackgroundDecoration(private val adapter: NativeListAdapter) : RecyclerView.ItemDecoration() {
+  private val paint = Paint()
+  override fun onDraw(canvas: Canvas, parent: RecyclerView, state: RecyclerView.State) {
+    for (index in 0 until parent.childCount) {
+      val child = parent.getChildAt(index)
+      val item = adapter.itemAt(parent.getChildAdapterPosition(child)) ?: continue
+      if (!item.json.optBoolean("backgroundFullWidth", false)) continue
+      val color = item.json.optString("backgroundColor")
+      if (color.isEmpty()) continue
+      paint.color = try { parseNativeListColor(color) } catch (_: IllegalArgumentException) { Color.TRANSPARENT }
+      val top = child.y
+      canvas.drawRect(0f, top, parent.width.toFloat(), top + child.height, paint)
+      if (item.type == "system" && item.json.optString("variant") == "warning") {
+        paint.color = try { parseNativeListColor(item.json.optString("borderColor", "#E0E0E0")) } catch (_: IllegalArgumentException) { Color.TRANSPARENT }
+        canvas.drawRect(0f, top, parent.width.toFloat(), top + 1, paint)
+        canvas.drawRect(0f, top + child.height - 1, parent.width.toFloat(), top + child.height, paint)
+      }
+    }
+  }
+}

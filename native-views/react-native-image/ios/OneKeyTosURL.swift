@@ -1,8 +1,10 @@
 import Foundation
 
 enum OneKeyTosURL {
-  static let widthBuckets = [
-    32, 40, 48, 64, 96, 128, 160, 200, 256, 320, 480, 640, 960, 1280,
+  // Select by layout size first. Density can only choose between this tier's renditions.
+  static let sizeTiers: [(maxDisplaySize: CGFloat, standard: Int, highDensity: Int)] = [
+    (48, 96, 160), (96, 192, 320), (192, 384, 640),
+    (384, 768, 1280), (.infinity, 1280, 1280),
   ]
 
   static func optimized(
@@ -24,19 +26,16 @@ enum OneKeyTosURL {
       return rawURL
     }
 
+    let tier = sizeTiers.first(where: { displaySize <= $0.maxDisplaySize })!
     let normalizedScale = scale.isFinite ? min(max(scale, 1), 3) : 1
-    let normalizedOverscan = overscan.isFinite ? max(overscan, 1) : 1
-    let requestedPixels = ceil(displaySize * normalizedScale * normalizedOverscan)
-    let bucket: Int
-    if !requestedPixels.isFinite || requestedPixels >= CGFloat(widthBuckets.last!) {
-      bucket = widthBuckets.last!
-    } else {
-      let requested = Int(requestedPixels)
-      bucket = widthBuckets.first(where: { $0 >= requested }) ?? widthBuckets.last!
-    }
-    var queryItems = components.queryItems ?? []
-    queryItems.append(URLQueryItem(name: "x-tos-process", value: "image/resize,w_\(bucket)"))
-    components.queryItems = queryItems
+    let normalizedOverscan = overscan.isFinite ? max(overscan, 1) : 1.1
+    // Fixed renditions already account for the default margin. Custom margins stay within the tier.
+    let density = normalizedScale * CGFloat(normalizedOverscan / 1.1)
+    let pixelWidth = density > 2 ? tier.highDensity : tier.standard
+    // Match Android and Web without rewriting the source URL's existing query.
+    let query = components.percentEncodedQuery ?? ""
+    let separator = query.isEmpty || query.hasSuffix("&") ? "" : "&"
+    components.percentEncodedQuery = "\(query)\(separator)x-tos-process=image%2Fresize%2Cw_\(pixelWidth)"
     return components.url ?? rawURL
   }
 

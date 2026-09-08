@@ -1,0 +1,16 @@
+{
+  "uiViewClassName": "NativeList",
+  "supportsRawText": false,
+  "bubblingEventTypes": {},
+  "directEventTypes": {},
+  "validAttributes": {
+    "snapshotJson": true,
+    "onRowAction": true,
+    "onActionAnchorInvalidated": true,
+    "onSelectionDelta": true,
+    "onReorder": true,
+    "onEndReached": true,
+    "onVisibleRangeChanged": true,
+    "hybridRef": true
+  }
+}

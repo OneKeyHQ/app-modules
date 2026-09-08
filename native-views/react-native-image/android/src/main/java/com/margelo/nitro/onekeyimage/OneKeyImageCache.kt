@@ -22,11 +22,12 @@ class HybridOneKeyImageCache : HybridOneKeyImageCacheSpec() {
         return@forEach
       }
       val baseOptions = RequestOptions()
+        .withOneKeyAvatarCache(source.uri)
         .dontTransform()
         .downsample(OneKeyImageSafeDownsampleStrategy)
       val options = when (source.cachePolicy ?: OneKeyImageCachePolicy.MEMORY_DISK) {
         OneKeyImageCachePolicy.MEMORY_DISK -> baseOptions
-          .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+          .diskCacheStrategy(oneKeyImageMemoryDiskStrategy(source.uri))
         OneKeyImageCachePolicy.MEMORY -> baseOptions
           .diskCacheStrategy(DiskCacheStrategy.NONE)
         OneKeyImageCachePolicy.DISK -> baseOptions

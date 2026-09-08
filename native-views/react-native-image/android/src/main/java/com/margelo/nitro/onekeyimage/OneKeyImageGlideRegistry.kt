@@ -28,6 +28,7 @@ import com.github.penfeizhou.animation.glide.StreamAnimationDecoder
 import java.io.ByteArrayOutputStream
 import java.io.ByteArrayInputStream
 import java.io.IOException
+import java.io.File
 import java.io.InputStream
 import java.nio.ByteBuffer
 
@@ -50,6 +51,16 @@ internal object OneKeyImageGlideRegistry {
       val glide = Glide.get(appContext)
       val registry = glide.registry
 
+      registry.prepend(
+        File::class.java,
+        ByteBuffer::class.java,
+        OneKeyAvatarCacheFileLoaderFactory(),
+      )
+      registry.prepend(
+        OneKeyBlockieAvatarModel::class.java,
+        ByteBuffer::class.java,
+        OneKeyBlockieAvatarLoaderFactory(),
+      )
       registry.prepend(
         OneKeyImageDataUriModel::class.java,
         ByteBuffer::class.java,

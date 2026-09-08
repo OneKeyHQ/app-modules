@@ -30,6 +30,8 @@ namespace margelo::nitro::onekeyimage {
       prototype.registerHybridSetter("recyclingKey", &HybridOneKeyImageSpec::setRecyclingKey);
       prototype.registerHybridGetter("optimizeTos", &HybridOneKeyImageSpec::getOptimizeTos);
       prototype.registerHybridSetter("optimizeTos", &HybridOneKeyImageSpec::setOptimizeTos);
+      prototype.registerHybridGetter("resizeWidth", &HybridOneKeyImageSpec::getResizeWidth);
+      prototype.registerHybridSetter("resizeWidth", &HybridOneKeyImageSpec::setResizeWidth);
       prototype.registerHybridGetter("overscan", &HybridOneKeyImageSpec::getOverscan);
       prototype.registerHybridSetter("overscan", &HybridOneKeyImageSpec::setOverscan);
       prototype.registerHybridGetter("loadingStrategy", &HybridOneKeyImageSpec::getLoadingStrategy);

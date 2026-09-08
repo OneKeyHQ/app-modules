@@ -118,6 +118,7 @@ internal fun oneKeyImageRequestSignature(
   width: Int,
   height: Int,
   density: Float,
+  resizeWidth: Double? = null,
 ): String = listOf(
   rawUrl,
   sourceHeadersJson.orEmpty(),
@@ -126,6 +127,7 @@ internal fun oneKeyImageRequestSignature(
   (contentFit ?: OneKeyImageContentFit.COVER).name,
   optimizeTos.toString(),
   overscan.toString(),
+  resizeWidth.toString(),
   width.toString(),
   height.toString(),
   density.toString(),
@@ -139,7 +141,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private val hostView = OneKeyImageHostView(context)
   // The Activity outlives ScreenStack Fragments but still provides bounded
   // background and destruction lifecycle handling for image requests.
-  private val requestManager by lazy(LazyThreadSafetyMode.NONE) {
+  private val activityRequestManager by lazy(LazyThreadSafetyMode.NONE) {
     val activity = context.findActivity() ?: context.currentActivity
     Glide.with(requireNotNull(activity) { "An Activity is required to load images" })
   }
@@ -154,6 +156,18 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private var displayRunnable: Runnable? = null
   private var pendingDisplayGeneration: Long? = null
   private var fallbackRunnable: Runnable? = null
+
+  /**
+   * Native reusable containers own their request cleanup explicitly, so their
+   * requests must not inherit a transient React Native screen Fragment lifecycle.
+   */
+  internal var usesApplicationRequestManager = false
+
+  private fun requestManager() = if (usesApplicationRequestManager) {
+    Glide.with(context.applicationContext)
+  } else {
+    activityRequestManager
+  }
 
   override val view: View = hostView
 
@@ -206,6 +220,12 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       requestIdentityChanged()
     }
   override var overscan: Double? = 1.1
+    set(value) {
+      if (field == value) return
+      field = value
+      requestIdentityChanged()
+    }
+  override var resizeWidth: Double? = null
     set(value) {
       if (field == value) return
       field = value
@@ -294,6 +314,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     autoplay = false
     recyclingKey = null
     optimizeTos = true
+    resizeWidth = null
     overscan = 1.1
     loadingStrategy = OneKeyImageLoadingStrategy.STATIC
     onLoadStart = null
@@ -347,6 +368,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       width = hostView.width,
       height = hostView.height,
       density = hostView.resources.displayMetrics.density,
+      resizeWidth = resizeWidth,
     )
     if (!force && signature == lastSignature) return
     lastSignature = signature
@@ -358,9 +380,11 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     val customIdentity = OneKeyImageModel.headers(sourceHeadersJson).isNotEmpty()
     val optimizedUrl = if (optimizeTos != false) {
       val density = hostView.resources.displayMetrics.density.coerceAtLeast(1f)
+      val displaySize = resizeWidth?.takeIf { it.isFinite() && it > 0.0 }
+        ?: (maxOf(hostView.width, hostView.height) / density.toDouble())
       OneKeyTosUrl.optimized(
         rawUrl,
-        ceil(maxOf(hostView.width, hostView.height) / density.toDouble()).toInt(),
+        ceil(displaySize).toInt(),
         density,
         overscan ?: 1.1,
         customIdentity,
@@ -469,10 +493,10 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       }
     }
     currentTarget = target
-    requestManager
+    requestManager()
       .asDrawable()
       .load(OneKeyImageModel.build(requestUrl, headersJson))
-      .apply(requestOptions(policy))
+      .apply(requestOptions(policy, requestUrl))
       .override(decodeDimensions.width, decodeDimensions.height)
       .listener(object : RequestListener<Drawable> {
         override fun onLoadFailed(
@@ -500,12 +524,13 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       .into(target)
   }
 
-  private fun requestOptions(policy: OneKeyImageCachePolicy): RequestOptions {
+  private fun requestOptions(policy: OneKeyImageCachePolicy, uri: String): RequestOptions {
     val options = RequestOptions()
+      .withOneKeyAvatarCache(uri)
       .dontTransform()
       .downsample(OneKeyImageSafeDownsampleStrategy)
     return when (policy) {
-      OneKeyImageCachePolicy.MEMORY_DISK -> options.diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+      OneKeyImageCachePolicy.MEMORY_DISK -> options.diskCacheStrategy(oneKeyImageMemoryDiskStrategy(uri))
       OneKeyImageCachePolicy.MEMORY -> options.diskCacheStrategy(DiskCacheStrategy.NONE)
       OneKeyImageCachePolicy.DISK -> options
         .diskCacheStrategy(DiskCacheStrategy.DATA)
@@ -546,7 +571,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     // Clear the field first so onResourceCleared from our own cancellation
     // cannot erase state belonging to the next generation/request.
     currentTarget = null
-    requestManager.clear(target)
+    requestManager().clear(target)
   }
 
   private fun scheduleOnDisplay(requestGeneration: Long) {

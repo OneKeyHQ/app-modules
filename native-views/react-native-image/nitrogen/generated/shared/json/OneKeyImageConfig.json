@@ -12,6 +12,7 @@
     "autoplay": true,
     "recyclingKey": true,
     "optimizeTos": true,
+    "resizeWidth": true,
     "overscan": true,
     "loadingStrategy": true,
     "onLoadStart": true,
