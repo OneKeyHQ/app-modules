@@ -27,3 +27,9 @@ Merged fork PRs are intentionally skipped with a workflow summary notice; run `p
 Before enabling the workflow, install a GitHub App on `app-monorepo` with repository Contents (write) and Pull requests (write) permissions. Set repository variable `APP_RELEASE_APP_ID` and secret `APP_RELEASE_PRIVATE_KEY` in `app-modules`, and retain the existing `NPM_TOKEN` secret for npm publishing. The app-monorepo PR is never merged automatically.
 
 The app-monorepo job checks the existing module-ID registry but does not regenerate it: `module-id:update` requires a fresh Union Build module-ID map, which is unavailable in a clean dependency-update job. If a release adds native runtime modules, generate that map and update the registry during app-monorepo PR validation before merging it.
+
+## Chain runtimes
+
+Rust chain libraries live in [chain-runtimes](./chain-runtimes/README.md), separately
+from React Native workspaces. Zcash is the first runtime; see its build and test
+commands there.

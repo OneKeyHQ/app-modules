@@ -1,0 +1,9 @@
+/target
+/pkg
+/pkg-keys
+/vendor
+*.log
+__pycache__/
+
+# Keep local wallet fixtures out of source control.
+/.secrets/

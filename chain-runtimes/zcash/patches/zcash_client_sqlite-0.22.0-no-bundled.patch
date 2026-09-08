@@ -1,0 +1,10 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -229,7 +229,6 @@
+ [dependencies.rusqlite]
+ version = "0.37"
+ features = [
+-    "bundled",
+     "time",
+     "array",
+     "uuid",
