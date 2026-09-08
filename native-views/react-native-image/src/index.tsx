@@ -153,6 +153,7 @@ export function OneKeyImage({
   autoplay,
   recyclingKey,
   optimizeTos = true,
+  resizeWidth,
   overscan = 1.1,
   loadingStrategy = OneKeyImageLoadingStrategy.STATIC,
   hybridRef,
@@ -173,7 +174,7 @@ export function OneKeyImage({
     normalized?.headers ?? {}
   )}|${resolvedCachePolicy}|${recyclingKey ?? ''}|${contentFit}|${
     optimizeTos ? '1' : '0'
-  }|${overscan}`;
+  }|${resizeWidth ?? ''}|${overscan}`;
   const hasSource = normalized != null;
   const hasOverlay = placeholder != null || fallback != null;
   type LoadState = {
@@ -338,6 +339,7 @@ export function OneKeyImage({
     autoplay: autoplay ?? Platform.OS !== 'android',
     recyclingKey,
     optimizeTos,
+    resizeWidth,
     overscan,
     loadingStrategy:
       placeholder == null ? loadingStrategy : OneKeyImageLoadingStrategy.NONE,

@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-native-list",
-  "version": "3.0.106",
+  "version": "3.0.107",
   "description": "Template-driven native RecyclerView and UICollectionView for React Native",
   "source": "./src/index.ts",
   "main": "./lib/module/index.js",
@@ -82,7 +82,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-image": "3.0.106",
+    "@onekeyfe/react-native-image": "3.0.107",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"

@@ -43,6 +43,8 @@ export interface OneKeyImageNativeProps extends HybridViewProps {
   autoplay?: boolean;
   recyclingKey?: string;
   optimizeTos?: boolean;
+  /** Display width hint in layout units. Native applies the screen density. */
+  resizeWidth?: number;
   overscan?: number;
   loadingStrategy?: OneKeyImageLoadingStrategy;
   onLoadStart?: () => void;

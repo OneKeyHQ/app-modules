@@ -79,6 +79,12 @@ abstract class HybridOneKeyImageSpec: HybridView() {
   @get:Keep
   @set:DoNotStrip
   @set:Keep
+  abstract var resizeWidth: Double?
+
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
   abstract var overscan: Double?
   
   @get:DoNotStrip

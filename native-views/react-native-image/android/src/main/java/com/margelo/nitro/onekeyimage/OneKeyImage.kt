@@ -118,6 +118,7 @@ internal fun oneKeyImageRequestSignature(
   width: Int,
   height: Int,
   density: Float,
+  resizeWidth: Double? = null,
 ): String = listOf(
   rawUrl,
   sourceHeadersJson.orEmpty(),
@@ -126,6 +127,7 @@ internal fun oneKeyImageRequestSignature(
   (contentFit ?: OneKeyImageContentFit.COVER).name,
   optimizeTos.toString(),
   overscan.toString(),
+  resizeWidth.toString(),
   width.toString(),
   height.toString(),
   density.toString(),
@@ -223,6 +225,12 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       field = value
       requestIdentityChanged()
     }
+  override var resizeWidth: Double? = null
+    set(value) {
+      if (field == value) return
+      field = value
+      requestIdentityChanged()
+    }
   override var loadingStrategy: OneKeyImageLoadingStrategy? = OneKeyImageLoadingStrategy.STATIC
     set(value) {
       field = value
@@ -306,6 +314,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     autoplay = false
     recyclingKey = null
     optimizeTos = true
+    resizeWidth = null
     overscan = 1.1
     loadingStrategy = OneKeyImageLoadingStrategy.STATIC
     onLoadStart = null
@@ -359,6 +368,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       width = hostView.width,
       height = hostView.height,
       density = hostView.resources.displayMetrics.density,
+      resizeWidth = resizeWidth,
     )
     if (!force && signature == lastSignature) return
     lastSignature = signature
@@ -370,9 +380,11 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     val customIdentity = OneKeyImageModel.headers(sourceHeadersJson).isNotEmpty()
     val optimizedUrl = if (optimizeTos != false) {
       val density = hostView.resources.displayMetrics.density.coerceAtLeast(1f)
+      val displaySize = resizeWidth?.takeIf { it.isFinite() && it > 0.0 }
+        ?: (maxOf(hostView.width, hostView.height) / density.toDouble())
       OneKeyTosUrl.optimized(
         rawUrl,
-        ceil(maxOf(hostView.width, hostView.height) / density.toDouble()).toInt(),
+        ceil(displaySize).toInt(),
         density,
         overscan ?: 1.1,
         customIdentity,

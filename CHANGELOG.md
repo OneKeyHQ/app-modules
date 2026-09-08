@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.107] - 2026-09-08
+
+### Bug Fixes
+- **image**: Select CDN renditions from five layout-size tiers with bounded density choices, reducing requests to eight pixel widths shared by rendering and preloading.
+- **image**: Accept layout-size hints in the native view and preserve canonical URL encoding for shared cache identity.
+
+### Chores
+- Bump all publishable packages to 3.0.107.
+
 ## [3.0.106] - 2026-09-08
 
 ### Features

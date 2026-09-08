@@ -28,6 +28,7 @@ namespace margelo::nitro::onekeyimage::views {
     autoplay(nitro::ReactProp<std::optional<bool>>::fromRawValue("OneKeyImage", "autoplay", rawProps, sourceProps.autoplay)),
     recyclingKey(nitro::ReactProp<std::optional<std::string>>::fromRawValue("OneKeyImage", "recyclingKey", rawProps, sourceProps.recyclingKey)),
     optimizeTos(nitro::ReactProp<std::optional<bool>>::fromRawValue("OneKeyImage", "optimizeTos", rawProps, sourceProps.optimizeTos)),
+    resizeWidth(nitro::ReactProp<std::optional<double>>::fromRawValue("OneKeyImage", "resizeWidth", rawProps, sourceProps.resizeWidth)),
     overscan(nitro::ReactProp<std::optional<double>>::fromRawValue("OneKeyImage", "overscan", rawProps, sourceProps.overscan)),
     loadingStrategy(nitro::ReactProp<std::optional<OneKeyImageLoadingStrategy>>::fromRawValue("OneKeyImage", "loadingStrategy", rawProps, sourceProps.loadingStrategy)),
     onLoadStart(nitro::ReactProp<std::optional<std::function<void()>>>::fromRawValue("OneKeyImage", "onLoadStart", rawProps, sourceProps.onLoadStart)),
@@ -47,6 +48,7 @@ namespace margelo::nitro::onekeyimage::views {
       case hashString("autoplay"): return true;
       case hashString("recyclingKey"): return true;
       case hashString("optimizeTos"): return true;
+      case hashString("resizeWidth"): return true;
       case hashString("overscan"): return true;
       case hashString("loadingStrategy"): return true;
       case hashString("onLoadStart"): return true;

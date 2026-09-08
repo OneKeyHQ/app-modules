@@ -121,6 +121,11 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   var optimizeTos: Bool? = true {
     didSet { if optimizeTos != oldValue { identityDidChange() } }
   }
+  var resizeWidth: Double? {
+    didSet {
+      if !Self.equalOptionalDouble(resizeWidth, oldValue) { identityDidChange() }
+    }
+  }
   var overscan: Double? = 1.1 {
     didSet {
       if !Self.equalOptionalDouble(overscan, oldValue) { identityDidChange() }
@@ -241,6 +246,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       cachePolicy?.stringValue ?? "memory-disk",
       contentFit?.stringValue ?? "cover",
       String(optimizeTos ?? true),
+      resizeWidth.map(String.init(describing:)) ?? "",
       String(overscan ?? 1.1),
       String(Int(hostView.bounds.width.rounded())),
       String(Int(hostView.bounds.height.rounded())),
@@ -270,11 +276,13 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     }
 
     let hasCustomIdentity = OneKeyImageRequestContext.headers(from: sourceHeadersJson) != nil
+    let displaySize = resizeWidth.flatMap { $0.isFinite && $0 > 0 ? CGFloat($0) : nil }
+      ?? max(hostView.bounds.width, hostView.bounds.height)
     let requestURL =
       (optimizeTos ?? true)
       ? OneKeyTosURL.optimized(
         rawURL: rawURL,
-        displaySize: max(hostView.bounds.width, hostView.bounds.height),
+        displaySize: displaySize,
         scale: screenScale,
         overscan: overscan ?? 1.1,
         hasCustomIdentity: hasCustomIdentity
@@ -463,6 +471,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     autoplay = true
     recyclingKey = nil
     optimizeTos = true
+    resizeWidth = nil
     overscan = 1.1
     loadingStrategy = .static
     onLoadStart = nil

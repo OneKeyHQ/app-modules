@@ -3,11 +3,12 @@ package com.margelo.nitro.onekeyimage
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
-import kotlin.math.ceil
 
 internal object OneKeyTosUrl {
-  internal val widthBuckets = intArrayOf(
-    32, 40, 48, 64, 96, 128, 160, 200, 256, 320, 480, 640, 960, 1280,
+  // Select by layout size first. Density can only choose between this tier's renditions.
+  private val sizeTiers = arrayOf(
+    Triple(48, 96, 160), Triple(96, 192, 320), Triple(192, 384, 640),
+    Triple(384, 768, 1280), Triple(Int.MAX_VALUE, 1280, 1280),
   )
 
   fun optimized(
@@ -41,14 +42,12 @@ internal object OneKeyTosUrl {
   }
 
   internal fun selectWidthBucket(displaySize: Int, density: Float, overscan: Double): Int {
-    val normalizedDensity = if (density.isFinite()) density.coerceIn(1f, MAX_DPR) else 1f
-    val normalizedOverscan = if (overscan.isFinite()) overscan.coerceAtLeast(1.0) else 1.0
-    val requestedPixels = ceil(displaySize * normalizedDensity * normalizedOverscan)
-    if (!requestedPixels.isFinite() || requestedPixels >= widthBuckets.last()) {
-      return widthBuckets.last()
-    }
-    val requested = requestedPixels.toInt()
-    return widthBuckets.firstOrNull { it >= requested } ?: widthBuckets.last()
+    val tier = sizeTiers.first { displaySize <= it.first }
+    val normalizedDensity = if (density.isFinite()) density.coerceIn(1f, MAX_DPR).toDouble() else 1.0
+    val normalizedOverscan = if (overscan.isFinite()) overscan.coerceAtLeast(1.0) else 1.1
+    // Fixed renditions already account for the default margin. Custom margins stay within the tier.
+    val requestedDensity = normalizedDensity * (normalizedOverscan / 1.1)
+    return if (requestedDensity > 2) tier.third else tier.second
   }
 
   private fun unsupportedExtension(path: String): Boolean {

@@ -56,6 +56,7 @@ namespace margelo::nitro::onekeyimage::views {
     nitro::ReactProp<std::optional<bool>> autoplay;
     nitro::ReactProp<std::optional<std::string>> recyclingKey;
     nitro::ReactProp<std::optional<bool>> optimizeTos;
+    nitro::ReactProp<std::optional<double>> resizeWidth;
     nitro::ReactProp<std::optional<double>> overscan;
     nitro::ReactProp<std::optional<OneKeyImageLoadingStrategy>> loadingStrategy;
     nitro::ReactProp<std::optional<std::function<void()>>> onLoadStart;
@@ -75,6 +76,7 @@ namespace margelo::nitro::onekeyimage::views {
              autoplay.hasSameValue(other.autoplay) &&
              recyclingKey.hasSameValue(other.recyclingKey) &&
              optimizeTos.hasSameValue(other.optimizeTos) &&
+             resizeWidth.hasSameValue(other.resizeWidth) &&
              overscan.hasSameValue(other.overscan) &&
              loadingStrategy.hasSameValue(other.loadingStrategy) &&
              onLoadStart.hasSameValue(other.onLoadStart) &&
@@ -95,6 +97,7 @@ namespace margelo::nitro::onekeyimage::views {
              autoplay.isProvided() ||
              recyclingKey.isProvided() ||
              optimizeTos.isProvided() ||
+             resizeWidth.isProvided() ||
              overscan.isProvided() ||
              loadingStrategy.isProvided() ||
              onLoadStart.isProvided() ||

@@ -18,6 +18,7 @@ public protocol HybridOneKeyImageSpec_protocol: HybridObject, HybridView {
   var autoplay: Bool? { get set }
   var recyclingKey: String? { get set }
   var optimizeTos: Bool? { get set }
+  var resizeWidth: Double? { get set }
   var overscan: Double? { get set }
   var loadingStrategy: OneKeyImageLoadingStrategy? { get set }
   var onLoadStart: (() -> Void)? { get set }

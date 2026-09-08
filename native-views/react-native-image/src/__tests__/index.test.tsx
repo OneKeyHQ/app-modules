@@ -42,6 +42,7 @@ describe('OneKeyImage wrapper', () => {
             cachePolicy: OneKeyImageCachePolicy.DISK,
           }}
           variant={OneKeyImageVariant.AVATAR}
+          resizeWidth={64}
           style={{ width: 40, height: 40 }}
         />
       );
@@ -51,6 +52,7 @@ describe('OneKeyImage wrapper', () => {
       'NativeOneKeyImage'
     );
     expect(native.props.sourceUri).toBe('https://example.com/avatar.png');
+    expect(native.props.resizeWidth).toBe(64);
     expect(native.props).not.toHaveProperty('sourceCacheKey');
     expect(native.props.cachePolicy).toBe(OneKeyImageCachePolicy.DISK);
     expect(native.props.loadingStrategy).toBe(
@@ -128,6 +130,7 @@ describe('OneKeyImage wrapper', () => {
   it.each([
     ['recycling key', { recyclingKey: 'cell-2' }],
     ['TOS optimization', { optimizeTos: false }],
+    ['TOS resize width', { resizeWidth: 64 }],
     ['TOS overscan', { overscan: 1.2 }],
     ['content fit', { contentFit: OneKeyImageContentFit.CONTAIN }],
   ])('resets same-URL placeholder when %s changes', async (_, changedProps) => {

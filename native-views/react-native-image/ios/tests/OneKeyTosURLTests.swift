@@ -3,6 +3,46 @@ import XCTest
 @testable import OneKeyImage
 
 final class OneKeyTosURLTests: XCTestCase {
+  func testCommonIconsShareRenditionsAfterApplyingScreenDensity() throws {
+    let raw = try XCTUnwrap(URL(string: "https://common.onekey-asset.com/token.png"))
+    for size: CGFloat in [32, 40, 48] {
+      for scale: CGFloat in [1, 2, 2.625, 3] {
+        let result = OneKeyTosURL.optimized(
+          rawURL: raw, displaySize: size, scale: scale, overscan: 1.1, hasCustomIdentity: false
+        )
+        let width = scale <= 2 ? 96 : 160
+        XCTAssertEqual(result.absoluteString, "\(raw.absoluteString)?x-tos-process=image%2Fresize%2Cw_\(width)")
+      }
+    }
+    for (size, standard, highDensity): (CGFloat, Int, Int) in [
+      (48, 96, 160), (48.1, 192, 320), (96, 192, 320),
+      (96.1, 384, 640), (192, 384, 640), (192.1, 768, 1280),
+      (384, 768, 1280), (384.1, 1280, 1280),
+    ] {
+      for (scale, width): (CGFloat, Int) in [(2, standard), (2.625, highDensity)] {
+        let result = OneKeyTosURL.optimized(
+          rawURL: raw, displaySize: size, scale: scale, overscan: 1.1, hasCustomIdentity: false
+        )
+        XCTAssertTrue(result.absoluteString.hasSuffix("w_\(width)"))
+      }
+    }
+    let overscanned = OneKeyTosURL.optimized(
+      rawURL: raw, displaySize: 48, scale: 2, overscan: 2, hasCustomIdentity: false
+    )
+    XCTAssertTrue(overscanned.absoluteString.hasSuffix("w_160"))
+  }
+
+  func testPreservesSourceQueryAndFragment() throws {
+    let raw = try XCTUnwrap(URL(string: "https://common.onekey-asset.com/token.png?foo=a%20b#preview"))
+    let result = OneKeyTosURL.optimized(
+      rawURL: raw, displaySize: 32, scale: 3, overscan: 1.1, hasCustomIdentity: false
+    )
+    XCTAssertEqual(
+      result.absoluteString,
+      "https://common.onekey-asset.com/token.png?foo=a%20b&x-tos-process=image%2Fresize%2Cw_160#preview"
+    )
+  }
+
   func testOptimizesAllowedOneKeyAssetURL() throws {
     let raw = try XCTUnwrap(URL(string: "https://common.onekey-asset.com/tokens/btc.png"))
     let result = OneKeyTosURL.optimized(
@@ -13,7 +53,7 @@ final class OneKeyTosURLTests: XCTestCase {
       hasCustomIdentity: false
     )
     XCTAssertTrue(result.absoluteString.contains("x-tos-process="))
-    XCTAssertTrue(result.absoluteString.contains("w_256"))
+    XCTAssertTrue(result.absoluteString.contains("w_384"))
   }
 
   func testDoesNotRewriteSignedOrCustomIdentityURL() throws {
@@ -84,7 +124,7 @@ final class OneKeyTosURLTests: XCTestCase {
         overscan: 1.1,
         hasCustomIdentity: false
       )
-      XCTAssertTrue(result.absoluteString.contains("w_480"))
+      XCTAssertTrue(result.absoluteString.contains("w_640"))
     }
   }
 
@@ -97,7 +137,7 @@ final class OneKeyTosURLTests: XCTestCase {
       overscan: .infinity,
       hasCustomIdentity: false
     )
-    XCTAssertTrue(result.absoluteString.contains("w_128"))
+    XCTAssertTrue(result.absoluteString.contains("w_384"))
     XCTAssertEqual(
       OneKeyTosURL.optimized(
         rawURL: raw,

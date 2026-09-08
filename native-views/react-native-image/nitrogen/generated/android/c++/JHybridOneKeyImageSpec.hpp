@@ -66,6 +66,8 @@ namespace margelo::nitro::onekeyimage {
     void setRecyclingKey(const std::optional<std::string>& recyclingKey) override;
     std::optional<bool> getOptimizeTos() override;
     void setOptimizeTos(std::optional<bool> optimizeTos) override;
+    std::optional<double> getResizeWidth() override;
+    void setResizeWidth(std::optional<double> resizeWidth) override;
     std::optional<double> getOverscan() override;
     void setOverscan(std::optional<double> overscan) override;
     std::optional<OneKeyImageLoadingStrategy> getLoadingStrategy() override;
