@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+- **text (Android)**: Add an opt-in React Native Text-compatible component with a one-physical-pixel intrinsic-width guard against glyph-end clipping.
+
 ## [3.0.107] - 2026-09-08
 
 ### Bug Fixes

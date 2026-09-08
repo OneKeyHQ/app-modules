@@ -71,8 +71,8 @@ export function TextTestPage() {
         </Text>
       </Text>
       <ReactNativeText style={styles.status} testID="text-press-status">
-        {nestedPressCount > 0 ? 'PASS' : 'WAIT'}: nested press callback · presses{' '}
-        {nestedPressCount}
+        {nestedPressCount > 0 ? 'PASS' : 'WAIT'}: nested press callback ·
+        presses {nestedPressCount}
       </ReactNativeText>
       <Text
         onPress={handleRootPress}

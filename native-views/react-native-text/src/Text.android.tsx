@@ -1,3 +1,12 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ *
+ * Adapted for the OneKey Android native Text component.
+ */
+
 /* eslint-disable @react-native/no-deep-imports */
 import * as ReactNativeFeatureFlags from 'react-native/src/private/featureflags/ReactNativeFeatureFlags';
 import * as PressabilityDebug from 'react-native/Libraries/Pressability/PressabilityDebug';
