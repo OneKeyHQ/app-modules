@@ -808,7 +808,7 @@ pub fn raw_transaction(db: &Db, txid: &str) -> Result<Vec<u8>> {
     Ok(raw)
 }
 
-/// The separately loaded prover package supports these proof types.
+/// Proof types supported by this wallet runtime.
 pub const PROVE_ORCHARD: bool = true;
 pub const PROVE_SAPLING: bool = false;
 pub const PROVE_IRONWOOD: bool = true;

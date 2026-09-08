@@ -11,7 +11,7 @@ The runtime is OneKey's adapter over the versions of librustzcash pinned in
 original local repository is retained. Generated packages, Cargo build caches,
 browser experiments, logs, and local wallet data are not imported.
 
-## Existing vendor changes preserved by this import
+## Vendor changes
 
 The source checkout depended on two local vendor trees. Only one of their
 patches was originally tracked. Both are now reconstructible from the upstream
@@ -19,10 +19,11 @@ crate archive checksums in `patches/manifest.json`:
 
 1. `zcash_client_sqlite 0.22.0`: disable rusqlite's `bundled` feature for WASM.
    Its Rust source is unchanged.
-2. `sqlite-wasm-vfs 0.2.0`: preserve the existing durability barrier and sticky
-   sync-error handling in `src/relaxed_idb.rs`. This patch was recovered by
-   comparing the old checkout against the published crate source. It is not a
-   new storage behavior introduced by the migration.
+2. The import initially preserved the existing `relaxed_idb` durability barrier.
+   The subsequent unified Worker change replaces it with
+   `sqlite-wasm-vfs-0.2.0-opfs-durability.patch`: per-connection locks, durable
+   journal deletion, handle cleanup and fail-closed metadata I/O. All App
+   platforms use this same patch. The old IndexedDB patch is no longer applied.
 
 `scripts/vendor-deps.sh` verifies the archives, applies the exact patches, and
 rejects an existing vendor tree whose contents differ. No vendor source or
@@ -36,7 +37,7 @@ Build both outputs before installing the app dependencies. Package names and
 runtime interfaces are unchanged by this import. Registry publishing and a
 versioned app dependency are a separate release step.
 
-## Local validation (2026-09-08)
+## Source-import validation (before the OPFS change, 2026-09-08)
 
 - All first-party Rust source and `Cargo.lock` match the source checkout byte
   for byte. Both reconstructed vendor trees match the source checkout's Rust
