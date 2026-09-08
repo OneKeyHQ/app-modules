@@ -4,8 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.108] - 2026-09-08
+
 ### Features
 - **text (Android)**: Add an opt-in React Native Text-compatible component with a one-physical-pixel intrinsic-width guard against glyph-end clipping.
+
+### Chores
+- Publish `@onekeyfe/react-native-text` for the first time and bump all publishable packages to 3.0.108.
 
 ## [3.0.107] - 2026-09-08
 
