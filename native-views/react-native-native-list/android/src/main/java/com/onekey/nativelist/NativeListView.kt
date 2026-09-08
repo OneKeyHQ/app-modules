@@ -1345,6 +1345,7 @@ class NativeListView(
         val from = dragFrom
         val to = dragTo
         val reordered = pendingReorder
+        var reorderPayload: JSONObject? = null
         val destinationPosition = if (to != RecyclerView.NO_POSITION) {
           to
         } else {
@@ -1384,12 +1385,12 @@ class NativeListView(
               .put("toIndex", to)
             reordered.getOrNull(to - 1)?.let { payload.put("beforeKey", it.key) }
             reordered.getOrNull(to + 1)?.let { payload.put("afterKey", it.key) }
+            reorderPayload = payload
             adapter.commitReordered(reordered) {
               finishCompactWalletGroup()
               if (!wasCompactWalletGroupDrag) {
                 recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
               }
-              emit(REORDER, payload)
             }
           }
         } else {
@@ -1399,6 +1400,8 @@ class NativeListView(
         dragFrom = RecyclerView.NO_POSITION
         dragTo = RecyclerView.NO_POSITION
         pendingReorder = null
+        // The gesture is committed now; a later snapshot may supersede its async diff.
+        reorderPayload?.let { emit(REORDER, it) }
       }
     }
     itemTouchHelper = ItemTouchHelper(callback).also { it.attachToRecyclerView(recyclerView) }

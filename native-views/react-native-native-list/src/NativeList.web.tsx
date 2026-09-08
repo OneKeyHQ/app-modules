@@ -234,8 +234,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           emitIndexFailure(-1, 'item-not-found');
           return;
         }
-        engineRef.current?.scrollToIndex(
-          index,
+        engineRef.current?.scrollToKey(
+          params.item.key,
           normalizePositionScroll(params, 'start')
         );
       },

@@ -15,6 +15,7 @@ internal class NativeListAdapter(
   private val context: ThemedReactContext,
 ) : RecyclerView.Adapter<NativeListViewHolder>() {
   private var suppressDifferUpdates = false
+  private var needsThemeRebind = false
   private var reorderItems: MutableList<NativeListItem>? = null
   private val differ = AsyncListDiffer(
     object : ListUpdateCallback {
@@ -43,6 +44,10 @@ internal class NativeListAdapter(
   )
   var usesSelectorSourceScale = false
   var theme: JSONObject? = null
+    set(value) {
+      if (field?.toString() != value?.toString()) needsThemeRebind = true
+      field = value
+    }
   var layout: String = "linear"
   var orientation: String = "vertical"
   var selectedKeys: Set<String> = emptySet()
@@ -117,11 +122,20 @@ internal class NativeListAdapter(
     (reorderItems ?: differ.currentList).indexOfFirst { it.key == key }
 
   fun submitList(items: List<NativeListItem>, commitCallback: (() -> Unit)? = null) {
+    // A newer submission can discard the reorder diff and its completion callback.
+    suppressDifferUpdates = false
     if (reorderItems != null) {
       reorderItems = null
       notifyDataSetChanged()
     }
-    differ.submitList(items.toList()) { commitCallback?.invoke() }
+    differ.submitList(items.toList()) {
+      // Retain this invalidation across superseded submissions, even when rows are unchanged.
+      if (needsThemeRebind) {
+        needsThemeRebind = false
+        notifyItemRangeChanged(0, itemCount)
+      }
+      commitCallback?.invoke()
+    }
   }
 
   fun moveReordered(from: Int, to: Int): List<NativeListItem>? {
@@ -144,6 +158,7 @@ internal class NativeListAdapter(
   }
 
   fun cancelReorder() {
+    suppressDifferUpdates = false
     if (reorderItems == null) return
     reorderItems = null
     notifyDataSetChanged()

@@ -15,6 +15,28 @@ const mockNativeMethods = {
   setRefreshing: jest.fn(),
 };
 let mockOnSelectionDelta: (payloadJson: string) => void;
+let mockOnReorder: (payloadJson: string) => void;
+const mockWebEngine = {
+  applySnapshot: jest.fn(),
+  setVirtualizationEnabled: jest.fn(),
+  updateCallbacks: jest.fn(),
+  scrollToKey: jest.fn(),
+  scrollToIndex: jest.fn(),
+  destroy: jest.fn(),
+};
+
+jest.mock('react-native', () => {
+  const ReactForMock = require('react') as typeof React;
+  return {
+    View: ReactForMock.forwardRef((props, ref) =>
+      ReactForMock.createElement('div', { ...props, ref })
+    ),
+  };
+});
+
+jest.mock('../web/NativeListWebEngine', () => ({
+  NativeListWebEngine: jest.fn(() => mockWebEngine),
+}));
 
 jest.mock('@onekeyfe/react-native-image', () => ({
   OneKeyImageCache: { preload: jest.fn().mockResolvedValue(true) },
@@ -31,8 +53,10 @@ jest.mock('react-native-nitro-modules', () => ({
     function MockNativeListHost(props: {
       hybridRef: (ref: typeof mockNativeMethods) => void;
       onSelectionDelta: (payloadJson: string) => void;
+      onReorder: (payloadJson: string) => void;
     }) {
       mockOnSelectionDelta = props.onSelectionDelta;
+      mockOnReorder = props.onReorder;
       const ReactForMock = require('react') as typeof React;
       ReactForMock.useEffect(() => props.hybridRef(mockNativeMethods), [props]);
       return null;
@@ -171,9 +195,8 @@ describe('NativeList imperative ref', () => {
       0.75,
       4
     );
-    expect(mockNativeMethods.scrollToIndex).toHaveBeenNthCalledWith(
-      4,
-      2,
+    expect(mockNativeMethods.scrollToKey).toHaveBeenCalledWith(
+      'a-0',
       true,
       'start',
       0,
@@ -182,7 +205,7 @@ describe('NativeList imperative ref', () => {
     expect(mockNativeMethods.scrollToOffset).toHaveBeenCalledWith(320, false);
     expect(mockNativeMethods.scrollToEnd).toHaveBeenCalledWith(false);
     expect(mockNativeMethods.scrollToIndex).toHaveBeenNthCalledWith(
-      5,
+      4,
       4,
       true,
       'start',
@@ -237,6 +260,76 @@ describe('NativeList imperative ref', () => {
       expect.objectContaining({ reason: 'item-not-found' })
     );
   });
+
+  it.each(['native', 'web'])(
+    '%s scrolls to the moved item by key before the reordered snapshot is echoed',
+    async (platform) => {
+      const { NativeList } = jest.requireActual(
+        platform === 'native' ? '../NativeList' : '../NativeList.web'
+      ) as typeof import('../NativeList');
+      const ref = createRef<NativeListRef>();
+      const reorderRows: NativeListSnapshot['rows'] = ['a', 'b', 'c'].map(
+        (key) => ({
+          type: 'identity',
+          key,
+          title: key,
+          leading: { kind: 'icon', name: 'wallet' },
+          draggable: true,
+        })
+      );
+      const onReorder = jest.fn(() => {
+        ref.current?.scrollToItem({
+          item: reorderRows[0],
+          animated: false,
+          viewPosition: 0.5,
+          viewOffset: 12,
+        });
+      });
+      let renderer!: TestRenderer.ReactTestRenderer;
+      await act(async () => {
+        renderer = TestRenderer.create(
+          <NativeList
+            ref={ref}
+            snapshot={{
+              ...snapshot,
+              layout: { kind: 'linear' },
+              capabilities: { reorderable: true },
+              rows: reorderRows,
+            }}
+            onReorder={onReorder}
+          />,
+          { createNodeMock: () => ({}) }
+        );
+      });
+      const event = { key: 'a', fromIndex: 0, toIndex: 2 };
+      if (platform === 'native') mockOnReorder(JSON.stringify(event));
+      else {
+        const { NativeListWebEngine } = jest.requireMock(
+          '../web/NativeListWebEngine'
+        ) as { NativeListWebEngine: jest.Mock };
+        NativeListWebEngine.mock.calls[0][2].onReorder(event);
+      }
+      expect(onReorder).toHaveBeenCalledTimes(1);
+      const methods = platform === 'native' ? mockNativeMethods : mockWebEngine;
+      expect(methods.scrollToIndex).not.toHaveBeenCalled();
+      if (platform === 'native')
+        expect(methods.scrollToKey).toHaveBeenCalledWith(
+          'a',
+          false,
+          'start',
+          0.5,
+          12
+        );
+      else
+        expect(methods.scrollToKey).toHaveBeenCalledWith('a', {
+          animated: false,
+          alignment: 'start',
+          viewPosition: 0.5,
+          viewOffset: 12,
+        });
+      await act(async () => renderer.unmount());
+    }
+  );
 
   it('applies an initial stable key only once', async () => {
     const { NativeList } = jest.requireActual(
