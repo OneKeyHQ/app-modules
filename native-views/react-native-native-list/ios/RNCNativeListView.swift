@@ -253,6 +253,7 @@ final class NativeListView: UIView {
       return
     }
     let oldItems = itemsByKey
+    let themeChanged = !dictionariesEqual(config?.theme, next.theme)
     if config?.generation != next.generation { endReachedGeneration = nil }
     config = next
     itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
@@ -267,7 +268,7 @@ final class NativeListView: UIView {
     snapshot.appendItems(keys, toSection: 0)
     let changedKeys = keys.filter { key in
       guard let old = oldItems[key], let new = itemsByKey[key] else { return false }
-      return old.revision != new.revision || old.content != new.content
+      return themeChanged || old.revision != new.revision || old.content != new.content
     }
     snapshot.reconfigureItems(changedKeys)
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in

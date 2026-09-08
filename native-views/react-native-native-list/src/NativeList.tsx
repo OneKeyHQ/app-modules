@@ -328,7 +328,10 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
           emitIndexFailure(-1, 'item-not-found');
           return;
         }
-        dispatchIndexScroll(index, normalizePositionScroll(params, 'start'));
+        dispatchKeyScroll(
+          params.item.key,
+          normalizePositionScroll(params, 'start')
+        );
       },
       scrollToOffset({ offset, animated = true }) {
         validateOffset(offset);
