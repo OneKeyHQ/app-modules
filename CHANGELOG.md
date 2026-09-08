@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+- **native-list (iOS)**: Add opt-in window-safe-area centering for section index rails.
+
 ## [3.0.107] - 2026-09-08
 
 ### Bug Fixes

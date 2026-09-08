@@ -62,6 +62,7 @@ struct NativeListConfig {
   let endReachedThreshold: Double
   let sectionIndexEnabled: Bool
   let sectionIndexHapticsEnabled: Bool
+  let sectionIndexCenteredInWindow: Bool
   let theme: [String: Any]?
   let fixedFooter: NativeListItem?
   var items: [NativeListItem]
@@ -123,6 +124,7 @@ struct NativeListConfig {
       endReachedThreshold: capabilities?["endReachedThreshold"] as? Double ?? 0.2,
       sectionIndexEnabled: sectionIndex?["enabled"] as? Bool ?? false,
       sectionIndexHapticsEnabled: sectionIndex?["hapticsEnabled"] as? Bool ?? true,
+      sectionIndexCenteredInWindow: sectionIndex?["centeredInWindow"] as? Bool ?? false,
       theme: root["theme"] as? [String: Any],
       fixedFooter: footer,
       items: items
