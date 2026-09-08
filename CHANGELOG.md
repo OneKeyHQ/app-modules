@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.110] - 2026-09-09
+
+### Bug Fixes
+- **native-list (Android)**: Allow token-pair network badges to extend outside the avatar frame while restoring clipping when recycled rows reset.
+
+### Chores
+- Bump all publishable packages to 3.0.110.
+
 ## [3.0.109] - 2026-09-08
 
 ### Features
