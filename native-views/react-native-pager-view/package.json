@@ -4,12 +4,14 @@
   "description": "React Native wrapper for Android and iOS ViewPager",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",
+  "browser": "./lib/module/index.web.js",
   "types": "./lib/typescript/src/index.d.ts",
   "sideEffects": false,
   "exports": {
     ".": {
       "source": "./src/index.tsx",
       "types": "./lib/typescript/src/index.d.ts",
+      "browser": "./lib/module/index.web.js",
       "default": "./lib/module/index.js"
     },
     "./package.json": "./package.json"
@@ -95,7 +97,8 @@
     },
     "ios": {
       "componentProvider": {
-        "RNCViewPager": "RNCPagerViewComponentView"
+        "RNCViewPager": "RNCPagerViewComponentView",
+        "RNCCollapsiblePagerView": "RNCCollapsiblePagerViewComponentView"
       }
     }
   }

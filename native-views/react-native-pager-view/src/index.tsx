@@ -1,14 +1,15 @@
-import type * as ReactNative from 'react-native';
-import { PagerView } from './PagerView';
+import type * as ReactNative from "react-native";
+import { PagerView } from "./PagerView";
 export default PagerView;
-export * from './usePagerView';
+export * from "./usePagerView";
+export * from "./CollapsiblePagerView";
 
 import type {
   OnPageScrollEventData as PagerViewOnPageScrollEventData,
   OnPageSelectedEventData as PagerViewOnPageSelectedEventData,
   OnPageScrollStateChangedEventData as PageScrollStateChangedNativeEventData,
   NativeProps,
-} from './PagerViewNativeComponent';
+} from "./PagerViewNativeComponent";
 
 export type {
   PagerViewOnPageScrollEventData,

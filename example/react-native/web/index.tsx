@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { NativeListAccountSelectorPage } from '../pages/NativeListAccountSelectorPage';
+import { MarketNativePagerExamplePage } from '../pages/MarketNativePagerExamplePage';
 
 import './styles.css';
 
@@ -20,12 +21,17 @@ const initialTarget = {
   walletNumber: readTargetNumber('wallet'),
   accountNumber: readTargetNumber('account'),
 };
+const page = searchParams.get('page');
 
 createRoot(rootElement).render(
   <StrictMode>
     <SafeAreaProvider>
       <NavigationContainer>
-        <NativeListAccountSelectorPage initialTarget={initialTarget} />
+        {page === 'market' ? (
+          <MarketNativePagerExamplePage />
+        ) : (
+          <NativeListAccountSelectorPage initialTarget={initialTarget} />
+        )}
       </NavigationContainer>
     </SafeAreaProvider>
   </StrictMode>,

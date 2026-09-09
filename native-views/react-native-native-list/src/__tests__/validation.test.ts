@@ -1,6 +1,7 @@
 import type {
   ActionRow,
   IdentityRow,
+  MarketRow,
   MetricCardRow,
   NativeListSnapshot,
   NativeListTheme,
@@ -25,6 +26,42 @@ const row = (key: string): IdentityRow => ({
   ],
 });
 
+const marketRow = (key = 'market-btc'): MarketRow => ({
+  type: 'market',
+  key,
+  variant: 'token',
+  leading: {
+    kind: 'token',
+    image: {
+      uri: 'https://example.com/btc.png',
+      width: 32,
+      height: 32,
+    },
+    networkImage: {
+      uri: 'https://example.com/bitcoin.png',
+      width: 16,
+      height: 16,
+    },
+  },
+  title: 'BTC',
+  subtitle: '$1.23B',
+  price: '$64,230.00',
+  change: { text: '+2.40%', tone: 'positive' },
+  badges: [
+    {
+      key: 'community',
+      iconName: 'verified',
+      tone: 'success',
+      actionKey: 'market.communityInfo',
+      accessibilityLabel: 'Community recognized',
+    },
+  ],
+  pressActionKey: 'market.open',
+  pressInActionKey: 'market.prewarm',
+  longPressActionKey: 'market.menu',
+  diagnostics: { imageBindActionKey: 'market.imageBind' },
+});
+
 const snapshot = (
   rows: readonly RowModel[] = [row('btc'), row('eth')]
 ): NativeListSnapshot => ({
@@ -36,6 +73,110 @@ const snapshot = (
 });
 
 describe('NativeList model validation', () => {
+  it('accepts the bounded Market row, verified glyph, styles, and states', () => {
+    const styled: MarketRow = {
+      ...marketRow(),
+      style: {
+        horizontalPadding: 20,
+        verticalPadding: 12,
+        leadingGap: 14,
+        titleBadgeGap: 4,
+        trailingGap: 8,
+        image: {
+          width: 32,
+          height: 32,
+          shape: 'circle',
+          contentFit: 'cover',
+        },
+        title: {
+          fontSize: 16,
+          fontWeight: 'medium',
+          lineHeight: 24,
+          lines: 1,
+          alignment: 'start',
+        },
+        change: { fontSize: 14, fontWeight: 'medium', lineHeight: 20 },
+        changeWidth: 80,
+        lineGap: 4,
+        changeHeight: 32,
+        changeCornerRadius: 8,
+      },
+    };
+    const states: RowModel[] = [
+      styled,
+      {
+        type: 'system',
+        key: 'loading',
+        variant: 'loading',
+        presentation: 'market',
+      },
+      {
+        type: 'system',
+        key: 'empty',
+        variant: 'noMatch',
+        presentation: 'market',
+        message: 'No assets',
+      },
+      {
+        type: 'system',
+        key: 'error',
+        variant: 'retry',
+        presentation: 'market',
+        message: 'Try again',
+        actionKey: 'market.retry',
+      },
+      { type: 'system', key: 'end', variant: 'end', presentation: 'market' },
+      {
+        type: 'system',
+        key: 'skeleton',
+        variant: 'loading',
+        loadingStyle: 'skeleton',
+      },
+      {
+        type: 'system',
+        key: 'spinner',
+        variant: 'loading',
+        loadingStyle: 'spinner',
+      },
+    ];
+    expect(validateSnapshot(snapshot(states)).rows).toEqual(states);
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            type: 'system',
+            key: 'invalid',
+            variant: 'loading',
+            loadingStyle: 'unknown',
+          } as unknown as RowModel,
+        ])
+      )
+    ).toThrow('loadingStyle');
+  });
+
+  it('rejects arbitrary Market glyphs and out-of-range styles', () => {
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...marketRow(),
+            badges: [{ key: 'bad', iconName: 'star' }],
+          } as unknown as MarketRow,
+        ])
+      )
+    ).toThrow('iconName');
+    expect(() =>
+      validateSnapshot(
+        snapshot([{ ...marketRow(), style: { changeWidth: 240 } } as MarketRow])
+      )
+    ).toThrow('changeWidth');
+    expect(() =>
+      validateSnapshot(
+        snapshot([{ ...marketRow(), style: { lineGap: 17 } } as MarketRow])
+      )
+    ).toThrow('lineGap');
+  });
+
   it('accepts amount plus checkbox on identity rows', () => {
     expect(validateSnapshot(snapshot())).toBeDefined();
   });
@@ -872,6 +1013,31 @@ describe('NativeList model validation', () => {
 });
 
 describe('NativeList patches', () => {
+  it('applies a Market quote patch without replacing its image descriptor', () => {
+    const initial = snapshot([marketRow()]);
+    const leading =
+      initial.rows[0]?.type === 'market' ? initial.rows[0].leading : undefined;
+    const next = applyRowPatches(initial, [
+      {
+        type: 'market',
+        key: 'market-btc',
+        changes: {
+          revision: 2,
+          price: '$64,240.00',
+          change: { text: '+2.41%', tone: 'positive' },
+        },
+      },
+    ]);
+    expect(next.rows[0]).toMatchObject({
+      revision: 2,
+      price: '$64,240.00',
+      change: { text: '+2.41%', tone: 'positive' },
+    });
+    expect(next.rows[0]?.type === 'market' && next.rows[0].leading).toBe(
+      leading
+    );
+  });
+
   it('applies a keyed batch without changing row order or untouched identity', () => {
     const initial = snapshot();
     const patches: RowPatch[] = [

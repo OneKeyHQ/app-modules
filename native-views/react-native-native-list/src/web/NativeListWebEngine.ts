@@ -3,6 +3,8 @@ import type {
   CheckboxState,
   ImageSource,
   LeadingVisual,
+  MarketRow,
+  MarketTextStyle,
   NativeListSnapshot,
   NativeListActionAnchor,
   NativeListActionSource,
@@ -60,6 +62,10 @@ export const WEB_REORDER_ANIMATION = {
 } as const;
 
 const REORDER_TOUCH_LONG_PRESS_MS = 120;
+const MARKET_LONG_PRESS_MS = 800;
+const MARKET_MOVE_CANCEL_PX = 10;
+export const WEB_MARKET_VERIFIED_PATH =
+  'M9.483 11.458v3.5h-1v-3.5z M10.467 2.698a2.03 2.03 0 0 1 3.065 0l1.358 1.564a.03.03 0 0 0 .028.01l2.046-.325a2.03 2.03 0 0 1 2.347 1.971l.037 2.07q0 .016.014.026l1.776 1.066a2.03 2.03 0 0 1 .532 3.019l-1.304 1.609a.03.03 0 0 0-.005.03l.675 1.956a2.03 2.03 0 0 1-1.533 2.656l-2.033.394a.03.03 0 0 0-.023.019l-.741 1.933a2.03 2.03 0 0 1-2.88 1.05l-1.811-1.006a.03.03 0 0 0-.03 0l-1.811 1.005a2.03 2.03 0 0 1-2.88-1.049l-.742-1.933a.03.03 0 0 0-.023-.019l-2.033-.394a2.03 2.03 0 0 1-1.532-2.656l.675-1.957a.03.03 0 0 0-.005-.029l-1.304-1.61a2.03 2.03 0 0 1 .532-3.018l1.776-1.066a.03.03 0 0 0 .014-.026l.035-2.07a2.03 2.03 0 0 1 2.349-1.97l2.045.324a.03.03 0 0 0 .028-.01zm1.516 3.76a.5.5 0 0 0-.447.276l-1.861 3.724H8.483a1 1 0 0 0-1 1v3.5a1 1 0 0 0 1 1h6.692a2 2 0 0 0 1.981-1.73l.341-2.5a2 2 0 0 0-1.982-2.27h-1.939l.197-1.269a1.5 1.5 0 0 0-1.481-1.731z';
 const REORDER_MOUSE_MOVE_THRESHOLD_PX = 5;
 const REORDER_EDGE_RATIO = 0.25;
 const REORDER_MAX_SPEED_ZONE_RATIO = 0.05;
@@ -107,6 +113,50 @@ export type WebListLayout = Readonly<{
   contentHeight: number;
   horizontal: boolean;
 }>;
+
+export type WebMarketLayoutStyle = Readonly<{
+  horizontalPadding: number;
+  verticalPadding: number;
+  leadingGap: number;
+  titleBadgeGap: number;
+  trailingGap: number;
+  imageWidth: number;
+  imageHeight: number;
+  imageCornerRadius: number;
+  changeWidth: number;
+  changeHeight: number;
+  changeCornerRadius: number;
+}>;
+
+/** Resolves every reusable Market geometry field, including legacy defaults. */
+export function resolveWebMarketLayoutStyle(
+  row: MarketRow
+): WebMarketLayoutStyle {
+  const style = row.style;
+  const imageWidth = style?.image?.width ?? (row.variant === 'stock' ? 40 : 32);
+  const imageHeight =
+    style?.image?.height ?? (row.variant === 'stock' ? 40 : 32);
+  return {
+    horizontalPadding:
+      style?.horizontalPadding ?? (row.variant === 'perp' ? 16 : 20),
+    verticalPadding: style?.verticalPadding ?? 12,
+    leadingGap: style?.leadingGap ?? (row.variant === 'perp' ? 8 : 14),
+    titleBadgeGap: style?.titleBadgeGap ?? 4,
+    trailingGap: style?.trailingGap ?? 8,
+    imageWidth,
+    imageHeight,
+    imageCornerRadius:
+      style?.image?.cornerRadius ??
+      (style?.image?.shape === 'square'
+        ? 0
+        : style?.image?.shape === 'rounded'
+        ? 8
+        : Math.min(imageWidth, imageHeight) / 2),
+    changeWidth: style?.changeWidth ?? 80,
+    changeHeight: style?.changeHeight ?? 32,
+    changeCornerRadius: style?.changeCornerRadius ?? 8,
+  };
+}
 
 export type NativeListWebCallbacks = Readonly<{
   onRowAction?: (event: RowActionEvent) => void;
@@ -450,7 +500,15 @@ export function estimateWebRowHeight(
     }
     case 'system':
       base =
-        row.variant === 'noMatch' || row.variant === 'end'
+        row.variant === 'loading' && row.loadingStyle === 'skeleton'
+          ? 56
+          : row.variant === 'loading' && row.loadingStyle === 'spinner'
+          ? 52
+          : 'presentation' in row && row.presentation === 'market'
+          ? row.variant === 'loading'
+            ? 68
+            : 44
+          : row.variant === 'noMatch' || row.variant === 'end'
           ? 36
           : row.variant === 'retry'
           ? 44
@@ -462,6 +520,14 @@ export function estimateWebRowHeight(
     case 'dataRow':
       base = row.columns.some((column) => column.secondaryText) ? 60 : 56;
       break;
+    case 'market': {
+      const marketStyle = resolveWebMarketLayoutStyle(row);
+      base = Math.max(
+        row.variant === 'stock' ? 72 : 68,
+        marketStyle.imageHeight + marketStyle.verticalPadding * 2
+      );
+      break;
+    }
     case 'identity':
       base = row.tertiary ? 72 : row.subtitle ? 60 : 56;
       break;
@@ -742,6 +808,30 @@ export function webRowRenderSignature(row: RowModel): string {
   return JSON.stringify(rowWithoutSelectionState(row));
 }
 
+const MARKET_QUOTE_PATCH_FIELDS = new Set([
+  'revision',
+  'price',
+  'priceSegments',
+  'change',
+  'accessibilityLabel',
+]);
+
+export function isWebMarketQuotePatch(patch: RowPatch): boolean {
+  return (
+    patch.type === 'market' &&
+    Object.keys(patch.changes).every((key) =>
+      MARKET_QUOTE_PATCH_FIELDS.has(key)
+    )
+  );
+}
+
+/** Number of Market image-binding passes caused by one Web patch transaction. */
+export function webMarketImageBindDeltaForPatches(
+  patches: readonly RowPatch[]
+): 0 | 1 {
+  return patches.length > 0 && patches.every(isWebMarketQuotePatch) ? 0 : 1;
+}
+
 // OneKey patch: selector names must shrink before the sidebar clips their contents.
 export const WEB_LIST_CSS = `
 [data-native-list-selector="walletSidebar"] .ok-native-list-title{max-width:100%;min-width:0}
@@ -798,11 +888,14 @@ export const WEB_LIST_CSS = `
 .ok-native-list-media{display:block;padding:0 5px;background:transparent;border-radius:16px}.ok-native-list-media-image{display:block;width:100%;aspect-ratio:1;border-radius:10px;background:var(--nl-strong);object-fit:cover}.ok-native-list-media-image[data-state="empty"]{background:transparent}.ok-native-list-media-image[data-state="error"]{display:flex;align-items:center;justify-content:center;color:var(--nl-icon-subdued);font-size:24px}.ok-native-list-media-meta{padding-top:7px}.ok-native-list-media-subtitle-row{display:flex;align-items:center;gap:6px}.ok-native-list-media-subtitle{flex:1;min-width:0;font-size:12px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-network{width:14px;height:14px;border-radius:50%}.ok-native-list-media-title{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-close{position:absolute;right:9px;top:4px;border:0;background:color-mix(in srgb,var(--nl-inverse) 72%,transparent);color:var(--nl-inverse-text);width:24px;height:24px;border-radius:50%;font:18px/20px inherit;cursor:pointer}
 .ok-native-list-metric{display:flex;flex-direction:column;align-items:flex-start;padding:12px;border-radius:12px;gap:5px;background:var(--nl-row)}.ok-native-list-metric-value{font-size:22px;line-height:28px;font-weight:700}.ok-native-list-composite{display:flex;flex-direction:column;align-items:stretch;padding:14px;border-radius:12px;gap:12px;background:var(--nl-subdued)}.ok-native-list-composite-heading{font-size:14px;letter-spacing:1px;color:var(--nl-secondary)}.ok-native-list-composite-row{display:flex;gap:12px}.ok-native-list-composite-cell{flex:1;min-width:0}.ok-native-list-composite-cell[data-shaded="true"]{padding:10px;border-radius:10px;background:color-mix(in srgb,var(--nl-primary) 5%,transparent)}.ok-native-list-composite-value{font-size:18px;font-weight:600}.ok-native-list-divider{height:1px;background:var(--nl-separator)}.ok-native-list-progress{height:4px;border-radius:2px;overflow:hidden;background:var(--nl-negative)}.ok-native-list-progress>span{display:block;height:100%;border-radius:2px;background:var(--nl-positive)}
 .ok-native-list-data{padding:6px 12px}.ok-native-list-index{flex:0 0 28px;color:var(--nl-secondary);font-size:13px}.ok-native-list-favorite{flex:0 0 24px;color:var(--nl-icon-subdued);font-size:22px}.ok-native-list-favorite[data-active="true"]{color:var(--nl-accent)}.ok-native-list-data-cell{display:flex;flex-direction:column;min-width:0}.ok-native-list-data-cell[data-align="center"]{align-items:center}.ok-native-list-data-cell[data-align="end"]{align-items:flex-end}.ok-native-list-data-primary{display:flex;align-items:center;gap:5px;max-width:100%;font-size:16px;font-weight:500;white-space:nowrap}.ok-native-list-unread{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--nl-accent)}.ok-native-list-thumbnail{width:64px;height:64px;border-radius:10px;object-fit:cover}
+.ok-native-list-market{padding:12px 20px;gap:14px}.ok-native-list-market>.ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-market[data-variant="stock"]>.ok-native-list-visual{width:40px;height:40px;flex-basis:40px}.ok-native-list-market>.ok-native-list-visual>.ok-native-list-visual-main{width:100%;height:100%}.ok-native-list-market-main{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-market-title-line{display:flex;align-items:center;min-width:0;gap:4px}.ok-native-list-market-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nl-primary);font-size:16px;line-height:24px;font-weight:500}.ok-native-list-market-subtitle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nl-secondary);font-size:14px;line-height:20px;font-weight:400}.ok-native-list-market-badge{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;box-sizing:border-box;max-width:72px;height:18px;padding:0 5px;border:0;border-radius:4px;background:var(--nl-strong);color:var(--nl-secondary);font:500 11px/18px inherit;overflow:hidden;white-space:nowrap}.ok-native-list-market-badge img{width:14px;height:14px;object-fit:contain}.ok-native-list-market-trailing{display:flex;flex:0 0 auto;align-items:center;gap:8px}.ok-native-list-market-price{max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--nl-primary);font-size:16px;line-height:24px;font-weight:500;font-variant-numeric:tabular-nums}.ok-native-list-market-change{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:80px;height:32px;border-radius:8px;color:#fff;background:#8d8d8d;font-size:14px;line-height:20px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}.ok-native-list-market-change[data-tone="positive"]{background:var(--nl-positive)}.ok-native-list-market-change[data-tone="negative"]{background:var(--nl-negative)}
+.ok-native-list-market-badge>svg,.ok-native-list-market-badge>.ok-native-list-market-badge-icon>svg{display:block;width:16px;height:16px;flex:0 0 16px}.ok-native-list-system[data-native-list-presentation="market"]{box-sizing:border-box;padding:12px 20px}.ok-native-list-system[data-native-list-presentation="market"]>.ok-native-list-spinner{width:32px;height:32px}
 .ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:6px;display:flex;width:20px;height:16px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:8px;background:transparent;color:var(--nl-secondary);font:600 10px/1 inherit;cursor:pointer}.ok-native-list-index-button[data-active="true"]{background:var(--nl-accent);color:var(--nl-inverse-text)}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-accent);outline-offset:1px}.ok-native-list-index-preview{position:absolute;z-index:8;right:40px;top:50%;display:flex;width:48px;height:48px;align-items:center;justify-content:center;transform:translateY(-50%) scale(.92);border-radius:14px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:22px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translateY(-50%) scale(1)}
 .ok-native-list-refresh{position:absolute;z-index:7;left:50%;top:8px;display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;opacity:0;transform:translate(-50%,-16px);transition:opacity .15s ease,transform .15s ease;pointer-events:none}.ok-native-list-refresh[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
 .ok-native-list-warning{height:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:14px 12px;border-top:1px solid;border-bottom:1px solid;box-sizing:border-box;cursor:default}.ok-native-list-warning-title,.ok-native-list-warning-message{font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}.ok-native-list-warning-title{font-weight:500;color:var(--nl-primary)}.ok-native-list-warning-message{font-weight:400;color:var(--nl-secondary)}
 .ok-native-list-subtitle-segments{display:flex;align-items:center;min-width:0;max-width:100%;height:20px}.ok-native-list-subtitle-segments>.ok-native-list-secondary{flex:0 1 auto;min-width:0}.ok-native-list-subtitle-dot{flex:0 0 4px;width:4px;height:4px;margin:0 6px;border-radius:50%;background:var(--nl-disabled)}.ok-native-list-wallet-row>.ok-native-list-flex{flex:0 1 auto;width:100%;align-items:center}.ok-native-list-wallet-badges{display:flex;gap:4px;justify-content:center;margin-top:4px;height:20px;max-width:100%}.ok-native-list-wallet-badges>.ok-native-list-badge{background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;height:20px;box-sizing:border-box;padding:2px 4px}.ok-native-list-visual-overlay{position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;line-height:1;font-size:10px}.ok-native-list-visual-overlay img,.ok-native-list-visual-overlay svg{width:100%;height:100%;object-fit:contain}
-@media (prefers-reduced-motion:reduce){.ok-native-list-index-preview,.ok-native-list-refresh{transition:none}.ok-native-list-spinner{animation:none}}
+.ok-native-list-row.ok-native-list-market-skeleton{padding:12px 20px;gap:0}.ok-native-list-skeleton-left{display:flex;align-items:center;gap:12px;flex:1}.ok-native-list-skeleton-text{display:flex;flex-direction:column;gap:4px}.ok-native-list-skeleton-right{display:flex;align-items:center;gap:8px}.ok-native-list-skeleton-mark{display:block;flex-shrink:0;border-radius:8px;animation:ok-native-list-skeleton 1.5s linear infinite alternate}@keyframes ok-native-list-skeleton{from{background-color:var(--nl-skeleton-base)}to{background-color:var(--nl-skeleton-highlight)}}.ok-native-list-market-spinner{display:block;width:20px;height:20px;flex-shrink:0;color:var(--nl-icon);animation:ok-native-list-spin .75s linear infinite}
+@media (prefers-reduced-motion:reduce){.ok-native-list-index-preview,.ok-native-list-refresh{transition:none}.ok-native-list-spinner,.ok-native-list-market-spinner{animation:none}.ok-native-list-skeleton-mark{animation:none;background:var(--nl-skeleton-base)}}
 /* OneKey patch: selector controls follow their original semantic colors and geometry. */
 .ok-native-list-checkbox[data-selector="networkSelector"]{padding:0;border-radius:4px;border-color:var(--nl-checkbox-border,var(--nl-separator));background:var(--nl-checkbox-icon,var(--nl-inverse-text))}
 .ok-native-list-checkbox[data-selector="networkSelector"]::after{display:none}
@@ -1280,6 +1373,17 @@ const selectorIcons: Readonly<
       },
     ],
   },
+  BadgeVerifiedSolid: {
+    viewBox: '0 0 24 24',
+    paths: [
+      {
+        d: WEB_MARKET_VERIFIED_PATH,
+        fill: 'currentColor',
+        fillRule: 'evenodd',
+        opacity: 1,
+      },
+    ],
+  },
 };
 function applySelectorIcon(element: HTMLElement, name: string) {
   const icon = selectorIcons[name];
@@ -1335,6 +1439,7 @@ function visualFromRow(row: RowModel): LeadingVisual | undefined {
   if (row.type === 'activity') return row.leading;
   if (row.type === 'message') return row.leading;
   if (row.type === 'dataRow') return row.leading;
+  if (row.type === 'market') return row.leading;
   if (row.type === 'metricCard') return row.visual;
   return undefined;
 }
@@ -2089,6 +2194,98 @@ function createSystemRow(
     'ok-native-list-row ok-native-list-system'
   );
   setData(body, 'variant', row.variant);
+  if ('presentation' in row)
+    setData(body, 'nativeListPresentation', row.presentation);
+  if (row.variant === 'loading' && row.loadingStyle === 'skeleton') {
+    body.classList.add('ok-native-list-market-skeleton');
+    const background = resolvedTheme(context.snapshot).background;
+    const rgb = Number.parseInt(background.slice(1, 7), 16);
+    const dark =
+      ((rgb >> 16) & 255) * 0.299 +
+        ((rgb >> 8) & 255) * 0.587 +
+        (rgb & 255) * 0.114 <
+      128;
+    body.style.setProperty('--nl-skeleton-base', dark ? '#111111' : '#fafafa');
+    body.style.setProperty(
+      '--nl-skeleton-highlight',
+      dark ? '#333333' : '#cdcdcd'
+    );
+    const left = createElement(
+      context.document,
+      'div',
+      'ok-native-list-skeleton-left'
+    );
+    const mark = (width: number, height: number, circle = false) => {
+      const element = createElement(
+        context.document,
+        'span',
+        'ok-native-list-skeleton-mark'
+      );
+      element.style.width = `${width}px`;
+      element.style.height = `${height}px`;
+      if (circle) element.style.borderRadius = '50%';
+      return element;
+    };
+    left.appendChild(mark(32, 32, true));
+    const text = createElement(
+      context.document,
+      'div',
+      'ok-native-list-skeleton-text'
+    );
+    text.appendChild(mark(80, 16));
+    text.appendChild(mark(60, 12));
+    left.appendChild(text);
+    body.appendChild(left);
+    const right = createElement(
+      context.document,
+      'div',
+      'ok-native-list-skeleton-right'
+    );
+    right.appendChild(mark(80, 18));
+    right.appendChild(mark(80, 18));
+    body.appendChild(right);
+    return body;
+  }
+  if (row.variant === 'loading' && row.loadingStyle === 'spinner') {
+    body.style.justifyContent = 'center';
+    body.style.padding = '16px';
+    const spinner = createElement(
+      context.document,
+      'span',
+      'ok-native-list-market-spinner'
+    );
+    spinner.setAttribute('role', 'progressbar');
+    // Same 20px SVG and 750ms rotation as react-native-web ActivityIndicator.
+    spinner.innerHTML =
+      '<svg viewBox="0 0 32 32" width="20" height="20"><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="4" opacity="0.2"/><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="80" stroke-dashoffset="60"/></svg>';
+    body.appendChild(spinner);
+    return body;
+  }
+  if ('presentation' in row && row.presentation === 'market') {
+    if (row.variant === 'noMatch') {
+      body.style.justifyContent = 'center';
+      body.style.padding = '32px';
+      const message = createElement(context.document, 'span', '', row.message);
+      message.style.fontSize = '16px';
+      message.style.lineHeight = '24px';
+      body.appendChild(message);
+      return body;
+    }
+    if (row.variant === 'end') {
+      body.style.justifyContent = 'center';
+      body.style.padding = '16px';
+      body.style.gap = '8px';
+      for (const width of [80, 4, 80]) {
+        const mark = createElement(context.document, 'span', '');
+        mark.style.width = String(width) + 'px';
+        mark.style.height = width === 4 ? '4px' : '1px';
+        mark.style.borderRadius = width === 4 ? '2px' : '0';
+        mark.style.background = 'var(--nl-separator)';
+        body.appendChild(mark);
+      }
+      return body;
+    }
+  }
   if (row.variant === 'warning') {
     body.classList.add('ok-native-list-warning');
     body.style.borderColor = row.borderColor ?? 'var(--nl-separator)';
@@ -2784,6 +2981,266 @@ function createWalletGroupRow(
   return body;
 }
 
+function marketFontWeight(
+  value: MarketTextStyle['fontWeight'] | undefined,
+  fallback: number
+): number {
+  if (value === 'bold') return 700;
+  if (value === 'semibold') return 600;
+  if (value === 'medium') return 500;
+  if (value === 'regular') return 400;
+  return fallback;
+}
+
+function applyMarketTextStyle(
+  element: HTMLElement,
+  style: MarketTextStyle | undefined,
+  defaults: Readonly<{
+    fontSize: number;
+    lineHeight: number;
+    weight: number;
+    alignment: 'start' | 'center' | 'end';
+  }>
+) {
+  element.style.fontSize = String(style?.fontSize ?? defaults.fontSize) + 'px';
+  element.style.lineHeight =
+    String(style?.lineHeight ?? defaults.lineHeight) + 'px';
+  element.style.fontWeight = String(
+    marketFontWeight(style?.fontWeight, defaults.weight)
+  );
+  element.style.color = style?.color ?? '';
+  element.style.textAlign = style?.alignment ?? defaults.alignment;
+  element.style.whiteSpace = style?.lines === 2 ? 'normal' : 'nowrap';
+  element.style.display = '';
+  element.style.removeProperty('-webkit-line-clamp');
+  element.style.removeProperty('-webkit-box-orient');
+  if (style?.lines === 2) {
+    element.style.display = '-webkit-box';
+    element.style.setProperty('-webkit-line-clamp', '2');
+    element.style.setProperty('-webkit-box-orient', 'vertical');
+  }
+}
+
+function setMarketQuoteContent(element: HTMLElement, row: MarketRow) {
+  const style = row.style;
+  const layoutStyle = resolveWebMarketLayoutStyle(row);
+  const price = element.querySelector<HTMLElement>(
+    '.ok-native-list-market-price'
+  );
+  if (price) {
+    price.textContent = row.price;
+    applyMarketTextStyle(price, style?.price, {
+      fontSize: 16,
+      lineHeight: 24,
+      weight: 500,
+      alignment: 'end',
+    });
+    applyValueSegments(
+      price,
+      row.priceSegments,
+      style?.price?.fontSize ?? 16,
+      style?.price?.lineHeight ?? 24,
+      marketFontWeight(style?.price?.fontWeight, 500)
+    );
+  }
+  const change = element.querySelector<HTMLElement>(
+    '.ok-native-list-market-change'
+  );
+  if (change) {
+    change.textContent = row.change.text;
+    setData(change, 'tone', row.change.tone);
+    applyMarketTextStyle(change, style?.change, {
+      fontSize: 14,
+      lineHeight: 20,
+      weight: 500,
+      alignment: 'center',
+    });
+    applyValueSegments(
+      change,
+      row.change.textSegments,
+      style?.change?.fontSize ?? 14,
+      style?.change?.lineHeight ?? 20,
+      marketFontWeight(style?.change?.fontWeight, 500)
+    );
+    change.style.width = String(layoutStyle.changeWidth) + 'px';
+    change.style.height = String(layoutStyle.changeHeight) + 'px';
+    change.style.borderRadius = String(layoutStyle.changeCornerRadius) + 'px';
+    change.style.color = row.change.textColor ?? style?.change?.color ?? '';
+    change.style.background = row.change.backgroundColor ?? '';
+  }
+  element.setAttribute(
+    'aria-label',
+    row.accessibilityLabel ??
+      [row.title, row.subtitle, row.price, row.change.text]
+        .filter(Boolean)
+        .join(', ')
+  );
+}
+
+function createMarketRow(context: RenderContext, row: MarketRow): HTMLElement {
+  const body = createElement(
+    context.document,
+    'div',
+    'ok-native-list-row ok-native-list-market'
+  );
+  setData(body, 'variant', row.variant);
+  const style = row.style;
+  const layoutStyle = resolveWebMarketLayoutStyle(row);
+  body.style.padding =
+    String(layoutStyle.verticalPadding) +
+    'px ' +
+    String(layoutStyle.horizontalPadding) +
+    'px';
+  body.style.gap = '0px';
+  const visual = createVisual(context, row.leading);
+  if (visual) {
+    const width = layoutStyle.imageWidth;
+    const height = layoutStyle.imageHeight;
+    visual.style.width = String(width) + 'px';
+    visual.style.height = String(height) + 'px';
+    visual.style.flexBasis = String(width) + 'px';
+    visual.style.borderRadius = String(layoutStyle.imageCornerRadius) + 'px';
+    const borderColor = 'borderColor' in row.leading ? row.leading.borderColor : undefined;
+    if (borderColor) {
+      visual.style.border = '1px solid ' + borderColor;
+      visual.style.boxSizing = 'border-box';
+    }
+    visual.querySelectorAll<HTMLElement>('img').forEach((image) => {
+      if (!image.classList.contains('ok-native-list-visual-corner')) {
+        image.style.width = '100%';
+        image.style.height = '100%';
+        if (borderColor) {
+          image.style.borderRadius = '0';
+          image.style.clipPath = 'inset(-1px round ' + String(layoutStyle.imageCornerRadius) + 'px)';
+        }
+        image.style.objectFit =
+          style?.image?.contentFit ?? image.style.objectFit;
+      } else {
+        image.style.width = '20px';
+        image.style.height = '20px';
+        if (borderColor) {
+          image.style.right = '-5px';
+          image.style.bottom = '-5px';
+        }
+      }
+    });
+    visual.style.marginRight = String(layoutStyle.leadingGap) + 'px';
+    body.appendChild(visual);
+  }
+  const main = createElement(
+    context.document,
+    'span',
+    'ok-native-list-market-main'
+  );
+  main.style.gap = String(style?.lineGap ?? 0) + 'px';
+  const titleLine = createElement(
+    context.document,
+    'span',
+    'ok-native-list-market-title-line'
+  );
+  titleLine.style.gap = String(layoutStyle.titleBadgeGap) + 'px';
+  const title = createElement(
+    context.document,
+    'span',
+    'ok-native-list-market-title',
+    row.title
+  );
+  applyMarketTextStyle(title, style?.title, {
+    fontSize: 16,
+    lineHeight: 24,
+    weight: 500,
+    alignment: 'start',
+  });
+  titleLine.appendChild(title);
+  row.badges?.forEach((badge, slot) => {
+    const element = createElement(
+      context.document,
+      badge.actionKey ? 'button' : 'span',
+      'ok-native-list-market-badge',
+      badge.text
+    );
+    if (badge.actionKey) {
+      element.setAttribute('type', 'button');
+      setData(element, 'nativeListAction', badge.actionKey);
+      markActionAnchorSource(element, 'marketBadge', slot);
+    }
+    setData(element, 'tone', badge.tone);
+    element.style.color =
+      badge.textColor ??
+      (badge.tone === 'success'
+        ? 'var(--nl-positive)'
+        : badge.tone === 'danger'
+        ? 'var(--nl-negative)'
+        : badge.tone === 'info'
+        ? 'var(--nl-info)'
+        : badge.tone === 'warning'
+        ? 'var(--nl-primary)'
+        : '');
+    element.style.background =
+      badge.backgroundColor ??
+      ((badge.icon || badge.iconName) && !badge.text ? 'transparent' : '');
+    if ((badge.icon || badge.iconName) && !badge.text) {
+      element.style.padding = '0';
+    }
+    if (badge.accessibilityLabel)
+      element.setAttribute('aria-label', badge.accessibilityLabel);
+    if (badge.icon) {
+      const icon = createImage(context, badge.icon);
+      if (icon) {
+        icon.style.borderRadius = '50%';
+        element.prepend(icon);
+      }
+    }
+    if (badge.iconName === 'verified') {
+      const icon = createElement(
+        context.document,
+        'span',
+        'ok-native-list-market-badge-icon'
+      );
+      applySelectorIcon(icon, 'BadgeVerifiedSolid');
+      element.prepend(icon);
+    }
+    titleLine.appendChild(element);
+  });
+  main.appendChild(titleLine);
+  if (row.subtitle || row.subtitleSegments?.length) {
+    const subtitle = createElement(
+      context.document,
+      'span',
+      'ok-native-list-market-subtitle',
+      row.subtitle
+    );
+    applyMarketTextStyle(subtitle, style?.subtitle, {
+      fontSize: 14,
+      lineHeight: 20,
+      weight: 400,
+      alignment: 'start',
+    });
+    applyValueSegments(
+      subtitle,
+      row.subtitleSegments,
+      style?.subtitle?.fontSize ?? 14,
+      style?.subtitle?.lineHeight ?? 20,
+      marketFontWeight(style?.subtitle?.fontWeight, 400)
+    );
+    main.appendChild(subtitle);
+  }
+  body.appendChild(main);
+  const trailing = createElement(
+    context.document,
+    'span',
+    'ok-native-list-market-trailing'
+  );
+  trailing.style.gap = String(layoutStyle.trailingGap) + 'px';
+  trailing.append(
+    createElement(context.document, 'span', 'ok-native-list-market-price'),
+    createElement(context.document, 'span', 'ok-native-list-market-change')
+  );
+  body.appendChild(trailing);
+  setMarketQuoteContent(body, row);
+  return body;
+}
+
 function createRowBody(context: RenderContext, row: RowModel): HTMLElement {
   switch (row.type) {
     case 'walletGroup':
@@ -2802,6 +3259,8 @@ function createRowBody(context: RenderContext, row: RowModel): HTMLElement {
       return createMetricRow(context, row);
     case 'dataRow':
       return createDataRow(context, row);
+    case 'market':
+      return createMarketRow(context, row);
     case 'identity':
     case 'activity':
     case 'message':
@@ -2869,6 +3328,16 @@ export class NativeListWebEngine {
   );
   private actionAnchorCounter = 0;
   private bindingEpochCounter = 0;
+  private marketPointer:
+    | Readonly<{
+        pointerId: number;
+        rowKey: string;
+        startX: number;
+        startY: number;
+        timer: number;
+      }>
+    | undefined;
+  private marketLongPressFired = false;
   private lastViewportWidth = -1;
   private lastViewportHeight = -1;
   private destroyed = false;
@@ -2959,6 +3428,10 @@ export class NativeListWebEngine {
       passive: true,
     });
     this.root.addEventListener('click', this.handleClick);
+    this.root.addEventListener('pointerdown', this.handleMarketPointerDown);
+    this.root.addEventListener('pointermove', this.handleMarketPointerMove);
+    this.root.addEventListener('pointerup', this.handleMarketPointerEnd);
+    this.root.addEventListener('pointercancel', this.handleMarketPointerEnd);
     // OneKey patch: preserve web tooltip hover for section titles.
     this.root.addEventListener('pointerover', this.handleTitlePointerOver);
     this.root.addEventListener('pointerout', this.handleTitlePointerOut);
@@ -3034,7 +3507,6 @@ export class NativeListWebEngine {
   applyPatches(patches: readonly RowPatch[]) {
     if (patches.length === 0) return;
     const next = applyRowPatches(this.snapshot, patches);
-    this.invalidateActionAnchor('snapshot');
     const selection = new Set(this.selectedKeys);
     patches.forEach((patch) => {
       const selected =
@@ -3042,6 +3514,29 @@ export class NativeListWebEngine {
       if (selected === true) selection.add(patch.key);
       else if (selected === false) selection.delete(patch.key);
     });
+    if (webMarketImageBindDeltaForPatches(patches) === 0) {
+      this.snapshot = next;
+      this.rows = effectiveRows(next);
+      this.selectedKeys = selection;
+      patches.forEach((patch) => {
+        const index = this.rows.findIndex((row) => row.key === patch.key);
+        const row = this.rows[index];
+        const element = this.mounted.get(index);
+        if (row?.type === 'market' && element) {
+          setMarketQuoteContent(element, row);
+          element.dataset.renderSignature = webRowRenderSignature(row);
+        }
+        if (
+          row?.type === 'market' &&
+          this.sticky.dataset.nativeListRowKey === row.key
+        ) {
+          setMarketQuoteContent(this.sticky, row);
+          this.sticky.dataset.renderSignature = webRowRenderSignature(row);
+        }
+      });
+      return;
+    }
+    this.invalidateActionAnchor('snapshot');
     this.setSnapshot(next, selection);
   }
 
@@ -3180,6 +3675,11 @@ export class NativeListWebEngine {
     );
     this.viewport.removeEventListener('scroll', this.handleScroll);
     this.root.removeEventListener('click', this.handleClick);
+    this.cancelMarketPointer();
+    this.root.removeEventListener('pointerdown', this.handleMarketPointerDown);
+    this.root.removeEventListener('pointermove', this.handleMarketPointerMove);
+    this.root.removeEventListener('pointerup', this.handleMarketPointerEnd);
+    this.root.removeEventListener('pointercancel', this.handleMarketPointerEnd);
     this.root.removeEventListener('pointerover', this.handleTitlePointerOver);
     this.root.removeEventListener('pointerout', this.handleTitlePointerOut);
     this.root.removeEventListener('keydown', this.handleKeyDown);
@@ -3230,6 +3730,7 @@ export class NativeListWebEngine {
     snapshot: NativeListSnapshot,
     selectedKeys?: ReadonlySet<string>
   ) {
+    this.cancelMarketPointer();
     this.measuredWarningHeights.clear();
     this.snapshot = snapshot;
     this.rows = effectiveRows(snapshot);
@@ -3580,6 +4081,17 @@ export class NativeListWebEngine {
       }
     }
     element.replaceChildren(body);
+    if (
+      row.type === 'market' &&
+      row.diagnostics?.imageBindActionKey &&
+      body.querySelector('img')
+    ) {
+      this.callbacks.onRowAction?.({
+        rowKey: row.key,
+        actionKey: row.diagnostics.imageBindActionKey,
+        sectionKey: row.sectionKey,
+      });
+    }
   }
 
   private renderFooter() {
@@ -4102,6 +4614,8 @@ export class NativeListWebEngine {
         ? row.actionKey
         : row.type === 'system' && row.variant === 'retry'
         ? row.actionKey
+        : row.type === 'market' && row.pressActionKey
+        ? row.pressActionKey
         : 'press';
     if (rowElement && sourceElement) {
       const anchor = this.createActionAnchor(sourceElement, rowElement, 'row');
@@ -4115,6 +4629,64 @@ export class NativeListWebEngine {
       this.emitRowAction(row, actionKey);
     }
   }
+
+  private cancelMarketPointer() {
+    const state = this.marketPointer;
+    if (!state) return;
+    this.document.defaultView?.clearTimeout(state.timer);
+    this.marketPointer = undefined;
+  }
+
+  private handleMarketPointerDown = (event: PointerEvent) => {
+    if (event.button !== 0 || !(event.target instanceof Element)) return;
+    this.marketLongPressFired = false;
+    if (event.target.closest('[data-native-list-action]')) return;
+    const rowElement = event.target.closest<HTMLElement>(
+      '[data-native-list-row-key]'
+    );
+    const row = this.rowAtElement(rowElement);
+    if (row?.type !== 'market' || row.disabled) return;
+    this.cancelMarketPointer();
+    if (row.pressInActionKey)
+      this.emitRowAction(
+        row,
+        row.pressInActionKey,
+        rowElement ?? undefined,
+        rowElement ?? undefined
+      );
+    if (!row.longPressActionKey || !rowElement) return;
+    markActionAnchorSource(rowElement, 'row');
+    const timer = this.document.defaultView?.setTimeout(() => {
+      const current = this.marketPointer;
+      if (!current || current.pointerId !== event.pointerId) return;
+      this.marketPointer = undefined;
+      this.marketLongPressFired = true;
+      this.emitRowAction(row, row.longPressActionKey!, rowElement, rowElement);
+    }, MARKET_LONG_PRESS_MS);
+    if (timer === undefined) return;
+    this.marketPointer = {
+      pointerId: event.pointerId,
+      rowKey: row.key,
+      startX: event.clientX,
+      startY: event.clientY,
+      timer,
+    };
+  };
+
+  private handleMarketPointerMove = (event: PointerEvent) => {
+    const state = this.marketPointer;
+    if (!state || state.pointerId !== event.pointerId) return;
+    if (
+      Math.abs(event.clientX - state.startX) > MARKET_MOVE_CANCEL_PX ||
+      Math.abs(event.clientY - state.startY) > MARKET_MOVE_CANCEL_PX
+    )
+      this.cancelMarketPointer();
+  };
+
+  private handleMarketPointerEnd = (event: PointerEvent) => {
+    if (this.marketPointer?.pointerId === event.pointerId)
+      this.cancelMarketPointer();
+  };
 
   // OneKey patch: hover opens the same anchored help action as native taps.
   private handleTitlePointerOver = (event: PointerEvent) => {
@@ -4167,7 +4739,8 @@ export class NativeListWebEngine {
   };
 
   private handleClick = (event: Event) => {
-    if (Date.now() < this.suppressClickUntil) {
+    if (this.marketLongPressFired || Date.now() < this.suppressClickUntil) {
+      this.marketLongPressFired = false;
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -4340,6 +4913,7 @@ export class NativeListWebEngine {
   }
 
   private handleScroll = () => {
+    this.cancelMarketPointer();
     this.invalidateActionAnchor('scroll');
     this.scheduleFrame();
   };

@@ -2,8 +2,24 @@
 #import <React/RCTBundleURLProvider.h>
 #import <ReactCommon/RCTHost.h>
 #import <BackgroundThread/BackgroundThreadManager.h>
+#import <CoreText/CoreText.h>
 
 @implementation ReactNativeDelegate
+
+- (instancetype)init
+{
+  self = [super init];
+  if (self) {
+    // Market's RN header must resolve the same fonts as its native rows on first layout.
+    NSURL *resourceURL = [[NSBundle mainBundle] URLForResource:@"NativeListResources" withExtension:@"bundle"];
+    NSBundle *resources = resourceURL ? [NSBundle bundleWithURL:resourceURL] : nil;
+    for (NSString *weight in @[@"Regular", @"Medium", @"SemiBold", @"Bold"]) {
+      NSURL *fontURL = [resources URLForResource:[@"Roobert-" stringByAppendingString:weight] withExtension:@"ttf"];
+      if (fontURL) CTFontManagerRegisterFontsForURL((__bridge CFURLRef)fontURL, kCTFontManagerScopeProcess, nil);
+    }
+  }
+  return self;
+}
 
 - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
 {
@@ -25,7 +41,7 @@
   [BackgroundThreadManager installSharedBridgeInMainRuntime:host];
 
 #if DEBUG
-  NSString *bgURL = @"http://localhost:8082/background.bundle?platform=ios&dev=true&lazy=false&minify=false&inlineSourceMap=false&modulesOnly=false&runModule=true";
+  NSString *bgURL = [[[RCTBundleURLProvider sharedSettings] jsBundleURLForBundleRoot:@"background"] absoluteString];
 #else
   NSString *bgURL = @"background.bundle";
 #endif

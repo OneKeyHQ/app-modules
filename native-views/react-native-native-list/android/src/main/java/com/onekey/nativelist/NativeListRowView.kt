@@ -6,12 +6,18 @@ import android.animation.TimeInterpolator
 import android.animation.ValueAnimator
 import android.graphics.Color
 import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Outline
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.os.Handler
+import android.os.Looper
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.TextUtils
@@ -24,6 +30,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -41,6 +48,69 @@ import androidx.core.widget.TextViewCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
+
+// Market/TokenListSkeleton: source geometry and the native Skeleton's 3s shimmer.
+private class NativeListMarketSkeleton(context: android.content.Context, backgroundColor: Int) : View(context) {
+  private val marks = Array(5) { RectF() }
+  private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+  private val matrix = Matrix()
+  private val shaders = arrayOfNulls<LinearGradient>(5)
+  private val dark = Color.red(backgroundColor) * 0.299 + Color.green(backgroundColor) * 0.587 + Color.blue(backgroundColor) * 0.114 < 128
+  private val colors = intArrayOf(
+    Color.parseColor(if (dark) "#111111" else "#FAFAFA"),
+    Color.parseColor(if (dark) "#333333" else "#CDCDCD"),
+    Color.parseColor(if (dark) "#111111" else "#FAFAFA"),
+  )
+  private var phase = 0f
+  private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+    duration = 3000
+    repeatCount = ValueAnimator.INFINITE
+    interpolator = LinearInterpolator()
+    addUpdateListener { phase = it.animatedValue as Float; invalidate() }
+  }
+
+  private fun dp(value: Float) = NativeListScale.dp(resources, value)
+
+  override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+    super.onSizeChanged(w, h, oldw, oldh)
+    marks[0].set(0f, 0f, dp(32f), dp(32f))
+    marks[1].set(dp(44f), 0f, dp(124f), dp(16f))
+    marks[2].set(dp(44f), dp(20f), dp(104f), dp(32f))
+    marks[3].set(w - dp(168f), dp(7f), w - dp(88f), dp(25f))
+    marks[4].set(w - dp(80f), dp(7f), w.toFloat(), dp(25f))
+    marks.forEachIndexed { index, mark ->
+      shaders[index] = LinearGradient(0f, 0f, mark.width(), 0f, colors, floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+    }
+  }
+
+  override fun onDraw(canvas: Canvas) {
+    super.onDraw(canvas)
+    marks.forEachIndexed { index, mark ->
+      matrix.setTranslate(mark.left - mark.width() + phase * mark.width() * 3f, 0f)
+      shaders[index]?.setLocalMatrix(matrix)
+      paint.shader = shaders[index]
+      val radius = dp(if (index == 0) 16f else 8f)
+      canvas.drawRoundRect(mark, radius, radius, paint)
+    }
+  }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    if (windowVisibility == VISIBLE) animator.start()
+  }
+
+  override fun onDetachedFromWindow() {
+    animator.cancel()
+    super.onDetachedFromWindow()
+  }
+
+  override fun onWindowVisibilityChanged(visibility: Int) {
+    super.onWindowVisibilityChanged(visibility)
+    if (visibility == VISIBLE && isAttachedToWindow) {
+      if (!animator.isStarted) animator.start()
+    } else animator.cancel()
+  }
+}
 
 internal data class NativeListActionOrigin(
   val sourceView: View,
@@ -147,26 +217,25 @@ private class PackedTitleLineLayout(context: android.content.Context) : LinearLa
     }
 
     val title = getChildAt(0)
-    val badge = getChildAt(1)
     val widthMode = MeasureSpec.getMode(widthMeasureSpec)
     val widthSize = MeasureSpec.getSize(widthMeasureSpec)
-    if (badge.visibility != GONE) {
+    var accessoryWidth = 0
+    for (index in 1 until childCount) {
+      val child = getChildAt(index)
+      if (child.visibility == GONE) continue
       measureChildWithMargins(
-        badge,
+        child,
         widthMeasureSpec,
-        paddingLeft + paddingRight,
+        paddingLeft + paddingRight + accessoryWidth,
         heightMeasureSpec,
         paddingTop + paddingBottom,
       )
-    }
-
-    val badgeMargins = badge.layoutParams as MarginLayoutParams
-    val badgeWidth = if (badge.visibility == GONE) 0 else {
-      badge.measuredWidth + badgeMargins.leftMargin + badgeMargins.rightMargin
+      val margins = child.layoutParams as MarginLayoutParams
+      accessoryWidth += child.measuredWidth + margins.leftMargin + margins.rightMargin
     }
     val titleMargins = title.layoutParams as MarginLayoutParams
     if (widthMode != MeasureSpec.UNSPECIFIED) {
-      (title as TextView).maxWidth = (widthSize - paddingLeft - paddingRight - badgeWidth -
+      (title as TextView).maxWidth = (widthSize - paddingLeft - paddingRight - accessoryWidth -
         titleMargins.leftMargin - titleMargins.rightMargin).coerceAtLeast(0)
     }
     (title.layoutParams as LayoutParams).apply {
@@ -362,6 +431,10 @@ internal class NativeListRowView(
   private val status = TextView(context)
   private val metricSubtitle = TextView(context)
   private val badgeLine = TextView(context)
+  private val marketBadgeViews = List(3) { LinearLayout(context) }
+  private val marketBadgeLabels = List(3) { TextView(context) }
+  private val marketBadgeImages = List(3) { OneKeyImageReusableView(reactContext) }
+  private val marketBadgeGlyphs = List(3) { OneKeyIconView(context) }
   private val activityContentRow = LinearLayout(context)
   private val actionLine = LinearLayout(context)
   private val actionViews = List(3) { TextView(context) }
@@ -402,6 +475,11 @@ internal class NativeListRowView(
   private var pressedRowBackground: Drawable? = null
   // OneKey patch: preserve a held row independently from RecyclerView snapshot rebinding.
   private var touchPressed = false
+  private val marketLongPressHandler = Handler(Looper.getMainLooper())
+  private var marketLongPressRunnable: Runnable? = null
+  private var marketTouchStartX = 0f
+  private var marketTouchStartY = 0f
+  private var marketLongPressFired = false
   private var reorderActive = false
   private var checkboxCheckedColor = Color.rgb(32, 32, 32)
   private var checkboxUncheckedColor = Color.rgb(252, 252, 252)
@@ -466,6 +544,23 @@ internal class NativeListRowView(
     titleLine.gravity = Gravity.CENTER_VERTICAL
     titleLine.addView(title, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
     titleLine.addView(badgeLine, wrap())
+    marketBadgeViews.forEachIndexed { index, badge ->
+      badge.orientation = HORIZONTAL
+      badge.gravity = Gravity.CENTER_VERTICAL
+      badge.isClickable = true
+      marketBadgeGlyphs[index].visibility = GONE
+      marketBadgeImages[index].visibility = GONE
+      marketBadgeLabels[index].apply {
+        includeFontPadding = false
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
+        textSize = sp(11f)
+        typeface = NativeListFonts.medium(context)
+      }
+      badge.addView(marketBadgeGlyphs[index], LayoutParams(dp(16), dp(16)))
+      badge.addView(marketBadgeImages[index], LayoutParams(dp(14), dp(14)))
+      badge.addView(marketBadgeLabels[index], wrap())
+    }
     mainColumn.addView(titleLine)
     mainColumn.addView(subtitle)
     mainColumn.addView(tertiary)
@@ -510,19 +605,47 @@ internal class NativeListRowView(
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> if (isEnabled) {
           touchPressed = true
+          marketLongPressFired = false
+          val item = tag as? NativeListItem
+          if (item?.type == "market") {
+            marketTouchStartX = event.x
+            marketTouchStartY = event.y
+            item.json.optString("pressInActionKey").takeIf(String::isNotEmpty)?.let { actionKey ->
+              emitAction(item, actionKey, null, this, "row")
+            }
+            item.json.optString("longPressActionKey").takeIf(String::isNotEmpty)?.let { actionKey ->
+              val expectedKey = item.key
+              val runnable = Runnable {
+                val current = tag as? NativeListItem
+                if (touchPressed && current?.key == expectedKey && current.type == "market") {
+                  marketLongPressRunnable = null
+                  marketLongPressFired = true
+                  emitAction(current, actionKey, null, this, "row")
+                }
+              }
+              marketLongPressRunnable = runnable
+              marketLongPressHandler.postDelayed(runnable, 800L)
+            }
+          }
           if ((tag as? NativeListItem)?.type == "mediaTile") {
             leadingFrame.alpha = 0.8f
           } else {
             background = pressedRowBackground
           }
         }
-        MotionEvent.ACTION_MOVE -> if (
-          event.x < 0 || event.y < 0 || event.x >= width || event.y >= height
-        ) {
-          touchPressed = false
-          restoreRestingBackground()
+        MotionEvent.ACTION_MOVE -> {
+          val outside = event.x < 0 || event.y < 0 || event.x >= width || event.y >= height
+          val movedMarket = (tag as? NativeListItem)?.type == "market" &&
+            (kotlin.math.abs(event.x - marketTouchStartX) > dp(10) ||
+              kotlin.math.abs(event.y - marketTouchStartY) > dp(10))
+          if (outside || movedMarket) {
+            cancelMarketLongPress()
+            touchPressed = false
+            restoreRestingBackground()
+          }
         }
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+          cancelMarketLongPress()
           touchPressed = false
           restoreRestingBackground()
         }
@@ -531,6 +654,10 @@ internal class NativeListRowView(
     }
     setOnClickListener { view ->
       (view.tag as? NativeListItem)?.let { item ->
+        if (item.type == "market" && marketLongPressFired) {
+          marketLongPressFired = false
+          return@let
+        }
         // OneKey patch: allow create-address accessories when whole-row press is gated.
         if (!item.json.optBoolean("pressDisabled", false)) onRowPress?.invoke(item, actionOrigin(view, "row"))
       }
@@ -650,13 +777,15 @@ internal class NativeListRowView(
     useSourceScale: Boolean = false,
   ) {
     val shouldRestorePressed = touchPressed && boundKey == item.key
+    cancelMarketLongPress()
+    marketLongPressFired = false
     invalidateCurrentBinding()
     bindingEpoch += 1
     boundKey = item.key
     touchPressed = shouldRestorePressed
     currentLayout = layout
     tag = item
-    selectorUsesSourceScale = item.usesSelectorSourceScale || useSourceScale
+    selectorUsesSourceScale = item.type == "market" || item.usesSelectorSourceScale || useSourceScale
     reorderActive = false
     leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
     secondaryImage.prepareForReuse()
@@ -742,6 +871,7 @@ internal class NativeListRowView(
       "activity" -> bindActivity(item, theme)
       "message" -> bindMessage(item, theme)
       "dataRow" -> bindDataRow(item, theme, checkboxState)
+      "market" -> bindMarket(item, theme)
       "mediaTile" -> bindMediaTile(item, theme)
       "metricCard" -> bindMetricCard(item, theme)
       "sectionHeader" -> bindSectionHeader(item, theme, checkboxState)
@@ -776,6 +906,8 @@ internal class NativeListRowView(
   }
 
   fun recycle() {
+    cancelMarketLongPress()
+    marketLongPressFired = false
     touchPressed = false
     restoreRestingBackground()
     invalidateCurrentBinding()
@@ -866,6 +998,7 @@ internal class NativeListRowView(
   }
 
   fun dispose() {
+    cancelMarketLongPress()
     invalidateCurrentBinding()
     restoreRestingBackground()
     selectorImages.forEach(OneKeyImageReusableView::dispose)
@@ -874,6 +1007,7 @@ internal class NativeListRowView(
     secondaryImage.dispose()
     mediaNetworkImage.dispose()
     metricVisualImages.forEach(OneKeyImageReusableView::dispose)
+    marketBadgeImages.forEach(OneKeyImageReusableView::dispose)
     walletGroupRows.forEach(NativeListRowView::dispose)
   }
 
@@ -939,6 +1073,7 @@ internal class NativeListRowView(
   }
 
   private fun resetViews() {
+    clipChildren = true
     clipToPadding = true
     selectorOriginalFontFeatures.forEach { (view, original) -> view.fontFeatureSettings = original }
     selectorOriginalFontFeatures.clear()
@@ -952,6 +1087,25 @@ internal class NativeListRowView(
     selectorImages.forEach(OneKeyImageReusableView::dispose)
     selectorImages.clear()
     selectorHeight = null
+    marketBadgeViews.forEachIndexed { index, badge ->
+      (badge.parent as? ViewGroup)?.removeView(badge)
+      badge.visibility = GONE
+      badge.background = null
+      badge.setPadding(0, 0, 0, 0)
+      badge.setOnClickListener(null)
+      badge.contentDescription = null
+      marketBadgeLabels[index].apply {
+        text = ""
+        setTextColor(color(null, "secondaryText", "#0000009B"))
+      }
+      marketBadgeImages[index].prepareForReuse()
+      marketBadgeImages[index].visibility = GONE
+      marketBadgeGlyphs[index].apply {
+        visibility = GONE
+        iconName = ""
+        tintColor = color(null, "secondaryText", "#0000009B")
+      }
+    }
     title.setOnClickListener(null)
     title.isClickable = false
     walletGroupRows.forEach { it.invalidateCurrentBinding() }
@@ -1120,10 +1274,19 @@ internal class NativeListRowView(
     mainColumn.removeView(skeletonSecondary)
     setOnClickListener { view ->
       (view.tag as? NativeListItem)?.let { item ->
+        if (item.type == "market" && marketLongPressFired) {
+          marketLongPressFired = false
+          return@let
+        }
         // OneKey patch: allow create-address accessories when whole-row press is gated.
         if (!item.json.optBoolean("pressDisabled", false)) onRowPress?.invoke(item, actionOrigin(view, "row"))
       }
     }
+  }
+
+  private fun cancelMarketLongPress() {
+    marketLongPressRunnable?.let(marketLongPressHandler::removeCallbacks)
+    marketLongPressRunnable = null
   }
 
   private fun restoreRestingBackground() {
@@ -1730,6 +1893,272 @@ internal class NativeListRowView(
       view.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, column.optInt("weight", 1).toFloat())
     }
     addView(dataContainer, weighted())
+  }
+
+  private fun marketTypeface(weight: String, fallback: String): Typeface = when (
+    weight.ifEmpty { fallback }
+  ) {
+    "regular" -> NativeListFonts.regular(context)
+    "semibold" -> NativeListFonts.semibold(context)
+    "bold" -> NativeListFonts.bold(context)
+    else -> NativeListFonts.medium(context)
+  }
+
+  private fun applyMarketTextStyle(
+    view: TextView,
+    style: JSONObject?,
+    defaultSize: Float,
+    defaultLineHeight: Int,
+    defaultWeight: String,
+    defaultColor: Int,
+    defaultAlignment: String,
+  ) {
+    view.includeFontPadding = false
+    view.fontFeatureSettings = "tnum"
+    view.textSize = sp(style?.optDouble("fontSize", defaultSize.toDouble())?.toFloat() ?: defaultSize)
+    view.typeface = marketTypeface(style?.optString("fontWeight").orEmpty(), defaultWeight)
+    view.setTextColor(safeColor(style?.optString("color"), defaultColor))
+    val alignment = style?.optString("alignment", defaultAlignment) ?: defaultAlignment
+    view.gravity = Gravity.CENTER_VERTICAL or when (alignment) {
+      "center" -> Gravity.CENTER_HORIZONTAL
+      "end" -> Gravity.END
+      else -> Gravity.START
+    }
+    view.maxLines = style?.optInt("lines", 1)?.coerceIn(1, 2) ?: 1
+    view.ellipsize = TextUtils.TruncateAt.END
+    TextViewCompat.setLineHeight(
+      view,
+      dp(style?.optDouble("lineHeight", defaultLineHeight.toDouble())?.roundToInt() ?: defaultLineHeight),
+    )
+  }
+
+  private fun marketText(value: String, segments: JSONArray?, fontSize: Float): CharSequence {
+    if (segments == null || segments.length() == 0) return value
+    val result = SpannableStringBuilder()
+    for (index in 0 until segments.length()) {
+      val segment = segments.getJSONObject(index)
+      val start = result.length
+      result.append(segment.optString("text"))
+      if (segment.optString("style") == "subscript") {
+        result.setSpan(
+          AbsoluteSizeSpan(sp(kotlin.math.ceil(fontSize * 0.6f)).roundToInt(), true),
+          start,
+          result.length,
+          Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+      }
+    }
+    return result
+  }
+
+  private fun bindMarket(item: NativeListItem, theme: JSONObject?) {
+    // Network badges extend beyond the leading image's frame.
+    clipChildren = false
+    val variant = item.json.optString("variant")
+    val style = item.json.optJSONObject("style")
+    val imageStyle = style?.optJSONObject("image")
+    val imageWidth = imageStyle?.optDouble("width", if (variant == "stock") 40.0 else 32.0)?.roundToInt()
+      ?: if (variant == "stock") 40 else 32
+    val imageHeight = imageStyle?.optDouble("height", if (variant == "stock") 40.0 else 32.0)?.roundToInt()
+      ?: if (variant == "stock") 40 else 32
+    val horizontalPadding = style?.optDouble("horizontalPadding", if (variant == "perp") 16.0 else 20.0)?.roundToInt()
+      ?: if (variant == "perp") 16 else 20
+    val verticalPadding = style?.optDouble("verticalPadding", 12.0)?.roundToInt() ?: 12
+    val leadingGap = style?.optDouble("leadingGap", if (variant == "perp") 8.0 else 14.0)?.roundToInt()
+      ?: if (variant == "perp") 8 else 14
+    setPadding(dp(horizontalPadding), dp(verticalPadding), dp(horizontalPadding), dp(verticalPadding))
+
+    val leading = JSONObject(item.json.getJSONObject("leading").toString())
+    imageStyle?.optString("shape")?.takeIf(String::isNotEmpty)?.let { leading.put("shape", it) }
+    imageStyle?.optString("contentFit")?.takeIf(String::isNotEmpty)?.let { contentFit ->
+      leading.optJSONObject("image")?.put("contentFit", contentFit)
+    }
+    val shape = imageStyle?.optString("shape", leading.optString("shape", "circle"))
+      ?: leading.optString("shape", "circle")
+    val cornerRadius = imageStyle?.takeIf { it.has("cornerRadius") }?.optDouble("cornerRadius")?.toFloat()
+      ?: when (shape) {
+        "square" -> 0f
+        "rounded" -> 8f
+        else -> minOf(imageWidth, imageHeight) / 2f
+      }
+    addLeading(
+      leading,
+      sizeDp = imageWidth,
+      spacingDp = leadingGap,
+      heightDp = imageHeight,
+      cornerRadiusDp = cornerRadius,
+    )
+
+    addView(mainColumn, weighted())
+    titleLine.packsChildrenAtStart = true
+    showText(title, item.json.optString("title"), style?.optJSONObject("title")?.optInt("lines", 1) ?: 1)
+    applyMarketTextStyle(
+      title,
+      style?.optJSONObject("title"),
+      16f,
+      24,
+      "medium",
+      color(theme, "primaryText", "#202020"),
+      "start",
+    )
+    val badges = item.json.optJSONArray("badges")
+    val titleBadgeGap = style?.optDouble("titleBadgeGap", 4.0)?.roundToInt() ?: 4
+    if (badges != null) {
+      for (index in 0 until minOf(marketBadgeViews.size, badges.length())) {
+        val badge = badges.getJSONObject(index)
+        val badgeView = marketBadgeViews[index]
+        val badgeLabel = marketBadgeLabels[index]
+        val hasGlyph = badge.optString("iconName") == "verified"
+        val remoteIcon = badge.optJSONObject("icon")
+        val hasIcon = hasGlyph || remoteIcon != null
+        val text = badge.optString("text")
+        val toneColor = when (badge.optString("tone")) {
+          "success" -> color(theme, "positive", "#218358")
+          "danger" -> color(theme, "negative", "#CE2C31")
+          "info" -> color(theme, "info", "#0D74CE")
+          "warning" -> color(theme, "primaryText", "#202020")
+          else -> color(theme, "secondaryText", "#646464")
+        }
+        val foreground = safeColor(badge.optString("textColor"), toneColor)
+        badgeView.visibility = VISIBLE
+        val iconOnly = hasIcon && text.isEmpty()
+        badgeView.setPadding(dp(if (iconOnly) 0 else if (hasIcon) 2 else 5), 0, dp(if (iconOnly) 0 else 5), 0)
+        badgeView.background = roundedFill(
+          safeColor(
+            badge.optString("backgroundColor"),
+            if (hasIcon && text.isEmpty()) Color.TRANSPARENT else color(theme, "strongBackground", "#0000000F"),
+          ),
+          4f,
+        )
+        badgeLabel.text = text
+        badgeLabel.setTextColor(foreground)
+        badgeLabel.visibility = if (text.isEmpty()) GONE else VISIBLE
+        if (hasGlyph) {
+          marketBadgeGlyphs[index].apply {
+            iconName = "BadgeVerifiedSolid"
+            tintColor = foreground
+            visibility = VISIBLE
+          }
+        }
+        remoteIcon?.let { icon ->
+          marketBadgeImages[index].visibility = VISIBLE
+          marketBadgeImages[index].outlineProvider = circleOutlineProvider
+          marketBadgeImages[index].clipToOutline = true
+          bindImage(icon, marketBadgeImages[index], item.key, 20 + index, "generic")
+        }
+        val actionKey = badge.optString("actionKey")
+        badgeView.isClickable = actionKey.isNotEmpty()
+        if (actionKey.isNotEmpty()) {
+          badgeView.setOnClickListener {
+            emitAction(item, actionKey, null, badgeView, "marketBadge", index)
+          }
+        }
+        badgeView.contentDescription = badge.optString("accessibilityLabel", text)
+        titleLine.addView(
+          badgeView,
+          LayoutParams(LayoutParams.WRAP_CONTENT, dp(18)).apply { marginStart = dp(titleBadgeGap) },
+        )
+      }
+    }
+    subtitle.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+      topMargin = dp(style?.optDouble("lineGap", 0.0)?.roundToInt() ?: 0)
+    }
+    val subtitleText = item.json.optString("subtitle")
+    val subtitleSegments = item.json.optJSONArray("subtitleSegments")
+    if (subtitleText.isNotEmpty() || (subtitleSegments?.length() ?: 0) > 0) {
+      subtitle.visibility = VISIBLE
+      applyMarketTextStyle(
+        subtitle,
+        style?.optJSONObject("subtitle"),
+        14f,
+        20,
+        "regular",
+        color(theme, "secondaryText", "#646464"),
+        "start",
+      )
+      subtitle.text = marketText(
+        subtitleText,
+        subtitleSegments,
+        style?.optJSONObject("subtitle")?.optDouble("fontSize", 14.0)?.toFloat() ?: 14f,
+      )
+    }
+    trailingColumn.orientation = HORIZONTAL
+    trailingColumn.gravity = Gravity.END or Gravity.CENTER_VERTICAL
+    addView(trailingColumn, wrap())
+    bindMarketQuote(item, theme)
+    item.json.optJSONObject("diagnostics")?.optString("imageBindActionKey")
+      ?.takeIf(String::isNotEmpty)
+      ?.takeIf { leading.optJSONObject("image") != null || leading.optJSONObject("networkImage") != null }
+      ?.let { actionKey -> onAction?.invoke(item, actionKey, null, null) }
+  }
+
+  fun bindMarketQuote(item: NativeListItem, theme: JSONObject?) {
+    if (boundKey != item.key || item.type != "market") return
+    tag = item
+    val style = item.json.optJSONObject("style")
+    val priceStyle = style?.optJSONObject("price")
+    val price = trailingViews[0]
+    price.isClickable = false
+    price.isLongClickable = false
+    price.visibility = VISIBLE
+    price.maxWidth = dp(112)
+    applyMarketTextStyle(
+      price,
+      priceStyle,
+      16f,
+      24,
+      "medium",
+      color(theme, "primaryText", "#202020"),
+      "end",
+    )
+    price.text = marketText(
+      item.json.optString("price"),
+      item.json.optJSONArray("priceSegments"),
+      priceStyle?.optDouble("fontSize", 16.0)?.toFloat() ?: 16f,
+    )
+    val trailingGap = style?.optDouble("trailingGap", 8.0)?.roundToInt() ?: 8
+    price.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+      marginEnd = dp(trailingGap)
+    }
+
+    val changeData = item.json.getJSONObject("change")
+    val changeStyle = style?.optJSONObject("change")
+    val change = trailingViews[1]
+    change.isClickable = false
+    change.isLongClickable = false
+    val toneColor = when (changeData.optString("tone")) {
+      "positive" -> color(theme, "positive", "#218358")
+      "negative" -> color(theme, "negative", "#CE2C31")
+      else -> color(theme, "secondaryText", "#8D8D8D")
+    }
+    val textColor = safeColor(
+      changeData.optString("textColor"),
+      color(theme, "inverseText", "#FFFFFF"),
+    )
+    change.visibility = VISIBLE
+    applyMarketTextStyle(change, changeStyle, 14f, 20, "medium", textColor, "center")
+    change.text = marketText(
+      changeData.optString("text"),
+      changeData.optJSONArray("textSegments"),
+      changeStyle?.optDouble("fontSize", 14.0)?.toFloat() ?: 14f,
+    )
+    change.background = roundedFill(
+      safeColor(changeData.optString("backgroundColor"), toneColor),
+      style?.optDouble("changeCornerRadius", 8.0)?.toFloat() ?: 8f,
+    )
+    change.layoutParams = LayoutParams(
+      dp(style?.optDouble("changeWidth", 80.0)?.roundToInt() ?: 80),
+      dp(style?.optDouble("changeHeight", 32.0)?.roundToInt() ?: 32),
+    )
+    contentDescription = item.json.optString(
+      "accessibilityLabel",
+      listOf(
+        item.json.optString("title"),
+        item.json.optString("subtitle"),
+        item.json.optString("price"),
+        changeData.optString("text"),
+      ).filter(String::isNotEmpty).joinToString(", "),
+    )
   }
 
   private fun styledDataText(
@@ -2366,6 +2795,40 @@ internal class NativeListRowView(
 
   private fun bindSystem(item: NativeListItem, theme: JSONObject?) {
     val variant = item.json.optString("variant")
+    val isMarket = item.json.optString("presentation") == "market"
+    if (isMarket) setPadding(dp(20), dp(12), dp(20), dp(12))
+    if (variant == "loading" && item.json.optString("loadingStyle") == "skeleton") {
+      setPadding(dp(20), dp(12), dp(20), dp(12))
+      addView(
+        NativeListMarketSkeleton(context, color(theme, "background", "#FFFFFF")),
+        LayoutParams(LayoutParams.MATCH_PARENT, dp(32)),
+      )
+      return
+    }
+    if (variant == "loading" && item.json.optString("loadingStyle") == "spinner") {
+      gravity = Gravity.CENTER
+      setPadding(0, dp(16), 0, dp(16))
+      addView(
+        ProgressBar(context, null, android.R.attr.progressBarStyleSmall).apply {
+          isIndeterminate = true
+          indeterminateTintList = android.content.res.ColorStateList.valueOf(color(theme, "icon", "#0000009B"))
+        },
+        LayoutParams(dp(20), dp(20)),
+      )
+      return
+    }
+    if (isMarket && variant == "noMatch") {
+      gravity = Gravity.CENTER
+      setPadding(dp(32), dp(32), dp(32), dp(32))
+      title.textSize = sp(16f)
+      title.typeface = NativeListFonts.regular(context)
+      title.gravity = Gravity.CENTER
+      title.setTextColor(color(theme, "secondaryText", "#0000009B"))
+      TextViewCompat.setLineHeight(title, dp(24))
+      showText(title, item.json.optString("message"), 1)
+      addView(mainColumn, weighted())
+      return
+    }
     // OneKey patch: warning title/description wrap inside the actual scroll content.
     if (variant == "warning") {
       setPadding(dp(12), dp(14), dp(12), dp(14))
@@ -2399,11 +2862,11 @@ internal class NativeListRowView(
     }
     gravity = Gravity.CENTER
     if (variant == "loading") {
-      addLeading(JSONObject().put("kind", "skeleton"), 40)
+      addLeading(JSONObject().put("kind", "skeleton"), if (isMarket) 32 else 40)
       leadingFallback.text = ""
       leadingFallback.background = roundedFill(
         color(theme, "strongBackground", "#0000000F"),
-        20f,
+        if (isMarket) 16f else 20f,
       )
       addSkeleton(skeletonPrimary, 120, 12, theme, bottomMarginDp = 8)
       addSkeleton(skeletonSecondary, 80, 12, theme)
@@ -2444,15 +2907,17 @@ internal class NativeListRowView(
     sizeDp: Int = 40,
     secondaryVisual: JSONObject? = null,
     spacingDp: Int = 12,
+    heightDp: Int = sizeDp,
+    cornerRadiusDp: Float? = null,
   ) {
     leadingFrame.visibility = VISIBLE
-    leadingFrame.layoutParams = LayoutParams(dp(sizeDp), dp(sizeDp)).apply {
+    leadingFrame.layoutParams = LayoutParams(dp(sizeDp), dp(heightDp)).apply {
       val item = tag as? NativeListItem
       // OneKey patch: Yoga rounds cumulative selector edges, not each 12dp gap separately.
       marginEnd = if (item?.json?.has("height") == true && item.json.optString("presentation") in setOf("accountSelector", "networkSelector")) dp(12 + sizeDp + spacingDp) - dp(12) - dp(sizeDp) else dp(spacingDp)
     }
     addView(leadingFrame)
-    leadingFallback.layoutParams = FrameLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
+    leadingFallback.layoutParams = FrameLayout.LayoutParams(dp(sizeDp), dp(heightDp))
     if (visual == null) return
     val kind = visual.optString("kind")
     val shape = visual.optString(
@@ -2473,16 +2938,19 @@ internal class NativeListRowView(
     if (!isIcon && visual.optString("backgroundColor").isNotEmpty()) {
       leadingFrame.background = roundedFill(
         visualBackground,
-        leadingCornerRadius(shape, sizeDp),
+        cornerRadiusDp ?: leadingCornerRadius(shape, minOf(sizeDp, heightDp)),
       )
     }
-    leadingFallback.background = roundedFill(visualBackground, leadingCornerRadius(shape, sizeDp))
+    leadingFallback.background = roundedFill(
+      visualBackground,
+      cornerRadiusDp ?: leadingCornerRadius(shape, minOf(sizeDp, heightDp)),
+    )
     leadingFallback.visibility = if (!isIcon && sources.isEmpty()) VISIBLE else GONE
     if (isIcon) {
       leadingFrame.background = GradientDrawable().apply {
         setColor(visualBackground)
         setStroke(1, parseNativeListColor("#0000001F"))
-        cornerRadius = scaledDp(leadingCornerRadius(shape, sizeDp))
+        cornerRadius = scaledDp(cornerRadiusDp ?: leadingCornerRadius(shape, minOf(sizeDp, heightDp)))
       }
       leadingIcon.iconName = visual.optString("name")
       leadingIcon.tintColor = safeColor(
@@ -2532,13 +3000,33 @@ internal class NativeListRowView(
         index = index,
         count = visibleSources.size,
         sizeDp = sizeDp,
+        heightDp = heightDp,
         tokenPair = tokenPair,
       )
       image.outlineProvider = when {
         tokenPair && index == 1 -> circleOutlineProvider
+        cornerRadiusDp != null -> roundedOutlineProvider(cornerRadiusDp)
         else -> leadingOutlineProvider(shape)
       }
       image.clipToOutline = true
+      if ((tag as? NativeListItem)?.type == "market" && index == 0 && visual.optString("borderColor").isNotEmpty()) {
+        val inset = dp(1)
+        val radius = scaledDp(cornerRadiusDp ?: leadingCornerRadius(shape, minOf(sizeDp, heightDp)))
+        leadingFrame.background = GradientDrawable().apply {
+          setColor(visualBackground)
+          setStroke(inset, safeColor(visual.optString("borderColor"), Color.TRANSPARENT))
+          this.cornerRadius = radius
+        }
+        image.layoutParams = FrameLayout.LayoutParams(dp(sizeDp) - inset * 2, dp(heightDp) - inset * 2).apply {
+          leftMargin = inset
+          topMargin = inset
+        }
+        image.outlineProvider = object : ViewOutlineProvider() {
+          override fun getOutline(view: View, outline: Outline) {
+            outline.setRoundRect(-inset, -inset, view.width + inset, view.height + inset, radius)
+          }
+        }
+      }
       val fallbackIcon = if (index == 0) visual.optJSONObject("fallbackIcon") else null
       val expectedEpoch = bindingEpoch
       bindImage(source, image, boundKey ?: "", index, variant,
@@ -2655,10 +3143,11 @@ internal class NativeListRowView(
     index: Int,
     count: Int,
     sizeDp: Int,
+    heightDp: Int,
     tokenPair: Boolean,
   ): FrameLayout.LayoutParams {
     if (count == 1 || tokenPair && index == 0) {
-      return FrameLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
+      return FrameLayout.LayoutParams(dp(sizeDp), dp(heightDp))
     }
     if (tokenPair && index == 1) {
       return FrameLayout.LayoutParams(dp(16), dp(16), Gravity.END or Gravity.BOTTOM).apply {
@@ -3000,6 +3489,22 @@ internal class NativeListRowView(
   }
 
   private fun applySize(item: NativeListItem) {
+    if (item.type == "market") {
+      val style = item.json.optJSONObject("style")
+      val imageHeight = style?.optJSONObject("image")?.optDouble(
+        "height",
+        if (item.json.optString("variant") == "stock") 40.0 else 32.0,
+      ) ?: if (item.json.optString("variant") == "stock") 40.0 else 32.0
+      val verticalPadding = style?.optDouble("verticalPadding", 12.0) ?: 12.0
+      val defaultHeight = if (item.json.optString("variant") == "stock") 72.0 else 68.0
+      minimumHeight = dp(
+        item.json.optDouble(
+          "height",
+          maxOf(defaultHeight, imageHeight + verticalPadding * 2),
+        ).roundToInt(),
+      )
+      return
+    }
     val isWalletSidebar =
       item.type == "identity" && item.json.optString("presentation") == "walletSidebar"
     val isAccountSelectorIdentity =
@@ -3152,9 +3657,14 @@ internal class NativeListRowView(
           else -> 36
         }
         "system" -> when (item.json.optString("variant")) {
+          "loading" -> when (item.json.optString("loadingStyle")) {
+            "skeleton" -> 56
+            "spinner" -> 52
+            else -> if (item.json.optString("presentation") == "market") 68 else 56
+          }
+          "noMatch", "retry" -> if (item.json.optString("presentation") == "market") 44 else if (item.json.optString("variant") == "noMatch") 36 else 44
           "warning" -> 0
-          "noMatch", "end" -> 36
-          "retry" -> 44
+          "end" -> if (item.json.optString("presentation") == "market") 44 else 36
           else -> 56
         }
         "action" -> when {
@@ -3257,6 +3767,12 @@ internal class NativeListRowView(
         }
         else -> outline.setOval(0, 0, view.width, view.height)
       }
+    }
+  }
+
+  private fun roundedOutlineProvider(radiusDp: Float) = object : ViewOutlineProvider() {
+    override fun getOutline(view: View, outline: Outline) {
+      outline.setRoundRect(0, 0, view.width, view.height, scaledDp(radiusDp))
     }
   }
 
@@ -3456,6 +3972,7 @@ private class OneKeyIconView(context: android.content.Context) : View(context) {
       "CrossedSmallSolid" to listOf(Path.FillType.WINDING),
       "AccountErrorCustom" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
       "Circle" to listOf(Path.FillType.WINDING),
+      "BadgeVerifiedSolid" to listOf(Path.FillType.EVEN_ODD),
       "ChevronRightSmallOutline" to listOf(Path.FillType.WINDING),
       "MinusCircleOutline" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
       "PlusCircleOutline" to listOf(Path.FillType.WINDING, Path.FillType.EVEN_ODD),
@@ -3483,6 +4000,7 @@ private class OneKeyIconView(context: android.content.Context) : View(context) {
       "CrossedSmallSolid" to listOf("M17.87 8.25 14.12 12l3.75 3.75-2.12 2.121-3.75-3.75-3.75 3.75-2.121-2.121L9.879 12l-3.75-3.75 2.12-2.121L12 9.879l3.75-3.75 2.122 2.121Z"),
       "AccountErrorCustom" to listOf("M12.5 12.75a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5", "M0 3.5A3.5 3.5 0 0 1 3.5 0h8.088A2.41 2.41 0 0 1 14 2.412V5h1a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H4a4 4 0 0 1-4-4zm2 3.163V14a2 2 0 0 0 2 2h11a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H3.5c-.537 0-1.045-.12-1.5-.337M2 3.5A1.5 1.5 0 0 0 3.5 5H12V2.412A.41.41 0 0 0 11.588 2H3.5A1.5 1.5 0 0 0 2 3.5"),
       "Circle" to listOf("M0 12a12 12 0 1 0 24 0a12 12 0 1 0 -24 0"),
+      "BadgeVerifiedSolid" to listOf("M9.483 11.458v3.5h-1v-3.5z M10.467 2.698a2.03 2.03 0 0 1 3.065 0l1.358 1.564a.03.03 0 0 0 .028.01l2.046-.325a2.03 2.03 0 0 1 2.347 1.971l.037 2.07q0 .016.014.026l1.776 1.066a2.03 2.03 0 0 1 .532 3.019l-1.304 1.609a.03.03 0 0 0-.005.03l.675 1.956a2.03 2.03 0 0 1-1.533 2.656l-2.033.394a.03.03 0 0 0-.023.019l-.741 1.933a2.03 2.03 0 0 1-2.88 1.05l-1.811-1.006a.03.03 0 0 0-.03 0l-1.811 1.005a2.03 2.03 0 0 1-2.88-1.049l-.742-1.933a.03.03 0 0 0-.023-.019l-2.033-.394a2.03 2.03 0 0 1-1.532-2.656l.675-1.957a.03.03 0 0 0-.005-.029l-1.304-1.61a2.03 2.03 0 0 1 .532-3.018l1.776-1.066a.03.03 0 0 0 .014-.026l.035-2.07a2.03 2.03 0 0 1 2.349-1.97l2.045.324a.03.03 0 0 0 .028-.01zm1.516 3.76a.5.5 0 0 0-.447.276l-1.861 3.724H8.483a1 1 0 0 0-1 1v3.5a1 1 0 0 0 1 1h6.692a2 2 0 0 0 1.981-1.73l.341-2.5a2 2 0 0 0-1.982-2.27h-1.939l.197-1.269a1.5 1.5 0 0 0-1.481-1.731z"),
       "ArrowBottomOutline" to listOf("m13 17.586 5-5L19.414 14 12 21.414 4.586 14 6 12.586l5 5V3h2z"),
       "ArrowTopOutline" to listOf("M19.414 10 18 11.414l-5-5V21h-2V6.414l-5 5L4.586 10 12 2.586z"),
       "ChartTrendingUpOutline" to listOf("M22 13h-2V9.414l-7 7-4-4-6 6L1.586 17 9 9.586l4 4L18.586 8H15V6h7z"),

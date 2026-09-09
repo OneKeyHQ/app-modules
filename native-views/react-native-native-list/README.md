@@ -112,9 +112,10 @@ second delta.
 | `activity`      | Transaction/activity with amounts and up to three actions  |
 | `message`       | Notification/message with bounded body lines and thumbnail |
 | `dataRow`       | Two to four fixed table columns, optional index/checkbox   |
+| `market`        | Recycled token, stock, or perpetual quote row              |
 | `mediaTile`     | Gallery or browser-preview tile                            |
-| `metricCard`    | KPI or fixed Activity/Performance portfolio card            |
-| `sectionHeader` | Sticky/group, tri-state, or fixed list-summary header       |
+| `metricCard`    | KPI or fixed Activity/Performance portfolio card           |
+| `sectionHeader` | Sticky/group, tri-state, or fixed list-summary header      |
 | `action`        | Fixed action row or fixed footer                           |
 | `system`        | Loading, retry, end marker, or bounded spacer              |
 
@@ -161,6 +162,59 @@ The native templates bundle OneKey's Roobert Regular, Medium, SemiBold, and
 Bold faces and use them before the platform-font fallback. Their semantic
 icons and checkbox marks are the same vector paths as the OneKey component
 library, rendered by Core Graphics/UIKit on iOS and Canvas on Android.
+
+### Market rows
+
+`market` is a fixed native/DOM template, not a React `renderItem`. Its default
+token/perpetual geometry uses a 32-point leading image with a 16-point network
+corner; stock uses a 40-point image. The trailing change block is 80×32 with an
+8-point radius. All displayed values are already formatted strings; compact
+zero runs can use `priceSegments`, `subtitleSegments`, or
+`change.textSegments` with `{ style: 'subscript' }`.
+
+```ts
+const btc = {
+  type: 'market',
+  key: 'btc',
+  variant: 'token',
+  leading: { kind: 'token', image: btcImage, networkImage: bitcoinImage },
+  title: 'BTC',
+  subtitle: '$1.23B',
+  price: '$64,230.00',
+  change: { text: '+2.40%', tone: 'positive' },
+  badges: [
+    {
+      key: 'community',
+      iconName: 'verified',
+      tone: 'success',
+      actionKey: 'market.communityInfo',
+      accessibilityLabel: 'Community recognized',
+    },
+  ],
+  pressInActionKey: 'market.prewarm',
+  pressActionKey: 'market.open',
+  longPressActionKey: 'market.menu',
+  diagnostics: { imageBindActionKey: 'market.imageBind' },
+} satisfies MarketRow;
+```
+
+Badges accept localized text, a bounded remote image, or the single built-in
+`iconName: 'verified'` glyph. A badge `actionKey` emits independently with an
+anchor whose source is `marketBadge`. Market long press fires after 800 ms and
+is cancelled when the pointer moves more than 10 logical pixels or the list
+scrolls. The optional diagnostic action fires when a row binds an image; quote-
+only patches (`price`, `priceSegments`, `change`, `accessibilityLabel`, and
+`revision`) update visible labels without rebinding that image.
+
+`style` is deliberately finite: row padding/gaps, image width/height/shape/
+corner radius/content fit, title/subtitle/price/change font size, weight,
+color, line height, one-or-two-line truncation and alignment, plus change-block
+width/height/radius. Omitting it preserves the defaults. Loading, empty, retry,
+and pagination states use the existing `system` rows with
+`presentation: 'market'`. Loading rows accept `loadingStyle: 'skeleton'` for
+the 56-point token skeleton or `'spinner'` for the centered 52-point pagination
+indicator. Use `accessibilityLabel` for loading announcements. Omitting
+`loadingStyle` preserves each platform's existing loading rendering.
 
 For native reorder, set `capabilities.reorderable` and mark eligible rail rows
 with `draggable: true`, or add a `drag` trailing accessory to an identity row.
@@ -307,7 +361,7 @@ by the iOS wallet list's 120 Hz tail behavior.
 | Activity rows       | `components/TxHistoryListView/TxHistoryListItem.tsx`                                         |
 | Message rows        | `Notifications/components/NotificationListView.tsx`                                          |
 | Data rows           | `Perp/components/TokenSelector/PerpTokenSelectorRow.tsx`                                     |
-| Media tile rows     | `Home/components/NFTListView/NFTListItem.tsx`                                               |
+| Media tile rows     | `Home/components/NFTListView/NFTListItem.tsx`                                                |
 | Metric card rows    | `Perp/components/Portfolio/PerpPortfolioContent.tsx`                                         |
 | Section header rows | `AllNetworksManager/NetworksSectionList.tsx`, `TxHistoryListView/TxHistorySectionHeader.tsx` |
 | Action rows         | `TokenManager/TokenManagerList.tsx`, `Discovery/pages/BookmarkListModal/index.tsx`           |

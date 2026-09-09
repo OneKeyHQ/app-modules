@@ -92,6 +92,10 @@ internal class NativeListAdapter(
     position: Int,
     payloads: MutableList<Any>,
   ) {
+    if (payloads.isNotEmpty() && payloads.all { it == MARKET_QUOTE_PAYLOAD }) {
+      itemAt(position)?.let { holder.rowView.bindMarketQuote(it, theme) }
+      return
+    }
     // OneKey patch: an unknown payload must retain full binding; validated echoes keep images alive.
     // if (payloads.contains(SELECTION_PAYLOAD)) {
     if (payloads.isNotEmpty() && payloads.all { it == SELECTION_PAYLOAD || it == SELECTION_ECHO_PAYLOAD }) {
@@ -183,7 +187,18 @@ internal class NativeListAdapter(
       override fun getChangePayload(oldItem: NativeListItem, newItem: NativeListItem): Any? =
         if (oldItem.key == newItem.key && oldItem.type == newItem.type &&
           newItem.selectionUpdateFromContent == oldItem.content
-        ) SELECTION_ECHO_PAYLOAD else null
+        ) SELECTION_ECHO_PAYLOAD else if (isMarketQuoteUpdate(oldItem, newItem)) MARKET_QUOTE_PAYLOAD else null
+
+      private fun isMarketQuoteUpdate(oldItem: NativeListItem, newItem: NativeListItem): Boolean {
+        if (oldItem.type != "market" || newItem.type != "market") return false
+        fun stableContent(item: NativeListItem): String {
+          val value = JSONObject(item.json.toString())
+          listOf("revision", "price", "priceSegments", "change", "accessibilityLabel")
+            .forEach(value::remove)
+          return value.toString()
+        }
+        return stableContent(oldItem) == stableContent(newItem)
+      }
     }
   }
 }
@@ -191,3 +206,4 @@ internal class NativeListAdapter(
 internal const val SELECTION_PAYLOAD = "selection"
 // OneKey patch: internal payload, never exposed through the serialized row contract.
 internal const val SELECTION_ECHO_PAYLOAD = "selectionEcho"
+internal const val MARKET_QUOTE_PAYLOAD = "marketQuote"

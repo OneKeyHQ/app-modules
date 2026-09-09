@@ -1,0 +1,85 @@
+import type * as React from "react";
+import {
+  codegenNativeCommands,
+  codegenNativeComponent,
+  type HostComponent,
+  type ViewProps,
+} from "react-native";
+
+import type {
+  DirectEventHandler,
+  Double,
+  Int32,
+  WithDefault,
+} from "react-native/Libraries/Types/CodegenTypes";
+
+export type OnPageScrollEventData = Readonly<{
+  position: Double;
+  offset: Double;
+}>;
+
+export type OnPageSelectedEventData = Readonly<{
+  position: Double;
+}>;
+
+export type OnPageScrollStateChangedEventData = Readonly<{
+  pageScrollState: "idle" | "dragging" | "settling";
+}>;
+
+export type OnCollapsibleStateChangedEventData = Readonly<{
+  position: Int32;
+  headerOffset: Double;
+  nativePageCount: Int32;
+  attachedPageCount: Int32;
+  observedScrollableCount: Int32;
+  retainedPages: string;
+  reason: string;
+}>;
+
+/**
+ * Internal native props. Consumers should use CollapsiblePagerViewProps from
+ * CollapsiblePagerView instead of mounting this host component directly.
+ */
+export interface NativeProps extends ViewProps {
+  scrollEnabled?: WithDefault<boolean, true>;
+  layoutDirection?: WithDefault<"ltr" | "rtl", "ltr">;
+  initialPage?: Int32;
+  offscreenPageLimit?: Int32;
+  headerHeight?: Int32;
+  stickyHeaderHeight?: Int32;
+  pageKeys?: string;
+  retainedPages?: string;
+  onPageScroll?: DirectEventHandler<OnPageScrollEventData>;
+  onPageSelected?: DirectEventHandler<OnPageSelectedEventData>;
+  onPageScrollStateChanged?: DirectEventHandler<OnPageScrollStateChangedEventData>;
+  onCollapsibleStateChanged?: DirectEventHandler<OnCollapsibleStateChangedEventData>;
+}
+
+type CollapsiblePagerViewNativeType = HostComponent<NativeProps>;
+
+export interface NativeCommands {
+  setPage: (
+    viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
+    selectedPage: Int32
+  ) => void;
+  setPageWithoutAnimation: (
+    viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
+    selectedPage: Int32
+  ) => void;
+  setScrollEnabledImperatively: (
+    viewRef: React.ElementRef<CollapsiblePagerViewNativeType>,
+    scrollEnabled: boolean
+  ) => void;
+}
+
+export const Commands: NativeCommands = codegenNativeCommands<NativeCommands>({
+  supportedCommands: [
+    "setPage",
+    "setPageWithoutAnimation",
+    "setScrollEnabledImperatively",
+  ],
+});
+
+export default codegenNativeComponent<NativeProps>(
+  "RNCCollapsiblePagerView"
+) as HostComponent<NativeProps>;

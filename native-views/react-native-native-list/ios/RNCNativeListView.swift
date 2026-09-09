@@ -83,6 +83,10 @@ final class NativeListView: UIView {
     target: self,
     action: #selector(reorderLongPressChanged(_:))
   )
+  private lazy var marketLongPress = UILongPressGestureRecognizer(
+    target: self,
+    action: #selector(marketLongPressChanged(_:))
+  )
   // OneKey patch: claim only vertical drags so held rows and ancestor pagers stay responsive.
   private lazy var listBodyGestureGuard = UIPanGestureRecognizer(target: nil, action: nil)
   private var interactiveReorderSource: (key: String, index: Int)?
@@ -122,6 +126,10 @@ final class NativeListView: UIView {
     reorderLongPress.allowableMovement = ReorderAnimation.allowableMovement
     reorderLongPress.delegate = self
     collectionView.addGestureRecognizer(reorderLongPress)
+    marketLongPress.minimumPressDuration = 0.8
+    marketLongPress.allowableMovement = 10
+    marketLongPress.delegate = self
+    collectionView.addGestureRecognizer(marketLongPress)
     interactiveReorderPlaceholder.isHidden = true
     interactiveReorderPlaceholder.isUserInteractionEnabled = false
     interactiveReorderPlaceholder.layer.cornerRadius = ReorderAnimation.placeholderRadius
@@ -298,8 +306,13 @@ final class NativeListView: UIView {
     }
 
     var changedKeys: [String] = []
+    var marketQuoteKeys = Set<String>()
     var sizeChanged = false
+    let marketQuoteFields: Set<String> = [
+      "revision", "price", "priceSegments", "change", "accessibilityLabel",
+    ]
     for (index, changes) in pending {
+      let previous = current.items[index]
       var merged = current.items[index].data
       changes.forEach { key, value in
         if key != "key" && key != "type" { merged[key] = value }
@@ -307,14 +320,30 @@ final class NativeListView: UIView {
       guard let item = try? NativeListItem(data: merged) else { return }
       if rowHeight(current.items[index]) != rowHeight(item) { sizeChanged = true }
       current.items[index] = item
-      changedKeys.append(item.key)
+      if previous.type == "market", Set(changes.keys).isSubset(of: marketQuoteFields) {
+        marketQuoteKeys.insert(item.key)
+      } else {
+        changedKeys.append(item.key)
+      }
       if let selected = changes["selected"] as? Bool {
         if selected { current.selectedKeys.insert(item.key) } else { current.selectedKeys.remove(item.key) }
       }
     }
-    invalidateActionAnchor(reason: "snapshot")
+    if !changedKeys.isEmpty { invalidateActionAnchor(reason: "snapshot") }
     config = current
     itemsByKey = Dictionary(uniqueKeysWithValues: current.items.map { ($0.key, $0) })
+    for indexPath in collectionView.indexPathsForVisibleItems {
+      guard let item = current.items[safe: indexPath.item],
+            marketQuoteKeys.contains(item.key),
+            let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell else { continue }
+      cell.updateMarketQuote(item, theme: current.theme)
+    }
+    if changedKeys.isEmpty {
+      configureFooter(current)
+      emitVisibleRangeIfNeeded()
+      checkEndReached()
+      return
+    }
     var snapshot = dataSource.snapshot()
     snapshot.reconfigureItems(changedKeys.filter { snapshot.indexOfItem($0) != nil })
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
@@ -984,13 +1013,28 @@ final class NativeListView: UIView {
       updateSelection(target: NativeSelectionTarget(scope: "row", key: item.key), sourceKey: item.key)
       return
     }
-    if item.type == "action" {
+    if item.type == "market", !item.data.string("pressActionKey").isEmpty {
+      emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("pressActionKey"), origin: origin))
+    } else if item.type == "action" {
       emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("actionKey"), origin: origin))
     } else if item.type == "system", item.data.string("variant") == "retry" {
       emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("actionKey"), origin: origin))
     } else {
       emit(onRowAction, rowActionPayload(item: item, actionKey: "press", origin: origin))
     }
+  }
+
+  @objc private func marketLongPressChanged(_ gesture: UILongPressGestureRecognizer) {
+    guard gesture.state == .began else { return }
+    let point = gesture.location(in: collectionView)
+    guard let indexPath = collectionView.indexPathForItem(at: point),
+          let item = config?.items[safe: indexPath.item],
+          item.type == "market",
+          !item.data.bool("disabled") else { return }
+    let actionKey = item.data.string("longPressActionKey")
+    guard !actionKey.isEmpty else { return }
+    let origin = (collectionView.cellForItem(at: indexPath) as? NativeListCell)?.rowActionOrigin()
+    handleAction(item: item, actionKey: actionKey, target: nil, origin: origin)
   }
 
   private func handleAction(
@@ -1265,10 +1309,18 @@ final class NativeListView: UIView {
                 ? 56
                 : config?.layout == "linear" ? 30 : 36
     case "system":
-      switch item.data.string("variant") {
-      case "noMatch", "end": base = 36
-      case "retry": base = 44
-      default: base = 56
+      if item.data.string("variant") == "loading" && item.data.string("loadingStyle") == "skeleton" {
+        base = 56
+      } else if item.data.string("variant") == "loading" && item.data.string("loadingStyle") == "spinner" {
+        base = 52
+      } else if item.data.string("presentation") == "market" {
+        base = item.data.string("variant") == "loading" ? 68 : 44
+      } else {
+        switch item.data.string("variant") {
+        case "noMatch", "end": base = 36
+        case "retry": base = 44
+        default: base = 56
+        }
       }
     case "action":
       base = item.data.string("presentation") == "accountSelector"
@@ -1278,6 +1330,14 @@ final class NativeListView: UIView {
       base = item.data.dictionaries("columns").contains {
         !$0.string("secondaryText").isEmpty
       } ? 60 : 56
+    case "market":
+      let style = item.data.dictionary("style")
+      let imageHeight = CGFloat(style?.dictionary("image")?.double(
+        "height",
+        default: item.data.string("variant") == "stock" ? 40 : 32
+      ) ?? (item.data.string("variant") == "stock" ? 40 : 32))
+      let verticalPadding = CGFloat(style?.double("verticalPadding", default: 12) ?? 12)
+      base = max(item.data.string("variant") == "stock" ? 72 : 68, imageHeight + verticalPadding * 2)
     default:
       if item.type == "identity", !item.data.string("tertiary").isEmpty {
         base = 72
@@ -1488,6 +1548,16 @@ final class NativeListView: UIView {
   }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer === reorderLongPress || gestureRecognizer === marketLongPress {
+      let point = gestureRecognizer.location(in: collectionView)
+      guard let indexPath = collectionView.indexPathForItem(at: point),
+            let item = item(at: indexPath),
+            !item.data.bool("disabled") else { return false }
+      if gestureRecognizer === reorderLongPress {
+        return config?.reorderable == true && item.isReorderable
+      }
+      return item.type == "market" && !item.data.string("longPressActionKey").isEmpty
+    }
     guard gestureRecognizer === listBodyGestureGuard,
           let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
     let velocity = pan.velocity(in: collectionView)
@@ -1604,6 +1674,14 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
   func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
     guard let item = config?.items[safe: indexPath.item] else { return false }
     return !item.data.bool("disabled")
+  }
+
+  func collectionView(_ collectionView: UICollectionView, didHighlightItemAt indexPath: IndexPath) {
+    guard let item = config?.items[safe: indexPath.item], item.type == "market" else { return }
+    let actionKey = item.data.string("pressInActionKey")
+    guard !actionKey.isEmpty else { return }
+    let origin = (collectionView.cellForItem(at: indexPath) as? NativeListCell)?.rowActionOrigin()
+    handleAction(item: item, actionKey: actionKey, target: nil, origin: origin)
   }
 
   func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {

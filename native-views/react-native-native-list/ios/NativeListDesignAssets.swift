@@ -118,6 +118,7 @@ func nativeListIcon(named name: String) -> UIImage? {
   case "DragOutline": assetName = "onekey_drag"
   case "StarOutline": assetName = "onekey_star"
   case "StarSolid": assetName = "onekey_star_solid"
+  case "BadgeVerifiedSolid": assetName = "onekey_badge_verified_solid"
   case "ChevronGrabberVerOutline": assetName = "onekey_chevron_grabber_ver"
   case "ChevronBottomOutline": assetName = "onekey_chevron_bottom"
   case "ChevronTopOutline": assetName = "onekey_chevron_top"
@@ -130,4 +131,11 @@ func nativeListIcon(named name: String) -> UIImage? {
   }
   return UIImage(named: assetName, in: NativeListResources.bundle, compatibleWith: nil)?
     .withRenderingMode(["GoogleIllus", "BotIllus", "AccountErrorCustom"].contains(name) ? .alwaysOriginal : .alwaysTemplate)
+}
+
+func nativeListIcon(named name: String, size: CGSize) -> UIImage? {
+  guard let image = nativeListIcon(named: name) else { return nil }
+  return UIGraphicsImageRenderer(size: size).image { _ in
+    image.draw(in: CGRect(origin: .zero, size: size))
+  }.withRenderingMode(.alwaysTemplate)
 }
