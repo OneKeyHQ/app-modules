@@ -690,6 +690,31 @@ fn circuit_version_for(
 }
 
 /// 给 PCZT 生成 Orchard / Ironwood 零知识证明。
+/// 合并两份同一笔交易的 PCZT（本地完整副本 + 外部签名器返回的脱敏副本）。
+pub fn combine_pczt(original: &[u8], signed: &[u8]) -> Result<Vec<u8>> {
+    let parse = |bytes: &[u8], which: &str| {
+        pczt::Pczt::parse(bytes).map_err(|error| {
+            RuntimeError::with(
+                ErrorCode::PcztError,
+                json!({ "stage": "parse", "which": which }),
+            )
+            .detail(format!("{error:?}"))
+        })
+    };
+    let original = parse(original, "original")?;
+    let signed = parse(signed, "signed")?;
+    let combined = pczt::roles::combiner::Combiner::new(vec![original, signed])
+        .combine()
+        .map_err(|error| {
+            RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "combine" }))
+                .detail(format!("{error:?}"))
+        })?;
+    combined.serialize().map_err(|error| {
+        RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "serialize" }))
+            .detail(format!("{error:?}"))
+    })
+}
+
 pub fn prove_pczt(db: &Db, pczt_bytes: &[u8]) -> Result<Vec<u8>> {
     let params = *db.params();
     let chain_tip = db
