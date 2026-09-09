@@ -8,6 +8,24 @@
 }
 
 @font-face {
+  font-family: 'Roobert';
+  src: url('../../../native-views/react-native-native-list/common/fonts/Roobert-Medium.ttf')
+    format('truetype');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roobert';
+  src: url('../../../native-views/react-native-native-list/common/fonts/Roobert-SemiBold.ttf')
+    format('truetype');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
   font-family: 'Roobert-Regular';
   src: url('../../../native-views/react-native-native-list/common/fonts/Roobert-Regular.ttf')
     format('truetype');

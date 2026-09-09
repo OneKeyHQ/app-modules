@@ -29,6 +29,7 @@ import { NativeListAccountSelectorPage } from './pages/NativeListAccountSelector
 import type { AccountSelectorInitialTargetInput } from './pages/nativeListAccountSelectorData';
 import { NativeListNetworkSelectorPage } from './pages/NativeListNetworkSelectorPage';
 import { NativeListTokenSelectorPage } from './pages/NativeListTokenSelectorPage';
+import { MarketNativePagerExamplePage, MarketNativeSearchPage, type MarketSearchParams } from './pages/MarketNativePagerExamplePage';
 import {
   NativeListExamplePage,
   type NativeListExampleKey,
@@ -84,6 +85,8 @@ export type RootStackParamList = {
   NativeListAccountSelector: AccountSelectorInitialTargetInput | undefined;
   NativeListNetworkSelector: undefined;
   NativeListTokenSelector: undefined;
+  MarketNativePager: undefined;
+  MarketSearch: MarketSearchParams;
   OtaPipeline: undefined;
   ApkOtaPipeline: undefined;
   ChartWebView: undefined;
@@ -241,6 +244,13 @@ const modules: {
     name: 'OneKey Image',
     description: 'SDWebImage/Glide image view with native loading states',
     icon: '🖼️',
+  },
+  {
+    screen: 'MarketNativePager',
+    name: 'Market Native Pager',
+    description:
+      'Production Market replay/live data with native collapsible pager and Market rows',
+    icon: '📉',
   },
   {
     screen: 'NativeList',
@@ -613,6 +623,12 @@ export function AppNavigator() {
         name="OneKeyImage"
         component={OneKeyImageTestPage}
         options={{ title: 'OneKey Image' }}
+      />
+      <Stack.Screen name="MarketSearch" component={MarketNativeSearchPage} options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+      <Stack.Screen
+        name="MarketNativePager"
+        component={MarketNativePagerExamplePage}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="NativeList"

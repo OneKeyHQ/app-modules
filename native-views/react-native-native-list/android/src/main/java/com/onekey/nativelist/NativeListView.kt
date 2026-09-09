@@ -91,6 +91,8 @@ class NativeListView(
   var onVisibleRangeChanged: ((String) -> Unit)? = null
   private val density = resources.displayMetrics.density
   private val recyclerView = RecyclerView(context)
+  private var configuredTopPaddingPx = 0
+  private var configuredBottomPaddingPx = 0
   private val refreshLayout = SwipeRefreshLayout(context)
   private val contentContainer = FrameLayout(context)
   private val adapter = NativeListAdapter(reactContext)
@@ -326,6 +328,18 @@ class NativeListView(
       }
       return
     }
+    // Keep the first Market row at its current pixel offset when it is
+    // reordered. RecyclerView otherwise follows the previous first key.
+    val marketStartOffset = if (
+      previous?.items?.firstOrNull()?.type == "market" &&
+      next.items.firstOrNull()?.type == "market" &&
+      previous.items.firstOrNull()?.key != next.items.firstOrNull()?.key &&
+      layoutManager.findFirstVisibleItemPosition() == 0
+    ) {
+      layoutManager.findViewByPosition(0)?.let {
+        layoutManager.getDecoratedTop(it) - recyclerView.paddingTop
+      }
+    } else null
     config = next
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
     adapter.usesSelectorSourceScale = usesSelectorSourceScale
@@ -338,6 +352,9 @@ class NativeListView(
     configureSectionIndex(next)
     updateLayout(next)
     adapter.submitList(next.items) {
+      if (marketStartOffset != null) {
+        layoutManager.scrollToPositionWithOffset(0, marketStartOffset)
+      }
       relayoutContents()
       performPendingScrollIfNeeded()
       syncSectionIndexToVisibleRows()
@@ -881,11 +898,17 @@ class NativeListView(
     val bottomPadding = next.contentPaddingBottom ?: defaultPadding
     // OneKey patch: the section index overlays rows and keeps only an accessory-safe inset.
     val indexGutter = if (sectionIndexEntries.isEmpty()) 0 else SECTION_INDEX_CONTENT_INSET_DP
+    // A native scroll coordinator may add header insets to this RecyclerView.
+    // Content/theme snapshots must replace only the padding owned by NativeList.
+    val coordinatorTopPadding = (recyclerView.paddingTop - configuredTopPaddingPx).coerceAtLeast(0)
+    val coordinatorBottomPadding = (recyclerView.paddingBottom - configuredBottomPaddingPx).coerceAtLeast(0)
+    configuredTopPaddingPx = dp(topPadding)
+    configuredBottomPaddingPx = dp(bottomPadding)
     recyclerView.setPaddingRelative(
       dp(horizontalPadding),
-      dp(topPadding),
+      configuredTopPaddingPx + coordinatorTopPadding,
       dp(horizontalPadding + indexGutter),
-      dp(bottomPadding),
+      configuredBottomPaddingPx + coordinatorBottomPadding,
     )
     recyclerView.clipToPadding = false
     recyclerView.isVerticalScrollBarEnabled = sectionIndexEntries.isEmpty()
@@ -1036,6 +1059,7 @@ class NativeListView(
       updateSelection(NativeSelectionTarget("row", item.key), item.key)
     } else {
       val actionKey = when {
+        item.type == "market" && item.json.optString("pressActionKey").isNotEmpty() -> item.json.optString("pressActionKey")
         item.type == "action" -> item.json.optString("actionKey")
         item.type == "system" && item.json.optString("variant") == "retry" -> item.json.optString("actionKey")
         else -> "press"
