@@ -32,7 +32,7 @@ async fn scan_with_batch(batch_size: u32) {
     let tip = network::chain_tip(&mut client).await.expect("应能取链尖");
     println!("链尖 = {tip}");
 
-    let uuid = account::import_ufvk(&mut db, &mut client, "alice", ALICE_UFVK, tip - 200)
+    let uuid = account::import_ufvk(&mut db, &mut client, "alice", ALICE_UFVK, tip - 200, None)
         .await
         .expect("导入账户应成功");
     println!("账户 = {uuid}");
@@ -109,7 +109,7 @@ async fn scan_from_height() {
     let tip = network::chain_tip(&mut client).await.expect("应能取链尖");
     println!("链尖 = {tip}，从 {from} 起扫 {batch} 块");
 
-    account::import_ufvk(&mut db, &mut client, "alice", ALICE_UFVK, from)
+    account::import_ufvk(&mut db, &mut client, "alice", ALICE_UFVK, from, None)
         .await
         .expect("导入账户应成功");
     sync::prepare(&mut db, &mut client)
@@ -147,7 +147,7 @@ async fn scan_batch_curve() {
             .expect("应能连上 lightwalletd");
         let tip = network::chain_tip(&mut client).await.expect("应能取链尖");
 
-        account::import_ufvk(&mut db, &mut client, "alice", ALICE_UFVK, tip - 2000)
+        account::import_ufvk(&mut db, &mut client, "alice", ALICE_UFVK, tip - 2000, None)
             .await
             .expect("导入账户应成功");
         sync::prepare(&mut db, &mut client)
@@ -186,7 +186,7 @@ async fn scan_one_by_one() {
     let tip = network::chain_tip(&mut client).await.expect("应能取链尖");
     println!("链尖 = {tip}");
 
-    account::import_ufvk(&mut db, &mut client, "alice", ALICE_UFVK, tip - 200)
+    account::import_ufvk(&mut db, &mut client, "alice", ALICE_UFVK, tip - 200, None)
         .await
         .expect("导入账户应成功");
     sync::prepare(&mut db, &mut client)
@@ -245,7 +245,7 @@ async fn uuid_binding_string_vs_blob() {
     let mut db = wallet::open_and_migrate("test", db_name).expect("开库应成功");
     let mut client = network::connect_native(LWD).await.expect("应能连上");
     let tip = network::chain_tip(&mut client).await.expect("取链尖");
-    let uuid_str = account::import_ufvk(&mut db, &mut client, "a", ALICE_UFVK, tip - 10)
+    let uuid_str = account::import_ufvk(&mut db, &mut client, "a", ALICE_UFVK, tip - 10, None)
         .await
         .expect("导入账户");
     println!("listAccounts 给出的形式: {uuid_str}");
@@ -291,7 +291,7 @@ async fn history_uuid_actually_matches() {
     let mut db = wallet::open_and_migrate("test", db_name).expect("开库");
     let mut client = network::connect_native(LWD).await.expect("连上");
     let tip = network::chain_tip(&mut client).await.expect("链尖");
-    let uuid = account::import_ufvk(&mut db, &mut client, "a", ALICE_UFVK, tip - 10)
+    let uuid = account::import_ufvk(&mut db, &mut client, "a", ALICE_UFVK, tip - 10, None)
         .await
         .expect("导入");
     drop(db);

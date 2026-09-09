@@ -138,6 +138,22 @@ pub fn transparent_address(network: &str, ufvk_str: &str) -> Result<String> {
 ///
 /// **这是标准值，不是随便一个标识符** —— 宿主把它持久化下来当账户身份用，
 /// 所以必须与 ZIP-32 的定义一致。自己另发明一套哈希会让存量账户全部失配。
+/// UFVK 里的透明账户公钥，BIP32 账户层（m/44'/133'/account'）：
+/// 32 字节 chain code || 33 字节压缩公钥，hex。宿主据此拼 xpub，
+/// 硬件账户无需再向设备额外要一次透明 xpub。
+pub fn transparent_account_pubkey(network: &str, ufvk_str: &str) -> Result<String> {
+    let params = parse_network(network)?;
+    let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
+        .map_err(|e| KeysError::new(ErrorCode::InvalidUfvk).detail(e))?;
+    let account_pubkey = ufvk.transparent().ok_or_else(|| {
+        KeysError::with(
+            ErrorCode::DeriveFailed,
+            json!({ "reason": "noTransparentFvk" }),
+        )
+    })?;
+    Ok(hex::encode(account_pubkey.serialize()))
+}
+
 pub fn seed_fingerprint(seed: &[u8]) -> Result<String> {
     if seed.len() < 32 {
         return Err(KeysError::with(
@@ -181,6 +197,15 @@ mod tests {
     // 公开测试向量，切勿用于真实资金。
     const TEST_MNEMONIC: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    #[test]
+    fn transparent_account_pubkey_is_chain_code_and_compressed_key() {
+        let ufvk = ufvk_from_mnemonic("main", TEST_MNEMONIC, 0).unwrap();
+        let hex_key = transparent_account_pubkey("main", &ufvk).unwrap();
+        assert_eq!(hex_key.len(), 65 * 2);
+        let tag = &hex_key[64..66];
+        assert!(tag == "02" || tag == "03", "压缩公钥前缀应为 02/03，实际 {tag}");
+    }
 
     #[test]
     fn network_parsing() {

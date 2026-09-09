@@ -204,12 +204,23 @@ pub async fn import_account_ufvk(
     account_name: String,
     ufvk: String,
     birthday_height: u32,
+    seed_fingerprint_hex: Option<String>,
+    account_index: Option<u32>,
 ) -> Result<String, JsValue> {
     Ok(
         runtime::with_db_and_client(move |mut db, mut client| async move {
-            let r =
-                account::import_ufvk(&mut db, &mut client, &account_name, &ufvk, birthday_height)
-                    .await;
+            let derivation = seed_fingerprint_hex
+                .as_deref()
+                .zip(account_index);
+            let r = account::import_ufvk(
+                &mut db,
+                &mut client,
+                &account_name,
+                &ufvk,
+                birthday_height,
+                derivation,
+            )
+            .await;
             (db, client, r)
         })
         .await?,
@@ -579,6 +590,16 @@ pub fn pczt_create(
 #[wasm_bindgen(js_name = pcztProve)]
 pub fn pczt_prove(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
     Ok(runtime::with_db(|db| send::prove_pczt(db, &pczt_bytes))?)
+}
+
+/// 把外部签名器（硬件）返回的脱敏 PCZT 合并回本地的完整 PCZT。
+///
+/// 硬件只回传签名等公开字段，私有字段（rseed、witness 等）以 None 回来；
+/// Combiner 逐字段取「有值」的一方，所以本地副本 + 签名副本 = 可证明可提取的 PCZT。
+/// 不需要钱包数据库。
+#[wasm_bindgen(js_name = pcztCombine)]
+pub fn pczt_combine(original: Vec<u8>, signed: Vec<u8>) -> Result<Vec<u8>, JsValue> {
+    Ok(send::combine_pczt(&original, &signed)?)
 }
 
 /// 构造「屏蔽全部透明余额」的 PCZT，返回 `{ pcztHex, reservationId }`。
