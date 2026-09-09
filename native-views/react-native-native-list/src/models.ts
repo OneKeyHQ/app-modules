@@ -409,6 +409,7 @@ export type NativeListTheme = Readonly<{
 export type SectionIndexConfig = Readonly<{
   enabled: boolean;
   hapticsEnabled?: boolean;
+  centeredInWindow?: boolean;
 }>;
 
 export type NativeListSnapshot = Readonly<{
