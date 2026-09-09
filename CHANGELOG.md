@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.113] - 2026-09-09
+
+### Features
+- **pager-view**: Add a collapsible pager with coordinated native scrolling and retained page positions on iOS and Android, plus a Web implementation.
+- **native-list**: Add Market row styles, source badges, long-press actions, skeleton loading and pagination spinners.
+- **example**: Add the mobile Market replica with complete real-data replay and live filters.
+
+### Bug Fixes
+- **native-list**: Align Market typography, image borders, row interactions and scroll insets with the original mobile UI.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.113 for the native Market integration release.
+
 ## [3.0.111] - 2026-09-09
 
 ### Bug Fixes
