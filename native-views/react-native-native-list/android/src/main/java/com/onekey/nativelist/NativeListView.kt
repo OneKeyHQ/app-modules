@@ -21,6 +21,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -388,6 +390,7 @@ class NativeListView(
       previous.endReachedThreshold != next.endReachedThreshold ||
       previous.sectionIndexEnabled != next.sectionIndexEnabled ||
       previous.sectionIndexHapticsEnabled != next.sectionIndexHapticsEnabled ||
+      previous.sectionIndexCenteredInWindow != next.sectionIndexCenteredInWindow ||
       previous.theme?.toString() != next.theme?.toString() ||
       previous.fixedFooter?.content != next.fixedFooter?.content ||
       previous.items.size != next.items.size
@@ -930,6 +933,7 @@ class NativeListView(
       themeColor(next.theme, "secondaryText", "#646464"),
       themeColor(next.theme, "accent", "#108303"),
       themeColor(next.theme, "inverseText", "#FCFCFC"),
+      next.sectionIndexCenteredInWindow,
     )
     sectionIndexView.visibility = if (sectionIndexEntries.isEmpty()) GONE else VISIBLE
     sectionIndexPreview.setTextColor(themeColor(next.theme, "inverseText", "#FCFCFC"))
@@ -1728,7 +1732,10 @@ private class NativeListSectionIndexView(
   private var normalColor = Color.GRAY
   private var activeColor = Color.BLACK
   private var activeTextColor = Color.WHITE
+  private var centeredInWindow = false
   private var lastTouchIndex: Int? = null
+  private val rootLocationOnScreen = IntArray(2)
+  private val locationOnScreen = IntArray(2)
   private val activeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val normalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = Paint.Align.CENTER
@@ -1751,11 +1758,13 @@ private class NativeListSectionIndexView(
     normalColor: Int,
     activeColor: Int,
     activeTextColor: Int,
+    centeredInWindow: Boolean,
   ) {
     this.titles = titles
     this.normalColor = normalColor
     this.activeColor = activeColor
     this.activeTextColor = activeTextColor
+    this.centeredInWindow = centeredInWindow
     activeIndex = null
     updateContentDescription()
     invalidate()
@@ -1772,7 +1781,7 @@ private class NativeListSectionIndexView(
     super.onDraw(canvas)
     if (titles.isEmpty()) return
     val cellHeight = cellHeight()
-    val originY = (height - cellHeight * titles.size) / 2f
+    val originY = indexOriginY(cellHeight, titles.size)
     val textSize = NativeListScale.font(resources, 10f) * resources.displayMetrics.scaledDensity
     normalPaint.color = normalColor
     normalPaint.textSize = textSize
@@ -1880,7 +1889,7 @@ private class NativeListSectionIndexView(
 
   private fun selectAt(y: Float, interacting: Boolean) {
     val cellHeight = cellHeight()
-    val originY = (height - cellHeight * titles.size) / 2f
+    val originY = indexOriginY(cellHeight, titles.size)
     val index = ((y - originY) / cellHeight).toInt().coerceIn(0, titles.lastIndex)
     if (interacting && lastTouchIndex == index) return
     lastTouchIndex = index.takeIf { interacting }
@@ -1896,6 +1905,24 @@ private class NativeListSectionIndexView(
     (height.toFloat() / titles.size.coerceAtLeast(1))
       .coerceAtMost(NativeListScale.dp(resources, 16f))
       .coerceAtLeast(1f)
+
+  private fun indexOriginY(cellHeight: Float, count: Int): Float {
+    val totalHeight = cellHeight * count
+    val centeredOriginY = (height - totalHeight) / 2f
+    if (!centeredInWindow || !isAttachedToWindow) return centeredOriginY
+    val systemBarInsets = ViewCompat.getRootWindowInsets(rootView)
+      ?.getInsetsIgnoringVisibility(
+        WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+      ) ?: return centeredOriginY
+    rootView.getLocationOnScreen(rootLocationOnScreen)
+    getLocationOnScreen(locationOnScreen)
+    val safeTop = rootLocationOnScreen[1] + systemBarInsets.top
+    val safeBottom = rootLocationOnScreen[1] + rootView.height - systemBarInsets.bottom
+    if (safeBottom <= safeTop) return centeredOriginY
+    val localCenterY = (safeTop + safeBottom) / 2f - locationOnScreen[1]
+    return (localCenterY - totalHeight / 2f)
+      .coerceIn(0f, (height - totalHeight).coerceAtLeast(0f))
+  }
 
   private fun updateContentDescription() {
     contentDescription = activeIndex?.let { titles.getOrNull(it) }

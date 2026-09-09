@@ -902,7 +902,8 @@ final class NativeListView: UIView {
       titles: sectionIndexEntries.map(\.title),
       textColor: nativeListColor(config.theme, "secondaryText", "#646464"),
       activeColor: nativeListColor(config.theme, "accent", "#108303"),
-      activeTextColor: nativeListColor(config.theme, "inverseText", "#FCFCFC")
+      activeTextColor: nativeListColor(config.theme, "inverseText", "#FCFCFC"),
+      centeredInWindow: config.sectionIndexCenteredInWindow
     )
     sectionIndexView.isHidden = sectionIndexEntries.isEmpty
     sectionIndexPreview.backgroundColor = nativeListColor(
@@ -1157,6 +1158,7 @@ final class NativeListView: UIView {
           current.endReachedThreshold == next.endReachedThreshold,
           current.sectionIndexEnabled == next.sectionIndexEnabled,
           current.sectionIndexHapticsEnabled == next.sectionIndexHapticsEnabled,
+          current.sectionIndexCenteredInWindow == next.sectionIndexCenteredInWindow,
           dictionariesEqual(current.theme, next.theme),
           current.fixedFooter?.content == next.fixedFooter?.content,
           current.items.count == next.items.count else { return false }
@@ -1834,6 +1836,7 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   private var textColor: UIColor = .secondaryLabel
   private var activeColor: UIColor = .tintColor
   private var activeTextColor: UIColor = .white
+  private var centeredInWindow = false
   private var lastTouchIndex: Int?
   private(set) var activeIndex: Int?
 
@@ -1874,12 +1877,14 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
     titles: [String],
     textColor: UIColor,
     activeColor: UIColor,
-    activeTextColor: UIColor
+    activeTextColor: UIColor,
+    centeredInWindow: Bool
   ) {
     self.titles = titles
     self.textColor = textColor
     self.activeColor = activeColor
     self.activeTextColor = activeTextColor
+    self.centeredInWindow = centeredInWindow
     labels.forEach { $0.removeFromSuperview() }
     labels = titles.map { title in
       let label = UILabel()
@@ -1907,7 +1912,7 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
     super.layoutSubviews()
     guard !labels.isEmpty else { return }
     let height = min(16, max(8, bounds.height / CGFloat(labels.count)))
-    let originY = (bounds.height - height * CGFloat(labels.count)) / 2
+    let originY = indexOriginY(cellHeight: height, count: labels.count)
     for (index, label) in labels.enumerated() {
       label.frame = CGRect(
         x: 6,
@@ -1953,11 +1958,22 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
 
   private func select(at y: CGFloat, interacting: Bool) {
     let height = min(16, max(8, bounds.height / CGFloat(titles.count)))
-    let originY = (bounds.height - height * CGFloat(titles.count)) / 2
+    let originY = indexOriginY(cellHeight: height, count: titles.count)
     let index = Int(floor((y - originY) / height)).clamped(to: 0...(titles.count - 1))
     if interacting && lastTouchIndex == index { return }
     lastTouchIndex = interacting ? index : nil
     select(index: index, interacting: interacting)
+  }
+
+  private func indexOriginY(cellHeight: CGFloat, count: Int) -> CGFloat {
+    let totalHeight = cellHeight * CGFloat(count)
+    let centeredOriginY = (bounds.height - totalHeight) / 2
+    guard centeredInWindow, let window else { return centeredOriginY }
+    let windowCenterY = window.safeAreaLayoutGuide.layoutFrame.midY
+    let localCenterY = convert(CGPoint(x: 0, y: windowCenterY), from: window).y
+    return (localCenterY - totalHeight / 2).clamped(
+      to: 0...max(0, bounds.height - totalHeight)
+    )
   }
 
   private func select(index: Int, interacting: Bool) {

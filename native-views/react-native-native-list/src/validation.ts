@@ -890,6 +890,15 @@ export function validateSnapshot(
       );
     }
     if (
+      sectionIndex.centeredInWindow !== undefined &&
+      typeof sectionIndex.centeredInWindow !== 'boolean'
+    ) {
+      fail(
+        'snapshot.capabilities.sectionIndex.centeredInWindow',
+        'must be a boolean'
+      );
+    }
+    if (
       sectionIndex.enabled &&
       (snapshot.layout.kind !== 'sectioned' ||
         snapshot.layout.orientation === 'horizontal')

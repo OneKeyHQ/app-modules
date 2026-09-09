@@ -660,13 +660,18 @@ describe('NativeList model validation', () => {
       ...snapshot(indexedRows),
       layout: { kind: 'sectioned', stickyHeaders: true },
       capabilities: {
-        sectionIndex: { enabled: true, hapticsEnabled: false },
+        sectionIndex: {
+          enabled: true,
+          hapticsEnabled: false,
+          centeredInWindow: true,
+        },
       },
     });
 
     expect(indexed.capabilities?.sectionIndex).toEqual({
       enabled: true,
       hapticsEnabled: false,
+      centeredInWindow: true,
     });
   });
 
@@ -691,6 +696,18 @@ describe('NativeList model validation', () => {
         capabilities: { sectionIndex: { enabled: true } },
       })
     ).toThrow('requires a vertical sectioned layout');
+    expect(() =>
+      validateSnapshot({
+        ...snapshot([header]),
+        layout: { kind: 'sectioned' },
+        capabilities: {
+          sectionIndex: {
+            enabled: true,
+            centeredInWindow: 'true' as unknown as boolean,
+          },
+        },
+      })
+    ).toThrow('sectionIndex.centeredInWindow');
     expect(() =>
       validateSnapshot({
         ...snapshot([

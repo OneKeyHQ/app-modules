@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.111] - 2026-09-09
+
+### Bug Fixes
+- **text (Android)**: Preserve React Native's dedicated selectable-text host when prepared text layout is enabled.
+
+### Chores
+- Bump all publishable packages to 3.0.111.
+
+## [3.0.110] - 2026-09-09
+
+### Bug Fixes
+- **native-list (Android)**: Allow token-pair network badges to extend outside the avatar frame while restoring clipping when recycled rows reset.
+
+### Chores
+- Bump all publishable packages to 3.0.110.
+
+## [3.0.109] - 2026-09-08
+
+### Features
+- **native-list (iOS and Android)**: Add opt-in window-safe-area centering for section index rails.
+
+### Bug Fixes
+- **native-list (Android)**: Keep the centered section index stable when the software keyboard opens.
+
+### Chores
+- Bump all publishable packages to 3.0.109.
+
+## [3.0.108] - 2026-09-08
+
+### Features
+- **text (Android)**: Add an opt-in React Native Text-compatible component with a one-physical-pixel intrinsic-width guard against glyph-end clipping.
+
+### Chores
+- Publish `@onekeyfe/react-native-text` for the first time and bump all publishable packages to 3.0.108.
+
 ## [3.0.107] - 2026-09-08
 
 ### Bug Fixes

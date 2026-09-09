@@ -52,6 +52,7 @@ import { SplashScreenTestPage } from './pages/SplashScreenTestPage';
 import { TabViewTestPage } from './pages/TabViewTestPage';
 import { TabViewSettingsPage } from './pages/TabViewSettingsPage';
 import { TextInputTestPage } from './pages/TextInputTestPage';
+import { TextTestPage } from './pages/TextTestPage';
 
 export type TabViewSettingsState = {
   showBadge: boolean;
@@ -103,6 +104,7 @@ export type RootStackParamList = {
   TabView: undefined;
   TabViewSettings: undefined;
   TextInput: undefined;
+  Text: undefined;
 };
 
 export type RootStackNavigationProp =
@@ -330,6 +332,12 @@ const modules: {
     description:
       'Native tab bar with UIKit (iOS) / Material (Android), badges, icons, liquid glass',
     icon: '📑',
+  },
+  {
+    screen: 'Text',
+    name: 'Text',
+    description: 'React Native Text parity and Android glyph width guard',
+    icon: 'Aa',
   },
   {
     screen: 'TextInput',
@@ -698,6 +706,11 @@ export function AppNavigator() {
         name="TabViewSettings"
         component={TabViewSettingsPage}
         options={{ title: 'Tab View Settings' }}
+      />
+      <Stack.Screen
+        name="Text"
+        component={TextTestPage}
+        options={{ title: 'Text' }}
       />
       <Stack.Screen
         name="TextInput"

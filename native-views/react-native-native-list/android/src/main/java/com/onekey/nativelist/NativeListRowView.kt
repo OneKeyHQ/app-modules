@@ -2962,6 +2962,8 @@ internal class NativeListRowView(
     val visibleSources = sources.take(leadingImages.size)
     val tokenPair = kind == "token" && visibleSources.size > 1
     if (tokenPair) {
+      // The network badge intentionally extends past the avatar frame.
+      clipChildren = false
       leadingOverlayBackground.visibility = VISIBLE
       leadingOverlayBackground.background = roundedFill(visualBackdropColor, 10f)
       leadingOverlayBackground.layoutParams = FrameLayout.LayoutParams(
