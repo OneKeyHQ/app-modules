@@ -4,8 +4,10 @@ import android.animation.TimeInterpolator
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
-import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.ShapeDrawable
+import android.graphics.drawable.shapes.PathShape
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -196,27 +198,28 @@ class NativeListView(
     contentContainer.addView(
       sectionIndexView,
       FrameLayout.LayoutParams(
-        dp(SECTION_INDEX_RAIL_WIDTH_DP),
+        sectionIndexDp(SECTION_INDEX_RAIL_WIDTH_DP),
         FrameLayout.LayoutParams.MATCH_PARENT,
         Gravity.END,
       ),
     )
     sectionIndexPreview.apply {
       gravity = Gravity.CENTER
-      textSize = NativeListScale.font(resources, 22f)
-      typeface = NativeListFonts.semibold(context)
-      visibility = GONE
+      textSize = 30f
+      typeface = NativeListFonts.regular(context)
+      setPadding(0, 0, sectionIndexDp(10), 0)
+      visibility = INVISIBLE
       alpha = 0f
       importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
     contentContainer.addView(
       sectionIndexPreview,
       FrameLayout.LayoutParams(
-        dp(SECTION_INDEX_PREVIEW_SIZE_DP),
-        dp(SECTION_INDEX_PREVIEW_SIZE_DP),
+        sectionIndexDp(SECTION_INDEX_PREVIEW_WIDTH_DP),
+        sectionIndexDp(SECTION_INDEX_PREVIEW_HEIGHT_DP),
         Gravity.CENTER_VERTICAL or Gravity.END,
       ).apply {
-        marginEnd = dp(SECTION_INDEX_PREVIEW_END_MARGIN_DP)
+        marginEnd = sectionIndexDp(SECTION_INDEX_PREVIEW_END_MARGIN_DP)
       },
     )
     addView(contentContainer, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
@@ -907,17 +910,14 @@ class NativeListView(
     sectionIndexHapticsEnabled = next.sectionIndexHapticsEnabled
     sectionIndexView.configure(
       sectionIndexEntries.map { it.title },
-      themeColor(next.theme, "secondaryText", "#646464"),
-      themeColor(next.theme, "accent", "#108303"),
+      themeColor(next.theme, "disabledText", "#8D8D8D"),
+      themeColor(next.theme, "positive", "#218358"),
       themeColor(next.theme, "inverseText", "#FCFCFC"),
       next.sectionIndexCenteredInWindow,
     )
     sectionIndexView.visibility = if (sectionIndexEntries.isEmpty()) GONE else VISIBLE
-    sectionIndexPreview.setTextColor(themeColor(next.theme, "inverseText", "#FCFCFC"))
-    sectionIndexPreview.background = GradientDrawable().apply {
-      setColor(themeColor(next.theme, "inverseBackground", "#202020"))
-      cornerRadius = dp(14).toFloat()
-    }
+    sectionIndexPreview.setTextColor(Color.WHITE)
+    sectionIndexPreview.background = sectionIndexPreviewBackground()
     sectionIndexView.setActiveIndex(
       previousKey?.let { key -> sectionIndexEntries.indexOfFirst { it.key == key }.takeIf { it >= 0 } },
     )
@@ -938,6 +938,7 @@ class NativeListView(
     if (interacting) {
       sectionIndexPreview.animate().cancel()
       sectionIndexPreview.text = entry.title
+      positionSectionIndexPreview(index)
       sectionIndexPreview.visibility = VISIBLE
       sectionIndexPreview.alpha = 1f
       if (changed && sectionIndexHapticsEnabled) {
@@ -953,13 +954,38 @@ class NativeListView(
     sectionIndexPreview.animate().cancel()
     if (immediately) {
       sectionIndexPreview.alpha = 0f
-      sectionIndexPreview.visibility = GONE
+      sectionIndexPreview.visibility = INVISIBLE
     } else {
       sectionIndexPreview.animate()
         .alpha(0f)
         .setDuration(150)
-        .withEndAction { sectionIndexPreview.visibility = GONE }
+        .withEndAction { sectionIndexPreview.visibility = INVISIBLE }
         .start()
+    }
+  }
+
+  private fun positionSectionIndexPreview(index: Int) {
+    val halfHeight = sectionIndexDp(SECTION_INDEX_PREVIEW_HEIGHT_DP) / 2f
+    val maximumY = (contentContainer.height - halfHeight).coerceAtLeast(halfHeight)
+    val targetY = sectionIndexView.top + sectionIndexView.centerYForIndex(index)
+    val clampedY = targetY.coerceIn(halfHeight, maximumY)
+    sectionIndexPreview.translationY = clampedY - contentContainer.height / 2f
+  }
+
+  private fun sectionIndexPreviewBackground(): ShapeDrawable {
+    val path = Path().apply {
+      moveTo(25f, 0f)
+      cubicTo(11f, 0f, 0f, 11f, 0f, 25f)
+      cubicTo(0f, 39f, 11f, 50f, 25f, 50f)
+      cubicTo(36f, 50f, 43f, 44f, 46f, 37.5f)
+      lineTo(60f, 25f)
+      lineTo(46f, 12.5f)
+      cubicTo(43f, 6f, 36f, 0f, 25f, 0f)
+      close()
+    }
+    return ShapeDrawable(PathShape(path, 60f, 50f)).apply {
+      paint.color = Color.rgb(194, 194, 194)
+      paint.isAntiAlias = true
     }
   }
 
@@ -1619,10 +1645,13 @@ class NativeListView(
 
   private fun dp(value: Int): Int = if (usesSelectorSourceScale) (value * resources.displayMetrics.density).roundToInt() else NativeListScale.dp(resources, value)
 
+  private fun sectionIndexDp(value: Int): Int = (value * density).roundToInt()
+
   companion object {
     private const val SECTION_INDEX_CONTENT_INSET_DP = 16
     private const val SECTION_INDEX_RAIL_WIDTH_DP = 32
-    private const val SECTION_INDEX_PREVIEW_SIZE_DP = 48
+    private const val SECTION_INDEX_PREVIEW_WIDTH_DP = 60
+    private const val SECTION_INDEX_PREVIEW_HEIGHT_DP = 50
     private const val SECTION_INDEX_PREVIEW_END_MARGIN_DP = 40
     private const val REORDER_LONG_PRESS_MS = 200L
     private const val REORDER_ALLOWABLE_MOVEMENT_DP = 10
@@ -1715,11 +1744,11 @@ private class NativeListSectionIndexView(
   private val activeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val normalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = Paint.Align.CENTER
-    typeface = NativeListFonts.medium(context)
+    typeface = NativeListFonts.regular(context)
   }
   private val activePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = Paint.Align.CENTER
-    typeface = NativeListFonts.semibold(context)
+    typeface = NativeListFonts.medium(context)
   }
 
   init {
@@ -1756,40 +1785,27 @@ private class NativeListSectionIndexView(
   override fun onDraw(canvas: Canvas) {
     super.onDraw(canvas)
     if (titles.isEmpty()) return
-    val cellHeight = cellHeight()
-    val originY = indexOriginY(cellHeight, titles.size)
-    val textSize = NativeListScale.font(resources, 10f) * resources.displayMetrics.scaledDensity
+    val metrics = indexMetrics()
+    val visibleIndices = visibleLabelIndices(metrics.trackHeight)
+    val textSize = 10f * resources.displayMetrics.scaledDensity
+    val centerX = width - dp(10f)
+    val badgeRadius = dp(7f)
     normalPaint.color = normalColor
     normalPaint.textSize = textSize
     activePaint.color = activeColor
     activePaint.textSize = textSize
-    titles.forEachIndexed { index, title ->
+    visibleIndices.forEachIndexed { visibleIndex, index ->
+      val title = titles[index]
       val active = index == activeIndex
       val paint = if (active) activePaint else normalPaint
-      val centerY = originY + cellHeight * (index + 0.5f)
-      if (active && cellHeight >= NativeListScale.dp(resources, 12f)) {
-        val badgeWidth = NativeListScale.dp(resources, 20f)
-        val badgeHeight = minOf(cellHeight, NativeListScale.dp(resources, 16f))
+      val centerY = visibleLabelCenterY(visibleIndex, visibleIndices.size, metrics)
+      if (active) {
         activeBackgroundPaint.color = activeColor
-        canvas.drawRoundRect(
-          width / 2f - badgeWidth / 2f,
-          centerY - badgeHeight / 2f,
-          width / 2f + badgeWidth / 2f,
-          centerY + badgeHeight / 2f,
-          badgeHeight / 2f,
-          badgeHeight / 2f,
-          activeBackgroundPaint,
-        )
+        canvas.drawCircle(centerX, centerY, badgeRadius, activeBackgroundPaint)
       }
-      paint.color = if (active && cellHeight >= NativeListScale.dp(resources, 12f)) {
-        activeTextColor
-      } else if (active) {
-        activeColor
-      } else {
-        normalColor
-      }
+      paint.color = if (active) activeTextColor else normalColor
       val baseline = centerY - (paint.descent() + paint.ascent()) / 2f
-      canvas.drawText(title, width / 2f, baseline, paint)
+      canvas.drawText(title, centerX, baseline, paint)
     }
   }
 
@@ -1864,9 +1880,10 @@ private class NativeListSectionIndexView(
   }
 
   private fun selectAt(y: Float, interacting: Boolean) {
-    val cellHeight = cellHeight()
-    val originY = indexOriginY(cellHeight, titles.size)
-    val index = ((y - originY) / cellHeight).toInt().coerceIn(0, titles.lastIndex)
+    val metrics = indexMetrics()
+    if (metrics.trackHeight <= 0f) return
+    val progress = ((y - metrics.originY) / metrics.trackHeight).coerceIn(0f, 1f)
+    val index = (progress * titles.size).toInt().coerceIn(0, titles.lastIndex)
     if (interacting && lastTouchIndex == index) return
     lastTouchIndex = index.takeIf { interacting }
     select(index, interacting)
@@ -1877,28 +1894,59 @@ private class NativeListSectionIndexView(
     setActiveIndex(index)
   }
 
-  private fun cellHeight(): Float =
-    (height.toFloat() / titles.size.coerceAtLeast(1))
-      .coerceAtMost(NativeListScale.dp(resources, 16f))
-      .coerceAtLeast(1f)
+  fun centerYForIndex(index: Int): Float = entryCenterY(index, indexMetrics())
 
-  private fun indexOriginY(cellHeight: Float, count: Int): Float {
-    val totalHeight = cellHeight * count
-    val centeredOriginY = (height - totalHeight) / 2f
-    if (!centeredInWindow || !isAttachedToWindow) return centeredOriginY
+  private data class Metrics(val originY: Float, val trackHeight: Float)
+
+  private fun indexMetrics(): Metrics {
+    if (titles.isEmpty()) return Metrics(height / 2f, 0f)
+    val edgePadding = dp(8f)
+    val labelSpacing = dp(16f)
+    val availableHeight = (height - edgePadding * 2f).coerceAtLeast(0f)
+    val trackHeight = minOf(availableHeight, labelSpacing * titles.size)
+    val centeredOriginY = (height - trackHeight) / 2f
+    if (!centeredInWindow || !isAttachedToWindow) {
+      return Metrics(centeredOriginY, trackHeight)
+    }
     val systemBarInsets = ViewCompat.getRootWindowInsets(rootView)
       ?.getInsetsIgnoringVisibility(
         WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
-      ) ?: return centeredOriginY
+      ) ?: return Metrics(centeredOriginY, trackHeight)
     rootView.getLocationOnScreen(rootLocationOnScreen)
     getLocationOnScreen(locationOnScreen)
     val safeTop = rootLocationOnScreen[1] + systemBarInsets.top
     val safeBottom = rootLocationOnScreen[1] + rootView.height - systemBarInsets.bottom
-    if (safeBottom <= safeTop) return centeredOriginY
+    if (safeBottom <= safeTop) return Metrics(centeredOriginY, trackHeight)
     val localCenterY = (safeTop + safeBottom) / 2f - locationOnScreen[1]
-    return (localCenterY - totalHeight / 2f)
-      .coerceIn(0f, (height - totalHeight).coerceAtLeast(0f))
+    val maximumOrigin = (height - edgePadding - trackHeight).coerceAtLeast(edgePadding)
+    return Metrics(
+      (localCenterY - trackHeight / 2f).coerceIn(edgePadding, maximumOrigin),
+      trackHeight,
+    )
   }
+
+  private fun entryCenterY(index: Int, metrics: Metrics): Float {
+    if (titles.isEmpty()) return height / 2f
+    return metrics.originY + metrics.trackHeight * (index + 0.5f) / titles.size
+  }
+
+  private fun visibleLabelCenterY(visibleIndex: Int, visibleCount: Int, metrics: Metrics): Float {
+    val visibleTrackHeight = minOf(metrics.trackHeight, dp(16f) * visibleCount)
+    val visibleOriginY = metrics.originY + (metrics.trackHeight - visibleTrackHeight) / 2f
+    return visibleOriginY + visibleTrackHeight * (visibleIndex + 0.5f) / visibleCount.coerceAtLeast(1)
+  }
+
+  private fun visibleLabelIndices(trackHeight: Float): Set<Int> {
+    if (titles.isEmpty()) return emptySet()
+    val maxVisible = max(1, (trackHeight / dp(16f)).toInt())
+    if (titles.size <= maxVisible) return titles.indices.toSet()
+    if (maxVisible == 1) return setOf(0)
+    return (0 until maxVisible).mapTo(mutableSetOf()) { slot ->
+      (slot.toFloat() * titles.lastIndex / (maxVisible - 1)).roundToInt()
+    }
+  }
+
+  private fun dp(value: Float): Float = value * resources.displayMetrics.density
 
   private fun updateContentDescription() {
     contentDescription = activeIndex?.let { titles.getOrNull(it) }

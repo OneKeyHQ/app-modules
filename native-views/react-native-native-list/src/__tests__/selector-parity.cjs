@@ -112,13 +112,19 @@ test('compact web index keeps every section reachable without overflowing short 
     assert.equal(rail.dataset.compact, 'true');
     assert(buttons.length < letters.length);
     assert.equal(page.document.querySelector('[aria-label="Jump to H"]'), null);
+    assert.equal(
+      page.document.querySelector('.ok-native-list-index-preview'),
+      null,
+    );
     assert.equal(page.engine.layout.items[0].width, 304);
+    const visibleTops = buttons.map(button => Number.parseFloat(button.style.top));
+    assert(
+      visibleTops.slice(1).every((top, index) => top - visibleTops[index] === 16),
+    );
 
     const targetIndex = 7;
-    const targetY = 20 + 8 + (targetIndex / (letters.length - 1)) * 144;
-    const overlappingVisibleButton = rail.querySelector(
-      '[data-section-entry-index="8"]',
-    );
+    const targetY = 20 + 8 + ((targetIndex + 0.5) / letters.length) * 144;
+    const overlappingVisibleButton = buttons[0];
     assert(overlappingVisibleButton);
     overlappingVisibleButton.dispatchEvent(
       new page.view.MouseEvent('pointerdown', {
@@ -134,9 +140,13 @@ test('compact web index keeps every section reachable without overflowing short 
         detail: 1,
       }),
     );
-    assert.equal(
-      page.document.querySelector('.ok-native-list-index-preview').textContent,
-      'H',
+    overlappingVisibleButton.dispatchEvent(
+      new page.view.MouseEvent('pointerup', {
+        bubbles: true,
+        buttons: 0,
+        clientX: 304,
+        clientY: targetY,
+      }),
     );
     assert.equal(viewport.scrollTop, targetIndex * 36);
 

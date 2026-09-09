@@ -47,7 +47,7 @@ import {
 const SECTION_INDEX_CONTENT_INSET = 16;
 const SECTION_INDEX_RAIL_WIDTH = 32;
 const SECTION_INDEX_EDGE_PADDING = 8;
-const SECTION_INDEX_MIN_LABEL_SPACING = 14;
+const SECTION_INDEX_LABEL_SPACING = 16;
 const SECTION_INDEX_MIN_HEIGHT = 120;
 const DEFAULT_VIEWPORT_WIDTH = 320;
 const DEFAULT_VIEWPORT_HEIGHT = 640;
@@ -798,11 +798,11 @@ export const WEB_LIST_CSS = `
 .ok-native-list-media{display:block;padding:0 5px;background:transparent;border-radius:16px}.ok-native-list-media-image{display:block;width:100%;aspect-ratio:1;border-radius:10px;background:var(--nl-strong);object-fit:cover}.ok-native-list-media-image[data-state="empty"]{background:transparent}.ok-native-list-media-image[data-state="error"]{display:flex;align-items:center;justify-content:center;color:var(--nl-icon-subdued);font-size:24px}.ok-native-list-media-meta{padding-top:7px}.ok-native-list-media-subtitle-row{display:flex;align-items:center;gap:6px}.ok-native-list-media-subtitle{flex:1;min-width:0;font-size:12px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-network{width:14px;height:14px;border-radius:50%}.ok-native-list-media-title{font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-media-close{position:absolute;right:9px;top:4px;border:0;background:color-mix(in srgb,var(--nl-inverse) 72%,transparent);color:var(--nl-inverse-text);width:24px;height:24px;border-radius:50%;font:18px/20px inherit;cursor:pointer}
 .ok-native-list-metric{display:flex;flex-direction:column;align-items:flex-start;padding:12px;border-radius:12px;gap:5px;background:var(--nl-row)}.ok-native-list-metric-value{font-size:22px;line-height:28px;font-weight:700}.ok-native-list-composite{display:flex;flex-direction:column;align-items:stretch;padding:14px;border-radius:12px;gap:12px;background:var(--nl-subdued)}.ok-native-list-composite-heading{font-size:14px;letter-spacing:1px;color:var(--nl-secondary)}.ok-native-list-composite-row{display:flex;gap:12px}.ok-native-list-composite-cell{flex:1;min-width:0}.ok-native-list-composite-cell[data-shaded="true"]{padding:10px;border-radius:10px;background:color-mix(in srgb,var(--nl-primary) 5%,transparent)}.ok-native-list-composite-value{font-size:18px;font-weight:600}.ok-native-list-divider{height:1px;background:var(--nl-separator)}.ok-native-list-progress{height:4px;border-radius:2px;overflow:hidden;background:var(--nl-negative)}.ok-native-list-progress>span{display:block;height:100%;border-radius:2px;background:var(--nl-positive)}
 .ok-native-list-data{padding:6px 12px}.ok-native-list-index{flex:0 0 28px;color:var(--nl-secondary);font-size:13px}.ok-native-list-favorite{flex:0 0 24px;color:var(--nl-icon-subdued);font-size:22px}.ok-native-list-favorite[data-active="true"]{color:var(--nl-accent)}.ok-native-list-data-cell{display:flex;flex-direction:column;min-width:0}.ok-native-list-data-cell[data-align="center"]{align-items:center}.ok-native-list-data-cell[data-align="end"]{align-items:flex-end}.ok-native-list-data-primary{display:flex;align-items:center;gap:5px;max-width:100%;font-size:16px;font-weight:500;white-space:nowrap}.ok-native-list-unread{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--nl-accent)}.ok-native-list-thumbnail{width:64px;height:64px;border-radius:10px;object-fit:cover}
-.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:6px;display:flex;width:20px;height:16px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:8px;background:transparent;color:var(--nl-secondary);font:600 10px/1 inherit;cursor:pointer}.ok-native-list-index-button[data-active="true"]{background:var(--nl-accent);color:var(--nl-inverse-text)}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-accent);outline-offset:1px}.ok-native-list-index-preview{position:absolute;z-index:8;right:40px;top:50%;display:flex;width:48px;height:48px;align-items:center;justify-content:center;transform:translateY(-50%) scale(.92);border-radius:14px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:22px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translateY(-50%) scale(1)}
+.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport{scrollbar-width:none}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport::-webkit-scrollbar{display:none}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:15px;display:flex;width:14px;height:14px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:7px;background:transparent;color:var(--nl-disabled);font-family:inherit;font-size:10px;font-weight:400;line-height:1;cursor:pointer}.ok-native-list-index-button[data-active="true"]{background:var(--nl-positive);color:var(--nl-inverse-text);font-weight:500}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-positive);outline-offset:1px}
 .ok-native-list-refresh{position:absolute;z-index:7;left:50%;top:8px;display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;opacity:0;transform:translate(-50%,-16px);transition:opacity .15s ease,transform .15s ease;pointer-events:none}.ok-native-list-refresh[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
 .ok-native-list-warning{height:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:14px 12px;border-top:1px solid;border-bottom:1px solid;box-sizing:border-box;cursor:default}.ok-native-list-warning-title,.ok-native-list-warning-message{font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}.ok-native-list-warning-title{font-weight:500;color:var(--nl-primary)}.ok-native-list-warning-message{font-weight:400;color:var(--nl-secondary)}
 .ok-native-list-subtitle-segments{display:flex;align-items:center;min-width:0;max-width:100%;height:20px}.ok-native-list-subtitle-segments>.ok-native-list-secondary{flex:0 1 auto;min-width:0}.ok-native-list-subtitle-dot{flex:0 0 4px;width:4px;height:4px;margin:0 6px;border-radius:50%;background:var(--nl-disabled)}.ok-native-list-wallet-row>.ok-native-list-flex{flex:0 1 auto;width:100%;align-items:center}.ok-native-list-wallet-badges{display:flex;gap:4px;justify-content:center;margin-top:4px;height:20px;max-width:100%}.ok-native-list-wallet-badges>.ok-native-list-badge{background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;height:20px;box-sizing:border-box;padding:2px 4px}.ok-native-list-visual-overlay{position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;line-height:1;font-size:10px}.ok-native-list-visual-overlay img,.ok-native-list-visual-overlay svg{width:100%;height:100%;object-fit:contain}
-@media (prefers-reduced-motion:reduce){.ok-native-list-index-preview,.ok-native-list-refresh{transition:none}.ok-native-list-spinner{animation:none}}
+@media (prefers-reduced-motion:reduce){.ok-native-list-refresh{transition:none}.ok-native-list-spinner{animation:none}}
 /* OneKey patch: selector controls follow their original semantic colors and geometry. */
 .ok-native-list-checkbox[data-selector="networkSelector"]{padding:0;border-radius:4px;border-color:var(--nl-checkbox-border,var(--nl-separator));background:var(--nl-checkbox-icon,var(--nl-inverse-text))}
 .ok-native-list-checkbox[data-selector="networkSelector"]::after{display:none}
@@ -2818,7 +2818,6 @@ export class NativeListWebEngine {
   private readonly footer: HTMLElement;
   private readonly sticky: HTMLElement;
   private readonly indexRail: HTMLElement;
-  private readonly indexPreview: HTMLElement;
   private readonly refreshIndicator: HTMLElement;
   private readonly reorderPreview: HTMLElement;
   private readonly previousHostPosition: string;
@@ -2844,7 +2843,6 @@ export class NativeListWebEngine {
   private avatarDirection = 1;
   private reachedGeneration: number | undefined;
   private stickyKey: string | undefined;
-  private previewTimer: number | undefined;
   private sectionIndexEntries: readonly Readonly<{
     key: string;
     title: string;
@@ -2923,12 +2921,6 @@ export class NativeListWebEngine {
     this.indexRail.setAttribute('role', 'navigation');
     this.indexRail.setAttribute('aria-label', 'Section index');
     this.indexRail.hidden = true;
-    this.indexPreview = createElement(
-      this.document,
-      'div',
-      'ok-native-list-index-preview'
-    );
-    this.indexPreview.setAttribute('aria-live', 'polite');
     this.refreshIndicator = createElement(
       this.document,
       'div',
@@ -2949,7 +2941,6 @@ export class NativeListWebEngine {
       this.viewport,
       this.sticky,
       this.indexRail,
-      this.indexPreview,
       this.refreshIndicator
     );
     this.root.append(style, this.viewportFrame, this.footer);
@@ -2990,6 +2981,11 @@ export class NativeListWebEngine {
     );
     this.indexRail.addEventListener('pointerdown', this.handleIndexPointer);
     this.indexRail.addEventListener('pointermove', this.handleIndexPointer);
+    this.indexRail.addEventListener('pointerup', this.handleIndexPointerEnd);
+    this.indexRail.addEventListener(
+      'pointercancel',
+      this.handleIndexPointerEnd
+    );
     this.indexRail.addEventListener('click', this.handleIndexClick);
     this.viewport.addEventListener('pointerdown', this.handlePullStart, {
       passive: true,
@@ -3169,8 +3165,6 @@ export class NativeListWebEngine {
     this.invalidateActionAnchor('destroy');
     this.destroyed = true;
     if (this.frameHandle !== undefined) this.cancelFrame(this.frameHandle);
-    if (this.previewTimer !== undefined)
-      this.document.defaultView?.clearTimeout(this.previewTimer);
     if (this.reorderMovementTimer !== undefined)
       this.document.defaultView?.clearTimeout(this.reorderMovementTimer);
     this.resizeObserver?.disconnect();
@@ -3208,6 +3202,11 @@ export class NativeListWebEngine {
     );
     this.indexRail.removeEventListener('pointerdown', this.handleIndexPointer);
     this.indexRail.removeEventListener('pointermove', this.handleIndexPointer);
+    this.indexRail.removeEventListener('pointerup', this.handleIndexPointerEnd);
+    this.indexRail.removeEventListener(
+      'pointercancel',
+      this.handleIndexPointerEnd
+    );
     this.indexRail.removeEventListener('click', this.handleIndexClick);
     this.viewport.removeEventListener('pointerdown', this.handlePullStart);
     this.viewport.removeEventListener('pointermove', this.handlePullMove);
@@ -3609,22 +3608,35 @@ export class NativeListWebEngine {
   ): readonly number[] {
     const entryCount = this.sectionIndexEntries.length;
     if (entryCount <= 1) return entryCount ? [0] : [];
-    const availableHeight = Math.max(
-      0,
-      viewportHeight - SECTION_INDEX_EDGE_PADDING * 2
-    );
+    const { trackHeight } = this.sectionIndexMetrics(viewportHeight);
     const maxVisible = Math.max(
-      2,
-      Math.floor(availableHeight / SECTION_INDEX_MIN_LABEL_SPACING) + 1
+      1,
+      Math.floor(trackHeight / SECTION_INDEX_LABEL_SPACING)
     );
     if (entryCount <= maxVisible) {
       return Array.from({ length: entryCount }, (_, index) => index);
     }
+    if (maxVisible === 1) return [0];
     const result = new Set<number>();
     for (let slot = 0; slot < maxVisible; slot += 1) {
       result.add(Math.round((slot * (entryCount - 1)) / (maxVisible - 1)));
     }
     return [...result].sort((left, right) => left - right);
+  }
+
+  private sectionIndexMetrics(viewportHeight: number) {
+    const availableHeight = Math.max(
+      0,
+      viewportHeight - SECTION_INDEX_EDGE_PADDING * 2
+    );
+    const trackHeight = Math.min(
+      availableHeight,
+      SECTION_INDEX_LABEL_SPACING * this.sectionIndexEntries.length
+    );
+    return {
+      originY: (viewportHeight - trackHeight) / 2,
+      trackHeight,
+    };
   }
 
   private renderSectionIndex(viewportHeight: number) {
@@ -3653,8 +3665,15 @@ export class NativeListWebEngine {
       'compact',
       visibleEntryIndices.length < this.sectionIndexEntries.length
     );
+    const metrics = this.sectionIndexMetrics(viewportHeight);
+    const visibleTrackHeight = Math.min(
+      metrics.trackHeight,
+      SECTION_INDEX_LABEL_SPACING * visibleEntryIndices.length
+    );
+    const visibleOriginY =
+      metrics.originY + (metrics.trackHeight - visibleTrackHeight) / 2;
     const fragment = this.document.createDocumentFragment();
-    visibleEntryIndices.forEach((entryIndex) => {
+    visibleEntryIndices.forEach((entryIndex, visibleIndex) => {
       const entry = this.sectionIndexEntries[entryIndex];
       if (!entry) return;
       const button = createElement(
@@ -3668,14 +3687,11 @@ export class NativeListWebEngine {
       setData(button, 'sectionEntryIndex', entryIndex);
       setData(button, 'sectionPosition', entry.position);
       setData(button, 'sectionKey', entry.key);
-      const progress =
-        this.sectionIndexEntries.length === 1
-          ? 0.5
-          : entryIndex / (this.sectionIndexEntries.length - 1);
       button.style.top =
         String(
-          SECTION_INDEX_EDGE_PADDING +
-            progress * (viewportHeight - SECTION_INDEX_EDGE_PADDING * 2)
+          visibleOriginY +
+            (visibleTrackHeight * (visibleIndex + 0.5)) /
+              visibleEntryIndices.length
         ) + 'px';
       fragment.appendChild(button);
     });
@@ -4375,78 +4391,62 @@ export class NativeListWebEngine {
     else view?.clearTimeout(handle);
   }
 
-  private selectIndexPosition(
-    position: number,
-    title: string,
-    previewClientY?: number
-  ) {
+  private selectIndexPosition(position: number) {
+    const activeKey = this.sectionIndexEntries.find(
+      (entry) => entry.position === position
+    )?.key;
+    this.indexRail
+      .querySelectorAll<HTMLElement>('[data-section-key]')
+      .forEach((button) =>
+        setData(button, 'active', button.dataset.sectionKey === activeKey)
+      );
     this.scrollToIndex(position, {
       animated: false,
       alignment: 'start',
       viewPosition: 0,
       viewOffset: 0,
     });
-    const frame = this.viewportFrame.getBoundingClientRect();
-    if (previewClientY !== undefined && frame.height > 0) {
-      const previewY = Math.min(
-        frame.height - 24,
-        Math.max(24, previewClientY - frame.top)
-      );
-      this.indexPreview.style.top = String(previewY) + 'px';
-    } else {
-      this.indexPreview.style.top = '50%';
-    }
-    this.indexPreview.textContent = title;
-    setData(this.indexPreview, 'visible', true);
-    if (this.previewTimer !== undefined)
-      this.document.defaultView?.clearTimeout(this.previewTimer);
-    this.previewTimer = this.document.defaultView?.setTimeout(() => {
-      setData(this.indexPreview, 'visible', false);
-    }, 180);
   }
 
-  private sectionIndexEntryAtEvent(event: PointerEvent):
-    | Readonly<{
-        entry: NativeListWebEngine['sectionIndexEntries'][number];
-        previewClientY: number;
-      }>
-    | undefined {
+  private sectionIndexEntryAtEvent(
+    event: PointerEvent
+  ): NativeListWebEngine['sectionIndexEntries'][number] | undefined {
     const rail = this.indexRail.getBoundingClientRect();
     if (this.sectionIndexEntries.length === 0 || rail.height <= 0) {
       return undefined;
     }
-    const availableHeight = Math.max(
-      1,
-      rail.height - SECTION_INDEX_EDGE_PADDING * 2
-    );
+    const metrics = this.sectionIndexMetrics(rail.height);
+    if (metrics.trackHeight <= 0) return undefined;
     const progress = Math.min(
       1,
       Math.max(
         0,
-        (event.clientY - rail.top - SECTION_INDEX_EDGE_PADDING) /
-          availableHeight
+        (event.clientY - rail.top - metrics.originY) / metrics.trackHeight
       )
     );
-    const entryIndex = Math.round(
-      progress * (this.sectionIndexEntries.length - 1)
+    const entryIndex = Math.min(
+      this.sectionIndexEntries.length - 1,
+      Math.floor(progress * this.sectionIndexEntries.length)
     );
-    const entry = this.sectionIndexEntries[entryIndex];
-    return entry ? { entry, previewClientY: event.clientY } : undefined;
+    return this.sectionIndexEntries[entryIndex];
   }
 
   private handleIndexPointer = (event: PointerEvent) => {
     if (event.type === 'pointermove' && event.buttons === 0) return;
-    const selection = this.sectionIndexEntryAtEvent(event);
-    if (!selection) return;
+    const entry = this.sectionIndexEntryAtEvent(event);
+    if (!entry) return;
     event.preventDefault();
     if (event.type === 'pointerdown') {
       this.indexRail.setPointerCapture?.(event.pointerId);
     }
-    this.selectIndexPosition(
-      selection.entry.position,
-      selection.entry.title,
-      selection.previewClientY
-    );
+    this.selectIndexPosition(entry.position);
+  };
+
+  private handleIndexPointerEnd = (event: PointerEvent) => {
+    if (event.type === 'pointerup') {
+      const entry = this.sectionIndexEntryAtEvent(event);
+      if (entry) this.selectIndexPosition(entry.position);
+    }
   };
 
   private handleIndexClick = (event: Event) => {
@@ -4463,12 +4463,7 @@ export class NativeListWebEngine {
     const entry =
       this.sectionIndexEntries[Number(button.dataset.sectionEntryIndex)];
     if (!entry) return;
-    const rect = button.getBoundingClientRect();
-    this.selectIndexPosition(
-      entry.position,
-      entry.title,
-      rect.top + rect.height / 2
-    );
+    this.selectIndexPosition(entry.position);
   };
 
   private handlePullStart = (event: PointerEvent) => {

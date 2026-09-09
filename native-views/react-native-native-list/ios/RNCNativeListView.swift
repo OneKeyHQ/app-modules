@@ -64,7 +64,7 @@ final class NativeListView: UIView {
   private let footerContainer = UIView()
   private let footerCell = NativeListCell(frame: .zero)
   private let sectionIndexView = NativeListSectionIndexView()
-  private let sectionIndexPreview = UILabel()
+  private let sectionIndexPreview = NativeListSectionIndexPreviewView()
   private var footerHeightConstraint: NSLayoutConstraint!
   private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
   private var config: NativeListConfig?
@@ -102,7 +102,8 @@ final class NativeListView: UIView {
 
   private static let sectionIndexContentInset: CGFloat = 16
   private static let sectionIndexRailWidth: CGFloat = 32
-  private static let sectionIndexPreviewSize: CGFloat = 48
+  private static let sectionIndexPreviewWidth: CGFloat = 60
+  private static let sectionIndexPreviewHeight: CGFloat = 50
   private static let sectionIndexPreviewEndMargin: CGFloat = 40
 
   override init(frame: CGRect) {
@@ -158,8 +159,8 @@ final class NativeListView: UIView {
         constant: -Self.sectionIndexPreviewEndMargin
       ),
       sectionIndexPreview.centerYAnchor.constraint(equalTo: collectionView.centerYAnchor),
-      sectionIndexPreview.widthAnchor.constraint(equalToConstant: Self.sectionIndexPreviewSize),
-      sectionIndexPreview.heightAnchor.constraint(equalToConstant: Self.sectionIndexPreviewSize),
+      sectionIndexPreview.widthAnchor.constraint(equalToConstant: Self.sectionIndexPreviewWidth),
+      sectionIndexPreview.heightAnchor.constraint(equalToConstant: Self.sectionIndexPreviewHeight),
     ])
 
     sectionIndexView.isHidden = true
@@ -171,11 +172,6 @@ final class NativeListView: UIView {
     }
     sectionIndexPreview.isHidden = true
     sectionIndexPreview.alpha = 0
-    sectionIndexPreview.layer.cornerRadius = 14
-    sectionIndexPreview.layer.masksToBounds = true
-    sectionIndexPreview.textAlignment = .center
-    sectionIndexPreview.adjustsFontForContentSizeCategory = true
-    sectionIndexPreview.font = nativeListFont(ofSize: 22, weight: .semibold)
     sectionIndexPreview.isAccessibilityElement = false
 
     footerCell.onAction = { [weak self] item, action, target, origin in
@@ -871,18 +867,21 @@ final class NativeListView: UIView {
     sectionIndexHapticsEnabled = config.sectionIndexHapticsEnabled
     sectionIndexView.configure(
       titles: sectionIndexEntries.map(\.title),
-      textColor: nativeListColor(config.theme, "secondaryText", "#646464"),
-      activeColor: nativeListColor(config.theme, "accent", "#108303"),
+      textColor: nativeListColor(config.theme, "disabledText", "#8D8D8D"),
+      activeColor: nativeListColor(config.theme, "positive", "#218358"),
       activeTextColor: nativeListColor(config.theme, "inverseText", "#FCFCFC"),
       centeredInWindow: config.sectionIndexCenteredInWindow
     )
     sectionIndexView.isHidden = sectionIndexEntries.isEmpty
-    sectionIndexPreview.backgroundColor = nativeListColor(
-      config.theme,
-      "inverseBackground",
-      "#202020"
+    sectionIndexPreview.configure(
+      fillColor: UIColor(
+        red: 202.0 / 255.0,
+        green: 202.0 / 255.0,
+        blue: 202.0 / 255.0,
+        alpha: 1
+      ),
+      textColor: .white
     )
-    sectionIndexPreview.textColor = nativeListColor(config.theme, "inverseText", "#FCFCFC")
     if let previousKey,
        let index = sectionIndexEntries.firstIndex(where: { $0.key == previousKey }) {
       sectionIndexView.setActiveIndex(index)
@@ -901,6 +900,7 @@ final class NativeListView: UIView {
     if interacting {
       sectionIndexPreview.layer.removeAllAnimations()
       sectionIndexPreview.text = entry.title
+      positionSectionIndexPreview(at: sectionIndexView.centerY(for: index))
       sectionIndexPreview.isHidden = false
       sectionIndexPreview.alpha = 1
       if changed && sectionIndexHapticsEnabled {
@@ -927,6 +927,23 @@ final class NativeListView: UIView {
     } else {
       UIView.animate(withDuration: 0.15, animations: hide, completion: completion)
     }
+  }
+
+  private func positionSectionIndexPreview(at sectionIndexY: CGFloat) {
+    layoutIfNeeded()
+    let targetY = sectionIndexView.convert(
+      CGPoint(x: sectionIndexView.bounds.midX, y: sectionIndexY),
+      to: self
+    ).y
+    let safeFrame = safeAreaLayoutGuide.layoutFrame
+    let halfHeight = Self.sectionIndexPreviewHeight / 2
+    let minimumY = safeFrame.minY + halfHeight
+    let maximumY = max(minimumY, safeFrame.maxY - halfHeight)
+    let clampedY = targetY.clamped(to: minimumY...maximumY)
+    sectionIndexPreview.transform = CGAffineTransform(
+      translationX: 0,
+      y: clampedY - sectionIndexPreview.center.y
+    )
   }
 
   private func syncSectionIndexToVisibleRows() {
@@ -1748,9 +1765,81 @@ private struct NativeListSectionIndexEntry {
   let position: Int
 }
 
+private final class NativeListSectionIndexPreviewView: UIView {
+  private let shapeLayer = CAShapeLayer()
+  private let label = UILabel()
+
+  var text: String? {
+    get { label.text }
+    set { label.text = newValue }
+  }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isUserInteractionEnabled = false
+    backgroundColor = .clear
+    layer.addSublayer(shapeLayer)
+    label.textAlignment = .center
+    label.adjustsFontForContentSizeCategory = true
+    label.font = nativeListFont(ofSize: 30)
+    label.isAccessibilityElement = false
+    addSubview(label)
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  func configure(fillColor: UIColor, textColor: UIColor) {
+    shapeLayer.fillColor = fillColor.cgColor
+    label.textColor = textColor
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let height = bounds.height
+    let bodyWidth = min(height, max(0, bounds.width - 10))
+    let midY = height / 2
+    let bodyMidX = bodyWidth / 2
+    let shoulderX = bodyWidth * 0.92
+    let path = UIBezierPath()
+    path.move(to: CGPoint(x: bodyMidX, y: 0))
+    path.addCurve(
+      to: CGPoint(x: 0, y: midY),
+      controlPoint1: CGPoint(x: bodyWidth * 0.22, y: 0),
+      controlPoint2: CGPoint(x: 0, y: height * 0.22)
+    )
+    path.addCurve(
+      to: CGPoint(x: bodyMidX, y: height),
+      controlPoint1: CGPoint(x: 0, y: height * 0.78),
+      controlPoint2: CGPoint(x: bodyWidth * 0.22, y: height)
+    )
+    path.addCurve(
+      to: CGPoint(x: shoulderX, y: height * 0.75),
+      controlPoint1: CGPoint(x: bodyWidth * 0.72, y: height),
+      controlPoint2: CGPoint(x: bodyWidth * 0.86, y: height * 0.88)
+    )
+    path.addLine(to: CGPoint(x: bounds.width, y: midY))
+    path.addLine(to: CGPoint(x: shoulderX, y: height * 0.25))
+    path.addCurve(
+      to: CGPoint(x: bodyMidX, y: 0),
+      controlPoint1: CGPoint(x: bodyWidth * 0.86, y: height * 0.12),
+      controlPoint2: CGPoint(x: bodyWidth * 0.72, y: 0)
+    )
+    path.close()
+    shapeLayer.frame = bounds
+    shapeLayer.path = path.cgPath
+    label.frame = CGRect(x: 0, y: 0, width: bodyWidth, height: height)
+  }
+}
+
 // OneKey patch: arbitrate index scrubbing against ancestor dismissal gestures.
 // private final class NativeListSectionIndexView: UIControl {
 private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDelegate {
+  private static let edgePadding: CGFloat = 8
+  private static let labelSize: CGFloat = 14
+  private static let labelSpacing: CGFloat = 16
+
   var onSelect: ((Int, Bool) -> Void)?
   var onInteractionEnded: (() -> Void)?
   private var titles: [String] = []
@@ -1833,16 +1922,22 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   override func layoutSubviews() {
     super.layoutSubviews()
     guard !labels.isEmpty else { return }
-    let height = min(16, max(8, bounds.height / CGFloat(labels.count)))
-    let originY = indexOriginY(cellHeight: height, count: labels.count)
+    let metrics = indexMetrics(count: labels.count)
+    let visibleIndices = visibleLabelIndices(
+      count: labels.count,
+      trackHeight: metrics.trackHeight
+    )
     for (index, label) in labels.enumerated() {
+      label.isHidden = !visibleIndices.contains(index)
+      let centerY = entryCenterY(index: index, metrics: metrics)
       label.frame = CGRect(
-        x: 6,
-        y: originY + CGFloat(index) * height,
-        width: 20,
-        height: height
+        x: bounds.width - Self.labelSize - 3,
+        y: centerY - Self.labelSize / 2,
+        width: Self.labelSize,
+        height: Self.labelSize
       )
     }
+    updateLabelStyles()
   }
 
   override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
@@ -1879,23 +1974,52 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   }
 
   private func select(at y: CGFloat, interacting: Bool) {
-    let height = min(16, max(8, bounds.height / CGFloat(titles.count)))
-    let originY = indexOriginY(cellHeight: height, count: titles.count)
-    let index = Int(floor((y - originY) / height)).clamped(to: 0...(titles.count - 1))
+    let metrics = indexMetrics(count: titles.count)
+    guard metrics.trackHeight > 0 else { return }
+    let progress = ((y - metrics.originY) / metrics.trackHeight).clamped(to: 0...1)
+    let index = Int(floor(progress * CGFloat(titles.count)))
+      .clamped(to: 0...(titles.count - 1))
     if interacting && lastTouchIndex == index { return }
     lastTouchIndex = interacting ? index : nil
     select(index: index, interacting: interacting)
   }
 
-  private func indexOriginY(cellHeight: CGFloat, count: Int) -> CGFloat {
-    let totalHeight = cellHeight * CGFloat(count)
-    let centeredOriginY = (bounds.height - totalHeight) / 2
-    guard centeredInWindow, let window else { return centeredOriginY }
+  func centerY(for index: Int) -> CGFloat {
+    entryCenterY(index: index, metrics: indexMetrics(count: titles.count))
+  }
+
+  private func indexMetrics(count: Int) -> (originY: CGFloat, trackHeight: CGFloat) {
+    guard count > 0 else { return (bounds.midY, 0) }
+    let availableHeight = max(0, bounds.height - Self.edgePadding * 2)
+    let trackHeight = min(availableHeight, Self.labelSpacing * CGFloat(count))
+    let centeredOriginY = (bounds.height - trackHeight) / 2
+    guard centeredInWindow, let window else { return (centeredOriginY, trackHeight) }
     let windowCenterY = window.safeAreaLayoutGuide.layoutFrame.midY
     let localCenterY = convert(CGPoint(x: 0, y: windowCenterY), from: window).y
-    return (localCenterY - totalHeight / 2).clamped(
-      to: 0...max(0, bounds.height - totalHeight)
+    return (
+      (localCenterY - trackHeight / 2).clamped(
+        to: Self.edgePadding...max(Self.edgePadding, bounds.height - Self.edgePadding - trackHeight)
+      ),
+      trackHeight
     )
+  }
+
+  private func entryCenterY(
+    index: Int,
+    metrics: (originY: CGFloat, trackHeight: CGFloat)
+  ) -> CGFloat {
+    guard !titles.isEmpty else { return bounds.midY }
+    return metrics.originY + metrics.trackHeight * (CGFloat(index) + 0.5) / CGFloat(titles.count)
+  }
+
+  private func visibleLabelIndices(count: Int, trackHeight: CGFloat) -> Set<Int> {
+    guard count > 0 else { return [] }
+    let maxVisible = max(1, Int(floor(trackHeight / Self.labelSpacing)))
+    guard count > maxVisible else { return Set(0..<count) }
+    guard maxVisible > 1 else { return [0] }
+    return Set((0..<maxVisible).map { slot in
+      Int(round(CGFloat(slot * (count - 1)) / CGFloat(maxVisible - 1)))
+    })
   }
 
   private func select(index: Int, interacting: Bool) {
@@ -1905,12 +2029,12 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
 
   private func updateLabelStyles() {
     for (index, label) in labels.enumerated() {
-      let active = index == activeIndex
+      let active = index == activeIndex && !label.isHidden
       label.textColor = active ? activeTextColor : textColor
       label.backgroundColor = active ? activeColor : .clear
-      label.layer.cornerRadius = 8
+      label.layer.cornerRadius = Self.labelSize / 2
       label.layer.masksToBounds = active
-      label.font = nativeListFont(ofSize: 10, weight: active ? .semibold : .medium)
+      label.font = nativeListFont(ofSize: 10, weight: active ? .medium : .regular)
     }
   }
 }
