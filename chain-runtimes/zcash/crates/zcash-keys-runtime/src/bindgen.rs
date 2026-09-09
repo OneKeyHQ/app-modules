@@ -99,6 +99,12 @@ pub fn transparent_address_from_ufvk(network: &str, ufvk: &str) -> Result<String
     Ok(keys::transparent_address(network, ufvk)?)
 }
 
+/// UFVK 的透明账户公钥（chain code || 压缩公钥，hex）。见 keys::transparent_account_pubkey。
+#[wasm_bindgen(js_name = transparentAccountPubKeyFromUfvk)]
+pub fn transparent_account_pubkey_from_ufvk(network: &str, ufvk: &str) -> Result<String, JsValue> {
+    Ok(keys::transparent_account_pubkey(network, ufvk)?)
+}
+
 /// 种子指纹（ZIP-32 标准值）。宿主拿它当账户身份持久化，
 /// 所以必须与标准一致 —— 不能另发明一套哈希。
 #[wasm_bindgen(js_name = seedFingerprint)]

@@ -4,7 +4,7 @@
 
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 use zcash_client_backend::data_api::{
-    Account as _, AccountBirthday, AccountPurpose, WalletRead, WalletWrite,
+    Account as _, AccountBirthday, AccountPurpose, WalletRead, WalletWrite, Zip32Derivation,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_protocol::consensus::BlockHeight;
@@ -26,11 +26,21 @@ pub async fn import_ufvk(
     account_name: &str,
     ufvk_str: &str,
     birthday_height: u32,
+    derivation: Option<(&str, u32)>,
 ) -> Result<String> {
     let params = *db.params();
 
     let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
         .map_err(|e| RuntimeError::new(ErrorCode::InvalidUfvk).detail(e))?;
+
+    // 宿主知道种子指纹 + 账户序号时，账户按「可花费」导入：PCZT 里的 change 输出
+    // 会带上 zip32_derivation，签名器（软件/硬件）据此确认找零回到自己。
+    let purpose = match derivation {
+        Some((fingerprint_hex, account_index)) => AccountPurpose::Spending {
+            derivation: Some(parse_zip32_derivation(fingerprint_hex, account_index)?),
+        },
+        None => AccountPurpose::ViewOnly,
+    };
 
     // treestate 取的是 birthday 的前一个区块：账户从 birthday 起开始观察，
     // 所以需要「birthday 之前」的树状态作为锚点。
@@ -50,7 +60,7 @@ pub async fn import_ufvk(
             account_name,
             &ufvk,
             &birthday,
-            AccountPurpose::ViewOnly,
+            purpose,
             None,
         )
         .map_err(|e| {
@@ -62,6 +72,29 @@ pub async fn import_ufvk(
         })?;
 
     Ok(account.id().expose_uuid().to_string())
+}
+
+fn parse_zip32_derivation(fingerprint_hex: &str, account_index: u32) -> Result<Zip32Derivation> {
+    let bytes = hex::decode(fingerprint_hex).map_err(|e| {
+        RuntimeError::with(ErrorCode::InvalidAccountId, json!({ "field": "seedFingerprint" }))
+            .detail(e)
+    })?;
+    let fingerprint: [u8; 32] = bytes.try_into().map_err(|_| {
+        RuntimeError::with(
+            ErrorCode::InvalidAccountId,
+            json!({ "field": "seedFingerprint", "expectedBytes": 32 }),
+        )
+    })?;
+    let account_id = zip32::AccountId::try_from(account_index).map_err(|_| {
+        RuntimeError::with(
+            ErrorCode::InvalidAccountId,
+            json!({ "field": "accountIndex", "value": account_index }),
+        )
+    })?;
+    Ok(Zip32Derivation::new(
+        zip32::fingerprint::SeedFingerprint::from_bytes(fingerprint),
+        account_id,
+    ))
 }
 
 /// 账户余额，JSON。`minConfirmations` 为 0 时把未确认也算进来。
