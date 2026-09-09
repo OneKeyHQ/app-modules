@@ -1,5 +1,6 @@
 import { createRef } from 'react';
 import { Text as ReactNativeText, View } from 'react-native';
+// eslint-disable-next-line @react-native/no-deep-imports
 import * as ReactNativeFeatureFlags from 'react-native/src/private/featureflags/ReactNativeFeatureFlags';
 import ReactTestRenderer, {
   type ReactTestInstance,
