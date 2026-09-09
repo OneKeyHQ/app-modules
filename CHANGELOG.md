@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.112] - 2026-09-09
+
+### Chores
+- Bump all publishable packages to 3.0.112 after synchronizing the release branch with the latest main changes.
+
 ## [3.0.111] - 2026-09-09
 
 ### Bug Fixes
