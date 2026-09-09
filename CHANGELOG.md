@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.114] - 2026-09-09
+
+### Bug Fixes
+- **native-list (Android)**: Allow account-selector network badges to extend outside the avatar frame without leaking clipping state across recycled rows.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.114.
+
 ## [3.0.112] - 2026-09-09
 
 ### Chores
