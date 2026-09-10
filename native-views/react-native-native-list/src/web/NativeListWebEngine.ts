@@ -3105,7 +3105,8 @@ function createMarketRow(context: RenderContext, row: MarketRow): HTMLElement {
     visual.style.height = String(height) + 'px';
     visual.style.flexBasis = String(width) + 'px';
     visual.style.borderRadius = String(layoutStyle.imageCornerRadius) + 'px';
-    const borderColor = 'borderColor' in row.leading ? row.leading.borderColor : undefined;
+    const borderColor =
+      'borderColor' in row.leading ? row.leading.borderColor : undefined;
     if (borderColor) {
       visual.style.border = '1px solid ' + borderColor;
       visual.style.boxSizing = 'border-box';
@@ -3116,7 +3117,8 @@ function createMarketRow(context: RenderContext, row: MarketRow): HTMLElement {
         image.style.height = '100%';
         if (borderColor) {
           image.style.borderRadius = '0';
-          image.style.clipPath = 'inset(-1px round ' + String(layoutStyle.imageCornerRadius) + 'px)';
+          image.style.clipPath =
+            'inset(-1px round ' + String(layoutStyle.imageCornerRadius) + 'px)';
         }
         image.style.objectFit =
           style?.image?.contentFit ?? image.style.objectFit;

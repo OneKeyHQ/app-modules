@@ -1434,6 +1434,8 @@ class NativeListView(
         pendingReorder = reordered
         reorderPlaceholderDecoration.position = to
         recyclerView.invalidate()
+        // OneKey patch: the drag-scoped loop handles deferred nested RecyclerView layouts.
+        // recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
         return true
       }
 
@@ -1509,6 +1511,7 @@ class NativeListView(
           effectiveViewSize = viewSize
           effectiveOutOfBounds = viewSizeOutOfBounds
         }
+        // OneKey patch: warm-start AndroidX's two-second quintic edge-scroll ramp.
         val acceleratedElapsedOutMs =
           msSinceStartScroll + REORDER_AUTOSCROLL_ACCELERATION_OFFSET_MS
         val result = super.interpolateOutOfBoundsScroll(
@@ -1516,6 +1519,7 @@ class NativeListView(
           effectiveViewSize,
           effectiveOutOfBounds,
           totalSize,
+          // msSinceStartScroll,
           acceleratedElapsedOutMs,
         )
         val now = SystemClock.uptimeMillis()
