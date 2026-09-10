@@ -242,6 +242,16 @@ function assertMarketRow(row: MarketRow, path: string): void {
   }
   assertText(row.price, `${path}.price`);
   assertText(row.change.text, `${path}.change.text`);
+  assertTrailingAccessories(
+    row.leadingAction ? [row.leadingAction] : undefined,
+    `${path}.leadingAction`
+  );
+  if (row.leadingAction) {
+    assertText(row.leadingAction.name, `${path}.leadingAction.name`);
+    if (row.leadingAction.actionKey !== undefined) {
+      assertKey(row.leadingAction.actionKey, `${path}.leadingAction.actionKey`);
+    }
+  }
   assertLeadingVisual(row.leading, `${path}.leading`);
   const assertSegments = (
     segments: MarketRow['priceSegments'],

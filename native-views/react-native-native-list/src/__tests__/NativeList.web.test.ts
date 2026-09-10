@@ -49,6 +49,11 @@ const market: MarketRow = {
     networkImage: { ...image, width: 16, height: 16 },
   },
   title: 'BTC',
+  leadingAction: {
+    kind: 'icon',
+    name: 'StarOutline',
+    actionKey: 'market.favorite',
+  },
   subtitle: '$1.23B',
   price: '$64,230.00',
   change: { text: '+2.40%', tone: 'positive' },
@@ -295,6 +300,12 @@ describe('NativeList pure DOM web layout', () => {
     expect(webRowRenderSignature(styled)).not.toBe(
       webRowRenderSignature(market)
     );
+    expect(
+      webRowRenderSignature({
+        ...market,
+        leadingAction: { ...market.leadingAction!, name: 'StarSolid' },
+      })
+    ).not.toBe(webRowRenderSignature(market));
   });
 
   it('keeps the disabled section-index rail out of pointer hit testing', () => {

@@ -1276,6 +1276,8 @@ final class NativeListCell: UICollectionViewCell {
     leadingActionButton.isHidden = true
     leadingActionButton.setImage(nil, for: .normal)
     leadingActionButton.setImage(nil, for: .disabled)
+    leadingActionButton.accessibilityIdentifier = nil
+    leadingActionButton.accessibilityLabel = nil
     unreadDot.isHidden = true
     mediaBadgeLabel.isHidden = true
     mediaBadgeLabel.text = nil
@@ -2312,6 +2314,28 @@ final class NativeListCell: UICollectionViewCell {
     rootTopConstraint.constant = verticalPadding
     rootBottomConstraint.constant = -verticalPadding
     rootStack.spacing = CGFloat(style?.double("leadingGap", default: variant == "perp" ? 8 : 14) ?? (variant == "perp" ? 8 : 14))
+    if let leadingAction = item.data.dictionary("leadingAction") {
+      leadingActionButton.isHidden = false
+      let tintColor = UIColor(
+        nativeListHex: leadingAction.string("tintColor", default: "#646464"),
+        fallback: .darkGray
+      )
+      leadingActionButton.tintColor = tintColor
+      if let image = nativeListIcon(named: leadingAction.string("name")) {
+        leadingActionButton.setImage(image, for: .normal)
+        leadingActionButton.setImage(
+          image.withTintColor(tintColor, renderingMode: .alwaysOriginal),
+          for: .disabled
+        )
+      }
+      leadingActionButton.isEnabled = !leadingAction.bool("disabled")
+      leadingActionButton.alpha = leadingActionButton.isEnabled ? 1 : 0.4
+      leadingActionButton.accessibilityIdentifier = leadingAction["testID"] as? String
+      leadingActionButton.accessibilityLabel = leadingAction["accessibilityLabel"] as? String
+      leadingActionKey = leadingAction.string("actionKey")
+      rootStack.addArrangedSubview(leadingActionButton)
+      rootStack.setCustomSpacing(5, after: leadingActionButton)
+    }
     leadingWidth.constant = imageWidth
     leadingHeight.constant = imageHeight
     if let visual = marketLeading(item, style: style) {

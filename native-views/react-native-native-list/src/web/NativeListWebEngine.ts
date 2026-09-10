@@ -3123,6 +3123,24 @@ function createMarketRow(context: RenderContext, row: MarketRow): HTMLElement {
     String(layoutStyle.horizontalPadding) +
     'px';
   body.style.gap = '0px';
+  if (row.leadingAction) {
+    const action = createIconAction(
+      context,
+      row.leadingAction.name,
+      row.leadingAction.actionKey,
+      row.leadingAction.disabled,
+      row.leadingAction.tintColor
+    );
+    action.style.flex = '0 0 36px';
+    action.style.width = '36px';
+    action.style.height = '36px';
+    action.style.marginRight = '5px';
+    setData(action, 'testid', row.leadingAction.testID);
+    if (row.leadingAction.accessibilityLabel)
+      action.setAttribute('aria-label', row.leadingAction.accessibilityLabel);
+    markActionAnchorSource(action, 'leadingAction');
+    body.appendChild(action);
+  }
   const visual = createVisual(context, row.leading);
   if (visual) {
     const width = layoutStyle.imageWidth;

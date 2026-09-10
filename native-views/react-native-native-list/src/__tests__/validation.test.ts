@@ -44,6 +44,12 @@ const marketRow = (key = 'market-btc'): MarketRow => ({
     },
   },
   title: 'BTC',
+  leadingAction: {
+    kind: 'icon',
+    name: 'StarOutline',
+    actionKey: 'market.favorite',
+    accessibilityLabel: 'Add to favorites',
+  },
   subtitle: '$1.23B',
   subtitlePrefix: {
     text: 'Bitcoin',
@@ -172,6 +178,20 @@ describe('NativeList model validation', () => {
   });
 
   it('rejects arbitrary Market glyphs and out-of-range styles', () => {
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...marketRow(),
+            leadingAction: {
+              kind: 'icon',
+              name: 'StarOutline',
+              actionKey: '',
+            },
+          },
+        ])
+      )
+    ).toThrow('leadingAction');
     expect(() =>
       validateSnapshot(
         snapshot([

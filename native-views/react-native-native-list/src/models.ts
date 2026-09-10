@@ -346,6 +346,7 @@ export type MarketRow = RowBase &
   Readonly<{
     type: 'market';
     variant: 'token' | 'stock' | 'perp';
+    leadingAction?: Extract<TrailingAccessory, { kind: 'icon' }>;
     leading: LeadingVisual;
     title: string;
     subtitle?: string;
@@ -667,6 +668,7 @@ export type RowPatch =
         Pick<
           MarketRow,
           | CommonPatchFields
+          | 'leadingAction'
           | 'leading'
           | 'title'
           | 'subtitle'

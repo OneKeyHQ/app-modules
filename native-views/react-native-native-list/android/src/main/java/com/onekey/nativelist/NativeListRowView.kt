@@ -1367,6 +1367,8 @@ internal class NativeListRowView(
     leadingActionIcon.iconName = ""
     leadingActionIcon.glyphSizeDp = 24
     leadingActionIcon.setOnClickListener(null)
+    leadingActionIcon.setTag(com.facebook.react.R.id.react_test_id, null)
+    leadingActionIcon.contentDescription = null
     mainColumn.visibility = VISIBLE
     dataContainer.visibility = GONE
     dataColumns.forEach { it.visibility = GONE }
@@ -2105,6 +2107,33 @@ internal class NativeListRowView(
     val leadingGap = style?.optDouble("leadingGap", if (variant == "perp") 8.0 else 14.0)?.roundToInt()
       ?: if (variant == "perp") 8 else 14
     setPadding(dp(horizontalPadding), dp(verticalPadding), dp(horizontalPadding), dp(verticalPadding))
+
+    item.json.optJSONObject("leadingAction")?.let { action ->
+      leadingActionIcon.visibility = VISIBLE
+      leadingActionIcon.iconName = action.optString("name")
+      leadingActionIcon.glyphSizeDp = 24
+      leadingActionIcon.tintColor = safeColor(
+        action.optString("tintColor"),
+        color(theme, "icon", "#0000009B"),
+      )
+      leadingActionIcon.isEnabled = !action.optBoolean("disabled", false)
+      leadingActionIcon.alpha = if (leadingActionIcon.isEnabled) 1f else 0.4f
+      leadingActionIcon.setTag(
+        com.facebook.react.R.id.react_test_id,
+        action.optString("testID").takeIf(String::isNotEmpty),
+      )
+      leadingActionIcon.contentDescription = action.optString("accessibilityLabel")
+      leadingActionIcon.setOnClickListener {
+        emitAction(
+          item,
+          action.optString("actionKey"),
+          null,
+          leadingActionIcon,
+          "leadingAction",
+        )
+      }
+      addView(leadingActionIcon, LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(5) })
+    }
 
     val leading = JSONObject(item.json.getJSONObject("leading").toString())
     imageStyle?.optString("shape")?.takeIf(String::isNotEmpty)?.let { leading.put("shape", it) }
