@@ -339,6 +339,9 @@ internal class NativeListRowView(
   private val selectorLineHeights = mutableMapOf<TextView, Int>()
   private val selectorFontSizes = mutableMapOf<TextView, Float>()
   private val selectorImages = mutableListOf<OneKeyImageReusableView>()
+  private val identitySubtitleLabels = mutableListOf<TextView>()
+  private var boundTheme: String? = null
+  private var boundOrientation: String? = null
   private var selectorHeight: Int? = null
   private val leadingImages = List(3) { OneKeyImageReusableView(reactContext) }
   private val leadingOverlayBackground = View(context)
@@ -649,6 +652,24 @@ internal class NativeListRowView(
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
     useSourceScale: Boolean = false,
   ) {
+    val previous = tag as? NativeListItem
+    val sourceScale = item.usesSelectorSourceScale || useSourceScale
+    if (
+      boundKey == item.key && previous != null &&
+      boundTheme == theme?.toString() && currentLayout == layout &&
+      boundOrientation == listOrientation && selectorUsesSourceScale == sourceScale &&
+      identitySubtitleLabels.isNotEmpty() && canUpdateIdentitySubtitle(previous, item)
+    ) {
+      // Balance patches keep the same avatar and its in-flight/completed image request.
+      val segments = item.json.getJSONArray("subtitleSegments")
+      identitySubtitleLabels.forEachIndexed { index, label ->
+        bindIdentitySubtitleLabel(label, segments.getJSONObject(index), theme)
+      }
+      contentDescription = item.json.optString("accessibilityLabel", item.json.optString("title"))
+      bindSelection(item, theme, layout, itemIndex, selected, checkboxState)
+      applySelectorTypography(item)
+      return
+    }
     val shouldRestorePressed = touchPressed && boundKey == item.key
     invalidateCurrentBinding()
     bindingEpoch += 1
@@ -656,7 +677,9 @@ internal class NativeListRowView(
     touchPressed = shouldRestorePressed
     currentLayout = layout
     tag = item
-    selectorUsesSourceScale = item.usesSelectorSourceScale || useSourceScale
+    selectorUsesSourceScale = sourceScale
+    boundTheme = theme?.toString()
+    boundOrientation = listOrientation
     reorderActive = false
     leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
     secondaryImage.prepareForReuse()
@@ -939,6 +962,7 @@ internal class NativeListRowView(
   }
 
   private fun resetViews() {
+    identitySubtitleLabels.clear()
     clipChildren = true
     clipToPadding = true
     selectorOriginalFontFeatures.forEach { (view, original) -> view.fontFeatureSettings = original }
@@ -1442,17 +1466,15 @@ internal class NativeListRowView(
           line.addView(dot, LayoutParams(dp(4), dp(4)).apply { marginStart = dp(6); marginEnd = dp(6) })
         }
         val label = TextView(context).apply {
-          text = segment.optString("text")
           typeface = NativeListFonts.regular(context)
           textSize = sp(14f)
           includeFontPadding = false
           maxLines = 1
           ellipsize = TextUtils.TruncateAt.END
-          val toneKey = when (segment.optString("tone")) { "primary" -> "primaryText"; "disabled" -> "disabledText"; "caution" -> "caution"; "positive" -> "positive"; "negative" -> "negative"; else -> "secondaryText" }
-          setTextColor(color(theme, toneKey, if (toneKey == "caution") "#AB6400" else "#0000009B"))
         }
         TextViewCompat.setLineHeight(label, dp(20))
-        applyValueSegments(label, segment.optJSONArray("textSegments"), 14, 20, false)
+        bindIdentitySubtitleLabel(label, segment, theme)
+        identitySubtitleLabels.add(label)
         line.addView(label, LayoutParams(LayoutParams.WRAP_CONTENT, dp(20)))
       }
       mainColumn.addView(line, 2, LayoutParams(LayoutParams.MATCH_PARENT, dp(20)))
@@ -2309,6 +2331,20 @@ internal class NativeListRowView(
       checkboxData?.let { bindCheckbox(item, it, checkboxState) }
     }
     applyValueSegments(trailingViews[0], item.json.optJSONArray("valueSegments"))
+  }
+
+  private fun bindIdentitySubtitleLabel(label: TextView, segment: JSONObject, theme: JSONObject?) {
+    label.text = segment.optString("text")
+    val toneKey = when (segment.optString("tone")) {
+      "primary" -> "primaryText"
+      "disabled" -> "disabledText"
+      "caution" -> "caution"
+      "positive" -> "positive"
+      "negative" -> "negative"
+      else -> "secondaryText"
+    }
+    label.setTextColor(color(theme, toneKey, if (toneKey == "caution") "#AB6400" else "#0000009B"))
+    applyValueSegments(label, segment.optJSONArray("textSegments"), 14, 20, false)
   }
 
   // OneKey patch: preserve compact zero-count digits without changing their baseline.
