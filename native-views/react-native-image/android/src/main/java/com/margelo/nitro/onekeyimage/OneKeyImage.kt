@@ -245,6 +245,12 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   init {
     OneKeyImageGlideRegistry.ensureRegistered(context)
     hostView.updateSkeletonStyle()
+    installHostCallbacks()
+    applyContentFit()
+    applyVariant()
+  }
+
+  private fun installHostCallbacks() {
     hostView.onReadyForRequest = { scheduleLoad() }
     hostView.onAttachmentChanged = { attached ->
       if (attached) {
@@ -255,8 +261,6 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
         displayRunnable = null
       }
     }
-    applyContentFit()
-    applyVariant()
   }
 
   override fun afterUpdate() {
@@ -276,21 +280,38 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
 
   override fun prepareForRecycle() {
     resetForReuse()
+    disposed = false
+    installHostCallbacks()
   }
 
   override fun onDropView() {
-    resetForReuse()
     disposed = true
     hostView.onReadyForRequest = null
-    hostView.onAttachmentChanged = null
+    cancelPendingCallbacks()
+    clearEventCallbacks()
+    hostView.autoplayEnabled = false
+    hostView.skeletonRequested = false
+    hostView.syncPlayback()
+    if (!usesApplicationRequestManager && hostView.isAttachedToWindow && hostView.drawable != null) {
+      // ScreenStack can still draw a dropped view during its removal transition.
+      // Keep the completed Glide target too: clearing it may recycle the bitmap.
+      hostView.onAttachmentChanged = { attached -> if (!attached) finishDrop() }
+    } else {
+      finishDrop()
+    }
     super.onDropView()
+  }
+
+  private fun finishDrop() {
+    resetForReuse()
+    hostView.onReadyForRequest = null
+    hostView.onAttachmentChanged = null
   }
 
   override fun dispose() {
     disposed = true
-    cancelCurrent(invalidateGeneration = true)
-    hostView.onReadyForRequest = null
-    hostView.onAttachmentChanged = null
+    clearEventCallbacks()
+    finishDrop()
     super.dispose()
   }
 
@@ -317,11 +338,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     resizeWidth = null
     overscan = 1.1
     loadingStrategy = OneKeyImageLoadingStrategy.STATIC
-    onLoadStart = null
-    onLoad = null
-    onDisplay = null
-    onError = null
-    onLoadEnd = null
+    clearEventCallbacks()
     suppressPropEffects = false
     requestActive = false
     displayState = DisplayState.LOADING
@@ -553,6 +570,14 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   }
 
   private fun cancelCurrent(invalidateGeneration: Boolean) {
+    cancelPendingCallbacks()
+    clearCurrentTarget()
+    requestActive = false
+    hostView.skeletonRequested = false
+    if (invalidateGeneration) generation++
+  }
+
+  private fun cancelPendingCallbacks() {
     loadRunnable?.let(hostView::removeCallbacks)
     loadRunnable = null
     displayRunnable?.let(hostView::removeCallbacks)
@@ -560,10 +585,14 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     pendingDisplayGeneration = null
     fallbackRunnable?.let(hostView::removeCallbacks)
     fallbackRunnable = null
-    clearCurrentTarget()
-    requestActive = false
-    hostView.skeletonRequested = false
-    if (invalidateGeneration) generation++
+  }
+
+  private fun clearEventCallbacks() {
+    onLoadStart = null
+    onLoad = null
+    onDisplay = null
+    onError = null
+    onLoadEnd = null
   }
 
   private fun clearCurrentTarget() {

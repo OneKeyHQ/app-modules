@@ -64,6 +64,7 @@ android {
     buildConfig true
     prefab true
   }
+  testOptions { unitTests.includeAndroidResources = true }
 
   buildTypes {
     release {
@@ -102,4 +103,6 @@ dependencies {
   implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
   implementation project(":react-native-nitro-modules")
   implementation project(":onekeyfe_react-native-image")
+  testImplementation "junit:junit:4.13.2"
+  testImplementation "org.robolectric:robolectric:4.16.1"
 }
