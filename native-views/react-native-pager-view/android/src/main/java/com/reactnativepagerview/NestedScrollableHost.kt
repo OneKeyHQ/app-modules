@@ -21,7 +21,9 @@ import kotlin.math.sign
  * Supports multiple levels of nested PagerViews by re-asserting
  * requestDisallowInterceptTouchEvent after child dispatch.
  */
-class NestedScrollableHost : FrameLayout {
+// OneKey patch: Let the collapsible pager reuse same-direction nested pager coordination.
+// Original: class NestedScrollableHost : FrameLayout {
+open class NestedScrollableHost : FrameLayout {
   constructor(context: Context) : super(context)
   constructor(context: Context, attrs: AttributeSet?) : super(context, attrs)
   public var initialIndex: Int? = null
