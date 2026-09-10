@@ -19,10 +19,29 @@ const { NativeListWebEngine, computeWebListLayout, estimateWebRowHeight } = requ
 const identity = (key, fields = {}) => ({ type: 'identity', key, title: key, leading: { kind: 'network' }, ...fields });
 const snapshot = (rows, fields = {}) => ({ schemaVersion: 1, generation: 1, layout: { kind: 'sectioned' }, rows, ...fields });
 
-test('compact iOS index lays out retained labels by visible order', () => {
-  const source = fs.readFileSync(path.join(packageRoot, 'ios/RNCNativeListView.swift'), 'utf8');
-  assert.match(source, /for \(visibleIndex, index\) in visibleIndices\.sorted\(\)\.enumerated\(\)/);
-  assert.match(source, /visibleLabelCenterY\(\s*visibleIndex: visibleIndex,/);
+test('compact native indexes lay out and select retained labels by visible order', () => {
+  const ios = fs.readFileSync(path.join(packageRoot, 'ios/RNCNativeListView.swift'), 'utf8');
+  const android = fs.readFileSync(path.join(packageRoot, 'android/src/main/java/com/onekey/nativelist/NativeListView.kt'), 'utf8');
+  assert.match(ios, /for \(visibleIndex, index\) in visibleIndices\.sorted\(\)\.enumerated\(\)/);
+  assert.match(ios, /visibleLabelCenterY\(\s*visibleIndex: visibleIndex,/);
+  assert.match(ios, /let index = visibleIndices\[slot\]/);
+  assert.match(android, /visibleIndices\.forEachIndexed \{ visibleIndex, index ->/);
+  assert.match(android, /val index = visibleIndices\[slot\]/);
+});
+
+test('native Market quote updates clear stale attributed text and preserve open anchors', () => {
+  const ios = fs.readFileSync(path.join(packageRoot, 'ios/NativeListCell.swift'), 'utf8');
+  const android = fs.readFileSync(path.join(packageRoot, 'android/src/main/java/com/onekey/nativelist/NativeListView.kt'), 'utf8');
+  assert.match(ios, /price\.setAttributedTitle\(nil, for: \.normal\)\s+price\.setTitle/);
+  assert.match(android, /if \(!marketQuoteOnly\) invalidateActionAnchor\("snapshot"\)/);
+});
+
+test('Android NativeList declares its native logger project as a peer dependency', () => {
+  const manifest = require('../../package.json');
+  const loggerManifest = require('../../../../native-modules/native-logger/package.json');
+  const gradle = fs.readFileSync(path.join(packageRoot, 'android/build.gradle'), 'utf8');
+  assert.equal(manifest.peerDependencies['@onekeyfe/react-native-native-logger'], loggerManifest.version);
+  assert.match(gradle, /project\(":onekeyfe_react-native-native-logger"\)/);
 });
 
 function mount(rows, props = {}) {

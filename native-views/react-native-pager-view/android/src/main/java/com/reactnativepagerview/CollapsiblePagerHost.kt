@@ -73,11 +73,12 @@ internal class CollapsiblePagerAdapter : RecyclerView.Adapter<ViewPagerViewHolde
 // Original: class CollapsiblePagerHost(context: Context) : FrameLayout(context), NestedScrollingParent3 {
 class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), NestedScrollingParent3 {
   private data class RecyclerPadding(
-    val left: Int,
-    val top: Int,
-    val right: Int,
-    val bottom: Int,
-    val clipToPadding: Boolean,
+    var left: Int,
+    var top: Int,
+    var right: Int,
+    var bottom: Int,
+    var clipToPadding: Boolean,
+    var appliedTopInset: Int = 0,
   )
 
   val pager = ViewPager2(context)
@@ -89,6 +90,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private val pageOffsets = HashMap<String, Int>()
   private var observedRecyclerView: RecyclerView? = null
   private var observedScrollListener: RecyclerView.OnScrollListener? = null
+  private var attachmentGeneration = 0
   private var headerView: View? = null
   private var stickyHeaderView: View? = null
   private val pageContentLayoutListener = ViewTreeObserver.OnPreDrawListener {
@@ -203,9 +205,20 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     if (adapter.itemCount == 0) return
     detachRecyclerObserver()
     selectedPage = position.coerceIn(0, adapter.itemCount - 1)
-    post {
+    val savedOffset = pageOffsets[currentPageKey()]
+      ?: recyclerViewForPage(selectedPage)?.computeVerticalScrollOffset()
+      ?: 0
+    if (savedOffset > 0) setHeaderOffset(headerHeightPx)
+    postForCurrentAttachment {
       prepareAdjacentPages()
       attachRecyclerObserver()
+    }
+  }
+
+  private fun postForCurrentAttachment(block: () -> Unit) {
+    val generation = attachmentGeneration
+    post {
+      if (isAttachedToWindow && generation == attachmentGeneration) block()
     }
   }
 
@@ -290,7 +303,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       headerHeightPx + stickyHeaderHeightPx,
     )
     applyHeaderOffset()
-    post {
+    postForCurrentAttachment {
       prepareAdjacentPages()
       attachRecyclerObserver()
     }
@@ -384,7 +397,13 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     applyRecyclerInsets(recycler, selectedPage)
     val listener = object : RecyclerView.OnScrollListener() {
       override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-        pageOffsets[currentPageKey()] = recyclerView.computeVerticalScrollOffset()
+        val contentOffset = recyclerView.computeVerticalScrollOffset()
+        pageOffsets[currentPageKey()] = contentOffset
+        // Nested touch scrolling moves list content only after the header has
+        // collapsed. Programmatic list jumps bypass those parent callbacks.
+        if (contentOffset > 0 && headerOffsetPx < headerHeightPx) {
+          setHeaderOffset(headerHeightPx)
+        }
       }
     }
     observedScrollListener = listener
@@ -417,6 +436,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         recycler.clipToPadding,
       )
     }
+    updateRecyclerPaddingOwnership(recycler, original)
     val topInset = headerHeightPx + stickyHeaderHeightPx
     recycler.clipToPadding = false
     val top = original.top + topInset
@@ -446,16 +466,39 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         recycler.layout(recycler.left, recycler.top, recycler.right, recycler.bottom)
       }
     }
+    original.appliedTopInset = topInset
     val key = pageKey(pageIndex)
     if (restoredRecyclerKeys[recycler] != key) {
       restoredRecyclerKeys[recycler] = key
+      val generation = attachmentGeneration
       recycler.post {
-        if (restoredRecyclerKeys[recycler] != key) return@post
+        if (!isAttachedToWindow || generation != attachmentGeneration ||
+          restoredRecyclerKeys[recycler] != key ||
+          originalRecyclerPadding[recycler] !== original) {
+          if (restoredRecyclerKeys[recycler] == key) restoredRecyclerKeys.remove(recycler)
+          return@post
+        }
         val saved = pageOffsets[key] ?: 0
         val current = recycler.computeVerticalScrollOffset()
         if (saved != current) recycler.scrollBy(0, saved - current)
       }
     }
+  }
+
+  private fun updateRecyclerPaddingOwnership(
+    recycler: RecyclerView,
+    original: RecyclerPadding,
+  ) {
+    val expectedTop = original.top + original.appliedTopInset
+    if (recycler.paddingLeft != original.left) original.left = recycler.paddingLeft
+    if (recycler.paddingTop != expectedTop) {
+      // A React-owned list can replace its content padding while it remains
+      // attached. Remove our inset before retaining that value as the new base.
+      original.top = (recycler.paddingTop - original.appliedTopInset).coerceAtLeast(0)
+    }
+    if (recycler.paddingRight != original.right) original.right = recycler.paddingRight
+    if (recycler.paddingBottom != original.bottom) original.bottom = recycler.paddingBottom
+    if (recycler.clipToPadding) original.clipToPadding = true
   }
 
   private fun reapplyRecyclerInsets() {
@@ -464,6 +507,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   private fun restoreRecyclerInsets(recycler: RecyclerView) {
     val original = originalRecyclerPadding.remove(recycler) ?: return
+    updateRecyclerPaddingOwnership(recycler, original)
     restoredRecyclerKeys.remove(recycler)
     recycler.clipToPadding = original.clipToPadding
     recycler.setPadding(original.left, original.top, original.right, original.bottom)
@@ -565,10 +609,13 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
+    attachmentGeneration += 1
+    restoredRecyclerKeys.clear()
     viewTreeObserver.addOnPreDrawListener(pageContentLayoutListener)
   }
 
   override fun onDetachedFromWindow() {
+    attachmentGeneration += 1
     viewTreeObserver.removeOnPreDrawListener(pageContentLayoutListener)
     detachRecyclerObserver()
     for (recycler in originalRecyclerPadding.keys.toList()) {

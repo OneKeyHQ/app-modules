@@ -55,6 +55,7 @@ import {
 import {
   buildMarketQuotePatches,
   buildMarketSnapshot,
+  shouldClearMarketRowsOnRequestError,
   type MarketThemeName,
 } from './marketNativePagerRows';
 import { MARKET_REPLAY_SNAPSHOT } from './marketNativePagerSnapshot';
@@ -2025,7 +2026,12 @@ function MarketListPage({
             ? requestError.message
             : String(requestError);
         setError(nextError);
-        if (!polling) replaceStructure([]);
+        if (
+          !polling &&
+          shouldClearMarketRowsOnRequestError(latestItemsRef.current)
+        ) {
+          replaceStructure([]);
+        }
         onDiagnostics(page.key, {
           sourceUrl:
             requestError instanceof MarketApiError

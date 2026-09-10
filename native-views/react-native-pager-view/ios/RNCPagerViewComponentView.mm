@@ -593,9 +593,11 @@ using namespace facebook::react;
 
 // The blocker gesture never actually does anything — it only serves as a gate
 - (void)blockerGestureFired:(UIPanGestureRecognizer *)recognizer {
-    // Immediately cancel so it doesn't interfere with other gestures
+    // Reset through the public enabled API. UIGestureRecognizer.state is
+    // read-only for clients; only recognizer subclasses may assign it.
     if (recognizer.state == UIGestureRecognizerStateBegan) {
-        recognizer.state = UIGestureRecognizerStateCancelled;
+        recognizer.enabled = NO;
+        recognizer.enabled = YES;
     }
 }
 

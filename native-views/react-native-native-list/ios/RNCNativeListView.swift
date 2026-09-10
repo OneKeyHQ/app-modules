@@ -2060,9 +2060,19 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   private func select(at y: CGFloat, interacting: Bool) {
     let metrics = indexMetrics(count: titles.count)
     guard metrics.trackHeight > 0 else { return }
-    let progress = ((y - metrics.originY) / metrics.trackHeight).clamped(to: 0...1)
-    let index = Int(floor(progress * CGFloat(titles.count)))
-      .clamped(to: 0...(titles.count - 1))
+    let visibleIndices = visibleLabelIndices(
+      count: titles.count,
+      trackHeight: metrics.trackHeight
+    ).sorted()
+    let visibleTrackHeight = min(
+      metrics.trackHeight,
+      Self.labelSpacing * CGFloat(visibleIndices.count)
+    )
+    let visibleOriginY = metrics.originY + (metrics.trackHeight - visibleTrackHeight) / 2
+    let progress = ((y - visibleOriginY) / visibleTrackHeight).clamped(to: 0...1)
+    let slot = Int(floor(progress * CGFloat(visibleIndices.count)))
+      .clamped(to: 0...(visibleIndices.count - 1))
+    let index = visibleIndices[slot]
     if interacting && lastTouchIndex == index { return }
     lastTouchIndex = interacting ? index : nil
     select(index: index, interacting: interacting)

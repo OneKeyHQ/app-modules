@@ -772,6 +772,32 @@ export function visibleWebLayoutItems(
   return visible;
 }
 
+export type WebCollapsiblePagerScrollMetrics = Readonly<{
+  offset: number;
+  viewportLength: number;
+}>;
+
+export function resolveWebCollapsiblePagerScrollMetrics(
+  rawOffset: number,
+  rawViewportLength: number,
+  headerInset: number,
+  stickyInset: number
+): WebCollapsiblePagerScrollMetrics {
+  const header = Math.max(0, headerInset);
+  const sticky = Math.max(0, stickyInset);
+  return {
+    offset: Math.max(0, rawOffset - header),
+    viewportLength: Math.max(0, rawViewportLength - sticky),
+  };
+}
+
+export function resolveWebCollapsiblePagerRawOffset(
+  logicalOffset: number,
+  headerInset: number
+): number {
+  return Math.max(0, logicalOffset) + Math.max(0, headerInset);
+}
+
 export function webLayoutItemsForMount(
   layout: WebListLayout,
   offset: number,
@@ -3425,6 +3451,10 @@ export class NativeListWebEngine {
     this.viewport.addEventListener('scroll', this.handleScroll, {
       passive: true,
     });
+    this.viewport.addEventListener(
+      'ok-collapsible-pager-insets-changed',
+      this.handleCollapsiblePagerInsetsChanged
+    );
     this.root.addEventListener('click', this.handleClick);
     this.root.addEventListener('pointerdown', this.handleMarketPointerDown);
     this.root.addEventListener('pointermove', this.handleMarketPointerMove);
@@ -3675,6 +3705,10 @@ export class NativeListWebEngine {
       this.handleWindowResize
     );
     this.viewport.removeEventListener('scroll', this.handleScroll);
+    this.viewport.removeEventListener(
+      'ok-collapsible-pager-insets-changed',
+      this.handleCollapsiblePagerInsetsChanged
+    );
     this.root.removeEventListener('click', this.handleClick);
     this.cancelMarketPointer();
     this.root.removeEventListener('pointerdown', this.handleMarketPointerDown);
@@ -3788,7 +3822,20 @@ export class NativeListWebEngine {
   private recomputeLayout = () => {
     if (this.destroyed) return;
     const viewportWidth = this.viewport.clientWidth;
-    const viewportHeight = this.viewport.clientHeight;
+    const viewportHeight =
+      this.snapshot.layout.orientation === 'horizontal'
+        ? this.viewport.clientHeight
+        : this.verticalScrollMetrics().viewportLength;
+    if (this.snapshot.layout.orientation !== 'horizontal') {
+      const stickyInset = this.collapsiblePagerInsets().sticky;
+      this.sticky.style.top = String(stickyInset) + 'px';
+      this.indexRail.style.top = String(stickyInset) + 'px';
+      this.refreshIndicator.style.top = String(stickyInset + 8) + 'px';
+    } else {
+      this.sticky.style.top = '0px';
+      this.indexRail.style.top = '0px';
+      this.refreshIndicator.style.top = '8px';
+    }
     if (
       this.lastViewportWidth >= 0 &&
       (viewportWidth !== this.lastViewportWidth ||
@@ -3819,7 +3866,11 @@ export class NativeListWebEngine {
     );
     this.content.style.width = String(this.layout.contentWidth) + 'px';
     this.content.style.height = String(this.layout.contentHeight) + 'px';
-    this.renderSectionIndex(viewportHeight || DEFAULT_VIEWPORT_HEIGHT);
+    this.renderSectionIndex(
+      this.viewport.clientHeight <= 0
+        ? DEFAULT_VIEWPORT_HEIGHT
+        : Math.max(1, viewportHeight)
+    );
     if (previousHorizontal !== this.layout.horizontal) {
       this.viewport.scrollLeft = 0;
       this.viewport.scrollTop = 0;
@@ -4346,7 +4397,7 @@ export class NativeListWebEngine {
     }
     const next = this.layout.items[nextIndex];
     const translate = next
-      ? Math.min(0, next.y - this.viewport.scrollTop - item.height)
+      ? Math.min(0, next.y - this.currentOffset() - item.height)
       : 0;
     this.sticky.style.transform =
       'translate3d(0,' + String(translate) + 'px,0)';
@@ -4422,9 +4473,11 @@ export class NativeListWebEngine {
   }
 
   private viewportLength(): number {
-    return this.layout.horizontal
-      ? this.viewport.clientWidth || DEFAULT_VIEWPORT_WIDTH
-      : this.viewport.clientHeight || DEFAULT_VIEWPORT_HEIGHT;
+    if (this.layout.horizontal) {
+      return this.viewport.clientWidth || DEFAULT_VIEWPORT_WIDTH;
+    }
+    if (this.viewport.clientHeight <= 0) return DEFAULT_VIEWPORT_HEIGHT;
+    return Math.max(1, this.verticalScrollMetrics().viewportLength);
   }
 
   private contentLength(): number {
@@ -4436,18 +4489,54 @@ export class NativeListWebEngine {
   private currentOffset(): number {
     return this.layout.horizontal
       ? this.viewport.scrollLeft
-      : this.viewport.scrollTop;
+      : this.verticalScrollMetrics().offset;
   }
+
+  private collapsiblePagerInsets(): Readonly<{
+    header: number;
+    sticky: number;
+  }> {
+    const readInset = (name: string) => {
+      const parsed = Number.parseFloat(
+        this.viewport.style.getPropertyValue(name)
+      );
+      return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    };
+    return {
+      header: readInset('--ok-collapsible-pager-header-inset'),
+      sticky: readInset('--ok-collapsible-pager-sticky-inset'),
+    };
+  }
+
+  private verticalScrollMetrics(): WebCollapsiblePagerScrollMetrics {
+    const insets = this.collapsiblePagerInsets();
+    return resolveWebCollapsiblePagerScrollMetrics(
+      this.viewport.scrollTop,
+      this.viewport.clientHeight,
+      insets.header,
+      insets.sticky
+    );
+  }
+
+  private handleCollapsiblePagerInsetsChanged = () => {
+    this.recomputeLayout();
+  };
 
   private scrollToAbsoluteOffset(offset: number, animated: boolean) {
     const resolved = Math.min(
       Math.max(0, offset),
       Math.max(0, this.contentLength() - this.viewportLength())
     );
+    const rawOffset = this.layout.horizontal
+      ? resolved
+      : resolveWebCollapsiblePagerRawOffset(
+          resolved,
+          this.collapsiblePagerInsets().header
+        );
     this.viewport.scrollTo(
       this.layout.horizontal
-        ? { left: resolved, top: 0, behavior: animated ? 'smooth' : 'auto' }
-        : { left: 0, top: resolved, behavior: animated ? 'smooth' : 'auto' }
+        ? { left: rawOffset, top: 0, behavior: animated ? 'smooth' : 'auto' }
+        : { left: 0, top: rawOffset, behavior: animated ? 'smooth' : 'auto' }
     );
     this.scheduleFrame();
   }
@@ -5247,7 +5336,12 @@ export class NativeListWebEngine {
     const maximum = Math.max(0, this.contentLength() - this.viewportLength());
     const next = Math.max(0, Math.min(maximum, offset));
     if (this.layout.horizontal) this.viewport.scrollLeft = next;
-    else this.viewport.scrollTop = next;
+    else {
+      this.viewport.scrollTop = resolveWebCollapsiblePagerRawOffset(
+        next,
+        this.collapsiblePagerInsets().header
+      );
+    }
     this.scheduleFrame();
   }
 
@@ -5329,10 +5423,15 @@ export class NativeListWebEngine {
     }
     this.reorderSettlingKey = state.sourceKey;
     const viewportRect = this.viewport.getBoundingClientRect();
+    const insets = this.collapsiblePagerInsets();
     const left =
       viewportRect.left + destinationLayout.x - this.viewport.scrollLeft;
     const top =
-      viewportRect.top + destinationLayout.y - this.viewport.scrollTop;
+      viewportRect.top +
+      destinationLayout.y +
+      insets.header +
+      insets.sticky -
+      this.viewport.scrollTop;
     this.reorderPreview.getBoundingClientRect();
     this.reorderPreview.style.transition =
       'transform ' +

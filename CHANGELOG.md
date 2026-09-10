@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [3.0.113] - 2026-09-09
+## [3.0.115] - 2026-09-10
 
 ### Features
 - **pager-view**: Add a collapsible pager with coordinated native scrolling and retained page positions on iOS and Android, plus a Web implementation.
@@ -13,9 +13,18 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 - **native-list**: Align Market typography, image borders, row interactions and scroll insets with the original mobile UI.
+- **example**: Lazy-load the Market screen and replay snapshot so other example routes do not evaluate the full capture at startup.
 
 ### Chores
-- Bump all 39 publishable packages to 3.0.113 for the native Market integration release.
+- Bump all 39 publishable packages to 3.0.115 for the native Market integration release.
+
+## [3.0.114] - 2026-09-09
+
+### Bug Fixes
+- **native-list (Android)**: Allow account-selector network badges to extend outside the avatar frame without leaking clipping state across recycled rows.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.114.
 
 ## [3.0.112] - 2026-09-09
 

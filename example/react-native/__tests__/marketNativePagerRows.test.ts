@@ -1,6 +1,7 @@
 import {
   buildMarketQuotePatches,
   buildMarketSnapshot,
+  shouldClearMarketRowsOnRequestError,
 } from '../pages/marketNativePagerRows';
 import { MARKET_REPLAY_SNAPSHOT } from '../pages/marketNativePagerSnapshot';
 
@@ -74,6 +75,32 @@ describe('Market built-in NativeList rows', () => {
     expect(
       buildMarketQuotePatches([source!], [{ ...next, key: 'different' }]),
     ).toBeUndefined();
+  });
+
+  it('explicitly clears compact price segments when the price returns to normal', () => {
+    expect(source).toBeDefined();
+    const tiny = { ...source!, price: '0.0000000123' };
+    const normal = { ...tiny, price: '0.001' };
+    const compactPatch = buildMarketQuotePatches([normal], [tiny]);
+    const patches = buildMarketQuotePatches([tiny], [normal]);
+
+    expect(compactPatch?.[0]?.changes).toMatchObject({
+      priceSegments: expect.arrayContaining([
+        expect.objectContaining({ style: 'subscript' }),
+      ]),
+    });
+    expect(patches?.[0]?.changes).toMatchObject({
+      price: '$0.001',
+      priceSegments: [],
+    });
+    expect(
+      JSON.parse(JSON.stringify(patches))[0].changes.priceSegments,
+    ).toEqual([]);
+  });
+
+  it('keeps existing rows after manual refresh and pagination failures', () => {
+    expect(shouldClearMarketRowsOnRequestError([])).toBe(true);
+    expect(shouldClearMarketRowsOnRequestError([source!])).toBe(false);
   });
 
   it('keeps loading, empty, error, and pagination states inside NativeList', () => {

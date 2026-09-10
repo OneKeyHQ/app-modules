@@ -18,6 +18,7 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   UIScrollViewDelegate,
   UIGestureRecognizerDelegate
 >
+- (void)finishPagerScrollEmittingSelection:(BOOL)emitSelection;
 @end
 
 @implementation RNCCollapsiblePagerViewComponentView {
@@ -113,10 +114,10 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 {
   [super didMoveToWindow];
   // OneKey patch: removing a decelerating page from its window can suppress
-  // UIKit's final scroll callback. Reconcile its settled viewport on reattach.
+  // UIKit's final scroll callback. Restore the last acknowledged page on reattach.
   if (self.window != nil && _isPagerDragging &&
       !_pagerScrollView.dragging && !_pagerScrollView.decelerating) {
-    [self scrollViewDidEndDecelerating:_pagerScrollView];
+    [self finishPagerScrollEmittingSelection:NO];
   }
 }
 
@@ -776,19 +777,26 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   if (!decelerate) [self scrollViewDidEndDecelerating:scrollView];
 }
 
-- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+- (void)finishPagerScrollEmittingSelection:(BOOL)emitSelection
 {
   if (_isPagerDragging) {
-    UIViewController *controller = _pageViewController.viewControllers.firstObject;
-    // An interrupted programmatic animation can report its target while a
-    // different controller is centered. Read the settled UIKit viewport.
-    for (UIViewController *candidate in _pageControllers) {
-      if (candidate.view.window == nil) continue;
-      CGRect frame = [candidate.view convertRect:candidate.view.bounds toView:_containerView];
-      if (fabs(frame.origin.x) < 1 &&
-          fabs(frame.size.width - _containerView.bounds.size.width) < 1) {
-        controller = candidate;
-        break;
+    UIViewController *controller = nil;
+    if (!emitSelection && _currentIndex >= 0 && _currentIndex < _pageControllers.count) {
+      // Detaching can make UIKit settle on a neighbouring controller without a
+      // completion callback. Keep the last page acknowledged by JavaScript.
+      controller = _pageControllers[_currentIndex];
+    } else {
+      controller = _pageViewController.viewControllers.firstObject;
+      // An interrupted programmatic animation can report its target while a
+      // different controller is centered. Read the settled UIKit viewport.
+      for (UIViewController *candidate in _pageControllers) {
+        if (candidate.view.window == nil) continue;
+        CGRect frame = [candidate.view convertRect:candidate.view.bounds toView:_containerView];
+        if (fabs(frame.origin.x) < 1 &&
+            fabs(frame.size.width - _containerView.bounds.size.width) < 1) {
+          controller = candidate;
+          break;
+        }
       }
     }
     NSInteger index = [_pageControllers indexOfObjectIdenticalTo:controller];
@@ -805,7 +813,8 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
       _destinationIndex = index;
       [self attachScrollObserverForCurrentPage];
       // A newer tab tap remains authoritative while its queued command runs.
-      if (_pendingGoToIndex < 0 || _pendingGoToIndex == index) {
+      if (emitSelection &&
+          (_pendingGoToIndex < 0 || _pendingGoToIndex == index)) {
         [self emitPageSelected:index];
         [self emitDiagnostics:@"page-selected"];
       }
@@ -821,6 +830,11 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   }
   [self emitDiagnostics:@"pager-idle"];
   [self drainPendingGoTo];
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+{
+  [self finishPagerScrollEmittingSelection:YES];
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
@@ -915,8 +929,11 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 
 - (void)blockerGestureFired:(UIPanGestureRecognizer *)recognizer
 {
+  // Reset through the public enabled API. UIGestureRecognizer.state is
+  // read-only for clients; only recognizer subclasses may assign it.
   if (recognizer.state == UIGestureRecognizerStateBegan) {
-    recognizer.state = UIGestureRecognizerStateCancelled;
+    recognizer.enabled = NO;
+    recognizer.enabled = YES;
   }
 }
 

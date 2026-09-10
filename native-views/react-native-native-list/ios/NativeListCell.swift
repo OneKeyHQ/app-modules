@@ -2386,6 +2386,7 @@ final class NativeListCell: UICollectionViewCell {
     let price = accessoryButtons[0]
     price.isUserInteractionEnabled = false
     price.isHidden = false
+    price.setAttributedTitle(nil, for: .normal)
     price.setTitle(item.data.string("price"), for: .normal)
     applyMarketButtonStyle(price, data: style?.dictionary("price"), defaultSize: 16, defaultLineHeight: 24, defaultWeight: .medium, color: nativeListColor(theme, "primaryText", "#202020"), defaultAlignment: .trailing)
     if !item.data.dictionaries("priceSegments").isEmpty {
@@ -2395,6 +2396,7 @@ final class NativeListCell: UICollectionViewCell {
     let change = accessoryButtons[1]
     change.isUserInteractionEnabled = false
     change.isHidden = false
+    change.setAttributedTitle(nil, for: .normal)
     change.setTitle(changeData.string("text"), for: .normal)
     let defaultChangeColor = nativeListColor(theme, "inverseText", "#FFFFFF")
     applyMarketButtonStyle(change, data: style?.dictionary("change"), defaultSize: 14, defaultLineHeight: 20, defaultWeight: .medium, color: UIColor(nativeListHex: changeData.string("textColor", default: "#FFFFFF"), fallback: defaultChangeColor), defaultAlignment: .center)

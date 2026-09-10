@@ -29,7 +29,7 @@ import { NativeListAccountSelectorPage } from './pages/NativeListAccountSelector
 import type { AccountSelectorInitialTargetInput } from './pages/nativeListAccountSelectorData';
 import { NativeListNetworkSelectorPage } from './pages/NativeListNetworkSelectorPage';
 import { NativeListTokenSelectorPage } from './pages/NativeListTokenSelectorPage';
-import { MarketNativePagerExamplePage, MarketNativeSearchPage, type MarketSearchParams } from './pages/MarketNativePagerExamplePage';
+import type { MarketSearchParams } from './pages/MarketNativePagerExamplePage';
 import {
   NativeListExamplePage,
   type NativeListExampleKey,
@@ -624,10 +624,19 @@ export function AppNavigator() {
         component={OneKeyImageTestPage}
         options={{ title: 'OneKey Image' }}
       />
-      <Stack.Screen name="MarketSearch" component={MarketNativeSearchPage} options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+      <Stack.Screen
+        name="MarketSearch"
+        getComponent={() =>
+          require('./pages/MarketNativePagerExamplePage').MarketNativeSearchPage
+        }
+        options={{ headerShown: false, presentation: 'fullScreenModal' }}
+      />
       <Stack.Screen
         name="MarketNativePager"
-        component={MarketNativePagerExamplePage}
+        getComponent={() =>
+          require('./pages/MarketNativePagerExamplePage')
+            .MarketNativePagerExamplePage
+        }
         options={{ headerShown: false }}
       />
       <Stack.Screen

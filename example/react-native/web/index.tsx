@@ -1,12 +1,22 @@
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { NativeListAccountSelectorPage } from '../pages/NativeListAccountSelectorPage';
-import { MarketNativePagerExamplePage } from '../pages/MarketNativePagerExamplePage';
 
 import './styles.css';
+
+const MarketNativePagerExamplePage = lazy(async () => {
+  const marketModule = await import('../pages/MarketNativePagerExamplePage');
+  return { default: marketModule.MarketNativePagerExamplePage };
+});
+
+const marketLoadingFallback = (
+  <div className="market-loading" role="status" aria-label="Loading market">
+    <span className="market-loading-indicator" />
+  </div>
+);
 
 const rootElement = document.getElementById('root');
 
@@ -28,7 +38,9 @@ createRoot(rootElement).render(
     <SafeAreaProvider>
       <NavigationContainer>
         {page === 'market' ? (
-          <MarketNativePagerExamplePage />
+          <Suspense fallback={marketLoadingFallback}>
+            <MarketNativePagerExamplePage />
+          </Suspense>
         ) : (
           <NativeListAccountSelectorPage initialTarget={initialTarget} />
         )}

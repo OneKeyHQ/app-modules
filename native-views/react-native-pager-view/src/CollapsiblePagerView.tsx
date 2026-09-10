@@ -55,6 +55,17 @@ type State = {
   selectedPage: number;
 };
 
+const pageIndex = (value: number) => {
+  const index = Math.trunc(value);
+  return Number.isFinite(index) ? index : null;
+};
+
+const clampedPageIndex = (value: number, pageCount: number) =>
+  Math.min(
+    Math.max(0, pageIndex(value) ?? 0),
+    Math.max(0, pageCount - 1)
+  );
+
 const pageKey = (child: React.ReactNode, index: number) => {
   if (React.isValidElement(child) && child.key != null) {
     return String(child.key);
@@ -72,7 +83,10 @@ export class CollapsiblePagerView extends React.PureComponent<
   State
 > {
   state: State = {
-    selectedPage: Math.max(0, this.props.initialPage ?? 0),
+    selectedPage: clampedPageIndex(
+      this.props.initialPage ?? 0,
+      React.Children.toArray(this.props.children).length
+    ),
   };
 
   private nativeRef: React.ElementRef<
@@ -86,20 +100,38 @@ export class CollapsiblePagerView extends React.PureComponent<
   }
 
   componentDidUpdate() {
+    const pageCount = this.pages().length;
+    const selectedPage = clampedPageIndex(this.state.selectedPage, pageCount);
+    if (selectedPage !== this.state.selectedPage) {
+      this.setState({ selectedPage });
+      return;
+    }
     this.notifyMountedPagesChanged();
   }
 
   public setPage = (selectedPage: number) => {
-    if (this.nativeRef) {
-      CollapsiblePagerViewNativeCommands.setPage(this.nativeRef, selectedPage);
+    const position = pageIndex(selectedPage);
+    if (
+      this.nativeRef &&
+      position !== null &&
+      position >= 0 &&
+      position < this.pages().length
+    ) {
+      CollapsiblePagerViewNativeCommands.setPage(this.nativeRef, position);
     }
   };
 
   public setPageWithoutAnimation = (selectedPage: number) => {
-    if (this.nativeRef) {
+    const position = pageIndex(selectedPage);
+    if (
+      this.nativeRef &&
+      position !== null &&
+      position >= 0 &&
+      position < this.pages().length
+    ) {
       CollapsiblePagerViewNativeCommands.setPageWithoutAnimation(
         this.nativeRef,
-        selectedPage
+        position
       );
     }
   };
@@ -157,7 +189,10 @@ export class CollapsiblePagerView extends React.PureComponent<
   private onPageSelected = (
     event: ReactNative.NativeSyntheticEvent<OnPageSelectedEventData>
   ) => {
-    const position = Math.max(0, Math.trunc(event.nativeEvent.position));
+    const position = clampedPageIndex(
+      event.nativeEvent.position,
+      this.pages().length
+    );
     if (position !== this.state.selectedPage) {
       this.setState({ selectedPage: position }, this.notifyMountedPagesChanged);
     }

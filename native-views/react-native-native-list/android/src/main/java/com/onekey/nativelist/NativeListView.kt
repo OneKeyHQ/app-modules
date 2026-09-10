@@ -525,9 +525,13 @@ class NativeListView(
     }
     val nextItems = current.items.toMutableList()
     val selected = LinkedHashSet(current.selectedKeys)
+    var marketQuoteOnly = pending.isNotEmpty()
     try {
       pending.forEach { (index, changes) ->
         val previous = nextItems[index]
+        marketQuoteOnly = marketQuoteOnly &&
+          previous.type == "market" &&
+          changes.keys().asSequence().all(MARKET_QUOTE_FIELDS::contains)
         val merged = NativeListItem.parse(mergeRow(previous.json, changes))
         nextItems[index] = merged
         if (changes.has("selected")) {
@@ -537,7 +541,7 @@ class NativeListView(
     } catch (_: Exception) {
       return
     }
-    invalidateActionAnchor("snapshot")
+    if (!marketQuoteOnly) invalidateActionAnchor("snapshot")
     val next = current.copy(items = nextItems, selectedKeys = selected)
     config = next
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
@@ -1893,6 +1897,13 @@ class NativeListView(
   private fun sectionIndexDp(value: Int): Int = (value * density).roundToInt()
 
   companion object {
+    private val MARKET_QUOTE_FIELDS = setOf(
+      "revision",
+      "price",
+      "priceSegments",
+      "change",
+      "accessibilityLabel",
+    )
     private const val SECTION_INDEX_CONTENT_INSET_DP = 16
     private const val SECTION_INDEX_RAIL_WIDTH_DP = 32
     private const val SECTION_INDEX_PREVIEW_WIDTH_DP = 60
@@ -2133,8 +2144,12 @@ private class NativeListSectionIndexView(
   private fun selectAt(y: Float, interacting: Boolean) {
     val metrics = indexMetrics()
     if (metrics.trackHeight <= 0f) return
-    val progress = ((y - metrics.originY) / metrics.trackHeight).coerceIn(0f, 1f)
-    val index = (progress * titles.size).toInt().coerceIn(0, titles.lastIndex)
+    val visibleIndices = visibleLabelIndices(metrics.trackHeight).sorted()
+    val visibleTrackHeight = minOf(metrics.trackHeight, dp(16f) * visibleIndices.size)
+    val visibleOriginY = metrics.originY + (metrics.trackHeight - visibleTrackHeight) / 2f
+    val progress = ((y - visibleOriginY) / visibleTrackHeight).coerceIn(0f, 1f)
+    val slot = (progress * visibleIndices.size).toInt().coerceIn(0, visibleIndices.lastIndex)
+    val index = visibleIndices[slot]
     if (interacting && lastTouchIndex == index) return
     lastTouchIndex = index.takeIf { interacting }
     select(index, interacting)

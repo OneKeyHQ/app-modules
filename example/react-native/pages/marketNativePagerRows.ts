@@ -364,7 +364,7 @@ export function buildMarketQuotePatches(
           price: priceSegments
             ? priceSegments.map(segment => segment.text).join('')
             : formatPrice(item.price),
-          priceSegments,
+          priceSegments: priceSegments ?? [],
           change: {
             text: formatChange(item.priceChange24hPercent),
             tone,
@@ -384,6 +384,12 @@ export function buildMarketQuotePatches(
       },
     ];
   });
+}
+
+export function shouldClearMarketRowsOnRequestError(
+  currentItems: readonly MarketAsset[],
+): boolean {
+  return currentItems.length === 0;
 }
 
 export function buildMarketSnapshot({

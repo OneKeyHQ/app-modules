@@ -15,6 +15,8 @@ import {
   isWebMarketQuotePatch,
   moveWebReorderRow,
   resolveWebMarketLayoutStyle,
+  resolveWebCollapsiblePagerRawOffset,
+  resolveWebCollapsiblePagerScrollMetrics,
   visibleWebLayoutItems,
   webReorderAutoScrollVelocity,
   webReorderEventForRows,
@@ -170,6 +172,22 @@ function snapshot(
 }
 
 describe('NativeList pure DOM web layout', () => {
+  it('uses list-relative offsets inside a collapsible pager viewport', () => {
+    expect(resolveWebCollapsiblePagerScrollMetrics(134, 800, 134, 120)).toEqual({
+      offset: 0,
+      viewportLength: 680,
+    });
+    expect(resolveWebCollapsiblePagerScrollMetrics(734, 800, 134, 120)).toEqual({
+      offset: 600,
+      viewportLength: 680,
+    });
+    expect(resolveWebCollapsiblePagerRawOffset(600, 134)).toBe(734);
+    expect(resolveWebCollapsiblePagerScrollMetrics(-20, 80, -1, 120)).toEqual({
+      offset: 0,
+      viewportLength: 0,
+    });
+  });
+
   it('distinguishes first-load skeleton and pagination without changing legacy loading height', () => {
     const loading = {
       type: 'system',
