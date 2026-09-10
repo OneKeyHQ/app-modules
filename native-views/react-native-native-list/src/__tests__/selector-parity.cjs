@@ -18,6 +18,13 @@ const { validateSnapshot, serializePatches } = require('../validation.ts');
 const { NativeListWebEngine, computeWebListLayout, estimateWebRowHeight } = require('../web/NativeListWebEngine.ts');
 const identity = (key, fields = {}) => ({ type: 'identity', key, title: key, leading: { kind: 'network' }, ...fields });
 const snapshot = (rows, fields = {}) => ({ schemaVersion: 1, generation: 1, layout: { kind: 'sectioned' }, rows, ...fields });
+
+test('compact iOS index lays out retained labels by visible order', () => {
+  const source = fs.readFileSync(path.join(packageRoot, 'ios/RNCNativeListView.swift'), 'utf8');
+  assert.match(source, /for \(visibleIndex, index\) in visibleIndices\.sorted\(\)\.enumerated\(\)/);
+  assert.match(source, /visibleLabelCenterY\(\s*visibleIndex: visibleIndex,/);
+});
+
 function mount(rows, props = {}) {
   const dom = new JSDOM('<!doctype html><div id="host"></div>', { pretendToBeVisual: true });
   const view = dom.window;

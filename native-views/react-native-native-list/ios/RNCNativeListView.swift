@@ -1927,9 +1927,15 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
       count: labels.count,
       trackHeight: metrics.trackHeight
     )
-    for (index, label) in labels.enumerated() {
-      label.isHidden = !visibleIndices.contains(index)
-      let centerY = entryCenterY(index: index, metrics: metrics)
+    labels.forEach { $0.isHidden = true }
+    for (visibleIndex, index) in visibleIndices.sorted().enumerated() {
+      let label = labels[index]
+      label.isHidden = false
+      let centerY = visibleLabelCenterY(
+        visibleIndex: visibleIndex,
+        visibleCount: visibleIndices.count,
+        metrics: metrics
+      )
       label.frame = CGRect(
         x: bounds.width - Self.labelSize - 3,
         y: centerY - Self.labelSize / 2,
@@ -2010,6 +2016,17 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   ) -> CGFloat {
     guard !titles.isEmpty else { return bounds.midY }
     return metrics.originY + metrics.trackHeight * (CGFloat(index) + 0.5) / CGFloat(titles.count)
+  }
+
+  private func visibleLabelCenterY(
+    visibleIndex: Int,
+    visibleCount: Int,
+    metrics: (originY: CGFloat, trackHeight: CGFloat)
+  ) -> CGFloat {
+    let visibleTrackHeight = min(metrics.trackHeight, Self.labelSpacing * CGFloat(visibleCount))
+    let visibleOriginY = metrics.originY + (metrics.trackHeight - visibleTrackHeight) / 2
+    return visibleOriginY
+      + visibleTrackHeight * (CGFloat(visibleIndex) + 0.5) / CGFloat(max(visibleCount, 1))
   }
 
   private func visibleLabelIndices(count: Int, trackHeight: CGFloat) -> Set<Int> {
