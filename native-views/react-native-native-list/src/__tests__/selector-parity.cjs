@@ -36,6 +36,73 @@ test('native Market quote updates clear stale attributed text and preserve open 
   assert.match(android, /if \(!marketQuoteOnly\) invalidateActionAnchor\("snapshot"\)/);
 });
 
+test('native Market patch parity retains layout, reuse, refresh, and action contracts', () => {
+  const adapter = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListAdapter.kt'
+    ),
+    'utf8'
+  );
+  const androidRow = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListRowView.kt'
+    ),
+    'utf8'
+  );
+  const androidList = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListView.kt'
+    ),
+    'utf8'
+  );
+  const iosCell = fs.readFileSync(
+    path.join(packageRoot, 'ios/NativeListCell.swift'),
+    'utf8'
+  );
+  const iosList = fs.readFileSync(
+    path.join(packageRoot, 'ios/RNCNativeListView.swift'),
+    'utf8'
+  );
+  const models = fs.readFileSync(
+    path.join(packageRoot, 'src/models.ts'),
+    'utf8'
+  );
+  const validation = fs.readFileSync(
+    path.join(packageRoot, 'src/validation.ts'),
+    'utf8'
+  );
+
+  assert.match(adapter, /fun marketSourceEdgePx\(position: Int\): Double/);
+  assert.match(androidRow, /windowPointPixels: android\.graphics\.PointF\?/);
+  assert.match(androidRow, /BackgroundStyleApplicator\.clipToPaddingBox/);
+  assert.match(androidRow, /private val marketSubtitleLine/);
+  assert.match(androidRow, /private fun applyMarketTextMetrics/);
+  assert.match(androidRow, /optString\("actionText", "Retry"\)/);
+  assert.match(androidList, /private val refreshIndicatorTravelPx/);
+  assert.match(androidList, /private fun updateRefreshIndicatorOffset/);
+  assert.match(androidList, /anchor\.put\("windowPoint"/);
+  assert.match(iosCell, /var windowPoint: CGPoint\?/);
+  assert.match(iosCell, /private let marketSubtitleStack/);
+  assert.match(iosCell, /NativeListAccessoryButton\(type: \.system\)/);
+  assert.match(iosCell, /string\("titleBadgeLayout"\) == "inline"/);
+  assert.match(iosCell, /string\("actionText", default: "Retry"\)/);
+  assert.match(iosList, /origin\?\.windowPoint = gesture\.location/);
+  for (const field of [
+    'titleBadgeLayout',
+    'contentTrailingGap',
+    'subtitleTrailingPadding',
+    'subtitlePrefix',
+    'actionText',
+  ]) {
+    assert.match(models, new RegExp(field));
+    assert.match(validation, new RegExp(field));
+  }
+  assert.match(models, /windowPoint/);
+});
+
 test('Android NativeList declares its native logger project as a peer dependency', () => {
   const manifest = require('../../package.json');
   const loggerManifest = require('../../../../native-modules/native-logger/package.json');

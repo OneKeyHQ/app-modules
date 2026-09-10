@@ -79,6 +79,7 @@ final class NativeListActionOrigin {
   let slot: Int?
   // OneKey patch: expose the layout slot while preserving the larger hit target.
   let anchorInset: CGFloat
+  var windowPoint: CGPoint?
 
   init(
     sourceView: UIView,
@@ -443,12 +444,17 @@ final class NativeListCell: UICollectionViewCell {
   private let titleRowStack = UIStackView()
   private let titleLabel = NativeListDottedUnderlineLabel()
   private let subtitleLabel = UILabel()
+  // OneKey patch: keep Market name and volume in independent line boxes.
+  private let marketSubtitleStack = UIStackView()
+  private let marketSubtitleSpacer = UIView()
   private let tertiaryLabel = UILabel()
   private let statusLabel = NativeListInsetLabel()
   private let metricSubtitleLabel = UILabel()
   private let metricCompositeStack = UIStackView()
   private let badgeLabel = NativeListInsetLabel()
-  private let marketBadgeButtons = (0..<3).map { _ in UIButton(type: .system) }
+  // OneKey patch: reuse the existing explicit line-box layout for styled Market badges.
+  // private let marketBadgeButtons = (0..<3).map { _ in UIButton(type: .system) }
+  private let marketBadgeButtons = (0..<3).map { _ in NativeListAccessoryButton(type: .system) }
   private let marketBadgeImages = (0..<3).map { _ in OneKeyImageReusableView(frame: .zero) }
   private let actionStack = UIStackView()
   private let actionButtons = (0..<3).map { _ in UIButton(type: .system) }
@@ -797,6 +803,19 @@ final class NativeListCell: UICollectionViewCell {
 
   override func layoutSubviews() {
     super.layoutSubviews()
+    if let item = currentItem, item.type == "system", item.data.string("presentation") == "market",
+       ["noMatch", "retry"].contains(item.data.string("variant")), !titleLabel.isHidden {
+      // The cell content view owns the root constraints and must settle before reading descendants.
+      contentView.layoutIfNeeded()
+      // React Native floors text origins to physical pixels after centering the line box.
+      titleLabel.transform = .identity
+      let scale = max(1, window?.screen.scale ?? traitCollection.displayScale)
+      let origin = titleLabel.convert(titleLabel.bounds, to: contentView).origin
+      let x = floor((contentView.bounds.width - titleLabel.bounds.width) / 2 * scale) / scale
+      let contentHeight: CGFloat = item.data.string("variant") == "retry" ? 56 : 24
+      let y = floor(max(32, (contentView.bounds.height - contentHeight) / 2) * scale) / scale
+      titleLabel.transform = CGAffineTransform(translationX: x - origin.x, y: y - origin.y)
+    }
     // OneKey patch: extend only the background across the section list outer inset.
     if currentItem?.data.bool("backgroundFullWidth") == true {
       selectorFullWidthBackground.frame = CGRect(x: -frame.minX, y: 0, width: superview?.bounds.width ?? bounds.width, height: bounds.height)
@@ -1140,6 +1159,7 @@ final class NativeListCell: UICollectionViewCell {
   }
 
   private func reset() {
+    titleLabel.transform = .identity
     restoreSelectorTypography()
     // OneKey patch: remove selector decorations before rebinding recycled cells.
     selectorViews.forEach { $0.removeFromSuperview() }
@@ -1202,6 +1222,15 @@ final class NativeListCell: UICollectionViewCell {
     headerValueIconImageView.removeFromSuperview()
     headerValueIconImageView.image = nil
     headerValueIconImageView.isHidden = true
+    // OneKey patch: restore the shared labels before any recycled row binds.
+    marketSubtitleStack.arrangedSubviews.forEach {
+      marketSubtitleStack.removeArrangedSubview($0)
+      $0.removeFromSuperview()
+    }
+    mainStack.removeArrangedSubview(marketSubtitleStack)
+    marketSubtitleStack.removeFromSuperview()
+    mainStack.removeArrangedSubview(tertiaryLabel)
+    tertiaryLabel.removeFromSuperview()
     mediaMetadataStack.removeArrangedSubview(subtitleLabel)
     mediaMetadataStack.removeArrangedSubview(mediaNetworkImage)
     mediaMetadataStack.removeFromSuperview()
@@ -1211,6 +1240,7 @@ final class NativeListCell: UICollectionViewCell {
     subtitleLabel.removeFromSuperview()
     mainStack.insertArrangedSubview(titleRowStack, at: 0)
     mainStack.insertArrangedSubview(subtitleLabel, at: 1)
+    mainStack.insertArrangedSubview(tertiaryLabel, at: 2)
     leadingWidth.constant = 40
     leadingHeight.constant = 40
     leadingIconWidth.constant = 18
@@ -1265,6 +1295,13 @@ final class NativeListCell: UICollectionViewCell {
     titleLabel.textAlignment = .natural
     subtitleLabel.text = nil
     subtitleLabel.lineBreakMode = .byTruncatingTail
+    subtitleLabel.attributedText = nil
+    subtitleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    subtitleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    tertiaryLabel.attributedText = nil
+    tertiaryLabel.lineBreakMode = .byTruncatingTail
+    tertiaryLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    tertiaryLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
     tertiaryLabel.text = nil
     statusLabel.text = nil
     statusLabel.topInset = 0
@@ -1291,6 +1328,15 @@ final class NativeListCell: UICollectionViewCell {
       $0.isHidden = true
       $0.isEnabled = true
       $0.isUserInteractionEnabled = false
+      // OneKey patch: a recycled badge must not retain an attributed title or font.
+      $0.setAttributedTitle(nil, for: .normal)
+      $0.marketLineHeight = nil
+      $0.selectorSummaryLineHeight = nil
+      $0.titleLabel?.font = nativeListFont(ofSize: 11, weight: .medium)
+      $0.titleLabel?.numberOfLines = 1
+      $0.contentHorizontalAlignment = .center
+      $0.accessibilityLabel = nil
+      $0.accessibilityTraits = .staticText
       $0.setTitle(nil, for: .normal)
       $0.setImage(nil, for: .normal)
       $0.setTitleColor(nil, for: .normal)
@@ -2295,15 +2341,29 @@ final class NativeListCell: UICollectionViewCell {
       }
     }
     rootStack.addArrangedSubview(mainStack)
-    rootStack.setCustomSpacing(0, after: mainStack)
+    // OneKey patch: opt in to the source Market row's content gap.
+    // rootStack.setCustomSpacing(0, after: mainStack)
+    rootStack.setCustomSpacing(CGFloat(style?.double("contentTrailingGap", default: 0) ?? 0), after: mainStack)
     mainStack.spacing = CGFloat(style?.double("lineGap", default: 0) ?? 0)
     titleRowStack.spacing = CGFloat(style?.double("titleBadgeGap", default: 4) ?? 4)
+    // OneKey patch: opt in without changing the other row templates' filled layout.
+    if style?.string("titleBadgeLayout") == "inline" {
+      mainStack.alignment = .leading
+      titleRowStack.setContentHuggingPriority(.required, for: .horizontal)
+    }
     show(titleLabel, item.data.string("title"), lines: style?.dictionary("title")?.int("lines", default: 1) ?? 1)
     applyMarketTextStyle(titleLabel, data: style?.dictionary("title"), theme: theme, defaultSize: 16, defaultLineHeight: 24, defaultWeight: .medium, defaultColor: nativeListColor(theme, "primaryText", "#202020"))
     let badges = Array(item.data.dictionaries("badges").prefix(marketBadgeButtons.count))
     marketBadgeActionKeys = badges.map { $0["actionKey"] as? String }
     for (index, badge) in badges.enumerated() {
       let button = marketBadgeButtons[index]
+      let badgeStyle = badge.dictionary("style")
+      let badgeFontSize = CGFloat(badgeStyle?.double("fontSize", default: 11) ?? 11)
+      let badgeFontWeight = marketFontWeight(badgeStyle?.string("fontWeight") ?? "", fallback: .medium)
+      // OneKey patch: SizableText supplies tabular numerals for explicit Market metrics.
+      let badgeFont = badgeStyle == nil
+        ? nativeListFont(ofSize: badgeFontSize, weight: badgeFontWeight)
+        : nativeListTabularFont(ofSize: badgeFontSize, weight: badgeFontWeight)
       let hasBuiltInIcon = badge.string("iconName") == "verified"
       let hasRemoteIcon = badge.dictionary("icon") != nil
       let hasIcon = hasBuiltInIcon || hasRemoteIcon
@@ -2326,6 +2386,12 @@ final class NativeListCell: UICollectionViewCell {
       button.accessibilityTraits = button.isUserInteractionEnabled ? .button : .staticText
       button.setTitle(text, for: .normal)
       button.setTitleColor(foreground, for: .normal)
+      button.titleLabel?.font = badgeFont
+      if let lineHeight = badgeStyle?["lineHeight"] as? Double {
+        setButtonLine(button, text: text, font: badgeFont, color: foreground, lineHeight: CGFloat(lineHeight))
+        // The explicit text-only line box must not cover an adjacent icon.
+        if hasIcon { button.marketLineHeight = nil }
+      }
       button.tintColor = foreground
       button.backgroundColor = UIColor(
         nativeListHex: badge.string("backgroundColor", default: ""),
@@ -2335,7 +2401,12 @@ final class NativeListCell: UICollectionViewCell {
       )
       let iconOnly = hasIcon && text.isEmpty
       let iconSize: CGFloat = hasBuiltInIcon ? 16 : 14
-      button.contentEdgeInsets = UIEdgeInsets(top: 0, left: iconOnly ? 0 : hasRemoteIcon ? 20 : hasIcon ? 3 : 5, bottom: 0, right: iconOnly ? 0 : 5)
+      // OneKey patch: preserve the native defaults unless the caller supplies padding.
+      let padding = CGFloat(badgeStyle?.double("horizontalPadding", default: 5) ?? 5)
+      let hasCustomPadding = badgeStyle?["horizontalPadding"] != nil
+      let leftPadding = hasCustomPadding ? padding + (hasRemoteIcon ? iconSize + 2 : 0) : hasRemoteIcon ? 20 : hasIcon ? 3 : 5
+      // button.contentEdgeInsets = UIEdgeInsets(top: 0, left: iconOnly ? 0 : hasRemoteIcon ? 20 : hasIcon ? 3 : 5, bottom: 0, right: iconOnly ? 0 : 5)
+      button.contentEdgeInsets = UIEdgeInsets(top: 0, left: iconOnly ? 0 : leftPadding, bottom: 0, right: iconOnly ? 0 : padding)
       button.imageEdgeInsets = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: text.isEmpty ? 0 : 3)
       button.titleEdgeInsets = .zero
       button.imageView?.contentMode = .scaleAspectFit
@@ -2345,11 +2416,15 @@ final class NativeListCell: UICollectionViewCell {
           for: .normal
         )
       }
-      let height = button.heightAnchor.constraint(equalToConstant: 18)
-      let textWidth = (text as NSString).size(
-        withAttributes: [.font: nativeListFont(ofSize: 11, weight: .medium)]
-      ).width
-      let width = button.widthAnchor.constraint(equalToConstant: iconOnly ? iconSize : ceil(textWidth) + (hasIcon ? iconSize + 11 : 10))
+      // OneKey patch: match source badge metrics at physical-pixel precision.
+      // let height = button.heightAnchor.constraint(equalToConstant: 18)
+      let height = button.heightAnchor.constraint(equalToConstant: CGFloat(badgeStyle?.double("height", default: 18) ?? 18))
+      let textWidth = (text as NSString).size(withAttributes: [.font: badgeFont]).width
+      let scale = max(1, traitCollection.displayScale)
+      let roundedTextWidth = badgeStyle == nil ? ceil(textWidth) : ceil(textWidth * scale) / scale
+      let extraWidth = hasCustomPadding ? padding * 2 + (hasIcon ? iconSize + 2 : 0) : hasIcon ? iconSize + 11 : 10
+      // let width = button.widthAnchor.constraint(equalToConstant: iconOnly ? iconSize : ceil(textWidth) + (hasIcon ? iconSize + 11 : 10))
+      let width = button.widthAnchor.constraint(equalToConstant: iconOnly ? iconSize : roundedTextWidth + extraWidth)
       NSLayoutConstraint.activate([width, height])
       selectorConstraints.append(contentsOf: [width, height])
       if let icon = badge.dictionary("icon") {
@@ -2369,6 +2444,41 @@ final class NativeListCell: UICollectionViewCell {
       if !item.data.dictionaries("subtitleSegments").isEmpty {
         subtitleLabel.attributedText = marketAttributedText(item.data.string("subtitle"), segments: item.data.dictionaries("subtitleSegments"), style: style?.dictionary("subtitle"), defaultSize: 14, defaultLineHeight: 20, defaultWeight: .regular, color: nativeListColor(theme, "secondaryText", "#646464"), defaultAlignment: .natural)
       }
+    }
+    // OneKey patch: preserve volume width while the localized name truncates.
+    let subtitlePrefix = item.data.dictionary("subtitlePrefix")
+    let subtitlePadding = CGFloat(style?.double("subtitleTrailingPadding", default: 0) ?? 0)
+    if subtitlePrefix != nil || subtitlePadding > 0 {
+      mainStack.removeArrangedSubview(subtitleLabel)
+      subtitleLabel.removeFromSuperview()
+      mainStack.removeArrangedSubview(tertiaryLabel)
+      tertiaryLabel.removeFromSuperview()
+      marketSubtitleStack.axis = .horizontal
+      marketSubtitleStack.alignment = .center
+      marketSubtitleStack.spacing = 0
+      marketSubtitleStack.clipsToBounds = true
+      show(tertiaryLabel, subtitlePrefix?.string("text") ?? "", lines: 1)
+      applyMarketTextStyle(tertiaryLabel, data: subtitlePrefix?.dictionary("style"), theme: theme, defaultSize: 12, defaultLineHeight: 16, defaultWeight: .regular, defaultColor: nativeListColor(theme, "secondaryText", "#646464"))
+      tertiaryLabel.setContentHuggingPriority(.required, for: .horizontal)
+      tertiaryLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+      subtitleLabel.setContentHuggingPriority(.required, for: .horizontal)
+      subtitleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+      marketSubtitleStack.addArrangedSubview(tertiaryLabel)
+      marketSubtitleStack.addArrangedSubview(subtitleLabel)
+      marketSubtitleStack.addArrangedSubview(marketSubtitleSpacer)
+      if !tertiaryLabel.isHidden && !subtitleLabel.isHidden {
+        marketSubtitleStack.setCustomSpacing(CGFloat(subtitlePrefix?.double("gap", default: 4) ?? 4), after: tertiaryLabel)
+      }
+      mainStack.insertArrangedSubview(marketSubtitleStack, at: 1)
+      let width = marketSubtitleStack.widthAnchor.constraint(equalTo: mainStack.widthAnchor, constant: -subtitlePadding)
+      width.isActive = true
+      selectorConstraints.append(width)
+      if let maxWidth = subtitlePrefix?["maxWidth"] as? Double {
+        let limit = tertiaryLabel.widthAnchor.constraint(lessThanOrEqualToConstant: CGFloat(maxWidth))
+        limit.isActive = true
+        selectorConstraints.append(limit)
+      }
+      marketSubtitleStack.isHidden = tertiaryLabel.isHidden && subtitleLabel.isHidden
     }
     rootStack.addArrangedSubview(trailingStack)
     trailingStack.axis = .horizontal
@@ -3039,6 +3149,41 @@ final class NativeListCell: UICollectionViewCell {
       rootTopConstraint.constant = 12
       rootBottomConstraint.constant = -12
     }
+    if isMarket && variant == "retry" {
+      let message = item.data.string("message")
+      let text = item.data.string("actionText", default: "Retry")
+      rootStack.axis = .vertical
+      // The source tertiary Button has -5 vertical margins around its 30pt frame.
+      rootStack.spacing = 7
+      rootLeadingConstraint.constant = 32
+      rootTrailingConstraint.constant = -32
+      let height = CGFloat(item.data.double("height", default: message.isEmpty ? 52 : 120))
+      let top = message.isEmpty ? 11 : max(32, (height - 56) / 2)
+      rootTopConstraint.constant = top
+      rootBottomConstraint.constant = -(height - top - (message.isEmpty ? 30 : 61))
+      if !message.isEmpty {
+        show(titleLabel, message, lines: 2)
+        titleLabel.font = nativeListTabularFont(ofSize: 16)
+        titleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
+        titleLabel.textAlignment = .center
+        setLineHeight(titleLabel, text: message, lineHeight: 24)
+        rootStack.addArrangedSubview(mainStack)
+      }
+      showAccessory(0, text, action: (item.data.string("actionKey"), nil))
+      let button = accessoryButtons[0]
+      button.backgroundColor = .clear
+      button.layer.cornerRadius = 15
+      setButtonLine(button, text: text, font: nativeListTabularFont(ofSize: 14, weight: .medium),
+                    color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 20)
+      let textWidth = button.intrinsicContentSize.width
+      selectorConstraints.append(contentsOf: [
+        button.widthAnchor.constraint(equalToConstant: textWidth + 18),
+        button.heightAnchor.constraint(equalToConstant: 30),
+      ])
+      NSLayoutConstraint.activate(selectorConstraints)
+      rootStack.addArrangedSubview(trailingStack)
+      return
+    }
     if variant == "loading" && item.data.string("loadingStyle") == "skeleton" {
       rootLeadingConstraint.constant = 20
       rootTrailingConstraint.constant = -20
@@ -3065,12 +3210,13 @@ final class NativeListCell: UICollectionViewCell {
       return
     }
     if isMarket && variant == "noMatch" {
-      rootTopConstraint.constant = 32
-      rootBottomConstraint.constant = -32
+      let padding = max(32, (CGFloat(item.data.double("height", default: 88)) - 24) / 2)
+      rootTopConstraint.constant = padding
+      rootBottomConstraint.constant = -padding
       rootStack.addArrangedSubview(mainStack)
       mainStack.alignment = .center
       mainStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-      titleLabel.font = nativeListFont(ofSize: 16)
+      titleLabel.font = nativeListTabularFont(ofSize: 16)
       titleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
       titleLabel.textAlignment = .center
       show(titleLabel, item.data.string("message"), lines: 1)
@@ -3080,6 +3226,8 @@ final class NativeListCell: UICollectionViewCell {
     if isMarket && variant == "end" {
       rootTopConstraint.constant = 16
       rootBottomConstraint.constant = -16
+      // OneKey patch: an empty title stack must not consume the dot's line height.
+      titleRowStack.isHidden = true
       rootStack.addArrangedSubview(mainStack)
       mainStack.alignment = .center
       mainStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -3558,7 +3706,7 @@ final class NativeListCell: UICollectionViewCell {
       .foregroundColor: label.textColor as Any,
       .paragraphStyle: paragraphStyle,
     ]
-    if currentItem?.type == "market" || (currentItem?.data["height"] != nil && (["accountSelector", "walletSidebar"].contains(currentItem?.data.string("presentation") ?? "") || currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector")) || currentItem?.type == "system" && currentItem?.data.string("variant") == "warning" {
+    if currentItem?.type == "market" || currentItem?.type == "system" && currentItem?.data.string("presentation") == "market" && currentItem?.data.string("variant") == "noMatch" || (currentItem?.data["height"] != nil && (["accountSelector", "walletSidebar"].contains(currentItem?.data.string("presentation") ?? "") || currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector")) || currentItem?.type == "system" && currentItem?.data.string("variant") == "warning" {
       // OneKey patch: React Native centers font metrics inside explicit line heights.
       let baselineOffset = max(0, (lineHeight - label.font.lineHeight) / 2)
       // OneKey patch: TextKit's 14/20 headings align their baseline to the upper physical pixel.
@@ -3566,7 +3714,7 @@ final class NativeListCell: UICollectionViewCell {
       let scale = window?.screen.scale ?? traitCollection.displayScale
       attributes[.baselineOffset] = isSelectorHeading && scale > 0 ? ceil(baselineOffset * scale) / scale : baselineOffset
     }
-    if letterSpacing != 0 || currentItem?.type == "market" { attributes[.kern] = letterSpacing }
+    if letterSpacing != 0 || currentItem?.type == "market" || currentItem?.data.string("presentation") == "market" { attributes[.kern] = letterSpacing }
     label.attributedText = NSAttributedString(string: text, attributes: attributes)
   }
 
@@ -3581,13 +3729,14 @@ final class NativeListCell: UICollectionViewCell {
     let paragraphStyle = NSMutableParagraphStyle()
     paragraphStyle.minimumLineHeight = lineHeight
     paragraphStyle.maximumLineHeight = lineHeight
+    let isMarketText = currentItem?.type == "market" || currentItem?.type == "system" && currentItem?.data.string("presentation") == "market" && currentItem?.data.string("variant") == "retry"
     let isSelectorValue = currentItem?.data.string("presentation") == "networkSelector" && currentItem?.data["height"] != nil && currentItem?.data.string("variant") != "summary"
     let isSelectorSummary = currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector" && currentItem?.data["height"] != nil && currentItem?.data.string("variant") == "summary"
     (button as? NativeListAccessoryButton)?.selectorSummaryLineHeight = isSelectorSummary ? lineHeight : nil
-    (button as? NativeListAccessoryButton)?.marketLineHeight = currentItem?.type == "market" ? lineHeight : nil
+    (button as? NativeListAccessoryButton)?.marketLineHeight = isMarketText ? lineHeight : nil
     // OneKey patch: summary text uses its source line box; currency retains trailing alignment.
     // Market's line box already handles alignment; source text starts at its origin.
-    paragraphStyle.alignment = isSelectorValue ? .right : isSelectorSummary || currentItem?.type == "market" ? .natural : .center
+    paragraphStyle.alignment = isSelectorValue ? .right : isSelectorSummary || isMarketText ? .natural : .center
     if isSelectorSummary {
       button.contentHorizontalAlignment = .leading
       button.titleLabel?.textAlignment = .natural
@@ -3596,14 +3745,14 @@ final class NativeListCell: UICollectionViewCell {
       button.contentHorizontalAlignment = .trailing
       button.titleLabel?.textAlignment = .right
     }
-    let baselineOffset: CGFloat = currentItem?.type == "market" || currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector" && currentItem?.data["height"] != nil ? max(0, (lineHeight - font.lineHeight) / 2) : 0
+    let baselineOffset: CGFloat = isMarketText || currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector" && currentItem?.data["height"] != nil ? max(0, (lineHeight - font.lineHeight) / 2) : 0
     var attributes: [NSAttributedString.Key: Any] = [
       .font: font,
       .foregroundColor: color,
       .paragraphStyle: paragraphStyle,
-      .baselineOffset: currentItem?.type == "market" && lineHeight == 20 && font.pointSize == 14 ? ceil(baselineOffset * max(1, traitCollection.displayScale)) / max(1, traitCollection.displayScale) : baselineOffset,
+      .baselineOffset: isMarketText && lineHeight == 20 && font.pointSize == 14 ? ceil(baselineOffset * max(1, traitCollection.displayScale)) / max(1, traitCollection.displayScale) : baselineOffset,
     ]
-    if currentItem?.type == "market" { attributes[.kern] = 0 }
+    if isMarketText { attributes[.kern] = 0 }
     button.setAttributedTitle(
       NSAttributedString(string: text, attributes: attributes),
       for: .normal

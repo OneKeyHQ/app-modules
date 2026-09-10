@@ -57,7 +57,12 @@ export type MarketRowStyle = Readonly<{
   /** Space between title and subtitle; 0 by default, bounded to 0..16. */
   lineGap?: number;
   titleBadgeGap?: number;
+  /** OneKey patch: keep badges next to the intrinsic title width. */
+  titleBadgeLayout?: 'inline';
   trailingGap?: number;
+  /** OneKey patch: preserve separate Market content and subtitle insets. */
+  contentTrailingGap?: number;
+  subtitleTrailingPadding?: number;
   image?: MarketImageStyle;
   title?: MarketTextStyle;
   subtitle?: MarketTextStyle;
@@ -79,6 +84,14 @@ export type MarketBadgeModel = Readonly<{
   backgroundColor?: string;
   actionKey?: string;
   accessibilityLabel?: string;
+  /** OneKey patch: optional Market badge metrics; legacy native defaults remain unchanged. */
+  style?: Readonly<{
+    fontSize?: number;
+    fontWeight?: MarketTextStyle['fontWeight'];
+    lineHeight?: number;
+    height?: number;
+    horizontalPadding?: number;
+  }>;
 }>;
 
 export type MarketChangeModel = Readonly<{
@@ -336,6 +349,13 @@ export type MarketRow = RowBase &
     leading: LeadingVisual;
     title: string;
     subtitle?: string;
+    /** OneKey patch: localized name shrinks independently of the volume. */
+    subtitlePrefix?: Readonly<{
+      text: string;
+      gap?: number;
+      maxWidth?: number;
+      style?: MarketTextStyle;
+    }>;
     subtitleSegments?: readonly ValueTextSegment[];
     price: string;
     priceSegments?: readonly ValueTextSegment[];
@@ -434,6 +454,7 @@ export type SystemRow = RowBase &
         presentation?: 'market';
         message: string;
         actionKey: string;
+        actionText?: string;
       }>
     | Readonly<{
         type: 'system';
@@ -764,6 +785,8 @@ export type NativeListActionAnchor = Readonly<{
   token: string;
   /** Window-relative logical units: CSS px on Web, points on iOS, dp on Android. */
   windowRect: NativeListWindowRect;
+  /** Actual long-press point, in the same logical units as windowRect. */
+  windowPoint?: Readonly<{ x: number; y: number }>;
   source: NativeListActionSource;
   slot?: number;
   generation: number;

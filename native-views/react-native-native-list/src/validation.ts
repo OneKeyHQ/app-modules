@@ -162,8 +162,17 @@ function assertMarketStyle(
     'leadingGap',
     'titleBadgeGap',
     'trailingGap',
+    'contentTrailingGap',
+    'subtitleTrailingPadding',
   ] as const) {
     assertBoundedStyleNumber(style[field], `${path}.${field}`, 0, 64);
+  }
+  // OneKey patch: validate the opt-in Market badge layout.
+  if (
+    style.titleBadgeLayout !== undefined &&
+    style.titleBadgeLayout !== 'inline'
+  ) {
+    fail(`${path}.titleBadgeLayout`, 'must be inline when provided');
   }
   assertBoundedStyleNumber(style.lineGap, `${path}.lineGap`, 0, 16);
   assertBoundedStyleNumber(style.changeWidth, `${path}.changeWidth`, 1, 160);
@@ -211,6 +220,26 @@ function assertMarketRow(row: MarketRow, path: string): void {
   }
   assertText(row.title, `${path}.title`);
   assertText(row.subtitle, `${path}.subtitle`);
+  // OneKey patch: validate the independently laid out Market name.
+  if (row.subtitlePrefix) {
+    assertText(row.subtitlePrefix.text, `${path}.subtitlePrefix.text`);
+    assertBoundedStyleNumber(
+      row.subtitlePrefix.gap,
+      `${path}.subtitlePrefix.gap`,
+      0,
+      64
+    );
+    assertBoundedStyleNumber(
+      row.subtitlePrefix.maxWidth,
+      `${path}.subtitlePrefix.maxWidth`,
+      1,
+      320
+    );
+    assertMarketTextStyle(
+      row.subtitlePrefix.style,
+      `${path}.subtitlePrefix.style`
+    );
+  }
   assertText(row.price, `${path}.price`);
   assertText(row.change.text, `${path}.change.text`);
   assertLeadingVisual(row.leading, `${path}.leading`);
@@ -246,6 +275,20 @@ function assertMarketRow(row: MarketRow, path: string): void {
     }
     badgeKeys.add(badge.key);
     assertText(badge.text, `${badgePath}.text`);
+    // OneKey patch: share typography bounds with Market text styles.
+    assertMarketTextStyle(badge.style, `${badgePath}.style`);
+    assertBoundedStyleNumber(
+      badge.style?.height,
+      `${badgePath}.style.height`,
+      1,
+      64
+    );
+    assertBoundedStyleNumber(
+      badge.style?.horizontalPadding,
+      `${badgePath}.style.horizontalPadding`,
+      0,
+      32
+    );
     if (badge.iconName !== undefined && badge.iconName !== 'verified') {
       fail(`${badgePath}.iconName`, 'must be verified when provided');
     }
@@ -797,6 +840,7 @@ function assertRow(
       }
       if (row.variant === 'retry') {
         assertKey(row.actionKey, `${path}.actionKey`);
+        assertText(row.actionText, `${path}.actionText`);
       }
       break;
   }

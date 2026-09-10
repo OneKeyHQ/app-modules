@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.116] - 2026-09-10
+
+### Bug Fixes
+- **native-list**: Complete the published Market row layout, refresh indicator, recycled-cell reset and action-anchor contracts on iOS and Android.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.116.
+
 ## [3.0.115] - 2026-09-10
 
 ### Features

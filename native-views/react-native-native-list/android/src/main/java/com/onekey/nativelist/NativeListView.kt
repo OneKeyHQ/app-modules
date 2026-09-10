@@ -94,6 +94,8 @@ class NativeListView(
   private var configuredTopPaddingPx = 0
   private var configuredBottomPaddingPx = 0
   private val refreshLayout = SwipeRefreshLayout(context)
+  private val refreshIndicatorTravelPx = refreshLayout.progressViewEndOffset
+  private var refreshIndicatorOffsetPx = 0
   private val contentContainer = FrameLayout(context)
   private val adapter = NativeListAdapter(reactContext)
   private val layoutManager = GridLayoutManager(context, 1)
@@ -251,6 +253,11 @@ class NativeListView(
         JSONObject().put("actionKey", "nativeList.refresh"),
       )
     }
+    recyclerView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+      // OneKey patch: a collapsible pager owns the extra padding above the rows.
+      // Keep the refresh control below that header without moving ordinary lists.
+      updateRefreshIndicatorOffset((recyclerView.paddingTop - configuredTopPaddingPx).coerceAtLeast(0))
+    }
 
     recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
       override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
@@ -274,6 +281,12 @@ class NativeListView(
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
     super.onLayout(changed, left, top, right, bottom)
+    val first = config?.items?.firstOrNull()
+    if (recyclerView.isLayoutRequested && (first?.type == "market" || first?.json?.optString("presentation") == "market")) {
+      // A retained Market page can keep cached parent measurements after its diff.
+      // Drain the child's pending layout so its committed rows replace the old cells.
+      relayoutRecyclerViewImmediately()
+    }
     val nextWidth = right - left
     val nextHeight = bottom - top
     if (
@@ -286,6 +299,28 @@ class NativeListView(
     lastLayoutHeight = nextHeight
     lastLayoutDirection = layoutDirection
     performPendingScrollIfNeeded()
+  }
+
+  private fun updateRefreshIndicatorOffset(offset: Int) {
+    if (refreshIndicatorOffsetPx == offset) return
+    refreshIndicatorOffsetPx = offset
+    val refreshing = refreshLayout.isRefreshing
+    val start = offset - refreshLayout.progressCircleDiameter
+    refreshLayout.setProgressViewOffset(false, start, start + refreshIndicatorTravelPx)
+    refreshLayout.isRefreshing = refreshing
+  }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    val first = config?.items?.firstOrNull()
+    if (recyclerView.isLayoutRequested && (first?.type == "market" || first?.json?.optString("presentation") == "market")) {
+      relayoutContents()
+    }
+  }
+
+  override fun onDetachedFromWindow() {
+    updateRefreshIndicatorOffset(0)
+    super.onDetachedFromWindow()
   }
 
   fun applySnapshot(snapshotJson: String) {
@@ -1121,7 +1156,12 @@ class NativeListView(
       .put("source", origin.source)
       .put("generation", generation)
       .put("layoutDirection", if (origin.sourceView.layoutDirection == LAYOUT_DIRECTION_RTL) "rtl" else "ltr")
-      .also { anchor -> origin.slot?.let { anchor.put("slot", it) } }
+      .also { anchor ->
+        origin.slot?.let { anchor.put("slot", it) }
+        origin.windowPointPixels?.let { point ->
+          anchor.put("windowPoint", JSONObject().put("x", point.x / density).put("y", point.y / density))
+        }
+      }
   }
 
   private fun isOriginValid(origin: NativeListActionOrigin): Boolean =

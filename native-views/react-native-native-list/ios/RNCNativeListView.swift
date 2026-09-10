@@ -1052,6 +1052,7 @@ final class NativeListView: UIView {
     let actionKey = item.data.string("longPressActionKey")
     guard !actionKey.isEmpty else { return }
     let origin = (collectionView.cellForItem(at: indexPath) as? NativeListCell)?.rowActionOrigin()
+    origin?.windowPoint = gesture.location(in: window)
     handleAction(item: item, actionKey: actionKey, target: nil, origin: origin)
   }
 
@@ -1478,6 +1479,9 @@ final class NativeListView: UIView {
         ? "rtl"
         : "ltr",
     ]
+    if let point = origin.windowPoint {
+      anchor["windowPoint"] = ["x": point.x, "y": point.y]
+    }
     if let slot = origin.slot { anchor["slot"] = slot }
     return anchor
   }

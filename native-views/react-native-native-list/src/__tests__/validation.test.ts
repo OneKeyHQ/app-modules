@@ -45,6 +45,12 @@ const marketRow = (key = 'market-btc'): MarketRow => ({
   },
   title: 'BTC',
   subtitle: '$1.23B',
+  subtitlePrefix: {
+    text: 'Bitcoin',
+    gap: 4,
+    maxWidth: 120,
+    style: { fontSize: 12, lineHeight: 16, fontWeight: 'regular' },
+  },
   price: '$64,230.00',
   change: { text: '+2.40%', tone: 'positive' },
   badges: [
@@ -54,6 +60,13 @@ const marketRow = (key = 'market-btc'): MarketRow => ({
       tone: 'success',
       actionKey: 'market.communityInfo',
       accessibilityLabel: 'Community recognized',
+      style: {
+        fontSize: 10,
+        fontWeight: 'regular',
+        lineHeight: 16,
+        height: 16,
+        horizontalPadding: 4,
+      },
     },
   ],
   pressActionKey: 'market.open',
@@ -81,7 +94,10 @@ describe('NativeList model validation', () => {
         verticalPadding: 12,
         leadingGap: 14,
         titleBadgeGap: 4,
+        titleBadgeLayout: 'inline',
         trailingGap: 8,
+        contentTrailingGap: 12,
+        subtitleTrailingPadding: 8,
         image: {
           width: 32,
           height: 32,
@@ -124,6 +140,7 @@ describe('NativeList model validation', () => {
         presentation: 'market',
         message: 'Try again',
         actionKey: 'market.retry',
+        actionText: 'Retry',
       },
       { type: 'system', key: 'end', variant: 'end', presentation: 'market' },
       {
@@ -175,6 +192,42 @@ describe('NativeList model validation', () => {
         snapshot([{ ...marketRow(), style: { lineGap: 17 } } as MarketRow])
       )
     ).toThrow('lineGap');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...marketRow(),
+            style: { titleBadgeLayout: 'stacked' },
+          } as unknown as MarketRow,
+        ])
+      )
+    ).toThrow('titleBadgeLayout');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...marketRow(),
+            subtitlePrefix: { text: 'Bitcoin', maxWidth: 321 },
+          },
+        ])
+      )
+    ).toThrow('subtitlePrefix.maxWidth');
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...marketRow(),
+            badges: [
+              {
+                key: 'oversized',
+                text: 'DEX',
+                style: { height: 65 },
+              },
+            ],
+          },
+        ])
+      )
+    ).toThrow('badges[0].style.height');
   });
 
   it('accepts amount plus checkbox on identity rows', () => {
