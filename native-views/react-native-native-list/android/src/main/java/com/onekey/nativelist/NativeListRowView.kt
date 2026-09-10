@@ -2961,9 +2961,15 @@ internal class NativeListRowView(
     }
     val visibleSources = sources.take(leadingImages.size)
     val tokenPair = kind == "token" && visibleSources.size > 1
-    if (tokenPair) {
-      // The network badge intentionally extends past the avatar frame.
+    val hasAccountSelectorBadge =
+      kind == "account" &&
+        (tag as? NativeListItem)?.json?.optString("presentation") == "accountSelector" &&
+        (visual.optJSONArray("overlays")?.length() ?: 0) > 0
+    if (tokenPair || hasAccountSelectorBadge) {
+      // Network badges intentionally extend past the avatar frame.
       clipChildren = false
+    }
+    if (tokenPair) {
       leadingOverlayBackground.visibility = VISIBLE
       leadingOverlayBackground.background = roundedFill(visualBackdropColor, 10f)
       leadingOverlayBackground.layoutParams = FrameLayout.LayoutParams(
