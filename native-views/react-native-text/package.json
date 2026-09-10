@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-text",
-  "version": "3.0.114",
+  "version": "3.0.115-alpha.0",
   "description": "Opt-in native text rendering for React Native",
   "source": "./src/index.ts",
   "main": "./lib/module/index.js",
@@ -114,5 +114,6 @@
     "android": {
       "javaPackageName": "com.onekey.text"
     }
-  }
+  },
+  "stableVersion": "3.0.114"
 }
