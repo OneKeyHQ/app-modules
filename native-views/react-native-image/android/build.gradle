@@ -64,7 +64,6 @@ android {
   sourceSets {
     main { java.srcDirs += ["generated/java", "generated/jni"] }
   }
-  testOptions { unitTests.includeAndroidResources = true }
 }
 
 repositories { mavenCentral(); google() }
@@ -83,5 +82,4 @@ dependencies {
   implementation project(":react-native-nitro-modules")
   implementation project(":onekeyfe_react-native-skeleton")
   testImplementation "junit:junit:4.13.2"
-  testImplementation "org.robolectric:robolectric:4.16.1"
 }

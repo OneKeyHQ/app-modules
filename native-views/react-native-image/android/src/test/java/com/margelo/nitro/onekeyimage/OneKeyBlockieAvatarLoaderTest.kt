@@ -16,9 +16,6 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 import java.io.IOException
 import java.io.File
 import java.nio.file.Files
@@ -29,8 +26,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
 class OneKeyBlockieAvatarLoaderTest {
   private val uri = "onekey-avatar://blockie/v1/0x1234"
 

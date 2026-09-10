@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-dns-lookup",
-  "version": "3.0.115-alpha.0",
+  "version": "3.0.114",
   "description": "react-native-dns-lookup",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -164,6 +164,5 @@
       "release-it"
     ],
     "version": "0.56.0"
-  },
-  "stableVersion": "3.0.114"
+  }
 }
