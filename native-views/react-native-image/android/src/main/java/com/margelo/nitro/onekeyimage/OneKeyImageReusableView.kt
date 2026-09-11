@@ -28,6 +28,7 @@ class OneKeyImageReusableView(context: ThemedReactContext) : FrameLayout(context
     optimizeTos: Boolean,
     overscan: Double,
     loadingStrategy: String,
+    placeholderColor: String,
     onLoad: (() -> Unit)? = null,
     onError: (() -> Unit)? = null,
   ) {
@@ -62,6 +63,7 @@ class OneKeyImageReusableView(context: ThemedReactContext) : FrameLayout(context
       "none" -> OneKeyImageLoadingStrategy.NONE
       else -> OneKeyImageLoadingStrategy.STATIC
     }
+    image.placeholderColor = placeholderColor
     image.sourceUri = sourceUri
     image.afterUpdate()
   }

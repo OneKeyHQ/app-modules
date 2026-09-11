@@ -1,4 +1,9 @@
-import type { IdentityRow, NativeListSnapshot, RowModel } from '../models';
+import type {
+  IdentityRow,
+  MarketRow,
+  NativeListSnapshot,
+  RowModel,
+} from '../models';
 import {
   WEB_LIST_CSS,
   WEB_REORDER_ANIMATION,
@@ -7,14 +12,20 @@ import {
   estimateWebRowHeight,
   hasExceededWebReorderMouseThreshold,
   isWebRowReorderable,
+  isWebMarketQuotePatch,
   moveWebReorderRow,
+  resolveWebMarketLayoutStyle,
+  resolveWebCollapsiblePagerRawOffset,
+  resolveWebCollapsiblePagerScrollMetrics,
   visibleWebLayoutItems,
   webReorderAutoScrollVelocity,
   webReorderEventForRows,
   webLayoutItemsForMount,
   webActionAnchorPayload,
+  webMarketImageBindDeltaForPatches,
   webRowRenderSignature,
   webWalletGroupReorderBadge,
+  WEB_MARKET_VERIFIED_PATH,
 } from '../web/NativeListWebEngine';
 
 jest.mock('../web/NativeListWebAvatarCache', () => ({
@@ -27,6 +38,27 @@ const image = {
   width: 40,
   height: 40,
 } as const;
+
+const market: MarketRow = {
+  type: 'market',
+  key: 'market-btc',
+  variant: 'token',
+  leading: {
+    kind: 'token',
+    image,
+    networkImage: { ...image, width: 16, height: 16 },
+  },
+  title: 'BTC',
+  leadingAction: {
+    kind: 'icon',
+    name: 'StarOutline',
+    actionKey: 'market.favorite',
+  },
+  subtitle: '$1.23B',
+  price: '$64,230.00',
+  change: { text: '+2.40%', tone: 'positive' },
+  badges: [{ key: 'community', iconName: 'verified', tone: 'success' }],
+};
 
 const rows: readonly RowModel[] = [
   {
@@ -145,6 +177,137 @@ function snapshot(
 }
 
 describe('NativeList pure DOM web layout', () => {
+  it('uses list-relative offsets inside a collapsible pager viewport', () => {
+    expect(resolveWebCollapsiblePagerScrollMetrics(134, 800, 134, 120)).toEqual({
+      offset: 0,
+      viewportLength: 680,
+    });
+    expect(resolveWebCollapsiblePagerScrollMetrics(734, 800, 134, 120)).toEqual({
+      offset: 600,
+      viewportLength: 680,
+    });
+    expect(resolveWebCollapsiblePagerRawOffset(600, 134)).toBe(734);
+    expect(resolveWebCollapsiblePagerScrollMetrics(-20, 80, -1, 120)).toEqual({
+      offset: 0,
+      viewportLength: 0,
+    });
+  });
+
+  it('distinguishes first-load skeleton and pagination without changing legacy loading height', () => {
+    const loading = {
+      type: 'system',
+      key: 'loading',
+      variant: 'loading',
+      presentation: 'market',
+    } as const;
+    const list = snapshot({ kind: 'linear' }, [loading]);
+    expect(estimateWebRowHeight(loading, list, 402)).toBe(68);
+    expect(
+      estimateWebRowHeight({ ...loading, loadingStyle: 'skeleton' }, list, 402)
+    ).toBe(56);
+    expect(
+      estimateWebRowHeight({ ...loading, loadingStyle: 'spinner' }, list, 402)
+    ).toBe(52);
+  });
+
+  it('keeps Market defaults, verified glyph, patch boundary, and style reset deterministic', () => {
+    const linear = snapshot({ kind: 'linear' }, [market]);
+    expect(estimateWebRowHeight(market, linear, 390)).toBe(68);
+    expect(
+      estimateWebRowHeight(
+        { ...market, key: 'stock', variant: 'stock' },
+        linear,
+        390
+      )
+    ).toBe(72);
+    expect(WEB_LIST_CSS).toContain('width:80px;height:32px');
+    expect(WEB_MARKET_VERIFIED_PATH).toContain('M9.483 11.458v3.5h-1v-3.5z');
+    expect(
+      isWebMarketQuotePatch({
+        type: 'market',
+        key: market.key,
+        changes: {
+          revision: 2,
+          price: '$64,240.00',
+          change: { text: '+2.41%', tone: 'positive' },
+        },
+      })
+    ).toBe(true);
+    const quotePatches = [
+      {
+        type: 'market',
+        key: market.key,
+        changes: {
+          revision: 2,
+          price: '$64,240.00',
+          change: { text: '+2.41%', tone: 'positive' },
+        },
+      },
+    ] as const;
+    const imageBindCountBeforeQuote = 1;
+    expect(
+      imageBindCountBeforeQuote +
+        webMarketImageBindDeltaForPatches(quotePatches)
+    ).toBe(imageBindCountBeforeQuote);
+    expect(
+      isWebMarketQuotePatch({
+        type: 'market',
+        key: market.key,
+        changes: { style: { changeWidth: 88 } },
+      })
+    ).toBe(false);
+    expect(
+      webMarketImageBindDeltaForPatches([
+        {
+          type: 'market',
+          key: market.key,
+          changes: { style: { changeWidth: 88 } },
+        },
+      ])
+    ).toBe(1);
+    const styled = {
+      ...market,
+      style: {
+        horizontalPadding: 24,
+        image: { width: 36, height: 38, shape: 'rounded' },
+        changeWidth: 88,
+        changeHeight: 36,
+        changeCornerRadius: 12,
+      },
+    } as MarketRow;
+    expect(resolveWebMarketLayoutStyle(styled)).toMatchObject({
+      horizontalPadding: 24,
+      imageWidth: 36,
+      imageHeight: 38,
+      imageCornerRadius: 8,
+      changeWidth: 88,
+      changeHeight: 36,
+      changeCornerRadius: 12,
+    });
+    expect(resolveWebMarketLayoutStyle(market)).toEqual({
+      horizontalPadding: 20,
+      verticalPadding: 12,
+      leadingGap: 14,
+      titleBadgeGap: 4,
+      trailingGap: 8,
+      imageWidth: 32,
+      imageHeight: 32,
+      imageCornerRadius: 16,
+      changeWidth: 80,
+      changeHeight: 32,
+      changeCornerRadius: 8,
+    });
+    expect(webRowRenderSignature(styled)).not.toBe(
+      webRowRenderSignature(market)
+    );
+    expect(
+      webRowRenderSignature({
+        ...market,
+        leadingAction: { ...market.leadingAction!, name: 'StarSolid' },
+      })
+    ).not.toBe(webRowRenderSignature(market));
+  });
+
   it('keeps the disabled section-index rail out of pointer hit testing', () => {
     expect(WEB_LIST_CSS).toContain(
       '.ok-native-list-index-rail[hidden]{display:none}'

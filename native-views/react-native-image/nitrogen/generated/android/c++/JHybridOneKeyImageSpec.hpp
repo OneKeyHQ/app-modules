@@ -72,6 +72,8 @@ namespace margelo::nitro::onekeyimage {
     void setOverscan(std::optional<double> overscan) override;
     std::optional<OneKeyImageLoadingStrategy> getLoadingStrategy() override;
     void setLoadingStrategy(std::optional<OneKeyImageLoadingStrategy> loadingStrategy) override;
+    std::optional<std::string> getPlaceholderColor() override;
+    void setPlaceholderColor(const std::optional<std::string>& placeholderColor) override;
     std::optional<std::function<void()>> getOnLoadStart() override;
     void setOnLoadStart(const std::optional<std::function<void()>>& onLoadStart) override;
     std::optional<std::function<void(double /* width */, double /* height */, OneKeyImageCacheType /* cacheType */)>> getOnLoad() override;

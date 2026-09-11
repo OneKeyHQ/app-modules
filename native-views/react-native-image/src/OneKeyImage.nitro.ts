@@ -47,6 +47,8 @@ export interface OneKeyImageNativeProps extends HybridViewProps {
   resizeWidth?: number;
   overscan?: number;
   loadingStrategy?: OneKeyImageLoadingStrategy;
+  /** Theme-aware color used by static loading, error, and fallback states. */
+  placeholderColor?: string;
   onLoadStart?: () => void;
   onLoad?: (
     width: number,

@@ -20,6 +20,7 @@ import type {
 } from './NativeList.nitro';
 import type {
   ActionAnchorInvalidatedEvent,
+  ImageSource,
   RowActionEvent,
   SelectionDeltaEvent,
   ReorderEvent,
@@ -63,6 +64,27 @@ const NativeListHost = getHostComponent<
   NativeListNativeProps,
   NativeListMethods
 >('NativeList', () => NativeListConfig);
+
+export function preloadNativeListAvatarImages(
+  sources: readonly ImageSource[]
+): Promise<boolean> {
+  return OneKeyImageCache.preload(
+    sources.map((source) => ({
+      uri: source.uri,
+      headers: source.headers,
+      resizeWidth: source.width,
+      resizeHeight: source.height,
+      optimizeTos: source.optimizeTos !== false,
+      overscan: source.overscan,
+      cachePolicy:
+        source.cachePolicy === 'memory'
+          ? OneKeyImageCachePolicy.MEMORY
+          : source.cachePolicy === 'disk'
+          ? OneKeyImageCachePolicy.DISK
+          : OneKeyImageCachePolicy.MEMORY_DISK,
+    }))
+  );
+}
 
 function parsePayload<T>(payloadJson: string): T {
   return JSON.parse(payloadJson) as T;
@@ -151,21 +173,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     useEffect(() => {
       avatarLifecycle.current = 'mounted';
       const queue = new NativeAvatarPrefetchQueue((source) =>
-        OneKeyImageCache.preload([
-          {
-            uri: source.uri,
-            headers: source.headers,
-            resizeWidth: source.width,
-            resizeHeight: source.height,
-            optimizeTos: false,
-            cachePolicy:
-              source.cachePolicy === 'memory'
-                ? OneKeyImageCachePolicy.MEMORY
-                : source.cachePolicy === 'disk'
-                ? OneKeyImageCachePolicy.DISK
-                : OneKeyImageCachePolicy.MEMORY_DISK,
-          },
-        ])
+        preloadNativeListAvatarImages([source])
       );
       avatarQueueRef.current = queue;
       updateAvatarPrefetchRef.current();

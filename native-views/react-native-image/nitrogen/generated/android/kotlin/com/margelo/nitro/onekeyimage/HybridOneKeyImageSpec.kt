@@ -93,6 +93,12 @@ abstract class HybridOneKeyImageSpec: HybridView() {
   @set:Keep
   abstract var loadingStrategy: OneKeyImageLoadingStrategy?
   
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var placeholderColor: String?
+
   abstract var onLoadStart: (() -> Unit)?
   
   private var onLoadStart_cxx: Func_void?

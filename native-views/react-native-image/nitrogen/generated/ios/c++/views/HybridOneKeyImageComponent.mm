@@ -164,6 +164,12 @@ using namespace margelo::nitro::onekeyimage::views;
           : !newViewProps.loadingStrategy.hasSameValue(oldViewProps->loadingStrategy)) {
       swiftPart.setLoadingStrategy(newViewProps.loadingStrategy.get());
     }
+    // placeholderColor: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.placeholderColor.isProvided()
+          : !newViewProps.placeholderColor.hasSameValue(oldViewProps->placeholderColor)) {
+      swiftPart.setPlaceholderColor(newViewProps.placeholderColor.get());
+    }
     // onLoadStart: optional
     if (oldViewProps == nullptr
           ? newViewProps.onLoadStart.isProvided()

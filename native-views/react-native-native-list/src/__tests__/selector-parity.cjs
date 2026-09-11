@@ -18,6 +18,99 @@ const { validateSnapshot, serializePatches } = require('../validation.ts');
 const { NativeListWebEngine, computeWebListLayout, estimateWebRowHeight } = require('../web/NativeListWebEngine.ts');
 const identity = (key, fields = {}) => ({ type: 'identity', key, title: key, leading: { kind: 'network' }, ...fields });
 const snapshot = (rows, fields = {}) => ({ schemaVersion: 1, generation: 1, layout: { kind: 'sectioned' }, rows, ...fields });
+
+test('compact native indexes lay out and select retained labels by visible order', () => {
+  const ios = fs.readFileSync(path.join(packageRoot, 'ios/RNCNativeListView.swift'), 'utf8');
+  const android = fs.readFileSync(path.join(packageRoot, 'android/src/main/java/com/onekey/nativelist/NativeListView.kt'), 'utf8');
+  assert.match(ios, /for \(visibleIndex, index\) in visibleIndices\.sorted\(\)\.enumerated\(\)/);
+  assert.match(ios, /visibleLabelCenterY\(\s*visibleIndex: visibleIndex,/);
+  assert.match(ios, /let index = visibleIndices\[slot\]/);
+  assert.match(android, /visibleIndices\.forEachIndexed \{ visibleIndex, index ->/);
+  assert.match(android, /val index = visibleIndices\[slot\]/);
+});
+
+test('native Market quote updates clear stale attributed text and preserve open anchors', () => {
+  const ios = fs.readFileSync(path.join(packageRoot, 'ios/NativeListCell.swift'), 'utf8');
+  const android = fs.readFileSync(path.join(packageRoot, 'android/src/main/java/com/onekey/nativelist/NativeListView.kt'), 'utf8');
+  assert.match(ios, /price\.setAttributedTitle\(nil, for: \.normal\)\s+price\.setTitle/);
+  assert.match(android, /if \(!marketQuoteOnly\) invalidateActionAnchor\("snapshot"\)/);
+});
+
+test('native Market patch parity retains layout, reuse, refresh, and action contracts', () => {
+  const adapter = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListAdapter.kt'
+    ),
+    'utf8'
+  );
+  const androidRow = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListRowView.kt'
+    ),
+    'utf8'
+  );
+  const androidList = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListView.kt'
+    ),
+    'utf8'
+  );
+  const iosCell = fs.readFileSync(
+    path.join(packageRoot, 'ios/NativeListCell.swift'),
+    'utf8'
+  );
+  const iosList = fs.readFileSync(
+    path.join(packageRoot, 'ios/RNCNativeListView.swift'),
+    'utf8'
+  );
+  const models = fs.readFileSync(
+    path.join(packageRoot, 'src/models.ts'),
+    'utf8'
+  );
+  const validation = fs.readFileSync(
+    path.join(packageRoot, 'src/validation.ts'),
+    'utf8'
+  );
+
+  assert.match(adapter, /fun marketSourceEdgePx\(position: Int\): Double/);
+  assert.match(androidRow, /windowPointPixels: android\.graphics\.PointF\?/);
+  assert.match(androidRow, /BackgroundStyleApplicator\.clipToPaddingBox/);
+  assert.match(androidRow, /private val marketSubtitleLine/);
+  assert.match(androidRow, /private fun applyMarketTextMetrics/);
+  assert.match(androidRow, /optString\("actionText", "Retry"\)/);
+  assert.match(androidList, /private val refreshIndicatorTravelPx/);
+  assert.match(androidList, /private fun updateRefreshIndicatorOffset/);
+  assert.match(androidList, /anchor\.put\("windowPoint"/);
+  assert.match(iosCell, /var windowPoint: CGPoint\?/);
+  assert.match(iosCell, /private let marketSubtitleStack/);
+  assert.match(iosCell, /NativeListAccessoryButton\(type: \.system\)/);
+  assert.match(iosCell, /string\("titleBadgeLayout"\) == "inline"/);
+  assert.match(iosCell, /string\("actionText", default: "Retry"\)/);
+  assert.match(iosList, /origin\?\.windowPoint = gesture\.location/);
+  for (const field of [
+    'titleBadgeLayout',
+    'contentTrailingGap',
+    'subtitleTrailingPadding',
+    'subtitlePrefix',
+    'actionText',
+  ]) {
+    assert.match(models, new RegExp(field));
+    assert.match(validation, new RegExp(field));
+  }
+  assert.match(models, /windowPoint/);
+});
+
+test('Android NativeList declares its native logger project as a peer dependency', () => {
+  const manifest = require('../../package.json');
+  const loggerManifest = require('../../../../native-modules/native-logger/package.json');
+  const gradle = fs.readFileSync(path.join(packageRoot, 'android/build.gradle'), 'utf8');
+  assert.equal(manifest.peerDependencies['@onekeyfe/react-native-native-logger'], loggerManifest.version);
+  assert.match(gradle, /project\(":onekeyfe_react-native-native-logger"\)/);
+});
+
 function mount(rows, props = {}) {
   const dom = new JSDOM('<!doctype html><div id="host"></div>', { pretendToBeVisual: true });
   const view = dom.window;
@@ -112,13 +205,19 @@ test('compact web index keeps every section reachable without overflowing short 
     assert.equal(rail.dataset.compact, 'true');
     assert(buttons.length < letters.length);
     assert.equal(page.document.querySelector('[aria-label="Jump to H"]'), null);
+    assert.equal(
+      page.document.querySelector('.ok-native-list-index-preview'),
+      null,
+    );
     assert.equal(page.engine.layout.items[0].width, 304);
+    const visibleTops = buttons.map(button => Number.parseFloat(button.style.top));
+    assert(
+      visibleTops.slice(1).every((top, index) => top - visibleTops[index] === 16),
+    );
 
     const targetIndex = 7;
-    const targetY = 20 + 8 + (targetIndex / (letters.length - 1)) * 144;
-    const overlappingVisibleButton = rail.querySelector(
-      '[data-section-entry-index="8"]',
-    );
+    const targetY = 20 + 8 + ((targetIndex + 0.5) / letters.length) * 144;
+    const overlappingVisibleButton = buttons[0];
     assert(overlappingVisibleButton);
     overlappingVisibleButton.dispatchEvent(
       new page.view.MouseEvent('pointerdown', {
@@ -134,9 +233,13 @@ test('compact web index keeps every section reachable without overflowing short 
         detail: 1,
       }),
     );
-    assert.equal(
-      page.document.querySelector('.ok-native-list-index-preview').textContent,
-      'H',
+    overlappingVisibleButton.dispatchEvent(
+      new page.view.MouseEvent('pointerup', {
+        bubbles: true,
+        buttons: 0,
+        clientX: 304,
+        clientY: targetY,
+      }),
     );
     assert.equal(viewport.scrollTop, targetIndex * 36);
 
@@ -183,6 +286,53 @@ test('search matches use info color and retain unhighlighted title text', () => 
   assert.equal(page.document.querySelector('.ok-native-list-title .ok-native-list-info').textContent, 'her');
   assert.equal(page.document.querySelector('.ok-native-list-title').style.fontSize, '16px');
   page.close();
+});
+test('web Market rows render subtitle prefixes with independent metrics', () => {
+  const row = {
+    type: 'market',
+    key: 'btc',
+    variant: 'token',
+    leading: { kind: 'token' },
+    title: 'BTC',
+    subtitle: '$1.23B',
+    subtitlePrefix: {
+      text: 'Bitcoin',
+      gap: 6,
+      maxWidth: 96,
+      style: { fontSize: 11, lineHeight: 15, fontWeight: 'medium', color: '#123456' },
+    },
+    price: '$64,230.00',
+    change: { text: '+2.40%', tone: 'positive' },
+  };
+  const page = mount([row]);
+  try {
+    const line = page.document.querySelector('.ok-native-list-market-subtitle-line');
+    const prefix = line.querySelector('.ok-native-list-market-subtitle-prefix');
+    assert.equal(line.style.gap, '6px');
+    assert.equal(prefix.textContent, 'Bitcoin');
+    assert.equal(prefix.style.maxWidth, '96px');
+    assert.equal(prefix.style.fontSize, '11px');
+    assert.equal(prefix.style.lineHeight, '15px');
+    assert.equal(prefix.style.fontWeight, '500');
+    assert.equal(prefix.style.color, 'rgb(18, 52, 86)');
+    assert.equal(line.querySelector('.ok-native-list-market-subtitle').textContent, '$1.23B');
+  } finally {
+    page.close();
+  }
+
+  const prefixOnly = mount([{ ...row, key: 'eth', subtitle: undefined }]);
+  try {
+    assert.equal(
+      prefixOnly.document.querySelector('.ok-native-list-market-subtitle-prefix').textContent,
+      'Bitcoin',
+    );
+    assert.equal(
+      prefixOnly.document.querySelector('.ok-native-list-market-subtitle'),
+      null,
+    );
+  } finally {
+    prefixOnly.close();
+  }
 });
 test('subtitle supports a leading address separator and distinct caution tone', () => {
   const page = mount([identity('x', { subtitleSegments: [{ text: 'Create address', tone: 'caution', separatorBefore: true }] })]);

@@ -33,6 +33,75 @@ export type BadgeModel = Readonly<{
   tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 }>;
 
+export type MarketTextStyle = Readonly<{
+  fontSize?: number;
+  fontWeight?: 'regular' | 'medium' | 'semibold' | 'bold';
+  color?: string;
+  lineHeight?: number;
+  lines?: 1 | 2;
+  alignment?: 'start' | 'center' | 'end';
+}>;
+
+export type MarketImageStyle = Readonly<{
+  width?: number;
+  height?: number;
+  shape?: 'circle' | 'rounded' | 'square';
+  cornerRadius?: number;
+  contentFit?: ImageContentFit;
+}>;
+
+export type MarketRowStyle = Readonly<{
+  horizontalPadding?: number;
+  verticalPadding?: number;
+  leadingGap?: number;
+  /** Space between title and subtitle; 0 by default, bounded to 0..16. */
+  lineGap?: number;
+  titleBadgeGap?: number;
+  /** OneKey patch: keep badges next to the intrinsic title width. */
+  titleBadgeLayout?: 'inline';
+  trailingGap?: number;
+  /** OneKey patch: preserve separate Market content and subtitle insets. */
+  contentTrailingGap?: number;
+  subtitleTrailingPadding?: number;
+  image?: MarketImageStyle;
+  title?: MarketTextStyle;
+  subtitle?: MarketTextStyle;
+  price?: MarketTextStyle;
+  change?: MarketTextStyle;
+  changeWidth?: number;
+  changeHeight?: number;
+  changeCornerRadius?: number;
+}>;
+
+export type MarketBadgeModel = Readonly<{
+  key: string;
+  text?: string;
+  /** Finite native glyph set; currently only the community verified mark. */
+  iconName?: 'verified';
+  icon?: ImageSource;
+  tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+  textColor?: string;
+  backgroundColor?: string;
+  actionKey?: string;
+  accessibilityLabel?: string;
+  /** OneKey patch: optional Market badge metrics; legacy native defaults remain unchanged. */
+  style?: Readonly<{
+    fontSize?: number;
+    fontWeight?: MarketTextStyle['fontWeight'];
+    lineHeight?: number;
+    height?: number;
+    horizontalPadding?: number;
+  }>;
+}>;
+
+export type MarketChangeModel = Readonly<{
+  text: string;
+  textSegments?: readonly ValueTextSegment[];
+  tone: 'positive' | 'negative' | 'neutral';
+  textColor?: string;
+  backgroundColor?: string;
+}>;
+
 // OneKey patch: keep selector decoration and text data serializable.
 export type SelectorTextSegment = Readonly<{
   text: string;
@@ -272,6 +341,34 @@ export type DataRow = RowBase &
     favoriteActive?: boolean;
   }>;
 
+/** Native Market quote row. All values are already localized/formatted strings. */
+export type MarketRow = RowBase &
+  Readonly<{
+    type: 'market';
+    variant: 'token' | 'stock' | 'perp';
+    leadingAction?: Extract<TrailingAccessory, { kind: 'icon' }>;
+    leading: LeadingVisual;
+    title: string;
+    subtitle?: string;
+    /** OneKey patch: localized name shrinks independently of the volume. */
+    subtitlePrefix?: Readonly<{
+      text: string;
+      gap?: number;
+      maxWidth?: number;
+      style?: MarketTextStyle;
+    }>;
+    subtitleSegments?: readonly ValueTextSegment[];
+    price: string;
+    priceSegments?: readonly ValueTextSegment[];
+    change: MarketChangeModel;
+    badges?: readonly MarketBadgeModel[];
+    pressActionKey?: string;
+    pressInActionKey?: string;
+    longPressActionKey?: string;
+    diagnostics?: Readonly<{ imageBindActionKey?: string }>;
+    style?: MarketRowStyle;
+  }>;
+
 export type MediaTileRow = RowBase &
   Readonly<{
     type: 'mediaTile';
@@ -345,12 +442,20 @@ export type ActionRow = RowBase &
 
 export type SystemRow = RowBase &
   (
-    | Readonly<{ type: 'system'; variant: 'loading'; message?: string }>
+    | Readonly<{
+        type: 'system';
+        variant: 'loading';
+        presentation?: 'market';
+        loadingStyle?: 'skeleton' | 'spinner';
+        message?: string;
+      }>
     | Readonly<{
         type: 'system';
         variant: 'retry';
+        presentation?: 'market';
         message: string;
         actionKey: string;
+        actionText?: string;
       }>
     | Readonly<{
         type: 'system';
@@ -359,8 +464,18 @@ export type SystemRow = RowBase &
         message: string;
         borderColor?: string;
       }>
-    | Readonly<{ type: 'system'; variant: 'noMatch'; message: string }>
-    | Readonly<{ type: 'system'; variant: 'end'; message?: string }>
+    | Readonly<{
+        type: 'system';
+        variant: 'noMatch';
+        presentation?: 'market';
+        message: string;
+      }>
+    | Readonly<{
+        type: 'system';
+        variant: 'end';
+        presentation?: 'market';
+        message?: string;
+      }>
     | Readonly<{ type: 'system'; variant: 'spacer'; height: number }>
   );
 
@@ -371,6 +486,7 @@ export type RowModel =
   | ActivityRow
   | MessageRow
   | DataRow
+  | MarketRow
   | MediaTileRow
   | MetricCardRow
   | SectionHeaderRow
@@ -546,6 +662,30 @@ export type RowPatch =
       >;
     }>
   | Readonly<{
+      type: 'market';
+      key: string;
+      changes: Partial<
+        Pick<
+          MarketRow,
+          | CommonPatchFields
+          | 'leadingAction'
+          | 'leading'
+          | 'title'
+          | 'subtitle'
+          | 'subtitleSegments'
+          | 'price'
+          | 'priceSegments'
+          | 'change'
+          | 'badges'
+          | 'pressActionKey'
+          | 'pressInActionKey'
+          | 'longPressActionKey'
+          | 'diagnostics'
+          | 'style'
+        >
+      >;
+    }>
+  | Readonly<{
       type: 'mediaTile';
       key: string;
       changes: Partial<
@@ -629,6 +769,7 @@ export type RowPatch =
 
 export type NativeListActionSource =
   | 'row'
+  | 'marketBadge'
   | 'leadingAction'
   | 'trailingAccessory'
   | 'footerAction'
@@ -646,6 +787,8 @@ export type NativeListActionAnchor = Readonly<{
   token: string;
   /** Window-relative logical units: CSS px on Web, points on iOS, dp on Android. */
   windowRect: NativeListWindowRect;
+  /** Actual long-press point, in the same logical units as windowRect. */
+  windowPoint?: Readonly<{ x: number; y: number }>;
   source: NativeListActionSource;
   slot?: number;
   generation: number;

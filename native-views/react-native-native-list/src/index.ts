@@ -1,4 +1,4 @@
-export { NativeList } from './NativeList';
+export { NativeList, preloadNativeListAvatarImages } from './NativeList';
 export type {
   ActionAnchorState,
   NativeListProps,

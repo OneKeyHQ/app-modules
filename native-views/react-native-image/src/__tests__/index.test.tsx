@@ -391,7 +391,7 @@ describe('OneKeyImage wrapper', () => {
 
     const native = renderer!.root.findByType('NativeOneKeyImage' as never);
     const tree = JSON.stringify(renderer!.toJSON());
-    expect(native.props.sourceUri).toBeUndefined();
+    expect(native.props.sourceUri).toBe('');
     expect(tree).toContain('unavailable-image');
     expect(tree).not.toContain('"children":["loading"]');
     expect(onError).not.toHaveBeenCalled();

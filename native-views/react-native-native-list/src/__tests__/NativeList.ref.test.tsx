@@ -38,6 +38,11 @@ jest.mock('../web/NativeListWebEngine', () => ({
   NativeListWebEngine: jest.fn(() => mockWebEngine),
 }));
 
+jest.mock('../web/NativeListWebAvatarCache', () => ({
+  acquireNativeListAvatar: jest.fn(() => jest.fn()),
+  canonicalNativeListAvatarUri: jest.fn((uri: string) => uri.trim()),
+}));
+
 jest.mock('@onekeyfe/react-native-image', () => ({
   OneKeyImageCache: { preload: jest.fn().mockResolvedValue(true) },
   OneKeyImageCachePolicy: {

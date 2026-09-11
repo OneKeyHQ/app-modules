@@ -8,6 +8,24 @@
 }
 
 @font-face {
+  font-family: 'Roobert';
+  src: url('../../../native-views/react-native-native-list/common/fonts/Roobert-Medium.ttf')
+    format('truetype');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roobert';
+  src: url('../../../native-views/react-native-native-list/common/fonts/Roobert-SemiBold.ttf')
+    format('truetype');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
   font-family: 'Roobert-Regular';
   src: url('../../../native-views/react-native-native-list/common/fonts/Roobert-Regular.ttf')
     format('truetype');
@@ -60,4 +78,28 @@ input {
 
 * {
   box-sizing: border-box;
+}
+
+.market-loading {
+  align-items: center;
+  background: #080808;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  width: 100%;
+}
+
+.market-loading-indicator {
+  animation: market-loading-spin 800ms linear infinite;
+  border: 2px solid rgb(255 255 255 / 24%);
+  border-radius: 50%;
+  border-top-color: #fff;
+  height: 28px;
+  width: 28px;
+}
+
+@keyframes market-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

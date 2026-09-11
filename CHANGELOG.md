@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.118] - 2026-09-11
+
+### Features
+- **image**: Add configurable theme-aware placeholder colors and skip unnecessary image fades for memory-cache hits while respecting reduced-motion settings.
+- **native-list**: Expose cross-platform avatar preloading and align selector image fallback and reuse behavior across iOS, Android, and Web.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.118.
+
+## [3.0.116] - 2026-09-10
+
+### Bug Fixes
+- **native-list**: Complete the published Market row layout, refresh indicator, recycled-cell reset and action-anchor contracts on iOS and Android.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.116.
+
+## [3.0.115] - 2026-09-10
+
+### Features
+- **pager-view**: Add a collapsible pager with coordinated native scrolling and retained page positions on iOS and Android, plus a Web implementation.
+- **native-list**: Add Market row styles, source badges, long-press actions, skeleton loading and pagination spinners.
+- **example**: Add the mobile Market replica with complete real-data replay and live filters.
+
+### Bug Fixes
+- **native-list**: Align Market typography, image borders, row interactions and scroll insets with the original mobile UI.
+- **example**: Lazy-load the Market screen and replay snapshot so other example routes do not evaluate the full capture at startup.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.115 for the native Market integration release.
+
 ## [3.0.114] - 2026-09-09
 
 ### Bug Fixes

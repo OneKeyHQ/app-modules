@@ -40,7 +40,7 @@ class MainApplication : Application(), ReactApplication {
 
         val bgURL = if (BuildConfig.DEBUG) {
           // Use the same host detection as React Native (emulator vs device)
-          val host = com.facebook.react.modules.systeminfo.AndroidInfoHelpers.getServerHost(this@MainApplication, 8082)
+          val host = com.facebook.react.modules.systeminfo.AndroidInfoHelpers.getServerHost(this@MainApplication)
           "http://$host/background.bundle?platform=android&dev=true&lazy=false&minify=false&inlineSourceMap=false&modulesOnly=false&runModule=true"
         } else {
           "background.bundle"

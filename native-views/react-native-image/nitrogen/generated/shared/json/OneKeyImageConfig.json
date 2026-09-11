@@ -15,6 +15,7 @@
     "resizeWidth": true,
     "overscan": true,
     "loadingStrategy": true,
+    "placeholderColor": true,
     "onLoadStart": true,
     "onLoad": true,
     "onDisplay": true,

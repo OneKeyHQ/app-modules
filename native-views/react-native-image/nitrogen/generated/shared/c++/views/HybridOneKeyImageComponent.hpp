@@ -59,6 +59,7 @@ namespace margelo::nitro::onekeyimage::views {
     nitro::ReactProp<std::optional<double>> resizeWidth;
     nitro::ReactProp<std::optional<double>> overscan;
     nitro::ReactProp<std::optional<OneKeyImageLoadingStrategy>> loadingStrategy;
+    nitro::ReactProp<std::optional<std::string>> placeholderColor;
     nitro::ReactProp<std::optional<std::function<void()>>> onLoadStart;
     nitro::ReactProp<std::optional<std::function<void(double /* width */, double /* height */, OneKeyImageCacheType /* cacheType */)>>> onLoad;
     nitro::ReactProp<std::optional<std::function<void()>>> onDisplay;
@@ -79,6 +80,7 @@ namespace margelo::nitro::onekeyimage::views {
              resizeWidth.hasSameValue(other.resizeWidth) &&
              overscan.hasSameValue(other.overscan) &&
              loadingStrategy.hasSameValue(other.loadingStrategy) &&
+             placeholderColor.hasSameValue(other.placeholderColor) &&
              onLoadStart.hasSameValue(other.onLoadStart) &&
              onLoad.hasSameValue(other.onLoad) &&
              onDisplay.hasSameValue(other.onDisplay) &&
@@ -100,6 +102,7 @@ namespace margelo::nitro::onekeyimage::views {
              resizeWidth.isProvided() ||
              overscan.isProvided() ||
              loadingStrategy.isProvided() ||
+             placeholderColor.isProvided() ||
              onLoadStart.isProvided() ||
              onLoad.isProvided() ||
              onDisplay.isProvided() ||

@@ -64,7 +64,7 @@ final class NativeListView: UIView {
   private let footerContainer = UIView()
   private let footerCell = NativeListCell(frame: .zero)
   private let sectionIndexView = NativeListSectionIndexView()
-  private let sectionIndexPreview = UILabel()
+  private let sectionIndexPreview = NativeListSectionIndexPreviewView()
   private var footerHeightConstraint: NSLayoutConstraint!
   private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
   private var config: NativeListConfig?
@@ -82,6 +82,10 @@ final class NativeListView: UIView {
   private lazy var reorderLongPress = UILongPressGestureRecognizer(
     target: self,
     action: #selector(reorderLongPressChanged(_:))
+  )
+  private lazy var marketLongPress = UILongPressGestureRecognizer(
+    target: self,
+    action: #selector(marketLongPressChanged(_:))
   )
   // OneKey patch: claim only vertical drags so held rows and ancestor pagers stay responsive.
   private lazy var listBodyGestureGuard = UIPanGestureRecognizer(target: nil, action: nil)
@@ -102,7 +106,8 @@ final class NativeListView: UIView {
 
   private static let sectionIndexContentInset: CGFloat = 16
   private static let sectionIndexRailWidth: CGFloat = 32
-  private static let sectionIndexPreviewSize: CGFloat = 48
+  private static let sectionIndexPreviewWidth: CGFloat = 60
+  private static let sectionIndexPreviewHeight: CGFloat = 50
   private static let sectionIndexPreviewEndMargin: CGFloat = 40
 
   override init(frame: CGRect) {
@@ -122,6 +127,10 @@ final class NativeListView: UIView {
     reorderLongPress.allowableMovement = ReorderAnimation.allowableMovement
     reorderLongPress.delegate = self
     collectionView.addGestureRecognizer(reorderLongPress)
+    marketLongPress.minimumPressDuration = 0.8
+    marketLongPress.allowableMovement = 10
+    marketLongPress.delegate = self
+    collectionView.addGestureRecognizer(marketLongPress)
     interactiveReorderPlaceholder.isHidden = true
     interactiveReorderPlaceholder.isUserInteractionEnabled = false
     interactiveReorderPlaceholder.layer.cornerRadius = ReorderAnimation.placeholderRadius
@@ -158,8 +167,8 @@ final class NativeListView: UIView {
         constant: -Self.sectionIndexPreviewEndMargin
       ),
       sectionIndexPreview.centerYAnchor.constraint(equalTo: collectionView.centerYAnchor),
-      sectionIndexPreview.widthAnchor.constraint(equalToConstant: Self.sectionIndexPreviewSize),
-      sectionIndexPreview.heightAnchor.constraint(equalToConstant: Self.sectionIndexPreviewSize),
+      sectionIndexPreview.widthAnchor.constraint(equalToConstant: Self.sectionIndexPreviewWidth),
+      sectionIndexPreview.heightAnchor.constraint(equalToConstant: Self.sectionIndexPreviewHeight),
     ])
 
     sectionIndexView.isHidden = true
@@ -171,11 +180,6 @@ final class NativeListView: UIView {
     }
     sectionIndexPreview.isHidden = true
     sectionIndexPreview.alpha = 0
-    sectionIndexPreview.layer.cornerRadius = 14
-    sectionIndexPreview.layer.masksToBounds = true
-    sectionIndexPreview.textAlignment = .center
-    sectionIndexPreview.adjustsFontForContentSizeCategory = true
-    sectionIndexPreview.font = nativeListFont(ofSize: 22, weight: .semibold)
     sectionIndexPreview.isAccessibilityElement = false
 
     footerCell.onAction = { [weak self] item, action, target, origin in
@@ -244,12 +248,11 @@ final class NativeListView: UIView {
     guard let next = try? NativeListConfig.parse(json: json) else { return }
     invalidateActionAnchor(reason: "snapshot")
     if let current = config, isControlledSelectionSnapshotUpdate(from: current, to: next) {
-      let changedSummaryKeys = Set(zip(current.items, next.items).compactMap { old, new in
-        old.content != new.content ? new.key : nil
-      })
       config = next
       itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
-      refreshVisibleSelection(changedSummaryKeys: changedSummaryKeys)
+      // OneKey patch: A controlled selection echo is fully handled by the
+      // lightweight updater. Rebinding unchanged visuals clears cached images.
+      refreshVisibleSelection()
       return
     }
     let oldItems = itemsByKey
@@ -298,8 +301,13 @@ final class NativeListView: UIView {
     }
 
     var changedKeys: [String] = []
+    var marketQuoteKeys = Set<String>()
     var sizeChanged = false
+    let marketQuoteFields: Set<String> = [
+      "revision", "price", "priceSegments", "change", "accessibilityLabel",
+    ]
     for (index, changes) in pending {
+      let previous = current.items[index]
       var merged = current.items[index].data
       changes.forEach { key, value in
         if key != "key" && key != "type" { merged[key] = value }
@@ -307,14 +315,30 @@ final class NativeListView: UIView {
       guard let item = try? NativeListItem(data: merged) else { return }
       if rowHeight(current.items[index]) != rowHeight(item) { sizeChanged = true }
       current.items[index] = item
-      changedKeys.append(item.key)
+      if previous.type == "market", Set(changes.keys).isSubset(of: marketQuoteFields) {
+        marketQuoteKeys.insert(item.key)
+      } else {
+        changedKeys.append(item.key)
+      }
       if let selected = changes["selected"] as? Bool {
         if selected { current.selectedKeys.insert(item.key) } else { current.selectedKeys.remove(item.key) }
       }
     }
-    invalidateActionAnchor(reason: "snapshot")
+    if !changedKeys.isEmpty { invalidateActionAnchor(reason: "snapshot") }
     config = current
     itemsByKey = Dictionary(uniqueKeysWithValues: current.items.map { ($0.key, $0) })
+    for indexPath in collectionView.indexPathsForVisibleItems {
+      guard let item = current.items[safe: indexPath.item],
+            marketQuoteKeys.contains(item.key),
+            let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell else { continue }
+      cell.updateMarketQuote(item, theme: current.theme)
+    }
+    if changedKeys.isEmpty {
+      configureFooter(current)
+      emitVisibleRangeIfNeeded()
+      checkEndReached()
+      return
+    }
     var snapshot = dataSource.snapshot()
     snapshot.reconfigureItems(changedKeys.filter { snapshot.indexOfItem($0) != nil })
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
@@ -871,18 +895,21 @@ final class NativeListView: UIView {
     sectionIndexHapticsEnabled = config.sectionIndexHapticsEnabled
     sectionIndexView.configure(
       titles: sectionIndexEntries.map(\.title),
-      textColor: nativeListColor(config.theme, "secondaryText", "#646464"),
-      activeColor: nativeListColor(config.theme, "accent", "#108303"),
+      textColor: nativeListColor(config.theme, "disabledText", "#8D8D8D"),
+      activeColor: nativeListColor(config.theme, "positive", "#218358"),
       activeTextColor: nativeListColor(config.theme, "inverseText", "#FCFCFC"),
       centeredInWindow: config.sectionIndexCenteredInWindow
     )
     sectionIndexView.isHidden = sectionIndexEntries.isEmpty
-    sectionIndexPreview.backgroundColor = nativeListColor(
-      config.theme,
-      "inverseBackground",
-      "#202020"
+    sectionIndexPreview.configure(
+      fillColor: UIColor(
+        red: 202.0 / 255.0,
+        green: 202.0 / 255.0,
+        blue: 202.0 / 255.0,
+        alpha: 1
+      ),
+      textColor: .white
     )
-    sectionIndexPreview.textColor = nativeListColor(config.theme, "inverseText", "#FCFCFC")
     if let previousKey,
        let index = sectionIndexEntries.firstIndex(where: { $0.key == previousKey }) {
       sectionIndexView.setActiveIndex(index)
@@ -901,6 +928,7 @@ final class NativeListView: UIView {
     if interacting {
       sectionIndexPreview.layer.removeAllAnimations()
       sectionIndexPreview.text = entry.title
+      positionSectionIndexPreview(at: sectionIndexView.centerY(for: index))
       sectionIndexPreview.isHidden = false
       sectionIndexPreview.alpha = 1
       if changed && sectionIndexHapticsEnabled {
@@ -927,6 +955,23 @@ final class NativeListView: UIView {
     } else {
       UIView.animate(withDuration: 0.15, animations: hide, completion: completion)
     }
+  }
+
+  private func positionSectionIndexPreview(at sectionIndexY: CGFloat) {
+    layoutIfNeeded()
+    let targetY = sectionIndexView.convert(
+      CGPoint(x: sectionIndexView.bounds.midX, y: sectionIndexY),
+      to: self
+    ).y
+    let safeFrame = safeAreaLayoutGuide.layoutFrame
+    let halfHeight = Self.sectionIndexPreviewHeight / 2
+    let minimumY = safeFrame.minY + halfHeight
+    let maximumY = max(minimumY, safeFrame.maxY - halfHeight)
+    let clampedY = targetY.clamped(to: minimumY...maximumY)
+    sectionIndexPreview.transform = CGAffineTransform(
+      translationX: 0,
+      y: clampedY - sectionIndexPreview.center.y
+    )
   }
 
   private func syncSectionIndexToVisibleRows() {
@@ -985,13 +1030,29 @@ final class NativeListView: UIView {
       updateSelection(target: NativeSelectionTarget(scope: "row", key: item.key), sourceKey: item.key)
       return
     }
-    if item.type == "action" {
+    if item.type == "market", !item.data.string("pressActionKey").isEmpty {
+      emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("pressActionKey"), origin: origin))
+    } else if item.type == "action" {
       emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("actionKey"), origin: origin))
     } else if item.type == "system", item.data.string("variant") == "retry" {
       emit(onRowAction, rowActionPayload(item: item, actionKey: item.data.string("actionKey"), origin: origin))
     } else {
       emit(onRowAction, rowActionPayload(item: item, actionKey: "press", origin: origin))
     }
+  }
+
+  @objc private func marketLongPressChanged(_ gesture: UILongPressGestureRecognizer) {
+    guard gesture.state == .began else { return }
+    let point = gesture.location(in: collectionView)
+    guard let indexPath = collectionView.indexPathForItem(at: point),
+          let item = config?.items[safe: indexPath.item],
+          item.type == "market",
+          !item.data.bool("disabled") else { return }
+    let actionKey = item.data.string("longPressActionKey")
+    guard !actionKey.isEmpty else { return }
+    let origin = (collectionView.cellForItem(at: indexPath) as? NativeListCell)?.rowActionOrigin()
+    origin?.windowPoint = gesture.location(in: window)
+    handleAction(item: item, actionKey: actionKey, target: nil, origin: origin)
   }
 
   private func handleAction(
@@ -1267,10 +1328,18 @@ final class NativeListView: UIView {
                 ? 56
                 : config?.layout == "linear" ? 30 : 36
     case "system":
-      switch item.data.string("variant") {
-      case "noMatch", "end": base = 36
-      case "retry": base = 44
-      default: base = 56
+      if item.data.string("variant") == "loading" && item.data.string("loadingStyle") == "skeleton" {
+        base = 56
+      } else if item.data.string("variant") == "loading" && item.data.string("loadingStyle") == "spinner" {
+        base = 52
+      } else if item.data.string("presentation") == "market" {
+        base = item.data.string("variant") == "loading" ? 68 : 44
+      } else {
+        switch item.data.string("variant") {
+        case "noMatch", "end": base = 36
+        case "retry": base = 44
+        default: base = 56
+        }
       }
     case "action":
       base = item.data.string("presentation") == "accountSelector"
@@ -1280,6 +1349,14 @@ final class NativeListView: UIView {
       base = item.data.dictionaries("columns").contains {
         !$0.string("secondaryText").isEmpty
       } ? 60 : 56
+    case "market":
+      let style = item.data.dictionary("style")
+      let imageHeight = CGFloat(style?.dictionary("image")?.double(
+        "height",
+        default: item.data.string("variant") == "stock" ? 40 : 32
+      ) ?? (item.data.string("variant") == "stock" ? 40 : 32))
+      let verticalPadding = CGFloat(style?.double("verticalPadding", default: 12) ?? 12)
+      base = max(item.data.string("variant") == "stock" ? 72 : 68, imageHeight + verticalPadding * 2)
     default:
       if item.type == "identity", !item.data.string("tertiary").isEmpty {
         base = 72
@@ -1401,6 +1478,9 @@ final class NativeListView: UIView {
         ? "rtl"
         : "ltr",
     ]
+    if let point = origin.windowPoint {
+      anchor["windowPoint"] = ["x": point.x, "y": point.y]
+    }
     if let slot = origin.slot { anchor["slot"] = slot }
     return anchor
   }
@@ -1490,6 +1570,16 @@ final class NativeListView: UIView {
   }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer === reorderLongPress || gestureRecognizer === marketLongPress {
+      let point = gestureRecognizer.location(in: collectionView)
+      guard let indexPath = collectionView.indexPathForItem(at: point),
+            let item = item(at: indexPath),
+            !item.data.bool("disabled") else { return false }
+      if gestureRecognizer === reorderLongPress {
+        return config?.reorderable == true && item.isReorderable
+      }
+      return item.type == "market" && !item.data.string("longPressActionKey").isEmpty
+    }
     guard gestureRecognizer === listBodyGestureGuard,
           let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
     let velocity = pan.velocity(in: collectionView)
@@ -1606,6 +1696,14 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
   func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
     guard let item = config?.items[safe: indexPath.item] else { return false }
     return !item.data.bool("disabled")
+  }
+
+  func collectionView(_ collectionView: UICollectionView, didHighlightItemAt indexPath: IndexPath) {
+    guard let item = config?.items[safe: indexPath.item], item.type == "market" else { return }
+    let actionKey = item.data.string("pressInActionKey")
+    guard !actionKey.isEmpty else { return }
+    let origin = (collectionView.cellForItem(at: indexPath) as? NativeListCell)?.rowActionOrigin()
+    handleAction(item: item, actionKey: actionKey, target: nil, origin: origin)
   }
 
   func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
@@ -1748,9 +1846,81 @@ private struct NativeListSectionIndexEntry {
   let position: Int
 }
 
+private final class NativeListSectionIndexPreviewView: UIView {
+  private let shapeLayer = CAShapeLayer()
+  private let label = UILabel()
+
+  var text: String? {
+    get { label.text }
+    set { label.text = newValue }
+  }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isUserInteractionEnabled = false
+    backgroundColor = .clear
+    layer.addSublayer(shapeLayer)
+    label.textAlignment = .center
+    label.adjustsFontForContentSizeCategory = true
+    label.font = nativeListFont(ofSize: 30)
+    label.isAccessibilityElement = false
+    addSubview(label)
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  func configure(fillColor: UIColor, textColor: UIColor) {
+    shapeLayer.fillColor = fillColor.cgColor
+    label.textColor = textColor
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let height = bounds.height
+    let bodyWidth = min(height, max(0, bounds.width - 10))
+    let midY = height / 2
+    let bodyMidX = bodyWidth / 2
+    let shoulderX = bodyWidth * 0.92
+    let path = UIBezierPath()
+    path.move(to: CGPoint(x: bodyMidX, y: 0))
+    path.addCurve(
+      to: CGPoint(x: 0, y: midY),
+      controlPoint1: CGPoint(x: bodyWidth * 0.22, y: 0),
+      controlPoint2: CGPoint(x: 0, y: height * 0.22)
+    )
+    path.addCurve(
+      to: CGPoint(x: bodyMidX, y: height),
+      controlPoint1: CGPoint(x: 0, y: height * 0.78),
+      controlPoint2: CGPoint(x: bodyWidth * 0.22, y: height)
+    )
+    path.addCurve(
+      to: CGPoint(x: shoulderX, y: height * 0.75),
+      controlPoint1: CGPoint(x: bodyWidth * 0.72, y: height),
+      controlPoint2: CGPoint(x: bodyWidth * 0.86, y: height * 0.88)
+    )
+    path.addLine(to: CGPoint(x: bounds.width, y: midY))
+    path.addLine(to: CGPoint(x: shoulderX, y: height * 0.25))
+    path.addCurve(
+      to: CGPoint(x: bodyMidX, y: 0),
+      controlPoint1: CGPoint(x: bodyWidth * 0.86, y: height * 0.12),
+      controlPoint2: CGPoint(x: bodyWidth * 0.72, y: 0)
+    )
+    path.close()
+    shapeLayer.frame = bounds
+    shapeLayer.path = path.cgPath
+    label.frame = CGRect(x: 0, y: 0, width: bodyWidth, height: height)
+  }
+}
+
 // OneKey patch: arbitrate index scrubbing against ancestor dismissal gestures.
 // private final class NativeListSectionIndexView: UIControl {
 private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDelegate {
+  private static let edgePadding: CGFloat = 8
+  private static let labelSize: CGFloat = 14
+  private static let labelSpacing: CGFloat = 16
+
   var onSelect: ((Int, Bool) -> Void)?
   var onInteractionEnded: (() -> Void)?
   private var titles: [String] = []
@@ -1833,16 +2003,28 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   override func layoutSubviews() {
     super.layoutSubviews()
     guard !labels.isEmpty else { return }
-    let height = min(16, max(8, bounds.height / CGFloat(labels.count)))
-    let originY = indexOriginY(cellHeight: height, count: labels.count)
-    for (index, label) in labels.enumerated() {
+    let metrics = indexMetrics(count: labels.count)
+    let visibleIndices = visibleLabelIndices(
+      count: labels.count,
+      trackHeight: metrics.trackHeight
+    )
+    labels.forEach { $0.isHidden = true }
+    for (visibleIndex, index) in visibleIndices.sorted().enumerated() {
+      let label = labels[index]
+      label.isHidden = false
+      let centerY = visibleLabelCenterY(
+        visibleIndex: visibleIndex,
+        visibleCount: visibleIndices.count,
+        metrics: metrics
+      )
       label.frame = CGRect(
-        x: 6,
-        y: originY + CGFloat(index) * height,
-        width: 20,
-        height: height
+        x: bounds.width - Self.labelSize - 3,
+        y: centerY - Self.labelSize / 2,
+        width: Self.labelSize,
+        height: Self.labelSize
       )
     }
+    updateLabelStyles()
   }
 
   override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
@@ -1879,23 +2061,73 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   }
 
   private func select(at y: CGFloat, interacting: Bool) {
-    let height = min(16, max(8, bounds.height / CGFloat(titles.count)))
-    let originY = indexOriginY(cellHeight: height, count: titles.count)
-    let index = Int(floor((y - originY) / height)).clamped(to: 0...(titles.count - 1))
+    let metrics = indexMetrics(count: titles.count)
+    guard metrics.trackHeight > 0 else { return }
+    let visibleIndices = visibleLabelIndices(
+      count: titles.count,
+      trackHeight: metrics.trackHeight
+    ).sorted()
+    let visibleTrackHeight = min(
+      metrics.trackHeight,
+      Self.labelSpacing * CGFloat(visibleIndices.count)
+    )
+    let visibleOriginY = metrics.originY + (metrics.trackHeight - visibleTrackHeight) / 2
+    let progress = ((y - visibleOriginY) / visibleTrackHeight).clamped(to: 0...1)
+    let slot = Int(floor(progress * CGFloat(visibleIndices.count)))
+      .clamped(to: 0...(visibleIndices.count - 1))
+    let index = visibleIndices[slot]
     if interacting && lastTouchIndex == index { return }
     lastTouchIndex = interacting ? index : nil
     select(index: index, interacting: interacting)
   }
 
-  private func indexOriginY(cellHeight: CGFloat, count: Int) -> CGFloat {
-    let totalHeight = cellHeight * CGFloat(count)
-    let centeredOriginY = (bounds.height - totalHeight) / 2
-    guard centeredInWindow, let window else { return centeredOriginY }
+  func centerY(for index: Int) -> CGFloat {
+    entryCenterY(index: index, metrics: indexMetrics(count: titles.count))
+  }
+
+  private func indexMetrics(count: Int) -> (originY: CGFloat, trackHeight: CGFloat) {
+    guard count > 0 else { return (bounds.midY, 0) }
+    let availableHeight = max(0, bounds.height - Self.edgePadding * 2)
+    let trackHeight = min(availableHeight, Self.labelSpacing * CGFloat(count))
+    let centeredOriginY = (bounds.height - trackHeight) / 2
+    guard centeredInWindow, let window else { return (centeredOriginY, trackHeight) }
     let windowCenterY = window.safeAreaLayoutGuide.layoutFrame.midY
     let localCenterY = convert(CGPoint(x: 0, y: windowCenterY), from: window).y
-    return (localCenterY - totalHeight / 2).clamped(
-      to: 0...max(0, bounds.height - totalHeight)
+    return (
+      (localCenterY - trackHeight / 2).clamped(
+        to: Self.edgePadding...max(Self.edgePadding, bounds.height - Self.edgePadding - trackHeight)
+      ),
+      trackHeight
     )
+  }
+
+  private func entryCenterY(
+    index: Int,
+    metrics: (originY: CGFloat, trackHeight: CGFloat)
+  ) -> CGFloat {
+    guard !titles.isEmpty else { return bounds.midY }
+    return metrics.originY + metrics.trackHeight * (CGFloat(index) + 0.5) / CGFloat(titles.count)
+  }
+
+  private func visibleLabelCenterY(
+    visibleIndex: Int,
+    visibleCount: Int,
+    metrics: (originY: CGFloat, trackHeight: CGFloat)
+  ) -> CGFloat {
+    let visibleTrackHeight = min(metrics.trackHeight, Self.labelSpacing * CGFloat(visibleCount))
+    let visibleOriginY = metrics.originY + (metrics.trackHeight - visibleTrackHeight) / 2
+    return visibleOriginY
+      + visibleTrackHeight * (CGFloat(visibleIndex) + 0.5) / CGFloat(max(visibleCount, 1))
+  }
+
+  private func visibleLabelIndices(count: Int, trackHeight: CGFloat) -> Set<Int> {
+    guard count > 0 else { return [] }
+    let maxVisible = max(1, Int(floor(trackHeight / Self.labelSpacing)))
+    guard count > maxVisible else { return Set(0..<count) }
+    guard maxVisible > 1 else { return [0] }
+    return Set((0..<maxVisible).map { slot in
+      Int(round(CGFloat(slot * (count - 1)) / CGFloat(maxVisible - 1)))
+    })
   }
 
   private func select(index: Int, interacting: Bool) {
@@ -1905,12 +2137,12 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
 
   private func updateLabelStyles() {
     for (index, label) in labels.enumerated() {
-      let active = index == activeIndex
+      let active = index == activeIndex && !label.isHidden
       label.textColor = active ? activeTextColor : textColor
       label.backgroundColor = active ? activeColor : .clear
-      label.layer.cornerRadius = 8
+      label.layer.cornerRadius = Self.labelSize / 2
       label.layer.masksToBounds = active
-      label.font = nativeListFont(ofSize: 10, weight: active ? .semibold : .medium)
+      label.font = nativeListFont(ofSize: 10, weight: active ? .medium : .regular)
     }
   }
 }

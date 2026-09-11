@@ -21,6 +21,7 @@ public protocol HybridOneKeyImageSpec_protocol: HybridObject, HybridView {
   var resizeWidth: Double? { get set }
   var overscan: Double? { get set }
   var loadingStrategy: OneKeyImageLoadingStrategy? { get set }
+  var placeholderColor: String? { get set }
   var onLoadStart: (() -> Void)? { get set }
   var onLoad: ((_ width: Double, _ height: Double, _ cacheType: OneKeyImageCacheType) -> Void)? { get set }
   var onDisplay: (() -> Void)? { get set }

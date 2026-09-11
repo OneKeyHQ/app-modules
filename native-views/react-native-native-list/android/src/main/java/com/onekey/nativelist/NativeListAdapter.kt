@@ -10,6 +10,8 @@ import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONObject
 import java.util.Collections
 import java.util.WeakHashMap
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 internal class NativeListAdapter(
   private val context: ThemedReactContext,
@@ -39,6 +41,8 @@ internal class NativeListAdapter(
   )
   val currentList: List<NativeListItem>
     get() = differ.currentList
+  private var marketSourceItems: List<NativeListItem>? = null
+  private var marketSourceEdges = DoubleArray(0)
   private val createdRows = Collections.newSetFromMap(
     WeakHashMap<NativeListRowView, Boolean>(),
   )
@@ -92,6 +96,10 @@ internal class NativeListAdapter(
     position: Int,
     payloads: MutableList<Any>,
   ) {
+    if (payloads.isNotEmpty() && payloads.all { it == MARKET_QUOTE_PAYLOAD }) {
+      itemAt(position)?.let { holder.rowView.bindMarketQuote(it, theme) }
+      return
+    }
     // OneKey patch: an unknown payload must retain full binding; validated echoes keep images alive.
     // if (payloads.contains(SELECTION_PAYLOAD)) {
     if (payloads.isNotEmpty() && payloads.all { it == SELECTION_PAYLOAD || it == SELECTION_ECHO_PAYLOAD }) {
@@ -117,6 +125,30 @@ internal class NativeListAdapter(
 
   fun itemAt(position: Int): NativeListItem? =
     reorderItems?.getOrNull(position) ?: differ.currentList.getOrNull(position)
+
+  // OneKey patch: Yoga rounds badge dimensions from unrounded cumulative row edges.
+  fun marketSourceEdgePx(position: Int): Double {
+    val items = reorderItems ?: differ.currentList
+    if (marketSourceItems !== items) {
+      val density = context.resources.displayMetrics.density.toDouble()
+      val edges = DoubleArray(items.size + 1)
+      items.forEachIndexed { index, item ->
+        val style = item.json.optJSONObject("style")
+        val height = item.json.optDouble("height", 0.0)
+        val sourceHeight = if (item.type == "market" && style != null) {
+          val titleHeight = ceil((style.optJSONObject("title")?.optDouble("lineHeight", 24.0) ?: 24.0) * density) / density
+          val subtitleHeight = if (item.json.optString("subtitle").isNotEmpty() || item.json.optJSONObject("subtitlePrefix") != null) {
+            ceil((style.optJSONObject("subtitle")?.optDouble("lineHeight", 20.0) ?: 20.0) * density) / density + style.optDouble("lineGap", 0.0)
+          } else 0.0
+          maxOf(height.roundToInt().toDouble(), titleHeight + subtitleHeight + style.optDouble("verticalPadding", 12.0) * 2).toFloat().toDouble()
+        } else height
+        edges[index + 1] = edges[index] + sourceHeight * density
+      }
+      marketSourceItems = items
+      marketSourceEdges = edges
+    }
+    return marketSourceEdges.getOrElse(position) { 0.0 }
+  }
 
   fun positionOfKey(key: String): Int =
     (reorderItems ?: differ.currentList).indexOfFirst { it.key == key }
@@ -165,6 +197,8 @@ internal class NativeListAdapter(
   }
 
   fun dispose() {
+    marketSourceItems = null
+    marketSourceEdges = DoubleArray(0)
     reorderItems = null
     suppressDifferUpdates = false
     createdRows.forEach(NativeListRowView::dispose)
@@ -183,7 +217,18 @@ internal class NativeListAdapter(
       override fun getChangePayload(oldItem: NativeListItem, newItem: NativeListItem): Any? =
         if (oldItem.key == newItem.key && oldItem.type == newItem.type &&
           newItem.selectionUpdateFromContent == oldItem.content
-        ) SELECTION_ECHO_PAYLOAD else null
+        ) SELECTION_ECHO_PAYLOAD else if (isMarketQuoteUpdate(oldItem, newItem)) MARKET_QUOTE_PAYLOAD else null
+
+      private fun isMarketQuoteUpdate(oldItem: NativeListItem, newItem: NativeListItem): Boolean {
+        if (oldItem.type != "market" || newItem.type != "market") return false
+        fun stableContent(item: NativeListItem): String {
+          val value = JSONObject(item.json.toString())
+          listOf("revision", "price", "priceSegments", "change", "accessibilityLabel")
+            .forEach(value::remove)
+          return value.toString()
+        }
+        return stableContent(oldItem) == stableContent(newItem)
+      }
     }
   }
 }
@@ -191,3 +236,4 @@ internal class NativeListAdapter(
 internal const val SELECTION_PAYLOAD = "selection"
 // OneKey patch: internal payload, never exposed through the serialized row contract.
 internal const val SELECTION_ECHO_PAYLOAD = "selectionEcho"
+internal const val MARKET_QUOTE_PAYLOAD = "marketQuote"

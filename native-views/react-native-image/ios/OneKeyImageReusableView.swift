@@ -28,6 +28,7 @@ public final class OneKeyImageReusableView: UIView {
     optimizeTos: Bool,
     overscan: Double,
     loadingStrategy: String,
+    placeholderColor: String,
     onLoad: (() -> Void)? = nil,
     onError: (() -> Void)? = nil
   ) {
@@ -43,6 +44,7 @@ public final class OneKeyImageReusableView: UIView {
     image.optimizeTos = optimizeTos
     image.overscan = overscan
     image.loadingStrategy = OneKeyImageLoadingStrategy(fromString: loadingStrategy) ?? .static
+    image.placeholderColor = placeholderColor
     image.sourceUri = sourceUri
     image.afterUpdate()
   }
