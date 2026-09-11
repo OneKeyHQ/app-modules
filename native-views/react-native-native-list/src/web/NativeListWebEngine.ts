@@ -4333,8 +4333,29 @@ export class NativeListWebEngine {
       availableHeight,
       SECTION_INDEX_LABEL_SPACING * this.sectionIndexEntries.length
     );
+    const centeredOriginY = (viewportHeight - trackHeight) / 2;
+    if (!this.snapshot.capabilities?.sectionIndex?.centeredInWindow) {
+      return { originY: centeredOriginY, trackHeight };
+    }
+    const view = this.document.defaultView;
+    if (!view) return { originY: centeredOriginY, trackHeight };
+    const visualViewport = view.visualViewport;
+    const windowCenterY = visualViewport
+      ? visualViewport.offsetTop + visualViewport.height / 2
+      : view.innerHeight / 2;
+    const railTop =
+      this.viewportFrame.getBoundingClientRect().top +
+      (Number.parseFloat(this.indexRail.style.top) || 0);
+    const minOriginY = SECTION_INDEX_EDGE_PADDING;
+    const maxOriginY = Math.max(
+      minOriginY,
+      viewportHeight - SECTION_INDEX_EDGE_PADDING - trackHeight
+    );
     return {
-      originY: (viewportHeight - trackHeight) / 2,
+      originY: Math.min(
+        maxOriginY,
+        Math.max(minOriginY, windowCenterY - railTop - trackHeight / 2)
+      ),
       trackHeight,
     };
   }

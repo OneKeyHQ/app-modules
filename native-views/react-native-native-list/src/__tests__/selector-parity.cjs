@@ -171,6 +171,63 @@ test('index jumps highlight the section reached after an exact spacer boundary',
     page.close();
   }
 });
+test('web section index centers in the browser window when requested', () => {
+  const letters = ['A', 'B', 'C', 'D'];
+  const page = mount(
+    letters.map((letter) => ({
+      type: 'sectionHeader',
+      key: letter,
+      sectionKey: letter,
+      title: letter,
+      indexTitle: letter,
+      height: 36,
+    })),
+    {
+      capabilities: {
+        sectionIndex: { enabled: true, centeredInWindow: true },
+      },
+    },
+  );
+  try {
+    const viewport = page.document.querySelector('.ok-native-list-viewport');
+    const frame = page.document.querySelector(
+      '.ok-native-list-viewport-frame',
+    );
+    const rail = page.document.querySelector('.ok-native-list-index-rail');
+    Object.defineProperty(page.view, 'innerHeight', {
+      configurable: true,
+      value: 900,
+    });
+    Object.defineProperty(viewport, 'clientHeight', {
+      configurable: true,
+      value: 300,
+    });
+    Object.defineProperty(viewport, 'clientWidth', {
+      configurable: true,
+      value: 320,
+    });
+    frame.getBoundingClientRect = () => ({
+      x: 0,
+      y: 250,
+      left: 0,
+      top: 250,
+      right: 320,
+      bottom: 550,
+      width: 320,
+      height: 300,
+    });
+    page.engine.recomputeLayout();
+
+    const buttons = [
+      ...rail.querySelectorAll('[data-section-entry-index]'),
+    ];
+    const firstCenterY = Number.parseFloat(buttons[0].style.top);
+    const lastCenterY = Number.parseFloat(buttons.at(-1).style.top);
+    assert.equal(250 + (firstCenterY + lastCenterY) / 2, 450);
+  } finally {
+    page.close();
+  }
+});
 test('compact web index keeps every section reachable without overflowing short viewports', () => {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
   const rows = [
