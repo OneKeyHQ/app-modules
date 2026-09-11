@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.119] - 2026-09-12
+
+### Features
+- **pager-view**: Add iOS native tab and scrollable subheader rendering for collapsible pagers.
+
+### Bug Fixes
+- **pager-view**: Coordinate nested horizontal and vertical gestures while cancelling React Native presses after a drag begins.
+- **native-list**: Align image fallback, section index positioning, and iOS interactive reorder behavior.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.119.
+
 ## [3.0.118] - 2026-09-11
 
 ### Features
