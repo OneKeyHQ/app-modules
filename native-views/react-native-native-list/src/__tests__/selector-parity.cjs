@@ -287,6 +287,53 @@ test('search matches use info color and retain unhighlighted title text', () => 
   assert.equal(page.document.querySelector('.ok-native-list-title').style.fontSize, '16px');
   page.close();
 });
+test('web Market rows render subtitle prefixes with independent metrics', () => {
+  const row = {
+    type: 'market',
+    key: 'btc',
+    variant: 'token',
+    leading: { kind: 'token' },
+    title: 'BTC',
+    subtitle: '$1.23B',
+    subtitlePrefix: {
+      text: 'Bitcoin',
+      gap: 6,
+      maxWidth: 96,
+      style: { fontSize: 11, lineHeight: 15, fontWeight: 'medium', color: '#123456' },
+    },
+    price: '$64,230.00',
+    change: { text: '+2.40%', tone: 'positive' },
+  };
+  const page = mount([row]);
+  try {
+    const line = page.document.querySelector('.ok-native-list-market-subtitle-line');
+    const prefix = line.querySelector('.ok-native-list-market-subtitle-prefix');
+    assert.equal(line.style.gap, '6px');
+    assert.equal(prefix.textContent, 'Bitcoin');
+    assert.equal(prefix.style.maxWidth, '96px');
+    assert.equal(prefix.style.fontSize, '11px');
+    assert.equal(prefix.style.lineHeight, '15px');
+    assert.equal(prefix.style.fontWeight, '500');
+    assert.equal(prefix.style.color, 'rgb(18, 52, 86)');
+    assert.equal(line.querySelector('.ok-native-list-market-subtitle').textContent, '$1.23B');
+  } finally {
+    page.close();
+  }
+
+  const prefixOnly = mount([{ ...row, key: 'eth', subtitle: undefined }]);
+  try {
+    assert.equal(
+      prefixOnly.document.querySelector('.ok-native-list-market-subtitle-prefix').textContent,
+      'Bitcoin',
+    );
+    assert.equal(
+      prefixOnly.document.querySelector('.ok-native-list-market-subtitle'),
+      null,
+    );
+  } finally {
+    prefixOnly.close();
+  }
+});
 test('subtitle supports a leading address separator and distinct caution tone', () => {
   const page = mount([identity('x', { subtitleSegments: [{ text: 'Create address', tone: 'caution', separatorBefore: true }] })]);
   assert.ok(page.document.querySelector('.ok-native-list-subtitle-segments').firstChild.classList.contains('ok-native-list-subtitle-dot'));

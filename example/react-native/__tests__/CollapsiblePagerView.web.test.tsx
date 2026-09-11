@@ -2,7 +2,11 @@ import React from 'react';
 import { View } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
+import {
+  CollapsiblePagerView as NativeCollapsiblePagerView,
+} from '../../../native-views/react-native-pager-view/src/CollapsiblePagerView';
 import { CollapsiblePagerView } from '../../../native-views/react-native-pager-view/src/CollapsiblePagerView.web';
+import { PagerView } from '../../../native-views/react-native-pager-view/src/PagerView.web';
 
 const pages = (count: number) =>
   Array.from({ length: count }, (_, index) => (
@@ -15,6 +19,28 @@ const requiredProps = {
   headerHeight: 100,
   stickyHeaderHeight: 44,
 };
+
+describe('CollapsiblePagerView native wrapper', () => {
+  it('passes the rendered-page-clamped initial index to native', async () => {
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <NativeCollapsiblePagerView {...requiredProps} initialPage={99}>
+          <View key="page-0" />
+          {false}
+          <View key="page-1" />
+        </NativeCollapsiblePagerView>,
+      );
+    });
+    const nativeHost = renderer.root.find(
+      node => typeof node.props.retainedPages === 'string',
+    );
+    expect(nativeHost.props.initialPage).toBe(1);
+    await ReactTestRenderer.act(() => {
+      renderer.unmount();
+    });
+  });
+});
 
 describe('CollapsiblePagerView web', () => {
   afterEach(() => {
@@ -154,6 +180,70 @@ describe('CollapsiblePagerView web', () => {
     expect(
       renderer.root.findByProps({ testID: 'collapsible-pager' }).props,
     ).toMatchObject({ accessibilityLabel: 'Accounts' });
+    await ReactTestRenderer.act(() => {
+      renderer.unmount();
+    });
+  });
+});
+
+describe('PagerView web', () => {
+  it('uses rendered pages for initial, update, command, and gesture bounds', async () => {
+    const conditionalPages = (includeThird: boolean) => [
+      <View key="page-0" testID="page-0" />,
+      false,
+      <View key="page-1" testID="page-1" />,
+      includeThird ? <View key="page-2" testID="page-2" /> : null,
+    ];
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <PagerView initialPage={2}>{conditionalPages(true)}</PagerView>,
+      );
+    });
+    const pager = renderer.root.findByType(PagerView).instance;
+    expect(pager.state.selectedPage).toBe(2);
+
+    await ReactTestRenderer.act(() => {
+      renderer.update(
+        <PagerView initialPage={2}>{conditionalPages(false)}</PagerView>,
+      );
+    });
+    expect(pager.state.selectedPage).toBe(1);
+
+    await ReactTestRenderer.act(() => {
+      pager.setPage(2);
+    });
+    expect(pager.state.selectedPage).toBe(1);
+
+    const track = renderer.root.find(
+      node =>
+        typeof node.props.onTouchStart === 'function' &&
+        typeof node.props.onTouchEnd === 'function',
+    );
+    await ReactTestRenderer.act(() => {
+      track.props.onTouchStart({ nativeEvent: { pageX: 100, pageY: 20 } });
+      track.props.onTouchEnd({ nativeEvent: { pageX: 20, pageY: 20 } });
+    });
+    expect(pager.state.selectedPage).toBe(1);
+    await ReactTestRenderer.act(() => {
+      renderer.unmount();
+    });
+  });
+
+  it('clamps an initial index against conditional rendered pages', async () => {
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <PagerView initialPage={2}>
+          <View key="page-0" />
+          {false}
+          <View key="page-1" />
+        </PagerView>,
+      );
+    });
+    expect(renderer.root.findByType(PagerView).instance.state.selectedPage).toBe(
+      1,
+    );
     await ReactTestRenderer.act(() => {
       renderer.unmount();
     });

@@ -3254,27 +3254,67 @@ function createMarketRow(context: RenderContext, row: MarketRow): HTMLElement {
     titleLine.appendChild(element);
   });
   main.appendChild(titleLine);
-  if (row.subtitle || row.subtitleSegments?.length) {
-    const subtitle = createElement(
+  if (row.subtitlePrefix || row.subtitle || row.subtitleSegments?.length) {
+    const subtitleLine = createElement(
       context.document,
       'span',
-      'ok-native-list-market-subtitle',
-      row.subtitle
+      'ok-native-list-market-subtitle-line'
     );
-    applyMarketTextStyle(subtitle, style?.subtitle, {
-      fontSize: 14,
-      lineHeight: 20,
-      weight: 400,
-      alignment: 'start',
-    });
-    applyValueSegments(
-      subtitle,
-      row.subtitleSegments,
-      style?.subtitle?.fontSize ?? 14,
-      style?.subtitle?.lineHeight ?? 20,
-      marketFontWeight(style?.subtitle?.fontWeight, 400)
-    );
-    main.appendChild(subtitle);
+    subtitleLine.style.display = 'flex';
+    subtitleLine.style.alignItems = 'center';
+    subtitleLine.style.minWidth = '0';
+    subtitleLine.style.overflow = 'hidden';
+    subtitleLine.style.gap =
+      String(row.subtitlePrefix ? row.subtitlePrefix.gap ?? 4 : 0) + 'px';
+    if (row.subtitlePrefix) {
+      const prefix = createElement(
+        context.document,
+        'span',
+        'ok-native-list-market-subtitle-prefix',
+        row.subtitlePrefix.text
+      );
+      applyMarketTextStyle(prefix, row.subtitlePrefix.style, {
+        fontSize: 12,
+        lineHeight: 16,
+        weight: 400,
+        alignment: 'start',
+      });
+      prefix.style.display = 'block';
+      prefix.style.flex = '1 1 auto';
+      prefix.style.minWidth = '0';
+      prefix.style.overflow = 'hidden';
+      prefix.style.textOverflow = 'ellipsis';
+      prefix.style.color =
+        row.subtitlePrefix.style?.color ?? 'var(--nl-secondary)';
+      if (row.subtitlePrefix.maxWidth !== undefined) {
+        prefix.style.maxWidth = String(row.subtitlePrefix.maxWidth) + 'px';
+      }
+      subtitleLine.appendChild(prefix);
+    }
+    if (row.subtitle || row.subtitleSegments?.length) {
+      const subtitle = createElement(
+        context.document,
+        'span',
+        'ok-native-list-market-subtitle',
+        row.subtitle
+      );
+      applyMarketTextStyle(subtitle, style?.subtitle, {
+        fontSize: 14,
+        lineHeight: 20,
+        weight: 400,
+        alignment: 'start',
+      });
+      applyValueSegments(
+        subtitle,
+        row.subtitleSegments,
+        style?.subtitle?.fontSize ?? 14,
+        style?.subtitle?.lineHeight ?? 20,
+        marketFontWeight(style?.subtitle?.fontWeight, 400)
+      );
+      subtitle.style.flex = row.subtitlePrefix ? '0 0 auto' : '1 1 auto';
+      subtitleLine.appendChild(subtitle);
+    }
+    main.appendChild(subtitleLine);
   }
   body.appendChild(main);
   const trailing = createElement(

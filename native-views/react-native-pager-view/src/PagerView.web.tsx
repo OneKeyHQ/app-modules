@@ -43,13 +43,27 @@ type State = Readonly<{
   animateTransition: boolean;
 }>;
 
+const pageIndex = (value: number) => {
+  const index = Math.trunc(value);
+  return Number.isFinite(index) ? index : null;
+};
+
+const clampedPageIndex = (value: number, pageCount: number) =>
+  Math.min(
+    Math.max(0, pageIndex(value) ?? 0),
+    Math.max(0, pageCount - 1)
+  );
+
 /**
  * Web fallback for the ordinary PagerView API. All pages stay mounted, matching
  * the package's pre-existing PagerView lifetime contract.
  */
 export class PagerView extends React.Component<PagerViewProps, State> {
   state: State = {
-    selectedPage: Math.max(0, Math.trunc(this.props.initialPage ?? 0)),
+    selectedPage: clampedPageIndex(
+      this.props.initialPage ?? 0,
+      React.Children.toArray(this.props.children).length
+    ),
     animateTransition: true,
   };
 
@@ -61,7 +75,7 @@ export class PagerView extends React.Component<PagerViewProps, State> {
       this.scrollEnabled = this.props.scrollEnabled ?? true;
     }
 
-    const pageCount = React.Children.count(this.props.children);
+    const pageCount = this.pages().length;
     if (pageCount > 0 && this.state.selectedPage >= pageCount) {
       this.setState({
         selectedPage: pageCount - 1,
@@ -86,10 +100,15 @@ export class PagerView extends React.Component<PagerViewProps, State> {
     return { nativeEvent } as ReactNative.NativeSyntheticEvent<T>;
   }
 
+  private pages() {
+    return React.Children.toArray(this.props.children);
+  }
+
   private selectPage(selectedPage: number, animated: boolean) {
-    const pageCount = React.Children.count(this.props.children);
-    const position = Math.trunc(selectedPage);
+    const pageCount = this.pages().length;
+    const position = pageIndex(selectedPage);
     if (
+      position === null ||
       position < 0 ||
       position >= pageCount ||
       position === this.state.selectedPage
@@ -159,7 +178,7 @@ export class PagerView extends React.Component<PagerViewProps, State> {
     if (
       direction === 0 ||
       next < 0 ||
-      next >= React.Children.count(this.props.children)
+      next >= this.pages().length
     ) {
       this.props.onPageScrollStateChanged?.(
         this.nativeEvent<PageScrollStateChangedNativeEventData>({
@@ -173,7 +192,7 @@ export class PagerView extends React.Component<PagerViewProps, State> {
 
   render() {
     const {
-      children,
+      children: _children,
       style,
       orientation = "horizontal",
       pageMargin = 0,
@@ -191,7 +210,7 @@ export class PagerView extends React.Component<PagerViewProps, State> {
       onPageScrollStateChanged: _onPageScrollStateChanged,
       ...viewProps
     } = this.props;
-    const pages = React.Children.toArray(children);
+    const pages = this.pages();
     const vertical = orientation === "vertical";
     const pageExtent = pages.length > 0 ? `${100 / pages.length}%` : "100%";
     const transform = vertical

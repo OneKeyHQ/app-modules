@@ -210,6 +210,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       onMountedPagesChanged: _onMountedPagesChanged,
       onPageSelected: _onPageSelected,
       layoutDirection,
+      initialPage: _initialPage,
       offscreenPageLimit,
       ...nativeProps
     } = this.props;
@@ -230,6 +231,10 @@ export class CollapsiblePagerView extends React.PureComponent<
           this.nativeRef = ref;
         }}
         layoutDirection={deducedLayoutDirection}
+        initialPage={clampedPageIndex(
+          this.props.initialPage ?? 0,
+          pages.length
+        )}
         offscreenPageLimit={Math.max(1, offscreenPageLimit ?? 1)}
         headerHeight={Math.max(0, Math.round(headerHeight))}
         stickyHeaderHeight={Math.max(0, Math.round(stickyHeaderHeight))}
