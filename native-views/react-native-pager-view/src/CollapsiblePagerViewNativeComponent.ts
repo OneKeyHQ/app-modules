@@ -2,6 +2,7 @@ import type * as React from "react";
 import {
   codegenNativeCommands,
   codegenNativeComponent,
+  type ColorValue,
   type HostComponent,
   type ViewProps,
 } from "react-native";
@@ -36,6 +37,11 @@ export type OnCollapsibleStateChangedEventData = Readonly<{
   reason: string;
 }>;
 
+export type OnNativeTabPressEventData = Readonly<{
+  position: Int32;
+  key: string;
+}>;
+
 /**
  * Internal native props. Consumers should use CollapsiblePagerViewProps from
  * CollapsiblePagerView instead of mounting this host component directly.
@@ -51,10 +57,26 @@ export interface NativeProps extends ViewProps {
   stickyHeaderHeight?: Int32;
   pageKeys?: string;
   retainedPages?: string;
+  nativeTabBarItems?: string;
+  nativeTabBarHeight?: Double;
+  nativeTabBarContentPaddingHorizontal?: Double;
+  nativeTabBarItemSpacing?: Double;
+  nativeTabBarFontSize?: Double;
+  nativeTabBarFontFamily?: string;
+  nativeTabBarBackgroundColor?: ColorValue;
+  nativeTabBarActiveTextColor?: ColorValue;
+  nativeTabBarInactiveTextColor?: ColorValue;
+  nativeTabBarIndicatorColor?: ColorValue;
+  nativeTabBarIndicatorHeight?: Double;
+  nativeTabBarIndicatorBottom?: Double;
+  nativeSubHeaderConfig?: string;
+  nativeSubHeaderSelectedBackgroundColor?: ColorValue;
   onPageScroll?: DirectEventHandler<OnPageScrollEventData>;
   onPageSelected?: DirectEventHandler<OnPageSelectedEventData>;
   onPageScrollStateChanged?: DirectEventHandler<OnPageScrollStateChangedEventData>;
   onCollapsibleStateChanged?: DirectEventHandler<OnCollapsibleStateChangedEventData>;
+  onNativeTabPress?: DirectEventHandler<OnNativeTabPressEventData>;
+  onNativeSubHeaderPress?: DirectEventHandler<OnNativeTabPressEventData>;
 }
 
 type CollapsiblePagerViewNativeType = HostComponent<NativeProps>;

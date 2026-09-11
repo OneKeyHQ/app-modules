@@ -173,6 +173,42 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     view?.retainedPages = value ?: "[]"
   }
 
+  // The optional native tab bar is implemented on iOS first. These no-op
+  // setters preserve the shared Fabric contract without changing Android UI.
+  override fun setNativeTabBarItems(view: CollapsiblePagerHost?, value: String?) = Unit
+
+  override fun setNativeTabBarHeight(view: CollapsiblePagerHost?, value: Double) = Unit
+
+  override fun setNativeTabBarContentPaddingHorizontal(
+    view: CollapsiblePagerHost?,
+    value: Double,
+  ) = Unit
+
+  override fun setNativeTabBarItemSpacing(view: CollapsiblePagerHost?, value: Double) = Unit
+
+  override fun setNativeTabBarFontSize(view: CollapsiblePagerHost?, value: Double) = Unit
+
+  override fun setNativeTabBarFontFamily(view: CollapsiblePagerHost?, value: String?) = Unit
+
+  override fun setNativeTabBarBackgroundColor(view: CollapsiblePagerHost?, value: Int?) = Unit
+
+  override fun setNativeTabBarActiveTextColor(view: CollapsiblePagerHost?, value: Int?) = Unit
+
+  override fun setNativeTabBarInactiveTextColor(view: CollapsiblePagerHost?, value: Int?) = Unit
+
+  override fun setNativeTabBarIndicatorColor(view: CollapsiblePagerHost?, value: Int?) = Unit
+
+  override fun setNativeTabBarIndicatorHeight(view: CollapsiblePagerHost?, value: Double) = Unit
+
+  override fun setNativeTabBarIndicatorBottom(view: CollapsiblePagerHost?, value: Double) = Unit
+
+  override fun setNativeSubHeaderConfig(view: CollapsiblePagerHost?, value: String?) = Unit
+
+  override fun setNativeSubHeaderSelectedBackgroundColor(
+    view: CollapsiblePagerHost?,
+    value: Int?,
+  ) = Unit
+
   private fun parseStringArray(value: String?): List<String> {
     if (value.isNullOrEmpty()) return emptyList()
     return runCatching {

@@ -6,6 +6,7 @@ import CollapsiblePagerViewNativeComponent, {
   Commands as CollapsiblePagerViewNativeCommands,
   type NativeProps,
   type OnCollapsibleStateChangedEventData,
+  type OnNativeTabPressEventData,
 } from "./CollapsiblePagerViewNativeComponent";
 import type {
   OnPageScrollEventData,
@@ -22,6 +23,63 @@ export type CollapsiblePagerMountState = Readonly<{
   pageKeys: readonly string[];
 }>;
 
+export type CollapsiblePagerNativeTabBarItem = Readonly<{
+  key: string;
+  title: string;
+  accessibilityLabel?: string;
+  testID?: string;
+}>;
+
+export type CollapsiblePagerNativeTabBarStyle = Readonly<{
+  height?: number;
+  contentPaddingHorizontal?: number;
+  itemSpacing?: number;
+  fontSize?: number;
+  fontFamily?: string;
+  backgroundColor?: ReactNative.ColorValue;
+  activeTextColor?: ReactNative.ColorValue;
+  inactiveTextColor?: ReactNative.ColorValue;
+  indicatorColor?: ReactNative.ColorValue;
+  indicatorHeight?: number;
+  indicatorBottom?: number;
+}>;
+
+export type CollapsiblePagerNativeTabBarConfig = Readonly<{
+  items: readonly CollapsiblePagerNativeTabBarItem[];
+  style?: CollapsiblePagerNativeTabBarStyle;
+}>;
+
+export type CollapsiblePagerNativeSubHeaderColumns = Readonly<{
+  leading: string;
+  middle: string;
+  trailing: string;
+}>;
+
+export type CollapsiblePagerNativeSubHeaderStyle = Readonly<{
+  height?: number;
+  tabsHeight?: number;
+  contentPaddingHorizontal?: number;
+  itemSpacing?: number;
+  fontSize?: number;
+  columnFontSize?: number;
+  trailingColumnWidth?: number;
+  columnGap?: number;
+  selectedBackgroundColor?: ReactNative.ColorValue;
+}>;
+
+export type CollapsiblePagerNativeSubHeaderConfig = Readonly<{
+  items: readonly CollapsiblePagerNativeTabBarItem[];
+  selectedKey: string;
+  columns: CollapsiblePagerNativeSubHeaderColumns;
+  style?: CollapsiblePagerNativeSubHeaderStyle;
+}>;
+
+export type CollapsiblePagerViewOnNativeTabPressEvent =
+  ReactNative.NativeSyntheticEvent<OnNativeTabPressEventData>;
+
+export type CollapsiblePagerViewOnNativeSubHeaderPressEvent =
+  ReactNative.NativeSyntheticEvent<OnNativeTabPressEventData>;
+
 export interface CollapsiblePagerViewProps
   extends Omit<
     NativeProps,
@@ -30,6 +88,22 @@ export interface CollapsiblePagerViewProps
     | "stickyHeaderHeight"
     | "pageKeys"
     | "retainedPages"
+    | "nativeTabBarItems"
+    | "nativeTabBarHeight"
+    | "nativeTabBarContentPaddingHorizontal"
+    | "nativeTabBarItemSpacing"
+    | "nativeTabBarFontSize"
+    | "nativeTabBarFontFamily"
+    | "nativeTabBarBackgroundColor"
+    | "nativeTabBarActiveTextColor"
+    | "nativeTabBarInactiveTextColor"
+    | "nativeTabBarIndicatorColor"
+    | "nativeTabBarIndicatorHeight"
+    | "nativeTabBarIndicatorBottom"
+    | "nativeSubHeaderConfig"
+    | "nativeSubHeaderSelectedBackgroundColor"
+    | "onNativeTabPress"
+    | "onNativeSubHeaderPress"
     | "layoutDirection"
   > {
   /** Collapsible content rendered above the sticky bar. */
@@ -47,12 +121,21 @@ export interface CollapsiblePagerViewProps
    */
   pageRetentionDistance?: number;
   layoutDirection?: "ltr" | "rtl" | "locale";
+  /** Optional native tab bar. It is currently rendered on iOS only. */
+  nativeTabBar?: CollapsiblePagerNativeTabBarConfig;
+  onNativeTabPress?: (event: CollapsiblePagerViewOnNativeTabPressEvent) => void;
+  /** Optional native secondary sticky header. It is currently rendered on iOS only. */
+  nativeSubHeader?: CollapsiblePagerNativeSubHeaderConfig;
+  onNativeSubHeaderPress?: (
+    event: CollapsiblePagerViewOnNativeSubHeaderPressEvent
+  ) => void;
   children?: React.ReactNode;
   onMountedPagesChanged?: (state: CollapsiblePagerMountState) => void;
 }
 
 type State = {
   selectedPage: number;
+  transientRetainedPages: readonly number[];
 };
 
 const pageIndex = (value: number) => {
@@ -61,10 +144,7 @@ const pageIndex = (value: number) => {
 };
 
 const clampedPageIndex = (value: number, pageCount: number) =>
-  Math.min(
-    Math.max(0, pageIndex(value) ?? 0),
-    Math.max(0, pageCount - 1)
-  );
+  Math.min(Math.max(0, pageIndex(value) ?? 0), Math.max(0, pageCount - 1));
 
 const pageKey = (child: React.ReactNode, index: number) => {
   if (React.isValidElement(child) && child.key != null) {
@@ -87,6 +167,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       this.props.initialPage ?? 0,
       React.Children.toArray(this.props.children).length
     ),
+    transientRetainedPages: [],
   };
 
   private nativeRef: React.ElementRef<
@@ -94,6 +175,10 @@ export class CollapsiblePagerView extends React.PureComponent<
   > | null = null;
 
   private lastMountSignature: string | null = null;
+
+  private nativeTabCommandId = 0;
+
+  private latestNativeTabTarget: number | null = null;
 
   componentDidMount() {
     this.notifyMountedPagesChanged();
@@ -117,7 +202,11 @@ export class CollapsiblePagerView extends React.PureComponent<
       position >= 0 &&
       position < this.pages().length
     ) {
-      CollapsiblePagerViewNativeCommands.setPage(this.nativeRef, position);
+      if (this.nativeTabBarEnabled()) {
+        this.dispatchNativeTabPageCommand(position, true);
+      } else {
+        CollapsiblePagerViewNativeCommands.setPage(this.nativeRef, position);
+      }
     }
   };
 
@@ -129,10 +218,14 @@ export class CollapsiblePagerView extends React.PureComponent<
       position >= 0 &&
       position < this.pages().length
     ) {
-      CollapsiblePagerViewNativeCommands.setPageWithoutAnimation(
-        this.nativeRef,
-        position
-      );
+      if (this.nativeTabBarEnabled()) {
+        this.dispatchNativeTabPageCommand(position, false);
+      } else {
+        CollapsiblePagerViewNativeCommands.setPageWithoutAnimation(
+          this.nativeRef,
+          position
+        );
+      }
     }
   };
 
@@ -149,6 +242,40 @@ export class CollapsiblePagerView extends React.PureComponent<
     return React.Children.toArray(this.props.children);
   }
 
+  private nativeTabBarEnabled() {
+    return Platform.OS === "ios" && !!this.props.nativeTabBar?.items.length;
+  }
+
+  private dispatchNativeTabPageCommand(position: number, animated: boolean) {
+    const commandId = ++this.nativeTabCommandId;
+    this.latestNativeTabTarget = position;
+    this.setState(
+      (state) => ({
+        transientRetainedPages: state.transientRetainedPages.includes(position)
+          ? state.transientRetainedPages
+          : [...state.transientRetainedPages, position],
+      }),
+      () => {
+        requestAnimationFrame(() => {
+          if (commandId !== this.nativeTabCommandId || !this.nativeRef) {
+            return;
+          }
+          if (animated) {
+            CollapsiblePagerViewNativeCommands.setPage(
+              this.nativeRef,
+              position
+            );
+          } else {
+            CollapsiblePagerViewNativeCommands.setPageWithoutAnimation(
+              this.nativeRef,
+              position
+            );
+          }
+        });
+      }
+    );
+  }
+
   private retentionDistance() {
     return Math.max(0, Math.floor(this.props.pageRetentionDistance ?? 1));
   }
@@ -161,7 +288,10 @@ export class CollapsiblePagerView extends React.PureComponent<
     );
     const mounted: number[] = [];
     for (let index = 0; index < pageCount; index += 1) {
-      if (Math.abs(index - selected) <= distance) {
+      if (
+        Math.abs(index - selected) <= distance ||
+        this.state.transientRetainedPages.includes(index)
+      ) {
         mounted.push(index);
       }
     }
@@ -193,10 +323,39 @@ export class CollapsiblePagerView extends React.PureComponent<
       event.nativeEvent.position,
       this.pages().length
     );
-    if (position !== this.state.selectedPage) {
-      this.setState({ selectedPage: position }, this.notifyMountedPagesChanged);
+    if (
+      position !== this.state.selectedPage ||
+      this.state.transientRetainedPages.length > 0
+    ) {
+      const pendingTarget = this.latestNativeTabTarget;
+      const transitionComplete = pendingTarget === position;
+      if (transitionComplete) {
+        this.latestNativeTabTarget = null;
+      }
+      this.setState(
+        {
+          selectedPage: position,
+          transientRetainedPages:
+            !transitionComplete && pendingTarget !== null
+              ? [pendingTarget]
+              : [],
+        },
+        this.notifyMountedPagesChanged
+      );
     }
     this.props.onPageSelected?.(event);
+  };
+
+  private onNativeTabPress = (
+    event: ReactNative.NativeSyntheticEvent<OnNativeTabPressEventData>
+  ) => {
+    this.props.onNativeTabPress?.(event);
+  };
+
+  private onNativeSubHeaderPress = (
+    event: ReactNative.NativeSyntheticEvent<OnNativeTabPressEventData>
+  ) => {
+    this.props.onNativeSubHeaderPress?.(event);
   };
 
   render() {
@@ -209,6 +368,10 @@ export class CollapsiblePagerView extends React.PureComponent<
       pageRetentionDistance: _pageRetentionDistance,
       onMountedPagesChanged: _onMountedPagesChanged,
       onPageSelected: _onPageSelected,
+      nativeTabBar,
+      onNativeTabPress: _onNativeTabPress,
+      nativeSubHeader,
+      onNativeSubHeaderPress: _onNativeSubHeaderPress,
       layoutDirection,
       initialPage: _initialPage,
       offscreenPageLimit,
@@ -223,6 +386,21 @@ export class CollapsiblePagerView extends React.PureComponent<
           ? "rtl"
           : "ltr"
         : layoutDirection;
+    const nativeTabBarEnabled =
+      Platform.OS === "ios" && !!nativeTabBar?.items.length;
+    const nativeTabBarStyle = nativeTabBar?.style;
+    const nativeSubHeaderEnabled =
+      Platform.OS === "ios" && !!nativeSubHeader?.items.length;
+    const nativeSubHeaderStyle = nativeSubHeader?.style;
+    const nativeSubHeaderConfig = nativeSubHeaderEnabled
+      ? JSON.stringify({
+          ...nativeSubHeader,
+          style: {
+            ...nativeSubHeaderStyle,
+            selectedBackgroundColor: undefined,
+          },
+        })
+      : undefined;
 
     return (
       <CollapsiblePagerViewNativeComponent
@@ -241,12 +419,72 @@ export class CollapsiblePagerView extends React.PureComponent<
         pageKeys={JSON.stringify(pageKeys)}
         retainedPages={JSON.stringify([...retained])}
         onPageSelected={this.onPageSelected}
+        nativeTabBarItems={
+          nativeTabBarEnabled ? JSON.stringify(nativeTabBar.items) : undefined
+        }
+        nativeTabBarHeight={
+          nativeTabBarEnabled ? nativeTabBarStyle?.height ?? 44 : undefined
+        }
+        nativeTabBarContentPaddingHorizontal={
+          nativeTabBarEnabled
+            ? nativeTabBarStyle?.contentPaddingHorizontal ?? 20
+            : undefined
+        }
+        nativeTabBarItemSpacing={
+          nativeTabBarEnabled ? nativeTabBarStyle?.itemSpacing ?? 8 : undefined
+        }
+        nativeTabBarFontSize={
+          nativeTabBarEnabled ? nativeTabBarStyle?.fontSize ?? 16 : undefined
+        }
+        nativeTabBarFontFamily={
+          nativeTabBarEnabled ? nativeTabBarStyle?.fontFamily : undefined
+        }
+        nativeTabBarBackgroundColor={
+          nativeTabBarEnabled ? nativeTabBarStyle?.backgroundColor : undefined
+        }
+        nativeTabBarActiveTextColor={
+          nativeTabBarEnabled ? nativeTabBarStyle?.activeTextColor : undefined
+        }
+        nativeTabBarInactiveTextColor={
+          nativeTabBarEnabled ? nativeTabBarStyle?.inactiveTextColor : undefined
+        }
+        nativeTabBarIndicatorColor={
+          nativeTabBarEnabled ? nativeTabBarStyle?.indicatorColor : undefined
+        }
+        nativeTabBarIndicatorHeight={
+          nativeTabBarEnabled
+            ? nativeTabBarStyle?.indicatorHeight ?? 2
+            : undefined
+        }
+        nativeTabBarIndicatorBottom={
+          nativeTabBarEnabled
+            ? nativeTabBarStyle?.indicatorBottom ?? 0
+            : undefined
+        }
+        nativeSubHeaderConfig={nativeSubHeaderConfig}
+        nativeSubHeaderSelectedBackgroundColor={
+          nativeSubHeaderEnabled
+            ? nativeSubHeaderStyle?.selectedBackgroundColor
+            : undefined
+        }
+        onNativeTabPress={
+          nativeTabBarEnabled ? this.onNativeTabPress : undefined
+        }
+        onNativeSubHeaderPress={
+          nativeSubHeaderEnabled ? this.onNativeSubHeaderPress : undefined
+        }
       >
         <View
           key="collapsible-header"
           collapsable={false}
           pointerEvents="box-none"
-          style={[styles.slot, { bottom: undefined, height: Math.max(0, Math.round(headerHeight)) }]}
+          style={[
+            styles.slot,
+            {
+              bottom: undefined,
+              height: Math.max(0, Math.round(headerHeight)),
+            },
+          ]}
         >
           {header}
         </View>
