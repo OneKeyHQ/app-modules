@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.118] - 2026-09-11
+
+### Features
+- **image**: Add configurable theme-aware placeholder colors and skip unnecessary image fades for memory-cache hits while respecting reduced-motion settings.
+- **native-list**: Expose cross-platform avatar preloading and align selector image fallback and reuse behavior across iOS, Android, and Web.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.118.
+
 ## [3.0.116] - 2026-09-10
 
 ### Bug Fixes
