@@ -94,7 +94,10 @@ final class NativeListView: UIView {
   private var interactiveReorderCompactKey: String?
   private var interactiveReorderUsesAtomicTargeting = false
   private var interactiveReorderTargetIndex: Int?
+  private var interactiveReorderTargetKey: String?
+  private var interactiveReorderLockedCrossAxisPosition: CGFloat?
   private var interactiveReorderTransformedCells: [NativeListCell] = []
+  private var deferredReorderReconfigureKeys = Set<String>()
   private let interactiveReorderPlaceholder = UIView()
   private var interactiveReorderAnimator: UIViewPropertyAnimator?
   private let reorderStartFeedback = UIImpactFeedbackGenerator(style: .medium)
@@ -255,6 +258,13 @@ final class NativeListView: UIView {
       refreshVisibleSelection()
       return
     }
+    if let current = config, interactiveReorderSource != nil {
+      if canDeferSnapshotDuringInteractiveReorder(from: current, to: next) {
+        deferSnapshotDuringInteractiveReorder(from: current, to: next)
+        return
+      }
+      cancelInteractiveReorderForStructuralUpdate()
+    }
     let oldItems = itemsByKey
     let themeChanged = !dictionariesEqual(config?.theme, next.theme)
     if config?.generation != next.generation { endReachedGeneration = nil }
@@ -269,11 +279,13 @@ final class NativeListView: UIView {
     snapshot.appendSections([0])
     let keys = next.items.map(\.key)
     snapshot.appendItems(keys, toSection: 0)
-    let changedKeys = keys.filter { key in
+    var changedKeys = Set(keys.filter { key in
       guard let old = oldItems[key], let new = itemsByKey[key] else { return false }
       return themeChanged || old.revision != new.revision || old.content != new.content
-    }
-    snapshot.reconfigureItems(changedKeys)
+    })
+    changedKeys.formUnion(deferredReorderReconfigureKeys)
+    deferredReorderReconfigureKeys.removeAll()
+    snapshot.reconfigureItems(changedKeys.filter { itemsByKey[$0] != nil })
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
       guard let self else { return }
       self.collectionView.layoutIfNeeded()
@@ -300,9 +312,10 @@ final class NativeListView: UIView {
       pending.append((index, changes))
     }
 
-    var changedKeys: [String] = []
+    var changedKeys = Set<String>()
     var marketQuoteKeys = Set<String>()
     var sizeChanged = false
+    var reorderStructureChanged = false
     let marketQuoteFields: Set<String> = [
       "revision", "price", "priceSegments", "change", "accessibilityLabel",
     ]
@@ -313,22 +326,37 @@ final class NativeListView: UIView {
         if key != "key" && key != "type" { merged[key] = value }
       }
       guard let item = try? NativeListItem(data: merged) else { return }
-      if rowHeight(current.items[index]) != rowHeight(item) { sizeChanged = true }
+      if rowHeight(previous, usingCompactReorderHeight: false) != rowHeight(item, usingCompactReorderHeight: false) ||
+        current.orientation == "horizontal" && previous.type == "rail" && railWidth(previous) != railWidth(item) ||
+        current.sectionIndexEnabled && previous.type == "sectionHeader" &&
+        previous.data.string("indexTitle").isEmpty != item.data.string("indexTitle").isEmpty {
+        sizeChanged = true
+      }
+      if previous.sectionKey != item.sectionKey ||
+        previous.isReorderable != item.isReorderable ||
+        !hasSameNestedReorderStructure(previous, item) ||
+        previous.type == "identity" &&
+        previous.data.string("presentation") != item.data.string("presentation") {
+        reorderStructureChanged = true
+      }
       current.items[index] = item
       if previous.type == "market", Set(changes.keys).isSubset(of: marketQuoteFields) {
         marketQuoteKeys.insert(item.key)
       } else {
-        changedKeys.append(item.key)
+        changedKeys.insert(item.key)
       }
       if let selected = changes["selected"] as? Bool {
         if selected { current.selectedKeys.insert(item.key) } else { current.selectedKeys.remove(item.key) }
       }
     }
     if !changedKeys.isEmpty { invalidateActionAnchor(reason: "snapshot") }
+    if interactiveReorderSource != nil, sizeChanged || reorderStructureChanged {
+      cancelInteractiveReorderForStructuralUpdate()
+    }
     config = current
     itemsByKey = Dictionary(uniqueKeysWithValues: current.items.map { ($0.key, $0) })
     for indexPath in collectionView.indexPathsForVisibleItems {
-      guard let item = current.items[safe: indexPath.item],
+      guard let item = item(at: indexPath),
             marketQuoteKeys.contains(item.key),
             let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell else { continue }
       cell.updateMarketQuote(item, theme: current.theme)
@@ -339,6 +367,13 @@ final class NativeListView: UIView {
       checkEndReached()
       return
     }
+    if interactiveReorderSource != nil {
+      deferredReorderReconfigureKeys.formUnion(changedKeys)
+      configureFooter(current)
+      return
+    }
+    changedKeys.formUnion(deferredReorderReconfigureKeys)
+    deferredReorderReconfigureKeys.removeAll()
     var snapshot = dataSource.snapshot()
     snapshot.reconfigureItems(changedKeys.filter { snapshot.indexOfItem($0) != nil })
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
@@ -567,6 +602,9 @@ final class NativeListView: UIView {
             let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell else {
         interactiveReorderSource = nil
         interactiveReorderCell = nil
+        interactiveReorderTargetIndex = nil
+        interactiveReorderTargetKey = nil
+        interactiveReorderLockedCrossAxisPosition = nil
         return
       }
       // OneKey patch: a hidden wallet child starts dragging its whole logical group.
@@ -581,6 +619,11 @@ final class NativeListView: UIView {
         item.data.string("presentation") == "walletSidebar" &&
         current.items.contains { $0.type == "walletGroup" }
       interactiveReorderTargetIndex = indexPath.item
+      interactiveReorderTargetKey = item.key
+      let sourceCenter = flowLayout.layoutAttributesForItem(at: indexPath)?.center ?? cell.center
+      interactiveReorderLockedCrossAxisPosition = current.orientation == "horizontal"
+        ? sourceCenter.y
+        : sourceCenter.x
       if item.type == "walletGroup" {
         interactiveReorderCompactKey = item.key
         cell.setWalletGroupReorderCompact(true)
@@ -596,6 +639,8 @@ final class NativeListView: UIView {
         interactiveReorderCell = nil
         interactiveReorderUsesAtomicTargeting = false
         interactiveReorderTargetIndex = nil
+        interactiveReorderTargetKey = nil
+        interactiveReorderLockedCrossAxisPosition = nil
         interactiveReorderFeedbackIndex = nil
         flowLayout.invalidateLayout()
         collectionView.layoutIfNeeded()
@@ -608,13 +653,20 @@ final class NativeListView: UIView {
       showInteractiveReorderPlaceholder(at: indexPath, item: item, config: current)
     case .changed:
       guard interactiveReorderSource != nil else { return }
-      let point = gesture.location(in: collectionView)
+      var point = gesture.location(in: collectionView)
+      if let lockedPosition = interactiveReorderLockedCrossAxisPosition {
+        if config?.orientation == "horizontal" {
+          point.y = lockedPosition
+        } else {
+          point.x = lockedPosition
+        }
+      }
       collectionView.updateInteractiveMovementTargetPosition(point)
       if let indexPath = nearestReorderIndexPath(to: point),
          let item = item(at: indexPath) {
         let targetChanged = interactiveReorderFeedbackIndex != indexPath.item
         if interactiveReorderUsesAtomicTargeting {
-          updateAtomicReorderTarget(to: indexPath.item, animated: targetChanged)
+          updateAtomicReorderTarget(to: indexPath.item, key: item.key, animated: targetChanged)
         }
         if targetChanged {
           interactiveReorderFeedbackIndex = indexPath.item
@@ -628,6 +680,7 @@ final class NativeListView: UIView {
       interactiveReorderCell?.setPressed(false)
       finishInteractiveReorder(cancelled: false)
     case .cancelled, .failed:
+      guard interactiveReorderSource != nil else { return }
       interactiveReorderCell?.setPressed(false)
       finishInteractiveReorder(cancelled: true)
     default:
@@ -636,10 +689,17 @@ final class NativeListView: UIView {
   }
 
   private func nearestReorderIndexPath(to point: CGPoint) -> IndexPath? {
-    collectionView.indexPathsForVisibleItems.min { lhs, rhs in
+    let isHorizontal = config?.orientation == "horizontal"
+    return collectionView.indexPathsForVisibleItems.min { lhs, rhs in
       let lhsFrame = flowLayout.layoutAttributesForItem(at: lhs)?.frame ?? .zero
       let rhsFrame = flowLayout.layoutAttributesForItem(at: rhs)?.frame ?? .zero
-      return abs(lhsFrame.midY - point.y) < abs(rhsFrame.midY - point.y)
+      let lhsDistance = isHorizontal
+        ? abs(lhsFrame.midX - point.x)
+        : abs(lhsFrame.midY - point.y)
+      let rhsDistance = isHorizontal
+        ? abs(rhsFrame.midX - point.x)
+        : abs(rhsFrame.midY - point.y)
+      return lhsDistance < rhsDistance
     }
   }
 
@@ -685,6 +745,7 @@ final class NativeListView: UIView {
   }
 
   private func finishInteractiveReorder(cancelled: Bool) {
+    interactiveReorderLockedCrossAxisPosition = nil
     if interactiveReorderUsesAtomicTargeting {
       finishAtomicInteractiveReorder(cancelled: cancelled)
       return
@@ -715,10 +776,56 @@ final class NativeListView: UIView {
       } else {
         self.interactiveReorderSource = nil
         self.interactiveReorderCell = nil
+        self.interactiveReorderTargetIndex = nil
+        self.interactiveReorderTargetKey = nil
+        self.scheduleDeferredReorderRefresh()
       }
     }
     interactiveReorderAnimator = animator
     animator.startAnimation()
+  }
+
+  private func cancelInteractiveReorderForStructuralUpdate() {
+    guard interactiveReorderSource != nil else { return }
+    interactiveReorderAnimator?.stopAnimation(true)
+    interactiveReorderAnimator = nil
+    collectionView.cancelInteractiveMovement()
+    interactiveReorderCell?.setPressed(false)
+    if interactiveReorderCompactKey != nil {
+      interactiveReorderCell?.setWalletGroupReorderCompact(false)
+      interactiveReorderCompactKey = nil
+      flowLayout.invalidateLayout()
+    }
+    resetAtomicReorderTransforms()
+    interactiveReorderSource = nil
+    interactiveReorderCell = nil
+    interactiveReorderFeedbackIndex = nil
+    clearAtomicInteractiveReorderState()
+  }
+
+  private func scheduleDeferredReorderRefresh() {
+    guard !deferredReorderReconfigureKeys.isEmpty else { return }
+    DispatchQueue.main.async { [weak self] in
+      self?.flushDeferredReorderRefresh()
+    }
+  }
+
+  private func flushDeferredReorderRefresh() {
+    guard interactiveReorderSource == nil,
+          interactiveReorderCompactKey == nil,
+          interactiveReorderAnimator == nil,
+          !deferredReorderReconfigureKeys.isEmpty else { return }
+    var snapshot = dataSource.snapshot()
+    let keys = deferredReorderReconfigureKeys.filter { snapshot.indexOfItem($0) != nil }
+    deferredReorderReconfigureKeys.removeAll()
+    guard !keys.isEmpty else { return }
+    snapshot.reconfigureItems(Array(keys))
+    dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+      guard let self else { return }
+      self.collectionView.layoutIfNeeded()
+      self.emitVisibleRangeIfNeeded()
+      self.checkEndReached()
+    }
   }
 
   private func completeInteractiveReorder(
@@ -729,6 +836,10 @@ final class NativeListView: UIView {
     defer {
       interactiveReorderSource = nil
       interactiveReorderCell = nil
+      interactiveReorderTargetIndex = nil
+      interactiveReorderTargetKey = nil
+      interactiveReorderLockedCrossAxisPosition = nil
+      scheduleDeferredReorderRefresh()
     }
     let keys = snapshot.itemIdentifiers
     let items = keys.compactMap { itemsByKey[$0] }
@@ -768,6 +879,10 @@ final class NativeListView: UIView {
       self.walletGroupCell(for: key)?.finishWalletGroupReorderExpansion()
       self.interactiveReorderSource = nil
       self.interactiveReorderCell = nil
+      self.interactiveReorderTargetIndex = nil
+      self.interactiveReorderTargetKey = nil
+      self.interactiveReorderAnimator = nil
+      self.scheduleDeferredReorderRefresh()
     }
     interactiveReorderAnimator = animator
     animator.startAnimation()
@@ -785,9 +900,10 @@ final class NativeListView: UIView {
     return config?.items[safe: indexPath.item]
   }
 
-  private func updateAtomicReorderTarget(to targetIndex: Int, animated: Bool) {
+  private func updateAtomicReorderTarget(to targetIndex: Int, key targetKey: String, animated: Bool) {
     guard let source = interactiveReorderSource else { return }
     interactiveReorderTargetIndex = targetIndex
+    interactiveReorderTargetKey = targetKey
     let distance = CGFloat(68) + flowLayout.minimumLineSpacing
     let updates = { [weak self] in
       guard let self else { return }
@@ -827,17 +943,28 @@ final class NativeListView: UIView {
 
   private func finishAtomicInteractiveReorder(cancelled: Bool) {
     interactiveReorderAnimator?.stopAnimation(true)
+    interactiveReorderAnimator = nil
     interactiveReorderFeedbackIndex = nil
     guard let source = interactiveReorderSource else { return }
-    let targetIndex = interactiveReorderTargetIndex ?? source.index
     collectionView.cancelInteractiveMovement()
 
-    if !cancelled, targetIndex != source.index {
+    if !cancelled {
       var snapshot = dataSource.snapshot()
       let keys = snapshot.itemIdentifiers
-      if targetIndex < source.index, let targetKey = keys[safe: targetIndex] {
+      guard let targetKey = interactiveReorderTargetKey,
+            targetKey != source.key,
+            let sourceIndex = keys.firstIndex(of: source.key),
+            let targetIndex = keys.firstIndex(of: targetKey) else {
+        resetAtomicReorderTransforms()
+        interactiveReorderSource = nil
+        interactiveReorderCell = nil
+        clearAtomicInteractiveReorderState()
+        scheduleDeferredReorderRefresh()
+        return
+      }
+      if targetIndex < sourceIndex {
         snapshot.moveItem(source.key, beforeItem: targetKey)
-      } else if let targetKey = keys[safe: targetIndex] {
+      } else {
         snapshot.moveItem(source.key, afterItem: targetKey)
       }
       dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
@@ -852,12 +979,15 @@ final class NativeListView: UIView {
       interactiveReorderSource = nil
       interactiveReorderCell = nil
       clearAtomicInteractiveReorderState()
+      scheduleDeferredReorderRefresh()
     }
   }
 
   private func clearAtomicInteractiveReorderState() {
     interactiveReorderUsesAtomicTargeting = false
     interactiveReorderTargetIndex = nil
+    interactiveReorderTargetKey = nil
+    interactiveReorderLockedCrossAxisPosition = nil
     interactiveReorderPlaceholder.isHidden = true
     interactiveReorderPlaceholder.alpha = 1
   }
@@ -1131,7 +1261,7 @@ final class NativeListView: UIView {
       self?.resolveCheckboxState(item: item, target: target, fallback: fallback) ?? fallback
     }
     for indexPath in collectionView.indexPathsForVisibleItems {
-      guard let item = config.items[safe: indexPath.item],
+      guard let item = item(at: indexPath),
             let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell else { continue }
       if changedSummaryKeys.contains(item.key) {
         bind(cell: cell, item: item, itemIndex: indexPath.item)
@@ -1200,6 +1330,101 @@ final class NativeListView: UIView {
     }
   }
 
+  private func canDeferSnapshotDuringInteractiveReorder(
+    from current: NativeListConfig,
+    to next: NativeListConfig
+  ) -> Bool {
+    guard current.layout == next.layout,
+          current.orientation == next.orientation,
+          current.gridColumns == next.gridColumns,
+          current.stickyHeaders == next.stickyHeaders,
+          current.contentPadding == next.contentPadding,
+          current.contentPaddingHorizontal == next.contentPaddingHorizontal,
+          current.contentPaddingTop == next.contentPaddingTop,
+          current.contentPaddingBottom == next.contentPaddingBottom,
+          current.itemSpacing == next.itemSpacing,
+          current.reorderable == next.reorderable,
+          current.sectionIndexEnabled == next.sectionIndexEnabled,
+          current.items.count == next.items.count,
+          hasSameFooterGeometry(current.fixedFooter, next.fixedFooter) else { return false }
+
+    return zip(current.items, next.items).allSatisfy { old, new in
+      guard old.key == new.key,
+            old.type == new.type,
+            old.sectionKey == new.sectionKey,
+            old.isReorderable == new.isReorderable,
+            hasSameNestedReorderStructure(old, new),
+            rowHeight(old, usingCompactReorderHeight: false) == rowHeight(new, usingCompactReorderHeight: false) else {
+        return false
+      }
+      if current.orientation == "horizontal", old.type == "rail", railWidth(old) != railWidth(new) {
+        return false
+      }
+      if old.type == "identity", old.data.string("presentation") != new.data.string("presentation") {
+        return false
+      }
+      if current.sectionIndexEnabled,
+         old.type == "sectionHeader",
+         old.data.string("indexTitle").isEmpty != new.data.string("indexTitle").isEmpty {
+        return false
+      }
+      return true
+    }
+  }
+
+  private func hasSameNestedReorderStructure(_ current: NativeListItem, _ next: NativeListItem) -> Bool {
+    guard current.type == "walletGroup" else { return true }
+    guard let currentParent = current.data.dictionary("parent"),
+          let nextParent = next.data.dictionary("parent") else { return false }
+    let currentMembers = [currentParent] + current.data.dictionaries("children")
+    let nextMembers = [nextParent] + next.data.dictionaries("children")
+    guard currentMembers.count == nextMembers.count else { return false }
+    return zip(currentMembers, nextMembers).allSatisfy { old, new in
+      old.string("key") == new.string("key") &&
+        old.string("type") == new.string("type") &&
+        old.string("sectionKey") == new.string("sectionKey") &&
+        old.string("presentation") == new.string("presentation")
+    }
+  }
+
+  private func hasSameFooterGeometry(_ current: NativeListItem?, _ next: NativeListItem?) -> Bool {
+    switch (current, next) {
+    case (nil, nil):
+      return true
+    case let (current?, next?):
+      return current.key == next.key &&
+        current.type == next.type &&
+        rowHeight(current, usingCompactReorderHeight: false) == rowHeight(next, usingCompactReorderHeight: false)
+    default:
+      return false
+    }
+  }
+
+  private func deferSnapshotDuringInteractiveReorder(
+    from current: NativeListConfig,
+    to next: NativeListConfig
+  ) {
+    let oldItems = itemsByKey
+    let themeChanged = !dictionariesEqual(current.theme, next.theme)
+    let selectionChanged = current.selectionMode != next.selectionMode ||
+      current.selectedKeys != next.selectedKeys
+    if current.generation != next.generation { endReachedGeneration = nil }
+    config = next
+    itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
+    let changedKeys = next.items.compactMap { item -> String? in
+      guard let old = oldItems[item.key] else { return nil }
+      return themeChanged || selectionChanged || old.revision != item.revision || old.content != item.content
+        ? item.key
+        : nil
+    }
+    deferredReorderReconfigureKeys.formUnion(changedKeys)
+    configureSectionIndex(next)
+    configureRefresh(next)
+    configureFooter(next)
+    emitVisibleRangeIfNeeded()
+    checkEndReached()
+  }
+
   // OneKey patch: remove only fields that the existing lightweight binder refreshes.
   private func selectionComparisonData(_ data: [String: Any], controlled: Bool) -> [String: Any]? {
     guard let type = data["type"] as? String else { return nil }
@@ -1263,7 +1488,10 @@ final class NativeListView: UIView {
     return try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
   }
 
-  private func rowHeight(_ item: NativeListItem) -> CGFloat {
+  private func rowHeight(
+    _ item: NativeListItem,
+    usingCompactReorderHeight: Bool = true
+  ) -> CGFloat {
     // OneKey patch: honor selector baseline geometry; keep compact drag sizing.
     if item.type != "walletGroup", item.data["height"] != nil { return CGFloat(item.data.double("height")) }
     if item.type == "system", item.data.string("variant") == "spacer" {
@@ -1281,7 +1509,7 @@ final class NativeListView: UIView {
       return 32 + textHeight("title", weight: .medium) + textHeight("message", weight: .regular)
     }
     if item.type == "walletGroup" {
-      if item.key == interactiveReorderCompactKey { return 68 }
+      if usingCompactReorderHeight, item.key == interactiveReorderCompactKey { return 68 }
       let childCount = item.data.dictionaries("children").count
       // OneKey patch: wallet badges contribute their own member heights.
       // return CGFloat((childCount + 1) * 68 + childCount * 12)
