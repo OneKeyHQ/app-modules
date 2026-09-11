@@ -21,6 +21,7 @@ export type ImageSource = Readonly<{
   autoplay?: boolean;
   optimizeTos?: boolean;
   overscan?: number;
+  /** Defaults to `none` in NativeList; use `static` or `skeleton` to opt into loading UI. */
   loadingStrategy?: ImageLoadingStrategy;
   // OneKey patch: fallbackUri is Web-only; retryTimes opts all platforms into terminal retries.
   fallbackUri?: string;

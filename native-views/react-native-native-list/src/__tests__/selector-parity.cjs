@@ -103,6 +103,26 @@ test('native Market patch parity retains layout, reuse, refresh, and action cont
   assert.match(models, /windowPoint/);
 });
 
+test('native source images default to no placeholder and restore explicit backgrounds after load', () => {
+  const android = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListRowView.kt'
+    ),
+    'utf8'
+  );
+  const ios = fs.readFileSync(
+    path.join(packageRoot, 'ios/NativeListCell.swift'),
+    'utf8'
+  );
+  assert.match(android, /optString\("loadingStrategy", "none"\)/);
+  assert.match(android, /loadingStrategy = source\.optString\("loadingStrategy", "none"\)/);
+  assert.match(android, /if \(!isIcon && sources\.isNotEmpty\(\)\) Color\.TRANSPARENT/);
+  assert.match(ios, /string\("loadingStrategy", default: "none"\)/);
+  assert.match(ios, /loadingStrategy: source\.string\("loadingStrategy", default: "none"\)/);
+  assert.match(ios, /self\.leadingContainer\.backgroundColor = visualBackgroundColor/);
+});
+
 test('Android NativeList declares its native logger project as a peer dependency', () => {
   const manifest = require('../../package.json');
   const loggerManifest = require('../../../../native-modules/native-logger/package.json');
@@ -365,7 +385,7 @@ test('section help is independent of checkbox selection and anchored to the titl
   page.close();
 });
 test('failed network images render the official globe SVG fallback', () => {
-  const page = mount([identity('x', { leading: { kind: 'network', image: { uri: 'https://example.invalid/missing.png', width: 32, height: 32 }, fallbackIcon: { name: 'GlobusOutline' } } })]);
+  const page = mount([identity('x', { leading: { kind: 'network', image: { uri: 'https://example.invalid/missing.png', width: 32, height: 32, loadingStrategy: 'static' }, fallbackIcon: { name: 'GlobusOutline' } } })]);
   page.document.querySelector('.ok-native-list-visual-main').dispatchEvent(new page.view.Event('error'));
   assert.equal(page.document.querySelector('.ok-native-list-visual-main'), null);
   assert.ok(page.document.querySelector('.ok-native-list-visual-fallback svg path'));
@@ -384,7 +404,7 @@ function fakeImageRetryClock(view) {
   return { timers, cleared, flush() { const callbacks = [...timers.values()]; timers.clear(); callbacks.forEach(callback => callback()); } };
 }
 test('optimized image failure falls back to raw, retries raw once, then shows the globe', () => {
-  const page = mount([identity('image', { leading: { kind: 'network', image: { uri: 'https://images.test/optimized.png', fallbackUri: 'https://images.test/raw.png', retryTimes: 1, width: 32, height: 32 }, fallbackIcon: { name: 'GlobusOutline' } } })]);
+  const page = mount([identity('image', { leading: { kind: 'network', image: { uri: 'https://images.test/optimized.png', fallbackUri: 'https://images.test/raw.png', retryTimes: 1, width: 32, height: 32, loadingStrategy: 'static' }, fallbackIcon: { name: 'GlobusOutline' } } })]);
   const clock = fakeImageRetryClock(page.view);
   const image = page.document.querySelector('.ok-native-list-visual-main');
   image.dispatchEvent(new page.view.Event('error'));
@@ -657,8 +677,26 @@ test('account add actions retain ListItem medium text while empty-search text re
   assert.equal(page.document.querySelector('[data-native-list-row-key="empty"] .ok-native-list-action-title').style.fontWeight, '');
   page.close();
 });
+test('source-backed visuals default to no background or fallback and allow explicit opt-in', () => {
+  const makeRow = loadingStrategy => identity('wallet', { revision: loadingStrategy ? 2 : 1, height: 68, presentation: 'walletSidebar', leading: { kind: 'wallet', shape: 'square', backgroundColor: '#00000000', image: { uri: 'file:///wallet.png', width: 40, height: 40, ...(loadingStrategy ? { loadingStrategy } : {}) }, fallbackText: 'W' } });
+  const page = mount([makeRow()]);
+  let frame = page.document.querySelector('.ok-native-list-visual');
+  let image = page.document.querySelector('.ok-native-list-visual-main');
+  assert.equal(frame.style.background, 'rgba(0, 0, 0, 0)');
+  image.dispatchEvent(new page.view.Event('error'));
+  assert.ok(page.document.querySelector('.ok-native-list-visual-main'));
+  assert.equal(page.document.querySelector('.ok-native-list-visual-fallback'), null);
+
+  page.engine.applySnapshot(snapshot([makeRow('static')], { generation: 2 }));
+  frame = page.document.querySelector('.ok-native-list-visual');
+  image = page.document.querySelector('.ok-native-list-visual-main');
+  assert.equal(frame.style.background, 'var(--nl-strong)');
+  image.dispatchEvent(new page.view.Event('load'));
+  assert.equal(frame.style.background, 'rgba(0, 0, 0, 0)');
+  page.close();
+});
 test('selector background pixels follow successful image sources and disappear after terminal failure or rebinding', () => {
-  const row = uri => identity('image', { height: 48, presentation: 'networkSelector', leading: { kind: 'network', image: { uri, fallbackUri: 'https://images.test/raw.png', width: 32, height: 32, contentFit: 'cover' }, fallbackIcon: { name: 'GlobusOutline' } } });
+  const row = uri => identity('image', { height: 48, presentation: 'networkSelector', leading: { kind: 'network', image: { uri, fallbackUri: 'https://images.test/raw.png', width: 32, height: 32, contentFit: 'cover', loadingStrategy: 'static' }, fallbackIcon: { name: 'GlobusOutline' } } });
   const page = mount([row('https://images.test/optimized.png')]);
   const image = page.document.querySelector('img');
   const paint = page.document.querySelector('.ok-native-list-selector-image-background');

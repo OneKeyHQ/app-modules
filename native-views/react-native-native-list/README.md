@@ -240,6 +240,12 @@ const avatar = {
 } as const;
 ```
 
+NativeList defaults `loadingStrategy` to `none`, so source-backed images render
+without a loading background or terminal fallback. Set it to `static` or
+`skeleton` to opt into loading UI; a configured `fallbackText` or
+`fallbackIcon` is shown after a terminal load failure only when loading UI is
+enabled.
+
 Each cell owns a fixed pool of native `OneKeyImageReusableView` slots. On bind,
 NativeList forwards the URI, headers, content fit, cache policy, autoplay, TOS
 options, overscan, and loading strategy. A stable `rowKey:slot` recycling key
