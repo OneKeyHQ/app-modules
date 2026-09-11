@@ -115,6 +115,11 @@ export interface CollapsiblePagerViewProps
   /** Measured sticky bar height. */
   stickyHeaderHeight: number;
   /**
+   * Lets the active iOS list own vertical gestures that begin on pager headers.
+   * Defaults to false and currently has no effect on Android or Web.
+   */
+  nativeSmoothHeaderScrollEnabled?: boolean;
+  /**
    * Number of pages retained on either side of the selected page. Page slots
    * remain stable, while distant React/native list subtrees are really
    * unmounted. Defaults to one adjacent page.
@@ -365,6 +370,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       stickyHeader,
       headerHeight,
       stickyHeaderHeight,
+      nativeSmoothHeaderScrollEnabled,
       pageRetentionDistance: _pageRetentionDistance,
       onMountedPagesChanged: _onMountedPagesChanged,
       onPageSelected: _onPageSelected,
@@ -416,6 +422,7 @@ export class CollapsiblePagerView extends React.PureComponent<
         offscreenPageLimit={Math.max(1, offscreenPageLimit ?? 1)}
         headerHeight={Math.max(0, Math.round(headerHeight))}
         stickyHeaderHeight={Math.max(0, Math.round(stickyHeaderHeight))}
+        nativeSmoothHeaderScrollEnabled={nativeSmoothHeaderScrollEnabled}
         pageKeys={JSON.stringify(pageKeys)}
         retainedPages={JSON.stringify([...retained])}
         onPageSelected={this.onPageSelected}

@@ -53,6 +53,7 @@ export interface NativeProps extends ViewProps {
   offscreenPageLimit?: Int32;
   // OneKey patch: Preserve nested pager gesture coordination for collapsible pages.
   nestedScrollEnabled?: WithDefault<boolean, false>;
+  nativeSmoothHeaderScrollEnabled?: WithDefault<boolean, false>;
   headerHeight?: Int32;
   stickyHeaderHeight?: Int32;
   pageKeys?: string;

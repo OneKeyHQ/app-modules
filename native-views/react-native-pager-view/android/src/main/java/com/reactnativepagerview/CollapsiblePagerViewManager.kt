@@ -151,6 +151,12 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     // OneKey patch: CollapsiblePagerHost always coordinates nested pagers on Android.
   }
 
+  // The smooth shared-header ownership is implemented on iOS first.
+  override fun setNativeSmoothHeaderScrollEnabled(
+    view: CollapsiblePagerHost?,
+    value: Boolean,
+  ) = Unit
+
   // OneKey patch: round Yoga header dimensions to the nearest physical pixel.
   @ReactProp(name = "headerHeight", defaultInt = 0)
   override fun setHeaderHeight(view: CollapsiblePagerHost?, value: Int) {
