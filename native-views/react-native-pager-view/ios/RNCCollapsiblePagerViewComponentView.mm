@@ -18,6 +18,22 @@ static CGFloat RNCClamp(CGFloat value, CGFloat minimum, CGFloat maximum)
   return MIN(MAX(value, minimum), maximum);
 }
 
+static void RNCCollapsiblePagerDebugLog(NSString *message)
+{
+#if DEBUG
+  Class logClass = NSClassFromString(@"ReactNativeNativeLogger.OneKeyLog");
+  if (logClass == nil) {
+    logClass = NSClassFromString(@"OneKeyLog");
+  }
+  SEL selector = NSSelectorFromString(@"debug::");
+  if (logClass == nil || ![logClass respondsToSelector:selector]) return;
+
+  typedef void (*LogFunction)(id, SEL, NSString *, NSString *);
+  LogFunction logFunction = (LogFunction)[logClass methodForSelector:selector];
+  logFunction(logClass, selector, @"MktSubHeader", message);
+#endif
+}
+
 static BOOL RNCGetColorComponents(UIColor *color, UITraitCollection *traits,
                                   CGFloat *red, CGFloat *green, CGFloat *blue, CGFloat *alpha)
 {
@@ -310,7 +326,7 @@ static UIColor *RNCInterpolateColor(UIColor *from, UIColor *to, CGFloat progress
 
 @end
 
-@interface RNCCollapsiblePagerNativeSubHeaderView : UIView
+@interface RNCCollapsiblePagerNativeSubHeaderView : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, copy) RNCCollapsiblePagerNativeTabPressHandler onItemPress;
 @property (nonatomic, readonly) CGFloat preferredHeight;
 - (void)updateConfigJSON:(NSString *)configJSON;
@@ -344,6 +360,10 @@ static UIColor *RNCInterpolateColor(UIColor *from, UIColor *to, CGFloat progress
   UIColor *_inactiveTextColor;
   UIColor *_selectedBackgroundColor;
   BOOL _leftToRight;
+  BOOL _shouldCenterSelectedItem;
+  UIPanGestureRecognizer *_tabsPanGesture;
+  CGFloat _tabsPanStartOffsetX;
+  CGFloat _tabsPanInitialTranslationX;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame
@@ -364,6 +384,7 @@ static UIColor *RNCInterpolateColor(UIColor *from, UIColor *to, CGFloat progress
     _inactiveTextColor = UIColor.secondaryLabelColor;
     _selectedBackgroundColor = UIColor.secondarySystemFillColor;
     _leftToRight = YES;
+    _shouldCenterSelectedItem = YES;
 
     _tabsScrollView = [UIScrollView new];
     _tabsScrollView.showsHorizontalScrollIndicator = NO;
@@ -372,6 +393,14 @@ static UIColor *RNCInterpolateColor(UIColor *from, UIColor *to, CGFloat progress
     _tabsScrollView.directionalLockEnabled = YES;
     _tabsScrollView.delaysContentTouches = NO;
     _tabsScrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    _tabsScrollView.panGestureRecognizer.enabled = NO;
+    _tabsPanGesture = [[UIPanGestureRecognizer alloc]
+      initWithTarget:self
+      action:@selector(handleTabsPan:)];
+    _tabsPanGesture.delegate = self;
+    _tabsPanGesture.cancelsTouchesInView = YES;
+    _tabsPanGesture.delaysTouchesBegan = NO;
+    [_tabsScrollView addGestureRecognizer:_tabsPanGesture];
     [self addSubview:_tabsScrollView];
 
     _columnsView = [UIView new];
@@ -391,6 +420,125 @@ static UIColor *RNCInterpolateColor(UIColor *from, UIColor *to, CGFloat progress
 - (CGFloat)preferredHeight
 {
   return _configuredHeight;
+}
+
+- (void)didMoveToWindow
+{
+  [super didMoveToWindow];
+  if (self.window == nil) return;
+
+  // Keep this nested horizontal scroller ahead of any ancestor pager. Without
+  // this precedence, the Discovery pager can consume the category drag.
+  for (UIView *ancestor = self.superview; ancestor != nil; ancestor = ancestor.superview) {
+    if ([ancestor isKindOfClass:UIScrollView.class]) {
+      UIScrollView *scrollView = (UIScrollView *)ancestor;
+      [scrollView.panGestureRecognizer
+        requireGestureRecognizerToFail:_tabsPanGesture];
+    }
+  }
+}
+
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
+{
+  if (gestureRecognizer != _tabsPanGesture) return YES;
+
+  CGPoint translation = [_tabsPanGesture translationInView:_tabsScrollView];
+  CGFloat maximumOffset = MAX(
+    0,
+    _tabsScrollView.contentSize.width - CGRectGetWidth(_tabsScrollView.bounds)
+  );
+  BOOL shouldBegin = maximumOffset > 0 && fabs(translation.x) > fabs(translation.y);
+  _tabsPanInitialTranslationX = shouldBegin ? translation.x : 0;
+  CGPoint velocity = [_tabsPanGesture velocityInView:_tabsScrollView];
+  RNCCollapsiblePagerDebugLog([NSString stringWithFormat:
+    @"shouldBegin state=%ld translation=%@ velocity=%@ contentSize=%@ bounds=%@ offset=%@ max=%.2f result=%d",
+    (long)_tabsPanGesture.state,
+    NSStringFromCGPoint(translation),
+    NSStringFromCGPoint(velocity),
+    NSStringFromCGSize(_tabsScrollView.contentSize),
+    NSStringFromCGSize(_tabsScrollView.bounds.size),
+    NSStringFromCGPoint(_tabsScrollView.contentOffset),
+    maximumOffset,
+    shouldBegin]);
+  return shouldBegin;
+}
+
+- (void)handleTabsPan:(UIPanGestureRecognizer *)recognizer
+{
+  CGFloat maximumOffset = MAX(
+    0,
+    _tabsScrollView.contentSize.width - CGRectGetWidth(_tabsScrollView.bounds)
+  );
+  if (maximumOffset <= 0) return;
+
+  CGPoint inputTranslation = [recognizer translationInView:_tabsScrollView];
+  RNCCollapsiblePagerDebugLog([NSString stringWithFormat:
+    @"handle state=%ld translation=%@ initial=%.2f start=%.2f offset=%@ max=%.2f",
+    (long)recognizer.state,
+    NSStringFromCGPoint(inputTranslation),
+    _tabsPanInitialTranslationX,
+    _tabsPanStartOffsetX,
+    NSStringFromCGPoint(_tabsScrollView.contentOffset),
+    maximumOffset]);
+
+  if (recognizer.state == UIGestureRecognizerStateBegan) {
+    _shouldCenterSelectedItem = NO;
+    _tabsPanStartOffsetX = _tabsScrollView.contentOffset.x;
+    [_tabsScrollView setContentOffset:_tabsScrollView.contentOffset animated:NO];
+    CGPoint translation = [recognizer translationInView:_tabsScrollView];
+    if (fabs(translation.x) < 0.5 && fabs(_tabsPanInitialTranslationX) >= 0.5) {
+      _tabsPanStartOffsetX = RNCClamp(
+        _tabsPanStartOffsetX - _tabsPanInitialTranslationX,
+        0,
+        maximumOffset
+      );
+      [_tabsScrollView setContentOffset:CGPointMake(_tabsPanStartOffsetX, 0) animated:NO];
+    }
+    RNCCollapsiblePagerDebugLog([NSString stringWithFormat:
+      @"began appliedStart=%.2f offset=%@",
+      _tabsPanStartOffsetX,
+      NSStringFromCGPoint(_tabsScrollView.contentOffset)]);
+    return;
+  }
+
+  CGPoint translation = [recognizer translationInView:_tabsScrollView];
+  CGFloat targetOffset = RNCClamp(
+    _tabsPanStartOffsetX - translation.x,
+    0,
+    maximumOffset
+  );
+  if (recognizer.state == UIGestureRecognizerStateChanged) {
+    [_tabsScrollView setContentOffset:CGPointMake(targetOffset, 0) animated:NO];
+    RNCCollapsiblePagerDebugLog([NSString stringWithFormat:
+      @"changed target=%.2f offset=%@",
+      targetOffset,
+      NSStringFromCGPoint(_tabsScrollView.contentOffset)]);
+    return;
+  }
+
+  if (recognizer.state == UIGestureRecognizerStateEnded) {
+    CGPoint velocity = [recognizer velocityInView:_tabsScrollView];
+    CGFloat projectedOffset = RNCClamp(
+      targetOffset - velocity.x * 0.12,
+      0,
+      maximumOffset
+    );
+    RNCCollapsiblePagerDebugLog([NSString stringWithFormat:
+      @"ended target=%.2f projected=%.2f velocity=%@",
+      targetOffset,
+      projectedOffset,
+      NSStringFromCGPoint(velocity)]);
+    [UIView animateWithDuration:0.2
+                          delay:0
+                        options:UIViewAnimationOptionBeginFromCurrentState |
+                                UIViewAnimationOptionAllowUserInteraction |
+                                UIViewAnimationOptionCurveEaseOut
+                     animations:^{
+                       [self->_tabsScrollView setContentOffset:CGPointMake(projectedOffset, 0)];
+                     }
+                     completion:nil];
+    _tabsPanInitialTranslationX = 0;
+  }
 }
 
 - (UIFont *)fontWithSize:(CGFloat)size
@@ -419,8 +567,10 @@ static UIColor *RNCInterpolateColor(UIColor *from, UIColor *to, CGFloat progress
     : @{};
 
   BOOL itemsChanged = ![_items isEqualToArray:items];
+  BOOL selectedKeyChanged = ![_selectedKey isEqualToString:selectedKey];
   _items = items;
   _selectedKey = [selectedKey copy];
+  if (itemsChanged || selectedKeyChanged) _shouldCenterSelectedItem = YES;
   _configuredHeight = MAX(1, [style[@"height"] doubleValue] ?: 74);
   _tabsHeight = MAX(0, [style[@"tabsHeight"] doubleValue] ?: 42);
   _contentPaddingHorizontal = MAX(
@@ -602,7 +752,8 @@ static UIColor *RNCInterpolateColor(UIColor *from, UIColor *to, CGFloat progress
     );
   }
 
-  if (selectedButton != nil && !_tabsScrollView.dragging && !_tabsScrollView.tracking) {
+  if (_shouldCenterSelectedItem && selectedButton != nil &&
+      !_tabsScrollView.dragging && !_tabsScrollView.tracking) {
     CGFloat maximumOffset = MAX(0, contentWidth - width);
     CGFloat desiredOffset = RNCClamp(
       CGRectGetMidX(selectedButton.frame) - width / 2,
@@ -610,6 +761,7 @@ static UIColor *RNCInterpolateColor(UIColor *from, UIColor *to, CGFloat progress
       maximumOffset
     );
     [_tabsScrollView setContentOffset:CGPointMake(desiredOffset, 0) animated:NO];
+    _shouldCenterSelectedItem = NO;
   }
 }
 
