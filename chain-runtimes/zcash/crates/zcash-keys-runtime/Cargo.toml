@@ -23,6 +23,8 @@ zip32 = "0.2"
 bip0039 = { version = "0.12", features = ["all-languages"] }
 bs58 = { version = "0.5", features = ["check"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }
+zcash_note_encryption = "0.4"
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 hex.workspace = true
@@ -32,7 +34,7 @@ zcash_script = { version = "0.4.3", default-features = false }
 # 不开 prover/tx-extractor —— 那些属于 runtime 包。
 # transparent：屏蔽（transparent → shielded）必须签透明输入，否则打进 t 地址的钱
 # 出不来。它会连带拉入 zcash_script（0.4 起是纯 Rust，能上 wasm32）。
-pczt = { workspace = true, features = ["signer", "orchard", "transparent"] }
+pczt = { workspace = true, features = ["signer", "orchard", "transparent", "zcp-builder", "spend-finalizer", "io-finalizer"] }
 transparent = { workspace = true, features = ["transparent-inputs"] }
 orchard = { version = "0.15", default-features = false }
 sapling.workspace = true

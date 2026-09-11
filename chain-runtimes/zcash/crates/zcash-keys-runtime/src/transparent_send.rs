@@ -16,6 +16,7 @@ use transparent::{
     keys::{AccountPrivKey, NonHardenedChildIndex, TransparentKeyScope},
 };
 use zcash_address::ZcashAddress;
+use zcash_keys::address::Address;
 use zcash_primitives::transaction::{
     fees::{
         transparent::{InputSize, OutputView},
@@ -125,9 +126,15 @@ struct PlannedInput {
     path: DerivationPath,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum RecipientAddress {
+    Transparent(TransparentAddress),
+    Ironwood(orchard::Address),
+}
+
 #[derive(Debug)]
 struct PlannedOutput {
-    address: TransparentAddress,
+    address: RecipientAddress,
     value: Zatoshis,
 }
 
@@ -135,6 +142,7 @@ struct PlannedOutput {
 struct TransactionPlan {
     account_index: AccountId,
     expiry_height: BlockHeight,
+    target_height: BlockHeight,
     inputs: Vec<PlannedInput>,
     recipients: Vec<PlannedOutput>,
     change: Option<(TransparentChange, PlannedOutput, DerivationPath)>,
@@ -300,7 +308,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
         .recipients
         .into_iter()
         .map(|recipient| {
-            let address = parse_transparent_address(&recipient.address, "recipient")?;
+            let address = parse_recipient_address(&recipient.address)?;
             if request.send_max {
                 if recipient.amount_zat.is_some() {
                     return Err(KeysError::with(
@@ -332,6 +340,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
         return Ok(TransactionPlan {
             account_index,
             expiry_height,
+            target_height,
             inputs,
             recipients: vec![PlannedOutput {
                 address,
@@ -394,7 +403,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
             ));
         }
         let mut addresses_with_change = recipient_addresses;
-        addresses_with_change.push(change_address);
+        addresses_with_change.push(RecipientAddress::Transparent(change_address));
         let fee = calculate_fee(target_height, inputs.len(), &addresses_with_change)?;
         let needed = send_total_raw
             .checked_add(fee.into_u64())
@@ -417,7 +426,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
             Some((
                 change_request,
                 PlannedOutput {
-                    address: change_address,
+                    address: RecipientAddress::Transparent(change_address),
                     value: change_value,
                 },
                 change_path,
@@ -428,6 +437,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
     Ok(TransactionPlan {
         account_index,
         expiry_height,
+        target_height,
         inputs,
         recipients,
         change,
@@ -557,14 +567,14 @@ fn build_transaction(
 
     for output in &plan.recipients {
         builder
-            .add_output(&output.address, output.value)
+            .add_output(&require_transparent(output.address)?, output.value)
             .map_err(|e| KeysError::new(ErrorCode::TransactionBuildFailed).detail(e))?;
     }
     if let Some((change_request, output, path)) = &plan.change {
         let secret_key = derive_secret_key(account_key, *path)?;
         let pubkey = signing_set.add_key(secret_key);
         let derived_address = TransparentAddress::from_pubkey(&pubkey);
-        if derived_address != output.address {
+        if derived_address != require_transparent(output.address)? {
             return Err(KeysError::with(
                 ErrorCode::KeyMismatch,
                 serde_json::json!({ "field": "change.address" }),
@@ -580,7 +590,7 @@ fn build_transaction(
             ));
         }
         builder
-            .add_output(&output.address, output.value)
+            .add_output(&require_transparent(output.address)?, output.value)
             .map_err(|e| KeysError::new(ErrorCode::TransactionBuildFailed).detail(e))?;
     }
 
@@ -641,11 +651,23 @@ fn build_transaction(
 fn calculate_fee(
     target_height: BlockHeight,
     input_count: usize,
-    output_addresses: &[TransparentAddress],
+    output_addresses: &[RecipientAddress],
 ) -> Result<Zatoshis> {
-    let output_sizes = output_addresses
+    let output_sizes = output_addresses.iter().filter_map(|address| match address {
+        RecipientAddress::Transparent(address) => {
+            Some(TxOut::new(Zatoshis::ZERO, address.script().into()).serialized_size())
+        }
+        RecipientAddress::Ironwood(_) => None,
+    });
+    let ironwood_outputs = output_addresses
         .iter()
-        .map(|address| TxOut::new(Zatoshis::ZERO, address.script().into()).serialized_size());
+        .filter(|a| matches!(a, RecipientAddress::Ironwood(_)))
+        .count();
+    let ironwood_actions = if ironwood_outputs == 0 {
+        0
+    } else {
+        ironwood_outputs.max(2)
+    };
     Zip317FeeRule::standard()
         .fee_required(
             &MAIN_NETWORK,
@@ -655,7 +677,7 @@ fn calculate_fee(
             0,
             0,
             0,
-            0,
+            ironwood_actions,
         )
         .map_err(|e| KeysError::new(ErrorCode::TransactionBuildFailed).detail(e))
 }
@@ -904,6 +926,43 @@ mod tests {
         .to_string()
     }
 
+    fn shielding_request(send_max: bool) -> String {
+        let sk = orchard::keys::SpendingKey::from_bytes([7; 32]).unwrap();
+        let fvk = orchard::keys::FullViewingKey::from(&sk);
+        let recipient = zcash_keys::address::UnifiedAddress::from_receivers(
+            Some(fvk.address_at(0u32, zip32::Scope::External)),
+            None,
+            None,
+        )
+        .unwrap()
+        .encode(&MAIN_NETWORK);
+        let mut request: serde_json::Value =
+            serde_json::from_str(&request_json(&[100_000], send_max)).unwrap();
+        request["recipients"][0]["address"] = recipient.into();
+        request.to_string()
+    }
+
+    #[test]
+    fn quotes_and_creates_shielding_without_a_wallet_or_scan() {
+        for send_max in [false, true] {
+            let request = shielding_request(send_max);
+            let quote: TransparentQuote =
+                serde_json::from_str(&quote_json(&request).unwrap()).unwrap();
+            assert_eq!(quote.fee_zat, "15000");
+            assert_eq!(
+                quote.send_amount_zat,
+                if send_max { "85000" } else { "50000" }
+            );
+            let created = shielding::create(&request, &seed()).unwrap();
+            let pczt = pczt::Pczt::parse(&created).unwrap();
+            assert_eq!(pczt.transparent().inputs().len(), 1);
+            assert_eq!(pczt.transparent().outputs().len(), usize::from(!send_max));
+            assert_eq!(pczt.ironwood().actions().len(), 2);
+            assert!(pczt.orchard().actions().is_empty());
+            assert!(pczt.sapling().spends().is_empty());
+        }
+    }
+
     #[test]
     fn quotes_zip317_for_multiple_inputs() {
         let request = request_json(&[30_000, 30_000, 30_000], false);
@@ -1032,3 +1091,26 @@ mod tests {
         );
     }
 }
+
+fn require_transparent(address: RecipientAddress) -> Result<TransparentAddress> {
+    match address {
+        RecipientAddress::Transparent(address) => Ok(address),
+        RecipientAddress::Ironwood(_) => Err(KeysError::new(ErrorCode::InvalidAddress)),
+    }
+}
+
+fn parse_recipient_address(encoded: &str) -> Result<RecipientAddress> {
+    match Address::decode(&MAIN_NETWORK, encoded) {
+        Some(Address::Transparent(address)) => Ok(RecipientAddress::Transparent(address)),
+        // Unified Orchard receivers receive Ironwood notes after NU6.3. Never silently
+        // fall back to a public receiver when a Unified Address lacks this receiver.
+        Some(Address::Unified(address)) => address
+            .orchard()
+            .copied()
+            .map(RecipientAddress::Ironwood)
+            .ok_or_else(|| KeysError::new(ErrorCode::InvalidAddress)),
+        _ => Err(KeysError::new(ErrorCode::InvalidAddress)),
+    }
+}
+
+pub mod shielding;

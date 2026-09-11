@@ -289,3 +289,29 @@ scripts/build-wasm.sh     构建
 - `zcash/zcash-android-wallet-sdk` 的 `backend-lib/` —— ECC 自己写的 Rust FFI 层，
   生产在跑。核心 `lib.rs` 4,076 行是「该暴露什么、按什么粒度」的权威参照
   （其余约 18,000 行是该 SDK 自己的历史 migration、投票、slipstream，我们不需要）。
+
+
+### Stateless transparent funding of Unified recipients
+
+`transparentTxQuote` accepts mainnet t1/t3 recipients and Unified recipients with an
+Orchard receiver (an Ironwood output after NU6.3). It uses only the host-supplied
+confirmed, regular transparent UTXOs, explicit outpoints, target height, and
+transparent change address. Sapling/Sprout destinations and coinbase inputs remain
+unsupported. No wallet registration, database, scan, or network call is required.
+
+Software keyrings use this sequence for Unified recipients:
+
+1. `keys.transparentShieldCreateWithSeed` (or `WithAccountXprv`) constructs a PCZT
+   from the same validated request used for the quote.
+2. `runtime.pcztProveAtHeight` proves it without calling `init` or opening a wallet.
+3. `keys.transparentShieldSignWithSeed` (or `WithAccountXprv`) checks the original
+   request, all effects of the original PCZT, and the proved PCZT before signing.
+4. `runtime.pcztExtractStateless` verifies and extracts the final transaction.
+
+The host owns transparent outpoint reservations, signature-time UTXO revalidation,
+pending broadcast records, and submission to its node. The recipient's wallet
+scans to discover and later spend the received shielded notes; the sender does not
+need to scan. Private inputs still use the existing stateful wallet/PCZT APIs.
+
+The app's existing hardware Shield flow is separate; these new signing exports
+are for software seed/account-xprv keyrings.
