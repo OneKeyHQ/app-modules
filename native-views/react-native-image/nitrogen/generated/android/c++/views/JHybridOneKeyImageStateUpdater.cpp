@@ -109,6 +109,11 @@ void JHybridOneKeyImageStateUpdater::updateViewProps(jni::alias_ref<jni::JClass>
     hybridView->setLoadingStrategy(newProps->loadingStrategy.get());
   }
   if (oldProps == nullptr
+        ? newProps->placeholderColor.isProvided()
+        : !newProps->placeholderColor.hasSameValue(oldProps->placeholderColor)) {
+    hybridView->setPlaceholderColor(newProps->placeholderColor.get());
+  }
+  if (oldProps == nullptr
         ? newProps->onLoadStart.isProvided()
         : !newProps->onLoadStart.hasSameValue(oldProps->onLoadStart)) {
     hybridView->setOnLoadStart(newProps->onLoadStart.get());

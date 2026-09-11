@@ -11,7 +11,9 @@ final class OneKeyAvatarImageLoader: NSObject, SDImageLoader {
     config.maxDiskAge = 30 * 24 * 60 * 60
     config.maxDiskSize = 32 * 1024 * 1024
     config.maxMemoryCost = 8 * 1024 * 1024
-    config.maxMemoryCount = 128
+    // OneKey patch: Keep several large-account wallets resident while the byte
+    // budget remains the hard memory bound.
+    config.maxMemoryCount = 512
     return SDImageCache(namespace: "onekey-avatar-blockie-v1", diskCacheDirectory: nil, config: config)
   }()
 

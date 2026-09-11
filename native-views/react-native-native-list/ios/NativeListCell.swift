@@ -1835,7 +1835,13 @@ final class NativeListCell: UICollectionViewCell {
         let label = UILabel()
         label.font = nativeListFont(ofSize: 14)
         label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        // Match V1: the balance may shrink, but keep the shortened address intact.
+        label.setContentCompressionResistancePriority(
+          item.data.string("presentation") == "accountSelector" && segment.bool("separatorBefore")
+            ? .defaultHigh
+            : .defaultLow,
+          for: .horizontal
+        )
         label.textColor = dataTextColor(segment.string("tone", default: "secondary"), theme: theme)
         setLineHeight(label, text: segment.string("text"), lineHeight: 20)
         let runs = segment.dictionaries("textSegments")
@@ -2591,13 +2597,15 @@ final class NativeListCell: UICollectionViewCell {
     subtitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     if let networkImage = item.data.dictionary("networkImage") {
       mediaMetadataStack.addArrangedSubview(mediaNetworkImage)
-      mediaNetworkImage.isHidden = false
+      // OneKey patch: Preserve badge layout without exposing a loading/error tile.
+      // mediaNetworkImage.isHidden = false
       bindImage(
         networkImage,
         into: mediaNetworkImage,
         token: item.key,
         slot: 2,
-        variant: "network"
+        variant: "network",
+        hideUntilLoaded: true
       )
     }
     mainStack.insertArrangedSubview(mediaMetadataStack, at: 0)
@@ -3367,14 +3375,23 @@ final class NativeListCell: UICollectionViewCell {
       default: kind == "image" || mediaHeight.isActive ? "rounded" : "circle"
     )
     let cornerIcon = visual.dictionary("cornerIcon")
-    fallbackLabel.text = String(visual.string("fallbackText").prefix(2))
+    let fallbackText = String(visual.string("fallbackText").prefix(2))
+    let fallbackIconData = visual.dictionary("fallbackIcon")
+    let handlesSourceFallback = !isIcon && !sources.isEmpty &&
+      (visual["fallbackText"] != nil || fallbackIconData != nil)
+    fallbackLabel.text = handlesSourceFallback ? nil : fallbackText
+    let sourceFallbackBackground = currentTheme?["strongBackground"] as? String ?? "#0000000F"
     leadingContainer.backgroundColor = UIColor(
-      nativeListHex: visual.string("backgroundColor", default: isIcon ? "#F0F0F0" : "#E0E0E0"),
+      // OneKey patch: Visual loading and fallback use the active list theme.
+      // nativeListHex: visual.string("backgroundColor", default: isIcon ? "#F0F0F0" : "#E0E0E0"),
+      nativeListHex: handlesSourceFallback
+        ? sourceFallbackBackground
+        : visual.string("backgroundColor", default: sourceFallbackBackground),
       fallback: .gray
     )
     leadingContainer.layer.cornerRadius = leadingCornerRadius(shape: shape)
     leadingContainer.clipsToBounds = true
-    fallbackLabel.isHidden = isIcon || !sources.isEmpty
+    fallbackLabel.isHidden = isIcon || (!sources.isEmpty && !handlesSourceFallback)
     if isIcon {
       leadingContainer.layer.borderWidth = 1 / UIScreen.main.scale
       leadingContainer.layer.borderColor = UIColor(
@@ -3387,6 +3404,15 @@ final class NativeListCell: UICollectionViewCell {
         fallback: .darkGray
       )
       leadingIconImageView.image = nativeListIcon(named: visual.string("name"))
+      leadingIconImageView.contentMode = .scaleAspectFit
+    } else if sources.isEmpty, let fallbackIconData {
+      fallbackLabel.isHidden = true
+      leadingIconImageView.isHidden = false
+      leadingIconImageView.tintColor = UIColor(
+        nativeListHex: fallbackIconData.string("tintColor", default: "#646464"),
+        fallback: .darkGray
+      )
+      leadingIconImageView.image = nativeListIcon(named: fallbackIconData.string("name"))
       leadingIconImageView.contentMode = .scaleAspectFit
     }
     let visibleSources = Array(sources.prefix(leadingImages.count))
@@ -3422,7 +3448,10 @@ final class NativeListCell: UICollectionViewCell {
     }
     for (index, source) in visibleSources.enumerated() {
       let imageView = leadingImages[index]
-      imageView.isHidden = false
+      // OneKey patch: Decorative badges and source-owned fallbacks stay hidden until loaded.
+      // imageView.isHidden = false
+      let ownsSourceFallback = index == 0 && handlesSourceFallback
+      imageView.isHidden = index > 0 || ownsSourceFallback
       imageView.clipsToBounds = true
       leadingSlotConstraints.append(contentsOf: leadingConstraints(
         imageView,
@@ -3436,22 +3465,30 @@ final class NativeListCell: UICollectionViewCell {
         imageView.layer.cornerRadius = 0
         imageView.clipsToBounds = false
       }
-      let fallbackIcon = index == 0 ? visual.dictionary("fallbackIcon") : nil
+      let fallbackIcon = index == 0 ? fallbackIconData : nil
       let expectedEpoch = bindingEpoch
       bindImage(source.data, into: imageView, token: key, slot: index, variant: source.variant,
-        onLoad: fallbackIcon == nil ? nil : { [weak self, weak imageView] in
+        onLoad: !ownsSourceFallback ? nil : { [weak self, weak imageView] in
           guard let self, self.bindingEpoch == expectedEpoch else { return }
           imageView?.isHidden = false
+          self.fallbackLabel.isHidden = true
           self.leadingIconImageView.isHidden = true
         },
-        onError: fallbackIcon == nil ? nil : { [weak self, weak imageView] in
-          guard let self, self.bindingEpoch == expectedEpoch, let fallbackIcon else { return }
+        onError: !ownsSourceFallback ? nil : { [weak self, weak imageView] in
+          guard let self, self.bindingEpoch == expectedEpoch else { return }
           imageView?.isHidden = true
-          self.fallbackLabel.isHidden = true
-          self.leadingIconImageView.image = nativeListIcon(named: fallbackIcon.string("name"))
-          self.leadingIconImageView.tintColor = UIColor(nativeListHex: fallbackIcon.string("tintColor", default: "#646464"), fallback: .darkGray)
-          self.leadingIconImageView.isHidden = false
-        })
+          if let fallbackIcon {
+            self.fallbackLabel.isHidden = true
+            self.leadingIconImageView.image = nativeListIcon(named: fallbackIcon.string("name"))
+            self.leadingIconImageView.tintColor = UIColor(nativeListHex: fallbackIcon.string("tintColor", default: "#646464"), fallback: .darkGray)
+            self.leadingIconImageView.isHidden = false
+          } else {
+            self.leadingIconImageView.isHidden = true
+            self.fallbackLabel.text = fallbackText
+            self.fallbackLabel.isHidden = false
+          }
+        },
+        hideUntilLoaded: index > 0 || ownsSourceFallback)
     }
     // OneKey patch: source-derived wallet decorations may occupy both corners.
     let overlays = visual.dictionaries("overlays")
@@ -3468,7 +3505,15 @@ final class NativeListCell: UICollectionViewCell {
       let width = CGFloat(overlay.double("width", default: isWalletText ? Double(naturalTextWidth) : Double(size)))
       let frame = UIView()
       frame.translatesAutoresizingMaskIntoConstraints = false
-      frame.backgroundColor = UIColor(nativeListHex: overlay.string("backgroundColor", default: "#FFFFFF"), fallback: .clear)
+      // OneKey patch: The row theme, not a light-only white, owns badge backing.
+      // frame.backgroundColor = UIColor(nativeListHex: overlay.string("backgroundColor", default: "#FFFFFF"), fallback: .clear)
+      frame.backgroundColor = UIColor(
+        nativeListHex: overlay.string(
+          "backgroundColor",
+          default: currentTheme?["rowBackground"] as? String ?? "#00000000"
+        ),
+        fallback: .clear
+      )
       frame.layer.cornerRadius = min(width, height) / 2
       frame.clipsToBounds = true
       leadingContainer.addSubview(frame)
@@ -3483,7 +3528,14 @@ final class NativeListCell: UICollectionViewCell {
       let content: UIView
       if let image = overlay.dictionary("image") {
         let imageView = OneKeyImageReusableView(frame: .zero)
-        bindImage(image, into: imageView, token: key, slot: 10 + index, variant: "generic")
+        bindImage(
+          image,
+          into: imageView,
+          token: key,
+          slot: 10 + index,
+          variant: "generic",
+          hideUntilLoaded: true
+        )
         selectorImages.append(imageView)
         content = imageView
       } else if !overlay.string("text").isEmpty {
@@ -3943,6 +3995,7 @@ final class NativeListCell: UICollectionViewCell {
     variant: String,
     onLoad: (() -> Void)? = nil,
     onError: (() -> Void)? = nil,
+    hideUntilLoaded: Bool = false,
     retryAttempt: Int = 0
   ) {
     let imageID = ObjectIdentifier(imageView)
@@ -3957,6 +4010,17 @@ final class NativeListCell: UICollectionViewCell {
     } else {
       headersJson = nil
     }
+    if hideUntilLoaded { imageView.isHidden = true }
+    let handleLoad: (() -> Void)? = hideUntilLoaded ? { [weak self, weak imageView] in
+      guard let self, self.bindingEpoch == expectedEpoch else { return }
+      imageView?.isHidden = false
+      onLoad?()
+    } : onLoad
+    let handleError: (() -> Void)? = hideUntilLoaded ? { [weak self, weak imageView] in
+      guard let self, self.bindingEpoch == expectedEpoch else { return }
+      imageView?.isHidden = true
+      onError?()
+    } : onError
     imageView.configure(
       sourceUri: source.string("uri").trimmingCharacters(in: .whitespacesAndNewlines),
       sourceHeadersJson: headersJson,
@@ -3968,19 +4032,20 @@ final class NativeListCell: UICollectionViewCell {
       optimizeTos: retryAttempt == 0 && (source["optimizeTos"] == nil || source.bool("optimizeTos")),
       overscan: source["overscan"] == nil ? 1.1 : source.double("overscan"),
       loadingStrategy: source.string("loadingStrategy", default: "static"),
-      onLoad: retryLimit == 0 ? onLoad : { [weak self] in
+      placeholderColor: currentTheme?["strongBackground"] as? String ?? "#0000000F",
+      onLoad: retryLimit == 0 ? handleLoad : { [weak self] in
         guard let self, self.bindingEpoch == expectedEpoch else { return }
         self.selectorImageRetries.removeValue(forKey: imageID)?.cancel()
-        onLoad?()
+        handleLoad?()
       },
-      onError: retryLimit == 0 ? onError : { [weak self, weak imageView] in
+      onError: retryLimit == 0 ? handleError : { [weak self, weak imageView] in
         guard let self, self.bindingEpoch == expectedEpoch, let imageView else { return }
-        guard retryAttempt < retryLimit else { onError?(); return }
+        guard retryAttempt < retryLimit else { handleError?(); return }
         guard self.selectorImageRetries[imageID] == nil else { return }
         let retry = DispatchWorkItem { [weak self, weak imageView] in
           guard let self, self.bindingEpoch == expectedEpoch, let imageView else { return }
           self.selectorImageRetries.removeValue(forKey: imageID)
-          self.bindImage(source, into: imageView, token: token, slot: slot, variant: variant, onLoad: onLoad, onError: onError, retryAttempt: retryAttempt + 1)
+          self.bindImage(source, into: imageView, token: token, slot: slot, variant: variant, onLoad: onLoad, onError: onError, hideUntilLoaded: hideUntilLoaded, retryAttempt: retryAttempt + 1)
         }
         self.selectorImageRetries[imageID] = retry
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(Int.random(in: 0...2)), execute: retry)

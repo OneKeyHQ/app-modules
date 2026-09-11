@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import { View } from 'react-native';
 import type { NativeListProps, NativeListRef } from './NativeList.types';
-import type { NativeListSnapshot, RowPatch } from './models';
+import type { ImageSource, NativeListSnapshot, RowPatch } from './models';
 import {
   normalizeIndexScroll,
   normalizeKeyScroll,
@@ -24,6 +24,10 @@ import {
   NativeListWebEngine,
   type NativeListWebCallbacks,
 } from './web/NativeListWebEngine';
+import {
+  acquireNativeListAvatar,
+  canonicalNativeListAvatarUri,
+} from './web/NativeListWebAvatarCache';
 
 export type { NativeListProps, NativeListRef } from './NativeList.types';
 export type {
@@ -38,6 +42,39 @@ export type {
   ScrollToLocationParams,
   ScrollToOffsetParams,
 } from './NativeList.types';
+
+export function preloadNativeListAvatarImages(
+  sources: readonly ImageSource[]
+): Promise<boolean> {
+  if (typeof document === 'undefined') return Promise.resolve(false);
+  const uris = [
+    ...new Set(
+      sources
+        .map((source) => canonicalNativeListAvatarUri(source.uri))
+        .filter((uri): uri is string => uri !== undefined)
+    ),
+  ];
+  if (!uris.length) return Promise.resolve(false);
+  return Promise.all(
+    uris.map(
+      (uri) =>
+        new Promise<boolean>((resolve) => {
+          let release: (() => void) | undefined;
+          const settle = (success: boolean) => {
+            resolve(success);
+            queueMicrotask(() => release?.());
+          };
+          release = acquireNativeListAvatar(
+            document,
+            uri,
+            () => settle(true),
+            () => settle(false),
+            0
+          );
+        })
+    )
+  ).then((results) => results.every(Boolean));
+}
 
 export const NativeList = forwardRef<NativeListRef, NativeListProps>(
   function NativeList(

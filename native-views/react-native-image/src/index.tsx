@@ -156,6 +156,7 @@ export function OneKeyImage({
   resizeWidth,
   overscan = 1.1,
   loadingStrategy = OneKeyImageLoadingStrategy.STATIC,
+  placeholderColor,
   hybridRef,
   onLoadStart,
   onLoad,
@@ -329,7 +330,7 @@ export function OneKeyImage({
     ...viewProps,
     ...nativeCallbacks,
     style: shouldWrapNative ? StyleSheet.absoluteFill : style,
-    sourceUri: normalized?.uri,
+    sourceUri: normalized?.uri ?? '',
     sourceHeadersJson: normalized?.headers
       ? JSON.stringify(normalized.headers)
       : undefined,
@@ -343,6 +344,7 @@ export function OneKeyImage({
     overscan,
     loadingStrategy:
       placeholder == null ? loadingStrategy : OneKeyImageLoadingStrategy.NONE,
+    placeholderColor,
   });
 
   if (!shouldWrapNative) return native;

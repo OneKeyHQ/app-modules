@@ -248,12 +248,11 @@ final class NativeListView: UIView {
     guard let next = try? NativeListConfig.parse(json: json) else { return }
     invalidateActionAnchor(reason: "snapshot")
     if let current = config, isControlledSelectionSnapshotUpdate(from: current, to: next) {
-      let changedSummaryKeys = Set(zip(current.items, next.items).compactMap { old, new in
-        old.content != new.content ? new.key : nil
-      })
       config = next
       itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
-      refreshVisibleSelection(changedSummaryKeys: changedSummaryKeys)
+      // OneKey patch: A controlled selection echo is fully handled by the
+      // lightweight updater. Rebinding unchanged visuals clears cached images.
+      refreshVisibleSelection()
       return
     }
     let oldItems = itemsByKey

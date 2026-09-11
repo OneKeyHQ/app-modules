@@ -155,6 +155,13 @@ namespace margelo::nitro::onekeyimage {
     inline void setLoadingStrategy(std::optional<OneKeyImageLoadingStrategy> loadingStrategy) noexcept override {
       _swiftPart.setLoadingStrategy(loadingStrategy);
     }
+    inline std::optional<std::string> getPlaceholderColor() noexcept override {
+      auto __result = _swiftPart.getPlaceholderColor();
+      return __result;
+    }
+    inline void setPlaceholderColor(const std::optional<std::string>& placeholderColor) noexcept override {
+      _swiftPart.setPlaceholderColor(placeholderColor);
+    }
     inline std::optional<std::function<void()>> getOnLoadStart() noexcept override {
       auto __result = _swiftPart.getOnLoadStart();
       return __result;

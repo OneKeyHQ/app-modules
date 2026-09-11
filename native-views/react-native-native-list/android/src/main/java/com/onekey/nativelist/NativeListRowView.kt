@@ -506,6 +506,7 @@ internal class NativeListRowView(
   private var checkboxUsesSelectorStyle = false
   private var iconSubduedColor = Color.rgb(141, 141, 141)
   private var visualBackdropColor = Color.WHITE
+  private var imagePlaceholderColor = "#0000000F"
   private val circleOutlineProvider = object : ViewOutlineProvider() {
     override fun getOutline(view: View, outline: Outline) {
       outline.setOval(0, 0, view.width, view.height)
@@ -914,6 +915,8 @@ internal class NativeListRowView(
     }
     iconSubduedColor = color(theme, "iconSubdued", "#00000072")
     visualBackdropColor = color(theme, "rowBackground", "#FFFFFF")
+    imagePlaceholderColor = theme?.optString("strongBackground", "#0000000F")
+      ?.takeIf(String::isNotEmpty) ?: "#0000000F"
     unreadDot.background = roundedFill(
       parseNativeListColor("#E5484D"),
       4f,
@@ -2492,11 +2495,12 @@ internal class NativeListRowView(
     mediaMetadataRow.gravity = Gravity.CENTER_VERTICAL
     mediaMetadataRow.addView(subtitle, weighted().apply { marginEnd = dp(8) })
     item.json.optJSONObject("networkImage")?.let { networkImage ->
-      mediaNetworkImage.visibility = VISIBLE
+      // OneKey patch: Preserve badge layout without exposing a loading/error tile.
+      // mediaNetworkImage.visibility = VISIBLE
       mediaNetworkImage.outlineProvider = circleOutlineProvider
       mediaNetworkImage.clipToOutline = true
       mediaMetadataRow.addView(mediaNetworkImage, LayoutParams(dp(14), dp(14)))
-      bindImage(networkImage, mediaNetworkImage, item.key, 2, "network")
+      bindImage(networkImage, mediaNetworkImage, item.key, 2, "network", hideUntilLoaded = true)
     }
     mainColumn.addView(mediaMetadataRow, 0)
     mainColumn.addView(titleLine, 1)
@@ -3184,11 +3188,17 @@ internal class NativeListRowView(
     val isIcon = kind == "icon"
     val cornerIconData = visual.optJSONObject("cornerIcon")
     val fallback = visual.optString("fallbackText").take(2)
-    leadingFallback.text = fallback
+    val fallbackIconData = visual.optJSONObject("fallbackIcon")
+    val handlesSourceFallback =
+      !isIcon && sources.isNotEmpty() &&
+        (visual.has("fallbackText") || fallbackIconData != null)
+    leadingFallback.text = if (handlesSourceFallback) "" else fallback
     leadingFallback.setTextColor(parseNativeListColor("#00000072"))
     val visualBackground = safeColor(
       visual.optString("backgroundColor"),
-      parseNativeListColor(if (isIcon) "#0000000F" else "#E0E0E0"),
+      // OneKey patch: Visual loading and fallback use the active list theme.
+      // parseNativeListColor(if (isIcon) "#0000000F" else "#E0E0E0"),
+      parseNativeListColor(imagePlaceholderColor),
     )
     if (!isIcon && visual.optString("backgroundColor").isNotEmpty()) {
       leadingFrame.background = roundedFill(
@@ -3197,10 +3207,11 @@ internal class NativeListRowView(
       )
     }
     leadingFallback.background = roundedFill(
-      visualBackground,
+      if (handlesSourceFallback) parseNativeListColor(imagePlaceholderColor) else visualBackground,
       cornerRadiusDp ?: leadingCornerRadius(shape, minOf(sizeDp, heightDp)),
     )
-    leadingFallback.visibility = if (!isIcon && sources.isEmpty()) VISIBLE else GONE
+    leadingFallback.visibility =
+      if (!isIcon && (sources.isEmpty() || handlesSourceFallback)) VISIBLE else GONE
     if (isIcon) {
       leadingFrame.background = GradientDrawable().apply {
         setColor(visualBackground)
@@ -3210,6 +3221,14 @@ internal class NativeListRowView(
       leadingIcon.iconName = visual.optString("name")
       leadingIcon.tintColor = safeColor(
         visual.optString("tintColor"),
+        parseNativeListColor("#0000009B"),
+      )
+      leadingIcon.visibility = VISIBLE
+    } else if (sources.isEmpty() && fallbackIconData != null) {
+      leadingFallback.visibility = GONE
+      leadingIcon.iconName = fallbackIconData.optString("name")
+      leadingIcon.tintColor = safeColor(
+        fallbackIconData.optString("tintColor"),
         parseNativeListColor("#0000009B"),
       )
       leadingIcon.visibility = VISIBLE
@@ -3265,7 +3284,10 @@ internal class NativeListRowView(
     }
     visibleSources.forEachIndexed { index, (source, variant) ->
       val image = leadingImages[index]
-      image.visibility = VISIBLE
+      // OneKey patch: Decorative badges and source-owned fallbacks stay hidden until loaded.
+      // image.visibility = VISIBLE
+      val ownsSourceFallback = index == 0 && handlesSourceFallback
+      image.visibility = if (index > 0 || ownsSourceFallback) INVISIBLE else VISIBLE
       image.layoutParams = leadingImageLayout(
         index = index,
         count = visibleSources.size,
@@ -3302,21 +3324,32 @@ internal class NativeListRowView(
         marketLeadingUsesSourceClip = true
         image.clipToOutline = false
       }
-      val fallbackIcon = if (index == 0) visual.optJSONObject("fallbackIcon") else null
+      val fallbackIcon = if (index == 0) fallbackIconData else null
       val expectedEpoch = bindingEpoch
       bindImage(source, image, boundKey ?: "", index, variant,
-        onLoad = if (fallbackIcon == null) null else ({
-          if (bindingEpoch == expectedEpoch) { image.visibility = VISIBLE; leadingIcon.visibility = GONE }
-        }),
-        onError = if (fallbackIcon == null) null else ({
+        onLoad = if (!ownsSourceFallback) null else ({
           if (bindingEpoch == expectedEpoch) {
-            image.visibility = GONE
+            image.visibility = VISIBLE
             leadingFallback.visibility = GONE
-            leadingIcon.iconName = fallbackIcon.optString("name")
-            leadingIcon.tintColor = safeColor(fallbackIcon.optString("tintColor"), parseNativeListColor("#0000009B"))
-            leadingIcon.visibility = VISIBLE
+            leadingIcon.visibility = GONE
           }
         }),
+        onError = if (!ownsSourceFallback) null else ({
+          if (bindingEpoch == expectedEpoch) {
+            image.visibility = GONE
+            if (fallbackIcon != null) {
+              leadingFallback.visibility = GONE
+              leadingIcon.iconName = fallbackIcon.optString("name")
+              leadingIcon.tintColor = safeColor(fallbackIcon.optString("tintColor"), parseNativeListColor("#0000009B"))
+              leadingIcon.visibility = VISIBLE
+            } else {
+              leadingIcon.visibility = GONE
+              leadingFallback.text = fallback
+              leadingFallback.visibility = VISIBLE
+            }
+          }
+        }),
+        hideUntilLoaded = index > 0 || ownsSourceFallback,
       )
     }
     // OneKey patch: wallet overlays retain source images, provider colors and QR text.
@@ -3339,7 +3372,7 @@ internal class NativeListRowView(
         val image = overlay.optJSONObject("image")
         val view = when {
           image != null -> OneKeyImageReusableView(reactContext).also {
-            bindImage(image, it, boundKey ?: "", 10 + index, "generic")
+            bindImage(image, it, boundKey ?: "", 10 + index, "generic", hideUntilLoaded = true)
             selectorImages.add(it)
           }
           overlay.optString("text").isNotEmpty() -> TextView(context).apply {
@@ -4086,12 +4119,26 @@ internal class NativeListRowView(
     variant: String,
     onLoad: (() -> Unit)? = null,
     onError: (() -> Unit)? = null,
+    hideUntilLoaded: Boolean = false,
     retryAttempt: Int = 0,
   ) {
     selectorImageRetries.remove(imageView)?.let(imageView::removeCallbacks)
     val expectedEpoch = bindingEpoch
     val retryLimit = source.optInt("retryTimes", 0).coerceAtLeast(0)
     val uri = source.optString("uri").trim().takeIf(String::isNotEmpty)
+    if (hideUntilLoaded) imageView.visibility = INVISIBLE
+    val handleLoad: (() -> Unit)? = if (hideUntilLoaded) ({
+      if (bindingEpoch == expectedEpoch) {
+        imageView.visibility = VISIBLE
+        onLoad?.invoke()
+      }
+    }) else onLoad
+    val handleError: (() -> Unit)? = if (hideUntilLoaded) ({
+      if (bindingEpoch == expectedEpoch) {
+        imageView.visibility = INVISIBLE
+        onError?.invoke()
+      }
+    }) else onError
     imageView.configure(
       sourceUri = uri,
       sourceHeadersJson = source.optJSONObject("headers")?.toString(),
@@ -4103,20 +4150,21 @@ internal class NativeListRowView(
       optimizeTos = retryAttempt == 0 && source.optBoolean("optimizeTos", true),
       overscan = source.optDouble("overscan", 1.1),
       loadingStrategy = source.optString("loadingStrategy", "static"),
-      onLoad = if (retryLimit == 0) onLoad else ({
+      placeholderColor = imagePlaceholderColor,
+      onLoad = if (retryLimit == 0) handleLoad else ({
         if (bindingEpoch == expectedEpoch) {
           selectorImageRetries.remove(imageView)?.let(imageView::removeCallbacks)
-          onLoad?.invoke()
+          handleLoad?.invoke()
         }
       }),
-      onError = if (retryLimit == 0) onError else ({
+      onError = if (retryLimit == 0) handleError else ({
         if (bindingEpoch == expectedEpoch) {
-          if (retryAttempt >= retryLimit) onError?.invoke()
+          if (retryAttempt >= retryLimit) handleError?.invoke()
           else if (!selectorImageRetries.containsKey(imageView)) {
             val retry = Runnable {
               if (bindingEpoch == expectedEpoch) {
                 selectorImageRetries.remove(imageView)
-                bindImage(source, imageView, token, slot, variant, onLoad, onError, retryAttempt + 1)
+                bindImage(source, imageView, token, slot, variant, onLoad, onError, hideUntilLoaded, retryAttempt + 1)
               }
             }
             selectorImageRetries[imageView] = retry

@@ -1087,6 +1087,30 @@ function configureWebAvatar(
   webAvatarCleanup.set(image, dispose);
 }
 
+const WEB_IMAGE_FADE_DELAY_MS = 100;
+const WEB_IMAGE_FADE_DURATION_MS = 140;
+
+function webImageNow(image: HTMLImageElement): number {
+  return image.ownerDocument.defaultView?.performance.now() ?? Date.now();
+}
+
+function revealWebImage(element: HTMLElement, startedAt: number) {
+  element.getAnimations?.().forEach((animation) => animation.cancel());
+  element.style.opacity = '1';
+  const view = element.ownerDocument.defaultView;
+  if (
+    webImageNow(element as HTMLImageElement) - startedAt <
+      WEB_IMAGE_FADE_DELAY_MS ||
+    view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches ||
+    typeof element.animate !== 'function'
+  )
+    return;
+  element.animate([{ opacity: 0 }, { opacity: 1 }], {
+    duration: WEB_IMAGE_FADE_DURATION_MS,
+    easing: 'ease-out',
+  });
+}
+
 function createImage(
   context: RenderContext,
   source: ImageSource,
@@ -1096,6 +1120,8 @@ function createImage(
   const uri = avatarUri ?? safeImageUri(source.uri);
   if (!uri) return undefined;
   const image = context.document.createElement('img');
+  const startedAt = webImageNow(image);
+  image.style.opacity = '0';
   if (className) image.className = className;
   // OneKey patch: consume recoverable errors before the visual's final fallback listener.
   if (avatarUri) {
@@ -1110,6 +1136,14 @@ function createImage(
   image.decoding = 'async';
   image.style.objectFit =
     source.contentFit === 'fill' ? 'fill' : source.contentFit ?? 'cover';
+  image.addEventListener('load', () => {
+    if (image.dataset.nativeListSelectorPaint !== 'true')
+      revealWebImage(image, startedAt);
+  });
+  image.addEventListener('error', () => {
+    image.style.opacity = '0';
+  });
+  image.dataset.nativeListImageStartedAt = String(startedAt);
   return image;
 }
 
@@ -1128,20 +1162,27 @@ function paintSelectorImageBackground(
   paint.style.cssText =
     'position:absolute;pointer-events:none;border-radius:inherit;background-position:center;background-repeat:no-repeat';
   paint.style.inset = String(inset) + 'px';
+  paint.style.opacity = '0';
   paint.style.backgroundSize =
     image.style.objectFit === 'fill'
       ? '100% 100%'
       : image.style.objectFit === 'center'
       ? 'auto'
       : image.style.objectFit;
+  image.dataset.nativeListSelectorPaint = 'true';
   image.style.opacity = '0';
   const update = () => {
     paint.style.backgroundImage =
       'url(' + JSON.stringify(image.currentSrc || image.src) + ')';
+    revealWebImage(
+      paint,
+      Number(image.dataset.nativeListImageStartedAt) || webImageNow(image)
+    );
   };
   image.addEventListener('load', update);
   image.addEventListener('error', () => {
     paint.style.backgroundImage = 'none';
+    paint.style.opacity = '0';
   });
   frame.insertBefore(paint, image);
   if (image.complete && image.naturalWidth > 0) update();
@@ -1516,9 +1557,19 @@ function createVisual(
     return frame;
   }
 
-  if ('backgroundColor' in visual && visual.backgroundColor)
-    frame.style.background = visual.backgroundColor;
+  // OneKey patch: Every image visual starts from the current theme backing.
+  // if ('backgroundColor' in visual && visual.backgroundColor)
+  //   frame.style.background = visual.backgroundColor;
+  frame.style.background =
+    'backgroundColor' in visual && visual.backgroundColor
+      ? visual.backgroundColor
+      : 'var(--nl-strong)';
   const source = visual.kind === 'image' ? visual.image : visual.image;
+  const fallbackIcon =
+    'fallbackIcon' in visual ? visual.fallbackIcon : undefined;
+  const handlesSourceFallback =
+    !!source && (fallbackIcon !== undefined || 'fallbackText' in visual);
+  if (handlesSourceFallback) frame.style.background = 'var(--nl-strong)';
   const image = source ? createImage(context, source) : undefined;
   if (image) {
     image.className = 'ok-native-list-visual-main';
@@ -1556,8 +1607,8 @@ function createVisual(
     frame.appendChild(corner);
   }
   // OneKey patch: image failure uses the same source-derived fallback as v1.
-  if ('fallbackIcon' in visual && visual.fallbackIcon) {
-    const icon = visual.fallbackIcon;
+  const hasFallbackText = 'fallbackText' in visual;
+  if (fallbackIcon || hasFallbackText) {
     const showFallback = () => {
       if (image) {
         disposeWebImageRetries(image);
@@ -1571,10 +1622,18 @@ function createVisual(
       const fallback = createElement(
         context.document,
         'span',
-        'ok-native-list-visual-fallback'
+        'ok-native-list-visual-fallback',
+        fallbackIcon
+          ? undefined
+          : 'fallbackText' in visual
+          ? visual.fallbackText ?? ''
+          : ''
       );
-      applySelectorIcon(fallback, icon.name);
-      if (icon.tintColor) fallback.style.color = icon.tintColor;
+      if (fallbackIcon) {
+        applySelectorIcon(fallback, fallbackIcon.name);
+        if (fallbackIcon.tintColor)
+          fallback.style.color = fallbackIcon.tintColor;
+      }
       frame.prepend(fallback);
     };
     if (image) image.addEventListener('error', showFallback, { once: true });

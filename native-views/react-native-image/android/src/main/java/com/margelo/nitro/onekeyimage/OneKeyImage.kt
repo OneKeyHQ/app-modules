@@ -1,14 +1,20 @@
 package com.margelo.nitro.onekeyimage
 
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
+import android.os.Build
+import android.os.SystemClock
+import android.provider.Settings
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
@@ -88,8 +94,16 @@ private class OneKeyImageHostView(context: ThemedReactContext) : ImageView(conte
     syncPlayback()
   }
 
-  fun updateSkeletonStyle() {
-    skeleton.updateStyle(null, 3.0)
+  fun updateSkeletonStyle(baseColor: Int) {
+    val average = (Color.red(baseColor) + Color.green(baseColor) + Color.blue(baseColor)) / 3
+    val delta = if (average < 128) 18 else -12
+    val highlightColor = Color.argb(
+      Color.alpha(baseColor),
+      (Color.red(baseColor) + delta).coerceIn(0, 255),
+      (Color.green(baseColor) + delta).coerceIn(0, 255),
+      (Color.blue(baseColor) + delta).coerceIn(0, 255),
+    )
+    skeleton.updateStyle(intArrayOf(baseColor, highlightColor), 3.0)
     skeleton.updateBounds(width, height)
   }
 
@@ -137,6 +151,10 @@ internal fun oneKeyImageRequestSignature(
 class HybridOneKeyImage(private val context: ThemedReactContext) :
   HybridOneKeyImageSpec(), RecyclableView {
   private enum class DisplayState { LOADING, IMAGE, ERROR, FALLBACK }
+  private companion object {
+    const val FADE_DELAY_THRESHOLD_MS = 100L
+    const val FADE_DURATION_MS = 140L
+  }
 
   private val hostView = OneKeyImageHostView(context)
   // The Activity outlives ScreenStack Fragments but still provides bounded
@@ -156,6 +174,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private var displayRunnable: Runnable? = null
   private var pendingDisplayGeneration: Long? = null
   private var fallbackRunnable: Runnable? = null
+  private var requestStartedAtMs: Long? = null
 
   /**
    * Native reusable containers own their request cleanup explicitly, so their
@@ -236,6 +255,11 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       field = value
       if (!suppressPropEffects) applyVariant()
     }
+  override var placeholderColor: String? = null
+    set(value) {
+      field = value
+      if (!suppressPropEffects) applyVariant()
+    }
   override var onLoadStart: (() -> Unit)? = null
   override var onLoad: ((width: Double, height: Double, cacheType: OneKeyImageCacheType) -> Unit)? = null
   override var onDisplay: (() -> Unit)? = null
@@ -244,7 +268,6 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
 
   init {
     OneKeyImageGlideRegistry.ensureRegistered(context)
-    hostView.updateSkeletonStyle()
     hostView.onReadyForRequest = { scheduleLoad() }
     hostView.onAttachmentChanged = { attached ->
       if (attached) {
@@ -317,6 +340,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     resizeWidth = null
     overscan = 1.1
     loadingStrategy = OneKeyImageLoadingStrategy.STATIC
+    placeholderColor = null
     onLoadStart = null
     onLoad = null
     onDisplay = null
@@ -375,6 +399,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
 
     cancelCurrent(invalidateGeneration = true)
     val requestGeneration = generation
+    requestStartedAtMs = SystemClock.uptimeMillis()
     onLoadStart?.invoke()
 
     val customIdentity = OneKeyImageModel.headers(sourceHeadersJson).isNotEmpty()
@@ -430,6 +455,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
         hostView.drawStateSymbol = false
         hostView.setBackgroundColor(Color.TRANSPARENT)
         hostView.setImageDrawable(resource)
+        applyLoadedImageTransition(resolvedCacheType)
         applyAutoplay()
         val loadCallback = onLoad
         val loadEndCallback = onLoadEnd
@@ -563,6 +589,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     clearCurrentTarget()
     requestActive = false
     hostView.skeletonRequested = false
+    requestStartedAtMs = null
+    resetImageTransition()
     if (invalidateGeneration) generation++
   }
 
@@ -605,6 +633,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private fun showLoading(requestIsActive: Boolean) {
     displayState = DisplayState.LOADING
     requestActive = requestIsActive
+    resetImageTransition()
     hostView.setImageDrawable(null)
     hostView.drawStateSymbol = false
     applyLoadingAppearance()
@@ -621,11 +650,15 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private fun showTerminalState(state: DisplayState) {
     displayState = state
     requestActive = false
+    resetImageTransition()
     hostView.setImageDrawable(null)
     hostView.skeletonRequested = false
-    hostView.drawStateSymbol = true
+    val hidesTerminalState = loadingStrategy == OneKeyImageLoadingStrategy.NONE
+    hostView.drawStateSymbol = !hidesTerminalState
     hostView.stateSymbol = stateSymbol()
-    hostView.setBackgroundColor(placeholderColor())
+    hostView.setBackgroundColor(
+      if (hidesTerminalState) Color.TRANSPARENT else resolvedPlaceholderColor(),
+    )
     hostView.invalidate()
   }
 
@@ -634,7 +667,11 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       DisplayState.IMAGE -> Unit
       DisplayState.LOADING -> applyLoadingAppearance()
       DisplayState.ERROR, DisplayState.FALLBACK -> {
-        hostView.setBackgroundColor(placeholderColor())
+        val hidesTerminalState = loadingStrategy == OneKeyImageLoadingStrategy.NONE
+        hostView.setBackgroundColor(
+          if (hidesTerminalState) Color.TRANSPARENT else resolvedPlaceholderColor(),
+        )
+        hostView.drawStateSymbol = !hidesTerminalState
         hostView.stateSymbol = stateSymbol()
         hostView.invalidate()
       }
@@ -643,11 +680,13 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
 
   private fun applyLoadingAppearance() {
     val strategy = loadingStrategy ?: OneKeyImageLoadingStrategy.STATIC
+    val placeholder = resolvedPlaceholderColor()
     hostView.setBackgroundColor(
-      if (strategy == OneKeyImageLoadingStrategy.NONE) Color.TRANSPARENT else placeholderColor(),
+      if (strategy == OneKeyImageLoadingStrategy.NONE) Color.TRANSPARENT else placeholder,
     )
+    hostView.updateSkeletonStyle(placeholder)
     hostView.skeletonRequested =
-      requestActive && strategy == OneKeyImageLoadingStrategy.SKELETON
+      requestActive && strategy == OneKeyImageLoadingStrategy.SKELETON && animationsEnabled()
     hostView.invalidate()
   }
 
@@ -658,11 +697,66 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     OneKeyImageVariant.AVATAR -> "●"
   }
 
-  private fun placeholderColor(): Int = when (variant ?: OneKeyImageVariant.GENERIC) {
-    OneKeyImageVariant.GENERIC -> Color.rgb(232, 232, 232)
-    OneKeyImageVariant.TOKEN -> Color.rgb(232, 237, 249)
-    OneKeyImageVariant.NETWORK -> Color.rgb(229, 240, 245)
-    OneKeyImageVariant.AVATAR -> Color.rgb(234, 234, 240)
+  private fun applyLoadedImageTransition(cacheType: OneKeyImageCacheType) {
+    resetImageTransition()
+    val startedAt = requestStartedAtMs ?: return
+    if (
+      cacheType == OneKeyImageCacheType.MEMORY ||
+      SystemClock.uptimeMillis() - startedAt < FADE_DELAY_THRESHOLD_MS ||
+      !animationsEnabled()
+    ) {
+      return
+    }
+    hostView.alpha = 0f
+    hostView.animate()
+      .alpha(1f)
+      .setDuration(FADE_DURATION_MS)
+      .setInterpolator(DecelerateInterpolator())
+      .start()
+  }
+
+  private fun resetImageTransition() {
+    hostView.animate().cancel()
+    hostView.alpha = 1f
+  }
+
+  private fun animationsEnabled(): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      ValueAnimator.areAnimatorsEnabled()
+    } else {
+      Settings.Global.getFloat(
+        context.contentResolver,
+        Settings.Global.ANIMATOR_DURATION_SCALE,
+        1f,
+      ) != 0f
+    }
+
+  private fun resolvedPlaceholderColor(): Int {
+    parseRgbaHex(placeholderColor)?.let { return it }
+    // OneKey patch: fall back to a dark-aware low-contrast fill instead of light-only RGB values.
+    // return when (variant ?: OneKeyImageVariant.GENERIC) {
+    //   OneKeyImageVariant.GENERIC -> Color.rgb(232, 232, 232)
+    //   OneKeyImageVariant.TOKEN -> Color.rgb(232, 237, 249)
+    //   OneKeyImageVariant.NETWORK -> Color.rgb(229, 240, 245)
+    //   OneKeyImageVariant.AVATAR -> Color.rgb(234, 234, 240)
+    // }
+    val nightMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+    return if (nightMode == Configuration.UI_MODE_NIGHT_YES) {
+      Color.rgb(38, 38, 38)
+    } else {
+      Color.rgb(238, 238, 238)
+    }
+  }
+
+  private fun parseRgbaHex(value: String?): Int? {
+    val hex = value?.trim()?.removePrefix("#") ?: return null
+    if (hex.length != 6 && hex.length != 8) return null
+    val parsed = hex.toLongOrNull(16) ?: return null
+    val red = ((parsed shr (if (hex.length == 8) 24 else 16)) and 0xFF).toInt()
+    val green = ((parsed shr (if (hex.length == 8) 16 else 8)) and 0xFF).toInt()
+    val blue = ((parsed shr (if (hex.length == 8) 8 else 0)) and 0xFF).toInt()
+    val alpha = if (hex.length == 8) (parsed and 0xFF).toInt() else 0xFF
+    return Color.argb(alpha, red, green, blue)
   }
 
   private fun applyContentFit() {

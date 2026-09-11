@@ -165,6 +165,15 @@ namespace margelo::nitro::onekeyimage {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JOneKeyImageLoadingStrategy> /* loadingStrategy */)>("setLoadingStrategy");
     method(_javaPart, loadingStrategy.has_value() ? JOneKeyImageLoadingStrategy::fromCpp(loadingStrategy.value()) : nullptr);
   }
+  std::optional<std::string> JHybridOneKeyImageSpec::getPlaceholderColor() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JString>()>("getPlaceholderColor");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->toStdString()) : std::nullopt;
+  }
+  void JHybridOneKeyImageSpec::setPlaceholderColor(const std::optional<std::string>& placeholderColor) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* placeholderColor */)>("setPlaceholderColor");
+    method(_javaPart, placeholderColor.has_value() ? jni::make_jstring(placeholderColor.value()) : nullptr);
+  }
   std::optional<std::function<void()>> JHybridOneKeyImageSpec::getOnLoadStart() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void::javaobject>()>("getOnLoadStart_cxx");
     auto __result = method(_javaPart);

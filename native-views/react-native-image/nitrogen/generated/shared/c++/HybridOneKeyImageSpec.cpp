@@ -36,6 +36,8 @@ namespace margelo::nitro::onekeyimage {
       prototype.registerHybridSetter("overscan", &HybridOneKeyImageSpec::setOverscan);
       prototype.registerHybridGetter("loadingStrategy", &HybridOneKeyImageSpec::getLoadingStrategy);
       prototype.registerHybridSetter("loadingStrategy", &HybridOneKeyImageSpec::setLoadingStrategy);
+      prototype.registerHybridGetter("placeholderColor", &HybridOneKeyImageSpec::getPlaceholderColor);
+      prototype.registerHybridSetter("placeholderColor", &HybridOneKeyImageSpec::setPlaceholderColor);
       prototype.registerHybridGetter("onLoadStart", &HybridOneKeyImageSpec::getOnLoadStart);
       prototype.registerHybridSetter("onLoadStart", &HybridOneKeyImageSpec::setOnLoadStart);
       prototype.registerHybridGetter("onLoad", &HybridOneKeyImageSpec::getOnLoad);
