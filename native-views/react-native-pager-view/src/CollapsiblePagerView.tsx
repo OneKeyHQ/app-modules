@@ -115,8 +115,8 @@ export interface CollapsiblePagerViewProps
   /** Measured sticky bar height. */
   stickyHeaderHeight: number;
   /**
-   * Lets the active iOS list own vertical gestures that begin on pager headers.
-   * Defaults to false and currently has no effect on Android or Web.
+   * Lets the active native list own vertical gestures that begin on pager headers.
+   * Defaults to false and has no effect on Web.
    */
   nativeSmoothHeaderScrollEnabled?: boolean;
   /**
@@ -126,10 +126,10 @@ export interface CollapsiblePagerViewProps
    */
   pageRetentionDistance?: number;
   layoutDirection?: "ltr" | "rtl" | "locale";
-  /** Optional native tab bar. It is currently rendered on iOS only. */
+  /** Optional native tab bar for iOS and Android. */
   nativeTabBar?: CollapsiblePagerNativeTabBarConfig;
   onNativeTabPress?: (event: CollapsiblePagerViewOnNativeTabPressEvent) => void;
-  /** Optional native secondary sticky header. It is currently rendered on iOS only. */
+  /** Optional native secondary sticky header for iOS and Android. */
   nativeSubHeader?: CollapsiblePagerNativeSubHeaderConfig;
   onNativeSubHeaderPress?: (
     event: CollapsiblePagerViewOnNativeSubHeaderPressEvent
@@ -248,7 +248,10 @@ export class CollapsiblePagerView extends React.PureComponent<
   }
 
   private nativeTabBarEnabled() {
-    return Platform.OS === "ios" && !!this.props.nativeTabBar?.items.length;
+    return (
+      (Platform.OS === "ios" || Platform.OS === "android") &&
+      !!this.props.nativeTabBar?.items.length
+    );
   }
 
   private dispatchNativeTabPageCommand(position: number, animated: boolean) {
@@ -393,10 +396,12 @@ export class CollapsiblePagerView extends React.PureComponent<
           : "ltr"
         : layoutDirection;
     const nativeTabBarEnabled =
-      Platform.OS === "ios" && !!nativeTabBar?.items.length;
+      (Platform.OS === "ios" || Platform.OS === "android") &&
+      !!nativeTabBar?.items.length;
     const nativeTabBarStyle = nativeTabBar?.style;
     const nativeSubHeaderEnabled =
-      Platform.OS === "ios" && !!nativeSubHeader?.items.length;
+      (Platform.OS === "ios" || Platform.OS === "android") &&
+      !!nativeSubHeader?.items.length;
     const nativeSubHeaderStyle = nativeSubHeader?.style;
     const nativeSubHeaderConfig = nativeSubHeaderEnabled
       ? JSON.stringify({

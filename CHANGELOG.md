@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.120] - 2026-09-12
+
+### Features
+- **pager-view (Android)**: Add opt-in native primary tabs and a scrollable Stocks subheader with pager-progress-driven selection styling.
+
+### Bug Fixes
+- **pager-view (Android)**: Route header vertical drags to the active list, preserve horizontal subheader ownership, cancel presses after directional drags, and log low-frequency pager lifecycle diagnostics.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.120.
+
 ## [3.0.119] - 2026-09-12
 
 ### Features

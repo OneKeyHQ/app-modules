@@ -2,6 +2,7 @@ package com.reactnativepagerview
 
 import android.view.View
 import android.view.ViewGroup
+import android.graphics.Color
 import androidx.viewpager2.widget.ViewPager2
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.common.MapBuilder
@@ -18,6 +19,7 @@ import com.reactnativepagerview.event.CollapsibleStateChangedEvent
 import com.reactnativepagerview.event.PageScrollEvent
 import com.reactnativepagerview.event.PageScrollStateChangedEvent
 import com.reactnativepagerview.event.PageSelectedEvent
+import com.reactnativepagerview.event.NativeHeaderPressEvent
 import org.json.JSONArray
 import kotlin.math.roundToInt
 
@@ -41,13 +43,16 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     )
     host.pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
       override fun onPageScrolled(position: Int, offset: Float, offsetPixels: Int) {
+        host.updateNativeTabProgress(position, offset)
         dispatch(reactContext, host, PageScrollEvent(host.id, position, offset))
       }
 
       override fun onPageSelected(position: Int) {
         host.selectPage(position)
+        host.updateNativeTabProgress(position, 0f)
         dispatch(reactContext, host, PageSelectedEvent(host.id, position))
         dispatchDiagnostics(reactContext, host, "page-selected")
+        host.logPagerState("page-selected")
       }
 
       override fun onPageScrollStateChanged(state: Int) {
@@ -60,9 +65,34 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
         dispatch(reactContext, host, PageScrollStateChangedEvent(host.id, value))
         if (state == ViewPager2.SCROLL_STATE_IDLE) {
           dispatchDiagnostics(reactContext, host, "pager-idle")
+          host.logPagerState("idle")
         }
       }
     })
+    host.onNativeTabPress = { position, key ->
+      dispatch(
+        reactContext,
+        host,
+        NativeHeaderPressEvent(
+          host.id,
+          position,
+          key,
+          NativeHeaderPressEvent.TAB_EVENT_NAME,
+        ),
+      )
+    }
+    host.onNativeSubHeaderPress = { position, key ->
+      dispatch(
+        reactContext,
+        host,
+        NativeHeaderPressEvent(
+          host.id,
+          position,
+          key,
+          NativeHeaderPressEvent.SUB_HEADER_EVENT_NAME,
+        ),
+      )
+    }
     host.onHeaderOffsetChanged = {
       if (!host.pager.isFakeDragging && host.pager.scrollState == ViewPager2.SCROLL_STATE_IDLE) {
         dispatchDiagnostics(reactContext, host, "vertical-idle")
@@ -123,11 +153,11 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
 
   @ReactProp(name = "layoutDirection")
   override fun setLayoutDirection(view: CollapsiblePagerHost?, value: String?) {
-    view?.pager?.layoutDirection = if (value == "rtl") {
+    view?.setPagerLayoutDirection(if (value == "rtl") {
       View.LAYOUT_DIRECTION_RTL
     } else {
       View.LAYOUT_DIRECTION_LTR
-    }
+    })
   }
 
   @ReactProp(name = "initialPage", defaultInt = 0)
@@ -151,11 +181,12 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     // OneKey patch: CollapsiblePagerHost always coordinates nested pagers on Android.
   }
 
-  // The smooth shared-header ownership is implemented on iOS first.
   override fun setNativeSmoothHeaderScrollEnabled(
     view: CollapsiblePagerHost?,
     value: Boolean,
-  ) = Unit
+  ) {
+    view?.nativeSmoothHeaderScrollEnabled = value
+  }
 
   // OneKey patch: round Yoga header dimensions to the nearest physical pixel.
   @ReactProp(name = "headerHeight", defaultInt = 0)
@@ -179,41 +210,91 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     view?.retainedPages = value ?: "[]"
   }
 
-  // The optional native tab bar is implemented on iOS first. These no-op
-  // setters preserve the shared Fabric contract without changing Android UI.
-  override fun setNativeTabBarItems(view: CollapsiblePagerHost?, value: String?) = Unit
+  override fun setNativeTabBarItems(view: CollapsiblePagerHost?, value: String?) {
+    view?.updateNativeTabBarItems(value)
+  }
 
-  override fun setNativeTabBarHeight(view: CollapsiblePagerHost?, value: Double) = Unit
+  override fun setNativeTabBarHeight(view: CollapsiblePagerHost?, value: Double) {
+    view ?: return
+    view.nativeTabBarHeight = value
+    view.applyNativeHeaderStyle()
+  }
 
   override fun setNativeTabBarContentPaddingHorizontal(
     view: CollapsiblePagerHost?,
     value: Double,
-  ) = Unit
+  ) {
+    view ?: return
+    view.nativeTabBarContentPaddingHorizontal = value
+    view.applyNativeHeaderStyle()
+  }
 
-  override fun setNativeTabBarItemSpacing(view: CollapsiblePagerHost?, value: Double) = Unit
+  override fun setNativeTabBarItemSpacing(view: CollapsiblePagerHost?, value: Double) {
+    view ?: return
+    view.nativeTabBarItemSpacing = value
+    view.applyNativeHeaderStyle()
+  }
 
-  override fun setNativeTabBarFontSize(view: CollapsiblePagerHost?, value: Double) = Unit
+  override fun setNativeTabBarFontSize(view: CollapsiblePagerHost?, value: Double) {
+    view ?: return
+    view.nativeTabBarFontSize = value
+    view.applyNativeHeaderStyle()
+  }
 
-  override fun setNativeTabBarFontFamily(view: CollapsiblePagerHost?, value: String?) = Unit
+  override fun setNativeTabBarFontFamily(view: CollapsiblePagerHost?, value: String?) {
+    view ?: return
+    view.nativeTabBarFontFamily = value
+    view.applyNativeHeaderStyle()
+  }
 
-  override fun setNativeTabBarBackgroundColor(view: CollapsiblePagerHost?, value: Int?) = Unit
+  override fun setNativeTabBarBackgroundColor(view: CollapsiblePagerHost?, value: Int?) {
+    view ?: return
+    view.nativeTabBarBackgroundColor = value ?: Color.TRANSPARENT
+    view.applyNativeHeaderStyle()
+  }
 
-  override fun setNativeTabBarActiveTextColor(view: CollapsiblePagerHost?, value: Int?) = Unit
+  override fun setNativeTabBarActiveTextColor(view: CollapsiblePagerHost?, value: Int?) {
+    view ?: return
+    view.nativeTabBarActiveTextColor = value ?: Color.BLACK
+    view.applyNativeHeaderStyle()
+  }
 
-  override fun setNativeTabBarInactiveTextColor(view: CollapsiblePagerHost?, value: Int?) = Unit
+  override fun setNativeTabBarInactiveTextColor(view: CollapsiblePagerHost?, value: Int?) {
+    view ?: return
+    view.nativeTabBarInactiveTextColor = value ?: Color.GRAY
+    view.applyNativeHeaderStyle()
+  }
 
-  override fun setNativeTabBarIndicatorColor(view: CollapsiblePagerHost?, value: Int?) = Unit
+  override fun setNativeTabBarIndicatorColor(view: CollapsiblePagerHost?, value: Int?) {
+    view ?: return
+    view.nativeTabBarIndicatorColor = value ?: view.nativeTabBarActiveTextColor
+    view.applyNativeHeaderStyle()
+  }
 
-  override fun setNativeTabBarIndicatorHeight(view: CollapsiblePagerHost?, value: Double) = Unit
+  override fun setNativeTabBarIndicatorHeight(view: CollapsiblePagerHost?, value: Double) {
+    view ?: return
+    view.nativeTabBarIndicatorHeight = value
+    view.applyNativeHeaderStyle()
+  }
 
-  override fun setNativeTabBarIndicatorBottom(view: CollapsiblePagerHost?, value: Double) = Unit
+  override fun setNativeTabBarIndicatorBottom(view: CollapsiblePagerHost?, value: Double) {
+    view ?: return
+    view.nativeTabBarIndicatorBottom = value
+    view.applyNativeHeaderStyle()
+  }
 
-  override fun setNativeSubHeaderConfig(view: CollapsiblePagerHost?, value: String?) = Unit
+  override fun setNativeSubHeaderConfig(view: CollapsiblePagerHost?, value: String?) {
+    view?.updateNativeSubHeader(value)
+  }
 
   override fun setNativeSubHeaderSelectedBackgroundColor(
     view: CollapsiblePagerHost?,
     value: Int?,
-  ) = Unit
+  ) {
+    view ?: return
+    view.nativeSubHeaderSelectedBackgroundColor = value ?: Color.TRANSPARENT
+    view.applyNativeHeaderStyle()
+  }
 
   private fun parseStringArray(value: String?): List<String> {
     if (value.isNullOrEmpty()) return emptyList()
@@ -254,6 +335,14 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
       .put(
         CollapsibleStateChangedEvent.EVENT_NAME,
         MapBuilder.of("registrationName", "onCollapsibleStateChanged"),
+      )
+      .put(
+        NativeHeaderPressEvent.TAB_EVENT_NAME,
+        MapBuilder.of("registrationName", "onNativeTabPress"),
+      )
+      .put(
+        NativeHeaderPressEvent.SUB_HEADER_EVENT_NAME,
+        MapBuilder.of("registrationName", "onNativeSubHeaderPress"),
       )
       .build()
       .toMutableMap()

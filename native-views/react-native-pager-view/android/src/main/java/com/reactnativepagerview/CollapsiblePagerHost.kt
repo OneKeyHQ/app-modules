@@ -2,9 +2,13 @@ package com.reactnativepagerview
 
 import android.content.Context
 import android.graphics.Rect
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.widget.HorizontalScrollView
 // OneKey patch: FrameLayout is inherited through NestedScrollableHost.
 // import android.widget.FrameLayout
 import androidx.core.view.NestedScrollingParent3
@@ -13,6 +17,8 @@ import androidx.core.view.ViewCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
+import com.facebook.react.uimanager.events.NativeGestureUtil
+import com.margelo.nitro.nativelogger.OneKeyLog
 import java.util.WeakHashMap
 import kotlin.math.max
 import kotlin.math.min
@@ -72,6 +78,13 @@ internal class CollapsiblePagerAdapter : RecyclerView.Adapter<ViewPagerViewHolde
 // OneKey patch: Match the standard pager's nested horizontal gesture host.
 // Original: class CollapsiblePagerHost(context: Context) : FrameLayout(context), NestedScrollingParent3 {
 class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), NestedScrollingParent3 {
+  private enum class HeaderGestureOwner {
+    NONE,
+    LIST,
+    HORIZONTAL_CHILD,
+    HEADER_GUARD,
+  }
+
   private data class RecyclerPadding(
     var left: Int,
     var top: Int,
@@ -83,6 +96,8 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   val pager = ViewPager2(context)
   internal val adapter = CollapsiblePagerAdapter()
+  private val nativeTabBarView = CollapsiblePagerNativeTabBarView(context)
+  private val nativeSubHeaderView = CollapsiblePagerNativeSubHeaderView(context)
   private val logicalChildren = ArrayList<View>()
   private val nestedScrollingParentHelper = NestedScrollingParentHelper(this)
   private val originalRecyclerPadding = WeakHashMap<RecyclerView, RecyclerPadding>()
@@ -91,8 +106,20 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private var observedRecyclerView: RecyclerView? = null
   private var observedScrollListener: RecyclerView.OnScrollListener? = null
   private var attachmentGeneration = 0
+  private val touchSlopPx = ViewConfiguration.get(context).scaledTouchSlop
+  private val hostIdentity = System.identityHashCode(this)
   private var headerView: View? = null
   private var stickyHeaderView: View? = null
+  private var headerTouchActive = false
+  private var headerTouchRegion = "none"
+  private var headerGestureOwner = HeaderGestureOwner.NONE
+  private var headerDownX = 0f
+  private var headerDownY = 0f
+  private var headerDownEvent: MotionEvent? = null
+  private var headerHasHorizontalChild = false
+  private var forwardedRecycler: RecyclerView? = null
+  private var nativeGestureStarted = false
+  private var pressCancelled = false
   private val pageContentLayoutListener = ViewTreeObserver.OnPreDrawListener {
     if (width > 0 && height > 0 && isShown) layoutPagerIfRequested()
     // Fabric can mount a retained list without another Android layout pass.
@@ -128,6 +155,22 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   var pageKeys: List<String> = emptyList()
   var retainedPages: String = "[]"
   var onHeaderOffsetChanged: (() -> Unit)? = null
+  var nativeSmoothHeaderScrollEnabled = false
+  var onNativeTabPress: ((Int, String) -> Unit)? = null
+  var onNativeSubHeaderPress: ((Int, String) -> Unit)? = null
+
+  var nativeTabBarHeight = 44.0
+  var nativeTabBarContentPaddingHorizontal = 20.0
+  var nativeTabBarItemSpacing = 8.0
+  var nativeTabBarFontSize = 16.0
+  var nativeTabBarFontFamily: String? = null
+  var nativeTabBarBackgroundColor = android.graphics.Color.TRANSPARENT
+  var nativeTabBarActiveTextColor = android.graphics.Color.BLACK
+  var nativeTabBarInactiveTextColor = android.graphics.Color.GRAY
+  var nativeTabBarIndicatorColor = android.graphics.Color.BLACK
+  var nativeTabBarIndicatorHeight = 2.0
+  var nativeTabBarIndicatorBottom = 0.0
+  var nativeSubHeaderSelectedBackgroundColor = android.graphics.Color.TRANSPARENT
 
   init {
     isSaveEnabled = false
@@ -139,6 +182,88 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       pager,
       LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
     )
+    nativeTabBarView.onItemPress = { index, key -> onNativeTabPress?.invoke(index, key) }
+    nativeSubHeaderView.onItemPress = { index, key -> onNativeSubHeaderPress?.invoke(index, key) }
+    super.addView(nativeTabBarView)
+    super.addView(nativeSubHeaderView)
+    applyNativeHeaderStyle()
+    log("host-init generation=$attachmentGeneration")
+  }
+
+  private fun log(message: String) {
+    OneKeyLog.debug("CollapsiblePager", "host=$hostIdentity $message")
+  }
+
+  private fun outerPagerIndex(): Int {
+    var ancestor = parent as? View
+    while (ancestor != null) {
+      if (ancestor is ViewPager2) return ancestor.currentItem
+      ancestor = ancestor.parent as? View
+    }
+    return -1
+  }
+
+  fun updateNativeTabBarItems(value: String?) {
+    nativeTabBarView.updateItemsJSON(value)
+    bringNativeHeadersToFront()
+    updateHeaderLayout()
+  }
+
+  fun updateNativeSubHeader(value: String?) {
+    nativeSubHeaderView.updateConfigJSON(value)
+    applyNativeHeaderStyle()
+    bringNativeHeadersToFront()
+    updateHeaderLayout()
+  }
+
+  fun updateNativeTabProgress(position: Int, offset: Float) {
+    nativeTabBarView.setProgress(position + offset)
+  }
+
+  fun logPagerState(reason: String) {
+    log(
+      "pager-state reason=$reason inner=$selectedPage outer=${outerPagerIndex()} " +
+        "nativePages=${adapter.itemCount} attachedPages=${attachedPageCount()} " +
+        "headerOffset=$headerOffsetPx retained=$retainedPages",
+    )
+  }
+
+  fun setPagerLayoutDirection(layoutDirection: Int) {
+    pager.layoutDirection = layoutDirection
+    nativeTabBarView.layoutDirection = layoutDirection
+    nativeSubHeaderView.layoutDirection = layoutDirection
+    nativeSubHeaderView.requestLayout()
+  }
+
+  fun applyNativeHeaderStyle() {
+    nativeTabBarView.updateStyle(
+      nativeTabBarHeight,
+      nativeTabBarContentPaddingHorizontal,
+      nativeTabBarItemSpacing,
+      nativeTabBarFontSize,
+      nativeTabBarFontFamily,
+      nativeTabBarIndicatorHeight,
+      nativeTabBarIndicatorBottom,
+    )
+    nativeTabBarView.updateColors(
+      nativeTabBarBackgroundColor,
+      nativeTabBarActiveTextColor,
+      nativeTabBarInactiveTextColor,
+      nativeTabBarIndicatorColor,
+    )
+    nativeSubHeaderView.updateColors(
+      nativeTabBarBackgroundColor,
+      nativeTabBarActiveTextColor,
+      nativeTabBarInactiveTextColor,
+      nativeSubHeaderSelectedBackgroundColor,
+      nativeTabBarFontFamily,
+    )
+    updateHeaderLayout()
+  }
+
+  private fun bringNativeHeadersToFront() {
+    nativeTabBarView.bringToFront()
+    nativeSubHeaderView.bringToFront()
   }
 
   fun addReactChild(child: View, index: Int) {
@@ -160,7 +285,11 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     applyPendingInitialPage()
     headerView?.bringToFront()
     stickyHeaderView?.bringToFront()
+    bringNativeHeadersToFront()
     requestLayout()
+    if (safeIndex >= PAGE_SLOT_OFFSET) {
+      log("page-attach slot=${safeIndex - PAGE_SLOT_OFFSET} nativePages=${adapter.itemCount}")
+    }
   }
 
   fun removeReactChild(child: View) {
@@ -179,6 +308,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       else -> {
         findVerticalRecyclerView(child)?.let(::restoreRecyclerInsets)
         adapter.removePage(child)
+        log("page-detach slot=${index - PAGE_SLOT_OFFSET} nativePages=${adapter.itemCount}")
       }
     }
   }
@@ -195,6 +325,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     logicalChildren.clear()
     adapter.clear()
     hasAppliedInitialPage = false
+    log("pages-clear")
   }
 
   fun reactChildCount() = logicalChildren.size
@@ -285,6 +416,20 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
       MeasureSpec.makeMeasureSpec(stickyHeaderHeightPx, MeasureSpec.EXACTLY),
     )
+    val nativeTabHeight = if (nativeTabBarView.visibility == View.VISIBLE) {
+      nativeTabBarView.preferredHeightPx()
+    } else 0
+    nativeTabBarView.measure(
+      MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+      MeasureSpec.makeMeasureSpec(nativeTabHeight, MeasureSpec.EXACTLY),
+    )
+    val nativeSubHeaderHeight = if (nativeSubHeaderView.visibility == View.VISIBLE) {
+      nativeSubHeaderView.preferredHeightPx()
+    } else 0
+    nativeSubHeaderView.measure(
+      MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+      MeasureSpec.makeMeasureSpec(nativeSubHeaderHeight, MeasureSpec.EXACTLY),
+    )
     setMeasuredDimension(width, height)
   }
 
@@ -301,6 +446,14 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       headerHeightPx,
       width,
       headerHeightPx + stickyHeaderHeightPx,
+    )
+    val nativeTabHeight = nativeTabBarView.measuredHeight
+    nativeTabBarView.layout(0, headerHeightPx, width, headerHeightPx + nativeTabHeight)
+    nativeSubHeaderView.layout(
+      0,
+      headerHeightPx + nativeTabHeight,
+      width,
+      headerHeightPx + nativeTabHeight + nativeSubHeaderView.measuredHeight,
     )
     applyHeaderOffset()
     postForCurrentAttachment {
@@ -333,6 +486,8 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     pager.translationY = -offset
     headerView?.translationY = -offset
     stickyHeaderView?.translationY = -offset
+    nativeTabBarView.translationY = -offset
+    nativeSubHeaderView.translationY = -offset
   }
 
   private fun pageKey(index: Int): String = pageKeys.getOrNull(index) ?: "page-$index"
@@ -408,7 +563,10 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     }
     observedScrollListener = listener
     recycler.addOnScrollListener(listener)
-
+    log(
+      "list-observer-attach inner=$selectedPage key=${currentPageKey()} " +
+        "recycler=${System.identityHashCode(recycler)}",
+    )
   }
 
   private fun detachRecyclerObserver() {
@@ -416,6 +574,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val recycler = observedRecyclerView
     val listener = observedScrollListener
     if (recycler != null && listener != null) recycler.removeOnScrollListener(listener)
+    if (recycler != null) {
+      log(
+        "list-observer-detach inner=$selectedPage key=${currentPageKey()} " +
+          "recycler=${System.identityHashCode(recycler)}",
+      )
+    }
     observedRecyclerView = null
     observedScrollListener = null
   }
@@ -511,6 +675,195 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     restoredRecyclerKeys.remove(recycler)
     recycler.clipToPadding = original.clipToPadding
     recycler.setPadding(original.left, original.top, original.right, original.bottom)
+  }
+
+  private fun headerRegionAt(y: Float): String? {
+    val headerBottom = headerHeightPx - headerOffsetPx
+    val stickyBottom = headerHeightPx + stickyHeaderHeightPx - headerOffsetPx
+    return when {
+      y < 0 || y >= stickyBottom -> null
+      y < headerBottom -> "header"
+      y < headerBottom + nativeTabBarView.measuredHeight &&
+        nativeTabBarView.visibility == View.VISIBLE -> "primary-tab"
+      y < headerBottom + nativeTabBarView.measuredHeight + nativeSubHeaderView.measuredHeight &&
+        nativeSubHeaderView.visibility == View.VISIBLE -> "secondary-header"
+      else -> "sticky-controls"
+    }
+  }
+
+  private fun deepestChildAt(group: ViewGroup, x: Float, y: Float): View {
+    for (index in group.childCount - 1 downTo 0) {
+      val child = group.getChildAt(index)
+      if (child.visibility != View.VISIBLE || child.alpha <= 0f) continue
+      val localX = x + group.scrollX - child.left - child.translationX
+      val localY = y + group.scrollY - child.top - child.translationY
+      if (localX < 0 || localY < 0 || localX >= child.width || localY >= child.height) continue
+      return if (child is ViewGroup) deepestChildAt(child, localX, localY) else child
+    }
+    return group
+  }
+
+  private fun hasHorizontalScrollOwner(x: Float, y: Float): Boolean {
+    var target: View? = deepestChildAt(this, x, y)
+    while (target != null && target !== this) {
+      if (
+        target is HorizontalScrollView ||
+        target.canScrollHorizontally(-1) ||
+        target.canScrollHorizontally(1) ||
+        (target is RecyclerView &&
+          (target.layoutManager as? LinearLayoutManager)?.orientation == RecyclerView.HORIZONTAL)
+      ) {
+        return true
+      }
+      target = target.parent as? View
+    }
+    return false
+  }
+
+  private fun cancelHeaderPress(event: MotionEvent, owner: String) {
+    if (pressCancelled) return
+    pressCancelled = true
+    val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+    super.dispatchTouchEvent(cancel)
+    cancel.recycle()
+    if (!nativeGestureStarted) {
+      NativeGestureUtil.notifyNativeGestureStarted(this, event)
+      nativeGestureStarted = true
+    }
+    log(
+      "press-cancel owner=$owner region=$headerTouchRegion " +
+        "inner=$selectedPage outer=${outerPagerIndex()}",
+    )
+  }
+
+  private fun dispatchToRecycler(recycler: RecyclerView, event: MotionEvent): Boolean {
+    val hostLocation = IntArray(2)
+    val recyclerLocation = IntArray(2)
+    getLocationOnScreen(hostLocation)
+    recycler.getLocationOnScreen(recyclerLocation)
+    val copy = MotionEvent.obtain(event)
+    copy.offsetLocation(
+      (hostLocation[0] - recyclerLocation[0]).toFloat(),
+      (hostLocation[1] - recyclerLocation[1]).toFloat(),
+    )
+    val handled = recycler.dispatchTouchEvent(copy)
+    copy.recycle()
+    return handled
+  }
+
+  private fun beginForwardingToRecycler(event: MotionEvent): Boolean {
+    val recycler = recyclerViewForPage(selectedPage) ?: return false
+    forwardedRecycler = recycler
+    headerDownEvent?.let { down -> dispatchToRecycler(recycler, down) }
+    return dispatchToRecycler(recycler, event)
+  }
+
+  private fun finishHeaderGesture(event: MotionEvent) {
+    val owner = headerGestureOwner.name.lowercase()
+    if (nativeGestureStarted) {
+      NativeGestureUtil.notifyNativeGestureEnded(this, event)
+      nativeGestureStarted = false
+    }
+    log(
+      "gesture-end action=${event.actionMasked} owner=$owner region=$headerTouchRegion " +
+        "inner=$selectedPage outer=${outerPagerIndex()} durationMs=" +
+        "${SystemClock.uptimeMillis() - event.downTime}",
+    )
+    headerDownEvent?.recycle()
+    headerDownEvent = null
+    headerTouchActive = false
+    headerTouchRegion = "none"
+    headerGestureOwner = HeaderGestureOwner.NONE
+    headerHasHorizontalChild = false
+    forwardedRecycler = null
+    pressCancelled = false
+  }
+
+  override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+    val event = e
+    if (!nativeSmoothHeaderScrollEnabled) return super.dispatchTouchEvent(event)
+
+    when (event.actionMasked) {
+      MotionEvent.ACTION_DOWN -> {
+        headerDownEvent?.recycle()
+        headerDownEvent = null
+        headerGestureOwner = HeaderGestureOwner.NONE
+        forwardedRecycler = null
+        pressCancelled = false
+        nativeGestureStarted = false
+        headerTouchRegion = headerRegionAt(event.y) ?: "none"
+        headerTouchActive = headerTouchRegion != "none"
+        if (!headerTouchActive) return super.dispatchTouchEvent(event)
+        headerDownX = event.x
+        headerDownY = event.y
+        headerDownEvent = MotionEvent.obtain(event)
+        headerHasHorizontalChild = hasHorizontalScrollOwner(event.x, event.y)
+        parent.requestDisallowInterceptTouchEvent(true)
+        log(
+          "gesture-begin region=$headerTouchRegion owner=pending " +
+            "horizontalChild=$headerHasHorizontalChild inner=$selectedPage " +
+            "outer=${outerPagerIndex()} headerOffset=$headerOffsetPx",
+        )
+        return super.dispatchTouchEvent(event)
+      }
+
+      MotionEvent.ACTION_MOVE -> {
+        if (!headerTouchActive) return super.dispatchTouchEvent(event)
+        if (headerGestureOwner == HeaderGestureOwner.NONE) {
+          val dx = event.x - headerDownX
+          val dy = event.y - headerDownY
+          if (kotlin.math.abs(dx) <= touchSlopPx && kotlin.math.abs(dy) <= touchSlopPx) {
+            return super.dispatchTouchEvent(event)
+          }
+          headerGestureOwner = when {
+            kotlin.math.abs(dy) > kotlin.math.abs(dx) -> HeaderGestureOwner.LIST
+            headerHasHorizontalChild -> HeaderGestureOwner.HORIZONTAL_CHILD
+            else -> HeaderGestureOwner.HEADER_GUARD
+          }
+          log(
+            "direction-lock owner=${headerGestureOwner.name.lowercase()} " +
+              "region=$headerTouchRegion dx=${dx.roundToInt()} dy=${dy.roundToInt()} " +
+              "inner=$selectedPage outer=${outerPagerIndex()}",
+          )
+        }
+        parent.requestDisallowInterceptTouchEvent(true)
+        return when (headerGestureOwner) {
+          HeaderGestureOwner.LIST -> {
+            cancelHeaderPress(event, "list")
+            val recycler = forwardedRecycler
+            if (recycler != null) {
+              dispatchToRecycler(recycler, event)
+            } else if (beginForwardingToRecycler(event)) {
+              true
+            } else {
+              headerGestureOwner = HeaderGestureOwner.HEADER_GUARD
+              log("gesture-list-unavailable region=$headerTouchRegion inner=$selectedPage")
+              true
+            }
+          }
+          HeaderGestureOwner.HORIZONTAL_CHILD -> super.dispatchTouchEvent(event)
+          HeaderGestureOwner.HEADER_GUARD -> {
+            cancelHeaderPress(event, "header-guard")
+            true
+          }
+          HeaderGestureOwner.NONE -> super.dispatchTouchEvent(event)
+        }
+      }
+
+      MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+        if (!headerTouchActive) return super.dispatchTouchEvent(event)
+        val handled = when (headerGestureOwner) {
+          HeaderGestureOwner.LIST -> forwardedRecycler?.let { recycler ->
+            dispatchToRecycler(recycler, event)
+          } ?: true
+          HeaderGestureOwner.HEADER_GUARD -> true
+          else -> super.dispatchTouchEvent(event)
+        }
+        finishHeaderGesture(event)
+        return handled
+      }
+    }
+    return super.dispatchTouchEvent(event)
   }
 
   private fun isCurrentPageTarget(target: View): Boolean {
@@ -612,15 +965,29 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     attachmentGeneration += 1
     restoredRecyclerKeys.clear()
     viewTreeObserver.addOnPreDrawListener(pageContentLayoutListener)
+    log(
+      "host-attach generation=$attachmentGeneration inner=$selectedPage " +
+        "outer=${outerPagerIndex()} nativePages=${adapter.itemCount}",
+    )
   }
 
   override fun onDetachedFromWindow() {
     attachmentGeneration += 1
+    headerDownEvent?.recycle()
+    headerDownEvent = null
+    headerTouchActive = false
+    forwardedRecycler = null
+    pressCancelled = false
+    nativeGestureStarted = false
     viewTreeObserver.removeOnPreDrawListener(pageContentLayoutListener)
     detachRecyclerObserver()
     for (recycler in originalRecyclerPadding.keys.toList()) {
       restoreRecyclerInsets(recycler)
     }
+    log(
+      "host-detach generation=$attachmentGeneration inner=$selectedPage " +
+        "outer=${outerPagerIndex()} nativePages=${adapter.itemCount}",
+    )
     super.onDetachedFromWindow()
   }
 
