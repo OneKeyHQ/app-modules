@@ -209,9 +209,7 @@ pub async fn import_account_ufvk(
 ) -> Result<String, JsValue> {
     Ok(
         runtime::with_db_and_client(move |mut db, mut client| async move {
-            let derivation = seed_fingerprint_hex
-                .as_deref()
-                .zip(account_index);
+            let derivation = seed_fingerprint_hex.as_deref().zip(account_index);
             let r = account::import_ufvk(
                 &mut db,
                 &mut client,
@@ -904,4 +902,33 @@ pub fn self_check(network_name: &str, db_name: &str) -> Result<String, JsValue> 
         "versions": crate::dependency_versions(),
     })
     .to_string())
+}
+
+/// Proves a locally constructed PCZT without opening a wallet or initializing storage.
+#[wasm_bindgen(js_name = pcztProveAtHeight)]
+pub fn pczt_prove_at_height(target_height: u32, pczt_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
+    install_panic_hook();
+    Ok(send::prove_pczt_at_height(
+        &zcash_protocol::consensus::Network::MainNetwork,
+        target_height.into(),
+        &pczt_bytes,
+    )?)
+}
+
+/// Validates and extracts a signed PCZT without persisting wallet state.
+#[wasm_bindgen(js_name = pcztExtractStateless)]
+pub fn pczt_extract_stateless(pczt_bytes: Vec<u8>) -> Result<String, JsValue> {
+    install_panic_hook();
+    let failure = |error: String| RuntimeError::new(ErrorCode::PcztError).detail(error);
+    let pczt = pczt::Pczt::parse(&pczt_bytes).map_err(|e| failure(format!("{e:?}")))?;
+    let tx = pczt::roles::tx_extractor::TransactionExtractor::new(pczt)
+        .extract()
+        .map_err(|e| failure(format!("{e:?}")))?;
+    let mut bytes = Vec::new();
+    tx.write(&mut bytes)
+        .map_err(|e| failure(format!("{e:?}")))?;
+    Ok(
+        serde_json::json!({ "rawTx": hex::encode(bytes), "txid": tx.txid().to_string() })
+            .to_string(),
+    )
 }
