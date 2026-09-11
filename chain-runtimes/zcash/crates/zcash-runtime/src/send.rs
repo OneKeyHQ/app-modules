@@ -721,7 +721,16 @@ pub fn prove_pczt(db: &Db, pczt_bytes: &[u8]) -> Result<Vec<u8>> {
         .chain_height()
         .map_err(|error| build_err("chainHeight", error))?
         .ok_or_else(|| RuntimeError::new(ErrorCode::NotSynced))?;
-    let version = circuit_version_for(&params, chain_tip);
+    prove_pczt_at_height(&params, chain_tip, pczt_bytes)
+}
+
+/// Pure proving: no wallet, database, scan, or storage initialization.
+pub fn prove_pczt_at_height(
+    params: &zcash_protocol::consensus::Network,
+    chain_tip: zcash_protocol::consensus::BlockHeight,
+    pczt_bytes: &[u8],
+) -> Result<Vec<u8>> {
+    let version = circuit_version_for(params, chain_tip);
     let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|error| {
         RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "parse" }))
             .detail(format!("{error:?}"))

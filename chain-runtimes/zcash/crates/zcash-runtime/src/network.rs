@@ -86,6 +86,15 @@ pub fn connect(base_url: &str) -> Result<LightClient> {
             json!({ "reason": "emptyUrl" }),
         ));
     }
+    // 明文会把「这个钱包在查哪些地址」直接暴露给链路上的任何人。原生那条路
+    // 靠 `https://` 前缀决定要不要配 TLS，浏览器这条路之前什么都收 —— 补齐，
+    // 免得哪天开放自定义节点或某个备用地址写错时静默降级。
+    if !base_url.starts_with("https://") {
+        return Err(RuntimeError::with(
+            ErrorCode::LightwalletdNotConfigured,
+            json!({ "reason": "httpsRequired" }),
+        ));
+    }
     Ok(CompactTxStreamerClient::new(
         tonic_web_wasm_client::Client::new(base_url.to_owned()),
     ))

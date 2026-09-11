@@ -160,6 +160,12 @@ pub fn keys_capabilities() -> String {
             "buildWithSeed": true,
             "buildWithAccountXprv": true,
         },
+        "transparentShield": {
+            "createWithSeed": transparent_send::shielding::SHIELD_CREATE_WITH_SEED,
+            "createWithAccountXprv": transparent_send::shielding::SHIELD_CREATE_WITH_ACCOUNT_XPRV,
+            "signWithSeed": transparent_send::shielding::SHIELD_SIGN_WITH_SEED,
+            "signWithAccountXprv": transparent_send::shielding::SHIELD_SIGN_WITH_ACCOUNT_XPRV,
+        },
     })
     .to_string()
 }
@@ -168,4 +174,61 @@ pub fn keys_capabilities() -> String {
 #[wasm_bindgen(js_name = keysDependencyVersions)]
 pub fn dependency_versions() -> String {
     crate::dependency_versions().to_string()
+}
+
+/// Creates a shielding PCZT using only host-supplied transparent inputs.
+#[wasm_bindgen(js_name = transparentShieldCreateWithSeed)]
+pub fn transparent_shield_create_with_seed(
+    request_json: &str,
+    seed: Vec<u8>,
+) -> Result<Vec<u8>, JsValue> {
+    let seed = Zeroizing::new(seed);
+    Ok(transparent_send::shielding::create(request_json, &seed)?)
+}
+
+/// Signs the locally created, proved shielding PCZT.
+#[wasm_bindgen(js_name = transparentShieldSignWithSeed)]
+pub fn transparent_shield_sign_with_seed(
+    request_json: &str,
+    seed: Vec<u8>,
+    original: Vec<u8>,
+    pczt: Vec<u8>,
+) -> Result<Vec<u8>, JsValue> {
+    let seed = Zeroizing::new(seed);
+    Ok(transparent_send::shielding::sign(
+        request_json,
+        &seed,
+        &original,
+        &pczt,
+    )?)
+}
+
+/// Creates a shielding PCZT with an account-level transparent key.
+#[wasm_bindgen(js_name = transparentShieldCreateWithAccountXprv)]
+pub fn transparent_shield_create_with_account_xprv(
+    request_json: &str,
+    account_xprv: String,
+) -> Result<Vec<u8>, JsValue> {
+    let account_xprv = Zeroizing::new(account_xprv);
+    Ok(transparent_send::shielding::create_with_account_xprv(
+        request_json,
+        &account_xprv,
+    )?)
+}
+
+/// Signs a proved shielding PCZT with an account-level transparent key.
+#[wasm_bindgen(js_name = transparentShieldSignWithAccountXprv)]
+pub fn transparent_shield_sign_with_account_xprv(
+    request_json: &str,
+    account_xprv: String,
+    original: Vec<u8>,
+    pczt: Vec<u8>,
+) -> Result<Vec<u8>, JsValue> {
+    let account_xprv = Zeroizing::new(account_xprv);
+    Ok(transparent_send::shielding::sign_with_account_xprv(
+        request_json,
+        &account_xprv,
+        &original,
+        &pczt,
+    )?)
 }
