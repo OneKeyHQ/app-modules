@@ -6,10 +6,905 @@
 #import <react/renderer/components/pagerview/RCTComponentViewHelpers.h>
 
 #import "React/RCTConversions.h"
+#import "React/RCTSurfaceTouchHandler.h"
+#import "React/RCTTouchHandler.h"
 
 using namespace facebook::react;
 
 static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerContentOffsetContext;
+
+typedef void (^RNCCollapsiblePagerNativeTabPressHandler)(NSInteger index, NSString *key);
+
+static CGFloat RNCClamp(CGFloat value, CGFloat minimum, CGFloat maximum)
+{
+  return MIN(MAX(value, minimum), maximum);
+}
+
+static void RNCCollapsiblePagerLog(NSString *message)
+{
+  Class logClass = NSClassFromString(@"ReactNativeNativeLogger.OneKeyLog");
+  if (logClass == nil) {
+    logClass = NSClassFromString(@"OneKeyLog");
+  }
+  SEL selector = NSSelectorFromString(@"debug::");
+  if (logClass == nil || ![logClass respondsToSelector:selector]) return;
+
+  typedef void (*LogFunction)(id, SEL, NSString *, NSString *);
+  LogFunction logFunction = (LogFunction)[logClass methodForSelector:selector];
+  logFunction(logClass, selector, @"CollapsiblePager", message);
+}
+
+static BOOL RNCGetColorComponents(UIColor *color, UITraitCollection *traits,
+                                  CGFloat *red, CGFloat *green, CGFloat *blue, CGFloat *alpha)
+{
+  UIColor *resolved = [color resolvedColorWithTraitCollection:traits];
+  if ([resolved getRed:red green:green blue:blue alpha:alpha]) return YES;
+  CGFloat white = 0;
+  if ([resolved getWhite:&white alpha:alpha]) {
+    *red = white;
+    *green = white;
+    *blue = white;
+    return YES;
+  }
+  return NO;
+}
+
+static UIColor *RNCInterpolateColor(UIColor *from, UIColor *to, CGFloat progress,
+                                    UITraitCollection *traits)
+{
+  CGFloat fromRed = 0, fromGreen = 0, fromBlue = 0, fromAlpha = 1;
+  CGFloat toRed = 0, toGreen = 0, toBlue = 0, toAlpha = 1;
+  if (!RNCGetColorComponents(from, traits, &fromRed, &fromGreen, &fromBlue, &fromAlpha) ||
+      !RNCGetColorComponents(to, traits, &toRed, &toGreen, &toBlue, &toAlpha)) {
+    return progress >= 0.5 ? to : from;
+  }
+  CGFloat clamped = RNCClamp(progress, 0, 1);
+  return [UIColor colorWithRed:fromRed + (toRed - fromRed) * clamped
+                         green:fromGreen + (toGreen - fromGreen) * clamped
+                          blue:fromBlue + (toBlue - fromBlue) * clamped
+                         alpha:fromAlpha + (toAlpha - fromAlpha) * clamped];
+}
+
+@interface RNCCollapsiblePagerHorizontalScrollView : UIScrollView
+@property (nonatomic, copy) NSString *axisOwner;
+@end
+
+@implementation RNCCollapsiblePagerHorizontalScrollView
+
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
+{
+  if (gestureRecognizer != self.panGestureRecognizer) {
+    return [super gestureRecognizerShouldBegin:gestureRecognizer];
+  }
+
+  CGPoint translation = [self.panGestureRecognizer translationInView:self];
+  CGPoint velocity = [self.panGestureRecognizer velocityInView:self];
+  CGPoint intent = fabs(translation.x) + fabs(translation.y) >= 1
+    ? translation
+    : velocity;
+  CGFloat maximumOffset = MAX(0, self.contentSize.width - CGRectGetWidth(self.bounds));
+  BOOL hasHorizontalRange = maximumOffset > 0;
+  BOOL horizontal = MAX(fabs(intent.x), fabs(intent.y)) >= 1 &&
+    fabs(intent.x) > fabs(intent.y);
+  BOOL shouldBegin = hasHorizontalRange && horizontal &&
+    [super gestureRecognizerShouldBegin:gestureRecognizer];
+  RNCCollapsiblePagerLog([NSString stringWithFormat:
+    @"native-tab-axis owner=%@ dx=%.2f dy=%.2f max=%.2f result=%d",
+    _axisOwner ?: @"unknown",
+    intent.x,
+    intent.y,
+    maximumOffset,
+    shouldBegin]);
+  return shouldBegin;
+}
+
+@end
+
+static void RNCLogNativeTabScrollBoundary(NSString *owner,
+                                          NSString *phase,
+                                          UIScrollView *scrollView,
+                                          CGFloat startOffsetX)
+{
+  NSInteger listState = -1;
+  NSInteger pagerState = -1;
+  for (UIView *ancestor = scrollView.superview;
+       ancestor != nil;
+       ancestor = ancestor.superview) {
+    if (![ancestor isKindOfClass:UIScrollView.class]) continue;
+    UIScrollView *ancestorScrollView = (UIScrollView *)ancestor;
+    if (ancestorScrollView.pagingEnabled) {
+      pagerState = ancestorScrollView.panGestureRecognizer.state;
+    } else if (listState < 0 &&
+               (ancestorScrollView.alwaysBounceVertical ||
+                ancestorScrollView.contentSize.height >
+                  CGRectGetHeight(ancestorScrollView.bounds))) {
+      listState = ancestorScrollView.panGestureRecognizer.state;
+    }
+  }
+  RNCCollapsiblePagerLog([NSString stringWithFormat:
+    @"native-tab-scroll owner=%@ phase=%@ x-start=%.2f x-current=%.2f state=%ld list-state=%ld pager-state=%ld",
+    owner,
+    phase,
+    startOffsetX,
+    scrollView.contentOffset.x,
+    (long)scrollView.panGestureRecognizer.state,
+    (long)listState,
+    (long)pagerState]);
+}
+
+@interface RNCCollapsiblePagerNativeTabBarView : UIView <UIScrollViewDelegate>
+@property (nonatomic, copy) RNCCollapsiblePagerNativeTabPressHandler onTabPress;
+- (void)updateItemsJSON:(NSString *)itemsJSON;
+- (void)updateStyleWithHeight:(CGFloat)height
+     contentPaddingHorizontal:(CGFloat)contentPaddingHorizontal
+                  itemSpacing:(CGFloat)itemSpacing
+                     fontSize:(CGFloat)fontSize
+                   fontFamily:(NSString *)fontFamily
+              backgroundColor:(UIColor *)backgroundColor
+              activeTextColor:(UIColor *)activeTextColor
+            inactiveTextColor:(UIColor *)inactiveTextColor
+               indicatorColor:(UIColor *)indicatorColor
+              indicatorHeight:(CGFloat)indicatorHeight
+              indicatorBottom:(CGFloat)indicatorBottom;
+- (void)setProgress:(CGFloat)progress;
+- (void)setLeftToRight:(BOOL)leftToRight;
+- (void)updateAncestorGesturePrecedence;
+@end
+
+@implementation RNCCollapsiblePagerNativeTabBarView {
+  RNCCollapsiblePagerHorizontalScrollView *_scrollView;
+  UIView *_indicatorView;
+  NSArray<NSDictionary *> *_items;
+  NSMutableArray<UIButton *> *_buttons;
+  NSMutableArray<NSValue *> *_indicatorFrames;
+  CGFloat _barHeight;
+  CGFloat _contentPaddingHorizontal;
+  CGFloat _itemSpacing;
+  CGFloat _fontSize;
+  NSString *_fontFamily;
+  UIColor *_activeTextColor;
+  UIColor *_inactiveTextColor;
+  UIColor *_indicatorColor;
+  CGFloat _indicatorHeight;
+  CGFloat _indicatorBottom;
+  CGFloat _progress;
+  BOOL _leftToRight;
+  BOOL _shouldCenterSelectedItem;
+  CGFloat _scrollStartOffsetX;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame
+{
+  if (self = [super initWithFrame:frame]) {
+    _items = @[];
+    _buttons = [NSMutableArray new];
+    _indicatorFrames = [NSMutableArray new];
+    _barHeight = 44;
+    _contentPaddingHorizontal = 20;
+    _itemSpacing = 8;
+    _fontSize = 16;
+    _activeTextColor = UIColor.labelColor;
+    _inactiveTextColor = UIColor.secondaryLabelColor;
+    _indicatorColor = UIColor.labelColor;
+    _indicatorHeight = 2;
+    _indicatorBottom = 0;
+    _leftToRight = YES;
+    _shouldCenterSelectedItem = YES;
+
+    _scrollView = [RNCCollapsiblePagerHorizontalScrollView new];
+    _scrollView.axisOwner = @"primary";
+    _scrollView.showsHorizontalScrollIndicator = NO;
+    _scrollView.showsVerticalScrollIndicator = NO;
+    _scrollView.alwaysBounceHorizontal = YES;
+    _scrollView.directionalLockEnabled = YES;
+    _scrollView.delaysContentTouches = NO;
+    _scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    _scrollView.delegate = self;
+    [self addSubview:_scrollView];
+
+    _indicatorView = [UIView new];
+    _indicatorView.userInteractionEnabled = NO;
+    [_scrollView addSubview:_indicatorView];
+  }
+  return self;
+}
+
+- (UIFont *)tabFont
+{
+  if (_fontFamily.length > 0) {
+    UIFont *font = [UIFont fontWithName:_fontFamily size:_fontSize];
+    if (font != nil) return font;
+  }
+  return [UIFont systemFontOfSize:_fontSize weight:UIFontWeightMedium];
+}
+
+- (void)updateItemsJSON:(NSString *)itemsJSON
+{
+  NSData *data = [itemsJSON dataUsingEncoding:NSUTF8StringEncoding];
+  id parsed = data == nil ? nil : [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+  NSArray *items = [parsed isKindOfClass:NSArray.class] ? parsed : @[];
+  if ([_items isEqualToArray:items]) return;
+  _items = items;
+
+  for (UIButton *button in _buttons) [button removeFromSuperview];
+  [_buttons removeAllObjects];
+  [_indicatorFrames removeAllObjects];
+
+  [_items enumerateObjectsUsingBlock:^(NSDictionary *item, NSUInteger index, BOOL *stop) {
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+    button.tag = (NSInteger)index;
+    button.titleLabel.font = self.tabFont;
+    button.titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    NSString *title = [item[@"title"] isKindOfClass:NSString.class] ? item[@"title"] : @"";
+    [button setTitle:title forState:UIControlStateNormal];
+    [button addTarget:self action:@selector(handleTabPress:) forControlEvents:UIControlEventTouchUpInside];
+    NSString *accessibilityLabel = [item[@"accessibilityLabel"] isKindOfClass:NSString.class]
+      ? item[@"accessibilityLabel"]
+      : title;
+    button.accessibilityLabel = accessibilityLabel;
+    NSString *testID = [item[@"testID"] isKindOfClass:NSString.class] ? item[@"testID"] : nil;
+    button.accessibilityIdentifier = testID;
+    [self->_scrollView addSubview:button];
+    [self->_buttons addObject:button];
+  }];
+
+  [_scrollView bringSubviewToFront:_indicatorView];
+  for (UIButton *button in _buttons) [_scrollView bringSubviewToFront:button];
+  _shouldCenterSelectedItem = YES;
+  self.hidden = _items.count == 0;
+  [self setNeedsLayout];
+}
+
+- (void)updateStyleWithHeight:(CGFloat)height
+     contentPaddingHorizontal:(CGFloat)contentPaddingHorizontal
+                  itemSpacing:(CGFloat)itemSpacing
+                     fontSize:(CGFloat)fontSize
+                   fontFamily:(NSString *)fontFamily
+              backgroundColor:(UIColor *)backgroundColor
+              activeTextColor:(UIColor *)activeTextColor
+            inactiveTextColor:(UIColor *)inactiveTextColor
+               indicatorColor:(UIColor *)indicatorColor
+              indicatorHeight:(CGFloat)indicatorHeight
+              indicatorBottom:(CGFloat)indicatorBottom
+{
+  _barHeight = MAX(1, height);
+  _contentPaddingHorizontal = MAX(0, contentPaddingHorizontal);
+  _itemSpacing = MAX(0, itemSpacing);
+  _fontSize = MAX(1, fontSize);
+  _fontFamily = [fontFamily copy];
+  self.backgroundColor = backgroundColor ?: UIColor.clearColor;
+  _scrollView.backgroundColor = self.backgroundColor;
+  _activeTextColor = activeTextColor ?: UIColor.labelColor;
+  _inactiveTextColor = inactiveTextColor ?: UIColor.secondaryLabelColor;
+  _indicatorColor = indicatorColor ?: _activeTextColor;
+  _indicatorHeight = MAX(0, indicatorHeight);
+  _indicatorBottom = MAX(0, indicatorBottom);
+  _indicatorView.backgroundColor = _indicatorColor;
+  _indicatorView.layer.cornerRadius = _indicatorHeight / 2;
+  for (UIButton *button in _buttons) button.titleLabel.font = self.tabFont;
+  [self setNeedsLayout];
+}
+
+- (void)setLeftToRight:(BOOL)leftToRight
+{
+  if (_leftToRight == leftToRight) return;
+  _leftToRight = leftToRight;
+  _shouldCenterSelectedItem = YES;
+  [self setNeedsLayout];
+}
+
+- (void)updateAncestorGesturePrecedence
+{
+  for (UIView *ancestor = self.superview; ancestor != nil; ancestor = ancestor.superview) {
+    if ([ancestor isKindOfClass:UIScrollView.class]) {
+      UIScrollView *scrollView = (UIScrollView *)ancestor;
+      if (scrollView.pagingEnabled || scrollView.alwaysBounceHorizontal) {
+        [scrollView.panGestureRecognizer
+          requireGestureRecognizerToFail:_scrollView.panGestureRecognizer];
+      }
+    }
+  }
+}
+
+- (void)handleTabPress:(UIButton *)button
+{
+  NSInteger index = button.tag;
+  if (index < 0 || index >= (NSInteger)_items.count) return;
+  NSDictionary *item = _items[index];
+  NSString *key = [item[@"key"] isKindOfClass:NSString.class] ? item[@"key"] : @"";
+  _shouldCenterSelectedItem = YES;
+  if (self.onTabPress) self.onTabPress(index, key);
+}
+
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
+{
+  _shouldCenterSelectedItem = NO;
+  _scrollStartOffsetX = scrollView.contentOffset.x;
+  RNCLogNativeTabScrollBoundary(@"primary", @"begin", scrollView, _scrollStartOffsetX);
+}
+
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView
+                  willDecelerate:(BOOL)decelerate
+{
+  if (decelerate) return;
+  RNCLogNativeTabScrollBoundary(@"primary", @"end", scrollView, _scrollStartOffsetX);
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+{
+  RNCLogNativeTabScrollBoundary(@"primary", @"end", scrollView, _scrollStartOffsetX);
+}
+
+- (void)layoutSubviews
+{
+  [super layoutSubviews];
+  _scrollView.frame = self.bounds;
+  UIFont *font = self.tabFont;
+  NSMutableArray<NSNumber *> *widths = [NSMutableArray arrayWithCapacity:_buttons.count];
+  CGFloat itemsWidth = 0;
+  for (UIButton *button in _buttons) {
+    NSString *title = [button titleForState:UIControlStateNormal] ?: @"";
+    CGFloat textWidth = ceil([title sizeWithAttributes:@{NSFontAttributeName: font}].width);
+    CGFloat buttonWidth = MAX(44, textWidth + 16);
+    [widths addObject:@(buttonWidth)];
+    itemsWidth += buttonWidth;
+  }
+  if (_buttons.count > 1) itemsWidth += (_buttons.count - 1) * _itemSpacing;
+  CGFloat contentWidth = MAX(CGRectGetWidth(self.bounds),
+                             itemsWidth + _contentPaddingHorizontal * 2);
+  _scrollView.contentSize = CGSizeMake(contentWidth, MAX(_barHeight, CGRectGetHeight(self.bounds)));
+  [_indicatorFrames removeAllObjects];
+
+  __block CGFloat x = _leftToRight
+    ? _contentPaddingHorizontal
+    : contentWidth - _contentPaddingHorizontal;
+  [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
+    CGFloat buttonWidth = widths[index].doubleValue;
+    if (!self->_leftToRight) x -= buttonWidth;
+    button.frame = CGRectMake(x, 0, buttonWidth, self->_barHeight);
+    NSString *title = [button titleForState:UIControlStateNormal] ?: @"";
+    CGFloat textWidth = ceil([title sizeWithAttributes:@{NSFontAttributeName: font}].width);
+    CGRect indicatorFrame = CGRectMake(
+      CGRectGetMidX(button.frame) - textWidth / 2,
+      self->_barHeight - self->_indicatorBottom - self->_indicatorHeight,
+      textWidth,
+      self->_indicatorHeight
+    );
+    [self->_indicatorFrames addObject:[NSValue valueWithCGRect:indicatorFrame]];
+    if (self->_leftToRight) {
+      x += buttonWidth + self->_itemSpacing;
+    } else {
+      x -= self->_itemSpacing;
+    }
+  }];
+  [self updatePresentation];
+}
+
+- (void)setProgress:(CGFloat)progress
+{
+  if (_items.count == 0) return;
+  if (fabs(_progress - progress) >= 0.001) _shouldCenterSelectedItem = YES;
+  _progress = RNCClamp(progress, 0, _items.count - 1);
+  if (_indicatorFrames.count == _items.count) [self updatePresentation];
+}
+
+- (void)updatePresentation
+{
+  NSInteger count = _buttons.count;
+  if (count == 0 || _indicatorFrames.count != count) return;
+  CGFloat progress = RNCClamp(_progress, 0, count - 1);
+  NSInteger lower = (NSInteger)floor(progress);
+  NSInteger upper = MIN(lower + 1, count - 1);
+  CGFloat fraction = progress - lower;
+  CGRect fromFrame = _indicatorFrames[lower].CGRectValue;
+  CGRect toFrame = _indicatorFrames[upper].CGRectValue;
+  CGRect indicatorFrame = CGRectMake(
+    CGRectGetMinX(fromFrame) + (CGRectGetMinX(toFrame) - CGRectGetMinX(fromFrame)) * fraction,
+    CGRectGetMinY(fromFrame),
+    CGRectGetWidth(fromFrame) + (CGRectGetWidth(toFrame) - CGRectGetWidth(fromFrame)) * fraction,
+    _indicatorHeight
+  );
+  _indicatorView.frame = indicatorFrame;
+  _indicatorView.hidden = _indicatorHeight <= 0;
+
+  NSInteger selectedIndex = (NSInteger)round(progress);
+  [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
+    CGFloat emphasis = 1 - MIN(1, fabs(progress - index));
+    UIColor *color = RNCInterpolateColor(
+      self->_inactiveTextColor,
+      self->_activeTextColor,
+      emphasis,
+      self.traitCollection
+    );
+    [button setTitleColor:color forState:UIControlStateNormal];
+    button.accessibilityTraits = index == selectedIndex
+      ? UIAccessibilityTraitButton | UIAccessibilityTraitSelected
+      : UIAccessibilityTraitButton;
+  }];
+
+  if (_shouldCenterSelectedItem && !_scrollView.tracking && !_scrollView.dragging &&
+      !_scrollView.decelerating && CGRectGetWidth(_scrollView.bounds) > 0) {
+    CGFloat maximumOffset = MAX(0, _scrollView.contentSize.width - CGRectGetWidth(_scrollView.bounds));
+    CGFloat desiredOffset = RNCClamp(
+      CGRectGetMidX(indicatorFrame) - CGRectGetWidth(_scrollView.bounds) / 2,
+      0,
+      maximumOffset
+    );
+    [_scrollView setContentOffset:CGPointMake(desiredOffset, 0) animated:NO];
+    _shouldCenterSelectedItem = NO;
+  }
+}
+
+@end
+
+@interface RNCCollapsiblePagerNativeSubHeaderView : UIView <UIScrollViewDelegate>
+@property (nonatomic, copy) RNCCollapsiblePagerNativeTabPressHandler onItemPress;
+@property (nonatomic, readonly) CGFloat preferredHeight;
+- (void)updateConfigJSON:(NSString *)configJSON;
+- (void)updateColorsWithBackgroundColor:(UIColor *)backgroundColor
+                        activeTextColor:(UIColor *)activeTextColor
+                      inactiveTextColor:(UIColor *)inactiveTextColor
+                selectedBackgroundColor:(UIColor *)selectedBackgroundColor
+                              fontFamily:(NSString *)fontFamily;
+- (void)setLeftToRight:(BOOL)leftToRight;
+- (void)updateAncestorGesturePrecedence;
+@end
+
+@implementation RNCCollapsiblePagerNativeSubHeaderView {
+  RNCCollapsiblePagerHorizontalScrollView *_tabsScrollView;
+  UIView *_columnsView;
+  UILabel *_leadingColumnLabel;
+  UILabel *_middleColumnLabel;
+  UILabel *_trailingColumnLabel;
+  NSArray<NSDictionary *> *_items;
+  NSMutableArray<UIButton *> *_buttons;
+  NSString *_selectedKey;
+  CGFloat _configuredHeight;
+  CGFloat _tabsHeight;
+  CGFloat _contentPaddingHorizontal;
+  CGFloat _itemSpacing;
+  CGFloat _fontSize;
+  CGFloat _columnFontSize;
+  CGFloat _trailingColumnWidth;
+  CGFloat _columnGap;
+  NSString *_fontFamily;
+  UIColor *_activeTextColor;
+  UIColor *_inactiveTextColor;
+  UIColor *_selectedBackgroundColor;
+  BOOL _leftToRight;
+  BOOL _shouldCenterSelectedItem;
+  CGFloat _scrollStartOffsetX;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame
+{
+  if (self = [super initWithFrame:frame]) {
+    _items = @[];
+    _buttons = [NSMutableArray new];
+    _selectedKey = @"";
+    _configuredHeight = 74;
+    _tabsHeight = 42;
+    _contentPaddingHorizontal = 20;
+    _itemSpacing = 8;
+    _fontSize = 14;
+    _columnFontSize = 12;
+    _trailingColumnWidth = 80;
+    _columnGap = 8;
+    _activeTextColor = UIColor.labelColor;
+    _inactiveTextColor = UIColor.secondaryLabelColor;
+    _selectedBackgroundColor = UIColor.secondarySystemFillColor;
+    _leftToRight = YES;
+    _shouldCenterSelectedItem = YES;
+
+    _tabsScrollView = [RNCCollapsiblePagerHorizontalScrollView new];
+    _tabsScrollView.axisOwner = @"secondary";
+    _tabsScrollView.showsHorizontalScrollIndicator = NO;
+    _tabsScrollView.showsVerticalScrollIndicator = NO;
+    _tabsScrollView.alwaysBounceHorizontal = YES;
+    _tabsScrollView.directionalLockEnabled = YES;
+    _tabsScrollView.delaysContentTouches = NO;
+    _tabsScrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    _tabsScrollView.delegate = self;
+    [self addSubview:_tabsScrollView];
+
+    _columnsView = [UIView new];
+    [self addSubview:_columnsView];
+    _leadingColumnLabel = [UILabel new];
+    _middleColumnLabel = [UILabel new];
+    _trailingColumnLabel = [UILabel new];
+    for (UILabel *label in @[_leadingColumnLabel, _middleColumnLabel, _trailingColumnLabel]) {
+      label.numberOfLines = 1;
+      label.lineBreakMode = NSLineBreakByTruncatingTail;
+      [_columnsView addSubview:label];
+    }
+  }
+  return self;
+}
+
+- (CGFloat)preferredHeight
+{
+  return _configuredHeight;
+}
+
+- (void)didMoveToWindow
+{
+  [super didMoveToWindow];
+  if (self.window == nil) return;
+
+  [self updateAncestorGesturePrecedence];
+}
+
+- (void)updateAncestorGesturePrecedence
+{
+
+  // Keep this nested horizontal scroller ahead of any ancestor pager. Without
+  // this precedence, the Discovery pager can consume the category drag.
+  for (UIView *ancestor = self.superview; ancestor != nil; ancestor = ancestor.superview) {
+    if ([ancestor isKindOfClass:UIScrollView.class]) {
+      UIScrollView *scrollView = (UIScrollView *)ancestor;
+      if (scrollView.pagingEnabled || scrollView.alwaysBounceHorizontal) {
+        [scrollView.panGestureRecognizer
+          requireGestureRecognizerToFail:_tabsScrollView.panGestureRecognizer];
+      }
+    }
+  }
+}
+
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
+{
+  _shouldCenterSelectedItem = NO;
+  _scrollStartOffsetX = scrollView.contentOffset.x;
+  RNCLogNativeTabScrollBoundary(@"secondary", @"begin", scrollView, _scrollStartOffsetX);
+}
+
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView
+                  willDecelerate:(BOOL)decelerate
+{
+  if (decelerate) return;
+  RNCLogNativeTabScrollBoundary(@"secondary", @"end", scrollView, _scrollStartOffsetX);
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+{
+  RNCLogNativeTabScrollBoundary(@"secondary", @"end", scrollView, _scrollStartOffsetX);
+}
+
+- (UIFont *)fontWithSize:(CGFloat)size
+{
+  if (_fontFamily.length > 0) {
+    UIFont *font = [UIFont fontWithName:_fontFamily size:size];
+    if (font != nil) return font;
+  }
+  return [UIFont systemFontOfSize:size weight:UIFontWeightMedium];
+}
+
+- (void)updateConfigJSON:(NSString *)configJSON
+{
+  NSData *data = [configJSON dataUsingEncoding:NSUTF8StringEncoding];
+  id parsed = data == nil ? nil : [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+  NSDictionary *config = [parsed isKindOfClass:NSDictionary.class] ? parsed : @{};
+  NSArray *items = [config[@"items"] isKindOfClass:NSArray.class] ? config[@"items"] : @[];
+  NSString *selectedKey = [config[@"selectedKey"] isKindOfClass:NSString.class]
+    ? config[@"selectedKey"]
+    : @"";
+  NSDictionary *columns = [config[@"columns"] isKindOfClass:NSDictionary.class]
+    ? config[@"columns"]
+    : @{};
+  NSDictionary *style = [config[@"style"] isKindOfClass:NSDictionary.class]
+    ? config[@"style"]
+    : @{};
+
+  BOOL itemsChanged = ![_items isEqualToArray:items];
+  BOOL selectedKeyChanged = ![_selectedKey isEqualToString:selectedKey];
+  _items = items;
+  _selectedKey = [selectedKey copy];
+  if (itemsChanged || selectedKeyChanged) _shouldCenterSelectedItem = YES;
+  _configuredHeight = MAX(1, [style[@"height"] doubleValue] ?: 74);
+  _tabsHeight = MAX(0, [style[@"tabsHeight"] doubleValue] ?: 42);
+  _contentPaddingHorizontal = MAX(
+    0,
+    [style[@"contentPaddingHorizontal"] doubleValue] ?: 20
+  );
+  _itemSpacing = MAX(0, [style[@"itemSpacing"] doubleValue] ?: 8);
+  _fontSize = MAX(1, [style[@"fontSize"] doubleValue] ?: 14);
+  _columnFontSize = MAX(1, [style[@"columnFontSize"] doubleValue] ?: 12);
+  _trailingColumnWidth = MAX(0, [style[@"trailingColumnWidth"] doubleValue] ?: 80);
+  _columnGap = MAX(0, [style[@"columnGap"] doubleValue] ?: 8);
+
+  _leadingColumnLabel.text = [columns[@"leading"] isKindOfClass:NSString.class]
+    ? columns[@"leading"]
+    : @"";
+  _middleColumnLabel.text = [columns[@"middle"] isKindOfClass:NSString.class]
+    ? columns[@"middle"]
+    : @"";
+  _trailingColumnLabel.text = [columns[@"trailing"] isKindOfClass:NSString.class]
+    ? columns[@"trailing"]
+    : @"";
+
+  if (itemsChanged) {
+    for (UIButton *button in _buttons) [button removeFromSuperview];
+    [_buttons removeAllObjects];
+    [_items enumerateObjectsUsingBlock:^(NSDictionary *item, NSUInteger index, BOOL *stop) {
+      UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+      button.tag = (NSInteger)index;
+      button.titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+      NSString *title = [item[@"title"] isKindOfClass:NSString.class] ? item[@"title"] : @"";
+      [button setTitle:title forState:UIControlStateNormal];
+      [button addTarget:self action:@selector(handleItemPress:) forControlEvents:UIControlEventTouchUpInside];
+      button.accessibilityLabel = [item[@"accessibilityLabel"] isKindOfClass:NSString.class]
+        ? item[@"accessibilityLabel"]
+        : title;
+      button.accessibilityIdentifier = [item[@"testID"] isKindOfClass:NSString.class]
+        ? item[@"testID"]
+        : nil;
+      [self->_tabsScrollView addSubview:button];
+      [self->_buttons addObject:button];
+    }];
+  }
+
+  self.hidden = _items.count == 0;
+  [self setNeedsLayout];
+}
+
+- (void)updateColorsWithBackgroundColor:(UIColor *)backgroundColor
+                        activeTextColor:(UIColor *)activeTextColor
+                      inactiveTextColor:(UIColor *)inactiveTextColor
+                selectedBackgroundColor:(UIColor *)selectedBackgroundColor
+                              fontFamily:(NSString *)fontFamily
+{
+  self.backgroundColor = backgroundColor ?: UIColor.clearColor;
+  _tabsScrollView.backgroundColor = self.backgroundColor;
+  _columnsView.backgroundColor = self.backgroundColor;
+  _activeTextColor = activeTextColor ?: UIColor.labelColor;
+  _inactiveTextColor = inactiveTextColor ?: UIColor.secondaryLabelColor;
+  _selectedBackgroundColor = selectedBackgroundColor ?: UIColor.secondarySystemFillColor;
+  _fontFamily = [fontFamily copy];
+  [self setNeedsLayout];
+}
+
+- (void)setLeftToRight:(BOOL)leftToRight
+{
+  if (_leftToRight == leftToRight) return;
+  _leftToRight = leftToRight;
+  [self setNeedsLayout];
+}
+
+- (void)handleItemPress:(UIButton *)button
+{
+  NSInteger index = button.tag;
+  if (index < 0 || index >= (NSInteger)_items.count) return;
+  NSDictionary *item = _items[index];
+  NSString *key = [item[@"key"] isKindOfClass:NSString.class] ? item[@"key"] : @"";
+  if (self.onItemPress) self.onItemPress(index, key);
+}
+
+- (void)layoutSubviews
+{
+  [super layoutSubviews];
+  CGFloat width = CGRectGetWidth(self.bounds);
+  CGFloat height = CGRectGetHeight(self.bounds);
+  CGFloat tabsHeight = MIN(height, _tabsHeight);
+  _tabsScrollView.frame = CGRectMake(0, 0, width, tabsHeight);
+  _columnsView.frame = CGRectMake(0, tabsHeight, width, MAX(0, height - tabsHeight));
+
+  UIFont *itemFont = [self fontWithSize:_fontSize];
+  CGFloat itemsWidth = 0;
+  NSMutableArray<NSNumber *> *widths = [NSMutableArray arrayWithCapacity:_buttons.count];
+  for (UIButton *button in _buttons) {
+    button.titleLabel.font = itemFont;
+    NSString *title = [button titleForState:UIControlStateNormal] ?: @"";
+    CGFloat itemWidth = MAX(44, ceil([title sizeWithAttributes:@{NSFontAttributeName: itemFont}].width) + 20);
+    [widths addObject:@(itemWidth)];
+    itemsWidth += itemWidth;
+  }
+  if (_buttons.count > 1) itemsWidth += (_buttons.count - 1) * _itemSpacing;
+  CGFloat contentWidth = MAX(width, itemsWidth + _contentPaddingHorizontal * 2);
+  _tabsScrollView.contentSize = CGSizeMake(contentWidth, tabsHeight);
+  __block CGFloat x = _leftToRight
+    ? _contentPaddingHorizontal
+    : contentWidth - _contentPaddingHorizontal;
+  __block UIButton *selectedButton = nil;
+  [_buttons enumerateObjectsUsingBlock:^(UIButton *button, NSUInteger index, BOOL *stop) {
+    CGFloat itemWidth = widths[index].doubleValue;
+    if (!self->_leftToRight) x -= itemWidth;
+    button.frame = CGRectMake(x, MAX(0, (tabsHeight - 32) / 2), itemWidth, MIN(32, tabsHeight));
+    NSDictionary *item = self->_items[index];
+    NSString *key = [item[@"key"] isKindOfClass:NSString.class] ? item[@"key"] : @"";
+    BOOL selected = [key isEqualToString:self->_selectedKey];
+    button.backgroundColor = selected ? self->_selectedBackgroundColor : UIColor.clearColor;
+    button.layer.cornerRadius = 10;
+    [button setTitleColor:selected ? self->_activeTextColor : self->_inactiveTextColor
+                 forState:UIControlStateNormal];
+    button.accessibilityTraits = selected
+      ? UIAccessibilityTraitButton | UIAccessibilityTraitSelected
+      : UIAccessibilityTraitButton;
+    if (selected) selectedButton = button;
+    if (self->_leftToRight) {
+      x += itemWidth + self->_itemSpacing;
+    } else {
+      x -= self->_itemSpacing;
+    }
+  }];
+
+  UIFont *columnFont = [self fontWithSize:_columnFontSize];
+  for (UILabel *label in @[_leadingColumnLabel, _middleColumnLabel, _trailingColumnLabel]) {
+    label.font = columnFont;
+    label.textColor = _inactiveTextColor;
+  }
+  CGFloat columnHeight = CGRectGetHeight(_columnsView.bounds);
+  CGFloat half = width / 2;
+  CGFloat trailingX = width - _contentPaddingHorizontal - _trailingColumnWidth;
+  if (_leftToRight) {
+    _leadingColumnLabel.textAlignment = NSTextAlignmentLeft;
+    _middleColumnLabel.textAlignment = NSTextAlignmentRight;
+    _trailingColumnLabel.textAlignment = NSTextAlignmentRight;
+    _leadingColumnLabel.frame = CGRectMake(
+      _contentPaddingHorizontal,
+      0,
+      MAX(0, half - _contentPaddingHorizontal),
+      columnHeight
+    );
+    _middleColumnLabel.frame = CGRectMake(
+      half,
+      0,
+      MAX(0, trailingX - _columnGap - half),
+      columnHeight
+    );
+    _trailingColumnLabel.frame = CGRectMake(
+      trailingX,
+      0,
+      _trailingColumnWidth,
+      columnHeight
+    );
+  } else {
+    _leadingColumnLabel.textAlignment = NSTextAlignmentRight;
+    _middleColumnLabel.textAlignment = NSTextAlignmentLeft;
+    _trailingColumnLabel.textAlignment = NSTextAlignmentLeft;
+    _leadingColumnLabel.frame = CGRectMake(
+      half,
+      0,
+      MAX(0, width - _contentPaddingHorizontal - half),
+      columnHeight
+    );
+    _middleColumnLabel.frame = CGRectMake(
+      _contentPaddingHorizontal + _trailingColumnWidth + _columnGap,
+      0,
+      MAX(0, half - _contentPaddingHorizontal - _trailingColumnWidth - _columnGap),
+      columnHeight
+    );
+    _trailingColumnLabel.frame = CGRectMake(
+      _contentPaddingHorizontal,
+      0,
+      _trailingColumnWidth,
+      columnHeight
+    );
+  }
+
+  if (_shouldCenterSelectedItem && selectedButton != nil &&
+      !_tabsScrollView.tracking && !_tabsScrollView.dragging &&
+      !_tabsScrollView.decelerating) {
+    CGFloat maximumOffset = MAX(0, contentWidth - width);
+    CGFloat desiredOffset = RNCClamp(
+      CGRectGetMidX(selectedButton.frame) - width / 2,
+      0,
+      maximumOffset
+    );
+    [_tabsScrollView setContentOffset:CGPointMake(desiredOffset, 0) animated:NO];
+    _shouldCenterSelectedItem = NO;
+  }
+}
+
+@end
+
+@interface RNCCollapsiblePagerSharedHeaderView : UIView
+@end
+
+@implementation RNCCollapsiblePagerSharedHeaderView
+
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
+{
+  if (self.hidden || !self.userInteractionEnabled || self.alpha <= 0.01) return nil;
+  // A pinned sticky child can be translated below this host's original bounds.
+  // Keep it interactive while the host itself scrolls above the viewport.
+  for (UIView *subview in self.subviews.reverseObjectEnumerator) {
+    if (subview.hidden || subview.alpha <= 0.01 || !subview.userInteractionEnabled) continue;
+    CGPoint childPoint = [subview convertPoint:point fromView:self];
+    UIView *hitView = [subview hitTest:childPoint withEvent:event];
+    if (hitView != nil) return hitView;
+  }
+  return nil;
+}
+
+@end
+
+@interface RNCCollapsiblePagerDirectScrollView : UIScrollView
+@property (nonatomic, weak) UIView *excludedHeaderView;
+@end
+
+@implementation RNCCollapsiblePagerDirectScrollView
+
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
+{
+  if (gestureRecognizer == self.panGestureRecognizer) {
+    UIPanGestureRecognizer *pan = self.panGestureRecognizer;
+    CGPoint translation = [pan translationInView:self];
+    CGPoint velocity = [pan velocityInView:self];
+    CGPoint intent = fabs(translation.x) + fabs(translation.y) >= 1
+      ? translation
+      : velocity;
+    BOOL hasMotion = MAX(fabs(intent.x), fabs(intent.y)) >= 1;
+    if (hasMotion && fabs(intent.y) > fabs(intent.x)) {
+      RNCCollapsiblePagerLog([NSString stringWithFormat:
+        @"pager-axis dx=%.2f dy=%.2f result=vertical-rejected",
+        intent.x,
+        intent.y]);
+      return NO;
+    }
+  }
+  if (gestureRecognizer == self.panGestureRecognizer && self.excludedHeaderView != nil) {
+    CGPoint point = [gestureRecognizer locationInView:self.excludedHeaderView];
+    if ([self.excludedHeaderView hitTest:point withEvent:nil] != nil) {
+      RNCCollapsiblePagerLog(@"pager-header-excluded result=1");
+      return NO;
+    }
+  }
+  return [super gestureRecognizerShouldBegin:gestureRecognizer];
+}
+
+@end
+
+@interface RNCCollapsiblePagerPressCancellationPanGestureRecognizer : UIPanGestureRecognizer
+@end
+
+@implementation RNCCollapsiblePagerPressCancellationPanGestureRecognizer
+
+- (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)preventedGestureRecognizer
+{
+  return [preventedGestureRecognizer isKindOfClass:RCTSurfaceTouchHandler.class] ||
+    [preventedGestureRecognizer isKindOfClass:RCTTouchHandler.class];
+}
+
+@end
+
+@interface RNCCollapsiblePagerOuterPagerPanGestureRecognizer : UIPanGestureRecognizer
+@property (nonatomic, strong) NSHashTable<UIGestureRecognizer *> *blockedPagerGestures;
+@end
+
+@implementation RNCCollapsiblePagerOuterPagerPanGestureRecognizer
+
+- (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)preventedGestureRecognizer
+{
+  return [_blockedPagerGestures containsObject:preventedGestureRecognizer];
+}
+
+- (BOOL)canBePreventedByGestureRecognizer:(UIGestureRecognizer *)preventingGestureRecognizer
+{
+  UIView *view = preventingGestureRecognizer.view;
+  if ([view isKindOfClass:UIScrollView.class] &&
+      [view isDescendantOfView:self.view]) {
+    UIScrollView *scrollView = (UIScrollView *)view;
+    BOOL horizontal = scrollView.alwaysBounceHorizontal ||
+      scrollView.contentSize.width > CGRectGetWidth(scrollView.bounds);
+    if (horizontal && preventingGestureRecognizer == scrollView.panGestureRecognizer) {
+      return YES;
+    }
+  }
+  return NO;
+}
+
+@end
+
+@interface RNCCollapsiblePagerVerticalPagerGuardGestureRecognizer : UIPanGestureRecognizer
+@end
+
+@implementation RNCCollapsiblePagerVerticalPagerGuardGestureRecognizer
+
+- (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)preventedGestureRecognizer
+{
+  return NO;
+}
+
+@end
 
 @interface RNCCollapsiblePagerViewComponentView () <
   RCTRNCCollapsiblePagerViewViewProtocol,
@@ -19,32 +914,59 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   UIGestureRecognizerDelegate
 >
 - (void)finishPagerScrollEmittingSelection:(BOOL)emitSelection;
+- (void)completeTransitionOnNextRunLoopForGeneration:(NSUInteger)generation
+                                         transition:(NSUInteger)transition;
+- (void)setDirectNativePagerEnabled:(BOOL)enabled;
+- (void)attachSharedHeadersToScrollView:(UIScrollView *)scrollView;
+- (void)liftSharedHeadersForPagerTransition:(NSString *)reason;
+- (void)restoreSharedHeadersToContainer;
+- (void)layoutSharedHeaders;
+- (void)preparePageForHorizontalTransitionAtIndex:(NSInteger)pageIndex;
+- (void)updateSharedHeaderPressCancellationGesture;
+- (void)detachSharedHeaderPressCancellationGesture;
+- (void)sharedHeaderPressCancellationGestureChanged:(UIPanGestureRecognizer *)recognizer;
+- (void)outerPagerGestureChanged:(UIPanGestureRecognizer *)recognizer;
+- (void)verticalPagerGuardGestureChanged:(UIPanGestureRecognizer *)recognizer;
+- (void)connectVerticalPagerGuard;
+- (void)observedListPanChanged:(UIPanGestureRecognizer *)recognizer;
 @end
 
 @implementation RNCCollapsiblePagerViewComponentView {
   UIView *_containerView;
+  RNCCollapsiblePagerSharedHeaderView *_sharedHeaderHostView;
   UIPageViewController *_pageViewController;
+  UIScrollView *_pageViewControllerScrollView;
   UIScrollView *_pagerScrollView;
   NSMutableArray<UIView<RCTComponentViewProtocol> *> *_logicalChildren;
   NSMutableArray<UIViewController *> *_pageControllers;
   UIView *_headerView;
   UIView *_stickyHeaderView;
+  RNCCollapsiblePagerNativeTabBarView *_nativeTabBarView;
+  RNCCollapsiblePagerNativeSubHeaderView *_nativeSubHeaderView;
   NSInteger _currentIndex;
   NSInteger _destinationIndex;
   NSInteger _pendingInitialPage;
   NSInteger _headerHeight;
   NSInteger _stickyHeaderHeight;
+  CGFloat _nativeTabBarHeight;
+  CGFloat _nativeSubHeaderHeight;
   CGFloat _headerOffset;
   BOOL _scrollEnabled;
   // OneKey patch: Coordinate this inner pager with an outer horizontal pager.
   BOOL _nestedScrollEnabled;
+  BOOL _nativeSmoothHeaderScrollEnabled;
   UIPanGestureRecognizer *_blockerGesture;
   BOOL _transitioning;
   BOOL _isPagerDragging;
+  BOOL _directNativePagerEnabled;
+  BOOL _pendingDirectNativePagerEnabled;
+  BOOL _hasPendingDirectNativePagerChange;
   BOOL _hasReceivedPageCommand;
   NSUInteger _transitionId;
   // OneKey patch: Retain the latest tab tap while an animation is in flight.
   NSInteger _pendingGoToIndex;
+  BOOL _pendingGoToAnimated;
+  BOOL _needsSlotRebuild;
   BOOL _hasAppliedInitialPage;
   BOOL _needsPropsReapply;
   NSString *_layoutDirection;
@@ -57,7 +979,16 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   NSMapTable<UIScrollView *, NSNumber *> *_originalAlwaysBounceVertical;
   NSMapTable<UIScrollView *, NSNumber *> *_originalInsetAdjustmentBehavior;
   __weak UIScrollView *_observedScrollView;
+  __weak UIScrollView *_sharedHeaderScrollView;
+  __weak UIView *_sharedHeaderPressCancellationGestureHost;
+  __weak UIGestureRecognizer *_reactTouchHandler;
+  UIPanGestureRecognizer *_sharedHeaderPressCancellationGesture;
+  RNCCollapsiblePagerOuterPagerPanGestureRecognizer *_sharedHeaderOuterPagerGesture;
+  UIPanGestureRecognizer *_verticalPagerGesture;
   BOOL _observingContentOffset;
+  CGFloat _currentLogicalOffset;
+  CGFloat _observedListPanStartLogicalOffset;
+  BOOL _sharedHeadersLiftedForPagerTransition;
   BOOL _isBeingRecycled;
   NSUInteger _generation;
 }
@@ -86,8 +1017,15 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
     _destinationIndex = 0;
     _pendingInitialPage = 0;
     _scrollEnabled = YES;
+    _nativeTabBarHeight = 44;
+    _nativeSubHeaderHeight = 74;
     _nestedScrollEnabled = NO;
+    _nativeSmoothHeaderScrollEnabled = NO;
+    _directNativePagerEnabled = NO;
+    _pendingDirectNativePagerEnabled = NO;
+    _hasPendingDirectNativePagerChange = NO;
     _pendingGoToIndex = -1;
+    _pendingGoToAnimated = YES;
     _hasAppliedInitialPage = NO;
     _needsPropsReapply = YES;
     _layoutDirection = @"ltr";
@@ -95,6 +1033,50 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
     _containerView = [UIView new];
     _containerView.clipsToBounds = YES;
     self.contentView = _containerView;
+
+    _sharedHeaderHostView = [RNCCollapsiblePagerSharedHeaderView new];
+    _sharedHeaderHostView.clipsToBounds = NO;
+    [_containerView addSubview:_sharedHeaderHostView];
+
+    _verticalPagerGesture =
+      [[RNCCollapsiblePagerVerticalPagerGuardGestureRecognizer alloc]
+        initWithTarget:self
+        action:@selector(verticalPagerGuardGestureChanged:)];
+    _verticalPagerGesture.delegate = self;
+    _verticalPagerGesture.cancelsTouchesInView = NO;
+    _verticalPagerGesture.enabled = NO;
+    [self addGestureRecognizer:_verticalPagerGesture];
+
+    _nativeTabBarView = [RNCCollapsiblePagerNativeTabBarView new];
+    _nativeTabBarView.hidden = YES;
+    __weak __typeof__(self) weakSelf = self;
+    _nativeTabBarView.onTabPress = ^(NSInteger index, NSString *key) {
+      __strong __typeof__(weakSelf) self = weakSelf;
+      if (self == nil || self->_isBeingRecycled) return;
+      const auto emitter = [self eventEmitter];
+      if (emitter) {
+        emitter->onNativeTabPress({
+          .position = (int)index,
+          .key = std::string(key.UTF8String ?: "")
+        });
+      }
+    };
+    [_sharedHeaderHostView addSubview:_nativeTabBarView];
+
+    _nativeSubHeaderView = [RNCCollapsiblePagerNativeSubHeaderView new];
+    _nativeSubHeaderView.hidden = YES;
+    _nativeSubHeaderView.onItemPress = ^(NSInteger index, NSString *key) {
+      __strong __typeof__(weakSelf) self = weakSelf;
+      if (self == nil || self->_isBeingRecycled) return;
+      const auto emitter = [self eventEmitter];
+      if (emitter) {
+        emitter->onNativeSubHeaderPress({
+          .position = (int)index,
+          .key = std::string(key.UTF8String ?: "")
+        });
+      }
+    };
+    [_sharedHeaderHostView addSubview:_nativeSubHeaderView];
 
     [self initializePageViewController];
   }
@@ -104,7 +1086,7 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 - (void)willMoveToSuperview:(UIView *)newSuperview
 {
   [super willMoveToSuperview:newSuperview];
-  if (newSuperview != nil && _pageViewController == nil) {
+  if (newSuperview != nil && !_directNativePagerEnabled && _pageViewController == nil) {
     self.contentView = _containerView;
     [self initializePageViewController];
   }
@@ -113,6 +1095,7 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 - (void)didMoveToWindow
 {
   [super didMoveToWindow];
+  [self updateSharedHeaderPressCancellationGesture];
   // OneKey patch: removing a decelerating page from its window can suppress
   // UIKit's final scroll callback. Restore the last acknowledged page on reattach.
   if (self.window != nil && _isPagerDragging &&
@@ -121,8 +1104,14 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   }
 }
 
+- (void)dealloc
+{
+  [self detachSharedHeaderPressCancellationGesture];
+}
+
 - (void)initializePageViewController
 {
+  if (_directNativePagerEnabled) return;
   _pageViewController = [[UIPageViewController alloc]
     initWithTransitionStyle:UIPageViewControllerTransitionStyleScroll
     navigationOrientation:UIPageViewControllerNavigationOrientationHorizontal
@@ -136,6 +1125,7 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   for (UIView *subview in _pageViewController.view.subviews) {
     if ([subview isKindOfClass:UIScrollView.class]) {
       _pagerScrollView = (UIScrollView *)subview;
+      _pageViewControllerScrollView = _pagerScrollView;
       _pagerScrollView.delegate = self;
       _pagerScrollView.delaysContentTouches = NO;
       _pagerScrollView.scrollEnabled = _scrollEnabled;
@@ -143,6 +1133,202 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
     }
   }
   [self applyNestedScrollBlocker];
+  [self connectVerticalPagerGuard];
+}
+
+- (void)setDirectNativePagerEnabled:(BOOL)enabled
+{
+  if ([_pagerScrollView isKindOfClass:RNCCollapsiblePagerDirectScrollView.class]) {
+    ((RNCCollapsiblePagerDirectScrollView *)_pagerScrollView).excludedHeaderView =
+      _nativeSmoothHeaderScrollEnabled ? _sharedHeaderHostView : nil;
+  }
+  if (_transitioning || _isPagerDragging) {
+    _pendingDirectNativePagerEnabled = enabled;
+    _hasPendingDirectNativePagerChange = YES;
+    return;
+  }
+  _hasPendingDirectNativePagerChange = NO;
+  if (_directNativePagerEnabled == enabled) return;
+
+  [self detachScrollObserver];
+  [self restoreSharedHeadersToContainer];
+  if (_blockerGesture != nil) {
+    [self removeGestureRecognizer:_blockerGesture];
+    _blockerGesture = nil;
+  }
+  for (UIViewController *controller in _pageControllers) {
+    [controller.view removeFromSuperview];
+  }
+
+  if (enabled) {
+    _pageViewController.dataSource = nil;
+    _pageViewController.delegate = nil;
+    _pageViewControllerScrollView.delegate = nil;
+    [_pageViewController.view removeFromSuperview];
+    _pageViewController = nil;
+    _pageViewControllerScrollView = nil;
+
+    RNCCollapsiblePagerDirectScrollView *directPager =
+      [RNCCollapsiblePagerDirectScrollView new];
+    directPager.excludedHeaderView = _nativeSmoothHeaderScrollEnabled
+      ? _sharedHeaderHostView
+      : nil;
+    directPager.pagingEnabled = YES;
+    directPager.directionalLockEnabled = YES;
+    directPager.delaysContentTouches = NO;
+    directPager.showsHorizontalScrollIndicator = NO;
+    directPager.showsVerticalScrollIndicator = NO;
+    directPager.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    directPager.scrollEnabled = _scrollEnabled;
+    directPager.delegate = self;
+    [_containerView insertSubview:directPager atIndex:0];
+    _pagerScrollView = directPager;
+    _directNativePagerEnabled = YES;
+  } else {
+    _pagerScrollView.delegate = nil;
+    [_pagerScrollView removeFromSuperview];
+    _pagerScrollView = nil;
+    _directNativePagerEnabled = NO;
+    [self initializePageViewController];
+  }
+
+  [self applyNestedScrollBlocker];
+  [self connectVerticalPagerGuard];
+  [self rebuildSlots];
+  [self updateSharedHeaderPressCancellationGesture];
+  [self setNeedsLayout];
+}
+
+- (CGFloat)directPagerOffsetForIndex:(NSInteger)index
+{
+  CGFloat width = CGRectGetWidth(_pagerScrollView.bounds);
+  if (width <= 0 || _pageControllers.count == 0) return 0;
+  NSInteger physicalIndex = self.isLtrLayout
+    ? index
+    : (NSInteger)_pageControllers.count - 1 - index;
+  return width * MAX(0, physicalIndex);
+}
+
+- (CGFloat)directPagerProgress
+{
+  CGFloat width = CGRectGetWidth(_pagerScrollView.bounds);
+  if (width <= 0 || _pageControllers.count == 0) return _currentIndex;
+  CGFloat physicalProgress = RNCClamp(
+    _pagerScrollView.contentOffset.x / width,
+    0,
+    _pageControllers.count - 1
+  );
+  return self.isLtrLayout
+    ? physicalProgress
+    : _pageControllers.count - 1 - physicalProgress;
+}
+
+#pragma mark - Smooth shared header ownership
+
+- (void)restoreSharedHeadersToContainer
+{
+  _sharedHeaderScrollView = nil;
+  _sharedHeadersLiftedForPagerTransition = NO;
+  _sharedHeaderHostView.layer.zPosition = 0;
+  if (_sharedHeaderHostView.superview != _containerView) {
+    [_containerView addSubview:_sharedHeaderHostView];
+  }
+  [self layoutSharedHeaders];
+}
+
+- (void)attachSharedHeadersToScrollView:(UIScrollView *)scrollView
+{
+  if (!_nativeSmoothHeaderScrollEnabled || _transitioning || _isPagerDragging ||
+      scrollView == nil || _isBeingRecycled) return;
+  if (_sharedHeaderScrollView == scrollView &&
+      _sharedHeaderHostView.superview == scrollView) {
+    [self layoutSharedHeaders];
+    return;
+  }
+
+  _sharedHeaderScrollView = scrollView;
+  _sharedHeadersLiftedForPagerTransition = NO;
+  _sharedHeaderHostView.layer.zPosition = 1000;
+  if (_sharedHeaderHostView.superview != scrollView) {
+    [scrollView addSubview:_sharedHeaderHostView];
+  }
+  [_nativeTabBarView updateAncestorGesturePrecedence];
+  [_nativeSubHeaderView updateAncestorGesturePrecedence];
+  _currentLogicalOffset = scrollView.contentOffset.y + scrollView.contentInset.top;
+  [self layoutSharedHeaders];
+  RNCCollapsiblePagerLog([NSString stringWithFormat:
+    @"header-owner=list page=%ld offset=%.2f",
+    (long)_currentIndex,
+    _currentLogicalOffset]);
+}
+
+- (void)liftSharedHeadersForPagerTransition:(NSString *)reason
+{
+  if (!_nativeSmoothHeaderScrollEnabled || _sharedHeadersLiftedForPagerTransition ||
+      _isBeingRecycled) return;
+  [self restoreSharedHeadersToContainer];
+  _sharedHeadersLiftedForPagerTransition = YES;
+  [self layoutSharedHeaders];
+  RNCCollapsiblePagerLog([NSString stringWithFormat:
+    @"header-owner=pager page=%ld destination=%ld reason=%@",
+    (long)_currentIndex,
+    (long)_destinationIndex,
+    reason ?: @"unknown"]);
+}
+
+- (void)layoutSharedHeaders
+{
+  CGFloat width = CGRectGetWidth(self.bounds);
+  CGFloat totalHeight = _headerHeight + _stickyHeaderHeight;
+  BOOL attachedToList = _nativeSmoothHeaderScrollEnabled &&
+    _sharedHeaderScrollView != nil && !_sharedHeadersLiftedForPagerTransition;
+
+  _sharedHeaderHostView.transform = CGAffineTransformIdentity;
+  _headerView.transform = CGAffineTransformIdentity;
+  _stickyHeaderView.transform = CGAffineTransformIdentity;
+  _nativeTabBarView.transform = CGAffineTransformIdentity;
+  _nativeSubHeaderView.transform = CGAffineTransformIdentity;
+
+  _sharedHeaderHostView.frame = CGRectMake(
+    0,
+    attachedToList ? -totalHeight : 0,
+    width,
+    totalHeight
+  );
+  CGFloat stickyY = _headerHeight;
+  _headerView.frame = CGRectMake(0, 0, width, _headerHeight);
+  _stickyHeaderView.frame = CGRectMake(0, stickyY, width, _stickyHeaderHeight);
+  CGFloat nativeTabBarVisibleHeight = _nativeTabBarView.hidden
+    ? 0
+    : MIN(_stickyHeaderHeight, _nativeTabBarHeight);
+  _nativeTabBarView.frame = CGRectMake(
+    0,
+    stickyY,
+    width,
+    nativeTabBarVisibleHeight
+  );
+  _nativeSubHeaderView.frame = CGRectMake(
+    0,
+    stickyY + nativeTabBarVisibleHeight,
+    width,
+    MIN(
+      MAX(0, _stickyHeaderHeight - nativeTabBarVisibleHeight),
+      _nativeSubHeaderHeight
+    )
+  );
+  [self applyHeaderOffset];
+}
+
+- (void)preparePageForHorizontalTransitionAtIndex:(NSInteger)pageIndex
+{
+  if (!_nativeSmoothHeaderScrollEnabled || _headerOffset >= _headerHeight ||
+      pageIndex < 0 || pageIndex >= _pageControllers.count) return;
+
+  _pageOffsets[[self pageKeyForIndex:pageIndex]] = @(_headerOffset);
+  UIScrollView *scrollView = [self findVerticalScrollViewInView:_pageControllers[pageIndex].view];
+  if (scrollView != nil && scrollView != _observedScrollView) {
+    [self applyInsetsToScrollView:scrollView pageIndex:pageIndex restore:YES];
+  }
 }
 
 #pragma mark - React mounting
@@ -169,24 +1355,36 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 
 - (void)rebuildSlots
 {
+  if (_transitioning || _isPagerDragging) {
+    _needsSlotRebuild = YES;
+    return;
+  }
+  _needsSlotRebuild = NO;
   [self detachScrollObserver];
+  [self restoreSharedHeadersToContainer];
   // OneKey patch: Fabric reuses these views without resetting transforms
   // written by a native parent. Release our collapse translation with the slot.
   _headerView.transform = CGAffineTransformIdentity;
   _stickyHeaderView.transform = CGAffineTransformIdentity;
+  _sharedHeaderHostView.transform = CGAffineTransformIdentity;
+  _nativeTabBarView.transform = CGAffineTransformIdentity;
+  _nativeSubHeaderView.transform = CGAffineTransformIdentity;
   [_headerView removeFromSuperview];
   [_stickyHeaderView removeFromSuperview];
+  for (UIViewController *controller in _pageControllers) {
+    [controller.view removeFromSuperview];
+  }
   _headerView = nil;
   _stickyHeaderView = nil;
   [_pageControllers removeAllObjects];
 
   if (_logicalChildren.count > 0) {
     _headerView = _logicalChildren[0];
-    [_containerView addSubview:_headerView];
+    [_sharedHeaderHostView addSubview:_headerView];
   }
   if (_logicalChildren.count > 1) {
     _stickyHeaderView = _logicalChildren[1];
-    [_containerView addSubview:_stickyHeaderView];
+    [_sharedHeaderHostView addSubview:_stickyHeaderView];
   }
   for (NSInteger index = 2; index < _logicalChildren.count; index++) {
     UIView *page = _logicalChildren[index];
@@ -201,18 +1399,32 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
         _pendingInitialPage < _pageControllers.count) {
       _currentIndex = _pendingInitialPage;
       // A recycled host may receive slots before its page controller exists.
-      _hasAppliedInitialPage = _pageViewController != nil;
+      _hasAppliedInitialPage = _directNativePagerEnabled || _pageViewController != nil;
     } else {
       _currentIndex = MIN(MAX(_currentIndex, 0), _pageControllers.count - 1);
     }
-    UIViewController *controller = _pageControllers[_currentIndex];
-    [_pageViewController setViewControllers:@[controller]
-                                  direction:UIPageViewControllerNavigationDirectionForward
-                                   animated:NO
-                                 completion:nil];
+    _destinationIndex = _currentIndex;
+    if (_directNativePagerEnabled) {
+      for (UIViewController *controller in _pageControllers) {
+        [_pagerScrollView addSubview:controller.view];
+      }
+      [_pagerScrollView setContentOffset:CGPointMake(
+        [self directPagerOffsetForIndex:_currentIndex],
+        0
+      ) animated:NO];
+    } else {
+      UIViewController *controller = _pageControllers[_currentIndex];
+      [_pageViewController setViewControllers:@[controller]
+                                    direction:UIPageViewControllerNavigationDirectionForward
+                                     animated:NO
+                                   completion:nil];
+    }
+    [_nativeTabBarView setProgress:_currentIndex];
   }
-  if (_headerView != nil) [_containerView bringSubviewToFront:_headerView];
-  if (_stickyHeaderView != nil) [_containerView bringSubviewToFront:_stickyHeaderView];
+  if (_stickyHeaderView != nil) [_sharedHeaderHostView bringSubviewToFront:_stickyHeaderView];
+  if (!_nativeTabBarView.hidden) [_sharedHeaderHostView bringSubviewToFront:_nativeTabBarView];
+  if (!_nativeSubHeaderView.hidden) [_sharedHeaderHostView bringSubviewToFront:_nativeSubHeaderView];
+  [_containerView bringSubviewToFront:_sharedHeaderHostView];
   [self setNeedsLayout];
   dispatch_async(dispatch_get_main_queue(), ^{
     if (!self->_isBeingRecycled) {
@@ -226,38 +1438,68 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 {
   [super layoutSubviews];
   _containerView.frame = self.bounds;
-  _pageViewController.view.frame = _containerView.bounds;
+  if (_directNativePagerEnabled) {
+    _pagerScrollView.frame = _containerView.bounds;
+  } else {
+    _pageViewController.view.frame = _containerView.bounds;
+  }
   // OneKey patch: Fabric may mount page slots before applying the host props.
   // Commit the pending initial page once both props and page controllers exist.
-  if (!_hasAppliedInitialPage && _pageViewController != nil &&
+  if (!_transitioning && !_isPagerDragging && !_hasAppliedInitialPage &&
+      (_directNativePagerEnabled ? _pagerScrollView != nil : _pageViewController != nil) &&
       _pendingInitialPage >= 0 && _pendingInitialPage < _pageControllers.count) {
     [self detachScrollObserver];
     _currentIndex = _pendingInitialPage;
     _destinationIndex = _currentIndex;
     _hasAppliedInitialPage = YES;
-    [_pageViewController setViewControllers:@[_pageControllers[_currentIndex]]
-                                  direction:UIPageViewControllerNavigationDirectionForward
-                                   animated:NO
-                                 completion:nil];
+    if (_directNativePagerEnabled) {
+      [_pagerScrollView setContentOffset:CGPointMake(
+        [self directPagerOffsetForIndex:_currentIndex],
+        0
+      ) animated:NO];
+    } else {
+      [_pageViewController setViewControllers:@[_pageControllers[_currentIndex]]
+                                    direction:UIPageViewControllerNavigationDirectionForward
+                                     animated:NO
+                                   completion:nil];
+    }
+    [_nativeTabBarView setProgress:_currentIndex];
   }
   // UIKit frame assignment is undefined while a view has a non-identity transform.
-  // Lay out the original slots, then restore the shared collapse translation.
+  // Restore transforms before settling page and shared-header frames.
   _headerView.transform = CGAffineTransformIdentity;
   _stickyHeaderView.transform = CGAffineTransformIdentity;
-  _headerView.frame = CGRectMake(0, 0, self.bounds.size.width, _headerHeight);
-  _stickyHeaderView.frame = CGRectMake(
-    0,
-    _headerHeight,
-    self.bounds.size.width,
-    _stickyHeaderHeight
-  );
-  // Settle UIKit page containers before sizing their autoresizing child views.
-  [_pageViewController.view layoutIfNeeded];
-  for (UIViewController *controller in _pageControllers) {
-    controller.view.frame = _pageViewController.view.bounds;
-    controller.view.subviews.firstObject.frame = controller.view.bounds;
+  _sharedHeaderHostView.transform = CGAffineTransformIdentity;
+  _nativeTabBarView.transform = CGAffineTransformIdentity;
+  _nativeSubHeaderView.transform = CGAffineTransformIdentity;
+  // Settle native page containers before sizing their React child views.
+  if (_directNativePagerEnabled) {
+    CGFloat width = CGRectGetWidth(_pagerScrollView.bounds);
+    CGFloat height = CGRectGetHeight(_pagerScrollView.bounds);
+    _pagerScrollView.contentSize = CGSizeMake(width * _pageControllers.count, height);
+    [_pageControllers enumerateObjectsUsingBlock:^(UIViewController *controller,
+                                                    NSUInteger index,
+                                                    BOOL *stop) {
+      NSInteger physicalIndex = self.isLtrLayout
+        ? (NSInteger)index
+        : (NSInteger)self->_pageControllers.count - 1 - (NSInteger)index;
+      controller.view.frame = CGRectMake(width * physicalIndex, 0, width, height);
+      controller.view.subviews.firstObject.frame = controller.view.bounds;
+    }];
+    if (!_transitioning && !_isPagerDragging) {
+      [_pagerScrollView setContentOffset:CGPointMake(
+        [self directPagerOffsetForIndex:_currentIndex],
+        0
+      ) animated:NO];
+    }
+  } else {
+    [_pageViewController.view layoutIfNeeded];
+    for (UIViewController *controller in _pageControllers) {
+      controller.view.frame = _pageViewController.view.bounds;
+      controller.view.subviews.firstObject.frame = controller.view.bounds;
+    }
   }
-  [self applyHeaderOffset];
+  [self layoutSharedHeaders];
   dispatch_async(dispatch_get_main_queue(), ^{
     if (!self->_isBeingRecycled) {
       [self prepareAdjacentPageInsets];
@@ -270,7 +1512,9 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 {
   _isBeingRecycled = YES;
   _generation++;
+  [self detachSharedHeaderPressCancellationGesture];
   [self detachScrollObserver];
+  [self restoreSharedHeadersToContainer];
   for (UIScrollView *scrollView in _originalInsets.keyEnumerator) {
     NSValue *value = [_originalInsets objectForKey:scrollView];
     if (value != nil) {
@@ -301,8 +1545,13 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   // written by a native parent. Release our collapse translation with the slot.
   _headerView.transform = CGAffineTransformIdentity;
   _stickyHeaderView.transform = CGAffineTransformIdentity;
+  _nativeTabBarView.transform = CGAffineTransformIdentity;
+  _nativeSubHeaderView.transform = CGAffineTransformIdentity;
   [_headerView removeFromSuperview];
   [_stickyHeaderView removeFromSuperview];
+  for (UIViewController *controller in _pageControllers) {
+    [controller.view removeFromSuperview];
+  }
   [_logicalChildren removeAllObjects];
   [_pageControllers removeAllObjects];
   _headerView = nil;
@@ -315,7 +1564,11 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
     _blockerGesture = nil;
   }
   [_pageViewController.view removeFromSuperview];
+  if (_directNativePagerEnabled) {
+    [_pagerScrollView removeFromSuperview];
+  }
   _pageViewController = nil;
+  _pageViewControllerScrollView = nil;
   _pagerScrollView = nil;
   [super prepareForRecycle];
   [_pageOffsets removeAllObjects];
@@ -326,17 +1579,36 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   _pendingInitialPage = 0;
   _headerHeight = 0;
   _stickyHeaderHeight = 0;
+  _nativeTabBarHeight = 44;
+  _nativeSubHeaderHeight = 74;
   _headerOffset = 0;
+  _currentLogicalOffset = 0;
+  _observedListPanStartLogicalOffset = 0;
+  _sharedHeaderHostView.transform = CGAffineTransformIdentity;
+  _sharedHeaderHostView.frame = CGRectZero;
+  _sharedHeaderHostView.layer.zPosition = 0;
   _scrollEnabled = YES;
   _nestedScrollEnabled = NO;
+  _nativeSmoothHeaderScrollEnabled = NO;
+  _directNativePagerEnabled = NO;
+  _pendingDirectNativePagerEnabled = NO;
+  _hasPendingDirectNativePagerChange = NO;
   _transitioning = NO;
   _isPagerDragging = NO;
+  _sharedHeaderScrollView = nil;
+  _sharedHeadersLiftedForPagerTransition = NO;
+  _verticalPagerGesture.enabled = NO;
   _hasReceivedPageCommand = NO;
   _pendingGoToIndex = -1;
+  _pendingGoToAnimated = YES;
+  _needsSlotRebuild = NO;
   _hasAppliedInitialPage = NO;
   // OneKey patch: Fabric retains old props when recycling this view.
   _needsPropsReapply = YES;
   _layoutDirection = @"ltr";
+  [_nativeTabBarView updateItemsJSON:@"[]"];
+  [_nativeTabBarView setProgress:0];
+  [_nativeSubHeaderView updateConfigJSON:@"{}"];
   _isBeingRecycled = NO;
 }
 
@@ -362,8 +1634,28 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
     _nestedScrollEnabled = newViewProps.nestedScrollEnabled;
     [self applyNestedScrollBlocker];
   }
+  if (_needsPropsReapply ||
+      oldViewProps.nativeSmoothHeaderScrollEnabled !=
+        newViewProps.nativeSmoothHeaderScrollEnabled) {
+    _nativeSmoothHeaderScrollEnabled = newViewProps.nativeSmoothHeaderScrollEnabled;
+    _verticalPagerGesture.enabled = _nativeSmoothHeaderScrollEnabled;
+    [self connectVerticalPagerGuard];
+    [self setDirectNativePagerEnabled:
+      _nativeSmoothHeaderScrollEnabled || !_nativeTabBarView.hidden];
+    if (_nativeSmoothHeaderScrollEnabled) {
+      [self attachSharedHeadersToScrollView:_observedScrollView];
+    } else {
+      [self restoreSharedHeadersToContainer];
+    }
+    [self updateSharedHeaderPressCancellationGesture];
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"smooth-header enabled=%d",
+      _nativeSmoothHeaderScrollEnabled]);
+  }
   if (_needsPropsReapply || oldViewProps.layoutDirection != newViewProps.layoutDirection) {
     _layoutDirection = RCTNSStringFromString(toString(newViewProps.layoutDirection));
+    [_nativeTabBarView setLeftToRight:self.isLtrLayout];
+    [_nativeSubHeaderView setLeftToRight:self.isLtrLayout];
   }
   BOOL insetsChanged = NO;
   if (_needsPropsReapply || oldViewProps.headerHeight != newViewProps.headerHeight) {
@@ -385,6 +1677,56 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
     _retainedPages = RCTNSStringFromString(newViewProps.retainedPages);
     [self setNeedsLayout];
   }
+  if (_needsPropsReapply || oldViewProps.nativeTabBarItems != newViewProps.nativeTabBarItems) {
+    NSString *itemsJSON = RCTNSStringFromString(newViewProps.nativeTabBarItems);
+    [_nativeTabBarView updateItemsJSON:itemsJSON];
+    [self setDirectNativePagerEnabled:
+      _nativeSmoothHeaderScrollEnabled || !_nativeTabBarView.hidden];
+    [self setNeedsLayout];
+  }
+  if (_needsPropsReapply || oldViewProps.nativeSubHeaderConfig != newViewProps.nativeSubHeaderConfig) {
+    NSString *configJSON = RCTNSStringFromString(newViewProps.nativeSubHeaderConfig);
+    [_nativeSubHeaderView updateConfigJSON:configJSON];
+    _nativeSubHeaderHeight = _nativeSubHeaderView.preferredHeight;
+    [self setNeedsLayout];
+  }
+  if (_needsPropsReapply ||
+      oldViewProps.nativeTabBarHeight != newViewProps.nativeTabBarHeight ||
+      oldViewProps.nativeTabBarContentPaddingHorizontal != newViewProps.nativeTabBarContentPaddingHorizontal ||
+      oldViewProps.nativeTabBarItemSpacing != newViewProps.nativeTabBarItemSpacing ||
+      oldViewProps.nativeTabBarFontSize != newViewProps.nativeTabBarFontSize ||
+      oldViewProps.nativeTabBarFontFamily != newViewProps.nativeTabBarFontFamily ||
+      oldViewProps.nativeTabBarBackgroundColor != newViewProps.nativeTabBarBackgroundColor ||
+      oldViewProps.nativeTabBarActiveTextColor != newViewProps.nativeTabBarActiveTextColor ||
+      oldViewProps.nativeTabBarInactiveTextColor != newViewProps.nativeTabBarInactiveTextColor ||
+      oldViewProps.nativeTabBarIndicatorColor != newViewProps.nativeTabBarIndicatorColor ||
+      oldViewProps.nativeTabBarIndicatorHeight != newViewProps.nativeTabBarIndicatorHeight ||
+      oldViewProps.nativeTabBarIndicatorBottom != newViewProps.nativeTabBarIndicatorBottom ||
+      oldViewProps.nativeSubHeaderSelectedBackgroundColor != newViewProps.nativeSubHeaderSelectedBackgroundColor) {
+    _nativeTabBarHeight = newViewProps.nativeTabBarHeight > 0
+      ? newViewProps.nativeTabBarHeight
+      : 44;
+    NSString *fontFamily = RCTNSStringFromString(newViewProps.nativeTabBarFontFamily);
+    [_nativeTabBarView
+      updateStyleWithHeight:_nativeTabBarHeight
+      contentPaddingHorizontal:MAX(0, newViewProps.nativeTabBarContentPaddingHorizontal)
+      itemSpacing:MAX(0, newViewProps.nativeTabBarItemSpacing)
+      fontSize:newViewProps.nativeTabBarFontSize > 0 ? newViewProps.nativeTabBarFontSize : 16
+      fontFamily:fontFamily
+      backgroundColor:RCTUIColorFromSharedColor(newViewProps.nativeTabBarBackgroundColor)
+      activeTextColor:RCTUIColorFromSharedColor(newViewProps.nativeTabBarActiveTextColor)
+      inactiveTextColor:RCTUIColorFromSharedColor(newViewProps.nativeTabBarInactiveTextColor)
+      indicatorColor:RCTUIColorFromSharedColor(newViewProps.nativeTabBarIndicatorColor)
+      indicatorHeight:MAX(0, newViewProps.nativeTabBarIndicatorHeight)
+      indicatorBottom:MAX(0, newViewProps.nativeTabBarIndicatorBottom)];
+    [_nativeSubHeaderView
+      updateColorsWithBackgroundColor:RCTUIColorFromSharedColor(newViewProps.nativeTabBarBackgroundColor)
+      activeTextColor:RCTUIColorFromSharedColor(newViewProps.nativeTabBarActiveTextColor)
+      inactiveTextColor:RCTUIColorFromSharedColor(newViewProps.nativeTabBarInactiveTextColor)
+      selectedBackgroundColor:RCTUIColorFromSharedColor(newViewProps.nativeSubHeaderSelectedBackgroundColor)
+      fontFamily:fontFamily];
+    [self setNeedsLayout];
+  }
 
   _needsPropsReapply = NO;
   [super updateProps:props oldProps:oldProps];
@@ -392,6 +1734,13 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
     [self reapplyInsetsToObservedScrollView];
     [self setNeedsLayout];
   }
+  if (!_nativeTabBarView.hidden) {
+    [_sharedHeaderHostView bringSubviewToFront:_nativeTabBarView];
+  }
+  if (!_nativeSubHeaderView.hidden) {
+    [_sharedHeaderHostView bringSubviewToFront:_nativeSubHeaderView];
+  }
+  [_sharedHeaderHostView.superview bringSubviewToFront:_sharedHeaderHostView];
 }
 
 #pragma mark - Collapsible scroll coordination
@@ -439,11 +1788,16 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   if (_currentIndex < 0 || _currentIndex >= _pageControllers.count) return;
   UIScrollView *candidate = [self findVerticalScrollViewInView:_pageControllers[_currentIndex].view];
   if (candidate == nil) return;
-  // A decelerating list can otherwise claim a new horizontal touch immediately.
-  if (_pagerScrollView != nil) {
+  // Legacy mode keeps the historical pager-first dependency. Smooth mode
+  // arbitrates header touches by axis so the vertical list can begin directly.
+  if (_pagerScrollView != nil && !_nativeSmoothHeaderScrollEnabled && !_needsPropsReapply) {
     [candidate.panGestureRecognizer requireGestureRecognizerToFail:_pagerScrollView.panGestureRecognizer];
   }
-  if (candidate == _observedScrollView) return;
+  if (candidate == _observedScrollView) {
+    [self attachSharedHeadersToScrollView:candidate];
+    [self updateSharedHeaderPressCancellationGesture];
+    return;
+  }
 
   BOOL replacingCurrentScrollView = _observingContentOffset;
   [self detachScrollObserver];
@@ -461,13 +1815,18 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
               forKeyPath:@"contentSize"
                  options:NSKeyValueObservingOptionOld | NSKeyValueObservingOptionNew
                  context:RNCCollapsiblePagerContentOffsetContext];
+  [candidate.panGestureRecognizer addTarget:self action:@selector(observedListPanChanged:)];
   _observingContentOffset = YES;
+  _currentLogicalOffset = candidate.contentOffset.y + candidate.contentInset.top;
+  [self attachSharedHeadersToScrollView:candidate];
+  [self updateSharedHeaderPressCancellationGesture];
 }
 
 - (void)detachScrollObserver
 {
   UIScrollView *scrollView = _observedScrollView;
   if (scrollView != nil) {
+    [scrollView.panGestureRecognizer removeTarget:self action:@selector(observedListPanChanged:)];
     _pageOffsets[self.currentPageKey] = @(scrollView.contentOffset.y + scrollView.contentInset.top);
     if (_observingContentOffset) {
       [scrollView removeObserver:self
@@ -480,6 +1839,211 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   }
   _observingContentOffset = NO;
   _observedScrollView = nil;
+}
+
+- (void)detachSharedHeaderPressCancellationGesture
+{
+  if (_sharedHeaderPressCancellationGesture.view != nil) {
+    [_sharedHeaderPressCancellationGesture.view
+      removeGestureRecognizer:_sharedHeaderPressCancellationGesture];
+  }
+  if (_sharedHeaderOuterPagerGesture.view != nil) {
+    [_sharedHeaderOuterPagerGesture.view
+      removeGestureRecognizer:_sharedHeaderOuterPagerGesture];
+  }
+  _sharedHeaderOuterPagerGesture.blockedPagerGestures = nil;
+  _sharedHeaderPressCancellationGestureHost = nil;
+  _reactTouchHandler = nil;
+}
+
+- (void)connectVerticalPagerGuard
+{
+  if (_pagerScrollView != nil && _verticalPagerGesture != nil) {
+    [_pagerScrollView.panGestureRecognizer
+      requireGestureRecognizerToFail:_verticalPagerGesture];
+  }
+}
+
+- (void)updateSharedHeaderPressCancellationGesture
+{
+  if (!_nativeSmoothHeaderScrollEnabled || self.window == nil || _isBeingRecycled) {
+    [self detachSharedHeaderPressCancellationGesture];
+    return;
+  }
+
+  UIGestureRecognizer *reactTouchHandler = nil;
+  for (UIView *ancestor = self; ancestor != nil; ancestor = ancestor.superview) {
+    for (UIGestureRecognizer *gestureRecognizer in ancestor.gestureRecognizers) {
+      if ([gestureRecognizer isKindOfClass:RCTSurfaceTouchHandler.class] ||
+          [gestureRecognizer isKindOfClass:RCTTouchHandler.class]) {
+        reactTouchHandler = gestureRecognizer;
+        break;
+      }
+    }
+    if (reactTouchHandler != nil) break;
+  }
+
+  UIView *gestureHost = reactTouchHandler.view.superview;
+  if (reactTouchHandler == nil || gestureHost == nil) {
+    [self detachSharedHeaderPressCancellationGesture];
+    RNCCollapsiblePagerLog(@"press-cancel-bridge attached=0 reason=touch-handler-missing");
+    return;
+  }
+
+  NSHashTable<UIGestureRecognizer *> *outerPagerGestures = [NSHashTable weakObjectsHashTable];
+  for (UIView *ancestor = self.superview;
+       ancestor != nil;
+       ancestor = ancestor.superview) {
+    if (![ancestor isKindOfClass:UIScrollView.class]) continue;
+    UIScrollView *scrollView = (UIScrollView *)ancestor;
+    if (scrollView.pagingEnabled) {
+      [outerPagerGestures addObject:scrollView.panGestureRecognizer];
+    }
+  }
+  if (_sharedHeaderPressCancellationGesture.view == gestureHost &&
+      _sharedHeaderOuterPagerGesture.view == _sharedHeaderHostView &&
+      _reactTouchHandler == reactTouchHandler) {
+    _sharedHeaderOuterPagerGesture.blockedPagerGestures = outerPagerGestures;
+    return;
+  }
+
+  [self detachSharedHeaderPressCancellationGesture];
+  if (_sharedHeaderPressCancellationGesture == nil) {
+    _sharedHeaderPressCancellationGesture =
+      [[RNCCollapsiblePagerPressCancellationPanGestureRecognizer alloc]
+        initWithTarget:self
+        action:@selector(sharedHeaderPressCancellationGestureChanged:)];
+    _sharedHeaderPressCancellationGesture.delegate = self;
+    _sharedHeaderPressCancellationGesture.cancelsTouchesInView = NO;
+    _sharedHeaderPressCancellationGesture.maximumNumberOfTouches = 1;
+  }
+  if (_sharedHeaderOuterPagerGesture == nil) {
+    _sharedHeaderOuterPagerGesture =
+      [[RNCCollapsiblePagerOuterPagerPanGestureRecognizer alloc]
+        initWithTarget:self
+        action:@selector(outerPagerGestureChanged:)];
+    _sharedHeaderOuterPagerGesture.delegate = self;
+    _sharedHeaderOuterPagerGesture.cancelsTouchesInView = YES;
+    _sharedHeaderOuterPagerGesture.maximumNumberOfTouches = 1;
+  }
+  _sharedHeaderOuterPagerGesture.blockedPagerGestures = outerPagerGestures;
+  _reactTouchHandler = reactTouchHandler;
+  _sharedHeaderPressCancellationGestureHost = gestureHost;
+  [gestureHost addGestureRecognizer:_sharedHeaderPressCancellationGesture];
+  [_sharedHeaderHostView addGestureRecognizer:_sharedHeaderOuterPagerGesture];
+  RNCCollapsiblePagerLog([NSString stringWithFormat:
+    @"press-cancel-bridge attached=1 outer-pagers=%lu",
+    (unsigned long)outerPagerGestures.count]);
+}
+
+- (void)sharedHeaderPressCancellationGestureChanged:(UIPanGestureRecognizer *)recognizer
+{
+  if (recognizer.state == UIGestureRecognizerStateBegan) {
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"press-cancel-owner=header page=%ld touch-handler-state=%ld",
+      (long)_currentIndex,
+      (long)_reactTouchHandler.state]);
+  } else if (recognizer.state == UIGestureRecognizerStateEnded ||
+             recognizer.state == UIGestureRecognizerStateCancelled ||
+             recognizer.state == UIGestureRecognizerStateFailed) {
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"press-cancel-end page=%ld state=%ld touch-handler-state=%ld",
+      (long)_currentIndex,
+      (long)recognizer.state,
+      (long)_reactTouchHandler.state]);
+  }
+}
+
+- (void)outerPagerGestureChanged:(UIPanGestureRecognizer *)recognizer
+{
+  if (recognizer.state == UIGestureRecognizerStateBegan) {
+    NSMutableArray<NSString *> *blockedStates = [NSMutableArray new];
+    for (UIGestureRecognizer *pagerGesture in
+         _sharedHeaderOuterPagerGesture.blockedPagerGestures) {
+      [blockedStates addObject:[NSString stringWithFormat:
+        @"%@:%ld",
+        NSStringFromClass(pagerGesture.view.class),
+        (long)pagerGesture.state]];
+    }
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"gesture-owner=header-outer-pager-block page=%ld blocked=[%@] rct=%ld list=%ld inner-pager=%ld",
+      (long)_currentIndex,
+      [blockedStates componentsJoinedByString:@","],
+      (long)_reactTouchHandler.state,
+      (long)_observedScrollView.panGestureRecognizer.state,
+      (long)_pagerScrollView.panGestureRecognizer.state]);
+  } else if (recognizer.state == UIGestureRecognizerStateEnded ||
+             recognizer.state == UIGestureRecognizerStateCancelled ||
+             recognizer.state == UIGestureRecognizerStateFailed) {
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"gesture-end=header-outer-pager-block page=%ld state=%ld",
+      (long)_currentIndex,
+      (long)recognizer.state]);
+  }
+}
+
+- (void)verticalPagerGuardGestureChanged:(UIPanGestureRecognizer *)recognizer
+{
+  if (recognizer.state == UIGestureRecognizerStateBegan) {
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"gesture-owner=vertical-pager-guard page=%ld list=%ld pager=%ld",
+      (long)_currentIndex,
+      (long)_observedScrollView.panGestureRecognizer.state,
+      (long)_pagerScrollView.panGestureRecognizer.state]);
+  } else if (recognizer.state == UIGestureRecognizerStateEnded ||
+             recognizer.state == UIGestureRecognizerStateCancelled ||
+             recognizer.state == UIGestureRecognizerStateFailed) {
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"gesture-end=vertical-pager-guard page=%ld state=%ld",
+      (long)_currentIndex,
+      (long)recognizer.state]);
+  }
+}
+
+- (void)observedListPanChanged:(UIPanGestureRecognizer *)recognizer
+{
+  if (!_nativeSmoothHeaderScrollEnabled || recognizer != _observedScrollView.panGestureRecognizer) {
+    return;
+  }
+  if (recognizer.state == UIGestureRecognizerStateBegan) {
+    _observedListPanStartLogicalOffset =
+      _observedScrollView.contentOffset.y + _observedScrollView.contentInset.top;
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"gesture-owner=list page=%ld logical=%.2f content-height=%.2f "
+       "bounds-height=%.2f inset=(%.2f,%.2f) enabled=%d dragging=%d",
+      (long)_currentIndex,
+      _observedListPanStartLogicalOffset,
+      _observedScrollView.contentSize.height,
+      _observedScrollView.bounds.size.height,
+      _observedScrollView.contentInset.top,
+      _observedScrollView.contentInset.bottom,
+      _observedScrollView.isScrollEnabled,
+      _observedScrollView.isDragging]);
+  } else if (recognizer.state == UIGestureRecognizerStateEnded ||
+             recognizer.state == UIGestureRecognizerStateCancelled ||
+             recognizer.state == UIGestureRecognizerStateFailed) {
+    CGFloat minimumOffset = -_observedScrollView.contentInset.top;
+    CGFloat maximumOffset = MAX(
+      minimumOffset,
+      _observedScrollView.contentSize.height - _observedScrollView.bounds.size.height +
+        _observedScrollView.contentInset.bottom
+    );
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"gesture-end=list page=%ld state=%ld logical-start=%.2f "
+       "logical-end=%.2f header=%.2f range=(%.2f,%.2f) "
+       "content-height=%.2f bounds-height=%.2f inset=(%.2f,%.2f)",
+      (long)_currentIndex,
+      (long)recognizer.state,
+      _observedListPanStartLogicalOffset,
+      _observedScrollView.contentOffset.y + _observedScrollView.contentInset.top,
+      _headerOffset,
+      minimumOffset,
+      maximumOffset,
+      _observedScrollView.contentSize.height,
+      _observedScrollView.bounds.size.height,
+      _observedScrollView.contentInset.top,
+      _observedScrollView.contentInset.bottom]);
+  }
 }
 
 - (void)restoreDetachedScrollInsets
@@ -574,7 +2138,13 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
     NSNumber *saved = _pageOffsets[[self pageKeyForIndex:pageIndex]];
     // The sticky slot can change height between pages. Cache offsets relative
     // to content start so a round trip does not add that height difference.
-    targetOffset = (saved == nil ? _headerOffset : saved.doubleValue) - next.top;
+    CGFloat restoredLogicalOffset = saved == nil ? _headerOffset : saved.doubleValue;
+    // While the shared header is visible, retained pages must agree on its
+    // collapse position. Deep offsets remain independent after full collapse.
+    if (_nativeSmoothHeaderScrollEnabled && _headerOffset < _headerHeight) {
+      restoredLogicalOffset = _headerOffset;
+    }
+    targetOffset = restoredLogicalOffset - next.top;
     targetOffset = MAX(targetOffset, -next.top + _headerOffset);
   }
   // A bottom-inset change must not cancel UIKit's refresh or bounce settlement.
@@ -623,7 +2193,8 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
       return;
     }
     UIScrollView *scrollView = (UIScrollView *)object;
-    _pageOffsets[self.currentPageKey] = @(scrollView.contentOffset.y + scrollView.contentInset.top);
+    _currentLogicalOffset = scrollView.contentOffset.y + scrollView.contentInset.top;
+    _pageOffsets[self.currentPageKey] = @(_currentLogicalOffset);
     [self updateHeaderForScrollView:scrollView];
     return;
   }
@@ -633,15 +2204,31 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 - (void)updateHeaderForScrollView:(UIScrollView *)scrollView
 {
   CGFloat logicalOffset = scrollView.contentOffset.y + scrollView.contentInset.top;
+  _currentLogicalOffset = logicalOffset;
   _headerOffset = MIN(MAX(logicalOffset, 0), _headerHeight);
   [self applyHeaderOffset];
 }
 
 - (void)applyHeaderOffset
 {
-  CGAffineTransform transform = CGAffineTransformMakeTranslation(0, -_headerOffset);
-  _headerView.transform = transform;
-  _stickyHeaderView.transform = transform;
+  BOOL attachedToList = _nativeSmoothHeaderScrollEnabled &&
+    _sharedHeaderScrollView != nil && !_sharedHeadersLiftedForPagerTransition;
+  if (attachedToList) {
+    _sharedHeaderHostView.transform = CGAffineTransformIdentity;
+    _headerView.transform = CGAffineTransformIdentity;
+    CGFloat pinnedTranslation = MAX(0, _currentLogicalOffset - _headerHeight);
+    CGAffineTransform stickyTransform = CGAffineTransformMakeTranslation(0, pinnedTranslation);
+    _stickyHeaderView.transform = stickyTransform;
+    _nativeTabBarView.transform = stickyTransform;
+    _nativeSubHeaderView.transform = stickyTransform;
+    return;
+  }
+  CGAffineTransform collapseTransform = CGAffineTransformMakeTranslation(0, -_headerOffset);
+  _sharedHeaderHostView.transform = collapseTransform;
+  _headerView.transform = CGAffineTransformIdentity;
+  _stickyHeaderView.transform = CGAffineTransformIdentity;
+  _nativeTabBarView.transform = CGAffineTransformIdentity;
+  _nativeSubHeaderView.transform = CGAffineTransformIdentity;
 }
 
 #pragma mark - Pager navigation
@@ -656,25 +2243,32 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   if (_isBeingRecycled || index < 0 || index >= _pageControllers.count) return;
   _hasReceivedPageCommand = YES;
   _hasAppliedInitialPage = YES;
-  if (_transitioning && animated) {
+  if (_transitioning || _isPagerDragging) {
     _pendingGoToIndex = index;
+    _pendingGoToAnimated = animated;
     return;
   }
 
   _pendingGoToIndex = -1;
+  _pendingGoToAnimated = YES;
 
   // Re-selecting the displayed controller removes its view briefly and cancels
   // an in-flight list touch. Focus synchronization must be idempotent.
+  BOOL currentControllerDisplayed = _directNativePagerEnabled
+    ? fabs(_pagerScrollView.contentOffset.x - [self directPagerOffsetForIndex:index]) < 0.5
+    : _pageViewController.viewControllers.firstObject == _pageControllers[index];
   if (!_transitioning && index == _currentIndex &&
-      _pageViewController.viewControllers.firstObject == _pageControllers[index]) {
+      currentControllerDisplayed) {
     [self attachScrollObserverForCurrentPage];
     [self emitPageSelected:index];
     [self emitDiagnostics:@"page-selected"];
     return;
   }
 
-  [self detachScrollObserver];
+  [self preparePageForHorizontalTransitionAtIndex:index];
   _destinationIndex = index;
+  [self liftSharedHeadersForPagerTransition:@"programmatic"];
+  [self detachScrollObserver];
   BOOL forward = (index > _currentIndex && self.isLtrLayout) ||
     (index < _currentIndex && !self.isLtrLayout);
   UIPageViewControllerNavigationDirection direction = forward
@@ -685,6 +2279,47 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
   NSUInteger capturedTransition = ++_transitionId;
   NSUInteger capturedGeneration = _generation;
   __weak __typeof__(self) weakSelf = self;
+  if (_directNativePagerEnabled) {
+    CGFloat targetOffset = [self directPagerOffsetForIndex:index];
+    void (^animations)(void) = ^{
+      [self->_pagerScrollView setContentOffset:CGPointMake(targetOffset, 0)];
+      [self->_nativeTabBarView setProgress:index];
+    };
+    void (^completion)(BOOL) = ^(BOOL finished) {
+      __strong __typeof__(weakSelf) self = weakSelf;
+      if (self == nil || self->_generation != capturedGeneration ||
+          self->_transitionId != capturedTransition || self->_isBeingRecycled) return;
+      self->_pagerScrollView.scrollEnabled = self->_scrollEnabled;
+      if (finished) {
+        self->_currentIndex = index;
+        self->_destinationIndex = index;
+        [self->_nativeTabBarView setProgress:index];
+        [self attachScrollObserverForCurrentPage];
+        [self emitPageSelected:index];
+        [self emitDiagnostics:@"page-selected"];
+      } else if (self->_pendingGoToIndex < 0) {
+        self->_pendingGoToIndex = index;
+        self->_pendingGoToAnimated = animated;
+      }
+      [self completeTransitionOnNextRunLoopForGeneration:capturedGeneration
+                                              transition:capturedTransition];
+    };
+
+    if (animated && index != _currentIndex) {
+      _pagerScrollView.scrollEnabled = NO;
+      [UIView animateWithDuration:0.28
+                            delay:0
+                          options:UIViewAnimationOptionCurveEaseInOut |
+                                  UIViewAnimationOptionAllowUserInteraction
+                       animations:animations
+                       completion:completion];
+    } else {
+      [UIView performWithoutAnimation:animations];
+      completion(YES);
+    }
+    return;
+  }
+
   [_pageViewController setViewControllers:@[_pageControllers[index]]
                                 direction:direction
                                  animated:animated && index != _currentIndex
@@ -694,19 +2329,43 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
         self->_transitionId != capturedTransition || self->_isBeingRecycled) return;
     if (finished) {
       self->_currentIndex = index;
+      self->_destinationIndex = index;
+      [self->_nativeTabBarView setProgress:index];
       [self attachScrollObserverForCurrentPage];
       [self emitPageSelected:index];
       [self emitDiagnostics:@"page-selected"];
+    } else {
+      [self->_nativeTabBarView setProgress:self->_currentIndex];
+      if (self->_pendingGoToIndex < 0) {
+        self->_pendingGoToIndex = self->_currentIndex;
+        self->_pendingGoToAnimated = NO;
+      }
     }
-    // UIKit is still unwinding its transition when this completion runs.
-    // Start a queued animation only after that callback has returned.
-    dispatch_async(dispatch_get_main_queue(), ^{
-      if (self->_generation != capturedGeneration ||
-          self->_transitionId != capturedTransition || self->_isBeingRecycled) return;
-      self->_transitioning = NO;
-      [self drainPendingGoTo];
-    });
+    [self completeTransitionOnNextRunLoopForGeneration:capturedGeneration
+                                           transition:capturedTransition];
   }];
+}
+
+- (void)completeTransitionOnNextRunLoopForGeneration:(NSUInteger)generation
+                                         transition:(NSUInteger)transition
+{
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (self->_generation != generation || self->_transitionId != transition ||
+        self->_isBeingRecycled) return;
+    self->_transitioning = NO;
+    if (self->_hasPendingDirectNativePagerChange) {
+      BOOL enabled = self->_pendingDirectNativePagerEnabled;
+      self->_hasPendingDirectNativePagerChange = NO;
+      [self setDirectNativePagerEnabled:enabled];
+    } else if (self->_needsSlotRebuild) {
+      [self rebuildSlots];
+    }
+    if (!self->_hasAppliedInitialPage) [self setNeedsLayout];
+    [self drainPendingGoTo];
+    if (!self->_transitioning && !self->_needsSlotRebuild) {
+      [self attachScrollObserverForCurrentPage];
+    }
+  });
 }
 
 - (UIViewController *)adjacentController:(UIViewController *)controller delta:(NSInteger)delta
@@ -737,9 +2396,18 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 - (void)drainPendingGoTo
 {
   NSInteger pending = _pendingGoToIndex;
+  BOOL animated = _pendingGoToAnimated;
   _pendingGoToIndex = -1;
-  if (pending >= 0 && pending != _currentIndex) {
-    [self goTo:pending animated:YES];
+  _pendingGoToAnimated = YES;
+  BOOL currentControllerNeedsRestore = NO;
+  if (_currentIndex >= 0 && _currentIndex < _pageControllers.count) {
+    currentControllerNeedsRestore = _directNativePagerEnabled
+      ? fabs(_pagerScrollView.contentOffset.x -
+             [self directPagerOffsetForIndex:_currentIndex]) >= 0.5
+      : _pageViewController.viewControllers.firstObject != _pageControllers[_currentIndex];
+  }
+  if (pending >= 0 && (pending != _currentIndex || currentControllerNeedsRestore)) {
+    [self goTo:pending animated:animated];
   }
 }
 
@@ -747,10 +2415,21 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
 {
+  if (_directNativePagerEnabled) {
+    [self preparePageForHorizontalTransitionAtIndex:_currentIndex - 1];
+    [self preparePageForHorizontalTransitionAtIndex:_currentIndex + 1];
+  }
   // A user drag owns the result even if UIKit later completes the old animation.
   ++_transitionId;
+  [self liftSharedHeadersForPagerTransition:@"interactive"];
+  [self detachScrollObserver];
   _isPagerDragging = YES;
   _transitioning = YES;
+  if (_nativeSmoothHeaderScrollEnabled) {
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"gesture-owner=pager page=%ld",
+      (long)_currentIndex]);
+  }
   const auto emitter = [self eventEmitter];
   if (emitter) {
     emitter->onPageScrollStateChanged({
@@ -779,6 +2458,43 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 
 - (void)finishPagerScrollEmittingSelection:(BOOL)emitSelection
 {
+  if (_directNativePagerEnabled) {
+    NSInteger index = emitSelection
+      ? (NSInteger)llround([self directPagerProgress])
+      : _currentIndex;
+    index = MAX(0, MIN(index, (NSInteger)_pageControllers.count - 1));
+    [self detachScrollObserver];
+    _currentIndex = index;
+    _destinationIndex = index;
+    [_pagerScrollView setContentOffset:CGPointMake(
+      [self directPagerOffsetForIndex:index],
+      0
+    ) animated:NO];
+    [_nativeTabBarView setProgress:index];
+    [self attachScrollObserverForCurrentPage];
+    if (emitSelection &&
+        (_pendingGoToIndex < 0 || _pendingGoToIndex == index)) {
+      [self emitPageSelected:index];
+      [self emitDiagnostics:@"page-selected"];
+    }
+    _isPagerDragging = NO;
+    if (_nativeSmoothHeaderScrollEnabled) {
+      RNCCollapsiblePagerLog([NSString stringWithFormat:
+        @"gesture-end=pager page=%ld",
+        (long)_currentIndex]);
+    }
+    const auto emitter = [self eventEmitter];
+    if (emitter) {
+      emitter->onPageScrollStateChanged({
+        .pageScrollState = RNCCollapsiblePagerViewEventEmitter::OnPageScrollStateChangedPageScrollState::Idle
+      });
+    }
+    [self emitDiagnostics:@"pager-idle"];
+    [self completeTransitionOnNextRunLoopForGeneration:_generation
+                                           transition:_transitionId];
+    return;
+  }
+
   if (_isPagerDragging) {
     UIViewController *controller = nil;
     if (!emitSelection && _currentIndex >= 0 && _currentIndex < _pageControllers.count) {
@@ -801,16 +2517,11 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
     }
     NSInteger index = [_pageControllers indexOfObjectIdenticalTo:controller];
     if (index != NSNotFound) {
-      if (_pageViewController.viewControllers.firstObject != controller) {
-        // Correct UIKit only after its animation completion has returned.
-        [_pageViewController setViewControllers:@[controller]
-                                      direction:UIPageViewControllerNavigationDirectionForward
-                                       animated:NO
-                                     completion:nil];
-      }
+      BOOL controllerNeedsRestore = _pageViewController.viewControllers.firstObject != controller;
       [self detachScrollObserver];
       _currentIndex = index;
       _destinationIndex = index;
+      [_nativeTabBarView setProgress:index];
       [self attachScrollObserverForCurrentPage];
       // A newer tab tap remains authoritative while its queued command runs.
       if (emitSelection &&
@@ -818,9 +2529,17 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
         [self emitPageSelected:index];
         [self emitDiagnostics:@"page-selected"];
       }
+      if (controllerNeedsRestore && _pendingGoToIndex < 0) {
+        _pendingGoToIndex = index;
+        _pendingGoToAnimated = NO;
+      }
     }
     _isPagerDragging = NO;
-    _transitioning = NO;
+  }
+  if (_nativeSmoothHeaderScrollEnabled) {
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"gesture-end=pager page=%ld",
+      (long)_currentIndex]);
   }
   const auto emitter = [self eventEmitter];
   if (emitter) {
@@ -829,7 +2548,8 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
     });
   }
   [self emitDiagnostics:@"pager-idle"];
-  [self drainPendingGoTo];
+  [self completeTransitionOnNextRunLoopForGeneration:_generation
+                                         transition:_transitionId];
 }
 
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
@@ -841,11 +2561,29 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 {
   CGFloat width = scrollView.bounds.size.width;
   if (width <= 0) return;
+  if (_directNativePagerEnabled && scrollView == _pagerScrollView) {
+    CGFloat progress = [self directPagerProgress];
+    NSInteger position = (NSInteger)floor(progress);
+    CGFloat offset = progress - position;
+    position = MAX(0, MIN(position, (NSInteger)_pageControllers.count - 1));
+    [_nativeTabBarView setProgress:progress];
+    const auto emitter = [self eventEmitter];
+    if (emitter) {
+      emitter->onPageScroll({.position = (double)position, .offset = (double)offset});
+    }
+    return;
+  }
   CGFloat rawOffset = (scrollView.contentOffset.x - width) / width;
   BOOL backwards = self.isLtrLayout ? rawOffset < 0 : rawOffset > 0;
   NSInteger position = backwards ? _currentIndex - 1 : _currentIndex;
   CGFloat offset = backwards ? 1 - fabs(rawOffset) : fabs(rawOffset);
   position = MAX(0, MIN(position, (NSInteger)_pageControllers.count - 1));
+  CGFloat tabProgress = position + offset;
+  if (_transitioning && !_isPagerDragging && _destinationIndex != _currentIndex) {
+    CGFloat transitionProgress = RNCClamp(fabs(rawOffset), 0, 1);
+    tabProgress = _currentIndex + (_destinationIndex - _currentIndex) * transitionProgress;
+  }
+  [_nativeTabBarView setProgress:tabProgress];
   const auto emitter = [self eventEmitter];
   if (emitter) {
     emitter->onPageScroll({.position = (double)position, .offset = (double)offset});
@@ -939,6 +2677,52 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
 {
+  if (gestureRecognizer == _sharedHeaderOuterPagerGesture) {
+    UIPanGestureRecognizer *pan = (UIPanGestureRecognizer *)gestureRecognizer;
+    CGPoint translation = [pan translationInView:pan.view];
+    CGPoint velocity = [pan velocityInView:pan.view];
+    CGPoint intent = fabs(translation.x) + fabs(translation.y) >= 1
+      ? translation
+      : velocity;
+    BOOL hasMotion = MAX(fabs(intent.x), fabs(intent.y)) >= 1;
+    BOOL horizontal = hasMotion && fabs(intent.x) > fabs(intent.y);
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"header-axis role=outer-pager-block dx=%.2f dy=%.2f velocity=(%.2f,%.2f) result=%d outer-pagers=%lu",
+      intent.x,
+      intent.y,
+      velocity.x,
+      velocity.y,
+      horizontal,
+      (unsigned long)_sharedHeaderOuterPagerGesture.blockedPagerGestures.count]);
+    return horizontal;
+  }
+  if (gestureRecognizer == _sharedHeaderPressCancellationGesture ||
+      gestureRecognizer == _verticalPagerGesture) {
+    UIPanGestureRecognizer *pan = (UIPanGestureRecognizer *)gestureRecognizer;
+    CGPoint translation = [pan translationInView:pan.view];
+    CGPoint velocity = [pan velocityInView:pan.view];
+    CGPoint intent = fabs(translation.x) + fabs(translation.y) >= 1
+      ? translation
+      : velocity;
+    BOOL hasMotion = MAX(fabs(intent.x), fabs(intent.y)) >= 1;
+    BOOL vertical = hasMotion && fabs(intent.y) > fabs(intent.x);
+    NSString *role = gestureRecognizer == _sharedHeaderPressCancellationGesture
+      ? @"vertical-cancel"
+      : @"vertical-pager-guard";
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"header-axis role=%@ dx=%.2f dy=%.2f velocity=(%.2f,%.2f) "
+       "result=%d rct=%ld list=%ld pager=%ld",
+      role,
+      intent.x,
+      intent.y,
+      velocity.x,
+      velocity.y,
+      vertical,
+      (long)_reactTouchHandler.state,
+      (long)_observedScrollView.panGestureRecognizer.state,
+      (long)_pagerScrollView.panGestureRecognizer.state]);
+    return vertical;
+  }
   if (gestureRecognizer != _blockerGesture) return YES;
   if (!_nestedScrollEnabled) return NO;
   if (![gestureRecognizer isKindOfClass:[UIPanGestureRecognizer class]]) return NO;
@@ -962,9 +2746,41 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch
 {
-  // OneKey patch: a new touch can cancel UIKit's animation before its first
-  // frame without starting a drag or completing the animation. Finish the
-  // commanded page before handing that touch to the nested scroll views.
+  if (gestureRecognizer == _sharedHeaderOuterPagerGesture) {
+    if (!_nativeSmoothHeaderScrollEnabled || _isBeingRecycled ||
+        _sharedHeaderPressCancellationGestureHost == nil) return NO;
+    UIView *touchView = touch.view;
+    BOOL beginsInSharedHeader = touchView == _sharedHeaderHostView ||
+      [touchView isDescendantOfView:_sharedHeaderHostView];
+    if (!beginsInSharedHeader) return NO;
+
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"outer-pager-touch target=%@ outer-pagers=%lu",
+      touchView == nil ? @"none" : NSStringFromClass(touchView.class),
+      (unsigned long)_sharedHeaderOuterPagerGesture.blockedPagerGestures.count]);
+    return YES;
+  }
+  if (gestureRecognizer == _sharedHeaderPressCancellationGesture) {
+    if (!_nativeSmoothHeaderScrollEnabled || _isBeingRecycled ||
+        _sharedHeaderPressCancellationGestureHost == nil) return NO;
+    UIView *touchView = touch.view;
+    BOOL beginsInSharedHeader = touchView == _sharedHeaderHostView ||
+      [touchView isDescendantOfView:_sharedHeaderHostView];
+    if (!beginsInSharedHeader) return NO;
+
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"header-touch target=%@ shared=1",
+      touchView == nil ? @"none" : NSStringFromClass(touchView.class)]);
+    return YES;
+  }
+  if (gestureRecognizer == _verticalPagerGesture) {
+    UIView *touchView = touch.view;
+    return touchView != _sharedHeaderHostView &&
+      ![touchView isDescendantOfView:_sharedHeaderHostView];
+  }
+  // A new touch can cancel UIKit's animation before its first frame. Queue a
+  // non-animated settle for the next safe transition boundary instead of
+  // re-entering setViewControllers while UIKit is flushing the current view.
   if (gestureRecognizer == _blockerGesture && _transitioning && !_isPagerDragging &&
       [touch.view isDescendantOfView:_pagerScrollView]) {
     [self goTo:_destinationIndex animated:NO];
@@ -975,6 +2791,30 @@ static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerConte
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
     shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer
 {
+  if (gestureRecognizer == _sharedHeaderOuterPagerGesture ||
+      otherGestureRecognizer == _sharedHeaderOuterPagerGesture) {
+    UIGestureRecognizer *other = gestureRecognizer == _sharedHeaderOuterPagerGesture
+      ? otherGestureRecognizer
+      : gestureRecognizer;
+    return ![other isKindOfClass:RCTSurfaceTouchHandler.class] &&
+      ![other isKindOfClass:RCTTouchHandler.class] &&
+      ![_sharedHeaderOuterPagerGesture.blockedPagerGestures containsObject:other];
+  }
+  if (gestureRecognizer == _sharedHeaderPressCancellationGesture ||
+      otherGestureRecognizer == _sharedHeaderPressCancellationGesture) {
+    UIGestureRecognizer *other = gestureRecognizer == _sharedHeaderPressCancellationGesture
+      ? otherGestureRecognizer
+      : gestureRecognizer;
+    return ![other isKindOfClass:RCTSurfaceTouchHandler.class] &&
+      ![other isKindOfClass:RCTTouchHandler.class];
+  }
+  if (gestureRecognizer == _verticalPagerGesture ||
+      otherGestureRecognizer == _verticalPagerGesture) {
+    UIGestureRecognizer *other = gestureRecognizer == _verticalPagerGesture
+      ? otherGestureRecognizer
+      : gestureRecognizer;
+    return other != _pagerScrollView.panGestureRecognizer;
+  }
   return gestureRecognizer == _blockerGesture;
 }
 

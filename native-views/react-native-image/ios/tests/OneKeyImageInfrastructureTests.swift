@@ -1,6 +1,7 @@
 import SDWebImage
 import SDWebImageSVGCoder
 import SDWebImageWebPCoder
+import UIKit
 import XCTest
 
 @testable import OneKeyImage
@@ -541,6 +542,18 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
         safetyViolation: .encodedDataTooLarge
       )
     )
+  }
+
+  func testSupersededRequestNeverPaintsRecycledView() throws {
+    let image = HybridOneKeyImage()
+    let imageView = try XCTUnwrap(image.view as? SDAnimatedImageView)
+    let painted = UIImage()
+
+    image.applyDisplayedImage(painted, generation: .max)
+    XCTAssertNil(imageView.image)
+
+    image.applyDisplayedImage(painted, generation: 0)
+    XCTAssertIdentical(imageView.image, painted)
   }
 
   func testAnimatedViewUsesBoundedFrameBuffer() throws {

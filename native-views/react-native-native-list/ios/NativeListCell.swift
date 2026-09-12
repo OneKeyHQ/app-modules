@@ -3377,18 +3377,23 @@ final class NativeListCell: UICollectionViewCell {
     let cornerIcon = visual.dictionary("cornerIcon")
     let fallbackText = String(visual.string("fallbackText").prefix(2))
     let fallbackIconData = visual.dictionary("fallbackIcon")
+    let sourceLoadingStrategy = sources.first?.data.string("loadingStrategy", default: "none") ?? "none"
+    let showsSourcePlaceholder = !isIcon && !sources.isEmpty && sourceLoadingStrategy != "none"
     let handlesSourceFallback = !isIcon && !sources.isEmpty &&
+      showsSourcePlaceholder &&
       (visual["fallbackText"] != nil || fallbackIconData != nil)
     fallbackLabel.text = handlesSourceFallback ? nil : fallbackText
     let sourceFallbackBackground = currentTheme?["strongBackground"] as? String ?? "#0000000F"
-    leadingContainer.backgroundColor = UIColor(
-      // OneKey patch: Visual loading and fallback use the active list theme.
-      // nativeListHex: visual.string("backgroundColor", default: isIcon ? "#F0F0F0" : "#E0E0E0"),
-      nativeListHex: handlesSourceFallback
-        ? sourceFallbackBackground
-        : visual.string("backgroundColor", default: sourceFallbackBackground),
-      fallback: .gray
+    // OneKey patch: source-backed visuals default to no placeholder/background.
+    // A non-none image loadingStrategy opts back into the themed placeholder.
+    let visualBackground = visual.string(
+      "backgroundColor",
+      default: !isIcon && !sources.isEmpty ? "#00000000" : sourceFallbackBackground
     )
+    let visualBackgroundColor = UIColor(nativeListHex: visualBackground, fallback: .clear)
+    leadingContainer.backgroundColor = handlesSourceFallback
+      ? UIColor(nativeListHex: sourceFallbackBackground, fallback: .clear)
+      : visualBackgroundColor
     leadingContainer.layer.cornerRadius = leadingCornerRadius(shape: shape)
     leadingContainer.clipsToBounds = true
     fallbackLabel.isHidden = isIcon || (!sources.isEmpty && !handlesSourceFallback)
@@ -3473,6 +3478,7 @@ final class NativeListCell: UICollectionViewCell {
           imageView?.isHidden = false
           self.fallbackLabel.isHidden = true
           self.leadingIconImageView.isHidden = true
+          self.leadingContainer.backgroundColor = visualBackgroundColor
         },
         onError: !ownsSourceFallback ? nil : { [weak self, weak imageView] in
           guard let self, self.bindingEpoch == expectedEpoch else { return }
@@ -4031,7 +4037,7 @@ final class NativeListCell: UICollectionViewCell {
       recyclingKey: retryAttempt == 0 ? "\(token):\(slot)" : "\(token):\(slot):retry:\(retryAttempt)",
       optimizeTos: retryAttempt == 0 && (source["optimizeTos"] == nil || source.bool("optimizeTos")),
       overscan: source["overscan"] == nil ? 1.1 : source.double("overscan"),
-      loadingStrategy: source.string("loadingStrategy", default: "static"),
+      loadingStrategy: source.string("loadingStrategy", default: "none"),
       placeholderColor: currentTheme?["strongBackground"] as? String ?? "#0000000F",
       onLoad: retryLimit == 0 ? handleLoad : { [weak self] in
         guard let self, self.bindingEpoch == expectedEpoch else { return }

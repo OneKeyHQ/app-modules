@@ -3189,16 +3189,18 @@ internal class NativeListRowView(
     val cornerIconData = visual.optJSONObject("cornerIcon")
     val fallback = visual.optString("fallbackText").take(2)
     val fallbackIconData = visual.optJSONObject("fallbackIcon")
+    val sourceLoadingStrategy = sources.firstOrNull()?.first?.optString("loadingStrategy", "none") ?: "none"
+    val showsSourcePlaceholder = !isIcon && sources.isNotEmpty() && sourceLoadingStrategy != "none"
     val handlesSourceFallback =
       !isIcon && sources.isNotEmpty() &&
+        showsSourcePlaceholder &&
         (visual.has("fallbackText") || fallbackIconData != null)
     leadingFallback.text = if (handlesSourceFallback) "" else fallback
     leadingFallback.setTextColor(parseNativeListColor("#00000072"))
     val visualBackground = safeColor(
       visual.optString("backgroundColor"),
-      // OneKey patch: Visual loading and fallback use the active list theme.
-      // parseNativeListColor(if (isIcon) "#0000000F" else "#E0E0E0"),
-      parseNativeListColor(imagePlaceholderColor),
+      // OneKey patch: source-backed visuals default to no placeholder/background.
+      if (!isIcon && sources.isNotEmpty()) Color.TRANSPARENT else parseNativeListColor(imagePlaceholderColor),
     )
     if (!isIcon && visual.optString("backgroundColor").isNotEmpty()) {
       leadingFrame.background = roundedFill(
@@ -4149,7 +4151,7 @@ internal class NativeListRowView(
       recyclingKey = if (retryAttempt == 0) "$token:$slot" else "$token:$slot:retry:$retryAttempt",
       optimizeTos = retryAttempt == 0 && source.optBoolean("optimizeTos", true),
       overscan = source.optDouble("overscan", 1.1),
-      loadingStrategy = source.optString("loadingStrategy", "static"),
+      loadingStrategy = source.optString("loadingStrategy", "none"),
       placeholderColor = imagePlaceholderColor,
       onLoad = if (retryLimit == 0) handleLoad else ({
         if (bindingEpoch == expectedEpoch) {

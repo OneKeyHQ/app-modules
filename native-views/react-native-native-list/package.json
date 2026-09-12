@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-native-list",
-  "version": "3.0.118",
+  "version": "3.0.123",
   "description": "Template-driven native RecyclerView and UICollectionView for React Native",
   "source": "./src/index.ts",
   "main": "./lib/module/index.js",
@@ -38,7 +38,7 @@
     "nitrogen": "nitrogen",
     "typecheck": "tsc -b",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "test": "jest --runInBand",
+    "test": "jest --runInBand && node --test src/__tests__/selector-parity.cjs",
     "release": "yarn prepare && npm whoami && npm publish --access public"
   },
   "keywords": [
@@ -83,8 +83,8 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
-    "@onekeyfe/react-native-image": "3.0.118",
-    "@onekeyfe/react-native-native-logger": "3.0.118",
+    "@onekeyfe/react-native-image": "3.0.123",
+    "@onekeyfe/react-native-native-logger": "3.0.123",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"

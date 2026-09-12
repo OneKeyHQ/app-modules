@@ -1557,25 +1557,38 @@ function createVisual(
     return frame;
   }
 
-  // OneKey patch: Every image visual starts from the current theme backing.
-  // if ('backgroundColor' in visual && visual.backgroundColor)
-  //   frame.style.background = visual.backgroundColor;
-  frame.style.background =
+  // OneKey patch: NativeList images are usually local and should not flash a
+  // placeholder. Callers can opt in with image.loadingStrategy.
+  const visualBackground =
     'backgroundColor' in visual && visual.backgroundColor
       ? visual.backgroundColor
-      : 'var(--nl-strong)';
+      : 'transparent';
   const source = visual.kind === 'image' ? visual.image : visual.image;
+  const showsSourcePlaceholder =
+    !!source &&
+    source.loadingStrategy !== undefined &&
+    source.loadingStrategy !== 'none';
+  frame.style.background = showsSourcePlaceholder
+    ? 'var(--nl-strong)'
+    : visualBackground;
   const fallbackIcon =
     'fallbackIcon' in visual ? visual.fallbackIcon : undefined;
   const handlesSourceFallback =
-    !!source && (fallbackIcon !== undefined || 'fallbackText' in visual);
-  if (handlesSourceFallback) frame.style.background = 'var(--nl-strong)';
+    showsSourcePlaceholder &&
+    (fallbackIcon !== undefined || 'fallbackText' in visual);
   const image = source ? createImage(context, source) : undefined;
   if (image) {
     image.className = 'ok-native-list-visual-main';
     frame.appendChild(image);
+    if (showsSourcePlaceholder) {
+      const restoreBackground = () => {
+        frame.style.background = visualBackground;
+      };
+      image.addEventListener('load', restoreBackground);
+      if (image.complete && image.naturalWidth > 0) restoreBackground();
+    }
     if (selectorPresentation) paintSelectorImageBackground(image, frame);
-  } else {
+  } else if (!source || showsSourcePlaceholder) {
     frame.appendChild(
       createElement(
         context.document,
@@ -1608,7 +1621,7 @@ function createVisual(
   }
   // OneKey patch: image failure uses the same source-derived fallback as v1.
   const hasFallbackText = 'fallbackText' in visual;
-  if (fallbackIcon || hasFallbackText) {
+  if ((fallbackIcon || hasFallbackText) && (!source || handlesSourceFallback)) {
     const showFallback = () => {
       if (image) {
         disposeWebImageRetries(image);
@@ -4320,8 +4333,29 @@ export class NativeListWebEngine {
       availableHeight,
       SECTION_INDEX_LABEL_SPACING * this.sectionIndexEntries.length
     );
+    const centeredOriginY = (viewportHeight - trackHeight) / 2;
+    if (!this.snapshot.capabilities?.sectionIndex?.centeredInWindow) {
+      return { originY: centeredOriginY, trackHeight };
+    }
+    const view = this.document.defaultView;
+    if (!view) return { originY: centeredOriginY, trackHeight };
+    const visualViewport = view.visualViewport;
+    const windowCenterY = visualViewport
+      ? visualViewport.offsetTop + visualViewport.height / 2
+      : view.innerHeight / 2;
+    const railTop =
+      this.viewportFrame.getBoundingClientRect().top +
+      (Number.parseFloat(this.indexRail.style.top) || 0);
+    const minOriginY = SECTION_INDEX_EDGE_PADDING;
+    const maxOriginY = Math.max(
+      minOriginY,
+      viewportHeight - SECTION_INDEX_EDGE_PADDING - trackHeight
+    );
     return {
-      originY: (viewportHeight - trackHeight) / 2,
+      originY: Math.min(
+        maxOriginY,
+        Math.max(minOriginY, windowCenterY - railTop - trackHeight / 2)
+      ),
       trackHeight,
     };
   }

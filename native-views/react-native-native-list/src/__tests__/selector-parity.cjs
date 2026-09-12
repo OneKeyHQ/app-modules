@@ -103,6 +103,49 @@ test('native Market patch parity retains layout, reuse, refresh, and action cont
   assert.match(models, /windowPoint/);
 });
 
+test('iOS reorder defers compatible snapshots and commits against the current key order', () => {
+  const ios = fs.readFileSync(
+    path.join(packageRoot, 'ios/RNCNativeListView.swift'),
+    'utf8'
+  );
+  assert.match(
+    ios,
+    /if let current = config, interactiveReorderSource != nil \{\s+if canDeferSnapshotDuringInteractiveReorder\(from: current, to: next\) \{\s+deferSnapshotDuringInteractiveReorder\(from: current, to: next\)\s+return\s+\}\s+cancelInteractiveReorderForStructuralUpdate\(\)/
+  );
+  assert.match(
+    ios,
+    /private func deferSnapshotDuringInteractiveReorder[\s\S]*?config = next\s+itemsByKey = Dictionary[\s\S]*?deferredReorderReconfigureKeys\.formUnion\(changedKeys\)/
+  );
+  assert.match(
+    ios,
+    /let keys = snapshot\.itemIdentifiers[\s\S]*?let sourceIndex = keys\.firstIndex\(of: source\.key\)[\s\S]*?let targetIndex = keys\.firstIndex\(of: targetKey\)[\s\S]*?snapshot\.moveItem\(source\.key, beforeItem: targetKey\)[\s\S]*?snapshot\.moveItem\(source\.key, afterItem: targetKey\)/
+  );
+  assert.match(
+    ios,
+    /private func completeInteractiveReorder[\s\S]*?let items = keys\.compactMap \{ itemsByKey\[\$0\] \}[\s\S]*?current\.items = items\s+config = current[\s\S]*?scheduleDeferredReorderRefresh\(\)/
+  );
+});
+
+test('native source images default to no placeholder and restore explicit backgrounds after load', () => {
+  const android = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListRowView.kt'
+    ),
+    'utf8'
+  );
+  const ios = fs.readFileSync(
+    path.join(packageRoot, 'ios/NativeListCell.swift'),
+    'utf8'
+  );
+  assert.match(android, /optString\("loadingStrategy", "none"\)/);
+  assert.match(android, /loadingStrategy = source\.optString\("loadingStrategy", "none"\)/);
+  assert.match(android, /if \(!isIcon && sources\.isNotEmpty\(\)\) Color\.TRANSPARENT/);
+  assert.match(ios, /string\("loadingStrategy", default: "none"\)/);
+  assert.match(ios, /loadingStrategy: source\.string\("loadingStrategy", default: "none"\)/);
+  assert.match(ios, /self\.leadingContainer\.backgroundColor = visualBackgroundColor/);
+});
+
 test('Android NativeList declares its native logger project as a peer dependency', () => {
   const manifest = require('../../package.json');
   const loggerManifest = require('../../../../native-modules/native-logger/package.json');
@@ -147,6 +190,63 @@ test('index jumps highlight the section reached after an exact spacer boundary',
     assert.equal(page.document.querySelector('.ok-native-list-viewport').scrollTop, 104);
     assert.equal(index.dataset.active, 'true');
     assert.equal(page.document.querySelector('[aria-label="Jump to A"]').dataset.active, 'false');
+  } finally {
+    page.close();
+  }
+});
+test('web section index centers in the browser window when requested', () => {
+  const letters = ['A', 'B', 'C', 'D'];
+  const page = mount(
+    letters.map((letter) => ({
+      type: 'sectionHeader',
+      key: letter,
+      sectionKey: letter,
+      title: letter,
+      indexTitle: letter,
+      height: 36,
+    })),
+    {
+      capabilities: {
+        sectionIndex: { enabled: true, centeredInWindow: true },
+      },
+    },
+  );
+  try {
+    const viewport = page.document.querySelector('.ok-native-list-viewport');
+    const frame = page.document.querySelector(
+      '.ok-native-list-viewport-frame',
+    );
+    const rail = page.document.querySelector('.ok-native-list-index-rail');
+    Object.defineProperty(page.view, 'innerHeight', {
+      configurable: true,
+      value: 900,
+    });
+    Object.defineProperty(viewport, 'clientHeight', {
+      configurable: true,
+      value: 300,
+    });
+    Object.defineProperty(viewport, 'clientWidth', {
+      configurable: true,
+      value: 320,
+    });
+    frame.getBoundingClientRect = () => ({
+      x: 0,
+      y: 250,
+      left: 0,
+      top: 250,
+      right: 320,
+      bottom: 550,
+      width: 320,
+      height: 300,
+    });
+    page.engine.recomputeLayout();
+
+    const buttons = [
+      ...rail.querySelectorAll('[data-section-entry-index]'),
+    ];
+    const firstCenterY = Number.parseFloat(buttons[0].style.top);
+    const lastCenterY = Number.parseFloat(buttons.at(-1).style.top);
+    assert.equal(250 + (firstCenterY + lastCenterY) / 2, 450);
   } finally {
     page.close();
   }
@@ -365,7 +465,7 @@ test('section help is independent of checkbox selection and anchored to the titl
   page.close();
 });
 test('failed network images render the official globe SVG fallback', () => {
-  const page = mount([identity('x', { leading: { kind: 'network', image: { uri: 'https://example.invalid/missing.png', width: 32, height: 32 }, fallbackIcon: { name: 'GlobusOutline' } } })]);
+  const page = mount([identity('x', { leading: { kind: 'network', image: { uri: 'https://example.invalid/missing.png', width: 32, height: 32, loadingStrategy: 'static' }, fallbackIcon: { name: 'GlobusOutline' } } })]);
   page.document.querySelector('.ok-native-list-visual-main').dispatchEvent(new page.view.Event('error'));
   assert.equal(page.document.querySelector('.ok-native-list-visual-main'), null);
   assert.ok(page.document.querySelector('.ok-native-list-visual-fallback svg path'));
@@ -384,7 +484,7 @@ function fakeImageRetryClock(view) {
   return { timers, cleared, flush() { const callbacks = [...timers.values()]; timers.clear(); callbacks.forEach(callback => callback()); } };
 }
 test('optimized image failure falls back to raw, retries raw once, then shows the globe', () => {
-  const page = mount([identity('image', { leading: { kind: 'network', image: { uri: 'https://images.test/optimized.png', fallbackUri: 'https://images.test/raw.png', retryTimes: 1, width: 32, height: 32 }, fallbackIcon: { name: 'GlobusOutline' } } })]);
+  const page = mount([identity('image', { leading: { kind: 'network', image: { uri: 'https://images.test/optimized.png', fallbackUri: 'https://images.test/raw.png', retryTimes: 1, width: 32, height: 32, loadingStrategy: 'static' }, fallbackIcon: { name: 'GlobusOutline' } } })]);
   const clock = fakeImageRetryClock(page.view);
   const image = page.document.querySelector('.ok-native-list-visual-main');
   image.dispatchEvent(new page.view.Event('error'));
@@ -657,8 +757,26 @@ test('account add actions retain ListItem medium text while empty-search text re
   assert.equal(page.document.querySelector('[data-native-list-row-key="empty"] .ok-native-list-action-title').style.fontWeight, '');
   page.close();
 });
+test('source-backed visuals default to no background or fallback and allow explicit opt-in', () => {
+  const makeRow = loadingStrategy => identity('wallet', { revision: loadingStrategy ? 2 : 1, height: 68, presentation: 'walletSidebar', leading: { kind: 'wallet', shape: 'square', backgroundColor: '#00000000', image: { uri: 'file:///wallet.png', width: 40, height: 40, ...(loadingStrategy ? { loadingStrategy } : {}) }, fallbackText: 'W' } });
+  const page = mount([makeRow()]);
+  let frame = page.document.querySelector('.ok-native-list-visual');
+  let image = page.document.querySelector('.ok-native-list-visual-main');
+  assert.equal(frame.style.background, 'rgba(0, 0, 0, 0)');
+  image.dispatchEvent(new page.view.Event('error'));
+  assert.ok(page.document.querySelector('.ok-native-list-visual-main'));
+  assert.equal(page.document.querySelector('.ok-native-list-visual-fallback'), null);
+
+  page.engine.applySnapshot(snapshot([makeRow('static')], { generation: 2 }));
+  frame = page.document.querySelector('.ok-native-list-visual');
+  image = page.document.querySelector('.ok-native-list-visual-main');
+  assert.equal(frame.style.background, 'var(--nl-strong)');
+  image.dispatchEvent(new page.view.Event('load'));
+  assert.equal(frame.style.background, 'rgba(0, 0, 0, 0)');
+  page.close();
+});
 test('selector background pixels follow successful image sources and disappear after terminal failure or rebinding', () => {
-  const row = uri => identity('image', { height: 48, presentation: 'networkSelector', leading: { kind: 'network', image: { uri, fallbackUri: 'https://images.test/raw.png', width: 32, height: 32, contentFit: 'cover' }, fallbackIcon: { name: 'GlobusOutline' } } });
+  const row = uri => identity('image', { height: 48, presentation: 'networkSelector', leading: { kind: 'network', image: { uri, fallbackUri: 'https://images.test/raw.png', width: 32, height: 32, contentFit: 'cover', loadingStrategy: 'static' }, fallbackIcon: { name: 'GlobusOutline' } } });
   const page = mount([row('https://images.test/optimized.png')]);
   const image = page.document.querySelector('img');
   const paint = page.document.querySelector('.ok-native-list-selector-image-background');

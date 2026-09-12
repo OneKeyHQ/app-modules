@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.122] - 2026-09-12
+
+### Bug Fixes
+- **pager-view (Android)**: Keep the horizontally scrollable native Market tab row centered on interpolated pager progress instead of jumping at rounded page boundaries.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.122.
+
+## [3.0.121] - 2026-09-12
+
+### Bug Fixes
+- **pager-view (Android)**: Complete nested native gesture lifecycles after horizontal header scrolling and keep the native tab indicator correctly sized before the first pager transition.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.121.
+
+## [3.0.120] - 2026-09-12
+
+### Features
+- **pager-view (Android)**: Add opt-in native primary tabs and a scrollable Stocks subheader with pager-progress-driven selection styling.
+
+### Bug Fixes
+- **pager-view (Android)**: Route header vertical drags to the active list, preserve horizontal subheader ownership, cancel presses after directional drags, and log low-frequency pager lifecycle diagnostics.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.120.
+
+## [3.0.119] - 2026-09-12
+
+### Features
+- **pager-view**: Add iOS native tab and scrollable subheader rendering for collapsible pagers.
+
+### Bug Fixes
+- **pager-view**: Coordinate nested horizontal and vertical gestures while cancelling React Native presses after a drag begins.
+- **native-list**: Align image fallback, section index positioning, and iOS interactive reorder behavior.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.119.
+
 ## [3.0.118] - 2026-09-11
 
 ### Features
