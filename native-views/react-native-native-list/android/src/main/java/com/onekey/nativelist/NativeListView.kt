@@ -51,6 +51,11 @@ import kotlin.math.sqrt
 class NativeListView(
   private val reactContext: ThemedReactContext,
 ) : LinearLayout(reactContext) {
+  private data class VisibleMarketAnchor(
+    val key: String,
+    val offset: Int,
+  )
+
   private class ActionAnchorRecord(
     val token: String,
     origin: NativeListActionOrigin,
@@ -170,6 +175,7 @@ class NativeListView(
   private var lastLayoutWidth = -1
   private var lastLayoutHeight = -1
   private var lastLayoutDirection = layoutDirection
+  private var lastMarketPaginationAnchorLogAtMs = 0L
   private var disposed = false
 
   init {
@@ -363,6 +369,9 @@ class NativeListView(
       }
       return
     }
+    val preserveMarketPaginationAnchor = previous?.let {
+      isMarketPaginationUpdate(it, next)
+    } ?: false
     // Keep the first Market row at its current pixel offset when it is
     // reordered. RecyclerView otherwise follows the previous first key.
     val marketStartOffset = if (
@@ -390,7 +399,7 @@ class NativeListView(
       if (marketStartOffset != null) {
         layoutManager.scrollToPositionWithOffset(0, marketStartOffset)
       }
-      relayoutContents()
+      relayoutContents(preserveMarketPaginationAnchor)
       performPendingScrollIfNeeded()
       syncSectionIndexToVisibleRows()
       scheduleVisibleEvent()
@@ -400,6 +409,40 @@ class NativeListView(
     refreshLayout.isRefreshing = next.refreshing
     bindFooter(next)
     updateReordering(next)
+  }
+
+  private fun captureVisibleMarketAnchor(): VisibleMarketAnchor? {
+    val position = layoutManager.findFirstVisibleItemPosition()
+    if (position == RecyclerView.NO_POSITION) return null
+    val item = adapter.itemAt(position) ?: return null
+    val view = layoutManager.findViewByPosition(position) ?: return null
+    return VisibleMarketAnchor(
+      key = item.key,
+      offset = layoutManager.getDecoratedTop(view) - recyclerView.paddingTop,
+    )
+  }
+
+  private fun isMarketPaginationUpdate(
+    previous: NativeListConfig,
+    next: NativeListConfig,
+  ): Boolean {
+    if (!previous.loadMore && !next.loadMore) return false
+    val previousRows = previous.items.dropLastWhile {
+      it.key in MARKET_PAGINATION_KEYS
+    }
+    val nextRows = next.items.dropLastWhile {
+      it.key in MARKET_PAGINATION_KEYS
+    }
+    if (previousRows.isEmpty() || previousRows.size > nextRows.size) return false
+    if (
+      previousRows.firstOrNull()?.type != "market" ||
+      nextRows.firstOrNull()?.type != "market"
+    ) {
+      return false
+    }
+    return previousRows.indices.all { index ->
+      previousRows[index].key == nextRows[index].key
+    }
   }
 
   /**
@@ -1839,15 +1882,36 @@ class NativeListView(
    * already-sized host once after a committed data update so the native rows
    * are measured and rebound without rebuilding the adapter.
    */
-  private fun relayoutContents() {
+  private fun relayoutContents(preserveMarketPaginationAnchor: Boolean = false) {
     post {
       if (disposed || width <= 0 || height <= 0) return@post
+      val anchor = if (preserveMarketPaginationAnchor) {
+        captureVisibleMarketAnchor()
+      } else {
+        null
+      }
+      val anchorIndex = anchor?.let { currentAnchor ->
+        adapter.currentList.indexOfFirst { it.key == currentAnchor.key }
+      } ?: RecyclerView.NO_POSITION
+      if (anchor != null && anchorIndex >= 0) {
+        layoutManager.scrollToPositionWithOffset(anchorIndex, anchor.offset)
+      }
       forceLayout()
       measure(
         MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
         MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
       )
       layout(left, top, right, bottom)
+      if (anchorIndex >= 0) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastMarketPaginationAnchorLogAtMs >= 1_000L) {
+          lastMarketPaginationAnchorLogAtMs = now
+          OneKeyLog.debug(
+            "NativeList",
+            "market-pagination-anchor-restored generation=${config?.generation} index=$anchorIndex",
+          )
+        }
+      }
     }
   }
 
@@ -1937,6 +2001,11 @@ class NativeListView(
   private fun sectionIndexDp(value: Int): Int = (value * density).roundToInt()
 
   companion object {
+    private val MARKET_PAGINATION_KEYS = setOf(
+      "market-loading-more",
+      "market-load-more-retry",
+      "market-end",
+    )
     private val MARKET_QUOTE_FIELDS = setOf(
       "revision",
       "price",
