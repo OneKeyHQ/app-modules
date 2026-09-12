@@ -185,6 +185,13 @@ export class CollapsiblePagerView extends React.PureComponent<
 
   private latestNativeTabTarget: number | null = null;
 
+  private latestNativeSelectedPage = this.state.selectedPage;
+
+  private nativePagerScrollState: OnPageScrollStateChangedEventData["pageScrollState"] =
+    "idle";
+
+  private nativeTabCommandQueuedDuringScroll = false;
+
   componentDidMount() {
     this.notifyMountedPagesChanged();
   }
@@ -256,6 +263,8 @@ export class CollapsiblePagerView extends React.PureComponent<
 
   private dispatchNativeTabPageCommand(position: number, animated: boolean) {
     const commandId = ++this.nativeTabCommandId;
+    this.nativeTabCommandQueuedDuringScroll =
+      this.nativePagerScrollState !== "idle";
     this.latestNativeTabTarget = position;
     this.setState(
       (state) => ({
@@ -331,6 +340,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       event.nativeEvent.position,
       this.pages().length
     );
+    this.latestNativeSelectedPage = position;
     if (
       position !== this.state.selectedPage ||
       this.state.transientRetainedPages.length > 0
@@ -339,6 +349,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       const transitionComplete = pendingTarget === position;
       if (transitionComplete) {
         this.latestNativeTabTarget = null;
+        this.nativeTabCommandQueuedDuringScroll = false;
       }
       this.setState(
         {
@@ -354,9 +365,46 @@ export class CollapsiblePagerView extends React.PureComponent<
     this.props.onPageSelected?.(event);
   };
 
+  private onPageScrollStateChanged = (
+    event: ReactNative.NativeSyntheticEvent<OnPageScrollStateChangedEventData>
+  ) => {
+    const scrollState = event.nativeEvent.pageScrollState;
+    const queuedDuringPreviousScroll = this.nativeTabCommandQueuedDuringScroll;
+    this.nativePagerScrollState = scrollState;
+    // Native drains tab commands queued during an active drag after reporting
+    // that drag as idle. Preserve the newer target through that first idle.
+    if (
+      scrollState === "idle" &&
+      this.latestNativeTabTarget !== null &&
+      this.latestNativeTabTarget !== this.latestNativeSelectedPage &&
+      !queuedDuringPreviousScroll
+    ) {
+      ++this.nativeTabCommandId;
+      this.latestNativeTabTarget = null;
+      this.setState(
+        { transientRetainedPages: [] },
+        this.notifyMountedPagesChanged
+      );
+    }
+    if (scrollState === "idle") {
+      this.nativeTabCommandQueuedDuringScroll = false;
+    }
+    this.props.onPageScrollStateChanged?.(event);
+  };
+
   private onNativeTabPress = (
     event: ReactNative.NativeSyntheticEvent<OnNativeTabPressEventData>
   ) => {
+    const position = pageIndex(event.nativeEvent.position);
+    if (
+      position !== null &&
+      position >= 0 &&
+      position < this.pages().length &&
+      (position !== this.state.selectedPage ||
+        this.latestNativeTabTarget !== null)
+    ) {
+      this.dispatchNativeTabPageCommand(position, true);
+    }
     this.props.onNativeTabPress?.(event);
   };
 
@@ -377,6 +425,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       pageRetentionDistance: _pageRetentionDistance,
       onMountedPagesChanged: _onMountedPagesChanged,
       onPageSelected: _onPageSelected,
+      onPageScrollStateChanged: _onPageScrollStateChanged,
       nativeTabBar,
       onNativeTabPress: _onNativeTabPress,
       nativeSubHeader,
@@ -431,6 +480,7 @@ export class CollapsiblePagerView extends React.PureComponent<
         pageKeys={JSON.stringify(pageKeys)}
         retainedPages={JSON.stringify([...retained])}
         onPageSelected={this.onPageSelected}
+        onPageScrollStateChanged={this.onPageScrollStateChanged}
         nativeTabBarItems={
           nativeTabBarEnabled ? JSON.stringify(nativeTabBar.items) : undefined
         }

@@ -181,6 +181,7 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     // OneKey patch: CollapsiblePagerHost always coordinates nested pagers on Android.
   }
 
+  @ReactProp(name = "nativeSmoothHeaderScrollEnabled", defaultBoolean = false)
   override fun setNativeSmoothHeaderScrollEnabled(
     view: CollapsiblePagerHost?,
     value: Boolean,
@@ -210,16 +211,19 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     view?.retainedPages = value ?: "[]"
   }
 
+  @ReactProp(name = "nativeTabBarItems")
   override fun setNativeTabBarItems(view: CollapsiblePagerHost?, value: String?) {
     view?.updateNativeTabBarItems(value)
   }
 
+  @ReactProp(name = "nativeTabBarHeight")
   override fun setNativeTabBarHeight(view: CollapsiblePagerHost?, value: Double) {
     view ?: return
     view.nativeTabBarHeight = value
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarContentPaddingHorizontal")
   override fun setNativeTabBarContentPaddingHorizontal(
     view: CollapsiblePagerHost?,
     value: Double,
@@ -229,64 +233,75 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarItemSpacing")
   override fun setNativeTabBarItemSpacing(view: CollapsiblePagerHost?, value: Double) {
     view ?: return
     view.nativeTabBarItemSpacing = value
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarFontSize")
   override fun setNativeTabBarFontSize(view: CollapsiblePagerHost?, value: Double) {
     view ?: return
     view.nativeTabBarFontSize = value
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarFontFamily")
   override fun setNativeTabBarFontFamily(view: CollapsiblePagerHost?, value: String?) {
     view ?: return
     view.nativeTabBarFontFamily = value
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarBackgroundColor", customType = "Color")
   override fun setNativeTabBarBackgroundColor(view: CollapsiblePagerHost?, value: Int?) {
     view ?: return
     view.nativeTabBarBackgroundColor = value ?: Color.TRANSPARENT
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarActiveTextColor", customType = "Color")
   override fun setNativeTabBarActiveTextColor(view: CollapsiblePagerHost?, value: Int?) {
     view ?: return
     view.nativeTabBarActiveTextColor = value ?: Color.BLACK
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarInactiveTextColor", customType = "Color")
   override fun setNativeTabBarInactiveTextColor(view: CollapsiblePagerHost?, value: Int?) {
     view ?: return
     view.nativeTabBarInactiveTextColor = value ?: Color.GRAY
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarIndicatorColor", customType = "Color")
   override fun setNativeTabBarIndicatorColor(view: CollapsiblePagerHost?, value: Int?) {
     view ?: return
     view.nativeTabBarIndicatorColor = value ?: view.nativeTabBarActiveTextColor
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarIndicatorHeight")
   override fun setNativeTabBarIndicatorHeight(view: CollapsiblePagerHost?, value: Double) {
     view ?: return
     view.nativeTabBarIndicatorHeight = value
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeTabBarIndicatorBottom")
   override fun setNativeTabBarIndicatorBottom(view: CollapsiblePagerHost?, value: Double) {
     view ?: return
     view.nativeTabBarIndicatorBottom = value
     view.applyNativeHeaderStyle()
   }
 
+  @ReactProp(name = "nativeSubHeaderConfig")
   override fun setNativeSubHeaderConfig(view: CollapsiblePagerHost?, value: String?) {
     view?.updateNativeSubHeader(value)
   }
 
+  @ReactProp(name = "nativeSubHeaderSelectedBackgroundColor", customType = "Color")
   override fun setNativeSubHeaderSelectedBackgroundColor(
     view: CollapsiblePagerHost?,
     value: Int?,

@@ -825,6 +825,22 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
 {
+  if (gestureRecognizer == self.panGestureRecognizer) {
+    UIPanGestureRecognizer *pan = self.panGestureRecognizer;
+    CGPoint translation = [pan translationInView:self];
+    CGPoint velocity = [pan velocityInView:self];
+    CGPoint intent = fabs(translation.x) + fabs(translation.y) >= 1
+      ? translation
+      : velocity;
+    BOOL hasMotion = MAX(fabs(intent.x), fabs(intent.y)) >= 1;
+    if (hasMotion && fabs(intent.y) > fabs(intent.x)) {
+      RNCCollapsiblePagerLog([NSString stringWithFormat:
+        @"pager-axis dx=%.2f dy=%.2f result=vertical-rejected",
+        intent.x,
+        intent.y]);
+      return NO;
+    }
+  }
   if (gestureRecognizer == self.panGestureRecognizer && self.excludedHeaderView != nil) {
     CGPoint point = [gestureRecognizer locationInView:self.excludedHeaderView];
     if ([self.excludedHeaderView hitTest:point withEvent:nil] != nil) {
@@ -1282,13 +1298,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   CGFloat stickyY = _headerHeight;
   _headerView.frame = CGRectMake(0, 0, width, _headerHeight);
   _stickyHeaderView.frame = CGRectMake(0, stickyY, width, _stickyHeaderHeight);
+  CGFloat nativeTabBarVisibleHeight = _nativeTabBarView.hidden
+    ? 0
+    : MIN(_stickyHeaderHeight, _nativeTabBarHeight);
   _nativeTabBarView.frame = CGRectMake(
     0,
     stickyY,
     width,
-    MIN(_stickyHeaderHeight, _nativeTabBarHeight)
+    nativeTabBarVisibleHeight
   );
-  CGFloat nativeTabBarVisibleHeight = CGRectGetHeight(_nativeTabBarView.frame);
   _nativeSubHeaderView.frame = CGRectMake(
     0,
     stickyY + nativeTabBarVisibleHeight,

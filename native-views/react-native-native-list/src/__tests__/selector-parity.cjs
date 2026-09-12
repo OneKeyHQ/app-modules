@@ -103,6 +103,29 @@ test('native Market patch parity retains layout, reuse, refresh, and action cont
   assert.match(models, /windowPoint/);
 });
 
+test('iOS reorder defers compatible snapshots and commits against the current key order', () => {
+  const ios = fs.readFileSync(
+    path.join(packageRoot, 'ios/RNCNativeListView.swift'),
+    'utf8'
+  );
+  assert.match(
+    ios,
+    /if let current = config, interactiveReorderSource != nil \{\s+if canDeferSnapshotDuringInteractiveReorder\(from: current, to: next\) \{\s+deferSnapshotDuringInteractiveReorder\(from: current, to: next\)\s+return\s+\}\s+cancelInteractiveReorderForStructuralUpdate\(\)/
+  );
+  assert.match(
+    ios,
+    /private func deferSnapshotDuringInteractiveReorder[\s\S]*?config = next\s+itemsByKey = Dictionary[\s\S]*?deferredReorderReconfigureKeys\.formUnion\(changedKeys\)/
+  );
+  assert.match(
+    ios,
+    /let keys = snapshot\.itemIdentifiers[\s\S]*?let sourceIndex = keys\.firstIndex\(of: source\.key\)[\s\S]*?let targetIndex = keys\.firstIndex\(of: targetKey\)[\s\S]*?snapshot\.moveItem\(source\.key, beforeItem: targetKey\)[\s\S]*?snapshot\.moveItem\(source\.key, afterItem: targetKey\)/
+  );
+  assert.match(
+    ios,
+    /private func completeInteractiveReorder[\s\S]*?let items = keys\.compactMap \{ itemsByKey\[\$0\] \}[\s\S]*?current\.items = items\s+config = current[\s\S]*?scheduleDeferredReorderRefresh\(\)/
+  );
+});
+
 test('native source images default to no placeholder and restore explicit backgrounds after load', () => {
   const android = fs.readFileSync(
     path.join(

@@ -38,7 +38,7 @@
     "nitrogen": "nitrogen",
     "typecheck": "tsc -b",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "test": "jest --runInBand",
+    "test": "jest --runInBand && node --test src/__tests__/selector-parity.cjs",
     "release": "yarn prepare && npm whoami && npm publish --access public"
   },
   "keywords": [
