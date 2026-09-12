@@ -344,11 +344,14 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       manager: safetyHandle.manager,
       url: url
     )
-    hostView.sd_setImage(
+    hostView.sd_internalSetImage(
       with: url,
       placeholderImage: nil,
       options: OneKeyImageRequestContext.renderOptions,
       context: context,
+      setImageBlock: { [weak self] image, _, _, _ in
+        self?.applyDisplayedImage(image, generation: generation)
+      },
       progress: { [weak self] receivedSize, _, _ in
         guard safetyHandle.tracker.inspectReceivedByteCount(Int64(receivedSize)) else { return }
         DispatchQueue.main.async { [weak self] in
@@ -356,7 +359,9 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
           self.hostView.sd_cancelCurrentImageLoad()
         }
       },
-      completed: { [weak self] image, error, cacheType, _ in
+      completed: { [weak self] image, _, error, cacheType, finished, _ in
+        // Progressive loads deliver partial images before the terminal callback.
+        guard finished else { return }
         guard let self, self.requestGeneration == generation else {
           safetyHandle.finish()
           return
@@ -515,6 +520,18 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     }
   }
 
+  // OneKey patch: SDWebImage assigns `image` from inside its own completion, which
+  // runs before this object's generation guard and never re-checks whether the view
+  // still belongs to the request that started the load. Fabric recycles a single
+  // OneKeyImage UIView across unrelated images, so a superseded completion could
+  // repaint a slot that now shows a different image. Every write goes through here.
+  func applyDisplayedImage(_ image: UIImage?, generation: UInt64) {
+    guard Self.isCurrentRequestGeneration(generation, current: requestGeneration) else {
+      return
+    }
+    hostView.image = image
+  }
+
   private func showLoading(
     requestIsActive: Bool,
     letLibraryStartIndicator: Bool
@@ -579,7 +596,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     skeletonIndicator.stopAnimatingIndicator()
     fallbackLayer.isHidden = true
     resetImageTransition()
-    hostView.image = image
+    applyDisplayedImage(image, generation: generation)
     hostView.backgroundColor = .clear
     if requestIsActive {
       applyLoadedImageTransition(cacheType: .memory)
