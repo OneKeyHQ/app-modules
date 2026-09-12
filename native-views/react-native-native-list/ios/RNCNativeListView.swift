@@ -65,6 +65,8 @@ final class NativeListView: UIView {
   private let footerCell = NativeListCell(frame: .zero)
   private let sectionIndexView = NativeListSectionIndexView()
   private let sectionIndexPreview = NativeListSectionIndexPreviewView()
+  private var sectionIndexLayoutConstraints: [NSLayoutConstraint] = []
+  private var sectionIndexWindowHeightConstraint: NSLayoutConstraint?
   private var footerHeightConstraint: NSLayoutConstraint!
   private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
   private var config: NativeListConfig?
@@ -161,10 +163,6 @@ final class NativeListView: UIView {
       footerContainer.trailingAnchor.constraint(equalTo: trailingAnchor),
       footerContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
       footerHeightConstraint,
-      sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
-      sectionIndexView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
-      sectionIndexView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
-      sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
       sectionIndexPreview.trailingAnchor.constraint(
         equalTo: safeAreaLayoutGuide.trailingAnchor,
         constant: -Self.sectionIndexPreviewEndMargin
@@ -173,6 +171,7 @@ final class NativeListView: UIView {
       sectionIndexPreview.widthAnchor.constraint(equalToConstant: Self.sectionIndexPreviewWidth),
       sectionIndexPreview.heightAnchor.constraint(equalToConstant: Self.sectionIndexPreviewHeight),
     ])
+    attachSectionIndexToList()
 
     sectionIndexView.isHidden = true
     sectionIndexView.onSelect = { [weak self] index, interacting in
@@ -233,8 +232,19 @@ final class NativeListView: UIView {
     fatalError("init(coder:) has not been implemented")
   }
 
+  override func willMove(toWindow newWindow: UIWindow?) {
+    if newWindow == nil { attachSectionIndexToList() }
+    super.willMove(toWindow: newWindow)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    updateSectionIndexAttachment()
+  }
+
   override func layoutSubviews() {
     super.layoutSubviews()
+    updateSectionIndexAttachment()
     let direction = effectiveUserInterfaceLayoutDirection
     if let lastLayoutSize,
        lastLayoutSize != bounds.size || lastLayoutDirection != nil && lastLayoutDirection != direction {
@@ -1027,10 +1037,10 @@ final class NativeListView: UIView {
       titles: sectionIndexEntries.map(\.title),
       textColor: nativeListColor(config.theme, "disabledText", "#8D8D8D"),
       activeColor: nativeListColor(config.theme, "positive", "#218358"),
-      activeTextColor: nativeListColor(config.theme, "inverseText", "#FCFCFC"),
-      centeredInWindow: config.sectionIndexCenteredInWindow
+      activeTextColor: nativeListColor(config.theme, "inverseText", "#FCFCFC")
     )
     sectionIndexView.isHidden = sectionIndexEntries.isEmpty
+    updateSectionIndexAttachment()
     sectionIndexPreview.configure(
       fillColor: UIColor(
         red: 202.0 / 255.0,
@@ -1047,6 +1057,63 @@ final class NativeListView: UIView {
       sectionIndexView.setActiveIndex(nil)
     }
     if sectionIndexEntries.isEmpty { finishSectionIndexInteraction(immediately: true) }
+  }
+
+  private func updateSectionIndexAttachment() {
+    guard config?.sectionIndexCenteredInWindow == true,
+          !sectionIndexEntries.isEmpty,
+          bounds.width > 0,
+          bounds.height > 0,
+          isVisibleInHierarchy,
+          let window else {
+      attachSectionIndexToList()
+      return
+    }
+    attachSectionIndex(to: window)
+  }
+
+  private var isVisibleInHierarchy: Bool {
+    var current: UIView? = self
+    while let view = current {
+      if view.isHidden || view.alpha <= 0.01 { return false }
+      current = view.superview
+    }
+    return true
+  }
+
+  private func attachSectionIndexToList() {
+    guard sectionIndexView.superview !== self || sectionIndexLayoutConstraints.isEmpty else { return }
+    NSLayoutConstraint.deactivate(sectionIndexLayoutConstraints)
+    sectionIndexWindowHeightConstraint = nil
+    sectionIndexView.removeFromSuperview()
+    addSubview(sectionIndexView)
+    sectionIndexLayoutConstraints = [
+      sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
+      sectionIndexView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+      sectionIndexView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+      sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
+    ]
+    NSLayoutConstraint.activate(sectionIndexLayoutConstraints)
+  }
+
+  private func attachSectionIndex(to window: UIWindow) {
+    let railHeight = sectionIndexView.preferredHeight(constrainedTo: window.bounds.height)
+    if sectionIndexView.superview === window {
+      sectionIndexWindowHeightConstraint?.constant = railHeight
+      return
+    }
+    NSLayoutConstraint.deactivate(sectionIndexLayoutConstraints)
+    sectionIndexView.removeFromSuperview()
+    window.addSubview(sectionIndexView)
+    let heightConstraint = sectionIndexView.heightAnchor.constraint(equalToConstant: railHeight)
+    sectionIndexWindowHeightConstraint = heightConstraint
+    sectionIndexLayoutConstraints = [
+      sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
+      sectionIndexView.centerYAnchor.constraint(equalTo: window.centerYAnchor),
+      sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
+      heightConstraint,
+    ]
+    NSLayoutConstraint.activate(sectionIndexLayoutConstraints)
   }
 
   private func selectSectionIndex(_ index: Int, interacting: Bool) {
@@ -2156,7 +2223,6 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   private var textColor: UIColor = .secondaryLabel
   private var activeColor: UIColor = .tintColor
   private var activeTextColor: UIColor = .white
-  private var centeredInWindow = false
   private var lastTouchIndex: Int?
   private(set) var activeIndex: Int?
 
@@ -2197,14 +2263,12 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
     titles: [String],
     textColor: UIColor,
     activeColor: UIColor,
-    activeTextColor: UIColor,
-    centeredInWindow: Bool
+    activeTextColor: UIColor
   ) {
     self.titles = titles
     self.textColor = textColor
     self.activeColor = activeColor
     self.activeTextColor = activeTextColor
-    self.centeredInWindow = centeredInWindow
     labels.forEach { $0.removeFromSuperview() }
     labels = titles.map { title in
       let label = UILabel()
@@ -2313,20 +2377,15 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
     entryCenterY(index: index, metrics: indexMetrics(count: titles.count))
   }
 
+  func preferredHeight(constrainedTo maximumHeight: CGFloat) -> CGFloat {
+    min(maximumHeight, Self.edgePadding * 2 + Self.labelSpacing * CGFloat(titles.count))
+  }
+
   private func indexMetrics(count: Int) -> (originY: CGFloat, trackHeight: CGFloat) {
     guard count > 0 else { return (bounds.midY, 0) }
     let availableHeight = max(0, bounds.height - Self.edgePadding * 2)
     let trackHeight = min(availableHeight, Self.labelSpacing * CGFloat(count))
-    let centeredOriginY = (bounds.height - trackHeight) / 2
-    guard centeredInWindow, let window else { return (centeredOriginY, trackHeight) }
-    let windowCenterY = window.safeAreaLayoutGuide.layoutFrame.midY
-    let localCenterY = convert(CGPoint(x: 0, y: windowCenterY), from: window).y
-    return (
-      (localCenterY - trackHeight / 2).clamped(
-        to: Self.edgePadding...max(Self.edgePadding, bounds.height - Self.edgePadding - trackHeight)
-      ),
-      trackHeight
-    )
+    return ((bounds.height - trackHeight) / 2, trackHeight)
   }
 
   private func entryCenterY(
