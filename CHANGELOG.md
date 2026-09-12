@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.121] - 2026-09-12
+
+### Bug Fixes
+- **pager-view (Android)**: Complete nested native gesture lifecycles after horizontal header scrolling and keep the native tab indicator correctly sized before the first pager transition.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.121.
+
 ## [3.0.120] - 2026-09-12
 
 ### Features

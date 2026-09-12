@@ -760,9 +760,10 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   private fun finishHeaderGesture(event: MotionEvent) {
     val owner = headerGestureOwner.name.lowercase()
-    if (nativeGestureStarted) {
+    if (nativeGestureStarted || nestedNativeGestureStarted) {
       NativeGestureUtil.notifyNativeGestureEnded(this, event)
       nativeGestureStarted = false
+      nestedNativeGestureStarted = false
     }
     log(
       "gesture-end action=${event.actionMasked} owner=$owner region=$headerTouchRegion " +
@@ -791,6 +792,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         forwardedRecycler = null
         pressCancelled = false
         nativeGestureStarted = false
+        nestedNativeGestureStarted = false
         headerTouchRegion = headerRegionAt(event.y) ?: "none"
         headerTouchActive = headerTouchRegion != "none"
         if (!headerTouchActive) return super.dispatchTouchEvent(event)
@@ -979,6 +981,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     forwardedRecycler = null
     pressCancelled = false
     nativeGestureStarted = false
+    nestedNativeGestureStarted = false
     viewTreeObserver.removeOnPreDrawListener(pageContentLayoutListener)
     detachRecyclerObserver()
     for (recycler in originalRecyclerPadding.keys.toList()) {

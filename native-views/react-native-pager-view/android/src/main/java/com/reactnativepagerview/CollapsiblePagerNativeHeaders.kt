@@ -53,6 +53,9 @@ private class CollapsiblePagerHorizontalItemsView(
   private val density = resources.displayMetrics.density
   private val content = FrameLayout(context)
   private val indicator = View(context)
+  private val indicatorBackground = GradientDrawable().apply {
+    shape = GradientDrawable.RECTANGLE
+  }
   private val buttons = ArrayList<TextView>()
   private val itemFrames = ArrayList<IntArray>()
   private var items: List<CollapsiblePagerNativeHeaderItem> = emptyList()
@@ -80,7 +83,8 @@ private class CollapsiblePagerHorizontalItemsView(
     isFillViewport = true
     overScrollMode = OVER_SCROLL_NEVER
     clipToPadding = false
-    content.addView(indicator)
+    indicator.background = indicatorBackground
+    content.addView(indicator, FrameLayout.LayoutParams(0, 0))
     addView(
       content,
       LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT),
@@ -141,6 +145,7 @@ private class CollapsiblePagerHorizontalItemsView(
     if (showsProgressIndicator) {
       indicatorHeightPx = max(0, dp(indicatorHeight))
       indicatorBottomPx = max(0, dp(indicatorBottom))
+      indicatorBackground.cornerRadius = indicatorHeightPx / 2f
     }
     applyTypeface()
     requestLayout()
@@ -159,7 +164,7 @@ private class CollapsiblePagerHorizontalItemsView(
     this.inactiveTextColor = inactiveTextColor
     this.selectedBackgroundColor = selectedBackgroundColor
     this.indicatorColor = indicatorColor
-    indicator.setBackgroundColor(indicatorColor)
+    indicatorBackground.setColor(indicatorColor)
     updatePresentation()
   }
 
@@ -216,7 +221,6 @@ private class CollapsiblePagerHorizontalItemsView(
       MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
     )
     setMeasuredDimension(width, height)
-    updatePresentation()
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
@@ -247,16 +251,14 @@ private class CollapsiblePagerHorizontalItemsView(
       val to = itemFrames[upper]
       val indicatorX = (from[2] + (to[2] - from[2]) * fraction).roundToInt()
       val indicatorWidth = (from[3] + (to[3] - from[3]) * fraction).roundToInt()
-      indicator.layoutParams = FrameLayout.LayoutParams(indicatorWidth, indicatorHeightPx).apply {
-        leftMargin = indicatorX
-        topMargin = max(0, measuredHeight - indicatorBottomPx - indicatorHeightPx)
-      }
+      val indicatorTop = max(0, measuredHeight - indicatorBottomPx - indicatorHeightPx)
+      indicator.layout(
+        indicatorX,
+        indicatorTop,
+        indicatorX + indicatorWidth,
+        indicatorTop + indicatorHeightPx,
+      )
       indicator.visibility = if (indicatorHeightPx > 0) VISIBLE else GONE
-      indicator.background = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        setColor(indicatorColor)
-        cornerRadius = indicatorHeightPx / 2f
-      }
       selectedIndex = clamped.roundToInt()
       buttons.forEachIndexed { index, button ->
         val emphasis = 1f - min(1f, kotlin.math.abs(clamped - index))

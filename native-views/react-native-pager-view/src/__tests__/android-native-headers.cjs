@@ -21,6 +21,9 @@ test('connects Android props, direct press events, gesture bridge, and file logg
   const host = read(
     'android/src/main/java/com/reactnativepagerview/CollapsiblePagerHost.kt'
   );
+  const headers = read(
+    'android/src/main/java/com/reactnativepagerview/CollapsiblePagerNativeHeaders.kt'
+  );
   const gradle = read('android/build.gradle');
   const manifest = JSON.parse(read('package.json'));
 
@@ -30,7 +33,10 @@ test('connects Android props, direct press events, gesture bridge, and file logg
   assert.match(manager, /host\.updateNativeTabProgress\(position, offset\)/);
   assert.match(host, /beginForwardingToRecycler\(event\)/);
   assert.match(host, /NativeGestureUtil\.notifyNativeGestureStarted/);
+  assert.match(host, /nativeGestureStarted \|\| nestedNativeGestureStarted/);
   assert.match(host, /OneKeyLog\.debug\("CollapsiblePager"/);
+  assert.match(headers, /indicator\.layout\(/);
+  assert.doesNotMatch(headers, /indicator\.layoutParams =/);
   assert.match(gradle, /project\(":onekeyfe_react-native-native-logger"\)/);
   assert.equal(
     manifest.peerDependencies['@onekeyfe/react-native-native-logger'],
