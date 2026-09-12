@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.122] - 2026-09-12
+
+### Bug Fixes
+- **pager-view (Android)**: Keep the horizontally scrollable native Market tab row centered on interpolated pager progress instead of jumping at rounded page boundaries.
+
+### Chores
+- Bump all 39 publishable packages to 3.0.122.
+
 ## [3.0.121] - 2026-09-12
 
 ### Bug Fixes

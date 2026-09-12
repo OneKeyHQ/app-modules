@@ -242,6 +242,7 @@ private class CollapsiblePagerHorizontalItemsView(
   private fun updatePresentation() {
     if (buttons.isEmpty() || itemFrames.size != buttons.size) return
     val selectedIndex: Int
+    val scrollTargetCenterX: Float
     if (showsProgressIndicator) {
       val clamped = progress.coerceIn(0f, buttons.lastIndex.toFloat())
       val lower = floor(clamped).toInt()
@@ -249,8 +250,10 @@ private class CollapsiblePagerHorizontalItemsView(
       val fraction = clamped - lower
       val from = itemFrames[lower]
       val to = itemFrames[upper]
-      val indicatorX = (from[2] + (to[2] - from[2]) * fraction).roundToInt()
-      val indicatorWidth = (from[3] + (to[3] - from[3]) * fraction).roundToInt()
+      val interpolatedIndicatorX = from[2] + (to[2] - from[2]) * fraction
+      val interpolatedIndicatorWidth = from[3] + (to[3] - from[3]) * fraction
+      val indicatorX = interpolatedIndicatorX.roundToInt()
+      val indicatorWidth = interpolatedIndicatorWidth.roundToInt()
       val indicatorTop = max(0, measuredHeight - indicatorBottomPx - indicatorHeightPx)
       indicator.layout(
         indicatorX,
@@ -259,6 +262,7 @@ private class CollapsiblePagerHorizontalItemsView(
         indicatorTop + indicatorHeightPx,
       )
       indicator.visibility = if (indicatorHeightPx > 0) VISIBLE else GONE
+      scrollTargetCenterX = interpolatedIndicatorX + interpolatedIndicatorWidth / 2f
       selectedIndex = clamped.roundToInt()
       buttons.forEachIndexed { index, button ->
         val emphasis = 1f - min(1f, kotlin.math.abs(clamped - index))
@@ -268,6 +272,8 @@ private class CollapsiblePagerHorizontalItemsView(
       }
     } else {
       selectedIndex = items.indexOfFirst { item -> item.key == selectedKey }
+      val frame = itemFrames.getOrNull(selectedIndex)
+      scrollTargetCenterX = frame?.let { it[0] + it[1] / 2f } ?: 0f
       indicator.visibility = GONE
       buttons.forEachIndexed { index, button ->
         val selected = index == selectedIndex
@@ -278,8 +284,7 @@ private class CollapsiblePagerHorizontalItemsView(
     }
 
     if (centerSelectionWhenIdle && !isTouchDragging && width > 0 && selectedIndex in itemFrames.indices) {
-      val frame = itemFrames[selectedIndex]
-      val desired = (frame[0] + frame[1] / 2 - width / 2)
+      val desired = (scrollTargetCenterX - width / 2f).roundToInt()
         .coerceIn(0, max(0, content.measuredWidth - width))
       scrollTo(desired, 0)
       centerSelectionWhenIdle = false

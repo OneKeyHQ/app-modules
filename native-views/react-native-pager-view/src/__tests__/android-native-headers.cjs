@@ -37,6 +37,14 @@ test('connects Android props, direct press events, gesture bridge, and file logg
   assert.match(host, /OneKeyLog\.debug\("CollapsiblePager"/);
   assert.match(headers, /indicator\.layout\(/);
   assert.doesNotMatch(headers, /indicator\.layoutParams =/);
+  assert.match(
+    headers,
+    /scrollTargetCenterX = interpolatedIndicatorX \+ interpolatedIndicatorWidth \/ 2f/
+  );
+  assert.match(
+    headers,
+    /\(scrollTargetCenterX - width \/ 2f\)\.roundToInt\(\)/
+  );
   assert.match(gradle, /project\(":onekeyfe_react-native-native-logger"\)/);
   assert.equal(
     manifest.peerDependencies['@onekeyfe/react-native-native-logger'],
