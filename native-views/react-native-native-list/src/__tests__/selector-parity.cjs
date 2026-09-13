@@ -29,6 +29,15 @@ test('compact native indexes lay out and select retained labels by visible order
   assert.match(android, /val index = visibleIndices\[slot\]/);
 });
 
+test('iOS line heights preserve configured label alignment for network avatar fallbacks', () => {
+  const ios = fs.readFileSync(path.join(packageRoot, 'ios/NativeListCell.swift'), 'utf8');
+  assert.match(ios, /fallbackLabel\.textAlignment = \.center/);
+  assert.match(
+    ios,
+    /paragraphStyle\.maximumLineHeight = lineHeight\s+paragraphStyle\.alignment = label\.textAlignment\s+if currentItem\?\.type == "market"/,
+  );
+});
+
 test('window-centered native indexes use controller-owned interactive hosts', () => {
   const ios = fs.readFileSync(path.join(packageRoot, 'ios/RNCNativeListView.swift'), 'utf8');
   const android = fs.readFileSync(path.join(packageRoot, 'android/src/main/java/com/onekey/nativelist/NativeListView.kt'), 'utf8');

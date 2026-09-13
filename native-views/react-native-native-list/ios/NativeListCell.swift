@@ -3809,9 +3809,9 @@ final class NativeListCell: UICollectionViewCell {
     let paragraphStyle = NSMutableParagraphStyle()
     paragraphStyle.minimumLineHeight = lineHeight
     paragraphStyle.maximumLineHeight = lineHeight
+    paragraphStyle.alignment = label.textAlignment
     if currentItem?.type == "market" || currentItem?.data.string("presentation") == "walletSidebar" {
-      // Attributed paragraphs must preserve the label alignment and tail ellipsis.
-      paragraphStyle.alignment = label.textAlignment
+      // Attributed paragraphs must preserve the tail ellipsis.
       paragraphStyle.lineBreakMode = label.lineBreakMode
     }
     var attributes: [NSAttributedString.Key: Any] = [
