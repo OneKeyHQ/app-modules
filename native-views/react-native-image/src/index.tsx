@@ -333,6 +333,8 @@ export function OneKeyImage({
         flattenedStyle.borderRightWidth,
         flattenedStyle.borderBottomWidth,
         flattenedStyle.borderLeftWidth,
+        flattenedStyle.borderStartWidth,
+        flattenedStyle.borderEndWidth,
       ].some((width) => typeof width === 'number' && width > 0)
   );
   const borderOverlayStyle =
@@ -343,11 +345,15 @@ export function OneKeyImage({
           borderRightWidth: flattenedStyle.borderRightWidth,
           borderBottomWidth: flattenedStyle.borderBottomWidth,
           borderLeftWidth: flattenedStyle.borderLeftWidth,
+          borderStartWidth: flattenedStyle.borderStartWidth,
+          borderEndWidth: flattenedStyle.borderEndWidth,
           borderColor: flattenedStyle.borderColor,
           borderTopColor: flattenedStyle.borderTopColor,
           borderRightColor: flattenedStyle.borderRightColor,
           borderBottomColor: flattenedStyle.borderBottomColor,
           borderLeftColor: flattenedStyle.borderLeftColor,
+          borderStartColor: flattenedStyle.borderStartColor,
+          borderEndColor: flattenedStyle.borderEndColor,
           borderStyle: flattenedStyle.borderStyle,
           borderRadius: flattenedStyle.borderRadius,
           borderTopLeftRadius: flattenedStyle.borderTopLeftRadius,
@@ -456,5 +462,7 @@ const styles = StyleSheet.create({
     borderRightWidth: 0,
     borderBottomWidth: 0,
     borderLeftWidth: 0,
+    borderStartWidth: 0,
+    borderEndWidth: 0,
   },
 });

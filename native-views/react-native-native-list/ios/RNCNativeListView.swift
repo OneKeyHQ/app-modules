@@ -66,7 +66,7 @@ final class NativeListView: UIView {
   private let sectionIndexView = NativeListSectionIndexView()
   private let sectionIndexPreview = NativeListSectionIndexPreviewView()
   private var sectionIndexLayoutConstraints: [NSLayoutConstraint] = []
-  private var sectionIndexWindowHeightConstraint: NSLayoutConstraint?
+  private var sectionIndexHostHeightConstraint: NSLayoutConstraint?
   private var footerHeightConstraint: NSLayoutConstraint!
   private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
   private var config: NativeListConfig?
@@ -1066,11 +1066,24 @@ final class NativeListView: UIView {
           bounds.width > 0,
           bounds.height > 0,
           isVisibleInHierarchy,
-          let window else {
+          let window,
+          let hostView = sectionIndexHostView,
+          hostView.window === window else {
       attachSectionIndexToList()
       return
     }
-    attachSectionIndex(to: window)
+    attachSectionIndex(to: hostView)
+  }
+
+  private var sectionIndexHostView: UIView? {
+    var responder: UIResponder? = self
+    while let current = responder {
+      if let viewController = current as? UIViewController {
+        return viewController.view
+      }
+      responder = current.next
+    }
+    return nil
   }
 
   private var isVisibleInHierarchy: Bool {
@@ -1085,7 +1098,7 @@ final class NativeListView: UIView {
   private func attachSectionIndexToList() {
     guard sectionIndexView.superview !== self || sectionIndexLayoutConstraints.isEmpty else { return }
     NSLayoutConstraint.deactivate(sectionIndexLayoutConstraints)
-    sectionIndexWindowHeightConstraint = nil
+    sectionIndexHostHeightConstraint = nil
     sectionIndexView.removeFromSuperview()
     addSubview(sectionIndexView)
     sectionIndexLayoutConstraints = [
@@ -1097,20 +1110,20 @@ final class NativeListView: UIView {
     NSLayoutConstraint.activate(sectionIndexLayoutConstraints)
   }
 
-  private func attachSectionIndex(to window: UIWindow) {
-    let railHeight = sectionIndexView.preferredHeight(constrainedTo: window.bounds.height)
-    if sectionIndexView.superview === window {
-      sectionIndexWindowHeightConstraint?.constant = railHeight
+  private func attachSectionIndex(to hostView: UIView) {
+    let railHeight = sectionIndexView.preferredHeight(constrainedTo: hostView.bounds.height)
+    if sectionIndexView.superview === hostView {
+      sectionIndexHostHeightConstraint?.constant = railHeight
       return
     }
     NSLayoutConstraint.deactivate(sectionIndexLayoutConstraints)
     sectionIndexView.removeFromSuperview()
-    window.addSubview(sectionIndexView)
+    hostView.addSubview(sectionIndexView)
     let heightConstraint = sectionIndexView.heightAnchor.constraint(equalToConstant: railHeight)
-    sectionIndexWindowHeightConstraint = heightConstraint
+    sectionIndexHostHeightConstraint = heightConstraint
     sectionIndexLayoutConstraints = [
       sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
-      sectionIndexView.centerYAnchor.constraint(equalTo: window.centerYAnchor),
+      sectionIndexView.centerYAnchor.constraint(equalTo: hostView.centerYAnchor),
       sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
       heightConstraint,
     ]

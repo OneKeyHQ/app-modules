@@ -198,7 +198,9 @@ private final class NativeSheetViewController: UIViewController,
   private let cornerRadiusValue: CGFloat
   private let showHandleValue: Bool
   private let dismissOnBackdropPressValue: Bool
+  private let dimAmountValue: CGFloat
   private var backdropTap: UITapGestureRecognizer?
+  private var dimmingView: UIView?
 
   init(
     host: NativeSheetContainerView,
@@ -206,7 +208,8 @@ private final class NativeSheetViewController: UIViewController,
     backgroundColor: UIColor,
     cornerRadius: CGFloat,
     showHandle: Bool,
-    dismissOnBackdropPress: Bool
+    dismissOnBackdropPress: Bool,
+    dimAmount: CGFloat
   ) {
     self.host = host
     self.lockedHeight = height
@@ -214,6 +217,7 @@ private final class NativeSheetViewController: UIViewController,
     self.cornerRadiusValue = cornerRadius
     self.showHandleValue = showHandle
     self.dismissOnBackdropPressValue = dismissOnBackdropPress
+    self.dimAmountValue = min(max(dimAmount, 0), 1)
     super.init(nibName: nil, bundle: nil)
     modalPresentationStyle = .pageSheet
   }
@@ -231,6 +235,7 @@ private final class NativeSheetViewController: UIViewController,
   }
 
   deinit {
+    dimmingView?.removeFromSuperview()
     if isViewLoaded {
       host.detachTouchHandler(from: view)
     }
@@ -247,6 +252,7 @@ private final class NativeSheetViewController: UIViewController,
       },
     ]
     sheet.selectedDetentIdentifier = identifier
+    sheet.largestUndimmedDetentIdentifier = identifier
     sheet.prefersGrabberVisible = showHandleValue
     sheet.preferredCornerRadius = cornerRadiusValue
     sheet.prefersScrollingExpandsWhenScrolledToEdge = false
@@ -258,6 +264,7 @@ private final class NativeSheetViewController: UIViewController,
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
+    installDimmingView()
     guard dismissOnBackdropPressValue,
           backdropTap == nil,
           let container = presentationController?.containerView else {
@@ -268,6 +275,12 @@ private final class NativeSheetViewController: UIViewController,
     recognizer.delegate = self
     container.addGestureRecognizer(recognizer)
     backdropTap = recognizer
+  }
+
+  override func viewDidDisappear(_ animated: Bool) {
+    super.viewDidDisappear(animated)
+    dimmingView?.removeFromSuperview()
+    dimmingView = nil
   }
 
   override func viewDidLayoutSubviews() {
@@ -292,6 +305,19 @@ private final class NativeSheetViewController: UIViewController,
   @objc private func handleBackdropTap(_ recognizer: UITapGestureRecognizer) {
     guard recognizer.state == .ended else { return }
     NativeSheetPresentationCoordinator.shared.dismiss(host, reason: "backdrop", animated: true)
+  }
+
+  private func installDimmingView() {
+    guard dimmingView == nil,
+          let container = presentationController?.containerView else {
+      return
+    }
+    let dimmingView = UIView(frame: container.bounds)
+    dimmingView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    dimmingView.backgroundColor = UIColor.black.withAlphaComponent(dimAmountValue)
+    dimmingView.isUserInteractionEnabled = false
+    container.insertSubview(dimmingView, at: 0)
+    self.dimmingView = dimmingView
   }
 }
 
@@ -390,7 +416,8 @@ private final class NativeSheetViewController: UIViewController,
       backgroundColor: sheetBackgroundColor ?? .systemBackground,
       cornerRadius: max(cornerRadius, 0),
       showHandle: showHandle,
-      dismissOnBackdropPress: dismissOnBackdropPress
+      dismissOnBackdropPress: dismissOnBackdropPress,
+      dimAmount: dimAmount
     )
     presentedController = controller
     return controller

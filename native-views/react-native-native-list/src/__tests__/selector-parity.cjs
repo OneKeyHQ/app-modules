@@ -29,12 +29,13 @@ test('compact native indexes lay out and select retained labels by visible order
   assert.match(android, /val index = visibleIndices\[slot\]/);
 });
 
-test('window-centered native indexes use full-window interactive hosts', () => {
+test('window-centered native indexes use controller-owned interactive hosts', () => {
   const ios = fs.readFileSync(path.join(packageRoot, 'ios/RNCNativeListView.swift'), 'utf8');
   const android = fs.readFileSync(path.join(packageRoot, 'android/src/main/java/com/onekey/nativelist/NativeListView.kt'), 'utf8');
-  assert.match(ios, /window\.addSubview\(sectionIndexView\)/);
-  assert.match(ios, /sectionIndexView\.centerYAnchor\.constraint\(equalTo: window\.centerYAnchor\)/);
-  assert.match(ios, /sectionIndexView\.preferredHeight\(constrainedTo: window\.bounds\.height\)/);
+  assert.match(ios, /if let viewController = current as\? UIViewController/);
+  assert.match(ios, /hostView\.addSubview\(sectionIndexView\)/);
+  assert.match(ios, /sectionIndexView\.centerYAnchor\.constraint\(equalTo: hostView\.centerYAnchor\)/);
+  assert.match(ios, /sectionIndexView\.preferredHeight\(constrainedTo: hostView\.bounds\.height\)/);
   assert.match(android, /windowHost\.addView\(sectionIndexView/);
   assert.match(android, /sectionIndexView\.preferredHeight\(windowHost\.height\)/);
   assert.match(android, /layoutDirection == LAYOUT_DIRECTION_RTL/);
