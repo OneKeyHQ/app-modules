@@ -4,10 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.129] - 2026-09-13
+
 ### Bug Fixes
 - **pager-view (Android)**: Keep the native tab indicator snapped to the selected page instead of letting intermediate scroll progress pull it back after a tab press.
 - **pager-view (iOS)**: Detach stale page scroll observers and restore shared headers while a replacement scroll container is mounting.
 - **native-sheet (iOS)**: Hit-test backdrop taps against the sheet's container-space frame.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.129.
 
 ## [3.0.128] - 2026-09-13
 
