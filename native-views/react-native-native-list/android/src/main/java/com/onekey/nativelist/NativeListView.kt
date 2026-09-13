@@ -18,14 +18,13 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -168,6 +167,8 @@ class NativeListView(
   private var sectionIndexScrubbing = false
   private var sectionIndexProgrammaticScroll = false
   private var sectionIndexHapticsEnabled = true
+  private val sectionIndexLocationOnScreen = IntArray(2)
+  private val sectionIndexHostLocationOnScreen = IntArray(2)
   private var pendingScrollRequest: ScrollRequest? = null
   private val actionAnchorInstanceId = UUID.randomUUID().toString()
   private var actionAnchorCounter = 0L
@@ -304,6 +305,7 @@ class NativeListView(
     lastLayoutWidth = nextWidth
     lastLayoutHeight = nextHeight
     lastLayoutDirection = layoutDirection
+    updateSectionIndexAttachment()
     performPendingScrollIfNeeded()
   }
 
@@ -318,6 +320,7 @@ class NativeListView(
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
+    updateSectionIndexAttachment()
     val first = config?.items?.firstOrNull()
     if (recyclerView.isLayoutRequested && (first?.type == "market" || first?.json?.optString("presentation") == "market")) {
       relayoutContents()
@@ -325,6 +328,7 @@ class NativeListView(
   }
 
   override fun onDetachedFromWindow() {
+    attachSectionIndexToList()
     updateRefreshIndicatorOffset(0)
     super.onDetachedFromWindow()
   }
@@ -950,6 +954,7 @@ class NativeListView(
 
   fun dispose() {
     if (disposed) return
+    attachSectionIndexToList()
     stopReorderRelayoutLoop()
     invalidateActionAnchor("destroy")
     actionAnchor = null
@@ -1024,9 +1029,9 @@ class NativeListView(
       themeColor(next.theme, "disabledText", "#8D8D8D"),
       themeColor(next.theme, "positive", "#218358"),
       themeColor(next.theme, "inverseText", "#FCFCFC"),
-      next.sectionIndexCenteredInWindow,
     )
     sectionIndexView.visibility = if (sectionIndexEntries.isEmpty()) GONE else VISIBLE
+    updateSectionIndexAttachment()
     sectionIndexPreview.setTextColor(Color.WHITE)
     sectionIndexPreview.background = sectionIndexPreviewBackground()
     sectionIndexView.setActiveIndex(
@@ -1078,9 +1083,70 @@ class NativeListView(
   private fun positionSectionIndexPreview(index: Int) {
     val halfHeight = sectionIndexDp(SECTION_INDEX_PREVIEW_HEIGHT_DP) / 2f
     val maximumY = (contentContainer.height - halfHeight).coerceAtLeast(halfHeight)
-    val targetY = sectionIndexView.top + sectionIndexView.centerYForIndex(index)
+    sectionIndexView.getLocationOnScreen(sectionIndexLocationOnScreen)
+    contentContainer.getLocationOnScreen(sectionIndexHostLocationOnScreen)
+    val targetY = sectionIndexLocationOnScreen[1] - sectionIndexHostLocationOnScreen[1] +
+      sectionIndexView.centerYForIndex(index)
     val clampedY = targetY.coerceIn(halfHeight, maximumY)
     sectionIndexPreview.translationY = clampedY - contentContainer.height / 2f
+  }
+
+  private fun updateSectionIndexAttachment() {
+    val windowHost = rootView as? FrameLayout
+    val useWindowHost = config?.sectionIndexCenteredInWindow == true &&
+      sectionIndexEntries.isNotEmpty() &&
+      isAttachedToWindow &&
+      isShown &&
+      width > 0 &&
+      height > 0 &&
+      windowHost != null &&
+      windowHost.width > 0 &&
+      windowHost.height > 0 &&
+      windowHost !== contentContainer
+    if (useWindowHost) {
+      attachSectionIndexToWindow(windowHost)
+    } else {
+      attachSectionIndexToList()
+    }
+  }
+
+  private fun attachSectionIndexToList() {
+    if (sectionIndexView.parent === contentContainer) return
+    (sectionIndexView.parent as? ViewGroup)?.removeView(sectionIndexView)
+    contentContainer.addView(
+      sectionIndexView,
+      FrameLayout.LayoutParams(
+        sectionIndexDp(SECTION_INDEX_RAIL_WIDTH_DP),
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        Gravity.END,
+      ),
+    )
+  }
+
+  private fun attachSectionIndexToWindow(windowHost: FrameLayout) {
+    val railWidth = sectionIndexDp(SECTION_INDEX_RAIL_WIDTH_DP)
+    val railHeight = sectionIndexView.preferredHeight(windowHost.height)
+    windowHost.getLocationOnScreen(sectionIndexHostLocationOnScreen)
+    getLocationOnScreen(sectionIndexLocationOnScreen)
+    val maximumLeft = (windowHost.width - railWidth).coerceAtLeast(0)
+    val left = (
+      sectionIndexLocationOnScreen[0] - sectionIndexHostLocationOnScreen[0] + width - railWidth
+    ).coerceIn(0, maximumLeft)
+    val layoutParams = FrameLayout.LayoutParams(
+      railWidth,
+      railHeight,
+      Gravity.TOP or Gravity.START,
+    ).apply {
+      leftMargin = left
+      topMargin = (windowHost.height - railHeight) / 2
+    }
+    if (sectionIndexView.parent !== windowHost) {
+      (sectionIndexView.parent as? ViewGroup)?.removeView(sectionIndexView)
+      windowHost.addView(sectionIndexView, layoutParams)
+      sectionIndexView.bringToFront()
+    } else {
+      sectionIndexView.layoutParams = layoutParams
+    }
   }
 
   private fun sectionIndexPreviewBackground(): ShapeDrawable {
@@ -2108,10 +2174,7 @@ private class NativeListSectionIndexView(
   private var normalColor = Color.GRAY
   private var activeColor = Color.BLACK
   private var activeTextColor = Color.WHITE
-  private var centeredInWindow = false
   private var lastTouchIndex: Int? = null
-  private val rootLocationOnScreen = IntArray(2)
-  private val locationOnScreen = IntArray(2)
   private val activeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val normalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = Paint.Align.CENTER
@@ -2134,13 +2197,11 @@ private class NativeListSectionIndexView(
     normalColor: Int,
     activeColor: Int,
     activeTextColor: Int,
-    centeredInWindow: Boolean,
   ) {
     this.titles = titles
     this.normalColor = normalColor
     this.activeColor = activeColor
     this.activeTextColor = activeTextColor
-    this.centeredInWindow = centeredInWindow
     activeIndex = null
     updateContentDescription()
     invalidate()
@@ -2271,6 +2332,11 @@ private class NativeListSectionIndexView(
 
   fun centerYForIndex(index: Int): Float = entryCenterY(index, indexMetrics())
 
+  fun preferredHeight(maximumHeight: Int): Int = minOf(
+    maximumHeight,
+    (dp(8f) * 2f + dp(16f) * titles.size).roundToInt(),
+  )
+
   private data class Metrics(val originY: Float, val trackHeight: Float)
 
   private fun indexMetrics(): Metrics {
@@ -2279,25 +2345,7 @@ private class NativeListSectionIndexView(
     val labelSpacing = dp(16f)
     val availableHeight = (height - edgePadding * 2f).coerceAtLeast(0f)
     val trackHeight = minOf(availableHeight, labelSpacing * titles.size)
-    val centeredOriginY = (height - trackHeight) / 2f
-    if (!centeredInWindow || !isAttachedToWindow) {
-      return Metrics(centeredOriginY, trackHeight)
-    }
-    val systemBarInsets = ViewCompat.getRootWindowInsets(rootView)
-      ?.getInsetsIgnoringVisibility(
-        WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
-      ) ?: return Metrics(centeredOriginY, trackHeight)
-    rootView.getLocationOnScreen(rootLocationOnScreen)
-    getLocationOnScreen(locationOnScreen)
-    val safeTop = rootLocationOnScreen[1] + systemBarInsets.top
-    val safeBottom = rootLocationOnScreen[1] + rootView.height - systemBarInsets.bottom
-    if (safeBottom <= safeTop) return Metrics(centeredOriginY, trackHeight)
-    val localCenterY = (safeTop + safeBottom) / 2f - locationOnScreen[1]
-    val maximumOrigin = (height - edgePadding - trackHeight).coerceAtLeast(edgePadding)
-    return Metrics(
-      (localCenterY - trackHeight / 2f).coerceIn(edgePadding, maximumOrigin),
-      trackHeight,
-    )
+    return Metrics((height - trackHeight) / 2f, trackHeight)
   }
 
   private fun entryCenterY(index: Int, metrics: Metrics): Float {

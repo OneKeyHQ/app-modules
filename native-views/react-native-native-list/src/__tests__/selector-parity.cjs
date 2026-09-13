@@ -29,6 +29,17 @@ test('compact native indexes lay out and select retained labels by visible order
   assert.match(android, /val index = visibleIndices\[slot\]/);
 });
 
+test('window-centered native indexes use full-window interactive hosts', () => {
+  const ios = fs.readFileSync(path.join(packageRoot, 'ios/RNCNativeListView.swift'), 'utf8');
+  const android = fs.readFileSync(path.join(packageRoot, 'android/src/main/java/com/onekey/nativelist/NativeListView.kt'), 'utf8');
+  assert.match(ios, /window\.addSubview\(sectionIndexView\)/);
+  assert.match(ios, /sectionIndexView\.centerYAnchor\.constraint\(equalTo: window\.centerYAnchor\)/);
+  assert.match(ios, /sectionIndexView\.preferredHeight\(constrainedTo: window\.bounds\.height\)/);
+  assert.match(android, /windowHost\.addView\(sectionIndexView/);
+  assert.match(android, /sectionIndexView\.preferredHeight\(windowHost\.height\)/);
+  assert.match(android, /topMargin = \(windowHost\.height - railHeight\) \/ 2/);
+});
+
 test('native Market quote updates clear stale attributed text and preserve open anchors', () => {
   const ios = fs.readFileSync(path.join(packageRoot, 'ios/NativeListCell.swift'), 'utf8');
   const android = fs.readFileSync(path.join(packageRoot, 'android/src/main/java/com/onekey/nativelist/NativeListView.kt'), 'utf8');
@@ -194,8 +205,8 @@ test('index jumps highlight the section reached after an exact spacer boundary',
     page.close();
   }
 });
-test('web section index centers in the browser window when requested', () => {
-  const letters = ['A', 'B', 'C', 'D'];
+test('web section index centers in the browser window outside a lower list viewport', () => {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
   const page = mount(
     letters.map((letter) => ({
       type: 'sectionHeader',
@@ -223,7 +234,7 @@ test('web section index centers in the browser window when requested', () => {
     });
     Object.defineProperty(viewport, 'clientHeight', {
       configurable: true,
-      value: 300,
+      value: 500,
     });
     Object.defineProperty(viewport, 'clientWidth', {
       configurable: true,
@@ -231,22 +242,26 @@ test('web section index centers in the browser window when requested', () => {
     });
     frame.getBoundingClientRect = () => ({
       x: 0,
-      y: 250,
+      y: 300,
       left: 0,
-      top: 250,
+      top: 300,
       right: 320,
-      bottom: 550,
+      bottom: 800,
       width: 320,
-      height: 300,
+      height: 500,
     });
     page.engine.recomputeLayout();
 
+    assert.equal(rail.parentElement, page.document.body);
     const buttons = [
       ...rail.querySelectorAll('[data-section-entry-index]'),
     ];
     const firstCenterY = Number.parseFloat(buttons[0].style.top);
     const lastCenterY = Number.parseFloat(buttons.at(-1).style.top);
-    assert.equal(250 + (firstCenterY + lastCenterY) / 2, 450);
+    assert.equal(
+      Number.parseFloat(rail.style.top) + (firstCenterY + lastCenterY) / 2,
+      450,
+    );
   } finally {
     page.close();
   }
