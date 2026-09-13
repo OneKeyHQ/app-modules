@@ -100,6 +100,15 @@ final class NativeListActionOrigin {
 
 // OneKey patch: explicit summary actions use the source text's physical-pixel line box.
 private final class NativeListAccessoryButton: UIButton {
+  var pressedBackgroundColor: UIColor?
+
+  override var isHighlighted: Bool {
+    didSet {
+      guard let pressedBackgroundColor else { return }
+      backgroundColor = isHighlighted ? pressedBackgroundColor : .clear
+    }
+  }
+
   var selectorSummaryLineHeight: CGFloat? {
     didSet { invalidateIntrinsicContentSize(); setNeedsLayout() }
   }
@@ -1373,6 +1382,7 @@ final class NativeListCell: UICollectionViewCell {
       button.setImage(nil, for: .disabled)
       button.isEnabled = true
       button.alpha = 1
+      button.pressedBackgroundColor = nil
       button.titleLabel?.numberOfLines = 1
       button.contentHorizontalAlignment = .center
       button.backgroundColor = .clear
@@ -3974,6 +3984,10 @@ final class NativeListCell: UICollectionViewCell {
     let isAccountIcon = currentItem?.data.string("presentation") == "accountSelector" && !isDrillIn
     let size: CGFloat = isDrillIn ? 24 : isAccountIcon && !isAccountCreate ? 38 : 36
     if isAccountCreate { button.layer.cornerRadius = 8 }
+    if isAccountIcon && !isAccountCreate && !data.string("actionKey").isEmpty {
+      button.pressedBackgroundColor = nativeListColor(currentTheme, "rowPressedBackground", "#E8E8E8")
+      button.layer.cornerRadius = size / 2
+    }
     if isAccountIcon { rootStack.setCustomSpacing(5, after: mainStack) }
     button.accessibilityIdentifier = data["testID"] as? String
     button.accessibilityLabel = data["accessibilityLabel"] as? String
