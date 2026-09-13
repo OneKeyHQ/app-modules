@@ -321,7 +321,8 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         stickyHeaderView = null
       }
       else -> {
-        when (val scrollable = findVerticalScrollableView(child)) {
+        when (val scrollable =
+          findExplicitNativeScrollerInView(child) ?: findVerticalScrollableView(child)) {
           is RecyclerView -> restoreRecyclerInsets(scrollable)
           is ScrollView -> restoreNativeScrollerInsets(scrollable)
         }

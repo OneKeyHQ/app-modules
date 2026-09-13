@@ -4349,21 +4349,27 @@ export class NativeListWebEngine {
     stickyInset: number,
     windowCentered: boolean
   ): number {
+    const view = this.document.defaultView;
+    const direction =
+      view?.getComputedStyle(this.viewportFrame).direction === 'rtl'
+        ? 'rtl'
+        : 'ltr';
+    this.indexRail.style.direction = direction;
     if (!windowCentered) {
       if (this.indexRail.parentElement !== this.viewportFrame) {
         this.viewportFrame.appendChild(this.indexRail);
       }
       this.indexRail.style.removeProperty('position');
       this.indexRail.style.removeProperty('left');
+      this.indexRail.style.removeProperty('right');
       this.indexRail.style.removeProperty('height');
       this.indexRail.style.removeProperty('z-index');
-      this.indexRail.style.right = '0px';
+      this.indexRail.style.insetInlineEnd = '0px';
       this.indexRail.style.top = String(stickyInset) + 'px';
       this.indexRail.style.bottom = '0px';
       return viewportHeight;
     }
 
-    const view = this.document.defaultView;
     if (!view) return viewportHeight;
     const visualViewport = view.visualViewport;
     const windowTop = visualViewport?.offsetTop ?? 0;
@@ -4378,9 +4384,15 @@ export class NativeListWebEngine {
       this.document.body.appendChild(this.indexRail);
     }
     this.indexRail.style.position = 'fixed';
-    this.indexRail.style.left =
-      String(Math.max(0, frame.right - SECTION_INDEX_RAIL_WIDTH)) + 'px';
-    this.indexRail.style.right = 'auto';
+    this.indexRail.style.removeProperty('left');
+    this.indexRail.style.removeProperty('right');
+    this.indexRail.style.insetInlineEnd =
+      String(
+        Math.max(
+          0,
+          direction === 'rtl' ? frame.left : view.innerWidth - frame.right
+        )
+      ) + 'px';
     this.indexRail.style.top =
       String(windowTop + (windowHeight - railHeight) / 2) + 'px';
     this.indexRail.style.bottom = 'auto';

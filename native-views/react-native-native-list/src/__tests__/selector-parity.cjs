@@ -37,6 +37,9 @@ test('window-centered native indexes use full-window interactive hosts', () => {
   assert.match(ios, /sectionIndexView\.preferredHeight\(constrainedTo: window\.bounds\.height\)/);
   assert.match(android, /windowHost\.addView\(sectionIndexView/);
   assert.match(android, /sectionIndexView\.preferredHeight\(windowHost\.height\)/);
+  assert.match(android, /layoutDirection == LAYOUT_DIRECTION_RTL/);
+  assert.match(android, /Gravity\.TOP or Gravity\.END/);
+  assert.match(android, /marginEnd = endMargin/);
   assert.match(android, /topMargin = \(windowHost\.height - railHeight\) \/ 2/);
 });
 
@@ -205,7 +208,7 @@ test('index jumps highlight the section reached after an exact spacer boundary',
     page.close();
   }
 });
-test('web section index centers in the browser window outside a lower list viewport', () => {
+test('web section index centers in the browser window at the logical RTL end', () => {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
   const page = mount(
     letters.map((letter) => ({
@@ -232,6 +235,10 @@ test('web section index centers in the browser window outside a lower list viewp
       configurable: true,
       value: 900,
     });
+    Object.defineProperty(page.view, 'innerWidth', {
+      configurable: true,
+      value: 1000,
+    });
     Object.defineProperty(viewport, 'clientHeight', {
       configurable: true,
       value: 500,
@@ -240,12 +247,13 @@ test('web section index centers in the browser window outside a lower list viewp
       configurable: true,
       value: 320,
     });
+    frame.style.direction = 'rtl';
     frame.getBoundingClientRect = () => ({
-      x: 0,
+      x: 120,
       y: 300,
-      left: 0,
+      left: 120,
       top: 300,
-      right: 320,
+      right: 440,
       bottom: 800,
       width: 320,
       height: 500,
@@ -253,6 +261,10 @@ test('web section index centers in the browser window outside a lower list viewp
     page.engine.recomputeLayout();
 
     assert.equal(rail.parentElement, page.document.body);
+    assert.equal(rail.style.direction, 'rtl');
+    assert.equal(rail.style.insetInlineEnd, '120px');
+    assert.equal(rail.style.left, '');
+    assert.equal(rail.style.right, '');
     const buttons = [
       ...rail.querySelectorAll('[data-section-entry-index]'),
     ];

@@ -125,6 +125,10 @@ test('connects Android props, direct press events, gesture bridge, and file logg
   assert.match(manager, /host\.updateNativeTabProgress\(position, offset\)/);
   assert.match(host, /beginForwardingToPrimaryScrollable\(event\)/);
   assert.match(host, /NATIVE_SCROLLER_ID_PREFIX/);
+  assert.match(
+    host,
+    /fun removeReactChild[\s\S]*?findExplicitNativeScrollerInView\(child\) \?: findVerticalScrollableView\(child\)[\s\S]*?adapter\.removePage\(child\)/
+  );
   assert.match(host, /NativeGestureUtil\.notifyNativeGestureStarted/);
   assert.match(host, /nativeGestureStarted \|\| nestedNativeGestureStarted/);
   assert.match(host, /OneKeyLog\.debug\("CollapsiblePager"/);

@@ -1128,16 +1128,19 @@ class NativeListView(
     val railHeight = sectionIndexView.preferredHeight(windowHost.height)
     windowHost.getLocationOnScreen(sectionIndexHostLocationOnScreen)
     getLocationOnScreen(sectionIndexLocationOnScreen)
-    val maximumLeft = (windowHost.width - railWidth).coerceAtLeast(0)
-    val left = (
-      sectionIndexLocationOnScreen[0] - sectionIndexHostLocationOnScreen[0] + width - railWidth
-    ).coerceIn(0, maximumLeft)
+    val listLeft = sectionIndexLocationOnScreen[0] - sectionIndexHostLocationOnScreen[0]
+    val maximumEndMargin = (windowHost.width - railWidth).coerceAtLeast(0)
+    val endMargin = if (layoutDirection == LAYOUT_DIRECTION_RTL) {
+      listLeft
+    } else {
+      windowHost.width - listLeft - width
+    }.coerceIn(0, maximumEndMargin)
     val layoutParams = FrameLayout.LayoutParams(
       railWidth,
       railHeight,
-      Gravity.TOP or Gravity.START,
+      Gravity.TOP or Gravity.END,
     ).apply {
-      leftMargin = left
+      marginEnd = endMargin
       topMargin = (windowHost.height - railHeight) / 2
     }
     if (sectionIndexView.parent !== windowHost) {
