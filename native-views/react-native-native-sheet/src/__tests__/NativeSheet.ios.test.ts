@@ -8,9 +8,7 @@ describe('NativeSheet iOS dimming', () => {
   );
 
   it('applies a clamped non-default dimAmount to the presentation container', () => {
-    expect(source).toContain(
-      'self.dimAmountValue = min(max(dimAmount, 0), 1)'
-    );
+    expect(source).toContain('self.dimAmountValue = min(max(dimAmount, 0), 1)');
     expect(source).toContain(
       'sheet.largestUndimmedDetentIdentifier = identifier'
     );
