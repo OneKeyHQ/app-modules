@@ -1924,6 +1924,15 @@ final class NativeListCell: UICollectionViewCell {
       trailingStack.spacing = 10
     }
     bindAccessories(item, accessories, theme, checkboxState)
+    if item.data.string("presentation") == "accountSelector",
+       accessories.count == 1,
+       let accessory = accessoryButtons.first(where: { !$0.isHidden }) {
+      // The vertical trailing stack has no stable intrinsic width, so keep its
+      // flexible space in the account title and subtitle column.
+      let width = trailingStack.widthAnchor.constraint(equalTo: accessory.widthAnchor)
+      width.isActive = true
+      selectorConstraints.append(width)
+    }
   }
 
   private func bindRail(_ item: NativeListItem, theme: [String: Any]?) {
