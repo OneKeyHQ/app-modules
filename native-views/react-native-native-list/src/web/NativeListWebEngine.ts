@@ -886,12 +886,12 @@ export const WEB_LIST_CSS = `
 .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:grab}
 .ok-native-list-root[data-native-list-dragging="true"] .ok-native-list-row{cursor:grabbing}
 .ok-native-list-item[data-native-list-animate-reorder="true"]{transition:transform ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction},height ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction}}
-.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row{overflow:hidden;border-radius:12px;background:var(--nl-row)}
+.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row{overflow:hidden;border-radius:12px;background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row>*{visibility:hidden}
-.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group{border-color:transparent;background:var(--nl-row)}
+.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group{border-color:transparent;background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group>*{visibility:hidden}
 .ok-native-list-reorder-preview{position:fixed;left:0;top:0;z-index:100001;pointer-events:none;overflow:hidden;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.12);transform-origin:center;will-change:transform;font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.ok-native-list-reorder-preview>.ok-native-list-row{background:var(--nl-row);cursor:grabbing}
+.ok-native-list-reorder-preview>.ok-native-list-row{background:var(--nl-pressed);cursor:grabbing}
 .ok-native-list-reorder-preview[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
 .ok-native-list-reorder-count{position:absolute;right:4px;bottom:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:24px;height:24px;padding:0 6px;border:1px solid var(--nl-row);border-radius:12px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;line-height:22px;font-weight:600}
 .ok-native-list-item[data-separator="true"]>.ok-native-list-row{border-bottom:1px solid var(--nl-separator)}

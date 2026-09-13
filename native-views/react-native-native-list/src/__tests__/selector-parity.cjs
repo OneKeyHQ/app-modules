@@ -678,6 +678,15 @@ test('touch-active rows keep the pressed background rule', () => {
   assert.match(css, /native-list-disabled="true"\]\):active>\.ok-native-list-row\{background:var\(--nl-pressed\)\}/);
   page.close();
 });
+test('web reorder sources use pressed backgrounds while selected previews stay selected', () => {
+  const page = mount([identity('wallet', { presentation: 'walletSidebar' })]);
+  const css = page.document.querySelector('style').textContent;
+  assert(css.includes('.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row{overflow:hidden;border-radius:12px;background:var(--nl-pressed)}'));
+  assert(css.includes('.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group{border-color:transparent;background:var(--nl-pressed)}'));
+  assert(css.includes('.ok-native-list-reorder-preview>.ok-native-list-row{background:var(--nl-pressed);cursor:grabbing}'));
+  assert(css.includes('.ok-native-list-reorder-preview[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}'));
+  page.close();
+});
 test('wallet hover anchors the complete child row without consuming normal selection taps', () => {
   const child = identity('child', { presentation: 'walletSidebar', height: 68, titleActionKey: 'wallet.help', titleActionOnHover: true });
   const group = { type: 'walletGroup', key: 'group', parent: identity('group', { presentation: 'walletSidebar', height: 68 }), children: [child] };
