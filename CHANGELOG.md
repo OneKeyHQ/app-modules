@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.125] - 2026-09-13
+
+### Bug Fixes
+- **native-sheet**: Publish the new package through the same CI release command as the other workspaces.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.125 for a complete CI release.
+
 ## [3.0.124] - 2026-09-13
 
 ### Features
