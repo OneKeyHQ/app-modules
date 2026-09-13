@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.128] - 2026-09-13
+
+### Chores
+- Bump all 40 publishable packages to 3.0.128.
+- Publish NativeList after the four-job concurrent batch to avoid racing with regenerated image type declarations.
+
 ## [3.0.127] - 2026-09-13
 
 ### Bug Fixes
@@ -11,7 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Chores
 - Bump all 40 publishable packages to 3.0.127.
-- Publish workspaces with four concurrent jobs while preserving dependency order.
+- Publish workspaces with four concurrent jobs, then publish NativeList after its shared build dependency is stable.
 
 ## [3.0.126] - 2026-09-13
 

@@ -31,3 +31,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: yarn version:publish --tag "${{ inputs.npm_dist_tag }}"
+      - name: Publish NativeList after shared build dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: yarn workspace @onekeyfe/react-native-native-list release --tag "${{ inputs.npm_dist_tag }}"
