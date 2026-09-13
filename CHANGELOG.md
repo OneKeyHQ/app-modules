@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.127] - 2026-09-13
+
+### Bug Fixes
+- **native-list (iOS)**: Preserve centered UILabel alignment when applying custom line heights to network avatar fallback text.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.127.
+
 ## [3.0.126] - 2026-09-13
 
 ### Bug Fixes
