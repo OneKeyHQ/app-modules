@@ -10,13 +10,53 @@ describe('NativeSheet iOS dimming', () => {
   it('applies a clamped non-default dimAmount to the presentation container', () => {
     expect(source).toContain('self.dimAmountValue = min(max(dimAmount, 0), 1)');
     expect(source).toContain(
-      'sheet.largestUndimmedDetentIdentifier = identifier'
+      'sheet.largestUndimmedDetentIdentifier = detentIdentifier'
     );
-    expect(source).toContain(
-      'UIColor.black.withAlphaComponent(dimAmountValue)'
-    );
+    expect(source).toContain('let targetAlpha = visible ? dimAmountValue : 0');
+    expect(source).toContain('transitionCoordinator.animate');
+    expect(source).toContain('UIViewControllerTransitioningDelegate');
+    expect(source).toContain('NativeSheetTransitionAnimator(presenting: true)');
+    expect(source).toContain('NativeSheetTransitionAnimator(presenting: false)');
+    expect(source).toContain('mass: 0.1');
+    expect(source).toContain('stiffness: 100');
+    expect(source).toContain('damping: 20');
+    expect(source).toContain('UIViewPropertyAnimator(duration: 0');
+    expect(source).toContain('override func viewWillAppear');
+    expect(source).toContain('override func viewWillDisappear');
+    expect(source).toContain('dimmingView.isUserInteractionEnabled = true');
+    expect(source).toContain('dimmingView.addGestureRecognizer(recognizer)');
+    expect(source).toContain('host.finishFailedPresentation(reason: "system")');
     expect(source).toMatch(
       /dismissOnBackdropPress: dismissOnBackdropPress,\s+dimAmount: dimAmount/
     );
+  });
+
+  it('animates height changes as a bottom-anchored custom detent update', () => {
+    expect(source).toContain('private var targetHeight: CGFloat');
+    expect(source).toContain(
+      'func updateHeight(_ height: CGFloat, animated: Bool)'
+    );
+    expect(source).toContain('sheet.invalidateDetents()');
+    expect(source).toContain('let animator = NativeSheetQuickAnimation.makeAnimator()');
+    expect(source).toContain('animator.addAnimations(changes)');
+    expect(source).toContain('heightAnimator.finishAnimation(at: .current)');
+    expect(source).toContain(
+      'controller.updateHeight(sheetHeight, animated: shouldAnimate)'
+    );
+    expect(source).toContain(
+      'min(max(self?.targetHeight ?? 1, 1), context.maximumDetentValue)'
+    );
+    expect(source).toContain('view.clipsToBounds = true');
+  });
+
+  it('removes only the UIKit presentation wrapper shadow', () => {
+    expect(source).toContain('private func removePresentationShadow()');
+    expect(source).toContain(
+      'while let current = ancestor, current !== container'
+    );
+    expect(source).toContain('current.layer.shadowOpacity = 0');
+    expect(source).toContain('current.layer.shadowColor = UIColor.clear.cgColor');
+    expect(source).toContain('override func viewDidAppear');
+    expect(source).toContain('override func viewDidLayoutSubviews');
   });
 });

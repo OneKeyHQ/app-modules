@@ -1,6 +1,98 @@
 import React
 import UIKit
 
+private enum NativeSheetQuickAnimation {
+  static func makeAnimator() -> UIViewPropertyAnimator {
+    let timing = UISpringTimingParameters(
+      mass: 0.1,
+      stiffness: 100,
+      damping: 20,
+      initialVelocity: .zero
+    )
+    return UIViewPropertyAnimator(duration: 0, timingParameters: timing)
+  }
+
+  static var duration: TimeInterval {
+    makeAnimator().duration
+  }
+}
+
+private final class NativeSheetTransitionAnimator: NSObject,
+  UIViewControllerAnimatedTransitioning {
+  private let presenting: Bool
+  private var animator: UIViewPropertyAnimator?
+
+  init(presenting: Bool) {
+    self.presenting = presenting
+  }
+
+  func transitionDuration(
+    using transitionContext: UIViewControllerContextTransitioning?
+  ) -> TimeInterval {
+    NativeSheetQuickAnimation.duration
+  }
+
+  func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
+    let animator = interruptibleAnimator(using: transitionContext)
+    animator.startAnimation()
+  }
+
+  func interruptibleAnimator(
+    using transitionContext: UIViewControllerContextTransitioning
+  ) -> UIViewImplicitlyAnimating {
+    if let animator {
+      return animator
+    }
+
+    let key: UITransitionContextViewKey = presenting ? .to : .from
+    guard let sheetView = transitionContext.view(forKey: key) else {
+      transitionContext.completeTransition(false)
+      return NativeSheetQuickAnimation.makeAnimator()
+    }
+    let controllerKey: UITransitionContextViewControllerKey = presenting ? .to : .from
+    guard let sheetController = transitionContext.viewController(forKey: controllerKey)
+      as? NativeSheetViewController else {
+      transitionContext.completeTransition(false)
+      return NativeSheetQuickAnimation.makeAnimator()
+    }
+    let container = transitionContext.containerView
+    let finalFrame = presenting
+      ? transitionContext.finalFrame(for: sheetController)
+      : sheetView.frame
+    let travel = max(container.bounds.maxY - finalFrame.minY, sheetView.bounds.height)
+    let offscreenTransform = CGAffineTransform(translationX: 0, y: travel)
+
+    if presenting {
+      sheetView.frame = finalFrame
+      sheetView.transform = offscreenTransform
+      sheetController.setDimmingAlpha(0)
+      if sheetView.superview == nil {
+        container.addSubview(sheetView)
+      }
+    }
+
+    let animator = NativeSheetQuickAnimation.makeAnimator()
+    animator.addAnimations {
+      sheetView.transform = self.presenting ? .identity : offscreenTransform
+      sheetController.setDimmingAlpha(self.presenting ? sheetController.resolvedDimAmount : 0)
+    }
+    animator.addCompletion { position in
+      let completed = position == .end && !transitionContext.transitionWasCancelled
+      if !completed {
+        sheetView.transform = self.presenting ? offscreenTransform : .identity
+        sheetController.setDimmingAlpha(self.presenting ? 0 : sheetController.resolvedDimAmount)
+      }
+      transitionContext.completeTransition(completed)
+    }
+    self.animator = animator
+    return animator
+  }
+
+  func animationEnded(_ transitionCompleted: Bool) {
+    animator = nil
+  }
+}
+
 private final class WeakSheetHost {
   weak var value: NativeSheetContainerView?
 
@@ -105,10 +197,14 @@ private final class NativeSheetPresentationCoordinator {
     }
     pending.removeFirst()
     guard host.shouldPresent else {
+      host.finishFailedPresentation(
+        reason: host.securityBlocked ? "security" : (host.open ? "system" : "programmatic")
+      )
       processPending()
       return
     }
     guard let presenter = topViewController() else {
+      host.finishFailedPresentation(reason: "system")
       processPending()
       return
     }
@@ -191,9 +287,12 @@ private final class NativeSheetPresentationCoordinator {
 
 private final class NativeSheetViewController: UIViewController,
   UIAdaptivePresentationControllerDelegate,
-  UIGestureRecognizerDelegate {
+  UIViewControllerTransitioningDelegate {
   let host: NativeSheetContainerView
-  private let lockedHeight: CGFloat
+  private let detentIdentifier = UISheetPresentationController.Detent.Identifier(
+    "onekey.nativeSheet.fixed"
+  )
+  private var targetHeight: CGFloat
   private let backgroundColorValue: UIColor
   private let cornerRadiusValue: CGFloat
   private let showHandleValue: Bool
@@ -201,6 +300,11 @@ private final class NativeSheetViewController: UIViewController,
   private let dimAmountValue: CGFloat
   private var backdropTap: UITapGestureRecognizer?
   private var dimmingView: UIView?
+  private var heightAnimator: UIViewPropertyAnimator?
+
+  fileprivate var resolvedDimAmount: CGFloat {
+    dimAmountValue
+  }
 
   init(
     host: NativeSheetContainerView,
@@ -212,7 +316,7 @@ private final class NativeSheetViewController: UIViewController,
     dimAmount: CGFloat
   ) {
     self.host = host
-    self.lockedHeight = height
+    self.targetHeight = height
     self.backgroundColorValue = backgroundColor
     self.cornerRadiusValue = cornerRadius
     self.showHandleValue = showHandle
@@ -220,6 +324,7 @@ private final class NativeSheetViewController: UIViewController,
     self.dimAmountValue = min(max(dimAmount, 0), 1)
     super.init(nibName: nil, bundle: nil)
     modalPresentationStyle = .pageSheet
+    transitioningDelegate = self
   }
 
   @available(*, unavailable)
@@ -245,14 +350,13 @@ private final class NativeSheetViewController: UIViewController,
     super.viewDidLoad()
     host.moveContent(to: view)
     guard let sheet = sheetPresentationController else { return }
-    let identifier = UISheetPresentationController.Detent.Identifier("onekey.nativeSheet.fixed")
     sheet.detents = [
-      .custom(identifier: identifier) { [lockedHeight] context in
-        min(max(lockedHeight, 1), context.maximumDetentValue)
+      .custom(identifier: detentIdentifier) { [weak self] context in
+        min(max(self?.targetHeight ?? 1, 1), context.maximumDetentValue)
       },
     ]
-    sheet.selectedDetentIdentifier = identifier
-    sheet.largestUndimmedDetentIdentifier = identifier
+    sheet.selectedDetentIdentifier = detentIdentifier
+    sheet.largestUndimmedDetentIdentifier = detentIdentifier
     sheet.prefersGrabberVisible = showHandleValue
     sheet.preferredCornerRadius = cornerRadiusValue
     sheet.prefersScrollingExpandsWhenScrolledToEdge = false
@@ -262,29 +366,96 @@ private final class NativeSheetViewController: UIViewController,
     isModalInPresentation = !host.dismissOnPanDown
   }
 
-  override func viewDidAppear(_ animated: Bool) {
-    super.viewDidAppear(animated)
-    installDimmingView()
-    guard dismissOnBackdropPressValue,
-          backdropTap == nil,
-          let container = presentationController?.containerView else {
+  func updateHeight(_ height: CGFloat, animated: Bool) {
+    let nextHeight = max(height, 1)
+    guard abs(nextHeight - targetHeight) >= 0.5 else { return }
+    guard isViewLoaded, let sheet = sheetPresentationController else {
+      targetHeight = nextHeight
       return
     }
-    let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleBackdropTap(_:)))
-    recognizer.cancelsTouchesInView = false
-    recognizer.delegate = self
-    container.addGestureRecognizer(recognizer)
-    backdropTap = recognizer
+    let changes = { [weak self, weak sheet] in
+      guard let self, let sheet else { return }
+      self.targetHeight = nextHeight
+      sheet.invalidateDetents()
+      sheet.selectedDetentIdentifier = self.detentIdentifier
+      sheet.containerView?.layoutIfNeeded()
+    }
+    guard animated else {
+      changes()
+      return
+    }
+
+    if let heightAnimator {
+      heightAnimator.stopAnimation(false)
+      heightAnimator.finishAnimation(at: .current)
+    }
+    sheet.containerView?.layoutIfNeeded()
+    let animator = NativeSheetQuickAnimation.makeAnimator()
+    heightAnimator = animator
+    animator.addAnimations(changes)
+    animator.addCompletion { [weak self, weak animator] _ in
+      guard let self, self.heightAnimator === animator else { return }
+      self.heightAnimator = nil
+    }
+    animator.startAnimation()
+  }
+
+  func animationController(
+    forPresented presented: UIViewController,
+    presenting: UIViewController,
+    source: UIViewController
+  ) -> UIViewControllerAnimatedTransitioning? {
+    NativeSheetTransitionAnimator(presenting: true)
+  }
+
+  func animationController(
+    forDismissed dismissed: UIViewController
+  ) -> UIViewControllerAnimatedTransitioning? {
+    NativeSheetTransitionAnimator(presenting: false)
+  }
+
+  override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    installDimmingView()
+    installBackdropTap()
+    setDimmingVisible(true, animated: animated)
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    removePresentationShadow()
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    setDimmingVisible(false, animated: animated)
   }
 
   override func viewDidDisappear(_ animated: Bool) {
     super.viewDidDisappear(animated)
+    if let backdropTap {
+      dimmingView?.removeGestureRecognizer(backdropTap)
+    }
+    backdropTap = nil
     dimmingView?.removeFromSuperview()
     dimmingView = nil
   }
 
+  private func installBackdropTap() {
+    guard dismissOnBackdropPressValue,
+          backdropTap == nil,
+          let dimmingView else {
+      return
+    }
+    let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleBackdropTap(_:)))
+    recognizer.cancelsTouchesInView = true
+    dimmingView.addGestureRecognizer(recognizer)
+    backdropTap = recognizer
+  }
+
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
+    removePresentationShadow()
     host.layoutPresentedContent(in: view.bounds)
   }
 
@@ -294,13 +465,6 @@ private final class NativeSheetViewController: UIViewController,
 
   func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
     NativeSheetPresentationCoordinator.shared.didDismissInteractively(host, reason: "pan")
-  }
-
-  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-    guard let container = presentationController?.containerView else { return false }
-    let point = touch.location(in: container)
-    let sheetFrame = view.convert(view.bounds, to: container)
-    return !sheetFrame.contains(point)
   }
 
   @objc private func handleBackdropTap(_ recognizer: UITapGestureRecognizer) {
@@ -315,10 +479,59 @@ private final class NativeSheetViewController: UIViewController,
     }
     let dimmingView = UIView(frame: container.bounds)
     dimmingView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    dimmingView.backgroundColor = UIColor.black.withAlphaComponent(dimAmountValue)
-    dimmingView.isUserInteractionEnabled = false
+    dimmingView.backgroundColor = .black
+    dimmingView.alpha = 0
+    // Always consume backdrop touches. When dismissal is disabled there is no
+    // recognizer, but taps still cannot reach the sheet below or the app page.
+    dimmingView.isUserInteractionEnabled = true
     container.insertSubview(dimmingView, at: 0)
     self.dimmingView = dimmingView
+  }
+
+  fileprivate func setDimmingAlpha(_ alpha: CGFloat) {
+    dimmingView?.alpha = alpha
+  }
+
+  private func removePresentationShadow() {
+    guard let container = presentationController?.containerView else { return }
+    var ancestor = view.superview
+    while let current = ancestor, current !== container {
+      if current.layer.shadowOpacity > 0 {
+        current.layer.shadowOpacity = 0
+        current.layer.shadowRadius = 0
+        current.layer.shadowColor = UIColor.clear.cgColor
+        current.layer.shadowPath = nil
+      }
+      ancestor = current.superview
+    }
+  }
+
+  private func setDimmingVisible(_ visible: Bool, animated: Bool) {
+    guard let dimmingView else { return }
+    let targetAlpha = visible ? dimAmountValue : 0
+    let animations = {
+      dimmingView.alpha = targetAlpha
+    }
+    guard animated else {
+      animations()
+      return
+    }
+    if let transitionCoordinator {
+      transitionCoordinator.animate(alongsideTransition: { _ in
+        animations()
+      }, completion: { context in
+        dimmingView.alpha = context.isCancelled
+          ? (visible ? 0 : self.dimAmountValue)
+          : targetAlpha
+      })
+    } else {
+      UIView.animate(
+        withDuration: 0.25,
+        delay: 0,
+        options: [.beginFromCurrentState, .curveEaseInOut],
+        animations: animations
+      )
+    }
   }
 }
 
@@ -387,6 +600,9 @@ private final class NativeSheetViewController: UIViewController,
   @objc func commitConfiguration() {
     let openChanged = committedOpen != open
     committedOpen = open
+    if openChanged && open {
+      dismissNotified = false
+    }
     if !open {
       dismissedForCurrentOpen = false
     }
@@ -400,6 +616,10 @@ private final class NativeSheetViewController: UIViewController,
               (openChanged || presentedController == nil),
               !dismissedForCurrentOpen {
       NativeSheetPresentationCoordinator.shared.present(self)
+    } else if let controller = presentedController, !dismissedForCurrentOpen {
+      let shouldAnimate = controller.presentingViewController != nil
+        && !controller.isBeingPresented
+      controller.updateHeight(sheetHeight, animated: shouldAnimate)
     }
   }
 
@@ -427,6 +647,13 @@ private final class NativeSheetViewController: UIViewController,
   fileprivate func finishPresent() {
     guard let controller = presentedController else { return }
     onPresented?(["height": min(sheetHeight, controller.view.bounds.height)])
+  }
+
+  fileprivate func finishFailedPresentation(reason: String) {
+    dismissedForCurrentOpen = committedOpen
+    guard !dismissNotified else { return }
+    dismissNotified = true
+    onDismiss?(["reason": reason])
   }
 
   fileprivate func finishDismiss(reason: String) {
