@@ -750,6 +750,100 @@ test('reorderable wallet taps do not capture the pointer until a drag crosses th
   page.close();
 });
 
+test('wallet groups exclude add-hidden actions from drag starts and reorder counts', () => {
+  const parent = identity('hardware', {
+    presentation: 'walletSidebar',
+    height: 68,
+    draggable: true,
+  });
+  const hidden = identity('hidden', {
+    presentation: 'walletSidebar',
+    height: 68,
+    draggable: true,
+  });
+  const addHidden = identity('add-hidden', {
+    presentation: 'walletSidebar',
+    height: 68,
+    draggable: false,
+  });
+  const group = {
+    type: 'walletGroup',
+    key: parent.key,
+    parent,
+    children: [hidden, addHidden],
+    draggable: true,
+  };
+  const page = mount([group], { capabilities: { reorderable: true } });
+  const viewport = page.document.querySelector('.ok-native-list-viewport');
+  const hiddenRow = page.document.querySelector(
+    '[data-native-list-group-member-key="hidden"] .ok-native-list-wallet-row',
+  );
+  const addHiddenRow = page.document.querySelector(
+    '[data-native-list-group-member-key="add-hidden"] .ok-native-list-wallet-row',
+  );
+  const captures = [];
+  viewport.setPointerCapture = id => captures.push(id);
+  const pointer = (target, type, x, y, pointerId) => {
+    const event = new page.view.MouseEvent(type, {
+      bubbles: true,
+      clientX: x,
+      clientY: y,
+    });
+    Object.defineProperties(event, {
+      pointerId: { value: pointerId },
+      pointerType: { value: 'mouse' },
+      isPrimary: { value: true },
+    });
+    target.dispatchEvent(event);
+  };
+
+  pointer(addHiddenRow, 'pointerdown', 30, 40, 1);
+  pointer(addHiddenRow, 'pointermove', 50, 60, 1);
+  assert.deepEqual(captures, []);
+  pointer(addHiddenRow, 'pointerup', 50, 60, 1);
+
+  pointer(hiddenRow, 'pointerdown', 30, 40, 2);
+  pointer(hiddenRow, 'pointermove', 50, 60, 2);
+  assert.deepEqual(captures, [2]);
+  assert.equal(
+    page.document.querySelector('.ok-native-list-reorder-count').textContent,
+    '+1',
+  );
+  pointer(hiddenRow, 'pointercancel', 50, 60, 2);
+  page.close();
+});
+
+test('native wallet groups gate drag starts and badge counts by child draggable state', () => {
+  const iosCell = fs.readFileSync(
+    path.join(packageRoot, 'ios/NativeListCell.swift'),
+    'utf8',
+  );
+  const iosList = fs.readFileSync(
+    path.join(packageRoot, 'ios/RNCNativeListView.swift'),
+    'utf8',
+  );
+  const androidRow = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListRowView.kt',
+    ),
+    'utf8',
+  );
+  const androidList = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListView.kt',
+    ),
+    'utf8',
+  );
+  assert.match(iosCell, /canStartWalletGroupReorder[\s\S]*?\["draggable"\] as\? Bool\) != false/);
+  assert.match(iosCell, /dictionaries\("children"\)\.filter[\s\S]*?\["draggable"\] as\? Bool\) != false/);
+  assert.match(iosList, /cell\.canStartWalletGroupReorder/);
+  assert.match(androidRow, /canStartWalletGroupReorder[\s\S]*?optBoolean\("draggable", true\) != false/);
+  assert.match(androidRow, /members\.drop\(1\)\.count[\s\S]*?optBoolean\("draggable", true\)/);
+  assert.match(androidList, /rowView\?\.canStartWalletGroupReorder/);
+});
+
 test('accessory help uses a separate hover action without replacing the edit click', () => {
   const page = mount([identity('custom', { presentation: 'networkSelector', height: 48, trailing: [{ kind: 'icon', name: 'PencilOutline', actionKey: 'edit', hoverActionKey: 'edit.help', accessibilityLabel: 'Edit' }] })]);
   const button = page.document.querySelector('[data-native-list-action="edit"]');

@@ -609,7 +609,8 @@ final class NativeListView: UIView {
             let indexPath = collectionView.indexPathForItem(at: point),
             let item = item(at: indexPath),
             item.isReorderable,
-            let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell else {
+            let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell,
+            cell.canStartWalletGroupReorder(at: gesture.location(in: cell)) else {
         interactiveReorderSource = nil
         interactiveReorderCell = nil
         interactiveReorderTargetIndex = nil

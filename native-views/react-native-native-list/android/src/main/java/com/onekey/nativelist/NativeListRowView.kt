@@ -1442,6 +1442,16 @@ internal class NativeListRowView(
     restoreRestingBackground()
   }
 
+  fun canStartWalletGroupReorder(localY: Float): Boolean {
+    if ((tag as? NativeListItem)?.type != "walletGroup") return true
+    walletGroupRows.forEach { row ->
+      if (localY >= row.top && localY < row.bottom) {
+        return (row.tag as? NativeListItem)?.json?.optBoolean("draggable", true) != false
+      }
+    }
+    return true
+  }
+
   fun finishWalletGroupReorder(
     durationMs: Long,
     interpolator: TimeInterpolator,
@@ -1533,11 +1543,14 @@ internal class NativeListRowView(
       }
     }
     if (members.first().has("height")) setPadding(dp(1), dp(1), dp(1), dp(1))
-    walletGroupDragChildCount = members.size - 1
+    val childCount = members.size - 1
+    walletGroupDragChildCount = members.drop(1).count {
+      it.optBoolean("draggable", true)
+    }
     walletGroupExpandedHeightPx =
       // OneKey patch: expanded groups include individual wallet badge heights.
       // dp(members.size * 68 + walletGroupDragChildCount * 12)
-      dp(members.sumOf { it.optInt("height", if ((it.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68) } + walletGroupDragChildCount * 12 + if (members.first().has("height")) 2 else 0)
+      dp(members.sumOf { it.optInt("height", if ((it.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68) } + childCount * 12 + if (members.first().has("height")) 2 else 0)
     walletGroupDragBadgeBackgroundPaint.color = color(
       theme,
       "inverseBackground",

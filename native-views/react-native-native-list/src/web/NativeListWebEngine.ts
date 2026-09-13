@@ -715,9 +715,24 @@ export function computeWebListLayout(
 }
 
 export function webWalletGroupReorderBadge(row: RowModel): string | undefined {
-  return row.type === 'walletGroup' && row.children.length > 0
-    ? '+' + String(row.children.length)
+  const draggableChildCount =
+    row.type === 'walletGroup'
+      ? row.children.filter((child) => child.draggable !== false).length
+      : 0;
+  return draggableChildCount > 0
+    ? '+' + String(draggableChildCount)
     : undefined;
+}
+
+export function canStartWebWalletGroupReorder(
+  row: RowModel,
+  memberKey: string | undefined
+): boolean {
+  if (row.type !== 'walletGroup' || !memberKey) return true;
+  const member = [row.parent, ...row.children].find(
+    (candidate) => candidate.key === memberKey
+  );
+  return member?.draggable !== false;
 }
 
 function itemStart(item: WebLayoutItem, horizontal: boolean): number {
@@ -5404,6 +5419,10 @@ export class NativeListWebEngine {
     const index = Number(rowElement?.dataset.nativeListRowIndex);
     const row = this.rows[index];
     if (!row || !this.isReorderable(row)) return;
+    const memberKey = target.closest<HTMLElement>(
+      '[data-native-list-group-member-key]'
+    )?.dataset.nativeListGroupMemberKey;
+    if (!canStartWebWalletGroupReorder(row, memberKey)) return;
     // OneKey patch: a child drag reorders its parent wallet group as one item.
     // if (
     // row.type === 'walletGroup' &&

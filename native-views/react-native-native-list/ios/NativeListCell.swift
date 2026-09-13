@@ -1519,7 +1519,9 @@ final class NativeListCell: UICollectionViewCell {
         checkboxState: checkboxState
       )
     }
-    let childCount = item.data.dictionaries("children").count
+    let childCount = item.data.dictionaries("children").filter {
+      ($0["draggable"] as? Bool) != false
+    }.count
     walletGroupDragBadge.text = childCount > 0 ? "+\(childCount)" : nil
     walletGroupDragBadge.isHidden = childCount == 0
     walletGroupDragBadge.backgroundColor = nativeListColor(
@@ -1563,6 +1565,16 @@ final class NativeListCell: UICollectionViewCell {
       return
     }
     isHighlighted = pressed && isUserInteractionEnabled
+  }
+
+  func canStartWalletGroupReorder(at point: CGPoint) -> Bool {
+    guard currentItem?.type == "walletGroup" else { return true }
+    let groupPoint = rootStack.convert(point, from: self)
+    for (index, cell) in walletGroupCells.prefix(walletGroupMembers.count).enumerated()
+      where cell.frame.contains(groupPoint) {
+      return (walletGroupMembers[index].data["draggable"] as? Bool) != false
+    }
+    return true
   }
 
   func setWalletGroupReorderCompact(_ compact: Bool) {

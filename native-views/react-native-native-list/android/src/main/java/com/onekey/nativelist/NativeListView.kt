@@ -1839,7 +1839,10 @@ class NativeListView(
                   // item.type != "walletGroup" ||
                   // event.rawY in holderLocation[1].toFloat()..(holderLocation[1] + dp(68)).toFloat()
                   // )
-                  item.isReorderable
+                  item.isReorderable &&
+                    (holder as? NativeListViewHolder)?.rowView?.canStartWalletGroupReorder(
+                      event.y - holder.itemView.top,
+                    ) != false
                 } == true
               }
             if (candidate != null) handler.postDelayed(startDrag, REORDER_LONG_PRESS_MS)

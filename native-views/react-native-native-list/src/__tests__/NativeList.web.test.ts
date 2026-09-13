@@ -7,6 +7,7 @@ import type {
 import {
   WEB_LIST_CSS,
   WEB_REORDER_ANIMATION,
+  canStartWebWalletGroupReorder,
   cancelWebReorderRows,
   computeWebListLayout,
   estimateWebRowHeight,
@@ -403,18 +404,32 @@ describe('NativeList pure DOM web layout', () => {
       key: parent.key,
       parent,
       children: [
-        { ...parent, key: 'hidden-1', title: 'Hidden 1' },
+        {
+          ...parent,
+          key: 'hidden-1',
+          title: 'Hidden 1',
+          draggable: true,
+        },
         { ...parent, key: 'hidden-2', title: 'Hidden 2' },
+        {
+          ...parent,
+          key: 'add-hidden',
+          title: 'Add hidden wallet',
+          draggable: false,
+        },
       ],
       draggable: true,
     };
     const peer: RowModel = { ...parent, key: 'peer', title: 'Peer' };
     const reorderable = snapshot({ kind: 'linear' }, [group, peer]);
 
-    expect(estimateWebRowHeight(group, reorderable, 136)).toBe(228);
+    expect(estimateWebRowHeight(group, reorderable, 136)).toBe(308);
     expect(isWebRowReorderable(reorderable, group)).toBe(true);
     expect(moveWebReorderRow([group, peer], 0, 1)).toEqual([peer, group]);
     expect(webWalletGroupReorderBadge(group)).toBe('+2');
+    expect(canStartWebWalletGroupReorder(group, 'hidden-1')).toBe(true);
+    expect(canStartWebWalletGroupReorder(group, 'hidden-2')).toBe(true);
+    expect(canStartWebWalletGroupReorder(group, 'add-hidden')).toBe(false);
 
     const compact = computeWebListLayout(reorderable, 136, 640, group.key);
     expect(compact.items.map((item) => item.height)).toEqual([68, 68]);
