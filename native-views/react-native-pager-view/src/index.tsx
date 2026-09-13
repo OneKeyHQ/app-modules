@@ -3,6 +3,7 @@ import { PagerView } from './PagerView';
 export default PagerView;
 export * from './usePagerView';
 export * from './CollapsiblePagerView';
+export * from './NativeScroller';
 
 import type {
   OnPageScrollEventData as PagerViewOnPageScrollEventData,

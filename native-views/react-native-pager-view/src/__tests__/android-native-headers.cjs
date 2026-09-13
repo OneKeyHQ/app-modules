@@ -123,7 +123,8 @@ test('connects Android props, direct press events, gesture bridge, and file logg
   assert.match(manager, /updateNativeSubHeader\(value\)/);
   assert.match(manager, /NativeHeaderPressEvent\.TAB_EVENT_NAME/);
   assert.match(manager, /host\.updateNativeTabProgress\(position, offset\)/);
-  assert.match(host, /beginForwardingToRecycler\(event\)/);
+  assert.match(host, /beginForwardingToPrimaryScrollable\(event\)/);
+  assert.match(host, /NATIVE_SCROLLER_ID_PREFIX/);
   assert.match(host, /NativeGestureUtil\.notifyNativeGestureStarted/);
   assert.match(host, /nativeGestureStarted \|\| nestedNativeGestureStarted/);
   assert.match(host, /OneKeyLog\.debug\("CollapsiblePager"/);

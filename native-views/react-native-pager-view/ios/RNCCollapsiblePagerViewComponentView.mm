@@ -6,12 +6,16 @@
 #import <react/renderer/components/pagerview/RCTComponentViewHelpers.h>
 
 #import "React/RCTConversions.h"
+#import "React/RCTMountingTransactionObserving.h"
+#import "React/RCTScrollViewComponentView.h"
 #import "React/RCTSurfaceTouchHandler.h"
 #import "React/RCTTouchHandler.h"
 
 using namespace facebook::react;
 
 static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerContentOffsetContext;
+static NSString *const RNCCollapsiblePagerNativeScrollerIDPrefix =
+  @"rnc-collapsible-pager-native-scroller:";
 
 typedef void (^RNCCollapsiblePagerNativeTabPressHandler)(NSInteger index, NSString *key);
 
@@ -911,7 +915,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   UIPageViewControllerDataSource,
   UIPageViewControllerDelegate,
   UIScrollViewDelegate,
-  UIGestureRecognizerDelegate
+  UIGestureRecognizerDelegate,
+  RCTMountingTransactionObserving
 >
 - (void)finishPagerScrollEmittingSelection:(BOOL)emitSelection;
 - (void)completeTransitionOnNextRunLoopForGeneration:(NSUInteger)generation
@@ -921,6 +926,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)liftSharedHeadersForPagerTransition:(NSString *)reason;
 - (void)restoreSharedHeadersToContainer;
 - (void)layoutSharedHeaders;
+- (UIScrollView *)currentVerticalScrollViewForParentPager;
+- (UIScrollView *)verticalScrollViewForPageAtIndex:(NSInteger)pageIndex;
+- (UIScrollView *)findExplicitNativeScrollerInView:(UIView *)view;
+- (UIScrollView *)findFabricScrollViewInView:(UIView *)view;
+- (UIScrollView *)findVerticalScrollViewInView:(UIView *)view;
+- (void)scheduleScrollObserverRetryForCurrentPage;
 - (void)preparePageForHorizontalTransitionAtIndex:(NSInteger)pageIndex;
 - (void)updateSharedHeaderPressCancellationGesture;
 - (void)detachSharedHeaderPressCancellationGesture;
@@ -980,12 +991,18 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSMapTable<UIScrollView *, NSNumber *> *_originalInsetAdjustmentBehavior;
   __weak UIScrollView *_observedScrollView;
   __weak UIScrollView *_sharedHeaderScrollView;
+  __weak UIScrollView *_pendingFallbackScrollView;
   __weak UIView *_sharedHeaderPressCancellationGestureHost;
   __weak UIGestureRecognizer *_reactTouchHandler;
   UIPanGestureRecognizer *_sharedHeaderPressCancellationGesture;
   RNCCollapsiblePagerOuterPagerPanGestureRecognizer *_sharedHeaderOuterPagerGesture;
   UIPanGestureRecognizer *_verticalPagerGesture;
   BOOL _observingContentOffset;
+  BOOL _scrollResolveRetryScheduled;
+  CFTimeInterval _pendingFallbackScrollViewDetectedAt;
+  NSInteger _scrollResolveRetryPageIndex;
+  NSInteger _scrollResolveRetryAttempt;
+  NSUInteger _scrollResolveRetryToken;
   CGFloat _currentLogicalOffset;
   CGFloat _observedListPanStartLogicalOffset;
   BOOL _sharedHeadersLiftedForPagerTransition;
@@ -1026,6 +1043,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _hasPendingDirectNativePagerChange = NO;
     _pendingGoToIndex = -1;
     _pendingGoToAnimated = YES;
+    _scrollResolveRetryPageIndex = NSNotFound;
     _hasAppliedInitialPage = NO;
     _needsPropsReapply = YES;
     _layoutDirection = @"ltr";
@@ -1081,6 +1099,18 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     [self initializePageViewController];
   }
   return self;
+}
+
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
+{
+  if (_nativeSmoothHeaderScrollEnabled && !_isBeingRecycled &&
+      _sharedHeaderHostView.superview != _containerView) {
+    CGPoint headerPoint = [_sharedHeaderHostView convertPoint:point fromView:self];
+    UIView *headerHitView =
+      [_sharedHeaderHostView hitTest:headerPoint withEvent:event];
+    if (headerHitView != nil) return headerHitView;
+  }
+  return [super hitTest:point withEvent:event];
 }
 
 - (void)willMoveToSuperview:(UIView *)newSuperview
@@ -1240,6 +1270,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   if (!_nativeSmoothHeaderScrollEnabled || _transitioning || _isPagerDragging ||
       scrollView == nil || _isBeingRecycled) return;
+  if ((UIView *)scrollView == _sharedHeaderHostView ||
+      [scrollView isDescendantOfView:_sharedHeaderHostView]) {
+    [self restoreSharedHeadersToContainer];
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"header-owner=pager page=%ld reason=cycle-guard",
+      (long)_currentIndex]);
+    return;
+  }
   if (_sharedHeaderScrollView == scrollView &&
       _sharedHeaderHostView.superview == scrollView) {
     [self layoutSharedHeaders];
@@ -1256,8 +1294,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [_nativeSubHeaderView updateAncestorGesturePrecedence];
   _currentLogicalOffset = scrollView.contentOffset.y + scrollView.contentInset.top;
   [self layoutSharedHeaders];
+  NSString *scrollKind = [scrollView isKindOfClass:UICollectionView.class]
+    ? @"list"
+    : @"scroller";
   RNCCollapsiblePagerLog([NSString stringWithFormat:
-    @"header-owner=list page=%ld offset=%.2f",
+    @"header-owner=%@ page=%ld offset=%.2f",
+    scrollKind,
     (long)_currentIndex,
     _currentLogicalOffset]);
 }
@@ -1325,13 +1367,32 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       pageIndex < 0 || pageIndex >= _pageControllers.count) return;
 
   _pageOffsets[[self pageKeyForIndex:pageIndex]] = @(_headerOffset);
-  UIScrollView *scrollView = [self findVerticalScrollViewInView:_pageControllers[pageIndex].view];
+  UIScrollView *scrollView = [self verticalScrollViewForPageAtIndex:pageIndex];
   if (scrollView != nil && scrollView != _observedScrollView) {
     [self applyInsetsToScrollView:scrollView pageIndex:pageIndex restore:YES];
   }
 }
 
 #pragma mark - React mounting
+
+- (void)mountingTransactionDidMount:(const MountingTransaction &)transaction
+               withSurfaceTelemetry:(const SurfaceTelemetry &)surfaceTelemetry
+{
+  if (!_nativeSmoothHeaderScrollEnabled || _transitioning ||
+      _isPagerDragging || _isBeingRecycled || self.window == nil ||
+      _currentIndex < 0 || _currentIndex >= _pageControllers.count) return;
+
+  UIView *pageView = _pageControllers[_currentIndex].view;
+  BOOL shouldResolve = _observedScrollView == nil ||
+    ![_observedScrollView isDescendantOfView:pageView];
+  if (!shouldResolve &&
+      [_observedScrollView isKindOfClass:UICollectionView.class]) {
+    UIScrollView *preferred = [self findExplicitNativeScrollerInView:pageView];
+    if (preferred == nil) preferred = [self findFabricScrollViewInView:pageView];
+    shouldResolve = preferred != nil && preferred != _observedScrollView;
+  }
+  if (shouldResolve) [self attachScrollObserverForCurrentPage];
+}
 
 - (void)mountChildComponentView:(UIView<RCTComponentViewProtocol> *)childComponentView
                           index:(NSInteger)index
@@ -1756,17 +1817,89 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   return [NSString stringWithFormat:@"page-%ld", (long)index];
 }
 
+- (UIScrollView *)currentVerticalScrollViewForParentPager
+{
+  return [self verticalScrollViewForPageAtIndex:_currentIndex];
+}
+
+- (UIScrollView *)verticalScrollViewForPageAtIndex:(NSInteger)pageIndex
+{
+  if (pageIndex < 0 || pageIndex >= _pageControllers.count) return nil;
+  UIView *pageView = _pageControllers[pageIndex].view;
+  UIScrollView *explicitScroller = [self findExplicitNativeScrollerInView:pageView];
+  if (explicitScroller != nil) return explicitScroller;
+  UIScrollView *fabricScrollView = [self findFabricScrollViewInView:pageView];
+  return fabricScrollView ?: [self findVerticalScrollViewInView:pageView];
+}
+
+- (UIScrollView *)findExplicitNativeScrollerInView:(UIView *)view
+{
+  if (view == _sharedHeaderHostView) return nil;
+  if (view != self &&
+      [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
+    return [(RNCCollapsiblePagerViewComponentView *)view
+      currentVerticalScrollViewForParentPager];
+  }
+  if ([view isKindOfClass:RCTScrollViewComponentView.class]) {
+    RCTScrollViewComponentView *componentView =
+      (RCTScrollViewComponentView *)view;
+    if ([componentView.nativeId hasPrefix:RNCCollapsiblePagerNativeScrollerIDPrefix]) {
+      return componentView.scrollView;
+    }
+  }
+  for (UIView *subview in view.subviews) {
+    UIScrollView *candidate = [self findExplicitNativeScrollerInView:subview];
+    if (candidate != nil) return candidate;
+  }
+  return nil;
+}
+
+- (UIScrollView *)findFabricScrollViewInView:(UIView *)view
+{
+  if (view == _sharedHeaderHostView) return nil;
+  if (view != self &&
+      [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
+    return [(RNCCollapsiblePagerViewComponentView *)view
+      currentVerticalScrollViewForParentPager];
+  }
+  if ([view isKindOfClass:RCTScrollViewComponentView.class]) {
+    UIScrollView *scrollView =
+      ((RCTScrollViewComponentView *)view).scrollView;
+    if (!scrollView.alwaysBounceHorizontal) {
+      return scrollView;
+    }
+  }
+  for (UIView *subview in view.subviews) {
+    UIScrollView *candidate = [self findFabricScrollViewInView:subview];
+    if (candidate != nil) return candidate;
+  }
+  return nil;
+}
+
 - (UIScrollView *)findVerticalScrollViewInView:(UIView *)view
 {
+  if (view == _sharedHeaderHostView) return nil;
+  // A parent pager must follow the nested pager's active page instead of the
+  // first retained page found by recursive subview order.
+  if (view != self &&
+      [view isKindOfClass:RNCCollapsiblePagerViewComponentView.class]) {
+    UIScrollView *nestedScrollView =
+      [(RNCCollapsiblePagerViewComponentView *)view
+        currentVerticalScrollViewForParentPager];
+    if (nestedScrollView != nil) return nestedScrollView;
+  }
   if ([view isKindOfClass:UICollectionView.class]) {
     UICollectionView *collectionView = (UICollectionView *)view;
     UICollectionViewLayout *layout = collectionView.collectionViewLayout;
-    if (![layout isKindOfClass:UICollectionViewFlowLayout.class] ||
-        ((UICollectionViewFlowLayout *)layout).scrollDirection == UICollectionViewScrollDirectionVertical) {
+    BOOL hasUsableBounds = CGRectGetWidth(collectionView.bounds) > 0 &&
+      CGRectGetHeight(collectionView.bounds) > 0;
+    if (hasUsableBounds &&
+        (![layout isKindOfClass:UICollectionViewFlowLayout.class] ||
+         ((UICollectionViewFlowLayout *)layout).scrollDirection == UICollectionViewScrollDirectionVertical)) {
       return collectionView;
     }
   }
-  // Empty pages may use an RN ScrollView instead of a native row list.
+  // Preserve compatibility with non-Fabric or custom vertical scroll views.
   if ([view isKindOfClass:UIScrollView.class] &&
       ![view isKindOfClass:UICollectionView.class]) {
     UIScrollView *scrollView = (UIScrollView *)view;
@@ -1782,12 +1915,66 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   return nil;
 }
 
+- (void)scheduleScrollObserverRetryForCurrentPage
+{
+  if (_scrollResolveRetryScheduled || _scrollResolveRetryAttempt >= 12 ||
+      _isBeingRecycled) return;
+  _scrollResolveRetryScheduled = YES;
+  _scrollResolveRetryPageIndex = _currentIndex;
+  _scrollResolveRetryAttempt += 1;
+  NSUInteger token = _scrollResolveRetryToken;
+  NSUInteger generation = _generation;
+  NSInteger pageIndex = _currentIndex;
+  dispatch_after(
+    // Fabric can mount a recycled child's native view before attaching its
+    // replacement ScrollView component. Let that transaction settle before
+    // accepting an automatically discovered UICollectionView fallback.
+    dispatch_time(DISPATCH_TIME_NOW, (int64_t)(100 * NSEC_PER_MSEC)),
+    dispatch_get_main_queue(),
+    ^{
+      if (self->_scrollResolveRetryToken != token) return;
+      self->_scrollResolveRetryScheduled = NO;
+      if (self->_isBeingRecycled || self->_generation != generation ||
+          self->_currentIndex != pageIndex) return;
+      [self attachScrollObserverForCurrentPage];
+    }
+  );
+}
+
 - (void)attachScrollObserverForCurrentPage
 {
   [self restoreDetachedScrollInsets];
-  if (_currentIndex < 0 || _currentIndex >= _pageControllers.count) return;
-  UIScrollView *candidate = [self findVerticalScrollViewInView:_pageControllers[_currentIndex].view];
-  if (candidate == nil) return;
+  if (_scrollResolveRetryPageIndex != _currentIndex) {
+    _scrollResolveRetryToken += 1;
+    _scrollResolveRetryScheduled = NO;
+    _scrollResolveRetryAttempt = 0;
+    _scrollResolveRetryPageIndex = _currentIndex;
+    _pendingFallbackScrollView = nil;
+    _pendingFallbackScrollViewDetectedAt = 0;
+  }
+  UIScrollView *candidate = [self verticalScrollViewForPageAtIndex:_currentIndex];
+  if (candidate == nil) {
+    [self scheduleScrollObserverRetryForCurrentPage];
+    return;
+  }
+  if ([candidate isKindOfClass:UICollectionView.class] &&
+      candidate != _observedScrollView) {
+    if (_pendingFallbackScrollView != candidate) {
+      _pendingFallbackScrollView = candidate;
+      _pendingFallbackScrollViewDetectedAt = CACurrentMediaTime();
+      _scrollResolveRetryAttempt = 0;
+    }
+    if (CACurrentMediaTime() - _pendingFallbackScrollViewDetectedAt < 0.5) {
+      [self scheduleScrollObserverRetryForCurrentPage];
+      return;
+    }
+  }
+  _scrollResolveRetryAttempt = 0;
+  _scrollResolveRetryPageIndex = _currentIndex;
+  _scrollResolveRetryToken += 1;
+  _scrollResolveRetryScheduled = NO;
+  _pendingFallbackScrollView = nil;
+  _pendingFallbackScrollViewDetectedAt = 0;
   // Legacy mode keeps the historical pager-first dependency. Smooth mode
   // arbitrates header touches by axis so the vertical list can begin directly.
   if (_pagerScrollView != nil && !_nativeSmoothHeaderScrollEnabled && !_needsPropsReapply) {
@@ -2171,7 +2358,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSInteger last = MIN((NSInteger)_pageControllers.count - 1, _currentIndex + 1);
   if (last < first) return;
   for (NSInteger index = first; index <= last; index++) {
-    UIScrollView *scrollView = [self findVerticalScrollViewInView:_pageControllers[index].view];
+    UIScrollView *scrollView = [self verticalScrollViewForPageAtIndex:index];
     if (scrollView != nil && scrollView != _observedScrollView) {
       [self applyInsetsToScrollView:scrollView pageIndex:index restore:YES];
     }
@@ -2374,7 +2561,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (index == NSNotFound) return nil;
   NSInteger target = index + delta;
   if (target < 0 || target >= _pageControllers.count) return nil;
-  UIScrollView *scrollView = [self findVerticalScrollViewInView:_pageControllers[target].view];
+  UIScrollView *scrollView = [self verticalScrollViewForPageAtIndex:target];
   if (scrollView != nil) {
     [self applyInsetsToScrollView:scrollView pageIndex:target restore:YES];
   }
