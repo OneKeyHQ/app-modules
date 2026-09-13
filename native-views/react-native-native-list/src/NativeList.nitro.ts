@@ -11,6 +11,8 @@ import type {
  */
 export interface NativeListNativeProps extends HybridViewProps {
   snapshotJson: string;
+  keyboardDismissMode: NativeListKeyboardDismissMode;
+  keyboardShouldPersistTaps: NativeListKeyboardShouldPersistTaps;
   onRowAction?: (payloadJson: string) => void;
   onActionAnchorInvalidated?: (payloadJson: string) => void;
   onSelectionDelta?: (payloadJson: string) => void;
@@ -18,6 +20,13 @@ export interface NativeListNativeProps extends HybridViewProps {
   onEndReached?: (payloadJson: string) => void;
   onVisibleRangeChanged?: (payloadJson: string) => void;
 }
+
+export type NativeListKeyboardDismissMode = 'none' | 'on-drag' | 'interactive';
+
+export type NativeListKeyboardShouldPersistTaps =
+  | 'never'
+  | 'always'
+  | 'handled';
 
 export type NativeListScrollAlignment = 'start' | 'center' | 'end' | 'nearest';
 

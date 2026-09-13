@@ -89,8 +89,13 @@ final class NativeListView: UIView {
     target: self,
     action: #selector(marketLongPressChanged(_:))
   )
+  private lazy var keyboardTapRecognizer = UITapGestureRecognizer(
+    target: self,
+    action: #selector(keyboardTapRecognized(_:))
+  )
   // OneKey patch: claim only vertical drags so held rows and ancestor pagers stay responsive.
   private lazy var listBodyGestureGuard = UIPanGestureRecognizer(target: nil, action: nil)
+  private var keyboardShouldPersistTaps: NativeListKeyboardShouldPersistTaps = .never
   private var interactiveReorderSource: (key: String, index: Int)?
   private weak var interactiveReorderCell: NativeListCell?
   private var interactiveReorderCompactKey: String?
@@ -123,6 +128,9 @@ final class NativeListView: UIView {
     collectionView.dragDelegate = self
     collectionView.dropDelegate = self
     collectionView.alwaysBounceVertical = true
+    keyboardTapRecognizer.cancelsTouchesInView = true
+    keyboardTapRecognizer.delegate = self
+    addGestureRecognizer(keyboardTapRecognizer)
     // OneKey patch: keep list-body drags from being claimed by an ancestor modal sheet.
     listBodyGestureGuard.cancelsTouchesInView = false
     listBodyGestureGuard.isEnabled = false
@@ -226,6 +234,53 @@ final class NativeListView: UIView {
       guard self?.interactiveReorderUsesAtomicTargeting != true else { return }
       self?.completeInteractiveReorder(transaction.finalSnapshot)
     }
+  }
+
+  func setKeyboardDismissMode(_ mode: NativeListKeyboardDismissMode) {
+    switch mode {
+    case .none:
+      collectionView.keyboardDismissMode = .none
+    case .onDrag:
+      collectionView.keyboardDismissMode = .onDrag
+    case .interactive:
+      collectionView.keyboardDismissMode = .interactive
+    }
+  }
+
+  func setKeyboardShouldPersistTaps(_ mode: NativeListKeyboardShouldPersistTaps) {
+    keyboardShouldPersistTaps = mode
+  }
+
+  @objc private func keyboardTapRecognized(_ gesture: UITapGestureRecognizer) {
+    guard gesture.state == .ended else { return }
+    window?.endEditing(true)
+  }
+
+  private func focusedTextInput(in view: UIView?) -> UIView? {
+    guard let view else { return nil }
+    if view.isFirstResponder, view is any UITextInput { return view }
+    for child in view.subviews {
+      if let result = focusedTextInput(in: child) { return result }
+    }
+    return nil
+  }
+
+  private func keyboardTapIsHandled(_ touch: UITouch) -> Bool {
+    var touchedView = touch.view
+    while let current = touchedView, current !== self {
+      if let control = current as? UIControl, control.isEnabled { return true }
+      touchedView = current.superview
+    }
+    if let touchView = touch.view,
+       touchView === footerCell || touchView.isDescendant(of: footerCell) {
+      guard let footer = config?.fixedFooter else { return false }
+      return !footer.data.bool("disabled") && !footer.data.bool("pressDisabled")
+    }
+    let point = touch.location(in: collectionView)
+    guard collectionView.bounds.contains(point),
+          let indexPath = collectionView.indexPathForItem(at: point),
+          let item = item(at: indexPath) else { return false }
+    return !item.data.bool("disabled") && !item.data.bool("pressDisabled")
   }
 
   required init?(coder: NSCoder) {
@@ -1898,6 +1953,17 @@ final class NativeListView: UIView {
 
 extension NativeListView: UIGestureRecognizerDelegate {
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    if gestureRecognizer === keyboardTapRecognizer {
+      guard focusedTextInput(in: window) != nil else { return false }
+      switch keyboardShouldPersistTaps {
+      case .never:
+        return true
+      case .always:
+        return false
+      case .handled:
+        return !keyboardTapIsHandled(touch)
+      }
+    }
     if gestureRecognizer === listBodyGestureGuard { return true }
     var view = touch.view
     while let current = view, current !== footerCell {
@@ -1911,6 +1977,10 @@ extension NativeListView: UIGestureRecognizerDelegate {
     _ gestureRecognizer: UIGestureRecognizer,
     shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
   ) -> Bool {
+    if gestureRecognizer === keyboardTapRecognizer ||
+       otherGestureRecognizer === keyboardTapRecognizer {
+      return false
+    }
     if gestureRecognizer === listBodyGestureGuard {
       guard let otherView = otherGestureRecognizer.view else { return false }
       return otherView === collectionView || otherView.isDescendant(of: collectionView)

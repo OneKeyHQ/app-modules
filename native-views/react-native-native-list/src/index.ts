@@ -1,6 +1,8 @@
 export { NativeList, preloadNativeListAvatarImages } from './NativeList';
 export type {
   ActionAnchorState,
+  NativeListKeyboardDismissMode,
+  NativeListKeyboardShouldPersistTaps,
   NativeListProps,
   NativeListRef,
   ScrollAlignment,

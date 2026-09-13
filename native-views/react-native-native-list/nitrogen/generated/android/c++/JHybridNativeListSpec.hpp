@@ -52,6 +52,10 @@ namespace margelo::nitro::nativelist {
     // Properties
     std::string getSnapshotJson() override;
     void setSnapshotJson(const std::string& snapshotJson) override;
+    NativeListKeyboardDismissMode getKeyboardDismissMode() override;
+    void setKeyboardDismissMode(NativeListKeyboardDismissMode keyboardDismissMode) override;
+    NativeListKeyboardShouldPersistTaps getKeyboardShouldPersistTaps() override;
+    void setKeyboardShouldPersistTaps(NativeListKeyboardShouldPersistTaps keyboardShouldPersistTaps) override;
     std::optional<std::function<void(const std::string& /* payloadJson */)>> getOnRowAction() override;
     void setOnRowAction(const std::optional<std::function<void(const std::string& /* payloadJson */)>>& onRowAction) override;
     std::optional<std::function<void(const std::string& /* payloadJson */)>> getOnActionAnchorInvalidated() override;

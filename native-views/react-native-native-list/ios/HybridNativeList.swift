@@ -16,6 +16,26 @@ final class HybridNativeList: HybridNativeListSpec {
     }
   }
 
+  var keyboardDismissMode: NativeListKeyboardDismissMode = .none {
+    didSet {
+      guard keyboardDismissMode != oldValue else { return }
+      runOnMain { [weak self] in
+        guard let self else { return }
+        self.hostView.setKeyboardDismissMode(self.keyboardDismissMode)
+      }
+    }
+  }
+
+  var keyboardShouldPersistTaps: NativeListKeyboardShouldPersistTaps = .never {
+    didSet {
+      guard keyboardShouldPersistTaps != oldValue else { return }
+      runOnMain { [weak self] in
+        guard let self else { return }
+        self.hostView.setKeyboardShouldPersistTaps(self.keyboardShouldPersistTaps)
+      }
+    }
+  }
+
   var onRowAction: ((_ payloadJson: String) -> Void)?
   var onActionAnchorInvalidated: ((_ payloadJson: String) -> Void)?
   var onSelectionDelta: ((_ payloadJson: String) -> Void)?

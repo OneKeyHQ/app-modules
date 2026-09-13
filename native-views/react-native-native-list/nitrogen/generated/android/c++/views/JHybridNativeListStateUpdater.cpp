@@ -59,6 +59,16 @@ void JHybridNativeListStateUpdater::updateViewProps(jni::alias_ref<jni::JClass> 
     hybridView->setSnapshotJson(newProps->snapshotJson.get());
   }
   if (oldProps == nullptr
+        ? newProps->keyboardDismissMode.isProvided()
+        : !newProps->keyboardDismissMode.hasSameValue(oldProps->keyboardDismissMode)) {
+    hybridView->setKeyboardDismissMode(newProps->keyboardDismissMode.get());
+  }
+  if (oldProps == nullptr
+        ? newProps->keyboardShouldPersistTaps.isProvided()
+        : !newProps->keyboardShouldPersistTaps.hasSameValue(oldProps->keyboardShouldPersistTaps)) {
+    hybridView->setKeyboardShouldPersistTaps(newProps->keyboardShouldPersistTaps.get());
+  }
+  if (oldProps == nullptr
         ? newProps->onRowAction.isProvided()
         : !newProps->onRowAction.hasSameValue(oldProps->onRowAction)) {
     hybridView->setOnRowAction(newProps->onRowAction.get());

@@ -5,6 +5,8 @@
   "directEventTypes": {},
   "validAttributes": {
     "snapshotJson": true,
+    "keyboardDismissMode": true,
+    "keyboardShouldPersistTaps": true,
     "onRowAction": true,
     "onActionAnchorInvalidated": true,
     "onSelectionDelta": true,

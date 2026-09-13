@@ -16,6 +16,10 @@ namespace margelo::nitro::nativelist {
     registerHybrids(this, [](Prototype& prototype) {
       prototype.registerHybridGetter("snapshotJson", &HybridNativeListSpec::getSnapshotJson);
       prototype.registerHybridSetter("snapshotJson", &HybridNativeListSpec::setSnapshotJson);
+      prototype.registerHybridGetter("keyboardDismissMode", &HybridNativeListSpec::getKeyboardDismissMode);
+      prototype.registerHybridSetter("keyboardDismissMode", &HybridNativeListSpec::setKeyboardDismissMode);
+      prototype.registerHybridGetter("keyboardShouldPersistTaps", &HybridNativeListSpec::getKeyboardShouldPersistTaps);
+      prototype.registerHybridSetter("keyboardShouldPersistTaps", &HybridNativeListSpec::setKeyboardShouldPersistTaps);
       prototype.registerHybridGetter("onRowAction", &HybridNativeListSpec::getOnRowAction);
       prototype.registerHybridSetter("onRowAction", &HybridNativeListSpec::setOnRowAction);
       prototype.registerHybridGetter("onActionAnchorInvalidated", &HybridNativeListSpec::getOnActionAnchorInvalidated);

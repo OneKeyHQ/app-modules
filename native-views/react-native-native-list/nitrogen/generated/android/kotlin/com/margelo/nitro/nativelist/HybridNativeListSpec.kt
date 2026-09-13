@@ -33,6 +33,18 @@ abstract class HybridNativeListSpec: HybridView() {
   @set:Keep
   abstract var snapshotJson: String
 
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var keyboardDismissMode: NativeListKeyboardDismissMode
+
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var keyboardShouldPersistTaps: NativeListKeyboardShouldPersistTaps
+
   abstract var onRowAction: ((payloadJson: String) -> Unit)?
 
   private var onRowAction_cxx: Func_void_std__string?

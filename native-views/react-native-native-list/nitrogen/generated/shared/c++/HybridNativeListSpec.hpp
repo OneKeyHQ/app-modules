@@ -13,10 +13,16 @@
 #error NitroModules cannot be found! Are you sure you installed NitroModules properly?
 #endif
 
+// Forward declaration of `NativeListKeyboardDismissMode` to properly resolve imports.
+namespace margelo::nitro::nativelist { enum class NativeListKeyboardDismissMode; }
+// Forward declaration of `NativeListKeyboardShouldPersistTaps` to properly resolve imports.
+namespace margelo::nitro::nativelist { enum class NativeListKeyboardShouldPersistTaps; }
 // Forward declaration of `NativeListScrollAlignment` to properly resolve imports.
 namespace margelo::nitro::nativelist { enum class NativeListScrollAlignment; }
 
 #include <string>
+#include "NativeListKeyboardDismissMode.hpp"
+#include "NativeListKeyboardShouldPersistTaps.hpp"
 #include <functional>
 #include <optional>
 #include "NativeListScrollAlignment.hpp"
@@ -50,6 +56,10 @@ namespace margelo::nitro::nativelist {
       // Properties
       virtual std::string getSnapshotJson() = 0;
       virtual void setSnapshotJson(const std::string& snapshotJson) = 0;
+      virtual NativeListKeyboardDismissMode getKeyboardDismissMode() = 0;
+      virtual void setKeyboardDismissMode(NativeListKeyboardDismissMode keyboardDismissMode) = 0;
+      virtual NativeListKeyboardShouldPersistTaps getKeyboardShouldPersistTaps() = 0;
+      virtual void setKeyboardShouldPersistTaps(NativeListKeyboardShouldPersistTaps keyboardShouldPersistTaps) = 0;
       virtual std::optional<std::function<void(const std::string& /* payloadJson */)>> getOnRowAction() = 0;
       virtual void setOnRowAction(const std::optional<std::function<void(const std::string& /* payloadJson */)>>& onRowAction) = 0;
       virtual std::optional<std::function<void(const std::string& /* payloadJson */)>> getOnActionAnchorInvalidated() = 0;

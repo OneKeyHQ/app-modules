@@ -19,6 +19,13 @@ export type ActionAnchorState = Readonly<{
 
 export type ScrollAlignment = 'start' | 'center' | 'end' | 'nearest';
 
+export type NativeListKeyboardDismissMode = 'none' | 'on-drag' | 'interactive';
+
+export type NativeListKeyboardShouldPersistTaps =
+  | 'never'
+  | 'always'
+  | 'handled';
+
 export type ScrollPositionOptions = Readonly<{
   animated?: boolean;
   alignment?: ScrollAlignment;
@@ -113,6 +120,13 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     snapshot: NativeListSnapshot;
     /** Web only. Defaults to true and is ignored by the native host. */
     webVirtualizationEnabled?: boolean;
+    /** Defaults to `none`. `interactive` behaves as `none` on Android. */
+    keyboardDismissMode?: NativeListKeyboardDismissMode;
+    /**
+     * Defaults to `never`. Boolean values are deprecated compatibility aliases:
+     * `true` maps to `always` and `false` maps to `never`.
+     */
+    keyboardShouldPersistTaps?: NativeListKeyboardShouldPersistTaps | boolean;
     onRowAction?: (event: RowActionEvent) => void;
     onActionAnchorInvalidated?: (event: ActionAnchorInvalidatedEvent) => void;
     onSelectionDelta?: (event: SelectionDeltaEvent) => void;

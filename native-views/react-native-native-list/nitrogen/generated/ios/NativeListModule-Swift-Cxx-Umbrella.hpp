@@ -10,11 +10,17 @@
 // Forward declarations of C++ defined types
 // Forward declaration of `HybridNativeListSpec` to properly resolve imports.
 namespace margelo::nitro::nativelist { class HybridNativeListSpec; }
+// Forward declaration of `NativeListKeyboardDismissMode` to properly resolve imports.
+namespace margelo::nitro::nativelist { enum class NativeListKeyboardDismissMode; }
+// Forward declaration of `NativeListKeyboardShouldPersistTaps` to properly resolve imports.
+namespace margelo::nitro::nativelist { enum class NativeListKeyboardShouldPersistTaps; }
 // Forward declaration of `NativeListScrollAlignment` to properly resolve imports.
 namespace margelo::nitro::nativelist { enum class NativeListScrollAlignment; }
 
 // Include C++ defined types
 #include "HybridNativeListSpec.hpp"
+#include "NativeListKeyboardDismissMode.hpp"
+#include "NativeListKeyboardShouldPersistTaps.hpp"
 #include "NativeListScrollAlignment.hpp"
 #include <NitroModules/Result.hpp>
 #include <exception>

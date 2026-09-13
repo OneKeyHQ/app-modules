@@ -1,10 +1,12 @@
 package com.margelo.nitro.nativelist
 
 import android.animation.TimeInterpolator
+import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.PathShape
@@ -21,10 +23,13 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -93,6 +98,8 @@ class NativeListView(
   var onReorder: ((String) -> Unit)? = null
   var onEndReached: ((String) -> Unit)? = null
   var onVisibleRangeChanged: ((String) -> Unit)? = null
+  var keyboardDismissMode = NativeListKeyboardDismissMode.NONE
+  var keyboardShouldPersistTaps = NativeListKeyboardShouldPersistTaps.NEVER
   private val density = resources.displayMetrics.density
   private val recyclerView = RecyclerView(context)
   private var configuredTopPaddingPx = 0
@@ -105,6 +112,7 @@ class NativeListView(
   private val layoutManager = GridLayoutManager(context, 1)
   // OneKey patch: vertical lists retain vertical drags and leave horizontal drags to a parent pager.
   private val pagerGestureTouchSlop = ViewConfiguration.get(context).scaledTouchSlop
+  private var pagerGestureIsVertical = false
   private val pagerGestureTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
     private var downX = 0f
     private var downY = 0f
@@ -117,21 +125,70 @@ class NativeListView(
           downX = event.x
           downY = event.y
           directionResolved = false
+          pagerGestureIsVertical = false
         }
         MotionEvent.ACTION_MOVE -> if (!directionResolved) {
           val deltaX = abs(event.x - downX)
           val deltaY = abs(event.y - downY)
           if (max(deltaX, deltaY) > pagerGestureTouchSlop) {
             directionResolved = true
-            recyclerView.parent?.requestDisallowInterceptTouchEvent(deltaY >= deltaX)
+            pagerGestureIsVertical = deltaY >= deltaX
+            recyclerView.parent?.requestDisallowInterceptTouchEvent(pagerGestureIsVertical)
           }
         }
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
           recyclerView.parent?.requestDisallowInterceptTouchEvent(false)
+          pagerGestureIsVertical = false
         }
       }
       return false
     }
+  }
+  // Intercept only a completed tap so RecyclerView keeps drag and reorder ownership.
+  private val keyboardTapTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
+    private var downX = 0f
+    private var downY = 0f
+    private var observingTap = false
+    private var moved = false
+
+    override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          downX = event.x
+          downY = event.y
+          moved = false
+          observingTap =
+            keyboardShouldPersistTaps != NativeListKeyboardShouldPersistTaps.ALWAYS &&
+              focusedTextEditor() != null
+        }
+        MotionEvent.ACTION_MOVE -> if (
+          observingTap && hypot(event.x - downX, event.y - downY) > pagerGestureTouchSlop
+        ) {
+          moved = true
+        }
+        MotionEvent.ACTION_UP -> {
+          val shouldDismiss =
+            observingTap &&
+              !moved &&
+              reorderPlaceholderDecoration.position == RecyclerView.NO_POSITION &&
+              when (keyboardShouldPersistTaps) {
+                NativeListKeyboardShouldPersistTaps.NEVER -> true
+                NativeListKeyboardShouldPersistTaps.HANDLED ->
+                  !keyboardTapIsHandled(recyclerView, event)
+                NativeListKeyboardShouldPersistTaps.ALWAYS -> false
+              }
+          observingTap = false
+          if (shouldDismiss) {
+            dismissKeyboard()
+            return true
+          }
+        }
+        MotionEvent.ACTION_CANCEL -> observingTap = false
+      }
+      return false
+    }
+
+    override fun onTouchEvent(recyclerView: RecyclerView, event: MotionEvent) = Unit
   }
   private val reorderPlaceholderDecoration = ReorderPlaceholderDecoration(
     adapter = adapter,
@@ -184,6 +241,7 @@ class NativeListView(
     recyclerView.adapter = adapter
     recyclerView.layoutManager = layoutManager
     recyclerView.itemAnimator = null
+    recyclerView.addOnItemTouchListener(keyboardTapTouchListener)
     recyclerView.addOnItemTouchListener(pagerGestureTouchListener)
     recyclerView.addItemDecoration(reorderPlaceholderDecoration)
     // OneKey patch: full-width selector header backgrounds do not change row content insets.
@@ -272,6 +330,12 @@ class NativeListView(
           RecyclerView.SCROLL_STATE_DRAGGING -> {
             sectionIndexProgrammaticScroll = false
             invalidateActionAnchor("scroll")
+            if (
+              keyboardDismissMode == NativeListKeyboardDismissMode.ON_DRAG &&
+              (layoutManager.orientation == RecyclerView.HORIZONTAL || pagerGestureIsVertical)
+            ) {
+              dismissKeyboard()
+            }
           }
           RecyclerView.SCROLL_STATE_IDLE -> sectionIndexProgrammaticScroll = false
         }
@@ -284,6 +348,44 @@ class NativeListView(
         checkEndReached()
       }
     })
+  }
+
+  private fun focusedTextEditor(): View? {
+    val insets = ViewCompat.getRootWindowInsets(this)
+    if (insets != null && !insets.isVisible(WindowInsetsCompat.Type.ime())) return null
+    val focused = rootView.findFocus() ?: reactContext.currentActivity?.currentFocus
+    return focused?.takeIf(View::onCheckIsTextEditor)
+  }
+
+  private fun dismissKeyboard(): Boolean {
+    val focused = focusedTextEditor() ?: return false
+    val windowToken = focused.windowToken
+    focused.clearFocus()
+    val inputMethodManager =
+      context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+    return inputMethodManager.hideSoftInputFromWindow(windowToken, 0)
+  }
+
+  private fun keyboardTapIsHandled(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+    val child = recyclerView.findChildViewUnder(event.x, event.y) ?: return false
+    val position = recyclerView.getChildAdapterPosition(child)
+    val item = adapter.itemAt(position) ?: return false
+    val clickable = clickableDescendantAt(child, event.rawX.toInt(), event.rawY.toInt())
+    val accessoryHandlesTap = clickable != null && clickable !== child
+    return accessoryHandlesTap ||
+      (!item.json.optBoolean("disabled", false) && !item.json.optBoolean("pressDisabled", false))
+  }
+
+  private fun clickableDescendantAt(view: View, rawX: Int, rawY: Int): View? {
+    if (!view.isShown) return null
+    val bounds = Rect()
+    if (!view.getGlobalVisibleRect(bounds) || !bounds.contains(rawX, rawY)) return null
+    if (view is ViewGroup) {
+      for (index in view.childCount - 1 downTo 0) {
+        clickableDescendantAt(view.getChildAt(index), rawX, rawY)?.let { return it }
+      }
+    }
+    return view.takeIf { it.isEnabled && it.isClickable }
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
@@ -965,6 +1067,7 @@ class NativeListView(
     reorderTouchHandler = null
     reorderTouchListener?.let(recyclerView::removeOnItemTouchListener)
     reorderTouchListener = null
+    recyclerView.removeOnItemTouchListener(keyboardTapTouchListener)
     recyclerView.removeOnItemTouchListener(pagerGestureTouchListener)
     itemTouchHelper?.attachToRecyclerView(null)
     itemTouchHelper = null

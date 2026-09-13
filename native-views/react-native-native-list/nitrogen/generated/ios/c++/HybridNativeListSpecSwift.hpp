@@ -12,10 +12,16 @@
 // Forward declaration of `HybridNativeListSpec_cxx` to properly resolve imports.
 namespace NativeListModule { class HybridNativeListSpec_cxx; }
 
+// Forward declaration of `NativeListKeyboardDismissMode` to properly resolve imports.
+namespace margelo::nitro::nativelist { enum class NativeListKeyboardDismissMode; }
+// Forward declaration of `NativeListKeyboardShouldPersistTaps` to properly resolve imports.
+namespace margelo::nitro::nativelist { enum class NativeListKeyboardShouldPersistTaps; }
 // Forward declaration of `NativeListScrollAlignment` to properly resolve imports.
 namespace margelo::nitro::nativelist { enum class NativeListScrollAlignment; }
 
 #include <string>
+#include "NativeListKeyboardDismissMode.hpp"
+#include "NativeListKeyboardShouldPersistTaps.hpp"
 #include <functional>
 #include <optional>
 #include "NativeListScrollAlignment.hpp"
@@ -72,6 +78,20 @@ namespace margelo::nitro::nativelist {
     }
     inline void setSnapshotJson(const std::string& snapshotJson) noexcept override {
       _swiftPart.setSnapshotJson(snapshotJson);
+    }
+    inline NativeListKeyboardDismissMode getKeyboardDismissMode() noexcept override {
+      auto __result = _swiftPart.getKeyboardDismissMode();
+      return static_cast<NativeListKeyboardDismissMode>(__result);
+    }
+    inline void setKeyboardDismissMode(NativeListKeyboardDismissMode keyboardDismissMode) noexcept override {
+      _swiftPart.setKeyboardDismissMode(static_cast<int>(keyboardDismissMode));
+    }
+    inline NativeListKeyboardShouldPersistTaps getKeyboardShouldPersistTaps() noexcept override {
+      auto __result = _swiftPart.getKeyboardShouldPersistTaps();
+      return static_cast<NativeListKeyboardShouldPersistTaps>(__result);
+    }
+    inline void setKeyboardShouldPersistTaps(NativeListKeyboardShouldPersistTaps keyboardShouldPersistTaps) noexcept override {
+      _swiftPart.setKeyboardShouldPersistTaps(static_cast<int>(keyboardShouldPersistTaps));
     }
     inline std::optional<std::function<void(const std::string& /* payloadJson */)>> getOnRowAction() noexcept override {
       auto __result = _swiftPart.getOnRowAction();

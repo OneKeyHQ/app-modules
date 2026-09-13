@@ -32,6 +32,8 @@ import {
 export type { NativeListProps, NativeListRef } from './NativeList.types';
 export type {
   ActionAnchorState,
+  NativeListKeyboardDismissMode,
+  NativeListKeyboardShouldPersistTaps,
   ScrollAlignment,
   ScrollPositionOptions,
   ScrollToEndParams,
@@ -81,6 +83,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     {
       snapshot,
       webVirtualizationEnabled = true,
+      keyboardDismissMode: _keyboardDismissMode,
+      keyboardShouldPersistTaps: _keyboardShouldPersistTaps,
       onRowAction,
       onActionAnchorInvalidated,
       onSelectionDelta,

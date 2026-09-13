@@ -104,6 +104,18 @@ using namespace margelo::nitro::nativelist::views;
           : !newViewProps.snapshotJson.hasSameValue(oldViewProps->snapshotJson)) {
       swiftPart.setSnapshotJson(newViewProps.snapshotJson.get());
     }
+    // keyboardDismissMode: enum
+    if (oldViewProps == nullptr
+          ? newViewProps.keyboardDismissMode.isProvided()
+          : !newViewProps.keyboardDismissMode.hasSameValue(oldViewProps->keyboardDismissMode)) {
+      swiftPart.setKeyboardDismissMode(static_cast<int>(newViewProps.keyboardDismissMode.get()));
+    }
+    // keyboardShouldPersistTaps: enum
+    if (oldViewProps == nullptr
+          ? newViewProps.keyboardShouldPersistTaps.isProvided()
+          : !newViewProps.keyboardShouldPersistTaps.hasSameValue(oldViewProps->keyboardShouldPersistTaps)) {
+      swiftPart.setKeyboardShouldPersistTaps(static_cast<int>(newViewProps.keyboardShouldPersistTaps.get()));
+    }
     // onRowAction: optional
     if (oldViewProps == nullptr
           ? newViewProps.onRowAction.isProvided()

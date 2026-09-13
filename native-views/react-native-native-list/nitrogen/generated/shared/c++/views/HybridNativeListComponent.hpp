@@ -18,6 +18,8 @@
 #include <string>
 
 #include <string>
+#include "NativeListKeyboardDismissMode.hpp"
+#include "NativeListKeyboardShouldPersistTaps.hpp"
 #include <functional>
 #include <optional>
 #include <memory>
@@ -44,6 +46,8 @@ namespace margelo::nitro::nativelist::views {
 
   public:
     nitro::ReactProp<std::string> snapshotJson;
+    nitro::ReactProp<NativeListKeyboardDismissMode> keyboardDismissMode;
+    nitro::ReactProp<NativeListKeyboardShouldPersistTaps> keyboardShouldPersistTaps;
     nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>> onRowAction;
     nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>> onActionAnchorInvalidated;
     nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>> onSelectionDelta;
@@ -55,6 +59,8 @@ namespace margelo::nitro::nativelist::views {
     [[nodiscard]]
     bool hasSameProps(const HybridNativeListProps& other) const noexcept {
       return snapshotJson.hasSameValue(other.snapshotJson) &&
+             keyboardDismissMode.hasSameValue(other.keyboardDismissMode) &&
+             keyboardShouldPersistTaps.hasSameValue(other.keyboardShouldPersistTaps) &&
              onRowAction.hasSameValue(other.onRowAction) &&
              onActionAnchorInvalidated.hasSameValue(other.onActionAnchorInvalidated) &&
              onSelectionDelta.hasSameValue(other.onSelectionDelta) &&
@@ -67,6 +73,8 @@ namespace margelo::nitro::nativelist::views {
     [[nodiscard]]
     bool hasAnyProvidedProps() const noexcept {
       return snapshotJson.isProvided() ||
+             keyboardDismissMode.isProvided() ||
+             keyboardShouldPersistTaps.isProvided() ||
              onRowAction.isProvided() ||
              onActionAnchorInvalidated.isProvided() ||
              onSelectionDelta.isProvided() ||
