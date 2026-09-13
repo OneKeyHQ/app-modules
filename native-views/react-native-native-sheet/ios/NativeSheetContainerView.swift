@@ -299,7 +299,8 @@ private final class NativeSheetViewController: UIViewController,
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
     guard let container = presentationController?.containerView else { return false }
     let point = touch.location(in: container)
-    return !view.frame.contains(point)
+    let sheetFrame = view.convert(view.bounds, to: container)
+    return !sheetFrame.contains(point)
   }
 
   @objc private func handleBackdropTap(_ recognizer: UITapGestureRecognizer) {
