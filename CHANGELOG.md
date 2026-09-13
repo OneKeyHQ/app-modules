@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.124] - 2026-09-13
+
+### Features
+- **native-sheet**: Add the initial cross-platform native sheet package.
+- **pager-view**: Add explicit non-virtualized page scrollers and stabilize retained or replaced page scroll ownership.
+
+### Bug Fixes
+- **image**: Draw rounded native image borders above image content on iOS and Android.
+- **native-list**: Center section indexes against the application window with RTL parity, preserve iOS account row feedback, and use the active background for Desktop/Web drag sources and reorder previews.
+- **pager-view (Android)**: Restore the exact page scroller padding before a page is removed.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.124.
+
 ## [3.0.122] - 2026-09-12
 
 ### Bug Fixes
