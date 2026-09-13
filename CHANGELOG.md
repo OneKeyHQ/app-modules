@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### Chores
 - Bump all 40 publishable packages to 3.0.127.
+- Publish workspaces with four concurrent jobs while preserving dependency order.
 
 ## [3.0.126] - 2026-09-13
 
