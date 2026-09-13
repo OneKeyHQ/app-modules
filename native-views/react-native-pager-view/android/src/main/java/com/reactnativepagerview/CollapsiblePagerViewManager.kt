@@ -43,7 +43,6 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     )
     host.pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
       override fun onPageScrolled(position: Int, offset: Float, offsetPixels: Int) {
-        host.updateNativeTabProgress(position, offset)
         dispatch(reactContext, host, PageScrollEvent(host.id, position, offset))
       }
 

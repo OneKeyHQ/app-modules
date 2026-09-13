@@ -1954,6 +1954,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   UIScrollView *candidate = [self verticalScrollViewForPageAtIndex:_currentIndex];
   if (candidate == nil) {
+    [self detachScrollObserver];
+    [self restoreSharedHeadersToContainer];
     [self scheduleScrollObserverRetryForCurrentPage];
     return;
   }
