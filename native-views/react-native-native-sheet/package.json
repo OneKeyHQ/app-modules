@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-native-sheet",
-  "version": "3.0.125",
+  "version": "3.0.126",
   "description": "Native bottom sheet host for arbitrary React Native content",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",

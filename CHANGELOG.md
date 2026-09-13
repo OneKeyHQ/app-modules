@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.126] - 2026-09-13
+
+### Bug Fixes
+- **image**: Render logical start/end borders in rounded image overlays for LTR and RTL layouts.
+- **native-list**: Exclude non-draggable wallet-group children from reorder badges and drag initiation, and keep the iOS section index below later native presentations.
+- **native-sheet**: Apply the configured dim amount to the iOS presentation backdrop.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.126.
+
 ## [3.0.125] - 2026-09-13
 
 ### Bug Fixes
