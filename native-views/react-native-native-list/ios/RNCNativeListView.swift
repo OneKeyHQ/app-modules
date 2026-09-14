@@ -1146,7 +1146,7 @@ final class NativeListView: UIView {
       attachSectionIndexToList()
       return
     }
-    attachSectionIndex(to: hostView)
+    attachSectionIndex(to: hostView, centeredIn: window)
   }
 
   private var sectionIndexHostView: UIView? {
@@ -1184,7 +1184,7 @@ final class NativeListView: UIView {
     NSLayoutConstraint.activate(sectionIndexLayoutConstraints)
   }
 
-  private func attachSectionIndex(to hostView: UIView) {
+  private func attachSectionIndex(to hostView: UIView, centeredIn window: UIWindow) {
     let railHeight = sectionIndexView.preferredHeight(constrainedTo: hostView.bounds.height)
     if sectionIndexView.superview === hostView {
       sectionIndexHostHeightConstraint?.constant = railHeight
@@ -1197,7 +1197,7 @@ final class NativeListView: UIView {
     sectionIndexHostHeightConstraint = heightConstraint
     sectionIndexLayoutConstraints = [
       sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
-      sectionIndexView.centerYAnchor.constraint(equalTo: hostView.centerYAnchor),
+      sectionIndexView.centerYAnchor.constraint(equalTo: window.centerYAnchor),
       sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
       heightConstraint,
     ]

@@ -38,18 +38,22 @@ test('iOS line heights preserve configured label alignment for network avatar fa
   );
 });
 
-test('window-centered native indexes use controller-owned interactive hosts', () => {
+test('window-centered native indexes use controller-owned hosts in window coordinates', () => {
   const ios = fs.readFileSync(path.join(packageRoot, 'ios/RNCNativeListView.swift'), 'utf8');
   const android = fs.readFileSync(path.join(packageRoot, 'android/src/main/java/com/onekey/nativelist/NativeListView.kt'), 'utf8');
   assert.match(ios, /if let viewController = current as\? UIViewController/);
   assert.match(ios, /hostView\.addSubview\(sectionIndexView\)/);
-  assert.match(ios, /sectionIndexView\.centerYAnchor\.constraint\(equalTo: hostView\.centerYAnchor\)/);
+  assert.match(ios, /attachSectionIndex\(to: hostView, centeredIn: window\)/);
+  assert.match(ios, /sectionIndexView\.centerYAnchor\.constraint\(equalTo: window\.centerYAnchor\)/);
   assert.match(ios, /sectionIndexView\.preferredHeight\(constrainedTo: hostView\.bounds\.height\)/);
   assert.match(android, /windowHost\.addView\(sectionIndexView/);
+  assert.match(android, /ViewTreeObserver\.OnPreDrawListener \{\s*updateSectionIndexAttachment\(\)/);
+  assert.match(android, /getLocationOnScreen\(sectionIndexLocationOnScreen\)/);
+  assert.match(android, /sectionIndexView\.translationX = \(targetRailLeft - restingRailLeft\)\.toFloat\(\)/);
+  assert.match(android, /!sectionIndexView\.hasSameWindowLayout\(layoutParams\)/);
   assert.match(android, /sectionIndexView\.preferredHeight\(windowHost\.height\)/);
   assert.match(android, /layoutDirection == LAYOUT_DIRECTION_RTL/);
   assert.match(android, /Gravity\.TOP or Gravity\.END/);
-  assert.match(android, /marginEnd = endMargin/);
   assert.match(android, /topMargin = \(windowHost\.height - railHeight\) \/ 2/);
 });
 

@@ -21,6 +21,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.InputMethodManager
@@ -232,6 +233,11 @@ class NativeListView(
   private var sectionIndexHapticsEnabled = true
   private val sectionIndexLocationOnScreen = IntArray(2)
   private val sectionIndexHostLocationOnScreen = IntArray(2)
+  private var sectionIndexObservedTree: ViewTreeObserver? = null
+  private val sectionIndexPreDrawListener = ViewTreeObserver.OnPreDrawListener {
+    updateSectionIndexAttachment()
+    true
+  }
   private var pendingScrollRequest: ScrollRequest? = null
   private val actionAnchorInstanceId = UUID.randomUUID().toString()
   private var actionAnchorCounter = 0L
@@ -436,6 +442,7 @@ class NativeListView(
   }
 
   override fun onDetachedFromWindow() {
+    stopSectionIndexAttachmentTracking()
     attachSectionIndexToList()
     updateRefreshIndicatorOffset(0)
     super.onDetachedFromWindow()
@@ -1062,6 +1069,7 @@ class NativeListView(
 
   fun dispose() {
     if (disposed) return
+    stopSectionIndexAttachmentTracking()
     attachSectionIndexToList()
     stopReorderRelayoutLoop()
     invalidateActionAnchor("destroy")
@@ -1202,16 +1210,21 @@ class NativeListView(
 
   private fun updateSectionIndexAttachment() {
     val windowHost = rootView as? FrameLayout
-    val useWindowHost = config?.sectionIndexCenteredInWindow == true &&
+    val canUseWindowHost = config?.sectionIndexCenteredInWindow == true &&
       sectionIndexEntries.isNotEmpty() &&
       isAttachedToWindow &&
-      isShown &&
       width > 0 &&
       height > 0 &&
       windowHost != null &&
       windowHost.width > 0 &&
       windowHost.height > 0 &&
       windowHost !== contentContainer
+    if (canUseWindowHost) {
+      startSectionIndexAttachmentTracking()
+    } else {
+      stopSectionIndexAttachmentTracking()
+    }
+    val useWindowHost = canUseWindowHost && isShown
     if (useWindowHost) {
       attachSectionIndexToWindow(windowHost)
     } else {
@@ -1219,9 +1232,25 @@ class NativeListView(
     }
   }
 
+  private fun startSectionIndexAttachmentTracking() {
+    val observer = viewTreeObserver
+    if (sectionIndexObservedTree === observer) return
+    sectionIndexObservedTree?.takeIf(ViewTreeObserver::isAlive)
+      ?.removeOnPreDrawListener(sectionIndexPreDrawListener)
+    observer.addOnPreDrawListener(sectionIndexPreDrawListener)
+    sectionIndexObservedTree = observer
+  }
+
+  private fun stopSectionIndexAttachmentTracking() {
+    sectionIndexObservedTree?.takeIf(ViewTreeObserver::isAlive)
+      ?.removeOnPreDrawListener(sectionIndexPreDrawListener)
+    sectionIndexObservedTree = null
+  }
+
   private fun attachSectionIndexToList() {
     if (sectionIndexView.parent === contentContainer) return
     (sectionIndexView.parent as? ViewGroup)?.removeView(sectionIndexView)
+    sectionIndexView.translationX = 0f
     contentContainer.addView(
       sectionIndexView,
       FrameLayout.LayoutParams(
@@ -1238,27 +1267,40 @@ class NativeListView(
     windowHost.getLocationOnScreen(sectionIndexHostLocationOnScreen)
     getLocationOnScreen(sectionIndexLocationOnScreen)
     val listLeft = sectionIndexLocationOnScreen[0] - sectionIndexHostLocationOnScreen[0]
-    val maximumEndMargin = (windowHost.width - railWidth).coerceAtLeast(0)
-    val endMargin = if (layoutDirection == LAYOUT_DIRECTION_RTL) {
+    val targetRailLeft = if (layoutDirection == LAYOUT_DIRECTION_RTL) {
       listLeft
     } else {
-      windowHost.width - listLeft - width
-    }.coerceIn(0, maximumEndMargin)
+      listLeft + width - railWidth
+    }
+    val restingRailLeft = if (layoutDirection == LAYOUT_DIRECTION_RTL) {
+      0
+    } else {
+      windowHost.width - railWidth
+    }
     val layoutParams = FrameLayout.LayoutParams(
       railWidth,
       railHeight,
       Gravity.TOP or Gravity.END,
     ).apply {
-      marginEnd = endMargin
       topMargin = (windowHost.height - railHeight) / 2
     }
     if (sectionIndexView.parent !== windowHost) {
       (sectionIndexView.parent as? ViewGroup)?.removeView(sectionIndexView)
       windowHost.addView(sectionIndexView, layoutParams)
       sectionIndexView.bringToFront()
-    } else {
+    } else if (!sectionIndexView.hasSameWindowLayout(layoutParams)) {
       sectionIndexView.layoutParams = layoutParams
     }
+    sectionIndexView.translationX = (targetRailLeft - restingRailLeft).toFloat()
+  }
+
+  private fun View.hasSameWindowLayout(next: FrameLayout.LayoutParams): Boolean {
+    val current = layoutParams as? FrameLayout.LayoutParams ?: return false
+    return current.width == next.width &&
+      current.height == next.height &&
+      current.gravity == next.gravity &&
+      current.marginEnd == next.marginEnd &&
+      current.topMargin == next.topMargin
   }
 
   private fun sectionIndexPreviewBackground(): ShapeDrawable {
