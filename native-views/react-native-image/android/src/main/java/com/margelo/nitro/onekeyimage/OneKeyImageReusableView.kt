@@ -68,6 +68,12 @@ class OneKeyImageReusableView(context: ThemedReactContext) : FrameLayout(context
     image.afterUpdate()
   }
 
+  fun isDisplaying(
+    sourceUri: String?,
+    sourceHeadersJson: String?,
+    recyclingKey: String,
+  ): Boolean = image.isDisplaying(sourceUri, sourceHeadersJson, recyclingKey)
+
   fun prepareForReuse() {
     image.prepareForRecycle()
   }

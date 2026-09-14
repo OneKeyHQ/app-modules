@@ -876,6 +876,7 @@ internal class NativeListRowView(
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
     useSourceScale: Boolean = false,
   ) {
+    val reusesImageIdentity = boundKey == item.key && (tag as? NativeListItem)?.type == item.type
     val shouldRestorePressed = touchPressed && boundKey == item.key
     cancelMarketLongPress()
     marketLongPressFired = false
@@ -887,10 +888,13 @@ internal class NativeListRowView(
     tag = item
     selectorUsesSourceScale = item.type == "market" || item.type == "system" && item.json.optString("presentation") == "market" && item.json.optString("variant") == "retry" || item.usesSelectorSourceScale || useSourceScale
     reorderActive = false
-    leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
-    secondaryImage.prepareForReuse()
-    mediaNetworkImage.prepareForReuse()
-    metricVisualImages.forEach(OneKeyImageReusableView::prepareForReuse)
+    if (!reusesImageIdentity) {
+      selectorImages.forEach(OneKeyImageReusableView::prepareForReuse)
+      leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
+      secondaryImage.prepareForReuse()
+      mediaNetworkImage.prepareForReuse()
+      metricVisualImages.forEach(OneKeyImageReusableView::prepareForReuse)
+    }
     resetViews()
 
     val primary = color(theme, "primaryText", "#000000DF")
@@ -1014,6 +1018,7 @@ internal class NativeListRowView(
     restoreRestingBackground()
     invalidateCurrentBinding()
     boundKey = null
+    selectorImages.forEach(OneKeyImageReusableView::prepareForReuse)
     leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
     secondaryImage.prepareForReuse()
     mediaNetworkImage.prepareForReuse()
@@ -1185,11 +1190,10 @@ internal class NativeListRowView(
     marketOriginalPaintFlags.clear()
     selectorLineHeights.clear()
     selectorFontSizes.clear()
+    selectorImages.forEach { (it.parent as? ViewGroup)?.removeView(it) }
     // OneKey patch: selector-only views cannot survive a recycled binding.
     selectorViews.forEach { (it.parent as? ViewGroup)?.removeView(it) }
     selectorViews.clear()
-    selectorImages.forEach(OneKeyImageReusableView::dispose)
-    selectorImages.clear()
     selectorHeight = null
     marketBadgeViews.forEachIndexed { index, badge ->
       (badge.parent as? ViewGroup)?.removeView(badge)
@@ -3386,9 +3390,8 @@ internal class NativeListRowView(
         }
         val image = overlay.optJSONObject("image")
         val view = when {
-          image != null -> OneKeyImageReusableView(reactContext).also {
+          image != null -> (selectorImages.getOrNull(index) ?: OneKeyImageReusableView(reactContext).also(selectorImages::add)).also {
             bindImage(image, it, boundKey ?: "", 10 + index, "generic", hideUntilLoaded = true)
-            selectorImages.add(it)
           }
           overlay.optString("text").isNotEmpty() -> TextView(context).apply {
             text = overlay.optString("text")
@@ -4141,7 +4144,11 @@ internal class NativeListRowView(
     val expectedEpoch = bindingEpoch
     val retryLimit = source.optInt("retryTimes", 0).coerceAtLeast(0)
     val uri = source.optString("uri").trim().takeIf(String::isNotEmpty)
-    if (hideUntilLoaded) imageView.visibility = INVISIBLE
+    val sourceHeadersJson = source.optJSONObject("headers")?.toString()
+    val recyclingKey = if (retryAttempt == 0) "$token:$slot" else "$token:$slot:retry:$retryAttempt"
+    if (hideUntilLoaded && !imageView.isDisplaying(uri, sourceHeadersJson, recyclingKey)) {
+      imageView.visibility = INVISIBLE
+    }
     val handleLoad: (() -> Unit)? = if (hideUntilLoaded) ({
       if (bindingEpoch == expectedEpoch) {
         imageView.visibility = VISIBLE
@@ -4156,12 +4163,12 @@ internal class NativeListRowView(
     }) else onError
     imageView.configure(
       sourceUri = uri,
-      sourceHeadersJson = source.optJSONObject("headers")?.toString(),
+      sourceHeadersJson = sourceHeadersJson,
       variant = variant,
       contentFit = source.optString("contentFit", "cover"),
       cachePolicy = source.optString("cachePolicy", "memory-disk"),
       autoplay = source.optBoolean("autoplay", false),
-      recyclingKey = if (retryAttempt == 0) "$token:$slot" else "$token:$slot:retry:$retryAttempt",
+      recyclingKey = recyclingKey,
       optimizeTos = retryAttempt == 0 && source.optBoolean("optimizeTos", true),
       overscan = source.optDouble("overscan", 1.1),
       loadingStrategy = source.optString("loadingStrategy", "none"),

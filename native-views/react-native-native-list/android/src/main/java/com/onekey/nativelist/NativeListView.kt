@@ -247,6 +247,7 @@ class NativeListView(
   private var lastLayoutDirection = layoutDirection
   private var lastMarketPaginationAnchorLogAtMs = 0L
   private var disposed = false
+  private var resourcesDisposed = false
 
   init {
     orientation = VERTICAL
@@ -445,6 +446,7 @@ class NativeListView(
     stopSectionIndexAttachmentTracking()
     attachSectionIndexToList()
     updateRefreshIndicatorOffset(0)
+    if (disposed) disposeResources()
     super.onDetachedFromWindow()
   }
 
@@ -1069,12 +1071,18 @@ class NativeListView(
 
   fun dispose() {
     if (disposed) return
+    disposed = true
+    if (!isAttachedToWindow) disposeResources()
+  }
+
+  private fun disposeResources() {
+    if (resourcesDisposed) return
+    resourcesDisposed = true
     stopSectionIndexAttachmentTracking()
     attachSectionIndexToList()
     stopReorderRelayoutLoop()
     invalidateActionAnchor("destroy")
     actionAnchor = null
-    disposed = true
     pendingScrollRequest = null
     visibleEventScheduled = false
     reorderTouchHandler?.removeCallbacksAndMessages(null)
