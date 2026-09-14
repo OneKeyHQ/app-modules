@@ -381,9 +381,6 @@ private final class NativeSheetViewController: UIViewController,
     sheet.prefersGrabberVisible = showHandleValue
     sheet.preferredCornerRadius = cornerRadiusValue
     sheet.prefersScrollingExpandsWhenScrolledToEdge = false
-    if #available(iOS 26.0, *) {
-      sheet.prefersPageSizing = true
-    }
     sheet.prefersEdgeAttachedInCompactHeight = true
     sheet.widthFollowsPreferredContentSizeWhenEdgeAttached = false
     presentationController?.delegate = self
@@ -482,6 +479,11 @@ private final class NativeSheetViewController: UIViewController,
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     removePresentationShadow()
+    if #available(iOS 26.0, *) {
+      DispatchQueue.main.async { [weak self] in
+        self?.removePresentationShadow()
+      }
+    }
     host.layoutPresentedContent(in: view.bounds)
   }
 
@@ -545,13 +547,28 @@ private final class NativeSheetViewController: UIViewController,
     CATransaction.setDisableActions(true)
     if #available(iOS 26.0, *),
        NSStringFromClass(type(of: shadowView)).contains("UIDropShadowView") {
-      shadowView.transform = .identity
+      compensateForPresentationScale(in: shadowView)
     }
     shadowView.layer.shadowOpacity = 0
     shadowView.layer.shadowRadius = 0
     shadowView.layer.shadowColor = UIColor.clear.cgColor
     shadowView.layer.shadowPath = nil
     CATransaction.commit()
+  }
+
+  @available(iOS 26.0, *)
+  private func compensateForPresentationScale(in shadowView: UIView) {
+    guard var surfaceView = view else { return }
+    while let parent = surfaceView.superview, parent !== shadowView {
+      surfaceView = parent
+    }
+    guard surfaceView.superview === shadowView else { return }
+    let transform = shadowView.transform
+    guard abs(transform.a) > 0.001, abs(transform.d) > 0.001 else { return }
+    surfaceView.transform = CGAffineTransform(
+      scaleX: 1 / transform.a,
+      y: 1 / transform.d
+    )
   }
 
   private func startSuppressingPresentationShadow() {

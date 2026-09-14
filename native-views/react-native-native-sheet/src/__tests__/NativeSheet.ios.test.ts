@@ -69,11 +69,13 @@ describe('NativeSheet iOS dimming', () => {
       /if #available\(iOS 26\.0, \*\) \{\s+backgroundView\.frame = rootView\.bounds/
     );
     expect(source).toMatch(
-      /if #available\(iOS 26\.0, \*\) \{\s+sheet\.prefersPageSizing = true/
-    );
-    expect(source).toMatch(
       /private func stageContent\(\) \{\s+if #available\(iOS 26\.0, \*\) \{[\s\S]*?\} else \{\s+moveContent\(to: self\)/
     );
+    expect(source).toContain(
+      'private func compensateForPresentationScale(in shadowView: UIView)'
+    );
+    expect(source).toContain('scaleX: 1 / transform.a');
+    expect(source).toContain('y: 1 / transform.d');
   });
 
   it('removes only the UIKit presentation wrapper shadow', () => {
