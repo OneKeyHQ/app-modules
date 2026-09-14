@@ -93,8 +93,13 @@ final class NativeListView: UIView {
     target: self,
     action: #selector(keyboardTapRecognized(_:))
   )
+  private lazy var keyboardDragRecognizer = UIPanGestureRecognizer(
+    target: self,
+    action: #selector(keyboardDragRecognized(_:))
+  )
   // OneKey patch: claim only vertical drags so held rows and ancestor pagers stay responsive.
   private lazy var listBodyGestureGuard = UIPanGestureRecognizer(target: nil, action: nil)
+  private var keyboardDismissMode: NativeListKeyboardDismissMode = .none
   private var keyboardShouldPersistTaps: NativeListKeyboardShouldPersistTaps = .never
   private var interactiveReorderSource: (key: String, index: Int)?
   private weak var interactiveReorderCell: NativeListCell?
@@ -131,6 +136,13 @@ final class NativeListView: UIView {
     keyboardTapRecognizer.cancelsTouchesInView = true
     keyboardTapRecognizer.delegate = self
     addGestureRecognizer(keyboardTapRecognizer)
+    keyboardDragRecognizer.cancelsTouchesInView = false
+    keyboardDragRecognizer.delegate = self
+    keyboardDragRecognizer.isEnabled = false
+    if #available(iOS 13.4, *) {
+      keyboardDragRecognizer.allowedScrollTypesMask = .all
+    }
+    collectionView.addGestureRecognizer(keyboardDragRecognizer)
     // OneKey patch: keep list-body drags from being claimed by an ancestor modal sheet.
     listBodyGestureGuard.cancelsTouchesInView = false
     listBodyGestureGuard.isEnabled = false
@@ -237,6 +249,8 @@ final class NativeListView: UIView {
   }
 
   func setKeyboardDismissMode(_ mode: NativeListKeyboardDismissMode) {
+    keyboardDismissMode = mode
+    keyboardDragRecognizer.isEnabled = mode == .onDrag
     switch mode {
     case .none:
       collectionView.keyboardDismissMode = .none
@@ -253,6 +267,11 @@ final class NativeListView: UIView {
 
   @objc private func keyboardTapRecognized(_ gesture: UITapGestureRecognizer) {
     guard gesture.state == .ended else { return }
+    window?.endEditing(true)
+  }
+
+  @objc private func keyboardDragRecognized(_ gesture: UIPanGestureRecognizer) {
+    guard gesture.state == .began, keyboardDismissMode == .onDrag else { return }
     window?.endEditing(true)
   }
 
@@ -1934,6 +1953,9 @@ final class NativeListView: UIView {
   }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer === keyboardDragRecognizer {
+      return keyboardDismissMode == .onDrag && focusedTextInput(in: window) != nil
+    }
     if gestureRecognizer === reorderLongPress || gestureRecognizer === marketLongPress {
       let point = gestureRecognizer.location(in: collectionView)
       guard let indexPath = collectionView.indexPathForItem(at: point),
@@ -1953,6 +1975,9 @@ final class NativeListView: UIView {
 
 extension NativeListView: UIGestureRecognizerDelegate {
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    if gestureRecognizer === keyboardDragRecognizer {
+      return keyboardDismissMode == .onDrag && focusedTextInput(in: window) != nil
+    }
     if gestureRecognizer === keyboardTapRecognizer {
       guard focusedTextInput(in: window) != nil else { return false }
       switch keyboardShouldPersistTaps {
@@ -1977,6 +2002,14 @@ extension NativeListView: UIGestureRecognizerDelegate {
     _ gestureRecognizer: UIGestureRecognizer,
     shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
   ) -> Bool {
+    if gestureRecognizer === keyboardDragRecognizer {
+      return otherGestureRecognizer === collectionView.panGestureRecognizer ||
+        otherGestureRecognizer === listBodyGestureGuard
+    }
+    if otherGestureRecognizer === keyboardDragRecognizer {
+      return gestureRecognizer === collectionView.panGestureRecognizer ||
+        gestureRecognizer === listBodyGestureGuard
+    }
     if gestureRecognizer === keyboardTapRecognizer ||
        otherGestureRecognizer === keyboardTapRecognizer {
       return false
