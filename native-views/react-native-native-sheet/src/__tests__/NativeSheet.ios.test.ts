@@ -61,7 +61,19 @@ describe('NativeSheet iOS dimming', () => {
     expect(source).toContain(
       'min(max(self?.targetHeight ?? 1, 1), context.maximumDetentValue)'
     );
-    expect(source).toContain('view.clipsToBounds = true');
+    expect(source).toContain('rootView.clipsToBounds = true');
+  });
+
+  it('gates the new presentation behavior to iOS 26', () => {
+    expect(source).toMatch(
+      /if #available\(iOS 26\.0, \*\) \{\s+backgroundView\.frame = rootView\.bounds/
+    );
+    expect(source).toMatch(
+      /if #available\(iOS 26\.0, \*\) \{\s+sheet\.prefersPageSizing = true/
+    );
+    expect(source).toMatch(
+      /private func stageContent\(\) \{\s+if #available\(iOS 26\.0, \*\) \{[\s\S]*?\} else \{\s+moveContent\(to: self\)/
+    );
   });
 
   it('removes only the UIKit presentation wrapper shadow', () => {

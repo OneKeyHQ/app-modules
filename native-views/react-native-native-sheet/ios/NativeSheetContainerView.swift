@@ -304,6 +304,7 @@ private final class NativeSheetViewController: UIViewController,
   private let showHandleValue: Bool
   private let dismissOnBackdropPressValue: Bool
   private let dimAmountValue: CGFloat
+  private let backgroundView = UIView()
   private var backdropTap: UITapGestureRecognizer?
   private var dimmingView: UIView?
   private var heightAnimator: UIViewPropertyAnimator?
@@ -340,10 +341,18 @@ private final class NativeSheetViewController: UIViewController,
   }
 
   override func loadView() {
-    view = UIView()
-    view.backgroundColor = backgroundColorValue
-    view.clipsToBounds = true
-    host.attachTouchHandler(to: view)
+    let rootView = UIView()
+    rootView.backgroundColor = backgroundColorValue
+    rootView.clipsToBounds = true
+    if #available(iOS 26.0, *) {
+      backgroundView.frame = rootView.bounds
+      backgroundView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      backgroundView.backgroundColor = backgroundColorValue
+      backgroundView.isUserInteractionEnabled = false
+      rootView.addSubview(backgroundView)
+    }
+    view = rootView
+    host.attachTouchHandler(to: rootView)
   }
 
   deinit {
@@ -372,6 +381,9 @@ private final class NativeSheetViewController: UIViewController,
     sheet.prefersGrabberVisible = showHandleValue
     sheet.preferredCornerRadius = cornerRadiusValue
     sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+    if #available(iOS 26.0, *) {
+      sheet.prefersPageSizing = true
+    }
     sheet.prefersEdgeAttachedInCompactHeight = true
     sheet.widthFollowsPreferredContentSizeWhenEdgeAttached = false
     presentationController?.delegate = self
@@ -531,6 +543,10 @@ private final class NativeSheetViewController: UIViewController,
   private func clearShadow(on shadowView: UIView) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
+    if #available(iOS 26.0, *),
+       NSStringFromClass(type(of: shadowView)).contains("UIDropShadowView") {
+      shadowView.transform = .identity
+    }
     shadowView.layer.shadowOpacity = 0
     shadowView.layer.shadowRadius = 0
     shadowView.layer.shadowColor = UIColor.clear.cgColor
@@ -676,7 +692,7 @@ private final class NativeSheetContentWrapperView: UIView {
     if let controller = presentedController {
       moveContent(to: controller.view)
     } else {
-      moveContent(to: self)
+      stageContent()
     }
   }
 
@@ -753,7 +769,7 @@ private final class NativeSheetContentWrapperView: UIView {
   fileprivate func finishDismiss(reason: String) {
     if let child = contentChild {
       child.autoresizingMask = []
-      moveContent(to: self)
+      stageContent()
     }
     let hadController = presentedController != nil
     presentedController = nil
@@ -775,6 +791,16 @@ private final class NativeSheetContentWrapperView: UIView {
       parent.addSubview(contentWrapperView)
     }
     contentWrapperView.frame = parent.bounds
+  }
+
+  private func stageContent() {
+    if #available(iOS 26.0, *) {
+      contentWrapperView.removeFromSuperview()
+      contentWrapperView.frame = bounds
+      contentWrapperView.layoutIfNeeded()
+    } else {
+      moveContent(to: self)
+    }
   }
 
   fileprivate func layoutPresentedContent(in bounds: CGRect) {
