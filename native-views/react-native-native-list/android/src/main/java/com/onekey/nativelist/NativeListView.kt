@@ -385,8 +385,7 @@ class NativeListView(
     val item = adapter.itemAt(position) ?: return false
     val clickable = clickableDescendantAt(child, event.rawX.toInt(), event.rawY.toInt())
     val accessoryHandlesTap = clickable != null && clickable !== child
-    return accessoryHandlesTap ||
-      (!item.json.optBoolean("disabled", false) && !item.json.optBoolean("pressDisabled", false))
+    return accessoryHandlesTap || item.isRowPressEnabled
   }
 
   private fun clickableDescendantAt(view: View, rawX: Int, rawY: Int): View? {
@@ -1365,6 +1364,7 @@ class NativeListView(
 
   private fun handleRowPress(item: NativeListItem, origin: NativeListActionOrigin) {
     val current = config ?: return
+    if (!item.isRowPressEnabled) return
     if (current.rowPressToggles && item.isSelectable && current.selectionMode != "none") {
       updateSelection(NativeSelectionTarget("row", item.key), item.key)
     } else {

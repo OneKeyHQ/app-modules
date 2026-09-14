@@ -21,6 +21,11 @@ internal data class NativeListItem(
   val isSelectable: Boolean
     get() = !json.optBoolean("disabled", false) && type in SELECTABLE_TYPES
 
+  val isRowPressEnabled: Boolean
+    get() = !json.optBoolean("disabled", false) &&
+      !json.optBoolean("pressDisabled", false) &&
+      (type != "system" || json.optString("variant") == "retry")
+
   val isReorderable: Boolean
     get() {
       if (json.optBoolean("disabled", false)) return false

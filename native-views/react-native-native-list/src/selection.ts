@@ -35,6 +35,14 @@ export function isSelectableRow(row: RowModel): boolean {
   );
 }
 
+export function isRowPressEnabled(row: RowModel): boolean {
+  return (
+    !row.disabled &&
+    !row.pressDisabled &&
+    (row.type !== 'system' || row.variant === 'retry')
+  );
+}
+
 function deltaBetween(
   before: ReadonlySet<string>,
   after: ReadonlySet<string>,

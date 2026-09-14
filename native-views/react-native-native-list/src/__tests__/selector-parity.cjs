@@ -483,12 +483,44 @@ test('subtitle supports a leading address separator and distinct caution tone', 
 });
 test('pressDisabled gates row clicks while preserving plus accessory actions', () => {
   const page = mount([identity('x', { presentation: 'accountSelector', height: 60, pressDisabled: true, trailing: [{ kind: 'icon', name: 'PlusSmallOutline', actionKey: 'create', testID: 'account-manager-plus-button-icon-btn' }] })]);
+  const row = page.document.querySelector('[data-native-list-row-key="x"]');
+  assert.equal(row.dataset.nativeListRowPressEnabled, 'false');
+  assert.equal(row.hasAttribute('tabindex'), false);
   page.document.querySelector('.ok-native-list-title').click();
   assert.equal(page.actions.length, 0);
   page.document.querySelector('[data-native-list-action="create"]').click();
   assert.equal(page.actions[0].actionKey, 'create');
   assert.ok(page.document.querySelector('[data-testid="account-manager-plus-button-icon-btn"]'));
   page.close();
+});
+test('passive system rows do not hover or emit row actions while retry remains interactive', () => {
+  const variants = ['spacer', 'end', 'loading', 'noMatch', 'warning'];
+  const rows = variants.map((variant) => ({
+    type: 'system',
+    variant,
+    key: variant,
+    height: 24,
+    ...(variant === 'warning' ? { title: 'Warning', message: 'Warning message' } : {}),
+  }));
+  rows.push({ type: 'system', variant: 'retry', key: 'retry', message: 'Retry', actionKey: 'retry' });
+  const page = mount(rows);
+  try {
+    for (const variant of variants) {
+      const row = page.document.querySelector(`[data-native-list-row-key="${variant}"]`);
+      assert.equal(row.dataset.nativeListRowPressEnabled, 'false');
+      assert.equal(row.hasAttribute('tabindex'), false);
+      row.click();
+    }
+    assert.equal(page.actions.length, 0);
+
+    const retry = page.document.querySelector('[data-native-list-row-key="retry"]');
+    assert.equal(retry.dataset.nativeListRowPressEnabled, 'true');
+    assert.equal(retry.tabIndex, 0);
+    retry.click();
+    assert.equal(page.actions[0].actionKey, 'retry');
+  } finally {
+    page.close();
+  }
 });
 test('section help is independent of checkbox selection and anchored to the title', () => {
   const rows = [{ type: 'sectionHeader', key: 'h', sectionKey: 'a', title: 'Assets', titleActionKey: 'help', titleActionOnHover: true, checkbox: { kind: 'checkbox', state: 'unchecked', target: { scope: 'section', sectionKey: 'a' } } }, identity('x', { sectionKey: 'a' })];
@@ -689,7 +721,7 @@ test('selector text enables tabular digits while generic rows retain their exist
 test('touch-active rows keep the pressed background rule', () => {
   const page = mount([identity('network', { presentation: 'networkSelector' })]);
   const css = page.document.querySelector('style').textContent;
-  assert.match(css, /native-list-disabled="true"\]\):active>\.ok-native-list-row\{background:var\(--nl-pressed\)\}/);
+  assert.match(css, /native-list-row-press-enabled="true"\]:active>\.ok-native-list-row\{background:var\(--nl-pressed\)\}/);
   page.close();
 });
 test('web reorder sources use pressed backgrounds while selected previews stay selected', () => {

@@ -14,6 +14,12 @@ struct NativeListItem {
     return !disabled && Self.selectableTypes.contains(type)
   }
 
+  var isRowPressEnabled: Bool {
+    !data.bool("disabled") &&
+      !data.bool("pressDisabled") &&
+      (type != "system" || data.string("variant") == "retry")
+  }
+
   var isReorderable: Bool {
     guard !data.bool("disabled") else { return false }
     if type == "rail", data.bool("draggable") { return true }

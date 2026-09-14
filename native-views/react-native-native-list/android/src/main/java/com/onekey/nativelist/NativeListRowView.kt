@@ -622,7 +622,7 @@ internal class NativeListRowView(
 
     setOnTouchListener { _, event ->
       when (event.actionMasked) {
-        MotionEvent.ACTION_DOWN -> if (isEnabled) {
+        MotionEvent.ACTION_DOWN -> if ((tag as? NativeListItem)?.isRowPressEnabled == true) {
           touchPressed = true
           marketLongPressFired = false
           val item = tag as? NativeListItem
@@ -686,7 +686,7 @@ internal class NativeListRowView(
           return@let
         }
         // OneKey patch: allow create-address accessories when whole-row press is gated.
-        if (!item.json.optBoolean("pressDisabled", false)) onRowPress?.invoke(item, actionOrigin(view, "row"))
+        if (item.isRowPressEnabled) onRowPress?.invoke(item, actionOrigin(view, "row"))
       }
     }
     setWillNotDraw(false)
@@ -1407,7 +1407,7 @@ internal class NativeListRowView(
           return@let
         }
         // OneKey patch: allow create-address accessories when whole-row press is gated.
-        if (!item.json.optBoolean("pressDisabled", false)) onRowPress?.invoke(item, actionOrigin(view, "row"))
+        if (item.isRowPressEnabled) onRowPress?.invoke(item, actionOrigin(view, "row"))
       }
     }
   }

@@ -27,6 +27,7 @@ import type {
 import {
   checkboxStateForKeys,
   checkboxStateForSection,
+  isRowPressEnabled,
   isSelectableRow,
   reduceSelection,
   selectionStateFromSnapshot,
@@ -882,14 +883,15 @@ export const WEB_LIST_CSS = `
 .ok-native-list-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
 .ok-native-list-content{position:relative;min-width:100%;min-height:100%}
 .ok-native-list-item{position:absolute;box-sizing:border-box;contain:layout paint style;outline:none}
-.ok-native-list-row{width:100%;height:100%;box-sizing:border-box;display:flex;align-items:center;gap:12px;overflow:hidden;background:var(--nl-row);color:var(--nl-primary);cursor:pointer;user-select:none;-webkit-user-select:none}
+.ok-native-list-row{width:100%;height:100%;box-sizing:border-box;display:flex;align-items:center;gap:12px;overflow:hidden;background:var(--nl-row);color:var(--nl-primary);cursor:default;user-select:none;-webkit-user-select:none}
 .ok-native-list-item[data-table-alternate="true"]>.ok-native-list-row{background:var(--nl-bg)}
 .ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
 .ok-native-list-item[data-native-list-disabled="true"]>.ok-native-list-row{opacity:.5;cursor:default}
-.ok-native-list-item:not([data-native-list-disabled="true"]):hover>.ok-native-list-row{background:var(--nl-pressed)}
-.ok-native-list-item:not([data-native-list-disabled="true"]):active>.ok-native-list-row{background:var(--nl-pressed)}
-.ok-native-list-item:not([data-native-list-disabled="true"]):not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
-.ok-native-list-item:not([data-native-list-disabled="true"]):not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]>.ok-native-list-row{cursor:pointer}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:hover>.ok-native-list-row{background:var(--nl-pressed)}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-row{background:var(--nl-pressed)}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-selected="true"]:hover>.ok-native-list-wallet-row{background:var(--nl-selected)}
 .ok-native-list-wallet-group{display:flex;width:100%;height:100%;box-sizing:border-box;flex-direction:column;gap:12px;overflow:hidden;border:1px solid var(--nl-separator);border-radius:12px;background:var(--nl-subdued);user-select:none;-webkit-user-select:none}
 .ok-native-list-wallet-member{flex:0 0 68px;height:68px;overflow:hidden;border-radius:12px;background:transparent;cursor:pointer}
@@ -897,7 +899,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-wallet-member[data-native-list-selected="true"]>.ok-native-list-wallet-row{background:var(--nl-selected)}
 .ok-native-list-wallet-member:not([data-native-list-selected="true"]):hover>.ok-native-list-wallet-row{background:var(--nl-strong)}
 .ok-native-list-wallet-member:not([data-native-list-selected="true"]):active>.ok-native-list-wallet-row{background:var(--nl-pressed)}
-.ok-native-list-item:focus-visible>.ok-native-list-row{outline:2px solid var(--nl-accent);outline-offset:-2px}
+.ok-native-list-item[data-native-list-row-press-enabled="true"]:focus-visible>.ok-native-list-row{outline:2px solid var(--nl-accent);outline-offset:-2px}
 .ok-native-list-item[data-native-list-reorderable="true"]>.ok-native-list-row{cursor:grab}
 .ok-native-list-root[data-native-list-dragging="true"] .ok-native-list-row{cursor:grabbing}
 .ok-native-list-item[data-native-list-animate-reorder="true"]{transition:transform ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction},height ${WEB_REORDER_ANIMATION.outOfWayDurationMs}ms ${WEB_REORDER_ANIMATION.outOfWayTimingFunction}}
@@ -4175,6 +4177,7 @@ export class NativeListWebEngine {
     setData(element, 'nativeListBindingEpoch', bindingEpoch);
     setData(element, 'nativeListRowIndex', index);
     setData(element, 'nativeListDisabled', Boolean(row.disabled));
+    setData(element, 'nativeListRowPressEnabled', isRowPressEnabled(row));
     setData(element, 'testid', row.testID);
     // OneKey patch: deprecation dims a row without disabling its actions.
     element.style.opacity = String(row.opacity ?? 1);
@@ -4198,7 +4201,7 @@ export class NativeListWebEngine {
       'aria-label',
       row.accessibilityLabel ?? this.rowLabel(row)
     );
-    if (!row.disabled && !(row.type === 'system' && row.variant === 'spacer')) {
+    if (isRowPressEnabled(row)) {
       element.tabIndex = 0;
     } else {
       element.removeAttribute('tabindex');
@@ -4932,7 +4935,7 @@ export class NativeListWebEngine {
   ) {
     // OneKey patch: missing-address rows keep their create-address accessory interactive.
     // if (row.disabled) return;
-    if (row.disabled || row.pressDisabled) return;
+    if (!isRowPressEnabled(row)) return;
     if (
       this.snapshot.selection?.rowPressToggles &&
       this.snapshot.selection.mode !== 'none' &&
