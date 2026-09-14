@@ -301,6 +301,7 @@ private final class NativeSheetViewController: UIViewController,
   private var backdropTap: UITapGestureRecognizer?
   private var dimmingView: UIView?
   private var heightAnimator: UIViewPropertyAnimator?
+  private var shadowSuppressionDisplayLink: CADisplayLink?
 
   fileprivate var resolvedDimAmount: CGFloat {
     dimAmountValue
@@ -340,6 +341,7 @@ private final class NativeSheetViewController: UIViewController,
   }
 
   deinit {
+    shadowSuppressionDisplayLink?.invalidate()
     dimmingView?.removeFromSuperview()
     if isViewLoaded {
       host.detachTouchHandler(from: view)
@@ -418,16 +420,18 @@ private final class NativeSheetViewController: UIViewController,
     super.viewWillAppear(animated)
     installDimmingView()
     installBackdropTap()
+    startSuppressingPresentationShadow()
     setDimmingVisible(true, animated: animated)
   }
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
-    removePresentationShadow()
+    stopSuppressingPresentationShadow()
   }
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
+    stopSuppressingPresentationShadow()
     setDimmingVisible(false, animated: animated)
   }
 
@@ -496,14 +500,65 @@ private final class NativeSheetViewController: UIViewController,
     guard let container = presentationController?.containerView else { return }
     var ancestor = view.superview
     while let current = ancestor, current !== container {
-      if current.layer.shadowOpacity > 0 {
-        current.layer.shadowOpacity = 0
-        current.layer.shadowRadius = 0
-        current.layer.shadowColor = UIColor.clear.cgColor
-        current.layer.shadowPath = nil
-      }
+      clearShadow(on: current)
       ancestor = current.superview
     }
+    removeDropShadowViews(in: container)
+  }
+
+  private func removeDropShadowViews(in candidate: UIView) {
+    guard candidate !== view else { return }
+    let className = NSStringFromClass(type(of: candidate))
+    guard className.hasPrefix("UI") || className.hasPrefix("_UI") else { return }
+    if className.contains("DropShadowView") {
+      clearShadow(on: candidate)
+    }
+    for subview in candidate.subviews {
+      removeDropShadowViews(in: subview)
+    }
+  }
+
+  private func clearShadow(on shadowView: UIView) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    shadowView.layer.shadowOpacity = 0
+    shadowView.layer.shadowRadius = 0
+    shadowView.layer.shadowColor = UIColor.clear.cgColor
+    shadowView.layer.shadowPath = nil
+    CATransaction.commit()
+  }
+
+  private func startSuppressingPresentationShadow() {
+    shadowSuppressionDisplayLink?.invalidate()
+    removePresentationShadow()
+    let displayLink = CADisplayLink(
+      target: self,
+      selector: #selector(suppressPresentationShadowForCurrentFrame)
+    )
+    displayLink.add(to: .main, forMode: .common)
+    shadowSuppressionDisplayLink = displayLink
+
+    if let transitionCoordinator {
+      transitionCoordinator.animate(alongsideTransition: nil) { [weak self] _ in
+        self?.stopSuppressingPresentationShadow()
+      }
+    } else {
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + NativeSheetQuickAnimation.duration
+      ) { [weak self] in
+        self?.stopSuppressingPresentationShadow()
+      }
+    }
+  }
+
+  private func stopSuppressingPresentationShadow() {
+    shadowSuppressionDisplayLink?.invalidate()
+    shadowSuppressionDisplayLink = nil
+    removePresentationShadow()
+  }
+
+  @objc private func suppressPresentationShadowForCurrentFrame() {
+    removePresentationShadow()
   }
 
   private func setDimmingVisible(_ visible: Bool, animated: Bool) {

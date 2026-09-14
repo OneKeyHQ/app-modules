@@ -16,7 +16,9 @@ describe('NativeSheet iOS dimming', () => {
     expect(source).toContain('transitionCoordinator.animate');
     expect(source).toContain('UIViewControllerTransitioningDelegate');
     expect(source).toContain('NativeSheetTransitionAnimator(presenting: true)');
-    expect(source).toContain('NativeSheetTransitionAnimator(presenting: false)');
+    expect(source).toContain(
+      'NativeSheetTransitionAnimator(presenting: false)'
+    );
     expect(source).toContain('mass: 0.1');
     expect(source).toContain('stiffness: 100');
     expect(source).toContain('damping: 20');
@@ -37,7 +39,9 @@ describe('NativeSheet iOS dimming', () => {
       'func updateHeight(_ height: CGFloat, animated: Bool)'
     );
     expect(source).toContain('sheet.invalidateDetents()');
-    expect(source).toContain('let animator = NativeSheetQuickAnimation.makeAnimator()');
+    expect(source).toContain(
+      'let animator = NativeSheetQuickAnimation.makeAnimator()'
+    );
     expect(source).toContain('animator.addAnimations(changes)');
     expect(source).toContain('heightAnimator.finishAnimation(at: .current)');
     expect(source).toContain(
@@ -54,8 +58,23 @@ describe('NativeSheet iOS dimming', () => {
     expect(source).toContain(
       'while let current = ancestor, current !== container'
     );
-    expect(source).toContain('current.layer.shadowOpacity = 0');
-    expect(source).toContain('current.layer.shadowColor = UIColor.clear.cgColor');
+    expect(source).toContain('removeDropShadowViews(in: container)');
+    expect(source).toContain('className.contains("DropShadowView")');
+    expect(source).toContain('guard candidate !== view else { return }');
+    expect(source).toContain(
+      'guard className.hasPrefix("UI") || className.hasPrefix("_UI") else { return }'
+    );
+    expect(source).toContain('shadowView.layer.shadowOpacity = 0');
+    expect(source).toContain(
+      'shadowView.layer.shadowColor = UIColor.clear.cgColor'
+    );
+    expect(source).toContain('CATransaction.setDisableActions(true)');
+    expect(source).toContain(
+      'private var shadowSuppressionDisplayLink: CADisplayLink?'
+    );
+    expect(source).toContain('startSuppressingPresentationShadow()');
+    expect(source).toContain('displayLink.add(to: .main, forMode: .common)');
+    expect(source).toContain('stopSuppressingPresentationShadow()');
     expect(source).toContain('override func viewDidAppear');
     expect(source).toContain('override func viewDidLayoutSubviews');
   });
