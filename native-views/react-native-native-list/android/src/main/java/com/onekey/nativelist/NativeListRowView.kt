@@ -987,7 +987,7 @@ internal class NativeListRowView(
     }
     // Keep passive rows out of accessibility and keyboard focus while allowing
     // their independently bound accessory controls to remain interactive.
-    val wholeRowPressEnabled = item.type != "walletGroup" && item.isRowPressEnabled
+    val wholeRowPressEnabled = item.isWholeRowInteractive
     isClickable = wholeRowPressEnabled
     isFocusable = wholeRowPressEnabled
     applySize(item)

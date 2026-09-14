@@ -3,6 +3,25 @@ package com.margelo.nitro.nativelist
 import org.json.JSONArray
 import org.json.JSONObject
 
+internal fun isNativeListRowPressEnabled(
+  type: String,
+  variant: String,
+  disabled: Boolean,
+  pressDisabled: Boolean,
+): Boolean = !disabled && !pressDisabled && (type != "system" || variant == "retry")
+
+internal fun isNativeListWholeRowInteractive(
+  type: String,
+  variant: String,
+  disabled: Boolean,
+  pressDisabled: Boolean,
+): Boolean = type != "walletGroup" && isNativeListRowPressEnabled(
+  type = type,
+  variant = variant,
+  disabled = disabled,
+  pressDisabled = pressDisabled,
+)
+
 internal data class NativeListItem(
   val key: String,
   val type: String,
@@ -22,9 +41,20 @@ internal data class NativeListItem(
     get() = !json.optBoolean("disabled", false) && type in SELECTABLE_TYPES
 
   val isRowPressEnabled: Boolean
-    get() = !json.optBoolean("disabled", false) &&
-      !json.optBoolean("pressDisabled", false) &&
-      (type != "system" || json.optString("variant") == "retry")
+    get() = isNativeListRowPressEnabled(
+      type = type,
+      variant = json.optString("variant"),
+      disabled = json.optBoolean("disabled", false),
+      pressDisabled = json.optBoolean("pressDisabled", false),
+    )
+
+  val isWholeRowInteractive: Boolean
+    get() = isNativeListWholeRowInteractive(
+      type = type,
+      variant = json.optString("variant"),
+      disabled = json.optBoolean("disabled", false),
+      pressDisabled = json.optBoolean("pressDisabled", false),
+    )
 
   val isReorderable: Boolean
     get() {

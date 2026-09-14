@@ -1,4 +1,5 @@
 #import "RNCCollapsiblePagerViewComponentView.h"
+#import "RNCCollapsiblePagerReleasedStatePolicy.h"
 
 #import <react/renderer/components/pagerview/ComponentDescriptors.h>
 #import <react/renderer/components/pagerview/EventEmitters.h>
@@ -1879,12 +1880,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     NSArray<NSString *> *nextPageKeys = [parsed isKindOfClass:NSArray.class] ? parsed : @[];
     // Stable keys keep their released identity across reorders. A missing key
     // represents an unmounted React page and must not be reused by a later page.
-    NSSet<NSString *> *validPageKeys = [NSSet setWithArray:nextPageKeys];
-    for (NSString *pageKey in _releasedPageScrollStates.allKeys) {
-      if (![validPageKeys containsObject:pageKey]) {
-        [_releasedPageScrollStates removeObjectForKey:pageKey];
-      }
-    }
+    RNCPruneReleasedPageStates(_releasedPageScrollStates, nextPageKeys);
     _pageKeys = nextPageKeys;
   }
   if (_needsPropsReapply || oldViewProps.retainedPages != newViewProps.retainedPages) {

@@ -103,4 +103,5 @@ dependencies {
   implementation project(":react-native-nitro-modules")
   implementation project(":onekeyfe_react-native-native-logger")
   implementation project(":onekeyfe_react-native-image")
+  testImplementation "junit:junit:4.13.2"
 }
