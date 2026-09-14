@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.132] - 2026-09-14
+
+### Bug Fixes
+- **auto-size-input (Android)**: Fit the `contentAutoWidth` font against the prefix/suffix labels measured at every candidate size, so a growing font next to a visible side label no longer hands the input a slot narrower than its text (leading digits scrolled out of view after the send-amount fiat toggle). Re-run the fit when `prefixMarginRight`/`suffixMarginLeft` change, because `requestLayout()` alone is swallowed by the React parent.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.132.
+
 ## [3.0.131] - 2026-09-14
 
 ### Bug Fixes
