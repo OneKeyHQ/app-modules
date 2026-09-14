@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.133] - 2026-09-15
+
+### Bug Fixes
+- **auto-size-input (iOS)**: Honor the configured keyboard appearance for single-line and multiline inputs.
+- **native-list**: Keep passive system rows non-interactive across iOS, Android, and Web; enforce `pressDisabled` for press-in and long-press gestures; center iOS network fallback text; restore Android/Web account-menu feedback; and defer Android section-index reparenting until detach completes.
+- **native-sheet**: Stabilize iOS 26 detent backgrounds, presentation sizing, staged content, scale, and shadow suppression, and restore Android text-input focus and keyboard visibility while presenting a sheet.
+- **tab-view (iOS)**: Clear recycled child autoresizing masks so reused Fabric views cannot expand to an unrelated parent.
+
+### Chores
+- Remove brittle native source-text assertion test suites.
+- Bump all 40 publishable packages to 3.0.133.
+
 ## [3.0.132] - 2026-09-14
 
 ### Bug Fixes
