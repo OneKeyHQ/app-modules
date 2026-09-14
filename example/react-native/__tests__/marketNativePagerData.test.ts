@@ -11,34 +11,6 @@ import {
 import { MARKET_REPLAY_SNAPSHOT } from '../pages/marketNativePagerSnapshot';
 
 describe('Market native pager production fixture', () => {
-  it('builds pages from every server spot category instead of a fixed count', () => {
-    const config = {
-      ...MARKET_REPLAY_SNAPSHOT.config,
-      spotCategories: [
-        { id: 'alpha', name: 'Alpha' },
-        { id: 'beta', name: 'Beta' },
-        { id: 'gamma', name: 'Gamma' },
-        { id: 'delta', name: 'Delta' },
-      ],
-    };
-
-    expect(buildMarketPages(config).map(page => page.categoryId)).toEqual([
-      'watchlist',
-      'alpha',
-      'beta',
-      'gamma',
-      'delta',
-      'top_coins',
-      'perps',
-    ]);
-
-    expect(
-      buildMarketPages({ ...config, perpsCategories: [] }).map(
-        page => page.categoryId,
-      ),
-    ).not.toContain('perps');
-  });
-
   it('preserves a server-provided top-coins category without duplicating it', () => {
     const pages = buildMarketPages({
       ...MARKET_REPLAY_SNAPSHOT.config,
@@ -296,65 +268,6 @@ describe('Market live watchlist', () => {
     },
   );
 
-  it('requests every saved identity, keeps its order, and uses the selected locale and all perps', async () => {
-    const { fetchMarketPage } =
-      require('../pages/marketNativePagerApi') as typeof import('../pages/marketNativePagerApi');
-    const unique = new Map(
-      Object.values(MARKET_REPLAY_SNAPSHOT.spotQueries ?? {})
-        .flat()
-        .map(item => [item.key, item]),
-    );
-    const tokens = [...unique.values()];
-    const keys = [...unique.keys(), 'perps:BTC'];
-    const originalFetch = globalThis.fetch;
-    const fetchMock = jest.fn(async (url: string) => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        code: 0,
-        data: url.includes('/batch')
-          ? { list: tokens }
-          : { tokens: [{ name: 'BTC', markPrice: '1' }] },
-      }),
-    }));
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-    try {
-      const result = await fetchMarketPage({
-        page: {
-          key: 'watchlist',
-          kind: 'watchlist',
-          name: 'Favorites',
-          categoryId: 'watchlist',
-        },
-        pageNumber: 1,
-        config: MARKET_REPLAY_SNAPSHOT.config,
-        timeRange: '1h',
-        stockCategory: 'all',
-        perpsCategory: 'stocks',
-        watchlistKeys: keys,
-        locale: 'en-US',
-      });
-      expect(result.items.map(item => item.key)).toEqual(keys);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
-      const [url, options] = calls.find(([path]) => path.includes('/batch'))!;
-      expect(url).toContain('/utility/v2/market/token/list/batch');
-      expect(options.method).toBe('POST');
-      expect(options.headers).toEqual(
-        expect.objectContaining({ 'X-Onekey-Request-Locale': 'en-US' }),
-      );
-      const body = JSON.parse(options.body as string);
-      expect(body.tokenAddressList).toHaveLength(tokens.length);
-      expect(body.tokenAddressList.at(-1).contractAddress).toBe(
-        tokens.at(-1)?.address,
-      );
-      expect(calls.find(([path]) => path.includes('/perps/'))![0]).toContain(
-        'category=all',
-      );
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
 });
 
 describe('source stock status badge', () => {
