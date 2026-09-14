@@ -231,6 +231,13 @@ class NativeListView(
   private var sectionIndexScrubbing = false
   private var sectionIndexProgrammaticScroll = false
   private var sectionIndexHapticsEnabled = true
+  private val sectionIndexAttachmentHandler = Handler(Looper.getMainLooper())
+  private var sectionIndexListAttachmentScheduled = false
+  private val sectionIndexListAttachmentRunnable = Runnable {
+    sectionIndexListAttachmentScheduled = false
+    attachSectionIndexToList()
+    if (!disposed && isAttachedToWindow) updateSectionIndexAttachment()
+  }
   private val sectionIndexLocationOnScreen = IntArray(2)
   private val sectionIndexHostLocationOnScreen = IntArray(2)
   private var sectionIndexObservedTree: ViewTreeObserver? = null
@@ -443,7 +450,7 @@ class NativeListView(
 
   override fun onDetachedFromWindow() {
     stopSectionIndexAttachmentTracking()
-    attachSectionIndexToList()
+    scheduleSectionIndexAttachmentToList()
     updateRefreshIndicatorOffset(0)
     if (disposed) disposeResources()
     super.onDetachedFromWindow()
@@ -1078,7 +1085,7 @@ class NativeListView(
     if (resourcesDisposed) return
     resourcesDisposed = true
     stopSectionIndexAttachmentTracking()
-    attachSectionIndexToList()
+    scheduleSectionIndexAttachmentToList()
     stopReorderRelayoutLoop()
     invalidateActionAnchor("destroy")
     actionAnchor = null
@@ -1252,6 +1259,13 @@ class NativeListView(
     sectionIndexObservedTree?.takeIf(ViewTreeObserver::isAlive)
       ?.removeOnPreDrawListener(sectionIndexPreDrawListener)
     sectionIndexObservedTree = null
+  }
+
+  private fun scheduleSectionIndexAttachmentToList() {
+    if (sectionIndexView.parent === contentContainer) return
+    if (sectionIndexListAttachmentScheduled) return
+    sectionIndexListAttachmentScheduled = true
+    sectionIndexAttachmentHandler.post(sectionIndexListAttachmentRunnable)
   }
 
   private fun attachSectionIndexToList() {

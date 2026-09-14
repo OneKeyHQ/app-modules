@@ -60,6 +60,14 @@ test('window-centered native indexes use controller-owned hosts in window coordi
   assert.match(android, /layoutDirection == LAYOUT_DIRECTION_RTL/);
   assert.match(android, /Gravity\.TOP or Gravity\.END/);
   assert.match(android, /topMargin = \(windowHost\.height - railHeight\) \/ 2/);
+  assert.match(
+    android,
+    /override fun onDetachedFromWindow\(\) \{\s*stopSectionIndexAttachmentTracking\(\)\s*scheduleSectionIndexAttachmentToList\(\)/,
+  );
+  assert.match(
+    android,
+    /private fun scheduleSectionIndexAttachmentToList\(\) \{\s*if \(sectionIndexView\.parent === contentContainer\) return\s*if \(sectionIndexListAttachmentScheduled\) return\s*sectionIndexListAttachmentScheduled = true\s*sectionIndexAttachmentHandler\.post\(sectionIndexListAttachmentRunnable\)\s*\}/,
+  );
 });
 
 test('native Market quote updates clear stale attributed text and preserve open anchors', () => {
