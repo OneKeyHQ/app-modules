@@ -184,10 +184,12 @@ private class CollapsiblePagerHorizontalItemsView(
     }
   }
 
-  private fun selectedBackground(selected: Boolean) = GradientDrawable().apply {
+  private fun selectedBackground(selected: Boolean, height: Int) = GradientDrawable().apply {
     shape = GradientDrawable.RECTANGLE
     setColor(if (selected) selectedBackgroundColor else Color.TRANSPARENT)
-    cornerRadius = dp(10.0).toFloat()
+    // OneKey patch: match the pill shape of the React category filters.
+    // cornerRadius = dp(10.0).toFloat()
+    cornerRadius = height / 2f
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -278,7 +280,7 @@ private class CollapsiblePagerHorizontalItemsView(
       buttons.forEachIndexed { index, button ->
         val selected = index == selectedIndex
         button.setTextColor(if (selected) activeTextColor else inactiveTextColor)
-        button.background = selectedBackground(selected)
+        button.background = selectedBackground(selected, button.height)
         button.isSelected = selected
       }
     }

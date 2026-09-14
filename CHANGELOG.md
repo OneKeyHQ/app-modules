@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.134] - 2026-09-15
+
+### Bug Fixes
+- **pager-view (iOS)**: Release pager-owned scroll observers, shared headers, and insets before Fabric removes or reuses a page list, then recover the correct page identity and offset after relevant mounting transactions to avoid stale view ownership and layer cycles.
+- **pager-view (iOS and Android)**: Render selected native category filters as full-height pills instead of using a fixed corner radius.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.134.
+
 ## [3.0.133] - 2026-09-15
 
 ### Bug Fixes
