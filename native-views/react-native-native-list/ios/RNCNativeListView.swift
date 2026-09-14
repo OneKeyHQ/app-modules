@@ -1332,7 +1332,7 @@ final class NativeListView: UIView {
     guard let indexPath = collectionView.indexPathForItem(at: point),
           let item = config?.items[safe: indexPath.item],
           item.type == "market",
-          !item.data.bool("disabled") else { return }
+          item.isRowPressEnabled else { return }
     let actionKey = item.data.string("longPressActionKey")
     guard !actionKey.isEmpty else { return }
     let origin = (collectionView.cellForItem(at: indexPath) as? NativeListCell)?.rowActionOrigin()
@@ -1968,7 +1968,7 @@ final class NativeListView: UIView {
       if gestureRecognizer === reorderLongPress {
         return config?.reorderable == true && item.isReorderable
       }
-      return item.type == "market" && !item.data.string("longPressActionKey").isEmpty
+      return item.type == "market" && item.isRowPressEnabled && !item.data.string("longPressActionKey").isEmpty
     }
     guard gestureRecognizer === listBodyGestureGuard,
           let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
