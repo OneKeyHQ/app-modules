@@ -124,6 +124,12 @@ describe('NativeSheet Android window behavior', () => {
       'val desiredTop = (restingTop - keyboardOcclusionPx).coerceAtLeast(0)'
     );
     expect(source).toContain('if (isTop && imeAnimationRunning)');
+    expect(source).toContain('pendingImeTarget = child.findFocus()');
+    expect(source).toContain('restorePendingImeFocus(sheetDialog)');
+    expect(source).toContain('decorView.hasWindowFocus()');
+    expect(source).toContain(
+      'inputMethodManager?.showSoftInput(target, InputMethodManager.SHOW_IMPLICIT)'
+    );
     expect(source).toContain(
       'behavior.expandedOffset = restoredTop.coerceAtLeast(0)'
     );
@@ -163,6 +169,11 @@ describe('NativeSheet Android window behavior', () => {
     expect(source).toContain(
       'sheetDialog.behavior.peekHeight = clampedHeightPx + navigationBarExtensionPx'
     );
+    expect(source).toContain(
+      'BottomSheetBehavior.STATE_DRAGGING -> userDrivenSheetSlide = true'
+    );
+    expect(source).toContain('if (userDrivenSheetSlide && slideOffset < 1f)');
+    expect(source).toContain('userDrivenSheetSlide = false');
   });
 
   it('dismisses stacked dialogs sequentially from the top', () => {
