@@ -29,13 +29,18 @@ test('compact native indexes lay out and select retained labels by visible order
   assert.match(android, /val index = visibleIndices\[slot\]/);
 });
 
-test('iOS line heights preserve configured label alignment for network avatar fallbacks', () => {
+test('iOS line heights preserve configured alignment and center network avatar font metrics', () => {
   const ios = fs.readFileSync(path.join(packageRoot, 'ios/NativeListCell.swift'), 'utf8');
   assert.match(ios, /fallbackLabel\.textAlignment = \.center/);
   assert.match(
     ios,
     /paragraphStyle\.maximumLineHeight = lineHeight\s+paragraphStyle\.alignment = label\.textAlignment\s+if currentItem\?\.type == "market"/,
   );
+  assert.match(
+    ios,
+    /let isNetworkFallback =\s+label === fallbackLabel &&\s+currentItem\?\.type == "identity" &&\s+currentItem\?\.data\.string\("presentation"\) == "networkSelector"/,
+  );
+  assert.match(ios, /variant"\) == "warning" \|\| isNetworkFallback \{/);
 });
 
 test('window-centered native indexes use controller-owned hosts in window coordinates', () => {

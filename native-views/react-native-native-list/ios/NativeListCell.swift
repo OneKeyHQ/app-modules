@@ -3819,7 +3819,11 @@ final class NativeListCell: UICollectionViewCell {
       .foregroundColor: label.textColor as Any,
       .paragraphStyle: paragraphStyle,
     ]
-    if currentItem?.type == "market" || currentItem?.type == "system" && currentItem?.data.string("presentation") == "market" && currentItem?.data.string("variant") == "noMatch" || (currentItem?.data["height"] != nil && (["accountSelector", "walletSidebar"].contains(currentItem?.data.string("presentation") ?? "") || currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector")) || currentItem?.type == "system" && currentItem?.data.string("variant") == "warning" {
+    let isNetworkFallback =
+      label === fallbackLabel &&
+      currentItem?.type == "identity" &&
+      currentItem?.data.string("presentation") == "networkSelector"
+    if currentItem?.type == "market" || currentItem?.type == "system" && currentItem?.data.string("presentation") == "market" && currentItem?.data.string("variant") == "noMatch" || (currentItem?.data["height"] != nil && (["accountSelector", "walletSidebar"].contains(currentItem?.data.string("presentation") ?? "") || currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector")) || currentItem?.type == "system" && currentItem?.data.string("variant") == "warning" || isNetworkFallback {
       // OneKey patch: React Native centers font metrics inside explicit line heights.
       let baselineOffset = max(0, (lineHeight - label.font.lineHeight) / 2)
       // OneKey patch: TextKit's 14/20 headings align their baseline to the upper physical pixel.
