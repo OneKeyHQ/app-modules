@@ -358,11 +358,15 @@ private final class NativeSheetViewController: UIViewController,
     super.viewDidLoad()
     host.moveContent(to: view)
     guard let sheet = sheetPresentationController else { return }
-    sheet.detents = [
-      .custom(identifier: detentIdentifier) { [weak self] context in
-        min(max(self?.targetHeight ?? 1, 1), context.maximumDetentValue)
-      },
-    ]
+    let detent = UISheetPresentationController.Detent.custom(
+      identifier: detentIdentifier
+    ) { [weak self] context in
+      min(max(self?.targetHeight ?? 1, 1), context.maximumDetentValue)
+    }
+    if #available(iOS 26.1, *) {
+      detent.backgroundEffect = UIColorEffect(color: backgroundColorValue)
+    }
+    sheet.detents = [detent]
     sheet.selectedDetentIdentifier = detentIdentifier
     sheet.largestUndimmedDetentIdentifier = detentIdentifier
     sheet.prefersGrabberVisible = showHandleValue
