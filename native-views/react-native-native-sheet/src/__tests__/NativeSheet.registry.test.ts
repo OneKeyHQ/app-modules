@@ -102,7 +102,7 @@ describe('NativeSheet imperative registry', () => {
   test('does not mount a new entry while the security provider is blocked', () => {
     const onOpenChange = jest.fn();
     const onDismiss = jest.fn();
-    setNativeSheetRegistryBlocked(true);
+    setNativeSheetRegistryBlocked(Symbol('security-provider'), true);
 
     addNativeSheetRegistryEntry(
       { renderContent: null, onOpenChange, onDismiss },
@@ -112,5 +112,27 @@ describe('NativeSheet imperative registry', () => {
     expect(onOpenChange.mock.calls).toEqual([[true], [false]]);
     expect(onDismiss).toHaveBeenCalledWith('security');
     expect(getNativeSheetRegistrySnapshot()).toEqual([]);
+  });
+
+  test('keeps the registry blocked until every blocking provider is cleared', () => {
+    const outerProvider = Symbol('outer-provider');
+    const innerProvider = Symbol('inner-provider');
+    const onDismiss = jest.fn();
+    setNativeSheetRegistryBlocked(outerProvider, true);
+    setNativeSheetRegistryBlocked(innerProvider, false);
+
+    addNativeSheetRegistryEntry({ renderContent: null, onDismiss }, null);
+    setNativeSheetRegistryBlocked(innerProvider, true);
+    setNativeSheetRegistryBlocked(innerProvider, false);
+    addNativeSheetRegistryEntry({ renderContent: null, onDismiss }, null);
+
+    expect(onDismiss).toHaveBeenCalledTimes(2);
+    expect(onDismiss).toHaveBeenNthCalledWith(1, 'security');
+    expect(onDismiss).toHaveBeenNthCalledWith(2, 'security');
+    expect(getNativeSheetRegistrySnapshot()).toEqual([]);
+
+    setNativeSheetRegistryBlocked(outerProvider, false);
+    addNativeSheetRegistryEntry({ renderContent: null, onDismiss }, null);
+    expect(getNativeSheetRegistrySnapshot()).toHaveLength(1);
   });
 });

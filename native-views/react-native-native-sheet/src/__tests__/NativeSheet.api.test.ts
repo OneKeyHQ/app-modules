@@ -28,6 +28,13 @@ describe('NativeSheet public API', () => {
     expect(source).toContain('style={styles.autoMeasureContent}');
     expect(source).toContain('onLayout={handleContentLayout}');
     expect(source).toContain('flexShrink: 0');
+    expect(source).toMatch(
+      /const handlePresented[\s\S]*onPresentationRequested\?\.\(\);[\s\S]*onPresented\?\.\(event\.nativeEvent\.height\)/
+    );
+    expect(source).toContain(
+      'const effectiveBlocked = parentBlocked || blocked'
+    );
+    expect(source).toContain('value={effectiveBlocked}');
   });
 });
 

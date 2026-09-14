@@ -79,3 +79,14 @@ describe('NativeSheet iOS dimming', () => {
     expect(source).toContain('override func viewDidLayoutSubviews');
   });
 });
+
+describe('NativeSheet iOS podspec', () => {
+  const podspec = fs.readFileSync(
+    path.join(__dirname, '../../NativeSheet.podspec'),
+    'utf8'
+  );
+
+  it('includes the Fabric component header', () => {
+    expect(podspec).toContain('"ios/**/*.h"');
+  });
+});

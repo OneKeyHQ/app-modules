@@ -116,12 +116,15 @@ export function NativeSheetSecurityProvider({
   blocked,
   children,
 }: PropsWithChildren<{ blocked: boolean }>) {
+  const parentBlocked = useContext(NativeSheetSecurityContext);
+  const blockerId = useRef(Symbol('NativeSheetSecurityProvider')).current;
+  const effectiveBlocked = parentBlocked || blocked;
   useEffect(() => {
-    setNativeSheetRegistryBlocked(blocked);
-    return () => setNativeSheetRegistryBlocked(false);
-  }, [blocked]);
+    setNativeSheetRegistryBlocked(blockerId, blocked);
+    return () => setNativeSheetRegistryBlocked(blockerId, false);
+  }, [blocked, blockerId]);
   return (
-    <NativeSheetSecurityContext.Provider value={blocked}>
+    <NativeSheetSecurityContext.Provider value={effectiveBlocked}>
       {children}
     </NativeSheetSecurityContext.Provider>
   );
@@ -231,17 +234,13 @@ function NativeSheetComponent({
     const timer = setTimeout(() => notifyDismiss('security'), 500);
     return () => clearTimeout(timer);
   }, [notifyDismiss, open, securityBlocked]);
-  useEffect(() => {
-    if (open && lockedHeight && !securityBlocked) {
-      onPresentationRequested?.();
-    }
-  }, [lockedHeight, onPresentationRequested, open, securityBlocked]);
   const handlePresented = useCallback(
     (event: NativeSyntheticEvent<NativeSheetPresentedEvent>) => {
+      onPresentationRequested?.();
       onPresented?.(event.nativeEvent.height);
       onAnimationComplete?.({ open: true });
     },
-    [onAnimationComplete, onPresented]
+    [onAnimationComplete, onPresentationRequested, onPresented]
   );
   const handleContentLayout = useCallback(
     (event: LayoutChangeEvent) => {

@@ -19,7 +19,7 @@ let entries: readonly NativeSheetRegistryEntry[] = [];
 const listeners = new Set<RegistryListener>();
 let securityFallbackTimer: ReturnType<typeof setTimeout> | undefined;
 const closeFallbackTimers = new Map<number, ReturnType<typeof setTimeout>>();
-let registryBlocked = false;
+const registryBlockers = new Set<symbol>();
 
 function clearCloseFallbackTimer(id: number) {
   const timer = closeFallbackTimers.get(id);
@@ -48,7 +48,7 @@ export function addNativeSheetRegistryEntry(
 ) {
   const id = nextId;
   nextId += 1;
-  if (registryBlocked) {
+  if (registryBlockers.size > 0) {
     options.onOpenChange?.(true);
     options.onOpenChange?.(false);
     options.onDismiss?.('security');
@@ -181,9 +181,17 @@ export function requestSecurityDismissAllNativeSheets() {
   }, 500);
 }
 
-export function setNativeSheetRegistryBlocked(blocked: boolean) {
-  registryBlocked = blocked;
+export function setNativeSheetRegistryBlocked(
+  blockerId: symbol,
+  blocked: boolean
+) {
+  const wasBlocked = registryBlockers.size > 0;
   if (blocked) {
+    registryBlockers.add(blockerId);
+  } else {
+    registryBlockers.delete(blockerId);
+  }
+  if (!wasBlocked && registryBlockers.size > 0) {
     requestSecurityDismissAllNativeSheets();
   }
 }
@@ -197,6 +205,6 @@ export function resetNativeSheetRegistryForTests() {
   closeFallbackTimers.clear();
   entries = [];
   nextId = 1;
-  registryBlocked = false;
+  registryBlockers.clear();
   listeners.clear();
 }
