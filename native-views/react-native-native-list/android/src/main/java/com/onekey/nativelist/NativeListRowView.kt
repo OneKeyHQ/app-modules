@@ -3040,7 +3040,7 @@ internal class NativeListRowView(
       }
     }
     setOnClickListener {
-      emitAction(item, item.json.optString("actionKey"), null, this, "row")
+      onRowPress?.invoke(item, actionOrigin(this, "row"))
     }
   }
 
@@ -3167,7 +3167,7 @@ internal class NativeListRowView(
     )
     if (variant == "retry") {
       setOnClickListener {
-        emitAction(item, item.json.optString("actionKey"), null, this, "row")
+        onRowPress?.invoke(item, actionOrigin(this, "row"))
       }
       showTrailing(0, "Retry", true, item.json.optString("actionKey"))
       trailingViews[0].textSize = sp(14f)

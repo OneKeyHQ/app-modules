@@ -4980,7 +4980,7 @@ export class NativeListWebEngine {
       '[data-native-list-row-key]'
     );
     const row = this.rowAtElement(rowElement);
-    if (row?.type !== 'market' || row.disabled) return;
+    if (row?.type !== 'market' || !isRowPressEnabled(row)) return;
     this.cancelMarketPointer();
     if (row.pressInActionKey)
       this.emitRowAction(

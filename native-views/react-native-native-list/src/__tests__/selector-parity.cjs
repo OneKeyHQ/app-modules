@@ -498,6 +498,51 @@ test('pressDisabled gates row clicks while preserving plus accessory actions', (
   assert.ok(page.document.querySelector('[data-testid="account-manager-plus-button-icon-btn"]'));
   page.close();
 });
+test('Android action and retry row clicks use the shared press gate', () => {
+  const android = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListRowView.kt'
+    ),
+    'utf8'
+  );
+  assert.match(
+    android,
+    /private fun bindAction\([\s\S]*?setOnClickListener \{\s*onRowPress\?\.invoke\(item, actionOrigin\(this, "row"\)\)\s*\}/
+  );
+  assert.match(
+    android,
+    /private fun bindSystem\([\s\S]*?if \(variant == "retry"\) \{\s*setOnClickListener \{\s*onRowPress\?\.invoke\(item, actionOrigin\(this, "row"\)\)\s*\}/
+  );
+});
+test('pressDisabled Market rows suppress press-in and long-press gestures', () => {
+  const page = mount([{
+    type: 'market',
+    key: 'btc',
+    variant: 'token',
+    leading: { kind: 'token' },
+    title: 'BTC',
+    price: '$64,230.00',
+    change: { text: '+2.40%', tone: 'positive' },
+    pressDisabled: true,
+    pressInActionKey: 'market.prewarm',
+    longPressActionKey: 'market.menu',
+  }]);
+  try {
+    const row = page.document.querySelector('[data-native-list-row-key="btc"]');
+    row.dispatchEvent(new page.view.MouseEvent('pointerdown', {
+      bubbles: true,
+      button: 0,
+      buttons: 1,
+      clientX: 30,
+      clientY: 40,
+    }));
+    assert.equal(page.actions.length, 0);
+    assert.equal(page.engine.marketPointer, undefined);
+  } finally {
+    page.close();
+  }
+});
 test('passive system rows do not hover or emit row actions while retry remains interactive', () => {
   const variants = ['spacer', 'end', 'loading', 'noMatch', 'warning'];
   const rows = variants.map((variant) => ({
