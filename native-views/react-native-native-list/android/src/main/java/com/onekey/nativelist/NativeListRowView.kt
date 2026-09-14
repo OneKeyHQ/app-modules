@@ -16,6 +16,7 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.os.Handler
 import android.os.Looper
 import android.text.Spannable
@@ -1334,6 +1335,8 @@ internal class NativeListRowView(
       it.glyphSizeDp = null
       it.alpha = 1f
       it.isEnabled = true
+      it.background = null
+      it.setPadding(0, 0, 0, 0)
       it.setOnClickListener(null)
     }
     checkbox.visibility = GONE
@@ -3524,14 +3527,16 @@ internal class NativeListRowView(
             put("name", "ChevronRightSmallOutline")
             if (optString("actionKey").isEmpty()) put("actionKey", "press")
           },
+          theme,
         )
         "menu" -> showTrailingMenu(textIndex++, accessory.optString("actionKey"))
         "drag" -> showTrailingIcon(
           textIndex++,
           item,
           JSONObject(accessory.toString()).apply { put("name", "DragOutline") },
+          theme,
         )
-        "icon" -> showTrailingIcon(textIndex++, item, accessory)
+        "icon" -> showTrailingIcon(textIndex++, item, accessory, theme)
         "spinner" -> spinner.visibility = VISIBLE
         "progress" -> showTrailing(textIndex++, "${(accessory.optDouble("value") * 100).toInt()}%", false)
       }
@@ -3758,7 +3763,7 @@ internal class NativeListRowView(
       else -> color(theme, "primaryText", "#000000DF")
     }
 
-  private fun showTrailingIcon(index: Int, item: NativeListItem, data: JSONObject) {
+  private fun showTrailingIcon(index: Int, item: NativeListItem, data: JSONObject, theme: JSONObject?) {
     if (index !in trailingIcons.indices) return
     val icon = trailingIcons[index]
     icon.iconName = data.optString("name")
@@ -3770,17 +3775,20 @@ internal class NativeListRowView(
     if (item.json.optString("presentation") == "accountSelector") {
       icon.glyphSizeDp = 24
       val isSourceMenu = item.json.has("height") && icon.iconName == "DotHorOutline"
-      val size = if (isSourceMenu) 24 else if (item.json.has("height") && icon.iconName == "PlusSmallOutline") 36 else 38
+      val size = if (item.json.has("height") && icon.iconName == "PlusSmallOutline") 36 else 38
       icon.layoutParams = LayoutParams(dp(size), dp(size)).apply {
         gravity = Gravity.CENTER_VERTICAL
-        if (!isSourceMenu) {
-          marginStart = -dp(7)
-          marginEnd = -dp(7)
-        }
+        marginStart = -dp(7)
+        marginEnd = -dp(7)
       }
-      if (isSourceMenu) {
-        // OneKey patch: the native ActionList trigger measures 24dp; Yoga rounds its trailing edge cumulatively.
-        setPadding(paddingLeft, paddingTop, (12 * resources.displayMetrics.density).toInt(), paddingBottom)
+      if (isSourceMenu && data.optString("actionKey").isNotEmpty()) {
+        icon.background = StateListDrawable().apply {
+          addState(
+            intArrayOf(android.R.attr.state_pressed),
+            roundedFill(color(theme, "rowPressedBackground", "#00000017"), 19f),
+          )
+          addState(intArrayOf(), roundedFill(Color.TRANSPARENT, 19f))
+        }
       }
     } else if (icon.iconName == "ChevronRightSmallOutline") {
       icon.glyphSizeDp = null
