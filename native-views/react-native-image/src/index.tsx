@@ -325,6 +325,48 @@ export function OneKeyImage({
       ].some((radius) => typeof radius === 'number' && radius > 0)
   );
   const shouldWrapNative = hasOverlay || hasRoundedCorners;
+  const hasBorderWidth = Boolean(
+    flattenedStyle &&
+      [
+        flattenedStyle.borderWidth,
+        flattenedStyle.borderTopWidth,
+        flattenedStyle.borderRightWidth,
+        flattenedStyle.borderBottomWidth,
+        flattenedStyle.borderLeftWidth,
+        flattenedStyle.borderStartWidth,
+        flattenedStyle.borderEndWidth,
+      ].some((width) => typeof width === 'number' && width > 0)
+  );
+  const borderOverlayStyle =
+    flattenedStyle && hasRoundedCorners && hasBorderWidth
+      ? {
+          borderWidth: flattenedStyle.borderWidth,
+          borderTopWidth: flattenedStyle.borderTopWidth,
+          borderRightWidth: flattenedStyle.borderRightWidth,
+          borderBottomWidth: flattenedStyle.borderBottomWidth,
+          borderLeftWidth: flattenedStyle.borderLeftWidth,
+          borderStartWidth: flattenedStyle.borderStartWidth,
+          borderEndWidth: flattenedStyle.borderEndWidth,
+          borderColor: flattenedStyle.borderColor,
+          borderTopColor: flattenedStyle.borderTopColor,
+          borderRightColor: flattenedStyle.borderRightColor,
+          borderBottomColor: flattenedStyle.borderBottomColor,
+          borderLeftColor: flattenedStyle.borderLeftColor,
+          borderStartColor: flattenedStyle.borderStartColor,
+          borderEndColor: flattenedStyle.borderEndColor,
+          borderStyle: flattenedStyle.borderStyle,
+          borderRadius: flattenedStyle.borderRadius,
+          borderTopLeftRadius: flattenedStyle.borderTopLeftRadius,
+          borderTopRightRadius: flattenedStyle.borderTopRightRadius,
+          borderBottomLeftRadius: flattenedStyle.borderBottomLeftRadius,
+          borderBottomRightRadius: flattenedStyle.borderBottomRightRadius,
+          borderStartStartRadius: flattenedStyle.borderStartStartRadius,
+          borderStartEndRadius: flattenedStyle.borderStartEndRadius,
+          borderEndStartRadius: flattenedStyle.borderEndStartRadius,
+          borderEndEndRadius: flattenedStyle.borderEndEndRadius,
+          zIndex: 1,
+        }
+      : undefined;
 
   const native = createElement(NativeOneKeyImage, {
     ...viewProps,
@@ -350,7 +392,14 @@ export function OneKeyImage({
   if (!shouldWrapNative) return native;
 
   return (
-    <View style={[style, styles.overlayContainer]} collapsable={false}>
+    <View
+      style={[
+        style,
+        styles.overlayContainer,
+        borderOverlayStyle ? styles.borderlessContainer : undefined,
+      ]}
+      collapsable={false}
+    >
       {native}
       {effectiveState === 'loading' && placeholder != null ? (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -361,6 +410,12 @@ export function OneKeyImage({
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           {fallback}
         </View>
+      ) : null}
+      {borderOverlayStyle ? (
+        <View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, borderOverlayStyle]}
+        />
       ) : null}
     </View>
   );
@@ -400,5 +455,14 @@ export const OneKeyImageCache = {
 const styles = StyleSheet.create({
   overlayContainer: {
     overflow: 'hidden',
+  },
+  borderlessContainer: {
+    borderWidth: 0,
+    borderTopWidth: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+    borderLeftWidth: 0,
+    borderStartWidth: 0,
+    borderEndWidth: 0,
   },
 });

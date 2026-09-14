@@ -4,6 +4,86 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.131] - 2026-09-14
+
+### Bug Fixes
+- **image (Android)**: Decode bitmaps at the requested target size without accepting undersized cached resources.
+- **native-sheet**: Include the Fabric header in CocoaPods, finalize queued closes before presentation, and preserve nested security-provider blocking ownership.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.131.
+
+## [3.0.130] - 2026-09-14
+
+### Features
+- **native-list**: Add keyboard dismissal and tap persistence controls for native list interactions.
+- **native-sheet**: Add reusable native presentation support.
+
+### Bug Fixes
+- **image/native-list (Android)**: Preserve valid image drawables across snapshot rebinds and visible page transitions while guarding asynchronous reuse by image identity.
+- **native-list**: Keep item indexes aligned during paging and dismiss the keyboard consistently while dragging on iOS and Android.
+- **native-sheet**: Prevent reused presentation views from corrupting lifecycle state and remove the unwanted presentation shadow.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.130.
+
+## [3.0.129] - 2026-09-13
+
+### Bug Fixes
+- **pager-view (Android)**: Keep the native tab indicator snapped to the selected page instead of letting intermediate scroll progress pull it back after a tab press.
+- **pager-view (iOS)**: Detach stale page scroll observers and restore shared headers while a replacement scroll container is mounting.
+- **native-sheet (iOS)**: Hit-test backdrop taps against the sheet's container-space frame.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.129.
+
+## [3.0.128] - 2026-09-13
+
+### Chores
+- Bump all 40 publishable packages to 3.0.128.
+- Publish NativeList after the four-job concurrent batch to avoid racing with regenerated image type declarations.
+
+## [3.0.127] - 2026-09-13
+
+### Bug Fixes
+- **native-list (iOS)**: Preserve centered UILabel alignment when applying custom line heights to network avatar fallback text.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.127.
+- Publish workspaces with four concurrent jobs, then publish NativeList after its shared build dependency is stable.
+
+## [3.0.126] - 2026-09-13
+
+### Bug Fixes
+- **image**: Render logical start/end borders in rounded image overlays for LTR and RTL layouts.
+- **native-list**: Exclude non-draggable wallet-group children from reorder badges and drag initiation, and keep the iOS section index below later native presentations.
+- **native-sheet**: Apply the configured dim amount to the iOS presentation backdrop.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.126.
+
+## [3.0.125] - 2026-09-13
+
+### Bug Fixes
+- **native-sheet**: Publish the new package through the same CI release command as the other workspaces.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.125 for a complete CI release.
+
+## [3.0.124] - 2026-09-13
+
+### Features
+- **native-sheet**: Add the initial cross-platform native sheet package.
+- **pager-view**: Add explicit non-virtualized page scrollers and stabilize retained or replaced page scroll ownership.
+
+### Bug Fixes
+- **image**: Draw rounded native image borders above image content on iOS and Android.
+- **native-list**: Center section indexes against the application window with RTL parity, preserve iOS account row feedback, and use the active background for Desktop/Web drag sources and reorder previews.
+- **pager-view (Android)**: Restore the exact page scroller padding before a page is removed.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.124.
+
 ## [3.0.122] - 2026-09-12
 
 ### Bug Fixes

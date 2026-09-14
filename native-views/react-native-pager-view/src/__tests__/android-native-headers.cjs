@@ -122,8 +122,25 @@ test('connects Android props, direct press events, gesture bridge, and file logg
   assert.match(manager, /updateNativeTabBarItems\(value\)/);
   assert.match(manager, /updateNativeSubHeader\(value\)/);
   assert.match(manager, /NativeHeaderPressEvent\.TAB_EVENT_NAME/);
-  assert.match(manager, /host\.updateNativeTabProgress\(position, offset\)/);
-  assert.match(host, /beginForwardingToRecycler\(event\)/);
+  assert.doesNotMatch(
+    manager,
+    /onPageScrolled[\s\S]*?host\.updateNativeTabProgress\(position, offset\)/
+  );
+  assert.match(
+    manager,
+    /onPageSelected[\s\S]*?host\.updateNativeTabProgress\(position, 0f\)/
+  );
+  assert.match(host, /beginForwardingToPrimaryScrollable\(event\)/);
+  assert.match(host, /NATIVE_SCROLLER_ID_PREFIX/);
+  assert.match(
+    host,
+    /fun removeReactChild[\s\S]*?findExplicitNativeScrollerInView\(child\) \?: findVerticalScrollableView\(child\)[\s\S]*?adapter\.removePage\(child\)/
+  );
+  const ios = read('ios/RNCCollapsiblePagerViewComponentView.mm');
+  assert.match(
+    ios,
+    /if \(candidate == nil\) \{\s+\[self detachScrollObserver\];\s+\[self restoreSharedHeadersToContainer\];\s+\[self scheduleScrollObserverRetryForCurrentPage\];/
+  );
   assert.match(host, /NativeGestureUtil\.notifyNativeGestureStarted/);
   assert.match(host, /nativeGestureStarted \|\| nestedNativeGestureStarted/);
   assert.match(host, /OneKeyLog\.debug\("CollapsiblePager"/);

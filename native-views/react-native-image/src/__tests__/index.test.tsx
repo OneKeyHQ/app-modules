@@ -310,6 +310,113 @@ describe('OneKeyImage wrapper', () => {
     });
   });
 
+  it.each(['ios', 'android'])(
+    'draws rounded borders as an overlay on %s',
+    async (platform) => {
+      const originalOS = Platform.OS;
+      Object.defineProperty(Platform, 'OS', {
+        configurable: true,
+        value: platform,
+      });
+
+      try {
+        let renderer: ReactTestRenderer.ReactTestRenderer;
+        await act(() => {
+          renderer = ReactTestRenderer.create(
+            <OneKeyImage
+              source={{ uri: 'https://example.com/token.png' }}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                borderTopWidth: 1,
+                borderRightWidth: 1,
+                borderBottomWidth: 1,
+                borderLeftWidth: 1,
+                borderColor: '#ffffff09',
+              }}
+            />
+          );
+        });
+
+        const native = renderer!.root.findByType('NativeOneKeyImage' as never);
+        expect(native.props.style).toBe(StyleSheet.absoluteFill);
+
+        const container = renderer!.root.findByProps({ collapsable: false });
+        expect(StyleSheet.flatten(container.props.style)).toMatchObject({
+          borderRadius: 20,
+          borderTopWidth: 0,
+          borderRightWidth: 0,
+          borderBottomWidth: 0,
+          borderLeftWidth: 0,
+          overflow: 'hidden',
+        });
+
+        const overlay = renderer!.root.findByProps({ pointerEvents: 'none' });
+        expect(StyleSheet.flatten(overlay.props.style)).toMatchObject({
+          position: 'absolute',
+          borderRadius: 20,
+          borderTopWidth: 1,
+          borderRightWidth: 1,
+          borderBottomWidth: 1,
+          borderLeftWidth: 1,
+          borderColor: '#ffffff09',
+        });
+      } finally {
+        Object.defineProperty(Platform, 'OS', {
+          configurable: true,
+          value: originalOS,
+        });
+      }
+    }
+  );
+
+  it.each(['ltr', 'rtl'] as const)(
+    'draws logical rounded borders as an overlay in %s',
+    async (direction) => {
+      let renderer: ReactTestRenderer.ReactTestRenderer;
+      await act(() => {
+        renderer = ReactTestRenderer.create(
+          <OneKeyImage
+            source={{ uri: 'https://example.com/token.png' }}
+            style={{
+              width: 40,
+              height: 40,
+              direction,
+              borderRadius: 20,
+              borderStartWidth: 2,
+              borderEndWidth: 3,
+              borderStartColor: '#111111',
+              borderEndColor: '#222222',
+            }}
+          />
+        );
+      });
+
+      const native = renderer!.root.findByType('NativeOneKeyImage' as never);
+      expect(native.props.style).toBe(StyleSheet.absoluteFill);
+
+      const container = renderer!.root.findByProps({ collapsable: false });
+      expect(StyleSheet.flatten(container.props.style)).toMatchObject({
+        direction,
+        borderRadius: 20,
+        borderStartWidth: 0,
+        borderEndWidth: 0,
+        overflow: 'hidden',
+      });
+
+      const overlay = renderer!.root.findByProps({ pointerEvents: 'none' });
+      expect(StyleSheet.flatten(overlay.props.style)).toMatchObject({
+        position: 'absolute',
+        borderRadius: 20,
+        borderStartWidth: 2,
+        borderEndWidth: 3,
+        borderStartColor: '#111111',
+        borderEndColor: '#222222',
+      });
+    }
+  );
+
   it('uses the documented Android autoplay default', async () => {
     const originalOS = Platform.OS;
     Object.defineProperty(Platform, 'OS', {

@@ -29,6 +29,34 @@ test('compact native indexes lay out and select retained labels by visible order
   assert.match(android, /val index = visibleIndices\[slot\]/);
 });
 
+test('iOS line heights preserve configured label alignment for network avatar fallbacks', () => {
+  const ios = fs.readFileSync(path.join(packageRoot, 'ios/NativeListCell.swift'), 'utf8');
+  assert.match(ios, /fallbackLabel\.textAlignment = \.center/);
+  assert.match(
+    ios,
+    /paragraphStyle\.maximumLineHeight = lineHeight\s+paragraphStyle\.alignment = label\.textAlignment\s+if currentItem\?\.type == "market"/,
+  );
+});
+
+test('window-centered native indexes use controller-owned hosts in window coordinates', () => {
+  const ios = fs.readFileSync(path.join(packageRoot, 'ios/RNCNativeListView.swift'), 'utf8');
+  const android = fs.readFileSync(path.join(packageRoot, 'android/src/main/java/com/onekey/nativelist/NativeListView.kt'), 'utf8');
+  assert.match(ios, /if let viewController = current as\? UIViewController/);
+  assert.match(ios, /hostView\.addSubview\(sectionIndexView\)/);
+  assert.match(ios, /attachSectionIndex\(to: hostView, centeredIn: window\)/);
+  assert.match(ios, /sectionIndexView\.centerYAnchor\.constraint\(equalTo: window\.centerYAnchor\)/);
+  assert.match(ios, /sectionIndexView\.preferredHeight\(constrainedTo: hostView\.bounds\.height\)/);
+  assert.match(android, /windowHost\.addView\(sectionIndexView/);
+  assert.match(android, /ViewTreeObserver\.OnPreDrawListener \{\s*updateSectionIndexAttachment\(\)/);
+  assert.match(android, /getLocationOnScreen\(sectionIndexLocationOnScreen\)/);
+  assert.match(android, /sectionIndexView\.translationX = \(targetRailLeft - restingRailLeft\)\.toFloat\(\)/);
+  assert.match(android, /!sectionIndexView\.hasSameWindowLayout\(layoutParams\)/);
+  assert.match(android, /sectionIndexView\.preferredHeight\(windowHost\.height\)/);
+  assert.match(android, /layoutDirection == LAYOUT_DIRECTION_RTL/);
+  assert.match(android, /Gravity\.TOP or Gravity\.END/);
+  assert.match(android, /topMargin = \(windowHost\.height - railHeight\) \/ 2/);
+});
+
 test('native Market quote updates clear stale attributed text and preserve open anchors', () => {
   const ios = fs.readFileSync(path.join(packageRoot, 'ios/NativeListCell.swift'), 'utf8');
   const android = fs.readFileSync(path.join(packageRoot, 'android/src/main/java/com/onekey/nativelist/NativeListView.kt'), 'utf8');
@@ -194,8 +222,8 @@ test('index jumps highlight the section reached after an exact spacer boundary',
     page.close();
   }
 });
-test('web section index centers in the browser window when requested', () => {
-  const letters = ['A', 'B', 'C', 'D'];
+test('web section index centers in the browser window at the logical RTL end', () => {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
   const page = mount(
     letters.map((letter) => ({
       type: 'sectionHeader',
@@ -221,32 +249,45 @@ test('web section index centers in the browser window when requested', () => {
       configurable: true,
       value: 900,
     });
+    Object.defineProperty(page.view, 'innerWidth', {
+      configurable: true,
+      value: 1000,
+    });
     Object.defineProperty(viewport, 'clientHeight', {
       configurable: true,
-      value: 300,
+      value: 500,
     });
     Object.defineProperty(viewport, 'clientWidth', {
       configurable: true,
       value: 320,
     });
+    frame.style.direction = 'rtl';
     frame.getBoundingClientRect = () => ({
-      x: 0,
-      y: 250,
-      left: 0,
-      top: 250,
-      right: 320,
-      bottom: 550,
+      x: 120,
+      y: 300,
+      left: 120,
+      top: 300,
+      right: 440,
+      bottom: 800,
       width: 320,
-      height: 300,
+      height: 500,
     });
     page.engine.recomputeLayout();
 
+    assert.equal(rail.parentElement, page.document.body);
+    assert.equal(rail.style.direction, 'rtl');
+    assert.equal(rail.style.insetInlineEnd, '120px');
+    assert.equal(rail.style.left, '');
+    assert.equal(rail.style.right, '');
     const buttons = [
       ...rail.querySelectorAll('[data-section-entry-index]'),
     ];
     const firstCenterY = Number.parseFloat(buttons[0].style.top);
     const lastCenterY = Number.parseFloat(buttons.at(-1).style.top);
-    assert.equal(250 + (firstCenterY + lastCenterY) / 2, 450);
+    assert.equal(
+      Number.parseFloat(rail.style.top) + (firstCenterY + lastCenterY) / 2,
+      450,
+    );
   } finally {
     page.close();
   }
@@ -651,6 +692,15 @@ test('touch-active rows keep the pressed background rule', () => {
   assert.match(css, /native-list-disabled="true"\]\):active>\.ok-native-list-row\{background:var\(--nl-pressed\)\}/);
   page.close();
 });
+test('web reorder sources use pressed backgrounds while selected previews stay selected', () => {
+  const page = mount([identity('wallet', { presentation: 'walletSidebar' })]);
+  const css = page.document.querySelector('style').textContent;
+  assert(css.includes('.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-row{overflow:hidden;border-radius:12px;background:var(--nl-pressed)}'));
+  assert(css.includes('.ok-native-list-item[data-native-list-dragging="true"]>.ok-native-list-wallet-group{border-color:transparent;background:var(--nl-pressed)}'));
+  assert(css.includes('.ok-native-list-reorder-preview>.ok-native-list-row{background:var(--nl-pressed);cursor:grabbing}'));
+  assert(css.includes('.ok-native-list-reorder-preview[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}'));
+  page.close();
+});
 test('wallet hover anchors the complete child row without consuming normal selection taps', () => {
   const child = identity('child', { presentation: 'walletSidebar', height: 68, titleActionKey: 'wallet.help', titleActionOnHover: true });
   const group = { type: 'walletGroup', key: 'group', parent: identity('group', { presentation: 'walletSidebar', height: 68 }), children: [child] };
@@ -712,6 +762,100 @@ test('reorderable wallet taps do not capture the pointer until a drag crosses th
   assert.deepEqual(captures, [1]);
   pointer('pointercancel', 50, 60);
   page.close();
+});
+
+test('wallet groups exclude add-hidden actions from drag starts and reorder counts', () => {
+  const parent = identity('hardware', {
+    presentation: 'walletSidebar',
+    height: 68,
+    draggable: true,
+  });
+  const hidden = identity('hidden', {
+    presentation: 'walletSidebar',
+    height: 68,
+    draggable: true,
+  });
+  const addHidden = identity('add-hidden', {
+    presentation: 'walletSidebar',
+    height: 68,
+    draggable: false,
+  });
+  const group = {
+    type: 'walletGroup',
+    key: parent.key,
+    parent,
+    children: [hidden, addHidden],
+    draggable: true,
+  };
+  const page = mount([group], { capabilities: { reorderable: true } });
+  const viewport = page.document.querySelector('.ok-native-list-viewport');
+  const hiddenRow = page.document.querySelector(
+    '[data-native-list-group-member-key="hidden"] .ok-native-list-wallet-row',
+  );
+  const addHiddenRow = page.document.querySelector(
+    '[data-native-list-group-member-key="add-hidden"] .ok-native-list-wallet-row',
+  );
+  const captures = [];
+  viewport.setPointerCapture = id => captures.push(id);
+  const pointer = (target, type, x, y, pointerId) => {
+    const event = new page.view.MouseEvent(type, {
+      bubbles: true,
+      clientX: x,
+      clientY: y,
+    });
+    Object.defineProperties(event, {
+      pointerId: { value: pointerId },
+      pointerType: { value: 'mouse' },
+      isPrimary: { value: true },
+    });
+    target.dispatchEvent(event);
+  };
+
+  pointer(addHiddenRow, 'pointerdown', 30, 40, 1);
+  pointer(addHiddenRow, 'pointermove', 50, 60, 1);
+  assert.deepEqual(captures, []);
+  pointer(addHiddenRow, 'pointerup', 50, 60, 1);
+
+  pointer(hiddenRow, 'pointerdown', 30, 40, 2);
+  pointer(hiddenRow, 'pointermove', 50, 60, 2);
+  assert.deepEqual(captures, [2]);
+  assert.equal(
+    page.document.querySelector('.ok-native-list-reorder-count').textContent,
+    '+1',
+  );
+  pointer(hiddenRow, 'pointercancel', 50, 60, 2);
+  page.close();
+});
+
+test('native wallet groups gate drag starts and badge counts by child draggable state', () => {
+  const iosCell = fs.readFileSync(
+    path.join(packageRoot, 'ios/NativeListCell.swift'),
+    'utf8',
+  );
+  const iosList = fs.readFileSync(
+    path.join(packageRoot, 'ios/RNCNativeListView.swift'),
+    'utf8',
+  );
+  const androidRow = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListRowView.kt',
+    ),
+    'utf8',
+  );
+  const androidList = fs.readFileSync(
+    path.join(
+      packageRoot,
+      'android/src/main/java/com/onekey/nativelist/NativeListView.kt',
+    ),
+    'utf8',
+  );
+  assert.match(iosCell, /canStartWalletGroupReorder[\s\S]*?\["draggable"\] as\? Bool\) != false/);
+  assert.match(iosCell, /dictionaries\("children"\)\.filter[\s\S]*?\["draggable"\] as\? Bool\) != false/);
+  assert.match(iosList, /cell\.canStartWalletGroupReorder/);
+  assert.match(androidRow, /canStartWalletGroupReorder[\s\S]*?optBoolean\("draggable", true\) != false/);
+  assert.match(androidRow, /members\.drop\(1\)\.count[\s\S]*?optBoolean\("draggable", true\)/);
+  assert.match(androidList, /rowView\?\.canStartWalletGroupReorder/);
 });
 
 test('accessory help uses a separate hover action without replacing the edit click', () => {

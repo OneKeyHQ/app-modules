@@ -11,6 +11,8 @@ import NitroModules
 public protocol HybridNativeListSpec_protocol: HybridObject, HybridView {
   // Properties
   var snapshotJson: String { get set }
+  var keyboardDismissMode: NativeListKeyboardDismissMode { get set }
+  var keyboardShouldPersistTaps: NativeListKeyboardShouldPersistTaps { get set }
   var onRowAction: ((_ payloadJson: String) -> Void)? { get set }
   var onActionAnchorInvalidated: ((_ payloadJson: String) -> Void)? { get set }
   var onSelectionDelta: ((_ payloadJson: String) -> Void)? { get set }

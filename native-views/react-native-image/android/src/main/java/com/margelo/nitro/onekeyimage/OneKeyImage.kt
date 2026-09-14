@@ -11,6 +11,7 @@ import android.graphics.Paint
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
@@ -175,6 +176,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private var pendingDisplayGeneration: Long? = null
   private var fallbackRunnable: Runnable? = null
   private var requestStartedAtMs: Long? = null
+  private var dropCleanupPending = false
+  private var dropCleanupFinished = false
 
   /**
    * Native reusable containers own their request cleanup explicitly, so their
@@ -268,10 +271,10 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
 
   init {
     OneKeyImageGlideRegistry.ensureRegistered(context)
-    hostView.onReadyForRequest = { scheduleLoad() }
+    hostView.onReadyForRequest = { loadForCurrentLayout() }
     hostView.onAttachmentChanged = { attached ->
       if (attached) {
-        scheduleLoad()
+        loadForCurrentLayout()
         schedulePendingDisplayIfNeeded()
       } else {
         displayRunnable?.let(hostView::removeCallbacks)
@@ -284,12 +287,12 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
 
   override fun afterUpdate() {
     super.afterUpdate()
-    scheduleLoad()
+    loadForCurrentLayout()
   }
 
   override fun reload() {
     lastSignature = null
-    scheduleLoad(force = true)
+    loadForCurrentLayout(force = true)
   }
 
   override fun cancel() {
@@ -302,20 +305,26 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   }
 
   override fun onDropView() {
-    resetForReuse()
-    disposed = true
-    hostView.onReadyForRequest = null
-    hostView.onAttachmentChanged = null
+    beginDrop()
     super.onDropView()
   }
 
   override fun dispose() {
-    disposed = true
-    cancelCurrent(invalidateGeneration = true)
-    hostView.onReadyForRequest = null
-    hostView.onAttachmentChanged = null
+    beginDrop()
     super.dispose()
   }
+
+  internal fun isDisplaying(
+    sourceUri: String?,
+    sourceHeadersJson: String?,
+    recyclingKey: String,
+  ): Boolean =
+    !disposed &&
+      displayState == DisplayState.IMAGE &&
+      hostView.drawable != null &&
+      this.sourceUri == sourceUri &&
+      this.sourceHeadersJson == sourceHeadersJson &&
+      this.recyclingKey == recyclingKey
 
   private fun requestIdentityChanged() {
     if (suppressPropEffects || disposed) return
@@ -361,9 +370,27 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private fun scheduleLoad(force: Boolean = false) {
     if (disposed) return
     loadRunnable?.let(hostView::removeCallbacks)
-    val runnable = Runnable { startLoad(force) }
+    val runnable = Runnable {
+      loadRunnable = null
+      startLoad(force)
+    }
     loadRunnable = runnable
     hostView.post(runnable)
+  }
+
+  private fun loadForCurrentLayout(force: Boolean = false) {
+    if (disposed) return
+    loadRunnable?.let(hostView::removeCallbacks)
+    loadRunnable = null
+    if (
+      Looper.myLooper() == Looper.getMainLooper() &&
+      hostView.width > 0 &&
+      hostView.height > 0
+    ) {
+      startLoad(force)
+    } else {
+      scheduleLoad(force)
+    }
   }
 
   private fun startLoad(force: Boolean) {
@@ -660,6 +687,60 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       if (hidesTerminalState) Color.TRANSPARENT else resolvedPlaceholderColor(),
     )
     hostView.invalidate()
+  }
+
+  private fun beginDrop() {
+    if (dropCleanupPending || dropCleanupFinished) return
+    disposed = true
+    hostView.onReadyForRequest = null
+    cancelPendingCallbacksForDrop()
+    clearEventCallbacks()
+    hostView.autoplayEnabled = false
+    hostView.skeletonRequested = false
+    hostView.syncPlayback()
+    if (
+      !usesApplicationRequestManager &&
+      hostView.isAttachedToWindow &&
+      hostView.drawable != null
+    ) {
+      dropCleanupPending = true
+      hostView.onAttachmentChanged = { attached ->
+        if (!attached) finishDrop()
+      }
+    } else {
+      finishDrop()
+    }
+  }
+
+  private fun finishDrop() {
+    if (dropCleanupFinished) return
+    dropCleanupPending = false
+    dropCleanupFinished = true
+    resetForReuse()
+    hostView.onReadyForRequest = null
+    hostView.onAttachmentChanged = null
+  }
+
+  private fun cancelPendingCallbacksForDrop() {
+    loadRunnable?.let(hostView::removeCallbacks)
+    loadRunnable = null
+    displayRunnable?.let(hostView::removeCallbacks)
+    displayRunnable = null
+    pendingDisplayGeneration = null
+    fallbackRunnable?.let(hostView::removeCallbacks)
+    fallbackRunnable = null
+    requestActive = false
+    hostView.skeletonRequested = false
+    requestStartedAtMs = null
+    resetImageTransition()
+  }
+
+  private fun clearEventCallbacks() {
+    onLoadStart = null
+    onLoad = null
+    onDisplay = null
+    onError = null
+    onLoadEnd = null
   }
 
   private fun applyVariant() {

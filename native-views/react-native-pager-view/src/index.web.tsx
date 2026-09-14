@@ -10,3 +10,4 @@ export type {
 } from "./PagerView.web";
 export * from "./usePagerView";
 export * from "./CollapsiblePagerView.web";
+export * from "./NativeScroller.web";

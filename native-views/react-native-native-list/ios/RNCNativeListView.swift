@@ -65,6 +65,8 @@ final class NativeListView: UIView {
   private let footerCell = NativeListCell(frame: .zero)
   private let sectionIndexView = NativeListSectionIndexView()
   private let sectionIndexPreview = NativeListSectionIndexPreviewView()
+  private var sectionIndexLayoutConstraints: [NSLayoutConstraint] = []
+  private var sectionIndexHostHeightConstraint: NSLayoutConstraint?
   private var footerHeightConstraint: NSLayoutConstraint!
   private var dataSource: UICollectionViewDiffableDataSource<Int, String>!
   private var config: NativeListConfig?
@@ -87,8 +89,18 @@ final class NativeListView: UIView {
     target: self,
     action: #selector(marketLongPressChanged(_:))
   )
+  private lazy var keyboardTapRecognizer = UITapGestureRecognizer(
+    target: self,
+    action: #selector(keyboardTapRecognized(_:))
+  )
+  private lazy var keyboardDragRecognizer = UIPanGestureRecognizer(
+    target: self,
+    action: #selector(keyboardDragRecognized(_:))
+  )
   // OneKey patch: claim only vertical drags so held rows and ancestor pagers stay responsive.
   private lazy var listBodyGestureGuard = UIPanGestureRecognizer(target: nil, action: nil)
+  private var keyboardDismissMode: NativeListKeyboardDismissMode = .none
+  private var keyboardShouldPersistTaps: NativeListKeyboardShouldPersistTaps = .never
   private var interactiveReorderSource: (key: String, index: Int)?
   private weak var interactiveReorderCell: NativeListCell?
   private var interactiveReorderCompactKey: String?
@@ -121,6 +133,16 @@ final class NativeListView: UIView {
     collectionView.dragDelegate = self
     collectionView.dropDelegate = self
     collectionView.alwaysBounceVertical = true
+    keyboardTapRecognizer.cancelsTouchesInView = true
+    keyboardTapRecognizer.delegate = self
+    addGestureRecognizer(keyboardTapRecognizer)
+    keyboardDragRecognizer.cancelsTouchesInView = false
+    keyboardDragRecognizer.delegate = self
+    keyboardDragRecognizer.isEnabled = false
+    if #available(iOS 13.4, *) {
+      keyboardDragRecognizer.allowedScrollTypesMask = .all
+    }
+    collectionView.addGestureRecognizer(keyboardDragRecognizer)
     // OneKey patch: keep list-body drags from being claimed by an ancestor modal sheet.
     listBodyGestureGuard.cancelsTouchesInView = false
     listBodyGestureGuard.isEnabled = false
@@ -161,10 +183,6 @@ final class NativeListView: UIView {
       footerContainer.trailingAnchor.constraint(equalTo: trailingAnchor),
       footerContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
       footerHeightConstraint,
-      sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
-      sectionIndexView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
-      sectionIndexView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
-      sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
       sectionIndexPreview.trailingAnchor.constraint(
         equalTo: safeAreaLayoutGuide.trailingAnchor,
         constant: -Self.sectionIndexPreviewEndMargin
@@ -173,6 +191,7 @@ final class NativeListView: UIView {
       sectionIndexPreview.widthAnchor.constraint(equalToConstant: Self.sectionIndexPreviewWidth),
       sectionIndexPreview.heightAnchor.constraint(equalToConstant: Self.sectionIndexPreviewHeight),
     ])
+    attachSectionIndexToList()
 
     sectionIndexView.isHidden = true
     sectionIndexView.onSelect = { [weak self] index, interacting in
@@ -229,12 +248,77 @@ final class NativeListView: UIView {
     }
   }
 
+  func setKeyboardDismissMode(_ mode: NativeListKeyboardDismissMode) {
+    keyboardDismissMode = mode
+    keyboardDragRecognizer.isEnabled = mode == .onDrag
+    switch mode {
+    case .none:
+      collectionView.keyboardDismissMode = .none
+    case .onDrag:
+      collectionView.keyboardDismissMode = .onDrag
+    case .interactive:
+      collectionView.keyboardDismissMode = .interactive
+    }
+  }
+
+  func setKeyboardShouldPersistTaps(_ mode: NativeListKeyboardShouldPersistTaps) {
+    keyboardShouldPersistTaps = mode
+  }
+
+  @objc private func keyboardTapRecognized(_ gesture: UITapGestureRecognizer) {
+    guard gesture.state == .ended else { return }
+    window?.endEditing(true)
+  }
+
+  @objc private func keyboardDragRecognized(_ gesture: UIPanGestureRecognizer) {
+    guard gesture.state == .began, keyboardDismissMode == .onDrag else { return }
+    window?.endEditing(true)
+  }
+
+  private func focusedTextInput(in view: UIView?) -> UIView? {
+    guard let view else { return nil }
+    if view.isFirstResponder, view is any UITextInput { return view }
+    for child in view.subviews {
+      if let result = focusedTextInput(in: child) { return result }
+    }
+    return nil
+  }
+
+  private func keyboardTapIsHandled(_ touch: UITouch) -> Bool {
+    var touchedView = touch.view
+    while let current = touchedView, current !== self {
+      if let control = current as? UIControl, control.isEnabled { return true }
+      touchedView = current.superview
+    }
+    if let touchView = touch.view,
+       touchView === footerCell || touchView.isDescendant(of: footerCell) {
+      guard let footer = config?.fixedFooter else { return false }
+      return !footer.data.bool("disabled") && !footer.data.bool("pressDisabled")
+    }
+    let point = touch.location(in: collectionView)
+    guard collectionView.bounds.contains(point),
+          let indexPath = collectionView.indexPathForItem(at: point),
+          let item = item(at: indexPath) else { return false }
+    return !item.data.bool("disabled") && !item.data.bool("pressDisabled")
+  }
+
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
   }
 
+  override func willMove(toWindow newWindow: UIWindow?) {
+    if newWindow == nil { attachSectionIndexToList() }
+    super.willMove(toWindow: newWindow)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    updateSectionIndexAttachment()
+  }
+
   override func layoutSubviews() {
     super.layoutSubviews()
+    updateSectionIndexAttachment()
     let direction = effectiveUserInterfaceLayoutDirection
     if let lastLayoutSize,
        lastLayoutSize != bounds.size || lastLayoutDirection != nil && lastLayoutDirection != direction {
@@ -599,7 +683,8 @@ final class NativeListView: UIView {
             let indexPath = collectionView.indexPathForItem(at: point),
             let item = item(at: indexPath),
             item.isReorderable,
-            let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell else {
+            let cell = collectionView.cellForItem(at: indexPath) as? NativeListCell,
+            cell.canStartWalletGroupReorder(at: gesture.location(in: cell)) else {
         interactiveReorderSource = nil
         interactiveReorderCell = nil
         interactiveReorderTargetIndex = nil
@@ -1027,10 +1112,10 @@ final class NativeListView: UIView {
       titles: sectionIndexEntries.map(\.title),
       textColor: nativeListColor(config.theme, "disabledText", "#8D8D8D"),
       activeColor: nativeListColor(config.theme, "positive", "#218358"),
-      activeTextColor: nativeListColor(config.theme, "inverseText", "#FCFCFC"),
-      centeredInWindow: config.sectionIndexCenteredInWindow
+      activeTextColor: nativeListColor(config.theme, "inverseText", "#FCFCFC")
     )
     sectionIndexView.isHidden = sectionIndexEntries.isEmpty
+    updateSectionIndexAttachment()
     sectionIndexPreview.configure(
       fillColor: UIColor(
         red: 202.0 / 255.0,
@@ -1047,6 +1132,76 @@ final class NativeListView: UIView {
       sectionIndexView.setActiveIndex(nil)
     }
     if sectionIndexEntries.isEmpty { finishSectionIndexInteraction(immediately: true) }
+  }
+
+  private func updateSectionIndexAttachment() {
+    guard config?.sectionIndexCenteredInWindow == true,
+          !sectionIndexEntries.isEmpty,
+          bounds.width > 0,
+          bounds.height > 0,
+          isVisibleInHierarchy,
+          let window,
+          let hostView = sectionIndexHostView,
+          hostView.window === window else {
+      attachSectionIndexToList()
+      return
+    }
+    attachSectionIndex(to: hostView, centeredIn: window)
+  }
+
+  private var sectionIndexHostView: UIView? {
+    var responder: UIResponder? = self
+    while let current = responder {
+      if let viewController = current as? UIViewController {
+        return viewController.view
+      }
+      responder = current.next
+    }
+    return nil
+  }
+
+  private var isVisibleInHierarchy: Bool {
+    var current: UIView? = self
+    while let view = current {
+      if view.isHidden || view.alpha <= 0.01 { return false }
+      current = view.superview
+    }
+    return true
+  }
+
+  private func attachSectionIndexToList() {
+    guard sectionIndexView.superview !== self || sectionIndexLayoutConstraints.isEmpty else { return }
+    NSLayoutConstraint.deactivate(sectionIndexLayoutConstraints)
+    sectionIndexHostHeightConstraint = nil
+    sectionIndexView.removeFromSuperview()
+    addSubview(sectionIndexView)
+    sectionIndexLayoutConstraints = [
+      sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
+      sectionIndexView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+      sectionIndexView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+      sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
+    ]
+    NSLayoutConstraint.activate(sectionIndexLayoutConstraints)
+  }
+
+  private func attachSectionIndex(to hostView: UIView, centeredIn window: UIWindow) {
+    let railHeight = sectionIndexView.preferredHeight(constrainedTo: hostView.bounds.height)
+    if sectionIndexView.superview === hostView {
+      sectionIndexHostHeightConstraint?.constant = railHeight
+      return
+    }
+    NSLayoutConstraint.deactivate(sectionIndexLayoutConstraints)
+    sectionIndexView.removeFromSuperview()
+    hostView.addSubview(sectionIndexView)
+    let heightConstraint = sectionIndexView.heightAnchor.constraint(equalToConstant: railHeight)
+    sectionIndexHostHeightConstraint = heightConstraint
+    sectionIndexLayoutConstraints = [
+      sectionIndexView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
+      sectionIndexView.centerYAnchor.constraint(equalTo: window.centerYAnchor),
+      sectionIndexView.widthAnchor.constraint(equalToConstant: Self.sectionIndexRailWidth),
+      heightConstraint,
+    ]
+    NSLayoutConstraint.activate(sectionIndexLayoutConstraints)
   }
 
   private func selectSectionIndex(_ index: Int, interacting: Bool) {
@@ -1798,6 +1953,9 @@ final class NativeListView: UIView {
   }
 
   override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer === keyboardDragRecognizer {
+      return keyboardDismissMode == .onDrag && focusedTextInput(in: window) != nil
+    }
     if gestureRecognizer === reorderLongPress || gestureRecognizer === marketLongPress {
       let point = gestureRecognizer.location(in: collectionView)
       guard let indexPath = collectionView.indexPathForItem(at: point),
@@ -1817,6 +1975,20 @@ final class NativeListView: UIView {
 
 extension NativeListView: UIGestureRecognizerDelegate {
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    if gestureRecognizer === keyboardDragRecognizer {
+      return keyboardDismissMode == .onDrag && focusedTextInput(in: window) != nil
+    }
+    if gestureRecognizer === keyboardTapRecognizer {
+      guard focusedTextInput(in: window) != nil else { return false }
+      switch keyboardShouldPersistTaps {
+      case .never:
+        return true
+      case .always:
+        return false
+      case .handled:
+        return !keyboardTapIsHandled(touch)
+      }
+    }
     if gestureRecognizer === listBodyGestureGuard { return true }
     var view = touch.view
     while let current = view, current !== footerCell {
@@ -1830,6 +2002,18 @@ extension NativeListView: UIGestureRecognizerDelegate {
     _ gestureRecognizer: UIGestureRecognizer,
     shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
   ) -> Bool {
+    if gestureRecognizer === keyboardDragRecognizer {
+      return otherGestureRecognizer === collectionView.panGestureRecognizer ||
+        otherGestureRecognizer === listBodyGestureGuard
+    }
+    if otherGestureRecognizer === keyboardDragRecognizer {
+      return gestureRecognizer === collectionView.panGestureRecognizer ||
+        gestureRecognizer === listBodyGestureGuard
+    }
+    if gestureRecognizer === keyboardTapRecognizer ||
+       otherGestureRecognizer === keyboardTapRecognizer {
+      return false
+    }
     if gestureRecognizer === listBodyGestureGuard {
       guard let otherView = otherGestureRecognizer.view else { return false }
       return otherView === collectionView || otherView.isDescendant(of: collectionView)
@@ -2156,7 +2340,6 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
   private var textColor: UIColor = .secondaryLabel
   private var activeColor: UIColor = .tintColor
   private var activeTextColor: UIColor = .white
-  private var centeredInWindow = false
   private var lastTouchIndex: Int?
   private(set) var activeIndex: Int?
 
@@ -2197,14 +2380,12 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
     titles: [String],
     textColor: UIColor,
     activeColor: UIColor,
-    activeTextColor: UIColor,
-    centeredInWindow: Bool
+    activeTextColor: UIColor
   ) {
     self.titles = titles
     self.textColor = textColor
     self.activeColor = activeColor
     self.activeTextColor = activeTextColor
-    self.centeredInWindow = centeredInWindow
     labels.forEach { $0.removeFromSuperview() }
     labels = titles.map { title in
       let label = UILabel()
@@ -2313,20 +2494,15 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
     entryCenterY(index: index, metrics: indexMetrics(count: titles.count))
   }
 
+  func preferredHeight(constrainedTo maximumHeight: CGFloat) -> CGFloat {
+    min(maximumHeight, Self.edgePadding * 2 + Self.labelSpacing * CGFloat(titles.count))
+  }
+
   private func indexMetrics(count: Int) -> (originY: CGFloat, trackHeight: CGFloat) {
     guard count > 0 else { return (bounds.midY, 0) }
     let availableHeight = max(0, bounds.height - Self.edgePadding * 2)
     let trackHeight = min(availableHeight, Self.labelSpacing * CGFloat(count))
-    let centeredOriginY = (bounds.height - trackHeight) / 2
-    guard centeredInWindow, let window else { return (centeredOriginY, trackHeight) }
-    let windowCenterY = window.safeAreaLayoutGuide.layoutFrame.midY
-    let localCenterY = convert(CGPoint(x: 0, y: windowCenterY), from: window).y
-    return (
-      (localCenterY - trackHeight / 2).clamped(
-        to: Self.edgePadding...max(Self.edgePadding, bounds.height - Self.edgePadding - trackHeight)
-      ),
-      trackHeight
-    )
+    return ((bounds.height - trackHeight) / 2, trackHeight)
   }
 
   private func entryCenterY(

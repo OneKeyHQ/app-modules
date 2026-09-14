@@ -7,10 +7,18 @@
 
 #include "JHybridNativeListSpec.hpp"
 
+// Forward declaration of `NativeListKeyboardDismissMode` to properly resolve imports.
+namespace margelo::nitro::nativelist { enum class NativeListKeyboardDismissMode; }
+// Forward declaration of `NativeListKeyboardShouldPersistTaps` to properly resolve imports.
+namespace margelo::nitro::nativelist { enum class NativeListKeyboardShouldPersistTaps; }
 // Forward declaration of `NativeListScrollAlignment` to properly resolve imports.
 namespace margelo::nitro::nativelist { enum class NativeListScrollAlignment; }
 
 #include <string>
+#include "NativeListKeyboardDismissMode.hpp"
+#include "JNativeListKeyboardDismissMode.hpp"
+#include "NativeListKeyboardShouldPersistTaps.hpp"
+#include "JNativeListKeyboardShouldPersistTaps.hpp"
 #include <functional>
 #include <optional>
 #include "JFunc_void_std__string.hpp"
@@ -56,6 +64,24 @@ namespace margelo::nitro::nativelist {
   void JHybridNativeListSpec::setSnapshotJson(const std::string& snapshotJson) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* snapshotJson */)>("setSnapshotJson");
     method(_javaPart, jni::make_jstring(snapshotJson));
+  }
+  NativeListKeyboardDismissMode JHybridNativeListSpec::getKeyboardDismissMode() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JNativeListKeyboardDismissMode>()>("getKeyboardDismissMode");
+    auto __result = method(_javaPart);
+    return __result->toCpp();
+  }
+  void JHybridNativeListSpec::setKeyboardDismissMode(NativeListKeyboardDismissMode keyboardDismissMode) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JNativeListKeyboardDismissMode> /* keyboardDismissMode */)>("setKeyboardDismissMode");
+    method(_javaPart, JNativeListKeyboardDismissMode::fromCpp(keyboardDismissMode));
+  }
+  NativeListKeyboardShouldPersistTaps JHybridNativeListSpec::getKeyboardShouldPersistTaps() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JNativeListKeyboardShouldPersistTaps>()>("getKeyboardShouldPersistTaps");
+    auto __result = method(_javaPart);
+    return __result->toCpp();
+  }
+  void JHybridNativeListSpec::setKeyboardShouldPersistTaps(NativeListKeyboardShouldPersistTaps keyboardShouldPersistTaps) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<JNativeListKeyboardShouldPersistTaps> /* keyboardShouldPersistTaps */)>("setKeyboardShouldPersistTaps");
+    method(_javaPart, JNativeListKeyboardShouldPersistTaps::fromCpp(keyboardShouldPersistTaps));
   }
   std::optional<std::function<void(const std::string& /* payloadJson */)>> JHybridNativeListSpec::getOnRowAction() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JFunc_void_std__string::javaobject>()>("getOnRowAction_cxx");

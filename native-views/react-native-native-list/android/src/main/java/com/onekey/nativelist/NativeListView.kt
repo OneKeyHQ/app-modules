@@ -1,10 +1,12 @@
 package com.margelo.nitro.nativelist
 
 import android.animation.TimeInterpolator
+import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.PathShape
@@ -18,8 +20,11 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -94,6 +99,8 @@ class NativeListView(
   var onReorder: ((String) -> Unit)? = null
   var onEndReached: ((String) -> Unit)? = null
   var onVisibleRangeChanged: ((String) -> Unit)? = null
+  var keyboardDismissMode = NativeListKeyboardDismissMode.NONE
+  var keyboardShouldPersistTaps = NativeListKeyboardShouldPersistTaps.NEVER
   private val density = resources.displayMetrics.density
   private val recyclerView = RecyclerView(context)
   private var configuredTopPaddingPx = 0
@@ -106,6 +113,7 @@ class NativeListView(
   private val layoutManager = GridLayoutManager(context, 1)
   // OneKey patch: vertical lists retain vertical drags and leave horizontal drags to a parent pager.
   private val pagerGestureTouchSlop = ViewConfiguration.get(context).scaledTouchSlop
+  private var pagerGestureIsVertical = false
   private val pagerGestureTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
     private var downX = 0f
     private var downY = 0f
@@ -118,21 +126,76 @@ class NativeListView(
           downX = event.x
           downY = event.y
           directionResolved = false
+          pagerGestureIsVertical = false
         }
         MotionEvent.ACTION_MOVE -> if (!directionResolved) {
           val deltaX = abs(event.x - downX)
           val deltaY = abs(event.y - downY)
           if (max(deltaX, deltaY) > pagerGestureTouchSlop) {
             directionResolved = true
-            recyclerView.parent?.requestDisallowInterceptTouchEvent(deltaY >= deltaX)
+            pagerGestureIsVertical = deltaY >= deltaX
+            recyclerView.parent?.requestDisallowInterceptTouchEvent(pagerGestureIsVertical)
+            if (
+              pagerGestureIsVertical &&
+              keyboardDismissMode == NativeListKeyboardDismissMode.ON_DRAG
+            ) {
+              dismissKeyboard()
+            }
           }
         }
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
           recyclerView.parent?.requestDisallowInterceptTouchEvent(false)
+          pagerGestureIsVertical = false
         }
       }
       return false
     }
+  }
+  // Intercept only a completed tap so RecyclerView keeps drag and reorder ownership.
+  private val keyboardTapTouchListener = object : RecyclerView.SimpleOnItemTouchListener() {
+    private var downX = 0f
+    private var downY = 0f
+    private var observingTap = false
+    private var moved = false
+
+    override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          downX = event.x
+          downY = event.y
+          moved = false
+          observingTap =
+            keyboardShouldPersistTaps != NativeListKeyboardShouldPersistTaps.ALWAYS &&
+              focusedTextEditor() != null
+        }
+        MotionEvent.ACTION_MOVE -> if (
+          observingTap && hypot(event.x - downX, event.y - downY) > pagerGestureTouchSlop
+        ) {
+          moved = true
+        }
+        MotionEvent.ACTION_UP -> {
+          val shouldDismiss =
+            observingTap &&
+              !moved &&
+              reorderPlaceholderDecoration.position == RecyclerView.NO_POSITION &&
+              when (keyboardShouldPersistTaps) {
+                NativeListKeyboardShouldPersistTaps.NEVER -> true
+                NativeListKeyboardShouldPersistTaps.HANDLED ->
+                  !keyboardTapIsHandled(recyclerView, event)
+                NativeListKeyboardShouldPersistTaps.ALWAYS -> false
+              }
+          observingTap = false
+          if (shouldDismiss) {
+            dismissKeyboard()
+            return true
+          }
+        }
+        MotionEvent.ACTION_CANCEL -> observingTap = false
+      }
+      return false
+    }
+
+    override fun onTouchEvent(recyclerView: RecyclerView, event: MotionEvent) = Unit
   }
   private val reorderPlaceholderDecoration = ReorderPlaceholderDecoration(
     adapter = adapter,
@@ -168,6 +231,13 @@ class NativeListView(
   private var sectionIndexScrubbing = false
   private var sectionIndexProgrammaticScroll = false
   private var sectionIndexHapticsEnabled = true
+  private val sectionIndexLocationOnScreen = IntArray(2)
+  private val sectionIndexHostLocationOnScreen = IntArray(2)
+  private var sectionIndexObservedTree: ViewTreeObserver? = null
+  private val sectionIndexPreDrawListener = ViewTreeObserver.OnPreDrawListener {
+    updateSectionIndexAttachment()
+    true
+  }
   private var pendingScrollRequest: ScrollRequest? = null
   private val actionAnchorInstanceId = UUID.randomUUID().toString()
   private var actionAnchorCounter = 0L
@@ -177,12 +247,14 @@ class NativeListView(
   private var lastLayoutDirection = layoutDirection
   private var lastMarketPaginationAnchorLogAtMs = 0L
   private var disposed = false
+  private var resourcesDisposed = false
 
   init {
     orientation = VERTICAL
     recyclerView.adapter = adapter
     recyclerView.layoutManager = layoutManager
     recyclerView.itemAnimator = null
+    recyclerView.addOnItemTouchListener(keyboardTapTouchListener)
     recyclerView.addOnItemTouchListener(pagerGestureTouchListener)
     recyclerView.addItemDecoration(reorderPlaceholderDecoration)
     // OneKey patch: full-width selector header backgrounds do not change row content insets.
@@ -271,6 +343,12 @@ class NativeListView(
           RecyclerView.SCROLL_STATE_DRAGGING -> {
             sectionIndexProgrammaticScroll = false
             invalidateActionAnchor("scroll")
+            if (
+              keyboardDismissMode == NativeListKeyboardDismissMode.ON_DRAG &&
+              (layoutManager.orientation == RecyclerView.HORIZONTAL || pagerGestureIsVertical)
+            ) {
+              dismissKeyboard()
+            }
           }
           RecyclerView.SCROLL_STATE_IDLE -> sectionIndexProgrammaticScroll = false
         }
@@ -283,6 +361,44 @@ class NativeListView(
         checkEndReached()
       }
     })
+  }
+
+  private fun focusedTextEditor(): View? {
+    val insets = ViewCompat.getRootWindowInsets(this)
+    if (insets != null && !insets.isVisible(WindowInsetsCompat.Type.ime())) return null
+    val focused = rootView.findFocus() ?: reactContext.currentActivity?.currentFocus
+    return focused?.takeIf(View::onCheckIsTextEditor)
+  }
+
+  private fun dismissKeyboard(): Boolean {
+    val focused = focusedTextEditor() ?: return false
+    val windowToken = focused.windowToken
+    focused.clearFocus()
+    val inputMethodManager =
+      context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+    return inputMethodManager.hideSoftInputFromWindow(windowToken, 0)
+  }
+
+  private fun keyboardTapIsHandled(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+    val child = recyclerView.findChildViewUnder(event.x, event.y) ?: return false
+    val position = recyclerView.getChildAdapterPosition(child)
+    val item = adapter.itemAt(position) ?: return false
+    val clickable = clickableDescendantAt(child, event.rawX.toInt(), event.rawY.toInt())
+    val accessoryHandlesTap = clickable != null && clickable !== child
+    return accessoryHandlesTap ||
+      (!item.json.optBoolean("disabled", false) && !item.json.optBoolean("pressDisabled", false))
+  }
+
+  private fun clickableDescendantAt(view: View, rawX: Int, rawY: Int): View? {
+    if (!view.isShown) return null
+    val bounds = Rect()
+    if (!view.getGlobalVisibleRect(bounds) || !bounds.contains(rawX, rawY)) return null
+    if (view is ViewGroup) {
+      for (index in view.childCount - 1 downTo 0) {
+        clickableDescendantAt(view.getChildAt(index), rawX, rawY)?.let { return it }
+      }
+    }
+    return view.takeIf { it.isEnabled && it.isClickable }
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
@@ -304,6 +420,7 @@ class NativeListView(
     lastLayoutWidth = nextWidth
     lastLayoutHeight = nextHeight
     lastLayoutDirection = layoutDirection
+    updateSectionIndexAttachment()
     performPendingScrollIfNeeded()
   }
 
@@ -318,6 +435,7 @@ class NativeListView(
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
+    updateSectionIndexAttachment()
     val first = config?.items?.firstOrNull()
     if (recyclerView.isLayoutRequested && (first?.type == "market" || first?.json?.optString("presentation") == "market")) {
       relayoutContents()
@@ -325,7 +443,10 @@ class NativeListView(
   }
 
   override fun onDetachedFromWindow() {
+    stopSectionIndexAttachmentTracking()
+    attachSectionIndexToList()
     updateRefreshIndicatorOffset(0)
+    if (disposed) disposeResources()
     super.onDetachedFromWindow()
   }
 
@@ -950,16 +1071,25 @@ class NativeListView(
 
   fun dispose() {
     if (disposed) return
+    disposed = true
+    if (!isAttachedToWindow) disposeResources()
+  }
+
+  private fun disposeResources() {
+    if (resourcesDisposed) return
+    resourcesDisposed = true
+    stopSectionIndexAttachmentTracking()
+    attachSectionIndexToList()
     stopReorderRelayoutLoop()
     invalidateActionAnchor("destroy")
     actionAnchor = null
-    disposed = true
     pendingScrollRequest = null
     visibleEventScheduled = false
     reorderTouchHandler?.removeCallbacksAndMessages(null)
     reorderTouchHandler = null
     reorderTouchListener?.let(recyclerView::removeOnItemTouchListener)
     reorderTouchListener = null
+    recyclerView.removeOnItemTouchListener(keyboardTapTouchListener)
     recyclerView.removeOnItemTouchListener(pagerGestureTouchListener)
     itemTouchHelper?.attachToRecyclerView(null)
     itemTouchHelper = null
@@ -1024,9 +1154,9 @@ class NativeListView(
       themeColor(next.theme, "disabledText", "#8D8D8D"),
       themeColor(next.theme, "positive", "#218358"),
       themeColor(next.theme, "inverseText", "#FCFCFC"),
-      next.sectionIndexCenteredInWindow,
     )
     sectionIndexView.visibility = if (sectionIndexEntries.isEmpty()) GONE else VISIBLE
+    updateSectionIndexAttachment()
     sectionIndexPreview.setTextColor(Color.WHITE)
     sectionIndexPreview.background = sectionIndexPreviewBackground()
     sectionIndexView.setActiveIndex(
@@ -1078,9 +1208,107 @@ class NativeListView(
   private fun positionSectionIndexPreview(index: Int) {
     val halfHeight = sectionIndexDp(SECTION_INDEX_PREVIEW_HEIGHT_DP) / 2f
     val maximumY = (contentContainer.height - halfHeight).coerceAtLeast(halfHeight)
-    val targetY = sectionIndexView.top + sectionIndexView.centerYForIndex(index)
+    sectionIndexView.getLocationOnScreen(sectionIndexLocationOnScreen)
+    contentContainer.getLocationOnScreen(sectionIndexHostLocationOnScreen)
+    val targetY = sectionIndexLocationOnScreen[1] - sectionIndexHostLocationOnScreen[1] +
+      sectionIndexView.centerYForIndex(index)
     val clampedY = targetY.coerceIn(halfHeight, maximumY)
     sectionIndexPreview.translationY = clampedY - contentContainer.height / 2f
+  }
+
+  private fun updateSectionIndexAttachment() {
+    val windowHost = rootView as? FrameLayout
+    val canUseWindowHost = config?.sectionIndexCenteredInWindow == true &&
+      sectionIndexEntries.isNotEmpty() &&
+      isAttachedToWindow &&
+      width > 0 &&
+      height > 0 &&
+      windowHost != null &&
+      windowHost.width > 0 &&
+      windowHost.height > 0 &&
+      windowHost !== contentContainer
+    if (canUseWindowHost) {
+      startSectionIndexAttachmentTracking()
+    } else {
+      stopSectionIndexAttachmentTracking()
+    }
+    val useWindowHost = canUseWindowHost && isShown
+    if (useWindowHost) {
+      attachSectionIndexToWindow(windowHost)
+    } else {
+      attachSectionIndexToList()
+    }
+  }
+
+  private fun startSectionIndexAttachmentTracking() {
+    val observer = viewTreeObserver
+    if (sectionIndexObservedTree === observer) return
+    sectionIndexObservedTree?.takeIf(ViewTreeObserver::isAlive)
+      ?.removeOnPreDrawListener(sectionIndexPreDrawListener)
+    observer.addOnPreDrawListener(sectionIndexPreDrawListener)
+    sectionIndexObservedTree = observer
+  }
+
+  private fun stopSectionIndexAttachmentTracking() {
+    sectionIndexObservedTree?.takeIf(ViewTreeObserver::isAlive)
+      ?.removeOnPreDrawListener(sectionIndexPreDrawListener)
+    sectionIndexObservedTree = null
+  }
+
+  private fun attachSectionIndexToList() {
+    if (sectionIndexView.parent === contentContainer) return
+    (sectionIndexView.parent as? ViewGroup)?.removeView(sectionIndexView)
+    sectionIndexView.translationX = 0f
+    contentContainer.addView(
+      sectionIndexView,
+      FrameLayout.LayoutParams(
+        sectionIndexDp(SECTION_INDEX_RAIL_WIDTH_DP),
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        Gravity.END,
+      ),
+    )
+  }
+
+  private fun attachSectionIndexToWindow(windowHost: FrameLayout) {
+    val railWidth = sectionIndexDp(SECTION_INDEX_RAIL_WIDTH_DP)
+    val railHeight = sectionIndexView.preferredHeight(windowHost.height)
+    windowHost.getLocationOnScreen(sectionIndexHostLocationOnScreen)
+    getLocationOnScreen(sectionIndexLocationOnScreen)
+    val listLeft = sectionIndexLocationOnScreen[0] - sectionIndexHostLocationOnScreen[0]
+    val targetRailLeft = if (layoutDirection == LAYOUT_DIRECTION_RTL) {
+      listLeft
+    } else {
+      listLeft + width - railWidth
+    }
+    val restingRailLeft = if (layoutDirection == LAYOUT_DIRECTION_RTL) {
+      0
+    } else {
+      windowHost.width - railWidth
+    }
+    val layoutParams = FrameLayout.LayoutParams(
+      railWidth,
+      railHeight,
+      Gravity.TOP or Gravity.END,
+    ).apply {
+      topMargin = (windowHost.height - railHeight) / 2
+    }
+    if (sectionIndexView.parent !== windowHost) {
+      (sectionIndexView.parent as? ViewGroup)?.removeView(sectionIndexView)
+      windowHost.addView(sectionIndexView, layoutParams)
+      sectionIndexView.bringToFront()
+    } else if (!sectionIndexView.hasSameWindowLayout(layoutParams)) {
+      sectionIndexView.layoutParams = layoutParams
+    }
+    sectionIndexView.translationX = (targetRailLeft - restingRailLeft).toFloat()
+  }
+
+  private fun View.hasSameWindowLayout(next: FrameLayout.LayoutParams): Boolean {
+    val current = layoutParams as? FrameLayout.LayoutParams ?: return false
+    return current.width == next.width &&
+      current.height == next.height &&
+      current.gravity == next.gravity &&
+      current.marginEnd == next.marginEnd &&
+      current.topMargin == next.topMargin
   }
 
   private fun sectionIndexPreviewBackground(): ShapeDrawable {
@@ -1770,7 +1998,10 @@ class NativeListView(
                   // item.type != "walletGroup" ||
                   // event.rawY in holderLocation[1].toFloat()..(holderLocation[1] + dp(68)).toFloat()
                   // )
-                  item.isReorderable
+                  item.isReorderable &&
+                    (holder as? NativeListViewHolder)?.rowView?.canStartWalletGroupReorder(
+                      event.y - holder.itemView.top,
+                    ) != false
                 } == true
               }
             if (candidate != null) handler.postDelayed(startDrag, REORDER_LONG_PRESS_MS)
@@ -2108,10 +2339,7 @@ private class NativeListSectionIndexView(
   private var normalColor = Color.GRAY
   private var activeColor = Color.BLACK
   private var activeTextColor = Color.WHITE
-  private var centeredInWindow = false
   private var lastTouchIndex: Int? = null
-  private val rootLocationOnScreen = IntArray(2)
-  private val locationOnScreen = IntArray(2)
   private val activeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val normalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = Paint.Align.CENTER
@@ -2134,13 +2362,11 @@ private class NativeListSectionIndexView(
     normalColor: Int,
     activeColor: Int,
     activeTextColor: Int,
-    centeredInWindow: Boolean,
   ) {
     this.titles = titles
     this.normalColor = normalColor
     this.activeColor = activeColor
     this.activeTextColor = activeTextColor
-    this.centeredInWindow = centeredInWindow
     activeIndex = null
     updateContentDescription()
     invalidate()
@@ -2271,6 +2497,11 @@ private class NativeListSectionIndexView(
 
   fun centerYForIndex(index: Int): Float = entryCenterY(index, indexMetrics())
 
+  fun preferredHeight(maximumHeight: Int): Int = minOf(
+    maximumHeight,
+    (dp(8f) * 2f + dp(16f) * titles.size).roundToInt(),
+  )
+
   private data class Metrics(val originY: Float, val trackHeight: Float)
 
   private fun indexMetrics(): Metrics {
@@ -2279,25 +2510,7 @@ private class NativeListSectionIndexView(
     val labelSpacing = dp(16f)
     val availableHeight = (height - edgePadding * 2f).coerceAtLeast(0f)
     val trackHeight = minOf(availableHeight, labelSpacing * titles.size)
-    val centeredOriginY = (height - trackHeight) / 2f
-    if (!centeredInWindow || !isAttachedToWindow) {
-      return Metrics(centeredOriginY, trackHeight)
-    }
-    val systemBarInsets = ViewCompat.getRootWindowInsets(rootView)
-      ?.getInsetsIgnoringVisibility(
-        WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
-      ) ?: return Metrics(centeredOriginY, trackHeight)
-    rootView.getLocationOnScreen(rootLocationOnScreen)
-    getLocationOnScreen(locationOnScreen)
-    val safeTop = rootLocationOnScreen[1] + systemBarInsets.top
-    val safeBottom = rootLocationOnScreen[1] + rootView.height - systemBarInsets.bottom
-    if (safeBottom <= safeTop) return Metrics(centeredOriginY, trackHeight)
-    val localCenterY = (safeTop + safeBottom) / 2f - locationOnScreen[1]
-    val maximumOrigin = (height - edgePadding - trackHeight).coerceAtLeast(edgePadding)
-    return Metrics(
-      (localCenterY - trackHeight / 2f).coerceIn(edgePadding, maximumOrigin),
-      trackHeight,
-    )
+    return Metrics((height - trackHeight) / 2f, trackHeight)
   }
 
   private fun entryCenterY(index: Int, metrics: Metrics): Float {

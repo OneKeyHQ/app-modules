@@ -132,6 +132,28 @@ open class HybridNativeListSpec_cxx {
     }
   }
 
+  public final var keyboardDismissMode: Int32 {
+    @inline(__always)
+    get {
+      return self.__implementation.keyboardDismissMode.rawValue
+    }
+    @inline(__always)
+    set {
+      self.__implementation.keyboardDismissMode = margelo.nitro.nativelist.NativeListKeyboardDismissMode(rawValue: newValue)!
+    }
+  }
+
+  public final var keyboardShouldPersistTaps: Int32 {
+    @inline(__always)
+    get {
+      return self.__implementation.keyboardShouldPersistTaps.rawValue
+    }
+    @inline(__always)
+    set {
+      self.__implementation.keyboardShouldPersistTaps = margelo.nitro.nativelist.NativeListKeyboardShouldPersistTaps(rawValue: newValue)!
+    }
+  }
+
   public final var onRowAction: bridge.std__optional_std__function_void_const_std__string_____payloadJson______ {
     @inline(__always)
     get {

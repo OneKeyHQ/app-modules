@@ -47,6 +47,8 @@ import {
 export type { NativeListProps, NativeListRef } from './NativeList.types';
 export type {
   ActionAnchorState,
+  NativeListKeyboardDismissMode,
+  NativeListKeyboardShouldPersistTaps,
   ScrollAlignment,
   ScrollPositionOptions,
   ScrollToEndParams,
@@ -95,6 +97,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     {
       snapshot,
       webVirtualizationEnabled: _webVirtualizationEnabled,
+      keyboardDismissMode = 'none',
+      keyboardShouldPersistTaps = 'never',
       onRowAction,
       onActionAnchorInvalidated,
       onSelectionDelta,
@@ -111,6 +115,12 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     },
     forwardedRef
   ) {
+    const normalizedKeyboardShouldPersistTaps =
+      keyboardShouldPersistTaps === true
+        ? 'always'
+        : keyboardShouldPersistTaps === false
+        ? 'never'
+        : keyboardShouldPersistTaps;
     const nativeRef = useRef<NativeListMethods | null>(null);
     const callbacksRef = useRef({
       onRowAction,
@@ -439,6 +449,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         {...viewProps}
         {...nativeCallbacks}
         snapshotJson={snapshotJson}
+        keyboardDismissMode={keyboardDismissMode}
+        keyboardShouldPersistTaps={normalizedKeyboardShouldPersistTaps}
       />
     );
   }

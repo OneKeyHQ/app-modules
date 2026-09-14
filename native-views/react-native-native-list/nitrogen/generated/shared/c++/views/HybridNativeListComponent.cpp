@@ -21,6 +21,8 @@ namespace margelo::nitro::nativelist::views {
                                                const react::RawProps& rawProps):
     react::ViewProps(context, sourceProps, rawProps, filterObjectKeys),
     snapshotJson(nitro::ReactProp<std::string>::fromRawValue("NativeList", "snapshotJson", rawProps, sourceProps.snapshotJson)),
+    keyboardDismissMode(nitro::ReactProp<NativeListKeyboardDismissMode>::fromRawValue("NativeList", "keyboardDismissMode", rawProps, sourceProps.keyboardDismissMode)),
+    keyboardShouldPersistTaps(nitro::ReactProp<NativeListKeyboardShouldPersistTaps>::fromRawValue("NativeList", "keyboardShouldPersistTaps", rawProps, sourceProps.keyboardShouldPersistTaps)),
     onRowAction(nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>>::fromRawValue("NativeList", "onRowAction", rawProps, sourceProps.onRowAction)),
     onActionAnchorInvalidated(nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>>::fromRawValue("NativeList", "onActionAnchorInvalidated", rawProps, sourceProps.onActionAnchorInvalidated)),
     onSelectionDelta(nitro::ReactProp<std::optional<std::function<void(const std::string& /* payloadJson */)>>>::fromRawValue("NativeList", "onSelectionDelta", rawProps, sourceProps.onSelectionDelta)),
@@ -32,6 +34,8 @@ namespace margelo::nitro::nativelist::views {
   bool HybridNativeListProps::filterObjectKeys(const std::string& propName) {
     switch (hashString(propName)) {
       case hashString("snapshotJson"): return true;
+      case hashString("keyboardDismissMode"): return true;
+      case hashString("keyboardShouldPersistTaps"): return true;
       case hashString("onRowAction"): return true;
       case hashString("onActionAnchorInvalidated"): return true;
       case hashString("onSelectionDelta"): return true;

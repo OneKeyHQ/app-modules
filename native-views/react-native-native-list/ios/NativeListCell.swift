@@ -100,6 +100,15 @@ final class NativeListActionOrigin {
 
 // OneKey patch: explicit summary actions use the source text's physical-pixel line box.
 private final class NativeListAccessoryButton: UIButton {
+  var pressedBackgroundColor: UIColor?
+
+  override var isHighlighted: Bool {
+    didSet {
+      guard let pressedBackgroundColor else { return }
+      backgroundColor = isHighlighted ? pressedBackgroundColor : .clear
+    }
+  }
+
   var selectorSummaryLineHeight: CGFloat? {
     didSet { invalidateIntrinsicContentSize(); setNeedsLayout() }
   }
@@ -1373,6 +1382,7 @@ final class NativeListCell: UICollectionViewCell {
       button.setImage(nil, for: .disabled)
       button.isEnabled = true
       button.alpha = 1
+      button.pressedBackgroundColor = nil
       button.titleLabel?.numberOfLines = 1
       button.contentHorizontalAlignment = .center
       button.backgroundColor = .clear
@@ -1509,7 +1519,9 @@ final class NativeListCell: UICollectionViewCell {
         checkboxState: checkboxState
       )
     }
-    let childCount = item.data.dictionaries("children").count
+    let childCount = item.data.dictionaries("children").filter {
+      ($0["draggable"] as? Bool) != false
+    }.count
     walletGroupDragBadge.text = childCount > 0 ? "+\(childCount)" : nil
     walletGroupDragBadge.isHidden = childCount == 0
     walletGroupDragBadge.backgroundColor = nativeListColor(
@@ -1553,6 +1565,16 @@ final class NativeListCell: UICollectionViewCell {
       return
     }
     isHighlighted = pressed && isUserInteractionEnabled
+  }
+
+  func canStartWalletGroupReorder(at point: CGPoint) -> Bool {
+    guard currentItem?.type == "walletGroup" else { return true }
+    let groupPoint = rootStack.convert(point, from: self)
+    for (index, cell) in walletGroupCells.prefix(walletGroupMembers.count).enumerated()
+      where cell.frame.contains(groupPoint) {
+      return (walletGroupMembers[index].data["draggable"] as? Bool) != false
+    }
+    return true
   }
 
   func setWalletGroupReorderCompact(_ compact: Bool) {
@@ -1924,6 +1946,15 @@ final class NativeListCell: UICollectionViewCell {
       trailingStack.spacing = 10
     }
     bindAccessories(item, accessories, theme, checkboxState)
+    if item.data.string("presentation") == "accountSelector",
+       accessories.count == 1,
+       let accessory = accessoryButtons.first(where: { !$0.isHidden }) {
+      // The vertical trailing stack has no stable intrinsic width, so keep its
+      // flexible space in the account title and subtitle column.
+      let width = trailingStack.widthAnchor.constraint(equalTo: accessory.widthAnchor)
+      width.isActive = true
+      selectorConstraints.append(width)
+    }
   }
 
   private func bindRail(_ item: NativeListItem, theme: [String: Any]?) {
@@ -3778,9 +3809,9 @@ final class NativeListCell: UICollectionViewCell {
     let paragraphStyle = NSMutableParagraphStyle()
     paragraphStyle.minimumLineHeight = lineHeight
     paragraphStyle.maximumLineHeight = lineHeight
+    paragraphStyle.alignment = label.textAlignment
     if currentItem?.type == "market" || currentItem?.data.string("presentation") == "walletSidebar" {
-      // Attributed paragraphs must preserve the label alignment and tail ellipsis.
-      paragraphStyle.alignment = label.textAlignment
+      // Attributed paragraphs must preserve the tail ellipsis.
       paragraphStyle.lineBreakMode = label.lineBreakMode
     }
     var attributes: [NSAttributedString.Key: Any] = [
@@ -3965,6 +3996,10 @@ final class NativeListCell: UICollectionViewCell {
     let isAccountIcon = currentItem?.data.string("presentation") == "accountSelector" && !isDrillIn
     let size: CGFloat = isDrillIn ? 24 : isAccountIcon && !isAccountCreate ? 38 : 36
     if isAccountCreate { button.layer.cornerRadius = 8 }
+    if isAccountIcon && !isAccountCreate && !data.string("actionKey").isEmpty {
+      button.pressedBackgroundColor = nativeListColor(currentTheme, "rowPressedBackground", "#E8E8E8")
+      button.layer.cornerRadius = size / 2
+    }
     if isAccountIcon { rootStack.setCustomSpacing(5, after: mainStack) }
     button.accessibilityIdentifier = data["testID"] as? String
     button.accessibilityLabel = data["accessibilityLabel"] as? String

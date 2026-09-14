@@ -19,6 +19,21 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
       dispatchToUi { hostView.applySnapshot(value) }
     }
 
+  override var keyboardDismissMode: NativeListKeyboardDismissMode = NativeListKeyboardDismissMode.NONE
+    set(value) {
+      if (field == value) return
+      field = value
+      dispatchToUi { hostView.keyboardDismissMode = value }
+    }
+
+  override var keyboardShouldPersistTaps: NativeListKeyboardShouldPersistTaps =
+    NativeListKeyboardShouldPersistTaps.NEVER
+    set(value) {
+      if (field == value) return
+      field = value
+      dispatchToUi { hostView.keyboardShouldPersistTaps = value }
+    }
+
   override var onRowAction: ((payloadJson: String) -> Unit)? = null
     set(value) { field = value; hostView.onRowAction = value }
   override var onActionAnchorInvalidated: ((payloadJson: String) -> Unit)? = null

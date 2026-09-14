@@ -155,6 +155,8 @@ order, skips headers without `indexTitle`, and scrolls to the header's existing
 row `key`. Titles must be unique after Unicode NFC normalization, contain no
 leading/trailing whitespace, and be at most eight Unicode code points. Set
 `hapticsEnabled: false` to follow an application-level reduced-haptics setting.
+Set `centeredInWindow: true` to render the interactive index rail against the
+full window and center it on the window's geometric midpoint.
 The web implementation renders the same explicit index entries as a DOM
 overlay, with click and pointer-drag navigation.
 
