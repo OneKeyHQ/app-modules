@@ -337,6 +337,10 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       if (isDisposed) return
       field = value
       view.requestLayout()
+      // requestLayout() is a no-op under React Native (the parent
+      // ReactViewGroup swallows it), so a gap change that arrives after the
+      // prefix/suffix props has to re-run the fit, which lays the row out again.
+      recalculateFontSize()
     }
 
   override var suffixMarginLeft: Double? = null
@@ -345,6 +349,10 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       if (isDisposed) return
       field = value
       view.requestLayout()
+      // requestLayout() is a no-op under React Native (the parent
+      // ReactViewGroup swallows it), so a gap change that arrives after the
+      // prefix/suffix props has to re-run the fit, which lays the row out again.
+      recalculateFontSize()
     }
 
   override var showBorder: Boolean? = null
@@ -595,31 +603,43 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       // In contentAutoWidth mode, prioritize width expansion instead of shrinking text.
       if (isContentAutoWidthEnabled) {
         val density = context.resources.displayMetrics.density
+        val scaledDensity = context.resources.displayMetrics.scaledDensity
         val edgeInset = (2f * density).toInt()
         val singleLineWidthPadding = contentAutoWidthPaddingPx()
-        val prefixW = if (prefixView.visibility == View.VISIBLE) measureTextViewWidthPx(prefixView) else 0
-        val suffixW = if (suffixView.visibility == View.VISIBLE) measureTextViewWidthPx(suffixView) else 0
+        val minInputWidth = (24f * density).toInt()
+        // Measure prefix/suffix at every candidate size instead of
+        // once at the current size. applyFontSize scales them together with the
+        // input, so a fit that used their old (smaller) width left performLayout
+        // with a slot narrower than the text and the EditText scrolled the
+        // leading digits out of view (send-amount fiat toggle: "$" prefix appears
+        // while the token suffix disappears and the font grows).
+        val prefixText = if (prefixView.visibility == View.VISIBLE) prefixView.text?.toString().orEmpty() else ""
+        val suffixText = if (suffixView.visibility == View.VISIBLE) suffixView.text?.toString().orEmpty() else ""
         val prefixGap = if (prefixView.visibility == View.VISIBLE) ((prefixMarginRight ?: 0.0) * density).toInt() else 0
         val suffixGap = if (suffixView.visibility == View.VISIBLE) ((suffixMarginLeft ?: 0.0) * density).toInt() else 0
-        val prefixSegment = prefixW + prefixGap
-        val suffixSegment = if (suffixView.visibility == View.VISIBLE) suffixGap + suffixW else 0
         val availableTrackWidth = maxOf(width - (edgeInset * 2), 0)
-        val maxInputWidth = maxOf(availableTrackWidth - prefixSegment - suffixSegment, 0)
-        val maxTextWidth = maxOf(maxInputWidth - singleLineWidthPadding, 0)
+        val availableGroupWidth = maxOf(availableTrackWidth - prefixGap - suffixGap, 0)
         val maxTextHeight = maxOf(height - inputView.paddingTop - inputView.paddingBottom, 0)
         val textForSizing = if (inputText.isEmpty()) (placeholder ?: "") else inputText
         val probeText = if (textForSizing.isEmpty()) "0" else textForSizing
+        val typeface = makeTypeface()
 
-        // Keep both width and line-height within the input slot.
-        val widthFitSize = if (maxTextWidth <= 0) {
-          minSize
-        } else {
-          findOptimalFontSizeSingleLine(
-            fullText = probeText,
-            availableWidth = maxTextWidth.toFloat(),
-            minSize = minSize,
-            maxSize = maxSize
+        // Keep both width and line-height within the input slot. The width probe
+        // mirrors performLayout: input slot (text + padding, at least the minimum
+        // width) plus both side labels, all at the candidate size.
+        val widthFitSize = AutoWidthFontFit.findLargestFittingSize(
+          minSize = minSize,
+          maxSize = maxSize,
+          availableWidth = availableGroupWidth.toFloat()
+        ) { candidateSize ->
+          val textSizePx = candidateSize * scaledDensity
+          val inputW = maxOf(
+            measureSingleLineTextWidthPx(probeText, textSizePx, typeface) + singleLineWidthPadding,
+            minInputWidth
           )
+          (inputW +
+            measureSideLabelWidthPx(prefixText, textSizePx, typeface) +
+            measureSideLabelWidthPx(suffixText, textSizePx, typeface)).toFloat()
         }
         val heightFitSize = if (maxTextHeight <= 0) {
           minSize
@@ -838,30 +858,51 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
   }
 
   private fun measureSingleLineTextWidthPx(text: String): Int {
+    return measureSingleLineTextWidthPx(
+      text,
+      currentFontSize * context.resources.displayMetrics.scaledDensity,
+      makeTypeface()
+    )
+  }
+
+  // Size-parameterized so the auto-width fit can probe candidates.
+  private fun measureSingleLineTextWidthPx(text: String, textSizePx: Float, typeface: Typeface): Int {
     if (text.isEmpty()) return 0
     val paint = TextPaint(Paint.ANTI_ALIAS_FLAG)
-    paint.textSize = currentFontSize * context.resources.displayMetrics.scaledDensity
-    paint.typeface = makeTypeface()
+    paint.textSize = textSizePx
+    paint.typeface = typeface
     return kotlin.math.ceil(paint.measureText(text).toDouble()).toInt()
+  }
+
+  // Width a prefix/suffix label occupies at [textSizePx]. Shared by
+  // the auto-width fit and measureTextViewWidthPx so both agree per size.
+  private fun measureSideLabelWidthPx(text: String, textSizePx: Float, typeface: Typeface): Int {
+    if (text.isEmpty()) return 0
+    val paint = TextPaint(Paint.ANTI_ALIAS_FLAG)
+    paint.textSize = textSizePx
+    paint.typeface = typeface
+    val bounds = Rect()
+    paint.getTextBounds(text, 0, text.length, bounds)
+    val advanceWidth = kotlin.math.ceil(paint.measureText(text).toDouble()).toInt()
+    return maxOf(advanceWidth, bounds.width()) + sideLabelSafetyPaddingPx(textSizePx)
+  }
+
+  // Keep extra room for side bearings/kerning to avoid clipping on some glyphs/fonts.
+  private fun sideLabelSafetyPaddingPx(textSizePx: Float): Int {
+    val density = context.resources.displayMetrics.density
+    return maxOf((4f * density).toInt(), kotlin.math.ceil(textSizePx * 0.5f).toInt())
   }
 
   private fun measureTextViewWidthPx(textView: TextView): Int {
     val content = textView.text?.toString().orEmpty()
     if (content.isEmpty()) return 0
-    val bounds = Rect()
-    textView.paint.getTextBounds(content, 0, content.length, bounds)
-    val advanceWidth = kotlin.math.ceil(textView.paint.measureText(content).toDouble()).toInt()
-    val glyphWidth = bounds.width()
     textView.measure(
       View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
       View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
     )
-    val desiredWidth = textView.measuredWidth
-    val density = context.resources.displayMetrics.density
-    // Keep extra room for side bearings/kerning to avoid clipping on some glyphs/fonts.
-    val safetyPadding = maxOf((4f * density).toInt(), kotlin.math.ceil(textView.textSize * 0.5f).toInt())
-    val measured = maxOf(maxOf(advanceWidth, glyphWidth), desiredWidth) + safetyPadding
-    return measured
+    val desiredWidth = textView.measuredWidth + sideLabelSafetyPaddingPx(textView.textSize)
+    val paintWidth = measureSideLabelWidthPx(content, textView.textSize, textView.typeface)
+    return maxOf(paintWidth, desiredWidth)
   }
 
   private fun requestInputFocus() {
