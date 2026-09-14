@@ -6,8 +6,16 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
   // MARK: - Subviews
   private let prefixLabel = UILabel()
   private let suffixLabel = UILabel()
-  private let singleLineInput = UITextField()
-  private let multiLineInput = UITextView()
+  private let singleLineInput: UITextField = {
+    let input = UITextField()
+    input.keyboardAppearance = .light
+    return input
+  }()
+  private let multiLineInput: UITextView = {
+    let input = UITextView()
+    input.keyboardAppearance = .light
+    return input
+  }()
 
   // MARK: - State
   private var isUpdatingFromJS = false
