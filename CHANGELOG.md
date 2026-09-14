@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.131] - 2026-09-14
+
+### Bug Fixes
+- **image (Android)**: Decode bitmaps at the requested target size without accepting undersized cached resources.
+- **native-sheet**: Include the Fabric header in CocoaPods, finalize queued closes before presentation, and preserve nested security-provider blocking ownership.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.131.
+
 ## [3.0.130] - 2026-09-14
 
 ### Features
