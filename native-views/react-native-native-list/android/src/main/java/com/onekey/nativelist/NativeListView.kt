@@ -134,6 +134,12 @@ class NativeListView(
             directionResolved = true
             pagerGestureIsVertical = deltaY >= deltaX
             recyclerView.parent?.requestDisallowInterceptTouchEvent(pagerGestureIsVertical)
+            if (
+              pagerGestureIsVertical &&
+              keyboardDismissMode == NativeListKeyboardDismissMode.ON_DRAG
+            ) {
+              dismissKeyboard()
+            }
           }
         }
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
