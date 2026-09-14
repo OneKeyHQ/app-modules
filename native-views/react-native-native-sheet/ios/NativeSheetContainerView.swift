@@ -535,6 +535,30 @@ private final class NativeSheetViewController: UIViewController,
   }
 }
 
+private final class NativeSheetContentWrapperView: UIView {
+  private weak var contentChild: UIView?
+
+  func setContentChild(_ child: UIView?) {
+    if contentChild !== child {
+      contentChild?.autoresizingMask = []
+      contentChild?.removeFromSuperview()
+    }
+    contentChild = child
+    guard let child else { return }
+    child.autoresizingMask = []
+    if child.superview !== self {
+      child.removeFromSuperview()
+      addSubview(child)
+    }
+    setNeedsLayout()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    contentChild?.frame = bounds
+  }
+}
+
 @objc final class NativeSheetContainerView: UIView {
   @objc var open = false
   @objc var sheetHeight: CGFloat = 0
@@ -556,6 +580,11 @@ private final class NativeSheetViewController: UIViewController,
   }
 
   private weak var contentChild: UIView?
+  private let contentWrapperView: NativeSheetContentWrapperView = {
+    let view = NativeSheetContentWrapperView()
+    view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    return view
+  }()
   private var committedOpen = false
   private var dismissedForCurrentOpen = false
   private var dismissNotified = false
@@ -572,28 +601,25 @@ private final class NativeSheetViewController: UIViewController,
   override func layoutSubviews() {
     super.layoutSubviews()
     if presentedController == nil {
-      contentChild?.frame = bounds
+      contentWrapperView.frame = bounds
     }
   }
 
   @objc func insertChild(_ child: UIView, atIndex index: Int) {
-    if contentChild !== child {
-      contentChild?.removeFromSuperview()
-    }
+    contentWrapperView.setContentChild(child)
     contentChild = child
     if let controller = presentedController {
       moveContent(to: controller.view)
     } else {
-      child.removeFromSuperview()
-      addSubview(child)
-      child.frame = bounds
-      child.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      moveContent(to: self)
     }
   }
 
   @objc func removeChild(_ child: UIView) {
     guard contentChild === child else { return }
-    child.removeFromSuperview()
+    contentWrapperView.setContentChild(nil)
+    contentWrapperView.removeFromSuperview()
+    child.autoresizingMask = []
     contentChild = nil
   }
 
@@ -658,10 +684,8 @@ private final class NativeSheetViewController: UIViewController,
 
   fileprivate func finishDismiss(reason: String) {
     if let child = contentChild {
-      child.removeFromSuperview()
-      addSubview(child)
-      child.frame = bounds
-      child.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      child.autoresizingMask = []
+      moveContent(to: self)
     }
     let hadController = presentedController != nil
     presentedController = nil
@@ -674,14 +698,17 @@ private final class NativeSheetViewController: UIViewController,
 
   fileprivate func moveContent(to parent: UIView) {
     guard let child = contentChild else { return }
-    child.removeFromSuperview()
-    parent.addSubview(child)
-    child.frame = parent.bounds
-    child.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    child.autoresizingMask = []
+    contentWrapperView.setContentChild(child)
+    if contentWrapperView.superview !== parent {
+      contentWrapperView.removeFromSuperview()
+      parent.addSubview(contentWrapperView)
+    }
+    contentWrapperView.frame = parent.bounds
   }
 
   fileprivate func layoutPresentedContent(in bounds: CGRect) {
-    contentChild?.frame = bounds
+    contentWrapperView.frame = bounds
   }
 
   fileprivate func attachTouchHandler(to view: UIView) {
