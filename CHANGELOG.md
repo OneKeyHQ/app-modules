@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.130] - 2026-09-14
+
+### Features
+- **native-list**: Add keyboard dismissal and tap persistence controls for native list interactions.
+- **native-sheet**: Add reusable native presentation support.
+
+### Bug Fixes
+- **image/native-list (Android)**: Preserve valid image drawables across snapshot rebinds and visible page transitions while guarding asynchronous reuse by image identity.
+- **native-list**: Keep item indexes aligned during paging and dismiss the keyboard consistently while dragging on iOS and Android.
+- **native-sheet**: Prevent reused presentation views from corrupting lifecycle state and remove the unwanted presentation shadow.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.130.
+
 ## [3.0.129] - 2026-09-13
 
 ### Bug Fixes
