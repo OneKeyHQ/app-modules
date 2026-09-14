@@ -135,4 +135,30 @@ describe('NativeSheet imperative registry', () => {
     addNativeSheetRegistryEntry({ renderContent: null, onDismiss }, null);
     expect(getNativeSheetRegistrySnapshot()).toHaveLength(1);
   });
+
+  test('security fallback does not dismiss entries opened after unblocking', () => {
+    jest.useFakeTimers();
+    const blocker = Symbol('security-provider');
+    const firstDismiss = jest.fn();
+    const secondDismiss = jest.fn();
+    const firstId = addNativeSheetRegistryEntry(
+      { renderContent: null, onDismiss: firstDismiss },
+      null
+    );
+    markNativeSheetRegistryEntryPresentationRequested(firstId);
+
+    setNativeSheetRegistryBlocked(blocker, true);
+    finishNativeSheetRegistryEntry(firstId, 'security');
+    setNativeSheetRegistryBlocked(blocker, false);
+    addNativeSheetRegistryEntry(
+      { renderContent: null, onDismiss: secondDismiss },
+      null
+    );
+    jest.advanceTimersByTime(500);
+
+    expect(firstDismiss).toHaveBeenCalledTimes(1);
+    expect(secondDismiss).not.toHaveBeenCalled();
+    expect(getNativeSheetRegistrySnapshot()).toHaveLength(1);
+    jest.useRealTimers();
+  });
 });

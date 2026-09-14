@@ -28,6 +28,17 @@ describe('NativeSheet iOS dimming', () => {
     expect(source).toContain('dimmingView.isUserInteractionEnabled = true');
     expect(source).toContain('dimmingView.addGestureRecognizer(recognizer)');
     expect(source).toContain('host.finishFailedPresentation(reason: "system")');
+    expect(source).toContain(
+      'reason: host.securityBlocked ? "security" : (host.open ? "system" : "programmatic")'
+    );
+    expect(source).toContain('cancelDeferredProgrammaticDismissal(self)');
+    expect(source).toContain('presentedController?.isBeingDismissed == true');
+    expect(source).toContain(
+      'let reopenedAfterProgrammaticDismiss = reason == "programmatic" && committedOpen'
+    );
+    expect(source).toContain(
+      'let shouldNotify = hadController || (reason == "security" && committedOpen)'
+    );
     expect(source).toMatch(
       /dismissOnBackdropPress: dismissOnBackdropPress,\s+dimAmount: dimAmount/
     );

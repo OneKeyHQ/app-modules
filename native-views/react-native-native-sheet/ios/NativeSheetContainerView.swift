@@ -119,6 +119,12 @@ private final class NativeSheetPresentationCoordinator {
     processPending()
   }
 
+  func cancelDeferredProgrammaticDismissal(_ host: NativeSheetContainerView) {
+    deferredDismissals.removeAll {
+      $0.host.value == nil || ($0.host.value === host && $0.reason == "programmatic")
+    }
+  }
+
   func dismiss(_ host: NativeSheetContainerView, reason: String, animated: Bool) {
     pending.removeAll { $0.value == nil || $0.value === host }
     guard !transitioning else {
@@ -221,7 +227,7 @@ private final class NativeSheetPresentationCoordinator {
         } else {
           self.queueDismiss(
             host,
-            reason: host.securityBlocked ? "security" : "system",
+            reason: host.securityBlocked ? "security" : (host.open ? "system" : "programmatic"),
             animated: false
           )
         }
@@ -683,6 +689,7 @@ private final class NativeSheetContentWrapperView: UIView {
     committedOpen = open
     if openChanged && open {
       dismissNotified = false
+      NativeSheetPresentationCoordinator.shared.cancelDeferredProgrammaticDismissal(self)
     }
     if !open {
       dismissedForCurrentOpen = false
@@ -696,7 +703,9 @@ private final class NativeSheetContentWrapperView: UIView {
     } else if window != nil,
               (openChanged || presentedController == nil),
               !dismissedForCurrentOpen {
-      NativeSheetPresentationCoordinator.shared.present(self)
+      if presentedController == nil || presentedController?.isBeingDismissed == true {
+        NativeSheetPresentationCoordinator.shared.present(self)
+      }
     } else if let controller = presentedController, !dismissedForCurrentOpen {
       let shouldAnimate = controller.presentingViewController != nil
         && !controller.isBeingPresented
@@ -744,8 +753,10 @@ private final class NativeSheetContentWrapperView: UIView {
     }
     let hadController = presentedController != nil
     presentedController = nil
-    dismissedForCurrentOpen = committedOpen
-    if hadController && !dismissNotified {
+    let reopenedAfterProgrammaticDismiss = reason == "programmatic" && committedOpen
+    dismissedForCurrentOpen = committedOpen && !reopenedAfterProgrammaticDismiss
+    let shouldNotify = hadController || (reason == "security" && committedOpen)
+    if shouldNotify && !reopenedAfterProgrammaticDismiss && !dismissNotified {
       dismissNotified = true
       onDismiss?(["reason": reason])
     }

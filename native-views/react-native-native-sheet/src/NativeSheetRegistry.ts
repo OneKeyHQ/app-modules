@@ -175,9 +175,17 @@ export function requestSecurityDismissAllNativeSheets() {
   if (securityFallbackTimer) {
     clearTimeout(securityFallbackTimer);
   }
+  const fallbackEntryIds = presentedEntries.map((entry) => entry.id);
   securityFallbackTimer = setTimeout(() => {
     securityFallbackTimer = undefined;
-    finishAllNativeSheetRegistryEntries('security');
+    fallbackEntryIds.forEach((id) => {
+      const pendingEntry = entries.find((entry) => entry.id === id);
+      if (!pendingEntry) {
+        return;
+      }
+      finishNativeSheetRegistryEntry(id, 'security');
+      pendingEntry.options.onAnimationComplete?.({ open: false });
+    });
   }, 500);
 }
 

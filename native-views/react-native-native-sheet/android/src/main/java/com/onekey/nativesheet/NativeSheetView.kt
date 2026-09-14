@@ -51,6 +51,9 @@ internal object NativeSheetStack {
 
   fun present(view: NativeSheetView) {
     compact()
+    deferredDismissals.removeAll {
+      it.first.get() == null || (it.first.get() === view && it.second == "programmatic")
+    }
     if (active.any { it.get() === view } || pending.any { it.get() === view }) {
       return
     }
@@ -768,6 +771,11 @@ class NativeSheetView(
   ) {
     val currentDialog = dialog
     if (currentDialog == null) {
+      if (reason == "security" && committedOpen && !dismissNotified) {
+        dismissedForCurrentOpen = true
+        dismissNotified = true
+        onDismiss?.invoke(reason)
+      }
       completion()
       return
     }
@@ -841,9 +849,10 @@ class NativeSheetView(
     heightAnimator = null
     child?.let { attachChild(this, it, 0) }
     NativeSheetStack.didDismiss(this)
-    if (!dismissNotified) {
+    val reopenedAfterProgrammaticDismiss = pendingDismissReason == "programmatic" && committedOpen
+    dismissedForCurrentOpen = committedOpen && !reopenedAfterProgrammaticDismiss
+    if (!reopenedAfterProgrammaticDismiss && !dismissNotified) {
       dismissNotified = true
-      dismissedForCurrentOpen = committedOpen
       onDismiss?.invoke(pendingDismissReason)
     }
     val completion = dismissalCompletion

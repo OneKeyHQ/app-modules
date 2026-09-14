@@ -58,6 +58,13 @@ describe('NativeSheet Android window behavior', () => {
     expect(source).toContain('ValueAnimator.ofFloat');
     expect(source).toContain('if (open && !securityBlocked)');
     expect(source).toContain('view.finishFailedPresentation()');
+    expect(source).toContain('it.second == "programmatic"');
+    expect(source).toContain(
+      'if (reason == "security" && committedOpen && !dismissNotified)'
+    );
+    expect(source).toContain(
+      'val reopenedAfterProgrammaticDismiss = pendingDismissReason == "programmatic" && committedOpen'
+    );
     expect(source).toContain('animateDimAmount(currentDialog, 0f, animated)');
     expect(source).toContain('com.google.android.material.R.id.touch_outside');
     expect(source).toContain('if (dismissOnBackdropPress)');
