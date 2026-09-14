@@ -34,6 +34,7 @@ export interface AutoSizeInputProps extends HybridViewProps {
 
   // Keyboard & input behavior
   keyboardType?: string;
+  keyboardAppearance?: string;
   returnKeyType?: string;
   autoCorrect?: boolean;
   autoCapitalize?: string;

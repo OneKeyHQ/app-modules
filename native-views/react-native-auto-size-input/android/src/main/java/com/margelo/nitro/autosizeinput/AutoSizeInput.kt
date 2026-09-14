@@ -255,6 +255,8 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
       })
     }
 
+  override var keyboardAppearance: String? = null
+
   override var returnKeyType: String? = null
     get() = field
     set(value) {

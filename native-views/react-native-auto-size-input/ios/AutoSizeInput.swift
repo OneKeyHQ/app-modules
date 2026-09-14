@@ -6,16 +6,8 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
   // MARK: - Subviews
   private let prefixLabel = UILabel()
   private let suffixLabel = UILabel()
-  private let singleLineInput: UITextField = {
-    let input = UITextField()
-    input.keyboardAppearance = .light
-    return input
-  }()
-  private let multiLineInput: UITextView = {
-    let input = UITextView()
-    input.keyboardAppearance = .light
-    return input
-  }()
+  private let singleLineInput = UITextField()
+  private let multiLineInput = UITextView()
 
   // MARK: - State
   private var isUpdatingFromJS = false
@@ -208,6 +200,14 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
       let kt = keyboardTypeFrom(keyboardType)
       singleLineInput.keyboardType = kt
       multiLineInput.keyboardType = kt
+    }
+  }
+
+  var keyboardAppearance: String? {
+    didSet {
+      let appearance = keyboardAppearanceFrom(keyboardAppearance)
+      singleLineInput.keyboardAppearance = appearance
+      multiLineInput.keyboardAppearance = appearance
     }
   }
 
@@ -707,6 +707,14 @@ class HybridAutoSizeInput: HybridAutoSizeInputSpec {
     case "emailAddress": return .emailAddress
     case "phonePad": return .phonePad
     case "url": return .URL
+    default: return .default
+    }
+  }
+
+  private func keyboardAppearanceFrom(_ appearance: String?) -> UIKeyboardAppearance {
+    switch appearance {
+    case "light": return .light
+    case "dark": return .dark
     default: return .default
     }
   }
