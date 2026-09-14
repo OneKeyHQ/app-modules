@@ -1876,7 +1876,16 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     NSString *json = RCTNSStringFromString(newViewProps.pageKeys);
     NSData *data = [json dataUsingEncoding:NSUTF8StringEncoding];
     id parsed = data == nil ? nil : [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-    _pageKeys = [parsed isKindOfClass:NSArray.class] ? parsed : @[];
+    NSArray<NSString *> *nextPageKeys = [parsed isKindOfClass:NSArray.class] ? parsed : @[];
+    // Stable keys keep their released identity across reorders. A missing key
+    // represents an unmounted React page and must not be reused by a later page.
+    NSSet<NSString *> *validPageKeys = [NSSet setWithArray:nextPageKeys];
+    for (NSString *pageKey in _releasedPageScrollStates.allKeys) {
+      if (![validPageKeys containsObject:pageKey]) {
+        [_releasedPageScrollStates removeObjectForKey:pageKey];
+      }
+    }
+    _pageKeys = nextPageKeys;
   }
   if (_needsPropsReapply || oldViewProps.retainedPages != newViewProps.retainedPages) {
     _retainedPages = RCTNSStringFromString(newViewProps.retainedPages);

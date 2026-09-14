@@ -985,6 +985,11 @@ internal class NativeListRowView(
       "action" -> bindAction(item, theme, checkboxState)
       "system" -> bindSystem(item, theme)
     }
+    // Keep passive rows out of accessibility and keyboard focus while allowing
+    // their independently bound accessory controls to remain interactive.
+    val wholeRowPressEnabled = item.type != "walletGroup" && item.isRowPressEnabled
+    isClickable = wholeRowPressEnabled
+    isFocusable = wholeRowPressEnabled
     applySize(item)
     if (item.type == "system" && item.json.optString("variant") == "warning") {
       title.typeface = NativeListFonts.medium(context)
