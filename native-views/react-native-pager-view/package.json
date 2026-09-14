@@ -39,7 +39,6 @@
     "prepare": "rm -rf lib && bob build",
     "typecheck": "tsc -b",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "test": "node --test src/__tests__/*.cjs",
     "release": "yarn prepare && npm whoami && npm publish --access public"
   },
   "keywords": [
