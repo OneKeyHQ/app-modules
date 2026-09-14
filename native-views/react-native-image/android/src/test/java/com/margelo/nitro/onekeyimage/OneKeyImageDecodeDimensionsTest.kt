@@ -1,5 +1,6 @@
 package com.margelo.nitro.onekeyimage
 
+import com.bumptech.glide.load.resource.bitmap.DownsampleStrategy.SampleSizeRounding
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -67,6 +68,14 @@ class OneKeyImageDecodeDimensionsTest {
     val decodedBytes = 8000.0 * scale * 1000.0 * scale * 4.0
 
     assertTrue(decodedBytes <= OneKeyImageDecodeDimensions.MAX_DECODE_BYTES)
+  }
+
+  @Test
+  fun safeDownsampleStrategyPrefersQualityOverUndersizedDecodes() {
+    assertEquals(
+      SampleSizeRounding.QUALITY,
+      OneKeyImageSafeDownsampleStrategy.getSampleSizeRounding(160, 160, 55, 55),
+    )
   }
 
   @Test
