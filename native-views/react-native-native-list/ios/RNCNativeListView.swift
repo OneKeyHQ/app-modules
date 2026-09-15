@@ -115,6 +115,7 @@ final class NativeListView: UIView {
   private let reorderStartFeedback = UIImpactFeedbackGenerator(style: .medium)
   private let reorderMoveFeedback = UISelectionFeedbackGenerator()
   private var interactiveReorderFeedbackIndex: Int?
+  private var interactiveMovementKeys: [String]?
   private var actionAnchor: ActionAnchorRecord?
   private let actionAnchorInstanceID = UUID().uuidString
   private var actionAnchorCounter = 0
@@ -731,6 +732,9 @@ final class NativeListView: UIView {
         collectionView.layoutIfNeeded()
         return
       }
+      if !interactiveReorderUsesAtomicTargeting {
+        interactiveMovementKeys = dataSource.snapshot().itemIdentifiers
+      }
       interactiveReorderFeedbackIndex = indexPath.item
       reorderStartFeedback.impactOccurred(intensity: 0.7)
       reorderStartFeedback.prepare()
@@ -838,9 +842,11 @@ final class NativeListView: UIView {
     interactiveReorderAnimator?.stopAnimation(true)
     interactiveReorderFeedbackIndex = nil
     if cancelled {
+      interactiveMovementKeys = nil
       collectionView.cancelInteractiveMovement()
     } else {
       collectionView.endInteractiveMovement()
+      interactiveMovementKeys = nil
     }
     let animator = UIViewPropertyAnimator(
       duration: ReorderAnimation.duration,
@@ -874,6 +880,7 @@ final class NativeListView: UIView {
     guard interactiveReorderSource != nil else { return }
     interactiveReorderAnimator?.stopAnimation(true)
     interactiveReorderAnimator = nil
+    interactiveMovementKeys = nil
     collectionView.cancelInteractiveMovement()
     interactiveReorderCell?.setPressed(false)
     if interactiveReorderCompactKey != nil {
@@ -976,6 +983,23 @@ final class NativeListView: UIView {
   private func walletGroupCell(for key: String) -> NativeListCell? {
     guard let index = dataSource.snapshot().indexOfItem(key) else { return nil }
     return collectionView.cellForItem(at: IndexPath(item: index, section: 0)) as? NativeListCell
+  }
+
+  // OneKey patch: flow layout sizes an interactive move in UIKit's in-flight order,
+  // while the diffable snapshot and cell index paths keep the pre-drag order until
+  // the move commits. Resolving sizes from the snapshot swaps row heights.
+  private func layoutItem(at indexPath: IndexPath) -> NativeListItem? {
+    guard let keys = interactiveMovementKeys else { return item(at: indexPath) }
+    return keys[safe: indexPath.item].flatMap { itemsByKey[$0] }
+  }
+
+  private func updateInteractiveMovementKeys(movingFrom source: IndexPath, to target: IndexPath) {
+    guard interactiveMovementKeys != nil else { return }
+    var keys = dataSource.snapshot().itemIdentifiers
+    guard keys.indices.contains(source.item) else { return }
+    let key = keys.remove(at: source.item)
+    keys.insert(key, at: min(max(target.item, 0), keys.count))
+    interactiveMovementKeys = keys
   }
 
   private func item(at indexPath: IndexPath) -> NativeListItem? {
@@ -2049,7 +2073,9 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
     atCurrentIndexPath currentIndexPath: IndexPath,
     toProposedIndexPath proposedIndexPath: IndexPath
   ) -> IndexPath {
-    interactiveReorderUsesAtomicTargeting ? currentIndexPath : proposedIndexPath
+    guard !interactiveReorderUsesAtomicTargeting else { return currentIndexPath }
+    updateInteractiveMovementKeys(movingFrom: originalIndexPath, to: proposedIndexPath)
+    return proposedIndexPath
   }
 
   func collectionView(
@@ -2057,7 +2083,9 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
     targetIndexPathForMoveFromItemAt originalIndexPath: IndexPath,
     toProposedIndexPath proposedIndexPath: IndexPath
   ) -> IndexPath {
-    interactiveReorderUsesAtomicTargeting ? originalIndexPath : proposedIndexPath
+    guard !interactiveReorderUsesAtomicTargeting else { return originalIndexPath }
+    updateInteractiveMovementKeys(movingFrom: originalIndexPath, to: proposedIndexPath)
+    return proposedIndexPath
   }
 
   func collectionView(
@@ -2065,7 +2093,7 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
     layout collectionViewLayout: UICollectionViewLayout,
     sizeForItemAt indexPath: IndexPath
   ) -> CGSize {
-    guard let config, let item = item(at: indexPath) else { return .zero }
+    guard let config, let item = layoutItem(at: indexPath) else { return .zero }
     let insets = flowLayout.sectionInset
     if config.orientation == "horizontal" {
       let width: CGFloat = item.type == "rail" ? railWidth(item) : item.type == "mediaTile" ? 200 : 280
