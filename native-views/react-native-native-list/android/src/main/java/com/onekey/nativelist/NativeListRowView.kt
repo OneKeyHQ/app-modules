@@ -3538,9 +3538,12 @@ internal class NativeListRowView(
   }
 
   private fun sourceFallbackStateKey(source: JSONObject): String? =
-    source.optString("uri").trim().takeIf(String::isNotEmpty)?.let { uri ->
-      "$uri\u0000${source.optJSONObject("headers")?.toString().orEmpty()}"
-    }
+    nativeListSourceFallbackStateKey(
+      uri = source.optString("uri"),
+      headers = source.optJSONObject("headers")?.let { headers ->
+        headers.keys().asSequence().associateWith { headers.optString(it) }
+      }.orEmpty(),
+    )
 
   private fun leadingImageLayout(
     index: Int,

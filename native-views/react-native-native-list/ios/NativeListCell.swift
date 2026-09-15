@@ -1,6 +1,7 @@
 import Foundation
 // OneKey patch: preserve native font faces while enabling tabular number features.
 import CoreText
+import CryptoKit
 import OneKeyImage
 import UIKit
 
@@ -3694,15 +3695,21 @@ final class NativeListCell: UICollectionViewCell {
   private func sourceFallbackStateKey(_ source: [String: Any]) -> String? {
     let uri = source.string("uri").trimmingCharacters(in: .whitespacesAndNewlines)
     guard !uri.isEmpty else { return nil }
-    let headersJson: String
-    if let headers = source.dictionary("headers"),
-       JSONSerialization.isValidJSONObject(headers),
-       let data = try? JSONSerialization.data(withJSONObject: headers, options: [.sortedKeys]) {
-      headersJson = String(data: data, encoding: .utf8) ?? ""
-    } else {
-      headersJson = ""
+    // The fallback-state cache is process-wide, so key it by a digest of the request identity
+    // instead of retaining raw header values, which can carry credentials such as Authorization.
+    let headers = source.dictionary("headers") ?? [:]
+    let fields: [(name: String, value: String)] = headers.map { key, value in
+      (name: key.lowercased(), value: String(describing: value))
     }
-    return "\(uri)\u{0}\(headersJson)"
+    let sortedFields = fields.sorted { lhs, rhs in
+      lhs.name == rhs.name ? lhs.value < rhs.value : lhs.name < rhs.name
+    }
+    var canonicalValue = "\(uri.utf8.count):\(uri)"
+    for field in sortedFields {
+      canonicalValue += "\(field.name.utf8.count):\(field.name)\(field.value.utf8.count):\(field.value)"
+    }
+    let digest = SHA256.hash(data: Data(canonicalValue.utf8))
+    return digest.map { String(format: "%02x", $0) }.joined()
   }
 
   private func leadingConstraints(
