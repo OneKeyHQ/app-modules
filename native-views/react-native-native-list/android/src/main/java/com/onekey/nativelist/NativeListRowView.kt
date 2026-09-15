@@ -395,6 +395,30 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
   private fun sp(value: Float): Float = NativeListScale.font(resources, value)
 }
 
+private object NativeListSourceFallbackState {
+  private const val CACHE_LIMIT = 128
+  private val sources = LinkedHashMap<String, Unit>(CACHE_LIMIT, 0.75f, true)
+
+  fun has(key: String): Boolean = synchronized(sources) {
+    sources[key] != null
+  }
+
+  fun remember(key: String) {
+    synchronized(sources) {
+      sources[key] = Unit
+      while (sources.size > CACHE_LIMIT) {
+        sources.remove(sources.entries.first().key)
+      }
+    }
+  }
+
+  fun forget(key: String) {
+    synchronized(sources) {
+      sources.remove(key)
+    }
+  }
+}
+
 internal class NativeListRowView(
   private val reactContext: ThemedReactContext,
 ) : LinearLayout(reactContext) {
@@ -1372,6 +1396,7 @@ internal class NativeListRowView(
     leadingIcon.visibility = GONE
     leadingIcon.iconName = ""
     leadingIcon.layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
+    leadingIcon.glyphSizeDp = null
     favoriteIcon.visibility = GONE
     favoriteIcon.iconName = ""
     headerTitleIcon.visibility = GONE
@@ -3214,13 +3239,27 @@ internal class NativeListRowView(
     val cornerIconData = visual.optJSONObject("cornerIcon")
     val fallback = visual.optString("fallbackText").take(2)
     val fallbackIconData = visual.optJSONObject("fallbackIcon")
+    val fallbackIconSizeDp = fallbackIconData?.let {
+      val slotSizeDp = minOf(sizeDp, heightDp)
+      if (it.optString("name") == "GlobusOutline") {
+        (slotSizeDp * 1.2f).roundToInt()
+      } else {
+        slotSizeDp
+      }
+    }
     val sourceLoadingStrategy = sources.firstOrNull()?.first?.optString("loadingStrategy", "none") ?: "none"
     val showsSourcePlaceholder = !isIcon && sources.isNotEmpty() && sourceLoadingStrategy != "none"
     val handlesSourceFallback =
       !isIcon && sources.isNotEmpty() &&
         showsSourcePlaceholder &&
         (visual.has("fallbackText") || fallbackIconData != null)
-    leadingFallback.text = if (handlesSourceFallback) "" else fallback
+    val sourceFallbackKey = if (handlesSourceFallback) {
+      sources.firstOrNull()?.first?.let(::sourceFallbackStateKey)
+    } else null
+    val restoresSourceFallback =
+      sourceFallbackKey?.let(NativeListSourceFallbackState::has) == true
+    leadingFallback.text =
+      if (handlesSourceFallback && !restoresSourceFallback) "" else fallback
     leadingFallback.setTextColor(parseNativeListColor("#00000072"))
     val visualBackground = safeColor(
       visual.optString("backgroundColor"),
@@ -3245,9 +3284,16 @@ internal class NativeListRowView(
         fallbackIconData.optString("tintColor"),
         parseNativeListColor("#0000009B"),
       )
+      leadingIcon.layoutParams = FrameLayout.LayoutParams(
+        dp(fallbackIconSizeDp ?: sizeDp),
+        dp(fallbackIconSizeDp ?: heightDp),
+        Gravity.CENTER,
+      )
+      leadingIcon.glyphSizeDp = fallbackIconSizeDp
       // Keep the fallback measured while the source loads so an asynchronous
       // failure can reveal it without waiting for another RecyclerView layout.
-      leadingIcon.visibility = INVISIBLE
+      leadingFallback.visibility = if (restoresSourceFallback) GONE else VISIBLE
+      leadingIcon.visibility = if (restoresSourceFallback) VISIBLE else INVISIBLE
     }
     if (isIcon) {
       leadingFrame.background = GradientDrawable().apply {
@@ -3268,6 +3314,12 @@ internal class NativeListRowView(
         fallbackIconData.optString("tintColor"),
         parseNativeListColor("#0000009B"),
       )
+      leadingIcon.layoutParams = FrameLayout.LayoutParams(
+        dp(fallbackIconSizeDp ?: sizeDp),
+        dp(fallbackIconSizeDp ?: heightDp),
+        Gravity.CENTER,
+      )
+      leadingIcon.glyphSizeDp = fallbackIconSizeDp
       leadingIcon.visibility = VISIBLE
     }
     val visibleSources = sources.take(leadingImages.size)
@@ -3366,6 +3418,7 @@ internal class NativeListRowView(
       bindImage(source, image, boundKey ?: "", index, variant,
         onLoad = if (!ownsSourceFallback) null else ({
           if (bindingEpoch == expectedEpoch) {
+            sourceFallbackKey?.let(NativeListSourceFallbackState::forget)
             image.visibility = VISIBLE
             leadingFallback.visibility = GONE
             leadingIcon.visibility = GONE
@@ -3373,6 +3426,7 @@ internal class NativeListRowView(
         }),
         onError = if (!ownsSourceFallback) null else ({
           if (bindingEpoch == expectedEpoch) {
+            sourceFallbackKey?.let(NativeListSourceFallbackState::remember)
             image.visibility = GONE
             if (fallbackIcon != null) {
               leadingFallback.visibility = GONE
@@ -3482,6 +3536,11 @@ internal class NativeListRowView(
       }
     }
   }
+
+  private fun sourceFallbackStateKey(source: JSONObject): String? =
+    source.optString("uri").trim().takeIf(String::isNotEmpty)?.let { uri ->
+      "$uri\u0000${source.optJSONObject("headers")?.toString().orEmpty()}"
+    }
 
   private fun leadingImageLayout(
     index: Int,
