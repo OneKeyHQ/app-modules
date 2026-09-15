@@ -4,6 +4,26 @@ import CoreText
 import OneKeyImage
 import UIKit
 
+private enum NativeListSourceFallbackState {
+  private static let sources: NSCache<NSString, NSNumber> = {
+    let cache = NSCache<NSString, NSNumber>()
+    cache.countLimit = 128
+    return cache
+  }()
+
+  static func has(_ key: String) -> Bool {
+    sources.object(forKey: key as NSString) != nil
+  }
+
+  static func remember(_ key: String) {
+    sources.setObject(NSNumber(value: true), forKey: key as NSString)
+  }
+
+  static func forget(_ key: String) {
+    sources.removeObject(forKey: key as NSString)
+  }
+}
+
 // Market/TokenListSkeleton: source geometry and the native Skeleton's 3s shimmer.
 private final class NativeListMarketSkeleton: UIView {
   private let marks = (0..<5).map { _ in UIView() }
@@ -3408,12 +3428,20 @@ final class NativeListCell: UICollectionViewCell {
     let cornerIcon = visual.dictionary("cornerIcon")
     let fallbackText = String(visual.string("fallbackText").prefix(2))
     let fallbackIconData = visual.dictionary("fallbackIcon")
+    let fallbackIconSize = fallbackIconData.map {
+      let slotSize = min(leadingWidth.constant, leadingHeight.constant)
+      return $0.string("name") == "GlobusOutline" ? slotSize * 1.2 : slotSize
+    }
     let sourceLoadingStrategy = sources.first?.data.string("loadingStrategy", default: "none") ?? "none"
     let showsSourcePlaceholder = !isIcon && !sources.isEmpty && sourceLoadingStrategy != "none"
     let handlesSourceFallback = !isIcon && !sources.isEmpty &&
       showsSourcePlaceholder &&
       (visual["fallbackText"] != nil || fallbackIconData != nil)
-    fallbackLabel.text = handlesSourceFallback ? nil : fallbackText
+    let sourceFallbackKey = handlesSourceFallback
+      ? sources.first.flatMap { sourceFallbackStateKey($0.data) }
+      : nil
+    let restoresSourceFallback = sourceFallbackKey.map(NativeListSourceFallbackState.has) ?? false
+    fallbackLabel.text = handlesSourceFallback && !restoresSourceFallback ? nil : fallbackText
     let sourceFallbackBackground = currentTheme?["strongBackground"] as? String ?? "#0000000F"
     // OneKey patch: source-backed visuals default to no placeholder/background.
     // A non-none image loadingStrategy opts back into the themed placeholder.
@@ -3450,6 +3478,20 @@ final class NativeListCell: UICollectionViewCell {
       )
       leadingIconImageView.image = nativeListIcon(named: fallbackIconData.string("name"))
       leadingIconImageView.contentMode = .scaleAspectFit
+    }
+    if handlesSourceFallback, let fallbackIconData {
+      fallbackLabel.isHidden = true
+      leadingIconImageView.image = nativeListIcon(named: fallbackIconData.string("name"))
+      leadingIconImageView.tintColor = UIColor(
+        nativeListHex: fallbackIconData.string("tintColor", default: "#646464"),
+        fallback: .darkGray
+      )
+      leadingIconImageView.contentMode = .scaleAspectFit
+      leadingIconWidth.constant = fallbackIconSize ?? leadingWidth.constant
+      leadingIconHeight.constant = fallbackIconSize ?? leadingHeight.constant
+      leadingIconImageView.isHidden = !restoresSourceFallback
+    } else if handlesSourceFallback {
+      fallbackLabel.isHidden = !restoresSourceFallback
     }
     let visibleSources = Array(sources.prefix(leadingImages.count))
     let tokenPair = kind == "token" && visibleSources.count > 1
@@ -3506,6 +3548,9 @@ final class NativeListCell: UICollectionViewCell {
       bindImage(source.data, into: imageView, token: key, slot: index, variant: source.variant,
         onLoad: !ownsSourceFallback ? nil : { [weak self, weak imageView] in
           guard let self, self.bindingEpoch == expectedEpoch else { return }
+          if let sourceFallbackKey {
+            NativeListSourceFallbackState.forget(sourceFallbackKey)
+          }
           imageView?.isHidden = false
           self.fallbackLabel.isHidden = true
           self.leadingIconImageView.isHidden = true
@@ -3513,6 +3558,9 @@ final class NativeListCell: UICollectionViewCell {
         },
         onError: !ownsSourceFallback ? nil : { [weak self, weak imageView] in
           guard let self, self.bindingEpoch == expectedEpoch else { return }
+          if let sourceFallbackKey {
+            NativeListSourceFallbackState.remember(sourceFallbackKey)
+          }
           imageView?.isHidden = true
           if let fallbackIcon {
             self.fallbackLabel.isHidden = true
@@ -3641,6 +3689,20 @@ final class NativeListCell: UICollectionViewCell {
       sources.append((networkImage, "network"))
     }
     return sources
+  }
+
+  private func sourceFallbackStateKey(_ source: [String: Any]) -> String? {
+    let uri = source.string("uri").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !uri.isEmpty else { return nil }
+    let headersJson: String
+    if let headers = source.dictionary("headers"),
+       JSONSerialization.isValidJSONObject(headers),
+       let data = try? JSONSerialization.data(withJSONObject: headers, options: [.sortedKeys]) {
+      headersJson = String(data: data, encoding: .utf8) ?? ""
+    } else {
+      headersJson = ""
+    }
+    return "\(uri)\u{0}\(headersJson)"
   }
 
   private func leadingConstraints(
