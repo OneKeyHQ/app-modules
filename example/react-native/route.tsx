@@ -29,6 +29,7 @@ import { NativeListAccountSelectorPage } from './pages/NativeListAccountSelector
 import type { AccountSelectorInitialTargetInput } from './pages/nativeListAccountSelectorData';
 import { NativeListNetworkSelectorPage } from './pages/NativeListNetworkSelectorPage';
 import { NativeListTokenSelectorPage } from './pages/NativeListTokenSelectorPage';
+import { NativeListWalletSidebarReorderPage } from './pages/NativeListWalletSidebarReorderPage';
 import type { MarketSearchParams } from './pages/MarketNativePagerExamplePage';
 import {
   NativeListExamplePage,
@@ -85,6 +86,7 @@ export type RootStackParamList = {
   NativeListAccountSelector: AccountSelectorInitialTargetInput | undefined;
   NativeListNetworkSelector: undefined;
   NativeListTokenSelector: undefined;
+  NativeListWalletSidebarReorder: undefined;
   MarketNativePager: undefined;
   MarketSearch: MarketSearchParams;
   OtaPipeline: undefined;
@@ -279,6 +281,13 @@ const modules: {
     description:
       'Production network catalog with native sections, search, and selection',
     icon: '🌐',
+  },
+  {
+    screen: 'NativeListWalletSidebarReorder',
+    name: 'Native List Wallet Sidebar Reorder',
+    description:
+      'OK-62492 recorded wallet sidebar for iOS wallet group drag reorder',
+    icon: '🗂️',
   },
   {
     screen: 'PagerView',
@@ -670,6 +679,12 @@ export function AppNavigator() {
         name="NativeListTokenSelector"
         component={NativeListTokenSelectorPage}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="NativeListWalletSidebarReorder"
+        component={NativeListWalletSidebarReorderPage}
+        // The sidebar sits on the left edge; edge-swipe back would steal slow drags.
+        options={{ headerShown: false, gestureEnabled: false }}
       />
       <Stack.Screen
         name="PagerView"
