@@ -4154,8 +4154,10 @@ final class NativeListCell: UICollectionViewCell {
       },
       onError: retryLimit == 0 ? handleError : { [weak self, weak imageView] in
         guard let self, self.bindingEpoch == expectedEpoch, let imageView else { return }
-        guard retryAttempt < retryLimit else { handleError?(); return }
-        guard self.selectorImageRetries[imageID] == nil else { return }
+        // Report every failed attempt: a rebind during the retry delay cancels the pending retry,
+        // so deferring to the last attempt would never record the source fallback state.
+        handleError?()
+        guard retryAttempt < retryLimit, self.selectorImageRetries[imageID] == nil else { return }
         let retry = DispatchWorkItem { [weak self, weak imageView] in
           guard let self, self.bindingEpoch == expectedEpoch, let imageView else { return }
           self.selectorImageRetries.removeValue(forKey: imageID)
