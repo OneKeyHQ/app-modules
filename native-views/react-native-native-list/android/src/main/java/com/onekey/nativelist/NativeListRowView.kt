@@ -4159,8 +4159,10 @@ internal class NativeListRowView(
     val uri = source.optString("uri").trim().takeIf(String::isNotEmpty)
     val sourceHeadersJson = source.optJSONObject("headers")?.toString()
     val recyclingKey = if (retryAttempt == 0) "$token:$slot" else "$token:$slot:retry:$retryAttempt"
-    if (hideUntilLoaded && !imageView.isDisplaying(uri, sourceHeadersJson, recyclingKey)) {
-      imageView.visibility = INVISIBLE
+    if (hideUntilLoaded) {
+      imageView.visibility = if (
+        imageView.isDisplaying(uri, sourceHeadersJson, recyclingKey)
+      ) VISIBLE else INVISIBLE
     }
     val handleLoad: (() -> Unit)? = if (hideUntilLoaded) ({
       if (bindingEpoch == expectedEpoch) {

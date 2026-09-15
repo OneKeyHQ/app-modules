@@ -325,20 +325,8 @@ export function OneKeyImage({
       ].some((radius) => typeof radius === 'number' && radius > 0)
   );
   const shouldWrapNative = hasOverlay || hasRoundedCorners;
-  const hasBorderWidth = Boolean(
-    flattenedStyle &&
-      [
-        flattenedStyle.borderWidth,
-        flattenedStyle.borderTopWidth,
-        flattenedStyle.borderRightWidth,
-        flattenedStyle.borderBottomWidth,
-        flattenedStyle.borderLeftWidth,
-        flattenedStyle.borderStartWidth,
-        flattenedStyle.borderEndWidth,
-      ].some((width) => typeof width === 'number' && width > 0)
-  );
   const borderOverlayStyle =
-    flattenedStyle && hasRoundedCorners && hasBorderWidth
+    flattenedStyle && hasRoundedCorners
       ? {
           borderWidth: flattenedStyle.borderWidth,
           borderTopWidth: flattenedStyle.borderTopWidth,
@@ -396,7 +384,7 @@ export function OneKeyImage({
       style={[
         style,
         styles.overlayContainer,
-        borderOverlayStyle ? styles.borderlessContainer : undefined,
+        hasRoundedCorners ? styles.borderlessContainer : undefined,
       ]}
       collapsable={false}
     >

@@ -279,8 +279,10 @@ describe('OneKeyImage wrapper', () => {
     });
     expect(onDisplay).toHaveBeenCalledTimes(1);
     expect(
-      renderer!.root.findAllByProps({ pointerEvents: 'none' })
-    ).toHaveLength(0);
+      renderer!.root
+        .findAllByProps({ pointerEvents: 'none' })
+        .every((node) => StyleSheet.flatten(node.props.style)?.zIndex === 1)
+    ).toBe(true);
 
     const container = renderer!.root.findByProps({ collapsable: false });
     expect(StyleSheet.flatten(container.props.style)).toMatchObject({
@@ -416,6 +418,49 @@ describe('OneKeyImage wrapper', () => {
       });
     }
   );
+
+  it('keeps the rounded border overlay mounted when the border is removed', async () => {
+    const source = { uri: 'https://example.com/token.png' };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <OneKeyImage
+          source={source}
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: '#ffffff09',
+          }}
+        />
+      );
+    });
+    const borderOverlay = renderer!.root
+      .findAllByProps({ pointerEvents: 'none' })
+      .find((node) => StyleSheet.flatten(node.props.style)?.zIndex === 1);
+    expect(borderOverlay).toBeDefined();
+
+    await act(() => {
+      renderer!.update(
+        <OneKeyImage
+          source={source}
+          style={{ width: 40, height: 40, borderRadius: 20 }}
+        />
+      );
+    });
+
+    const container = renderer!.root.findByProps({ collapsable: false });
+    expect(StyleSheet.flatten(container.props.style)).toMatchObject({
+      borderRadius: 20,
+      borderWidth: 0,
+      overflow: 'hidden',
+    });
+    const updatedBorderOverlay = renderer!.root
+      .findAllByProps({ pointerEvents: 'none' })
+      .find((node) => StyleSheet.flatten(node.props.style)?.zIndex === 1);
+    expect(updatedBorderOverlay).toBe(borderOverlay);
+  });
 
   it('uses the documented Android autoplay default', async () => {
     const originalOS = Platform.OS;
