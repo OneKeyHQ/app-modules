@@ -965,6 +965,10 @@ export const WEB_LIST_CSS = `
 .ok-native-list-account-row[data-native-list-selector="accountSelector"]>.ok-native-list-accessories[data-native-list-account-control="createAddress"]{position:absolute;top:18px;right:12px}
 .ok-native-list-account-row[data-native-list-selector="accountSelector"] .ok-native-list-accessories>[data-native-list-account-control="createAddress"]{flex-basis:36px;width:36px;height:36px;padding:6px;border-radius:8px}
 .ok-native-list-account-action-row{padding-left:12px;padding-right:12px}.ok-native-list-account-action-row .ok-native-list-action-title{font-size:16px;line-height:24px;font-weight:400}.ok-native-list-account-action-row .ok-native-list-action-title[data-tone="primary"]{color:var(--nl-primary)}
+/* OneKey patch: account selector wallets and accounts keep the default cursor instead of pointer or grab affordances. */
+.ok-native-list-root .ok-native-list-item>.ok-native-list-wallet-row,.ok-native-list-root .ok-native-list-wallet-member>.ok-native-list-wallet-row,.ok-native-list-root .ok-native-list-item>.ok-native-list-account-row,.ok-native-list-root .ok-native-list-item>.ok-native-list-account-action-row,.ok-native-list-wallet-member,.ok-native-list-wallet-row *,.ok-native-list-account-row *,.ok-native-list-account-action-row *{cursor:default}
+/* OneKey patch: Add account hover and pressed backgrounds keep the account row corner radius. */
+.ok-native-list-account-action-row{border-radius:12px}
 `;
 
 function createElement(
