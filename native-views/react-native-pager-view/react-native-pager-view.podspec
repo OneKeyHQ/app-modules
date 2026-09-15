@@ -14,6 +14,11 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/nicholasxuu/app-modules.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm}"
+  s.exclude_files = "ios/tests/**/*"
+
+  s.test_spec "Tests" do |test_spec|
+    test_spec.source_files = "ios/tests/**/*.{m,mm}"
+  end
 
   install_modules_dependencies(s)
 

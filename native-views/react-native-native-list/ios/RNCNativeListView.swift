@@ -293,13 +293,13 @@ final class NativeListView: UIView {
     if let touchView = touch.view,
        touchView === footerCell || touchView.isDescendant(of: footerCell) {
       guard let footer = config?.fixedFooter else { return false }
-      return !footer.data.bool("disabled") && !footer.data.bool("pressDisabled")
+      return footer.isRowPressEnabled
     }
     let point = touch.location(in: collectionView)
     guard collectionView.bounds.contains(point),
           let indexPath = collectionView.indexPathForItem(at: point),
           let item = item(at: indexPath) else { return false }
-    return !item.data.bool("disabled") && !item.data.bool("pressDisabled")
+    return item.isRowPressEnabled
   }
 
   required init?(coder: NSCoder) {
@@ -1310,7 +1310,7 @@ final class NativeListView: UIView {
 
   private func handleRowPress(_ item: NativeListItem, origin: NativeListActionOrigin?) {
     // OneKey patch: missing-address rows keep accessory actions available.
-    guard let config, !item.data.bool("disabled"), !item.data.bool("pressDisabled") else { return }
+    guard let config, item.isRowPressEnabled else { return }
     if config.rowPressToggles && item.isSelectable && config.selectionMode != "none" {
       updateSelection(target: NativeSelectionTarget(scope: "row", key: item.key), sourceKey: item.key)
       return
@@ -1332,7 +1332,7 @@ final class NativeListView: UIView {
     guard let indexPath = collectionView.indexPathForItem(at: point),
           let item = config?.items[safe: indexPath.item],
           item.type == "market",
-          !item.data.bool("disabled") else { return }
+          item.isRowPressEnabled else { return }
     let actionKey = item.data.string("longPressActionKey")
     guard !actionKey.isEmpty else { return }
     let origin = (collectionView.cellForItem(at: indexPath) as? NativeListCell)?.rowActionOrigin()
@@ -1906,6 +1906,10 @@ final class NativeListView: UIView {
   }
 
   @objc private func footerHighlightChanged(_ recognizer: UILongPressGestureRecognizer) {
+    guard config?.fixedFooter?.isRowPressEnabled == true else {
+      footerCell.setPressed(false)
+      return
+    }
     switch recognizer.state {
     case .began, .changed:
       footerCell.setPressed(footerCell.bounds.contains(recognizer.location(in: footerCell)))
@@ -1964,7 +1968,7 @@ final class NativeListView: UIView {
       if gestureRecognizer === reorderLongPress {
         return config?.reorderable == true && item.isReorderable
       }
-      return item.type == "market" && !item.data.string("longPressActionKey").isEmpty
+      return item.type == "market" && item.isRowPressEnabled && !item.data.string("longPressActionKey").isEmpty
     }
     guard gestureRecognizer === listBodyGestureGuard,
           let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
@@ -2107,7 +2111,7 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
 
   func collectionView(_ collectionView: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
     guard let item = config?.items[safe: indexPath.item] else { return false }
-    return !item.data.bool("disabled")
+    return item.isRowPressEnabled
   }
 
   func collectionView(_ collectionView: UICollectionView, didHighlightItemAt indexPath: IndexPath) {
@@ -2120,7 +2124,7 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
 
   func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
     guard let item = config?.items[safe: indexPath.item] else { return false }
-    return !item.data.bool("disabled")
+    return item.isRowPressEnabled
   }
 
   func scrollViewDidScroll(_ scrollView: UIScrollView) {

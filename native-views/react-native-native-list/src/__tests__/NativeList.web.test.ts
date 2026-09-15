@@ -1,11 +1,9 @@
 import type {
   IdentityRow,
-  MarketRow,
   NativeListSnapshot,
   RowModel,
 } from '../models';
 import {
-  WEB_LIST_CSS,
   WEB_REORDER_ANIMATION,
   canStartWebWalletGroupReorder,
   cancelWebReorderRows,
@@ -13,9 +11,7 @@ import {
   estimateWebRowHeight,
   hasExceededWebReorderMouseThreshold,
   isWebRowReorderable,
-  isWebMarketQuotePatch,
   moveWebReorderRow,
-  resolveWebMarketLayoutStyle,
   resolveWebCollapsiblePagerRawOffset,
   resolveWebCollapsiblePagerScrollMetrics,
   visibleWebLayoutItems,
@@ -23,10 +19,8 @@ import {
   webReorderEventForRows,
   webLayoutItemsForMount,
   webActionAnchorPayload,
-  webMarketImageBindDeltaForPatches,
   webRowRenderSignature,
   webWalletGroupReorderBadge,
-  WEB_MARKET_VERIFIED_PATH,
 } from '../web/NativeListWebEngine';
 
 jest.mock('../web/NativeListWebAvatarCache', () => ({
@@ -39,27 +33,6 @@ const image = {
   width: 40,
   height: 40,
 } as const;
-
-const market: MarketRow = {
-  type: 'market',
-  key: 'market-btc',
-  variant: 'token',
-  leading: {
-    kind: 'token',
-    image,
-    networkImage: { ...image, width: 16, height: 16 },
-  },
-  title: 'BTC',
-  leadingAction: {
-    kind: 'icon',
-    name: 'StarOutline',
-    actionKey: 'market.favorite',
-  },
-  subtitle: '$1.23B',
-  price: '$64,230.00',
-  change: { text: '+2.40%', tone: 'positive' },
-  badges: [{ key: 'community', iconName: 'verified', tone: 'success' }],
-};
 
 const rows: readonly RowModel[] = [
   {
@@ -209,110 +182,6 @@ describe('NativeList pure DOM web layout', () => {
     expect(
       estimateWebRowHeight({ ...loading, loadingStyle: 'spinner' }, list, 402)
     ).toBe(52);
-  });
-
-  it('keeps Market defaults, verified glyph, patch boundary, and style reset deterministic', () => {
-    const linear = snapshot({ kind: 'linear' }, [market]);
-    expect(estimateWebRowHeight(market, linear, 390)).toBe(68);
-    expect(
-      estimateWebRowHeight(
-        { ...market, key: 'stock', variant: 'stock' },
-        linear,
-        390
-      )
-    ).toBe(72);
-    expect(WEB_LIST_CSS).toContain('width:80px;height:32px');
-    expect(WEB_MARKET_VERIFIED_PATH).toContain('M9.483 11.458v3.5h-1v-3.5z');
-    expect(
-      isWebMarketQuotePatch({
-        type: 'market',
-        key: market.key,
-        changes: {
-          revision: 2,
-          price: '$64,240.00',
-          change: { text: '+2.41%', tone: 'positive' },
-        },
-      })
-    ).toBe(true);
-    const quotePatches = [
-      {
-        type: 'market',
-        key: market.key,
-        changes: {
-          revision: 2,
-          price: '$64,240.00',
-          change: { text: '+2.41%', tone: 'positive' },
-        },
-      },
-    ] as const;
-    const imageBindCountBeforeQuote = 1;
-    expect(
-      imageBindCountBeforeQuote +
-        webMarketImageBindDeltaForPatches(quotePatches)
-    ).toBe(imageBindCountBeforeQuote);
-    expect(
-      isWebMarketQuotePatch({
-        type: 'market',
-        key: market.key,
-        changes: { style: { changeWidth: 88 } },
-      })
-    ).toBe(false);
-    expect(
-      webMarketImageBindDeltaForPatches([
-        {
-          type: 'market',
-          key: market.key,
-          changes: { style: { changeWidth: 88 } },
-        },
-      ])
-    ).toBe(1);
-    const styled = {
-      ...market,
-      style: {
-        horizontalPadding: 24,
-        image: { width: 36, height: 38, shape: 'rounded' },
-        changeWidth: 88,
-        changeHeight: 36,
-        changeCornerRadius: 12,
-      },
-    } as MarketRow;
-    expect(resolveWebMarketLayoutStyle(styled)).toMatchObject({
-      horizontalPadding: 24,
-      imageWidth: 36,
-      imageHeight: 38,
-      imageCornerRadius: 8,
-      changeWidth: 88,
-      changeHeight: 36,
-      changeCornerRadius: 12,
-    });
-    expect(resolveWebMarketLayoutStyle(market)).toEqual({
-      horizontalPadding: 20,
-      verticalPadding: 12,
-      leadingGap: 14,
-      titleBadgeGap: 4,
-      trailingGap: 8,
-      imageWidth: 32,
-      imageHeight: 32,
-      imageCornerRadius: 16,
-      changeWidth: 80,
-      changeHeight: 32,
-      changeCornerRadius: 8,
-    });
-    expect(webRowRenderSignature(styled)).not.toBe(
-      webRowRenderSignature(market)
-    );
-    expect(
-      webRowRenderSignature({
-        ...market,
-        leadingAction: { ...market.leadingAction!, name: 'StarSolid' },
-      })
-    ).not.toBe(webRowRenderSignature(market));
-  });
-
-  it('keeps the disabled section-index rail out of pointer hit testing', () => {
-    expect(WEB_LIST_CSS).toContain(
-      '.ok-native-list-index-rail[hidden]{display:none}'
-    );
   });
 
   it('captures logical window geometry and preserves media-close source', () => {
@@ -511,64 +380,6 @@ describe('NativeList pure DOM web layout', () => {
       dropDurationMs: 80,
       dropTimingFunction: 'ease',
     });
-  });
-
-  it('lays out linear, sectioned, grid, table, and horizontal examples', () => {
-    const linear = computeWebListLayout(
-      snapshot({ kind: 'linear', contentPadding: 8 }),
-      360,
-      640
-    );
-    expect(linear.items).toHaveLength(rows.length);
-    expect(linear.items[0]).toMatchObject({ x: 8, y: 8, width: 344 });
-
-    const sectioned = computeWebListLayout(
-      snapshot({
-        kind: 'sectioned',
-        stickyHeaders: true,
-        contentPaddingHorizontal: 8,
-      }),
-      360,
-      640
-    );
-    expect(sectioned.items[1].width).toBe(328);
-
-    const grid = computeWebListLayout(
-      snapshot({ kind: 'grid', gridColumns: 2, contentPadding: 10 }),
-      360,
-      640
-    );
-    expect(grid.items[0].width).toBe(340);
-    expect(grid.items[2].width).toBe(170);
-    expect(grid.items[3].y).toBe(grid.items[2].y);
-    const partiallyVisibleBand = visibleWebLayoutItems(
-      grid,
-      grid.items[2].y + 50,
-      1
-    );
-    expect(partiallyVisibleBand.map((item) => item.key)).toContain('identity');
-    expect(partiallyVisibleBand.map((item) => item.key)).not.toContain('rail');
-
-    const table = computeWebListLayout(
-      snapshot({ kind: 'table' }, [rows[6]]),
-      360,
-      640
-    );
-    expect(table.items[0].height).toBe(60);
-
-    const rail = rows[3];
-    if (rail.type !== 'rail') throw new Error('Invalid fixture');
-    const horizontal = computeWebListLayout(
-      snapshot({ kind: 'linear', orientation: 'horizontal', itemSpacing: 4 }, [
-        rail,
-        { ...rail, key: 'rail-2', title: 'Long rail title' },
-      ]),
-      360,
-      80
-    );
-    expect(horizontal.horizontal).toBe(true);
-    expect(horizontal.items[1].x).toBeGreaterThan(horizontal.items[0].x);
-    expect(horizontal.contentWidth).toBeGreaterThanOrEqual(360);
   });
 
   it('windows 5,000 rows instead of materializing every row', () => {

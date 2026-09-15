@@ -726,6 +726,10 @@ class RCTTabViewContainerView: UIView {
       self.bottomAccessoryView = nil
       return
     }
+    // Fabric recycles this view for unrelated <View>s once it is unmounted.
+    // Leaving the flexible mask on would let UIKit autoresize it to whatever
+    // superview it lands in next (it showed up as page-sized "flakes").
+    child.autoresizingMask = []
     childViews.remove(at: index)
     rebuildViewControllers()
   }

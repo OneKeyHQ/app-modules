@@ -17,6 +17,7 @@ import android.view.ViewTreeObserver
 import android.view.Window
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -257,6 +258,9 @@ class NativeSheetView(
   private var navigationBarBackgroundView: View? = null
   private var navigationBarBackgroundColor = Color.TRANSPARENT
   private var preImeBottomSheetBottomPx: Int? = null
+  private var pendingImeTarget: WeakReference<View>? = null
+  private var windowFocusListener: ViewTreeObserver.OnWindowFocusChangeListener? = null
+  private var userDrivenSheetSlide = false
 
   init {
     visibility = INVISIBLE
@@ -321,7 +325,12 @@ class NativeSheetView(
       background = createSheetBackground(resolvedSheetBackgroundColor)
       clipToOutline = true
     }
-    contentChild?.let { attachChild(content, it, 0) }
+    contentChild?.let { child ->
+      pendingImeTarget = child.findFocus()
+        ?.takeIf { it.onCheckIsTextEditor() }
+        ?.let(::WeakReference)
+      attachChild(content, child, 0)
+    }
     if (showHandle) content.addView(createHandle(), createHandleLayoutParams())
 
     pendingDismissReason = "system"
@@ -381,6 +390,7 @@ class NativeSheetView(
       setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
       configureEdgeToEdgeWindow(this)
     }
+    restorePendingImeFocus(sheetDialog)
     animateDimAmount(
       sheetDialog,
       dimAmount.coerceIn(0.0, 1.0).toFloat(),
@@ -477,13 +487,25 @@ class NativeSheetView(
       state = BottomSheetBehavior.STATE_EXPANDED
       addBottomSheetCallback(object : BottomSheetBehavior.BottomSheetCallback() {
         override fun onStateChanged(bottomSheet: View, newState: Int) {
-          if (newState == BottomSheetBehavior.STATE_HIDDEN) {
-            pendingDismissReason = "pan"
+          when (newState) {
+            BottomSheetBehavior.STATE_DRAGGING -> userDrivenSheetSlide = true
+            BottomSheetBehavior.STATE_EXPANDED -> {
+              if (userDrivenSheetSlide) {
+                sheetDialog.window?.setDimAmount(
+                  dimAmount.coerceIn(0.0, 1.0).toFloat(),
+                )
+              }
+              userDrivenSheetSlide = false
+            }
+            BottomSheetBehavior.STATE_HIDDEN -> {
+              pendingDismissReason = "pan"
+              userDrivenSheetSlide = false
+            }
           }
         }
 
         override fun onSlide(bottomSheet: View, slideOffset: Float) {
-          if (slideOffset < 1f) {
+          if (userDrivenSheetSlide && slideOffset < 1f) {
             dimAnimator?.cancel()
             sheetDialog.window?.setDimAmount(
               dimAmount.coerceIn(0.0, 1.0).toFloat() * slideOffset.coerceIn(0f, 1f),
@@ -764,6 +786,45 @@ class NativeSheetView(
     return true
   }
 
+  private fun restorePendingImeFocus(sheetDialog: BottomSheetDialog) {
+    val target = pendingImeTarget?.get() ?: return
+    val decorView = sheetDialog.window?.decorView ?: return
+    val showIme = {
+      if (dialog === sheetDialog && target.isAttachedToWindow) {
+        target.requestFocus()
+        target.post {
+          if (dialog === sheetDialog && target.hasFocus()) {
+            val inputMethodManager = reactContext.getSystemService(
+              android.content.Context.INPUT_METHOD_SERVICE,
+            ) as? InputMethodManager
+            inputMethodManager?.showSoftInput(target, InputMethodManager.SHOW_IMPLICIT)
+          }
+        }
+      }
+      clearPendingImeFocus(decorView)
+    }
+    if (decorView.hasWindowFocus()) {
+      showIme()
+      return
+    }
+    val listener = object : ViewTreeObserver.OnWindowFocusChangeListener {
+      override fun onWindowFocusChanged(hasFocus: Boolean) {
+        if (hasFocus) showIme()
+      }
+    }
+    windowFocusListener = listener
+    decorView.viewTreeObserver.addOnWindowFocusChangeListener(listener)
+  }
+
+  private fun clearPendingImeFocus(decorView: View? = dialog?.window?.decorView) {
+    val listener = windowFocusListener
+    if (listener != null && decorView?.viewTreeObserver?.isAlive == true) {
+      decorView.viewTreeObserver.removeOnWindowFocusChangeListener(listener)
+    }
+    windowFocusListener = null
+    pendingImeTarget = null
+  }
+
   internal fun dismissDialogInternal(
     reason: String,
     animated: Boolean,
@@ -826,6 +887,7 @@ class NativeSheetView(
 
   private fun handleDialogDismissed() {
     val child = contentChild
+    clearPendingImeFocus()
     clearWindowInsetsObservation()
     navigationBarBackgroundView?.let { view ->
       (view.parent as? ViewGroup)?.removeView(view)
@@ -843,6 +905,7 @@ class NativeSheetView(
     extendsIntoNavigationBar = false
     navigationBarBackgroundColor = Color.TRANSPARENT
     preImeBottomSheetBottomPx = null
+    userDrivenSheetSlide = false
     dimAnimator?.cancel()
     dimAnimator = null
     heightAnimator?.cancel()

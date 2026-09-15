@@ -231,6 +231,13 @@ class NativeListView(
   private var sectionIndexScrubbing = false
   private var sectionIndexProgrammaticScroll = false
   private var sectionIndexHapticsEnabled = true
+  private val sectionIndexAttachmentHandler = Handler(Looper.getMainLooper())
+  private var sectionIndexListAttachmentScheduled = false
+  private val sectionIndexListAttachmentRunnable = Runnable {
+    sectionIndexListAttachmentScheduled = false
+    attachSectionIndexToList()
+    if (!disposed && isAttachedToWindow) updateSectionIndexAttachment()
+  }
   private val sectionIndexLocationOnScreen = IntArray(2)
   private val sectionIndexHostLocationOnScreen = IntArray(2)
   private var sectionIndexObservedTree: ViewTreeObserver? = null
@@ -385,8 +392,7 @@ class NativeListView(
     val item = adapter.itemAt(position) ?: return false
     val clickable = clickableDescendantAt(child, event.rawX.toInt(), event.rawY.toInt())
     val accessoryHandlesTap = clickable != null && clickable !== child
-    return accessoryHandlesTap ||
-      (!item.json.optBoolean("disabled", false) && !item.json.optBoolean("pressDisabled", false))
+    return accessoryHandlesTap || item.isRowPressEnabled
   }
 
   private fun clickableDescendantAt(view: View, rawX: Int, rawY: Int): View? {
@@ -444,7 +450,7 @@ class NativeListView(
 
   override fun onDetachedFromWindow() {
     stopSectionIndexAttachmentTracking()
-    attachSectionIndexToList()
+    scheduleSectionIndexAttachmentToList()
     updateRefreshIndicatorOffset(0)
     if (disposed) disposeResources()
     super.onDetachedFromWindow()
@@ -1079,7 +1085,7 @@ class NativeListView(
     if (resourcesDisposed) return
     resourcesDisposed = true
     stopSectionIndexAttachmentTracking()
-    attachSectionIndexToList()
+    scheduleSectionIndexAttachmentToList()
     stopReorderRelayoutLoop()
     invalidateActionAnchor("destroy")
     actionAnchor = null
@@ -1255,6 +1261,13 @@ class NativeListView(
     sectionIndexObservedTree = null
   }
 
+  private fun scheduleSectionIndexAttachmentToList() {
+    if (sectionIndexView.parent === contentContainer) return
+    if (sectionIndexListAttachmentScheduled) return
+    sectionIndexListAttachmentScheduled = true
+    sectionIndexAttachmentHandler.post(sectionIndexListAttachmentRunnable)
+  }
+
   private fun attachSectionIndexToList() {
     if (sectionIndexView.parent === contentContainer) return
     (sectionIndexView.parent as? ViewGroup)?.removeView(sectionIndexView)
@@ -1365,6 +1378,7 @@ class NativeListView(
 
   private fun handleRowPress(item: NativeListItem, origin: NativeListActionOrigin) {
     val current = config ?: return
+    if (!item.isRowPressEnabled) return
     if (current.rowPressToggles && item.isSelectable && current.selectionMode != "none") {
       updateSelection(NativeSelectionTarget("row", item.key), item.key)
     } else {

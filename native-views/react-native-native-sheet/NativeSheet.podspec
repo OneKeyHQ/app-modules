@@ -18,6 +18,10 @@ Pod::Spec.new do |s|
     "ios/**/*.{swift}",
     "ios/**/*.{m,mm}",
   ]
+  s.exclude_files = "ios/tests/**/*"
   s.swift_version = '5.0'
+  s.test_spec "Tests" do |test_spec|
+    test_spec.source_files = "ios/tests/**/*.swift"
+  end
   install_modules_dependencies(s)
 end

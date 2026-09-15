@@ -304,6 +304,7 @@ private final class NativeSheetViewController: UIViewController,
   private let showHandleValue: Bool
   private let dismissOnBackdropPressValue: Bool
   private let dimAmountValue: CGFloat
+  private let backgroundView = UIView()
   private var backdropTap: UITapGestureRecognizer?
   private var dimmingView: UIView?
   private var heightAnimator: UIViewPropertyAnimator?
@@ -340,10 +341,18 @@ private final class NativeSheetViewController: UIViewController,
   }
 
   override func loadView() {
-    view = UIView()
-    view.backgroundColor = backgroundColorValue
-    view.clipsToBounds = true
-    host.attachTouchHandler(to: view)
+    let rootView = UIView()
+    rootView.backgroundColor = backgroundColorValue
+    rootView.clipsToBounds = true
+    if #available(iOS 26.0, *) {
+      backgroundView.frame = rootView.bounds
+      backgroundView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      backgroundView.backgroundColor = backgroundColorValue
+      backgroundView.isUserInteractionEnabled = false
+      rootView.addSubview(backgroundView)
+    }
+    view = rootView
+    host.attachTouchHandler(to: rootView)
   }
 
   deinit {
@@ -358,11 +367,15 @@ private final class NativeSheetViewController: UIViewController,
     super.viewDidLoad()
     host.moveContent(to: view)
     guard let sheet = sheetPresentationController else { return }
-    sheet.detents = [
-      .custom(identifier: detentIdentifier) { [weak self] context in
-        min(max(self?.targetHeight ?? 1, 1), context.maximumDetentValue)
-      },
-    ]
+    let detent = UISheetPresentationController.Detent.custom(
+      identifier: detentIdentifier
+    ) { [weak self] context in
+      min(max(self?.targetHeight ?? 1, 1), context.maximumDetentValue)
+    }
+    if #available(iOS 26.1, *) {
+      detent.backgroundEffect = UIColorEffect(color: backgroundColorValue)
+    }
+    sheet.detents = [detent]
     sheet.selectedDetentIdentifier = detentIdentifier
     sheet.largestUndimmedDetentIdentifier = detentIdentifier
     sheet.prefersGrabberVisible = showHandleValue
@@ -466,6 +479,11 @@ private final class NativeSheetViewController: UIViewController,
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     removePresentationShadow()
+    if #available(iOS 26.0, *) {
+      DispatchQueue.main.async { [weak self] in
+        self?.removePresentationShadow()
+      }
+    }
     host.layoutPresentedContent(in: view.bounds)
   }
 
@@ -527,11 +545,30 @@ private final class NativeSheetViewController: UIViewController,
   private func clearShadow(on shadowView: UIView) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
+    if #available(iOS 26.0, *),
+       NSStringFromClass(type(of: shadowView)).contains("UIDropShadowView") {
+      compensateForPresentationScale(in: shadowView)
+    }
     shadowView.layer.shadowOpacity = 0
     shadowView.layer.shadowRadius = 0
     shadowView.layer.shadowColor = UIColor.clear.cgColor
     shadowView.layer.shadowPath = nil
     CATransaction.commit()
+  }
+
+  @available(iOS 26.0, *)
+  private func compensateForPresentationScale(in shadowView: UIView) {
+    guard var surfaceView = view else { return }
+    while let parent = surfaceView.superview, parent !== shadowView {
+      surfaceView = parent
+    }
+    guard surfaceView.superview === shadowView else { return }
+    let transform = shadowView.transform
+    guard abs(transform.a) > 0.001, abs(transform.d) > 0.001 else { return }
+    surfaceView.transform = CGAffineTransform(
+      scaleX: 1 / transform.a,
+      y: 1 / transform.d
+    )
   }
 
   private func startSuppressingPresentationShadow() {
@@ -672,7 +709,7 @@ private final class NativeSheetContentWrapperView: UIView {
     if let controller = presentedController {
       moveContent(to: controller.view)
     } else {
-      moveContent(to: self)
+      stageContent()
     }
   }
 
@@ -749,7 +786,7 @@ private final class NativeSheetContentWrapperView: UIView {
   fileprivate func finishDismiss(reason: String) {
     if let child = contentChild {
       child.autoresizingMask = []
-      moveContent(to: self)
+      stageContent()
     }
     let hadController = presentedController != nil
     presentedController = nil
@@ -771,6 +808,16 @@ private final class NativeSheetContentWrapperView: UIView {
       parent.addSubview(contentWrapperView)
     }
     contentWrapperView.frame = parent.bounds
+  }
+
+  private func stageContent() {
+    if #available(iOS 26.0, *) {
+      contentWrapperView.removeFromSuperview()
+      contentWrapperView.frame = bounds
+      contentWrapperView.layoutIfNeeded()
+    } else {
+      moveContent(to: self)
+    }
   }
 
   fileprivate func layoutPresentedContent(in bounds: CGRect) {

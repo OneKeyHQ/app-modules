@@ -2,9 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
-import {
-  CollapsiblePagerView as NativeCollapsiblePagerView,
-} from '../../../native-views/react-native-pager-view/src/CollapsiblePagerView';
+import { CollapsiblePagerView as NativeCollapsiblePagerView } from '../../../native-views/react-native-pager-view/src/CollapsiblePagerView';
 import { CollapsiblePagerView } from '../../../native-views/react-native-pager-view/src/CollapsiblePagerView.web';
 import { PagerView } from '../../../native-views/react-native-pager-view/src/PagerView.web';
 
@@ -36,6 +34,49 @@ describe('CollapsiblePagerView native wrapper', () => {
       node => typeof node.props.retainedPages === 'string',
     );
     expect(nativeHost.props.initialPage).toBe(1);
+    await ReactTestRenderer.act(() => {
+      renderer.unmount();
+    });
+  });
+
+  it('updates native page identity in the same render that replaces pages', async () => {
+    const keyedPages = (keys: readonly string[]) =>
+      keys.map(key => <View key={key} testID={key} />);
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <NativeCollapsiblePagerView
+          {...requiredProps}
+          pageRetentionDistance={10}
+        >
+          {keyedPages(['alpha', 'beta'])}
+        </NativeCollapsiblePagerView>,
+      );
+    });
+
+    const nativeHost = () =>
+      renderer.root.find(node => typeof node.props.retainedPages === 'string');
+    expect(JSON.parse(nativeHost().props.pageKeys)).toEqual([
+      '.$alpha',
+      '.$beta',
+    ]);
+
+    await ReactTestRenderer.act(() => {
+      renderer.update(
+        <NativeCollapsiblePagerView
+          {...requiredProps}
+          pageRetentionDistance={10}
+        >
+          {keyedPages(['beta', 'gamma'])}
+        </NativeCollapsiblePagerView>,
+      );
+    });
+
+    expect(JSON.parse(nativeHost().props.pageKeys)).toEqual([
+      '.$beta',
+      '.$gamma',
+    ]);
+    expect(JSON.parse(nativeHost().props.retainedPages)).toEqual([0, 1]);
     await ReactTestRenderer.act(() => {
       renderer.unmount();
     });
@@ -241,9 +282,9 @@ describe('PagerView web', () => {
         </PagerView>,
       );
     });
-    expect(renderer.root.findByType(PagerView).instance.state.selectedPage).toBe(
-      1,
-    );
+    expect(
+      renderer.root.findByType(PagerView).instance.state.selectedPage,
+    ).toBe(1);
     await ReactTestRenderer.act(() => {
       renderer.unmount();
     });
