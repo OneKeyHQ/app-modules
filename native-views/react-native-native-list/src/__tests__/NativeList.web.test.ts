@@ -4,6 +4,7 @@ import type {
   RowModel,
 } from '../models';
 import {
+  WEB_LIST_CSS,
   WEB_REORDER_ANIMATION,
   canStartWebWalletGroupReorder,
   cancelWebReorderRows,
@@ -437,5 +438,37 @@ describe('NativeList pure DOM web layout', () => {
     expect(webRowRenderSignature({ ...identity, title: 'Changed' })).not.toBe(
       webRowRenderSignature(identity)
     );
+  });
+
+  it('keeps the default row cursor from disarming interactive controls', () => {
+    const rule = WEB_LIST_CSS.split('\n').find(
+      (line) =>
+        line.includes('.ok-native-list-wallet-row') &&
+        line.includes('cursor:default')
+    );
+    if (!rule) throw new Error('Missing default row cursor rule');
+    const selectors = rule
+      .slice(0, rule.indexOf('{'))
+      .split(',')
+      .map((selector) => selector.trim());
+    expect(selectors).toEqual([
+      '.ok-native-list-root .ok-native-list-item>.ok-native-list-wallet-row',
+      '.ok-native-list-root .ok-native-list-wallet-member>.ok-native-list-wallet-row',
+      '.ok-native-list-root .ok-native-list-item>.ok-native-list-account-row',
+      '.ok-native-list-root .ok-native-list-item>.ok-native-list-account-action-row',
+      '.ok-native-list-wallet-member',
+    ]);
+    // cursor inherits, so the row surface already covers its plain children, and a
+    // descendant selector would outrank the controls' own pointer rules.
+    expect(selectors.filter((selector) => selector.endsWith('*'))).toEqual([]);
+    for (const control of [
+      'ok-native-list-icon-button',
+      'ok-native-list-checkbox',
+      'ok-native-list-action-button',
+    ]) {
+      expect(
+        new RegExp(`\\.${control}\\{[^}]*cursor:pointer`).test(WEB_LIST_CSS)
+      ).toBe(true);
+    }
   });
 });
