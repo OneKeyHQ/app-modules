@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.135] - 2026-09-15
+
+### Bug Fixes
+- **native-list (iOS)**: Keep row heights in sync while a wallet group is dragged in the wallet sidebar. UIKit interactive movement lays rows out in the in-flight order, but sizes were still resolved from the pre-drag snapshot, which stretched the neighboring row and clipped the passed group's name (OK-62492).
+
+### Chores
+- Add the "Native List Wallet Sidebar Reorder" example page that replays the OK-62492 wallet sidebar recording.
+- Bump all 40 publishable packages to 3.0.135.
+
 ## [3.0.134] - 2026-09-15
 
 ### Bug Fixes
