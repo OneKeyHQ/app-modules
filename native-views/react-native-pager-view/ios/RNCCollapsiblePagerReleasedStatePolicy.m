@@ -1,7 +1,7 @@
 #import "RNCCollapsiblePagerReleasedStatePolicy.h"
 
 void RNCPruneReleasedPageStates(
-  NSMutableDictionary<NSString *, id> *releasedStates,
+  NSMutableDictionary *releasedStates,
   NSArray<NSString *> *validPageKeys
 )
 {

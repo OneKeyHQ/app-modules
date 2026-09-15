@@ -11,7 +11,8 @@
 {
   NSObject *alpha = [NSObject new];
   NSObject *beta = [NSObject new];
-  NSMutableDictionary<NSString *, id> *releasedStates = [@{
+  // A concrete value type in Objective-C++ mirrors the component view call site.
+  NSMutableDictionary<NSString *, NSObject *> *releasedStates = [@{
     @"alpha": alpha,
     @"beta": beta,
   } mutableCopy];
@@ -30,7 +31,7 @@
 
   RNCPruneReleasedPageStates(releasedStates, @[]);
 
-  XCTAssertEqual(releasedStates.count, 0);
+  XCTAssertEqual(releasedStates.count, 0u);
 }
 
 @end
