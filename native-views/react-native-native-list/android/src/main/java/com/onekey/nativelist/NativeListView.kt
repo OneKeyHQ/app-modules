@@ -53,6 +53,24 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+private class NativeListGridLayoutManager(
+  context: Context,
+  spanCount: Int,
+) : GridLayoutManager(context, spanCount) {
+  override fun removeAndRecycleViewAt(index: Int, recycler: RecyclerView.Recycler) {
+    val child = getChildAt(index) ?: return
+    removeViewAt(index)
+    // An index-based removal can leave the selected child attached during rapid
+    // nested scrolling. Detach that exact view before giving it to RecyclerView.
+    if (child.parent != null) removeView(child)
+    if (child.parent == null) {
+      recycler.recycleView(child)
+    } else {
+      requestLayout()
+    }
+  }
+}
+
 class NativeListView(
   private val reactContext: ThemedReactContext,
 ) : LinearLayout(reactContext) {
@@ -110,7 +128,7 @@ class NativeListView(
   private var refreshIndicatorOffsetPx = 0
   private val contentContainer = FrameLayout(context)
   private val adapter = NativeListAdapter(reactContext)
-  private val layoutManager = GridLayoutManager(context, 1)
+  private val layoutManager = NativeListGridLayoutManager(context, 1)
   // OneKey patch: vertical lists retain vertical drags and leave horizontal drags to a parent pager.
   private val pagerGestureTouchSlop = ViewConfiguration.get(context).scaledTouchSlop
   private var pagerGestureIsVertical = false

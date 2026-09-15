@@ -3239,6 +3239,16 @@ internal class NativeListRowView(
     )
     leadingFallback.visibility =
       if (!isIcon && (sources.isEmpty() || handlesSourceFallback)) VISIBLE else GONE
+    if (handlesSourceFallback && fallbackIconData != null) {
+      leadingIcon.iconName = fallbackIconData.optString("name")
+      leadingIcon.tintColor = safeColor(
+        fallbackIconData.optString("tintColor"),
+        parseNativeListColor("#0000009B"),
+      )
+      // Keep the fallback measured while the source loads so an asynchronous
+      // failure can reveal it without waiting for another RecyclerView layout.
+      leadingIcon.visibility = INVISIBLE
+    }
     if (isIcon) {
       leadingFrame.background = GradientDrawable().apply {
         setColor(visualBackground)
@@ -4196,8 +4206,8 @@ internal class NativeListRowView(
       }),
       onError = if (retryLimit == 0) handleError else ({
         if (bindingEpoch == expectedEpoch) {
-          if (retryAttempt >= retryLimit) handleError?.invoke()
-          else if (!selectorImageRetries.containsKey(imageView)) {
+          handleError?.invoke()
+          if (retryAttempt < retryLimit && !selectorImageRetries.containsKey(imageView)) {
             val retry = Runnable {
               if (bindingEpoch == expectedEpoch) {
                 selectorImageRetries.remove(imageView)
