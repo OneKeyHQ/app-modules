@@ -41,9 +41,22 @@ The three renderers cannot constrain each other, but they all read the same
 | Known divergences | **This document + PR review** | §6 |
 
 A style token is resolved on the JavaScript side. `{ token: '$bodyLg' }` becomes
-`{ fontSize: 16, lineHeight: 24, fontWeight: 'medium' }` before it crosses the
-bridge. Native renderers never learn the token vocabulary and therefore cannot
-drift from it. Raw numeric overrides stay available for pixel-parity work.
+`{ fontSize: 16, lineHeight: 24, fontWeight: 'regular' }` before it crosses the
+bridge — and an explicit `fontSize` alongside the token wins. Native renderers
+never learn the token vocabulary and therefore cannot drift from it. Raw numeric
+overrides stay available for pixel-parity work. Resolution is idempotent, and a
+snapshot with nothing to resolve is returned unchanged, so the common path keeps
+object identity.
+
+### Status
+
+| Layer | State |
+| --- | --- |
+| Contract, validation, token resolution, patch support | Implemented |
+| Web — text slots for every template, `horizontalPadding`, `verticalPadding`, `lineGap` | Implemented |
+| Web — `leadingGap`, `trailingGap`, `titleBadgeGap`, `image` | Validated but applied only on `market`; the others need a per-template default gap that cannot be read back from the DOM |
+| iOS, Android | Not started |
+| Row heights | Unchanged. A styled row that grows still needs an explicit `row.height` (§6.1) |
 
 ## 3. T1 — Design tokens
 
@@ -118,6 +131,12 @@ every platform `metricCard` renders its *value* through the title label and its
 `activity.status`, `message.time`, and `metricCard.trend`. Naming style keys after
 views would therefore mis-target. `market` already follows this rule with
 `style.price` / `style.change`.
+
+On Web the element rendering a field carries `data-nl-slot="<field>"`, so the
+style pass resolves a slot by name rather than by CSS class — on its own,
+`.ok-native-list-secondary` is the identity subtitle, the rail status, a metric
+label, a data column's secondary text, and a system message. iOS and Android will
+need the same field-to-view mapping expressed in native code.
 
 Legend: **=** all three platforms agree; **≠** registered divergence, see §6.
 
@@ -412,7 +431,7 @@ belongs there, so none of the 13 binders change.
 | --- | --- | --- |
 | iOS | `NativeListCell.bind()`, after the `switch item.type` | Also covers box metrics: the four root constraints, stack spacings, leading size |
 | Android | `NativeListRowView.bind()`, **after** `applySize(item)` | `applySize` re-dispatches font size and typeface by row type and would otherwise overwrite the style |
-| Web | `renderElement()`, after `createRowBody()` | The selector inline overrides already live here |
+| Web | `renderElement()`, after `createRowBody()` — **implemented** as `applyRowStyle()` | The selector inline overrides already live here |
 
 The existing market helpers generalize rather than being rewritten:
 `applyMarketTextStyle` / `applyMarketButtonStyle` / `marketAttributedText` (iOS),

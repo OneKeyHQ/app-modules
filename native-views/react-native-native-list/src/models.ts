@@ -34,7 +34,25 @@ export type BadgeModel = Readonly<{
   tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 }>;
 
-export type MarketTextStyle = Readonly<{
+/**
+ * Named typography steps, shared with the application's design scale. Resolved
+ * to fontSize/lineHeight/fontWeight in JavaScript before the snapshot is
+ * serialized, so no native renderer needs to know the vocabulary.
+ * See docs/STYLE_SPEC.md §3.2.
+ */
+export type NativeListTypographyToken =
+  | '$headingXl'
+  | '$headingLg'
+  | '$headingMd'
+  | '$headingSm'
+  | '$headingXs'
+  | '$bodyLg'
+  | '$bodyMd'
+  | '$bodySm'
+  | '$bodyXs';
+
+export type NativeListTextStyle = Readonly<{
+  token?: NativeListTypographyToken;
   fontSize?: number;
   fontWeight?: 'regular' | 'medium' | 'semibold' | 'bold';
   color?: string;
@@ -43,7 +61,10 @@ export type MarketTextStyle = Readonly<{
   alignment?: 'start' | 'center' | 'end';
 }>;
 
-export type MarketImageStyle = Readonly<{
+/** Retained alias: Market shipped this name before the style surface was shared. */
+export type MarketTextStyle = NativeListTextStyle;
+
+export type NativeListImageStyle = Readonly<{
   width?: number;
   height?: number;
   shape?: 'circle' | 'rounded' | 'square';
@@ -51,28 +72,121 @@ export type MarketImageStyle = Readonly<{
   contentFit?: ImageContentFit;
 }>;
 
-export type MarketRowStyle = Readonly<{
+export type MarketImageStyle = NativeListImageStyle;
+
+/** Box metrics every template shares. Bounds live in docs/STYLE_SPEC.md §3.3. */
+export type RowBoxStyle = Readonly<{
   horizontalPadding?: number;
   verticalPadding?: number;
   leadingGap?: number;
   /** Space between title and subtitle; 0 by default, bounded to 0..16. */
   lineGap?: number;
   titleBadgeGap?: number;
-  /** OneKey patch: keep badges next to the intrinsic title width. */
-  titleBadgeLayout?: 'inline';
   trailingGap?: number;
-  /** OneKey patch: preserve separate Market content and subtitle insets. */
-  contentTrailingGap?: number;
-  subtitleTrailingPadding?: number;
-  image?: MarketImageStyle;
-  title?: MarketTextStyle;
-  subtitle?: MarketTextStyle;
-  price?: MarketTextStyle;
-  change?: MarketTextStyle;
-  changeWidth?: number;
-  changeHeight?: number;
-  changeCornerRadius?: number;
+  image?: NativeListImageStyle;
 }>;
+
+/**
+ * A style key names the model field it modifies, never the view that carries
+ * it. The view pool is shared and the mapping is not one to one: metricCard
+ * renders `value` through the same label identity uses for `title`, and the
+ * status view carries rail.status, activity.status, message.time and
+ * metricCard.trend. See docs/STYLE_SPEC.md §4.
+ */
+export type IdentityRowStyle = RowBoxStyle &
+  Readonly<{
+    title?: NativeListTextStyle;
+    subtitle?: NativeListTextStyle;
+    tertiary?: NativeListTextStyle;
+    badge?: NativeListTextStyle;
+    value?: NativeListTextStyle;
+    valueSecondary?: NativeListTextStyle;
+  }>;
+
+export type WalletGroupRowStyle = RowBoxStyle;
+
+export type RailRowStyle = RowBoxStyle &
+  Readonly<{
+    title?: NativeListTextStyle;
+    badge?: NativeListTextStyle;
+    status?: NativeListTextStyle;
+  }>;
+
+export type ActivityRowStyle = RowBoxStyle &
+  Readonly<{
+    title?: NativeListTextStyle;
+    description?: NativeListTextStyle;
+    status?: NativeListTextStyle;
+    primaryAmount?: NativeListTextStyle;
+    secondaryAmount?: NativeListTextStyle;
+  }>;
+
+export type MessageRowStyle = RowBoxStyle &
+  Readonly<{
+    title?: NativeListTextStyle;
+    body?: NativeListTextStyle;
+    time?: NativeListTextStyle;
+  }>;
+
+export type DataRowStyle = RowBoxStyle &
+  Readonly<{
+    columns?: NativeListTextStyle;
+    columnSecondary?: NativeListTextStyle;
+    index?: NativeListTextStyle;
+  }>;
+
+export type MarketRowStyle = RowBoxStyle &
+  Readonly<{
+    /** OneKey patch: keep badges next to the intrinsic title width. */
+    titleBadgeLayout?: 'inline';
+    /** OneKey patch: preserve separate Market content and subtitle insets. */
+    contentTrailingGap?: number;
+    subtitleTrailingPadding?: number;
+    title?: NativeListTextStyle;
+    subtitle?: NativeListTextStyle;
+    price?: NativeListTextStyle;
+    change?: NativeListTextStyle;
+    changeWidth?: number;
+    changeHeight?: number;
+    changeCornerRadius?: number;
+  }>;
+
+export type MediaTileRowStyle = RowBoxStyle &
+  Readonly<{
+    title?: NativeListTextStyle;
+    subtitle?: NativeListTextStyle;
+    badge?: NativeListTextStyle;
+  }>;
+
+export type MetricCardRowStyle = RowBoxStyle &
+  Readonly<{
+    /** The small label. Carried by the subtitle view on every platform. */
+    title?: NativeListTextStyle;
+    /** The large number. Carried by the title view on every platform. */
+    value?: NativeListTextStyle;
+    subtitle?: NativeListTextStyle;
+    trend?: NativeListTextStyle;
+  }>;
+
+export type SectionHeaderRowStyle = RowBoxStyle &
+  Readonly<{
+    title?: NativeListTextStyle;
+    subtitle?: NativeListTextStyle;
+    value?: NativeListTextStyle;
+  }>;
+
+export type ActionRowStyle = RowBoxStyle &
+  Readonly<{
+    title?: NativeListTextStyle;
+    value?: NativeListTextStyle;
+  }>;
+
+export type SystemRowStyle = RowBoxStyle &
+  Readonly<{
+    title?: NativeListTextStyle;
+    message?: NativeListTextStyle;
+    actionText?: NativeListTextStyle;
+  }>;
 
 export type MarketBadgeModel = Readonly<{
   key: string;
@@ -273,6 +387,7 @@ export type IdentityRow = RowBase &
     badges?: readonly BadgeModel[];
     trailing?: readonly TrailingAccessory[];
     draggable?: boolean;
+    style?: IdentityRowStyle;
   }>;
 
 export type WalletGroupRow = RowBase &
@@ -281,6 +396,7 @@ export type WalletGroupRow = RowBase &
     parent: IdentityRow;
     children: readonly IdentityRow[];
     draggable?: boolean;
+    style?: WalletGroupRowStyle;
   }>;
 
 export type RailRow = RowBase &
@@ -291,6 +407,7 @@ export type RailRow = RowBase &
     status?: 'none' | 'online' | 'warning' | 'error';
     badge?: BadgeModel;
     draggable?: boolean;
+    style?: RailRowStyle;
   }>;
 
 export type ActivityRow = RowBase &
@@ -304,6 +421,7 @@ export type ActivityRow = RowBase &
     primaryAmount?: string;
     secondaryAmount?: string;
     footerActions?: readonly FooterAction[];
+    style?: ActivityRowStyle;
   }>;
 
 export type MessageRow = RowBase &
@@ -316,6 +434,7 @@ export type MessageRow = RowBase &
     bodyLines?: 1 | 2 | 3;
     time: string;
     thumbnail?: ImageSource;
+    style?: MessageRowStyle;
   }>;
 
 export type DataColumn = Readonly<{
@@ -340,6 +459,7 @@ export type DataRow = RowBase &
     badges?: readonly BadgeModel[];
     favorite?: boolean;
     favoriteActive?: boolean;
+    style?: DataRowStyle;
   }>;
 
 /** Native Market quote row. All values are already localized/formatted strings. */
@@ -381,6 +501,7 @@ export type MediaTileRow = RowBase &
     subtitle?: string;
     badge?: BadgeModel;
     closeActionKey?: string;
+    style?: MediaTileRowStyle;
   }>;
 
 /** Compact KPI card for dashboards and grids. */
@@ -405,6 +526,7 @@ export type MetricCardRow = RowBase &
     badge?: BadgeModel;
     metrics?: readonly MetricValue[];
     progress?: number;
+    style?: MetricCardRowStyle;
   }>;
 
 export type SectionHeaderRow = RowBase &
@@ -427,6 +549,7 @@ export type SectionHeaderRow = RowBase &
     titleIcon?: Extract<TrailingAccessory, { kind: 'icon' }>;
     valueIcon?: Extract<TrailingAccessory, { kind: 'icon' }>;
     checkbox?: Extract<TrailingAccessory, { kind: 'checkbox' }>;
+    style?: SectionHeaderRowStyle;
   }>;
 
 export type ActionRow = RowBase &
@@ -439,9 +562,11 @@ export type ActionRow = RowBase &
     icon?: Extract<LeadingVisual, { kind: 'icon' }>;
     checkbox?: Extract<TrailingAccessory, { kind: 'checkbox' }>;
     trailing?: readonly TrailingAccessory[];
+    style?: ActionRowStyle;
   }>;
 
 export type SystemRow = RowBase &
+  Readonly<{ style?: SystemRowStyle }> &
   (
     | Readonly<{
         type: 'system';
@@ -575,7 +700,8 @@ type CommonPatchFields =
   | 'heightRounding'
   | 'opacity'
   | 'pressDisabled'
-  | 'accessibilityLabel';
+  | 'accessibilityLabel'
+  | 'style';
 
 export type RowPatch =
   | Readonly<{

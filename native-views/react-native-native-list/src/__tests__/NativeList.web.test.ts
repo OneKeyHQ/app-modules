@@ -2,9 +2,11 @@ import type { IdentityRow, NativeListSnapshot, RowModel } from '../models';
 import {
   WEB_LIST_CSS,
   WEB_REORDER_ANIMATION,
+  applyRowStyle,
   canStartWebWalletGroupReorder,
   cancelWebReorderRows,
   computeWebListLayout,
+  createRowBody,
   estimateWebRowHeight,
   hasExceededWebReorderMouseThreshold,
   isWebRowReorderable,
@@ -470,5 +472,86 @@ describe('NativeList pure DOM web layout', () => {
         new RegExp(`\\.${control}\\{[^}]*cursor:pointer`).test(WEB_LIST_CSS)
       ).toBe(true);
     }
+  });
+});
+
+describe('web row style', () => {
+  // The workspace ships jsdom without its type package; type the one entry used.
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => { window: { document: Document } };
+  };
+
+  const render = (styledRow: RowModel): HTMLElement => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const body = createRowBody(
+      {
+        document,
+        snapshot: {
+          schemaVersion: 1,
+          generation: 1,
+          layout: { kind: 'linear' },
+          rows: [styledRow],
+        },
+        selectedKeys: new Set<string>(),
+        itemIndex: 0,
+      },
+      styledRow
+    );
+    applyRowStyle(body, styledRow);
+    return body;
+  };
+
+  it('tags each slot with the model field it renders', () => {
+    const body = render({
+      type: 'message',
+      key: 'notification',
+      title: 'Title',
+      body: 'Body',
+      time: '1m',
+    });
+    expect(body.querySelector('[data-nl-slot="title"]')?.textContent).toBe(
+      'Title'
+    );
+    expect(body.querySelector('[data-nl-slot="body"]')?.textContent).toBe(
+      'Body'
+    );
+    expect(body.querySelector('[data-nl-slot="time"]')?.textContent).toBe('1m');
+  });
+
+  it('styles the named model field, not the view that carries it', () => {
+    // metricCard renders `value` through the view identity uses for `title`.
+    const body = render({
+      type: 'metricCard',
+      key: 'kpi',
+      title: 'Volume',
+      value: '42',
+      style: {
+        title: { fontSize: 11 },
+        value: { fontSize: 22, fontWeight: 'bold' },
+      },
+    });
+    const label = body.querySelector<HTMLElement>('[data-nl-slot="title"]');
+    const value = body.querySelector<HTMLElement>('[data-nl-slot="value"]');
+    expect(label?.textContent).toBe('Volume');
+    expect(label?.style.fontSize).toBe('11px');
+    expect(value?.textContent).toBe('42');
+    expect(value?.style.fontSize).toBe('22px');
+    expect(value?.style.fontWeight).toBe('700');
+  });
+
+  it('applies box padding only when the row asks for it', () => {
+    const base: RowModel = {
+      type: 'identity',
+      key: 'btc',
+      leading: { kind: 'icon', name: 'coin' },
+      title: 'Bitcoin',
+    };
+    expect(render(base).style.paddingInline).toBe('');
+    const styled = render({
+      ...base,
+      style: { horizontalPadding: 16, verticalPadding: 10 },
+    } as RowModel);
+    expect(styled.style.paddingInline).toBe('16px');
+    expect(styled.style.paddingBlock).toBe('10px');
   });
 });
