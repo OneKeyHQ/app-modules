@@ -11,6 +11,14 @@ on:
         options:
           - next
           - latest
+      only_workspace:
+        # A failed package cannot be retried by re-running the whole release:
+        # the 39 that already published reject with E403 and the run goes red
+        # before proving anything about the one that matters.
+        description: "Publish only this workspace, e.g. @onekeyfe/react-native-bundle-crypto. Leave empty to publish every package."
+        required: false
+        default: ""
+        type: string
 
 jobs:
   package-publish:
@@ -28,10 +36,31 @@ jobs:
       - name: Install Package
         run: corepack enable && yarn install
       - name: Publish packages (4 concurrent)
+        if: inputs.only_workspace == ''
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: yarn version:publish --tag "${{ inputs.npm_dist_tag }}"
+          NPM_DIST_TAG: ${{ inputs.npm_dist_tag }}
+        run: yarn version:publish --tag "$NPM_DIST_TAG"
       - name: Publish NativeList after shared build dependencies
+        if: inputs.only_workspace == ''
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: yarn workspace @onekeyfe/react-native-native-list release --tag "${{ inputs.npm_dist_tag }}"
+          NPM_DIST_TAG: ${{ inputs.npm_dist_tag }}
+        run: yarn workspace @onekeyfe/react-native-native-list release --tag "$NPM_DIST_TAG"
+      - name: Publish a single workspace
+        if: inputs.only_workspace != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_DIST_TAG: ${{ inputs.npm_dist_tag }}
+          ONLY_WORKSPACE: ${{ inputs.only_workspace }}
+        run: yarn workspace "$ONLY_WORKSPACE" release --tag "$NPM_DIST_TAG"
+      # npm reports success the moment it accepts a tarball, which is not the
+      # same as the version becoming available. 3.0.137 went out green with
+      # @onekeyfe/react-native-bundle-crypto staged but never committed: the
+      # version was undownloadable AND unrepublishable, and nothing in this
+      # workflow noticed. Fail the run that produced it instead.
+      - name: Verify the published versions are on the registry
+        env:
+          NPM_DIST_TAG: ${{ inputs.npm_dist_tag }}
+          ONLY_WORKSPACE: ${{ inputs.only_workspace }}
+        run: node scripts/verify-published.mjs "$NPM_DIST_TAG" "$ONLY_WORKSPACE"
