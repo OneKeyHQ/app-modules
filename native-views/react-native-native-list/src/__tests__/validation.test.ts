@@ -1229,3 +1229,93 @@ describe('NativeList patches', () => {
     ).toThrow('bodyLines');
   });
 });
+
+describe('NativeList style contract', () => {
+  const styled = (style: unknown): NativeListSnapshot =>
+    snapshot([{ ...row('btc'), style } as RowModel]);
+
+  it('resolves a typography token to numbers before serialization', () => {
+    const [first] = validateSnapshot(
+      styled({ title: { token: '$bodyLg' }, horizontalPadding: 16 })
+    ).rows;
+    expect((first as IdentityRow).style).toEqual({
+      title: { fontSize: 16, lineHeight: 24, fontWeight: 'regular' },
+      horizontalPadding: 16,
+    });
+    expect(
+      serializeSnapshot(styled({ title: { token: '$bodyLg' } }))
+    ).not.toContain('$bodyLg');
+  });
+
+  it('lets an explicit value override the token it resolves', () => {
+    const [first] = validateSnapshot(
+      styled({ title: { token: '$bodyLg', fontSize: 15 } })
+    ).rows;
+    expect((first as IdentityRow).style?.title).toEqual({
+      fontSize: 15,
+      lineHeight: 24,
+      fontWeight: 'regular',
+    });
+  });
+
+  it('keeps snapshot identity when nothing needs resolving', () => {
+    const input = snapshot();
+    expect(validateSnapshot(input)).toBe(input);
+  });
+
+  it('rejects a style key the template does not declare', () => {
+    expect(() => validateSnapshot(styled({ price: { fontSize: 12 } }))).toThrow(
+      'is not a style key of the "identity" template'
+    );
+  });
+
+  it('rejects an unknown token and out-of-range metrics', () => {
+    expect(() =>
+      validateSnapshot(styled({ title: { token: '$displayXl' } }))
+    ).toThrow('token');
+    expect(() => validateSnapshot(styled({ title: { fontSize: 72 } }))).toThrow(
+      'fontSize'
+    );
+    expect(() => validateSnapshot(styled({ lineGap: 17 }))).toThrow('lineGap');
+  });
+
+  it('validates and resolves a style carried by a patch', () => {
+    const patches = validatePatches([
+      {
+        type: 'identity',
+        key: 'btc',
+        changes: { style: { subtitle: { token: '$bodySm' } } },
+      } as unknown as RowPatch,
+    ]);
+    expect(
+      (patches[0] as unknown as { changes: { style: { subtitle: unknown } } })
+        .changes.style.subtitle
+    ).toEqual({ fontSize: 12, lineHeight: 16, fontWeight: 'regular' });
+    expect(() =>
+      validatePatches([
+        {
+          type: 'identity',
+          key: 'btc',
+          changes: { style: { change: {} } },
+        } as unknown as RowPatch,
+      ])
+    ).toThrow('is not a style key of the "identity" template');
+  });
+
+  it('keeps the Market style surface intact', () => {
+    const [first] = validateSnapshot(
+      snapshot([
+        {
+          ...marketRow(),
+          style: { title: { token: '$headingSm' }, changeWidth: 80 },
+        } as MarketRow,
+      ])
+    ).rows;
+    expect((first as MarketRow).style?.title).toEqual({
+      fontSize: 16,
+      lineHeight: 24,
+      fontWeight: 'medium',
+    });
+    expect((first as MarketRow).style?.changeWidth).toBe(80);
+  });
+});
