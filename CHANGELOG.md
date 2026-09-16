@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+- **native-list**: Add a bounded per-template row style. `style` keys name the model field they modify rather than the view that carries it, so `metricCard.style.value` reaches the large number even though it shares a view with `identity.style.title`. Typography can be given as a named step (`{ token: '$bodyLg' }`) which is resolved to numbers in JavaScript before serialization, so no native renderer learns the vocabulary; explicit values still override. Keys a template does not declare are rejected by `validateSnapshot` and `validatePatches`, and styles carried by a patch are resolved the same way. Implemented on Web: text slots for every template plus `horizontalPadding`, `verticalPadding`, and `lineGap`. Row heights are unchanged — a styled row that grows still needs an explicit `height`.
+
 ### Documentation
 - **native-list**: Add `docs/STYLE_SPEC.md`, the shared style vocabulary for rows, section headers, fixed footers, and empty states. It records the design tokens (aliased to the application's own token names), the per-template style surface keyed by model field, list chrome, the template isolation rules, and a review checklist. Cross-platform divergences — row-height tables, typography, the Android sticky-header renderer, list-wide source scale — are registered rather than changed.
 

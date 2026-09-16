@@ -9,8 +9,10 @@ import type {
   NativeListActionAnchor,
   NativeListActionSource,
   NativeListTheme,
+  NativeListTextStyle,
   ReorderEvent,
   RowActionEvent,
+  RowBoxStyle,
   RowModel,
   RowPatch,
   SelectionDeltaEvent,
@@ -1754,11 +1756,9 @@ function createBadge(
   context: RenderContext,
   badge: Readonly<{ text: string; tone?: string }>
 ): HTMLElement {
-  const element = createElement(
-    context.document,
-    'span',
-    'ok-native-list-badge',
-    badge.text
+  const element = tagSlot(
+    createElement(context.document, 'span', 'ok-native-list-badge', badge.text),
+    'badge'
   );
   setData(element, 'tone', badge.tone);
   return element;
@@ -2070,10 +2070,23 @@ function appendAccessories(
   ) {
     setData(container, 'nativeListAccountControl', 'createAddress');
   }
-  accessories.forEach((accessory, slot) =>
-    container.appendChild(createAccessory(context, rowKey, accessory, slot))
-  );
+  accessories.forEach((accessory, slot) => {
+    const element = createAccessory(context, rowKey, accessory, slot);
+    if (accessory.kind === 'value' || accessory.kind === 'valuePair') {
+      tagSlot(element, slot === 0 ? 'value' : 'valueSecondary');
+    }
+    container.appendChild(element);
+  });
   parent.appendChild(container);
+}
+
+/**
+ * Marks the element that renders one model field. Style keys name model fields,
+ * not views, and the view pool is shared. See docs/STYLE_SPEC.md §4.
+ */
+function tagSlot<T extends HTMLElement>(element: T, slot: string): T {
+  element.dataset.nlSlot = slot;
+  return element;
 }
 
 function createTextColumn(
@@ -2082,14 +2095,17 @@ function createTextColumn(
   subtitle?: string,
   tertiary?: string,
   tertiaryTone?: 'secondary' | 'info',
-  badges?: readonly Readonly<{ text: string; tone?: string }>[]
+  badges?: readonly Readonly<{ text: string; tone?: string }>[],
+  slots: Readonly<{ title: string; subtitle: string; tertiary: string }> = {
+    title: 'title',
+    subtitle: 'subtitle',
+    tertiary: 'tertiary',
+  }
 ): HTMLElement {
   const column = createElement(context.document, 'span', 'ok-native-list-flex');
-  const titleLine = createElement(
-    context.document,
-    'span',
-    'ok-native-list-title',
-    title
+  const titleLine = tagSlot(
+    createElement(context.document, 'span', 'ok-native-list-title', title),
+    slots.title
   );
   if (badges?.length) {
     const badgeLine = createElement(
@@ -2105,21 +2121,27 @@ function createTextColumn(
   column.appendChild(titleLine);
   if (subtitle)
     column.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        subtitle
+      tagSlot(
+        createElement(
+          context.document,
+          'span',
+          'ok-native-list-secondary',
+          subtitle
+        ),
+        slots.subtitle
       )
     );
   if (tertiary) {
-    const element = createElement(
-      context.document,
-      'span',
-      tertiaryTone === 'info'
-        ? 'ok-native-list-secondary ok-native-list-info'
-        : 'ok-native-list-secondary ok-native-list-tertiary',
-      tertiary
+    const element = tagSlot(
+      createElement(
+        context.document,
+        'span',
+        tertiaryTone === 'info'
+          ? 'ok-native-list-secondary ok-native-list-info'
+          : 'ok-native-list-secondary ok-native-list-tertiary',
+        tertiary
+      ),
+      slots.tertiary
     );
     column.appendChild(element);
   }
@@ -2230,13 +2252,16 @@ function createSectionHeader(
   }
   body.appendChild(column);
   if (row.value) {
-    const value = createElement(
-      context.document,
-      row.valueActionKey ? 'button' : 'span',
-      row.valueActionKey
-        ? 'ok-native-list-action-button ok-native-list-section-value'
-        : 'ok-native-list-value ok-native-list-section-value',
-      row.value
+    const value = tagSlot(
+      createElement(
+        context.document,
+        row.valueActionKey ? 'button' : 'span',
+        row.valueActionKey
+          ? 'ok-native-list-action-button ok-native-list-section-value'
+          : 'ok-native-list-value ok-native-list-section-value',
+        row.value
+      ),
+      'value'
     );
     applyValueSegments(value, row.valueSegments);
     if (row.presentation === 'networkSelector' && row.height !== undefined) {
@@ -2292,11 +2317,14 @@ function createActionRow(
       .join(' ')
   );
   if (row.icon) body.appendChild(createVisual(context, row.icon)!);
-  const title = createElement(
-    context.document,
-    'span',
-    'ok-native-list-action-title',
-    row.title
+  const title = tagSlot(
+    createElement(
+      context.document,
+      'span',
+      'ok-native-list-action-title',
+      row.title
+    ),
+    'title'
   );
   setData(title, 'tone', row.tone);
   if (row.presentation === 'accountSelector' && row.icon)
@@ -2389,7 +2417,10 @@ function createSystemRow(
     if (row.variant === 'noMatch') {
       body.style.justifyContent = 'center';
       body.style.padding = '32px';
-      const message = createElement(context.document, 'span', '', row.message);
+      const message = tagSlot(
+        createElement(context.document, 'span', '', row.message),
+        'message'
+      );
       message.style.fontSize = '16px';
       message.style.lineHeight = '24px';
       body.appendChild(message);
@@ -2414,19 +2445,25 @@ function createSystemRow(
     body.classList.add('ok-native-list-warning');
     body.style.borderColor = row.borderColor ?? 'var(--nl-separator)';
     body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-warning-title',
-        row.title
+      tagSlot(
+        createElement(
+          context.document,
+          'span',
+          'ok-native-list-warning-title',
+          row.title
+        ),
+        'title'
       )
     );
     body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-warning-message',
-        row.message
+      tagSlot(
+        createElement(
+          context.document,
+          'span',
+          'ok-native-list-warning-message',
+          row.message
+        ),
+        'message'
       )
     );
     return body;
@@ -2441,11 +2478,14 @@ function createSystemRow(
       : row.message ?? (row.variant === 'end' ? 'End' : '');
   if (message)
     body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        message
+      tagSlot(
+        createElement(
+          context.document,
+          'span',
+          'ok-native-list-secondary',
+          message
+        ),
+        'message'
       )
     );
   return body;
@@ -2463,20 +2503,26 @@ function createRailRow(
   const visual = createVisual(context, row.visual);
   if (visual) body.appendChild(visual);
   body.appendChild(
-    createElement(
-      context.document,
-      'span',
-      'ok-native-list-rail-title',
-      row.title
+    tagSlot(
+      createElement(
+        context.document,
+        'span',
+        'ok-native-list-rail-title',
+        row.title
+      ),
+      'title'
     )
   );
   if (row.status && row.status !== 'none')
     body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        row.status
+      tagSlot(
+        createElement(
+          context.document,
+          'span',
+          'ok-native-list-secondary',
+          row.status
+        ),
+        'status'
       )
     );
   if (row.badge) body.appendChild(createBadge(context, row.badge));
@@ -2516,11 +2562,14 @@ function createMediaRow(
     'ok-native-list-media-subtitle-row'
   );
   subtitleLine.appendChild(
-    createElement(
-      context.document,
-      'span',
-      'ok-native-list-media-subtitle',
-      row.subtitle || '-'
+    tagSlot(
+      createElement(
+        context.document,
+        'span',
+        'ok-native-list-media-subtitle',
+        row.subtitle || '-'
+      ),
+      'subtitle'
     )
   );
   if (row.networkImage) {
@@ -2533,11 +2582,14 @@ function createMediaRow(
   }
   metadata.appendChild(subtitleLine);
   metadata.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-media-title',
-      row.title
+    tagSlot(
+      createElement(
+        context.document,
+        'div',
+        'ok-native-list-media-title',
+        row.title
+      ),
+      'title'
     )
   );
   if (row.badge) metadata.appendChild(createBadge(context, row.badge));
@@ -2680,27 +2732,36 @@ function createMetricRow(
     if (visual) body.appendChild(visual);
   }
   body.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-secondary',
-      row.title
+    tagSlot(
+      createElement(
+        context.document,
+        'div',
+        'ok-native-list-secondary',
+        row.title
+      ),
+      'title'
     )
   );
   body.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-metric-value',
-      row.value
+    tagSlot(
+      createElement(
+        context.document,
+        'div',
+        'ok-native-list-metric-value',
+        row.value
+      ),
+      'value'
     )
   );
   if (row.trend) {
-    const trend = createElement(
-      context.document,
-      'div',
-      'ok-native-list-secondary',
-      row.trend
+    const trend = tagSlot(
+      createElement(
+        context.document,
+        'div',
+        'ok-native-list-secondary',
+        row.trend
+      ),
+      'trend'
     );
     trend.style.color =
       row.trendTone === 'positive'
@@ -2712,11 +2773,14 @@ function createMetricRow(
   }
   if (row.subtitle)
     body.appendChild(
-      createElement(
-        context.document,
-        'div',
-        'ok-native-list-secondary',
-        row.subtitle
+      tagSlot(
+        createElement(
+          context.document,
+          'div',
+          'ok-native-list-secondary',
+          row.subtitle
+        ),
+        'subtitle'
       )
     );
   if (row.badge) body.appendChild(createBadge(context, row.badge));
@@ -2736,11 +2800,14 @@ function createDataRow(
     body.appendChild(createCheckbox(context, row.key, row.checkbox));
   if (row.index !== undefined)
     body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-index',
-        String(row.index)
+      tagSlot(
+        createElement(
+          context.document,
+          'span',
+          'ok-native-list-index',
+          String(row.index)
+        ),
+        'index'
       )
     );
   if (row.favorite) {
@@ -2765,10 +2832,9 @@ function createDataRow(
     );
     cell.style.flex = String(column.weight ?? 1);
     setData(cell, 'align', column.alignment ?? 'start');
-    const primary = createElement(
-      context.document,
-      'span',
-      'ok-native-list-data-primary'
+    const primary = tagSlot(
+      createElement(context.document, 'span', 'ok-native-list-data-primary'),
+      'columns'
     );
     primary.style.color = toneColor(column.tone, 'primary');
     if (column.secondaryLeadingText)
@@ -2790,11 +2856,14 @@ function createDataRow(
     }
     cell.appendChild(primary);
     if (column.secondaryText) {
-      const secondary = createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        column.secondaryText
+      const secondary = tagSlot(
+        createElement(
+          context.document,
+          'span',
+          'ok-native-list-secondary',
+          column.secondaryText
+        ),
+        'columnSecondary'
       );
       secondary.style.color = toneColor(column.secondaryTone, 'secondary');
       cell.appendChild(secondary);
@@ -2907,7 +2976,17 @@ function createIdentityActivityOrMessageRow(
     row.type === 'identity' ? row.tertiaryTone : undefined,
     row.type === 'identity' && presentation !== 'walletSidebar'
       ? row.badges
-      : undefined
+      : undefined,
+    {
+      title: 'title',
+      subtitle:
+        row.type === 'activity'
+          ? 'description'
+          : row.type === 'message'
+          ? 'body'
+          : 'subtitle',
+      tertiary: 'tertiary',
+    }
   );
   // OneKey patch: match existing search, subtitle fragments, and sidebar badges.
   if (row.type === 'identity') {
@@ -3021,26 +3100,40 @@ function createIdentityActivityOrMessageRow(
     );
     if (row.primaryAmount)
       amounts.appendChild(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-value',
-          row.primaryAmount
+        tagSlot(
+          createElement(
+            context.document,
+            'span',
+            'ok-native-list-value',
+            row.primaryAmount
+          ),
+          'primaryAmount'
         )
       );
     if (row.secondaryAmount)
       amounts.appendChild(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          row.secondaryAmount
+        tagSlot(
+          createElement(
+            context.document,
+            'span',
+            'ok-native-list-secondary',
+            row.secondaryAmount
+          ),
+          'secondaryAmount'
         )
       );
     body.appendChild(amounts);
   } else if (row.type === 'message') {
     body.appendChild(
-      createElement(context.document, 'span', 'ok-native-list-time', row.time)
+      tagSlot(
+        createElement(
+          context.document,
+          'span',
+          'ok-native-list-time',
+          row.time
+        ),
+        'time'
+      )
     );
     if (row.thumbnail) {
       const thumbnail = createImage(
@@ -3425,7 +3518,78 @@ function createMarketRow(context: RenderContext, row: MarketRow): HTMLElement {
   return body;
 }
 
-function createRowBody(context: RenderContext, row: RowModel): HTMLElement {
+const ROW_BOX_STYLE_KEYS: ReadonlySet<string> = new Set([
+  'horizontalPadding',
+  'verticalPadding',
+  'leadingGap',
+  'lineGap',
+  'titleBadgeGap',
+  'trailingGap',
+  'image',
+]);
+
+function applyTextStyleToSlot(
+  element: HTMLElement,
+  style: NativeListTextStyle
+): void {
+  if (style.fontSize !== undefined)
+    element.style.fontSize = String(style.fontSize) + 'px';
+  if (style.lineHeight !== undefined)
+    element.style.lineHeight = String(style.lineHeight) + 'px';
+  if (style.fontWeight !== undefined)
+    element.style.fontWeight = String(marketFontWeight(style.fontWeight, 400));
+  if (style.color !== undefined) element.style.color = style.color;
+  if (style.alignment !== undefined) element.style.textAlign = style.alignment;
+  if (style.lines !== undefined) {
+    element.style.removeProperty('-webkit-line-clamp');
+    element.style.removeProperty('-webkit-box-orient');
+    element.style.display = '';
+    element.style.whiteSpace = style.lines === 2 ? 'normal' : 'nowrap';
+    if (style.lines === 2) {
+      element.style.display = '-webkit-box';
+      element.style.setProperty('-webkit-line-clamp', '2');
+      element.style.setProperty('-webkit-box-orient', 'vertical');
+    }
+  }
+}
+
+/**
+ * Applies a row style once the template has been built. A style key names the
+ * model field it modifies and the element rendering that field carries
+ * `data-nl-slot`, because the view pool is shared across templates. Market
+ * keeps its own richer path. See docs/STYLE_SPEC.md §4 and §8.
+ */
+export function applyRowStyle(body: HTMLElement, row: RowModel): void {
+  if (row.type === 'market') return;
+  const style = (row as { style?: Record<string, unknown> }).style;
+  if (!style) return;
+  const box = style as RowBoxStyle;
+  if (box.horizontalPadding !== undefined)
+    body.style.paddingInline = String(box.horizontalPadding) + 'px';
+  if (box.verticalPadding !== undefined)
+    body.style.paddingBlock = String(box.verticalPadding) + 'px';
+  if (box.lineGap !== undefined) {
+    const lineGap = String(box.lineGap) + 'px';
+    body
+      .querySelectorAll<HTMLElement>('.ok-native-list-flex')
+      .forEach((column) => {
+        column.style.rowGap = lineGap;
+      });
+  }
+  Object.keys(style).forEach((key) => {
+    if (ROW_BOX_STYLE_KEYS.has(key)) return;
+    const slotStyle = style[key] as NativeListTextStyle | undefined;
+    if (!slotStyle) return;
+    body
+      .querySelectorAll<HTMLElement>('[data-nl-slot="' + key + '"]')
+      .forEach((element) => applyTextStyleToSlot(element, slotStyle));
+  });
+}
+
+export function createRowBody(
+  context: RenderContext,
+  row: RowModel
+): HTMLElement {
   switch (row.type) {
     case 'walletGroup':
       return createWalletGroupRow(context, row);
@@ -4218,6 +4382,7 @@ export class NativeListWebEngine {
     };
     const body = createRowBody(context, row);
     applySelectorTabularNumbers(body, row);
+    applyRowStyle(body, row);
     // OneKey patch: explicit selector fields preserve original page geometry.
     element.style.contain = row.backgroundFullWidth ? 'layout style' : '';
     if (row.backgroundColor) body.style.backgroundColor = row.backgroundColor;
