@@ -64,6 +64,10 @@ in `NativeListModels.kt` and `styleSlot` in `NativeListCell.swift`. §4 is the s
 truth for both; the Kotlin copy is unit-tested, including a check that no template maps
 two style keys onto one view.
 
+The example application's **Native List Row Style** page renders every template twice,
+plain and styled, behind a toggle. With the toggle off the page must match the build
+from before the style existed — that is the regression check for all three platforms.
+
 ## 3. T1 — Design tokens
 
 ### 3.1 Color tokens
