@@ -25,6 +25,77 @@ internal fun isNativeListWholeRowInteractive(
   pressDisabled = pressDisabled,
 )
 
+/**
+ * Maps a style key - which names a model field - to the view slot that renders it.
+ * The view pool is shared across templates and the mapping is not one to one:
+ * metricCard renders `value` through the title view and its own `title` through
+ * the subtitle view, and one status view carries rail.status, activity.status,
+ * message.time and metricCard.trend. See docs/STYLE_SPEC.md section 4.
+ *
+ * Returns null when the template does not render that field, so an unmapped key
+ * is ignored rather than reaching an unrelated view.
+ */
+internal fun nativeListStyleSlot(type: String, variant: String, field: String): String? =
+  when (type) {
+    "identity" -> when (field) {
+      "title", "subtitle", "tertiary", "badge", "value", "valueSecondary" -> field
+      else -> null
+    }
+    "rail" -> when (field) {
+      "title", "badge", "status" -> field
+      else -> null
+    }
+    "activity" -> when (field) {
+      "title", "status" -> field
+      "description" -> "subtitle"
+      "primaryAmount" -> "value"
+      "secondaryAmount" -> "valueSecondary"
+      else -> null
+    }
+    "message" -> when (field) {
+      "title" -> "title"
+      "body" -> "subtitle"
+      "time" -> "status"
+      else -> null
+    }
+    "dataRow" -> when (field) {
+      "columns" -> "dataPrimary"
+      "index" -> "value"
+      else -> null
+    }
+    "mediaTile" -> when (field) {
+      "title", "subtitle" -> field
+      "badge" -> "mediaBadge"
+      else -> null
+    }
+    // The large number and the small label sit in swapped views.
+    "metricCard" -> when (field) {
+      "value" -> "title"
+      "title" -> "subtitle"
+      "subtitle" -> "metricSubtitle"
+      "trend" -> "status"
+      else -> null
+    }
+    "sectionHeader" -> when (field) {
+      "title", "subtitle", "value" -> field
+      else -> null
+    }
+    "action" -> when (field) {
+      "title", "value" -> field
+      else -> null
+    }
+    "system" -> when (field) {
+      "title" -> "title"
+      // Only the warning variant renders a separate title; every other variant
+      // puts its message in the title view.
+      "message" -> if (variant == "warning") "subtitle" else "title"
+      "actionText" -> "value"
+      else -> null
+    }
+    // Market owns its own richer style path.
+    else -> null
+  }
+
 // The image fallback-state cache is process-wide, so it is keyed by a digest of the request
 // identity instead of the raw headers, which can carry credentials such as Authorization.
 internal fun nativeListSourceFallbackStateKey(uri: String, headers: Map<String, String>): String? {

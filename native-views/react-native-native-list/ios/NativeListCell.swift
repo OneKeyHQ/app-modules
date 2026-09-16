@@ -548,6 +548,8 @@ final class NativeListCell: UICollectionViewCell {
   private var checkboxBorderColor = UIColor(nativeListHex: "#CECECE", fallback: .lightGray)
   private var visualBackdropColor = UIColor.white
   private var currentLayout = "linear"
+  // OneKey patch: a row style wrote view properties that reset() does not restore.
+  private var styledViewsDirty = false
   private var currentTheme: [String: Any]?
   private var currentItemIndex: Int?
   // OneKey patch: delayed image retries belong to the current reusable cell binding.
@@ -1006,6 +1008,7 @@ final class NativeListCell: UICollectionViewCell {
     case "system": bindSystem(item, theme: theme)
     default: break
     }
+    applyRowStyle(item)
     applySelectorTypography(item)
     if shouldRestoreHighlight && isUserInteractionEnabled {
       isHighlighted = true
@@ -1188,7 +1191,29 @@ final class NativeListCell: UICollectionViewCell {
     return color
   }
 
+  /**
+   docs/STYLE_SPEC.md section 7 rule 2: reset() restores the fonts of the labels
+   every template uses, but not those of the data, metric and media labels, nor any
+   text alignment. A style that wrote one of those would leak into the next row that
+   reuses the cell, so put them back before the binder runs.
+   */
+  private func resetRowStyle() {
+    guard styledViewsDirty else { return }
+    styledViewsDirty = false
+    metricSubtitleLabel.font = nativeListFont(ofSize: 12)
+    mediaBadgeLabel.font = nativeListFont(ofSize: 14, weight: .medium)
+    dataLabels.forEach { $0.font = nativeListFont(ofSize: 12) }
+    let aligned: [UILabel] = [
+      subtitleLabel, tertiaryLabel, statusLabel, badgeLabel, metricSubtitleLabel,
+    ]
+    aligned.forEach {
+      $0.textAlignment = .natural
+      $0.lineBreakMode = .byTruncatingTail
+    }
+  }
+
   private func reset() {
+    resetRowStyle()
     titleLabel.transform = .identity
     restoreSelectorTypography()
     // OneKey patch: remove selector decorations before rebinding recycled cells.
@@ -2262,6 +2287,211 @@ final class NativeListCell: UICollectionViewCell {
     case "end": return effectiveUserInterfaceLayoutDirection == .rightToLeft ? .left : .right
     default: return .natural
     }
+  }
+
+  /**
+   docs/STYLE_SPEC.md section 4. A style key names a model field, and the view pool
+   is shared, so the same field lands in a different view per template. This table
+   must stay in step with `nativeListStyleSlot` on Android.
+   */
+  private func styleSlot(type: String, variant: String, field: String) -> String? {
+    switch type {
+    case "identity":
+      return ["title", "subtitle", "tertiary", "badge", "value", "valueSecondary"]
+        .contains(field) ? field : nil
+    case "rail":
+      return ["title", "badge", "status"].contains(field) ? field : nil
+    case "activity":
+      switch field {
+      case "title", "status": return field
+      case "description": return "subtitle"
+      case "primaryAmount": return "value"
+      case "secondaryAmount": return "valueSecondary"
+      default: return nil
+      }
+    case "message":
+      switch field {
+      case "title": return "title"
+      case "body": return "subtitle"
+      case "time": return "status"
+      default: return nil
+      }
+    case "dataRow":
+      switch field {
+      case "columns": return "dataPrimary"
+      case "index": return "value"
+      default: return nil
+      }
+    case "mediaTile":
+      switch field {
+      case "title", "subtitle": return field
+      case "badge": return "mediaBadge"
+      default: return nil
+      }
+    // The large number and the small label sit in swapped views.
+    case "metricCard":
+      switch field {
+      case "value": return "title"
+      case "title": return "subtitle"
+      case "subtitle": return "metricSubtitle"
+      case "trend": return "status"
+      default: return nil
+      }
+    case "sectionHeader":
+      return ["title", "subtitle", "value"].contains(field) ? field : nil
+    case "action":
+      return ["title", "value"].contains(field) ? field : nil
+    case "system":
+      switch field {
+      case "title": return "title"
+      // Only the warning variant renders a separate title; every other variant
+      // puts its message in the title view.
+      case "message": return variant == "warning" ? "subtitle" : "title"
+      case "actionText": return "value"
+      default: return nil
+      }
+    default:
+      return nil
+    }
+  }
+
+  /**
+   docs/STYLE_SPEC.md section 8. Runs after the per-template binder, so it is the
+   last writer. Market owns its own richer path inside bindMarket.
+   */
+  private func applyRowStyle(_ item: NativeListItem) {
+    if item.type == "market" { return }
+    guard let style = item.data.dictionary("style") else { return }
+    styledViewsDirty = true
+    if style["horizontalPadding"] != nil {
+      let inset = CGFloat(style.double("horizontalPadding"))
+      rootLeadingConstraint.constant = inset
+      rootTrailingConstraint.constant = -inset
+    }
+    if style["verticalPadding"] != nil {
+      let inset = CGFloat(style.double("verticalPadding"))
+      rootTopConstraint.constant = inset
+      rootBottomConstraint.constant = -inset
+    }
+    if style["lineGap"] != nil {
+      mainStack.spacing = CGFloat(style.double("lineGap"))
+    }
+    let variant = item.data.string("variant")
+    for (field, value) in style {
+      guard let slotStyle = value as? [String: Any],
+            let slot = styleSlot(type: item.type, variant: variant, field: field)
+      else { continue }
+      switch slot {
+      case "title": applyStyledText(titleLabel, slotStyle)
+      case "subtitle": applyStyledText(subtitleLabel, slotStyle)
+      case "tertiary": applyStyledText(tertiaryLabel, slotStyle)
+      case "status": applyStyledText(statusLabel, slotStyle)
+      case "metricSubtitle": applyStyledText(metricSubtitleLabel, slotStyle)
+      case "badge": applyStyledText(badgeLabel, slotStyle)
+      case "mediaBadge": applyStyledText(mediaBadgeLabel, slotStyle)
+      case "dataPrimary": dataLabels.forEach { applyStyledText($0, slotStyle) }
+      case "value": applyStyledButton(accessoryButtons[0], slotStyle)
+      case "valueSecondary": applyStyledButton(accessoryButtons[1], slotStyle)
+      default: break
+      }
+    }
+  }
+
+  /**
+   The binders install an attributed string through setLineHeight, so assigning
+   `font` or `textColor` alone would not take effect. Rebuild the line box.
+   */
+  private func applyStyledText(_ label: UILabel, _ style: [String: Any]) {
+    let text = label.attributedText?.string ?? label.text ?? ""
+    guard !text.isEmpty else { return }
+    let baseFont = label.font ?? nativeListFont(ofSize: 14)
+    let size = CGFloat(style.double("fontSize", default: Double(baseFont.pointSize)))
+    let font: UIFont
+    if let weightName = style["fontWeight"] as? String {
+      font = nativeListFont(
+        ofSize: size,
+        weight: marketFontWeight(weightName, fallback: .regular)
+      )
+    } else {
+      font = baseFont.withSize(size)
+    }
+    let color = (style["color"] as? String)
+      .map { UIColor(nativeListHex: $0, fallback: label.textColor ?? .black) }
+      ?? label.textColor ?? .black
+    if style["lines"] != nil {
+      label.numberOfLines = min(2, max(1, style.int("lines", default: 1)))
+      label.lineBreakMode = .byTruncatingTail
+    }
+    if let alignmentName = style["alignment"] as? String {
+      label.textAlignment = marketTextAlignment(alignmentName)
+    }
+    label.font = font
+    label.textColor = color
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.alignment = label.textAlignment
+    paragraph.lineBreakMode = label.lineBreakMode
+    var attributes: [NSAttributedString.Key: Any] = [
+      .font: font,
+      .foregroundColor: color,
+      .paragraphStyle: paragraph,
+    ]
+    if style["lineHeight"] != nil {
+      let box = CGFloat(style.double("lineHeight"))
+      paragraph.minimumLineHeight = box
+      paragraph.maximumLineHeight = box
+      // React Native centers font metrics inside an explicit line height.
+      attributes[.baselineOffset] = max(0, (box - font.lineHeight) / 2)
+    }
+    label.attributedText = NSAttributedString(string: text, attributes: attributes)
+  }
+
+  private func applyStyledButton(_ button: UIButton, _ style: [String: Any]) {
+    let text = button.attributedTitle(for: .normal)?.string
+      ?? button.title(for: .normal)
+      ?? ""
+    guard !text.isEmpty else { return }
+    let baseFont = button.titleLabel?.font ?? nativeListFont(ofSize: 14)
+    let size = CGFloat(style.double("fontSize", default: Double(baseFont.pointSize)))
+    let font: UIFont
+    if let weightName = style["fontWeight"] as? String {
+      font = nativeListFont(
+        ofSize: size,
+        weight: marketFontWeight(weightName, fallback: .regular)
+      )
+    } else {
+      font = baseFont.withSize(size)
+    }
+    let fallbackColor = button.titleColor(for: .normal) ?? .black
+    let color = (style["color"] as? String)
+      .map { UIColor(nativeListHex: $0, fallback: fallbackColor) }
+      ?? fallbackColor
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.alignment = button.titleLabel?.textAlignment ?? .natural
+    if let alignmentName = style["alignment"] as? String {
+      paragraph.alignment = marketTextAlignment(alignmentName)
+      button.contentHorizontalAlignment = alignmentName == "start"
+        ? .leading
+        : alignmentName == "end" ? .trailing : .center
+    }
+    var attributes: [NSAttributedString.Key: Any] = [
+      .font: font,
+      .foregroundColor: color,
+      .paragraphStyle: paragraph,
+    ]
+    if style["lineHeight"] != nil {
+      let box = CGFloat(style.double("lineHeight"))
+      paragraph.minimumLineHeight = box
+      paragraph.maximumLineHeight = box
+      attributes[.baselineOffset] = max(0, (box - font.lineHeight) / 2)
+    }
+    if style["lines"] != nil {
+      button.titleLabel?.numberOfLines = min(2, max(1, style.int("lines", default: 1)))
+    }
+    button.titleLabel?.font = font
+    button.setAttributedTitle(
+      NSAttributedString(string: text, attributes: attributes),
+      for: .normal
+    )
   }
 
   private func applyMarketTextStyle(
