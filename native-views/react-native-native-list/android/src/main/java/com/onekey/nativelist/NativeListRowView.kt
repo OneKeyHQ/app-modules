@@ -523,6 +523,8 @@ internal class NativeListRowView(
   private var marketTouchX = 0f
   private var marketTouchY = 0f
   private var marketLongPressFired = false
+  // OneKey patch: a row style wrote view properties that resetViews does not restore.
+  private var styledViewsDirty = false
   private var reorderActive = false
   private var checkboxCheckedColor = Color.rgb(32, 32, 32)
   private var checkboxUncheckedColor = Color.rgb(252, 252, 252)
@@ -1023,8 +1025,82 @@ internal class NativeListRowView(
       TextViewCompat.setLineHeight(subtitle, dp(20))
       minimumHeight = 0
     }
+    applyRowStyle(item)
     applyListOrientation(item, listOrientation)
     applySelectorTypography(item)
+  }
+
+  /**
+   * docs/STYLE_SPEC.md section 8. Must run after applySize(), which re-dispatches
+   * font size and typeface by row type and would otherwise overwrite the style.
+   * A style key names a model field; nativeListStyleSlot maps it to the view that
+   * renders that field, because the view pool is shared across templates.
+   */
+  private fun applyRowStyle(item: NativeListItem) {
+    // Market owns its own richer style path, applied inside bindMarket.
+    if (item.type == "market") return
+    val style = item.json.optJSONObject("style") ?: return
+    styledViewsDirty = true
+    if (style.has("horizontalPadding")) {
+      val inset = dp(style.optDouble("horizontalPadding").roundToInt())
+      setPadding(inset, paddingTop, inset, paddingBottom)
+    }
+    if (style.has("verticalPadding")) {
+      val inset = dp(style.optDouble("verticalPadding").roundToInt())
+      setPadding(paddingLeft, inset, paddingRight, inset)
+    }
+    if (style.has("lineGap")) {
+      (subtitle.layoutParams as? MarginLayoutParams)?.topMargin =
+        dp(style.optDouble("lineGap").roundToInt())
+    }
+    val variant = item.json.optString("variant")
+    val fields = style.keys()
+    while (fields.hasNext()) {
+      val field = fields.next()
+      val slotStyle = style.optJSONObject(field) ?: continue
+      when (val slot = nativeListStyleSlot(item.type, variant, field)) {
+        null -> continue
+        "dataPrimary" -> dataColumns.forEach { applyStyledText(it, slotStyle) }
+        else -> styledSlotView(slot)?.let { applyStyledText(it, slotStyle) }
+      }
+    }
+  }
+
+  private fun styledSlotView(slot: String): TextView? = when (slot) {
+    "title" -> title
+    "subtitle" -> subtitle
+    "tertiary" -> tertiary
+    "status" -> status
+    "metricSubtitle" -> metricSubtitle
+    "badge" -> badgeLine
+    "mediaBadge" -> mediaBadge
+    "value" -> trailingViews[0]
+    "valueSecondary" -> trailingViews[1]
+    else -> null
+  }
+
+  private fun applyStyledText(view: TextView, style: JSONObject) {
+    if (style.has("fontSize")) view.textSize = sp(style.optDouble("fontSize").toFloat())
+    style.optString("fontWeight").takeIf(String::isNotEmpty)?.let {
+      view.typeface = marketTypeface(it, "regular")
+    }
+    style.optString("color").takeIf(String::isNotEmpty)?.let {
+      view.setTextColor(safeColor(it, view.currentTextColor))
+    }
+    if (style.has("lineHeight")) {
+      TextViewCompat.setLineHeight(view, dp(style.optDouble("lineHeight").roundToInt()))
+    }
+    if (style.has("lines")) {
+      view.maxLines = style.optInt("lines").coerceIn(1, 2)
+      view.ellipsize = TextUtils.TruncateAt.END
+    }
+    style.optString("alignment").takeIf(String::isNotEmpty)?.let {
+      view.gravity = (view.gravity and Gravity.VERTICAL_GRAVITY_MASK) or when (it) {
+        "center" -> Gravity.CENTER_HORIZONTAL
+        "end" -> Gravity.END
+        else -> Gravity.START
+      }
+    }
   }
 
   // OneKey patch: keep a small idle member pool after reuse or a direct rebind.
@@ -1209,7 +1285,33 @@ internal class NativeListRowView(
     bindingEpoch += 1
   }
 
+  /**
+   * docs/STYLE_SPEC.md section 7 rule 2: resetViews() restores visibility, gravity,
+   * maxLines, layout params, background and padding - but not textSize, typeface or
+   * lineHeight, which each binding path re-establishes for itself. A style that wrote
+   * one of those would therefore leak into the next row reusing the view, so put them
+   * back to the constructor baseline before the binder runs.
+   */
+  private fun resetRowStyle() {
+    if (!styledViewsDirty) return
+    styledViewsDirty = false
+    listOf(title, subtitle, tertiary, status, metricSubtitle).forEach { view ->
+      view.typeface = NativeListFonts.regular(context)
+      view.setLineSpacing(0f, 1f)
+    }
+    badgeLine.typeface = NativeListFonts.medium(context)
+    badgeLine.setLineSpacing(0f, 1f)
+    mediaBadge.typeface = NativeListFonts.regular(context)
+    mediaBadge.setLineSpacing(0f, 1f)
+    trailingViews.forEach { it.setLineSpacing(0f, 1f) }
+    dataColumns.forEach {
+      it.typeface = NativeListFonts.medium(context)
+      it.setLineSpacing(0f, 1f)
+    }
+  }
+
   private fun resetViews() {
+    resetRowStyle()
     clipChildren = true
     clipToPadding = true
     selectorOriginalFontFeatures.forEach { (view, original) -> view.fontFeatureSettings = original }
