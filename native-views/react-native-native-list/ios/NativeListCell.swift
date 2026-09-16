@@ -556,6 +556,10 @@ final class NativeListCell: UICollectionViewCell {
   private var selectorImageRetries: [ObjectIdentifier: DispatchWorkItem] = [:]
   private(set) var bindingEpoch = 0
 
+  /// docs/STYLE_SPEC.md §5. Set by the list before `bind`, so the row binder and
+  /// `applyGroupPosition` can read it without another parameter.
+  var listStyle: [String: Any]?
+
   var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Void)?
   var onBindingInvalidated: ((NativeListCell, Int) -> Void)?
 
@@ -950,8 +954,14 @@ final class NativeListCell: UICollectionViewCell {
     mediaBadgeLabel.backgroundColor = nativeListColor(theme, "inverseBackground", "#202020")
     mediaBadgeLabel.textColor = nativeListColor(theme, "inverseText", "#FCFCFC")
     mediaBadgeLabel.layer.borderColor = nativeListColor(theme, "rowBackground", "#FFFFFF").cgColor
-    separatorView.backgroundColor = nativeListColor(theme, "separator", "#E0E0E0")
-    separatorLeadingConstraint.constant = item.type == "identity" ? 60 : 12
+    let separatorStyle = listStyle?.dictionary("separator")
+    let separatorColor = nativeListColor(theme, "separator", "#E0E0E0")
+    separatorView.backgroundColor = (separatorStyle?["color"] as? String)
+      .map { UIColor(nativeListHex: $0, fallback: separatorColor) }
+      ?? separatorColor
+    separatorLeadingConstraint.constant = separatorStyle?["inset"] == nil
+      ? (item.type == "identity" ? 60 : 12)
+      : CGFloat(separatorStyle?.double("inset") ?? 0)
     separatorView.isHidden = !item.data.bool("separator")
     restingBackgroundColor = selectionBackgroundColor(
       item: item,
@@ -1545,6 +1555,7 @@ final class NativeListCell: UICollectionViewCell {
       memberCell.onBindingInvalidated = { [weak self] cell, epoch in
         self?.onBindingInvalidated?(cell, epoch)
       }
+      memberCell.listStyle = listStyle
       memberCell.bind(
         item: member,
         theme: theme,
@@ -1556,6 +1567,7 @@ final class NativeListCell: UICollectionViewCell {
       rootStack.addArrangedSubview(memberCell)
     }
     if let parent = walletGroupMembers.first {
+      walletGroupCompactCell?.listStyle = listStyle
       walletGroupCompactCell?.bind(
         item: parent,
         theme: theme,
@@ -4414,7 +4426,9 @@ final class NativeListCell: UICollectionViewCell {
     }
     let isWalletSidebar = currentItem?.type == "identity"
       && currentItem?.data.string("presentation") == "walletSidebar"
-    layer.cornerRadius = isWalletSidebar ? 20 : 12
+    layer.cornerRadius = listStyle?["groupCornerRadius"] == nil
+      ? (isWalletSidebar ? 20 : 12)
+      : CGFloat(listStyle?.double("groupCornerRadius") ?? 12)
     layer.cornerCurve = isWalletSidebar ? .continuous : .circular
     layer.masksToBounds = true
   }

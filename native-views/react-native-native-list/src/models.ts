@@ -654,6 +654,28 @@ export type SectionIndexConfig = Readonly<{
   centeredInWindow?: boolean;
 }>;
 
+export type NativeListSeparatorStyle = Readonly<{
+  /**
+   * Leading inset in logical pixels. Omitted keeps each platform's own default,
+   * which is not the same everywhere — see docs/STYLE_SPEC.md §6.2.
+   */
+  inset?: number;
+  /** Overrides the `separator` theme token for this list only. */
+  color?: string;
+}>;
+
+/**
+ * List chrome that every platform can honour. Pull to refresh, the section index
+ * rail and the reorder preview are deliberately absent: the first two are system
+ * controls or three independent constant sets, and the third is drawn with
+ * platform-specific primitives. See docs/STYLE_SPEC.md §5.
+ */
+export type NativeListListStyle = Readonly<{
+  separator?: NativeListSeparatorStyle;
+  /** Corner radius of a `groupId` card. Does not affect rail or media tiles. */
+  groupCornerRadius?: number;
+}>;
+
 export type NativeListSnapshot = Readonly<{
   schemaVersion: 1;
   generation: number;
@@ -685,6 +707,7 @@ export type NativeListSnapshot = Readonly<{
   emptyState?: ActionRow | SystemRow;
   fixedFooter?: ActionRow | SystemRow;
   theme?: NativeListTheme;
+  listStyle?: NativeListListStyle;
 }>;
 
 // OneKey patch: include selector-only mutable presentation fields.

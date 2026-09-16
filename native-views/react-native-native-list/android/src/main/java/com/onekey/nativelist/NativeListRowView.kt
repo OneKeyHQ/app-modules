@@ -542,6 +542,12 @@ internal class NativeListRowView(
   private val separatorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private var showsSeparator = false
 
+  /**
+   * docs/STYLE_SPEC.md section 5. Set by the adapter before bind, so the binder and
+   * groupedBackground can read it without another parameter.
+   */
+  var listStyle: JSONObject? = null
+
   var onRowPress: ((NativeListItem, NativeListActionOrigin) -> Unit)? = null
   var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Unit)? = null
   var onBindingInvalidated: ((NativeListRowView, Long) -> Unit)? = null
@@ -722,7 +728,14 @@ internal class NativeListRowView(
   override fun dispatchDraw(canvas: Canvas) {
     super.dispatchDraw(canvas)
     if (showsSeparator) {
-      val start = if ((tag as? NativeListItem)?.type == "identity") dp(60).toFloat() else dp(12).toFloat()
+      val separatorStyle = listStyle?.optJSONObject("separator")
+      val start = if (separatorStyle?.has("inset") == true) {
+        dp(separatorStyle.optDouble("inset").roundToInt()).toFloat()
+      } else if ((tag as? NativeListItem)?.type == "identity") {
+        dp(60).toFloat()
+      } else {
+        dp(12).toFloat()
+      }
       canvas.drawLine(start, height - 1f, width.toFloat(), height - 1f, separatorPaint)
     }
     if (reorderActive && (tag as? NativeListItem)?.type == "walletGroup" && walletGroupDragChildCount > 0) {
@@ -979,7 +992,10 @@ internal class NativeListRowView(
     status.setTextColor(secondary)
     metricSubtitle.setTextColor(secondary)
     badgeLine.setTextColor(accent)
-    separatorPaint.color = color(theme, "separator", "#0000001F")
+    separatorPaint.color = safeColor(
+      listStyle?.optJSONObject("separator")?.optString("color"),
+      color(theme, "separator", "#0000001F"),
+    )
     separatorPaint.strokeWidth = 1f
     showsSeparator = item.json.optBoolean("separator", false) &&
       !item.key.startsWith("token-") &&
@@ -1724,6 +1740,7 @@ internal class NativeListRowView(
       memberRow.onBindingInvalidated = { row, epoch ->
         onBindingInvalidated?.invoke(row, epoch)
       }
+      memberRow.listStyle = listStyle
       memberRow.bind(
         member,
         theme,
@@ -4420,7 +4437,9 @@ internal class NativeListRowView(
 
   private fun groupedBackground(position: String, color: Int) = GradientDrawable().apply {
     setColor(color)
-    val radius = scaledDp(12f)
+    val radius = listStyle?.takeIf { it.has("groupCornerRadius") }
+      ?.let { scaledDp(it.optDouble("groupCornerRadius").toFloat()) }
+      ?: scaledDp(12f)
     cornerRadii = when (position) {
       "first" -> floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
       "last" -> floatArrayOf(0f, 0f, 0f, 0f, radius, radius, radius, radius)

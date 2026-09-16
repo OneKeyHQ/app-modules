@@ -55,6 +55,7 @@ object identity.
 | Contract, validation, token resolution, patch support | Implemented |
 | Text slots, `horizontalPadding`, `verticalPadding`, `lineGap` | Implemented on Web, iOS and Android |
 | `leadingGap`, `trailingGap`, `titleBadgeGap`, `image` | Validated but applied only on `market`. The others need a per-template default gap, which is not readable from the DOM on Web and is spread across the binders on the native sides |
+| `listStyle.separator` and `listStyle.groupCornerRadius` | Implemented on Web, iOS and Android |
 | `dataRow` columns in the `table` layout | Not applied. The text lives inside `NativeListTableColumnView` / `tableDataColumns`, which own their own labels; the `linear` layout is covered |
 | Row heights | Unchanged. A styled row that grows still needs an explicit `row.height` (§6.1) |
 | Android list-wide source scale (§6.3) | Unchanged. Making it per-row would move every selector list's metrics and needs device verification |
@@ -330,8 +331,8 @@ not yet implemented).
 | --- | --- | --- | --- | --- |
 | Content padding | yes (`layout.contentPadding*`) | `contentInset` | `setPadding` | `paddingValues` |
 | Item spacing | yes (`layout.itemSpacing`) | flow layout spacing | `ItemSpacingDecoration` | layout gap |
-| Separator | partial (`row.separator`) | 1/scale, inset 60/12 | 1px, inset dp(60)/dp(12) | `1px`, class rule |
-| Group card radius | no | 20 / 12 | dp(12) | 12px |
+| Separator | **yes** — `listStyle.separator.{inset,color}` | 1/scale, inset 60/12 | 1px, inset dp(60)/dp(12) | `1px`, class rule, **no inset** |
+| Group card radius | **yes** — `listStyle.groupCornerRadius` | 20 / 12 | dp(12) | 12px |
 | Section index rail | partial (`capabilities.sectionIndex`) | static constants, label 10 | `SECTION_INDEX_*_DP`, raw density | `SECTION_INDEX_*` + CSS |
 | Section index preview | no | 48×48 r14, 22 semibold | preview w/h/margin constants | 48px r14, 22px |
 | Pull to refresh | partial (`capabilities.pullToRefresh`) | `UIRefreshControl` | `SwipeRefreshLayout` | custom pill, 12px |
@@ -340,6 +341,25 @@ not yet implemented).
 
 The section index rail is three separate constant sets for one control; Android's
 `sectionIndexDp()` deliberately never follows the source-scale switch.
+
+`listStyle` carries only what all three platforms can honour. The rest of this table
+is deliberately excluded rather than declared and half-implemented:
+
+- **Pull to refresh** is a system control on both native platforms (`UIRefreshControl`,
+  `SwipeRefreshLayout`); only Web draws its own indicator.
+- **Section index rail and preview** belong to `capabilities.sectionIndex`, which is
+  where their geometry should go if it is ever exposed, and are three independent
+  constant sets today.
+- **Reorder preview and count badge** are drawn with platform-specific primitives —
+  Android paints the badge on `Canvas` inside `dispatchDraw`, Web uses a CSS overlay,
+  and iOS has neither.
+- **Content padding and item spacing** are already `layout.contentPadding*` and
+  `layout.itemSpacing`; duplicating them here would give one value two homes.
+
+Every `listStyle` value is absent by default, and each platform keeps its own number
+as the fallback, so an untouched list renders exactly as before. On Web that required
+the inset separator to keep the transparent `border-bottom` for layout and paint the
+visible line with a logical-inset overlay, rather than moving the row by a pixel.
 
 ## 6. T4 — Known divergences
 
@@ -382,6 +402,12 @@ here and left alone.
 | `metricCard.value` | 18 semibold | sp(18) semibold | **22 / 28 / 700** |
 | visual `rounded` radius | `min(10, h/4)` | `min(10, size/4)`; 8 for accountSelector | **10px**; 8 `!important` for account action; 8 for market |
 | `walletSidebar` row radius | **20** | 12 | 12 |
+| separator default inset | 60 identity / 12 | dp(60) identity / dp(12) | **0** |
+| separator thickness | `1 / scale` (hairline) | `1f` raw px | `1px` |
+
+Separator inset and colour are now settable through `listStyle.separator` (§5); the
+defaults above are what a list gets when it does not set them. Thickness is not
+exposed — a hairline is correct on iOS and a whole pixel is correct elsewhere.
 
 ### 6.3 Behavioral
 

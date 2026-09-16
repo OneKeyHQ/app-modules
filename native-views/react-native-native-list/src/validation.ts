@@ -5,6 +5,7 @@ import type {
   LeadingVisual,
   MarketRow,
   MarketRowStyle,
+  NativeListListStyle,
   NativeListSnapshot,
   NativeListTextStyle,
   NativeListTypographyToken,
@@ -345,6 +346,62 @@ function assertRowStyle(row: RowModel, path: string): void {
   textKeys.forEach((key) =>
     assertTextStyle(slots[key], `${path}.style.${key}`)
   );
+}
+
+const LIST_STYLE_KEYS: readonly string[] = ['separator', 'groupCornerRadius'];
+const SEPARATOR_STYLE_KEYS: readonly string[] = ['inset', 'color'];
+
+function assertUnknownKeys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  path: string,
+  subject: string
+): void {
+  Object.keys(value).forEach((key) => {
+    if (!allowed.includes(key)) fail(`${path}.${key}`, `is not a ${subject}`);
+  });
+}
+
+function assertListStyle(
+  listStyle: NativeListListStyle | undefined,
+  path: string
+): void {
+  if (listStyle === undefined) return;
+  if (
+    typeof listStyle !== 'object' ||
+    listStyle === null ||
+    Array.isArray(listStyle)
+  ) {
+    fail(path, 'must be an object');
+  }
+  assertUnknownKeys(
+    listStyle as Record<string, unknown>,
+    LIST_STYLE_KEYS,
+    path,
+    'list style key'
+  );
+  assertBoundedStyleNumber(
+    listStyle.groupCornerRadius,
+    `${path}.groupCornerRadius`,
+    0,
+    40
+  );
+  const separator = listStyle.separator;
+  if (separator === undefined) return;
+  if (
+    typeof separator !== 'object' ||
+    separator === null ||
+    Array.isArray(separator)
+  ) {
+    fail(`${path}.separator`, 'must be an object');
+  }
+  assertUnknownKeys(
+    separator as Record<string, unknown>,
+    SEPARATOR_STYLE_KEYS,
+    `${path}.separator`,
+    'separator style key'
+  );
+  assertBoundedStyleNumber(separator.inset, `${path}.separator.inset`, 0, 64);
 }
 
 /** Token resolution is idempotent: a resolved style carries no token. */
@@ -1161,6 +1218,8 @@ export function validateSnapshot(
       );
     }
   }
+
+  assertListStyle(snapshot.listStyle, 'snapshot.listStyle');
 
   const rowKeys = new Set<string>();
   const sectionIndexTitles = new Set<string>();
