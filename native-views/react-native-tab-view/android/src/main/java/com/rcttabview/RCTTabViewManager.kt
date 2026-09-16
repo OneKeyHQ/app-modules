@@ -193,6 +193,10 @@ class RCTTabViewManager(context: ReactApplicationContext) :
     view?.setIgnoreBottomInsets(value)
   }
 
+  override fun setAndroidTabBarStyle(view: ReactBottomNavigationView?, value: String?) {
+    view?.setAndroidTabBarStyle(value)
+  }
+
   // iOS-only props (no-ops on Android)
   // selectedIcons feeds UITabBarItem.selectedImage on iOS; Android keeps
   // swapping the icon in JS via the focusedKey-driven `icons` array.

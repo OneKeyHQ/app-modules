@@ -191,6 +191,10 @@ interface Props<Route extends BaseRoute> {
    */
   ignoreBottomInsets?: boolean;
   /**
+   * Visual style of the Android tab bar. Android only.
+   */
+  androidTabBarStyle?: 'default' | 'floating';
+  /**
    * Whether to delay freeze/unfreeze by 200ms on tab switch.
    * Defaults to false (immediate freeze). Set to true to restore the
    * original delayed behavior.

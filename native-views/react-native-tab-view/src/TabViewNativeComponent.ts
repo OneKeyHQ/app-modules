@@ -62,6 +62,7 @@ export interface TabViewProps extends ViewProps {
   fontWeight?: string;
   fontSize?: Int32;
   ignoreBottomInsets?: boolean;
+  androidTabBarStyle?: WithDefault<'default' | 'floating', 'default'>;
 }
 
 export default codegenNativeComponent<TabViewProps>('RNCTabView');
