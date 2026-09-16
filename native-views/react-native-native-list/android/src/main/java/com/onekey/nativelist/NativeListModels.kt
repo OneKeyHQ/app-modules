@@ -212,6 +212,7 @@ internal data class NativeListConfig(
   val sectionIndexHapticsEnabled: Boolean,
   val sectionIndexCenteredInWindow: Boolean,
   val theme: JSONObject?,
+  val listStyle: JSONObject?,
   val fixedFooter: NativeListItem?,
   val items: List<NativeListItem>,
 ) {
@@ -261,6 +262,7 @@ internal data class NativeListConfig(
         sectionIndexHapticsEnabled = sectionIndex?.optBoolean("hapticsEnabled", true) ?: true,
         sectionIndexCenteredInWindow = sectionIndex?.optBoolean("centeredInWindow", false) ?: false,
         theme = root.optJSONObject("theme"),
+        listStyle = root.optJSONObject("listStyle"),
         fixedFooter = fixedFooter,
         items = items,
       )

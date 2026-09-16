@@ -52,6 +52,13 @@ internal class NativeListAdapter(
       if (field?.toString() != value?.toString()) needsThemeRebind = true
       field = value
     }
+  // Reuses the theme rebind path: chrome lives outside the row payload, so a
+  // changed list style would otherwise not reach rows DiffUtil considers equal.
+  var listStyle: JSONObject? = null
+    set(value) {
+      if (field?.toString() != value?.toString()) needsThemeRebind = true
+      field = value
+    }
   var layout: String = "linear"
   var orientation: String = "vertical"
   var selectedKeys: Set<String> = emptySet()
@@ -79,6 +86,7 @@ internal class NativeListAdapter(
 
   override fun onBindViewHolder(holder: NativeListViewHolder, position: Int) {
     val item = itemAt(position) ?: return
+    holder.rowView.listStyle = listStyle
     holder.rowView.bind(
       item,
       theme,
