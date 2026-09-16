@@ -1302,6 +1302,35 @@ describe('NativeList style contract', () => {
     ).toThrow('is not a style key of the "identity" template');
   });
 
+  it('accepts list chrome and rejects anything outside it', () => {
+    const withChrome = (listStyle: unknown): NativeListSnapshot =>
+      ({ ...snapshot(), listStyle } as NativeListSnapshot);
+    expect(
+      validateSnapshot(
+        withChrome({
+          separator: { inset: 16, color: '#E0E0E0' },
+          groupCornerRadius: 8,
+        })
+      ).listStyle
+    ).toEqual({
+      separator: { inset: 16, color: '#E0E0E0' },
+      groupCornerRadius: 8,
+    });
+    expect(() =>
+      validateSnapshot(withChrome({ separator: { inset: 65 } }))
+    ).toThrow('separator.inset');
+    expect(() =>
+      validateSnapshot(withChrome({ groupCornerRadius: 41 }))
+    ).toThrow('groupCornerRadius');
+    // Chrome the platforms cannot all honour is rejected rather than ignored.
+    expect(() => validateSnapshot(withChrome({ pullToRefresh: {} }))).toThrow(
+      'is not a list style key'
+    );
+    expect(() =>
+      validateSnapshot(withChrome({ separator: { thickness: 2 } }))
+    ).toThrow('is not a separator style key');
+  });
+
   it('keeps the Market style surface intact', () => {
     const [first] = validateSnapshot(
       snapshot([

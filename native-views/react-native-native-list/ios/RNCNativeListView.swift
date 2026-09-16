@@ -352,7 +352,10 @@ final class NativeListView: UIView {
       cancelInteractiveReorderForStructuralUpdate()
     }
     let oldItems = itemsByKey
+    // Chrome lives outside the row payload, so a changed list style must rebind
+    // rows whose own content is unchanged.
     let themeChanged = !dictionariesEqual(config?.theme, next.theme)
+      || !dictionariesEqual(config?.listStyle, next.listStyle)
     if config?.generation != next.generation { endReachedGeneration = nil }
     config = next
     itemsByKey = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
@@ -1318,6 +1321,7 @@ final class NativeListView: UIView {
 
   private func bind(cell: NativeListCell, item: NativeListItem, itemIndex: Int? = nil) {
     guard let config else { return }
+    cell.listStyle = config.listStyle
     cell.bind(
       item: item,
       theme: config.theme,
@@ -1470,6 +1474,7 @@ final class NativeListView: UIView {
           current.layout == next.layout,
           current.orientation == next.orientation,
           current.gridColumns == next.gridColumns,
+          dictionariesEqual(current.listStyle, next.listStyle),
           current.stickyHeaders == next.stickyHeaders,
           current.contentPadding == next.contentPadding,
           current.contentPaddingHorizontal == next.contentPaddingHorizontal,
@@ -1517,6 +1522,7 @@ final class NativeListView: UIView {
     guard current.layout == next.layout,
           current.orientation == next.orientation,
           current.gridColumns == next.gridColumns,
+          dictionariesEqual(current.listStyle, next.listStyle),
           current.stickyHeaders == next.stickyHeaders,
           current.contentPadding == next.contentPadding,
           current.contentPaddingHorizontal == next.contentPaddingHorizontal,

@@ -70,6 +70,7 @@ struct NativeListConfig {
   let sectionIndexHapticsEnabled: Bool
   let sectionIndexCenteredInWindow: Bool
   let theme: [String: Any]?
+  let listStyle: [String: Any]?
   let fixedFooter: NativeListItem?
   var items: [NativeListItem]
 
@@ -132,6 +133,7 @@ struct NativeListConfig {
       sectionIndexHapticsEnabled: sectionIndex?["hapticsEnabled"] as? Bool ?? true,
       sectionIndexCenteredInWindow: sectionIndex?["centeredInWindow"] as? Bool ?? false,
       theme: root["theme"] as? [String: Any],
+      listStyle: root["listStyle"] as? [String: Any],
       fixedFooter: footer,
       items: items
     )

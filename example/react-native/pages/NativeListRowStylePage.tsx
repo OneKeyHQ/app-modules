@@ -161,6 +161,37 @@ function buildRows(styled: boolean): RowModel[] {
       : {}),
   });
 
+  // listStyle is chrome, not a row: the separator inset and the group card
+  // radius below come from the snapshot, not from these rows.
+  rows.push(header('chrome', 'listStyle', 'separator / group'));
+  rows.push({
+    type: 'identity',
+    key: 'chrome-separator',
+    sectionKey: 'chrome',
+    leading: { kind: 'icon', name: 'StarOutline' },
+    title: 'Separator inset',
+    subtitle: 'Inset comes from listStyle.separator',
+    separator: true,
+  });
+  rows.push({
+    type: 'identity',
+    key: 'chrome-group-first',
+    sectionKey: 'chrome',
+    groupId: 'chrome-card',
+    groupPosition: 'first',
+    leading: { kind: 'icon', name: 'StarOutline' },
+    title: 'Grouped card, first',
+  });
+  rows.push({
+    type: 'identity',
+    key: 'chrome-group-last',
+    sectionKey: 'chrome',
+    groupId: 'chrome-card',
+    groupPosition: 'last',
+    leading: { kind: 'icon', name: 'StarOutline' },
+    title: 'Grouped card, last',
+  });
+
   // Growing text needs an explicit height: row heights are not derived from the
   // style. See docs/STYLE_SPEC.md section 6.1.
   rows.push(header('height', 'explicit height', 'larger text'));
@@ -194,6 +225,11 @@ export function NativeListRowStylePage() {
       generation: styled ? 2 : 1,
       layout: { kind: 'sectioned', stickyHeaders: true, contentPadding: 8 },
       theme: THEME,
+      // Absent by default, so the chrome falls back to each platform's own
+      // numbers - which are not the same everywhere, see STYLE_SPEC section 6.2.
+      listStyle: styled
+        ? { separator: { inset: 20 }, groupCornerRadius: 16 }
+        : undefined,
       rows: buildRows(styled),
     }),
     [styled],

@@ -628,6 +628,20 @@ describe('web row style', () => {
     expect(value?.style.fontWeight).toBe('700');
   });
 
+  it("keeps today's numbers as the chrome fallbacks", () => {
+    // An untouched list must render exactly as before, so every chrome variable
+    // carries the current value as its CSS fallback.
+    expect(WEB_LIST_CSS).toContain(
+      'border-bottom:1px solid var(--nl-separator-color,var(--nl-separator))'
+    );
+    expect(WEB_LIST_CSS).toContain('border-radius:var(--nl-group-radius,12px)');
+    // The inset variant keeps the transparent border so row height is unchanged.
+    expect(WEB_LIST_CSS).toContain('border-bottom-color:transparent');
+    expect(WEB_LIST_CSS).toContain(
+      'inset-inline-start:var(--nl-separator-inset,0)'
+    );
+  });
+
   it('applies box padding only when the row asks for it', () => {
     const base: RowModel = {
       type: 'identity',

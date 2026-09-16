@@ -500,6 +500,7 @@ class NativeListView(
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
     adapter.usesSelectorSourceScale = usesSelectorSourceScale
       adapter.theme = next.theme
+      adapter.listStyle = next.listStyle
       adapter.layout = next.layout
       adapter.orientation = next.orientation
       adapter.selectedKeys = next.selectedKeys
@@ -1381,6 +1382,7 @@ class NativeListView(
       footerView.recycle()
     } else {
       footerView.visibility = VISIBLE
+      footerView.listStyle = next.listStyle
       footerView.bind(
         footer,
         next.theme,

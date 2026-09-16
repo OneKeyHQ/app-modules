@@ -986,10 +986,13 @@ export const WEB_LIST_CSS = `
 .ok-native-list-reorder-preview>.ok-native-list-row{background:var(--nl-pressed);cursor:grabbing}
 .ok-native-list-reorder-preview[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
 .ok-native-list-reorder-count{position:absolute;right:4px;bottom:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:24px;height:24px;padding:0 6px;border:1px solid var(--nl-row);border-radius:12px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;line-height:22px;font-weight:600}
-.ok-native-list-item[data-separator="true"]>.ok-native-list-row{border-bottom:1px solid var(--nl-separator)}
-.ok-native-list-item[data-group-position="first"]>.ok-native-list-row{border-radius:12px 12px 0 0}
-.ok-native-list-item[data-group-position="last"]>.ok-native-list-row{border-radius:0 0 12px 12px}
-.ok-native-list-item[data-group-position="single"]>.ok-native-list-row{border-radius:12px}
+.ok-native-list-item[data-separator="true"]>.ok-native-list-row{border-bottom:1px solid var(--nl-separator-color,var(--nl-separator))}
+/* An inset separator keeps the transparent border so the row's height is unchanged, and paints the visible line with a logical-inset overlay so it follows RTL. */
+.ok-native-list-root[data-separator-inset="true"] .ok-native-list-item[data-separator="true"]>.ok-native-list-row{position:relative;border-bottom-color:transparent}
+.ok-native-list-root[data-separator-inset="true"] .ok-native-list-item[data-separator="true"]>.ok-native-list-row::after{content:"";position:absolute;inset-inline-start:var(--nl-separator-inset,0);inset-inline-end:0;bottom:-1px;height:1px;background:var(--nl-separator-color,var(--nl-separator))}
+.ok-native-list-item[data-group-position="first"]>.ok-native-list-row{border-radius:var(--nl-group-radius,12px) var(--nl-group-radius,12px) 0 0}
+.ok-native-list-item[data-group-position="last"]>.ok-native-list-row{border-radius:0 0 var(--nl-group-radius,12px) var(--nl-group-radius,12px)}
+.ok-native-list-item[data-group-position="single"]>.ok-native-list-row{border-radius:var(--nl-group-radius,12px)}
 .ok-native-list-standard{padding:8px 12px}.ok-native-list-network-row{padding:0 12px}.ok-native-list-wallet-row{padding:4px 8px;flex-direction:column;justify-content:center;gap:4px}.ok-native-list-account-row{padding:4px 12px;gap:8px}
 .ok-native-list-account-row .ok-native-list-visual,.ok-native-list-account-action-row .ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-account-row .ok-native-list-visual>img,.ok-native-list-account-row .ok-native-list-visual-main,.ok-native-list-account-action-row .ok-native-list-visual>img,.ok-native-list-account-action-row .ok-native-list-visual-main{width:32px;height:32px}.ok-native-list-account-row .ok-native-list-visual>.ok-native-list-visual-corner{width:20px;height:20px;padding:2px}.ok-native-list-account-action-row .ok-native-list-visual{border-radius:8px!important}.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:400}.ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-primary)}.ok-native-list-account-row .ok-native-list-title{font-size:16px;line-height:20px;font-weight:400}.ok-native-list-account-row .ok-native-list-secondary{font-size:14px;line-height:20px;font-weight:400}
 .ok-native-list-flex{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-title{font-size:15px;line-height:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-secondary{font-size:13px;line-height:18px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-tertiary{color:var(--nl-secondary)}.ok-native-list-info{color:var(--nl-info)}
@@ -4218,6 +4221,31 @@ export class NativeListWebEngine {
       this.root.style.setProperty(name, value);
       this.indexRail.style.setProperty(name, value);
       this.reorderPreview.style.setProperty(name, value);
+    });
+    this.applyListStyle();
+  }
+
+  /**
+   * List chrome from `snapshot.listStyle`. Every value is absent by default and
+   * the stylesheet carries today's number as the fallback, so an untouched list
+   * renders exactly as before. See docs/STYLE_SPEC.md §5.
+   */
+  private applyListStyle() {
+    const listStyle = this.snapshot.listStyle;
+    const inset = listStyle?.separator?.inset;
+    setData(this.root, 'separatorInset', inset !== undefined && inset > 0);
+    const chrome: Readonly<Record<string, string | undefined>> = {
+      '--nl-separator-inset':
+        inset === undefined ? undefined : String(inset) + 'px',
+      '--nl-separator-color': listStyle?.separator?.color,
+      '--nl-group-radius':
+        listStyle?.groupCornerRadius === undefined
+          ? undefined
+          : String(listStyle.groupCornerRadius) + 'px',
+    };
+    Object.entries(chrome).forEach(([name, value]) => {
+      if (value === undefined) this.root.style.removeProperty(name);
+      else this.root.style.setProperty(name, value);
     });
   }
 
