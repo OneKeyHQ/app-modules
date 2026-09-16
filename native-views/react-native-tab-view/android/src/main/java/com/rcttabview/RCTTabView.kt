@@ -52,22 +52,30 @@ class ExtendedBottomNavigationView(context: Context) : BottomNavigationView(getM
   private val basePaddingEnd = paddingEnd
   private val basePaddingBottom = paddingBottom
   private var ignoreBottomInsets = false
+  private var ignoreKeyboardInsets = true
 
   init {
     // OneKey patch: Material pads the bar with getSystemWindowInsetBottom(), which
-    // includes the IME height while the window uses adjustResize (switched on by
-    // react-native-keyboard-controller hooks). The bar then grows by the keyboard
-    // height and its items rise above the keyboard. Pad for system bars only.
+    // includes the IME height only while the window uses adjustResize (switched on by
+    // react-native-keyboard-controller hooks), so whether the bar rose above the
+    // keyboard depended on the screen. Pad for system bars, and add the IME only when
+    // ignoreKeyboardInsets is turned off.
     ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
       val barInsets = insets.getInsets(
         WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
       )
+      val navigationBarBottom = if (ignoreBottomInsets) 0 else barInsets.bottom
+      val keyboardBottom = if (ignoreKeyboardInsets) {
+        0
+      } else {
+        insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+      }
       val isRtl = view.layoutDirection == View.LAYOUT_DIRECTION_RTL
       view.setPaddingRelative(
         basePaddingStart + if (isRtl) barInsets.right else barInsets.left,
         basePaddingTop,
         basePaddingEnd + if (isRtl) barInsets.left else barInsets.right,
-        basePaddingBottom + if (ignoreBottomInsets) 0 else barInsets.bottom,
+        basePaddingBottom + maxOf(navigationBarBottom, keyboardBottom),
       )
       insets
     }
@@ -78,6 +86,14 @@ class ExtendedBottomNavigationView(context: Context) : BottomNavigationView(getM
       return
     }
     ignoreBottomInsets = ignore
+    requestApplyInsets()
+  }
+
+  fun setIgnoreKeyboardInsets(ignore: Boolean) {
+    if (ignoreKeyboardInsets == ignore) {
+      return
+    }
+    ignoreKeyboardInsets = ignore
     requestApplyInsets()
   }
 
@@ -131,6 +147,8 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   private var lastReportedSize: Size? = null
   private var hasCustomAppearance = false
   private var uiModeConfiguration: Int = Configuration.UI_MODE_NIGHT_UNDEFINED
+  private var ignoreBottomInsets = false
+  private var ignoreKeyboardInsets = true
 
   private val imageLoader = ImageLoader.Builder(context)
     .components {
@@ -314,7 +332,13 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
   }
 
   fun setIgnoreBottomInsets(ignore: Boolean) {
+    ignoreBottomInsets = ignore
     bottomNavigation.setIgnoreBottomInsets(ignore)
+  }
+
+  fun setIgnoreKeyboardInsets(ignore: Boolean) {
+    ignoreKeyboardInsets = ignore
+    bottomNavigation.setIgnoreKeyboardInsets(ignore)
   }
 
   fun setTabBarHidden(isHidden: Boolean) {
@@ -601,6 +625,8 @@ class ReactBottomNavigationView(context: Context) : LinearLayout(context) {
     // We also opt-out of this recreation when custom styles are used.
     removeView(bottomNavigation)
     bottomNavigation = ExtendedBottomNavigationView(context)
+    bottomNavigation.setIgnoreBottomInsets(ignoreBottomInsets)
+    bottomNavigation.setIgnoreKeyboardInsets(ignoreKeyboardInsets)
     addView(bottomNavigation)
     updateItems(items)
     setLabeled(this.labeled)
