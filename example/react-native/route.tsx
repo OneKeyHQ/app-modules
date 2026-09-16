@@ -30,6 +30,7 @@ import type { AccountSelectorInitialTargetInput } from './pages/nativeListAccoun
 import { NativeListNetworkSelectorPage } from './pages/NativeListNetworkSelectorPage';
 import { NativeListTokenSelectorPage } from './pages/NativeListTokenSelectorPage';
 import { NativeListWalletSidebarReorderPage } from './pages/NativeListWalletSidebarReorderPage';
+import { NativeListRowStylePage } from './pages/NativeListRowStylePage';
 import type { MarketSearchParams } from './pages/MarketNativePagerExamplePage';
 import {
   NativeListExamplePage,
@@ -87,6 +88,7 @@ export type RootStackParamList = {
   NativeListNetworkSelector: undefined;
   NativeListTokenSelector: undefined;
   NativeListWalletSidebarReorder: undefined;
+  NativeListRowStyle: undefined;
   MarketNativePager: undefined;
   MarketSearch: MarketSearchParams;
   OtaPipeline: undefined;
@@ -288,6 +290,13 @@ const modules: {
     description:
       'OK-62492 recorded wallet sidebar for iOS wallet group drag reorder',
     icon: '🗂️',
+  },
+  {
+    screen: 'NativeListRowStyle',
+    name: 'Native List Row Style',
+    description:
+      'Every template plain and styled, with a toggle for the unstyled regression check',
+    icon: '🎚️',
   },
   {
     screen: 'PagerView',
@@ -685,6 +694,11 @@ export function AppNavigator() {
         component={NativeListWalletSidebarReorderPage}
         // The sidebar sits on the left edge; edge-swipe back would steal slow drags.
         options={{ headerShown: false, gestureEnabled: false }}
+      />
+      <Stack.Screen
+        name="NativeListRowStyle"
+        component={NativeListRowStylePage}
+        options={{ title: 'Native List Row Style' }}
       />
       <Stack.Screen
         name="PagerView"
