@@ -22,6 +22,12 @@ Business concepts such as asset, account, network, wallet, and settings map to
 the same presentation templates instead of introducing business-specific row
 types.
 
+Each row also accepts a bounded `style`, whose keys name model fields rather than
+views. [STYLE_SPEC.md](STYLE_SPEC.md) is the shared vocabulary: the design tokens,
+the per-template style surface with each platform's current values, the template
+isolation rules, and the cross-platform divergences that are registered rather
+than fixed.
+
 The wrapper validates and normalizes data before serializing it. A structural
 change is one snapshot payload. Frequently changing fields use one batch patch
 payload keyed by row key. Neither API performs one native call per row. The
