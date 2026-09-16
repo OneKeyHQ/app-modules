@@ -53,10 +53,16 @@ object identity.
 | Layer | State |
 | --- | --- |
 | Contract, validation, token resolution, patch support | Implemented |
-| Web — text slots for every template, `horizontalPadding`, `verticalPadding`, `lineGap` | Implemented |
-| Web — `leadingGap`, `trailingGap`, `titleBadgeGap`, `image` | Validated but applied only on `market`; the others need a per-template default gap that cannot be read back from the DOM |
-| iOS, Android | Not started |
+| Text slots, `horizontalPadding`, `verticalPadding`, `lineGap` | Implemented on Web, iOS and Android |
+| `leadingGap`, `trailingGap`, `titleBadgeGap`, `image` | Validated but applied only on `market`. The others need a per-template default gap, which is not readable from the DOM on Web and is spread across the binders on the native sides |
+| `dataRow` columns in the `table` layout | Not applied. The text lives inside `NativeListTableColumnView` / `tableDataColumns`, which own their own labels; the `linear` layout is covered |
 | Row heights | Unchanged. A styled row that grows still needs an explicit `row.height` (§6.1) |
+| Android list-wide source scale (§6.3) | Unchanged. Making it per-row would move every selector list's metrics and needs device verification |
+
+The field-to-view mapping exists twice, once per native language — `nativeListStyleSlot`
+in `NativeListModels.kt` and `styleSlot` in `NativeListCell.swift`. §4 is the source of
+truth for both; the Kotlin copy is unit-tested, including a check that no template maps
+two style keys onto one view.
 
 ## 3. T1 — Design tokens
 
@@ -427,11 +433,19 @@ affect any other row. Four rules:
 Each renderer already runs a pass after the per-template binder. The style pass
 belongs there, so none of the 13 binders change.
 
+All three are implemented as `applyRowStyle`.
+
 | Platform | Anchor | Note |
 | --- | --- | --- |
-| iOS | `NativeListCell.bind()`, after the `switch item.type` | Also covers box metrics: the four root constraints, stack spacings, leading size |
+| iOS | `NativeListCell.bind()`, after the `switch item.type` | The binders install an attributed string through `setLineHeight`, so assigning `font` or `textColor` alone would not take effect — the style pass rebuilds the line box |
 | Android | `NativeListRowView.bind()`, **after** `applySize(item)` | `applySize` re-dispatches font size and typeface by row type and would otherwise overwrite the style |
-| Web | `renderElement()`, after `createRowBody()` — **implemented** as `applyRowStyle()` | The selector inline overrides already live here |
+| Web | `renderElement()`, after `createRowBody()` | The selector inline overrides already live here |
+
+Each platform also gained a `resetRowStyle` that runs before the binder, per §7 rule 2.
+On Android `resetViews()` restores neither `textSize`, `typeface` nor `lineHeight`; on iOS
+`reset()` restores the shared label fonts but not the data, metric and media label fonts,
+nor any text alignment. Without the reset, a style would leak into the next row that
+reuses the view.
 
 The existing market helpers generalize rather than being rewritten:
 `applyMarketTextStyle` / `applyMarketButtonStyle` / `marketAttributedText` (iOS),
