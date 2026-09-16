@@ -1,8 +1,29 @@
 import Foundation
 // OneKey patch: preserve native font faces while enabling tabular number features.
 import CoreText
+import CryptoKit
 import OneKeyImage
 import UIKit
+
+private enum NativeListSourceFallbackState {
+  private static let sources: NSCache<NSString, NSNumber> = {
+    let cache = NSCache<NSString, NSNumber>()
+    cache.countLimit = 128
+    return cache
+  }()
+
+  static func has(_ key: String) -> Bool {
+    sources.object(forKey: key as NSString) != nil
+  }
+
+  static func remember(_ key: String) {
+    sources.setObject(NSNumber(value: true), forKey: key as NSString)
+  }
+
+  static func forget(_ key: String) {
+    sources.removeObject(forKey: key as NSString)
+  }
+}
 
 // Market/TokenListSkeleton: source geometry and the native Skeleton's 3s shimmer.
 private final class NativeListMarketSkeleton: UIView {
@@ -3408,12 +3429,20 @@ final class NativeListCell: UICollectionViewCell {
     let cornerIcon = visual.dictionary("cornerIcon")
     let fallbackText = String(visual.string("fallbackText").prefix(2))
     let fallbackIconData = visual.dictionary("fallbackIcon")
+    let fallbackIconSize = fallbackIconData.map {
+      let slotSize = min(leadingWidth.constant, leadingHeight.constant)
+      return $0.string("name") == "GlobusOutline" ? slotSize * 1.2 : slotSize
+    }
     let sourceLoadingStrategy = sources.first?.data.string("loadingStrategy", default: "none") ?? "none"
     let showsSourcePlaceholder = !isIcon && !sources.isEmpty && sourceLoadingStrategy != "none"
     let handlesSourceFallback = !isIcon && !sources.isEmpty &&
       showsSourcePlaceholder &&
       (visual["fallbackText"] != nil || fallbackIconData != nil)
-    fallbackLabel.text = handlesSourceFallback ? nil : fallbackText
+    let sourceFallbackKey = handlesSourceFallback
+      ? sources.first.flatMap { sourceFallbackStateKey($0.data) }
+      : nil
+    let restoresSourceFallback = sourceFallbackKey.map(NativeListSourceFallbackState.has) ?? false
+    fallbackLabel.text = handlesSourceFallback && !restoresSourceFallback ? nil : fallbackText
     let sourceFallbackBackground = currentTheme?["strongBackground"] as? String ?? "#0000000F"
     // OneKey patch: source-backed visuals default to no placeholder/background.
     // A non-none image loadingStrategy opts back into the themed placeholder.
@@ -3450,6 +3479,20 @@ final class NativeListCell: UICollectionViewCell {
       )
       leadingIconImageView.image = nativeListIcon(named: fallbackIconData.string("name"))
       leadingIconImageView.contentMode = .scaleAspectFit
+    }
+    if handlesSourceFallback, let fallbackIconData {
+      fallbackLabel.isHidden = true
+      leadingIconImageView.image = nativeListIcon(named: fallbackIconData.string("name"))
+      leadingIconImageView.tintColor = UIColor(
+        nativeListHex: fallbackIconData.string("tintColor", default: "#646464"),
+        fallback: .darkGray
+      )
+      leadingIconImageView.contentMode = .scaleAspectFit
+      leadingIconWidth.constant = fallbackIconSize ?? leadingWidth.constant
+      leadingIconHeight.constant = fallbackIconSize ?? leadingHeight.constant
+      leadingIconImageView.isHidden = !restoresSourceFallback
+    } else if handlesSourceFallback {
+      fallbackLabel.isHidden = !restoresSourceFallback
     }
     let visibleSources = Array(sources.prefix(leadingImages.count))
     let tokenPair = kind == "token" && visibleSources.count > 1
@@ -3506,6 +3549,9 @@ final class NativeListCell: UICollectionViewCell {
       bindImage(source.data, into: imageView, token: key, slot: index, variant: source.variant,
         onLoad: !ownsSourceFallback ? nil : { [weak self, weak imageView] in
           guard let self, self.bindingEpoch == expectedEpoch else { return }
+          if let sourceFallbackKey {
+            NativeListSourceFallbackState.forget(sourceFallbackKey)
+          }
           imageView?.isHidden = false
           self.fallbackLabel.isHidden = true
           self.leadingIconImageView.isHidden = true
@@ -3513,6 +3559,9 @@ final class NativeListCell: UICollectionViewCell {
         },
         onError: !ownsSourceFallback ? nil : { [weak self, weak imageView] in
           guard let self, self.bindingEpoch == expectedEpoch else { return }
+          if let sourceFallbackKey {
+            NativeListSourceFallbackState.remember(sourceFallbackKey)
+          }
           imageView?.isHidden = true
           if let fallbackIcon {
             self.fallbackLabel.isHidden = true
@@ -3641,6 +3690,26 @@ final class NativeListCell: UICollectionViewCell {
       sources.append((networkImage, "network"))
     }
     return sources
+  }
+
+  private func sourceFallbackStateKey(_ source: [String: Any]) -> String? {
+    let uri = source.string("uri").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !uri.isEmpty else { return nil }
+    // The fallback-state cache is process-wide, so key it by a digest of the request identity
+    // instead of retaining raw header values, which can carry credentials such as Authorization.
+    let headers = source.dictionary("headers") ?? [:]
+    let fields: [(name: String, value: String)] = headers.map { key, value in
+      (name: key.lowercased(), value: String(describing: value))
+    }
+    let sortedFields = fields.sorted { lhs, rhs in
+      lhs.name == rhs.name ? lhs.value < rhs.value : lhs.name < rhs.name
+    }
+    var canonicalValue = "\(uri.utf8.count):\(uri)"
+    for field in sortedFields {
+      canonicalValue += "\(field.name.utf8.count):\(field.name)\(field.value.utf8.count):\(field.value)"
+    }
+    let digest = SHA256.hash(data: Data(canonicalValue.utf8))
+    return digest.map { String(format: "%02x", $0) }.joined()
   }
 
   private func leadingConstraints(
@@ -4085,8 +4154,10 @@ final class NativeListCell: UICollectionViewCell {
       },
       onError: retryLimit == 0 ? handleError : { [weak self, weak imageView] in
         guard let self, self.bindingEpoch == expectedEpoch, let imageView else { return }
-        guard retryAttempt < retryLimit else { handleError?(); return }
-        guard self.selectorImageRetries[imageID] == nil else { return }
+        // Report every failed attempt: a rebind during the retry delay cancels the pending retry,
+        // so deferring to the last attempt would never record the source fallback state.
+        handleError?()
+        guard retryAttempt < retryLimit, self.selectorImageRetries[imageID] == nil else { return }
         let retry = DispatchWorkItem { [weak self, weak imageView] in
           guard let self, self.bindingEpoch == expectedEpoch, let imageView else { return }
           self.selectorImageRetries.removeValue(forKey: imageID)

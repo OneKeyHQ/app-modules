@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.136] - 2026-09-15
+
+### Bug Fixes
+- **native-list (Android)**: Keep token icons visible after a theme change by showing `hideUntilLoaded` images again when they already display the requested source (OK-50498).
+- **native-list (iOS and Android)**: Remember recently failed image sources so recycled or rebound rows restore their fallback text or icon immediately instead of flashing an empty slot, and size fallback icons to the image slot, drawing the `GlobusOutline` fallback at 1.2x.
+- **native-list (Android)**: Keep the source fallback icon measured while an image loads so an asynchronous failure can reveal it without another layout pass, call the image error handler on every failed load while retries continue, and detach the exact child view before recycling it during rapid nested scrolling.
+- **native-list (iOS)**: Call the image error handler on every failed load while retries continue, so a row rebound during the retry delay still records its failed source and restores the fallback instead of rendering an empty slot.
+- **native-list (Web)**: Keep the default cursor on the wallet sidebar, hardware wallet group member, account, and Add account row surfaces while icon buttons, checkboxes, and action buttons inside those rows keep their own pointer cursor, and round the Add account row's hover and pressed backgrounds with the 12px account row radius.
+- **image**: Use the border overlay and borderless container for every image with rounded corners, not only rounded images that also set a border width.
+- **pager-view (iOS)**: Fix the Release archive build failure "no matching function for call to 'RNCPruneReleasedPageStates'" by letting Objective-C++ callers pass typed released-state dictionaries.
+
+### Chores
+- Compile the pager-view released-state policy tests as Objective-C++ so the typed-dictionary call site is covered.
+- Bump all 40 publishable packages to 3.0.136.
+
 ## [3.0.135] - 2026-09-15
 
 ### Bug Fixes

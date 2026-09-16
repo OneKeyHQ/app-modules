@@ -2,6 +2,9 @@ package com.margelo.nitro.nativelist
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.nio.ByteBuffer
+import java.security.MessageDigest
+import java.util.Locale
 
 internal fun isNativeListRowPressEnabled(
   type: String,
@@ -21,6 +24,28 @@ internal fun isNativeListWholeRowInteractive(
   disabled = disabled,
   pressDisabled = pressDisabled,
 )
+
+// The image fallback-state cache is process-wide, so it is keyed by a digest of the request
+// identity instead of the raw headers, which can carry credentials such as Authorization.
+internal fun nativeListSourceFallbackStateKey(uri: String, headers: Map<String, String>): String? {
+  val trimmedUri = uri.trim().takeIf(String::isNotEmpty) ?: return null
+  val digest = MessageDigest.getInstance("SHA-256")
+  updateLengthPrefixed(digest, trimmedUri)
+  headers.entries
+    .map { it.key.lowercase(Locale.ROOT) to it.value }
+    .sortedWith(compareBy<Pair<String, String>>({ it.first }, { it.second }))
+    .forEach { (name, value) ->
+      updateLengthPrefixed(digest, name)
+      updateLengthPrefixed(digest, value)
+    }
+  return digest.digest().joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 0xff) }
+}
+
+private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
+  val bytes = value.toByteArray(Charsets.UTF_8)
+  digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+  digest.update(bytes)
+}
 
 internal data class NativeListItem(
   val key: String,

@@ -2,8 +2,10 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+// Keep the dictionary unspecialized: NSMutableDictionary generics are invariant,
+// so Objective-C++ callers with a concrete value type would fail to compile.
 FOUNDATION_EXPORT void RNCPruneReleasedPageStates(
-  NSMutableDictionary<NSString *, id> *releasedStates,
+  NSMutableDictionary *releasedStates,
   NSArray<NSString *> *validPageKeys
 );
 
