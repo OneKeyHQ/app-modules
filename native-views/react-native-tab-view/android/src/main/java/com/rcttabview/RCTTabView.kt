@@ -20,6 +20,8 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.forEachIndexed
 import coil3.ImageLoader
 import coil3.asDrawable
@@ -45,15 +47,38 @@ private fun getMaterialContext(context: Context): Context {
 }
 
 class ExtendedBottomNavigationView(context: Context) : BottomNavigationView(getMaterialContext(context)) {
+  private val basePaddingStart = paddingStart
+  private val basePaddingTop = paddingTop
+  private val basePaddingEnd = paddingEnd
+  private val basePaddingBottom = paddingBottom
+  private var ignoreBottomInsets = false
+
+  init {
+    // OneKey patch: Material pads the bar with getSystemWindowInsetBottom(), which
+    // includes the IME height while the window uses adjustResize (switched on by
+    // react-native-keyboard-controller hooks). The bar then grows by the keyboard
+    // height and its items rise above the keyboard. Pad for system bars only.
+    ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+      val barInsets = insets.getInsets(
+        WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+      )
+      val isRtl = view.layoutDirection == View.LAYOUT_DIRECTION_RTL
+      view.setPaddingRelative(
+        basePaddingStart + if (isRtl) barInsets.right else barInsets.left,
+        basePaddingTop,
+        basePaddingEnd + if (isRtl) barInsets.left else barInsets.right,
+        basePaddingBottom + if (ignoreBottomInsets) 0 else barInsets.bottom,
+      )
+      insets
+    }
+  }
 
   fun setIgnoreBottomInsets(ignore: Boolean) {
-    if (ignore) {
-      setOnApplyWindowInsetsListener { v, insets -> insets }
-      setPadding(paddingLeft, paddingTop, paddingRight, 0)
-    } else {
-      setOnApplyWindowInsetsListener(null)
-      requestApplyInsets()
+    if (ignoreBottomInsets == ignore) {
+      return
     }
+    ignoreBottomInsets = ignore
+    requestApplyInsets()
   }
 
   override fun getMaxItemCount(): Int {
