@@ -401,4 +401,7 @@ use Instruments or Android Studio Profiler for native frame and memory data.
   the React component. It mirrors the mobile data and imperative APIs, but its
   performance must still be measured independently from iOS and Android.
 
-See [docs/DESIGN.md](docs/DESIGN.md) for the architecture and ownership model.
+See [docs/DESIGN.md](docs/DESIGN.md) for the architecture and ownership model, and
+[docs/STYLE_SPEC.md](docs/STYLE_SPEC.md) for the shared style vocabulary: design
+tokens, the per-template style surface with each platform's current values, and the
+registered cross-platform divergences.
