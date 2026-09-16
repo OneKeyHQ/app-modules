@@ -29,7 +29,7 @@ export function validateNpmDistTag(distTag, releaseWorkspaces) {
   );
 }
 
-async function loadReleaseWorkspaces(repoRoot) {
+export async function loadReleaseWorkspaces(repoRoot) {
   const rootPackage = JSON.parse(
     await readFile(join(repoRoot, "package.json"), "utf8")
   );

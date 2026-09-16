@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.139] - 2026-09-16
+
+### Chores
+- **release tooling**: The publish workflow trusted npm's exit code, so a package that npm accepted but never made available still turned the run green — exactly how `@onekeyfe/react-native-bundle-crypto@3.0.137` shipped as a silent partial release. Added `scripts/verify-published.mjs`, which reads each published version back from the registry origin (`?write=true`, since the read-through CDN can serve hours-stale documents and would otherwise fail healthy releases) and requires both that the version is listed and that the dist-tag points at it, polling for up to 10 minutes before failing the run.
+- **release tooling**: Added an `only_workspace` input to the publish workflow. Retrying one failed package previously meant re-running the whole release, where the packages that already published reject with E403 and turn the run red before proving anything about the one that mattered.
+- Bump all 40 publishable packages to 3.0.139. Package contents are unchanged from 3.0.138 — this release exercises the new post-publish verification on a real run.
+
 ## [3.0.138] - 2026-09-16
 
 ### Bug Fixes
