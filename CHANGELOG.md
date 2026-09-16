@@ -4,13 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.138] - 2026-09-16
+
+### Bug Fixes
+- **bundle-crypto (iOS)**: Drop the x86_64 simulator architecture from the vendored `Gopenpgp.xcframework`. The package was 14.9 MB packed / 42.5 MB unpacked — 9x the next largest package here and ~100x the median — because the framework carries three ~10 MB gomobile static archives, one of them a fat simulator slice holding both arm64 and x86_64. Now 10.7 MB packed / 30.7 MB unpacked. The slice directory is renamed to match its contents and the xcframework manifest updated; the podspec vendors the whole xcframework, so nothing else referenced the old name. **Intel Mac simulator builds are no longer supported by this module**; Apple Silicon simulator, device, and Mac Catalyst are unchanged. Symbol stripping is not an alternative — `strip -S` rejects the gomobile archives with "string table not at the end of the file".
+
+### Chores
+- Bump all 40 publishable packages to 3.0.138. 3.0.137 shipped for 39 of them, but npm left `@onekeyfe/react-native-bundle-crypto@3.0.137` in a staged-but-never-committed state — undownloadable, and permanently rejecting republishing with `409 Cannot publish over previously staged version`. The version number is unrecoverable, so the whole set moves to 3.0.138 to stay in lockstep.
+
 ## [3.0.137] - 2026-09-16
 
 ### Bug Fixes
 - **split-bundle-loader (Android)**: Stop the builtin segment extractor from racing itself. The main and background runtimes resolve the same segment independently, and `extractSemaphore` throttles I/O rather than excluding concurrent work on one path, so both could extract the same segment at once into a shared `<name>.tmp` — two `O_TRUNC` writers on one inode, with `renameTo` failing for whichever thread lost. That loser reported `SPLIT_BUNDLE_NOT_FOUND` for a file that was already on disk and complete, and the JS loader caches that code as a permanent failure, so a millisecond-wide race blanked a route for the rest of the process. Seen on the first launch after an APK replace, where the install-stamp wipe forces every segment to re-extract at once. Extraction is now serialized per path, each attempt writes a uniquely named temp file (so no two writers can publish a partially zeroed HBC, across processes too), and a failed rename re-checks the destination before reporting the segment missing.
 
 ### Chores
-- Bump all 40 publishable packages to 3.0.137.
+- Bump all 40 publishable packages to 3.0.137. Published for 39 of them; `@onekeyfe/react-native-bundle-crypto@3.0.137` never became available (see 3.0.138).
 
 ## [3.0.136] - 2026-09-15
 
