@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.141] - 2026-09-16
+
+### Bug Fixes
+- **pager-view (Android)**: Load the native tab bar, category item and column label fonts from the app's bundled assets (OK-63273). They resolved `fontFamily` with `Typeface.create`, which only knows system font families, so a bundled family such as `Roobert-Medium` silently fell back to the system font on Android while iOS resolved it through `UIAppFonts`. The typeface now comes from `ReactFontManager`, the lookup React Native `Text` uses: registered custom fonts, then `assets/fonts/<family>.ttf|otf`, and only then `Typeface.create`. The `fontFamily` prop is unchanged. This upstreams the patch-package patch app-monorepo carried for `react-native-pager-view`.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.141.
+
 ## [3.0.140] - 2026-09-16
 
 ### Features
