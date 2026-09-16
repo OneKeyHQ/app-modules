@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.137] - 2026-09-16
+
+### Bug Fixes
+- **split-bundle-loader (Android)**: Stop the builtin segment extractor from racing itself. The main and background runtimes resolve the same segment independently, and `extractSemaphore` throttles I/O rather than excluding concurrent work on one path, so both could extract the same segment at once into a shared `<name>.tmp` — two `O_TRUNC` writers on one inode, with `renameTo` failing for whichever thread lost. That loser reported `SPLIT_BUNDLE_NOT_FOUND` for a file that was already on disk and complete, and the JS loader caches that code as a permanent failure, so a millisecond-wide race blanked a route for the rest of the process. Seen on the first launch after an APK replace, where the install-stamp wipe forces every segment to re-extract at once. Extraction is now serialized per path, each attempt writes a uniquely named temp file (so no two writers can publish a partially zeroed HBC, across processes too), and a failed rename re-checks the destination before reporting the segment missing.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.137.
+
 ## [3.0.136] - 2026-09-15
 
 ### Bug Fixes
