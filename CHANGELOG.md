@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.142] - 2026-09-17
+
+### Bug Fixes
+- **native-list (iOS)**: Show the pressed row background on quick taps. The list's `UICollectionView` kept UIScrollView's default `delaysContentTouches = true`, so a row received touch-down only after about 150 ms. A tap released inside that window highlighted, unhighlighted and selected the row in one run loop turn, and the pressed color never rendered; Android rows set it on `ACTION_DOWN`. A private `NativeListCollectionView` now delivers touches immediately, and `touchesShouldCancel(in:)` returns `true` for in-row controls so a drag that starts on a tag badge, accessory or checkbox still scrolls the list. `didHighlightItemAt`, and with it `pressInActionKey`, now runs on touch-down, as it does on Android.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.142.
+
 ## [3.0.141] - 2026-09-16
 
 ### Bug Fixes
