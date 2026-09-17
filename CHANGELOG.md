@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.144] - 2026-09-17
+
+### Features
+- **pager-view (iOS and Android)**: Add `nativeTabPressAnimationEnabled` to `CollapsiblePagerView`, default `true`. Set it to `false` to jump straight to the pressed page (OK-63487). A native tab press always dispatched an animated `setPage`, so pressing a distant tab scrolled through every page in between. Pages outside `pageRetentionDistance` are unmounted, so they showed blank while neighboring lists slid past, and app-monorepo's Market home had to send a second, non-animated command from `onNativeTabPress` to override the animation. The pressed page is still retained before the command is dispatched, so it is mounted when the pager moves.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.144.
+
 ## [3.0.142] - 2026-09-17
 
 ### Bug Fixes
