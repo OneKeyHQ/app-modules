@@ -19,6 +19,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.TextView
 import com.facebook.proguard.annotations.DoNotStrip
+import com.facebook.react.common.assets.ReactFontManager
 import com.facebook.react.uimanager.ThemedReactContext
 
 @DoNotStrip
@@ -785,21 +786,18 @@ class HybridAutoSizeInput(val context: ThemedReactContext) : HybridAutoSizeInput
     }
   }
 
+  // Resolve fonts the way React Native Text does. ReactFontManager reads bundled
+  // assets/fonts/<family>.ttf and fonts registered at runtime (expo-font);
+  // Typeface.create only knows system families and silently falls back to the
+  // default font, so an app font such as "Roobert-Medium" never applied.
   private fun makeTypeface(): Typeface {
     val style = when (fontWeight) {
       "bold" -> Typeface.BOLD
       else -> Typeface.NORMAL
     }
-
-    return if (fontFamily != null && fontFamily!!.isNotEmpty()) {
-      try {
-        Typeface.create(fontFamily, style)
-      } catch (e: Exception) {
-        Typeface.defaultFromStyle(style)
-      }
-    } else {
-      Typeface.defaultFromStyle(style)
-    }
+    val family = fontFamily?.takeIf { it.isNotEmpty() }
+      ?: return Typeface.defaultFromStyle(style)
+    return ReactFontManager.getInstance().getTypeface(family, style, context.assets)
   }
 
   // MARK: - Methods

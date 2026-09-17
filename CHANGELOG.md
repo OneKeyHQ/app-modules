@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.146] - 2026-09-17
+
+### Bug Fixes
+- **auto-size-input (Android)**: Load the input, prefix and suffix font from the app's bundled assets (OK-57825). `makeTypeface()` resolved `fontFamily` with `Typeface.create`, which only knows system font families, so a bundled family such as `Roobert-Medium` silently fell back to the system font on Android while iOS resolved it through `UIAppFonts`. In app-monorepo's send amount input, the digits and the token symbol rendered in Roboto or the OEM system font. The typeface now comes from `ReactFontManager`, the lookup React Native `Text` uses: registered custom fonts, then `assets/fonts/<family>.ttf|otf`, and only then `Typeface.create`. Auto-size measurement uses the same typeface, so the fitted font size follows the real glyph widths. The `fontFamily` and `fontWeight` props are unchanged.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.146.
+
 ## [3.0.145] - 2026-09-17
 
 ### Bug Fixes
