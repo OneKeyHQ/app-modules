@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.145] - 2026-09-17
+
+### Bug Fixes
+- **pager-view (iOS)**: Scroll the `CollapsiblePagerView` native tab bar and native sub-header when a drag starts on a tab or category item (regressed in 3.0.142). The items are `UIButton`s in horizontal scroll views that deliver touches immediately, so an item starts tracking on touch-down, and `UIScrollView` does not cancel `UIControl` touches by default: only a drag that began in the gap between two items scrolled. The bug stayed hidden while the page's NativeList collection view, which hosts the shared headers, kept UIKit's default `delaysContentTouches = true` and held touch-down back for about 150 ms, long enough for the drag to be recognized first. NativeList's quick-tap press fix in 3.0.142 turned that delay off. `touchesShouldCancelInContentView:` now returns `YES` for controls, as NativeList's collection view does, so a drag cancels the item's touch and scrolls the bar while a tap still presses the item.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.145.
+
 ## [3.0.144] - 2026-09-17
 
 ### Features
