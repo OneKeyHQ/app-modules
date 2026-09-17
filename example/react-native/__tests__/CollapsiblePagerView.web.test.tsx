@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import { CollapsiblePagerView as NativeCollapsiblePagerView } from '../../../native-views/react-native-pager-view/src/CollapsiblePagerView';
+import { Commands as NativeCollapsiblePagerCommands } from '../../../native-views/react-native-pager-view/src/CollapsiblePagerViewNativeComponent';
 import { CollapsiblePagerView } from '../../../native-views/react-native-pager-view/src/CollapsiblePagerView.web';
 import { PagerView } from '../../../native-views/react-native-pager-view/src/PagerView.web';
 
@@ -79,6 +80,90 @@ describe('CollapsiblePagerView native wrapper', () => {
     expect(JSON.parse(nativeHost().props.retainedPages)).toEqual([0, 1]);
     await ReactTestRenderer.act(() => {
       renderer.unmount();
+    });
+  });
+
+  describe('native tab presses', () => {
+    const nativeTabBar = {
+      items: ['alpha', 'beta', 'gamma', 'delta'].map(key => ({
+        key,
+        title: key,
+      })),
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest
+        .spyOn(NativeCollapsiblePagerCommands, 'setPage')
+        .mockImplementation(() => {});
+      jest
+        .spyOn(NativeCollapsiblePagerCommands, 'setPageWithoutAnimation')
+        .mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+      jest.useRealTimers();
+    });
+
+    const pressTab = async (
+      animationEnabled: boolean | undefined,
+      position: number,
+    ) => {
+      let renderer!: ReactTestRenderer.ReactTestRenderer;
+      await ReactTestRenderer.act(() => {
+        renderer = ReactTestRenderer.create(
+          <NativeCollapsiblePagerView
+            {...requiredProps}
+            nativeTabBar={nativeTabBar}
+            nativeTabPressAnimationEnabled={animationEnabled}
+          >
+            {pages(nativeTabBar.items.length)}
+          </NativeCollapsiblePagerView>,
+          { createNodeMock: () => ({}) },
+        );
+      });
+      const nativeHost = renderer.root.find(
+        node => typeof node.props.retainedPages === 'string',
+      );
+      await ReactTestRenderer.act(() => {
+        nativeHost.props.onNativeTabPress({
+          nativeEvent: { position, key: nativeTabBar.items[position].key },
+        });
+      });
+      // The command is dispatched on the next frame, once the page is retained.
+      await ReactTestRenderer.act(() => {
+        jest.runOnlyPendingTimers();
+      });
+      expect(JSON.parse(nativeHost.props.retainedPages)).toContain(position);
+      await ReactTestRenderer.act(() => {
+        renderer.unmount();
+      });
+    };
+
+    it('animates the page change by default', async () => {
+      await pressTab(undefined, 3);
+
+      expect(NativeCollapsiblePagerCommands.setPage).toHaveBeenCalledTimes(1);
+      expect(NativeCollapsiblePagerCommands.setPage).toHaveBeenCalledWith(
+        expect.anything(),
+        3,
+      );
+      expect(
+        NativeCollapsiblePagerCommands.setPageWithoutAnimation,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('jumps straight to the pressed page when animation is disabled', async () => {
+      await pressTab(false, 3);
+
+      expect(
+        NativeCollapsiblePagerCommands.setPageWithoutAnimation,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        NativeCollapsiblePagerCommands.setPageWithoutAnimation,
+      ).toHaveBeenCalledWith(expect.anything(), 3);
+      expect(NativeCollapsiblePagerCommands.setPage).not.toHaveBeenCalled();
     });
   });
 });

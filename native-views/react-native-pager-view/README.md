@@ -67,5 +67,11 @@ Web scroll child can opt in by exposing a DOM element with
 `data-collapsible-pager-scroll`. CSS scroll timelines drive header/sticky
 movement, so React is not updated on each vertical scroll frame.
 
+On iOS and Android, `nativeTabBar` renders the tab bar natively and
+`onNativeTabPress` reports presses. A press animates to the pressed page by
+default. Set `nativeTabPressAnimationEnabled={false}` to jump straight there,
+so pressing a distant tab does not scroll through every page in between,
+including unmounted pages that would show blank.
+
 Thank you again to Callstack and everyone who contributes to
 `react-native-pager-view` 💙
