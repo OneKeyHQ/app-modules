@@ -14,6 +14,7 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
+import com.facebook.react.common.assets.ReactFontManager
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.ceil
@@ -45,6 +46,18 @@ private fun parseHeaderItems(value: String?): List<CollapsiblePagerNativeHeaderI
     }
   }.getOrDefault(emptyList())
 }
+
+private const val DEFAULT_HEADER_FONT_FAMILY = "sans-serif-medium"
+
+// Resolve fonts the way React Native Text does. ReactFontManager reads bundled
+// assets/fonts/<family>.ttf and registered custom fonts; Typeface.create only
+// knows system families and silently falls back to the default font.
+private fun resolveHeaderTypeface(context: Context, fontFamily: String?): Typeface =
+  ReactFontManager.getInstance().getTypeface(
+    fontFamily?.takeIf(String::isNotEmpty) ?: DEFAULT_HEADER_FONT_FAMILY,
+    Typeface.NORMAL,
+    context.assets,
+  )
 
 private class CollapsiblePagerHorizontalItemsView(
   context: Context,
@@ -177,7 +190,7 @@ private class CollapsiblePagerHorizontalItemsView(
   }
 
   private fun applyTypeface() {
-    val typeface = Typeface.create(fontFamily ?: "sans-serif-medium", Typeface.NORMAL)
+    val typeface = resolveHeaderTypeface(context, fontFamily)
     buttons.forEach { button ->
       button.typeface = typeface
       button.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize.toFloat())
@@ -452,7 +465,7 @@ internal class CollapsiblePagerNativeSubHeaderView(context: Context) : ViewGroup
       selectedBackgroundColor,
       activeTextColor,
     )
-    val typeface = Typeface.create(fontFamily ?: "sans-serif-medium", Typeface.NORMAL)
+    val typeface = resolveHeaderTypeface(context, fontFamily)
     listOf(leading, middle, trailing).forEach { label ->
       label.typeface = typeface
       label.setTextSize(TypedValue.COMPLEX_UNIT_SP, columnFontSize.toFloat())

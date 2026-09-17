@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.141] - 2026-09-16
+
+### Bug Fixes
+- **pager-view (Android)**: Load the native tab bar, category item and column label fonts from the app's bundled assets (OK-63273). They resolved `fontFamily` with `Typeface.create`, which only knows system font families, so a bundled family such as `Roobert-Medium` silently fell back to the system font on Android while iOS resolved it through `UIAppFonts`. The typeface now comes from `ReactFontManager`, the lookup React Native `Text` uses: registered custom fonts, then `assets/fonts/<family>.ttf|otf`, and only then `Typeface.create`. The `fontFamily` prop is unchanged. This upstreams the patch-package patch app-monorepo carried for `react-native-pager-view`.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.141.
+
+## [3.0.140] - 2026-09-16
+
+### Features
+- **tab-view (Android)**: Add `ignoreKeyboardInsets`, default `true`. Set it to `false` to pad the tab bar by the keyboard height so it rises above the soft keyboard. The IME inset is read explicitly instead of through the compat system-window inset, and combined with the navigation bar inset so the prop stays independent of `ignoreBottomInsets`. The value lives in JS, so apps can switch the behavior without a native release.
+
+### Bug Fixes
+- **tab-view (Android)**: Keep the bottom tab bar under the soft keyboard (OK-63557). Material's `BottomNavigationView` padded itself with `getSystemWindowInsetBottom()`, which carries the IME height while the window uses `adjustResize`, and react-native-keyboard-controller switches the window to `adjustResize` whenever a `KeyboardAwareScrollView`, `KeyboardStickyView` or keyboard animation hook is mounted. On those screens the bar grew by the keyboard height, its items sat directly on top of the keyboard, and `onTabBarMeasured` reported the inflated height to JS. The bar now pads for system bars and display cutouts only unless `ignoreKeyboardInsets` is turned off.
+- **tab-view (Android)**: `setIgnoreBottomInsets(false)` no longer clears the inset listener, which also dropped the navigation bar padding. Both inset flags are re-applied when a uiMode change recreates the bottom navigation view.
+
+### Chores
+- Bump all 40 publishable packages to 3.0.140.
+
 ## [3.0.139] - 2026-09-16
 
 ### Chores

@@ -193,6 +193,10 @@ class RCTTabViewManager(context: ReactApplicationContext) :
     view?.setIgnoreBottomInsets(value)
   }
 
+  override fun setIgnoreKeyboardInsets(view: ReactBottomNavigationView?, value: Boolean) {
+    view?.setIgnoreKeyboardInsets(value)
+  }
+
   // iOS-only props (no-ops on Android)
   // selectedIcons feeds UITabBarItem.selectedImage on iOS; Android keeps
   // swapping the icon in JS via the focusedKey-driven `icons` array.
