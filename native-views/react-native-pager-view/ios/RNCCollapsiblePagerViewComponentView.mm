@@ -130,6 +130,14 @@ static UIColor *RNCInterpolateColor(UIColor *from, UIColor *to, CGFloat progress
   return shouldBegin;
 }
 
+// Tab and category items are UIButtons that start tracking on touch-down, and UIScrollView does
+// not cancel UIControl touches by default, so a drag that began on an item never scrolled the bar.
+// The host NativeList used to hide this by holding touch-down back for about 150 ms.
+- (BOOL)touchesShouldCancelInContentView:(UIView *)view
+{
+  return [view isKindOfClass:UIControl.class] ? YES : [super touchesShouldCancelInContentView:view];
+}
+
 @end
 
 static void RNCLogNativeTabScrollBoundary(NSString *owner,
