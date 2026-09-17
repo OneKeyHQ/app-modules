@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.147] - 2026-09-18
+
+### Features
+- **image-crop-picker (new)**: Add `@onekeyfe/react-native-image-crop-picker`, a Nitro module that replaces `react-native-image-crop-picker` 0.51.1. app-monorepo installs it under the `react-native-image-crop-picker` npm alias, so imports stay the same. It keeps `openPicker`, `openCropper`, `clean`, `cleanSingle` and the `E_*` rejection codes that OneKey uses, and drops multiple selection, video and the camera.
+  - **iOS**: Pick photos with `PHPickerViewController`, which needs no photo library permission (OK-48227). `react-native-image-crop-picker` requested full library access before showing its picker. After a user tapped "Don't Allow" once, iOS never asked again and every later `openPicker` call rejected with `E_NO_LIBRARY_PERMISSION`. The OneKey ID avatar and hardware wallpaper entries swallowed that rejection, so tapping them did nothing.
+  - **iOS**: Crop with a vendored TOCropViewController 3.2.0, up from 2.8.0, with the OK-51551 fix that keeps the crop box from shrinking on every rotation re-applied. Upstream 3.2.0 still has that bug. The app no longer needs its TOCropViewController pod override.
+  - **Android**: Port the existing flow to Kotlin: the system Photo Picker (no storage or media permission) and uCrop 2.2.11-native, the latest release. Activity results go through the activity's `ActivityResultRegistry` instead of an `ActivityEventListener`.
+  - Decode photos at most 4096 px on the long side, so a 48 MP photo no longer needs about 200 MB of memory before cropping.
+
+### Chores
+- Bump all 41 publishable packages to 3.0.147.
+
 ## [3.0.146] - 2026-09-17
 
 ### Bug Fixes
