@@ -129,6 +129,12 @@ export interface CollapsiblePagerViewProps
   /** Optional native tab bar for iOS and Android. */
   nativeTabBar?: CollapsiblePagerNativeTabBarConfig;
   onNativeTabPress?: (event: CollapsiblePagerViewOnNativeTabPressEvent) => void;
+  /**
+   * Animates the page change started by a native tab press. Defaults to true.
+   * Set false to jump straight to the pressed page, so a distant tab does not
+   * scroll through every page in between, including unmounted ones.
+   */
+  nativeTabPressAnimationEnabled?: boolean;
   /** Optional native secondary sticky header for iOS and Android. */
   nativeSubHeader?: CollapsiblePagerNativeSubHeaderConfig;
   onNativeSubHeaderPress?: (
@@ -403,7 +409,10 @@ export class CollapsiblePagerView extends React.PureComponent<
       (position !== this.state.selectedPage ||
         this.latestNativeTabTarget !== null)
     ) {
-      this.dispatchNativeTabPageCommand(position, true);
+      this.dispatchNativeTabPageCommand(
+        position,
+        this.props.nativeTabPressAnimationEnabled ?? true
+      );
     }
     this.props.onNativeTabPress?.(event);
   };
@@ -428,6 +437,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       onPageScrollStateChanged: _onPageScrollStateChanged,
       nativeTabBar,
       onNativeTabPress: _onNativeTabPress,
+      nativeTabPressAnimationEnabled: _nativeTabPressAnimationEnabled,
       nativeSubHeader,
       onNativeSubHeaderPress: _onNativeSubHeaderPress,
       layoutDirection,
