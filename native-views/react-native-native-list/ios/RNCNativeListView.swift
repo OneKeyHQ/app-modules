@@ -60,7 +60,7 @@ final class NativeListView: UIView {
   }
 
   private let flowLayout = NativeListFlowLayout()
-  private lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: flowLayout)
+  private lazy var collectionView = NativeListCollectionView(frame: .zero, collectionViewLayout: flowLayout)
   private let footerContainer = UIView()
   private let footerCell = NativeListCell(frame: .zero)
   private let sectionIndexView = NativeListSectionIndexView()
@@ -2211,6 +2211,26 @@ extension NativeListView: UICollectionViewDragDelegate, UICollectionViewDropDele
     if let before = current.items[safe: destination.item - 1] { payload["beforeKey"] = before.key }
     if let after = current.items[safe: destination.item + 1] { payload["afterKey"] = after.key }
     emit(onReorder, payload)
+  }
+}
+
+// UIScrollView holds touch-down for about 150 ms while it decides whether a touch scrolls, so a
+// quick tap highlighted and unhighlighted a row within one frame and the pressed background never
+// rendered. Deliver touches immediately, as Android rows do.
+private final class NativeListCollectionView: UICollectionView {
+  override init(frame: CGRect, collectionViewLayout layout: UICollectionViewLayout) {
+    super.init(frame: frame, collectionViewLayout: layout)
+    delaysContentTouches = false
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  // Without the delay, in-row buttons receive touches first; UIScrollView would otherwise refuse
+  // to cancel UIControl touches, so a drag starting on a badge or accessory could not scroll.
+  override func touchesShouldCancel(in view: UIView) -> Bool {
+    view is UIControl ? true : super.touchesShouldCancel(in: view)
   }
 }
 
