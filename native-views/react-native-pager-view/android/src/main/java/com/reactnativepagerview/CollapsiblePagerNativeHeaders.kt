@@ -216,7 +216,13 @@ private class CollapsiblePagerHorizontalItemsView(
     var x = contentPaddingPx
     buttons.forEachIndexed { index, button ->
       val textWidth = ceil(button.paint.measureText(button.text.toString()).toDouble()).toInt()
-      val buttonWidth = max(dp(44.0), textWidth + dp(if (showsProgressIndicator) 16.0 else 20.0))
+      // Reuse the rounded padding: dp(16) can be one pixel less than two dp(8) insets.
+      val horizontalPadding = if (showsProgressIndicator) {
+        button.compoundPaddingLeft + button.compoundPaddingRight
+      } else {
+        dp(20.0)
+      }
+      val buttonWidth = max(dp(44.0), textWidth + horizontalPadding)
       val indicatorWidth = textWidth
       val indicatorX = x + (buttonWidth - indicatorWidth) / 2
       itemFrames.add(intArrayOf(x, buttonWidth, indicatorX, indicatorWidth))
