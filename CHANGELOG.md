@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.148] - 2026-09-18
+
+### Features
+- **image-crop-picker (iOS and Android)**: Replace the TOCropViewController and uCrop screens with one cropper screen that looks like an app page and is the same on both platforms. The iOS cropper had TOCropViewController's dark toolbar with plain-text Cancel and Done, whatever the app theme, and Android's uCrop screen had a toolbar with a check mark plus aspect, rotate and scale tabs, so the two looked unrelated. The new screen has a header with the title and a rotate button, the crop area, and a footer with capsule Cancel and Confirm buttons, with the same metrics on both platforms. iOS hosts TOCropView in `ImageCropperViewController`; Android hosts uCrop's `UCropView` in `ImageCropperActivity`.
+  - Add `cropperAppearance`: `colorScheme`, background, title, icon and button colors, title and button fonts, and a size `scale`. Colors are CSS hex strings, and anything left out falls back to OneKey's light or dark palette.
+  - The area outside the crop box shows the page background at 70% opacity instead of TOCropViewController's dark blur or uCrop's black dimming. The crop box border uses the title color, and its corner handles only show when the box can be resized (`freeStyleCropEnabled`).
+  - The rule-of-thirds grid shows while the image is moved, on Android as well. Android no longer rotates with two fingers, as iOS never did, and its rotate button animates the turn.
+  - Android keeps the calling activity's requested orientation and draws edge to edge, with status and navigation bar icons that follow `colorScheme`.
+  - iOS: `TOCropOverlayView` gains `frameColor`, `gridColor` and `cornerHandlesHidden`.
+
+### Bug Fixes
+- **image-crop-picker (iOS)**: Reopen the cropper when the same photo is tapped again after cancelling it. `PHPickerViewController` keeps the photo selected when the cropper is dismissed back to it, so the first tap only deselected it and nothing seemed to happen. On iOS 17 and later the picker's selection is now cleared; the configuration passes the shared photo library to get asset identifiers, which asks for no permission.
+- **native-logger (iOS)**: Keep log files after the first roll. `DDLogFileManagerDefault` defaults `logFilesDiskQuota` to 20 MB, the same as the configured `maximumFileSize`, so a single rolled file filled the quota and cleanup deleted every log file, including the one being written. The logger then wrote nothing for the rest of the session and exported log bundles had no `.log` files. The quota now follows the retention of 7 files × 20 MB, matching Android's `TOTAL_SIZE_CAP`.
+- **lite-card (iOS)**: Stop Lite card callbacks from firing twice when the NFC sheet is cancelled right after a card connects, which crashed the app with SIGABRT in `RCTTurboModule.mm` ("Callback arg cannot be called more than once") in the backup and restore flow on 6.6.0. The user's cancel was reported while the card operation was still running on another thread, and the operation's failed APDUs then reported a connection failure through the same callback. Each completion is now taken out under a lock when delivered, the app's own `invalidateSession` is no longer treated as a user cancel, `connectToTag` failures and non-Lite cards report a connection failure instead of leaving the JS promise pending, and repeated results are logged and dropped instead of aborting.
+
+### Breaking Changes
+- **image-crop-picker**: Remove `cropperChooseColor`, `cropperCancelColor`, `cropperActiveWidgetColor`, `cropperToolbarColor`, `cropperToolbarWidgetColor`, `cropperStatusBarLight`, `cropperNavigationBarLight`, `showCropFrame`, `enableRotationGesture`, `hideBottomControls` and `disableCropperColorSetters`. They styled the TOCropViewController and uCrop screens; use `cropperAppearance` instead.
+
+### Chores
+- Bump all 41 publishable packages to 3.0.148.
+
 ## [3.0.147] - 2026-09-18
 
 ### Features
