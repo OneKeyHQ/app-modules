@@ -38,6 +38,15 @@ NS_ASSUME_NONNULL_BEGIN
 /** Shows and hides the interior grid lines with an optional crossfade animation. */
 - (void)setGridHidden:(BOOL)hidden animated:(BOOL)animated;
 
+/** OneKey: color of the crop box border and corner handles. Default is white. */
+@property (nonatomic, strong) UIColor *frameColor;
+
+/** OneKey: color of the interior grid lines. Default is white. */
+@property (nonatomic, strong) UIColor *gridColor;
+
+/** OneKey: hides the corner handles, for crop boxes that cannot be resized. */
+@property (nonatomic, assign) BOOL cornerHandlesHidden;
+
 @end
 
 NS_ASSUME_NONNULL_END

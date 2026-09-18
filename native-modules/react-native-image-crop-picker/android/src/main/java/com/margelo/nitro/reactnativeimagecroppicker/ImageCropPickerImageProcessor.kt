@@ -28,16 +28,11 @@ internal data class ImageCropPickerConfig(
   val freeStyleCropEnabled: Boolean,
   val cropperCircleOverlay: Boolean,
   val cropperToolbarTitle: String?,
-  val cropperActiveWidgetColor: String?,
-  val cropperToolbarColor: String?,
-  val cropperToolbarWidgetColor: String?,
-  val cropperStatusBarLight: Boolean,
-  val cropperNavigationBarLight: Boolean,
+  val cropperChooseText: String?,
+  val cropperCancelText: String?,
+  val cropperRotateButtonsHidden: Boolean,
   val showCropGuidelines: Boolean,
-  val showCropFrame: Boolean,
-  val enableRotationGesture: Boolean,
-  val hideBottomControls: Boolean,
-  val disableCropperColorSetters: Boolean,
+  val appearance: ImageCropperAppearance?,
 ) {
   companion object {
     fun from(options: ImageCropPickerOptions, forceCropping: Boolean) = ImageCropPickerConfig(
@@ -51,16 +46,11 @@ internal data class ImageCropPickerConfig(
       freeStyleCropEnabled = options.freeStyleCropEnabled == true,
       cropperCircleOverlay = options.cropperCircleOverlay == true,
       cropperToolbarTitle = options.cropperToolbarTitle,
-      cropperActiveWidgetColor = options.cropperActiveWidgetColor,
-      cropperToolbarColor = options.cropperToolbarColor,
-      cropperToolbarWidgetColor = options.cropperToolbarWidgetColor,
-      cropperStatusBarLight = options.cropperStatusBarLight ?: true,
-      cropperNavigationBarLight = options.cropperNavigationBarLight ?: false,
+      cropperChooseText = options.cropperChooseText,
+      cropperCancelText = options.cropperCancelText,
+      cropperRotateButtonsHidden = options.cropperRotateButtonsHidden == true,
       showCropGuidelines = options.showCropGuidelines ?: true,
-      showCropFrame = options.showCropFrame ?: true,
-      enableRotationGesture = options.enableRotationGesture == true,
-      hideBottomControls = options.hideBottomControls == true,
-      disableCropperColorSetters = options.disableCropperColorSetters == true,
+      appearance = options.cropperAppearance,
     )
   }
 }

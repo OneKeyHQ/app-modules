@@ -3,9 +3,9 @@
 
   <application>
     <activity
-      android:name="com.yalantis.ucrop.UCropActivity"
+      android:name="com.margelo.nitro.reactnativeimagecroppicker.ImageCropperActivity"
       android:exported="false"
-      android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+      android:theme="@style/Theme.AppCompat.NoActionBar" />
 
     <!-- Prompts Google Play services to install the backported photo picker module. -->
     <service

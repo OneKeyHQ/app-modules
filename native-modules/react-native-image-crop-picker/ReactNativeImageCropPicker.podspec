@@ -19,9 +19,11 @@ Pod::Spec.new do |s|
     "cpp/**/*.{hpp,cpp}",
   ]
 
-  # Vendored TOCropViewController 3.2.0 with the OK-51551 rotation fix. Its
-  # headers are public so the Swift sources can use it. It replaces the
-  # standalone TOCropViewController pod, which must not be installed alongside.
+  # Vendored TOCropViewController 3.2.0 with the OK-51551 rotation fix, plus
+  # color hooks on TOCropOverlayView. Only its TOCropView is used, hosted by
+  # ImageCropperViewController. Its headers are public so the Swift sources can
+  # use it. It replaces the standalone TOCropViewController pod, which must not
+  # be installed alongside.
   s.public_header_files = ["ios/TOCropViewController/**/*.h"]
   # TOCropViewController looks up its strings in a bundle with exactly this name.
   s.resource_bundles = {

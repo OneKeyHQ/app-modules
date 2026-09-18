@@ -1,8 +1,7 @@
 package com.margelo.nitro.reactnativeimagecroppicker
 
 import android.app.Activity
-import android.graphics.Bitmap
-import android.graphics.Color
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -15,8 +14,6 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import com.margelo.nitro.core.Promise
 import com.margelo.nitro.nativelogger.OneKeyLog
-import com.yalantis.ucrop.UCrop
-import com.yalantis.ucrop.UCropActivity
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.ExecutorService
@@ -124,30 +121,37 @@ internal class ImageCropPickerSession(
     }
     temporaryFiles.add(destination)
 
-    val cropper = UCrop.of(source, Uri.fromFile(destination)).withOptions(buildCropOptions())
-    if (config.width != null && config.height != null) {
-      cropper.withAspectRatio(config.width.toFloat(), config.height.toFloat())
-    }
+    val systemIsDark = (activity.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+      Configuration.UI_MODE_NIGHT_YES
+    val intent = ImageCropperActivity.createIntent(
+      activity,
+      source,
+      Uri.fromFile(destination),
+      config,
+      ImageCropperTheme.resolve(config.appearance, systemIsDark),
+      // Keeps the cropper in the app's orientation, e.g. portrait on phones.
+      activity.requestedOrientation,
+    )
     val launcher = register(ActivityResultContracts.StartActivityForResult()) { result ->
       handleCropResult(result)
     }
-    launch { launcher.launch(cropper.getIntent(activity)) }
+    launch { launcher.launch(intent) }
   }
 
   private fun handleCropResult(result: ActivityResult) {
     val data = result.data
     when (result.resultCode) {
       Activity.RESULT_OK -> {
-        val output = data?.let { UCrop.getOutput(it) }
+        val output = data?.let { ImageCropperActivity.getOutputUri(it) }
         if (data == null || output == null) {
           finish(Result.failure(ImageCropPickerException.noImageData()))
           return
         }
         val cropRect = CropRect(
-          x = data.getIntExtra(UCrop.EXTRA_OUTPUT_OFFSET_X, -1).toDouble(),
-          y = data.getIntExtra(UCrop.EXTRA_OUTPUT_OFFSET_Y, -1).toDouble(),
-          width = data.getIntExtra(UCrop.EXTRA_OUTPUT_IMAGE_WIDTH, -1).toDouble(),
-          height = data.getIntExtra(UCrop.EXTRA_OUTPUT_IMAGE_HEIGHT, -1).toDouble(),
+          x = data.getIntExtra(ImageCropperActivity.EXTRA_OUTPUT_OFFSET_X, -1).toDouble(),
+          y = data.getIntExtra(ImageCropperActivity.EXTRA_OUTPUT_OFFSET_Y, -1).toDouble(),
+          width = data.getIntExtra(ImageCropperActivity.EXTRA_OUTPUT_WIDTH, -1).toDouble(),
+          height = data.getIntExtra(ImageCropperActivity.EXTRA_OUTPUT_HEIGHT, -1).toDouble(),
         )
         val filename = pickedFilename
         runInBackground(
@@ -164,32 +168,12 @@ internal class ImageCropPickerSession(
           onComplete = ::finish,
         )
       }
-      UCrop.RESULT_ERROR -> {
-        val message = data?.let { UCrop.getError(it)?.message } ?: "Cannot crop image"
+      ImageCropperActivity.RESULT_ERROR -> {
+        val message = data?.getStringExtra(ImageCropperActivity.EXTRA_ERROR_MESSAGE)
+          ?: "Cannot crop image"
         finish(Result.failure(ImageCropPickerException.noImageData(message)))
       }
       else -> finish(Result.failure(ImageCropPickerException.cancelled()))
-    }
-  }
-
-  private fun buildCropOptions(): UCrop.Options = UCrop.Options().apply {
-    setCompressionFormat(Bitmap.CompressFormat.JPEG)
-    setCompressionQuality(100)
-    setCircleDimmedLayer(config.cropperCircleOverlay)
-    setFreeStyleCropEnabled(config.freeStyleCropEnabled)
-    setShowCropGrid(config.showCropGuidelines)
-    setShowCropFrame(config.showCropFrame)
-    setHideBottomControls(config.hideBottomControls)
-    config.cropperToolbarTitle?.let { setToolbarTitle(it) }
-    if (config.enableRotationGesture) {
-      setAllowedGestures(UCropActivity.ALL, UCropActivity.ALL, UCropActivity.ALL)
-    }
-    if (!config.disableCropperColorSetters) {
-      parseColor(config.cropperActiveWidgetColor)?.let { setActiveControlsWidgetColor(it) }
-      parseColor(config.cropperToolbarColor)?.let { setToolbarColor(it) }
-      parseColor(config.cropperToolbarWidgetColor)?.let { setToolbarWidgetColor(it) }
-      setStatusBarLight(config.cropperStatusBarLight)
-      setNavigationBarLight(config.cropperNavigationBarLight)
     }
   }
 
@@ -279,15 +263,6 @@ internal class ImageCropPickerSession(
     }
     return displayName ?: uri.lastPathSegment
   }
-
-  private fun parseColor(value: String?): Int? =
-    value?.let {
-      try {
-        Color.parseColor(it)
-      } catch (error: IllegalArgumentException) {
-        null
-      }
-    }
 
   companion object {
     private const val TAG = "ImageCropPicker"

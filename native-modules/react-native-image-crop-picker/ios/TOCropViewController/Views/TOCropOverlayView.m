@@ -50,6 +50,9 @@ static const CGFloat kTOCropOverLayerCornerWidth = 20.0f;
 }
 
 - (void)setup {
+    _frameColor = [UIColor whiteColor];
+    _gridColor = [UIColor whiteColor];
+
     UIView * (^newLineView)(void) = ^UIView *(void) {
         return [self createNewLineView];
     };
@@ -188,6 +191,41 @@ static const CGFloat kTOCropOverLayerCornerWidth = 20.0f;
 
 #pragma mark - Property methods
 
+- (NSArray<UIView *> *)cornerHandleViews {
+    NSMutableArray<UIView *> *views = [NSMutableArray array];
+    for (NSArray *lines in @[self.topLeftLineViews, self.topRightLineViews, self.bottomRightLineViews, self.bottomLeftLineViews]) {
+        [views addObjectsFromArray:lines];
+    }
+    return views;
+}
+
+- (void)setFrameColor:(UIColor *)frameColor {
+    _frameColor = frameColor ?: [UIColor whiteColor];
+    for (UIView *lineView in self.outerLineViews) {
+        lineView.backgroundColor = _frameColor;
+    }
+    for (UIView *lineView in [self cornerHandleViews]) {
+        lineView.backgroundColor = _frameColor;
+    }
+}
+
+- (void)setGridColor:(UIColor *)gridColor {
+    _gridColor = gridColor ?: [UIColor whiteColor];
+    for (UIView *lineView in self.horizontalGridLines) {
+        lineView.backgroundColor = _gridColor;
+    }
+    for (UIView *lineView in self.verticalGridLines) {
+        lineView.backgroundColor = _gridColor;
+    }
+}
+
+- (void)setCornerHandlesHidden:(BOOL)cornerHandlesHidden {
+    _cornerHandlesHidden = cornerHandlesHidden;
+    for (UIView *lineView in [self cornerHandleViews]) {
+        lineView.hidden = cornerHandlesHidden;
+    }
+}
+
 - (void)setDisplayHorizontalGridLines:(BOOL)displayHorizontalGridLines {
     _displayHorizontalGridLines = displayHorizontalGridLines;
 
@@ -196,7 +234,7 @@ static const CGFloat kTOCropOverLayerCornerWidth = 20.0f;
     }];
 
     if (_displayHorizontalGridLines) {
-        self.horizontalGridLines = @[[self createNewLineView], [self createNewLineView]];
+        self.horizontalGridLines = @[[self createGridLineView], [self createGridLineView]];
     } else {
         self.horizontalGridLines = @[];
     }
@@ -214,7 +252,7 @@ static const CGFloat kTOCropOverLayerCornerWidth = 20.0f;
     }];
 
     if (_displayVerticalGridLines) {
-        self.verticalGridLines = @[[self createNewLineView], [self createNewLineView]];
+        self.verticalGridLines = @[[self createGridLineView], [self createGridLineView]];
     } else {
         self.verticalGridLines = @[];
     }
@@ -232,8 +270,14 @@ static const CGFloat kTOCropOverLayerCornerWidth = 20.0f;
 
 - (nonnull UIView *)createNewLineView {
     UIView *newLine = [[UIView alloc] initWithFrame:CGRectZero];
-    newLine.backgroundColor = [UIColor whiteColor];
+    newLine.backgroundColor = self.frameColor ?: [UIColor whiteColor];
     [self addSubview:newLine];
+    return newLine;
+}
+
+- (nonnull UIView *)createGridLineView {
+    UIView *newLine = [self createNewLineView];
+    newLine.backgroundColor = self.gridColor ?: [UIColor whiteColor];
     return newLine;
 }
 

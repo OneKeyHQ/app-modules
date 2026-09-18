@@ -20,6 +20,32 @@ export interface PickedImage {
   filename?: string;
 }
 
+export type ImageCropperColorScheme = 'light' | 'dark';
+
+// Colors and fonts of the cropper screen, which is identical on iOS and
+// Android. Colors are CSS hex strings (#RGB, #RRGGBB or #RRGGBBAA). Anything
+// left out falls back to OneKey's own palette for `colorScheme`.
+export interface ImageCropperAppearance {
+  // Defaults to the system appearance.
+  colorScheme?: ImageCropperColorScheme;
+  // Page background. The area outside the crop box is this color, 70% opaque.
+  backgroundColor?: string;
+  // Title, and the crop box border.
+  titleColor?: string;
+  // The rotate button.
+  iconColor?: string;
+  cancelButtonColor?: string;
+  cancelButtonPressedColor?: string;
+  cancelButtonTextColor?: string;
+  confirmButtonColor?: string;
+  confirmButtonPressedColor?: string;
+  confirmButtonTextColor?: string;
+  titleFontFamily?: string;
+  buttonFontFamily?: string;
+  // Multiplies every size and spacing, for apps that scale their UI.
+  scale?: number;
+}
+
 export interface ImageCropPickerOptions {
   // Target size of the cropped image. Also defines the crop aspect ratio.
   width?: number;
@@ -29,26 +55,16 @@ export interface ImageCropPickerOptions {
   compressImageQuality?: number;
   compressImageMaxWidth?: number;
   compressImageMaxHeight?: number;
+  // Lets the user resize the crop box to any aspect ratio.
   freeStyleCropEnabled?: boolean;
   cropperCircleOverlay?: boolean;
   cropperToolbarTitle?: string;
   cropperChooseText?: string;
   cropperCancelText?: string;
-  // iOS only
-  cropperChooseColor?: string;
-  cropperCancelColor?: string;
   cropperRotateButtonsHidden?: boolean;
-  // Android only
-  cropperActiveWidgetColor?: string;
-  cropperToolbarColor?: string;
-  cropperToolbarWidgetColor?: string;
-  cropperStatusBarLight?: boolean;
-  cropperNavigationBarLight?: boolean;
+  // Shows the rule-of-thirds grid inside the crop box.
   showCropGuidelines?: boolean;
-  showCropFrame?: boolean;
-  enableRotationGesture?: boolean;
-  hideBottomControls?: boolean;
-  disableCropperColorSetters?: boolean;
+  cropperAppearance?: ImageCropperAppearance;
 }
 
 export interface ReactNativeImageCropPicker

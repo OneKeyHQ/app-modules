@@ -23,9 +23,10 @@ final class ImageCropPickerSession: NSObject {
 
   // Main thread state.
   private var pickerController: PHPickerViewController?
-  private var cropController: TOCropViewController?
+  private var cropController: ImageCropperViewController?
   private var loadingView: UIView?
   private var pickedFilename: String?
+  private var pickedAssetIdentifier: String?
   private var sourceScale: CGFloat = 1
   private var presentationRequestedAt: Date?
   private var hasPresented = false
@@ -100,7 +101,9 @@ final class ImageCropPickerSession: NSObject {
 
     // PHPickerViewController runs out of process and needs no photo library
     // permission, so a previously denied permission can't block the picker.
-    var configuration = PHPickerConfiguration()
+    // Passing the library only adds asset identifiers to the results; it
+    // doesn't ask for access either.
+    var configuration = PHPickerConfiguration(photoLibrary: .shared())
     configuration.filter = .images
     configuration.selectionLimit = 1
     configuration.preferredAssetRepresentationMode = .current
@@ -108,6 +111,14 @@ final class ImageCropPickerSession: NSObject {
     let picker = PHPickerViewController(configuration: configuration)
     picker.delegate = self
     picker.modalPresentationStyle = .fullScreen
+    switch config.appearance.colorScheme {
+    case .dark:
+      picker.overrideUserInterfaceStyle = .dark
+    case .light:
+      picker.overrideUserInterfaceStyle = .light
+    case nil:
+      break
+    }
     pickerController = picker
     present(picker, from: presenter)
   }
@@ -202,32 +213,12 @@ final class ImageCropPickerSession: NSObject {
   }
 
   private func presentCropper(image: UIImage, from presenter: UIViewController) {
-    let controller: TOCropViewController
-    if config.cropperCircleOverlay {
-      controller = TOCropViewController(croppingStyle: .circular, image: image)
-    } else {
-      controller = TOCropViewController(image: image)
-      if let targetSize = config.targetSize {
-        controller.aspectRatioPreset = targetSize
-      }
-      controller.aspectRatioLockEnabled = !config.freeStyleCropEnabled
-      controller.resetAspectRatioEnabled = !controller.aspectRatioLockEnabled
-    }
-
-    controller.title = config.cropperToolbarTitle
+    let theme = ImageCropperTheme(
+      config.appearance,
+      systemIsDark: presenter.traitCollection.userInterfaceStyle == .dark
+    )
+    let controller = ImageCropperViewController(image: image, config: config, theme: theme)
     controller.delegate = self
-    if let color = ImageCropPickerImageProcessor.color(fromHex: config.cropperChooseColor) {
-      controller.doneButtonColor = color
-    }
-    if let color = ImageCropPickerImageProcessor.color(fromHex: config.cropperCancelColor) {
-      controller.cancelButtonColor = color
-    }
-    controller.doneButtonTitle = config.cropperChooseText
-    controller.cancelButtonTitle = config.cropperCancelText
-    controller.rotateButtonsHidden = config.cropperRotateButtonsHidden
-    controller.modalPresentationStyle = .fullScreen
-    controller.modalTransitionStyle = .coverVertical
-
     cropController = controller
     present(controller, from: presenter)
   }
@@ -345,37 +336,42 @@ extension ImageCropPickerSession: PHPickerViewControllerDelegate {
       dismissAll { self.finish(.failure(ImageCropPickerError.cancelled)) }
       return
     }
+    pickedAssetIdentifier = result.assetIdentifier
     loadPickedImage(result, in: picker)
   }
 }
 
-extension ImageCropPickerSession: TOCropViewControllerDelegate {
-  func cropViewController(
-    _ cropViewController: TOCropViewController,
-    didCropTo image: UIImage,
-    with cropRect: CGRect,
+extension ImageCropPickerSession: ImageCropperViewControllerDelegate {
+  func imageCropperViewController(
+    _ controller: ImageCropperViewController,
+    didCropWithFrame cropFrame: CGRect,
     angle: Int
   ) {
     guard !isFinished, !isBusy else {
       return
     }
     isBusy = true
-    showLoading(in: cropViewController.view)
+    controller.isProcessing = true
 
+    let image = controller.image
     let config = self.config
     let filename = pickedFilename
     // Report the crop rect in the coordinates of the original, undownsampled image.
     let sourceCropRect = CGRect(
-      x: (cropRect.origin.x * sourceScale).rounded(),
-      y: (cropRect.origin.y * sourceScale).rounded(),
-      width: (cropRect.width * sourceScale).rounded(),
-      height: (cropRect.height * sourceScale).rounded()
+      x: (cropFrame.origin.x * sourceScale).rounded(),
+      y: (cropFrame.origin.y * sourceScale).rounded(),
+      width: (cropFrame.width * sourceScale).rounded(),
+      height: (cropFrame.height * sourceScale).rounded()
     )
 
     DispatchQueue.global(qos: .userInitiated).async { [self] in
       let result = Result {
-        try ImageCropPickerImageProcessor.makeResult(
-          image: ImageCropPickerImageProcessor.resizeCroppedImage(image, config: config),
+        let isWholeImage = angle == 0 && cropFrame == CGRect(origin: .zero, size: image.size)
+        let cropped = isWholeImage
+          ? image
+          : image.croppedImage(withFrame: cropFrame, angle: angle, circularClip: false)
+        return try ImageCropPickerImageProcessor.makeResult(
+          image: ImageCropPickerImageProcessor.resizeCroppedImage(cropped, config: config),
           config: config,
           cropRect: sourceCropRect,
           filename: filename
@@ -383,23 +379,24 @@ extension ImageCropPickerSession: TOCropViewControllerDelegate {
       }
       DispatchQueue.main.async { [self] in
         isBusy = false
-        hideLoading()
         dismissAll { self.finish(result) }
       }
     }
   }
 
-  func cropViewController(
-    _ cropViewController: TOCropViewController,
-    didFinishCancelled cancelled: Bool
-  ) {
+  func imageCropperViewControllerDidCancel(_ controller: ImageCropperViewController) {
     guard !isFinished, !isBusy else {
       return
     }
-    if isPickerMode, pickerController?.presentingViewController != nil {
+    if isPickerMode, let picker = pickerController, picker.presentingViewController != nil {
       // Go back to the photo picker, like react-native-image-crop-picker.
+      // The picker keeps the photo selected, so without this, tapping the
+      // same photo again would only deselect it.
+      if #available(iOS 17.0, *), let identifier = pickedAssetIdentifier {
+        picker.deselectAssets(withIdentifiers: [identifier])
+      }
       cropController = nil
-      cropViewController.dismiss(animated: true)
+      controller.dismiss(animated: true)
       return
     }
     dismissAll { self.finish(.failure(ImageCropPickerError.cancelled)) }

@@ -16,9 +16,9 @@ struct ImageCropPickerConfig {
   let cropperToolbarTitle: String?
   let cropperChooseText: String?
   let cropperCancelText: String?
-  let cropperChooseColor: String?
-  let cropperCancelColor: String?
   let cropperRotateButtonsHidden: Bool
+  let showCropGuidelines: Bool
+  let appearance: ImageCropperAppearanceConfig
 
   init(_ options: ImageCropPickerOptions, forceCropping: Bool = false) {
     width = options.width
@@ -33,9 +33,9 @@ struct ImageCropPickerConfig {
     cropperToolbarTitle = options.cropperToolbarTitle
     cropperChooseText = options.cropperChooseText
     cropperCancelText = options.cropperCancelText
-    cropperChooseColor = options.cropperChooseColor
-    cropperCancelColor = options.cropperCancelColor
     cropperRotateButtonsHidden = options.cropperRotateButtonsHidden ?? false
+    showCropGuidelines = options.showCropGuidelines ?? true
+    appearance = ImageCropperAppearanceConfig(options.cropperAppearance)
   }
 
   var targetSize: CGSize? {
@@ -305,12 +305,16 @@ enum ImageCropPickerImageProcessor {
     }
   }
 
+  // Parses CSS hex colors: #RGB, #RRGGBB and #RRGGBBAA.
   static func color(fromHex hex: String?) -> UIColor? {
     guard var value = hex?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
       return nil
     }
     if value.hasPrefix("#") {
       value.removeFirst()
+    }
+    if value.count == 3 {
+      value = value.map { "\($0)\($0)" }.joined()
     }
     guard value.count == 6 || value.count == 8, let rgba = UInt64(value, radix: 16) else {
       return nil
