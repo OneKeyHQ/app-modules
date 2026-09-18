@@ -169,7 +169,7 @@ fn explain_insufficient(
             "shortfallZat": shortfall,
             "transparentZat": regular,
             // coinbase 单列：成熟规则不同，而且只能走专门的 coinbase 屏蔽路径，
-            // `pcztShield` 碰不到它。并成一个数的话，用户会照着提示去点屏蔽，
+            // 宿主的屏蔽碰不到它。并成一个数的话，用户会照着提示去点屏蔽，
             // 然后发现钱没动。
             "transparentCoinbaseZat": coinbase,
         }),
@@ -183,7 +183,10 @@ pub fn parse_change_pool(name: &str) -> Result<ShieldedPool> {
         // 把它留作合法取值只为历史兼容，新交易不该用。
         "ironwood" => Ok(ShieldedPool::Ironwood),
         "orchard" => Ok(ShieldedPool::Orchard),
-        "sapling" => Ok(ShieldedPool::Sapling),
+        // Sapling 不是合法的找零去处，理由和 `parse_spend_source` 拒它一样，
+        // 而且更硬：本方案裁掉了 Sapling 的 Groth16 证明参数，建不出 Sapling
+        // 输出。就算建得出，那笔找零也进了一个本钱包只读不可花的池子 ——
+        // 用户的找零会当场变成取不回来的钱。
         other => Err(RuntimeError::with(
             ErrorCode::TransactionBuildError,
             json!({ "stage": "fallbackChangePool", "value": other }),
@@ -227,7 +230,7 @@ pub struct SendPolicy {
     /// 关联起来；上游因此把它做成显式 opt-in，默认一个透明 UTXO 都不花。
     ///
     /// 关着的后果是具体的：一个只有透明余额的账户**发不出任何款**，
-    /// 唯一出口是先 `pcztShield` 屏蔽（多一笔交易、多一份手续费、多一次等待）。
+    /// 唯一出口是先屏蔽（多一笔交易、多一份手续费、多一次等待）。
     pub spend_transparent: bool,
     /// 零确认的自家屏蔽产出允不允许立刻再花（ZIP-315 建议允许）。
     ///
@@ -266,12 +269,62 @@ impl SendPolicy {
     }
 }
 
+/// 从宿主传来的原始参数造一份发送策略。
+///
+/// **报价和真正构造必须走这一个入口。** 两边各拼一次 `SendPolicy`，迟早会出现
+/// 某个字段只在一边接上：`pad_orchard_bundle` 就是这样 —— 报价那边曾经固定写
+/// `false`，而它会改变 Orchard bundle 的大小、进而改变 ZIP-317 手续费。当时
+/// 宿主的常量也是 `false`，所以对得上；等哪天真去打开这个产品开关，报出来的
+/// 费用就会比实付的低，而且没有任何东西会报错。
+#[allow(clippy::too_many_arguments)]
+pub fn parse_send_policy(
+    trusted: u32,
+    untrusted: u32,
+    fallback_change_pool: &str,
+    pad_orchard_bundle: bool,
+    spend_transparent: Option<bool>,
+    allow_zero_conf_shielding: Option<bool>,
+    spend_source: Option<&str>,
+) -> Result<SendPolicy> {
+    Ok(SendPolicy {
+        trusted,
+        untrusted,
+        fallback_change_pool: parse_change_pool(fallback_change_pool)?,
+        pad_orchard_bundle,
+        spend_transparent: spend_transparent.unwrap_or(false),
+        allow_zero_conf_shielding: allow_zero_conf_shielding.unwrap_or(false),
+        spend_source: parse_spend_source(spend_source)?,
+    })
+}
+
 /// 一次转账提案。`create_pczt` 与 `quote` 共用 —— 两者的选币、费率、找零策略
 /// 必须完全一致，否则报价和实际构造会对不上，用户看到的费用就是假的。
 type TransferProposal =
     zcash_client_backend::proposal::Proposal<Zip317FeeRule, zcash_client_sqlite::ReceivedNoteId>;
-type ShieldingProposal =
-    zcash_client_backend::proposal::Proposal<Zip317FeeRule, std::convert::Infallible>;
+
+/// 这个收款地址收不收得进屏蔽池。
+///
+/// 不认识的 receiver 类型算「收得进」：UA 里可能有本 crate 的 `zcash_address`
+/// 还不认识的池子，把它判成纯透明会拒掉一笔合法的屏蔽转账 —— 比放过一笔
+/// 公开转账更糟。
+fn recipient_accepts_shielded(
+    params: &zcash_protocol::consensus::Network,
+    recipient: &zcash_address::ZcashAddress,
+) -> Result<bool> {
+    use zcash_keys::address::Address;
+    let parsed = Address::try_from_zcash_address(params, recipient.clone()).map_err(|e| {
+        RuntimeError::with(
+            ErrorCode::InvalidAddress,
+            json!({ "stage": "recipientKind" }),
+        )
+        .detail(format!("{e:?}"))
+    })?;
+    Ok(match parsed {
+        Address::Transparent(_) | Address::Tex(_) => false,
+        Address::Sapling(_) => true,
+        Address::Unified(ua) => ua.has_orchard() || ua.has_sapling() || !ua.unknown().is_empty(),
+    })
+}
 
 fn build_proposal(
     db: &mut Db,
@@ -309,6 +362,20 @@ fn build_proposal(
             Some(MemoBytes::from(&parsed))
         }
     };
+
+    // 花透明输入换来的隐私代价，只有在收款方是屏蔽地址时才买到了东西：
+    // 那笔钱进了池子。收款方只能收透明时，这笔交易从头到尾公开，被选中的
+    // 透明地址还白白关联到了收款方 —— 用户为一个不存在的收益付了隐私。
+    //
+    // 宿主本来就只在收款方是屏蔽地址时才打开这个开关（见
+    // `shouldPreferTransparentForShieldedSend`）。这里是拦宿主的 bug：
+    // 这个开关的代价是用户看不见的，不能靠调用方自觉。
+    if policy.spend_transparent && !recipient_accepts_shielded(&params, &recipient)? {
+        return Err(RuntimeError::with(
+            ErrorCode::TransactionBuildError,
+            json!({ "stage": "spendTransparent", "reason": "transparentOnlyRecipient" }),
+        ));
+    }
 
     // Payment::new 会自己校验「透明地址不能带 memo」这类约束。
     let payment = zip321::Payment::new(recipient, Some(amount), memo_bytes, None, None, vec![])
@@ -526,7 +593,6 @@ pub fn release_reservation(db: &mut Db, reservation_id: &str) -> Result<bool> {
         return Ok(false);
     }
 
-    // 转账与屏蔽的提案类型不同，分两张表存；两边都要查，否则取消屏蔽时锁放不开。
     if let Some((account_uuid, proposal)) =
         RESERVATIONS.with(|r| r.borrow_mut().remove(reservation_id))
     {
@@ -539,19 +605,81 @@ pub fn release_reservation(db: &mut Db, reservation_id: &str) -> Result<bool> {
         }
         return Ok(true);
     }
-    if let Some((account_uuid, proposal)) =
-        SHIELD_RESERVATIONS.with(|r| r.borrow_mut().remove(reservation_id))
-    {
-        if let Err(e) = unlock_proposal_inputs(db, &proposal, owner) {
-            SHIELD_RESERVATIONS.with(|r| {
-                r.borrow_mut()
-                    .insert(reservation_id.to_owned(), (account_uuid, proposal));
-            });
-            return Err(build_err("unlockProposalInputs", format!("{e:?}")));
+    release_persisted_reservation(db, reservation_id, owner)
+}
+
+// The proposal map is process-local, but the lock owner survives in SQLite.
+// Read the owner's exact output references and use the upstream lock API;
+// never clear another proposal's locks or write wallet-owned tables directly.
+fn release_persisted_reservation(
+    db: &mut Db,
+    reservation_id: &str,
+    owner: LockOwner,
+) -> Result<bool> {
+    use rusqlite::OptionalExtension;
+    use zcash_client_backend::{data_api::OutputLockStore, wallet::OutputRef};
+    use zcash_primitives::transaction::TxId;
+    use zcash_protocol::PoolType;
+
+    db.transactionally_with_extension(|wallet, ext| {
+        if tx_state::existing_txid_for_reservation(ext, reservation_id)?.is_some() {
+            return Ok(false);
         }
-        return Ok(true);
-    }
-    Ok(false)
+        let mut released = false;
+        for (table, index, pool) in [
+            (
+                "sapling_received_notes",
+                "output_index",
+                PoolType::Shielded(ShieldedPool::Sapling),
+            ),
+            (
+                "orchard_received_notes",
+                "action_index",
+                PoolType::Shielded(ShieldedPool::Orchard),
+            ),
+            (
+                "ironwood_received_notes",
+                "action_index",
+                PoolType::Shielded(ShieldedPool::Ironwood),
+            ),
+            (
+                "transparent_received_outputs",
+                "output_index",
+                PoolType::Transparent,
+            ),
+        ] {
+            loop {
+                let output = ext
+                    .query_row(
+                        &format!(
+                            "SELECT tx.txid, output.{index}
+                              FROM {table} output
+                              JOIN transactions tx ON tx.id_tx = output.transaction_id
+                              WHERE output.lock_owner = ?1 LIMIT 1"
+                        ),
+                        [owner.as_bytes()],
+                        |row| Ok((row.get::<_, [u8; 32]>(0)?, row.get::<_, u32>(1)?)),
+                    )
+                    .optional()
+                    .map_err(|e| build_err("readReservationLocks", e))?;
+                let Some((txid, output_index)) = output else {
+                    break;
+                };
+                let output = OutputRef::new(TxId::from_bytes(txid), pool, output_index);
+                if !wallet
+                    .unlock_output(&output, owner)
+                    .map_err(|e| build_err("releaseReservationLock", e))?
+                {
+                    return Err(build_err(
+                        "releaseReservationLock",
+                        "persisted lock was not released",
+                    ));
+                }
+                released = true;
+            }
+        }
+        Ok(released)
+    })
 }
 
 /// 交易已落库后丢弃 reservation 记录。
@@ -560,24 +688,6 @@ pub fn release_reservation(db: &mut Db, reservation_id: &str) -> Result<bool> {
 /// 解锁会把已经花出去的 note 重新放回可选池。
 pub fn forget_reservation(reservation_id: &str) {
     RESERVATIONS.with(|r| r.borrow_mut().remove(reservation_id));
-    SHIELD_RESERVATIONS.with(|r| r.borrow_mut().remove(reservation_id));
-}
-
-/// Whether this process still owns an in-flight proposal for the account.
-/// Account repair must not delete the account while such a proposal exists:
-/// the caller still holds its reservation id and may be proving or signing it.
-pub fn has_active_reservations(account_uuid: &str) -> bool {
-    RESERVATIONS.with(|reservations| {
-        reservations
-            .borrow()
-            .values()
-            .any(|(owner_account_uuid, _)| owner_account_uuid == account_uuid)
-    }) || SHIELD_RESERVATIONS.with(|reservations| {
-        reservations
-            .borrow()
-            .values()
-            .any(|(owner_account_uuid, _)| owner_account_uuid == account_uuid)
-    })
 }
 
 /// 构造一笔转账的 PCZT（未签名），并**锁住选中的 note**。
@@ -691,7 +801,22 @@ fn circuit_version_for(
 
 /// 给 PCZT 生成 Orchard / Ironwood 零知识证明。
 /// 合并两份同一笔交易的 PCZT（本地完整副本 + 外部签名器返回的脱敏副本）。
+/// 合并硬件回传的签名副本。**只许补签名，不许改交易。**
+///
+/// 别指望后面那一步兜底：`TransactionExtractor` 是拿**合并后**的交易重算 sighash
+/// 再验签名，它只回答「这笔交易自洽吗」，不知道用户批准过什么。
+///
+/// 裸 `Combiner` 目前挡得住换交易，但那是两条上游性质的副作用，不是本 crate 的
+/// 声明：一是我们构造的 PCZT `tx_modifiable == 0`，不可增删输入/输出/action；
+/// 二是效果字段全部已填，冲突会被逐字段查出来。两条都属于上游，升级就可能变。
+///
+/// 所以把不变量写在这里：合并前后 sighash 必须逐字节相同，且 `scriptSig` 必须仍为
+/// 空 —— 它不进 sighash，又恰好是原件里为 `None`、会被 `merge_optional` 直接采纳的
+/// 字段，是这层唯一真正漏着的口子。失败发生在昂贵的证明之前，错误带 `field`。
 pub fn combine_pczt(original: &[u8], signed: &[u8]) -> Result<Vec<u8>> {
+    use pczt::roles::signer::Signer;
+    use pczt::roles::verifier::{TransparentError, Verifier};
+
     let parse = |bytes: &[u8], which: &str| {
         pczt::Pczt::parse(bytes).map_err(|error| {
             RuntimeError::with(
@@ -701,14 +826,91 @@ pub fn combine_pczt(original: &[u8], signed: &[u8]) -> Result<Vec<u8>> {
             .detail(format!("{error:?}"))
         })
     };
+    let signer = |pczt: pczt::Pczt, which: &str| {
+        Signer::new(pczt).map_err(|error| {
+            RuntimeError::with(
+                ErrorCode::PcztError,
+                json!({ "stage": "signer", "which": which }),
+            )
+            .detail(format!("{error:?}"))
+        })
+    };
+    let mismatch = |field: &str| {
+        RuntimeError::with(
+            ErrorCode::PcztError,
+            json!({
+                "stage": "combine",
+                "reason": "signedPcztChangedTheTransaction",
+                "field": field,
+            }),
+        )
+    };
+
     let original = parse(original, "original")?;
     let signed = parse(signed, "signed")?;
+    let transparent_inputs = original.transparent().inputs().len();
+    let approved = signer(original.clone(), "original")?;
+
     let combined = pczt::roles::combiner::Combiner::new(vec![original, signed])
         .combine()
         .map_err(|error| {
             RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "combine" }))
                 .detail(format!("{error:?}"))
         })?;
+    let result = signer(combined.clone(), "combined")?;
+
+    if result.shielded_sighash() != approved.shielded_sighash() {
+        return Err(mismatch("shieldedSighash"));
+    }
+    if combined.transparent().inputs().len() != transparent_inputs {
+        return Err(mismatch("transparentInputCount"));
+    }
+    for index in 0..transparent_inputs {
+        let approved_sighash = approved.transparent_sighash(index).map_err(|error| {
+            RuntimeError::with(
+                ErrorCode::PcztError,
+                json!({ "stage": "transparentSighash", "which": "original" }),
+            )
+            .detail(format!("{error:?}"))
+        })?;
+        let combined_sighash = result.transparent_sighash(index).map_err(|error| {
+            RuntimeError::with(
+                ErrorCode::PcztError,
+                json!({ "stage": "transparentSighash", "which": "combined" }),
+            )
+            .detail(format!("{error:?}"))
+        })?;
+        if approved_sighash != combined_sighash {
+            return Err(mismatch("transparentSighash"));
+        }
+    }
+    // sighash 不覆盖 scriptSig，而它正是合并里唯一能被对方无中生有填上的字段
+    // （原件恒为 None，merge_optional 会直接采纳）。我们自己从不填：提取时
+    // SpendFinalizer 才从 partial_signatures 拼出来。
+    // 在副本上查 —— Verifier 会把 bundle 解析再序列化回去，不能动待序列化的那份。
+    if transparent_inputs > 0 {
+        Verifier::new(combined.clone())
+            .with_transparent(|bundle| {
+                if bundle
+                    .inputs()
+                    .iter()
+                    .any(|input| input.script_sig().is_some())
+                {
+                    Err(TransparentError::Custom(()))
+                } else {
+                    Ok(())
+                }
+            })
+            .map_err(|error| match error {
+                TransparentError::Custom(()) => mismatch("transparentScriptSig"),
+                other => RuntimeError::with(
+                    ErrorCode::PcztError,
+                    json!({ "stage": "verifyTransparent" }),
+                )
+                .detail(format!("{other:?}")),
+            })?;
+    }
+
     combined.serialize().map_err(|error| {
         RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "serialize" }))
             .detail(format!("{error:?}"))
@@ -847,188 +1049,10 @@ pub const PROVE_ORCHARD: bool = true;
 pub const PROVE_SAPLING: bool = false;
 pub const PROVE_IRONWOOD: bool = true;
 
-/// 构造一笔「屏蔽全部透明余额」的 PCZT，并锁住选中的透明 UTXO。
-///
-/// ## 为什么它不是普通转账
-///
-/// 钱落在 t 地址那一刻就和用户公开绑定了。屏蔽是把它搬进隐私池，
-/// 让之后的花费别人看不见。所以它：
-///
-/// - **没有收款地址** —— 收款方就是本账户自己的屏蔽地址
-/// - **没有金额** —— 扫走全部透明余额。留零头等于白搭：它照样公开，
-///   将来还要再付一次手续费才能搬走
-///
-/// `shielding_threshold` 是宿主的策略：透明余额低于它就不值得屏蔽（手续费可能
-/// 超过金额本身）。低于阈值时上游报「余额不足」，我们照常映射成
-/// `INSUFFICIENT_FUNDS`，宿主可据此提示「金额太小，暂不值得屏蔽」。
-///
-/// 只屏蔽非 coinbase 输出：coinbase 有单独的成熟度规则，上游要求走
-/// `propose_shielding_coinbase`。矿工场景不在本钱包的目标内。
-fn build_shielding_proposal(
-    db: &mut Db,
-    account_uuid: &str,
-    shielding_threshold_zat: u64,
-    policy: SendPolicy,
-    lock: Option<LockRequest>,
-) -> Result<ShieldingProposal> {
-    use zcash_client_backend::data_api::wallet::propose_shielding;
-    use zcash_client_backend::data_api::CoinbaseFilter;
-
-    let params = *db.params();
-    let account_id = account::parse_account_id(db, account_uuid)?;
-
-    let threshold = Zatoshis::from_u64(shielding_threshold_zat).map_err(|_| {
-        RuntimeError::with(
-            ErrorCode::AmountOutOfRange,
-            json!({ "valueZat": shielding_threshold_zat }),
-        )
-    })?;
-
-    // 本账户名下全部透明收款地址（含找零与独立地址）—— 屏蔽是「扫干净」，
-    // 漏掉任何一个地址都会留下公开残额。
-    let receivers = db
-        .get_transparent_receivers(account_id, true, true)
-        .map_err(|e| build_err("getTransparentReceivers", e))?;
-    if receivers.is_empty() {
-        return Err(RuntimeError::with(
-            ErrorCode::InsufficientFunds,
-            json!({ "availableZat": 0, "requiredZat": shielding_threshold_zat, "reason": "noTransparentAddress" }),
-        ));
-    }
-    let from_addrs: Vec<_> = receivers.keys().copied().collect();
-
-    let confirmations = account::confirmations_policy(
-        policy.trusted,
-        policy.untrusted,
-        policy.allow_zero_conf_shielding,
-    )?;
-    let selector = GreedyInputSelector::<Db>::new();
-    let change = SingleOutputChangeStrategy::<_, Db>::new(
-        Zip317FeeRule::standard(),
-        None,
-        policy.change_pool(),
-        DustOutputPolicy::default(),
-    );
-
-    propose_shielding::<Db, _, _, _, zcash_client_sqlite::wallet::commitment_tree::Error>(
-        db,
-        &params,
-        &selector,
-        &change,
-        threshold,
-        &from_addrs,
-        account_id,
-        confirmations,
-        CoinbaseFilter::NonCoinbaseOnly,
-        lock,
-    )
-    .map_err(|e| propose_err("proposeShielding", e))
-}
-
-/// Exact ZIP-317 fee for the same sweep proposal used by `create_shielding_pczt`.
-/// It does not lock transparent UTXOs or construct a PCZT.
-pub fn quote_shielding(
-    db: &mut Db,
-    account_uuid: &str,
-    shielding_threshold_zat: u64,
-    policy: SendPolicy,
-) -> Result<u64> {
-    let proposal =
-        build_shielding_proposal(db, account_uuid, shielding_threshold_zat, policy, None)?;
-    Ok(proposal
-        .steps()
-        .iter()
-        .map(|step| u64::from(step.balance().fee_required()))
-        .sum())
-}
-
-pub fn create_shielding_pczt(
-    db: &mut Db,
-    account_uuid: &str,
-    shielding_threshold_zat: u64,
-    policy: SendPolicy,
-    lock_for_blocks: u32,
-    reservation_id: Option<&str>,
-) -> Result<(Vec<u8>, String, u64)> {
-    let params = *db.params();
-    let account_id = account::parse_account_id(db, account_uuid)?;
-    let owner = match reservation_id {
-        Some(id) => parse_owner(id)?,
-        None => LockOwner::random(&mut rand::rngs::OsRng),
-    };
-    let reservation_id = hex32(owner.as_bytes());
-    let proposal = build_shielding_proposal(
-        db,
-        account_uuid,
-        shielding_threshold_zat,
-        policy,
-        Some(LockRequest::new(owner, lock_for_blocks)),
-    )?;
-    let fee_zat = proposal
-        .steps()
-        .iter()
-        .map(|step| u64::from(step.balance().fee_required()))
-        .sum();
-
-    // 同 create_pczt：提案已锁 note，之后失败必须先解锁再返回。
-    let built = (|| -> Result<Vec<u8>> {
-        let pczt = create_pczt_from_proposal::<
-            Db,
-            _,
-            std::convert::Infallible,
-            _,
-            std::convert::Infallible,
-            _,
-        >(
-            db,
-            &params,
-            account_id,
-            OvkPolicy::Sender,
-            &proposal,
-            None,
-            policy.padding(),
-        )
-        .map_err(|e| build_err("createShieldingPczt", format!("{e:?}")))?;
-
-        pczt.serialize().map_err(|e| {
-            RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "serialize" }))
-                .detail(format!("{e:?}"))
-        })
-    })();
-
-    let bytes = match built {
-        Ok(b) => b,
-        Err(e) => {
-            let _ = unlock_proposal_inputs(db, &proposal, owner);
-            return Err(e);
-        }
-    };
-
-    SHIELD_RESERVATIONS.with(|r| {
-        r.borrow_mut()
-            .insert(reservation_id.clone(), (account_uuid.to_owned(), proposal));
-    });
-    Ok((bytes, reservation_id, fee_zat))
-}
-
-// 屏蔽提案的 NoteRef 类型与转账不同（Infallible），所以单独存一张表。
-thread_local! {
-    static SHIELD_RESERVATIONS: std::cell::RefCell<
-        std::collections::HashMap<String, (String, ShieldingProposal)>,
-    > = std::cell::RefCell::new(std::collections::HashMap::new());
-}
-
-/// 释放某账户当前被锁住的**全部** note。
-///
-/// ## 为什么需要它
-///
-/// `releaseReservation` 靠内存里的提案表定位要解锁哪些 note。app 或 offscreen
-/// 重启后那张表就没了 —— 此时旧的 reservationId 既解不开锁，也无从知道锁了什么，
-/// 那批 note 会一直冻到过期。
-///
-/// 这是宿主的「状态修复」入口：不需要 token，直接把该账户名下所有锁清掉。
-/// 代价是会连带放开**正在进行中**的提案，所以只该由用户主动触发的修复动作调用，
-/// 不能在正常流程里用。
+/// Clears all advisory locks for an account during explicit state repair.
+/// Normal cancellation uses the durable owner-scoped `release_reservation`,
+/// including after restart. This broader operation also clears other proposals
+/// and must not be used as an automatic cancellation fallback.
 pub fn clear_locked_outputs(db: &mut Db, account_uuid: &str) -> Result<u32> {
     use zcash_client_backend::data_api::OutputLockStore;
 
@@ -1041,9 +1065,302 @@ pub fn clear_locked_outputs(db: &mut Db, account_uuid: &str) -> Result<u32> {
         r.borrow_mut()
             .retain(|_, (owner_account_uuid, _)| owner_account_uuid != account_uuid);
     });
-    SHIELD_RESERVATIONS.with(|r| {
-        r.borrow_mut()
-            .retain(|_, (owner_account_uuid, _)| owner_account_uuid != account_uuid);
-    });
     Ok(n as u32)
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod reservation_recovery_tests {
+    use super::*;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+    use rusqlite::Connection;
+    use zcash_client_sqlite::WalletDb;
+    use zcash_protocol::consensus::Network;
+
+    fn wallet(conn: Connection) -> Db {
+        WalletDb::from_connection(
+            conn,
+            Network::TestNetwork,
+            crate::clock::HostClock,
+            ChaCha20Rng::from_seed([0; 32]),
+        )
+    }
+
+    #[test]
+    fn restart_cancellation_releases_only_its_owner_and_preserves_finalized_locks() {
+        let path =
+            std::env::temp_dir().join(format!("zcash-reservation-{}.sqlite", uuid::Uuid::new_v4()));
+        let owner = [1_u8; 32];
+        let other_owner = [2_u8; 32];
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (id_tx INTEGER PRIMARY KEY, txid BLOB);
+                            CREATE TABLE ext_onekey_tx_state (txid BLOB, reservation_id TEXT);",
+        )
+        .unwrap();
+        conn.execute("INSERT INTO transactions VALUES (1, ?1)", [[3_u8; 32]])
+            .unwrap();
+        for (table, index) in [
+            ("sapling_received_notes", "output_index"),
+            ("orchard_received_notes", "action_index"),
+            ("ironwood_received_notes", "action_index"),
+            ("transparent_received_outputs", "output_index"),
+        ] {
+            conn.execute_batch(&format!(
+                "CREATE TABLE {table} (
+                transaction_id INTEGER, {index} INTEGER, lock_owner BLOB, lock_expiry_height INTEGER
+            );"
+            ))
+            .unwrap();
+            conn.execute(
+                &format!("INSERT INTO {table} VALUES (1, 0, ?1, 1000), (1, 1, ?2, 1000)"),
+                rusqlite::params![owner, other_owner],
+            )
+            .unwrap();
+        }
+        drop(wallet(conn));
+
+        let mut db = wallet(Connection::open(&path).unwrap());
+        assert!(release_reservation(&mut db, &hex32(&owner)).unwrap());
+        assert!(!release_reservation(&mut db, &hex32(&owner)).unwrap());
+        let conn = Connection::open(&path).unwrap();
+        for table in [
+            "sapling_received_notes",
+            "orchard_received_notes",
+            "ironwood_received_notes",
+            "transparent_received_outputs",
+        ] {
+            let locks: u32 = conn.query_row(&format!("SELECT COUNT(*) FROM {table} WHERE lock_owner = ?1 AND lock_expiry_height = 1000"), [other_owner], |row| row.get(0)).unwrap();
+            assert_eq!(locks, 1);
+            let released: u32 = conn.query_row(&format!("SELECT COUNT(*) FROM {table} WHERE lock_owner IS NULL AND lock_expiry_height IS NULL"), [], |row| row.get(0)).unwrap();
+            assert_eq!(released, 1);
+        }
+        conn.execute(
+            "INSERT INTO ext_onekey_tx_state VALUES (?1, ?2)",
+            rusqlite::params![[4_u8; 32], hex32(&other_owner)],
+        )
+        .unwrap();
+        assert!(!release_reservation(&mut db, &hex32(&other_owner)).unwrap());
+        let locks: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM orchard_received_notes WHERE lock_owner = ?1",
+                [other_owner],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(locks, 1);
+        drop(conn);
+        drop(db);
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod policy_tests {
+    use super::*;
+    use zcash_address::ZcashAddress;
+    use zcash_keys::keys::{UnifiedAddressRequest, UnifiedSpendingKey};
+    use zcash_protocol::consensus::Network;
+
+    fn parse(encoded: &str) -> ZcashAddress {
+        ZcashAddress::try_from_encoded(encoded).expect("a valid address")
+    }
+
+    /// Sapling 在这两处都不是合法取值，理由不同但结论一样：证明建不出来，
+    /// 而且找零会落进一个只读不可花的池子。
+    #[test]
+    fn sapling_is_not_a_spendable_source_nor_a_change_destination() {
+        assert!(parse_change_pool("ironwood").is_ok());
+        assert!(parse_change_pool("orchard").is_ok());
+        assert!(parse_change_pool("sapling").is_err());
+        assert!(parse_spend_source(Some("sapling")).is_err());
+    }
+
+    #[test]
+    fn only_a_shielded_recipient_justifies_spending_transparent_inputs() {
+        let params = Network::MainNetwork;
+        let taddr = ::transparent::address::TransparentAddress::PublicKeyHash([3; 20]);
+
+        // 裸 t 地址、TEX 地址：整笔交易公开，花透明输入换不到任何隐私。
+        let t_encoded = zcash_keys::encoding::encode_transparent_address_p(&params, &taddr);
+        assert!(!recipient_accepts_shielded(&params, &parse(&t_encoded)).unwrap());
+
+        let tex = zcash_keys::address::Address::Tex([3; 20])
+            .to_zcash_address(&params)
+            .encode();
+        assert!(!recipient_accepts_shielded(&params, &parse(&tex)).unwrap());
+
+        // UA：钱进了屏蔽池，这才是这个开关买到的东西。
+        let ua = UnifiedSpendingKey::from_seed(
+            &params,
+            &[7u8; 32],
+            0u32.try_into().expect("valid ZIP-32 account index"),
+        )
+        .expect("test seed derives a USK")
+        .to_unified_full_viewing_key()
+        .default_address(UnifiedAddressRequest::ALLOW_ALL)
+        .expect("a default unified address")
+        .0
+        .encode(&params);
+        assert!(recipient_accepts_shielded(&params, &parse(&ua)).unwrap());
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod combine_tests {
+    use super::*;
+    use pczt::roles::{
+        creator::Creator, io_finalizer::IoFinalizer, signer::Signer,
+        spend_finalizer::SpendFinalizer,
+    };
+    use transparent::address::TransparentAddress;
+    use transparent::bundle::{OutPoint, TxOut};
+    use zcash_primitives::transaction::builder::{BuildConfig, Builder};
+    use zcash_protocol::consensus::{BlockHeight, Network};
+
+    fn secret_key() -> secp256k1::SecretKey {
+        secp256k1::SecretKey::from_slice(&[0x11; 32]).unwrap()
+    }
+
+    /// A transparent-only PCZT, io-finalized. `extra` appends a second
+    /// input/output pair; the first pair stays byte-identical so the two PCZTs
+    /// still merge.
+    ///
+    /// Transparent-only is deliberate. `IoFinalizer` clears the three
+    /// `tx_modifiable` flags ONLY when the transaction has shielded spends or
+    /// outputs (io_finalizer/mod.rs:70), so a transparent-only PCZT stays
+    /// modifiable and the bare Combiner will happily append the other side's
+    /// extra inputs, outputs and Orchard actions.
+    fn transparent_pczt(send_zat: u64, recipient: u8, extra: bool) -> Vec<u8> {
+        let secp = secp256k1::Secp256k1::new();
+        let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret_key());
+        let from = TransparentAddress::from_pubkey(&pubkey);
+        let mut builder = Builder::new(
+            Network::MainNetwork,
+            BlockHeight::from_u32(3_000_000),
+            BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: None,
+                ironwood_anchor: None,
+                orchard_padding: BundlePadding::DEFAULT,
+                ironwood_padding: BundlePadding::DEFAULT,
+            },
+        );
+        let input = |index: u8, value: u64, builder: &mut Builder<Network, ()>| {
+            builder
+                .add_transparent_p2pkh_input(
+                    pubkey,
+                    OutPoint::new([index; 32], 0),
+                    TxOut::new(Zatoshis::const_from_u64(value), from.script().into()),
+                )
+                .unwrap();
+        };
+        input(7, 100_000, &mut builder);
+        if extra {
+            input(9, 50_000, &mut builder);
+        }
+        builder
+            .add_transparent_output(
+                &TransparentAddress::PublicKeyHash([recipient; 20]),
+                Zatoshis::const_from_u64(send_zat),
+            )
+            .unwrap();
+        if extra {
+            builder
+                .add_transparent_output(
+                    &TransparentAddress::PublicKeyHash([0xcc; 20]),
+                    Zatoshis::const_from_u64(50_000),
+                )
+                .unwrap();
+        }
+        let parts = builder
+            .build_for_pczt(rand::rngs::OsRng, &Zip317FeeRule::standard())
+            .unwrap();
+        let pczt = Creator::build_from_parts(parts.pczt_parts).unwrap();
+        IoFinalizer::new(pczt)
+            .finalize_io()
+            .unwrap()
+            .serialize()
+            .unwrap()
+    }
+
+    fn signed_copy(original: &[u8]) -> Vec<u8> {
+        let mut signer = Signer::new(pczt::Pczt::parse(original).unwrap()).unwrap();
+        for index in 0..pczt::Pczt::parse(original)
+            .unwrap()
+            .transparent()
+            .inputs()
+            .len()
+        {
+            signer.sign_transparent(index, &secret_key()).unwrap();
+        }
+        signer.finish().serialize().unwrap()
+    }
+
+    fn reason(error: &RuntimeError) -> String {
+        format!("{error:?}")
+    }
+
+    #[test]
+    fn combining_a_signature_copy_keeps_the_approved_transaction() {
+        let original = transparent_pczt(90_000, 0xaa, false);
+        let combined = combine_pczt(&original, &signed_copy(&original)).unwrap();
+        let approved = Signer::new(pczt::Pczt::parse(&original).unwrap()).unwrap();
+        let result = Signer::new(pczt::Pczt::parse(&combined).unwrap()).unwrap();
+        assert_eq!(result.shielded_sighash(), approved.shielded_sighash());
+    }
+
+    // Conflicting values on a field both sides carry: the bare Combiner already
+    // refuses this one. Pinned so a future upstream bump cannot quietly relax it.
+    #[test]
+    fn combine_rejects_a_conflicting_recipient() {
+        let approved = transparent_pczt(90_000, 0xaa, false);
+        let other = transparent_pczt(90_000, 0xbb, false);
+        let error = combine_pczt(&approved, &signed_copy(&other)).unwrap_err();
+        assert!(
+            reason(&error).contains("DataMismatch"),
+            "{}",
+            reason(&error)
+        );
+    }
+
+    // What actually stops a counterparty from appending an input, output or
+    // Orchard action: `tx_modifiable` is already 0 on anything our pipeline
+    // builds, and the Combiner refuses to grow a non-modifiable bundle. That is
+    // upstream's behaviour, not ours, so pin it -- the sighash comparison in
+    // `combine_pczt` is what still covers us if a future bump relaxes it.
+    #[test]
+    fn our_pczts_are_not_modifiable_so_the_combiner_refuses_to_grow_them() {
+        let approved = transparent_pczt(90_000, 0xaa, false);
+        let enlarged = transparent_pczt(90_000, 0xaa, true);
+        let global = pczt::Pczt::parse(&approved).unwrap();
+        let global = global.global();
+        assert!(!global.inputs_modifiable());
+        assert!(!global.outputs_modifiable());
+        assert!(!global.shielded_modifiable());
+        let error = combine_pczt(&approved, &signed_copy(&enlarged)).unwrap_err();
+        assert!(
+            reason(&error).contains("DataMismatch"),
+            "{}",
+            reason(&error)
+        );
+    }
+
+    #[test]
+    fn combine_rejects_a_copy_that_already_carries_a_script_sig() {
+        // script_sig is absent from the sighash and absent from our original, so
+        // the bare Combiner would adopt whatever the other side put there.
+        let original = transparent_pczt(90_000, 0xaa, false);
+        let finalized = SpendFinalizer::new(pczt::Pczt::parse(&signed_copy(&original)).unwrap())
+            .finalize_spends()
+            .unwrap()
+            .serialize()
+            .unwrap();
+        let error = combine_pczt(&original, &finalized).unwrap_err();
+        assert!(
+            reason(&error).contains("transparentScriptSig"),
+            "{}",
+            reason(&error)
+        );
+    }
 }

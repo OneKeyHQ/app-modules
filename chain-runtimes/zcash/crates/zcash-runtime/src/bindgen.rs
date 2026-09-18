@@ -23,7 +23,7 @@ use crate::perf;
 use crate::{
     account,
     error::{ErrorCode, RuntimeError},
-    history, network, runtime, send, storage, sync, tx_state, wallet,
+    guard, history, network, runtime, send, storage, sync, tx_state, wallet,
 };
 
 // ── 生命周期 ────────────────────────────────────────────────────────────
@@ -228,24 +228,14 @@ pub async fn import_account_ufvk(
 /// 从共享库里移除单个账户。**不删库** —— 库还装着其他钱包的账户。
 #[wasm_bindgen(js_name = removeAccount)]
 pub async fn remove_account(account_uuid: String) -> Result<(), JsValue> {
-    let has_unsettled_outgoing =
-        runtime::with_read_conn(|conn| history::has_unsettled_outgoing(conn, &account_uuid))?;
-    let has_unresolved_broadcast = runtime::with_read_conn(|conn| {
-        tx_state::unresolved_txids(conn, &account_uuid).map(|txids| !txids.is_empty())
-    })?;
-    let has_active_reservation = send::has_active_reservations(&account_uuid);
-    if has_active_reservation || has_unsettled_outgoing || has_unresolved_broadcast {
-        return Err(crate::RuntimeError::with(
-            crate::ErrorCode::WalletBusy,
-            serde_json::json!({
-                "operation": "removeAccount",
-                "activeReservation": has_active_reservation,
-                "unsettledOutgoing": has_unsettled_outgoing,
-                "unresolvedBroadcast": has_unresolved_broadcast,
-            }),
+    runtime::with_read_conn(|conn| {
+        guard::assert_idle(
+            conn,
+            Some(&account_uuid),
+            "removeAccount",
+            guard::LockPolicy::Blocking,
         )
-        .into());
-    }
+    })?;
     runtime::with_db(|db| account::remove_account(db, &account_uuid))?;
     storage::durability_barrier().await?;
     Ok(())
@@ -337,16 +327,26 @@ pub async fn sync_tip() -> Result<String, JsValue> {
     )
 }
 
-/// 刷新账户的透明 UTXO。**必须单独调**。
+/// 用宿主给的快照刷新账户的透明 UTXO。**必须单独调**。
 ///
-/// 扫区块只产出屏蔽 note；透明 UTXO 在链上是公开的，要按地址向 lightwalletd 查。
-/// 不调的后果是静默的：透明余额恒为 0、屏蔽按钮永远说「没有可屏蔽的钱」，
-/// 而扫链看起来一切正常。
+/// 扫区块只产出屏蔽 note；透明 UTXO 在链上是公开的，由宿主的后端索引器提供 ——
+/// 运行时不自己去查，透明侧只有一个事实来源。不调的后果是静默的：隐私转账
+/// 想花透明输入时选不到钱，而扫链看起来一切正常。
+///
+/// `utxos_json` 是 `HostTransparentUtxo` 数组：
+/// `[{ txid, vout, valueZat, scriptPubKey, height }]`。归属由脚本反解的地址
+/// 决定，不属于本账户的条目会被丢掉。
 #[wasm_bindgen(js_name = syncTransparentUtxos)]
-pub async fn sync_transparent_utxos(account_uuid: String) -> Result<String, JsValue> {
+pub async fn sync_transparent_utxos(
+    account_uuid: String,
+    utxos_json: String,
+) -> Result<String, JsValue> {
+    let utxos: Vec<sync::HostTransparentUtxo> = serde_json::from_str(&utxos_json)
+        .map_err(|e| RuntimeError::new(ErrorCode::InvalidTransparentUtxos).detail(e.to_string()))?;
     Ok(
         runtime::with_db_and_client(move |mut db, mut client| async move {
-            let r = sync::refresh_transparent_utxos(&mut db, &mut client, &account_uuid).await;
+            let r =
+                sync::refresh_transparent_utxos(&mut db, &mut client, &account_uuid, &utxos).await;
             (db, client, r)
         })
         .await?,
@@ -390,22 +390,22 @@ pub fn pczt_quote(
     trusted: u32,
     untrusted: u32,
     fallback_change_pool: String,
+    pad_orchard_bundle: bool,
     spend_transparent: Option<bool>,
     allow_zero_conf_shielding: Option<bool>,
     spend_source: Option<String>,
 ) -> Result<String, JsValue> {
-    let pool = send::parse_change_pool(&fallback_change_pool)?;
-    // 报价必须和真正发送用同一套选币规则，否则报出来的费用不是实付的费用。
-    // spend_source 也在其中：限定池子会换掉被选中的 note，费用随之不同。
-    let policy = send::SendPolicy {
+    // 与 `pcztCreate` 同一个构造入口，参数顺序也刻意对齐：报价用的选币规则
+    // 只要有一个字段和真正发送不同，报出来的费用就不是实付的费用。
+    let policy = send::parse_send_policy(
         trusted,
         untrusted,
-        fallback_change_pool: pool,
-        pad_orchard_bundle: false,
-        spend_transparent: spend_transparent.unwrap_or(false),
-        allow_zero_conf_shielding: allow_zero_conf_shielding.unwrap_or(false),
-        spend_source: send::parse_spend_source(spend_source.as_deref())?,
-    };
+        &fallback_change_pool,
+        pad_orchard_bundle,
+        spend_transparent,
+        allow_zero_conf_shielding,
+        spend_source.as_deref(),
+    )?;
     Ok(runtime::with_db(|db| {
         send::quote(
             db,
@@ -512,6 +512,12 @@ pub fn transaction_history(
 /// （上游可能因承诺树检查点位置退得更靠前）。
 #[wasm_bindgen(js_name = rewindTo)]
 pub fn rewind_to(height: u32) -> Result<u32, JsValue> {
+    // 刻意**没有**空闲闸门。这不是用户可选的破坏性操作，而是重组发生时钱包
+    // 跟上链的唯一手段（唯一调用方是 syncWallet 的重组分支）。在这里因为
+    // 「有笔交易还没落块」而拒绝，正好挑中最该回退的时刻把账户钉死在一条
+    // 已被放弃的链上，之后再也扫不过去。
+    //
+    // 用户触发的重扫走 `queueRescanFrom`：它只重排扫描区间，不丢数据。
     Ok(runtime::with_db(|db| sync::rewind_to(db, height))?)
 }
 
@@ -554,16 +560,15 @@ pub fn pczt_create(
     allow_zero_conf_shielding: Option<bool>,
     spend_source: Option<String>,
 ) -> Result<String, JsValue> {
-    let pool = send::parse_change_pool(&fallback_change_pool)?;
-    let policy = send::SendPolicy {
+    let policy = send::parse_send_policy(
         trusted,
         untrusted,
-        fallback_change_pool: pool,
+        &fallback_change_pool,
         pad_orchard_bundle,
-        spend_transparent: spend_transparent.unwrap_or(false),
-        allow_zero_conf_shielding: allow_zero_conf_shielding.unwrap_or(false),
-        spend_source: send::parse_spend_source(spend_source.as_deref())?,
-    };
+        spend_transparent,
+        allow_zero_conf_shielding,
+        spend_source.as_deref(),
+    )?;
     Ok(runtime::with_db(|db| {
         let (bytes, reservation_id, fee_zat) = send::create_pczt(
             db,
@@ -600,84 +605,6 @@ pub fn pczt_combine(original: Vec<u8>, signed: Vec<u8>) -> Result<Vec<u8>, JsVal
     Ok(send::combine_pczt(&original, &signed)?)
 }
 
-/// 构造「屏蔽全部透明余额」的 PCZT，返回 `{ pcztHex, reservationId }`。
-///
-/// 没有收款地址、没有金额：收款方是本账户自己的屏蔽地址，金额是全部透明余额。
-/// 之后的 prove / sign / send / broadcast 与普通转账完全一样。
-///
-/// `shieldingThresholdZat` 是宿主策略：透明余额低于它就不值得屏蔽（手续费可能
-/// 比金额还高）。低于阈值时抛 `INSUFFICIENT_FUNDS`。
-#[wasm_bindgen(js_name = pcztShield)]
-pub fn pczt_shield(
-    account_uuid: String,
-    shielding_threshold_zat: u64,
-    trusted: u32,
-    untrusted: u32,
-    fallback_change_pool: String,
-    pad_orchard_bundle: bool,
-    lock_for_blocks: u32,
-    reservation_id: Option<String>,
-    allow_zero_conf_shielding: Option<bool>,
-) -> Result<String, JsValue> {
-    let pool = send::parse_change_pool(&fallback_change_pool)?;
-    let policy = send::SendPolicy {
-        trusted,
-        untrusted,
-        fallback_change_pool: pool,
-        pad_orchard_bundle,
-        // 屏蔽按定义就是花透明输入。这里不读这个字段（屏蔽路径有自己的选币器），
-        // 写 true 是为了字段语义诚实，将来谁去读它也拿到对的值。
-        spend_transparent: true,
-        allow_zero_conf_shielding: allow_zero_conf_shielding.unwrap_or(false),
-        // 同上：屏蔽不从屏蔽池取 note，源池子这个概念在这条路径上不适用。
-        spend_source: None,
-    };
-    Ok(runtime::with_db(|db| {
-        let (bytes, reservation_id, fee_zat) = send::create_shielding_pczt(
-            db,
-            &account_uuid,
-            shielding_threshold_zat,
-            policy,
-            lock_for_blocks,
-            reservation_id.as_deref(),
-        )?;
-        Ok(serde_json::json!({
-            "pcztHex": bytes.iter().map(|b| format!("{b:02x}")).collect::<String>(),
-            "reservationId": reservation_id,
-            "feeZat": fee_zat,
-        })
-        .to_string())
-    })?)
-}
-
-/// Exact shielding fee from the same proposal path as `pcztShield`, without
-/// locking inputs or constructing a transaction.
-#[wasm_bindgen(js_name = pcztShieldQuote)]
-pub fn pczt_shield_quote(
-    account_uuid: String,
-    shielding_threshold_zat: u64,
-    trusted: u32,
-    untrusted: u32,
-    fallback_change_pool: String,
-    pad_orchard_bundle: bool,
-    allow_zero_conf_shielding: Option<bool>,
-) -> Result<String, JsValue> {
-    let pool = send::parse_change_pool(&fallback_change_pool)?;
-    let policy = send::SendPolicy {
-        trusted,
-        untrusted,
-        fallback_change_pool: pool,
-        pad_orchard_bundle,
-        spend_transparent: true,
-        allow_zero_conf_shielding: allow_zero_conf_shielding.unwrap_or(false),
-        spend_source: None,
-    };
-    Ok(runtime::with_db(|db| {
-        let fee_zat = send::quote_shielding(db, &account_uuid, shielding_threshold_zat, policy)?;
-        Ok(serde_json::json!({ "feeZat": fee_zat }).to_string())
-    })?)
-}
-
 /// 释放该账户**全部**被锁的 note，返回解锁数量。
 ///
 /// 崩溃恢复用：`releaseReservation` 靠内存里的提案表定位，app / offscreen 重启后
@@ -687,6 +614,16 @@ pub fn pczt_shield_quote(
 /// 不要放进正常流程。
 #[wasm_bindgen(js_name = clearLockedOutputs)]
 pub fn clear_locked_outputs(account_uuid: String) -> Result<u32, JsValue> {
+    // 锁本身不算「忙」—— 它正是这里要清的东西。但已经发出去的交易算：解锁
+    // 一批正在被一笔待广播交易花掉的 note，等于把它们放回可选池去双花。
+    runtime::with_read_conn(|conn| {
+        guard::assert_idle(
+            conn,
+            Some(&account_uuid),
+            "clearLockedOutputs",
+            guard::LockPolicy::Ignored,
+        )
+    })?;
     Ok(runtime::with_db(|db| {
         send::clear_locked_outputs(db, &account_uuid)
     })?)
@@ -807,7 +744,32 @@ pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
 /// 返回 `true` 表示确实删掉了，`false` 表示本来就不存在（不算错误）。
 #[wasm_bindgen(js_name = deleteWallet)]
 pub async fn delete_wallet(db_name: String) -> Result<bool, JsValue> {
-    if runtime::open_db_name().as_deref() == Some(db_name.as_str()) {
+    if !storage::database_exists(&db_name).await? {
+        return Ok(false);
+    }
+    let is_open = runtime::open_db_name().as_deref() == Some(db_name.as_str());
+    // 闸门要在关库之前读，而且按整库判：库里装着全部钱包的全部账户。
+    //
+    // 读不出来就放行。这个接口的用途之一就是「库坏了，重置」，让一条查不动
+    // 的 SQL 把修复入口也锁死，比漏判一笔在途交易更糟 —— 而库都读不了的时候，
+    // 那笔交易的状态本来也已经取不回来了。
+    let idle = if is_open {
+        runtime::with_read_conn(|conn| {
+            guard::assert_idle(conn, None, "deleteWallet", guard::LockPolicy::Blocking)
+        })
+    } else {
+        storage::open_connection(&db_name).and_then(|conn| {
+            guard::assert_idle(&conn, None, "deleteWallet", guard::LockPolicy::Blocking)
+        })
+    };
+    match idle {
+        Ok(()) => {}
+        Err(e) if e.code == ErrorCode::WalletBusy => return Err(e.into()),
+        Err(e) => {
+            tracing::warn!("deleteWallet idle check unreadable, deleting anyway: {e}");
+        }
+    }
+    if is_open {
         runtime::close()?;
     }
     Ok(storage::delete_database(&db_name).await?)

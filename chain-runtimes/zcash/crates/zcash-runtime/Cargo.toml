@@ -51,6 +51,9 @@ tokio = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio.workspace = true
+# Only for building a signed PCZT fixture in the combine_pczt tests; must track
+# the version `transparent`/`pczt` use or the key types will not unify.
+secp256k1 = { version = "0.29", features = ["alloc"], default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 sqlite-wasm-rs.workspace = true

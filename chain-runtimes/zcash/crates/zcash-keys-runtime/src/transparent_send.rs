@@ -13,7 +13,7 @@ use transparent::{
     address::TransparentAddress,
     builder::{TransparentBuilder, TransparentSigningSet},
     bundle::{OutPoint, TxOut},
-    keys::{AccountPrivKey, NonHardenedChildIndex, TransparentKeyScope},
+    keys::{AccountPrivKey, AccountPubKey, NonHardenedChildIndex, TransparentKeyScope},
 };
 use zcash_address::ZcashAddress;
 use zcash_keys::address::Address;
@@ -135,6 +135,7 @@ enum RecipientAddress {
 #[derive(Debug)]
 struct PlannedOutput {
     address: RecipientAddress,
+    user_address: String,
     value: Zatoshis,
 }
 
@@ -316,7 +317,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
                         serde_json::json!({ "field": "amountZat", "reason": "mustBeOmittedForSendMax" }),
                     ));
                 }
-                Ok((address, None))
+                Ok((address, None, recipient.address))
             } else {
                 let amount = recipient.amount_zat.as_deref().ok_or_else(|| {
                     KeysError::with(
@@ -325,7 +326,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
                     )
                 })?;
                 let value = parse_positive_zatoshis(amount, "recipient.amountZat")?;
-                Ok((address, Some(value)))
+                Ok((address, Some(value), recipient.address))
             }
         })
         .collect::<Result<Vec<_>>>()?;
@@ -344,6 +345,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
             inputs,
             recipients: vec![PlannedOutput {
                 address,
+                user_address: parsed_recipients[0].2.clone(),
                 value: send_amount,
             }],
             change: None,
@@ -355,8 +357,9 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
 
     let recipients = parsed_recipients
         .into_iter()
-        .map(|(address, value)| PlannedOutput {
+        .map(|(address, value, user_address)| PlannedOutput {
             address,
+            user_address,
             value: value.expect("non-send-max recipients were checked above"),
         })
         .collect::<Vec<_>>();
@@ -424,9 +427,10 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
         (
             fee,
             Some((
-                change_request,
+                change_request.clone(),
                 PlannedOutput {
                     address: RecipientAddress::Transparent(change_address),
+                    user_address: change_request.address,
                     value: change_value,
                 },
                 change_path,
@@ -705,6 +709,39 @@ fn derive_secret_key(
     account_key
         .derive_secret_key(scope, index)
         .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(e))
+}
+
+fn derive_public_key(
+    account_key: &AccountPubKey,
+    path: DerivationPath,
+) -> Result<secp256k1::PublicKey> {
+    let scope = match path.scope {
+        0 => TransparentKeyScope::EXTERNAL,
+        1 => TransparentKeyScope::INTERNAL,
+        _ => return Err(KeysError::new(ErrorCode::InvalidDerivationPath)),
+    };
+    let index = NonHardenedChildIndex::from_index(path.index)
+        .ok_or_else(|| KeysError::new(ErrorCode::InvalidDerivationPath))?;
+    account_key
+        .derive_address_pubkey(scope, index)
+        .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(e))
+}
+
+fn parse_account_xpub(encoded: &str, expected_account: u32) -> Result<AccountPubKey> {
+    let invalid = || KeysError::new(ErrorCode::InvalidAccountXpub);
+    let decoded = bs58::decode(encoded)
+        .with_check(None)
+        .into_vec()
+        .map_err(|_| invalid())?;
+    if decoded.len() != 78 || decoded[..4] != [0x04, 0x88, 0xb2, 0x1e] || decoded[4] != 3 {
+        return Err(invalid());
+    }
+    let child = u32::from_be_bytes(decoded[9..13].try_into().map_err(|_| invalid())?);
+    if Some(child) != expected_account.checked_add(1 << 31) {
+        return Err(invalid());
+    }
+    AccountPubKey::deserialize(decoded[13..].try_into().map_err(|_| invalid())?)
+        .map_err(|_| invalid())
 }
 
 fn parse_account_xprv(encoded: &str, expected_account: u32) -> Result<AccountPrivKey> {

@@ -119,6 +119,8 @@ pub enum ErrorCode {
     InvalidReservationId,
     /// txid 格式不合法（不是 64 位 hex）。参数：`{ value }` 或 `{ value, byteLen }`
     InvalidTxid,
+    /// 宿主喂进来的透明 UTXO 快照解析失败。`detail` 里是 serde 的原文。
+    InvalidTransparentUtxos,
     /// PCZT 解析或序列化失败。参数：`{ stage }`
     PcztError,
     /// 交易构造失败（选币、费用、anchor 等）。参数：`{ stage }`
@@ -171,6 +173,7 @@ impl ErrorCode {
             NoActiveAccounts => "NO_ACTIVE_ACCOUNTS",
             InvalidReservationId => "INVALID_RESERVATION_ID",
             InvalidTxid => "INVALID_TXID",
+            InvalidTransparentUtxos => "INVALID_TRANSPARENT_UTXOS",
             PcztError => "PCZT_ERROR",
             TransactionBuildError => "TRANSACTION_BUILD_ERROR",
             BroadcastRejected => "BROADCAST_REJECTED",

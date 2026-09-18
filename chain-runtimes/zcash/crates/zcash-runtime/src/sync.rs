@@ -26,13 +26,19 @@ use zcash_client_backend::data_api::chain::error::Error as ChainError;
 use zcash_client_backend::data_api::chain::{
     BlockCache, BlockSource, ChainState, CommitmentTreeRoot,
 };
+use zcash_client_backend::data_api::ll::{LowLevelWalletRead, LowLevelWalletWrite};
 use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
-use zcash_client_backend::data_api::{WalletCommitmentTrees, WalletRead, WalletWrite};
+use zcash_client_backend::data_api::{
+    OutputStatusFilter, TransactionDataRequest, TransactionStatus, TransactionStatusFilter,
+    WalletCommitmentTrees, WalletRead, WalletWrite,
+};
 use zcash_client_backend::proto::service;
 use zcash_client_backend::scanning::{scan_block, Nullifiers, ScanningKeys};
+use zcash_client_sqlite::util::Clock;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::merkle_tree::HashSer;
-use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
+use zcash_primitives::transaction::Transaction;
+use zcash_protocol::consensus::{BlockHeight, BranchId, NetworkUpgrade, Parameters};
 
 use crate::blockcache::MemoryBlockCache;
 use crate::error::{ErrorCode, Result, RuntimeError};
@@ -857,101 +863,445 @@ pub fn queue_rescan_from(db: &mut Db, from_height: u32) -> Result<String> {
     .to_string())
 }
 
-/// 刷新账户的透明 UTXO。
+// A UTXO reply does not identify coinbase transactions. Validate its complete
+// parent before inserting the output so NonCoinbaseOnly never sees an unknown
+// parent as an ordinary transaction.
+fn decode_mined_transaction(
+    params: &zcash_protocol::consensus::Network,
+    raw: &service::RawTransaction,
+) -> Result<(Transaction, BlockHeight)> {
+    let height = u32::try_from(raw.height)
+        .ok()
+        .filter(|height| *height > 0)
+        .map(BlockHeight::from_u32)
+        .ok_or_else(|| net_err("transparentTransaction", "missing main-chain height"))?;
+    let mut bytes = raw.data.as_slice();
+    let tx = Transaction::read(&mut bytes, BranchId::for_height(params, height))
+        .map_err(|e| net_err("transparentTransaction", e))?;
+    if !bytes.is_empty() {
+        return Err(net_err(
+            "transparentTransaction",
+            "trailing transaction data",
+        ));
+    }
+    Ok((tx, height))
+}
+
+fn validate_transparent_parent(
+    tx: &Transaction,
+    txid: &[u8; 32],
+    index: u32,
+    txout: &::transparent::bundle::TxOut,
+) -> Result<()> {
+    if tx.txid().as_ref() != txid {
+        return Err(net_err("transparentParent", "transaction id mismatch"));
+    }
+    let output = tx
+        .transparent_bundle()
+        .and_then(|bundle| bundle.vout.get(index as usize));
+    if output != Some(txout) {
+        return Err(net_err(
+            "transparentParent",
+            "output value or script mismatch",
+        ));
+    }
+    Ok(())
+}
+
+fn store_account_transaction(
+    db: &mut Db,
+    account_id: <Db as WalletRead>::AccountId,
+    tx: &Transaction,
+    height: BlockHeight,
+    received: Option<
+        &zcash_client_backend::wallet::WalletTransparentOutput<<Db as WalletRead>::AccountId>,
+    >,
+) -> Result<()> {
+    // The high-level decrypted transaction writer detects inputs and outputs
+    // across every wallet account, even when its decryption key set is scoped.
+    // This transparent-only path changes spentness only for the active owner.
+    db.transactionally(|wallet| {
+        let tx_ref = wallet.put_tx_data(tx, None, None, None, height)?;
+        LowLevelWalletWrite::set_transaction_status(
+            wallet,
+            tx.txid(),
+            TransactionStatus::Mined(height),
+        )?;
+        if let Some(output) = received {
+            WalletWrite::put_received_transparent_utxo(wallet, output)?;
+        }
+        if let Some(bundle) = tx.transparent_bundle() {
+            for (index, _) in bundle.vout.iter().enumerate() {
+                let outpoint =
+                    ::transparent::bundle::OutPoint::new(*tx.txid().as_ref(), index as u32);
+                if let Some(output) = wallet.get_wallet_transparent_output(&outpoint, None)? {
+                    if output.recipient_account() == Some(&account_id) {
+                        wallet.queue_transparent_spend_detection(
+                            *output.recipient_address(),
+                            tx_ref,
+                            index as u32,
+                        )?;
+                    }
+                }
+            }
+            for input in &bundle.vin {
+                let owned = wallet
+                    .get_wallet_transparent_output(input.prevout(), None)?
+                    .is_some_and(|output| output.recipient_account() == Some(&account_id));
+                if owned {
+                    wallet.mark_transparent_utxo_spent(input.prevout(), tx_ref)?;
+                }
+            }
+        }
+        Ok::<_, zcash_client_sqlite::error::SqliteClientError>(())
+    })
+    .map_err(|e| db_err("storeTransparentTransaction", e))
+}
+
+async fn queue_cached_transparent_outputs(
+    db: &mut Db,
+    client: &mut LightClient,
+    account_id: <Db as WalletRead>::AccountId,
+    addresses: &HashSet<::transparent::address::TransparentAddress>,
+    already_stored: &HashMap<[u8; 32], (Transaction, BlockHeight)>,
+    fetched_parents: &mut u32,
+) -> Result<u32> {
+    use zcash_client_backend::data_api::wallet::{
+        input_selection::LockFilter, ConfirmationsPolicy,
+    };
+    use zcash_client_backend::data_api::{CoinbaseFilter, InputSource};
+    let params = *db.params();
+    let tip = db
+        .chain_height()
+        .map_err(|e| db_err("chainHeight", e))?
+        .ok_or_else(|| db_err("chainHeight", "unknown chain height"))?;
+    // This is a spentness audit, not input selection. Include locked outputs
+    // so an external spend cannot remain hidden behind a local reservation.
+    let outputs = db
+        .get_spendable_transparent_outputs_for_addresses(
+            &addresses.iter().copied().collect::<Vec<_>>(),
+            (tip + 1).into(),
+            ConfirmationsPolicy::default(),
+            CoinbaseFilter::AllTransparentOutputs,
+            LockFilter::Unfiltered,
+        )
+        .map_err(|e| db_err("cachedTransparentOutputs", e))?;
+    let mut seen = HashSet::new();
+    let mut deferred = 0;
+    for output in outputs {
+        let txid = *output.outpoint().hash();
+        if already_stored.contains_key(&txid) || !seen.insert(txid) {
+            continue;
+        }
+        let cached = db
+            .get_transaction(zcash_protocol::TxId::from_bytes(txid))
+            .map_err(|e| db_err("getTransparentParent", e))?;
+        let (parent, height) = if let Some(parent) = cached {
+            let Some(height) = output.mined_height() else {
+                continue;
+            };
+            (parent, height)
+        } else {
+            if *fetched_parents >= 16 {
+                deferred += 1;
+                continue;
+            }
+            let raw = crate::network::with_timeout(
+                async {
+                    client
+                        .get_transaction(service::TxFilter {
+                            hash: txid.to_vec(),
+                            ..Default::default()
+                        })
+                        .await
+                        .map(|reply| reply.into_inner())
+                        .map_err(|e| net_err("getTransparentParent", e))
+                },
+                crate::network::DEFAULT_TIMEOUT_MS,
+                "getTransparentParent",
+            )
+            .await?;
+            *fetched_parents += 1;
+            decode_mined_transaction(&params, &raw)?
+        };
+        validate_transparent_parent(&parent, &txid, output.outpoint().n(), output.txout())?;
+        // Do not reinsert an old cached output as known-unspent at today's tip.
+        // Its absence from the current UTXO reply requires a spend check.
+        store_account_transaction(db, account_id, &parent, height, None)?;
+    }
+    Ok(deferred)
+}
+
+async fn complete_transparent_spend_check<S>(
+    db: &mut Db,
+    account_id: <Db as WalletRead>::AccountId,
+    request: zcash_client_backend::data_api::TransactionsInvolvingAddress,
+    mut stream: S,
+) -> Result<()>
+where
+    S: futures_util::TryStream<Ok = service::RawTransaction> + Unpin,
+    S::Error: std::fmt::Display,
+{
+    let params = *db.params();
+    let end = request
+        .block_range_end()
+        .ok_or_else(|| net_err("getTransparentSpends", "missing bounded range"))?;
+    loop {
+        let raw = crate::network::with_timeout(
+            async {
+                stream
+                    .try_next()
+                    .await
+                    .map_err(|e| net_err("getTransparentSpends", e))
+            },
+            crate::network::DEFAULT_TIMEOUT_MS,
+            "getTransparentSpends",
+        )
+        .await?;
+        let Some(raw) = raw else {
+            break;
+        };
+        let (tx, height) = decode_mined_transaction(&params, &raw)?;
+        if height < request.block_range_start() || height >= end {
+            return Err(net_err(
+                "getTransparentSpends",
+                "transaction outside requested range",
+            ));
+        }
+        store_account_transaction(db, account_id, &tx, height, None)?;
+    }
+    // Empty and complete streams establish a checked range, not a spend.
+    // A failed or partial stream never reaches this acknowledgement.
+    db.notify_address_checked(request, end - 1)
+        .map_err(|e| db_err("notifyAddressChecked", e))
+}
+
+async fn refresh_transparent_spends(
+    db: &mut Db,
+    client: &mut LightClient,
+    account_id: <Db as WalletRead>::AccountId,
+    addresses: &HashSet<::transparent::address::TransparentAddress>,
+) -> Result<u32> {
+    let params = *db.params();
+    let requests = db
+        .transaction_data_requests()
+        .map_err(|e| db_err("transactionDataRequests", e))?;
+    let mut seen = HashSet::new();
+    let mut checked = 0;
+    for request in requests {
+        let TransactionDataRequest::TransactionsInvolvingAddress(request) = request else {
+            continue;
+        };
+        // GetTaddressTxids covers mined transactions only. Leave unsupported
+        // mempool/ephemeral queries queued rather than acknowledging incomplete data.
+        if !addresses.contains(&request.address())
+            || *request.tx_status_filter() != TransactionStatusFilter::Mined
+            || *request.output_status_filter() != OutputStatusFilter::All
+            || request
+                .request_at()
+                .is_some_and(|at| at > crate::clock::HostClock.now())
+            || !seen.insert(request.clone())
+        {
+            continue;
+        }
+        let Some(end) = request.block_range_end() else {
+            continue;
+        };
+        if request.block_range_start() >= end {
+            continue;
+        }
+        // The upstream mined-spend queue issues short expiry-sized ranges.
+        // Completing each range advances its persisted observed-unspent height,
+        // so subsequent rounds do not restart the same first page forever.
+        if checked >= 16 {
+            break;
+        }
+        let stream = crate::network::with_timeout(
+            async {
+                client
+                    .get_taddress_txids(service::TransparentAddressBlockFilter {
+                        address: zcash_keys::encoding::encode_transparent_address_p(
+                            &params,
+                            &request.address(),
+                        ),
+                        range: Some(service::BlockRange {
+                            start: Some(service::BlockId {
+                                height: u64::from(request.block_range_start()),
+                                hash: vec![],
+                            }),
+                            end: Some(service::BlockId {
+                                height: u64::from(end - 1),
+                                hash: vec![],
+                            }),
+                            pool_types: vec![],
+                        }),
+                    })
+                    .await
+                    .map(|reply| reply.into_inner())
+                    .map_err(|e| net_err("getTransparentSpends", e))
+            },
+            crate::network::DEFAULT_TIMEOUT_MS,
+            "getTransparentSpends",
+        )
+        .await?;
+        complete_transparent_spend_check(db, account_id, request, stream).await?;
+        checked += 1;
+    }
+    Ok(checked)
+}
+
+/// 宿主喂进来的一条透明 UTXO。
+///
+/// 透明侧的唯一事实来源是宿主的后端索引器，不是 lightwalletd：同一个钱包里
+/// 两个来源各说各话时，用户看到的余额和这里能选的输入就对不上。运行时只负责
+/// 校验与落库，不自己去查。
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HostTransparentUtxo {
+    pub txid: String,
+    pub vout: u32,
+    pub value_zat: String,
+    pub script_pub_key: String,
+    pub height: u32,
+}
+
+/// 用宿主给的快照刷新账户的透明 UTXO。
 ///
 /// ## 为什么必须单独做
 ///
 /// 屏蔽 note 是扫区块试解密出来的，透明 UTXO 不是 —— 它们在链上是公开的，
-/// 由 lightwalletd 按地址直接返回。`scan_cached_blocks` 不会产出它们。
+/// `scan_cached_blocks` 不会产出它们。
 ///
-/// 不做这一步的后果是**静默的**：透明余额恒为 0，屏蔽（把透明余额转进隐私池）
-/// 永远报「没有可屏蔽的钱」，而扫链看起来一切正常。
+/// 不做这一步的后果是**静默的**：隐私转账想花透明输入时选不到钱，报
+/// INSUFFICIENT_FUNDS，而扫链看起来一切正常。
 ///
-/// 只查该账户名下的透明收款地址（含找零与独立地址）—— 漏掉任何一个都会
-/// 让那部分钱在钱包里不存在。
+/// ## 归属只认脚本
+///
+/// 每条 UTXO 的归属由 `script_pub_key` 解出的地址决定，再拿去比对本账户的
+/// 透明收款地址（含找零与独立地址）。宿主说它是谁的不作数 —— 否则宿主一处
+/// 笔误就能把别人的输出记到这个账户名下。
 pub async fn refresh_transparent_utxos(
     db: &mut Db,
     client: &mut LightClient,
     account_uuid: &str,
+    utxos: &[HostTransparentUtxo],
 ) -> Result<String> {
-    use ::transparent::bundle::{OutPoint, TxOut};
-    use zcash_client_backend::proto::service::GetAddressUtxosArg;
+    // Bound the whole refresh, including a server that keeps emitting stream
+    // items. Synchronous DB commits remain valid; unfinished ranges stay queued.
+    crate::network::with_timeout(
+        refresh_transparent_utxos_impl(db, client, account_uuid, utxos),
+        crate::network::DEFAULT_TIMEOUT_MS,
+        "refreshTransparentUtxos",
+    )
+    .await
+}
+
+async fn refresh_transparent_utxos_impl(
+    db: &mut Db,
+    client: &mut LightClient,
+    account_uuid: &str,
+    utxos: &[HostTransparentUtxo],
+) -> Result<String> {
+    use ::transparent::bundle::OutPoint;
     use zcash_client_backend::wallet::WalletTransparentOutput;
-    use zcash_protocol::value::Zatoshis;
 
     let params = *db.params();
 
     let account_id = crate::account::parse_account_id(db, account_uuid)?;
 
-    // 地址 → 账户。返回的每条 UTXO 靠它归属，否则批量查回来就分不清是谁的。
+    // 地址 → 账户。喂进来的每条 UTXO 靠它归属，否则宿主一处笔误就能把别人的
+    // 输出记到这个账户名下。
     let mut owner_of: std::collections::HashMap<String, <Db as WalletRead>::AccountId> =
         std::collections::HashMap::new();
-    let mut addresses: Vec<String> = Vec::new();
     let receivers = db
         .get_transparent_receivers(account_id, true, true)
         .map_err(|e| db_err("getTransparentReceivers", e))?;
     for addr in receivers.keys() {
-        let encoded = zcash_keys::encoding::encode_transparent_address_p(&params, addr);
-        owner_of.insert(encoded.clone(), account_id);
-        addresses.push(encoded);
+        owner_of.insert(
+            zcash_keys::encoding::encode_transparent_address_p(&params, addr),
+            account_id,
+        );
     }
 
-    if addresses.is_empty() {
+    if owner_of.is_empty() {
         return Ok(json!({ "addresses": 0, "utxos": 0, "storedZat": 0 }).to_string());
     }
-    let address_count = addresses.len();
-    let start_height = u64::from(
-        db.utxo_query_height(account_id)
-            .map_err(|e| db_err("utxoQueryHeight", e))?,
-    );
-
-    let replies = crate::network::with_timeout(
-        async {
-            client
-                .get_address_utxos(GetAddressUtxosArg {
-                    addresses,
-                    start_height,
-                    max_entries: 0,
-                })
-                .await
-                .map_err(|e| net_err("getAddressUtxos", e))
-                .map(|r| r.into_inner().address_utxos)
-        },
-        crate::network::DEFAULT_TIMEOUT_MS,
-        "getAddressUtxos",
-    )
-    .await?;
+    let address_count = owner_of.len();
+    let active_receivers = receivers.keys().copied().collect();
 
     let mut stored = 0u32;
     let mut total: u64 = 0;
-    for utxo in replies {
-        let Ok(txid) = <[u8; 32]>::try_from(&utxo.txid[..]) else {
-            continue;
-        };
-        let Ok(index) = u32::try_from(utxo.index) else {
-            continue;
-        };
-        let Ok(value) = u64::try_from(utxo.value_zat)
-            .map_err(|_| ())
-            .and_then(|v| Zatoshis::from_u64(v).map_err(|_| ()))
+    let mut parents = HashMap::new();
+    let mut fetched_parents = 0;
+    let mut deferred_utxos = 0;
+    let mut rejected_utxos = 0;
+    for utxo in utxos {
+        let Some((txid, index, txout, owner)) =
+            decode_host_transparent_utxo(&params, &owner_of, utxo)
         else {
             continue;
         };
+        let value = txout.value();
+        let height = Some(BlockHeight::from_u32(utxo.height));
 
-        // `Script` 内部包着 zcash_script 的类型，构造函数不公开；`read` 走的是
-        // 带长度前缀的编码，所以这里自己拼前缀，避免为了一个构造再引一个 crate。
-        let Some(script_pubkey) = read_script(&utxo.script) else {
+        if !parents.contains_key(&txid) {
+            if let Some(parent) = db
+                .get_transaction(zcash_protocol::TxId::from_bytes(txid))
+                .map_err(|e| db_err("getTransparentParent", e))?
+            {
+                // The cached parent's height comes from the wallet database, not
+                // from the host. Storing `utxo.height` here would make the
+                // comparison below compare the host's claim with itself, so a
+                // wrong height on an already-known transaction would sail
+                // through and re-stamp its mined status.
+                let Some(mined_height) = db
+                    .get_tx_height(zcash_protocol::TxId::from_bytes(txid))
+                    .map_err(|e| db_err("getTransparentParentHeight", e))?
+                else {
+                    // Known transaction, no mined height: nothing to check the
+                    // host against, so do not stage it on the host's word.
+                    rejected_utxos += 1;
+                    continue;
+                };
+                parents.insert(txid, (parent, mined_height));
+            } else {
+                // Persisted raw parents make this budget advance across rounds.
+                if fetched_parents >= 16 {
+                    deferred_utxos += 1;
+                    continue;
+                }
+                let raw = crate::network::with_timeout(
+                    async {
+                        client
+                            .get_transaction(service::TxFilter {
+                                hash: txid.to_vec(),
+                                ..Default::default()
+                            })
+                            .await
+                            .map(|reply| reply.into_inner())
+                            .map_err(|e| net_err("getTransparentParent", e))
+                    },
+                    crate::network::DEFAULT_TIMEOUT_MS,
+                    "getTransparentParent",
+                )
+                .await?;
+                parents.insert(txid, decode_mined_transaction(&params, &raw)?);
+                fetched_parents += 1;
+            }
+        }
+        let (parent, mined_height) = parents
+            .get(&txid)
+            .ok_or_else(|| net_err("transparentParent", "missing fetched parent"))?;
+        // 金额/脚本/高度以链上的父交易为准。宿主和链现在是两个来源（重组窗口里
+        // 它们本来就会短暂不一致），所以对不上的只丢这一条 —— 让一条过期的
+        // UTXO 把整笔隐私转账挡掉，比少一个可选输入更糟。计数交回宿主，
+        // 这样宿主的 bug 不会没人看见。
+        if validate_transparent_parent(parent, &txid, index, &txout).is_err()
+            || height != Some(*mined_height)
+        {
+            rejected_utxos += 1;
             continue;
-        };
-        let txout = TxOut::new(value, script_pubkey);
-        let height = u32::try_from(utxo.height).ok().map(BlockHeight::from_u32);
-
-        // 归属靠地址查回来。批量查询里混着多个账户的输出，用「当前账户」会把
-        // 别人的钱记到自己头上。
-        let Some(&owner) = owner_of.get(&utxo.address) else {
-            continue;
-        };
-
+        }
         let Some(output) = WalletTransparentOutput::from_parts(
             OutPoint::new(txid, index),
             txout,
@@ -964,18 +1314,67 @@ pub async fn refresh_transparent_utxos(
             continue;
         };
 
-        db.put_received_transparent_utxo(&output)
-            .map_err(|e| db_err("putReceivedTransparentUtxo", e))?;
+        store_account_transaction(db, owner, parent, *mined_height, Some(&output))?;
         stored += 1;
         total += u64::from(value);
     }
 
+    deferred_utxos += queue_cached_transparent_outputs(
+        db,
+        client,
+        account_id,
+        &active_receivers,
+        &parents,
+        &mut fetched_parents,
+    )
+    .await?;
+    let spend_ranges_checked =
+        refresh_transparent_spends(db, client, account_id, &active_receivers).await?;
+
     Ok(json!({
+        "spendRangesChecked": spend_ranges_checked,
+        "deferredUtxos": deferred_utxos,
+        "rejectedUtxos": rejected_utxos,
         "addresses": address_count,
         "utxos": stored,
         "storedZat": total,
     })
     .to_string())
+}
+
+/// 把宿主喂进来的一条 UTXO 解成可入库的形式，认不出或不属于本账户就返回 `None`。
+///
+/// 归属只由 `script_pub_key` 反解出的地址决定 —— 宿主对这条 UTXO 属于谁的说法
+/// 一概不采信。宿主一处笔误就能把别人的输出记到这个账户名下，而入库之后它就是
+/// 可选的花费输入了。
+fn decode_host_transparent_utxo(
+    params: &zcash_protocol::consensus::Network,
+    owner_of: &std::collections::HashMap<String, <Db as WalletRead>::AccountId>,
+    utxo: &HostTransparentUtxo,
+) -> Option<(
+    [u8; 32],
+    u32,
+    ::transparent::bundle::TxOut,
+    <Db as WalletRead>::AccountId,
+)> {
+    use ::transparent::bundle::TxOut;
+    use zcash_protocol::value::Zatoshis;
+
+    // 宿主给的是后端的**显示序**（大端 hex）；`TxId` / SQLite / lightwalletd 的
+    // `TxFilter.hash` 全要内部序。不反转就是去查一个不存在的父交易，而且对
+    // 回文 txid 恰好看不出来。
+    let txid =
+        <[u8; 32]>::try_from(&crate::history::display_order_to_internal(&utxo.txid).ok()?[..])
+            .ok()?;
+    let value = Zatoshis::from_u64(utxo.value_zat.parse::<u64>().ok()?).ok()?;
+    let script_pubkey = read_script(&hex::decode(&utxo.script_pub_key).ok()?)?;
+    let txout = TxOut::new(value, script_pubkey);
+    // 认不出的脚本（既非 P2PKH 也非 P2SH）没有可比对的地址，跳过而不是猜。
+    let recipient = txout.recipient_address()?;
+    let owner = *owner_of.get(&zcash_keys::encoding::encode_transparent_address_p(
+        params, &recipient,
+    ))?;
+    Some((txid, utxo.vout, txout, owner))
 }
 
 /// 把裸 script 字节读成 `Script`。
@@ -1015,6 +1414,388 @@ mod tests {
         )
         .expect("test seed derives a USK")
         .to_unified_full_viewing_key()
+    }
+
+    fn transparent_fixture(
+        inputs: Vec<::transparent::bundle::OutPoint>,
+        outputs: Vec<::transparent::bundle::TxOut>,
+    ) -> Transaction {
+        use ::transparent::bundle::{Authorized, Bundle, TxIn};
+        use zcash_primitives::transaction::{TransactionData, TxVersion};
+        TransactionData::from_parts(
+            TxVersion::V5,
+            BranchId::Nu5,
+            0,
+            BlockHeight::from_u32(2_100_000),
+            Some(Bundle {
+                vin: inputs
+                    .into_iter()
+                    .map(|prevout| TxIn::from_parts(prevout, read_script(&[]).unwrap(), u32::MAX))
+                    .collect(),
+                vout: outputs,
+                authorization: Authorized,
+            }),
+            None,
+            None,
+            None,
+        )
+        .freeze()
+        .unwrap()
+    }
+
+    #[test]
+    fn transparent_parent_requires_exact_transaction_and_output() {
+        use ::transparent::{
+            address::TransparentAddress,
+            bundle::{OutPoint, TxOut},
+        };
+        use zcash_protocol::value::Zatoshis;
+        let output = TxOut::new(
+            Zatoshis::from_u64(50_000).unwrap(),
+            TransparentAddress::PublicKeyHash([1; 20]).script().into(),
+        );
+        let tx = transparent_fixture(vec![OutPoint::new([0; 32], u32::MAX)], vec![output.clone()]);
+        validate_transparent_parent(&tx, tx.txid().as_ref(), 0, &output).unwrap();
+        assert!(validate_transparent_parent(&tx, &[2; 32], 0, &output).is_err());
+        assert!(validate_transparent_parent(&tx, tx.txid().as_ref(), 1, &output).is_err());
+        let wrong_value = TxOut::new(
+            Zatoshis::from_u64(50_001).unwrap(),
+            output.script_pubkey().clone(),
+        );
+        assert!(validate_transparent_parent(&tx, tx.txid().as_ref(), 0, &wrong_value).is_err());
+        let wrong_script = TxOut::new(
+            output.value(),
+            TransparentAddress::PublicKeyHash([2; 20]).script().into(),
+        );
+        assert!(validate_transparent_parent(&tx, tx.txid().as_ref(), 0, &wrong_script).is_err());
+        let mut data = vec![];
+        tx.write(&mut data).unwrap();
+        let mut raw = service::RawTransaction {
+            data,
+            height: 2_000_000,
+        };
+        decode_mined_transaction(&Network::MainNetwork, &raw).unwrap();
+        raw.height = 0;
+        assert!(decode_mined_transaction(&Network::MainNetwork, &raw).is_err());
+        raw.height = u64::MAX;
+        assert!(decode_mined_transaction(&Network::MainNetwork, &raw).is_err());
+        raw.height = 2_000_000;
+        raw.data.push(0);
+        assert!(decode_mined_transaction(&Network::MainNetwork, &raw).is_err());
+    }
+
+    #[test]
+    fn host_transparent_utxo_is_attributed_by_its_script_not_by_the_host() {
+        use ::transparent::address::TransparentAddress;
+        use zcash_protocol::consensus::Network;
+
+        let params = Network::MainNetwork;
+        let mine = [7u8; 20];
+        let theirs = [9u8; 20];
+        let owner = zcash_client_sqlite::AccountUuid::from_uuid(uuid::Uuid::from_u128(1));
+        let mut owner_of = std::collections::HashMap::new();
+        owner_of.insert(
+            zcash_keys::encoding::encode_transparent_address_p(
+                &params,
+                &TransparentAddress::PublicKeyHash(mine),
+            ),
+            owner,
+        );
+
+        // 宿主发的就是 blockbook 的裸 scriptPubKey：P2PKH 是
+        // OP_DUP OP_HASH160 <20 字节> OP_EQUALVERIFY OP_CHECKSIG。
+        let p2pkh = |hash: [u8; 20]| format!("76a914{}88ac", hex::encode(hash));
+        let utxo = |script: String, value: &str, txid: &str| HostTransparentUtxo {
+            txid: txid.to_string(),
+            vout: 1,
+            value_zat: value.to_string(),
+            script_pub_key: script,
+            height: 2_000_000,
+        };
+        // 每个字节都不同：回文 txid（比如 "ab" 重复 32 次）在字节反转下和自己
+        // 相等，用它做用例等于把显示序/内部序这一层测没了。
+        let txid_display: String = (0u8..32).map(|b| format!("{b:02x}")).collect();
+        let txid_internal: [u8; 32] = {
+            let mut b = [0u8; 32];
+            for (i, v) in (0u8..32).rev().enumerate() {
+                b[i] = v;
+            }
+            b
+        };
+        let txid_hex = txid_display;
+
+        let (txid, index, txout, got) =
+            decode_host_transparent_utxo(&params, &owner_of, &utxo(p2pkh(mine), "1000", &txid_hex))
+                .expect("an owned P2PKH output is attributed to its account");
+        assert_eq!(txid, txid_internal, "显示序 hex 必须反转成内部序字节");
+        assert_eq!(index, 1);
+        assert_eq!(u64::from(txout.value()), 1000);
+        assert_eq!(got, owner);
+
+        // 宿主可以搞错 UTXO 是谁的；入库之后它就是可花费的输入了，所以归属
+        // 只认脚本反解出来的地址。
+        assert!(decode_host_transparent_utxo(
+            &params,
+            &owner_of,
+            &utxo(p2pkh(theirs), "1000", &txid_hex)
+        )
+        .is_none());
+        // 单条坏数据只丢这一条，不影响同一快照里的其他 UTXO。
+        for bad in [
+            utxo(p2pkh(mine), "1000", "zz"),
+            utxo(p2pkh(mine), "1000", "ab"),
+            utxo(p2pkh(mine), "-1", &txid_hex),
+            utxo(p2pkh(mine), "not-a-number", &txid_hex),
+            // OP_RETURN：没有可比对的地址。
+            utxo("6a".to_string(), "1000", &txid_hex),
+        ] {
+            assert!(decode_host_transparent_utxo(&params, &owner_of, &bad).is_none());
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn transparent_storage_classifies_coinbase_and_limits_spends_to_active_owner() {
+        use ::transparent::bundle::{OutPoint, TxOut};
+        use zcash_client_backend::data_api::wallet::{
+            input_selection::LockFilter, ConfirmationsPolicy,
+        };
+        use zcash_client_backend::data_api::{
+            Account as _, AccountBirthday, AccountPurpose, CoinbaseFilter, InputSource,
+        };
+        use zcash_client_backend::wallet::WalletTransparentOutput;
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::value::Zatoshis;
+        let mut db = crate::wallet::open_and_migrate("main", ":memory:").unwrap();
+        let height = BlockHeight::from_u32(2_000_000);
+        let birthday =
+            AccountBirthday::from_parts(ChainState::empty(height - 1, BlockHash([0; 32])), None);
+        let a = db
+            .import_account_ufvk(
+                "active",
+                &test_ufvk(&Network::MainNetwork, 51),
+                &birthday,
+                AccountPurpose::ViewOnly,
+                None,
+            )
+            .unwrap()
+            .id();
+        let b = db
+            .import_account_ufvk(
+                "paused",
+                &test_ufvk(&Network::MainNetwork, 52),
+                &birthday,
+                AccountPurpose::ViewOnly,
+                None,
+            )
+            .unwrap()
+            .id();
+        db.update_chain_tip(height + 200).unwrap();
+        let address_a = *db
+            .get_transparent_receivers(a, true, true)
+            .unwrap()
+            .keys()
+            .next()
+            .unwrap();
+        let address_b = *db
+            .get_transparent_receivers(b, true, true)
+            .unwrap()
+            .keys()
+            .next()
+            .unwrap();
+        let output_a = TxOut::new(
+            Zatoshis::from_u64(50_000).unwrap(),
+            address_a.script().into(),
+        );
+        let output_b = TxOut::new(
+            Zatoshis::from_u64(60_000).unwrap(),
+            address_b.script().into(),
+        );
+        let coinbase = transparent_fixture(
+            vec![OutPoint::new([0; 32], u32::MAX)],
+            vec![output_a.clone()],
+        );
+        let regular = transparent_fixture(
+            vec![OutPoint::new([3; 32], 0)],
+            vec![output_a.clone(), output_b.clone()],
+        );
+        for (tx, index, output, owner) in [
+            (&coinbase, 0, output_a.clone(), a),
+            (&regular, 0, output_a.clone(), a),
+            (&regular, 1, output_b.clone(), b),
+        ] {
+            store_account_transaction(&mut db, owner, tx, height, None).unwrap();
+            let output = WalletTransparentOutput::from_parts(
+                OutPoint::new(*tx.txid().as_ref(), index),
+                output,
+                Some(height),
+                Some(owner),
+                None,
+                None,
+            )
+            .unwrap();
+            db.put_received_transparent_utxo(&output).unwrap();
+        }
+        let spendable = |db: &Db, address| {
+            db.get_spendable_transparent_outputs(
+                address,
+                (height + 401).into(),
+                ConfirmationsPolicy::default(),
+                CoinbaseFilter::NonCoinbaseOnly,
+                LockFilter::Policy(&Default::default()),
+            )
+            .unwrap()
+        };
+        assert_eq!(spendable(&db, &address_a).len(), 1);
+        let a_input = OutPoint::new(*regular.txid().as_ref(), 0);
+        let b_input = OutPoint::new(*regular.txid().as_ref(), 1);
+        let spend = transparent_fixture(vec![a_input, b_input], vec![output_b]);
+        let b_receivers_before = db.get_transparent_receivers(b, true, true).unwrap().len();
+        store_account_transaction(&mut db, a, &spend, height + 1, None).unwrap();
+        assert!(spendable(&db, &address_a).is_empty());
+        assert_eq!(spendable(&db, &address_b).len(), 1);
+        assert_eq!(
+            db.get_transparent_receivers(b, true, true).unwrap().len(),
+            b_receivers_before
+        );
+        assert!(db
+            .get_unspent_transparent_output(
+                &OutPoint::new(*spend.txid().as_ref(), 0),
+                (height + 401).into()
+            )
+            .unwrap()
+            .is_none());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn transparent_spend_checks_acknowledge_only_complete_ranges() {
+        use ::transparent::bundle::{OutPoint, TxOut};
+        use zcash_client_backend::data_api::{
+            Account as _, AccountBirthday, AccountPurpose, InputSource,
+        };
+        use zcash_client_backend::wallet::WalletTransparentOutput;
+        use zcash_primitives::block::BlockHash;
+        use zcash_protocol::value::Zatoshis;
+        let mut db = crate::wallet::open_and_migrate("main", ":memory:").unwrap();
+        let height = BlockHeight::from_u32(2_000_000);
+        let birthday =
+            AccountBirthday::from_parts(ChainState::empty(height - 1, BlockHash([0; 32])), None);
+        let owner = db
+            .import_account_ufvk(
+                "active",
+                &test_ufvk(&Network::MainNetwork, 61),
+                &birthday,
+                AccountPurpose::ViewOnly,
+                None,
+            )
+            .unwrap()
+            .id();
+        db.update_chain_tip(height + 200).unwrap();
+        let address = *db
+            .get_transparent_receivers(owner, true, true)
+            .unwrap()
+            .keys()
+            .next()
+            .unwrap();
+        let txout = TxOut::new(Zatoshis::from_u64(50_000).unwrap(), address.script().into());
+        let parent = transparent_fixture(vec![OutPoint::new([3; 32], 0)], vec![txout.clone()]);
+        store_account_transaction(&mut db, owner, &parent, height, None).unwrap();
+        let outpoint = OutPoint::new(*parent.txid().as_ref(), 0);
+        db.put_received_transparent_utxo(
+            &WalletTransparentOutput::from_parts(
+                outpoint.clone(),
+                txout.clone(),
+                Some(height),
+                Some(owner),
+                None,
+                None,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let request_for = |db: &Db| {
+            db.transaction_data_requests()
+                .unwrap()
+                .into_iter()
+                .find_map(|request| match request {
+                    TransactionDataRequest::TransactionsInvolvingAddress(request)
+                        if request.address() == address =>
+                    {
+                        Some(request)
+                    }
+                    _ => None,
+                })
+                .unwrap()
+        };
+        store_account_transaction(&mut db, owner, &parent, height, None).unwrap();
+        db.update_chain_tip(height + 400).unwrap();
+        let initial = request_for(&db);
+        let error_stream = futures_util::stream::iter(vec![Err::<service::RawTransaction, _>(
+            net_err("testStream", "interrupted"),
+        )]);
+        assert!(
+            complete_transparent_spend_check(&mut db, owner, initial.clone(), error_stream)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            request_for(&db).block_range_start(),
+            initial.block_range_start()
+        );
+        let empty_stream =
+            futures_util::stream::iter(Vec::<Result<service::RawTransaction>>::new());
+        complete_transparent_spend_check(&mut db, owner, initial.clone(), empty_stream)
+            .await
+            .unwrap();
+        assert_eq!(
+            request_for(&db).block_range_start(),
+            initial.block_range_end().unwrap()
+        );
+        assert!(db
+            .get_unspent_transparent_output(&outpoint, (height + 401).into())
+            .unwrap()
+            .is_some());
+
+        let next = request_for(&db);
+        let mut data = vec![];
+        parent.write(&mut data).unwrap();
+        let outside_range =
+            futures_util::stream::iter(vec![Ok::<_, RuntimeError>(service::RawTransaction {
+                data,
+                height: u64::from(next.block_range_end().unwrap()),
+            })]);
+        assert!(
+            complete_transparent_spend_check(&mut db, owner, next.clone(), outside_range)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            request_for(&db).block_range_start(),
+            next.block_range_start()
+        );
+
+        let spend = transparent_fixture(vec![outpoint.clone()], vec![txout]);
+        let mut data = vec![];
+        spend.write(&mut data).unwrap();
+        let partial_stream = futures_util::stream::iter(vec![
+            Ok(service::RawTransaction {
+                data,
+                height: u64::from(next.block_range_start()),
+            }),
+            Err(net_err("testStream", "interrupted after transaction")),
+        ]);
+        assert!(
+            complete_transparent_spend_check(&mut db, owner, next, partial_stream)
+                .await
+                .is_err()
+        );
+        // A positively observed spend remains valid even when later stream data
+        // fails; missing entries alone never changed spentness above.
+        assert!(db
+            .get_unspent_transparent_output(&outpoint, (height + 401).into())
+            .unwrap()
+            .is_none());
     }
 
     fn selected_ufvks_for(

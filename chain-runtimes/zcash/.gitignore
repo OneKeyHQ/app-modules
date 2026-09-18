@@ -1,6 +1,7 @@
 /target
 /pkg
 /pkg-keys
+/zcash-wasm-manifest.json
 /vendor
 *.log
 __pycache__/

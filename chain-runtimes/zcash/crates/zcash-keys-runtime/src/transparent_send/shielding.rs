@@ -1,10 +1,12 @@
 //! Stateless shielding from an explicit, host-owned transparent UTXO catalog.
 use super::*;
 use pczt::roles::{
+    combiner::Combiner,
     creator::Creator,
     io_finalizer::IoFinalizer,
     signer::Signer,
     spend_finalizer::SpendFinalizer,
+    updater::Updater,
     verifier::{OrchardError, TransparentError, Verifier},
 };
 use zcash_note_encryption::Domain;
@@ -32,16 +34,16 @@ pub fn create(request_json: &str, seed: &[u8]) -> Result<Vec<u8>> {
     let plan = plan_transaction(parse_request(request_json)?)?;
     let key =
         AccountPrivKey::from_seed(&MAIN_NETWORK, seed, plan.account_index).map_err(failure)?;
-    create_with_key(&plan, &key)
+    create_with_public_key(&plan, &key.to_account_pubkey())
 }
 
 pub fn create_with_account_xprv(request_json: &str, account_xprv: &str) -> Result<Vec<u8>> {
     let plan = plan_transaction(parse_request(request_json)?)?;
     let key = parse_account_xprv(account_xprv, u32::from(plan.account_index))?;
-    create_with_key(&plan, &key)
+    create_with_public_key(&plan, &key.to_account_pubkey())
 }
 
-fn create_with_key(plan: &TransactionPlan, key: &AccountPrivKey) -> Result<Vec<u8>> {
+fn create_with_public_key(plan: &TransactionPlan, key: &AccountPubKey) -> Result<Vec<u8>> {
     let mut builder = Builder::new(
         MAIN_NETWORK,
         plan.target_height,
@@ -49,15 +51,18 @@ fn create_with_key(plan: &TransactionPlan, key: &AccountPrivKey) -> Result<Vec<u
             sapling_anchor: None,
             orchard_anchor: None,
             // No shielded spends: the empty anchor needs no scanned commitment tree.
-            ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+            ironwood_anchor: plan
+                .recipients
+                .iter()
+                .any(|output| matches!(output.address, RecipientAddress::Ironwood(_)))
+                .then(orchard::Anchor::empty_tree),
             orchard_padding: BundlePadding::DEFAULT,
             ironwood_padding: BundlePadding::DEFAULT,
         },
     )
     .with_expiry_height(plan.expiry_height);
     for input in &plan.inputs {
-        let secret = derive_secret_key(&key, input.path)?;
-        let pubkey = secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &secret);
+        let pubkey = derive_public_key(key, input.path)?;
         let address = TransparentAddress::from_pubkey(&pubkey);
         if address.script().to_bytes() != input.script_pub_key {
             return Err(KeysError::new(ErrorCode::KeyMismatch));
@@ -86,8 +91,7 @@ fn create_with_key(plan: &TransactionPlan, key: &AccountPrivKey) -> Result<Vec<u
         }
     }
     if let Some((_, output, path)) = &plan.change {
-        let secret = derive_secret_key(&key, *path)?;
-        let pubkey = secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &secret);
+        let pubkey = derive_public_key(key, *path)?;
         let address = TransparentAddress::from_pubkey(&pubkey);
         if address != require_transparent(output.address)? {
             return Err(KeysError::new(ErrorCode::KeyMismatch));
@@ -101,8 +105,203 @@ fn create_with_key(plan: &TransactionPlan, key: &AccountPrivKey) -> Result<Vec<u
         .map_err(failure)?;
     let pczt = Creator::build_from_parts(parts.pczt_parts)
         .ok_or_else(|| KeysError::new(ErrorCode::TransactionBuildFailed))?;
+    let mut transparent_index = 0;
+    let mut ironwood_index = 0;
+    let mut transparent_addresses = Vec::new();
+    let mut ironwood_addresses = Vec::new();
+    for output in &plan.recipients {
+        match output.address {
+            RecipientAddress::Transparent(_) => {
+                transparent_addresses.push((transparent_index, output.user_address.clone()));
+                transparent_index += 1;
+            }
+            RecipientAddress::Ironwood(_) => {
+                let action_index = parts
+                    .ironwood_meta
+                    .output_action_index(ironwood_index)
+                    .ok_or_else(mismatch)?;
+                ironwood_addresses.push((action_index, output.user_address.clone()));
+                ironwood_index += 1;
+            }
+        }
+    }
+    let pczt = Updater::new(pczt)
+        .update_transparent_with(|mut bundle| {
+            for (index, address) in transparent_addresses {
+                bundle.update_output_with(index, |mut output| {
+                    output.set_user_address(address);
+                    Ok(())
+                })?;
+            }
+            Ok(())
+        })
+        .map_err(failure)?
+        .update_ironwood_with(|mut bundle| {
+            for (index, address) in ironwood_addresses {
+                bundle.update_action_with(index, |mut action| {
+                    action.set_output_user_address(address);
+                    Ok(())
+                })?;
+            }
+            Ok(())
+        })
+        .map_err(failure)?
+        .finish();
     IoFinalizer::new(pczt)
         .finalize_io()
+        .map_err(failure)?
+        .serialize()
+        .map_err(failure)
+}
+
+/// Builds an unproved PCZT from an account xpub. Device derivation metadata
+/// covers every selected input and the transparent change output.
+pub fn create_with_account_xpub(
+    request_json: &str,
+    account_xpub: &str,
+    seed_fingerprint_hex: &str,
+) -> Result<Vec<u8>> {
+    let plan = plan_transaction(parse_request(request_json)?)?;
+    let key = parse_account_xpub(account_xpub, u32::from(plan.account_index))?;
+    let fingerprint: [u8; 32] = hex::decode(seed_fingerprint_hex)
+        .map_err(|_| KeysError::new(ErrorCode::InvalidTransactionRequest))?
+        .try_into()
+        .map_err(|_| KeysError::new(ErrorCode::InvalidTransactionRequest))?;
+    let original = create_with_public_key(&plan, &key)?;
+    let pczt = pczt::Pczt::parse(&original).map_err(failure)?;
+    let derivation = |path: DerivationPath| {
+        transparent::pczt::Bip32Derivation::parse(
+            fingerprint,
+            vec![
+                44 | (1 << 31),
+                133 | (1 << 31),
+                path.account | (1 << 31),
+                path.scope,
+                path.index,
+            ],
+        )
+        .map_err(failure)
+    };
+    let input_keys = plan
+        .inputs
+        .iter()
+        .map(|input| {
+            Ok((
+                derive_public_key(&key, input.path)?.serialize(),
+                derivation(input.path)?,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let change_key = plan
+        .change
+        .as_ref()
+        .map(|(_, _, path)| {
+            Ok((
+                derive_public_key(&key, *path)?.serialize(),
+                derivation(*path)?,
+            ))
+        })
+        .transpose()?;
+    let change_index = plan
+        .recipients
+        .iter()
+        .filter(|output| matches!(output.address, RecipientAddress::Transparent(_)))
+        .count();
+    let updated = Updater::new(pczt)
+        .update_transparent_with(|mut updater| {
+            for (index, (public, path)) in input_keys.into_iter().enumerate() {
+                updater.update_input_with(index, |mut input| {
+                    input.set_bip32_derivation(public, path);
+                    Ok(())
+                })?;
+            }
+            if let Some((public, path)) = change_key {
+                updater.update_output_with(change_index, |mut output| {
+                    output.set_bip32_derivation(public, path);
+                    Ok(())
+                })?;
+            }
+            Ok(())
+        })
+        .map_err(failure)?
+        .finish();
+    // Keep device RAM bounds explicit before asking the user to confirm.
+    let serialized = updated.serialize().map_err(failure)?;
+    if serialized.len() > 24 * 1024 {
+        return Err(KeysError::with(
+            ErrorCode::TransactionBuildFailed,
+            serde_json::json!({ "reason": "hardwarePcztTooLarge", "maxBytes": 24 * 1024 }),
+        ));
+    }
+    Ok(serialized)
+}
+
+/// Combines a device's redacted signatures with the approved original, verifies
+/// every signature against the exact request, then finalizes transparent spends.
+pub fn combine_hardware_signed(
+    request_json: &str,
+    account_xpub: &str,
+    original: &[u8],
+    signed: &[u8],
+) -> Result<Vec<u8>> {
+    let plan = plan_transaction(parse_request(request_json)?)?;
+    let key = parse_account_xpub(account_xpub, u32::from(plan.account_index))?;
+    let original = validate_original(&plan, &key, pczt::Pczt::parse(original).map_err(failure)?)?;
+    let original_signer = Signer::new(original.clone()).map_err(failure)?;
+    let combined = Combiner::new(vec![original, pczt::Pczt::parse(signed).map_err(failure)?])
+        .combine()
+        .map_err(failure)?;
+    if combined.transparent().inputs().len() != plan.inputs.len() {
+        return Err(mismatch());
+    }
+    let combined_signer = Signer::new(combined.clone()).map_err(failure)?;
+    let mut sighashes = Vec::with_capacity(plan.inputs.len());
+    for index in 0..plan.inputs.len() {
+        let approved = original_signer
+            .transparent_sighash(index)
+            .map_err(failure)?;
+        if combined_signer
+            .transparent_sighash(index)
+            .map_err(failure)?
+            != approved
+        {
+            return Err(mismatch());
+        }
+        sighashes.push(approved);
+    }
+    let secp = secp256k1::Secp256k1::verification_only();
+    let combined = Verifier::new(combined)
+        .with_transparent(|bundle| {
+            for (index, input) in bundle.inputs().iter().enumerate() {
+                let public = derive_public_key(&key, plan.inputs[index].path)
+                    .map_err(TransparentError::Custom)?;
+                let signatures = input.partial_signatures();
+                let signature = signatures
+                    .get(&public.serialize())
+                    .ok_or_else(|| TransparentError::Custom(mismatch()))?;
+                if signatures.len() != 1
+                    || signature.last() != Some(&1)
+                    || input.script_sig().is_some()
+                    || *input.sighash_type() != transparent::sighash::SighashType::ALL
+                {
+                    return Err(TransparentError::Custom(mismatch()));
+                }
+                let signature =
+                    secp256k1::ecdsa::Signature::from_der(&signature[..signature.len() - 1])
+                        .map_err(|_| TransparentError::Custom(mismatch()))?;
+                secp.verify_ecdsa(
+                    &secp256k1::Message::from_digest(sighashes[index]),
+                    &signature,
+                    &public,
+                )
+                .map_err(|_| TransparentError::Custom(mismatch()))?;
+            }
+            Ok(())
+        })
+        .map_err(failure)?
+        .finish();
+    SpendFinalizer::new(combined)
+        .finalize_spends()
         .map_err(failure)?
         .serialize()
         .map_err(failure)
@@ -199,10 +398,15 @@ fn validate_ironwood(bundle: &orchard::pczt::Bundle, plan: &TransactionPlan) -> 
 
 fn validate_original(
     plan: &TransactionPlan,
-    key: &AccountPrivKey,
+    key: &AccountPubKey,
     pczt: pczt::Pczt,
 ) -> Result<pczt::Pczt> {
     let global = pczt.global();
+    let has_ironwood = plan
+        .recipients
+        .iter()
+        .any(|output| matches!(output.address, RecipientAddress::Ironwood(_)));
+    let expected_anchor = has_ironwood.then(|| orchard::Anchor::empty_tree().to_bytes());
     if *global.tx_version() != zcash_protocol::constants::V6_TX_VERSION
         || *global.version_group_id() != zcash_protocol::constants::V6_VERSION_GROUP_ID
         || *global.consensus_branch_id() != u32::from(BranchId::Nu6_3)
@@ -211,14 +415,16 @@ fn validate_original(
         || !pczt.sapling().spends().is_empty()
         || !pczt.sapling().outputs().is_empty()
         || !pczt.orchard().actions().is_empty()
-        || *pczt.ironwood().anchor() != Some(orchard::Anchor::empty_tree().to_bytes())
+        || *pczt.ironwood().anchor() != expected_anchor
+        || (!has_ironwood
+            && (!pczt.ironwood().actions().is_empty()
+                || *pczt.ironwood().value_sum() != (0, false)))
         || pczt.transparent().inputs().len() != plan.inputs.len()
     {
         return Err(mismatch());
     }
     for (input, planned) in pczt.transparent().inputs().iter().zip(&plan.inputs) {
-        let secret = derive_secret_key(key, planned.path)?;
-        let public = secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &secret);
+        let public = derive_public_key(key, planned.path)?;
         if input.prevout_txid() != planned.txid.as_ref()
             || *input.prevout_index() != planned.request.vout
             || *input.value() != u64::from(planned.value)
@@ -242,8 +448,7 @@ fn validate_original(
         .collect::<Vec<_>>();
     if let Some((_, change, path)) = &plan.change {
         let address = require_transparent(change.address)?;
-        let secret = derive_secret_key(key, *path)?;
-        let public = secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &secret);
+        let public = derive_public_key(key, *path)?;
         if TransparentAddress::from_pubkey(&public) != address {
             return Err(mismatch());
         }
@@ -273,9 +478,14 @@ fn validate_original(
             }
             Ok(())
         })
-        .map_err(failure)?
-        .with_ironwood(|bundle| validate_ironwood(bundle, plan).map_err(OrchardError::Custom))
         .map_err(failure)?;
+    let verified = if has_ironwood {
+        verified
+            .with_ironwood(|bundle| validate_ironwood(bundle, plan).map_err(OrchardError::Custom))
+            .map_err(failure)?
+    } else {
+        verified
+    };
     Ok(verified.finish())
 }
 
@@ -306,7 +516,11 @@ fn sign_with_key(
     original: &[u8],
     pczt: &[u8],
 ) -> Result<Vec<u8>> {
-    let original = validate_original(plan, key, pczt::Pczt::parse(original).map_err(failure)?)?;
+    let original = validate_original(
+        plan,
+        &key.to_account_pubkey(),
+        pczt::Pczt::parse(original).map_err(failure)?,
+    )?;
     let pczt = pczt::Pczt::parse(pczt).map_err(failure)?;
     // V6 deliberately excludes anchors from the effects hash (ZIP 374).
     if pczt.ironwood().anchor() != original.ironwood().anchor()
@@ -402,6 +616,202 @@ mod tests {
                 "address": transparent_address(1, 0).to_zcash_address(NetworkType::Main).to_string(),
                 "derivationPath": "m/44'/133'/0'/1/0" }) },
         })
+    }
+
+    fn account_xpub() -> String {
+        let key = AccountPrivKey::from_seed(&MAIN_NETWORK, &SEED, AccountId::ZERO).unwrap();
+        let mut payload = vec![0x04, 0x88, 0xb2, 0x1e, 3, 0, 0, 0, 0];
+        payload.extend_from_slice(&(1_u32 << 31).to_be_bytes());
+        payload.extend_from_slice(&key.to_account_pubkey().serialize());
+        bs58::encode(payload).with_check().into_string()
+    }
+
+    fn simulated_device_signature(original: &[u8]) -> Vec<u8> {
+        simulated_device_signatures(original, 1)
+    }
+
+    fn simulated_device_signatures(original: &[u8], input_count: usize) -> Vec<u8> {
+        let key = AccountPrivKey::from_seed(&MAIN_NETWORK, &SEED, AccountId::ZERO).unwrap();
+        let mut signer = Signer::new(pczt::Pczt::parse(original).unwrap()).unwrap();
+        for index in 0..input_count {
+            signer
+                .sign_transparent(
+                    index,
+                    &derive_secret_key(
+                        &key,
+                        DerivationPath {
+                            account: 0,
+                            scope: 0,
+                            index: 0,
+                        },
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        pczt::roles::redactor::Redactor::new(signer.finish())
+            .redact_transparent_with(|mut bundle| {
+                bundle.redact_inputs(|mut input| input.clear_bip32_derivation());
+                bundle.redact_outputs(|mut output| output.clear_bip32_derivation());
+            })
+            .finish()
+            .serialize()
+            .unwrap()
+    }
+
+    #[test]
+    fn hardware_metadata_matches_each_external_output_after_action_randomization() {
+        let mut request = request(false);
+        request["recipients"] = json!([
+            { "address": recipient(0), "amountZat": "10000" },
+            { "address": recipient(1), "amountZat": "10000" },
+            { "address": recipient(0), "amountZat": "10000" },
+            { "address": transparent_address(0, 9).to_zcash_address(NetworkType::Main).to_string(), "amountZat": "10000" },
+        ]);
+        for _ in 0..4 {
+            let original =
+                create_with_account_xpub(&request.to_string(), &account_xpub(), &"01".repeat(32))
+                    .unwrap();
+            let pczt = pczt::Pczt::parse(&original).unwrap();
+            Verifier::new(pczt)
+                .with_transparent::<KeysError, _>(|bundle| {
+                    assert_eq!(bundle.inputs()[0].bip32_derivation().len(), 1);
+                    let external = &bundle.outputs()[0];
+                    let address = require_transparent(
+                        parse_recipient_address(external.user_address().as_ref().unwrap()).unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        address.script().to_bytes(),
+                        external.script_pubkey().to_bytes()
+                    );
+                    assert!(external.bip32_derivation().is_empty());
+                    assert_eq!(bundle.outputs()[1].bip32_derivation().len(), 1);
+                    Ok(())
+                })
+                .unwrap()
+                .with_ironwood::<KeysError, _>(|bundle| {
+                    let mut displayed = Vec::new();
+                    for action in bundle.actions() {
+                        let output = action.output();
+                        if output.value().unwrap().inner() == 0 {
+                            continue;
+                        }
+                        let address = output.user_address().as_ref().unwrap();
+                        let RecipientAddress::Ironwood(receiver) =
+                            parse_recipient_address(address).unwrap()
+                        else {
+                            panic!("expected Ironwood recipient");
+                        };
+                        assert_eq!(Some(receiver), *output.recipient());
+                        displayed.push(address.clone());
+                    }
+                    displayed.sort();
+                    let mut expected = vec![recipient(0), recipient(1), recipient(0)];
+                    expected.sort();
+                    assert_eq!(displayed, expected);
+                    Ok(())
+                })
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn hardware_requires_all_selected_inputs_and_rejects_invalid_public_material() {
+        let mut request = request(false);
+        let mut second = request["utxos"][0].clone();
+        second["vout"] = 1.into();
+        request["utxos"].as_array_mut().unwrap().push(second);
+        let mut outpoint = request["selectedOutpoints"][0].clone();
+        outpoint["vout"] = 1.into();
+        request["selectedOutpoints"]
+            .as_array_mut()
+            .unwrap()
+            .push(outpoint);
+        let request = request.to_string();
+        let original =
+            create_with_account_xpub(&request, &account_xpub(), &"01".repeat(32)).unwrap();
+        assert!(combine_hardware_signed(
+            &request,
+            &account_xpub(),
+            &original,
+            &simulated_device_signatures(&original, 1)
+        )
+        .is_err());
+        let signed = simulated_device_signatures(&original, 2);
+        let finalized =
+            combine_hardware_signed(&request, &account_xpub(), &original, &signed).unwrap();
+        assert!(combine_hardware_signed(&request, &account_xpub(), &original, &finalized).is_err());
+        let parsed = pczt::Pczt::parse(&signed).unwrap();
+        let mut signature = Vec::new();
+        Verifier::new(parsed)
+            .with_transparent::<KeysError, _>(|bundle| {
+                signature = bundle.inputs()[0]
+                    .partial_signatures()
+                    .values()
+                    .next()
+                    .unwrap()
+                    .clone();
+                Ok(())
+            })
+            .unwrap();
+        let position = signed
+            .windows(signature.len())
+            .position(|bytes| bytes == signature.as_slice())
+            .unwrap();
+        let mut corrupted = signed.clone();
+        corrupted[position + signature.len() - 3] ^= 1;
+        assert!(combine_hardware_signed(&request, &account_xpub(), &original, &corrupted).is_err());
+        assert!(create_with_account_xpub(&request, "not-an-xpub", &"01".repeat(32)).is_err());
+        assert!(create_with_account_xpub(&request, &account_xpub(), "01").is_err());
+    }
+
+    #[test]
+    fn hardware_public_construction_and_signature_validation_cover_both_destinations() {
+        for transparent_destination in [false, true] {
+            for send_max in [false, true] {
+                let mut request = request(send_max);
+                if transparent_destination {
+                    request["recipients"][0]["address"] = transparent_address(0, 9)
+                        .to_zcash_address(NetworkType::Main)
+                        .to_string()
+                        .into();
+                }
+                let request_json = request.to_string();
+                let original =
+                    create_with_account_xpub(&request_json, &account_xpub(), &"01".repeat(32))
+                        .unwrap();
+                let signed = simulated_device_signature(&original);
+                let finalized =
+                    combine_hardware_signed(&request_json, &account_xpub(), &original, &signed)
+                        .unwrap();
+                Verifier::new(pczt::Pczt::parse(&finalized).unwrap())
+                    .with_transparent::<KeysError, _>(|bundle| {
+                        assert!(bundle.inputs()[0].script_sig().is_some());
+                        Ok(())
+                    })
+                    .unwrap();
+                let mut changed_request = request.clone();
+                changed_request["expiryHeight"] = 3_500_021.into();
+                let changed = simulated_device_signature(
+                    &create(&changed_request.to_string(), &SEED).unwrap(),
+                );
+                assert!(combine_hardware_signed(
+                    &request_json,
+                    &account_xpub(),
+                    &original,
+                    &changed
+                )
+                .is_err());
+                assert!(combine_hardware_signed(
+                    &request_json,
+                    &account_xpub(),
+                    &original,
+                    &original
+                )
+                .is_err());
+            }
+        }
     }
 
     fn mutate(bytes: &[u8], change: impl FnOnce(&mut Value)) -> Vec<u8> {

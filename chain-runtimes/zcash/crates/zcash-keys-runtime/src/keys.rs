@@ -71,7 +71,10 @@ pub fn ufvk_from_seed_bytes(params: Network, seed: &[u8], account_index: u32) ->
 fn receiver_policy(name: &str) -> Result<zcash_keys::keys::UnifiedAddressRequest> {
     use zcash_keys::keys::UnifiedAddressRequest as R;
     match name {
-        "" | "all" => Ok(R::ALLOW_ALL),
+        // 空串不再当作 `"all"`。缺省最省事的那个取值恰好是隐私上最贵的一个：
+        // 带 transparent receiver 的 UA 会把用户的透明活动和屏蔽活动绑在
+        // 同一个字符串里，而调用方什么都没写，也就什么都没同意。
+        "all" => Ok(R::ALLOW_ALL),
         "shielded" => Ok(R::SHIELDED),
         "orchard" => Ok(R::ORCHARD),
         other => Err(KeysError::with(
@@ -91,19 +94,6 @@ pub fn unified_address_with(network: &str, ufvk_str: &str, policy: &str) -> Resu
 
     let (addr, _) = ufvk
         .default_address(receiver_policy(policy)?)
-        .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(format!("{e:?}")))?;
-
-    Ok(addr.encode(&params))
-}
-
-/// 从 UFVK 取默认统一地址（UA）。不涉及任何私钥。
-pub fn unified_address(network: &str, ufvk_str: &str) -> Result<String> {
-    let params = parse_network(network)?;
-    let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
-        .map_err(|e| KeysError::new(ErrorCode::InvalidUfvk).detail(e))?;
-
-    let (addr, _) = ufvk
-        .default_address(zcash_keys::keys::UnifiedAddressRequest::ALLOW_ALL)
         .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(format!("{e:?}")))?;
 
     Ok(addr.encode(&params))
@@ -189,7 +179,7 @@ mod tests {
         let ufvk = ufvk_from_mnemonic("test", TEST_MNEMONIC, 0).unwrap();
         let t = transparent_address("test", &ufvk).unwrap();
         assert!(t.starts_with("tm"), "testnet t 地址前缀应为 tm，实际 {t}");
-        let ua = unified_address("test", &ufvk).unwrap();
+        let ua = unified_address_with("test", &ufvk, "all").unwrap();
         assert!(ua.starts_with("utest"), "UA 前缀应为 utest");
         assert_ne!(t, ua, "t 地址与 UA 是两种呈现，不该相同");
     }
@@ -204,7 +194,21 @@ mod tests {
         let hex_key = transparent_account_pubkey("main", &ufvk).unwrap();
         assert_eq!(hex_key.len(), 65 * 2);
         let tag = &hex_key[64..66];
-        assert!(tag == "02" || tag == "03", "压缩公钥前缀应为 02/03，实际 {tag}");
+        assert!(
+            tag == "02" || tag == "03",
+            "压缩公钥前缀应为 02/03，实际 {tag}"
+        );
+    }
+
+    /// 省略 / 留空 receiver 策略曾经等于选中 `"all"` —— 那是隐私上最贵的取值，
+    /// 而调用方什么都没写，也就什么都没同意。
+    #[test]
+    fn receiver_policy_has_no_default() {
+        assert!(receiver_policy("all").is_ok());
+        assert!(receiver_policy("shielded").is_ok());
+        assert!(receiver_policy("orchard").is_ok());
+        assert!(receiver_policy("").is_err());
+        assert!(receiver_policy("transparent").is_err());
     }
 
     #[test]
@@ -228,7 +232,7 @@ mod tests {
             "testnet UFVK 前缀应为 uview，实际 {ufvk}"
         );
 
-        let addr = unified_address("test", &ufvk).expect("应能取地址");
+        let addr = unified_address_with("test", &ufvk, "all").expect("应能取地址");
         assert!(
             addr.starts_with("utest"),
             "testnet UA 前缀应为 utest，实际 {addr}"

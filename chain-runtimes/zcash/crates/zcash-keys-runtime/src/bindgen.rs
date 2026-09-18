@@ -20,20 +20,18 @@ pub fn ufvk_from_mnemonic(
 
 /// 从 UFVK 取统一地址。纯公开材料，不涉及私钥。
 ///
-/// `receiverPolicy` 决定 UA 里包含哪些 receiver：`"all"`（默认）/ `"shielded"` /
-/// `"orchard"`。**这是隐私策略，由宿主决定** —— 带 transparent receiver 的地址
-/// 别人可以用公开方式付给你，代价是把你的透明与屏蔽活动关联起来。
+/// `receiverPolicy` 决定 UA 里包含哪些 receiver：`"all"` / `"shielded"` /
+/// `"orchard"`。**这是隐私策略，由宿主决定，没有缺省值** —— 带 transparent
+/// receiver 的地址别人可以用公开方式付给你，代价是把你的透明与屏蔽活动关联
+/// 起来。省略这个参数曾经等于选中 `"all"`，也就是那个代价最大的取值：调用方
+/// 什么都没写，却替用户做了这个决定。
 #[wasm_bindgen(js_name = unifiedAddress)]
 pub fn unified_address(
     network: &str,
     ufvk: &str,
-    receiver_policy: Option<String>,
+    receiver_policy: &str,
 ) -> Result<String, JsValue> {
-    Ok(keys::unified_address_with(
-        network,
-        ufvk,
-        receiver_policy.as_deref().unwrap_or("all"),
-    )?)
+    Ok(keys::unified_address_with(network, ufvk, receiver_policy)?)
 }
 
 /// 给 PCZT 签名。
@@ -159,6 +157,8 @@ pub fn keys_capabilities() -> String {
             "quote": true,
             "buildWithSeed": true,
             "buildWithAccountXprv": true,
+            "createWithAccountXpub": true,
+            "combineHardwareSigned": true,
         },
         "transparentShield": {
             "createWithSeed": transparent_send::shielding::SHIELD_CREATE_WITH_SEED,
@@ -168,6 +168,36 @@ pub fn keys_capabilities() -> String {
         },
     })
     .to_string()
+}
+
+/// Creates a device-signable PCZT from public account material without wallet storage.
+#[wasm_bindgen(js_name = transparentTxCreateWithAccountXpub)]
+pub fn transparent_tx_create_with_account_xpub(
+    request_json: &str,
+    account_xpub: &str,
+    seed_fingerprint_hex: &str,
+) -> Result<Vec<u8>, JsValue> {
+    Ok(transparent_send::shielding::create_with_account_xpub(
+        request_json,
+        account_xpub,
+        seed_fingerprint_hex,
+    )?)
+}
+
+/// Validates and finalizes device signatures against the approved transaction.
+#[wasm_bindgen(js_name = transparentTxCombineHardwareSigned)]
+pub fn transparent_tx_combine_hardware_signed(
+    request_json: &str,
+    account_xpub: &str,
+    original: Vec<u8>,
+    signed: Vec<u8>,
+) -> Result<Vec<u8>, JsValue> {
+    Ok(transparent_send::shielding::combine_hardware_signed(
+        request_json,
+        account_xpub,
+        &original,
+        &signed,
+    )?)
 }
 
 /// 本 crate 锁定的官方依赖版本。

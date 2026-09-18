@@ -13,7 +13,7 @@ use crate::history::{display_order_to_internal, hex_display_order, uuid_blob};
 use crate::wallet::Db;
 
 const MIGRATION_ID: Uuid = Uuid::from_u128(0x5be0af90_63f4_43ea_ae65_8207c84e46dd);
-const TABLE: &str = "ext_onekey_tx_state";
+pub(crate) const TABLE: &str = "ext_onekey_tx_state";
 
 pub struct Migration;
 

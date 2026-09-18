@@ -50,24 +50,6 @@ fn db_err(e: impl std::fmt::Display) -> RuntimeError {
     RuntimeError::with(ErrorCode::DatabaseError, json!({ "operation": "history" })).detail(e)
 }
 
-/// Whether deleting this account would discard a locally created outgoing
-/// transaction that has not reached a terminal chain state yet.
-pub fn has_unsettled_outgoing(conn: &rusqlite::Connection, account_uuid: &str) -> Result<bool> {
-    conn.query_row(
-        "SELECT EXISTS(
-           SELECT 1
-           FROM v_transactions
-           WHERE account_uuid = ?1
-             AND mined_height IS NULL
-             AND expired_unmined = 0
-             AND COALESCE(total_spent, 0) > 0
-         )",
-        rusqlite::params![uuid_blob(account_uuid)?],
-        |row| row.get(0),
-    )
-    .map_err(db_err)
-}
-
 // Keep the list and detail endpoints on the exact same projection. `row_to_json`
 // intentionally has one shape; adding a field to only one query would otherwise
 // compile and then fail when the other endpoint reads a missing column at runtime.

@@ -114,27 +114,27 @@ Current Shielded Output Pool。它不消费任何已有私密池，也不消费 
 
 _Avoid_: Shield、归集（单独使用时无法表达来源、目标和“全部”语义）
 
-## Internal Transparent Spending（内测透明花费）
+## Transparent-first Preference（优先使用透明资金）
 
-wallet runtime 接受普通透明输入的底层能力。它不属于 OneKey 产品的正常发送路径；
-App 始终传入关闭值，能力的开启分支只能由 runtime 自身的隔离测试覆盖，不能出现在
-普通 Debug UI 或可持久化设置中。
+账户允许向受支持私密目的地址付款时优先使用符合条件的透明资金，再由选定私池补足
+差额的偏好。它不是自动屏蔽，也不代表透明资金来源因此被隐藏。
 
-_Avoid_: Debug 开关（Developer Mode 在正式构建中仍可能启用，不等价于构建授权）
+_Avoid_: 内测专属透明花费、自动 Shield All
+
+产品定位与默认关闭的决定见
+[App ADR 0007](../../../app-monorepo/packages/kit-bg/src/vaults/impls/zcash/docs/adr/0007-align-payment-capabilities-and-balance-language.md)。
 
 ## Transparent Mode（透明模式）
 
-账户只使用 Zcash 透明地址和 OneKey 后端数据，不注册 UFVK、不扫描私密池，也不加载
-wallet runtime。查看余额和历史不需要任何 Zcash WASM；软件发送按需加载无数据库、
-无网络、无扫描器的轻量 Zcash signer。
+账户展示透明资金与活动，并使用透明来源付款，不启用私密资金发现或扫描。付款可以
+面向透明地址或受支持的 Unified Address；私密收款目标不改变付款来源的公开属性。
 
 _Avoid_: Privacy disabled（容易把产品模式误解为一次临时暂停）
 
 ## Privacy Mode（隐私模式）
 
-账户允许注册 UFVK，并由共享 wallet runtime 扫描支持的私密池。关闭该模式必须停止
-该 UFVK 的 trial decryption，而不只是隐藏 UI。当前支持对象是软件 HD 账户；导入
-助记词仍属于 HD，单私钥账户和观察账户不属于 Privacy Mode。
+账户选择启用受支持私密资金与活动的发现和展示。启用不等于历史发现已经完成；
+支持的账户、设备及发送组合由产品契约规定，不能由该模式名称自行推导。
 
 ## Privacy Pause（暂停隐私处理）
 

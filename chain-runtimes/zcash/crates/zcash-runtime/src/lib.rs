@@ -26,6 +26,7 @@ pub mod account;
 pub mod blockcache;
 pub mod clock;
 pub mod error;
+pub mod guard;
 pub mod history;
 pub mod send;
 pub mod stats;

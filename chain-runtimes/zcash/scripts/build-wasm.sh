@@ -67,3 +67,9 @@ echo "==> 构建 storage benchmark"
 echo "==> 构建 onekey-zcash-keys"
 (cd "${ROOT}/crates/zcash-keys-runtime" && wasm-pack build --mode no-install --locked --target web --out-dir "${ROOT}/pkg-keys" --release)
 echo "产物：$(du -h "${ROOT}"/pkg/*.wasm "${ROOT}"/pkg-keys/*.wasm "${ROOT}"/pkg/storage-benchmark/*.wasm | tr '\n' ' ')"
+
+if [ "${OUT}" = "${ROOT}/pkg" ]; then
+  python3 "${ROOT}/scripts/artifact-manifest.py" write
+else
+  echo "Custom runtime output: no complete artifact manifest produced."
+fi

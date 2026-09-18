@@ -1704,6 +1704,7 @@ dependencies = [
  "sapling-crypto",
  "schemerz",
  "schemerz-rusqlite",
+ "secp256k1",
  "serde",
  "serde_json",
  "sqlite-wasm-rs",

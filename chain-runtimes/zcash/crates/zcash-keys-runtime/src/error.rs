@@ -55,6 +55,8 @@ pub enum ErrorCode {
     DustChange,
     /// An account-level BIP-44 xprv is malformed or has unexpected metadata.
     InvalidAccountXprv,
+    /// An account-level BIP-44 xpub is malformed or has unexpected metadata.
+    InvalidAccountXpub,
     /// Transparent transaction construction or signing failed.
     TransactionBuildFailed,
     /// The signed transaction could not be serialized.
@@ -88,6 +90,7 @@ impl ErrorCode {
             InsufficientFunds => "INSUFFICIENT_FUNDS",
             DustChange => "DUST_CHANGE",
             InvalidAccountXprv => "INVALID_ACCOUNT_XPRV",
+            InvalidAccountXpub => "INVALID_ACCOUNT_XPUB",
             TransactionBuildFailed => "TRANSACTION_BUILD_FAILED",
             TransactionSerializeFailed => "TRANSACTION_SERIALIZE_FAILED",
         }
@@ -206,6 +209,7 @@ mod tests {
             InsufficientFunds,
             DustChange,
             InvalidAccountXprv,
+            InvalidAccountXpub,
             TransactionBuildFailed,
             TransactionSerializeFailed,
         ];
