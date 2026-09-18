@@ -96,6 +96,10 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
 
     private static let maxMessageLength = 4096
 
+    // Log retention, mirroring Android's MAX_FILE_SIZE / MAX_HISTORY / TOTAL_SIZE_CAP.
+    private static let maxLogFileSize: UInt64 = 20 * 1024 * 1024  // 20 MB
+    private static let maxLogFiles: UInt = 7                      // 1 active + 6 archived
+
     private struct TokenBucket {
         let ratePerSecond: Double
         let burstCapacity: Double
@@ -164,11 +168,19 @@ private class OneKeyLogFileManager: DDLogFileManagerDefault {
         // NOTE: DDLogFileManagerDefault.maximumNumberOfLogFiles counts ALL log files
         // including the current active file (app-latest.log).
         // Set to 7 = 1 active + 6 archived, matching Android MAX_HISTORY=6.
-        fileManager.maximumNumberOfLogFiles = 7
+        fileManager.maximumNumberOfLogFiles = OneKeyLog.maxLogFiles
+        // logFilesDiskQuota defaults to 20 MB — the size of one full log file. The
+        // first roll then exceeds the quota, and because the rolled file is already
+        // archived, cleanup deletes every log file (the "don't delete the active
+        // file" guard only covers unarchived ones) and the logger writes nothing for
+        // the rest of the session. Size the quota after the retention above so a full
+        // set of files fits, matching Android's TOTAL_SIZE_CAP.
+        fileManager.logFilesDiskQuota =
+            UInt64(OneKeyLog.maxLogFiles) * OneKeyLog.maxLogFileSize
 
         let logger = DDFileLogger(logFileManager: fileManager)
         logger.rollingFrequency = 86400       // daily rolling
-        logger.maximumFileSize = 20_971_520   // 20 MB
+        logger.maximumFileSize = OneKeyLog.maxLogFileSize
         logger.logFormatter = OneKeyLogFormatter()
 
         DDLog.add(logger)

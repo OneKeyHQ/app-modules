@@ -45,6 +45,7 @@ import { AppUpdateTestPage } from './pages/AppUpdateTestPage';
 import { RangeDownloaderTestPage } from './pages/RangeDownloaderTestPage';
 import { BundleCryptoTestPage } from './pages/BundleCryptoTestPage';
 import { ZipArchiveTestPage } from './pages/ZipArchiveTestPage';
+import { ImageCropPickerTestPage } from './pages/ImageCropPickerTestPage';
 import { OtaPipelineTestPage } from './pages/OtaPipelineTestPage';
 import { ApkOtaPipelineTestPage } from './pages/ApkOtaPipelineTestPage';
 import { ChartWebViewTestPage } from './pages/ChartWebViewTestPage';
@@ -99,6 +100,7 @@ export type RootStackParamList = {
   RangeDownloader: undefined;
   BundleCrypto: undefined;
   ZipArchive: undefined;
+  ImageCropPicker: undefined;
   ScrollGuard: undefined;
   SegmentSlider: undefined;
   Skeleton: undefined;
@@ -204,6 +206,13 @@ const modules: {
     description:
       'unzip, getUncompressedSize, isPasswordProtected for OTA bundle archives',
     icon: '🗜️',
+  },
+  {
+    screen: 'ImageCropPicker',
+    name: 'Image Crop Picker',
+    description:
+      'Permission-free photo picker with cropping for avatars and wallpapers',
+    icon: '🖼️',
   },
   {
     screen: 'CloudKit',
@@ -577,6 +586,11 @@ export function AppNavigator() {
         name="ZipArchive"
         component={ZipArchiveTestPage}
         options={{ title: 'Zip Archive' }}
+      />
+      <Stack.Screen
+        name="ImageCropPicker"
+        component={ImageCropPickerTestPage}
+        options={{ title: 'Image Crop Picker' }}
       />
       <Stack.Screen
         name="OtaPipeline"

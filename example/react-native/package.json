@@ -28,6 +28,7 @@
     "@onekeyfe/react-native-dns-lookup": "workspace:*",
     "@onekeyfe/react-native-get-random-values": "workspace:*",
     "@onekeyfe/react-native-image": "workspace:*",
+    "@onekeyfe/react-native-image-crop-picker": "workspace:*",
     "@onekeyfe/react-native-keychain-module": "workspace:*",
     "@onekeyfe/react-native-lite-card": "workspace:*",
     "@onekeyfe/react-native-native-list": "workspace:*",
