@@ -160,8 +160,8 @@ pub fn balance_json(db: &Db, account_uuid: &str, policy: ConfirmationsPolicy) ->
         "ironwood": pool(balances.ironwood_balance()),
 
         // 透明余额也分开报：coinbase 有不同的成熟规则，而且只能走
-        // `propose_shielding_coinbase` 屏蔽 —— `pcztShield` 用的是
-        // NonCoinbaseOnly，屏蔽不到它。并成一个数就看不出这个差别了。
+        // `propose_shielding_coinbase` 屏蔽，宿主的屏蔽路径碰不到它。
+        // 并成一个数就看不出这个差别了。
         "transparentRegular": pool(balances.unshielded_regular_balance()),
         "transparentCoinbase": pool(balances.unshielded_coinbase_balance()),
 
