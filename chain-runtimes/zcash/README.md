@@ -137,7 +137,8 @@ OPFS 仍受浏览器 origin、配额和清理策略约束；App 内嵌页面的�
 - [x] **端到端发送并广播上链**（testnet）：水龙头 0.1 TAZ 落 Ironwood 池 →
       `pcztCreate` → `pcztProve`（Halo2 约 19s）→ `pcztSign` → `pcztSend` →
       `broadcastTransaction`，链上确认。逐笔手续费对账到 zatoshi
-- [x] **透明 ↔ 屏蔽双向**：隐私→透明地址、透明→隐私（`pcztShield`，含**透明输入签名**）、
+- [x] **透明 ↔ 屏蔽双向**：隐私→透明地址、透明→隐私（当时走 `pcztShield`，含**透明
+      输入签名**；该 API 已移除，屏蔽改由 keys runtime 无状态构造）、
       透明→透明（需 `spendTransparent`），全部链上确认
 - [x] **多账户共库**：acct0/1/2 同一个库，扫一遍服务全部账户
 
@@ -204,7 +205,6 @@ deleteWallet(dbName)                     擦掉本地缓存库（可重建），
 
 pcztQuote(...)                           只报价，不建交易、不锁 note
 pcztCreate(...) → { pcztHex, reservationId }   构造并锁住选中的 note
-pcztShield(...) → { pcztHex, reservationId }   屏蔽全部透明余额（无收款方、无金额）
 releaseReservation(id)                   用户取消时放开锁，幂等
 pcztProve(pczt, circuitVersion)  →  keys.pcztSign  →  pcztSend(pczt, reservationId) → txid
 broadcastTransaction(txid)               真正发出去（pcztSend 只落库，不发网络）

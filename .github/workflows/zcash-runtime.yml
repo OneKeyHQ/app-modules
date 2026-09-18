@@ -43,6 +43,8 @@ jobs:
           CC_wasm32_unknown_unknown: /usr/bin/clang
           AR_wasm32_unknown_unknown: /usr/bin/llvm-ar
         run: bash scripts/build-wasm.sh --offline
+      - name: Verify complete artifact provenance
+        run: python3 scripts/artifact-manifest.py verify --expected-revision "${{ github.sha }}"
       - uses: actions/upload-artifact@v4
         with:
           name: zcash-wasm-${{ github.sha }}
@@ -50,3 +52,4 @@ jobs:
           path: |
             chain-runtimes/zcash/pkg/
             chain-runtimes/zcash/pkg-keys/
+            chain-runtimes/zcash/zcash-wasm-manifest.json
