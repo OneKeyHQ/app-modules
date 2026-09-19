@@ -2269,7 +2269,30 @@ final class NativeListFlowLayout: UICollectionViewFlowLayout {
 
   override func shouldInvalidateLayout(forBoundsChange newBounds: CGRect) -> Bool {
     if scrollDirection == .horizontal, collectionView?.bounds.size != newBounds.size { return true }
+    if crossAxisLengthChanged(to: newBounds) { return true }
     return !stickyItemIndexes.isEmpty || super.shouldInvalidateLayout(forBoundsChange: newBounds)
+  }
+
+  // OneKey patch: sizeForItemAt sizes rows from the list's cross-axis length, but
+  // the context UIKit builds for a bounds change does not query the delegate again.
+  // A list resized after its first layout (iPad rotation, a sheet that settles at its
+  // final width) kept its old row size, so a narrower row was centered in the list.
+  override func invalidationContext(
+    forBoundsChange newBounds: CGRect
+  ) -> UICollectionViewLayoutInvalidationContext {
+    let context = super.invalidationContext(forBoundsChange: newBounds)
+    if crossAxisLengthChanged(to: newBounds),
+       let flowContext = context as? UICollectionViewFlowLayoutInvalidationContext {
+      flowContext.invalidateFlowLayoutDelegateMetrics = true
+    }
+    return context
+  }
+
+  private func crossAxisLengthChanged(to newBounds: CGRect) -> Bool {
+    guard let collectionView else { return false }
+    return scrollDirection == .horizontal
+      ? collectionView.bounds.height != newBounds.height
+      : collectionView.bounds.width != newBounds.width
   }
 
   override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? {
