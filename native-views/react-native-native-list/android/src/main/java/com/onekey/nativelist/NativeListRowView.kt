@@ -1348,6 +1348,7 @@ internal class NativeListRowView(
     trailingColumn.gravity = Gravity.END or Gravity.CENTER_VERTICAL
     trailingColumn.orientation = VERTICAL
     trailingColumn.layoutParams = wrap()
+    trailingColumn.clipChildren = true
     trailingViews.forEach {
       it.visibility = GONE
       it.setTag(com.facebook.react.R.id.react_test_id, null)
@@ -3858,6 +3859,11 @@ internal class NativeListRowView(
         marginStart = -dp(7)
         marginEnd = -dp(7)
       }
+      // The frame overhangs its 24dp layout slot by 7dp on each side. The column
+      // clips children and the row clips to padding by default, which would cut
+      // the pressed circle down to a 24dp-wide pill.
+      trailingColumn.clipChildren = false
+      clipToPadding = false
       if (isSourceMenu && data.optString("actionKey").isNotEmpty()) {
         icon.background = StateListDrawable().apply {
           addState(
