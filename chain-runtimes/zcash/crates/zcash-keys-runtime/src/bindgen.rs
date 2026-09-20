@@ -5,7 +5,7 @@
 use wasm_bindgen::prelude::*;
 use zeroize::Zeroizing;
 
-use crate::{keys, sign, transparent_send};
+use crate::{keys, sign, transparent_prevouts, transparent_send};
 
 /// Check recipient encoding, network, and supported receivers locally.
 #[wasm_bindgen(js_name = validateAddress)]
@@ -115,6 +115,12 @@ pub fn transparent_account_pubkey_from_ufvk(network: &str, ufvk: &str) -> Result
 pub fn seed_fingerprint(seed: Vec<u8>) -> Result<String, JsValue> {
     let seed = Zeroizing::new(seed);
     Ok(keys::seed_fingerprint(&seed)?)
+}
+
+/// Parses and verifies previous transactions without loading wallet state.
+#[wasm_bindgen(js_name = parseTransparentTransactions)]
+pub fn parse_transparent_transactions(request_json: &str) -> Result<String, JsValue> {
+    Ok(transparent_prevouts::parse_json(request_json)?)
 }
 
 /// Quotes a mainnet V6 transparent transaction without loading wallet state.

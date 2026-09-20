@@ -14,6 +14,7 @@
 pub mod error;
 pub mod keys;
 pub mod sign;
+pub mod transparent_prevouts;
 pub mod transparent_send;
 
 #[cfg(target_arch = "wasm32")]
