@@ -1,7 +1,7 @@
 > This project now lives in `app-modules/chain-runtimes/zcash`. See
 > [IMPORT.md](./IMPORT.md) for the source revision and preserved vendor patches.
 > Build commands below run from this directory. Use Rust 1.93.0 (pinned in
-> `rust-toolchain.toml`), Python 3.9+, LLVM/Clang, and wasm-pack 0.15.0.
+> `rust-toolchain.toml`), Python 3.11+, LLVM/Clang, and wasm-pack 0.15.0.
 > Install `wasm-bindgen-cli` at the `wasm-bindgen` version in `Cargo.lock`
 > and provide `wasm-opt` (Binaryen), or reuse the matching wasm-pack tool cache.
 > Builds use `--mode no-install` and never update `Cargo.lock`.
@@ -97,6 +97,9 @@ OPFS 仍受浏览器 origin、配额和清理策略约束；App 内嵌页面的�
 本次处于开发阶段，不提供旧 IndexedDB 库迁移。运行时的新交易持久化要求仍然保留。
 
 ## 先前版本的验证记录（不替代当前 OPFS 验收）
+
+以下是历史实验记录，含旧 IndexedDB 后端描述，不是当前发布验收清单。
+当前存储实现见上方 OPFS 章节；每个候选版本须按 RELEASING.md 验证实际产物。
 
 > 状态：**runtime 的看账与发送链路已在 testnet 上真实上链验证，App 适配层已接入并通过
 > 类型、单元与浏览器 runtime 检查。** App 内的有资金发送闭环与主网真实交易仍需人工验收。
@@ -261,7 +264,8 @@ bash scripts/vendor-deps.sh --offline
 ```
 
 产物 `pkg/`、`pkg-keys/` 不入库。两者一起构建，供 app-monorepo 的本地
-portal 依赖或 CI artifact 使用。本次迁移不发布 npm 包。
+portal 依赖或 CI artifact 使用。独立 npm 发布流程、版本规则与 App 切换步骤见
+[RELEASING.md](./RELEASING.md)。
 
 ---
 
