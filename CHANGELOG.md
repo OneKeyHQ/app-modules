@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.150] - 2026-09-20
+
+### Bug Fixes
+- **native-sheet (iOS)**: Keep the sheet background transparent while dragging below its detent, and restore the backdrop after a cancelled drag-to-dismiss gesture.
+
 ## [3.0.148] - 2026-09-18
 
 ### Features
