@@ -15,29 +15,30 @@ concurrency:
   queue: max
 
 jobs:
+  notice-fork-merge:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain manual release requirement
+        run: |
+          echo 'A merged fork PR does not trigger an automatic release. Run prepare-release manually when ready.' >> "$GITHUB_STEP_SUMMARY"
+
   prepare-release:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged == true &&
-       !(github.event.pull_request.head.repo.full_name == github.repository &&
-         startsWith(github.event.pull_request.head.ref, 'codex/release-app-modules-v')))
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       !startsWith(github.event.pull_request.head.ref, 'codex/release-app-modules-v'))
     runs-on: ubuntu-latest
     steps:
-      - name: Create repository-scoped release token
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ vars.APP_RELEASE_APP_ID }}
-          private-key: ${{ secrets.APP_RELEASE_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: app-modules
-          permission-contents: write
-          permission-pull-requests: write
       - uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
       - name: Check for unreleased merges
         id: changes
         run: |
@@ -63,6 +64,17 @@ jobs:
           node scripts/prepare-release.mjs
           node scripts/validate-npm-dist-tag.mjs latest
           git diff --check
+      - name: Create repository-scoped release token
+        if: steps.changes.outputs.needed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.APP_RELEASE_APP_ID }}
+          private-key: ${{ secrets.APP_RELEASE_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: app-modules
+          permission-contents: write
+          permission-pull-requests: write
       - name: Create or update release PR
         if: steps.changes.outputs.needed == 'true'
         env:
@@ -75,6 +87,7 @@ jobs:
           git add -u CHANGELOG.md yarn.lock native-modules native-views
           git diff --cached --check
           git commit -m "release: app-modules ${version}"
+          gh auth setup-git
           remote_sha=$(git ls-remote --heads origin "refs/heads/${branch}" | cut -f1)
           if test -n "$remote_sha"; then
             git push --force-with-lease="refs/heads/${branch}:${remote_sha}" origin "HEAD:refs/heads/${branch}"

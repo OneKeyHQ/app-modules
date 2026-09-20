@@ -31,12 +31,42 @@ concurrency:
   queue: max
 
 jobs:
-  package-publish:
+  verify-release-pr:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'codex/release-app-modules-v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the release App identity
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.APP_RELEASE_APP_ID }}
+          private-key: ${{ secrets.APP_RELEASE_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: app-modules
+          permission-contents: read
+      - name: Verify the release PR author
+        env:
+          EXPECTED_BOT: ${{ steps.app-token.outputs.app-slug }}[bot]
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          test "$PR_AUTHOR" = "$EXPECTED_BOT" || {
+            echo "Release PR was not created by $EXPECTED_BOT"
+            exit 1
+          }
+
+  package-publish:
+    needs: verify-release-pr
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged == true &&
        github.event.pull_request.head.repo.full_name == github.repository &&
-       startsWith(github.event.pull_request.head.ref, 'codex/release-app-modules-v'))
+       startsWith(github.event.pull_request.head.ref, 'codex/release-app-modules-v') &&
+       needs.verify-release-pr.result == 'success'))
     runs-on: ubuntu-latest
     env:
       NPM_DIST_TAG: ${{ github.event_name == 'pull_request' && 'latest' || inputs.npm_dist_tag }}
@@ -96,27 +126,28 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Create app-monorepo-scoped token
-        id: app-token
+      - name: Create read-only app-monorepo token
+        id: read-token
         uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.APP_RELEASE_APP_ID }}
           private-key: ${{ secrets.APP_RELEASE_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: app-monorepo
-          permission-contents: write
-          permission-pull-requests: write
+          permission-contents: read
           permission-packages: read
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           path: app-modules
+          persist-credentials: false
       - uses: actions/checkout@v6
         with:
           repository: OneKeyHQ/app-monorepo
           ref: x
           path: app-monorepo
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.read-token.outputs.token }}
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
@@ -127,7 +158,7 @@ jobs:
         working-directory: app-monorepo
         run: |
           node ../app-modules/scripts/sync-app-monorepo.mjs .
-          if git diff --quiet -- apps/mobile/package.json; then
+          if git diff --quiet -- apps/mobile/package.json packages/components/package.json package.json; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
             echo 'changed=true' >> "$GITHUB_OUTPUT"
@@ -136,26 +167,38 @@ jobs:
         if: steps.dependencies.outputs.changed == 'true'
         working-directory: app-monorepo
         env:
-          NODE_AUTH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ steps.read-token.outputs.token }}
         run: |
           corepack enable
           yarn install --mode=skip-build
           yarn install --immutable --mode=skip-build
           yarn workspace @onekeyhq/mobile module-id:check
           git diff --check
+      - name: Create app-monorepo write token
+        if: steps.dependencies.outputs.changed == 'true'
+        id: write-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.APP_RELEASE_APP_ID }}
+          private-key: ${{ secrets.APP_RELEASE_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: app-monorepo
+          permission-contents: write
+          permission-pull-requests: write
       - name: Create or update app-monorepo PR
         if: steps.dependencies.outputs.changed == 'true'
         working-directory: app-monorepo
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.write-token.outputs.token }}
         run: |
           version=$(node -p "require('../app-modules/native-views/react-native-native-list/package.json').version")
           branch="codex/app-modules-v${version}"
           git config user.name 'onekey-release[bot]'
           git config user.email 'onekey-release[bot]@users.noreply.github.com'
-          git add -u apps/mobile/package.json yarn.lock
+          git add -u apps/mobile/package.json packages/components/package.json package.json yarn.lock
           git diff --cached --check
           git commit -m "chore: update app-modules to ${version}"
+          gh auth setup-git
           remote_sha=$(git ls-remote --heads origin "refs/heads/${branch}" | cut -f1)
           if test -n "$remote_sha"; then
             git push --force-with-lease="refs/heads/${branch}:${remote_sha}" origin "HEAD:refs/heads/${branch}"

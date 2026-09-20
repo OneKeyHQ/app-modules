@@ -23,7 +23,11 @@ function compareVersions(left, right) {
   return 0;
 }
 
-export function updateMobileManifest(manifestText, workspaces) {
+export function updateMobileManifest(
+  manifestText,
+  workspaces,
+  sections = ["dependencies"]
+) {
   const manifest = JSON.parse(manifestText);
   const versions = new Set(workspaces.map(({ version }) => version));
   if (workspaces.length === 0 || versions.size !== 1) {
@@ -33,18 +37,25 @@ export function updateMobileManifest(manifestText, workspaces) {
     workspaces.map(({ name, version }) => [name, version])
   );
   const updated = [];
-  for (const [name, current] of Object.entries(manifest.dependencies ?? {})) {
-    const target = byName.get(name);
-    if (!target || current === target) {
-      continue;
+  for (const section of sections) {
+    for (const [name, current] of Object.entries(manifest[section] ?? {})) {
+      const alias = /^npm:((?:@[^/]+\/)?[^@]+)@(.+)$/.exec(current);
+      const workspaceName = alias ? alias[1] : name;
+      const currentVersion = alias ? alias[2] : current;
+      const target = byName.get(workspaceName);
+      if (!target || currentVersion === target) {
+        continue;
+      }
+      if (compareVersions(currentVersion, target) > 0) {
+        throw new Error(
+          `Refusing to downgrade ${name} from ${currentVersion} to ${target}`
+        );
+      }
+      manifest[section][name] = alias
+        ? `npm:${workspaceName}@${target}`
+        : target;
+      updated.push(name);
     }
-    if (compareVersions(current, target) > 0) {
-      throw new Error(
-        `Refusing to downgrade ${name} from ${current} to ${target}`
-      );
-    }
-    manifest.dependencies[name] = target;
-    updated.push(name);
   }
   return {
     text:
@@ -62,17 +73,25 @@ async function main() {
       "Usage: node scripts/sync-app-monorepo.mjs <app-monorepo-path>"
     );
   }
-  const manifestPath = join(
-    resolve(appMonorepoArg),
-    "apps/mobile/package.json"
-  );
   const workspaces = await loadReleaseWorkspaces(repoRoot);
-  const original = await readFile(manifestPath, "utf8");
-  const { text, updated } = updateMobileManifest(original, workspaces);
-  if (updated.length > 0) {
-    await writeFile(manifestPath, text);
+  const manifests = [
+    ["apps/mobile/package.json", ["dependencies"]],
+    ["packages/components/package.json", ["dependencies"]],
+    ["package.json", ["dependencies", "resolutions"]],
+  ];
+  for (const [relativePath, sections] of manifests) {
+    const manifestPath = join(resolve(appMonorepoArg), relativePath);
+    const original = await readFile(manifestPath, "utf8");
+    const { text, updated } = updateMobileManifest(
+      original,
+      workspaces,
+      sections
+    );
+    if (updated.length > 0) {
+      await writeFile(manifestPath, text);
+    }
+    console.log(`Updated ${updated.length} dependencies in ${relativePath}`);
   }
-  console.log(`Updated ${updated.length} app-monorepo mobile dependencies`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
