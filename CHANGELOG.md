@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.152] - 2026-09-20
+
+### Bug Fixes
+- **native-list (Android)**: Draw the full 38dp pressed circle behind the account selector row menu (OK-63780). The `DotHorOutline` accessory overhangs its 24dp slot with -7dp margins; the trailing column clipped children and the row clipped to padding, so the press state showed as a 24dp-wide pill while iOS and desktop drew the full circle.
+
+### Chores
+- Bump all 41 publishable packages to 3.0.152.
+
 ## [3.0.151] - 2026-09-20
 
 ### Bug Fixes
