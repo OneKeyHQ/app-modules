@@ -14,8 +14,8 @@ const REGISTRY = "https://registry.npmjs.org";
 // ("409 Cannot publish over previously staged version"), so the number was
 // burned and the whole set had to move to 3.0.138. This check exists so that a
 // release like that fails loudly in the run that produced it.
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
-const POLL_INTERVAL_MS = 15 * 1000;
+const DEFAULT_MAX_ATTEMPTS = 10;
+const POLL_INTERVAL_MS = 45 * 1000;
 
 /**
  * The workspaces a run was supposed to publish. `onlyWorkspace` mirrors the
@@ -88,13 +88,20 @@ const sleep = (ms) =>
 export async function verifyPublished(
   workspaces,
   distTag,
-  { timeoutMs = DEFAULT_TIMEOUT_MS, log = console.log } = {}
+  {
+    maxAttempts = DEFAULT_MAX_ATTEMPTS,
+    pollIntervalMs = POLL_INTERVAL_MS,
+    log = console.log,
+  } = {}
 ) {
-  const deadline = Date.now() + timeoutMs;
   let pending = workspaces;
-  let lastReasons = new Map();
+  const lastReasons = new Map();
 
-  while (pending.length > 0) {
+  for (
+    let attempt = 1;
+    attempt <= maxAttempts && pending.length > 0;
+    attempt += 1
+  ) {
     const stillPending = [];
     for (const workspace of pending) {
       let result;
@@ -115,18 +122,15 @@ export async function verifyPublished(
       }
     }
     pending = stillPending;
-    if (pending.length === 0) {
-      break;
-    }
-    if (Date.now() >= deadline) {
+    if (pending.length === 0 || attempt === maxAttempts) {
       break;
     }
     log(
       `  waiting  ${pending.length} package(s) not visible yet; re-checking in ${
-        POLL_INTERVAL_MS / 1000
+        pollIntervalMs / 1000
       }s`
     );
-    await sleep(POLL_INTERVAL_MS);
+    await sleep(pollIntervalMs);
   }
 
   return pending.map((workspace) => ({
@@ -158,10 +162,9 @@ async function main() {
         missing
           .map(({ name, version, reason }) => `  - ${name}@${version}: ${reason}`)
           .join("\n") +
-        "\n\nnpm accepted these publishes but the registry never served them. " +
-        "The version numbers are likely burned (republishing returns 409 " +
-        "'Cannot publish over previously staged version'), so the fix is " +
-        "usually to bump and release again."
+        "\n\nThe versions were not visible after 10 checks. They may still be " +
+        "propagating; retry verification before considering a new release. " +
+        "If npm rejects republishing with 409, the staged version may be burned."
     );
     process.exitCode = 1;
     return;
