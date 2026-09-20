@@ -835,10 +835,13 @@ final class NativeListCell: UICollectionViewCell {
     super.layoutSubviews()
     if let item = currentItem, item.type == "system", item.data.string("presentation") == "market",
        ["noMatch", "retry"].contains(item.data.string("variant")), !titleLabel.isHidden {
-      // The cell content view owns the root constraints and must settle before reading descendants.
-      contentView.layoutIfNeeded()
-      // React Native floors text origins to physical pixels after centering the line box.
       titleLabel.transform = .identity
+      // Settle each nested stack before measuring; the content view alone can leave stale descendant frames.
+      contentView.layoutIfNeeded()
+      rootStack.layoutIfNeeded()
+      mainStack.layoutIfNeeded()
+      titleRowStack.layoutIfNeeded()
+      // React Native floors text origins to physical pixels after centering the line box.
       let scale = max(1, window?.screen.scale ?? traitCollection.displayScale)
       let origin = titleLabel.convert(titleLabel.bounds, to: contentView).origin
       let x = floor((contentView.bounds.width - titleLabel.bounds.width) / 2 * scale) / scale
