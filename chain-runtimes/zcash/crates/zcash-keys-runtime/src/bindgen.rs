@@ -7,6 +7,12 @@ use zeroize::Zeroizing;
 
 use crate::{keys, sign, transparent_send};
 
+/// Check recipient encoding, network, and supported receivers locally.
+#[wasm_bindgen(js_name = validateAddress)]
+pub fn validate_address(network: &str, address: &str) -> Result<bool, JsValue> {
+    Ok(keys::validate_address(network, address)?)
+}
+
 /// 从助记词派生该账户的 UFVK。助记词与种子在 Rust 侧用完即擦。
 #[wasm_bindgen(js_name = ufvkFromMnemonic)]
 pub fn ufvk_from_mnemonic(
