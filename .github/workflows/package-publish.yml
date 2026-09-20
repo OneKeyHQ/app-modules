@@ -135,7 +135,6 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: app-monorepo
           permission-contents: read
-          permission-packages: read
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
@@ -151,8 +150,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
-          registry-url: https://npm.pkg.github.com
-          scope: '@onekeyhq'
       - name: Update only app-modules mobile dependencies
         id: dependencies
         working-directory: app-monorepo
@@ -166,11 +163,9 @@ jobs:
       - name: Refresh lockfile and check module registry
         if: steps.dependencies.outputs.changed == 'true'
         working-directory: app-monorepo
-        env:
-          NODE_AUTH_TOKEN: ${{ steps.read-token.outputs.token }}
         run: |
           corepack enable
-          yarn install --mode=skip-build
+          YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install --mode=skip-build
           yarn install --immutable --mode=skip-build
           yarn workspace @onekeyhq/mobile module-id:check
           git diff --check
@@ -206,7 +201,7 @@ jobs:
             git push origin "HEAD:refs/heads/${branch}"
           fi
           body="Update app-modules mobile dependencies to ${version} after all 41 packages passed npm registry verification. Source: ${GITHUB_REPOSITORY}@${GITHUB_SHA}. Module-ID registry structure is checked; new native runtime modules require a fresh Union Build map before registry update."
-          pr_number=$(gh pr list --repo OneKeyHQ/app-monorepo --state open --head "OneKeyHQ:${branch}" --json number --jq '.[0].number')
+          pr_number=$(gh pr list --repo OneKeyHQ/app-monorepo --state open --base x --head "$branch" --json number,headRepositoryOwner --jq "[.[] | select(.headRepositoryOwner.login == \"$GITHUB_REPOSITORY_OWNER\")][0].number")
           if test -n "$pr_number"; then
             gh pr edit "$pr_number" --repo OneKeyHQ/app-monorepo --title "chore: update app-modules to ${version}" --body "$body"
           else

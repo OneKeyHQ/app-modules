@@ -60,7 +60,7 @@ jobs:
           yarn install --immutable
           node --test scripts/*.test.mjs
           yarn version:patch
-          yarn install
+          YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
           node scripts/prepare-release.mjs
           node scripts/validate-npm-dist-tag.mjs latest
           git diff --check
@@ -95,7 +95,7 @@ jobs:
             git push origin "HEAD:refs/heads/${branch}"
           fi
           body="Automated version and changelog update for app-modules ${version}. The publish workflow will run only after this PR merges into main."
-          pr_number=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "${GITHUB_REPOSITORY_OWNER}:${branch}" --json number --jq '.[0].number')
+          pr_number=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base main --head "$branch" --json number,headRepositoryOwner --jq "[.[] | select(.headRepositoryOwner.login == \"$GITHUB_REPOSITORY_OWNER\")][0].number")
           if test -n "$pr_number"; then
             gh pr edit "$pr_number" --repo "$GITHUB_REPOSITORY" --title "release: app-modules ${version}" --body "$body"
           else
