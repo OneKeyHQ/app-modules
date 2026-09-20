@@ -9,6 +9,15 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 - **native-sheet (iOS)**: Keep the sheet background transparent while dragging below its detent, and restore the backdrop after a cancelled drag-to-dismiss gesture.
 
+## [3.0.149] - 2026-09-19
+
+### Bug Fixes
+- **native-list (iOS)**: Re-measure rows when the list's width changes after its first layout (OK-63486). `NativeListFlowLayout` sizes rows in `sizeForItemAt` from the collection view's width, but the invalidation context UIKit builds for a bounds change leaves `invalidateFlowLayoutDelegateMetrics` off, so the delegate was not asked again. Rows kept their old width, and the flow layout centered a narrower row in the list. In app-monorepo's iPad account selector, react-native-screens lays the sheet content out at the parent stack's width (494 pt in landscape split view) before the sheet frame (840 pt) arrives, so the account list showed as a narrow centered column; rotating with the selector open did the same. A later data update re-measured the rows, which made the bug look intermittent. The layout now invalidates on every cross-axis size change and asks for delegate metrics in that context. Android rows are `MATCH_PARENT` and were not affected.
+- **pager-view (Android)**: Stop `CollapsiblePagerView` native tabs from truncating their labels at display densities such as 450 dpi (OK-63273). Tabs with the progress indicator reserved a combined `dp(16)` of padding, which rounds to 45 px there, while the `TextView`'s two 8 dp insets round to 23 px each, so a 90 px label got 89 px and was ellipsized. The tab width now adds the button's actual compound padding.
+
+### Chores
+- Bump all 41 publishable packages to 3.0.149.
+
 ## [3.0.148] - 2026-09-18
 
 ### Features
