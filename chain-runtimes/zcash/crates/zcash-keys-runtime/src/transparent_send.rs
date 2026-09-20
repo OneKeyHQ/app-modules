@@ -233,7 +233,7 @@ impl TransactionPlan {
 }
 
 fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
-    if request.network != "main" && request.network != "mainnet" {
+    if request.network != "main" {
         return Err(KeysError::with(
             ErrorCode::InvalidNetwork,
             serde_json::json!({ "value": request.network }),
@@ -1137,7 +1137,7 @@ fn require_transparent(address: RecipientAddress) -> Result<TransparentAddress> 
 }
 
 fn parse_recipient_address(encoded: &str) -> Result<RecipientAddress> {
-    match Address::decode(&MAIN_NETWORK, encoded) {
+    match crate::keys::supported_recipient(&MAIN_NETWORK, encoded) {
         Some(Address::Transparent(address)) => Ok(RecipientAddress::Transparent(address)),
         // Unified Orchard receivers receive Ironwood notes after NU6.3. Never silently
         // fall back to a public receiver when a Unified Address lacks this receiver.

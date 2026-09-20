@@ -179,10 +179,8 @@ fn explain_insufficient(
 /// 解析宿主传来的找零池名。构造与报价共用，避免两处各写一份而写歪。
 pub fn parse_change_pool(name: &str) -> Result<ShieldedPool> {
     match name {
-        // Orchard 自 NU6.3 起是只出不进的单向闸门 —— 找零进不去。
-        // 把它留作合法取值只为历史兼容，新交易不该用。
+        // NU6.3 makes Orchard spend-only; new change must enter Ironwood.
         "ironwood" => Ok(ShieldedPool::Ironwood),
-        "orchard" => Ok(ShieldedPool::Orchard),
         // Sapling 不是合法的找零去处，理由和 `parse_spend_source` 拒它一样，
         // 而且更硬：本方案裁掉了 Sapling 的 Groth16 证明参数，建不出 Sapling
         // 输出。就算建得出，那笔找零也进了一个本钱包只读不可花的池子 ——
@@ -197,9 +195,8 @@ pub fn parse_change_pool(name: &str) -> Result<ShieldedPool> {
 /// 解析宿主传来的「只从这个池子花」。`None` 表示不限制（见
 /// `SendPolicy::spend_source`）。
 ///
-/// 与 `parse_change_pool` 分开而不是复用：那里 sapling 是合法取值（历史找零
-/// 目标），这里不是。本方案不发 Sapling 证明，接受 `"sapling"` 只会把一个
-/// 必然在证明阶段失败的请求放进来，还让调用方以为可行。
+/// Orchard remains a valid spend source, but cannot receive new change.
+/// Sapling spending is unsupported because this runtime does not ship its prover.
 pub fn parse_spend_source(name: Option<&str>) -> Result<Option<ShieldedPool>> {
     match name {
         None => Ok(None),
@@ -1171,7 +1168,7 @@ mod policy_tests {
     #[test]
     fn sapling_is_not_a_spendable_source_nor_a_change_destination() {
         assert!(parse_change_pool("ironwood").is_ok());
-        assert!(parse_change_pool("orchard").is_ok());
+        assert!(parse_change_pool("orchard").is_err());
         assert!(parse_change_pool("sapling").is_err());
         assert!(parse_spend_source(Some("sapling")).is_err());
     }

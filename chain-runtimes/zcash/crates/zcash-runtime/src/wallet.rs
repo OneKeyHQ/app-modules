@@ -20,8 +20,8 @@ pub type Db = WalletDb<rusqlite::Connection, Network, HostClock, ChaCha20Rng>;
 /// 网络选择。跨 wasm 边界时用字符串，不暴露 Rust 枚举形状。
 pub fn parse_network(s: &str) -> Result<Network> {
     match s {
-        "main" | "mainnet" => Ok(Network::MainNetwork),
-        "test" | "testnet" => Ok(Network::TestNetwork),
+        "main" => Ok(Network::MainNetwork),
+        "test" => Ok(Network::TestNetwork),
         other => Err(RuntimeError::with(
             ErrorCode::InvalidNetwork,
             json!({ "value": other }),
@@ -77,6 +77,8 @@ mod tests {
         assert!(matches!(parse_network("main"), Ok(Network::MainNetwork)));
         assert!(matches!(parse_network("test"), Ok(Network::TestNetwork)));
         assert!(parse_network("regtest").is_err());
+        assert!(parse_network("mainnet").is_err());
+        assert!(parse_network("testnet").is_err());
     }
 
     #[test]

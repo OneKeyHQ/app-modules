@@ -13,13 +13,36 @@ use serde_json::json;
 
 pub fn parse_network(s: &str) -> Result<Network> {
     match s {
-        "main" | "mainnet" => Ok(Network::MainNetwork),
-        "test" | "testnet" => Ok(Network::TestNetwork),
+        "main" => Ok(Network::MainNetwork),
+        "test" => Ok(Network::TestNetwork),
         other => Err(KeysError::with(
             ErrorCode::InvalidNetwork,
             json!({ "value": other }),
         )),
     }
+}
+
+/// Decode only recipients supported by the transaction builders.
+pub(crate) fn supported_recipient(
+    params: &impl zcash_protocol::consensus::Parameters,
+    encoded: &str,
+) -> Option<zcash_keys::address::Address> {
+    use zcash_keys::address::Address;
+    // Host routing uses canonical lowercase Unified Address prefixes.
+    if encoded.starts_with("U") {
+        return None;
+    }
+    match Address::decode(params, encoded)? {
+        address @ Address::Transparent(_) => Some(address),
+        Address::Unified(address) if address.has_orchard() => Some(Address::Unified(address)),
+        _ => None,
+    }
+}
+
+/// Validate a recipient locally without storage, scanning, or network access.
+pub fn validate_address(network: &str, encoded: &str) -> Result<bool> {
+    let params = parse_network(network)?;
+    Ok(supported_recipient(&params, encoded).is_some())
 }
 
 /// 从 BIP-39 助记词派生该账户的 UFVK。
@@ -189,6 +212,39 @@ mod tests {
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
     #[test]
+    fn recipient_validation_checks_network_checksum_and_supported_receivers() {
+        use zcash_address::unified::{Address, Encoding, Receiver};
+        use zcash_protocol::consensus::NetworkType;
+
+        let ufvk = ufvk_from_mnemonic("main", TEST_MNEMONIC, 0).unwrap();
+        let ua = unified_address_with("main", &ufvk, "orchard").unwrap();
+        assert!(validate_address("main", &ua).unwrap());
+        assert!(!validate_address("test", &ua).unwrap());
+        assert!(!validate_address("main", &ua.to_uppercase()).unwrap());
+        let mut corrupt = ua.clone();
+        corrupt.pop();
+        corrupt.push(if ua.ends_with('q') { 'p' } else { 'q' });
+        assert!(!validate_address("main", &corrupt).unwrap());
+        for receiver in [Receiver::P2pkh([1; 20]), Receiver::P2sh([2; 20])] {
+            let no_orchard = Address::try_from_items(vec![
+                receiver,
+                Receiver::Unknown {
+                    typecode: 65535,
+                    data: vec![1; 43],
+                },
+            ])
+            .unwrap()
+            .encode(&NetworkType::Main);
+            assert!(!validate_address("main", &no_orchard).unwrap());
+        }
+        let transparent = transparent_address("main", &ufvk).unwrap();
+        assert!(validate_address("main", &transparent).unwrap());
+        assert!(!validate_address("test", &transparent).unwrap());
+        assert!(!validate_address("main", "u1not-an-address").unwrap());
+        assert!(validate_address("regtest", &ua).is_err());
+    }
+
+    #[test]
     fn transparent_account_pubkey_is_chain_code_and_compressed_key() {
         let ufvk = ufvk_from_mnemonic("main", TEST_MNEMONIC, 0).unwrap();
         let hex_key = transparent_account_pubkey("main", &ufvk).unwrap();
@@ -216,6 +272,8 @@ mod tests {
         assert!(parse_network("main").is_ok());
         assert!(parse_network("test").is_ok());
         assert!(parse_network("regtest").is_err());
+        assert!(parse_network("mainnet").is_err());
+        assert!(parse_network("testnet").is_err());
     }
 
     #[test]
