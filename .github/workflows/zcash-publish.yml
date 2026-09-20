@@ -1,0 +1,74 @@
+name: Publish Zcash runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact workspace version (for example 0.1.0-rc.1)
+        required: true
+        type: string
+      tag:
+        description: npm dist-tag
+        required: true
+        type: choice
+        options: [rc, latest]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zcash-npm-publish
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Require main and the exact release version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          python3 - <<'PY'
+          import importlib.util, os
+          from pathlib import Path
+          path = Path('chain-runtimes/zcash/scripts/package-release.py')
+          spec = importlib.util.spec_from_file_location('release', path)
+          release = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(release)
+          release.check_version(release.version(release.ROOT), os.environ['RELEASE_VERSION'], os.environ['RELEASE_TAG'])
+          PY
+  build:
+    needs: validate
+    uses: ./.github/workflows/zcash-runtime.yml
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: npm-zcash
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: zcash-wasm-${{ github.sha }}
+          path: chain-runtimes/zcash
+      - name: Recheck and pack the verified build
+        working-directory: chain-runtimes/zcash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/package-release.py pack --version "$RELEASE_VERSION" --tag "$RELEASE_TAG" --revision "$GITHUB_SHA"
+      - name: Publish the runtime and keys pair
+        working-directory: chain-runtimes/zcash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          npm publish "dist/onekey-zcash-runtime-${RELEASE_VERSION}.tgz" --ignore-scripts --access public --tag "$RELEASE_TAG"
+          npm publish "dist/onekey-zcash-keys-${RELEASE_VERSION}.tgz" --ignore-scripts --access public --tag "$RELEASE_TAG"

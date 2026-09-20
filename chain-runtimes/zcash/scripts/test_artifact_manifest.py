@@ -1,7 +1,9 @@
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location("artifact_manifest", Path(__file__).with_name("artifact-manifest.py"))
@@ -10,6 +12,19 @@ spec.loader.exec_module(artifact)
 
 
 class ArtifactManifestTests(unittest.TestCase):
+    def test_lockfile_drift_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Cargo.lock").write_text("current lock")
+            (root / artifact.MANIFEST).write_text(json.dumps({
+                "formatVersion": 1, "sourceRepository": "OneKeyHQ/app-modules",
+                "sourceRevision": "revision", "sourceDirty": False,
+                "cargoLockSha256": "old lock hash", "files": {},
+            }))
+            with patch.object(artifact, "ROOT", root):
+                with self.assertRaisesRegex(ValueError, "Cargo.lock checksum"):
+                    artifact.verify(root, "revision")
+
     def test_all_three_packages_and_exact_inventory_are_required(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -5,12 +5,15 @@ on:
     paths:
       - 'chain-runtimes/zcash/**'
       - '.github/workflows/zcash-runtime.yml'
+      - '.github/workflows/zcash-publish.yml'
   push:
     branches: [main]
     paths:
       - 'chain-runtimes/zcash/**'
       - '.github/workflows/zcash-runtime.yml'
+      - '.github/workflows/zcash-publish.yml'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -45,6 +48,15 @@ jobs:
         run: bash scripts/build-wasm.sh --offline
       - name: Verify complete artifact provenance
         run: python3 scripts/artifact-manifest.py verify --expected-revision "${{ github.sha }}"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+      - name: Verify npm archives
+        run: |
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
+          TAG=latest
+          if [[ "$VERSION" == *-rc.* ]]; then TAG=rc; fi
+          python3 scripts/package-release.py pack --version "$VERSION" --tag "$TAG" --revision "$GITHUB_SHA"
       - uses: actions/upload-artifact@v4
         with:
           name: zcash-wasm-${{ github.sha }}
@@ -53,3 +65,8 @@ jobs:
             chain-runtimes/zcash/pkg/
             chain-runtimes/zcash/pkg-keys/
             chain-runtimes/zcash/zcash-wasm-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zcash-npm-${{ github.sha }}
+          if-no-files-found: error
+          path: chain-runtimes/zcash/dist/

@@ -63,6 +63,8 @@ def verify(root, revision, allow_dirty=False):
         raise ValueError("Artifact source revision mismatch")
     if manifest.get("sourceDirty") is not False and not allow_dirty:
         raise ValueError("CI artifacts must originate from a clean source checkout")
+    if manifest.get("cargoLockSha256") != digest(ROOT / "Cargo.lock"):
+        raise ValueError("Artifact Cargo.lock checksum mismatch")
     if artifact_files(root) != manifest.get("files"):
         raise ValueError("Artifact file inventory or checksum mismatch")
     print(f"Verified complete Zcash artifact for {revision}")
