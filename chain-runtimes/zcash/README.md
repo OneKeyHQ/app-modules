@@ -312,6 +312,12 @@ Software keyrings use this sequence for Unified recipients:
    request, all effects of the original PCZT, and the proved PCZT before signing.
 4. `runtime.pcztExtractStateless` verifies and extracts the final transaction.
 
+`parseTransparentTransactions` verifies raw previous transactions against their
+requested transaction IDs and returns transparent output values, scripts, and
+coinbase status. The host supplies the mined height for legacy transaction branch
+selection and must check each UTXO's output index and value against the result.
+This API uses only the keys module; no wallet database or scan is required.
+
 The host owns transparent outpoint reservations, signature-time UTXO revalidation,
 pending broadcast records, and submission to its node. The recipient's wallet
 scans to discover and later spend the received shielded notes; the sender does not
