@@ -13,14 +13,12 @@ yarn package:setup new-lib
 ```
 
 
-## Publish all package
+## Release automation
 
-To update the versions of all workspace packages, run the following command in the project root directory:
+Merging a PR into `main` creates or updates a release PR with synchronized package versions, `yarn.lock`, and a `CHANGELOG.md` entry. Write detailed release notes under `Unreleased` in the change PR when needed; the release PR also lists every merged commit since the previous release. Once the release PR merges, `package-publish.yml` publishes missing packages with the npm `latest` tag, verifies all published versions on npm, and opens an app-monorepo PR against `x` for the mobile dependency and lockfile updates. The existing manual publish action remains available for `next`, `latest`, and single-workspace recovery.
 
-```shell
-yarn version:bump
-yarn version:apply
-```
-Commit version changes and push to GitHub.
+Before enabling the workflows, install a GitHub App on both `app-modules` and `app-monorepo` with repository Contents (write), Pull requests (write), and Packages (read) permissions. Set repository variable `APP_RELEASE_APP_ID` and secret `APP_RELEASE_PRIVATE_KEY` in `app-modules`, and retain the existing `NPM_TOKEN` secret for npm publishing. The App creates release and dependency PRs; its token allows the PR checks to run without the approval gate applied to PRs created with `GITHUB_TOKEN`.
 
-Run publish package actions on GitHub.
+The current `main` ruleset requires one approval and has no bypass actor, so the release PR must be approved before automatic publication can continue. Granting a dedicated App a narrowly scoped ruleset exception is an administrator decision, not part of this workflow. The app-monorepo PR is never merged automatically.
+
+The app-monorepo job checks the existing module-ID registry but does not regenerate it: `module-id:update` requires a fresh Union Build module-ID map, which is unavailable in a clean dependency-update job. If a release adds native runtime modules, generate that map and update the registry during app-monorepo PR validation before merging it.
