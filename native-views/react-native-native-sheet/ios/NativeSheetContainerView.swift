@@ -373,7 +373,9 @@ private final class NativeSheetViewController: UIViewController,
       min(max(self?.targetHeight ?? 1, 1), context.maximumDetentValue)
     }
     if #available(iOS 26.1, *) {
-      detent.backgroundEffect = UIColorEffect(color: backgroundColorValue)
+      let backgroundEffect = UIColorEffect(color: backgroundColorValue)
+      sheet.backgroundEffect = backgroundEffect
+      detent.backgroundEffect = backgroundEffect
     }
     sheet.detents = [detent]
     sheet.selectedDetentIdentifier = detentIdentifier
@@ -618,9 +620,8 @@ private final class NativeSheetViewController: UIViewController,
       transitionCoordinator.animate(alongsideTransition: { _ in
         animations()
       }, completion: { context in
-        dimmingView.alpha = context.isCancelled
-          ? (visible ? 0 : self.dimAmountValue)
-          : targetAlpha
+        guard !context.isCancelled else { return }
+        dimmingView.alpha = targetAlpha
       })
     } else {
       UIView.animate(
