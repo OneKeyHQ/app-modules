@@ -12,6 +12,8 @@ permissions:
 # A newer merge must not replace a pending release preparation.
 concurrency:
   group: app-modules-prepare-release
+  # Supported on GitHub.com; keep pending release runs instead of replacing them.
+  # https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency
   queue: max
 
 jobs:

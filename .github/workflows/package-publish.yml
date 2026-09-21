@@ -28,6 +28,8 @@ permissions:
 
 concurrency:
   group: app-modules-package-publish
+  # Supported on GitHub.com; keep pending publish runs instead of replacing them.
+  # https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency
   queue: max
 
 jobs:
