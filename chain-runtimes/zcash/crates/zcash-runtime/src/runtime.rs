@@ -31,10 +31,29 @@ thread_local! {
     // 之后所有操作都在错误的库上进行，而且看不出来：历史串库、余额串库、
     // 甚至可能用 A 的 note 去发 B 的交易。
     //
-    // 两道防线：BUSY 期间拒绝一切会切换钱包的操作；generation 保证异步返回时
-    // 不会用一个过期的钱包覆盖新的。两者独立，任一失效另一个仍能兜住。
+    // 防线主力是 BUSY：它在期间拒绝一切会切换钱包的操作。GENERATION 是它后面
+    // 的兜底，但**当前不可达** —— 采样发生在置位 BUSY 之后，而 set_db/close 都
+    // 被 BUSY 挡住，世代号在守卫存活期间不可能变。留着是为了将来出现「跨 await
+    // 却不持 BUSY」的路径时仍有第二道，不要据此认为现在有两道独立防线。
     static BUSY: Cell<bool> = const { Cell::new(false) };
     static GENERATION: Cell<u64> = const { Cell::new(0) };
+
+    // 客户端有自己的世代号。DB 的那道防线盖不住它：`setLightwalletdUrl` 换端点
+    // 时**不**碰 DB，GENERATION 不动，于是一次在途的 `getChainTip` 结束后会把
+    // 旧端点原样盖回去，之后所有同步都在跟上一个网络的 lightwalletd 说话。
+    static CLIENT_GENERATION: Cell<u64> = const { Cell::new(0) };
+}
+
+/// 取走客户端前采样；放回前比对。不相等说明期间端点被换掉或关掉了，手上这个
+/// 已经作废 —— 丢弃它，而不是覆盖当前的。
+fn client_generation() -> u64 {
+    CLIENT_GENERATION.with(Cell::get)
+}
+
+fn put_client_back(client: LightClient, sampled: u64) {
+    if client_generation() == sampled {
+        CLIENT.with(|c| *c.borrow_mut() = Some(client));
+    }
 }
 
 /// 正在进行一次异步操作时，任何切换钱包的调用都必须被拒绝。
@@ -91,6 +110,10 @@ impl Drop for BusyGuard {
     }
 }
 
+fn bump_client_generation() {
+    CLIENT_GENERATION.with(|g| g.set(g.get().wrapping_add(1)));
+}
+
 fn bump_generation() {
     GENERATION.with(|g| g.set(g.get().wrapping_add(1)));
 }
@@ -122,10 +145,7 @@ pub fn with_read_conn<T>(f: impl FnOnce(&rusqlite::Connection) -> Result<T>) -> 
 
 pub fn set_client(client: LightClient) {
     CLIENT.with(|c| *c.borrow_mut() = Some(client));
-}
-
-pub fn has_db() -> bool {
-    DB.with(|c| c.borrow().is_some())
+    bump_client_generation();
 }
 
 /// 借出数据库做一次同步操作。
@@ -151,6 +171,7 @@ where
     // 先拿锁再取 DB，两者之间没有 await，所以 generation 的采样点与取走 DB
     // 是同一时刻 —— 这正是「陈旧」判定成立的前提。
     let guard = BusyGuard::acquire("walletOperation")?;
+    let client_gen = client_generation();
     let db = DB.with(|c| c.borrow_mut().take()).ok_or_else(not_open)?;
     let client = match CLIENT.with(|c| c.borrow_mut().take()) {
         Some(c) => c,
@@ -169,7 +190,7 @@ where
     } else {
         DB.with(|c| *c.borrow_mut() = Some(db));
     }
-    CLIENT.with(|c| *c.borrow_mut() = Some(client));
+    put_client_back(client, client_gen);
     out
 }
 
@@ -183,11 +204,12 @@ where
     F: FnOnce(LightClient) -> Fut,
     Fut: std::future::Future<Output = (LightClient, Result<T>)>,
 {
+    let client_gen = client_generation();
     let client = CLIENT
         .with(|c| c.borrow_mut().take())
         .ok_or_else(|| RuntimeError::new(ErrorCode::LightwalletdNotConfigured))?;
     let (client, result) = f(client).await;
-    CLIENT.with(|c| *c.borrow_mut() = Some(client));
+    put_client_back(client, client_gen);
     result
 }
 
@@ -206,5 +228,6 @@ pub fn close() -> Result<()> {
     CLIENT.with(|c| *c.borrow_mut() = None);
     DB_NAME.with(|c| *c.borrow_mut() = None);
     bump_generation();
+    bump_client_generation();
     Ok(())
 }

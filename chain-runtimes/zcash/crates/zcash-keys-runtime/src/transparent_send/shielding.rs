@@ -282,7 +282,7 @@ pub fn combine_hardware_signed(
                 if signatures.len() != 1
                     || signature.last() != Some(&1)
                     || input.script_sig().is_some()
-                    || *input.sighash_type() != transparent::sighash::SighashType::ALL
+                    || !crate::sign::is_sighash_all(input)
                 {
                     return Err(TransparentError::Custom(mismatch()));
                 }
@@ -467,7 +467,7 @@ fn validate_original(
     let verified = Verifier::new(pczt)
         .with_transparent(|bundle| {
             if bundle.inputs().iter().any(|input| {
-                *input.sighash_type() != transparent::sighash::SighashType::ALL
+                !crate::sign::is_sighash_all(input)
                     || input.redeem_script().is_some()
                     || input.script_sig().is_some()
                     || !input.partial_signatures().is_empty()
@@ -533,7 +533,7 @@ fn sign_with_key(
             if bundle
                 .inputs()
                 .iter()
-                .any(|input| *input.sighash_type() != transparent::sighash::SighashType::ALL)
+                .any(|input| !crate::sign::is_sighash_all(input))
             {
                 return Err(TransparentError::Custom(mismatch()));
             }
@@ -862,6 +862,34 @@ mod tests {
                 "{field}"
             );
         }
+    }
+
+    /// `pcztSignWithSeed` 是通用签名入口，PCZT 从宿主传进来。上游 `Signer` 的
+    /// 文档把语义校验的责任明确留给调用方，所以那一侧必须自己守 `SIGHASH_ALL`：
+    /// 非 ALL 的签名盖不住输出，拿到已签交易的人能改收款地址。
+    ///
+    /// 正向用例同时钉住另一件事：屏蔽 PCZT 的 ironwood action 只有输出、
+    /// 没有可签的 spend，**部分池签不上是正常的**，不能改成「每池全签」。
+    #[test]
+    fn generic_signer_requires_sighash_all_on_transparent_inputs() {
+        use zcash_protocol::consensus::Network;
+
+        let request = request(false).to_string();
+        let original = create(&request, &SEED).unwrap();
+
+        crate::sign::sign_pczt_with_seed(Network::MainNetwork, &SEED, 0, &original)
+            .expect("未改动的屏蔽 PCZT 应当能签");
+
+        let modified = mutate(&original, |value| {
+            value["transparent"]["inputs"][0]["sighash_type"] = 2.into();
+        });
+        let e = crate::sign::sign_pczt_with_seed(Network::MainNetwork, &SEED, 0, &modified)
+            .expect_err("sighash_type 不是 ALL 必须拒签");
+        assert_eq!(e.code, ErrorCode::PcztSignFailed);
+        assert!(
+            format!("{:?}", e.detail).contains("transparentInputSighashNotAll"),
+            "应指出是 sighash 策略问题，实际 {e:?}"
+        );
     }
 
     #[test]

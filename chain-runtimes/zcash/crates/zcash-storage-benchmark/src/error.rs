@@ -87,7 +87,8 @@ impl From<RuntimeError> for JsValue {
         let _ = js_sys::Reflect::set(
             object,
             &JsValue::from_str("params"),
-            &JsValue::from_str(&error.params.to_string()),
+            &js_sys::JSON::parse(&error.params.to_string())
+                .unwrap_or_else(|_| js_sys::Object::new().into()),
         );
         if let Some(detail) = error.detail {
             let _ = js_sys::Reflect::set(

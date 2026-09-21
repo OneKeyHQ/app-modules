@@ -116,15 +116,18 @@ where
 fn explain_insufficient(
     db: &Db,
     account_id: <Db as WalletRead>::AccountId,
+    confirmations: zcash_client_backend::data_api::wallet::ConfirmationsPolicy,
     err: RuntimeError,
 ) -> RuntimeError {
-    use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
-
     if err.code != ErrorCode::InsufficientFunds {
         return err;
     }
 
-    let Ok(Some(summary)) = db.get_wallet_summary(ConfirmationsPolicy::default()) else {
+    // 必须用**这笔发送实际用的**确认数策略读余额，不能用 default()。
+    // 这个函数存在的唯一目的就是给准确指引，而两套门槛下「透明池里有多少钱
+    // 可用」的答案不一样 —— 用另一套读出来的数会把人指去屏蔽，结果还是不够。
+    // 本文件 `allow_zero_conf_shielding` 的注释早写了这条：读和花必须同源。
+    let Ok(Some(summary)) = db.get_wallet_summary(confirmations) else {
         return err;
     };
     let Some(balances) = summary.account_balances().get(&account_id) else {
@@ -445,6 +448,7 @@ fn build_proposal(
             return Err(explain_insufficient(
                 db,
                 account_id,
+                confirmations,
                 propose_err("proposeTransfer", e),
             ))
         }

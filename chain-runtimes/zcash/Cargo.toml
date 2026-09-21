@@ -62,7 +62,6 @@ getrandom = "0.4"
 thiserror = "2"
 schemerz = "0.2"
 schemerz-rusqlite = "0.370"
-async-trait = "0.1"
 futures-util = { version = "0.3", default-features = false }
 sapling = { package = "sapling-crypto", version = "0.7", default-features = false }
 

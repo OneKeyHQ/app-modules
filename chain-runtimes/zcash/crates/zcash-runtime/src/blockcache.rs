@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Mutex;
 
-use zcash_client_backend::data_api::chain::{error, BlockCache, BlockSource};
+use zcash_client_backend::data_api::chain::{error, BlockSource};
 use zcash_client_backend::data_api::scanning::ScanRange;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_protocol::consensus::BlockHeight;
@@ -49,6 +49,27 @@ impl MemoryBlockCache {
         let r = range.block_range();
         u32::from(r.start)..u32::from(r.end)
     }
+    /// 写入一批区块。缓存是过程性数据，重复写入同一高度即覆盖。
+    pub fn insert(&self, compact_blocks: Vec<CompactBlock>) -> Result<(), CacheError> {
+        let mut blocks = self.blocks.lock().map_err(|_| poisoned())?;
+        for b in compact_blocks {
+            let h = u32::try_from(b.height)
+                .map_err(|_| CacheError(format!("区块高度超出范围: {}", b.height)))?;
+            blocks.insert(h, b);
+        }
+        Ok(())
+    }
+
+    /// 扫完即弃：删掉一段区间，把内存还回去。
+    pub fn delete(&self, range: &ScanRange) -> Result<(), CacheError> {
+        let mut blocks = self.blocks.lock().map_err(|_| poisoned())?;
+        let r = Self::range_of(range);
+        let doomed: Vec<u32> = blocks.range(r).map(|(h, _)| *h).collect();
+        for h in doomed {
+            blocks.remove(&h);
+        }
+        Ok(())
+    }
 }
 
 /// 缓存自身的错误。内存实现里唯一可能的失败是锁中毒。
@@ -79,28 +100,53 @@ impl BlockSource for MemoryBlockCache {
     where
         F: FnMut(CompactBlock) -> Result<(), error::Error<WalletErrT, Self::Error>>,
     {
-        // 先在持锁时把需要的区块**收集出来**，再释放锁，最后才执行回调。
+        // 交出去的必须是**从 from_height 起的连续前缀**，允许短读。
         //
-        // 不能在持锁期间调 `with_block` —— 回调会写钱包库，而上游有可能在那条
-        // 路径上再次读取本缓存。`std::sync::Mutex` 不可重入，同一线程二次加锁
-        // 在 wasm 单线程环境下就是永久死锁。
+        // 这条契约不是形式主义：调用方拿 `prior` 的元数据去接续扫描，喂给它一段
+        // 跳号的块会被上游判成 `BlockHeightDiscontinuity`，而那个错误 是
+        // `is_continuity_error()` 的真值 —— 于是服务端漏块会被当成链重组，触发
+        // 破坏性回退、重下、再撞同一个洞。宁可短读让下一轮重来。
+        //
+        // 先在持锁时收集，再释放锁，最后才执行回调：回调会写钱包库，而上游有
+        // 可能在那条路径上再次读取本缓存。`std::sync::Mutex` 不可重入，同一线程
+        // 二次加锁在 wasm 单线程环境下就是永久死锁。
         let selected: Vec<CompactBlock> = {
             let blocks = self
                 .blocks
                 .lock()
                 .map_err(|_| error::Error::BlockSource(poisoned()))?;
 
-            let start = from_height.map(u32::from).unwrap_or(0);
-            let iter = blocks.range(start..).map(|(_, b)| b.clone());
-            match limit {
-                Some(n) => iter.take(n).collect(),
-                None => iter.collect(),
+            let cap = limit.unwrap_or(usize::MAX);
+            let start = match from_height.map(u32::from) {
+                Some(h) => h,
+                None => blocks.keys().next().copied().unwrap_or(0),
+            };
+
+            let mut out = Vec::new();
+            let mut expect = start;
+            while out.len() < cap {
+                let Some(block) = blocks.get(&expect) else {
+                    break;
+                };
+                out.push(block.clone());
+                let Some(next) = expect.checked_add(1) else {
+                    break;
+                };
+                expect = next;
             }
+
+            // 起点缺失时一块都不交，并且**报错而不是静默返回空**：静默空会让
+            // 上游把空批当成功、队列不推进，调用方原地重下同一段直到批数耗尽。
+            if out.is_empty() && cap > 0 && !blocks.is_empty() {
+                return Err(error::Error::BlockSource(CacheError(format!(
+                    "缓存缺少起点区块 {start}，不能从后面的块接着扫"
+                ))));
+            }
+            out
         }; // 锁在这里释放
 
-        // 逐块打点。上游 `scan_cached_blocks` 是黑盒，而它唯一会回调进来的地方
-        // 就是这里 —— 于是「卡在第几块的扫描里」和「所有块都扫完了、卡在之后的
-        // 写库/承诺树里」可以被分开。只在排查构建里编进来。
+        // 逐块打点：把「卡在第几块的扫描里」和「所有块都扫完了、卡在之后的
+        // 写库/承诺树里」分开。只在排查构建里编进来。
         #[cfg(feature = "debug-tracing")]
         let total = selected.len();
         // The index is consumed only by the debug-tracing build.
@@ -117,62 +163,6 @@ impl BlockSource for MemoryBlockCache {
         }
         #[cfg(feature = "debug-tracing")]
         crate::sync::trace("cache: 本批区块已全部交出，之后的时间都在上游写库/承诺树里");
-        Ok(())
-    }
-}
-
-#[async_trait::async_trait]
-impl BlockCache for MemoryBlockCache {
-    fn get_tip_height(
-        &self,
-        range: Option<&ScanRange>,
-    ) -> Result<Option<BlockHeight>, Self::Error> {
-        let blocks = self.blocks.lock().map_err(|_| poisoned())?;
-        let tip = match range {
-            None => blocks.keys().next_back().copied(),
-            Some(range) => {
-                let r = Self::range_of(range);
-                blocks.range(r).map(|(h, _)| *h).next_back()
-            }
-        };
-        Ok(tip.map(BlockHeight::from_u32))
-    }
-
-    async fn read(&self, range: &ScanRange) -> Result<Vec<CompactBlock>, Self::Error> {
-        let blocks = self.blocks.lock().map_err(|_| poisoned())?;
-        let r = Self::range_of(range);
-        // 契约要求返回的区块必须连续且从 range.start 开始；允许短读。
-        let mut out = Vec::new();
-        let mut expect = r.start;
-        while expect < r.end {
-            match blocks.get(&expect) {
-                Some(b) => {
-                    out.push(b.clone());
-                    expect += 1;
-                }
-                None => break,
-            }
-        }
-        Ok(out)
-    }
-
-    async fn insert(&self, compact_blocks: Vec<CompactBlock>) -> Result<(), Self::Error> {
-        let mut blocks = self.blocks.lock().map_err(|_| poisoned())?;
-        for b in compact_blocks {
-            let h = u32::try_from(b.height)
-                .map_err(|_| CacheError(format!("区块高度超出范围: {}", b.height)))?;
-            blocks.insert(h, b);
-        }
-        Ok(())
-    }
-
-    async fn delete(&self, range: ScanRange) -> Result<(), Self::Error> {
-        let mut blocks = self.blocks.lock().map_err(|_| poisoned())?;
-        let r = Self::range_of(&range);
-        let doomed: Vec<u32> = blocks.range(r).map(|(h, _)| *h).collect();
-        for h in doomed {
-            blocks.remove(&h);
-        }
         Ok(())
     }
 }
@@ -196,64 +186,73 @@ mod tests {
         )
     }
 
+    /// 收集 `with_blocks` 实际交出来的高度 —— 这是扫描唯一走的那条路。
+    fn handed_out(
+        c: &MemoryBlockCache,
+        from: u32,
+        limit: usize,
+    ) -> Result<Vec<u64>, error::Error<(), CacheError>> {
+        let mut got = Vec::new();
+        c.with_blocks::<_, ()>(Some(BlockHeight::from_u32(from)), Some(limit), |b| {
+            got.push(b.height);
+            Ok(())
+        })?;
+        Ok(got)
+    }
+
     #[test]
-    fn empty_cache_has_no_tip() {
+    fn empty_cache_hands_out_nothing() {
         let c = MemoryBlockCache::new();
         assert!(c.is_empty());
-        assert_eq!(c.get_tip_height(None).unwrap(), None);
+        assert_eq!(handed_out(&c, 10, 5).unwrap(), Vec::<u64>::new());
     }
 
     #[test]
-    fn insert_then_read_contiguous() {
+    fn insert_then_hand_out_contiguous() {
         let c = MemoryBlockCache::new();
-        futures::executor::block_on(c.insert(vec![block(10), block(11), block(12)])).unwrap();
+        c.insert(vec![block(10), block(11), block(12)]).unwrap();
         assert_eq!(c.len(), 3);
+        assert_eq!(handed_out(&c, 10, 3).unwrap(), vec![10, 11, 12]);
+    }
+
+    #[test]
+    fn limit_is_respected() {
+        let c = MemoryBlockCache::new();
+        c.insert(vec![block(10), block(11), block(12)]).unwrap();
+        assert_eq!(handed_out(&c, 10, 2).unwrap(), vec![10, 11]);
+    }
+
+    /// 缺口之后的区块不能被交出去，否则上游会把跳号判成链重组并触发破坏性回退。
+    #[test]
+    fn hand_out_stops_at_gap() {
+        let c = MemoryBlockCache::new();
+        c.insert(vec![block(10), block(11), block(13)]).unwrap();
         assert_eq!(
-            c.get_tip_height(None).unwrap(),
-            Some(BlockHeight::from_u32(12))
+            handed_out(&c, 10, 4).unwrap(),
+            vec![10, 11],
+            "高度 12 缺，就该停"
         );
-
-        let got = futures::executor::block_on(c.read(&range(10, 13))).unwrap();
-        assert_eq!(got.len(), 3);
-        assert_eq!(got[0].height, 10);
     }
 
-    /// 契约要求：返回的区块必须连续且从 range.start 开始，允许短读。
-    /// 缺口之后的区块不能被返回，否则调用方会把不连续的数据当成连续的。
+    /// 起点缺失要**报错**，不能静默返回空 —— 静默空会被当成扫描成功，
+    /// 队列不推进，调用方原地重下同一段。
     #[test]
-    fn read_stops_at_gap() {
+    fn missing_start_is_an_error_not_an_empty_batch() {
         let c = MemoryBlockCache::new();
-        futures::executor::block_on(c.insert(vec![block(10), block(11), block(13)])).unwrap();
-        let got = futures::executor::block_on(c.read(&range(10, 14))).unwrap();
-        assert_eq!(got.len(), 2, "遇到高度 12 的缺口就该停");
-        assert_eq!(got[1].height, 11);
-    }
-
-    #[test]
-    fn read_returns_empty_when_start_missing() {
-        let c = MemoryBlockCache::new();
-        futures::executor::block_on(c.insert(vec![block(11)])).unwrap();
-        let got = futures::executor::block_on(c.read(&range(10, 12))).unwrap();
-        assert!(got.is_empty(), "起点缺失时不能从中间开始返回");
+        c.insert(vec![block(11), block(12)]).unwrap();
+        let e = handed_out(&c, 10, 2).unwrap_err();
+        assert!(
+            matches!(e, error::Error::BlockSource(CacheError(ref m)) if m.contains("10")),
+            "起点缺失应报 BlockSource 错误，实际 {e:?}"
+        );
     }
 
     #[test]
     fn delete_removes_only_the_range() {
         let c = MemoryBlockCache::new();
-        futures::executor::block_on(c.insert(vec![block(10), block(11), block(12)])).unwrap();
-        futures::executor::block_on(c.delete(range(11, 12))).unwrap();
+        c.insert(vec![block(10), block(11), block(12)]).unwrap();
+        c.delete(&range(11, 12)).unwrap();
         assert_eq!(c.len(), 2);
-        assert_eq!(
-            c.get_tip_height(None).unwrap(),
-            Some(BlockHeight::from_u32(12))
-        );
-    }
-
-    #[test]
-    fn tip_within_range_is_bounded() {
-        let c = MemoryBlockCache::new();
-        futures::executor::block_on(c.insert(vec![block(10), block(20), block(30)])).unwrap();
-        let tip = c.get_tip_height(Some(&range(10, 25))).unwrap();
-        assert_eq!(tip, Some(BlockHeight::from_u32(20)));
+        assert_eq!(handed_out(&c, 12, 1).unwrap(), vec![12]);
     }
 }

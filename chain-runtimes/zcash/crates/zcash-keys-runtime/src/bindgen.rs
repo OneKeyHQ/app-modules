@@ -13,17 +13,6 @@ pub fn validate_address(network: &str, address: &str) -> Result<bool, JsValue> {
     Ok(keys::validate_address(network, address)?)
 }
 
-/// 从助记词派生该账户的 UFVK。助记词与种子在 Rust 侧用完即擦。
-#[wasm_bindgen(js_name = ufvkFromMnemonic)]
-pub fn ufvk_from_mnemonic(
-    network: &str,
-    mnemonic: String,
-    account_index: u32,
-) -> Result<String, JsValue> {
-    let mnemonic = Zeroizing::new(mnemonic);
-    Ok(keys::ufvk_from_mnemonic(network, &mnemonic, account_index)?)
-}
-
 /// 从 UFVK 取统一地址。纯公开材料，不涉及私钥。
 ///
 /// `receiverPolicy` 决定 UA 里包含哪些 receiver：`"all"` / `"shielded"` /
@@ -40,33 +29,9 @@ pub fn unified_address(
     Ok(keys::unified_address_with(network, ufvk, receiver_policy)?)
 }
 
-/// 给 PCZT 签名。
-///
-/// 这是整个方案里唯一接触花费密钥的接口。助记词在 Rust 侧派生、用完即擦，
-/// 种子与花费密钥不会跨这条边界返回。
-///
-/// 输入是 `onekey-zcash-runtime` 的 `pcztCreate` 产物，
-/// 输出交回它的 `pcztSend` 终结并广播。
-#[wasm_bindgen(js_name = pcztSign)]
-pub fn pczt_sign(
-    network: &str,
-    mnemonic: String,
-    account_index: u32,
-    pczt_bytes: Vec<u8>,
-) -> Result<Vec<u8>, JsValue> {
-    let mnemonic = Zeroizing::new(mnemonic);
-    Ok(sign::sign_pczt_with_mnemonic(
-        network,
-        &mnemonic,
-        account_index,
-        &pczt_bytes,
-    )?)
-}
-
 /// 从**种子字节**派生 UFVK。
 ///
-/// OneKey 的架构里，助记词只在解密那一刻出现一次，之后全程传种子。
-/// 所以这才是接进 app 的实际入口；`ufvkFromMnemonic` 主要用于测试与独立验证。
+/// 助记词只在解密那一刻出现一次，之后全程传种子 —— 本边界不收助记词。
 #[wasm_bindgen(js_name = ufvkFromSeed)]
 pub fn ufvk_from_seed(network: &str, seed: Vec<u8>, account_index: u32) -> Result<String, JsValue> {
     // Own and wipe the original bindgen allocation, including on validation errors.

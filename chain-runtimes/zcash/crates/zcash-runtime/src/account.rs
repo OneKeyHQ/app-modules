@@ -7,7 +7,6 @@ use zcash_client_backend::data_api::{
     Account as _, AccountBirthday, AccountPurpose, WalletRead, WalletWrite, Zip32Derivation,
 };
 use zcash_keys::keys::UnifiedFullViewingKey;
-use zcash_protocol::consensus::BlockHeight;
 
 use crate::error::{ErrorCode, Result, RuntimeError};
 use crate::network::{self, LightClient};
@@ -56,13 +55,7 @@ pub async fn import_ufvk(
     })?;
 
     let account = db
-        .import_account_ufvk(
-            account_name,
-            &ufvk,
-            &birthday,
-            purpose,
-            None,
-        )
+        .import_account_ufvk(account_name, &ufvk, &birthday, purpose, None)
         .map_err(|e| {
             RuntimeError::with(
                 ErrorCode::DatabaseError,
@@ -76,8 +69,11 @@ pub async fn import_ufvk(
 
 fn parse_zip32_derivation(fingerprint_hex: &str, account_index: u32) -> Result<Zip32Derivation> {
     let bytes = hex::decode(fingerprint_hex).map_err(|e| {
-        RuntimeError::with(ErrorCode::InvalidAccountId, json!({ "field": "seedFingerprint" }))
-            .detail(e)
+        RuntimeError::with(
+            ErrorCode::InvalidAccountId,
+            json!({ "field": "seedFingerprint" }),
+        )
+        .detail(e)
     })?;
     let fingerprint: [u8; 32] = bytes.try_into().map_err(|_| {
         RuntimeError::with(
@@ -261,11 +257,6 @@ fn uuid_from_str(s: &str) -> Result<uuid::Uuid> {
     uuid::Uuid::parse_str(s).map_err(|e| {
         RuntimeError::with(ErrorCode::InvalidAccountId, json!({ "value": s })).detail(e)
     })
-}
-
-/// 高度换算成 `BlockHeight`，越界时给出可读错误。
-pub fn block_height(h: u32) -> BlockHeight {
-    BlockHeight::from_u32(h)
 }
 
 /// 构造确认数策略。两个门槛都必须 >= 1，且 trusted <= untrusted。

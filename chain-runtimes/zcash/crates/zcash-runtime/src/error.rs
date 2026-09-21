@@ -332,6 +332,15 @@ mod tests {
             TransactionBuildError,
             BroadcastRejected,
             Unimplemented,
+            FundsNeedShielding,
+            CoinbaseFundsUnspendable,
+            ReorgDetected,
+            WalletBusy,
+            InvalidScanPriority,
+            InvalidTransparentUtxos,
+            BroadcastIntentNotFound,
+            BroadcastIntentNotReady,
+            FinalizeOutcomeUnknown,
         ];
         let mut seen = std::collections::HashSet::new();
         for c in all {

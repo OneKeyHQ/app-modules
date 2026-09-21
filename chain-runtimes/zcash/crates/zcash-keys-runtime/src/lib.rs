@@ -8,8 +8,11 @@
 //! ## 密钥纪律
 //!
 //! - 种子与花费密钥（USK）**只在本 crate 内部存在**，不跨 wasm 边界。
-//! - 所有中间副本用 `Zeroize` 擦除；JS 侧永远只拿到 UFVK 和地址。
-//! - 调用方传进来的种子字节，本 crate 用完即擦。
+//! - JS 侧永远只拿到 UFVK 和地址；出厂边界不收助记词，只收种子字节。
+//! - 种子（含调用方传进来的那份）用 `Zeroizing` 包裹，用完即擦。
+//! - **但派生出的密钥擦不掉**：`UnifiedSpendingKey`、`AccountPrivKey`、
+//!   `secp256k1::SecretKey` 上游都没有 `ZeroizeOnDrop`，析构后仍留在 wasm
+//!   线性内存里。别把这一条读成「全链路擦干净」—— 它不是。
 
 pub mod error;
 pub mod keys;
