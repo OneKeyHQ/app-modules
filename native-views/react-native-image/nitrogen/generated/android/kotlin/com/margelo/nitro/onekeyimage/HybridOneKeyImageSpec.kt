@@ -80,13 +80,19 @@ abstract class HybridOneKeyImageSpec: HybridView() {
   @set:DoNotStrip
   @set:Keep
   abstract var round: Boolean?
-
+  
   @get:DoNotStrip
   @get:Keep
   @set:DoNotStrip
   @set:Keep
   abstract var resizeWidth: Double?
-
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var resizeHeight: Double?
+  
   @get:DoNotStrip
   @get:Keep
   @set:DoNotStrip
@@ -104,7 +110,7 @@ abstract class HybridOneKeyImageSpec: HybridView() {
   @set:DoNotStrip
   @set:Keep
   abstract var placeholderColor: String?
-
+  
   abstract var onLoadStart: (() -> Unit)?
   
   private var onLoadStart_cxx: Func_void?

@@ -58,6 +58,7 @@ namespace margelo::nitro::onekeyimage::views {
     nitro::ReactProp<std::optional<bool>> optimizeTos;
     nitro::ReactProp<std::optional<bool>> round;
     nitro::ReactProp<std::optional<double>> resizeWidth;
+    nitro::ReactProp<std::optional<double>> resizeHeight;
     nitro::ReactProp<std::optional<double>> overscan;
     nitro::ReactProp<std::optional<OneKeyImageLoadingStrategy>> loadingStrategy;
     nitro::ReactProp<std::optional<std::string>> placeholderColor;
@@ -80,6 +81,7 @@ namespace margelo::nitro::onekeyimage::views {
              optimizeTos.hasSameValue(other.optimizeTos) &&
              round.hasSameValue(other.round) &&
              resizeWidth.hasSameValue(other.resizeWidth) &&
+             resizeHeight.hasSameValue(other.resizeHeight) &&
              overscan.hasSameValue(other.overscan) &&
              loadingStrategy.hasSameValue(other.loadingStrategy) &&
              placeholderColor.hasSameValue(other.placeholderColor) &&
@@ -103,6 +105,7 @@ namespace margelo::nitro::onekeyimage::views {
              optimizeTos.isProvided() ||
              round.isProvided() ||
              resizeWidth.isProvided() ||
+             resizeHeight.isProvided() ||
              overscan.isProvided() ||
              loadingStrategy.isProvided() ||
              placeholderColor.isProvided() ||

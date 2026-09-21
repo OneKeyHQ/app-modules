@@ -156,6 +156,15 @@ namespace margelo::nitro::onekeyimage {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* resizeWidth */)>("setResizeWidth");
     method(_javaPart, resizeWidth.has_value() ? jni::JDouble::valueOf(resizeWidth.value()) : nullptr);
   }
+  std::optional<double> JHybridOneKeyImageSpec::getResizeHeight() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getResizeHeight");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->value()) : std::nullopt;
+  }
+  void JHybridOneKeyImageSpec::setResizeHeight(std::optional<double> resizeHeight) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JDouble> /* resizeHeight */)>("setResizeHeight");
+    method(_javaPart, resizeHeight.has_value() ? jni::JDouble::valueOf(resizeHeight.value()) : nullptr);
+  }
   std::optional<double> JHybridOneKeyImageSpec::getOverscan() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getOverscan");
     auto __result = method(_javaPart);

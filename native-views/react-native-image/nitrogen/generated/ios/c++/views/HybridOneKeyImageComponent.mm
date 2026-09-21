@@ -158,6 +158,12 @@ using namespace margelo::nitro::onekeyimage::views;
           : !newViewProps.resizeWidth.hasSameValue(oldViewProps->resizeWidth)) {
       swiftPart.setResizeWidth(newViewProps.resizeWidth.get());
     }
+    // resizeHeight: optional
+    if (oldViewProps == nullptr
+          ? newViewProps.resizeHeight.isProvided()
+          : !newViewProps.resizeHeight.hasSameValue(oldViewProps->resizeHeight)) {
+      swiftPart.setResizeHeight(newViewProps.resizeHeight.get());
+    }
     // overscan: optional
     if (oldViewProps == nullptr
           ? newViewProps.overscan.isProvided()

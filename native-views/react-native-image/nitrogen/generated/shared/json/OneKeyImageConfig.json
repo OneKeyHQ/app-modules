@@ -14,6 +14,7 @@
     "optimizeTos": true,
     "round": true,
     "resizeWidth": true,
+    "resizeHeight": true,
     "overscan": true,
     "loadingStrategy": true,
     "placeholderColor": true,

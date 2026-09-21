@@ -34,6 +34,8 @@ namespace margelo::nitro::onekeyimage {
       prototype.registerHybridSetter("round", &HybridOneKeyImageSpec::setRound);
       prototype.registerHybridGetter("resizeWidth", &HybridOneKeyImageSpec::getResizeWidth);
       prototype.registerHybridSetter("resizeWidth", &HybridOneKeyImageSpec::setResizeWidth);
+      prototype.registerHybridGetter("resizeHeight", &HybridOneKeyImageSpec::getResizeHeight);
+      prototype.registerHybridSetter("resizeHeight", &HybridOneKeyImageSpec::setResizeHeight);
       prototype.registerHybridGetter("overscan", &HybridOneKeyImageSpec::getOverscan);
       prototype.registerHybridSetter("overscan", &HybridOneKeyImageSpec::setOverscan);
       prototype.registerHybridGetter("loadingStrategy", &HybridOneKeyImageSpec::getLoadingStrategy);

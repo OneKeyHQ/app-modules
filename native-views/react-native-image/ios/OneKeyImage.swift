@@ -115,6 +115,9 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   private var requestActive = false
   private var isResetting = false
   private var displayState = DisplayState.loading
+  /// `.loading` with the previous image kept on screen as the placeholder
+  /// (see `showLoading(preservedImage:)`).
+  private var isPreservingDisplayedImage = false
   private var requestStartedAt: CFTimeInterval?
 
   var view: UIView { hostView }
@@ -148,6 +151,11 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   var resizeWidth: Double? {
     didSet {
       if !Self.equalOptionalDouble(resizeWidth, oldValue) { identityDidChange() }
+    }
+  }
+  var resizeHeight: Double? {
+    didSet {
+      if !Self.equalOptionalDouble(resizeHeight, oldValue) { identityDidChange() }
     }
   }
   var overscan: Double? = 1.1 {
@@ -260,7 +268,14 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     guard !hostView.bounds.isEmpty else {
       cancelCurrentRequest(invalidateGeneration: true)
       lastRequestSignature = nil
-      showLoading(requestIsActive: false, letLibraryStartIndicator: false)
+      // A memory-cached image shown from `identityDidChange` before layout
+      // stays up; layout re-runs this load with real bounds and confirms it.
+      if !Self.shouldPreserveDisplayedImage(
+        isShowingImage: displayState == .image,
+        hasImage: hostView.image != nil
+      ) {
+        showLoading(requestIsActive: false, letLibraryStartIndicator: false)
+      }
       return
     }
     guard let rawString = sourceUri, !rawString.isEmpty else {
@@ -280,6 +295,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       contentFit?.stringValue ?? "cover",
       String(optimizeTos ?? true),
       resizeWidth.map(String.init(describing:)) ?? "",
+      resizeHeight.map(String.init(describing:)) ?? "",
       String(overscan ?? 1.1),
       String(Int(hostView.bounds.width.rounded())),
       String(Int(hostView.bounds.height.rounded())),
@@ -295,7 +311,20 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     onLoadStart?()
     guard Self.isCurrentRequestGeneration(generation, current: requestGeneration) else { return }
     if showMemoryCachedImageIfAvailable(requestIsActive: true) { return }
-    showLoading(requestIsActive: true, letLibraryStartIndicator: true)
+    // The pre-layout probe may have shown this identity from another thumbnail
+    // key (a preload's, or an earlier layout size). Keep it on screen as the
+    // placeholder while the exact rendition loads: blanking to a skeleton and
+    // redrawing is worse than the skeleton it replaced.
+    let preservedImage =
+      Self.shouldPreserveDisplayedImage(
+        isShowingImage: displayState == .image,
+        hasImage: hostView.image != nil
+      ) ? hostView.image : nil
+    showLoading(
+      requestIsActive: true,
+      letLibraryStartIndicator: true,
+      preservedImage: preservedImage
+    )
 
     if let violation = OneKeyImageSafetyPolicy.preflight(source: rawString) {
       finishWithError(violation, generation: generation)
@@ -311,8 +340,11 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     }
 
     let hasCustomIdentity = OneKeyImageRequestContext.headers(from: sourceHeadersJson) != nil
-    let displaySize = resizeWidth.flatMap { $0.isFinite && $0 > 0 ? CGFloat($0) : nil }
-      ?? max(hostView.bounds.width, hostView.bounds.height)
+    let displaySize = OneKeyImageDecodeSizing.tosDisplaySize(
+      bounds: hostView.bounds.size,
+      resizeWidth: resizeWidth,
+      resizeHeight: resizeHeight
+    ) ?? 0
     let requestURL =
       (optimizeTos ?? true)
       ? OneKeyTosURL.optimized(
@@ -327,7 +359,8 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       url: requestURL,
       rawURL: rawURL,
       generation: generation,
-      mayFallbackToRaw: requestURL != rawURL
+      mayFallbackToRaw: requestURL != rawURL,
+      placeholderImage: preservedImage
     )
   }
 
@@ -335,7 +368,8 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     url: URL,
     rawURL: URL,
     generation: UInt64,
-    mayFallbackToRaw: Bool
+    mayFallbackToRaw: Bool,
+    placeholderImage: UIImage? = nil
   ) {
     guard Self.isCurrentRequestGeneration(generation, current: requestGeneration) else { return }
     let rawScreenScale: CGFloat = hostView.window?.screen.scale ?? UIScreen.main.scale
@@ -363,7 +397,9 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     )
     hostView.sd_internalSetImage(
       with: url,
-      placeholderImage: nil,
+      // SDWebImage resets the image view when it starts a load; hand it the
+      // preserved image so the view keeps showing it until the load lands.
+      placeholderImage: placeholderImage,
       options: OneKeyImageRequestContext.renderOptions,
       context: context,
       setImageBlock: { [weak self] image, _, _, _ in
@@ -409,6 +445,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
         guard self.claimTerminal(generation) else { return }
         self.requestActive = false
         self.displayState = .image
+        self.isPreservingDisplayedImage = false
         self.skeletonIndicator.stopAnimatingIndicator()
         self.fallbackLayer.isHidden = true
         self.hostView.backgroundColor = .clear
@@ -517,6 +554,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     optimizeTos = true
     round = false
     resizeWidth = nil
+    resizeHeight = nil
     overscan = 1.1
     loadingStrategy = .static
     placeholderColor = nil
@@ -547,23 +585,56 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     guard Self.isCurrentRequestGeneration(generation, current: requestGeneration) else {
       return
     }
+    // Also the placeholder write path (SDWebImage hands the preserved image
+    // back through setImageBlock when the load starts), so the preservation
+    // flag is NOT touched here; it ends with the terminal callbacks.
     hostView.image = image
   }
 
   private func showLoading(
     requestIsActive: Bool,
-    letLibraryStartIndicator: Bool
+    letLibraryStartIndicator: Bool,
+    preservedImage: UIImage? = nil
   ) {
     displayState = .loading
     requestActive = requestIsActive
     resetImageTransition()
-    hostView.image = nil
     fallbackLayer.isHidden = true
+    if let preservedImage {
+      // Same identity, different thumbnail key: the image already on screen
+      // stands in for the placeholder, so no blank frame and no indicator.
+      // The indicator is unmounted, not just stopped: SDWebImage restarts a
+      // mounted `sd_imageIndicator` when the load begins, and `applyVariant`
+      // must not reinstall it while this state lasts.
+      isPreservingDisplayedImage = true
+      hostView.image = preservedImage
+      skeletonIndicator.stopAnimatingIndicator()
+      if hostView.sd_imageIndicator != nil {
+        hostView.sd_imageIndicator = nil
+      }
+      hostView.backgroundColor = .clear
+      return
+    }
+    isPreservingDisplayedImage = false
+    hostView.image = nil
     applyLoadingAppearance(letLibraryStartIndicator: letLibraryStartIndicator)
   }
 
+  /// Whether the image currently on screen should stay up while a load for the
+  /// SAME identity runs (bounds not laid out yet, or the laid-out request key
+  /// differs from the one the pre-layout probe hit). Pure for testability.
+  static func shouldPreserveDisplayedImage(isShowingImage: Bool, hasImage: Bool) -> Bool {
+    isShowingImage && hasImage
+  }
+
   private func showMemoryCachedImageIfAvailable(requestIsActive: Bool) -> Bool {
-    guard cachePolicy == .memory || cachePolicy == .memoryDisk,
+    // JS leaves `cachePolicy` unset for the common case and Fabric then hands
+    // Nitro a nil, which the request path already treats as memory-disk; the
+    // probe must agree, otherwise a nil policy skips the memory lookup entirely
+    // and every mount pays the async pipeline round trip (an icon skeleton
+    // frame) for an image that is already decoded in memory.
+    let effectivePolicy = cachePolicy ?? .memoryDisk
+    guard effectivePolicy == .memory || effectivePolicy == .memoryDisk,
           let sourceUri,
           let rawURL = URL(string: sourceUri) else {
       return false
@@ -571,8 +642,11 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     let rawScreenScale: CGFloat = hostView.window?.screen.scale ?? UIScreen.main.scale
     let screenScale = min(max(rawScreenScale, 1), 3)
     let hasCustomIdentity = OneKeyImageRequestContext.headers(from: sourceHeadersJson) != nil
-    let displaySize = resizeWidth.flatMap { $0.isFinite && $0 > 0 ? CGFloat($0) : nil }
-      ?? max(hostView.bounds.width, hostView.bounds.height)
+    let displaySize = OneKeyImageDecodeSizing.tosDisplaySize(
+      bounds: hostView.bounds.size,
+      resizeWidth: resizeWidth,
+      resizeHeight: resizeHeight
+    ) ?? 0
     let requestURL =
       (optimizeTos ?? true)
       ? OneKeyTosURL.optimized(
@@ -583,12 +657,21 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
         hasCustomIdentity: hasCustomIdentity
       )
       : rawURL
-    let thumbnailPixelSize = OneKeyImageDecodeSizing.thumbnailPixelSize(
-      viewSize: hostView.bounds.size,
-      scale: screenScale,
-      contentFit: contentFit ?? .cover
-    )
-    func memoryCachedImage(for url: URL) -> UIImage? {
+    // The thumbnail size is part of the cache key. Laid out, it is this view's
+    // own request key; before layout it comes from the resize hints, under
+    // this view's contentFit and under `.cover` (a preload's key). With no
+    // bounds and no hint the un-thumbnailed key is the only thing to try.
+    let thumbnailCandidates: [CGSize?] = {
+      let sizes = OneKeyImageDecodeSizing.probeThumbnailPixelSizes(
+        bounds: hostView.bounds.size,
+        resizeWidth: resizeWidth,
+        resizeHeight: resizeHeight,
+        scale: screenScale,
+        contentFit: contentFit ?? .cover
+      )
+      return sizes.isEmpty ? [nil] : sizes
+    }()
+    func memoryCachedImage(for url: URL, thumbnailPixelSize: CGSize?) -> UIImage? {
       let context = OneKeyImageRequestContext.make(
         headersJson: sourceHeadersJson,
         cachePolicy: cachePolicy ?? .memoryDisk,
@@ -603,6 +686,14 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       }
       return cache.imageFromMemoryCache(forKey: key)
     }
+    func memoryCachedImage(for url: URL) -> UIImage? {
+      for thumbnailPixelSize in thumbnailCandidates {
+        if let image = memoryCachedImage(for: url, thumbnailPixelSize: thumbnailPixelSize) {
+          return image
+        }
+      }
+      return nil
+    }
     guard let image = memoryCachedImage(for: requestURL)
       ?? (requestURL == rawURL ? nil : memoryCachedImage(for: rawURL)) else {
       return false
@@ -610,6 +701,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     let generation = requestGeneration
     if requestIsActive, !claimTerminal(generation) { return true }
     displayState = .image
+    isPreservingDisplayedImage = false
     requestActive = false
     skeletonIndicator.stopAnimatingIndicator()
     fallbackLayer.isHidden = true
@@ -647,6 +739,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   private func showTerminalState(_ state: DisplayState) {
     displayState = state
     requestActive = false
+    isPreservingDisplayedImage = false
     skeletonIndicator.stopAnimatingIndicator()
     resetImageTransition()
     hostView.image = nil
@@ -664,6 +757,9 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     case .image:
       break
     case .loading:
+      // A preserved image is the placeholder; re-applying the loading look
+      // would cover it with the skeleton / placeholder color again.
+      if isPreservingDisplayedImage { break }
       applyLoadingAppearance(letLibraryStartIndicator: false)
     case .error, .fallback:
       let hidesTerminalState = loadingStrategy == .none

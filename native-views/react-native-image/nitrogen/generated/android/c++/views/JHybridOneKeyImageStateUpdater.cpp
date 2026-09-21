@@ -104,6 +104,11 @@ void JHybridOneKeyImageStateUpdater::updateViewProps(jni::alias_ref<jni::JClass>
     hybridView->setResizeWidth(newProps->resizeWidth.get());
   }
   if (oldProps == nullptr
+        ? newProps->resizeHeight.isProvided()
+        : !newProps->resizeHeight.hasSameValue(oldProps->resizeHeight)) {
+    hybridView->setResizeHeight(newProps->resizeHeight.get());
+  }
+  if (oldProps == nullptr
         ? newProps->overscan.isProvided()
         : !newProps->overscan.hasSameValue(oldProps->overscan)) {
     hybridView->setOverscan(newProps->overscan.get());

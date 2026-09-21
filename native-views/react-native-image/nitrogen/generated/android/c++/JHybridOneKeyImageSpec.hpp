@@ -70,6 +70,8 @@ namespace margelo::nitro::onekeyimage {
     void setRound(std::optional<bool> round) override;
     std::optional<double> getResizeWidth() override;
     void setResizeWidth(std::optional<double> resizeWidth) override;
+    std::optional<double> getResizeHeight() override;
+    void setResizeHeight(std::optional<double> resizeHeight) override;
     std::optional<double> getOverscan() override;
     void setOverscan(std::optional<double> overscan) override;
     std::optional<OneKeyImageLoadingStrategy> getLoadingStrategy() override;

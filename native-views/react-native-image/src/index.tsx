@@ -155,6 +155,7 @@ export function OneKeyImage({
   optimizeTos = true,
   round = false,
   resizeWidth,
+  resizeHeight,
   overscan = 1.1,
   loadingStrategy = OneKeyImageLoadingStrategy.STATIC,
   placeholderColor,
@@ -176,7 +177,7 @@ export function OneKeyImage({
     normalized?.headers ?? {}
   )}|${resolvedCachePolicy}|${recyclingKey ?? ''}|${contentFit}|${
     optimizeTos ? '1' : '0'
-  }|${resizeWidth ?? ''}|${overscan}`;
+  }|${resizeWidth ?? ''}|${resizeHeight ?? ''}|${overscan}`;
   const hasSource = normalized != null;
   const hasOverlay = placeholder != null || fallback != null;
   type LoadState = {
@@ -373,6 +374,7 @@ export function OneKeyImage({
     optimizeTos,
     round,
     resizeWidth,
+    resizeHeight,
     overscan,
     loadingStrategy:
       placeholder == null ? loadingStrategy : OneKeyImageLoadingStrategy.NONE,

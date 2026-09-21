@@ -20,6 +20,7 @@ public protocol HybridOneKeyImageSpec_protocol: HybridObject, HybridView {
   var optimizeTos: Bool? { get set }
   var round: Bool? { get set }
   var resizeWidth: Double? { get set }
+  var resizeHeight: Double? { get set }
   var overscan: Double? { get set }
   var loadingStrategy: OneKeyImageLoadingStrategy? { get set }
   var placeholderColor: String? { get set }

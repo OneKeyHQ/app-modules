@@ -30,6 +30,7 @@ namespace margelo::nitro::onekeyimage::views {
     optimizeTos(nitro::ReactProp<std::optional<bool>>::fromRawValue("OneKeyImage", "optimizeTos", rawProps, sourceProps.optimizeTos)),
     round(nitro::ReactProp<std::optional<bool>>::fromRawValue("OneKeyImage", "round", rawProps, sourceProps.round)),
     resizeWidth(nitro::ReactProp<std::optional<double>>::fromRawValue("OneKeyImage", "resizeWidth", rawProps, sourceProps.resizeWidth)),
+    resizeHeight(nitro::ReactProp<std::optional<double>>::fromRawValue("OneKeyImage", "resizeHeight", rawProps, sourceProps.resizeHeight)),
     overscan(nitro::ReactProp<std::optional<double>>::fromRawValue("OneKeyImage", "overscan", rawProps, sourceProps.overscan)),
     loadingStrategy(nitro::ReactProp<std::optional<OneKeyImageLoadingStrategy>>::fromRawValue("OneKeyImage", "loadingStrategy", rawProps, sourceProps.loadingStrategy)),
     placeholderColor(nitro::ReactProp<std::optional<std::string>>::fromRawValue("OneKeyImage", "placeholderColor", rawProps, sourceProps.placeholderColor)),
@@ -52,6 +53,7 @@ namespace margelo::nitro::onekeyimage::views {
       case hashString("optimizeTos"): return true;
       case hashString("round"): return true;
       case hashString("resizeWidth"): return true;
+      case hashString("resizeHeight"): return true;
       case hashString("overscan"): return true;
       case hashString("loadingStrategy"): return true;
       case hashString("placeholderColor"): return true;

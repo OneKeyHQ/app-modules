@@ -180,6 +180,7 @@ internal fun oneKeyImageRequestSignature(
   height: Int,
   density: Float,
   resizeWidth: Double? = null,
+  resizeHeight: Double? = null,
 ): String = listOf(
   rawUrl,
   sourceHeadersJson.orEmpty(),
@@ -190,6 +191,7 @@ internal fun oneKeyImageRequestSignature(
   overscan.toString(),
   round.toString(),
   resizeWidth.toString(),
+  resizeHeight.toString(),
   width.toString(),
   height.toString(),
   density.toString(),
@@ -304,6 +306,14 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       field = value
       requestIdentityChanged()
     }
+  // Layout hint pair with resizeWidth; only the iOS pre-layout memory probe
+  // consumes it today, Android keys the request on the measured view size.
+  override var resizeHeight: Double? = null
+    set(value) {
+      if (field == value) return
+      field = value
+      requestIdentityChanged()
+    }
   override var loadingStrategy: OneKeyImageLoadingStrategy? = OneKeyImageLoadingStrategy.STATIC
     set(value) {
       field = value
@@ -403,6 +413,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     optimizeTos = true
     round = false
     resizeWidth = null
+    resizeHeight = null
     overscan = 1.1
     loadingStrategy = OneKeyImageLoadingStrategy.STATIC
     placeholderColor = null
@@ -477,6 +488,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       height = hostView.height,
       density = hostView.resources.displayMetrics.density,
       resizeWidth = resizeWidth,
+      resizeHeight = resizeHeight,
     )
     if (!force && signature == lastSignature) return
     lastSignature = signature

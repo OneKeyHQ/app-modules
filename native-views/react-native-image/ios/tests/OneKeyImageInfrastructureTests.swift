@@ -310,6 +310,91 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     )
   }
 
+  // The pre-layout memory probe is only useful if it reproduces a key some
+  // earlier load stored under. These pin the probe against the two real key
+  // producers: the laid-out render request (bounds + contentFit) and the
+  // preload (logicalViewSize(resizeWidth, resizeHeight) + .cover).
+  private func renderKey(bounds: CGSize, fit: OneKeyImageContentFit) throws -> CGSize {
+    try XCTUnwrap(
+      OneKeyImageDecodeSizing.thumbnailPixelSize(viewSize: bounds, scale: 3, contentFit: fit)
+    )
+  }
+
+  private func preloadKey(width: Double?, height: Double?) throws -> CGSize {
+    try renderKey(
+      bounds: try XCTUnwrap(OneKeyImageDecodeSizing.logicalViewSize(width: width, height: height)),
+      fit: .cover
+    )
+  }
+
+  func testLaidOutProbeUsesExactlyTheRenderRequestKey() throws {
+    let bounds = CGSize(width: 40, height: 64)
+    for fit in [OneKeyImageContentFit.cover, .contain, .fill, .center] {
+      XCTAssertEqual(
+        OneKeyImageDecodeSizing.probeThumbnailPixelSizes(
+          bounds: bounds, resizeWidth: 32, resizeHeight: 48, scale: 3, contentFit: fit
+        ),
+        [try renderKey(bounds: bounds, fit: fit)],
+        "\(fit)"
+      )
+    }
+  }
+
+  func testPreLayoutSquareHintMatchesPreloadAndRenderKeys() throws {
+    // A token icon: resizeWidth only, laid out square, cover. One key, shared
+    // by the preload, the laid-out request and the probe.
+    let sizes = OneKeyImageDecodeSizing.probeThumbnailPixelSizes(
+      bounds: .zero, resizeWidth: 40, resizeHeight: nil, scale: 3, contentFit: .cover
+    )
+    XCTAssertEqual(sizes, [CGSize(width: 120, height: 120)])
+    XCTAssertEqual(sizes, [try preloadKey(width: 40, height: nil)])
+    XCTAssertEqual(sizes, [try renderKey(bounds: CGSize(width: 40, height: 40), fit: .cover)])
+  }
+
+  func testPreLayoutRectangularHintProbesRenderAndPreloadKeys() throws {
+    // The README preload shape (48x64 @3) under a non-cover view: the laid-out
+    // request key comes first, the preload's cover key second, no duplicates.
+    let sizes = OneKeyImageDecodeSizing.probeThumbnailPixelSizes(
+      bounds: .zero, resizeWidth: 48, resizeHeight: 64, scale: 3, contentFit: .contain
+    )
+    XCTAssertEqual(
+      sizes,
+      [
+        try renderKey(bounds: CGSize(width: 48, height: 64), fit: .contain),
+        try preloadKey(width: 48, height: 64),
+      ]
+    )
+    XCTAssertEqual(sizes, [CGSize(width: 144, height: 192), CGSize(width: 192, height: 192)])
+    // Under cover both collapse to the preload key.
+    XCTAssertEqual(
+      OneKeyImageDecodeSizing.probeThumbnailPixelSizes(
+        bounds: .zero, resizeWidth: 48, resizeHeight: 64, scale: 3, contentFit: .cover
+      ),
+      [try preloadKey(width: 48, height: 64)]
+    )
+  }
+
+  func testPreLayoutProbeWithoutHintHasNothingToTry() {
+    XCTAssertEqual(
+      OneKeyImageDecodeSizing.probeThumbnailPixelSizes(
+        bounds: .zero, resizeWidth: nil, resizeHeight: nil, scale: 3, contentFit: .cover
+      ),
+      []
+    )
+    XCTAssertEqual(
+      OneKeyImageDecodeSizing.probeThumbnailPixelSizes(
+        bounds: .zero, resizeWidth: 0, resizeHeight: -1, scale: 3, contentFit: .cover
+      ),
+      []
+    )
+  }
+
+  func testDisplayedImageIsPreservedOnlyWhileShowingOne() {
+    XCTAssertTrue(HybridOneKeyImage.shouldPreserveDisplayedImage(isShowingImage: true, hasImage: true))
+    XCTAssertFalse(HybridOneKeyImage.shouldPreserveDisplayedImage(isShowingImage: true, hasImage: false))
+    XCTAssertFalse(HybridOneKeyImage.shouldPreserveDisplayedImage(isShowingImage: false, hasImage: true))
+  }
+
   func testNoSizePreloadUsesCappedDecodeTarget() {
     XCTAssertEqual(HybridOneKeyImageCache.maximumConcurrentPreloads, 4)
     XCTAssertEqual(
@@ -541,6 +626,55 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
         mayFallbackToRaw: true,
         safetyViolation: .encodedDataTooLarge
       )
+    )
+  }
+
+  func testRecycledViewForgetsBothResizeHints() throws {
+    let image = HybridOneKeyImage()
+    image.sourceUri = "https://example.com/hinted.png"
+    image.resizeWidth = 48
+    image.resizeHeight = 64
+    image.prepareForRecycle()
+    XCTAssertNil(image.resizeWidth)
+    XCTAssertNil(image.resizeHeight)
+    XCTAssertNil(image.sourceUri)
+  }
+
+  func testViewAndPreloadPickTheSameTosRenditionForOneHint() throws {
+    // Preload: long edge of logicalViewSize(resizeWidth, resizeHeight).
+    // View: the same, before and after layout, so the request URL (and with it
+    // the cache key) is identical on both sides.
+    let raw = try XCTUnwrap(URL(string: "https://common.onekey-asset.com/token.png"))
+    let hint = try XCTUnwrap(OneKeyImageDecodeSizing.logicalViewSize(width: 48, height: 64))
+    let preloadDisplaySize = max(hint.width, hint.height)
+    for bounds in [CGSize.zero, CGSize(width: 48, height: 64), CGSize(width: 30, height: 30)] {
+      let viewDisplaySize = try XCTUnwrap(
+        OneKeyImageDecodeSizing.tosDisplaySize(bounds: bounds, resizeWidth: 48, resizeHeight: 64)
+      )
+      XCTAssertEqual(viewDisplaySize, preloadDisplaySize)
+      XCTAssertEqual(
+        OneKeyTosURL.optimized(
+          rawURL: raw, displaySize: viewDisplaySize, scale: 3, overscan: 1.1, hasCustomIdentity: false
+        ),
+        OneKeyTosURL.optimized(
+          rawURL: raw, displaySize: preloadDisplaySize, scale: 3, overscan: 1.1, hasCustomIdentity: false
+        )
+      )
+    }
+    // Width-only hint keeps the historical behaviour (the width itself).
+    XCTAssertEqual(
+      OneKeyImageDecodeSizing.tosDisplaySize(bounds: .zero, resizeWidth: 40, resizeHeight: nil),
+      40
+    )
+    // No hint: the laid-out bounds decide; nothing before layout.
+    XCTAssertEqual(
+      OneKeyImageDecodeSizing.tosDisplaySize(
+        bounds: CGSize(width: 40, height: 64), resizeWidth: nil, resizeHeight: nil
+      ),
+      64
+    )
+    XCTAssertNil(
+      OneKeyImageDecodeSizing.tosDisplaySize(bounds: .zero, resizeWidth: nil, resizeHeight: nil)
     )
   }
 
