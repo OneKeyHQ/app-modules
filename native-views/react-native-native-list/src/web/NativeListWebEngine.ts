@@ -50,9 +50,14 @@ import {
 const SECTION_INDEX_CONTENT_INSET = 16;
 const SECTION_INDEX_RAIL_WIDTH = 32;
 const SECTION_INDEX_EDGE_PADDING = 8;
-const SECTION_INDEX_LABEL_SPACING = 16;
+const SECTION_INDEX_MIN_LABEL_SPACING = 16;
+const SECTION_INDEX_CONTAINER_LABEL_SPACING = 22;
 const SECTION_INDEX_MIN_HEIGHT = 120;
 const SECTION_INDEX_WINDOW_Z_INDEX = 100_000;
+const SECTION_INDEX_TRANSFORM_MIN_TRACKING_FRAMES = 12;
+const SECTION_INDEX_TRANSFORM_MAX_TRACKING_FRAMES = 90;
+const SECTION_INDEX_TRANSFORM_SETTLED_FRAMES = 4;
+const SECTION_INDEX_TRANSFORM_SETTLED_EPSILON = 0.0001;
 const DEFAULT_VIEWPORT_WIDTH = 320;
 const DEFAULT_VIEWPORT_HEIGHT = 640;
 const OVERSCAN_VIEWPORTS = 1;
@@ -115,6 +120,74 @@ export type WebListLayout = Readonly<{
   contentHeight: number;
   horizontal: boolean;
 }>;
+
+export function webSectionIndexMetrics(
+  entryCount: number,
+  viewportHeight: number,
+  alignStart = false
+) {
+  const availableHeight = Math.max(
+    0,
+    viewportHeight - SECTION_INDEX_EDGE_PADDING * 2
+  );
+  const labelSpacing = alignStart
+    ? SECTION_INDEX_CONTAINER_LABEL_SPACING
+    : SECTION_INDEX_MIN_LABEL_SPACING;
+  const trackHeight = Math.min(availableHeight, labelSpacing * entryCount);
+  return {
+    originY: alignStart
+      ? SECTION_INDEX_EDGE_PADDING
+      : (viewportHeight - trackHeight) / 2,
+    trackHeight,
+  };
+}
+
+export function webSectionIndexContainerLayout(
+  entryCount: number,
+  containerHeight: number
+) {
+  const height = Math.min(
+    Math.max(0, containerHeight),
+    SECTION_INDEX_EDGE_PADDING * 2 +
+      SECTION_INDEX_CONTAINER_LABEL_SPACING * entryCount
+  );
+  return {
+    top: Math.max(0, (containerHeight - height) / 2),
+    height,
+  };
+}
+
+export function webSectionIndexInverseScale(
+  layoutHeight: number,
+  renderedHeight: number
+) {
+  if (layoutHeight <= 0 || renderedHeight <= 0) return 1;
+  return layoutHeight / renderedHeight;
+}
+
+export function webSectionIndexActiveKey(
+  rows: readonly RowModel[],
+  layout: WebListLayout,
+  offset: number,
+  viewportLength: number
+): string | undefined {
+  const indexedRows = rows.flatMap((row, index) =>
+    row.type === 'sectionHeader' && row.sticky !== false && row.indexTitle
+      ? [{ key: row.key, index }]
+      : []
+  );
+  const maxOffset = Math.max(0, layout.contentHeight - viewportLength);
+  if (maxOffset > 0 && offset >= maxOffset - 1) {
+    return indexedRows.at(-1)?.key;
+  }
+  let activeKey: string | undefined;
+  indexedRows.forEach(({ key, index }) => {
+    if (itemStart(layout.items[index], layout.horizontal) <= offset) {
+      activeKey = key;
+    }
+  });
+  return activeKey;
+}
 
 export type WebMarketLayoutStyle = Readonly<{
   horizontalPadding: number;
@@ -940,7 +1013,7 @@ export const WEB_LIST_CSS = `
 .ok-native-list-subtitle-segments{display:flex;align-items:center;min-width:0;max-width:100%;height:20px}.ok-native-list-subtitle-segments>.ok-native-list-secondary{flex:0 1 auto;min-width:0}.ok-native-list-subtitle-dot{flex:0 0 4px;width:4px;height:4px;margin:0 6px;border-radius:50%;background:var(--nl-disabled)}.ok-native-list-wallet-row>.ok-native-list-flex{flex:0 1 auto;width:100%;align-items:center}.ok-native-list-wallet-badges{display:flex;gap:4px;justify-content:center;margin-top:4px;height:20px;max-width:100%}.ok-native-list-wallet-badges>.ok-native-list-badge{background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;height:20px;box-sizing:border-box;padding:2px 4px}.ok-native-list-visual-overlay{position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;line-height:1;font-size:10px}.ok-native-list-visual-overlay img,.ok-native-list-visual-overlay svg{width:100%;height:100%;object-fit:contain}
 .ok-native-list-row.ok-native-list-market-skeleton{padding:12px 20px;gap:0}.ok-native-list-skeleton-left{display:flex;align-items:center;gap:12px;flex:1}.ok-native-list-skeleton-text{display:flex;flex-direction:column;gap:4px}.ok-native-list-skeleton-right{display:flex;align-items:center;gap:8px}.ok-native-list-skeleton-mark{display:block;flex-shrink:0;border-radius:8px;animation:ok-native-list-skeleton 1.5s linear infinite alternate}@keyframes ok-native-list-skeleton{from{background-color:var(--nl-skeleton-base)}to{background-color:var(--nl-skeleton-highlight)}}.ok-native-list-market-spinner{display:block;width:20px;height:20px;flex-shrink:0;color:var(--nl-icon);animation:ok-native-list-spin .75s linear infinite}
 @media (prefers-reduced-motion:reduce){.ok-native-list-index-preview,.ok-native-list-refresh{transition:none}.ok-native-list-spinner,.ok-native-list-market-spinner{animation:none}.ok-native-list-skeleton-mark{animation:none;background:var(--nl-skeleton-base)}}
-.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport{scrollbar-width:none}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport::-webkit-scrollbar,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport::-webkit-scrollbar{display:none}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer;font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:15px;display:flex;width:14px;height:14px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:7px;background:transparent;color:var(--nl-disabled);font-family:inherit;font-size:10px;font-weight:400;line-height:1;cursor:pointer}.ok-native-list-index-button[data-active="true"]{background:var(--nl-positive);color:var(--nl-inverse-text);font-weight:500}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-positive);outline-offset:1px}
+.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport{scrollbar-width:none}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport::-webkit-scrollbar,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport::-webkit-scrollbar{display:none}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer;font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:15px;display:flex;width:14px;height:14px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:7px;background:transparent;color:var(--nl-disabled);font-family:inherit;font-size:10px;font-weight:400;line-height:1;cursor:pointer;opacity:.5;transition:opacity .15s ease}.ok-native-list-index-rail:hover .ok-native-list-index-button,.ok-native-list-index-rail:focus-within .ok-native-list-index-button,.ok-native-list-index-button[data-active="true"]{opacity:1}.ok-native-list-index-button[data-active="true"]{background:var(--nl-positive);color:var(--nl-inverse-text);font-weight:500}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-positive);outline-offset:1px}
 .ok-native-list-refresh{position:absolute;z-index:7;left:50%;top:8px;display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;opacity:0;transform:translate(-50%,-16px);transition:opacity .15s ease,transform .15s ease;pointer-events:none}.ok-native-list-refresh[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
 .ok-native-list-warning{height:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:14px 12px;border-top:1px solid;border-bottom:1px solid;box-sizing:border-box;cursor:default}.ok-native-list-warning-title,.ok-native-list-warning-message{font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}.ok-native-list-warning-title{font-weight:500;color:var(--nl-primary)}.ok-native-list-warning-message{font-weight:400;color:var(--nl-secondary)}
 .ok-native-list-subtitle-segments{display:flex;align-items:center;min-width:0;max-width:100%;height:20px}.ok-native-list-subtitle-segments>.ok-native-list-secondary{flex:0 1 auto;min-width:0}.ok-native-list-subtitle-dot{flex:0 0 4px;width:4px;height:4px;margin:0 6px;border-radius:50%;background:var(--nl-disabled)}.ok-native-list-wallet-row>.ok-native-list-flex{flex:0 1 auto;width:100%;align-items:center}.ok-native-list-wallet-badges{display:flex;gap:4px;justify-content:center;margin-top:4px;height:20px;max-width:100%}.ok-native-list-wallet-badges>.ok-native-list-badge{background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;height:20px;box-sizing:border-box;padding:2px 4px}.ok-native-list-visual-overlay{position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;line-height:1;font-size:10px}.ok-native-list-visual-overlay img,.ok-native-list-visual-overlay svg{width:100%;height:100%;object-fit:contain}
@@ -3469,6 +3542,7 @@ export class NativeListWebEngine {
   private readonly refreshIndicator: HTMLElement;
   private readonly reorderPreview: HTMLElement;
   private readonly previousHostPosition: string;
+  private readonly sectionIndexContainer: HTMLElement | undefined;
   private snapshot: NativeListSnapshot;
   private rows: readonly RowModel[] = [];
   private selectedKeys: ReadonlySet<string> = new Set();
@@ -3483,6 +3557,10 @@ export class NativeListWebEngine {
   private readonly pool: HTMLElement[] = [];
   private frameHandle: number | undefined;
   private resizeObserver: ResizeObserver | undefined;
+  private sectionIndexTransformObserver: MutationObserver | undefined;
+  private sectionIndexTransformFrame: number | undefined;
+  private sectionIndexTransformTrackingFrames = 0;
+  private sectionIndexTransformSettledFrames = 0;
   private pendingScroll: PendingScroll | undefined;
   private lastVisibleSignature: string | undefined;
   // OneKey patch: URI leases outlive DOM overscan only inside this bounded window.
@@ -3528,6 +3606,7 @@ export class NativeListWebEngine {
   private lastViewportWidth = -1;
   private lastViewportHeight = -1;
   private destroyed = false;
+  private sectionIndexAlignStart = false;
   // OneKey patch: warning banners are measured after normal browser text wrapping.
   private measuredWarningHeights = new Map<string, number>();
 
@@ -3535,12 +3614,14 @@ export class NativeListWebEngine {
     host: HTMLElement,
     snapshot: NativeListSnapshot,
     callbacks: NativeListWebCallbacks,
-    virtualizationEnabled = true
+    virtualizationEnabled = true,
+    sectionIndexContainer?: HTMLElement | null
   ) {
     this.document = host.ownerDocument;
     this.snapshot = validateSnapshot(snapshot);
     this.callbacks = callbacks;
     this.virtualizationEnabled = virtualizationEnabled;
+    this.sectionIndexContainer = sectionIndexContainer ?? undefined;
     this.previousHostPosition = host.style.position;
     if (!host.style.position) host.style.position = 'relative';
 
@@ -3674,6 +3755,7 @@ export class NativeListWebEngine {
         this.handleWindowResize
       );
     }
+    this.observeSectionIndexTransforms();
     this.applySnapshot(this.snapshot);
   }
 
@@ -3853,9 +3935,12 @@ export class NativeListWebEngine {
     this.invalidateActionAnchor('destroy');
     this.destroyed = true;
     if (this.frameHandle !== undefined) this.cancelFrame(this.frameHandle);
+    if (this.sectionIndexTransformFrame !== undefined)
+      this.cancelFrame(this.sectionIndexTransformFrame);
     if (this.reorderMovementTimer !== undefined)
       this.document.defaultView?.clearTimeout(this.reorderMovementTimer);
     this.resizeObserver?.disconnect();
+    this.sectionIndexTransformObserver?.disconnect();
     this.document.defaultView?.removeEventListener(
       'resize',
       this.handleWindowResize
@@ -4342,7 +4427,7 @@ export class NativeListWebEngine {
     const { trackHeight } = this.sectionIndexMetrics(viewportHeight);
     const maxVisible = Math.max(
       1,
-      Math.floor(trackHeight / SECTION_INDEX_LABEL_SPACING)
+      Math.floor(trackHeight / SECTION_INDEX_MIN_LABEL_SPACING)
     );
     if (entryCount <= maxVisible) {
       return Array.from({ length: entryCount }, (_, index) => index);
@@ -4356,18 +4441,11 @@ export class NativeListWebEngine {
   }
 
   private sectionIndexMetrics(viewportHeight: number) {
-    const availableHeight = Math.max(
-      0,
-      viewportHeight - SECTION_INDEX_EDGE_PADDING * 2
+    return webSectionIndexMetrics(
+      this.sectionIndexEntries.length,
+      viewportHeight,
+      this.sectionIndexAlignStart
     );
-    const trackHeight = Math.min(
-      availableHeight,
-      SECTION_INDEX_LABEL_SPACING * this.sectionIndexEntries.length
-    );
-    return {
-      originY: (viewportHeight - trackHeight) / 2,
-      trackHeight,
-    };
   }
 
   private configureSectionIndexRail(
@@ -4382,6 +4460,8 @@ export class NativeListWebEngine {
         : 'ltr';
     this.indexRail.style.direction = direction;
     if (!windowCentered) {
+      this.sectionIndexAlignStart = false;
+      this.resetSectionIndexTransformCompensation();
       if (this.indexRail.parentElement !== this.viewportFrame) {
         this.viewportFrame.appendChild(this.indexRail);
       }
@@ -4397,15 +4477,50 @@ export class NativeListWebEngine {
     }
 
     if (!view) return viewportHeight;
+    const sectionIndexContainer = this.sectionIndexContainer?.isConnected
+      ? this.sectionIndexContainer
+      : undefined;
+    const frame = this.viewportFrame.getBoundingClientRect();
+    if (sectionIndexContainer) {
+      const container = sectionIndexContainer.getBoundingClientRect();
+      const railLayout = webSectionIndexContainerLayout(
+        this.sectionIndexEntries.length,
+        sectionIndexContainer.clientHeight || container.height
+      );
+      if (this.indexRail.parentElement !== sectionIndexContainer) {
+        sectionIndexContainer.appendChild(this.indexRail);
+      }
+      this.sectionIndexAlignStart = true;
+      this.indexRail.style.position = 'absolute';
+      this.indexRail.style.removeProperty('left');
+      this.indexRail.style.removeProperty('right');
+      this.indexRail.style.insetInlineEnd =
+        String(
+          Math.max(
+            0,
+            direction === 'rtl'
+              ? frame.left - container.left
+              : container.right - frame.right
+          )
+        ) + 'px';
+      this.indexRail.style.top = String(railLayout.top) + 'px';
+      this.indexRail.style.bottom = 'auto';
+      this.indexRail.style.height = String(railLayout.height) + 'px';
+      this.indexRail.style.zIndex = String(SECTION_INDEX_WINDOW_Z_INDEX);
+      this.startSectionIndexTransformCompensation();
+      return railLayout.height;
+    }
+
+    this.sectionIndexAlignStart = false;
+    this.resetSectionIndexTransformCompensation();
     const visualViewport = view.visualViewport;
     const windowTop = visualViewport?.offsetTop ?? 0;
     const windowHeight = visualViewport?.height ?? view.innerHeight;
     const railHeight = Math.min(
       windowHeight,
       SECTION_INDEX_EDGE_PADDING * 2 +
-        SECTION_INDEX_LABEL_SPACING * this.sectionIndexEntries.length
+        SECTION_INDEX_MIN_LABEL_SPACING * this.sectionIndexEntries.length
     );
-    const frame = this.viewportFrame.getBoundingClientRect();
     if (this.indexRail.parentElement !== this.document.body) {
       this.document.body.appendChild(this.indexRail);
     }
@@ -4425,6 +4540,86 @@ export class NativeListWebEngine {
     this.indexRail.style.height = String(railHeight) + 'px';
     this.indexRail.style.zIndex = String(SECTION_INDEX_WINDOW_Z_INDEX);
     return railHeight;
+  }
+
+  private observeSectionIndexTransforms() {
+    const container = this.sectionIndexContainer;
+    const MutationObserverConstructor =
+      this.document.defaultView?.MutationObserver;
+    if (!container || !MutationObserverConstructor) return;
+    this.sectionIndexTransformObserver = new MutationObserverConstructor(() =>
+      this.startSectionIndexTransformCompensation()
+    );
+    let element: HTMLElement | null = container;
+    while (element) {
+      this.sectionIndexTransformObserver.observe(element, {
+        attributes: true,
+        attributeFilter: ['style'],
+      });
+      if (element === this.document.body) break;
+      element = element.parentElement;
+    }
+  }
+
+  private startSectionIndexTransformCompensation() {
+    this.sectionIndexTransformTrackingFrames = 0;
+    this.sectionIndexTransformSettledFrames = 0;
+    this.updateSectionIndexTransformCompensation();
+    this.scheduleSectionIndexTransformCompensation();
+  }
+
+  private scheduleSectionIndexTransformCompensation() {
+    if (
+      this.destroyed ||
+      this.sectionIndexTransformFrame !== undefined ||
+      this.indexRail.parentElement !== this.sectionIndexContainer
+    ) {
+      return;
+    }
+    this.sectionIndexTransformFrame = this.requestFrame(() => {
+      this.sectionIndexTransformFrame = undefined;
+      const settled = this.updateSectionIndexTransformCompensation();
+      this.sectionIndexTransformTrackingFrames += 1;
+      this.sectionIndexTransformSettledFrames = settled
+        ? this.sectionIndexTransformSettledFrames + 1
+        : 0;
+      if (
+        this.sectionIndexTransformTrackingFrames <
+          SECTION_INDEX_TRANSFORM_MAX_TRACKING_FRAMES &&
+        (this.sectionIndexTransformTrackingFrames <
+          SECTION_INDEX_TRANSFORM_MIN_TRACKING_FRAMES ||
+          this.sectionIndexTransformSettledFrames <
+            SECTION_INDEX_TRANSFORM_SETTLED_FRAMES)
+      ) {
+        this.scheduleSectionIndexTransformCompensation();
+      }
+    });
+  }
+
+  private updateSectionIndexTransformCompensation() {
+    const container = this.sectionIndexContainer;
+    if (!container || this.indexRail.parentElement !== container) return true;
+    const inverseScale = webSectionIndexInverseScale(
+      container.clientHeight,
+      container.getBoundingClientRect().height
+    );
+    this.indexRail.style.transformOrigin = 'center center';
+    this.indexRail.style.transform =
+      Math.abs(inverseScale - 1) < SECTION_INDEX_TRANSFORM_SETTLED_EPSILON
+        ? 'none'
+        : `scale(${String(inverseScale)})`;
+    return Math.abs(inverseScale - 1) < SECTION_INDEX_TRANSFORM_SETTLED_EPSILON;
+  }
+
+  private resetSectionIndexTransformCompensation() {
+    if (this.sectionIndexTransformFrame !== undefined) {
+      this.cancelFrame(this.sectionIndexTransformFrame);
+      this.sectionIndexTransformFrame = undefined;
+    }
+    this.sectionIndexTransformTrackingFrames = 0;
+    this.sectionIndexTransformSettledFrames = 0;
+    this.indexRail.style.removeProperty('transform');
+    this.indexRail.style.removeProperty('transform-origin');
   }
 
   private renderSectionIndex(viewportHeight: number, stickyInset: number) {
@@ -4468,10 +4663,15 @@ export class NativeListWebEngine {
     const metrics = this.sectionIndexMetrics(indexLayoutHeight);
     const visibleTrackHeight = Math.min(
       metrics.trackHeight,
-      SECTION_INDEX_LABEL_SPACING * visibleEntryIndices.length
+      SECTION_INDEX_MIN_LABEL_SPACING * visibleEntryIndices.length
     );
+    const allEntriesVisible =
+      visibleEntryIndices.length === this.sectionIndexEntries.length;
+    const resolvedVisibleTrackHeight = allEntriesVisible
+      ? metrics.trackHeight
+      : visibleTrackHeight;
     const visibleOriginY =
-      metrics.originY + (metrics.trackHeight - visibleTrackHeight) / 2;
+      metrics.originY + (metrics.trackHeight - resolvedVisibleTrackHeight) / 2;
     const fragment = this.document.createDocumentFragment();
     visibleEntryIndices.forEach((entryIndex, visibleIndex) => {
       const entry = this.sectionIndexEntries[entryIndex];
@@ -4490,7 +4690,7 @@ export class NativeListWebEngine {
       button.style.top =
         String(
           visibleOriginY +
-            (visibleTrackHeight * (visibleIndex + 0.5)) /
+            (resolvedVisibleTrackHeight * (visibleIndex + 0.5)) /
               visibleEntryIndices.length
         ) + 'px';
       fragment.appendChild(button);
@@ -4637,19 +4837,12 @@ export class NativeListWebEngine {
 
   // private updateSectionIndex(firstVisibleIndex: number) {
   private updateSectionIndex() {
-    let activeKey: string | undefined;
-    this.snapshot.rows.forEach((row, index) => {
-      if (
-        // OneKey patch: a spacer ending exactly at the viewport is not the active section.
-        // index <= firstVisibleIndex &&
-        itemStart(this.layout.items[index], this.layout.horizontal) <=
-          this.currentOffset() &&
-        row.type === 'sectionHeader' &&
-        row.sticky !== false &&
-        row.indexTitle
-      )
-        activeKey = row.key;
-    });
+    const activeKey = webSectionIndexActiveKey(
+      this.snapshot.rows,
+      this.layout,
+      this.currentOffset(),
+      this.viewportLength()
+    );
     this.indexRail
       .querySelectorAll<HTMLElement>('[data-section-key]')
       .forEach((button) =>

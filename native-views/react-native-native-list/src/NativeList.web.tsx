@@ -83,6 +83,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     {
       snapshot,
       webVirtualizationEnabled = true,
+      webSectionIndexContainerRef,
       keyboardDismissMode: _keyboardDismissMode,
       keyboardShouldPersistTaps: _keyboardShouldPersistTaps,
       onRowAction,
@@ -175,7 +176,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         host,
         snapshotRef.current,
         callbacksRef.current,
-        webVirtualizationEnabledRef.current
+        webVirtualizationEnabledRef.current,
+        webSectionIndexContainerRef?.current as unknown as HTMLElement | null
       );
       engineRef.current = engine;
       appliedSnapshotRef.current = snapshotRef.current;
@@ -195,7 +197,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         engine.destroy();
         if (engineRef.current === engine) engineRef.current = undefined;
       };
-    }, [host]);
+    }, [host, webSectionIndexContainerRef]);
 
     useEffect(() => {
       engineRef.current?.setVirtualizationEnabled(webVirtualizationEnabled);
