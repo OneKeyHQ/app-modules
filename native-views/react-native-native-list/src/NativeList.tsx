@@ -97,6 +97,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     {
       snapshot,
       webVirtualizationEnabled: _webVirtualizationEnabled,
+      webSectionIndexContainerRef: _webSectionIndexContainerRef,
       keyboardDismissMode = 'none',
       keyboardShouldPersistTaps = 'never',
       onRowAction,

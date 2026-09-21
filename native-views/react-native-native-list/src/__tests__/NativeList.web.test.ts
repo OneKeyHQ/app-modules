@@ -1,8 +1,4 @@
-import type {
-  IdentityRow,
-  NativeListSnapshot,
-  RowModel,
-} from '../models';
+import type { IdentityRow, NativeListSnapshot, RowModel } from '../models';
 import {
   WEB_LIST_CSS,
   WEB_REORDER_ANIMATION,
@@ -16,6 +12,10 @@ import {
   resolveWebCollapsiblePagerRawOffset,
   resolveWebCollapsiblePagerScrollMetrics,
   visibleWebLayoutItems,
+  webSectionIndexActiveKey,
+  webSectionIndexContainerLayout,
+  webSectionIndexInverseScale,
+  webSectionIndexMetrics,
   webReorderAutoScrollVelocity,
   webReorderEventForRows,
   webLayoutItemsForMount,
@@ -152,15 +152,104 @@ function snapshot(
 }
 
 describe('NativeList pure DOM web layout', () => {
+  it('centers a fixed-spacing container-hosted section index', () => {
+    expect(webSectionIndexContainerLayout(22, 668)).toEqual({
+      top: 84,
+      height: 500,
+    });
+    expect(webSectionIndexContainerLayout(22, 588)).toEqual({
+      top: 44,
+      height: 500,
+    });
+    expect(webSectionIndexContainerLayout(22, 472)).toEqual({
+      top: 0,
+      height: 472,
+    });
+    expect(webSectionIndexMetrics(22, 472, true)).toEqual({
+      originY: 8,
+      trackHeight: 456,
+    });
+    expect(webSectionIndexMetrics(22, 700, true)).toEqual({
+      originY: 8,
+      trackHeight: 484,
+    });
+    expect(webSectionIndexMetrics(22, 472)).toEqual({
+      originY: 60,
+      trackHeight: 352,
+    });
+  });
+
+  it('cancels the container scale without changing section index layout', () => {
+    expect(webSectionIndexInverseScale(640, 608)).toBeCloseTo(1 / 0.95);
+    expect(webSectionIndexInverseScale(640, 642.77888)).toBeCloseTo(
+      1 / 1.004342
+    );
+    expect(webSectionIndexInverseScale(640, 640)).toBe(1);
+    expect(webSectionIndexInverseScale(640, 0)).toBe(1);
+  });
+
+  it('keeps the final indexed section active at the scroll limit', () => {
+    const indexedRows: readonly RowModel[] = [
+      {
+        type: 'sectionHeader',
+        key: 'header-x',
+        sectionKey: 'x',
+        indexTitle: 'X',
+        title: 'X',
+      },
+      {
+        type: 'identity',
+        key: 'x-row',
+        sectionKey: 'x',
+        leading: { kind: 'icon', name: 'x' },
+        title: 'X row',
+      },
+      {
+        type: 'sectionHeader',
+        key: 'header-z',
+        sectionKey: 'z',
+        indexTitle: 'Z',
+        title: 'Z',
+      },
+      {
+        type: 'identity',
+        key: 'z-row',
+        sectionKey: 'z',
+        leading: { kind: 'icon', name: 'z' },
+        title: 'Z row',
+      },
+    ];
+    const layout = computeWebListLayout(
+      snapshot({ kind: 'sectioned' }, indexedRows),
+      320,
+      120
+    );
+    expect(webSectionIndexActiveKey(indexedRows, layout, 0, 120)).toBe(
+      'header-x'
+    );
+    expect(
+      webSectionIndexActiveKey(
+        indexedRows,
+        layout,
+        layout.contentHeight - 120,
+        120
+      )
+    ).toBe('header-z');
+  });
+
   it('uses list-relative offsets inside a collapsible pager viewport', () => {
-    expect(resolveWebCollapsiblePagerScrollMetrics(134, 800, 134, 120)).toEqual({
-      offset: 0,
-      viewportLength: 680,
-    });
-    expect(resolveWebCollapsiblePagerScrollMetrics(734, 800, 134, 120)).toEqual({
-      offset: 600,
-      viewportLength: 680,
-    });
+    expect(resolveWebCollapsiblePagerScrollMetrics(134, 800, 134, 120)).toEqual(
+      {
+        offset: 0,
+        viewportLength: 680,
+      }
+    );
+    expect(resolveWebCollapsiblePagerScrollMetrics(734, 800, 134, 120)).toEqual(
+      {
+        offset: 600,
+        viewportLength: 680,
+      }
+    );
     expect(resolveWebCollapsiblePagerRawOffset(600, 134)).toBe(734);
     expect(resolveWebCollapsiblePagerScrollMetrics(-20, 80, -1, 120)).toEqual({
       offset: 0,

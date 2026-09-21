@@ -1,4 +1,5 @@
-import type { ViewProps } from 'react-native';
+import type { RefObject } from 'react';
+import type { View, ViewProps } from 'react-native';
 import type {
   ActionAnchorInvalidatedEvent,
   EndReachedEvent,
@@ -120,6 +121,8 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     snapshot: NativeListSnapshot;
     /** Web only. Defaults to true and is ignored by the native host. */
     webVirtualizationEnabled?: boolean;
+    /** Web only. Hosts the section index inside this container. */
+    webSectionIndexContainerRef?: RefObject<View | null>;
     /** Defaults to `none`. `interactive` behaves as `none` on Android. */
     keyboardDismissMode?: NativeListKeyboardDismissMode;
     /**
