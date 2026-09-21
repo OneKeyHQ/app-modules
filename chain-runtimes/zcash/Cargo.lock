@@ -1687,7 +1687,6 @@ dependencies = [
 name = "onekey-zcash-runtime"
 version = "0.1.0-rc.1"
 dependencies = [
- "async-trait",
  "console_error_panic_hook",
  "futures",
  "futures-util",

@@ -1,47 +1,25 @@
-//! PCZT 签名。
+//! PCZT signing with keys derived from caller-provided seed bytes.
 //!
-//! **这是整个方案里唯一接触花费密钥的地方。**
-//!
-//! 构造 PCZT 需要钱包数据库（选币、witness、anchor），签名需要种子。
-//! 两者分处两个 crate，所以：
-//!
-//! - `onekey-zcash-runtime` 里没有任何路径能拿到种子；
-//! - 移动端只打这个 keys 包时，签名依然可用；
-//! - 想审计「私钥去了哪」，只需要看这一个文件。
-//!
-//! 种子在函数内派生、用完即 `zeroize`，绝不跨 wasm 边界返回。
+//! This crate also handles spending keys in `keys` and `transparent_send`.
+//! See the crate documentation for the limits of derived-key zeroization.
 
 use pczt::roles::signer::Signer;
+use pczt::roles::verifier::{TransparentError, Verifier};
+use transparent::sighash::SighashType;
 use zcash_keys::keys::UnifiedSpendingKey;
 use zcash_protocol::consensus::Network;
-use zeroize::Zeroizing;
 use zip32::AccountId;
 
 use crate::error::{ErrorCode, KeysError, Result};
-use crate::keys::parse_network;
 
-/// 用助记词派生出的花费密钥给 PCZT 签名。
+/// 透明输入的签名是否盖住全部输出。
 ///
-/// 只签 Orchard 花费 —— 本方案不支持 Sapling 花费（Sapling 的 Groth16 证明参数
-/// 约 50 MB，不适合随包分发；新收到的资金也不会落在 Sapling 池）。
-///
-/// 返回签名后的 PCZT 字节，交回 runtime 的 `pcztSend` 终结并广播。
-pub fn sign_pczt_with_mnemonic(
-    network: &str,
-    mnemonic: &str,
-    account_index: u32,
-    pczt_bytes: &[u8],
-) -> Result<Vec<u8>> {
-    let params = parse_network(network)?;
-
-    let parsed = bip0039::Mnemonic::<bip0039::English>::from_phrase(mnemonic)
-        .map_err(|_| KeysError::new(ErrorCode::InvalidMnemonic))?;
-    let seed = Zeroizing::new(parsed.to_seed(""));
-
-    sign_pczt_with_seed(params, seed.as_ref(), account_index, pczt_bytes)
+/// 非 `SIGHASH_ALL` 的签名盖不住输出，拿到已签交易的人能改写收款地址。四处
+/// 签名/校验路径共用这一个判定，别在调用点各写各的 —— 写岔一处就是一个洞。
+pub(crate) fn is_sighash_all(input: &transparent::pczt::Input) -> bool {
+    *input.sighash_type() == SighashType::ALL
 }
 
-/// 同上，但直接接收种子字节。调用方负责擦除自己那份。
 /// 本 crate 当前实际能签的 bundle 类型。定义在实现旁边，翻转时必然改到实现。
 pub const SIGN_ORCHARD: bool = true;
 pub const SIGN_SAPLING: bool = false;
@@ -55,7 +33,10 @@ pub const SIGN_IRONWOOD: bool = true;
 /// `script_pubkey`，不匹配就报错 —— 所以试签不会静默产出错误签名。
 ///
 /// 取值要覆盖钱包的 gap limit（默认 20），留一倍余量。
-const TRANSPARENT_SCAN_GAP: u32 = 40;
+///
+/// 这个上限同时约束**找零地址的序号**（见 `transparent_send`）：找零落在扫描
+/// 范围之外，就是一笔钥匙还在、钱包却再也签不出来的钱。
+pub(crate) const TRANSPARENT_SCAN_GAP: u32 = 40;
 
 /// 给全部透明输入签名，返回 (签上了几个, 最后一次失败原因)。
 ///
@@ -101,6 +82,10 @@ fn sign_transparent_inputs(
     (signed, last_err)
 }
 
+/// 用种子派生出的花费密钥给 PCZT 签名。调用方负责擦除自己那份种子。
+///
+/// 只签 Orchard/Ironwood 花费与透明输入 —— 不支持 Sapling 花费
+/// （Groth16 证明参数约 50 MB，不随包分发；新收到的资金也不落在 Sapling 池）。
 pub fn sign_pczt_with_seed(
     params: Network,
     seed: &[u8],
@@ -126,6 +111,31 @@ pub fn sign_pczt_with_seed(
 
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| KeysError::new(ErrorCode::PcztParseFailed).detail(format!("{e:?}")))?;
+
+    // 签名前的闸门。上游 `Signer::sign_*` 的文档明写：语义校验是调用方的责任。
+    //
+    // 这里守住最要命的一条：签名必须盖住全部输出。`SIGHASH_ALL` 之外的类型
+    // （`NONE`、`SINGLE|ANYONECANPAY` 等）签出来的透明输入，拿到已签交易的人
+    // 可以改写收款地址。姊妹模块 shielding.rs 三处都查了这一条，这条路漏了。
+    let pczt = Verifier::new(pczt)
+        .with_transparent(|bundle| {
+            match bundle
+                .inputs()
+                .iter()
+                .position(|input| !is_sighash_all(input))
+            {
+                Some(index) => Err(TransparentError::Custom(KeysError::with(
+                    ErrorCode::PcztSignFailed,
+                    serde_json::json!({
+                        "reason": "transparentInputSighashNotAll",
+                        "inputIndex": index,
+                    }),
+                ))),
+                None => Ok(()),
+            }
+        })
+        .map_err(|e| KeysError::new(ErrorCode::PcztSignFailed).detail(format!("{e:?}")))?
+        .finish();
 
     let mut signer = Signer::new(pczt)
         .map_err(|e| KeysError::new(ErrorCode::PcztSignFailed).detail(format!("{e:?}")))?;
@@ -209,8 +219,7 @@ fn bundle_counts(pczt_bytes: &[u8]) -> Result<(usize, usize, usize)> {
 mod tests {
     use super::*;
 
-    const M: &str =
-        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    const SEED: [u8; 32] = [7u8; 32];
 
     #[test]
     fn rejects_short_seed() {
@@ -221,13 +230,7 @@ mod tests {
 
     #[test]
     fn rejects_garbage_pczt() {
-        let e = sign_pczt_with_mnemonic("test", M, 0, b"not a pczt").unwrap_err();
+        let e = sign_pczt_with_seed(Network::TestNetwork, &SEED, 0, b"not a pczt").unwrap_err();
         assert_eq!(e.code, ErrorCode::PcztParseFailed);
-    }
-
-    #[test]
-    fn rejects_bad_mnemonic() {
-        let e = sign_pczt_with_mnemonic("test", "clearly not a mnemonic", 0, &[]).unwrap_err();
-        assert_eq!(e.code, ErrorCode::InvalidMnemonic);
     }
 }

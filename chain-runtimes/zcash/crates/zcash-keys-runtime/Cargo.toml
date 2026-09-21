@@ -20,7 +20,6 @@ zcash_protocol.workspace = true
 zcash_address.workspace = true
 zcash_primitives = { workspace = true, features = ["transparent-inputs"] }
 zip32 = "0.2"
-bip0039 = { version = "0.12", features = ["all-languages"] }
 bs58 = { version = "0.5", features = ["check"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }
 zcash_note_encryption = "0.4"
@@ -39,6 +38,10 @@ transparent = { workspace = true, features = ["transparent-inputs"] }
 orchard = { version = "0.15", default-features = false }
 sapling.workspace = true
 thiserror.workspace = true
+
+# bip0039 只在测试里出现：出厂产物不收助记词，宿主传种子字节。
+[dev-dependencies]
+bip0039 = { version = "0.12", features = ["all-languages"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen.workspace = true

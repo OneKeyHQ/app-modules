@@ -5,6 +5,7 @@
 
 use zcash_keys::keys::{UnifiedFullViewingKey, UnifiedSpendingKey};
 use zcash_protocol::consensus::Network;
+#[cfg(test)]
 use zeroize::Zeroizing;
 use zip32::AccountId;
 
@@ -45,23 +46,27 @@ pub fn validate_address(network: &str, encoded: &str) -> Result<bool> {
     Ok(supported_recipient(&params, encoded).is_some())
 }
 
-/// 从 BIP-39 助记词派生该账户的 UFVK。
+/// 测试专用：从助记词派生 UFVK。
 ///
-/// 助记词与派生出的种子都在函数内擦除；返回值只有可公开的 UFVK 字符串。
-pub fn ufvk_from_mnemonic(network: &str, mnemonic: &str, account_index: u32) -> Result<String> {
+/// 出厂产物不收助记词 —— 宿主只传种子字节。留着它是为了让金标向量测试
+/// 能直接喂参考实现用的助记词。
+#[cfg(test)]
+pub(crate) fn ufvk_from_mnemonic(
+    network: &str,
+    mnemonic: &str,
+    account_index: u32,
+) -> Result<String> {
     let params = parse_network(network)?;
-
     let parsed = bip0039::Mnemonic::<bip0039::English>::from_phrase(mnemonic)
         .map_err(|_| KeysError::new(ErrorCode::InvalidMnemonic))?;
-
-    // 种子放进 Zeroizing，离开作用域即擦。
     let seed = Zeroizing::new(parsed.to_seed(""));
     ufvk_from_seed_bytes(params, seed.as_ref(), account_index)
 }
 
 /// 从原始种子字节派生 UFVK。
 ///
-/// 调用方给的切片本 crate 不持有；内部所有副本都受 `Zeroizing` 管理。
+/// 调用方给的切片本 crate 不持有。注意中间的 `UnifiedSpendingKey` 上游没有
+/// `ZeroizeOnDrop`，析构后仍留在线性内存里 —— 擦除责任在宿主那一侧。
 pub fn ufvk_from_seed_bytes(params: Network, seed: &[u8], account_index: u32) -> Result<String> {
     if seed.len() < 32 {
         return Err(KeysError::with(
@@ -147,10 +152,6 @@ pub fn transparent_address(network: &str, ufvk_str: &str) -> Result<String> {
     ))
 }
 
-/// 种子指纹（ZIP-32）。
-///
-/// **这是标准值，不是随便一个标识符** —— 宿主把它持久化下来当账户身份用，
-/// 所以必须与 ZIP-32 的定义一致。自己另发明一套哈希会让存量账户全部失配。
 /// UFVK 里的透明账户公钥，BIP32 账户层（m/44'/133'/account'）：
 /// 32 字节 chain code || 33 字节压缩公钥，hex。宿主据此拼 xpub，
 /// 硬件账户无需再向设备额外要一次透明 xpub。
@@ -167,6 +168,7 @@ pub fn transparent_account_pubkey(network: &str, ufvk_str: &str) -> Result<Strin
     Ok(hex::encode(account_pubkey.serialize()))
 }
 
+/// Standard ZIP-32 seed fingerprint, persisted as account identity.
 pub fn seed_fingerprint(seed: &[u8]) -> Result<String> {
     if seed.len() < 32 {
         return Err(KeysError::with(

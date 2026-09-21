@@ -23,9 +23,7 @@ use serde_json::json;
 
 use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
 use zcash_client_backend::data_api::chain::error::Error as ChainError;
-use zcash_client_backend::data_api::chain::{
-    BlockCache, BlockSource, ChainState, CommitmentTreeRoot,
-};
+use zcash_client_backend::data_api::chain::{BlockSource, ChainState, CommitmentTreeRoot};
 use zcash_client_backend::data_api::ll::{LowLevelWalletRead, LowLevelWalletWrite};
 use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
 use zcash_client_backend::data_api::{
@@ -378,10 +376,7 @@ pub async fn step(
 
         blocks_scanned += batch_len as u64;
 
-        cache
-            .delete(batch)
-            .await
-            .map_err(|e| db_err("cacheDelete", e))?;
+        cache.delete(&batch).map_err(|e| db_err("cacheDelete", e))?;
 
         batches_done += 1;
     }
@@ -805,10 +800,7 @@ async fn download_batch(
     if got == 0 {
         return Err(net_err("getBlockRange", "empty stream for non-empty range"));
     }
-    cache
-        .insert(blocks)
-        .await
-        .map_err(|e| db_err("cacheInsert", e))?;
+    cache.insert(blocks).map_err(|e| db_err("cacheInsert", e))?;
     Ok(got)
 }
 

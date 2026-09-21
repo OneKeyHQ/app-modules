@@ -35,7 +35,7 @@ getrandom.workspace = true
 tonic.workspace = true
 hex.workspace = true
 prost.workspace = true
-async-trait.workspace = true
+
 futures-util.workspace = true
 sapling.workspace = true
 uuid.workspace = true

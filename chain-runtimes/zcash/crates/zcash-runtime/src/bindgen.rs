@@ -640,6 +640,20 @@ pub fn release_reservation(reservation_id: String) -> Result<bool, JsValue> {
     })?)
 }
 
+/// 在一件**已经不可逆地发生了**的事情之后做落盘屏障。
+///
+/// 屏障失败的含义是「持久化有没有到达耐久存储未知」，不是「这件事失败了」。
+/// 两个调用点都已越过不可逆点 —— `pcztSend` 已提交交易并交出 note，
+/// `broadcastTransaction` 已把交易发上网。把真实结局换成一个泛化的存储错误，
+/// 宿主就会去重试、或者把一笔已上链的交易显示成「未知失败」。
+///
+/// 调用方自己写 params（各自的结局形状不同），错误码与 detail 由这里统一。
+async fn barrier_after_irreversible(params: serde_json::Value) -> Result<(), crate::RuntimeError> {
+    storage::durability_barrier().await.map_err(|error| {
+        crate::RuntimeError::with(crate::ErrorCode::FinalizeOutcomeUnknown, params).detail(error)
+    })
+}
+
 /// 终结已证明且已签名的 PCZT，提取交易并**写回本地钱包**，返回 txid。
 ///
 /// **这一步不发网络。** 交易还没有广播出去，必须再调 `broadcastTransaction(txid)`。
@@ -659,13 +673,7 @@ pub async fn pczt_send(
     // means the host does not know whether persistence reached durable storage,
     // but it must never be allowed to unlock inputs that may already be spent.
     send::forget_reservation(&reservation_id);
-    storage::durability_barrier().await.map_err(|error| {
-        crate::RuntimeError::with(
-            crate::ErrorCode::FinalizeOutcomeUnknown,
-            serde_json::json!({ "operation": "finalizeTransaction" }),
-        )
-        .detail(error)
-    })?;
+    barrier_after_irreversible(serde_json::json!({ "operation": "finalizeTransaction" })).await?;
     Ok(txid)
 }
 
@@ -713,9 +721,14 @@ pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
         let r = match r {
             Ok(()) => tx_state::mark_accepted(&mut db, &txid),
             Err(e) if e.code == crate::ErrorCode::BroadcastRejected => {
+                // 落库失败也要把**节点给的拒绝原因**交回宿主：那才是用户能据以
+                // 行动的信息，而重试这笔广播只会被同样地拒。落库本身的失败作为
+                // detail 附上，不顶替结论。
                 match tx_state::mark_rejected(&mut db, &txid, &e) {
                     Ok(()) => Err(e),
-                    Err(persist_error) => Err(persist_error),
+                    Err(persist_error) => {
+                        Err(e.detail(format!("mark_rejected failed: {persist_error}")))
+                    }
                 }
             }
             Err(e) => Err(e),
@@ -728,7 +741,18 @@ pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
             .as_ref()
             .is_err_and(|error| error.code == crate::ErrorCode::BroadcastRejected);
     if changed_lifecycle {
-        storage::durability_barrier().await?;
+        // 广播已经发生，生命周期也已写进事务 —— 结局必须原样带给宿主。
+        let outcome = match &result {
+            Ok(()) => serde_json::json!({ "broadcast": "accepted" }),
+            Err(rejection) => serde_json::json!({
+                "broadcast": "rejected",
+                "rejection": rejection.to_json(),
+            }),
+        };
+        barrier_after_irreversible(
+            serde_json::json!({ "operation": "broadcastTransaction", "outcome": outcome }),
+        )
+        .await?;
     }
     Ok(result?)
 }

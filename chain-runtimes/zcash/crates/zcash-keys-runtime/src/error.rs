@@ -51,8 +51,6 @@ pub enum ErrorCode {
     InvalidAmount,
     /// Selected inputs cannot cover outputs and the ZIP-317 fee.
     InsufficientFunds,
-    /// The transaction would create uneconomic transparent change.
-    DustChange,
     /// An account-level BIP-44 xprv is malformed or has unexpected metadata.
     InvalidAccountXprv,
     /// An account-level BIP-44 xpub is malformed or has unexpected metadata.
@@ -88,7 +86,6 @@ impl ErrorCode {
             KeyMismatch => "KEY_MISMATCH",
             InvalidAmount => "INVALID_AMOUNT",
             InsufficientFunds => "INSUFFICIENT_FUNDS",
-            DustChange => "DUST_CHANGE",
             InvalidAccountXprv => "INVALID_ACCOUNT_XPRV",
             InvalidAccountXpub => "INVALID_ACCOUNT_XPUB",
             TransactionBuildFailed => "TRANSACTION_BUILD_FAILED",
@@ -207,7 +204,6 @@ mod tests {
             KeyMismatch,
             InvalidAmount,
             InsufficientFunds,
-            DustChange,
             InvalidAccountXprv,
             InvalidAccountXpub,
             TransactionBuildFailed,
