@@ -292,11 +292,20 @@ class RCTTabViewContainerView: UIView {
         if childView.superview !== vc.view {
           childView.removeFromSuperview()
           vc.view.addSubview(childView)
-          // Use autoresizingMask instead of Auto Layout constraints — Fabric sets
-          // frames directly and constraints conflict with that on subsequent mounts.
-          childView.translatesAutoresizingMaskIntoConstraints = true
-          childView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-          childView.frame = vc.view.bounds
+          // Do not write childView.frame or attach a flexible autoresizingMask.
+          // This view is Fabric-managed: RCTViewComponentView.updateLayoutMetrics
+          // uses the instance's cached _layoutMetrics as the old value and skips
+          // setFrame when they match, and prepareForRecycle does not reset that
+          // cache. Writing the frame here (and letting UIKit keep growing it via
+          // autoresizingMask) desyncs the real frame from _layoutMetrics. After
+          // recycle the same instance is reused as an unrelated view — a
+          // pressable highlight, a drawer background — still carrying the stale
+          // tab-scene size, which showed up as randomly-sized buttons and a
+          // half-screen white band leaking out of a closed drawer.
+          // JS sizes the scene as absolute + the native-reported bounds, so the
+          // frame Fabric already applied is (0,0,w,h) in this container.
+          // Clear any leftover flexible mask from a previous attach.
+          childView.autoresizingMask = []
         }
       }
 
