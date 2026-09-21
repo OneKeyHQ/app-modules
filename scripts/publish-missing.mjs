@@ -36,18 +36,22 @@ export function selectUnpublished(workspaces, packuments, distTag) {
       );
     }
     if (document?.versions?.[workspace.version]) {
-      if (tagged !== workspace.version) {
-        throw new Error(
-          `${workspace.name}@${
-            workspace.version
-          } already exists but ${distTag} points at ${tagged ?? "nothing"}`
-        );
-      }
+      continue;
     } else {
       missing.push(workspace);
     }
   }
   return missing;
+}
+
+export function selectRetags(workspaces, packuments, distTag) {
+  return workspaces.filter((workspace) => {
+    const document = packuments.get(workspace.name);
+    return (
+      document?.versions?.[workspace.version] &&
+      document?.["dist-tags"]?.[distTag] !== workspace.version
+    );
+  });
 }
 
 async function readPackument(name) {
@@ -73,6 +77,16 @@ function runYarn(args) {
   }
 }
 
+function runNpm(args) {
+  const result = spawnSync("npm", args, { cwd: repoRoot, stdio: "inherit" });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(`npm ${args.join(" ")} failed with exit ${result.status}`);
+  }
+}
+
 async function main() {
   const [distTag] = process.argv.slice(2);
   const workspaces = await loadReleaseWorkspaces(repoRoot);
@@ -88,8 +102,9 @@ async function main() {
     packuments.set(name, await readPackument(name));
   }
   const missing = selectUnpublished(workspaces, packuments, distTag);
+  const retags = selectRetags(workspaces, packuments, distTag);
   console.log(
-    `${missing.length} of ${workspaces.length} packages still need publishing`
+    `${missing.length} package(s) need publishing; ${retags.length} existing version(s) need the ${distTag} tag`
   );
   const first = missing.filter(({ name }) => name !== nativeListName);
   if (first.length > 0) {
@@ -111,6 +126,9 @@ async function main() {
   }
   if (missing.some(({ name }) => name === nativeListName)) {
     runYarn(["workspace", nativeListName, "release", "--tag", distTag]);
+  }
+  for (const { name, version } of retags) {
+    runNpm(["dist-tag", "add", `${name}@${version}`, distTag]);
   }
 }
 
