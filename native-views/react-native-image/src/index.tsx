@@ -371,7 +371,7 @@ export function OneKeyImage({
     autoplay: autoplay ?? Platform.OS !== 'android',
     recyclingKey,
     optimizeTos,
-    round: Platform.OS === 'android' ? round : undefined,
+    round,
     resizeWidth,
     overscan,
     loadingStrategy:

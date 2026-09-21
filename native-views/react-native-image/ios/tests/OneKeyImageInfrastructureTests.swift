@@ -566,4 +566,49 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     XCTAssertTrue(imageView.clearBufferWhenStopped)
   }
 
+  func testRoundPropUpdatesNativeCornerRadius() throws {
+    let image = HybridOneKeyImage()
+    let imageView = try XCTUnwrap(image.view as? SDAnimatedImageView)
+    imageView.frame = CGRect(x: 0, y: 0, width: 40, height: 40)
+
+    image.sourceUri = "https://example.com/round.png"
+    image.round = true
+    image.afterUpdate()
+    imageView.layoutIfNeeded()
+    XCTAssertEqual(imageView.layer.cornerRadius, 20)
+
+    image.round = nil
+    image.afterUpdate()
+    XCTAssertEqual(imageView.layer.cornerRadius, 20)
+
+    image.round = false
+    image.afterUpdate()
+    XCTAssertEqual(imageView.layer.cornerRadius, 0)
+  }
+
+  func testRecycleKeepsRoundMaskUntilVisibleViewDetaches() throws {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+    let image = HybridOneKeyImage()
+    let imageView = try XCTUnwrap(image.view as? SDAnimatedImageView)
+    imageView.frame = CGRect(x: 0, y: 0, width: 40, height: 40)
+    window.addSubview(imageView)
+    image.sourceUri = "https://example.com/round.png"
+    image.round = true
+    image.afterUpdate()
+    imageView.layoutIfNeeded()
+
+    // Fabric resets props in setter order before the view leaves the hierarchy.
+    image.round = false
+    image.sourceUri = nil
+    image.afterUpdate()
+    XCTAssertEqual(imageView.layer.cornerRadius, 20)
+
+    image.prepareForRecycle()
+
+    XCTAssertEqual(imageView.layer.cornerRadius, 20)
+
+    image.sourceUri = "https://example.com/reused.png"
+    image.afterUpdate()
+    XCTAssertEqual(imageView.layer.cornerRadius, 0)
+  }
 }

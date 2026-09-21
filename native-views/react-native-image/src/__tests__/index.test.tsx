@@ -32,12 +32,7 @@ const mockCache = jest.requireMock('react-native-nitro-modules').__cache as {
 };
 
 describe('OneKeyImage wrapper', () => {
-  beforeEach(() => {
-    Platform.OS = 'ios';
-  });
-
   it('normalizes a URI source and keeps RN overlays opt-in', async () => {
-    Platform.OS = 'android';
     let renderer: ReactTestRenderer.ReactTestRenderer;
     await act(() => {
       renderer = ReactTestRenderer.create(
@@ -116,7 +111,6 @@ describe('OneKeyImage wrapper', () => {
   });
 
   it('sends an explicit false round prop for non-round images', async () => {
-    Platform.OS = 'android';
     let renderer: ReactTestRenderer.ReactTestRenderer;
     await act(() => {
       renderer = ReactTestRenderer.create(
@@ -129,23 +123,6 @@ describe('OneKeyImage wrapper', () => {
 
     const native = renderer!.root.findByType('NativeOneKeyImage' as never);
     expect(native.props.round).toBe(false);
-  });
-
-  it('does not send the round prop to iOS', async () => {
-    Platform.OS = 'ios';
-    let renderer: ReactTestRenderer.ReactTestRenderer;
-    await act(() => {
-      renderer = ReactTestRenderer.create(
-        <OneKeyImage
-          source={{ uri: 'https://example.com/token.png' }}
-          round
-          style={{ width: 40, height: 40 }}
-        />
-      );
-    });
-
-    const native = renderer!.root.findByType('NativeOneKeyImage' as never);
-    expect(native.props.round).toBeUndefined();
   });
 
   it('returns false for blank preload sources without hiding valid work', async () => {

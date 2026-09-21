@@ -7,9 +7,13 @@ import UIKit
 private final class OneKeyImageHostView: SDAnimatedImageView {
   var onLayout: (() -> Void)?
   var onWindowChanged: ((Bool) -> Void)?
+  var round = false {
+    didSet { updateRoundMask() }
+  }
 
   override func layoutSubviews() {
     super.layoutSubviews()
+    updateRoundMask()
     onLayout?()
   }
 
@@ -18,6 +22,9 @@ private final class OneKeyImageHostView: SDAnimatedImageView {
     onWindowChanged?(window != nil)
   }
 
+  private func updateRoundMask() {
+    layer.cornerRadius = round ? min(bounds.width, bounds.height) / 2 : 0
+  }
 }
 
 private final class OneKeyImageSkeletonView: UIView {
@@ -189,6 +196,12 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   }
 
   func afterUpdate() {
+    // Fabric can reset `round` before clearing `sourceUri` while removing a view.
+    // Apply the shape once per committed prop batch so the outgoing frame keeps
+    // its clipping, while mounted and recycled views still receive the new value.
+    if let sourceUri, !sourceUri.isEmpty {
+      hostView.round = round == true
+    }
     scheduleLoad()
   }
 
