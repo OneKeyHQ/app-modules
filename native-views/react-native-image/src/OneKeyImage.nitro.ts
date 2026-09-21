@@ -43,6 +43,8 @@ export interface OneKeyImageNativeProps extends HybridViewProps {
   autoplay?: boolean;
   recyclingKey?: string;
   optimizeTos?: boolean;
+  /** Clips the native image to an oval using its current bounds. */
+  round?: boolean;
   /** Display width hint in layout units. Native applies the screen density. */
   resizeWidth?: number;
   overscan?: number;

@@ -134,6 +134,13 @@ namespace margelo::nitro::onekeyimage {
     inline void setOptimizeTos(std::optional<bool> optimizeTos) noexcept override {
       _swiftPart.setOptimizeTos(optimizeTos);
     }
+    inline std::optional<bool> getRound() noexcept override {
+      auto __result = _swiftPart.getRound();
+      return __result;
+    }
+    inline void setRound(std::optional<bool> round) noexcept override {
+      _swiftPart.setRound(round);
+    }
     inline std::optional<double> getResizeWidth() noexcept override {
       auto __result = _swiftPart.getResizeWidth();
       return __result;

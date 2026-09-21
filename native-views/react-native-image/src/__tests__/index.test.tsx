@@ -42,6 +42,7 @@ describe('OneKeyImage wrapper', () => {
             cachePolicy: OneKeyImageCachePolicy.DISK,
           }}
           variant={OneKeyImageVariant.AVATAR}
+          round
           resizeWidth={64}
           style={{ width: 40, height: 40 }}
         />
@@ -53,6 +54,7 @@ describe('OneKeyImage wrapper', () => {
     );
     expect(native.props.sourceUri).toBe('https://example.com/avatar.png');
     expect(native.props.resizeWidth).toBe(64);
+    expect(native.props.round).toBe(true);
     expect(native.props).not.toHaveProperty('sourceCacheKey');
     expect(native.props.cachePolicy).toBe(OneKeyImageCachePolicy.DISK);
     expect(native.props.loadingStrategy).toBe(
@@ -106,6 +108,21 @@ describe('OneKeyImage wrapper', () => {
     const clearResult = OneKeyImageCache.clearMemory();
     expect(clearResult).toBeInstanceOf(Promise);
     await expect(clearResult).resolves.toBeUndefined();
+  });
+
+  it('sends an explicit false round prop for non-round images', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <OneKeyImage
+          source={{ uri: 'https://example.com/token.png' }}
+          style={{ width: 40, height: 40 }}
+        />
+      );
+    });
+
+    const native = renderer!.root.findByType('NativeOneKeyImage' as never);
+    expect(native.props.round).toBe(false);
   });
 
   it('returns false for blank preload sources without hiding valid work', async () => {
