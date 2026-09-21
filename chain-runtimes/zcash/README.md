@@ -314,8 +314,8 @@ Software keyrings use this sequence for Unified recipients:
 
 `parseTransparentTransactions` verifies raw previous transactions against their
 requested transaction IDs and returns transparent output values, scripts, and
-coinbase status. The host supplies the mined height for legacy transaction branch
-selection and must check each UTXO's output index and value against the result.
+coinbase status. It only needs transaction IDs and raw bytes; the host must check
+each UTXO's output index and value against the result.
 This API uses only the keys module; no wallet database or scan is required.
 
 The host owns transparent outpoint reservations, signature-time UTXO revalidation,

@@ -1,13 +1,12 @@
 use serde::{Deserialize, Serialize};
 use zcash_primitives::transaction::Transaction;
-use zcash_protocol::consensus::{BlockHeight, BranchId};
+use zcash_protocol::consensus::BranchId;
 
-use crate::{keys::parse_network, ErrorCode, KeysError, Result};
+use crate::{ErrorCode, KeysError, Result};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Request {
-    network: String,
     transactions: Vec<PreviousTransaction>,
 }
 
@@ -16,7 +15,6 @@ struct Request {
 struct PreviousTransaction {
     txid: String,
     raw_tx: String,
-    height: u32,
 }
 
 #[derive(Serialize)]
@@ -37,24 +35,23 @@ struct Output {
 pub fn parse_json(request_json: &str) -> Result<String> {
     let invalid = || KeysError::new(ErrorCode::InvalidTransactionRequest);
     let request: Request = serde_json::from_str(request_json).map_err(|_| invalid())?;
-    let network = parse_network(&request.network)?;
     let parsed = request
         .transactions
         .into_iter()
         .map(|previous| {
-            if previous.height == 0 {
-                return Err(invalid().detail("previous transaction height is required"));
-            }
             let bytes = hex::decode(&previous.raw_tx).map_err(|_| invalid())?;
             let mut reader = &bytes[..];
-            let branch = BranchId::for_height(&network, BlockHeight::from_u32(previous.height));
-            let tx = Transaction::read(&mut reader, branch).map_err(|e| invalid().detail(e))?;
-            if !reader.is_empty() || !tx.txid().to_string().eq_ignore_ascii_case(&previous.txid) {
+            // The legacy branch metadata is unused for txids and transparent outputs.
+            // V5 and later read the branch from the transaction itself. Never sign this object.
+            let tx = Transaction::read(&mut reader, BranchId::Sprout)
+                .map_err(|e| invalid().detail(e))?;
+            let txid = tx.txid().to_string();
+            if !reader.is_empty() || !txid.eq_ignore_ascii_case(&previous.txid) {
                 return Err(invalid().detail("previous transaction does not match its txid"));
             }
             let bundle = tx.transparent_bundle().ok_or_else(invalid)?;
             Ok(ParsedTransaction {
-                txid: tx.txid().to_string(),
+                txid,
                 is_coinbase: bundle.is_coinbase(),
                 outputs: bundle
                     .vout
@@ -95,7 +92,7 @@ mod tests {
 
     #[test]
     fn rejects_mismatched_malformed_and_trailing_data() {
-        for mode in ["txid", "truncated", "trailing", "hex", "height"] {
+        for mode in ["txid", "truncated", "trailing", "hex"] {
             let mut request = request();
             let tx = &mut request["transactions"][0];
             match mode {
@@ -103,7 +100,6 @@ mod tests {
                 "truncated" => tx["rawTx"] = "04000080".into(),
                 "trailing" => tx["rawTx"] = format!("{}00", tx["rawTx"].as_str().unwrap()).into(),
                 "hex" => tx["rawTx"] = "zz".into(),
-                "height" => tx["height"] = 0.into(),
                 _ => unreachable!(),
             }
             assert!(parse_json(&request.to_string()).is_err(), "{mode}");
@@ -119,7 +115,7 @@ mod tests {
         bytes[41..45].fill(0xff);
         let tx = Transaction::read(&bytes[..], BranchId::Nu6_2).unwrap();
         request["transactions"] = json!([{
-            "txid": tx.txid().to_string(), "rawTx": hex::encode(bytes), "height": 3490000,
+            "txid": tx.txid().to_string(), "rawTx": hex::encode(bytes),
         }]);
         let parsed: Value =
             serde_json::from_str(&parse_json(&request.to_string()).unwrap()).unwrap();
