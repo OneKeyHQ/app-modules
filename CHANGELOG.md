@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.156] - 2026-09-21
+
+### Features
+- **image (iOS and Android)**: Add a `round` prop to OneKeyImage and keep rounded clipping stable during Android navigation snapshots and recycled NativeList rows.
+
+### Bug Fixes
+- **native-list (iOS)**: Dispose the native host view tree when Nitro drops a list. Account-selector modals create two NativeLists; the previous drop hook only invalidated action anchors, so every close left both collection views, their visible cells, image hosts, and thousands of constraints reachable until the wrapper was collected. Disposal is now idempotent, detaches delegates and callbacks, releases list data and reusable views, and drops the host view immediately.
+
+### Chores
+- Bump all 41 publishable packages to 3.0.156.
+
 ## [3.0.152] - 2026-09-20
 
 ### Bug Fixes

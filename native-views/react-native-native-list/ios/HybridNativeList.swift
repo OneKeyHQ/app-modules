@@ -2,16 +2,17 @@ import Foundation
 import UIKit
 
 final class HybridNativeList: HybridNativeListSpec {
-  private let hostView = NativeListView(frame: .zero)
+  private var hostView: NativeListView? = NativeListView(frame: .zero)
+  private let disposedView = UIView(frame: .zero)
 
-  var view: UIView { hostView }
+  var view: UIView { hostView ?? disposedView }
 
   var snapshotJson: String = "" {
     didSet {
       guard snapshotJson != oldValue else { return }
       runOnMain { [weak self] in
         guard let self else { return }
-        self.hostView.applySnapshotJson(self.snapshotJson)
+        self.hostView?.applySnapshotJson(self.snapshotJson)
       }
     }
   }
@@ -21,7 +22,7 @@ final class HybridNativeList: HybridNativeListSpec {
       guard keyboardDismissMode != oldValue else { return }
       runOnMain { [weak self] in
         guard let self else { return }
-        self.hostView.setKeyboardDismissMode(self.keyboardDismissMode)
+        self.hostView?.setKeyboardDismissMode(self.keyboardDismissMode)
       }
     }
   }
@@ -31,7 +32,7 @@ final class HybridNativeList: HybridNativeListSpec {
       guard keyboardShouldPersistTaps != oldValue else { return }
       runOnMain { [weak self] in
         guard let self else { return }
-        self.hostView.setKeyboardShouldPersistTaps(self.keyboardShouldPersistTaps)
+        self.hostView?.setKeyboardShouldPersistTaps(self.keyboardShouldPersistTaps)
       }
     }
   }
@@ -45,30 +46,30 @@ final class HybridNativeList: HybridNativeListSpec {
     didSet {
       runOnMain { [weak self] in
         guard let self else { return }
-        self.hostView.onVisibleRangeChanged = self.onVisibleRangeChanged
+        self.hostView?.onVisibleRangeChanged = self.onVisibleRangeChanged
       }
     }
   }
 
   override init() {
     super.init()
-    hostView.onRowAction = { [weak self] in self?.onRowAction?($0) }
-    hostView.onActionAnchorInvalidated = { [weak self] in self?.onActionAnchorInvalidated?($0) }
-    hostView.onSelectionDelta = { [weak self] in self?.onSelectionDelta?($0) }
-    hostView.onReorder = { [weak self] in self?.onReorder?($0) }
-    hostView.onEndReached = { [weak self] in self?.onEndReached?($0) }
+    hostView?.onRowAction = { [weak self] in self?.onRowAction?($0) }
+    hostView?.onActionAnchorInvalidated = { [weak self] in self?.onActionAnchorInvalidated?($0) }
+    hostView?.onSelectionDelta = { [weak self] in self?.onSelectionDelta?($0) }
+    hostView?.onReorder = { [weak self] in self?.onReorder?($0) }
+    hostView?.onEndReached = { [weak self] in self?.onEndReached?($0) }
   }
 
   func applySnapshot(snapshotJson: String) throws {
-    runOnMain { [weak self] in self?.hostView.applySnapshotJson(snapshotJson) }
+    runOnMain { [weak self] in self?.hostView?.applySnapshotJson(snapshotJson) }
   }
 
   func applyPatches(patchesJson: String) throws {
-    runOnMain { [weak self] in self?.hostView.applyPatchesJson(patchesJson) }
+    runOnMain { [weak self] in self?.hostView?.applyPatchesJson(patchesJson) }
   }
 
   func reconcileSelection(selectedKeysJson: String) throws {
-    runOnMain { [weak self] in self?.hostView.reconcileSelectionJson(selectedKeysJson) }
+    runOnMain { [weak self] in self?.hostView?.reconcileSelectionJson(selectedKeysJson) }
   }
 
   func scrollToKey(
@@ -79,7 +80,7 @@ final class HybridNativeList: HybridNativeListSpec {
     viewOffset: Double
   ) throws {
     runOnMain { [weak self] in
-      self?.hostView.scrollToKey(
+      self?.hostView?.scrollToKey(
         key,
         animated: animated,
         alignment: alignment.stringValue,
@@ -101,7 +102,7 @@ final class HybridNativeList: HybridNativeListSpec {
           index.rounded(.towardZero) == index,
           index <= Double(Int.max) else { return }
     runOnMain { [weak self] in
-      self?.hostView.scrollToIndex(
+      self?.hostView?.scrollToIndex(
         Int(index),
         animated: animated,
         alignment: alignment.stringValue,
@@ -114,37 +115,50 @@ final class HybridNativeList: HybridNativeListSpec {
   func scrollToOffset(offset: Double, animated: Bool) throws {
     guard offset.isFinite, offset >= 0 else { return }
     runOnMain { [weak self] in
-      self?.hostView.scrollToOffset(offset, animated: animated)
+      self?.hostView?.scrollToOffset(offset, animated: animated)
     }
   }
 
   func scrollToEnd(animated: Bool) throws {
-    runOnMain { [weak self] in self?.hostView.scrollToEnd(animated: animated) }
+    runOnMain { [weak self] in self?.hostView?.scrollToEnd(animated: animated) }
   }
 
   func setActionAnchorState(stateJson: String) throws {
-    runOnMain { [weak self] in self?.hostView.setActionAnchorStateJson(stateJson) }
+    runOnMain { [weak self] in self?.hostView?.setActionAnchorStateJson(stateJson) }
   }
 
   func setRefreshing(refreshing: Bool) throws {
-    runOnMain { [weak self] in self?.hostView.setRefreshing(refreshing) }
+    runOnMain { [weak self] in self?.hostView?.setRefreshing(refreshing) }
   }
 
   func onDropView() {
-    runOnMain { [weak self] in self?.hostView.disposeActionAnchor() }
+    runOnMain { [weak self] in self?.disposeHostView() }
   }
 
   func dispose() {
-    runOnMain { [weak self] in self?.hostView.disposeActionAnchor() }
+    runOnMain { [weak self] in self?.disposeHostView() }
   }
 
   deinit {
+    guard let hostView else { return }
     if Thread.isMainThread {
-      hostView.disposeActionAnchor()
+      hostView.dispose()
     } else {
-      let view = hostView
-      DispatchQueue.main.async { view.disposeActionAnchor() }
+      DispatchQueue.main.async { hostView.dispose() }
     }
+  }
+
+  private func disposeHostView() {
+    guard let hostView else { return }
+    onRowAction = nil
+    onActionAnchorInvalidated = nil
+    onSelectionDelta = nil
+    onReorder = nil
+    onEndReached = nil
+    onVisibleRangeChanged = nil
+    hostView.dispose()
+    self.hostView = nil
+    snapshotJson = ""
   }
 
   private func runOnMain(_ work: @escaping () -> Void) {

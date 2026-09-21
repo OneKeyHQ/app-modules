@@ -119,6 +119,7 @@ final class NativeListView: UIView {
   private var actionAnchor: ActionAnchorRecord?
   private let actionAnchorInstanceID = UUID().uuidString
   private var actionAnchorCounter = 0
+  private var disposed = false
 
   private static let sectionIndexContentInset: CGFloat = 16
   private static let sectionIndexRailWidth: CGFloat = 32
@@ -1856,6 +1857,65 @@ final class NativeListView: UIView {
   func disposeActionAnchor() {
     invalidateActionAnchor(reason: "destroy")
     actionAnchor = nil
+  }
+
+  func dispose() {
+    guard !disposed else { return }
+    disposed = true
+
+    disposeActionAnchor()
+    interactiveReorderAnimator?.stopAnimation(true)
+    interactiveReorderAnimator = nil
+    if interactiveReorderSource != nil {
+      collectionView.cancelInteractiveMovement()
+    }
+    resetAtomicReorderTransforms()
+    interactiveReorderSource = nil
+    interactiveReorderCell = nil
+    interactiveMovementKeys = nil
+    deferredReorderReconfigureKeys.removeAll()
+
+    finishSectionIndexInteraction(immediately: true)
+    sectionIndexView.onSelect = nil
+    sectionIndexView.onInteractionEnded = nil
+    NSLayoutConstraint.deactivate(sectionIndexLayoutConstraints)
+    sectionIndexLayoutConstraints.removeAll()
+    sectionIndexHostHeightConstraint = nil
+    sectionIndexView.removeFromSuperview()
+
+    collectionView.refreshControl?.removeTarget(nil, action: nil, for: .allEvents)
+    collectionView.refreshControl = nil
+    collectionView.delegate = nil
+    collectionView.dragDelegate = nil
+    collectionView.dropDelegate = nil
+    keyboardTapRecognizer.delegate = nil
+    keyboardDragRecognizer.delegate = nil
+    listBodyGestureGuard.delegate = nil
+    reorderLongPress.delegate = nil
+    marketLongPress.delegate = nil
+
+    for case let cell as NativeListCell in collectionView.visibleCells {
+      cell.onAction = nil
+      cell.onBindingInvalidated = nil
+      cell.prepareForReuse()
+    }
+    footerCell.onAction = nil
+    footerCell.onBindingInvalidated = nil
+    footerCell.prepareForReuse()
+    collectionView.dataSource = nil
+    dataSource = nil
+
+    config = nil
+    itemsByKey.removeAll()
+    sectionIndexEntries.removeAll()
+    pendingScrollRequest = nil
+    lastVisibleRange = nil
+    onRowAction = nil
+    onActionAnchorInvalidated = nil
+    onSelectionDelta = nil
+    onReorder = nil
+    onEndReached = nil
+    onVisibleRangeChanged = nil
   }
 
   private func createActionAnchor(origin: NativeListActionOrigin) -> [String: Any]? {
