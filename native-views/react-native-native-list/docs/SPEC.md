@@ -76,7 +76,7 @@ separate workload and measurements.
 
 | Stage | Current status | Exit condition |
 | --- | --- | --- |
-| 1. Baseline | Partial: representative Message/runtime cases exist; implicit key/default/update inventory is incomplete | Preserve each existing rule or explicitly migrate its caller |
+| 1. Baseline | Complete: [implicit keys, defaults, special updates and acceptance baseline](MIGRATION_BASELINE.md) inventoried | Preserve each existing rule or explicitly migrate its caller |
 | 2. Message pilot | In progress: three-platform binding/reuse families and renderer-owned text subtrees implemented; Message runtime cases verified | Lightweight native hosts, resolved styling/measurement, update classification and lifecycle acceptance |
 | 3. Simple templates | Not started | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
 | 4. Complex templates | Not started | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
@@ -87,6 +87,21 @@ Native Message now owns its text subtree and typography; Web owns its DOM
 structure and still uses shared CSS defaults. Shared leading/thumbnail image
 slots and generic native host lifecycle stay in place
 until their primitives are extracted. The legacy host remains allocated.
+
+Stage 2 completion requires registered Message factories to create lightweight
+hosts on both native platforms and a persistent Web Message body. The renderer
+resolves text/spacing/image inputs from data/theme/styles, classifies updates,
+and binds/measures using that resolved model. Unchanged assets keep their slot
+and request identity; changed/removed assets invalidate stale callbacks and
+retries. The legacy Message binding and slot-map branches must be removed.
+
+Message intrinsic measurement will use its actual resolved view metrics rather
+than the historical estimator-only defaults listed in MIGRATION_BASELINE.md.
+This can change **automatic** Message heights; explicit row/container heights
+and unstyled drawing defaults remain unchanged. Native measurement must account
+for the allocated column width, line limits, gaps and optional images. Web uses
+the same resolved geometry with a conservative text estimate, then corrects the
+visible intrinsic height from its rendered DOM; it does not auto-fit content.
 
 Source boundaries and dated runtime evidence are in the incremental migration
 section of [DESIGN.md](DESIGN.md). Acceptance covers style set/change/clear,
