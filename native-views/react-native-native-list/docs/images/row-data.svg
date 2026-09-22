@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="272" viewBox="0 0 900 272" role="img" aria-labelledby="title desc">
+<title id="title">dataRow · stable column geometry</title>
+<desc id="desc">Structural schematic. Blue is content; green is controls; dashed slots are optional. Not a device screenshot or a pixel specification.</desc>
+<rect width="900" height="100%" rx="16" fill="#f5f7fa"/>
+<g font-family="Arial, Helvetica, sans-serif">
+<text x="24" y="36" font-size="22" fill="#172a3a" font-weight="600">dataRow · stable column geometry</text>
+<rect x="24" y="66" width="852" height="154" rx="8" fill="#fff" stroke="#bfcbd5"/>
+<rect x="40" y="84" width="68" height="116" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="52" y="147.0" font-size="15" fill="#294766" font-weight="400">index</text>
+<rect x="120" y="84" width="100" height="116" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="132" y="147.0" font-size="15" fill="#294766" font-weight="400">leading</text>
+<rect x="234" y="84" width="216" height="116" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="246" y="136.0" font-size="15" fill="#294766" font-weight="400">columns[0].text</text>
+<text x="246" y="158.0" font-size="15" fill="#294766" font-weight="400">secondaryText?</text>
+<rect x="464" y="84" width="216" height="116" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="476" y="136.0" font-size="15" fill="#294766" font-weight="400">columns[1].text</text>
+<text x="476" y="158.0" font-size="15" fill="#294766" font-weight="400">secondaryText?</text>
+<rect x="696" y="84" width="72" height="116" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="708" y="147.0" font-size="15" fill="#294766" font-weight="400">…</text>
+<rect x="782" y="84" width="74" height="116" rx="8" fill="#e9f5ee" stroke="#72a38a" stroke-dasharray="5 4"/>
+<text x="794" y="147.0" font-size="15" fill="#2c6245" font-weight="400">check</text>
+<text x="24" y="252" font-size="13" fill="#64798b" font-weight="400">2–4 columns; order, weight and alignment are data/layout inputs, not arbitrary text-style overrides.</text>
+</g>
+</svg>

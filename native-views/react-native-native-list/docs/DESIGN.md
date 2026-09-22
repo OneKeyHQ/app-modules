@@ -8,8 +8,9 @@ selection feedback, image request cancellation, and scrolling. JavaScript sends
 normalized plain data; rows never contain a `ReactNode`, function, or arbitrary
 style object.
 
-The component supports `identity`, `rail`, `activity`, `message`, `dataRow`,
-`mediaTile`, `metricCard`, `sectionHeader`, `action`, and `system` rows.
+The component supports 12 row types: `identity`, `walletGroup`, `rail`, `activity`,
+`message`, `dataRow`, `market`, `mediaTile`, `metricCard`, `sectionHeader`, `action`,
+and `system`. [ROW_TEMPLATES.md](ROW_TEMPLATES.md) defines each with an illustration.
 `metricCard` supports a compact KPI template and the fixed `activity` and
 `performance` Portfolio & PnL composites. Their bounded metric arrays and
 progress value have dedicated native binders on both mobile platforms.
@@ -26,7 +27,10 @@ Each row also accepts a bounded `style`, whose keys name model fields rather tha
 views. [STYLE_SPEC.md](STYLE_SPEC.md) is the shared vocabulary: the design tokens,
 the per-template style surface with each platform's current values, the template
 isolation rules, and the cross-platform divergences that are registered rather
-than fixed.
+than fixed. Its container capability contract keeps header/footer placement,
+sections, scrolling and the indexed bar independent of content templates. A local
+style must preserve the template skeleton and allocated row frame; current
+numeric validation alone does not guarantee that a combination fits.
 
 The wrapper validates and normalizes data before serializing it. A structural
 change is one snapshot payload. Frequently changing fields use one batch patch
@@ -34,10 +38,13 @@ payload keyed by row key. Neither API performs one native call per row. The
 native side rejects malformed or duplicate-key payloads without partially
 applying them.
 
-Section headers, footers, separators, empty rows, and fixed-footer descriptors
-are represented as rows in one flattened native data source. `groupId` and
-`groupPosition` preserve continuous card geometry without nesting lists inside
-cells.
+Section headers and scrolling footer/status rows use the flattened row stream.
+`fixedFooter` is a separate descriptor outside that stream, and `emptyState` is
+used when content is empty; both reuse row binders and currently accept only
+`action` or `system` through the public API. A generic public list-header slot is
+not yet exposed. `groupId` and `groupPosition` preserve continuous card geometry
+without nesting lists inside cells. These placement/grouping rules belong to the
+container even when the displayed content uses an existing row template.
 
 ## Native architecture
 

@@ -108,6 +108,7 @@ second delta.
 | Row type        | Intended template                                          |
 | --------------- | ---------------------------------------------------------- |
 | `identity`      | Asset, account, wallet, network, or settings identity      |
+| `walletGroup`   | Parent and child wallet-sidebar identity rows in one group |
 | `rail`          | Compact horizontal item with optional native drag support  |
 | `activity`      | Transaction/activity with amounts and up to three actions  |
 | `message`       | Notification/message with bounded body lines and thumbnail |
@@ -403,5 +404,6 @@ use Instruments or Android Studio Profiler for native frame and memory data.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the architecture and ownership model, and
 [docs/STYLE_SPEC.md](docs/STYLE_SPEC.md) for the shared style vocabulary: design
-tokens, the per-template style surface with each platform's current values, and the
-registered cross-platform divergences.
+tokens, local layout-safety rules, common list capabilities and current implementation
+gaps. [docs/ROW_TEMPLATES.md](docs/ROW_TEMPLATES.md) defines all 12 row types with
+structural illustrations, required fields, variants and styling boundaries.
