@@ -74,17 +74,104 @@ export type NativeListImageStyle = Readonly<{
 
 export type MarketImageStyle = NativeListImageStyle;
 
-/** Box metrics every template shares. Bounds live in docs/STYLE_SPEC.md §3.3. */
+/** Local box vocabulary. Each template exposes only parameters for its own slots. */
 export type RowBoxStyle = Readonly<{
   horizontalPadding?: number;
   verticalPadding?: number;
   leadingGap?: number;
-  /** Space between title and subtitle; 0 by default, bounded to 0..16. */
+  /** Gap between the template's text rows. Omission preserves its default. */
   lineGap?: number;
   titleBadgeGap?: number;
   trailingGap?: number;
   image?: NativeListImageStyle;
 }>;
+
+/** Template-owned slots determine which local box parameters exist, on every platform. */
+export const ROW_BOX_STYLE_KEYS_BY_TYPE = {
+  identity: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'titleBadgeGap',
+    'trailingGap',
+    'image',
+  ],
+  walletGroup: ['horizontalPadding', 'verticalPadding'],
+  rail: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'titleBadgeGap',
+    'trailingGap',
+    'image',
+  ],
+  activity: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'trailingGap',
+    'image',
+  ],
+  message: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'image',
+  ],
+  dataRow: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'titleBadgeGap',
+    'image',
+  ],
+  market: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'titleBadgeGap',
+    'trailingGap',
+    'image',
+  ],
+  mediaTile: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'image',
+  ],
+  metricCard: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'lineGap',
+    'image',
+  ],
+  sectionHeader: [
+    'horizontalPadding',
+    'verticalPadding',
+    'lineGap',
+    'trailingGap',
+  ],
+  action: [
+    'horizontalPadding',
+    'verticalPadding',
+    'leadingGap',
+    'trailingGap',
+    'image',
+  ],
+  system: ['horizontalPadding', 'verticalPadding', 'lineGap'],
+} as const;
+
+type TemplateBoxStyle<T extends keyof typeof ROW_BOX_STYLE_KEYS_BY_TYPE> = Pick<
+  RowBoxStyle,
+  (typeof ROW_BOX_STYLE_KEYS_BY_TYPE)[T][number]
+>;
 
 /**
  * A style key names the model field it modifies, never the view that carries
@@ -93,7 +180,7 @@ export type RowBoxStyle = Readonly<{
  * status view carries rail.status, activity.status, message.time and
  * metricCard.trend. See docs/STYLE_SPEC.md §4.
  */
-export type IdentityRowStyle = RowBoxStyle &
+export type IdentityRowStyle = TemplateBoxStyle<'identity'> &
   Readonly<{
     title?: NativeListTextStyle;
     subtitle?: NativeListTextStyle;
@@ -103,16 +190,16 @@ export type IdentityRowStyle = RowBoxStyle &
     valueSecondary?: NativeListTextStyle;
   }>;
 
-export type WalletGroupRowStyle = RowBoxStyle;
+export type WalletGroupRowStyle = TemplateBoxStyle<'walletGroup'>;
 
-export type RailRowStyle = RowBoxStyle &
+export type RailRowStyle = TemplateBoxStyle<'rail'> &
   Readonly<{
     title?: NativeListTextStyle;
     badge?: NativeListTextStyle;
     status?: NativeListTextStyle;
   }>;
 
-export type ActivityRowStyle = RowBoxStyle &
+export type ActivityRowStyle = TemplateBoxStyle<'activity'> &
   Readonly<{
     title?: NativeListTextStyle;
     description?: NativeListTextStyle;
@@ -121,21 +208,21 @@ export type ActivityRowStyle = RowBoxStyle &
     secondaryAmount?: NativeListTextStyle;
   }>;
 
-export type MessageRowStyle = RowBoxStyle &
+export type MessageRowStyle = TemplateBoxStyle<'message'> &
   Readonly<{
     title?: NativeListTextStyle;
     body?: NativeListTextStyle;
     time?: NativeListTextStyle;
   }>;
 
-export type DataRowStyle = RowBoxStyle &
+export type DataRowStyle = TemplateBoxStyle<'dataRow'> &
   Readonly<{
     columns?: NativeListTextStyle;
     columnSecondary?: NativeListTextStyle;
     index?: NativeListTextStyle;
   }>;
 
-export type MarketRowStyle = RowBoxStyle &
+export type MarketRowStyle = TemplateBoxStyle<'market'> &
   Readonly<{
     /** OneKey patch: keep badges next to the intrinsic title width. */
     titleBadgeLayout?: 'inline';
@@ -151,37 +238,37 @@ export type MarketRowStyle = RowBoxStyle &
     changeCornerRadius?: number;
   }>;
 
-export type MediaTileRowStyle = RowBoxStyle &
+export type MediaTileRowStyle = TemplateBoxStyle<'mediaTile'> &
   Readonly<{
     title?: NativeListTextStyle;
     subtitle?: NativeListTextStyle;
     badge?: NativeListTextStyle;
   }>;
 
-export type MetricCardRowStyle = RowBoxStyle &
+export type MetricCardRowStyle = TemplateBoxStyle<'metricCard'> &
   Readonly<{
-    /** The small label. Carried by the subtitle view on every platform. */
+    /** Standard-card label or composite-card heading. */
     title?: NativeListTextStyle;
-    /** The large number. Carried by the title view on every platform. */
+    /** Large number in the standard template; absent in composite variants. */
     value?: NativeListTextStyle;
     subtitle?: NativeListTextStyle;
     trend?: NativeListTextStyle;
   }>;
 
-export type SectionHeaderRowStyle = RowBoxStyle &
+export type SectionHeaderRowStyle = TemplateBoxStyle<'sectionHeader'> &
   Readonly<{
     title?: NativeListTextStyle;
     subtitle?: NativeListTextStyle;
     value?: NativeListTextStyle;
   }>;
 
-export type ActionRowStyle = RowBoxStyle &
+export type ActionRowStyle = TemplateBoxStyle<'action'> &
   Readonly<{
     title?: NativeListTextStyle;
     value?: NativeListTextStyle;
   }>;
 
-export type SystemRowStyle = RowBoxStyle &
+export type SystemRowStyle = TemplateBoxStyle<'system'> &
   Readonly<{
     title?: NativeListTextStyle;
     message?: NativeListTextStyle;

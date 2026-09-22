@@ -1307,6 +1307,57 @@ describe('NativeList style contract', () => {
     expect(() => validateSnapshot(styled({ lineGap: 17 }))).toThrow('lineGap');
   });
 
+  it.each(['red', '#abc', 'rgb(1, 2, 3)', '$text', '#123456789'])(
+    'rejects nonportable style color %s',
+    (color) => {
+      expect(() => validateSnapshot(styled({ title: { color } }))).toThrow(
+        'must be #RRGGBB or #RRGGBBAA'
+      );
+    }
+  );
+
+  it.each(['#123456', '#aAbBcC80'])(
+    'accepts shared style color %s',
+    (color) => {
+      expect(() =>
+        validateSnapshot(styled({ title: { color } }))
+      ).not.toThrow();
+    }
+  );
+
+  it('rejects box parameters for template parts that do not exist, including patches', () => {
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            type: 'rail',
+            key: 'r',
+            title: 'Rail',
+            style: { lineGap: 3 },
+          } as unknown as RowModel,
+        ])
+      )
+    ).toThrow('style.lineGap');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'sectionHeader',
+          key: 'h',
+          changes: { style: { image: { width: 20 } } },
+        } as unknown as RowPatch,
+      ])
+    ).toThrow('style.image');
+    expect(() =>
+      validatePatches([
+        {
+          type: 'dataRow',
+          key: 'd',
+          changes: { style: { trailingGap: 4 } },
+        } as unknown as RowPatch,
+      ])
+    ).toThrow('style.trailingGap');
+  });
+
   it('validates and resolves a style carried by a patch', () => {
     const patches = validatePatches([
       {

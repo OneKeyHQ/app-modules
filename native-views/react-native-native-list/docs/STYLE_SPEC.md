@@ -1,6 +1,6 @@
 # NativeList Style Spec
 
-Status: **draft contract; implementation is partial**. Consolidated on 2026-09-22
+Status: **shared style contract implemented in source; native rendered acceptance pending**. Consolidated on 2026-09-22
 from PRs #107, #109, #110, #111 and #112, on main `feac35eb6`.
 Use symbol names as source anchors. Tables of legacy defaults below are an
 inventory, not evidence of three-platform visual acceptance.
@@ -53,22 +53,31 @@ example the indexed bar requires vertical sections), not a particular business
 row template. This requirement does not claim every current renderer satisfies it.
 Current API limits and implementation gaps are explicit in §5 and §6.5.
 
-### 1.2 Design audit — 2026-09-22
+### 1.2 Row template and row style are different contracts
 
-The ownership model matches the intended design. The consolidated documents are
-not yet a fully implemented contract:
+- **Row template** (`row.type` plus its declared `variant`/`presentation`) defines
+  the content model and structure: slot order, hierarchy, optional parts, and
+  interactions. `identity`, `market` and `dataRow` are templates. Changing a
+  template is a model change, not a style change.
+- **Row style** (`row.style`) customizes existing semantic fields and local
+  metrics within that template. For example, `identity.style.title.fontSize`
+  changes title typography; `image.width` changes the primary visual slot.
+  A style cannot add a field, reorder slots or change a column's weight.
+- **List capabilities** belong to the container. Header/footer placement,
+  sections, scrolling, indexed bar, selection and list chrome do not belong to
+  either a content template or its row style.
 
-| Design intent | Audit conclusion / remaining decision |
-| --- | --- |
-| Each row template has a clear definition and illustration | All 12 types have a catalog entry and structural diagram. Variant-specific style applicability still needs coverage: composite metric-card `title` means its heading; the standard card's `value`, `subtitle` and `trend` do not name nested metric fields. |
-| Local styles cannot change the template structure | The component owns the slot structure and style isolation. By the 2026-09-22 scope decision, developers integrating the list own overflow prevention: they choose fitting text/image/padding values and row heights. Automatic measurement, combination-fit rejection and style-driven auto-height are not part of this work. |
-| Header/footer/sections/scroll/indexed bar are common capabilities | Ownership is correctly assigned to the container. Existing section headers and fixed action/system footers are independent of business templates. A generic header/footer slot needs an explicit interface decision covering placement, measurement, scroll indexing and event routing. |
+The configurable property names, valid values, semantic targets and precedence
+are the same on Web, iOS and Android. A template exposes only parameters for parts
+it owns. Unsupported keys are rejected by the shared validator before
+serialization; optional or variant-specific parts that are absent are not created
+by styling them. See the complete applicability matrix in §4.1.
 
-The five source PRs are closed; implementation continues on the consolidated
-branch. The first refactor pass fixes existing field targeting, nested style
-validation, text-state restoration and list-chrome scope. It does not settle the
-header/footer interface questions or provide layout-fit enforcement. Overflow
-handling belongs to the developer integrating the list, not a pending component feature.
+The 12 templates each have a definition and schematic in ROW_TEMPLATES.md.
+Overflow fitting remains the integrating developer's responsibility: choose
+fitting text/image/padding values and row heights. Automatic measurement,
+combination-fit rejection and style-driven auto-height are outside this contract.
+The five source PRs are closed; implementation continues in the consolidated PR.
 
 ## 2. How this spec is enforced
 
@@ -95,13 +104,14 @@ object identity.
 
 | Layer | State |
 | --- | --- |
-| Key validation, token resolution, patch support | Implemented; combination fitting is the integrator's responsibility |
-| Text slots, `horizontalPadding`, `verticalPadding`, `lineGap` | Style passes exist on Web, iOS and Android; coverage and reset gaps remain (§6.5) |
-| `leadingGap`, `trailingGap`, `titleBadgeGap`, `image` | Validated but applied only on `market`. The others need a per-template default gap, which is not readable from the DOM on Web and is spread across the binders on the native sides |
-| `listStyle.separator` and `listStyle.groupCornerRadius` | Android initial snapshot propagation and radius scope corrected; rendered verification pending (§6.5) |
-| `dataRow` column styles | Web has primary/secondary slots. Native linear primary styling exists; native secondary and table column styling are incomplete (§6.5) |
-| Row heights | Unchanged. A styled row that grows still needs an explicit `row.height` (§6.1) |
-| Android list-wide source scale (§6.3) | Unchanged. Making it per-row would move every selector list's metrics and needs device verification |
+| Per-template key validation, token resolution, patch support | Shared TypeScript/runtime contract; identical for all three renderers |
+| Text roles and local box/image parameters | Implemented for the applicable template slots in §4.1; absent optional slots remain absent |
+| `dataRow` column styles | Independent primary/secondary text on all platforms, in linear and table layouts |
+| Sticky header styles | Android uses the same row view/binder as normal headers; iOS and Web also reuse their row renderers |
+| `listStyle.separator` / `groupCornerRadius` | Initial/update propagation and actual-group scope aligned |
+| Row heights and overflow | Caller owns row allocation and fitting; style does not introduce auto-height |
+| Legacy baseline dimensions | Inventory in §4/§6; explicit style values use logical units independently of Android's legacy list scale |
+| Rendered acceptance | The source contract and build checks do not establish full native interaction/pixel acceptance (§9) |
 
 The field-to-view mapping exists twice, once per native language — `nativeListStyleSlot`
 in `NativeListModels.kt` and `styleSlot` in `NativeListCell.swift`. §4 is the source of
@@ -201,7 +211,67 @@ the same semantic mapping in native code. Singular style roles such as `badge`
 and `value` can refer to repeated badges or values in `trailing`; their precise
 meaning is defined in the [catalog](ROW_TEMPLATES.md).
 
-Legend: **=** all three platforms agree; **≠** registered divergence, see §6.
+### 4.1 Shared configurable properties
+
+Every text role listed below accepts the same `NativeListTextStyle`:
+`token`, `fontSize`, `fontWeight`, `color`, `lineHeight`, `lines`, `alignment`.
+Weights are `regular | medium | semibold | bold`; line counts are `1 | 2`;
+`start | center | end` alignment follows layout direction. Colors must be
+`#RRGGBB` or `#RRGGBBAA`, the common native/Web color format. Omitted properties
+preserve the template's values. Explicit properties override token values,
+presentation defaults and rich-text runs only for that property.
+
+Every supported image role accepts `width`, `height`, `shape`, `cornerRadius`,
+`contentFit`. Shape is `circle | rounded | square`; explicit corner radius wins.
+Fit is `cover | contain | fill | center`. These parameters target the primary
+visual, not network badges, corner decorations, message thumbnails or nested
+metric images. A media tile keeps its square default when only width is set;
+an explicit height overrides that aspect. Width/height do not change the outer row allocation.
+
+In the matrix, **padding** means both `horizontalPadding` and `verticalPadding`.
+Each cell describes the same public contract on **Web + iOS + Android**.
+
+| Template | Semantic text roles | Local box/image properties |
+| --- | --- | --- |
+| `identity` | title, subtitle, tertiary, badge, value, valueSecondary | padding, leadingGap, lineGap, titleBadgeGap, trailingGap, image |
+| `walletGroup` | None; members own their identity styles | padding |
+| `rail` | title, badge, status | padding, leadingGap, titleBadgeGap, trailingGap, image |
+| `activity` | title, description, status, primaryAmount, secondaryAmount | padding, leadingGap, lineGap, trailingGap, image |
+| `message` | title, body, time | padding, leadingGap, lineGap, image |
+| `dataRow` | columns, columnSecondary, index | padding, leadingGap, lineGap, titleBadgeGap, image |
+| `market` | title, subtitle, price, change | padding, leadingGap, lineGap, titleBadgeGap, trailingGap, image; Market-specific properties below |
+| `mediaTile` | title, subtitle, badge | padding, leadingGap, lineGap, image |
+| `metricCard` | title, value, subtitle, trend | padding, leadingGap, lineGap, image |
+| `sectionHeader` | title, subtitle, value | padding, lineGap, trailingGap |
+| `action` | title, value | padding, leadingGap, trailingGap, image |
+| `system` | title, message, actionText | padding, lineGap |
+
+Market additionally exposes `titleBadgeLayout: inline`, `contentTrailingGap`,
+`subtitleTrailingPadding`, `changeWidth`, `changeHeight`, `changeCornerRadius`, preserving
+its existing template-specific style surface on every platform.
+
+Gap meanings are structural: `leadingGap` separates the primary visual from
+content; `lineGap` separates content text rows (primary/secondary per data column);
+`titleBadgeGap` separates a title and its badges (vertical for walletSidebar);
+`trailingGap` separates trailing values/controls (title/badge to status for rail).
+`walletGroup` padding applies only to the group; it never cascades into members.
+Composite metric-card `lineGap` separates heading/metric blocks and dividers; it
+does not change the typography or inner label/value gap of each metric.
+
+Variant applicability is also shared: composite metric-card `title` styles its
+heading, while standard-card `value`/`subtitle`/`trend` do not style nested metrics;
+`system.title` applies to warning, `actionText` to retry. A missing leading visual,
+badge, subtitle or trailing value remains absent. New nested-metric/thumbnail
+style roles require a separately declared cross-platform contract.
+
+All numeric overrides use logical units (CSS px / iOS pt / Android dp), including
+explicit typography. Legacy Android scaling may affect omitted defaults, but must
+not rescale an explicit style value. Physical-pixel/font-rasterization differences
+remain platform-specific. See §3.3 for bounds and §7 for fitting responsibility.
+
+### 4.2 Existing defaults (inventory, not a pixel parity claim)
+
+Legend: **=** inventoried defaults agree; **≠** legacy divergence, see §6.
 
 ### identity
 
@@ -287,7 +357,7 @@ Legend: **=** all three platforms agree; **≠** registered divergence, see §6.
 
 | Key | Default | iOS | Android | Web |
 | --- | --- | --- | --- | --- |
-| `columns` (linear) | `$bodyMd` | 14 medium | sp(16) medium | 16px / 500 **≠** |
+| `columns` (linear) | `$bodyMd` | 14 medium / 20 | sp(16) medium / dp(20) | 16px / 500 **≠** |
 | `columns` (table) | `$bodyMd` | 14 medium / 20 | sp(14) medium / dp(20) | 16px / 500 **≠** |
 | column secondary | `$bodySm` | 12 regular / 16 | sp(12) / dp(16) | — |
 | `index` | `$bodySm` | — | dp(32) slot | 13px, 28px slot **≠** |
@@ -372,8 +442,8 @@ Rows in `snapshot.rows`, `snapshot.fixedFooter`, and `snapshot.emptyState` reuse
 the row binders. The two standalone descriptors currently accept only `action`
 or `system` in the public TypeScript API. `sectionHeader` is a structural row in
 `rows`. Reusing a binder does not transfer ownership of footer positioning,
-empty-state placement or header pinning to the row template. Android's separate
-sticky-header renderer has additional limitations (§6.3).
+empty-state placement or header pinning to the row template. Android's pinned
+header reuses the ordinary header row view and callbacks (§6.3).
 
 ## 5. T3 — List chrome
 
@@ -385,9 +455,9 @@ container APIs; being public does not require placing everything in `listStyle`.
 
 | Capability | Existing entry point | Contract and current limit |
 | --- | --- | --- |
-| List header | A leading structural row can carry summary content; native pager integration can host external header views | Header placement belongs to the container. There is currently **no generic public `listHeader`/`ListHeaderComponent` prop**; a full shared header slot remains a design/implementation gap |
+| List header | Leading structural/summary rows; `CollapsiblePagerView.header` and `stickyHeader` for composed React content | Header placement belongs to the container. There is currently **no generic public `listHeader`/`ListHeaderComponent` prop**; arbitrary React children inside NativeList are not part of the current template API |
 | List footer | A trailing `action`/`system` row scrolls with content; `snapshot.fixedFooter` stays outside the scrolling rows | Available independently of the content row type. `fixedFooter` currently accepts only `ActionRow \| SystemRow`; row style controls its content, not its fixed placement |
-| Sections / sticky headers | `layout.kind: 'sectioned'`, `sectionHeader.sectionKey`, member `sectionKey`, `layout.stickyHeaders`, header `sticky` | A section can contain different content templates. `sectionHeader` describes the heading; the container owns membership, positioning and pinning. Android complex-header pinning remains limited (§6.3) |
+| Sections / sticky headers | `layout.kind: 'sectioned'`, `sectionHeader.sectionKey`, member `sectionKey`, `layout.stickyHeaders`, header `sticky` | A section can contain different content templates. `sectionHeader` describes the heading; the container owns membership, positioning and pinning. Complex headers share the normal row renderer when pinned; summary headers remain non-sticky on all three platforms (§6.3) |
 | Scroll and restoration | `NativeListRef.scrollToKey/Index/Item/Offset/End/Location`, `initialScrollKey/Index` and view position/offset props | Shared viewport behavior, independent of row template. Style must not silently change measured offsets or invalidate stable row keys |
 | Indexed bar | `capabilities.sectionIndex`, `sectionHeader.indexTitle`; Web has `webSectionIndexContainerRef` | Requires vertical `sectioned` layout; entries follow indexed header order and target header keys. No dependency on `identity`, `market`, or another content template |
 | Refresh / pagination | `capabilities.pullToRefresh/refreshing/loadMore/endReachedThreshold`, `onRefresh`, `onEndReached`, `setRefreshing` | Container gestures/state; indicator implementation may differ by platform |
@@ -490,22 +560,18 @@ exposed — a hairline is correct on iOS and a whole pixel is correct elsewhere.
 
 ### 6.3 Behavioral
 
-- **Android sticky headers are a second renderer.**
-  `StickySectionHeaderDecoration` draws the pinned header with `canvas.drawText`,
-  carrying its own `Paint`, font size (14 / 12), hard-coded semibold typeface,
-  height (36 / 16), horizontal inset (20 / 8), manual letter spacing (× 0.8), and
-  baseline math. iOS pins the real cell through layout attributes and Web reuses
-  `renderElement`, so both inherit row styling for free; Android will need the
-  style applied in two places.
-- **Android silently drops stickiness for complex headers.**
-  `isSimpleStickySectionHeader()` requires no `value`, no `checkbox`, and
-  `variant !== 'summary'`. A section header carrying a total or a select-all box
-  does not stick on Android, but does on iOS and Web. Needs a product decision.
+- **Android pinned headers reuse normal row rendering.** The old Canvas-only
+  `StickySectionHeaderDecoration` is replaced by an overlay `NativeListRowView`.
+  Typography, local metrics, values, checkbox/action callbacks and theme now follow
+  the same binding path. The overlay pushes away for the next sticky header and
+  forwards drag gestures to the RecyclerView. Summary and `sticky: false` headers
+  are excluded consistently. Device touch/accessibility acceptance remains required.
 - **Source scale is list-wide on Android.**
   `usesSelectorSourceScale` is computed with `items.any { … }`, so one selector row
   switches the metric system (the sub-400dp 0.9 factor) for the entire list.
   `NativeListTableColumnView`, the market skeleton, and the section index never
-  follow it.
+  follow it. Explicit non-Market row styles now use density directly, so this
+  legacy baseline policy cannot scale an explicitly supplied style value.
 - **`accent` is not an accent.** The consumer maps the application's `iconActive`
   onto the theme key `accent`. The name should be retired in favour of an alias.
 
@@ -518,29 +584,24 @@ exposed — a hairline is correct on iOS and a whole pixel is correct elsewhere.
   tokens, because `--nl-inverse-text` defaults to `#fcfcfc` and `--nl-secondary` to
   `#6b7280`. Swapping them changes untinted rendering.
 
-### 6.5 Consolidated implementation gaps
+### 6.5 Consolidated gap audit
 
-These items were checked against the consolidated source on 2026-09-22. Source
-fixes and regression tests below do not establish native rendered acceptance.
-
-| Gap | Source anchor / context | Acceptance needed |
+| Former gap | Resolution in source | Remaining verification |
 | --- | --- | --- |
-| Web selector style order | Corrected: `renderElement` now applies styles after presentation defaults. DOM regressions cover account/network selectors and style removal | Rendered geometry and interactions still need verification |
-| Composite metric-card heading | `style.title` now targets the heading on Web/iOS/Android. Standard-card value/subtitle/trend roles must not target the heading or nested metrics | Verify both variants; nested metric styling needs a separate declared role before implementation |
-| Native data secondary/table styles are missing | `nativeListStyleSlot` / `styleSlot` omit `columnSecondary`; native table labels have their own renderer ([#110](https://github.com/OneKeyHQ/app-modules/pull/110)) | Verify primary and secondary text in both linear and table layouts |
-| Native text state on reuse | The style pass now saves the bound view's actual text defaults and restores them before reuse, including alignment. iOS retains attributed-string properties not overridden by a style | Styled → unstyled → different-template reuse still needs device verification |
-| Android initial list chrome | Normal snapshots now assign `adapter.listStyle`, matching the stable-content path | Initial mount, normal update, chrome-only update and footer must use the same list style |
-| Android grouped-radius scope | Custom radius now requires actual `groupId` membership, not a synthetic `single` position | Grouped rows change; standalone selectors and metric cards retain template geometry |
-| Wallet-group member scope on Web | Members now apply their own styles; group `lineGap` no longer traverses member text columns | Parent and child styles must remain independent on every platform |
-| Example inventory | `NativeListRowStylePage.buildRows` now covers all 12 types | Complete relevant variants and execute §9 |
-| Layout fitting is an integration responsibility | Text/image nested object shape, unknown keys and numeric bounds are checked; available space is not | Integrators choose fitting parameters and verify their layouts (§7.1); no component-level overflow prevention is planned |
-| General header slot is absent | `NativeListProps`, `NativeListSnapshot` | Define one container-level header contract before expanding the public API |
+| Non-Market box/image parameters accepted without effect | Per-template allowlists and native/Web geometry/image mappings; properties for nonexistent template parts rejected | Native image loading, decoration clipping and variant geometry |
+| Native table and secondary-column styling | Separate primary/secondary labels in linear and table layouts; styles target only their semantic text | Rendered alignment and reuse in both native layouts |
+| Missing semantic text targets | Activity status, rich identity subtitles, wallet badges, retry action and composite heading routed to actual fields | Device variant coverage |
+| Selector defaults overwrite styles | Explicit style applied after defaults; summary/selection updates restore and reapply styles | Rapid selection/summary updates on device |
+| Native reuse leaks | Restore the actual bound text and local geometry before rebinding; preserve unspecified rich-text attributes | Styled → unstyled → another template during scrolling |
+| Android sticky header uses a separate partial renderer | Normal row view renders pinned text, values and controls | Pin/push-off, checkbox/action taps, scrolling and accessibility |
+| List chrome propagation and group scope | Initial/update paths receive listStyle; custom radius only applies to actual groups | Initial and chrome-only snapshot interactions |
+| Parent style cascades to wallet members | Group exposes padding only; members bind their own styles | Independent group/member styling during reorder |
 
-`leadingGap`, `trailingGap`, `titleBadgeGap` and `image` remain accepted but unused
-outside Market in this stack. Android sticky-header styling remains separate
-(§6.3). Unsupported paths must be completed or explicitly rejected before being
-advertised as cross-platform style support. This consolidation does not change
-the runtime API to resolve those gaps.
+Common headers/footers already exist through structural rows, `fixedFooter` and
+pager composition (§5.1). This work does not add an arbitrary React header slot.
+Layout fitting is caller-owned, not an unresolved component feature. Legacy
+unstyled defaults in §6 remain distinct from the unified configurable surface;
+this change is not a wholesale redesign of those defaults.
 
 ## 7. Isolation rules
 
@@ -644,7 +705,7 @@ For any PR that touches list typography or geometry:
       (§7 rule 2)?
 - [ ] Is any decision derived from the whole row list rather than one row
       (§7 rule 3)?
-- [ ] For a section header: does the Android sticky decoration need the same change
+- [ ] For a section header: does the shared pinned row retain styles and interaction
       (§6.3)?
 - [ ] Does each style-only update preserve the allocated row frame and slot order?
       Has the integrator verified fitting content and control hit areas (§7.1)?
@@ -667,21 +728,26 @@ rendered interaction checks.
 | Scroll / chrome | Initial scroll, scroll to key/index/location/end, resize, refresh, pagination, initial/chrome-only snapshots | Correct target/offset and consistent separator/group style without row-size changes |
 | Independent scopes | Two list instances, grouped and non-grouped rows, nested wallet members | No style or index-host effect outside the intended list/group/row |
 
-Next implementation work should close §6.5, complete the example coverage, and
-record platform-specific build and interaction evidence. The shared document is
+Next acceptance work should execute the device cases in §6.5 and record
+platform-specific build and interaction evidence. The shared document is
 the contract; no shared cross-language renderer or code generator is required.
 
-### First-pass verification — 2026-09-22
+### Verification — 2026-09-22
 
-- JavaScript: 95 tests across five suites pass, including selector style removal,
-  composite heading targeting, wallet-member isolation and nested style validation.
-- TypeScript: package, example page and documented composition sample pass.
-- Lint: package has no errors (21 existing warnings); example page passes.
-- Example data: both toggle states validate, each with 42 rows covering all 12 types.
-- Android: `compileDebugKotlin` and `testDebugUnitTest` pass; seven tests in three
-  suites. Dependency Nitrogen outputs were generated locally for the build.
-- iOS: `NativeListCell.swift` passes Swift syntax parsing only.
-- No device or browser rendering/interaction acceptance has been completed for
-  this refactor. Native data secondary/table style coverage, non-Market image/gap
-  support and the generic header/footer question remain open. Geometry fitting
-  is assigned to integrators and is not a remaining implementation gap.
+- Package TypeScript and JavaScript: 109 tests in five suites pass. Added cases
+  cover per-template keys/colors, rich text and badge isolation, independent data
+  columns, media dimensions, local gaps, status/retry targets and value accessories.
+- Package lint: zero errors, 21 existing warnings. Example and documented
+  composition TypeScript pass; the example covers 12 templates with 42 rows.
+- Android: `:onekeyfe_react-native-native-list:compileDebugKotlin` and
+  `:onekeyfe_react-native-native-list:testDebugUnitTest` pass (seven tests in three
+  suites), using the example Gradle project with `--configure-on-demand`.
+- iOS: the modified models/assets/cell typecheck with the real simulator UIKit
+  SDK and a test double matching the public OneKeyImage view interface. This does
+  not verify the image implementation, linking or a full application build.
+- An isolated iOS simulator check could not start: CoreSimulator was denied
+  permission to create the external-drive device data (Cocoa 513 / EPERM).
+  No native rendered interaction acceptance is claimed. Execute the matrix above
+  before treating the refactor as device-accepted.
+
+Overflow fitting is the integrating developer's responsibility.

@@ -591,6 +591,201 @@ describe('web row style', () => {
     return body;
   };
 
+  it('styles primary and secondary data independently without restyling badges', () => {
+    const body = render({
+      type: 'dataRow',
+      key: 'data',
+      columns: [
+        {
+          key: 'asset',
+          text: 'BTC',
+          secondaryLeadingText: '1',
+          secondaryText: 'Bitcoin',
+        },
+        { key: 'price', text: '$1' },
+      ],
+      badges: [{ key: 'tag', text: 'Tag' }],
+      style: {
+        columns: { fontSize: 22, color: '#112233', alignment: 'end' },
+        columnSecondary: { fontSize: 11, color: '#445566' },
+        lineGap: 9,
+        titleBadgeGap: 12,
+      },
+    });
+    const primary = body.querySelector<HTMLElement>(
+      '[data-nl-slot="columns"]'
+    )!;
+    const secondary = Array.from(
+      body.querySelectorAll<HTMLElement>('[data-nl-slot="columnSecondary"]')
+    );
+    expect(primary.style.fontSize).toBe('22px');
+    expect(primary.textContent).toBe('BTC');
+    expect(primary.style.textAlign).toBe('end');
+    expect(secondary.map((node) => node.textContent)).toEqual(['1', 'Bitcoin']);
+    expect(secondary.every((node) => node.style.fontSize === '11px')).toBe(
+      true
+    );
+    expect(
+      body.querySelector<HTMLElement>('[data-nl-slot="badge"]')!.style.fontSize
+    ).toBe('');
+    expect(
+      body.querySelector<HTMLElement>('.ok-native-list-data-cell')!.style.rowGap
+    ).toBe('9px');
+  });
+
+  it('keeps explicit media dimensions and independent caption spacing', () => {
+    const body = render({
+      type: 'mediaTile',
+      variant: 'gallery',
+      key: 'media',
+      title: 'Title',
+      subtitle: 'Subtitle',
+      image,
+      style: {
+        image: {
+          width: 80,
+          height: 60,
+          shape: 'square',
+          contentFit: 'contain',
+        },
+        leadingGap: 13,
+        lineGap: 5,
+      },
+    });
+    const bitmap = body.querySelector<HTMLElement>(
+      '.ok-native-list-media-image'
+    )!;
+    expect(bitmap.style.width).toBe('80px');
+    expect(bitmap.style.height).toBe('60px');
+    expect(bitmap.style.objectFit).toBe('contain');
+    expect(bitmap.style.borderRadius).toBe('0px');
+    expect(
+      body.querySelector<HTMLElement>('.ok-native-list-media-meta')!.style
+        .rowGap
+    ).toBe('5px');
+  });
+
+  it('keeps title and badge styling independent even with search highlights', () => {
+    const body = render({
+      type: 'identity',
+      leading: { kind: 'icon', name: 'coin' },
+      key: 'badge',
+      title: 'Bitcoin',
+      titleMatch: [{ start: 0, end: 3 }],
+      badges: [{ key: 'tag', text: 'Tag' }],
+      style: {
+        title: { fontSize: 24, color: '#112233' },
+        badge: { fontSize: 10 },
+        titleBadgeGap: 7,
+      },
+    });
+    const title = body.querySelector<HTMLElement>('[data-nl-slot="title"]')!;
+    const badge = body.querySelector<HTMLElement>('[data-nl-slot="badge"]')!;
+    expect(title.textContent).toBe('Bitcoin');
+    expect(title.contains(badge)).toBe(false);
+    expect(
+      title.querySelector<HTMLElement>('.ok-native-list-info')!.style.color
+    ).toBe('rgb(17, 34, 51)');
+    expect(badge.style.fontSize).toBe('10px');
+  });
+
+  it('applies missing status, rich subtitle and retry action roles', () => {
+    const activity = render({
+      type: 'activity',
+      leading: { kind: 'icon', name: 'coin' },
+      key: 'a',
+      title: 'Sent',
+      status: 'Pending',
+      style: { status: { fontSize: 19 } },
+    });
+    expect(
+      activity.querySelector<HTMLElement>('[data-nl-slot="status"]')!.style
+        .fontSize
+    ).toBe('19px');
+    const identity = render({
+      type: 'identity',
+      leading: { kind: 'icon', name: 'coin' },
+      key: 'i',
+      title: 'Wallet',
+      subtitleSegments: [{ text: 'Balance' }],
+      style: { subtitle: { fontSize: 18 } },
+    });
+    expect(
+      identity.querySelector<HTMLElement>('[data-nl-slot="subtitle"]')!.style
+        .fontSize
+    ).toBe('18px');
+    const retry = render({
+      type: 'system',
+      key: 's',
+      variant: 'retry',
+      message: 'Failed',
+      actionText: 'Try again',
+      actionKey: 'retry',
+      style: { actionText: { fontSize: 20 } },
+    });
+    const action = retry.querySelector<HTMLElement>(
+      '[data-nl-slot="actionText"]'
+    )!;
+    expect(action.textContent).toBe('Try again');
+    expect(action.style.fontSize).toBe('20px');
+    expect(action.dataset.nativeListAction).toBe('retry');
+  });
+
+  it('applies header accessory spacing and keeps rail badge before status', () => {
+    const header = render({
+      type: 'sectionHeader',
+      key: 'h',
+      sectionKey: 'assets',
+      title: 'Assets',
+      value: '$1',
+      checkbox: {
+        kind: 'checkbox',
+        state: 'unchecked',
+        target: { scope: 'list' },
+      },
+      style: { trailingGap: 17 },
+    });
+    expect(
+      (header.lastElementChild as HTMLElement).style.marginInlineStart
+    ).toContain('17px');
+    const rail = render({
+      type: 'rail',
+      visual: { kind: 'icon', name: 'coin' },
+      key: 'r',
+      title: 'Wallet',
+      badge: { key: 'tag', text: 'Tag' },
+      status: 'online',
+    });
+    expect(
+      Array.from(rail.querySelectorAll<HTMLElement>('[data-nl-slot]')).map(
+        (node) => node.dataset.nlSlot
+      )
+    ).toEqual(['title', 'badge', 'status']);
+  });
+
+  it('styles the first value accessory independently of preceding controls', () => {
+    const body = render({
+      type: 'identity',
+      key: 'value',
+      title: 'Wallet',
+      leading: { kind: 'icon', name: 'coin' },
+      trailing: [
+        { kind: 'checkbox', state: 'unchecked' },
+        { kind: 'valuePair', primary: '$10', secondary: '2 BTC' },
+      ],
+      style: { value: { fontSize: 19, color: '#123456' } },
+    });
+    const value = body.querySelector<HTMLElement>('[data-nl-slot="value"]')!;
+    expect(value.textContent).toBe('$102 BTC');
+    expect(value.style.fontSize).toBe('19px');
+    expect(
+      Array.from(value.children).every(
+        (run) => (run as HTMLElement).style.fontSize === '19px'
+      )
+    ).toBe(true);
+    expect(body.querySelector('[data-nl-slot="valueSecondary"]')).toBeNull();
+  });
+
   it('tags each slot with the model field it renders', () => {
     const body = render({
       type: 'message',
@@ -673,7 +868,7 @@ describe('web row style', () => {
       children: [
         { ...parent, key: 'child', title: 'Child wallet', style: undefined },
       ],
-      style: { lineGap: 13 },
+      style: { horizontalPadding: 13 },
     });
     const titles = body.querySelectorAll<HTMLElement>('[data-nl-slot="title"]');
     expect(titles).toHaveLength(2);

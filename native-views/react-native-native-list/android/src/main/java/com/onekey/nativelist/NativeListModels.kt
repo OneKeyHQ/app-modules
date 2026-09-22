@@ -60,6 +60,7 @@ internal fun nativeListStyleSlot(type: String, variant: String, field: String): 
     }
     "dataRow" -> when (field) {
       "columns" -> "dataPrimary"
+      "columnSecondary" -> "dataSecondary"
       "index" -> "value"
       else -> null
     }
@@ -85,7 +86,7 @@ internal fun nativeListStyleSlot(type: String, variant: String, field: String): 
       else -> null
     }
     "system" -> when (field) {
-      "title" -> "title"
+      "title" -> if (variant == "warning") "title" else null
       // Only the warning variant renders a separate title; every other variant
       // puts its message in the title view.
       "message" -> if (variant == "warning") "subtitle" else "title"

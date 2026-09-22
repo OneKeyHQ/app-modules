@@ -310,21 +310,26 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
       TextViewCompat.setLineHeight(label, dp(16))
     }
     secondaryLeading.maxWidth = dp(120)
-    secondaryLine.addView(secondaryLeading, LayoutParams(LayoutParams.WRAP_CONTENT, dp(16)))
-    secondaryLine.addView(secondary, LayoutParams(LayoutParams.WRAP_CONTENT, dp(16)).apply {
+    secondaryLine.addView(secondaryLeading, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+    secondaryLine.addView(secondary, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
       marginStart = dp(4)
     })
-    primaryLine.addView(primary, LayoutParams(LayoutParams.WRAP_CONTENT, dp(20)))
-    primaryLine.addView(badges, LayoutParams(LayoutParams.WRAP_CONTENT, dp(16)).apply {
+    primaryLine.addView(primary, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+    primaryLine.addView(badges, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
       marginStart = dp(6)
     })
-    addView(primaryLine, LayoutParams(LayoutParams.WRAP_CONTENT, dp(20)))
-    addView(secondaryLine, LayoutParams(LayoutParams.MATCH_PARENT, dp(16)).apply {
+    addView(primaryLine, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+    addView(secondaryLine, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
       topMargin = dp(4)
     })
   }
 
   fun reset() {
+    primaryLine.layoutParams.width = LayoutParams.WRAP_CONTENT
+    primary.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+    secondary.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginStart = dp(4) }
+    (secondaryLine.layoutParams as MarginLayoutParams).topMargin = dp(4)
+    (badges.layoutParams as MarginLayoutParams).marginStart = dp(6)
     primary.text = ""
     secondaryLeading.text = ""
     secondary.text = ""
@@ -341,8 +346,10 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
     primaryColor: Int,
     secondaryColor: Int,
     infoColor: Int,
+    primarySize: Float,
   ) {
     reset()
+    primary.textSize = sp(primarySize)
     gravity = when (column.optString("alignment", "start")) {
       "center" -> Gravity.CENTER_HORIZONTAL
       "end" -> Gravity.END
@@ -370,7 +377,7 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
             cornerRadius = dp(4).toFloat()
           }
         }
-        badges.addView(badge, LayoutParams(LayoutParams.WRAP_CONTENT, dp(16)).apply {
+        badges.addView(badge, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
           if (index > 0) marginStart = dp(4)
         })
       }
@@ -389,6 +396,23 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
       secondary.visibility = VISIBLE
       secondaryLine.visibility = VISIBLE
     }
+  }
+
+  fun applyStyle(style: JSONObject, applyText: (TextView, JSONObject) -> Unit) {
+    style.optJSONObject("columns")?.let {
+      applyText(primary, it)
+      if (it.has("alignment")) {
+        primaryLine.layoutParams.width = LayoutParams.MATCH_PARENT
+        primary.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
+      }
+    }
+    style.optJSONObject("columnSecondary")?.let {
+      applyText(secondaryLeading, it)
+      applyText(secondary, it)
+      if (it.has("alignment")) secondary.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(4) }
+    }
+    (secondaryLine.layoutParams as MarginLayoutParams).topMargin = style.optDouble("lineGap", 4.0).let { (it * resources.displayMetrics.density).roundToInt() }
+    (badges.layoutParams as MarginLayoutParams).marginStart = style.optDouble("titleBadgeGap", 6.0).let { (it * resources.displayMetrics.density).roundToInt() }
   }
 
   private fun dp(value: Int): Int = NativeListScale.dp(resources, value)
@@ -484,8 +508,6 @@ internal class NativeListRowView(
   private val trailingIcons = List(2) { OneKeyIconView(context) }
   private val checkbox = OneKeyCheckboxView(context)
   private val spinner = ProgressBar(context)
-  private val dataContainer = LinearLayout(context)
-  private val dataColumns = List(4) { TextView(context) }
   private val tableDataContainer = LinearLayout(context)
   private val tableDataColumns = List(4) { NativeListTableColumnView(context) }
   private val unreadDot = View(context)
@@ -527,6 +549,11 @@ internal class NativeListRowView(
   private var styledViewsDirty = false
   private val styledTextRestorations = mutableMapOf<TextView, () -> Unit>()
   private var compositeMetricTitle: TextView? = null
+  private val styledBoxRestorations = mutableListOf<() -> Unit>()
+  private val semanticBadgeLabels = mutableListOf<TextView>()
+  private val semanticSubtitleLabels = mutableListOf<TextView>()
+  private val semanticValueViews = mutableListOf<TextView>()
+  private var walletBadgeLine: View? = null
   private var reorderActive = false
   private var checkboxCheckedColor = Color.rgb(32, 32, 32)
   private var checkboxUncheckedColor = Color.rgb(252, 252, 252)
@@ -639,9 +666,6 @@ internal class NativeListRowView(
     trailingColumn.addView(checkbox)
     trailingColumn.addView(spinner)
 
-    dataContainer.orientation = HORIZONTAL
-    dataContainer.gravity = Gravity.CENTER_VERTICAL
-    dataColumns.forEach { dataContainer.addView(it) }
     tableDataContainer.orientation = HORIZONTAL
     tableDataContainer.gravity = Gravity.CENTER_VERTICAL
     tableDataColumns.forEach { tableDataContainer.addView(it) }
@@ -801,7 +825,15 @@ internal class NativeListRowView(
     if (isMediaTile) {
       val availableWidth = (MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight)
         .coerceAtLeast(0)
-      leadingFrame.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, availableWidth)
+      val imageStyle = (tag as? NativeListItem)?.json?.optJSONObject("style")?.optJSONObject("image")
+      val params = leadingFrame.layoutParams
+      params.width = if (imageStyle?.has("width") == true) styleDp(imageStyle.optDouble("width")) else LayoutParams.MATCH_PARENT
+      params.height = when {
+        imageStyle?.has("height") == true -> styleDp(imageStyle.optDouble("height"))
+        imageStyle?.has("width") == true -> styleDp(imageStyle.optDouble("width"))
+        else -> availableWidth
+      }
+      leadingFrame.layoutParams = params
     }
     // OneKey patch: RecyclerView must use the adapter's measured selector height.
     super.onMeasure(widthMeasureSpec, selectorHeight?.let { MeasureSpec.makeMeasureSpec(it, MeasureSpec.EXACTLY) } ?: heightMeasureSpec)
@@ -1043,9 +1075,9 @@ internal class NativeListRowView(
       TextViewCompat.setLineHeight(subtitle, dp(20))
       minimumHeight = 0
     }
-    applyRowStyle(item)
     applyListOrientation(item, listOrientation)
     applySelectorTypography(item)
+    applyRowStyle(item)
   }
 
   /**
@@ -1059,18 +1091,88 @@ internal class NativeListRowView(
     if (item.type == "market") return
     val style = item.json.optJSONObject("style") ?: return
     styledViewsDirty = true
+    val padding = intArrayOf(paddingLeft, paddingTop, paddingRight, paddingBottom)
+    styledBoxRestorations.add { setPadding(padding[0], padding[1], padding[2], padding[3]) }
     if (style.has("horizontalPadding")) {
-      val inset = dp(style.optDouble("horizontalPadding").roundToInt())
+      val inset = styleDp(style.optDouble("horizontalPadding"))
       setPadding(inset, paddingTop, inset, paddingBottom)
     }
     if (style.has("verticalPadding")) {
-      val inset = dp(style.optDouble("verticalPadding").roundToInt())
+      val inset = styleDp(style.optDouble("verticalPadding"))
       setPadding(paddingLeft, inset, paddingRight, inset)
     }
-    if (style.has("lineGap")) {
-      (subtitle.layoutParams as? MarginLayoutParams)?.topMargin =
-        dp(style.optDouble("lineGap").roundToInt())
+    if (style.has("lineGap") && item.type != "walletGroup" && item.type != "dataRow") {
+      val target = if (item.type == "metricCard" && item.json.optString("variant") in setOf("activity", "performance")) this else mainColumn
+      styleGap(target, styleDp(style.optDouble("lineGap")))
     }
+    if (style.has("leadingGap") && leadingFrame.parent != null) {
+      val gap = styleDp(style.optDouble("leadingGap"))
+      if ((leadingFrame.parent as? LinearLayout)?.orientation == VERTICAL) {
+        styleMargins(leadingFrame, end = 0, bottom = gap)
+        if (mainColumn.parent === this) styleMargins(mainColumn, top = 0)
+      } else styleMargins(leadingFrame, end = gap)
+    }
+    if (style.has("titleBadgeGap")) {
+      val gap = styleDp(style.optDouble("titleBadgeGap"))
+      walletBadgeLine?.let { styleMargins(it, top = gap) } ?: styleMargins(badgeLine, start = gap)
+    }
+    if (style.has("trailingGap")) {
+      val gap = styleDp(style.optDouble("trailingGap"))
+      if (item.type == "rail") styleMargins(status, start = gap)
+      else styleGap(trailingColumn, gap)
+    }
+    style.optJSONObject("image")?.let { image ->
+      if (leadingFrame.parent != null) {
+        val params = leadingFrame.layoutParams
+        val oldWidth = params.width
+        val oldHeight = params.height
+        styledBoxRestorations.add { params.width = oldWidth; params.height = oldHeight; leadingFrame.layoutParams = params }
+        if (image.has("width")) params.width = styleDp(image.optDouble("width"))
+        if (image.has("height")) params.height = styleDp(image.optDouble("height"))
+        leadingFrame.layoutParams = params
+        if (image.has("width") || image.has("height")) {
+          listOf<View>(leadingImages[0], leadingFallback).forEach { child ->
+            val childParams = child.layoutParams
+            val width = childParams.width
+            val height = childParams.height
+            styledBoxRestorations.add { childParams.width = width; childParams.height = height; child.layoutParams = childParams }
+            if (image.has("width")) childParams.width = params.width
+            if (image.has("height")) childParams.height = params.height
+            child.layoutParams = childParams
+          }
+        }
+        val shape = image.optString("shape")
+        val radius = when {
+          image.has("cornerRadius") -> styleDp(image.optDouble("cornerRadius")).toFloat()
+          shape == "square" -> 0f
+          shape == "rounded" -> styleDp(10.0).toFloat()
+          shape == "circle" -> -1f
+          else -> null
+        }
+        if (radius != null) {
+          listOf<View>(leadingFrame, leadingImages[0], leadingFallback).forEach { view ->
+            val original = view.outlineProvider
+            val clip = view.clipToOutline
+            styledBoxRestorations.add { view.outlineProvider = original; view.clipToOutline = clip }
+            view.outlineProvider = object : ViewOutlineProvider() {
+              override fun getOutline(view: View, outline: Outline) {
+                if (radius < 0) outline.setOval(0, 0, view.width, view.height)
+                else outline.setRoundRect(0, 0, view.width, view.height, radius)
+              }
+            }
+            view.clipToOutline = view !== leadingFrame || (leadingImages[1].visibility == GONE && leadingCornerIconFrame.visibility == GONE && selectorViews.none { it.parent === leadingFrame })
+          }
+        }
+      }
+    }
+    if (item.type == "activity" && actionLine.parent === this) {
+      if (style.has("lineGap")) styleMargins(actionLine, top = styleDp(style.optDouble("lineGap")))
+      if (style.has("leadingGap") || style.optJSONObject("image")?.has("width") == true) {
+        val leading = leadingFrame.layoutParams as MarginLayoutParams
+        styleMargins(actionLine, start = leading.width + leading.marginEnd)
+      }
+    }
+    if (item.type == "dataRow") tableDataColumns.forEach { it.applyStyle(style, ::applyStyledText) }
     val variant = item.json.optString("variant")
     if (item.type == "metricCard" && variant in setOf("activity", "performance")) {
       style.optJSONObject("title")?.let { titleStyle ->
@@ -1084,9 +1186,39 @@ internal class NativeListRowView(
       val slotStyle = style.optJSONObject(field) ?: continue
       when (val slot = nativeListStyleSlot(item.type, variant, field)) {
         null -> continue
-        "dataPrimary" -> dataColumns.forEach { applyStyledText(it, slotStyle) }
+        "dataPrimary", "dataSecondary" -> Unit // Independent column labels are styled above.
+        "value", "valueSecondary" -> {
+          val view = if (item.type in setOf("identity", "action")) semanticValueViews.getOrNull(if (slot == "value") 0 else 1) else styledSlotView(slot)
+          view?.let { applyStyledText(it, slotStyle) }
+        }
+        "status" -> applyStyledText(if (item.type == "activity" && item.json.optString("status") == "Failed") badgeLine else status, slotStyle)
+        "badge" -> (semanticBadgeLabels.ifEmpty { listOf(badgeLine) }).forEach { applyStyledText(it, slotStyle) }
+        "subtitle" -> (semanticSubtitleLabels.ifEmpty { listOf(subtitle) }).forEach { applyStyledText(it, slotStyle) }
         else -> styledSlotView(slot)?.let { applyStyledText(it, slotStyle) }
       }
+    }
+  }
+
+  private fun styleDp(value: Double): Int = (value * resources.displayMetrics.density).roundToInt()
+
+  private fun styleMargins(view: View, start: Int? = null, end: Int? = null, top: Int? = null, bottom: Int? = null) {
+    val params = view.layoutParams as? MarginLayoutParams ?: return
+    val saved = intArrayOf(params.marginStart, params.marginEnd, params.topMargin, params.bottomMargin)
+    styledBoxRestorations.add {
+      params.marginStart = saved[0]; params.marginEnd = saved[1]
+      params.topMargin = saved[2]; params.bottomMargin = saved[3]
+      view.layoutParams = params
+    }
+    start?.let { params.marginStart = it }; end?.let { params.marginEnd = it }
+    top?.let { params.topMargin = it }; bottom?.let { params.bottomMargin = it }
+    view.layoutParams = params
+  }
+
+  private fun styleGap(stack: LinearLayout, gap: Int) {
+    val visible = (0 until stack.childCount).map(stack::getChildAt).filter { it.visibility != GONE }
+    visible.forEachIndexed { index, view ->
+      if (stack.orientation == HORIZONTAL) styleMargins(view, start = if (index == 0) 0 else gap, end = 0)
+      else styleMargins(view, top = if (index == 0) 0 else gap, bottom = 0)
     }
   }
 
@@ -1110,6 +1242,7 @@ internal class NativeListRowView(
       val textSize = view.textSize
       val typeface = view.typeface
       val colors = view.textColors
+      val originalText = view.text
       val lineSpacingExtra = view.lineSpacingExtra
       val lineSpacingMultiplier = view.lineSpacingMultiplier
       val maxLines = view.maxLines
@@ -1119,21 +1252,34 @@ internal class NativeListRowView(
         view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textSize)
         view.typeface = typeface
         view.setTextColor(colors)
+        view.text = originalText
         view.setLineSpacing(lineSpacingExtra, lineSpacingMultiplier)
         view.maxLines = maxLines
         view.ellipsize = ellipsize
         view.gravity = gravity
       }
     }
-    if (style.has("fontSize")) view.textSize = sp(style.optDouble("fontSize").toFloat())
+    if (style.has("fontSize")) {
+      view.setTextSize(TypedValue.COMPLEX_UNIT_PX, (style.optDouble("fontSize") * resources.displayMetrics.density).toFloat())
+      val text = SpannableStringBuilder(view.text)
+      text.getSpans(0, text.length, AbsoluteSizeSpan::class.java).forEach(text::removeSpan)
+      view.text = text
+    }
     style.optString("fontWeight").takeIf(String::isNotEmpty)?.let {
       view.typeface = marketTypeface(it, "regular")
     }
     style.optString("color").takeIf(String::isNotEmpty)?.let {
-      view.setTextColor(safeColor(it, view.currentTextColor))
+      val color = safeColor(it, view.currentTextColor)
+      view.setTextColor(color)
+      val text = SpannableStringBuilder(view.text)
+      text.getSpans(0, text.length, ForegroundColorSpan::class.java).forEach(text::removeSpan)
+      view.text = text
     }
     if (style.has("lineHeight")) {
-      TextViewCompat.setLineHeight(view, dp(style.optDouble("lineHeight").roundToInt()))
+      val text = SpannableStringBuilder(view.text)
+      text.getSpans(0, text.length, SelectorLineHeightSpan::class.java).forEach(text::removeSpan)
+      view.text = text
+      TextViewCompat.setLineHeight(view, styleDp(style.optDouble("lineHeight")))
     }
     if (style.has("lines")) {
       view.maxLines = style.optInt("lines").coerceIn(1, 2)
@@ -1193,6 +1339,7 @@ internal class NativeListRowView(
     if (boundKey != item.key) return
     // OneKey patch: keep row callbacks and checkbox fallback state current without resetting images.
     tag = item
+    resetRowStyle()
     if (item.type == "walletGroup") {
       val members = buildList {
         add(item.json.getJSONObject("parent"))
@@ -1214,6 +1361,7 @@ internal class NativeListRowView(
       // applying the translucent selected color to both levels produces dark
       // bands in the 12dp gaps and double-composites the parent highlight.
       background = restingRowBackground
+      applyRowStyle(item)
       return
     }
     applySelectionState(item, theme, layout, itemIndex, selected)
@@ -1238,6 +1386,7 @@ internal class NativeListRowView(
       boundCheckboxData = latestCheckbox ?: boundCheckboxData
       boundCheckboxData?.let { bindCheckbox(item, it, checkboxState) }
     }
+    applyRowStyle(item)
   }
 
   fun bindStableSummary(item: NativeListItem) {
@@ -1248,6 +1397,7 @@ internal class NativeListRowView(
     ) {
       return
     }
+    resetRowStyle()
     tag = item
     contentDescription = item.json.optString("accessibilityLabel", item.json.optString("title"))
     title.text = item.json.optString("title")
@@ -1338,6 +1488,8 @@ internal class NativeListRowView(
   private fun resetRowStyle() {
     if (!styledViewsDirty) return
     styledViewsDirty = false
+    styledBoxRestorations.asReversed().forEach { it() }
+    styledBoxRestorations.clear()
     styledTextRestorations.values.forEach { it() }
     styledTextRestorations.clear()
   }
@@ -1345,6 +1497,10 @@ internal class NativeListRowView(
   private fun resetViews() {
     resetRowStyle()
     compositeMetricTitle = null
+    semanticBadgeLabels.clear()
+    semanticSubtitleLabels.clear()
+    semanticValueViews.clear()
+    walletBadgeLine = null
     clipChildren = true
     clipToPadding = true
     selectorOriginalFontFeatures.forEach { (view, original) -> view.fontFeatureSettings = original }
@@ -1546,8 +1702,6 @@ internal class NativeListRowView(
     leadingActionIcon.setTag(com.facebook.react.R.id.react_test_id, null)
     leadingActionIcon.contentDescription = null
     mainColumn.visibility = VISIBLE
-    dataContainer.visibility = GONE
-    dataColumns.forEach { it.visibility = GONE }
     tableDataContainer.visibility = GONE
     tableDataColumns.forEach {
       it.reset()
@@ -1844,8 +1998,10 @@ internal class NativeListRowView(
             setPadding(dp(if (isSelector) 6 else 4), dp(2), dp(if (isSelector) 6 else 4), dp(2))
           }
           TextViewCompat.setLineHeight(badge, dp(badgeLineHeight))
+          semanticBadgeLabels.add(badge)
           line.addView(badge, LayoutParams(LayoutParams.WRAP_CONTENT, dp(badgeHeight)).apply { if (index > 0) marginStart = dp(4) })
         }
+        walletBadgeLine = line
         mainColumn.addView(line, LayoutParams(LayoutParams.WRAP_CONTENT, dp(badgeHeight)).apply { topMargin = dp(4) })
         selectorViews.add(line)
       }
@@ -1926,6 +2082,7 @@ internal class NativeListRowView(
         }
         TextViewCompat.setLineHeight(label, dp(20))
         applyValueSegments(label, segment.optJSONArray("textSegments"), 14, 20, false)
+        semanticSubtitleLabels.add(label)
         line.addView(label, LayoutParams(LayoutParams.WRAP_CONTENT, dp(20)))
       }
       mainColumn.addView(line, 2, LayoutParams(LayoutParams.MATCH_PARENT, dp(20)))
@@ -2156,54 +2313,23 @@ internal class NativeListRowView(
     }
     val columns = item.json.getJSONArray("columns")
     val rowBadges = item.json.optJSONArray("badges")
-    if (currentLayout == "table") {
-      tableDataContainer.visibility = VISIBLE
-      for (index in 0 until minOf(4, columns.length())) {
-        val column = columns.getJSONObject(index)
-        tableDataColumns[index].visibility = VISIBLE
-        tableDataColumns[index].bind(
-          column = column,
-          rowBadges = if (index == 0) rowBadges else null,
-          primaryColor = dataTextColor(column.optString("tone"), theme),
-          secondaryColor = dataTextColor(
-            column.optString("secondaryTone", "secondary"),
-            theme,
-          ),
-          infoColor = color(theme, "info", "#006DCBF2"),
-        )
-        tableDataColumns[index].layoutParams = LayoutParams(
-          0,
-          dp(40),
-          column.optInt("weight", 1).toFloat(),
-        )
-      }
-      addView(tableDataContainer, weighted())
-      return
-    }
-
-    dataContainer.visibility = VISIBLE
+    tableDataContainer.visibility = VISIBLE
     for (index in 0 until minOf(4, columns.length())) {
       val column = columns.getJSONObject(index)
-      val view = dataColumns[index]
-      view.text = styledDataText(column, if (index == 0) rowBadges else null, theme)
-      view.maxLines = if (column.optString("secondaryText").isEmpty()) 1 else 2
-      view.gravity = when (column.optString("alignment", "start")) {
-        "center" -> Gravity.CENTER
-        "end" -> Gravity.END
-        else -> Gravity.START
-      }
-      view.visibility = VISIBLE
-      view.setTextColor(
-        when (column.optString("tone", "primary")) {
-          "secondary" -> color(theme, "secondaryText", "#0000009B")
-          "positive" -> color(theme, "positive", "#00713FDE")
-          "negative" -> color(theme, "negative", "#C40006D3")
-          else -> color(theme, "primaryText", "#000000DF")
-        },
+      tableDataColumns[index].visibility = VISIBLE
+      tableDataColumns[index].bind(
+        column = column,
+        rowBadges = if (index == 0) rowBadges else null,
+        primaryColor = dataTextColor(column.optString("tone"), theme),
+        secondaryColor = dataTextColor(column.optString("secondaryTone", "secondary"), theme),
+        infoColor = color(theme, "info", "#006DCBF2"),
+        primarySize = if (currentLayout == "table") 14f else 16f,
       )
-      view.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, column.optInt("weight", 1).toFloat())
+      tableDataColumns[index].layoutParams = LayoutParams(
+        0, LayoutParams.WRAP_CONTENT, column.optInt("weight", 1).toFloat(),
+      )
     }
-    addView(dataContainer, weighted())
+    addView(tableDataContainer, weighted())
   }
 
   private fun marketTypeface(weight: String, fallback: String): Typeface = when (
@@ -2579,49 +2705,6 @@ internal class NativeListRowView(
         changeData.optString("text"),
       ).filter(String::isNotEmpty).joinToString(", "),
     )
-  }
-
-  private fun styledDataText(
-    column: JSONObject,
-    badges: JSONArray?,
-    theme: JSONObject?,
-  ): CharSequence {
-    val result = SpannableStringBuilder(column.optString("text"))
-    result.setSpan(
-      ForegroundColorSpan(dataTextColor(column.optString("tone"), theme)),
-      0,
-      result.length,
-      Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-    )
-    if (badges != null) {
-      for (index in 0 until minOf(2, badges.length())) {
-        val start = result.length
-        result.append("  ${badges.getJSONObject(index).optString("text")} ")
-        result.setSpan(
-          ForegroundColorSpan(color(theme, "info", "#006DCBF2")),
-          start,
-          result.length,
-          Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-        )
-        result.setSpan(
-          BackgroundColorSpan(parseNativeListColor("#008FF519")),
-          start,
-          result.length,
-          Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-        )
-      }
-    }
-    column.optString("secondaryText").takeIf(String::isNotEmpty)?.let { secondary ->
-      val start = result.length
-      result.append("\n$secondary")
-      result.setSpan(
-        ForegroundColorSpan(dataTextColor(column.optString("secondaryTone", "secondary"), theme)),
-        start,
-        result.length,
-        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-      )
-    }
-    return result
   }
 
   private fun dataTextColor(tone: String, theme: JSONObject?): Int = when (tone.ifEmpty { "primary" }) {
@@ -3339,7 +3422,7 @@ internal class NativeListRowView(
       setOnClickListener {
         onRowPress?.invoke(item, actionOrigin(this, "row"))
       }
-      showTrailing(0, "Retry", true, item.json.optString("actionKey"))
+      showTrailing(0, item.json.optString("actionText", "Retry"), true, item.json.optString("actionKey"))
       trailingViews[0].textSize = sp(14f)
       trailingViews[0].background = roundedFill(color(theme, "strongBackground", "#0000000F"), 16f)
       trailingViews[0].setPadding(dp(10), dp(4), dp(10), dp(4))
@@ -3356,14 +3439,17 @@ internal class NativeListRowView(
     heightDp: Int = sizeDp,
     cornerRadiusDp: Float? = null,
   ) {
+    val imageStyle = (tag as? NativeListItem)?.json?.optJSONObject("style")?.optJSONObject("image")
+    val styledWidthDp = imageStyle?.optDouble("width", sizeDp.toDouble())?.roundToInt() ?: sizeDp
+    val styledHeightDp = imageStyle?.optDouble("height", heightDp.toDouble())?.roundToInt() ?: heightDp
     leadingFrame.visibility = VISIBLE
-    leadingFrame.layoutParams = LayoutParams(dp(sizeDp), dp(heightDp)).apply {
+    leadingFrame.layoutParams = LayoutParams(dp(styledWidthDp), dp(styledHeightDp)).apply {
       val item = tag as? NativeListItem
       // OneKey patch: Yoga rounds cumulative selector edges, not each 12dp gap separately.
-      marginEnd = if (item?.json?.has("height") == true && item.json.optString("presentation") in setOf("accountSelector", "networkSelector")) dp(12 + sizeDp + spacingDp) - dp(12) - dp(sizeDp) else dp(spacingDp)
+      marginEnd = if (item?.json?.has("height") == true && item.json.optString("presentation") in setOf("accountSelector", "networkSelector")) dp(12 + styledWidthDp + spacingDp) - dp(12) - dp(styledWidthDp) else dp(spacingDp)
     }
     addView(leadingFrame)
-    leadingFallback.layoutParams = FrameLayout.LayoutParams(dp(sizeDp), dp(heightDp))
+    leadingFallback.layoutParams = FrameLayout.LayoutParams(dp(styledWidthDp), dp(styledHeightDp))
     if (visual == null) return
     val kind = visual.optString("kind")
     val shape = visual.optString(
@@ -3377,7 +3463,7 @@ internal class NativeListRowView(
     val fallback = visual.optString("fallbackText").take(2)
     val fallbackIconData = visual.optJSONObject("fallbackIcon")
     val fallbackIconSizeDp = fallbackIconData?.let {
-      val slotSizeDp = minOf(sizeDp, heightDp)
+      val slotSizeDp = minOf(styledWidthDp, styledHeightDp)
       if (it.optString("name") == "GlobusOutline") {
         (slotSizeDp * 1.2f).roundToInt()
       } else {
@@ -3406,12 +3492,12 @@ internal class NativeListRowView(
     if (!isIcon && visual.optString("backgroundColor").isNotEmpty()) {
       leadingFrame.background = roundedFill(
         visualBackground,
-        cornerRadiusDp ?: leadingCornerRadius(shape, minOf(sizeDp, heightDp)),
+        cornerRadiusDp ?: leadingCornerRadius(shape, minOf(styledWidthDp, styledHeightDp)),
       )
     }
     leadingFallback.background = roundedFill(
       if (handlesSourceFallback) parseNativeListColor(imagePlaceholderColor) else visualBackground,
-      cornerRadiusDp ?: leadingCornerRadius(shape, minOf(sizeDp, heightDp)),
+      cornerRadiusDp ?: leadingCornerRadius(shape, minOf(styledWidthDp, styledHeightDp)),
     )
     leadingFallback.visibility =
       if (!isIcon && (sources.isEmpty() || handlesSourceFallback)) VISIBLE else GONE
@@ -3422,8 +3508,8 @@ internal class NativeListRowView(
         parseNativeListColor("#0000009B"),
       )
       leadingIcon.layoutParams = FrameLayout.LayoutParams(
-        dp(fallbackIconSizeDp ?: sizeDp),
-        dp(fallbackIconSizeDp ?: heightDp),
+        dp(fallbackIconSizeDp ?: styledWidthDp),
+        dp(fallbackIconSizeDp ?: styledHeightDp),
         Gravity.CENTER,
       )
       leadingIcon.glyphSizeDp = fallbackIconSizeDp
@@ -3436,7 +3522,7 @@ internal class NativeListRowView(
       leadingFrame.background = GradientDrawable().apply {
         setColor(visualBackground)
         setStroke(1, parseNativeListColor("#0000001F"))
-        cornerRadius = scaledDp(cornerRadiusDp ?: leadingCornerRadius(shape, minOf(sizeDp, heightDp)))
+        cornerRadius = scaledDp(cornerRadiusDp ?: leadingCornerRadius(shape, minOf(styledWidthDp, styledHeightDp)))
       }
       leadingIcon.iconName = visual.optString("name")
       leadingIcon.tintColor = safeColor(
@@ -3452,8 +3538,8 @@ internal class NativeListRowView(
         parseNativeListColor("#0000009B"),
       )
       leadingIcon.layoutParams = FrameLayout.LayoutParams(
-        dp(fallbackIconSizeDp ?: sizeDp),
-        dp(fallbackIconSizeDp ?: heightDp),
+        dp(fallbackIconSizeDp ?: styledWidthDp),
+        dp(fallbackIconSizeDp ?: styledHeightDp),
         Gravity.CENTER,
       )
       leadingIcon.glyphSizeDp = fallbackIconSizeDp
@@ -3476,9 +3562,9 @@ internal class NativeListRowView(
       val marketPadding = if (item?.type == "market") item.json.optJSONObject("style")?.optDouble("horizontalPadding", 20.0) ?: 20.0 else null
       val density = resources.displayMetrics.density
       // Yoga rounds the absolute horizontal edges, including the avatar's fractional origin.
-      val badgeRight = marketPadding?.let { ((it + sizeDp + 4) * density).roundToInt() }
-      val badgeLeft = marketPadding?.let { ((it + sizeDp - 16) * density).roundToInt() }
-      val avatarRight = marketPadding?.let { ((it + sizeDp) * density).roundToInt() }
+      val badgeRight = marketPadding?.let { ((it + styledWidthDp + 4) * density).roundToInt() }
+      val badgeLeft = marketPadding?.let { ((it + styledWidthDp - 16) * density).roundToInt() }
+      val avatarRight = marketPadding?.let { ((it + styledWidthDp) * density).roundToInt() }
       leadingOverlayBackground.layoutParams = FrameLayout.LayoutParams(
         if (badgeRight != null && badgeLeft != null) badgeRight - badgeLeft else dp(20),
         dp(20),
@@ -3517,8 +3603,8 @@ internal class NativeListRowView(
       image.layoutParams = leadingImageLayout(
         index = index,
         count = visibleSources.size,
-        sizeDp = sizeDp,
-        heightDp = heightDp,
+        sizeDp = styledWidthDp,
+        heightDp = styledHeightDp,
         tokenPair = tokenPair,
       )
       image.outlineProvider = when {
@@ -3530,7 +3616,7 @@ internal class NativeListRowView(
       if ((tag as? NativeListItem)?.type == "market" && index == 0 && visual.optString("borderColor").isNotEmpty()) {
         val inset = dp(1)
         val density = resources.displayMetrics.density
-        val sourceRadius = cornerRadiusDp ?: leadingCornerRadius(shape, minOf(sizeDp, heightDp))
+        val sourceRadius = cornerRadiusDp ?: leadingCornerRadius(shape, minOf(styledWidthDp, styledHeightDp))
         // OneKey patch: retain the source's fractional border and background rendering.
         leadingFrame.background = null
         BackgroundStyleApplicator.setBackgroundColor(leadingFrame, visualBackground)
@@ -3542,8 +3628,8 @@ internal class NativeListRowView(
         BackgroundStyleApplicator.setBorderRadius(leadingFrame, BorderRadiusProp.BORDER_RADIUS, LengthPercentage(sourceRadius, LengthPercentageType.POINT))
         // OneKey patch: round the source image's absolute edges inside its border.
         val sourceLeft = ((tag as? NativeListItem)?.json?.optJSONObject("style")?.optDouble("horizontalPadding", 20.0) ?: 20.0) * density
-        val imageWidth = (sourceLeft + (sizeDp - 1) * density).roundToInt() - (sourceLeft + density).roundToInt()
-        image.layoutParams = FrameLayout.LayoutParams(imageWidth, dp(heightDp - 2)).apply {
+        val imageWidth = (sourceLeft + (styledWidthDp - 1) * density).roundToInt() - (sourceLeft + density).roundToInt()
+        image.layoutParams = FrameLayout.LayoutParams(imageWidth, dp(styledHeightDp - 2)).apply {
           leftMargin = inset
           topMargin = inset
         }
@@ -3553,7 +3639,7 @@ internal class NativeListRowView(
       val fallbackIcon = if (index == 0) fallbackIconData else null
       val expectedEpoch = bindingEpoch
       bindImage(source, image, boundKey ?: "", index, variant,
-        round = shape == "circle",
+        round = shape == "circle" && (imageStyle == null || (!imageStyle.has("shape") && !imageStyle.has("cornerRadius"))),
         onLoad = if (!ownsSourceFallback) null else ({
           if (bindingEpoch == expectedEpoch) {
             sourceFallbackKey?.let(NativeListSourceFallbackState::forget)
@@ -3642,7 +3728,7 @@ internal class NativeListRowView(
     if (visual.optString("borderStyle") == "dashed") {
       leadingFrame.background = GradientDrawable().apply {
         setColor(visualBackground)
-        cornerRadius = dp(sizeDp / 2).toFloat()
+        cornerRadius = dp(styledWidthDp / 2).toFloat()
         setStroke(dp(if (selectorUsesSourceScale && (tag as? NativeListItem)?.json?.optString("presentation") == "walletSidebar") 1 else 2), safeColor(visual.optString("borderColor"), parseNativeListColor("#00000072")), dp(4).toFloat(), dp(4).toFloat())
       }
       leadingFallback.background = null
@@ -3718,10 +3804,14 @@ internal class NativeListRowView(
       when (accessory.optString("kind")) {
         "value" -> {
           showTrailing(textIndex, accessory.optString("text"), !accessory.optBoolean("secondary", false))
+          semanticValueViews.add(trailingViews[textIndex])
           applyValueSegments(trailingViews[textIndex], accessory.optJSONArray("textSegments"))
           textIndex++
         }
-        "valuePair" -> showTrailingValuePair(textIndex++, accessory, theme)
+        "valuePair" -> {
+          showTrailingValuePair(textIndex, accessory, theme)
+          semanticValueViews.add(trailingViews[textIndex++])
+        }
         "checkbox" -> bindCheckbox(item, accessory, checkboxState)
         "radio" -> showTrailing(
           textIndex++,
@@ -4157,11 +4247,6 @@ internal class NativeListRowView(
     }
     status.textSize = sp(12f)
     badgeLine.textSize = sp(12f)
-    dataColumns.forEach { column ->
-      column.textSize = sp(16f)
-      column.typeface = NativeListFonts.medium(context)
-      column.fontFeatureSettings = "tnum"
-    }
     // OneKey patch: exact selector row dimensions override template minimums.
     selectorHeight = if (item.json.has("height")) dp(item.json.optInt("height")) else null
     // OneKey patch: React Native's section spacers and letter blocks truncate physical heights.
@@ -4396,7 +4481,7 @@ internal class NativeListRowView(
       sourceUri = uri,
       sourceHeadersJson = sourceHeadersJson,
       variant = variant,
-      contentFit = source.optString("contentFit", "cover"),
+      contentFit = if (imageView === leadingImages[0]) (tag as? NativeListItem)?.json?.optJSONObject("style")?.optJSONObject("image")?.optString("contentFit")?.takeIf(String::isNotEmpty) ?: source.optString("contentFit", "cover") else source.optString("contentFit", "cover"),
       cachePolicy = source.optString("cachePolicy", "memory-disk"),
       autoplay = source.optBoolean("autoplay", false),
       recyclingKey = recyclingKey,

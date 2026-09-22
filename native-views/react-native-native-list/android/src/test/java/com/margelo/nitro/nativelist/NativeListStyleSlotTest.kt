@@ -31,6 +31,9 @@ class NativeListStyleSlotTest {
       Case(type = "activity", field = "primaryAmount", expected = "value"),
       Case(type = "activity", field = "secondaryAmount", expected = "valueSecondary"),
       Case(type = "dataRow", field = "index", expected = "value"),
+      Case(type = "dataRow", field = "columns", expected = "dataPrimary"),
+      Case(type = "dataRow", field = "columnSecondary", expected = "dataSecondary"),
+      Case(type = "system", field = "title", variant = "retry", expected = null),
       Case(type = "sectionHeader", field = "value", expected = "value"),
       // Only the warning variant renders a separate title.
       Case(type = "system", field = "message", variant = "warning", expected = "subtitle"),
@@ -57,7 +60,7 @@ class NativeListStyleSlotTest {
       Triple("rail", "", listOf("title", "badge", "status")),
       Triple("activity", "", listOf("title", "description", "status", "primaryAmount", "secondaryAmount")),
       Triple("message", "", listOf("title", "body", "time")),
-      Triple("dataRow", "", listOf("columns", "index")),
+      Triple("dataRow", "", listOf("columns", "columnSecondary", "index")),
       Triple("mediaTile", "", listOf("title", "subtitle", "badge")),
       Triple("metricCard", "", listOf("title", "value", "subtitle", "trend")),
       Triple("sectionHeader", "", listOf("title", "subtitle", "value")),

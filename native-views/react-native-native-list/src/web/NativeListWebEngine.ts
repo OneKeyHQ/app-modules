@@ -2146,10 +2146,11 @@ function appendAccessories(
   ) {
     setData(container, 'nativeListAccountControl', 'createAddress');
   }
+  let valueIndex = 0;
   accessories.forEach((accessory, slot) => {
     const element = createAccessory(context, rowKey, accessory, slot);
     if (accessory.kind === 'value' || accessory.kind === 'valuePair') {
-      tagSlot(element, slot === 0 ? 'value' : 'valueSecondary');
+      tagSlot(element, valueIndex++ === 0 ? 'value' : 'valueSecondary');
     }
     container.appendChild(element);
   });
@@ -2184,6 +2185,13 @@ function createTextColumn(
     slots.title
   );
   if (badges?.length) {
+    titleLine.removeAttribute('data-nl-slot');
+    titleLine.replaceChildren(
+      tagSlot(
+        createElement(context.document, 'span', undefined, title),
+        slots.title
+      )
+    );
     const badgeLine = createElement(
       context.document,
       'span',
@@ -2564,6 +2572,21 @@ function createSystemRow(
         'message'
       )
     );
+  if (row.variant === 'retry') {
+    const action = tagSlot(
+      createElement(
+        context.document,
+        'button',
+        'ok-native-list-action-button',
+        row.actionText ?? 'Retry'
+      ),
+      'actionText'
+    );
+    action.setAttribute('type', 'button');
+    setData(action, 'nativeListAction', row.actionKey);
+    markActionAnchorSource(action, 'trailingAccessory', 0);
+    body.appendChild(action);
+  }
   return body;
 }
 
@@ -2589,6 +2612,7 @@ function createRailRow(
       'title'
     )
   );
+  if (row.badge) body.appendChild(createBadge(context, row.badge));
   if (row.status && row.status !== 'none')
     body.appendChild(
       tagSlot(
@@ -2601,7 +2625,6 @@ function createRailRow(
         'status'
       )
     );
-  if (row.badge) body.appendChild(createBadge(context, row.badge));
   return body;
 }
 
@@ -2911,22 +2934,17 @@ function createDataRow(
     );
     cell.style.flex = String(column.weight ?? 1);
     setData(cell, 'align', column.alignment ?? 'start');
-    const primary = tagSlot(
-      createElement(context.document, 'span', 'ok-native-list-data-primary'),
-      'columns'
+    const primary = createElement(
+      context.document,
+      'span',
+      'ok-native-list-data-primary'
     );
     primary.style.color = toneColor(column.tone, 'primary');
-    if (column.secondaryLeadingText)
-      primary.appendChild(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          column.secondaryLeadingText
-        )
-      );
     primary.appendChild(
-      createElement(context.document, 'span', undefined, column.text)
+      tagSlot(
+        createElement(context.document, 'span', undefined, column.text),
+        'columns'
+      )
     );
     if (column.key === 'asset' && row.badges?.length) {
       row.badges.forEach((badge) =>
@@ -2934,18 +2952,29 @@ function createDataRow(
       );
     }
     cell.appendChild(primary);
-    if (column.secondaryText) {
-      const secondary = tagSlot(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          column.secondaryText
-        ),
-        'columnSecondary'
+    if (column.secondaryLeadingText || column.secondaryText) {
+      const secondaryLine = createElement(
+        context.document,
+        'span',
+        'ok-native-list-data-secondary-line'
       );
-      secondary.style.color = toneColor(column.secondaryTone, 'secondary');
-      cell.appendChild(secondary);
+      secondaryLine.style.display = 'flex';
+      secondaryLine.style.gap = '4px';
+      for (const text of [column.secondaryLeadingText, column.secondaryText]) {
+        if (!text) continue;
+        const secondary = tagSlot(
+          createElement(
+            context.document,
+            'span',
+            'ok-native-list-secondary',
+            text
+          ),
+          'columnSecondary'
+        );
+        secondary.style.color = toneColor(column.secondaryTone, 'secondary');
+        secondaryLine.appendChild(secondary);
+      }
+      cell.appendChild(secondaryLine);
     }
     body.appendChild(cell);
   });
@@ -3071,7 +3100,10 @@ function createIdentityActivityOrMessageRow(
   if (row.type === 'identity') {
     const titleElement = column.firstElementChild as HTMLElement;
     if (row.titleMatch?.length) {
-      const firstText = titleElement.firstChild;
+      const textTarget =
+        titleElement.querySelector<HTMLElement>('[data-nl-slot="title"]') ??
+        titleElement;
+      const firstText = textTarget.firstChild;
       if (firstText) firstText.remove();
       const fragment = context.document.createDocumentFragment();
       let offset = 0;
@@ -3091,7 +3123,7 @@ function createIdentityActivityOrMessageRow(
       fragment.appendChild(
         context.document.createTextNode(row.title.slice(offset))
       );
-      titleElement.prepend(fragment);
+      textTarget.prepend(fragment);
     }
     if (row.subtitleSegments?.length) {
       column.querySelector('.ok-native-list-secondary')?.remove();
@@ -3115,6 +3147,7 @@ function createIdentityActivityOrMessageRow(
           'ok-native-list-secondary',
           segment.text
         );
+        tagSlot(text, 'subtitle');
         applyValueSegments(text, segment.textSegments, 14, 20, 400);
         setData(text, 'tone', segment.tone);
         text.style.color =
@@ -3141,11 +3174,14 @@ function createIdentityActivityOrMessageRow(
   }
   if (row.type === 'activity' && row.status)
     column.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        row.status
+      tagSlot(
+        createElement(
+          context.document,
+          'span',
+          'ok-native-list-secondary',
+          row.status
+        ),
+        'status'
       )
     );
   if (row.type === 'activity' && row.footerActions?.length) {
@@ -3619,6 +3655,16 @@ function applyTextStyleToSlot(
   if (style.fontWeight !== undefined)
     element.style.fontWeight = String(marketFontWeight(style.fontWeight, 400));
   if (style.color !== undefined) element.style.color = style.color;
+  // Explicit overrides also apply to rich text runs, but never to sibling badges.
+  element.querySelectorAll<HTMLElement>('span').forEach((run) => {
+    if (style.color !== undefined) run.style.color = style.color;
+    if (style.fontSize !== undefined)
+      run.style.fontSize = String(style.fontSize) + 'px';
+    if (style.fontWeight !== undefined)
+      run.style.fontWeight = String(marketFontWeight(style.fontWeight, 400));
+    if (style.lineHeight !== undefined)
+      run.style.lineHeight = String(style.lineHeight) + 'px';
+  });
   if (style.alignment !== undefined) element.style.textAlign = style.alignment;
   if (style.lines !== undefined) {
     element.style.removeProperty('-webkit-line-clamp');
@@ -3648,13 +3694,151 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
     body.style.paddingInline = String(box.horizontalPadding) + 'px';
   if (box.verticalPadding !== undefined)
     body.style.paddingBlock = String(box.verticalPadding) + 'px';
-  if (box.lineGap !== undefined && row.type !== 'walletGroup') {
-    const lineGap = String(box.lineGap) + 'px';
+  const compositeMetric =
+    row.type === 'metricCard' &&
+    (row.variant === 'activity' || row.variant === 'performance');
+  const vertical =
+    row.type === 'mediaTile' ||
+    row.type === 'metricCard' ||
+    (row.type === 'identity' && row.presentation === 'walletSidebar');
+  const leading = body.querySelector<HTMLElement>(
+    ':scope > .ok-native-list-visual, :scope > .ok-native-list-stacked, :scope > .ok-native-list-media-image'
+  );
+  const defaultGap =
+    body.style.gap ||
+    (row.type === 'mediaTile'
+      ? '7px'
+      : row.type === 'rail'
+      ? '6px'
+      : row.type === 'metricCard'
+      ? '5px'
+      : row.type === 'identity' && row.presentation === 'walletSidebar'
+      ? '4px'
+      : row.type === 'identity' && row.presentation === 'accountSelector'
+      ? '8px'
+      : '12px');
+  if (box.lineGap !== undefined) {
+    const targets =
+      row.type === 'dataRow'
+        ? body.querySelectorAll<HTMLElement>('.ok-native-list-data-cell')
+        : row.type === 'mediaTile'
+        ? body.querySelectorAll<HTMLElement>('.ok-native-list-media-meta')
+        : row.type === 'metricCard' ||
+          (row.type === 'system' && row.variant === 'warning')
+        ? [body]
+        : body.querySelectorAll<HTMLElement>(':scope > .ok-native-list-flex');
+    targets.forEach((column) => {
+      if (row.type === 'mediaTile') {
+        column.style.display = 'flex';
+        column.style.flexDirection = 'column';
+      }
+      column.style.rowGap = String(box.lineGap) + 'px';
+    });
+  }
+  if (leading && box.leadingGap !== undefined) {
+    const gap =
+      'calc(' +
+      String(box.leadingGap) +
+      'px - ' +
+      (row.type === 'metricCard' && box.lineGap !== undefined
+        ? String(box.lineGap) + 'px'
+        : defaultGap) +
+      ')';
+    if (vertical) leading.style.marginBottom = gap;
+    else leading.style.marginInlineEnd = gap;
+  }
+  if (box.titleBadgeGap !== undefined) {
+    const gap = String(box.titleBadgeGap) + 'px';
+    if (row.type === 'dataRow')
+      body
+        .querySelectorAll<HTMLElement>('.ok-native-list-data-primary')
+        .forEach((line) => {
+          line.style.gap = gap;
+        });
+    else
+      body
+        .querySelectorAll<HTMLElement>(
+          '.ok-native-list-badges, .ok-native-list-wallet-badges'
+        )
+        .forEach((badges) => {
+          if (badges.classList.contains('ok-native-list-wallet-badges'))
+            badges.style.marginTop =
+              box.lineGap === undefined
+                ? gap
+                : 'calc(' + gap + ' - ' + String(box.lineGap) + 'px)';
+          else badges.style.marginInlineStart = gap;
+        });
+    if (row.type === 'rail') {
+      const badge = body.querySelector<HTMLElement>('[data-nl-slot="badge"]');
+      if (badge)
+        badge.style.marginInlineStart =
+          'calc(' + gap + ' - ' + defaultGap + ')';
+    }
+  }
+  if (box.trailingGap !== undefined) {
+    const gap = String(box.trailingGap) + 'px';
     body
-      .querySelectorAll<HTMLElement>('.ok-native-list-flex')
-      .forEach((column) => {
-        column.style.rowGap = lineGap;
+      .querySelectorAll<HTMLElement>(
+        '.ok-native-list-accessories, .ok-native-list-amounts'
+      )
+      .forEach((trailing) => {
+        trailing.style.gap = gap;
       });
+    if (row.type === 'sectionHeader') {
+      const children = Array.from(body.children) as HTMLElement[];
+      const columnIndex = children.findIndex((child) =>
+        child.classList.contains('ok-native-list-flex')
+      );
+      children.slice(columnIndex + 2).forEach((child) => {
+        child.style.marginInlineStart =
+          'calc(' + gap + ' - ' + defaultGap + ')';
+      });
+    }
+    if (row.type === 'rail') {
+      const status = body.querySelector<HTMLElement>('[data-nl-slot="status"]');
+      if (status)
+        status.style.marginInlineStart =
+          'calc(' + gap + ' - ' + defaultGap + ')';
+    }
+  }
+  if (leading && box.image && !compositeMetric) {
+    const image = box.image;
+    if (image.width !== undefined) {
+      leading.style.width = String(image.width) + 'px';
+      if (!vertical) leading.style.flexBasis = String(image.width) + 'px';
+    }
+    if (image.height !== undefined)
+      leading.style.height = String(image.height) + 'px';
+    const radius =
+      image.cornerRadius !== undefined
+        ? String(image.cornerRadius) + 'px'
+        : image.shape === 'circle'
+        ? '50%'
+        : image.shape === 'square'
+        ? '0px'
+        : image.shape === 'rounded'
+        ? '10px'
+        : undefined;
+    if (radius !== undefined) {
+      leading.style.setProperty('border-radius', radius, 'important');
+      // Clip the bitmap itself; decorations may extend beyond the visual slot.
+      leading.style.overflow = leading.matches('img') ? 'hidden' : 'visible';
+    }
+    const images = leading.matches('img')
+      ? [leading]
+      : leading.querySelectorAll<HTMLElement>(
+          ':scope > img, :scope > .ok-native-list-visual-fallback'
+        );
+    images.forEach((bitmap) => {
+      if (bitmap !== leading) {
+        if (image.width !== undefined) bitmap.style.width = '100%';
+        if (image.height !== undefined) bitmap.style.height = '100%';
+      }
+      if (radius !== undefined) bitmap.style.borderRadius = radius;
+      if (image.contentFit !== undefined)
+        bitmap.style.objectFit =
+          image.contentFit === 'center' ? 'none' : image.contentFit;
+    });
   }
   Object.keys(style).forEach((key) => {
     if (ROW_BOX_STYLE_KEYS.has(key)) return;
@@ -3662,7 +3846,13 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
     if (!slotStyle) return;
     body
       .querySelectorAll<HTMLElement>('[data-nl-slot="' + key + '"]')
-      .forEach((element) => applyTextStyleToSlot(element, slotStyle));
+      .forEach((element) => {
+        applyTextStyleToSlot(element, slotStyle);
+        if (row.type === 'dataRow' && slotStyle.alignment) {
+          element.style.flex = '1';
+          if (element.parentElement) element.parentElement.style.width = '100%';
+        }
+      });
   });
 }
 

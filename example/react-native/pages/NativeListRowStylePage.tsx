@@ -70,6 +70,9 @@ function buildRows(styled: boolean): RowModel[] {
             value: { token: '$bodySm' as const },
             horizontalPadding: 20,
             lineGap: 2,
+            leadingGap: 16,
+            titleBadgeGap: 6,
+            image: { width: 32, height: 32, shape: 'rounded' as const },
           },
         }
       : {}),
@@ -161,8 +164,8 @@ function buildRows(styled: boolean): RowModel[] {
       : {}),
   });
 
-  // Cover the remaining row types with appearance-only overrides. These pairs
-  // keep geometry identical so field targeting can be checked independently.
+  // Cover remaining templates with local text/image/gap overrides. Outer row
+  // allocation stays fixed; callers choose fitting dimensions.
   const additional: readonly [RowModel, RowModel['style']][] = [
     [
       {
@@ -186,7 +189,12 @@ function buildRows(styled: boolean): RowModel[] {
           { key: 'value', text: '$64,230', alignment: 'end' },
         ],
       },
-      { index: { color: '#0D74CE' } },
+      {
+        index: { color: '#0D74CE' },
+        columns: { fontSize: 16, color: '#0D74CE' },
+        columnSecondary: { fontSize: 12, color: '#108303' },
+        lineGap: 4,
+      },
     ],
     [
       {
@@ -210,7 +218,13 @@ function buildRows(styled: boolean): RowModel[] {
         title: 'Collectible',
         subtitle: 'Ethereum',
       },
-      { title: { color: '#0D74CE' }, subtitle: { color: '#108303' } },
+      {
+        title: { color: '#0D74CE' },
+        subtitle: { color: '#108303' },
+        image: { width: 120, height: 80, shape: 'rounded' },
+        leadingGap: 8,
+        lineGap: 4,
+      },
     ],
     [
       {

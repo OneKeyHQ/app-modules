@@ -1,3 +1,4 @@
+import { ROW_BOX_STYLE_KEYS_BY_TYPE } from './models';
 import type {
   ActivityRow,
   IdentityRow,
@@ -156,16 +157,6 @@ const TYPOGRAPHY_TOKENS: Readonly<
   $bodyXs: { fontSize: 11, lineHeight: 16, fontWeight: 'regular' },
 };
 
-const BOX_STYLE_KEYS: readonly string[] = [
-  'horizontalPadding',
-  'verticalPadding',
-  'leadingGap',
-  'lineGap',
-  'titleBadgeGap',
-  'trailingGap',
-  'image',
-];
-
 /** Style keys name model fields, never views. See docs/STYLE_SPEC.md §4. */
 const TEXT_STYLE_KEYS_BY_ROW_TYPE: Readonly<
   Record<RowModel['type'], readonly string[]>
@@ -234,8 +225,12 @@ function assertTextStyle(
     path,
     'text style key'
   );
-  if (style.color !== undefined && typeof style.color !== 'string') {
-    fail(`${path}.color`, 'must be a color string');
+  if (
+    style.color !== undefined &&
+    (typeof style.color !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(style.color))
+  ) {
+    fail(`${path}.color`, 'must be #RRGGBB or #RRGGBBAA');
   }
   if (
     style.token !== undefined &&
@@ -362,7 +357,7 @@ function assertRowStyle(row: RowModel, path: string): void {
   }
   const textKeys = TEXT_STYLE_KEYS_BY_ROW_TYPE[row.type] ?? [];
   const allowed = new Set([
-    ...BOX_STYLE_KEYS,
+    ...ROW_BOX_STYLE_KEYS_BY_TYPE[row.type],
     ...textKeys,
     ...(EXTRA_STYLE_KEYS_BY_ROW_TYPE[row.type] ?? []),
   ]);

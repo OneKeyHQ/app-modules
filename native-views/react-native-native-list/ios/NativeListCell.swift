@@ -334,6 +334,11 @@ private final class NativeListTableColumnView: UIStackView {
   }
 
   func reset() {
+    spacing = 4
+    primaryLine.spacing = 6
+    primaryLabel.numberOfLines = 1
+    secondaryLeadingLabel.numberOfLines = 1
+    secondaryLabel.numberOfLines = 1
     primaryLabel.attributedText = nil
     secondaryLeadingLabel.attributedText = nil
     secondaryLabel.attributedText = nil
@@ -367,6 +372,9 @@ private final class NativeListTableColumnView: UIStackView {
     primaryLabel.textAlignment = textAlignment
     secondaryLeadingLabel.textAlignment = textAlignment
     secondaryLabel.textAlignment = textAlignment
+    primaryLabel.font = nativeListFont(ofSize: 14, weight: .medium)
+    secondaryLeadingLabel.font = nativeListFont(ofSize: 12)
+    secondaryLabel.font = nativeListFont(ofSize: 12)
     primaryLabel.attributedText = line(
       column.string("text"),
       font: nativeListFont(ofSize: 14, weight: .medium),
@@ -417,6 +425,20 @@ private final class NativeListTableColumnView: UIStackView {
     }
   }
 
+  func applyStyle(_ style: [String: Any], text: (UILabel, [String: Any]) -> Void) {
+    if let primary = style.dictionary("columns") {
+      if primary["alignment"] != nil { alignment = .fill }
+      text(primaryLabel, primary)
+    }
+    if let secondary = style.dictionary("columnSecondary") {
+      if secondary["alignment"] != nil { alignment = .fill }
+      text(secondaryLeadingLabel, secondary)
+      text(secondaryLabel, secondary)
+    }
+    if style["lineGap"] != nil { spacing = CGFloat(style.double("lineGap")) }
+    if style["titleBadgeGap"] != nil { primaryLine.spacing = CGFloat(style.double("titleBadgeGap")) }
+  }
+
   private func line(_ text: String, font: UIFont, color: UIColor, height: CGFloat) -> NSAttributedString {
     let paragraph = NSMutableParagraphStyle()
     paragraph.minimumLineHeight = height
@@ -448,6 +470,8 @@ final class NativeListCell: UICollectionViewCell {
   static let reuseIdentifier = "NativeListCell"
 
   private let rootStack = UIStackView()
+  private let mediaVisualWrapper = UIView()
+  private var styledCircleViews: [UIView] = []
   private let leadingImages = (0..<3).map { _ in OneKeyImageReusableView(frame: .zero) }
   private let leadingOverlayBackground = UIView()
   private let leadingCornerIconBackground = UIView()
@@ -494,8 +518,6 @@ final class NativeListCell: UICollectionViewCell {
   private let accessoryButtons = (0..<2).map { _ in NativeListAccessoryButton(type: .system) }
   private let checkboxButton = UIButton(type: .system)
   private let spinner = UIActivityIndicatorView(style: .medium)
-  private let dataStack = UIStackView()
-  private let dataLabels = (0..<4).map { _ in UILabel() }
   private let tableDataStack = UIStackView()
   private let tableDataColumns = (0..<4).map { _ in NativeListTableColumnView() }
   private let mediaBadgeLabel = UILabel()
@@ -551,6 +573,10 @@ final class NativeListCell: UICollectionViewCell {
   // OneKey patch: a row style wrote view properties that reset() does not restore.
   private var styledViewsDirty = false
   private var styledTextRestorations: [() -> Void] = []
+  private var semanticBadgeLabels: [UILabel] = []
+  private var semanticSubtitleLabels: [UILabel] = []
+  private var semanticValueButtons: [UIButton] = []
+  private weak var walletBadgeLine: UIStackView?
   private var currentTheme: [String: Any]?
   private var currentItemIndex: Int?
   // OneKey patch: delayed image retries belong to the current reusable cell binding.
@@ -818,15 +844,6 @@ final class NativeListCell: UICollectionViewCell {
     trailingStack.addArrangedSubview(checkboxButton)
     trailingStack.addArrangedSubview(spinner)
 
-    dataStack.axis = .horizontal
-    dataStack.alignment = .center
-    dataStack.distribution = .fillProportionally
-    dataStack.spacing = 8
-    dataLabels.forEach { label in
-      label.font = nativeListFont(ofSize: 12)
-      label.lineBreakMode = .byTruncatingTail
-      dataStack.addArrangedSubview(label)
-    }
     tableDataStack.axis = .horizontal
     tableDataStack.alignment = .center
     tableDataStack.distribution = .fill
@@ -861,7 +878,13 @@ final class NativeListCell: UICollectionViewCell {
       selectorFullWidthBackground.frame = CGRect(x: -frame.minX, y: 0, width: superview?.bounds.width ?? bounds.width, height: bounds.height)
     }
     if currentItem?.type == "mediaTile" {
-      mediaHeight.constant = max(0, contentView.bounds.width - 20)
+      let image = currentItem?.data.dictionary("style")?.dictionary("image")
+      if let image, image["height"] != nil { mediaHeight.constant = CGFloat(image.double("height")) }
+      else if let image, image["width"] != nil { mediaHeight.constant = CGFloat(image.double("width")) }
+      else { mediaHeight.constant = max(0, contentView.bounds.width - rootLeadingConstraint.constant + rootTrailingConstraint.constant) }
+    }
+    for view in styledCircleViews {
+      (view.layer.mask as? CAShapeLayer)?.path = UIBezierPath(ovalIn: view.bounds).cgPath
     }
     if currentItem?.type == "identity", currentItem?.data["height"] != nil,
        currentItem?.data.string("presentation") == "accountSelector",
@@ -1043,7 +1066,11 @@ final class NativeListCell: UICollectionViewCell {
   ) {
     guard currentItem?.key == item.key else { return }
     restoreSelectorTypography()
-    defer { applySelectorTypography(item) }
+    resetRowStyle()
+    defer {
+      applyRowStyle(item)
+      applySelectorTypography(item)
+    }
     if item.type == "walletGroup" {
       currentItem = item
       let memberData = [item.data.dictionary("parent")].compactMap { $0 }
@@ -1214,14 +1241,19 @@ final class NativeListCell: UICollectionViewCell {
   private func resetRowStyle() {
     guard styledViewsDirty else { return }
     styledViewsDirty = false
+    styledCircleViews.removeAll()
     styledTextRestorations.reversed().forEach { $0() }
     styledTextRestorations.removeAll(keepingCapacity: true)
   }
 
   private func reset() {
-    resetRowStyle()
-    titleLabel.transform = .identity
     restoreSelectorTypography()
+    resetRowStyle()
+    semanticBadgeLabels.removeAll(keepingCapacity: true)
+    semanticSubtitleLabels.removeAll(keepingCapacity: true)
+    semanticValueButtons.removeAll(keepingCapacity: true)
+    walletBadgeLine = nil
+    titleLabel.transform = .identity
     // OneKey patch: remove selector decorations before rebinding recycled cells.
     selectorViews.forEach { $0.removeFromSuperview() }
     selectorViews.removeAll()
@@ -1317,7 +1349,6 @@ final class NativeListCell: UICollectionViewCell {
     dataWeightConstraints.removeAll()
     NSLayoutConstraint.deactivate(accessorySizeConstraints)
     accessorySizeConstraints.removeAll()
-    dataStack.distribution = .fill
     leadingImages.forEach {
       $0.isHidden = true
       $0.alpha = 1
@@ -1449,12 +1480,6 @@ final class NativeListCell: UICollectionViewCell {
     checkboxButton.setImage(nil, for: .normal)
     spinner.stopAnimating()
     spinner.alpha = 1
-    dataLabels.forEach {
-      $0.isHidden = true
-      $0.text = nil
-      $0.attributedText = nil
-      $0.numberOfLines = 1
-    }
     tableDataColumns.forEach {
       $0.reset()
       $0.isHidden = true
@@ -1820,8 +1845,10 @@ final class NativeListCell: UICollectionViewCell {
           label.layer.cornerRadius = 4
           label.clipsToBounds = true
           setLineHeight(label, text: badge.string("text"), lineHeight: isSelector ? 14 : 16)
+          semanticBadgeLabels.append(label)
           line.addArrangedSubview(label)
         }
+        walletBadgeLine = line
         mainStack.spacing = 4
         mainStack.addArrangedSubview(line)
         selectorViews.append(line)
@@ -1936,6 +1963,7 @@ final class NativeListCell: UICollectionViewCell {
           }
           label.attributedText = value
         }
+        semanticSubtitleLabels.append(label)
         line.addArrangedSubview(label)
       }
       let filler = UIView()
@@ -2195,81 +2223,22 @@ final class NativeListCell: UICollectionViewCell {
     if hasLeadingAccessory { rootStack.addArrangedSubview(trailingStack) }
     let columns = Array(item.data.dictionaries("columns").prefix(4))
     let rowBadges = item.data.dictionaries("badges")
-    if currentLayout == "table" {
-      rootStack.addArrangedSubview(tableDataStack)
-      for (index, column) in columns.enumerated() {
-        tableDataColumns[index].isHidden = false
-        tableDataColumns[index].bind(
-          column: column,
-          badges: index == 0 ? rowBadges : [],
-          theme: theme
-        )
-      }
-      if let firstColumn = columns.first {
-        let firstWeight = CGFloat(max(1, firstColumn.int("weight", default: 1)))
-        for index in 1..<columns.count {
-          let weight = CGFloat(max(1, columns[index].int("weight", default: 1)))
-          dataWeightConstraints.append(
-            tableDataColumns[index].widthAnchor.constraint(
-              equalTo: tableDataColumns[0].widthAnchor,
-              multiplier: weight / firstWeight
-            )
-          )
-        }
-        NSLayoutConstraint.activate(dataWeightConstraints)
-      }
-      return
-    }
-
-    rootStack.addArrangedSubview(dataStack)
+    rootStack.addArrangedSubview(tableDataStack)
     for (index, column) in columns.enumerated() {
-      let label = dataLabels[index]
-      label.isHidden = false
-      let primaryColor = dataTextColor(column.string("tone"), theme: theme)
-      let attributed = NSMutableAttributedString(
-        string: column.string("text"),
-        attributes: [
-          .font: nativeListFont(ofSize: 14, weight: .medium),
-          .foregroundColor: primaryColor,
-        ]
+      tableDataColumns[index].isHidden = false
+      tableDataColumns[index].bind(
+        column: column,
+        badges: index == 0 ? rowBadges : [],
+        theme: theme
       )
-      if index == 0 {
-        for badge in rowBadges.prefix(2) {
-          attributed.append(NSAttributedString(
-            string: "  \(badge.string("text")) ",
-            attributes: [
-              .font: nativeListFont(ofSize: 12, weight: .medium),
-              .foregroundColor: nativeListColor(theme, "info", "#0D74CE"),
-              .backgroundColor: UIColor(nativeListHex: "#008FF519", fallback: .systemBlue),
-            ]
-          ))
-        }
-      }
-      let secondaryText = column.string("secondaryText")
-      if !secondaryText.isEmpty {
-        attributed.append(NSAttributedString(
-          string: "\n\(secondaryText)",
-          attributes: [
-            .font: nativeListFont(ofSize: 12),
-            .foregroundColor: dataTextColor(
-              column.string("secondaryTone", default: "secondary"),
-              theme: theme
-            ),
-          ]
-        ))
-        label.numberOfLines = 2
-      }
-      label.attributedText = attributed
-      label.textAlignment = column.string("alignment") == "end" ? .right : column.string("alignment") == "center" ? .center : .left
-      label.setContentHuggingPriority(.defaultLow, for: .horizontal)
     }
     if let firstColumn = columns.first {
       let firstWeight = CGFloat(max(1, firstColumn.int("weight", default: 1)))
       for index in 1..<columns.count {
         let weight = CGFloat(max(1, columns[index].int("weight", default: 1)))
         dataWeightConstraints.append(
-          dataLabels[index].widthAnchor.constraint(
-            equalTo: dataLabels[0].widthAnchor,
+          tableDataColumns[index].widthAnchor.constraint(
+            equalTo: tableDataColumns[0].widthAnchor,
             multiplier: weight / firstWeight
           )
         )
@@ -2327,6 +2296,7 @@ final class NativeListCell: UICollectionViewCell {
     case "dataRow":
       switch field {
       case "columns": return "dataPrimary"
+      case "columnSecondary": return "dataSecondary"
       case "index": return "value"
       default: return nil
       }
@@ -2351,7 +2321,7 @@ final class NativeListCell: UICollectionViewCell {
       return ["title", "value"].contains(field) ? field : nil
     case "system":
       switch field {
-      case "title": return "title"
+      case "title": return variant == "warning" ? "title" : nil
       // Only the warning variant renders a separate title; every other variant
       // puts its message in the title view.
       case "message": return variant == "warning" ? "subtitle" : "title"
@@ -2371,6 +2341,15 @@ final class NativeListCell: UICollectionViewCell {
     if item.type == "market" { return }
     guard let style = item.data.dictionary("style") else { return }
     styledViewsDirty = true
+    let constraints = [rootLeadingConstraint!, rootTrailingConstraint!, rootTopConstraint!, rootBottomConstraint!, leadingWidth!, leadingHeight!, mediaHeight!]
+    let constants = constraints.map { $0.constant }
+    let active = constraints.map { $0.isActive }
+    styledTextRestorations.append {
+      for (index, constraint) in constraints.enumerated() {
+        constraint.constant = constants[index]
+        constraint.isActive = active[index]
+      }
+    }
     if style["horizontalPadding"] != nil {
       let inset = CGFloat(style.double("horizontalPadding"))
       rootLeadingConstraint.constant = inset
@@ -2381,8 +2360,63 @@ final class NativeListCell: UICollectionViewCell {
       rootTopConstraint.constant = inset
       rootBottomConstraint.constant = -inset
     }
-    if style["lineGap"] != nil {
-      mainStack.spacing = CGFloat(style.double("lineGap"))
+    if style["lineGap"] != nil, item.type != "walletGroup", item.type != "dataRow" {
+      let gap = CGFloat(style.double("lineGap"))
+      styleGap(mainStack, gap)
+      if item.type == "metricCard", ["activity", "performance"].contains(item.data.string("variant")) {
+        styleGap(metricCompositeStack, gap)
+        if item.data.string("variant") == "performance", let summary = metricCompositeStack.arrangedSubviews.first as? UIStackView { styleGap(summary, gap) }
+      }
+    }
+    let leadingSlot = item.type == "mediaTile" ? mediaVisualWrapper : leadingContainer
+    if style["leadingGap"] != nil, let stack = leadingSlot.superview as? UIStackView {
+      styleSpacing(stack, after: leadingSlot, CGFloat(style.double("leadingGap")))
+    }
+    if style["titleBadgeGap"] != nil {
+      let gap = CGFloat(style.double("titleBadgeGap"))
+      if walletBadgeLine != nil { styleSpacing(mainStack, after: titleRowStack, gap) }
+      else { styleSpacing(titleRowStack, after: titleLabel, gap) }
+    }
+    if style["trailingGap"] != nil {
+      let gap = CGFloat(style.double("trailingGap"))
+      if item.type == "rail" { styleSpacing(mainStack, after: titleRowStack, gap) }
+      else { styleGap(trailingStack, gap) }
+    }
+    if let image = style.dictionary("image"), leadingContainer.superview != nil {
+      if image["width"] != nil {
+        leadingWidth.constant = CGFloat(image.double("width"))
+        leadingWidth.isActive = true
+      }
+      if image["height"] != nil {
+        if mediaHeight.isActive { mediaHeight.constant = CGFloat(image.double("height")) }
+        else { leadingHeight.constant = CGFloat(image.double("height")); leadingHeight.isActive = true }
+      }
+      let radius: CGFloat? = image["cornerRadius"] != nil ? CGFloat(image.double("cornerRadius"))
+        : image.string("shape") == "circle" ? min(leadingWidth.constant, leadingHeight.constant) / 2
+        : image.string("shape") == "square" ? 0
+        : image.string("shape") == "rounded" ? 10 : nil
+      if let radius {
+        let visual = item.data.dictionary("leading") ?? item.data.dictionary("visual") ?? [:]
+        let decorated = visual.dictionary("networkImage") != nil || !visual.dictionaries("overlays").isEmpty || visual.dictionary("cornerIcon") != nil || item.data.dictionary("secondaryLeading") != nil || visual.string("kind") == "stackedImages"
+        for view in [leadingContainer] + leadingImages.prefix(1).map({ $0 as UIView }) {
+          let oldRadius = view.layer.cornerRadius
+          let clips = view.clipsToBounds
+          styledTextRestorations.append { view.layer.cornerRadius = oldRadius; view.clipsToBounds = clips }
+          view.layer.cornerRadius = radius
+          view.clipsToBounds = view !== leadingContainer || !decorated
+          if image.string("shape") == "circle", image["cornerRadius"] == nil, view !== leadingContainer || !decorated {
+            let originalMask = view.layer.mask
+            styledTextRestorations.append { view.layer.mask = originalMask }
+            let mask = CAShapeLayer()
+            mask.path = UIBezierPath(ovalIn: view.bounds).cgPath
+            view.layer.mask = mask
+            styledCircleViews.append(view)
+          }
+        }
+      }
+    }
+    if item.type == "dataRow" {
+      tableDataColumns.forEach { $0.applyStyle(style, text: applyStyledText) }
     }
     let variant = item.data.string("variant")
     if item.type == "metricCard" && ["activity", "performance"].contains(variant) {
@@ -2398,15 +2432,17 @@ final class NativeListCell: UICollectionViewCell {
       else { continue }
       switch slot {
       case "title": applyStyledText(titleLabel, slotStyle)
-      case "subtitle": applyStyledText(subtitleLabel, slotStyle)
+      case "subtitle": (semanticSubtitleLabels.isEmpty ? [subtitleLabel] : semanticSubtitleLabels).forEach { applyStyledText($0, slotStyle) }
       case "tertiary": applyStyledText(tertiaryLabel, slotStyle)
-      case "status": applyStyledText(statusLabel, slotStyle)
+      case "status": applyStyledText(item.type == "activity" && item.data.string("status") == "Failed" ? badgeLabel : statusLabel, slotStyle)
       case "metricSubtitle": applyStyledText(metricSubtitleLabel, slotStyle)
-      case "badge": applyStyledText(badgeLabel, slotStyle)
+      case "badge": (semanticBadgeLabels.isEmpty ? [badgeLabel] : semanticBadgeLabels).forEach { applyStyledText($0, slotStyle) }
       case "mediaBadge": applyStyledText(mediaBadgeLabel, slotStyle)
-      case "dataPrimary": dataLabels.forEach { applyStyledText($0, slotStyle) }
-      case "value": applyStyledButton(accessoryButtons[0], slotStyle)
-      case "valueSecondary": applyStyledButton(accessoryButtons[1], slotStyle)
+      case "dataPrimary", "dataSecondary": break // Applied to independent column labels above.
+      case "value", "valueSecondary":
+        let index = slot == "value" ? 0 : 1
+        let buttons = ["identity", "action"].contains(item.type) ? semanticValueButtons : accessoryButtons
+        if buttons.indices.contains(index) { applyStyledButton(buttons[index], slotStyle) }
       default: break
       }
     }
@@ -2416,6 +2452,31 @@ final class NativeListCell: UICollectionViewCell {
    The binders install an attributed string through setLineHeight, so assigning
    `font` or `textColor` alone would not take effect. Rebuild the line box.
    */
+  private func styleSpacing(_ stack: UIStackView, after view: UIView, _ gap: CGFloat) {
+    guard stack.arrangedSubviews.contains(view) else { return }
+    let original = stack.customSpacing(after: view)
+    styledTextRestorations.append { stack.setCustomSpacing(original, after: view) }
+    stack.setCustomSpacing(gap, after: view)
+  }
+
+  private func styleGap(_ stack: UIStackView, _ gap: CGFloat) {
+    let original = stack.spacing
+    styledTextRestorations.append { stack.spacing = original }
+    stack.spacing = gap
+    stack.arrangedSubviews.forEach { styleSpacing(stack, after: $0, gap) }
+  }
+
+  private func applyStyledFont(_ text: NSMutableAttributedString, _ style: [String: Any], fallback: UIFont) {
+    guard style["fontSize"] != nil || style["fontWeight"] != nil else { return }
+    text.enumerateAttribute(.font, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+      let original = (value as? UIFont) ?? fallback
+      let size = CGFloat(style.double("fontSize", default: Double(original.pointSize)))
+      let font = style["fontWeight"] == nil ? original.withSize(size)
+        : nativeListFont(ofSize: size, weight: marketFontWeight(style.string("fontWeight"), fallback: .regular))
+      text.addAttribute(.font, value: font, range: range)
+    }
+  }
+
   private func applyStyledText(_ label: UILabel, _ style: [String: Any]) {
     let text = label.attributedText?.string ?? label.text ?? ""
     guard !text.isEmpty else { return }
@@ -2433,7 +2494,7 @@ final class NativeListCell: UICollectionViewCell {
       label.textAlignment = originalAlignment
       label.lineBreakMode = originalBreakMode
     }
-    let baseFont = label.font ?? nativeListFont(ofSize: 14)
+    let baseFont = (originalText?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont) ?? label.font ?? nativeListFont(ofSize: 14)
     let size = CGFloat(style.double("fontSize", default: Double(baseFont.pointSize)))
     let font: UIFont
     if let weightName = style["fontWeight"] as? String {
@@ -2463,7 +2524,7 @@ final class NativeListCell: UICollectionViewCell {
     if style["alignment"] != nil { paragraph.alignment = label.textAlignment }
     if style["lines"] != nil { paragraph.lineBreakMode = label.lineBreakMode }
     var attributes: [NSAttributedString.Key: Any] = [:]
-    if style["fontSize"] != nil || style["fontWeight"] != nil { attributes[.font] = font }
+    applyStyledFont(attributed, style, fallback: baseFont)
     if style["color"] != nil { attributes[.foregroundColor] = color }
     if style["alignment"] != nil || style["lines"] != nil || style["lineHeight"] != nil {
       attributes[.paragraphStyle] = paragraph
@@ -2494,7 +2555,7 @@ final class NativeListCell: UICollectionViewCell {
       button.setAttributedTitle(originalText, for: .normal)
       button.contentHorizontalAlignment = originalAlignment
     }
-    let baseFont = button.titleLabel?.font ?? nativeListFont(ofSize: 14)
+    let baseFont = (originalText?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont) ?? button.titleLabel?.font ?? nativeListFont(ofSize: 14)
     let size = CGFloat(style.double("fontSize", default: Double(baseFont.pointSize)))
     let font: UIFont
     if let weightName = style["fontWeight"] as? String {
@@ -2520,7 +2581,7 @@ final class NativeListCell: UICollectionViewCell {
         : alignmentName == "end" ? .trailing : .center
     }
     var attributes: [NSAttributedString.Key: Any] = [:]
-    if style["fontSize"] != nil || style["fontWeight"] != nil { attributes[.font] = font }
+    applyStyledFont(attributed, style, fallback: baseFont)
     if style["color"] != nil { attributes[.foregroundColor] = color }
     if style["alignment"] != nil || style["lineHeight"] != nil {
       attributes[.paragraphStyle] = paragraph
@@ -2899,6 +2960,18 @@ final class NativeListCell: UICollectionViewCell {
       ? nil
       : item.data.dictionary("image").map { ["kind": "image", "image": $0] }
     addLeading(imageVisual, key: item.key, to: rootStack)
+    rootStack.removeArrangedSubview(leadingContainer)
+    leadingContainer.removeFromSuperview()
+    mediaVisualWrapper.addSubview(leadingContainer)
+    rootStack.addArrangedSubview(mediaVisualWrapper)
+    let imageStyle = item.data.dictionary("style")?.dictionary("image")
+    let mediaConstraints = [
+      leadingContainer.leadingAnchor.constraint(equalTo: mediaVisualWrapper.leadingAnchor),
+      leadingContainer.topAnchor.constraint(equalTo: mediaVisualWrapper.topAnchor),
+      leadingContainer.bottomAnchor.constraint(equalTo: mediaVisualWrapper.bottomAnchor),
+    ] + (imageStyle?["width"] == nil ? [leadingContainer.widthAnchor.constraint(equalTo: mediaVisualWrapper.widthAnchor)] : [])
+    selectorConstraints.append(contentsOf: mediaConstraints)
+    NSLayoutConstraint.activate(mediaConstraints)
     leadingContainer.layer.cornerRadius = 10
     leadingContainer.clipsToBounds = true
     if imageState == "empty" {
@@ -3688,6 +3761,10 @@ final class NativeListCell: UICollectionViewCell {
     key: String,
     to stack: UIStackView? = nil
   ) {
+    if let image = currentItem?.data.dictionary("style")?.dictionary("image") {
+      if image["width"] != nil { leadingWidth.constant = CGFloat(image.double("width")) }
+      if image["height"] != nil { leadingHeight.constant = CGFloat(image.double("height")) }
+    }
     let targetStack = stack ?? rootStack
     targetStack.addArrangedSubview(leadingContainer)
     guard let visual else { return }
@@ -4044,6 +4121,7 @@ final class NativeListCell: UICollectionViewCell {
       switch accessory.string("kind") {
       case "value":
         showAccessory(textIndex, accessory.string("text"))
+        semanticValueButtons.append(accessoryButtons[textIndex])
         if item.data.string("presentation") == "networkSelector" && item.data["height"] != nil {
           accessoryButtons[textIndex].contentHorizontalAlignment = .trailing
           accessoryButtons[textIndex].titleLabel?.textAlignment = .right
@@ -4052,6 +4130,7 @@ final class NativeListCell: UICollectionViewCell {
         textIndex += 1
       case "valuePair":
         showValuePairAccessory(textIndex, accessory, theme: theme)
+        semanticValueButtons.append(accessoryButtons[textIndex])
         textIndex += 1
       case "checkbox": bindCheckbox(item, accessory, checkboxState)
       case "radio": showAccessory(textIndex, accessory.bool("checked") ? "●" : "○", action: accessoryAction(accessory)); textIndex += 1
@@ -4414,7 +4493,9 @@ final class NativeListCell: UICollectionViewCell {
       sourceUri: source.string("uri").trimmingCharacters(in: .whitespacesAndNewlines),
       sourceHeadersJson: headersJson,
       variant: variant,
-      contentFit: source.string("contentFit", default: "cover"),
+      contentFit: imageView === leadingImages.first
+        ? currentItem?.data.dictionary("style")?.dictionary("image")?["contentFit"] as? String ?? source.string("contentFit", default: "cover")
+        : source.string("contentFit", default: "cover"),
       cachePolicy: source.string("cachePolicy", default: "memory-disk"),
       autoplay: source.bool("autoplay"),
       recyclingKey: retryAttempt == 0 ? "\(token):\(slot)" : "\(token):\(slot):retry:\(retryAttempt)",

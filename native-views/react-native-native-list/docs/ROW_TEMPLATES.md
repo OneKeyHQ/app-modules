@@ -33,12 +33,14 @@ template the owner of sections or the indexed bar.
 | [action](#action) | A row-level command | Label + optional icon/value/controls |
 | [system](#system) | Loading, retry, warning, empty/end or spacer | Variant-specific bounded status content |
 
-The style roles below describe the **declared surface**, not completion on all
-platforms. All styles extend `RowBoxStyle`: `horizontalPadding`, `verticalPadding`,
-`leadingGap`, `lineGap`, `titleBadgeGap`, `trailingGap`, `image`. Only supported
-parameters for visible slots may be relied on. In this stack, gaps other than
-`lineGap` and image overrides are applied only by Market; other coverage gaps are
-listed in STYLE_SPEC §6.5. An absent optional field is not created by styling it.
+The style roles below form the shared configurable contract on Web, iOS and
+Android. **Template** means structure and content fields; **row style** means
+allowlisted parameters applied to those existing fields. Each template exposes
+only applicable box/image parameters, listed in [STYLE_SPEC §4.1](STYLE_SPEC.md#41-shared-configurable-properties).
+All text roles share the same typography/color/alignment properties; supported
+image roles share the same dimensions/shape/fit properties. An absent optional
+field is not created by styling it. Native rendered acceptance is tracked
+separately from source implementation in STYLE_SPEC §9.
 
 ## identity
 
@@ -52,7 +54,9 @@ listed in STYLE_SPEC §6.5. An absent optional field is not created by styling i
   wallet presentation. A variant is explicit model data, never inferred from font size.
 - **Text style roles:** `title`, `subtitle`, `tertiary`, `badge`, `value`,
   `valueSecondary`. The last two refer to value accessories in `trailing`; `badge`
-  refers to badge text. They are semantic roles, not extra top-level data fields.
+  refers to badge text. `value`/`valueSecondary` select the first/second value
+  accessory, ignoring intervening controls. A `valuePair` is one accessory, so
+  its style applies to both text runs. They are semantic roles, not extra top-level data fields.
 - **Layout boundary:** reserve visual and accessory slots; text compresses within
   its own column. Styling cannot move a checkbox/menu into the title column,
   reorder accessories or convert a horizontal row into the sidebar presentation.
@@ -67,7 +71,7 @@ listed in STYLE_SPEC §6.5. An absent optional field is not created by styling i
 - **Required data:** `parent: IdentityRow`, nonempty `children: IdentityRow[]`.
   Every member must use `presentation: 'walletSidebar'`; `parent.key` must equal
   the group row's `key`, and member keys must be unique within the group.
-- **Style surface:** group `style` is box-only. Text styles belong to
+- **Style surface:** group `style` exposes horizontal/vertical padding only. Text styles belong to
   `parent.style` or the individual `children[i].style`; there is no inherited
   group `title`/`value` text style.
 - **Layout boundary:** preserve parent-first member order and wallet member
@@ -138,8 +142,8 @@ listed in STYLE_SPEC §6.5. An absent optional field is not created by styling i
 - **Layout boundary:** column order/count/weights are data, shared table column
   alignment is layout. Text styles cannot change those or move favorite/checkbox
   controls into a data column.
-- **Current gap:** native secondary styles and native table-column styles are
-  incomplete; Web slot coverage does not establish native parity.
+- **Style isolation:** primary and secondary text use independent style targets in
+  linear and table layouts on all three platforms. Column badges keep their own typography.
 
 ## market
 
@@ -191,7 +195,7 @@ listed in STYLE_SPEC §6.5. An absent optional field is not created by styling i
 - **Layout boundary:** styles cannot change the number/order of metric cells or
   turn the standard card into a composite card. Composite subfield mapping needs
   explicit coverage; do not assume `style.value` reaches every nested metric.
-- **Current gap:** nested metric fields have no declared local text-style roles.
+- **Style boundary:** nested metric fields have no declared local text-style roles on any platform.
   The standard card example alone cannot validate composite heading styling.
 
 ## sectionHeader
@@ -210,8 +214,8 @@ listed in STYLE_SPEC §6.5. An absent optional field is not created by styling i
 - **Common-capability boundary:** `sectionHeader` is the current serialized
   heading descriptor, not a header feature attached to `identity` or another
   content template. `indexTitle` supplies the shared indexed bar's label.
-- **Current gap:** Android draws sticky headers separately and excludes complex
-  headers with a value or checkbox from that path; STYLE_SPEC §6.3 records it.
+- **Pinned rendering:** the container reuses the ordinary header renderer on all
+  platforms, including headers with a value or checkbox. Summary is non-sticky.
 
 ## action
 
@@ -287,5 +291,5 @@ const snapshot: NativeListSnapshot = {
 stable row key through the shared list API. Changing the quote's content template
 while preserving a valid key/section does not introduce a new scroll API.
 
-For completion criteria and known source-level gaps, return to
-[STYLE_SPEC §6–§9](STYLE_SPEC.md#65-consolidated-implementation-gaps).
+For completion criteria and the source audit, return to
+[STYLE_SPEC §6–§9](STYLE_SPEC.md#65-consolidated-gap-audit).

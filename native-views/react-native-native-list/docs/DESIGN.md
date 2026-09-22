@@ -142,3 +142,13 @@ workloads without an unbounded self-sizing pass.
 The native list runs in the main UI runtime. OneKey's background and main
 JavaScript heaps are not shared, so this API accepts normalized serializable data
 and never depends on background-runtime object identity.
+
+### Template versus style
+
+A row template (`type` and declared variant/presentation) defines structure,
+semantic fields and interactions. `row.style` only changes allowlisted local
+properties of those fields; it does not add children or rearrange the template.
+The [shared style matrix](STYLE_SPEC.md#41-shared-configurable-properties) defines
+the same configurable properties and semantics for Web, iOS and Android.
+Header/footer placement, sections, scrolling and indexed bar belong to the
+container. The integrating developer owns content fitting and row-height choices.
