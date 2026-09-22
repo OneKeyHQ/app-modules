@@ -828,13 +828,15 @@ state before the normal template reset. This includes text metrics, color and
 alignment; iOS also restores attributed text. This avoids guessing one baseline
 for views shared by different templates. Device reuse checks remain required.
 
-Message is the first incremental renderer extraction: its native title/body/time
-styles now target the renderer's typed view bundle directly, while box styles
-and restoration still run through the existing host. Web Message owns its DOM
+Message is the first incremental renderer extraction: its renderer allocates and
+resets the native title/body/time subtree, and text styles and line gaps target
+that subtree directly. Box styles and style restoration still run through the
+existing host. Web Message owns its DOM
 structure and measurement in a separate module. All three scrolling hosts now
 partition Message from legacy reuse; style changes keep the same family, while
-cross-family template changes replace the host. Native view allocation remains
-in the existing classes. See
+cross-family template changes replace the host. The legacy native host and image
+slots are still allocated; lightweight hosts and resolved style inputs shared
+with measurement remain pending. See
 [DESIGN.md](DESIGN.md#incremental-renderer-migration) for the current ownership,
 remaining migration steps and acceptance scope.
 

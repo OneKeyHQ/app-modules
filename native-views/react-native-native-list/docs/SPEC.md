@@ -77,15 +77,16 @@ separate workload and measurements.
 | Stage | Current status | Exit condition |
 | --- | --- | --- |
 | 1. Baseline | Partial: representative Message/runtime cases exist; implicit key/default/update inventory is incomplete | Preserve each existing rule or explicitly migrate its caller |
-| 2. Message pilot | In progress: three-platform binding extraction and structural reuse families implemented | Renderer-owned lightweight views, resolved styling/measurement, update classification and lifecycle acceptance |
+| 2. Message pilot | In progress: three-platform binding/reuse families and renderer-owned text subtrees implemented; Message runtime cases verified | Lightweight native hosts, resolved styling/measurement, update classification and lifecycle acceptance |
 | 3. Simple templates | Not started | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
 | 4. Complex templates | Not started | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
 | 5. WalletGroup | Not started | Independent member renderers; verify member events/styles, compact dragging and height restoration |
 | 6. Cleanup | Not started | Remove migrated key inference and global style maps; container no longer manipulates template internals |
 
-The next Message increment moves its text subtree and typography into the
-renderer. Shared leading/thumbnail image slots and generic host lifecycle stay
-in place until their primitives are extracted. The legacy host remains allocated.
+Native Message now owns its text subtree and typography; Web owns its DOM
+structure and still uses shared CSS defaults. Shared leading/thumbnail image
+slots and generic native host lifecycle stay in place
+until their primitives are extracted. The legacy host remains allocated.
 
 Source boundaries and dated runtime evidence are in the incremental migration
 section of [DESIGN.md](DESIGN.md). Acceptance covers style set/change/clear,

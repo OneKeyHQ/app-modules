@@ -88,12 +88,17 @@ Migration begins with `message`, one platform per commit. Its current boundary:
 | Platform | Extracted | Still owned by the existing host |
 | --- | --- | --- |
 | Web | DOM structure, semantic text roles, estimated measurement in `src/web/templates/MessageRowRenderer.ts` | Shared style/asset primitives; wrapper pooling and body replacement |
-| Android | Content binding and direct title/body/time style targets in `NativeListMessageRenderer.kt` | View allocation, default typography in `applySize`, box styles, measurement and reset |
-| iOS | Content binding, direct title/body/time style targets and existing measured height in `NativeListMessageRenderer.swift` | View allocation, box styles, reset and image lifecycle |
+| Android | Text subtree allocation, default typography/reset, content binding and direct title/body/time style targets in `NativeListMessageRenderer.kt` | Legacy host allocation, image slots, box styles, measurement and style restoration |
+| iOS | Text subtree allocation, default typography/reset, content binding, semantic text targets and existing measured height in `NativeListMessageRenderer.swift` | Legacy host allocation, image slots, box styles, style restoration and image lifecycle |
 
 The migration still keeps existing platform defaults and the native monolithic
-hosts. It does **not** yet establish a renderer registry, renderer-owned native
-view allocation or complete resolved-style pipeline.
+hosts. It does **not** yet establish a renderer registry, lightweight native
+hosts or complete resolved-style pipeline. Native Message text views are now
+allocated lazily by the renderer and no longer borrow the legacy title/body/time
+slots. Their text primitives are shared with the legacy templates; line-gap
+styling targets the renderer's own column. The legacy host still allocates its
+unused text views, so this intermediate extraction makes no allocation savings
+claim. [SPEC.md](SPEC.md#conformance-and-six-stage-migration) tracks all six stages.
 The callback parameters are temporary adapters to the existing image/text
 primitives, not a public plugin API. Shared legacy slot maps still serve
 unmigrated templates and will be retired as ownership moves.
@@ -110,12 +115,12 @@ to replace an incompatible holder. Market quote and selection payloads retain
 their existing full/partial update decisions. Footer and nested-row hosts remain
 outside these scrolling pools.
 
-This is a reuse boundary, not a separate native view implementation: both native
-families still allocate the legacy cell/row class. The next Message step replaces
-the temporary adapters with shared primitives and a renderer-owned view tree,
-connects its factory to the existing reuse family, then moves update
-classification into the renderer. Preserve Market quote and selection update
-paths throughout migration.
+Both native families still allocate the legacy cell/row class. The next Message
+step extracts the remaining shared image primitives and replaces that class with
+a lightweight host for the renderer-owned tree, connecting its factory to the
+existing reuse family. Resolved styles and update classification still need to
+move into the renderer. Preserve Market quote and selection update paths
+throughout migration.
 Move the remaining simple templates only after this lifecycle works on all
 three platforms; migrate Market/Identity/Header and composed wallet groups last.
 
@@ -160,6 +165,21 @@ scrolled end/back. Style reset, image add/remove and fixed-footer placement were
 checked again. Web additionally verifies wrapper identity in regression tests;
 runtime checks included ten Web and five iOS mixed-template switching cycles.
 No browser page errors, Android crashes or iOS runtime exceptions were observed.
+
+The Message text ownership follow-up on 2026-09-22 merged main `52849b86f`,
+regenerated the ignored Image/List bindings and rebuilt both real native apps.
+The 150 package tests, typecheck, lint (zero errors), Android build/seven unit
+tests and full iOS build passed. Both native runtimes preserved the sampled
+pre-extraction title/body/time geometry. They passed style and height clearing,
+same-key template switching, content replacement, image add/remove, scrolling
+end/back, mixed-family replacement and empty/repopulation with the fixed footer.
+Additional cases set font size/weight, lineGap, horizontal/vertical alignment,
+optical offset and line limits, then cleared them or rebound empty body/time
+without recycling; no stale text remained and default geometry was restored.
+Chrome desktop and 390px RTL passed the same applicable Message cases. Runtime
+screenshots, accessibility trees and an iOS recording were retained outside the
+repository. These checks cover this text-subtree increment, not completion of
+stage 2 or full native acceptance of every template.
 
 `linear`, `sectioned`, `grid`, and `table` are observable native container
 semantics. Linear is a full-width stream. Sectioned adds a visual break before
