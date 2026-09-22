@@ -1,15 +1,15 @@
 import UIKit
 import OneKeyImage
 
-// Template-owned binding and semantic text targets. The existing cell owns
-// allocation/reset until the row-host migration replaces the legacy view tree.
+// The renderer owns its text subtree. Image slots and row constraints remain
+// borrowed from the legacy host until the shared image primitive is extracted.
 enum NativeListMessageRenderer {
-  struct Views {
+  final class Views {
     let root: UIStackView
-    let column: UIStackView
-    let title: UILabel
-    let body: UILabel
-    let time: UILabel
+    let column = UIStackView()
+    let title = NativeListTextLabel()
+    let body = NativeListTextLabel()
+    let time = NativeListInsetLabel()
     let unread: UIView
     let thumbnail: OneKeyImageReusableView
     let top: NSLayoutConstraint
@@ -18,16 +18,67 @@ enum NativeListMessageRenderer {
     let leadingHeight: NSLayoutConstraint
     let thumbnailWidth: NSLayoutConstraint
     let thumbnailHeight: NSLayoutConstraint
+
+    init(
+      root: UIStackView, unread: UIView, thumbnail: OneKeyImageReusableView,
+      top: NSLayoutConstraint, bottom: NSLayoutConstraint,
+      leadingWidth: NSLayoutConstraint, leadingHeight: NSLayoutConstraint,
+      thumbnailWidth: NSLayoutConstraint, thumbnailHeight: NSLayoutConstraint
+    ) {
+      self.root = root
+      self.unread = unread
+      self.thumbnail = thumbnail
+      self.top = top
+      self.bottom = bottom
+      self.leadingWidth = leadingWidth
+      self.leadingHeight = leadingHeight
+      self.thumbnailWidth = thumbnailWidth
+      self.thumbnailHeight = thumbnailHeight
+      column.axis = .vertical
+      column.alignment = .fill
+      column.spacing = 2
+      column.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
+      column.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+      // Keep the existing title line's layout priorities without Market badges.
+      let titleLine = UIStackView(arrangedSubviews: [title])
+      titleLine.axis = .horizontal
+      titleLine.alignment = .center
+      titleLine.setContentHuggingPriority(.defaultLow, for: .horizontal)
+      titleLine.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+      title.setContentHuggingPriority(.defaultLow, for: .horizontal)
+      title.setContentCompressionResistancePriority(.required, for: .horizontal)
+      [titleLine, body, time].forEach(column.addArrangedSubview)
+    }
+
+    func resetText(theme: [String: Any]?) {
+      for label in [title, body, time] {
+        label.attributedText = nil
+        label.text = nil
+        label.isHidden = true
+        label.textAlignment = .natural
+        label.lineBreakMode = .byTruncatingTail
+        label.rowVerticalAlignment = nil
+        label.rowOffsetY = 0
+      }
+      title.font = nativeListFont(ofSize: 14, weight: .semibold)
+      body.font = nativeListFont(ofSize: 14)
+      time.font = nativeListFont(ofSize: 12)
+      title.textColor = nativeListColor(theme, "primaryText", "#202020")
+      body.textColor = nativeListColor(theme, "secondaryText", "#646464")
+      time.textColor = nativeListColor(theme, "disabledText", "#8D8D8D")
+      time.lineBreakMode = .byWordWrapping
+      time.topInset = 2
+    }
   }
 
   static func bind(
     _ views: Views, item: NativeListItem, theme: [String: Any]?,
     show: (UILabel, String, Int) -> Void,
     lineHeight: (UILabel, String, CGFloat) -> Void,
-    timeInset: (CGFloat) -> Void,
     leading: ([String: Any]) -> Void,
     image: ([String: Any], OneKeyImageReusableView) -> Void
   ) {
+    views.resetText(theme: theme)
     views.root.alignment = .top
     views.top.constant = 16
     views.bottom.constant = -16
@@ -37,15 +88,10 @@ enum NativeListMessageRenderer {
     views.unread.isHidden = !item.data.bool("unread")
     views.root.addArrangedSubview(views.column)
     show(views.title, item.data.string("title"), 2)
-    views.title.font = nativeListFont(ofSize: 14, weight: .semibold)
     lineHeight(views.title, item.data.string("title"), 20)
     show(views.body, item.data.string("body"), min(3, max(1, item.data.int("bodyLines", default: 3))))
-    views.body.font = nativeListFont(ofSize: 14)
     lineHeight(views.body, item.data.string("body"), 20)
     show(views.time, item.data.string("time"), 1)
-    views.time.font = nativeListFont(ofSize: 12)
-    views.time.textColor = nativeListColor(theme, "disabledText", "#8D8D8D")
-    timeInset(2)
     lineHeight(views.time, item.data.string("time"), 16)
     if let source = item.data.dictionary("thumbnail") {
       views.root.addArrangedSubview(views.thumbnail)

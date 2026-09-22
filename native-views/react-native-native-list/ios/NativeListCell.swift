@@ -193,47 +193,6 @@ private final class NativeListAccessoryButton: UIButton {
   }
 }
 
-private class NativeListTextLabel: UILabel {
-  var rowVerticalAlignment: String? { didSet { setNeedsDisplay() } }
-  var rowOffsetY: CGFloat = 0 { didSet { setNeedsDisplay() } }
-
-  override func drawText(in rect: CGRect) {
-    var target = rect
-    if let alignment = rowVerticalAlignment {
-      let height = super.textRect(forBounds: rect, limitedToNumberOfLines: numberOfLines).height
-      target.origin.y += alignment == "top" ? 0 : alignment == "bottom" ? rect.height - height : (rect.height - height) / 2
-      target.size.height = height
-    }
-    target.origin.y += rowOffsetY
-    super.drawText(in: target)
-  }
-}
-
-private final class NativeListInsetLabel: NativeListTextLabel {
-  var horizontalInset: CGFloat = 0
-  var topInset: CGFloat = 0
-  var bottomInset: CGFloat = 0
-
-  override var intrinsicContentSize: CGSize {
-    let size = super.intrinsicContentSize
-    return CGSize(
-      width: size.width + horizontalInset * 2,
-      height: size.height + topInset + bottomInset
-    )
-  }
-
-  override func drawText(in rect: CGRect) {
-    super.drawText(in: rect.inset(
-      by: UIEdgeInsets(
-        top: topInset,
-        left: horizontalInset,
-        bottom: bottomInset,
-        right: horizontalInset
-      )
-    ))
-  }
-}
-
 private final class NativeListDottedUnderlineLabel: NativeListTextLabel {
   var showsDottedUnderline = false {
     didSet { setNeedsLayout() }
@@ -2234,22 +2193,18 @@ final class NativeListCell: UICollectionViewCell {
     }
   }
 
-  private var messageViews: NativeListMessageRenderer.Views {
-    NativeListMessageRenderer.Views(
-      root: rootStack, column: mainStack, title: titleLabel, body: subtitleLabel,
-      time: statusLabel, unread: unreadDot, thumbnail: secondaryImage,
-      top: rootTopConstraint, bottom: rootBottomConstraint,
-      leadingWidth: leadingWidth, leadingHeight: leadingHeight,
-      thumbnailWidth: secondaryWidth, thumbnailHeight: secondaryHeight
-    )
-  }
+  private lazy var messageViews = NativeListMessageRenderer.Views(
+    root: rootStack, unread: unreadDot, thumbnail: secondaryImage,
+    top: rootTopConstraint, bottom: rootBottomConstraint,
+    leadingWidth: leadingWidth, leadingHeight: leadingHeight,
+    thumbnailWidth: secondaryWidth, thumbnailHeight: secondaryHeight
+  )
 
   private func bindMessage(_ item: NativeListItem, theme: [String: Any]?) {
     NativeListMessageRenderer.bind(
       messageViews, item: item, theme: theme,
       show: show,
       lineHeight: { self.setLineHeight($0, text: $1, lineHeight: $2) },
-      timeInset: { self.statusLabel.topInset = $0 },
       leading: { self.addLeading($0, key: item.key) },
       image: { self.bindImage($0, into: $1, token: item.key, slot: 0, variant: "generic") }
     )
@@ -2448,9 +2403,9 @@ final class NativeListCell: UICollectionViewCell {
     }
     if style["lineGap"] != nil, item.type != "walletGroup", item.type != "dataRow" {
       let gap = CGFloat(style.double("lineGap"))
-      styleGap(mainStack, gap)
+      styleGap(item.type == "message" ? messageViews.column : mainStack, gap)
       if item.type == "message" {
-        let label = statusLabel
+        let label = messageViews.time
         let inset = label.topInset
         styledTextRestorations.append { label.topInset = inset }
         label.topInset = 0
