@@ -1,12 +1,9 @@
 package com.margelo.nitro.nativelist
 
-import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Outline
-import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.LinearLayout
@@ -15,13 +12,6 @@ import kotlin.math.roundToInt
 import org.json.JSONObject
 
 internal object NativeListMessageRenderer {
-  enum class Update {
-    UNCHANGED,
-    CONTENT,
-    ASSETS,
-    REPLACE,
-  }
-
   data class Resolved(
     val title: NativeListResolvedText,
     val body: NativeListResolvedText,
@@ -96,19 +86,6 @@ internal object NativeListMessageRenderer {
         else -> Gravity.TOP
       },
     )
-  }
-
-  fun update(old: NativeListItem?, next: NativeListItem): Update {
-    if (old == null || old.key != next.key || old.rendererKey != next.rendererKey)
-      return Update.REPLACE
-    if (old.content == next.content) return Update.UNCHANGED
-    if (
-      listOf("leading", "thumbnail").any {
-        nativeListCanonical(old.json.opt(it)) != nativeListCanonical(next.json.opt(it))
-      }
-    )
-      return Update.ASSETS
-    return Update.CONTENT
   }
 
   class Views(private val context: ThemedReactContext) {
@@ -229,237 +206,27 @@ internal object NativeListMessageRenderer {
   }
 }
 
-internal class NativeListMessageRowView(private val reactContext: ThemedReactContext) :
-  NativeListRowHost(reactContext) {
-  private val views = NativeListMessageRenderer.Views(reactContext)
-  private var current: NativeListItem? = null
-  private var theme: JSONObject? = null
-  private var listLayout = "linear"
-  private var selected = false
-  private var sourceScale = false
-  private var inputSignature = ""
-  private var explicitHeight: Int? = null
-  private var touchPressed = false
-  private val separator = Paint(Paint.ANTI_ALIAS_FLAG)
+internal class NativeListMessageRowView(context: ThemedReactContext) :
+  NativeListRendererRowView(context) {
+  override val assetFields = listOf("leading", "thumbnail")
+  private val views = NativeListMessageRenderer.Views(context)
 
-  private fun dp(value: Int) =
-    if (sourceScale) (value * resources.displayMetrics.density).roundToInt()
-    else NativeListScale.dp(resources, value)
-
-  private fun stylePx(value: Double) = (value * resources.displayMetrics.density).roundToInt()
-
-  private fun color(value: String, fallback: Int = Color.TRANSPARENT) =
-    runCatching { parseNativeListColor(value) }.getOrDefault(fallback)
-
-  init {
-    orientation = HORIZONTAL
-    setOnClickListener {
-      current
-        ?.takeIf { it.isRowPressEnabled }
-        ?.let { onRowPress?.invoke(it, NativeListActionOrigin(this, this, bindingEpoch, "row")) }
-    }
-    setOnTouchListener { _, event ->
-      when (event.actionMasked) {
-        MotionEvent.ACTION_DOWN -> touchPressed = current?.isRowPressEnabled == true
-        MotionEvent.ACTION_UP,
-        MotionEvent.ACTION_CANCEL -> touchPressed = false
-      }
-      appearance()
-      false
-    }
-  }
-
-  override fun bind(
+  override fun bindContent(
     item: NativeListItem,
     theme: JSONObject?,
     layout: String,
-    listOrientation: String,
-    itemIndex: Int?,
-    selected: Boolean,
-    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
-    useSourceScale: Boolean,
-  ) {
-    val update = NativeListMessageRenderer.update(current, item)
-    val signature =
-      nativeListCanonical(
-        JSONObject()
-          .put("theme", theme)
-          .put("layout", layout)
-          .put("orientation", listOrientation)
-          .put("sourceScale", useSourceScale)
-          .put("listStyle", listStyle)
-      )
-    sourceScale = useSourceScale
-    if (update != NativeListMessageRenderer.Update.UNCHANGED || signature != inputSignature) {
-      if (current != null) onBindingInvalidated?.invoke(this, bindingEpoch)
-      bindingEpoch++
-      if (update == NativeListMessageRenderer.Update.REPLACE) {
-        views.recycle()
-        touchPressed = false
-      }
-      views.bind(
-        this,
-        NativeListMessageRenderer.resolve(reactContext, item, theme, sourceScale),
-        item,
-        theme,
-        sourceScale,
-      )
-      inputSignature = signature
-    }
-    current = item
-    tag = item
-    this.theme = theme
-    listLayout = layout
-    this.selected = selected
-    explicitHeight =
-      item.styledHeight?.let(::stylePx)
-        ?: if (item.json.has("height"))
-          when (item.json.optString("heightRounding")) {
-            "floor" -> (item.json.optDouble("height") * resources.displayMetrics.density).toInt()
-            "nearest" -> stylePx(item.json.optDouble("height"))
-            else -> dp(item.json.optInt("height"))
-          }
-        else null
-    minimumHeight =
-      if (explicitHeight == null && item.json.optString("size") == "large") dp(12) else 0
-    layoutParams =
-      (layoutParams
-          ?: android.view.ViewGroup.LayoutParams(
-            LayoutParams.MATCH_PARENT,
-            LayoutParams.WRAP_CONTENT,
-          ))
-        .apply {
-          width = if (listOrientation == "horizontal") dp(280) else LayoutParams.MATCH_PARENT
-          height = LayoutParams.WRAP_CONTENT
-        }
-    contentDescription = item.json.optString("accessibilityLabel", item.json.optString("title"))
-    setTag(
-      com.facebook.react.R.id.react_test_id,
-      item.json.optString("testID").takeIf { it.isNotEmpty() },
-    )
-    isEnabled = !item.json.optBoolean("disabled")
-    isClickable = item.isWholeRowInteractive
-    isFocusable = isClickable
-    if (!isEnabled) touchPressed = false
-    appearance()
-    requestLayout()
-  }
-
-  override fun bindSelection(
-    item: NativeListItem,
-    theme: JSONObject?,
-    layout: String,
-    itemIndex: Int?,
-    selected: Boolean,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
-    if (current?.key != item.key) return
-    current = item
-    tag = item
-    this.theme = theme
-    this.selected = selected
-    listLayout = layout
-    appearance()
-  }
-
-  private fun appearance() {
-    val item = current ?: return
-    val container = item.json.optJSONObject("style")?.optJSONObject("container") ?: JSONObject()
-    val showSelected = selected && (listLayout != "sectioned" || item.json.optBoolean("selected"))
-    val backgroundName =
-      if (touchPressed) "rowPressedBackground"
-      else if (showSelected) "rowSelectedBackground" else "rowBackground"
-    val backgroundFallback =
-      if (touchPressed) "#00000017" else if (showSelected) "#0000000F" else "#FFFFFF"
-    var fill = color(theme?.optString(backgroundName, backgroundFallback) ?: backgroundFallback)
-    if (!touchPressed) {
-      if (item.json.has("backgroundColor"))
-        fill = color(item.json.optString("backgroundColor"), fill)
-      if (container.has("backgroundColor"))
-        fill = color(container.optString("backgroundColor"), fill)
-    }
-    val position = item.json.optString("groupPosition")
-    val radius =
-      if (container.has("cornerRadius")) stylePx(container.optDouble("cornerRadius")).toFloat()
-      else if (listStyle?.has("groupCornerRadius") == true)
-        stylePx(listStyle!!.optDouble("groupCornerRadius")).toFloat()
-      else dp(12).toFloat()
-    val top = container.has("cornerRadius") || position in setOf("first", "single")
-    val bottom = container.has("cornerRadius") || position in setOf("last", "single")
-    val radii = FloatArray(8) { if (it < 4 && top || it >= 4 && bottom) radius else 0f }
-    outlineProvider = ViewOutlineProvider.BACKGROUND
-    clipToOutline = container.has("cornerRadius")
-    background =
-      GradientDrawable().apply {
-        setColor(fill)
-        cornerRadii = radii
-      }
-    foreground =
-      if (container.has("borderWidth"))
-        GradientDrawable().apply {
-          setColor(Color.TRANSPARENT)
-          cornerRadii = radii
-          setStroke(
-            stylePx(container.optDouble("borderWidth")),
-            color(container.optString("borderColor", "#00000000")),
-          )
-        }
-      else null
-    alpha =
-      container.optDouble("opacity", item.json.optDouble("opacity", 1.0)).toFloat() *
-        if (isEnabled) 1f else 0.5f
-    separator.color =
-      color(
-        listStyle
-          ?.optJSONObject("separator")
-          ?.optString("color", theme?.optString("separator", "#0000001F") ?: "#0000001F")
-          ?: theme?.optString("separator", "#0000001F")
-          ?: "#0000001F"
-      )
-    separator.strokeWidth = 1f
-    invalidate()
-  }
-
-  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-    // Android's native measurement consumes the exact resolved text/image views.
-    super.onMeasure(
-      widthMeasureSpec,
-      explicitHeight?.let { MeasureSpec.makeMeasureSpec(it, MeasureSpec.EXACTLY) }
-        ?: heightMeasureSpec,
+    views.bind(
+      this,
+      NativeListMessageRenderer.resolve(reactContext, item, theme, sourceScale),
+      item,
+      theme,
+      sourceScale,
     )
   }
 
-  override fun dispatchDraw(canvas: Canvas) {
-    super.dispatchDraw(canvas)
-    current?.takeIf(::nativeListLegacyShowsSeparator)?.let {
-      val start =
-        listStyle
-          ?.optJSONObject("separator")
-          ?.takeIf { it.has("inset") }
-          ?.let { stylePx(it.optDouble("inset")) } ?: dp(12)
-      canvas.drawLine(start.toFloat(), height - 1f, width.toFloat(), height - 1f, separator)
-    }
-  }
+  override fun recycleContent() = views.recycle()
 
-  override fun onInitializeAccessibilityNodeInfo(
-    info: android.view.accessibility.AccessibilityNodeInfo
-  ) {
-    super.onInitializeAccessibilityNodeInfo(info)
-    info.viewIdResourceName = getTag(com.facebook.react.R.id.react_test_id) as? String
-  }
-
-  override fun recycle() {
-    if (current != null) onBindingInvalidated?.invoke(this, bindingEpoch)
-    bindingEpoch++
-    current = null
-    tag = null
-    inputSignature = ""
-    touchPressed = false
-    views.recycle()
-  }
-
-  override fun dispose() {
-    recycle()
-    views.dispose()
-  }
+  override fun disposeContent() = views.dispose()
 }

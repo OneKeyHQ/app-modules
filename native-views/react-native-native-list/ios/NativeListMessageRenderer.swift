@@ -1,7 +1,6 @@
 import UIKit
 
 enum NativeListMessageRenderer {
-  enum Update { case unchanged, content, assets, replace }
   struct Resolved {
     let title: NativeListResolvedText
     let body: NativeListResolvedText
@@ -66,7 +65,7 @@ enum NativeListMessageRenderer {
   }
 
   final class Views {
-    let root = UIStackView()
+    let root: UIStackView
     let column = UIStackView()
     let title = NativeListTextLabel()
     let body = NativeListTextLabel()
@@ -75,7 +74,8 @@ enum NativeListMessageRenderer {
     private var thumbnail: NativeListImageSlot?
     private var sizeConstraints: [NSLayoutConstraint] = []
 
-    init() {
+    init(root: UIStackView = UIStackView()) {
+      self.root = root
       root.axis = .horizontal
       root.spacing = 12
       column.axis = .vertical
@@ -140,160 +140,22 @@ enum NativeListMessageRenderer {
     }
   }
 
-  static func update(from old: NativeListItem?, to new: NativeListItem) -> Update {
-    guard let old, old.key == new.key, old.rendererKey == new.rendererKey else { return .replace }
-    if old.content == new.content { return .unchanged }
-    for field in ["leading", "thumbnail"] {
-      if NativeListImageSlot.signature(old.data.dictionary(field) ?? [:])
-        != NativeListImageSlot.signature(new.data.dictionary(field) ?? [:])
-      {
-        return .assets
-      }
-    }
-    return .content
-  }
 }
 
-final class NativeListMessageCell: NativeListRowHost {
-  private let views = NativeListMessageRenderer.Views()
-  private let separator = UIView()
-  private let fullWidthBackground = CALayer()
-  private var rootConstraints: [NSLayoutConstraint] = []
-  private var item: NativeListItem?
-  private var theme: [String: Any]?
-  private var layout = "linear"
-  private var selectedState = false
-  private var inputSignature = ""
-
-  override init(frame: CGRect) {
-    super.init(frame: frame)
-    views.root.translatesAutoresizingMaskIntoConstraints = false
-    contentView.addSubview(views.root)
-    contentView.addSubview(separator)
-    rootConstraints = [
-      views.root.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-      views.root.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-      views.root.topAnchor.constraint(equalTo: contentView.topAnchor),
-      views.root.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-    ]
-    NSLayoutConstraint.activate(rootConstraints)
-  }
+final class NativeListMessageCell: NativeListRendererCell {
+  override var assetFields: [String] { ["leading", "thumbnail"] }
+  private lazy var views = NativeListMessageRenderer.Views(root: root)
+  override init(frame: CGRect) { super.init(frame: frame) }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-  override func bind(
-    item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int? = nil,
-    selected: Bool, checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
-  ) {
-    let update = NativeListMessageRenderer.update(from: self.item, to: item)
-    let signature = NativeListImageSlot.signature([
-      "theme": theme ?? [:], "layout": layout, "listStyle": listStyle ?? [:],
-    ])
-    if update != .unchanged || signature != inputSignature {
-      if self.item != nil { onBindingInvalidated?(self, bindingEpoch) }
-      bindingEpoch &+= 1
-      if update == .replace {
-        views.recycle()
-        isHighlighted = false
-      }
-      let resolved = NativeListMessageRenderer.Resolved(item, theme: theme, layout: layout)
-      views.bind(resolved, item: item, theme: theme)
-      rootConstraints[0].constant = resolved.horizontalPadding
-      rootConstraints[1].constant = -resolved.horizontalPadding
-      rootConstraints[2].constant = resolved.verticalPadding
-      rootConstraints[3].constant = -resolved.verticalPadding
-      inputSignature = signature
-    }
-    self.item = item
-    self.theme = theme
-    self.layout = layout
-    self.selectedState = selected
-    accessibilityLabel = item.data.string("accessibilityLabel", default: item.data.string("title"))
-    accessibilityIdentifier = item.data["testID"] as? String
-    isUserInteractionEnabled = !item.data.bool("disabled")
-    if !isUserInteractionEnabled { isHighlighted = false }
-    applyAppearance()
-    setNeedsLayout()
-  }
-
-  override func updateSelection(
-    item: NativeListItem, selected: Bool,
+  override func bindContent(
+    _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
-    guard self.item?.key == item.key else { return }
-    self.item = item
-    self.selectedState = selected
-    applyAppearance()
+    let resolved = NativeListMessageRenderer.Resolved(item, theme: theme, layout: layout)
+    views.bind(resolved, item: item, theme: theme)
+    contentInsets = UIEdgeInsets(
+      top: resolved.verticalPadding, left: resolved.horizontalPadding,
+      bottom: resolved.verticalPadding, right: resolved.horizontalPadding)
   }
-  override var isHighlighted: Bool { didSet { applyAppearance() } }
-
-  private func applyAppearance() {
-    guard let item else { return }
-    let container = item.data.dictionary("style")?.dictionary("container") ?? [:]
-    let showSelection = selectedState && (layout != "sectioned" || item.data.bool("selected"))
-    var background = nativeListColor(
-      theme, showSelection ? "rowSelectedBackground" : "rowBackground",
-      showSelection ? "#F0F0F0" : "#FFFFFF")
-    if let color = (container["backgroundColor"] ?? item.data["backgroundColor"]) as? String {
-      background = UIColor(nativeListHex: color, fallback: background)
-    }
-    contentView.backgroundColor =
-      isHighlighted ? nativeListColor(theme, "rowPressedBackground", "#E8E8E8") : background
-    contentView.alpha =
-      CGFloat(container.double("opacity", default: item.data.double("opacity", default: 1)))
-      * (item.data.bool("disabled") ? 0.5 : 1)
-    let position = item.data.string("groupPosition")
-    let grouped = ["first", "last", "single"].contains(position)
-    let radius = CGFloat(
-      container.double(
-        "cornerRadius",
-        default: grouped ? listStyle?.double("groupCornerRadius", default: 12) ?? 12 : 0))
-    let top: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-    let bottom: CACornerMask = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-    layer.maskedCorners =
-      container["cornerRadius"] != nil || position == "single"
-      ? top.union(bottom) : position == "first" ? top : position == "last" ? bottom : []
-    layer.cornerRadius = radius
-    layer.masksToBounds = radius > 0
-    contentView.layer.cornerRadius = radius
-    contentView.layer.maskedCorners = layer.maskedCorners
-    contentView.layer.borderWidth = CGFloat(container.double("borderWidth"))
-    contentView.layer.borderColor =
-      UIColor(
-        nativeListHex: container.string("borderColor", default: "#00000000"), fallback: .clear
-      ).cgColor
-    if item.data.bool("backgroundFullWidth"),
-      let fill = (container["backgroundColor"] ?? item.data["backgroundColor"]) as? String
-    {
-      fullWidthBackground.backgroundColor = UIColor(nativeListHex: fill, fallback: .clear).cgColor
-      contentView.layer.insertSublayer(fullWidthBackground, at: 0)
-      clipsToBounds = false
-    } else {
-      fullWidthBackground.removeFromSuperlayer()
-    }
-    separator.isHidden = !item.data.bool("separator")
-    separator.backgroundColor = UIColor(
-      nativeListHex: listStyle?.dictionary("separator")?.string(
-        "color", default: theme?.string("separator", default: "#E0E0E0") ?? "#E0E0E0") ?? theme?
-        .string("separator", default: "#E0E0E0") ?? "#E0E0E0", fallback: .lightGray)
-  }
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    fullWidthBackground.frame = CGRect(
-      x: -frame.minX, y: 0, width: superview?.bounds.width ?? bounds.width, height: bounds.height)
-    let inset = CGFloat(listStyle?.dictionary("separator")?.double("inset", default: 12) ?? 12)
-    separator.frame = CGRect(
-      x: effectiveUserInterfaceLayoutDirection == .rightToLeft ? 0 : inset,
-      y: contentView.bounds.height - 1 / UIScreen.main.scale,
-      width: max(0, contentView.bounds.width - inset), height: 1 / UIScreen.main.scale)
-  }
-  override func prepareForReuse() {
-    super.prepareForReuse()
-    if item != nil { onBindingInvalidated?(self, bindingEpoch) }
-    bindingEpoch &+= 1
-    item = nil
-    inputSignature = ""
-    views.recycle()
-    fullWidthBackground.removeFromSuperlayer()
-    isHighlighted = false
-  }
+  override func recycleContent() { views.recycle() }
 }

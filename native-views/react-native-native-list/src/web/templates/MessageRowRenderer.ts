@@ -1,16 +1,6 @@
-import type {
-  ImageSource,
-  LeadingVisual,
-  MessageRow,
-  NativeListTextStyle,
-} from '../../models';
-
-export type MessagePrimitives = Readonly<{
-  visual: (source: LeadingVisual | undefined) => HTMLElement | undefined;
-  thumbnail: (source: ImageSource) => HTMLElement | undefined;
-  textStyle: (element: HTMLElement, style: NativeListTextStyle) => void;
-  dispose: (element: HTMLElement) => void;
-}>;
+import { RowVisualStyle } from './RowVisual';
+import type { RowPrimitives } from './RowVisual';
+import type { MessageRow, NativeListTextStyle } from '../../models';
 
 type Text = Readonly<{
   value: string;
@@ -91,20 +81,10 @@ type Views = {
   thumbnailIdentity: string;
   // Factory defaults are captured before any caller style is applied. They are
   // never inferred from the previous bound row's styled state.
-  visualDefaults: Map<HTMLElement, Record<string, string>>;
+  visualStyle?: RowVisualStyle;
   row?: MessageRow;
-  primitives: MessagePrimitives;
+  primitives: RowPrimitives;
 };
-const visualStyleKeys = [
-  'width',
-  'height',
-  'flex-basis',
-  'border-radius',
-  'overflow',
-  'object-fit',
-  'margin-inline-end',
-  'align-self',
-];
 const viewsByBody = new WeakMap<HTMLElement, Views>();
 const identity = (key: string, source: unknown) =>
   JSON.stringify([key, source]);
@@ -126,7 +106,7 @@ export function classifyMessageUpdate(
 export function bindMessageRow(
   body: HTMLElement,
   row: MessageRow,
-  primitives: MessagePrimitives
+  primitives: RowPrimitives
 ): void {
   const views = viewsByBody.get(body);
   if (!views) throw new Error('Message renderer received an incompatible body');
@@ -166,68 +146,18 @@ export function bindMessageRow(
     }
     views.leading = primitives.visual(row.leading);
     views.leadingIdentity = leadingIdentity;
-    views.visualDefaults.clear();
+    views.visualStyle = undefined;
     if (views.leading) {
       body.insertBefore(views.leading, body.firstChild);
-      [
-        views.leading,
-        ...views.leading.querySelectorAll<HTMLElement>('*'),
-      ].forEach((view) =>
-        views.visualDefaults.set(
-          view,
-          Object.fromEntries(
-            visualStyleKeys.map((key) => [
-              key,
-              view.style.getPropertyValue(key),
-            ])
-          )
-        )
-      );
+      views.visualStyle = new RowVisualStyle(views.leading);
     }
   }
-  if (views.leading) {
-    views.visualDefaults.forEach((style, view) => {
-      visualStyleKeys.forEach((key) => {
-        view.style.removeProperty(key);
-        if (style[key]) view.style.setProperty(key, style[key]!);
-      });
-    });
-    const leading = views.leading;
-    leading.style.width = `${resolved.imageWidth}px`;
-    leading.style.height = `${resolved.imageHeight}px`;
-    leading.style.flexBasis = `${resolved.imageWidth}px`;
-    leading.style.marginInlineEnd = `${resolved.leadingGap - 12}px`;
-    const image = resolved.image;
-    const radius =
-      image?.cornerRadius !== undefined
-        ? `${image.cornerRadius}px`
-        : image?.shape === 'circle'
-        ? '50%'
-        : image?.shape === 'square'
-        ? '0px'
-        : image?.shape === 'rounded'
-        ? '10px'
-        : undefined;
-    if (radius !== undefined) {
-      leading.style.setProperty('border-radius', radius, 'important');
-      leading.style.overflow = leading.matches('img') ? 'hidden' : 'visible';
-    }
-    const images = leading.matches('img')
-      ? [leading]
-      : leading.querySelectorAll<HTMLElement>(
-          ':scope > img:not(.ok-native-list-visual-corner), :scope > .ok-native-list-visual-fallback:not(.ok-native-list-visual-corner)'
-        );
-    images.forEach((bitmap) => {
-      if (bitmap !== leading) {
-        if (image?.width !== undefined) bitmap.style.width = '100%';
-        if (image?.height !== undefined) bitmap.style.height = '100%';
-      }
-      if (radius !== undefined) bitmap.style.borderRadius = radius;
-      if (image?.contentFit)
-        bitmap.style.objectFit =
-          image.contentFit === 'center' ? 'none' : image.contentFit;
-    });
-  }
+  views.visualStyle?.apply(
+    resolved.image,
+    resolved.imageWidth,
+    resolved.imageHeight,
+    resolved.leadingGap - 12
+  );
   const thumbnailIdentity = identity(row.key, row.thumbnail);
   if (thumbnailIdentity !== views.thumbnailIdentity) {
     if (views.thumbnail) {
@@ -247,7 +177,7 @@ export function bindMessageRow(
 export function createMessageRow(
   document: Document,
   row: MessageRow,
-  primitives: MessagePrimitives
+  primitives: RowPrimitives
 ): HTMLElement {
   const span = (className: string, role?: string) => {
     const view = document.createElement('span');
@@ -272,7 +202,6 @@ export function createMessageRow(
     unread: span('ok-native-list-unread'),
     leadingIdentity: '',
     thumbnailIdentity: '',
-    visualDefaults: new Map(),
     primitives,
   });
   bindMessageRow(body, row, primitives);
@@ -295,7 +224,7 @@ export function recycleMessageRow(body: HTMLElement): void {
   views.row = undefined;
   views.leadingIdentity = '';
   views.thumbnailIdentity = '';
-  views.visualDefaults.clear();
+  views.visualStyle = undefined;
 }
 
 export function measureMessageRow(
