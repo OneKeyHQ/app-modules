@@ -78,7 +78,7 @@ separate workload and measurements.
 | --- | --- | --- |
 | 1. Baseline | Complete: [implicit keys, defaults, special updates and acceptance baseline](MIGRATION_BASELINE.md) inventoried | Preserve each existing rule or explicitly migrate its caller |
 | 2. Message pilot | Complete: registered lightweight native hosts, persistent Web body, resolved styling/measurement and lifecycle acceptance | Lightweight native hosts, resolved styling/measurement, update classification and lifecycle acceptance |
-| 3. Simple templates | Not started | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
+| 3. Simple templates | In progress: migrate one template across all three platforms per increment | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
 | 4. Complex templates | Not started | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
 | 5. WalletGroup | Not started | Independent member renderers; verify member events/styles, compact dragging and height restoration |
 | 6. Cleanup | Not started | Remove migrated key inference and global style maps; container no longer manipulates template internals |
@@ -112,3 +112,14 @@ binding without recycle, same-key template changes, image add/remove, scrolling
 away/back, explicit height restoration and fixed-footer placement. Unit/type
 checks are not native runtime verification, and Message acceptance does not
 complete the remaining stages.
+
+Stage 3 extends the closed registry one template at a time. Migrated templates
+own their view trees and semantic styles; native templates share the Message
+host's appearance/event lifecycle and bounded image primitives, not a legacy
+view tree. Preserve existing default geometry, variant behavior, actions,
+selection echo and platform differences. Horizontal sizing belongs to each
+renderer and must use its resolved text/image/spacing inputs. A style change
+must invalidate horizontal placement when its measured width changes. Fixed
+template height defaults remain defaults, not automatic content fitting.
+DataRow keeps the inventoried `asset`-column Web badge behavior until a separate
+caller migration; this extraction does not change which column owns badges.
