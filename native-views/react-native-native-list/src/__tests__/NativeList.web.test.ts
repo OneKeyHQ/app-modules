@@ -996,9 +996,74 @@ describe('web row style', () => {
       );
       expect(item().querySelector('[data-nl-slot="body"]')).toBeNull();
       expect(item().querySelector('[data-nl-slot="time"]')).toBeNull();
+      expect(item()).not.toBe(wrapper);
+      expect(wrapper.isConnected).toBe(false);
       engine.applySnapshot(snapshot({ kind: 'sectioned' }, [message]));
+      expect(item()).toBe(wrapper);
       expect(item().style.height).toBe('136px');
       expect(body().textContent).toBe('One Two Three');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('reuses only compatible row hosts after removal, insertion and index changes', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const message = {
+      type: 'message',
+      key: 'old-message',
+      title: 'Old',
+      body: 'Old body',
+      time: 'Now',
+      style: { container: { height: 192 }, body: { color: '#FF0000' } },
+    } as const;
+    const identity = {
+      type: 'identity',
+      key: 'identity',
+      title: 'Identity',
+      leading: { kind: 'icon', name: 'StarOutline' },
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [message, identity]),
+      {},
+      false
+    );
+    const item = (key: string) =>
+      host.querySelector<HTMLElement>(`[data-native-list-row-key="${key}"]`)!;
+    try {
+      const messageHost = item(message.key);
+      const identityHost = item(identity.key);
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, []));
+      expect(messageHost.isConnected).toBe(false);
+      expect(identityHost.isConnected).toBe(false);
+      const replacement = {
+        type: 'message',
+        key: 'new-message',
+        title: 'New',
+        body: 'Fresh',
+        time: 'Later',
+        height: 136,
+      } as const;
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [identity, replacement])
+      );
+      expect(item(identity.key)).toBe(identityHost);
+      expect(item(replacement.key)).toBe(messageHost);
+      expect(messageHost.style.height).toBe('136px');
+      expect(
+        messageHost.querySelector<HTMLElement>('[data-nl-slot="body"]')!.style
+          .color
+      ).toBe('');
+      expect(messageHost.textContent).toContain('Fresh');
+      expect(messageHost.textContent).not.toContain('Old body');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [replacement, identity])
+      );
+      expect(item(identity.key)).toBe(identityHost);
+      expect(item(replacement.key)).toBe(messageHost);
     } finally {
       engine.destroy();
     }

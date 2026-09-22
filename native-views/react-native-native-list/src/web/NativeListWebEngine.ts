@@ -4095,6 +4095,14 @@ export function createRowBody(
   }
 }
 
+// Only Message has begun renderer migration. The other templates still share
+// the legacy view tree; data keys and style values never partition reuse.
+type RowRendererKey = 'legacy' | 'message';
+
+function rowRendererKey(row: RowModel): RowRendererKey {
+  return row.type === 'message' ? 'message' : 'legacy';
+}
+
 export class NativeListWebEngine {
   private readonly document: Document;
   private readonly root: HTMLElement;
@@ -4119,7 +4127,11 @@ export class NativeListWebEngine {
     horizontal: false,
   };
   private readonly mounted = new Map<number, HTMLElement>();
-  private readonly pool: HTMLElement[] = [];
+  private readonly pool: Record<RowRendererKey, HTMLElement[]> = {
+    legacy: [],
+    message: [],
+  };
+  private readonly rendererKeys = new WeakMap<HTMLElement, RowRendererKey>();
   private frameHandle: number | undefined;
   private resizeObserver: ResizeObserver | undefined;
   private sectionIndexTransformObserver: MutationObserver | undefined;
@@ -4561,14 +4573,18 @@ export class NativeListWebEngine {
     this.viewport.removeEventListener('pointercancel', this.handlePullEnd);
     const host = this.root.parentElement;
     disposeWebImageRetries(this.root);
-    this.pool.forEach(disposeWebImageRetries);
+    Object.values(this.pool).forEach((elements) =>
+      elements.forEach(disposeWebImageRetries)
+    );
     this.root.remove();
     this.indexRail.remove();
     this.hideReorderPreview();
     this.reorderPreview.remove();
     if (host) host.style.position = this.previousHostPosition;
     this.mounted.clear();
-    this.pool.length = 0;
+    Object.values(this.pool).forEach((elements) => {
+      elements.length = 0;
+    });
     this.avatarLeases.forEach((release) => release());
     this.avatarLeases.clear();
   }
@@ -4781,13 +4797,19 @@ export class NativeListWebEngine {
     );
     const desired = new Set(visible.map((item) => item.index));
     this.mounted.forEach((element, index) => {
-      if (!desired.has(index)) {
+      const nextRow = this.rows[index];
+      const rendererKey = this.rendererKeys.get(element);
+      if (
+        !desired.has(index) ||
+        !nextRow ||
+        rendererKey !== rowRendererKey(nextRow)
+      ) {
         this.invalidateActionAnchorForElement(element);
         this.mounted.delete(index);
         if (disposeWebImageRetries(element))
           element.removeAttribute('data-render-signature');
         element.remove();
-        this.pool.push(element);
+        if (rendererKey) this.pool[rendererKey].push(element);
       }
     });
 
@@ -4796,9 +4818,11 @@ export class NativeListWebEngine {
       if (!row) return;
       let element = this.mounted.get(layoutItem.index);
       if (!element) {
+        const rendererKey = rowRendererKey(row);
         element =
-          this.pool.pop() ??
+          this.pool[rendererKey].pop() ??
           createElement(this.document, 'div', 'ok-native-list-item');
+        this.rendererKeys.set(element, rendererKey);
         setData(element, 'nativeListAnimateReorder', false);
         this.mounted.set(layoutItem.index, element);
         this.content.appendChild(element);
