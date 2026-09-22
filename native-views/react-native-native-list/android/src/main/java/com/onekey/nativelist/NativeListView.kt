@@ -1590,7 +1590,7 @@ class NativeListView(
     return false
   }
 
-  private fun handleBindingInvalidated(row: NativeListRowView, epoch: Long) {
+  private fun handleBindingInvalidated(row: NativeListRowHost, epoch: Long) {
     val anchor = actionAnchor ?: return
     if (anchor.ownerRowView.get() === row && anchor.bindingEpoch == epoch) {
       invalidateActionAnchor("rebind")

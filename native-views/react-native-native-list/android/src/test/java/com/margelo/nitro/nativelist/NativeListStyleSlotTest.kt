@@ -23,10 +23,10 @@ class NativeListStyleSlotTest {
       // identity keeps its own names.
       Case(type = "identity", field = "title", expected = "title"),
       Case(type = "identity", field = "valueSecondary", expected = "valueSecondary"),
-      // One status view carries four different model fields.
+      // Legacy status views only serve unmigrated templates.
       Case(type = "rail", field = "status", expected = "status"),
       Case(type = "activity", field = "status", expected = "status"),
-      Case(type = "message", field = "time", expected = "status"),
+      Case(type = "message", field = "time", expected = null),
       // Amounts, indices and values share the two trailing views.
       Case(type = "activity", field = "primaryAmount", expected = "value"),
       Case(type = "activity", field = "secondaryAmount", expected = "valueSecondary"),
@@ -59,7 +59,6 @@ class NativeListStyleSlotTest {
       Triple("identity", "", listOf("title", "subtitle", "tertiary", "badge", "value", "valueSecondary")),
       Triple("rail", "", listOf("title", "badge", "status")),
       Triple("activity", "", listOf("title", "description", "status", "primaryAmount", "secondaryAmount")),
-      Triple("message", "", listOf("title", "body", "time")),
       Triple("dataRow", "", listOf("columns", "columnSecondary", "index")),
       Triple("mediaTile", "", listOf("title", "subtitle", "badge")),
       Triple("metricCard", "", listOf("title", "value", "subtitle", "trend")),

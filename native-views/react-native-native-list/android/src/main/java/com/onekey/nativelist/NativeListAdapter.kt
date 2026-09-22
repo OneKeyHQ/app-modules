@@ -44,7 +44,7 @@ internal class NativeListAdapter(
   private var marketSourceItems: List<NativeListItem>? = null
   private var marketSourceEdges = DoubleArray(0)
   private val createdRows = Collections.newSetFromMap(
-    WeakHashMap<NativeListRowView, Boolean>(),
+    WeakHashMap<NativeListRowHost, Boolean>(),
   )
   var usesSelectorSourceScale = false
   var theme: JSONObject? = null
@@ -65,7 +65,7 @@ internal class NativeListAdapter(
   var checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String = { _, _, fallback -> fallback }
   var onRowPress: ((NativeListItem, NativeListActionOrigin) -> Unit)? = null
   var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Unit)? = null
-  var onBindingInvalidated: ((NativeListRowView, Long) -> Unit)? = null
+  var onBindingInvalidated: ((NativeListRowHost, Long) -> Unit)? = null
 
   override fun getItemCount(): Int = reorderItems?.size ?: differ.currentList.size
 
@@ -73,7 +73,7 @@ internal class NativeListAdapter(
     requireNotNull(itemAt(position)).rendererKey.ordinal
 
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NativeListViewHolder {
-    val view = NativeListRowView(context)
+    val view = NativeListRendererRegistry.create(context, viewType)
     view.layoutParams = ViewGroup.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT,
       ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -212,7 +212,7 @@ internal class NativeListAdapter(
     marketSourceEdges = DoubleArray(0)
     reorderItems = null
     suppressDifferUpdates = false
-    createdRows.forEach(NativeListRowView::dispose)
+    createdRows.forEach(NativeListRowHost::dispose)
     createdRows.clear()
   }
 

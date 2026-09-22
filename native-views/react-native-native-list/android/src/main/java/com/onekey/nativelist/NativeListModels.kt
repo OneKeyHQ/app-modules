@@ -30,7 +30,7 @@ internal fun isNativeListWholeRowInteractive(
  * The view pool is shared across templates and the mapping is not one to one:
  * metricCard renders `value` through the title view and its own `title` through
  * the subtitle view, and one status view carries rail.status, activity.status,
- * message.time and metricCard.trend. See docs/STYLE_SPEC.md section 4.
+ * metricCard.trend. See docs/STYLE_SPEC.md section 4.
  *
  * Returns null when the template does not render that field, so an unmapped key
  * is ignored rather than reaching an unrelated view.
@@ -50,12 +50,6 @@ internal fun nativeListStyleSlot(type: String, variant: String, field: String): 
       "description" -> "subtitle"
       "primaryAmount" -> "value"
       "secondaryAmount" -> "valueSecondary"
-      else -> null
-    }
-    "message" -> when (field) {
-      "title" -> "title"
-      "body" -> "subtitle"
-      "time" -> "status"
       else -> null
     }
     "dataRow" -> when (field) {
@@ -132,7 +126,7 @@ internal data class NativeListItem(
 ) {
   val content: String = json.toString()
   val rendererKey: NativeListRendererKey
-    get() = if (type == "message") NativeListRendererKey.MESSAGE else NativeListRendererKey.LEGACY
+    get() = NativeListRendererRegistry.key(type)
   val styledHeight: Double?
     get() = json.optJSONObject("style")?.optJSONObject("container")
       ?.takeIf { it.has("height") }?.optDouble("height")

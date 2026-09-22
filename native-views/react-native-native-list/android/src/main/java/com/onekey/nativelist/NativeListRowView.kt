@@ -116,7 +116,7 @@ private class NativeListMarketSkeleton(context: android.content.Context, backgro
 
 internal data class NativeListActionOrigin(
   val sourceView: View,
-  val ownerRowView: NativeListRowView,
+  val ownerRowView: NativeListRowHost,
   val bindingEpoch: Long,
   val source: String,
   val slot: Int? = null,
@@ -175,17 +175,6 @@ internal object NativeListFonts {
 }
 
 internal data class NativeSelectionTarget(val scope: String, val key: String?)
-
-// OneKey patch: match React Native's CustomLineHeightSpan for first/last line bounds.
-private class SelectorLineHeightSpan(private val lineHeight: Int) : android.text.style.LineHeightSpan {
-  override fun chooseHeight(text: CharSequence, start: Int, end: Int, spanstartv: Int, v: Int, fm: Paint.FontMetricsInt) {
-    val leading = lineHeight - (fm.descent - fm.ascent)
-    fm.ascent -= kotlin.math.ceil(leading / 2.0).toInt()
-    fm.descent += kotlin.math.floor(leading / 2.0).toInt()
-    if (start == 0) fm.top = fm.ascent
-    if (end == text.length) fm.bottom = fm.descent
-  }
-}
 
 private class DottedUnderlineTextView(context: android.content.Context) : NativeListTextView(context) {
   var useSourceScale = false
@@ -419,33 +408,9 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
   private fun sp(value: Float): Float = NativeListScale.font(resources, value)
 }
 
-private object NativeListSourceFallbackState {
-  private const val CACHE_LIMIT = 128
-  private val sources = LinkedHashMap<String, Unit>(CACHE_LIMIT, 0.75f, true)
-
-  fun has(key: String): Boolean = synchronized(sources) {
-    sources[key] != null
-  }
-
-  fun remember(key: String) {
-    synchronized(sources) {
-      sources[key] = Unit
-      while (sources.size > CACHE_LIMIT) {
-        sources.remove(sources.entries.first().key)
-      }
-    }
-  }
-
-  fun forget(key: String) {
-    synchronized(sources) {
-      sources.remove(key)
-    }
-  }
-}
-
 internal class NativeListRowView(
   private val reactContext: ThemedReactContext,
-) : LinearLayout(reactContext) {
+) : NativeListRowHost(reactContext) {
   private var marketLeadingUsesSourceClip = false
   private val leadingFrame = object : FrameLayout(context) {
     override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
@@ -530,8 +495,6 @@ internal class NativeListRowView(
   private var boundKey: String? = null
   // OneKey patch: delayed retries cannot survive cell rebinding or recycling.
   private val selectorImageRetries = mutableMapOf<OneKeyImageReusableView, Runnable>()
-  var bindingEpoch: Long = 0
-    private set
   private var boundCheckboxData: JSONObject? = null
   private var currentLayout = "linear"
   private var restingRowBackground: Drawable? = null
@@ -570,16 +533,6 @@ internal class NativeListRowView(
   }
   private val separatorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private var showsSeparator = false
-
-  /**
-   * docs/STYLE_SPEC.md section 5. Set by the adapter before bind, so the binder and
-   * groupedBackground can read it without another parameter.
-   */
-  var listStyle: JSONObject? = null
-
-  var onRowPress: ((NativeListItem, NativeListActionOrigin) -> Unit)? = null
-  var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Unit)? = null
-  var onBindingInvalidated: ((NativeListRowView, Long) -> Unit)? = null
 
   init {
     gravity = Gravity.CENTER_VERTICAL
@@ -945,7 +898,7 @@ internal class NativeListRowView(
     }
   }
 
-  fun bind(
+  override fun bind(
     item: NativeListItem,
     theme: JSONObject?,
     layout: String,
@@ -953,7 +906,7 @@ internal class NativeListRowView(
     itemIndex: Int?,
     selected: Boolean,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
-    useSourceScale: Boolean = false,
+    useSourceScale: Boolean,
   ) {
     val reusesImageIdentity = boundKey == item.key && (tag as? NativeListItem)?.type == item.type
     val shouldRestorePressed = touchPressed && boundKey == item.key
@@ -1036,10 +989,7 @@ internal class NativeListRowView(
       color(theme, "separator", "#0000001F"),
     )
     separatorPaint.strokeWidth = 1f
-    showsSeparator = item.json.optBoolean("separator", false) &&
-      !item.key.startsWith("token-") &&
-      !item.key.startsWith("balance-token-") &&
-      item.key != "linear-custom-token"
+    showsSeparator = nativeListLegacyShowsSeparator(item)
     invalidate()
     trailingViews.forEach { it.setTextColor(primary) }
     isEnabled = !item.json.optBoolean("disabled", false)
@@ -1057,7 +1007,6 @@ internal class NativeListRowView(
       "identity" -> bindIdentity(item, theme, selected, checkboxState)
       "rail" -> bindRail(item, theme)
       "activity" -> bindActivity(item, theme)
-      "message" -> bindMessage(item, theme)
       "dataRow" -> bindDataRow(item, theme, checkboxState)
       "market" -> bindMarket(item, theme)
       "mediaTile" -> bindMediaTile(item, theme)
@@ -1149,7 +1098,6 @@ internal class NativeListRowView(
     }
     if (style.has("lineGap") && item.type != "walletGroup" && item.type != "dataRow") {
       val target = when {
-        item.type == "message" -> messageViews.column
         item.type == "metricCard" && item.json.optString("variant") in setOf("activity", "performance") -> this
         else -> mainColumn
       }
@@ -1223,10 +1171,7 @@ internal class NativeListRowView(
       }
     }
     if (item.type == "dataRow") tableDataColumns.forEach { it.applyStyle(style, ::applyStyledText) }
-    if (item.type == "message") {
-      NativeListMessageRenderer.applyTextStyles(messageViews, style, ::applyStyledText)
-      return
-    }
+
     val variant = item.json.optString("variant")
     if (item.type == "metricCard" && variant in setOf("activity", "performance")) {
       style.optJSONObject("title")?.let { titleStyle ->
@@ -1340,8 +1285,8 @@ internal class NativeListRowView(
     }
     if (style.has("lineHeight")) {
       val text = SpannableStringBuilder(view.text)
-      text.getSpans(0, text.length, SelectorLineHeightSpan::class.java).forEach(text::removeSpan)
-      text.setSpan(SelectorLineHeightSpan(styleDp(style.optDouble("lineHeight"))), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+      text.getSpans(0, text.length, NativeListLineHeightSpan::class.java).forEach(text::removeSpan)
+      text.setSpan(NativeListLineHeightSpan(styleDp(style.optDouble("lineHeight"))), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
       view.setLineSpacing(0f, 1f)
       view.text = text
     }
@@ -1389,7 +1334,7 @@ internal class NativeListRowView(
     }
   }
 
-  fun recycle() {
+  override fun recycle() {
     cancelMarketLongPress()
     marketLongPressFired = false
     touchPressed = false
@@ -1409,7 +1354,7 @@ internal class NativeListRowView(
     if (!reorderActive && walletGroupExpandAnimator?.isRunning != true) trimWalletGroupRows(0)
   }
 
-  fun bindSelection(
+  override fun bindSelection(
     item: NativeListItem,
     theme: JSONObject?,
     layout: String,
@@ -1471,7 +1416,7 @@ internal class NativeListRowView(
     applyRowStyle(item)
   }
 
-  fun bindStableSummary(item: NativeListItem) {
+  override fun bindStableSummary(item: NativeListItem) {
     if (
       boundKey != item.key ||
       item.type != "sectionHeader" ||
@@ -1487,7 +1432,7 @@ internal class NativeListRowView(
     applySelectorTypography(item)
   }
 
-  fun dispose() {
+  override fun dispose() {
     cancelMarketLongPress()
     invalidateCurrentBinding()
     restoreRestingBackground()
@@ -1543,8 +1488,8 @@ internal class NativeListRowView(
         }
         if (sourceTypography && view.text.isNotEmpty()) {
           val text = SpannableStringBuilder(view.text)
-          text.getSpans(0, text.length, SelectorLineHeightSpan::class.java).forEach(text::removeSpan)
-          text.setSpan(SelectorLineHeightSpan(selectorLineHeight), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+          text.getSpans(0, text.length, NativeListLineHeightSpan::class.java).forEach(text::removeSpan)
+          text.setSpan(NativeListLineHeightSpan(selectorLineHeight), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
           view.setLineSpacing(0f, 1f)
           view.text = text
         }
@@ -1827,7 +1772,7 @@ internal class NativeListRowView(
     leadingFrame.alpha = 1f
   }
 
-  fun setReorderActive(active: Boolean) {
+  override fun setReorderActive(active: Boolean) {
     if ((tag as? NativeListItem)?.type == "walletGroup" && reorderActive == active) return
     reorderActive = active
     if ((tag as? NativeListItem)?.type == "walletGroup") {
@@ -1851,7 +1796,7 @@ internal class NativeListRowView(
     restoreRestingBackground()
   }
 
-  fun canStartWalletGroupReorder(localY: Float): Boolean {
+  override fun canStartWalletGroupReorder(localY: Float): Boolean {
     if ((tag as? NativeListItem)?.type != "walletGroup") return true
     walletGroupRows.forEach { row ->
       if (localY >= row.top && localY < row.bottom) {
@@ -1861,10 +1806,10 @@ internal class NativeListRowView(
     return true
   }
 
-  fun finishWalletGroupReorder(
+  override fun finishWalletGroupReorder(
     durationMs: Long,
     interpolator: TimeInterpolator,
-    completion: (() -> Unit)? = null,
+    completion: (() -> Unit)?,
   ) {
     if ((tag as? NativeListItem)?.type != "walletGroup") {
       setReorderActive(false)
@@ -2328,22 +2273,6 @@ internal class NativeListRowView(
     }
   }
 
-  private val messageViews by lazy {
-    NativeListMessageRenderer.Views(context, unreadDot, secondaryImage)
-  }
-
-  private fun bindMessage(item: NativeListItem, theme: JSONObject?) {
-    NativeListMessageRenderer.bind(this, messageViews, item, theme,
-      dp = ::dp,
-      sp = ::sp,
-      color = ::color,
-      showText = ::showText,
-      leading = ::addLeading,
-      thumbnailBorder = ::roundedHairlineStroke,
-      image = { source, view -> bindImage(source, view, item.key, 0, "generic") },
-    )
-  }
-
   private fun bindDataRow(
     item: NativeListItem,
     theme: JSONObject?,
@@ -2451,10 +2380,10 @@ internal class NativeListRowView(
     }
     val text = SpannableStringBuilder(view.text)
     if (style.has("fontSize")) text.getSpans(0, text.length, AbsoluteSizeSpan::class.java).forEach(text::removeSpan)
-    text.getSpans(0, text.length, SelectorLineHeightSpan::class.java).forEach(text::removeSpan)
+    text.getSpans(0, text.length, NativeListLineHeightSpan::class.java).forEach(text::removeSpan)
     if (style.has("lineHeight")) {
       val lineHeight = styleDp(style.optDouble("lineHeight"))
-      text.setSpan(SelectorLineHeightSpan(lineHeight), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+      text.setSpan(NativeListLineHeightSpan(lineHeight), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
       view.setLineSpacing(0f, 1f)
     }
     view.text = text
@@ -2698,7 +2627,7 @@ internal class NativeListRowView(
       ?.let { actionKey -> onAction?.invoke(item, actionKey, null, null) }
   }
 
-  fun bindMarketQuote(item: NativeListItem, theme: JSONObject?) {
+  override fun bindMarketQuote(item: NativeListItem, theme: JSONObject?) {
     if (boundKey != item.key || item.type != "market") return
     tag = item
     val style = item.json.optJSONObject("style")
@@ -4366,7 +4295,6 @@ internal class NativeListRowView(
       else -> when (item.type) {
         "rail" -> 28
         "activity" -> if ((item.json.optJSONArray("footerActions")?.length() ?: 0) > 0) 104 else 60
-        "message" -> 0
         "mediaTile" -> 0
         "metricCard" -> when (item.json.optString("variant")) {
           "activity" -> 0
@@ -4654,7 +4582,7 @@ internal class NativeListRowView(
 
 }
 
-private class OneKeyIconView(context: android.content.Context) : View(context) {
+internal class OneKeyIconView(context: android.content.Context) : View(context) {
   var useSourceScale = false
   var iconName: String = ""
     set(value) {
@@ -4837,5 +4765,5 @@ private class OneKeyCheckboxView(context: android.content.Context) : View(contex
   }
 }
 
-internal class NativeListViewHolder(val rowView: NativeListRowView) :
+internal class NativeListViewHolder(val rowView: NativeListRowHost) :
   androidx.recyclerview.widget.RecyclerView.ViewHolder(rowView)
