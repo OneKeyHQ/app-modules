@@ -5,6 +5,9 @@ native loading placeholders, opt-in shared-renderer skeleton, fallback states,
 cache controls,
 and conservative OneKey TOS URL resizing without depending on Expo Image.
 
+The authoritative lifecycle, cache identity, cross-size memory-preview, safety,
+and platform contract is defined in [docs/SPEC.md](docs/SPEC.md).
+
 ```tsx
 <OneKeyImage
   source={{ uri: 'https://example.com/avatar.png' }}

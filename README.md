@@ -2,16 +2,21 @@
 
 ## Create new package
 
+Native package work must follow the
+[Native Module Development Requirements](docs/NATIVE_MODULE_DEVELOPMENT.md),
+including a package-level `docs/SPEC.md` and the post-change conformance audit.
+
 ### Create Nitro Module
 
 ```shell
-npx create-react-native-library@latest new-lib
+yarn create:module <package-name>
 ```
+
+### Create Nitro View
 
 ```shell
-yarn package:setup new-lib
+yarn create:view <view-name>
 ```
-
 
 ## Release automation
 

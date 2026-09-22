@@ -47,6 +47,12 @@ export interface OneKeyImageNativeProps extends HybridViewProps {
   round?: boolean;
   /** Display width hint in layout units. Native applies the screen density. */
   resizeWidth?: number;
+  /**
+   * Display height hint in layout units. With `resizeWidth` it lets the
+   * pre-layout memory-cache probe derive the same decode thumbnail a preload
+   * with the same hints stored; omitted, the hint is a square of `resizeWidth`.
+   */
+  resizeHeight?: number;
   overscan?: number;
   loadingStrategy?: OneKeyImageLoadingStrategy;
   /** Theme-aware color used by static loading, error, and fallback states. */
