@@ -62,6 +62,77 @@ container even when the displayed content uses an existing row template.
   selection reconciliation, and scrolling. Nitro callback props carry bounded
   JSON payloads which the wrapper decodes into strict public event types.
 
+### Incremental renderer migration
+
+Template dispatch is a closed-set lookup, not a state machine. The target
+ownership is container → template registry → renderer → shared primitives:
+
+- The container owns data, placement, sections, header/footer, scrolling,
+  indexed bar, selection and reorder.
+- A renderer owns its view structure, template defaults, semantic text/image
+  targets, measurement, binding and supported partial updates.
+- A row host owns shared container appearance, events and binding invalidation.
+  Image/text primitives do not branch on business keys or template names.
+- `row.key` identifies data. A structural reuse key identifies a compatible
+  renderer/view tree; style values and item keys must not enter that key.
+- Resolved style must come from template defaults, theme, model and explicit
+  style, never from the previous bound view. Rendering and measurement consume
+  the same resolved inputs. Height precedence remains `style.container.height`
+  → `row.height` → template measurement/default. There is no automatic fit pass.
+- Full binding must be correct without a preceding recycle callback. Image
+  descriptors that did not change should retain their bindings. Async work and
+  action anchors must still be invalidated by the host's binding epoch.
+
+Migration begins with `message`, one platform per commit. Its current boundary:
+
+| Platform | Extracted | Still owned by the existing host |
+| --- | --- | --- |
+| Web | DOM structure, semantic text roles, estimated measurement in `src/web/templates/MessageRowRenderer.ts` | Shared style/asset primitives; wrapper pooling and body replacement |
+| Android | Content binding and direct title/body/time style targets in `NativeListMessageRenderer.kt` | View allocation, default typography in `applySize`, box styles, measurement and reset |
+| iOS | Content binding, direct title/body/time style targets and existing measured height in `NativeListMessageRenderer.swift` | View allocation, box styles, reset and image lifecycle |
+
+This first extraction deliberately keeps existing platform defaults and the
+native monolithic hosts. It does **not** establish a new registry, structural
+reuse pool, renderer-owned view allocation or complete resolved-style pipeline.
+The callback parameters are temporary adapters to the existing image/text
+primitives, not a public plugin API. Shared legacy slot maps still serve
+unmigrated templates and will be retired as ownership moves.
+
+The next Message step replaces those temporary adapters with shared primitives
+and a renderer-owned view tree, then connects structural reuse and update
+classification. On iOS, a template change must reload a cell rather than merely
+reconfigure a cell from an incompatible reuse class. On Android, the same change
+must select a different `getItemViewType`; ordinary style changes keep the same
+type. Preserve Market quote and selection update paths throughout migration.
+Move the remaining simple templates only after this lifecycle works on all
+three platforms; migrate Market/Identity/Header and composed wallet groups last.
+
+Acceptance for every step includes style set/change/clear, binding A → B without
+recycle, same-key template changes, scrolling away/back, image add/remove,
+explicit height restoration and shared footer placement. Keep geometry and
+typography changes in separate commits from structural extraction.
+
+The first extraction was checked on 2026-09-22:
+
+- Web: 149 tests, typecheck and lint (zero errors); actual Chrome desktop and
+  390px RTL rendering, rapid style/template switching, image decoding and
+  scrolling through 41 messages. Styled height 192 returns to model height 136.
+- Android: Kotlin build and seven unit tests; an isolated RN app using the real
+  NativeList/Image/Logger/Skeleton/Nitro packages ran on API 36. Style clearing,
+  same-key Message/Identity switching, content updates, image add/remove,
+  scroll-to-end/back and the fixed footer were checked. At the test device's
+  density, legacy model height 136 rendered as 122px through the existing scale;
+  explicit style height rendered as 192px and clearing restored 122px. The
+  styled three-line body measured 66px; clearing restored its one-line box.
+- iOS: models/assets/cell/Message renderer typechecked against the simulator
+  UIKit SDK with a OneKeyImage interface test double; the list view parsed.
+  Full app compilation/linking and rendered acceptance remain unverified.
+  Creation of the required external-drive simulator remained stuck in the
+  creation state; no existing simulator owned by another task was reused.
+
+These results cover the Message extraction, not native acceptance of every
+template or completion of the target architecture.
+
 `linear`, `sectioned`, `grid`, and `table` are observable native container
 semantics. Linear is a full-width stream. Sectioned adds a visual break before
 section-header rows and can pin those rows. Grid allocates native spans and
