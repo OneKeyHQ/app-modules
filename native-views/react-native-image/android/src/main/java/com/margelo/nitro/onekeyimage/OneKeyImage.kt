@@ -47,6 +47,34 @@ private fun Context.findActivity(): Activity? {
   return currentContext as? Activity
 }
 
+internal fun shouldScaleCenterMemoryPreview(
+  contentFit: OneKeyImageContentFit,
+  candidate: OneKeyImageMemoryVariant,
+  target: OneKeyImageMemoryVariant,
+): Boolean =
+  contentFit == OneKeyImageContentFit.CENTER &&
+    (candidate.width != target.width || candidate.height != target.height)
+
+internal fun shouldProbeMemoryPreview(
+  hasTarget: Boolean,
+  sameFamily: Boolean,
+  hasDrawable: Boolean,
+): Boolean = !hasTarget || !sameFamily || !hasDrawable
+
+internal fun shouldAnimateLoadedImageTransition(
+  cacheType: OneKeyImageCacheType,
+  fadeDelayElapsed: Boolean,
+  animationsEnabled: Boolean,
+  replacingMemoryPreview: Boolean,
+): Boolean =
+  !replacingMemoryPreview && cacheType != OneKeyImageCacheType.MEMORY &&
+    fadeDelayElapsed && animationsEnabled
+
+internal fun memoryProbeRequestOptions(base: RequestOptions): RequestOptions =
+  base
+    .diskCacheStrategy(DiskCacheStrategy.NONE)
+    .onlyRetrieveFromCache(true)
+
 private class OneKeyImageHostView(context: ThemedReactContext) : ImageView(context) {
   private val roundClipPath = Path()
   private val roundOutlineProvider = object : ViewOutlineProvider() {
@@ -218,6 +246,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private var currentTarget: CustomViewTarget<OneKeyImageHostView, Drawable>? = null
   private var memoryPreviewTarget: CustomTarget<Drawable>? = null
   private var memoryPreviewFamily: OneKeyImageMemoryFamilyKey? = null
+  private var scalesCenterMemoryPreview = false
   private var generation = 0L
   private var lastSignature: String? = null
   private var disposed = false
@@ -565,8 +594,9 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
         .asDrawable()
         .load(OneKeyImageModel.build(candidate.requestUrl, sourceHeadersJson))
         .apply(
-          requestOptions(policy, candidate.requestUrl, candidate.round)
-            .onlyRetrieveFromCache(true),
+          memoryProbeRequestOptions(
+            requestOptions(policy, candidate.requestUrl, candidate.round),
+          ),
         )
         .override(candidate.width, candidate.height)
         .into(target)
@@ -581,6 +611,12 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       clearMemoryPreviewTarget()
       memoryPreviewTarget = target
       memoryPreviewFamily = family
+      scalesCenterMemoryPreview = shouldScaleCenterMemoryPreview(
+        contentFit = contentFit ?: OneKeyImageContentFit.COVER,
+        candidate = candidate,
+        target = exactVariant,
+      )
+      applyContentFit()
       displayState = DisplayState.IMAGE
       requestActive = false
       isPreservingDisplayedImage = false
@@ -662,7 +698,13 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       height = decodeDimensions.height,
       round = round == true,
     )
-    if (memoryPreviewTarget == null || memoryPreviewFamily != memoryFamily) {
+    if (
+      shouldProbeMemoryPreview(
+        hasTarget = memoryPreviewTarget != null,
+        sameFamily = memoryPreviewFamily == memoryFamily,
+        hasDrawable = hostView.drawable != null,
+      )
+    ) {
       showMemoryCachedPreview(
         family = memoryFamily,
         exactVariant = exactVariant,
@@ -711,6 +753,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
 
       override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
         if (requestGeneration != generation || disposed) return
+        val replacesMemoryPreview = memoryPreviewTarget != null && hostView.drawable != null
         requestActive = false
         displayState = DisplayState.IMAGE
         hostView.skeletonRequested = false
@@ -726,7 +769,10 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
           OneKeyImageMemoryVariantRegistry.record(memoryFamily, memoryVariant)
         }
         clearMemoryPreviewTarget()
-        applyLoadedImageTransition(resolvedCacheType)
+        applyLoadedImageTransition(
+          cacheType = resolvedCacheType,
+          replacingMemoryPreview = replacesMemoryPreview,
+        )
         applyAutoplay()
         val loadCallback = onLoad
         val loadEndCallback = onLoadEnd
@@ -885,10 +931,12 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   }
 
   private fun clearMemoryPreviewTarget() {
-    val target = memoryPreviewTarget ?: return
+    val target = memoryPreviewTarget
     memoryPreviewTarget = null
     memoryPreviewFamily = null
-    requestManager().clear(target)
+    scalesCenterMemoryPreview = false
+    applyContentFit()
+    if (target != null) requestManager().clear(target)
   }
 
   private fun scheduleOnDisplay(requestGeneration: Long) {
@@ -953,6 +1001,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     requestActive = false
     isPreservingDisplayedImage = false
     resetImageTransition()
+    clearMemoryPreviewTarget()
     hostView.setImageDrawable(null)
     hostView.skeletonRequested = false
     val hidesTerminalState = loadingStrategy == OneKeyImageLoadingStrategy.NONE
@@ -1053,16 +1102,19 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     OneKeyImageVariant.AVATAR -> "●"
   }
 
-  private fun applyLoadedImageTransition(cacheType: OneKeyImageCacheType) {
+  private fun applyLoadedImageTransition(
+    cacheType: OneKeyImageCacheType,
+    replacingMemoryPreview: Boolean,
+  ) {
     resetImageTransition()
     val startedAt = requestStartedAtMs ?: return
-    if (
-      cacheType == OneKeyImageCacheType.MEMORY ||
-      SystemClock.uptimeMillis() - startedAt < FADE_DELAY_THRESHOLD_MS ||
-      !animationsEnabled()
-    ) {
-      return
-    }
+    val shouldAnimate = shouldAnimateLoadedImageTransition(
+      cacheType = cacheType,
+      fadeDelayElapsed = SystemClock.uptimeMillis() - startedAt >= FADE_DELAY_THRESHOLD_MS,
+      animationsEnabled = animationsEnabled(),
+      replacingMemoryPreview = replacingMemoryPreview,
+    )
+    if (!shouldAnimate) return
     hostView.alpha = 0f
     hostView.animate()
       .alpha(1f)
@@ -1116,6 +1168,13 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   }
 
   private fun applyContentFit() {
+    if (
+      scalesCenterMemoryPreview &&
+      (contentFit ?: OneKeyImageContentFit.COVER) == OneKeyImageContentFit.CENTER
+    ) {
+      hostView.scaleType = ImageView.ScaleType.FIT_CENTER
+      return
+    }
     hostView.scaleType = when (contentFit ?: OneKeyImageContentFit.COVER) {
       OneKeyImageContentFit.COVER -> ImageView.ScaleType.CENTER_CROP
       OneKeyImageContentFit.CONTAIN -> ImageView.ScaleType.FIT_CENTER

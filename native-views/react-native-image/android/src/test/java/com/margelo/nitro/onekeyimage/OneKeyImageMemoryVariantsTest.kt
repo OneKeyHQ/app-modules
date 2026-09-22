@@ -1,6 +1,11 @@
 package com.margelo.nitro.onekeyimage
 
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.request.RequestOptions
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OneKeyImageMemoryVariantsTest {
@@ -49,6 +54,87 @@ class OneKeyImageMemoryVariantsTest {
         target = variant(96, round = false),
       ),
     )
+  }
+
+  @Test
+  fun crossSizeCenterPreviewUsesTemporaryScaling() {
+    assertTrue(
+      shouldScaleCenterMemoryPreview(
+        contentFit = OneKeyImageContentFit.CENTER,
+        candidate = variant(48),
+        target = variant(96),
+      ),
+    )
+    assertTrue(
+      shouldScaleCenterMemoryPreview(
+        contentFit = OneKeyImageContentFit.CENTER,
+        candidate = variant(144),
+        target = variant(96),
+      ),
+    )
+    assertFalse(
+      shouldScaleCenterMemoryPreview(
+        contentFit = OneKeyImageContentFit.CENTER,
+        candidate = variant(96),
+        target = variant(96),
+      ),
+    )
+    assertFalse(
+      shouldScaleCenterMemoryPreview(
+        contentFit = OneKeyImageContentFit.COVER,
+        candidate = variant(48),
+        target = variant(96),
+      ),
+    )
+  }
+
+  @Test
+  fun missingPreviewDrawableAllowsSameFamilyProbeRetry() {
+    assertTrue(
+      shouldProbeMemoryPreview(
+        hasTarget = true,
+        sameFamily = true,
+        hasDrawable = false,
+      ),
+    )
+    assertFalse(
+      shouldProbeMemoryPreview(
+        hasTarget = true,
+        sameFamily = true,
+        hasDrawable = true,
+      ),
+    )
+  }
+
+  @Test
+  fun replacingMemoryPreviewSkipsWholeViewFade() {
+    assertFalse(
+      shouldAnimateLoadedImageTransition(
+        cacheType = OneKeyImageCacheType.DISK,
+        fadeDelayElapsed = true,
+        animationsEnabled = true,
+        replacingMemoryPreview = true,
+      ),
+    )
+    assertTrue(
+      shouldAnimateLoadedImageTransition(
+        cacheType = OneKeyImageCacheType.DISK,
+        fadeDelayElapsed = true,
+        animationsEnabled = true,
+        replacingMemoryPreview = false,
+      ),
+    )
+  }
+
+  @Test
+  fun memoryProbeKeepsMemoryEnabledAndDisablesDiskReads() {
+    val options = memoryProbeRequestOptions(
+      RequestOptions().diskCacheStrategy(DiskCacheStrategy.AUTOMATIC),
+    )
+
+    assertSame(DiskCacheStrategy.NONE, options.diskCacheStrategy)
+    assertTrue(options.onlyRetrieveFromCache)
+    assertTrue(options.isMemoryCacheable)
   }
 
   private fun variant(

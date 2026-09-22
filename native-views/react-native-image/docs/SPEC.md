@@ -148,7 +148,9 @@ per family.
 
 For `memory` and `memory-disk` policies, a prop change may probe decoded memory
 synchronously on the UI thread before layout when size hints are available. No
-disk or network work is allowed in this probe.
+disk or network work is allowed in this probe. Android MUST disable Glide disk
+cache access for the probe and accept only a resource delivered synchronously
+from decoded memory.
 
 The probe order is:
 
@@ -164,8 +166,16 @@ uncropped bitmap because the host clips it.
 
 An approximate hit remains visible as the loading placeholder until the exact
 request replaces it. This avoids a blank or skeleton frame while preserving the
-quality and event semantics of the exact request. `disk` and `none` policies do
-not participate in synchronous previews.
+quality and event semantics of the exact request. A cross-size preview for
+`contentFit: center` is temporarily rendered with aspect-fit scaling so a
+smaller image fills the intended visual area and a larger image is not clipped.
+The cached bitmap is not resampled or copied. The exact image restores `center`
+and replaces the preview in the same UI-thread delivery. Replacing a visible
+preview MUST NOT run a whole-view fade that makes the preview disappear first.
+
+Terminal error or fallback, cancellation, recycling, and disposal release
+preview ownership. A later request for the same family may probe memory again.
+`disk` and `none` policies do not participate in synchronous previews.
 
 The registry is bounded to 1,024 families and eight variants per family. Family
 access is recency-ordered; new variants evict the oldest retained hints. A cache
@@ -216,15 +226,15 @@ must clean up request and safety-flight ownership.
 
 ## 9. Platform mapping and known divergences
 
-| Contract                  | iOS                                                     | Android                                                                     |
-| ------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Image pipeline            | SDWebImage / `SDAnimatedImageView`                      | Glide / native `ImageView`                                                  |
-| Exact synchronous hit     | May complete the current request immediately            | Displays immediately; Glide request remains terminal                        |
-| Cross-size preview        | Direct decoded `UIImage` lookup by reproduced cache key | `onlyRetrieveFromCache(true)` and accepts only an immediate memory callback |
-| Circular output           | Host view corner mask                                   | Circle-cropped Glide resource plus host clipping                            |
-| Default autoplay          | `true`                                                  | `false`                                                                     |
-| Preload scheduling        | Up to four concurrent tasks                             | Sequential source loop                                                      |
-| Native-only reusable host | `OneKeyImageReusableView`                               | `OneKeyImageReusableView`                                                   |
+| Contract                  | iOS                                                     | Android                                                                |
+| ------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Image pipeline            | SDWebImage / `SDAnimatedImageView`                      | Glide / native `ImageView`                                             |
+| Exact synchronous hit     | May complete the current request immediately            | Displays immediately; Glide request remains terminal                   |
+| Cross-size preview        | Direct decoded `UIImage` lookup by reproduced cache key | Disk cache disabled; accepts only an immediate decoded-memory callback |
+| Circular output           | Host view corner mask                                   | Circle-cropped Glide resource plus host clipping                       |
+| Default autoplay          | `true`                                                  | `false`                                                                |
+| Preload scheduling        | Up to four concurrent tasks                             | Sequential source loop                                                 |
+| Native-only reusable host | `OneKeyImageReusableView`                               | `OneKeyImageReusableView`                                              |
 
 The shared contract is the result and ownership described above. It does not
 require SDWebImage and Glide to expose identical internal cache behavior.
@@ -263,16 +273,16 @@ For any change to Native Image:
 
 ### Acceptance matrix
 
-| Area           | Required cases                                                                          | Pass condition                                                                                        |
-| -------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Identity       | Same URL with different headers, sizes, fit, round, policy, and recycling keys          | No cache or stale-result ownership crosses an incompatible identity                                   |
-| Memory preview | Exact, larger, smaller, incompatible aspect ratio, stale hint, animated entry           | Compatible static entries display immediately; disallowed entries are ignored and stale hints removed |
-| Lifecycle      | Rapid source changes, reload, cancel, recycle, detach/attach                            | Only the current generation writes and emits one terminal pair                                        |
-| Loading UI     | Native static/skeleton/none and React placeholder/fallback                              | One loading surface is visible; clipping and terminal state are correct                               |
-| TOS            | Every tier, DPR boundary, protected query, headers, unsupported path, optimized failure | Correct rendition or raw URL; only ordinary optimized failure retries raw                             |
-| Safety         | Encoded, dimension, frame, duration, and decode-buffer boundaries                       | At-limit input follows the supported path; over-limit input fails and cleans up                       |
-| Cache API      | Preload mixed success, memory/disk/all clearing                                         | Promise result is accurate and requested cache work plus hints are complete                           |
-| Native reuse   | Standalone Nitro view and reusable list-cell host                                       | No stale image, callback, animation, skeleton, or request survives ownership change                   |
+| Area           | Required cases                                                                                    | Pass condition                                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity       | Same URL with different headers, sizes, fit, round, policy, and recycling keys                    | No cache or stale-result ownership crosses an incompatible identity                                                                                     |
+| Memory preview | Exact, larger, smaller, `center`, incompatible aspect ratio, stale hint, animated entry           | Compatible static entries display immediately; cross-size `center` scales without a blank frame; disallowed entries are ignored and stale hints removed |
+| Lifecycle      | Rapid source changes, reload, exact-request failure after preview, cancel, recycle, detach/attach | Only the current generation writes and emits one terminal pair; preview ownership is released on terminal failure                                       |
+| Loading UI     | Native static/skeleton/none and React placeholder/fallback                                        | One loading surface is visible; clipping and terminal state are correct                                                                                 |
+| TOS            | Every tier, DPR boundary, protected query, headers, unsupported path, optimized failure           | Correct rendition or raw URL; only ordinary optimized failure retries raw                                                                               |
+| Safety         | Encoded, dimension, frame, duration, and decode-buffer boundaries                                 | At-limit input follows the supported path; over-limit input fails and cleans up                                                                         |
+| Cache API      | Preload mixed success, memory/disk/all clearing                                                   | Promise result is accurate and requested cache work plus hints are complete                                                                             |
+| Native reuse   | Standalone Nitro view and reusable list-cell host                                                 | No stale image, callback, animation, skeleton, or request survives ownership change                                                                     |
 
 The implementation is complete on iOS and Android. Source tests and native
 builds verify the implementation at their respective layers. Simulator or device

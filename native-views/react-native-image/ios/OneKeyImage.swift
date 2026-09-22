@@ -119,6 +119,8 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   /// `.loading` with the previous image kept on screen as the placeholder
   /// (see `showLoading(preservedImage:)`).
   private var isPreservingDisplayedImage = false
+  private var isShowingMemoryPreview = false
+  private var scalesCenterMemoryPreview = false
   private var requestStartedAt: CFTimeInterval?
 
   var view: UIView { hostView }
@@ -461,6 +463,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
           )
         }
         guard self.claimTerminal(generation) else { return }
+        let replacesMemoryPreview = self.clearMemoryPreviewPresentation()
         self.requestActive = false
         self.displayState = .image
         self.isPreservingDisplayedImage = false
@@ -468,7 +471,10 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
         self.fallbackLayer.isHidden = true
         self.hostView.backgroundColor = .clear
         let resolvedCacheType = Self.cacheType(cacheType)
-        self.applyLoadedImageTransition(cacheType: resolvedCacheType)
+        self.applyLoadedImageTransition(
+          cacheType: resolvedCacheType,
+          replacingMemoryPreview: replacesMemoryPreview
+        )
         self.applyAutoplay()
         let onLoad = self.onLoad
         let onLoadEnd = self.onLoadEnd
@@ -633,6 +639,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       hostView.backgroundColor = .clear
       return
     }
+    clearMemoryPreviewPresentation()
     isPreservingDisplayedImage = false
     hostView.image = nil
     applyLoadingAppearance(letLibraryStartIndicator: letLibraryStartIndicator)
@@ -731,7 +738,12 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       if let variant = probe.variant, Self.canUseAsMemoryPreview(image) {
         OneKeyImageMemoryVariantRegistry.shared.record(variant, for: family)
       }
-      displayMemoryCachedImage(image, requestIsActive: requestIsActive, terminal: true)
+      displayMemoryCachedImage(
+        image,
+        requestIsActive: requestIsActive,
+        terminal: true,
+        scalesCenterPreview: false
+      )
       return .exact
     }
 
@@ -752,7 +764,16 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
           OneKeyImageMemoryVariantRegistry.shared.remove(candidate, for: family)
           continue
         }
-        displayMemoryCachedImage(image, requestIsActive: false, terminal: false)
+        displayMemoryCachedImage(
+          image,
+          requestIsActive: false,
+          terminal: false,
+          scalesCenterPreview: Self.shouldScaleCenterMemoryPreview(
+            contentFit: contentFit ?? .cover,
+            candidate: candidate,
+            target: target
+          )
+        )
         OneKeyImageMemoryVariantRegistry.shared.record(candidate, for: family)
         return .preview
       }
@@ -763,10 +784,14 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   private func displayMemoryCachedImage(
     _ image: UIImage,
     requestIsActive: Bool,
-    terminal: Bool
+    terminal: Bool,
+    scalesCenterPreview: Bool
   ) {
     let generation = requestGeneration
     if terminal, requestIsActive, !claimTerminal(generation) { return }
+    isShowingMemoryPreview = !terminal
+    self.scalesCenterMemoryPreview = !terminal && scalesCenterPreview
+    applyContentFit()
     displayState = .image
     isPreservingDisplayedImage = false
     requestActive = false
@@ -776,7 +801,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     applyDisplayedImage(image, generation: generation)
     hostView.backgroundColor = .clear
     if terminal, requestIsActive {
-      applyLoadedImageTransition(cacheType: .memory)
+      applyLoadedImageTransition(cacheType: .memory, replacingMemoryPreview: false)
     }
     applyAutoplay()
     if terminal, requestIsActive {
@@ -798,6 +823,24 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     !(image is SDAnimatedImage) && image.images == nil
   }
 
+  static func shouldScaleCenterMemoryPreview(
+    contentFit: OneKeyImageContentFit,
+    candidate: OneKeyImageMemoryVariant,
+    target: OneKeyImageMemoryVariant
+  ) -> Bool {
+    guard case .center = contentFit else { return false }
+    return candidate.pixelWidth != target.pixelWidth || candidate.pixelHeight != target.pixelHeight
+  }
+
+  @discardableResult
+  private func clearMemoryPreviewPresentation() -> Bool {
+    let wasShowingMemoryPreview = isShowingMemoryPreview
+    isShowingMemoryPreview = false
+    scalesCenterMemoryPreview = false
+    applyContentFit()
+    return wasShowingMemoryPreview
+  }
+
   private func showError() {
     showTerminalState(.error)
   }
@@ -810,6 +853,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     displayState = state
     requestActive = false
     isPreservingDisplayedImage = false
+    clearMemoryPreviewPresentation()
     skeletonIndicator.stopAnimatingIndicator()
     resetImageTransition()
     hostView.image = nil
@@ -905,12 +949,28 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     return [base, highlight]
   }
 
-  private func applyLoadedImageTransition(cacheType: OneKeyImageCacheType) {
+  static func shouldAnimateLoadedImageTransition(
+    cacheType: OneKeyImageCacheType,
+    requestDuration: CFTimeInterval?,
+    reduceMotionEnabled: Bool,
+    replacingMemoryPreview: Bool
+  ) -> Bool {
+    !replacingMemoryPreview && cacheType != .memory
+      && (requestDuration ?? 0) >= fadeDelayThreshold && !reduceMotionEnabled
+  }
+
+  private func applyLoadedImageTransition(
+    cacheType: OneKeyImageCacheType,
+    replacingMemoryPreview: Bool
+  ) {
     resetImageTransition()
-    guard cacheType != .memory,
-          let requestStartedAt,
-          CACurrentMediaTime() - requestStartedAt >= Self.fadeDelayThreshold,
-          !UIAccessibility.isReduceMotionEnabled else {
+    let requestDuration = requestStartedAt.map { CACurrentMediaTime() - $0 }
+    guard Self.shouldAnimateLoadedImageTransition(
+      cacheType: cacheType,
+      requestDuration: requestDuration,
+      reduceMotionEnabled: UIAccessibility.isReduceMotionEnabled,
+      replacingMemoryPreview: replacingMemoryPreview
+    ) else {
       return
     }
     hostView.alpha = 0
@@ -955,6 +1015,10 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   }
 
   private func applyContentFit() {
+    if scalesCenterMemoryPreview, case .center = contentFit ?? .cover {
+      hostView.contentMode = .scaleAspectFit
+      return
+    }
     switch contentFit ?? .cover {
     case .cover: hostView.contentMode = .scaleAspectFill
     case .contain: hostView.contentMode = .scaleAspectFit

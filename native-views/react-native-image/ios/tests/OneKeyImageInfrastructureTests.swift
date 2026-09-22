@@ -416,6 +416,56 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     )
   }
 
+  func testCrossSizeCenterPreviewUsesTemporaryScaling() {
+    XCTAssertTrue(
+      HybridOneKeyImage.shouldScaleCenterMemoryPreview(
+        contentFit: .center,
+        candidate: memoryVariant(48),
+        target: memoryVariant(96)
+      )
+    )
+    XCTAssertTrue(
+      HybridOneKeyImage.shouldScaleCenterMemoryPreview(
+        contentFit: .center,
+        candidate: memoryVariant(144),
+        target: memoryVariant(96)
+      )
+    )
+    XCTAssertFalse(
+      HybridOneKeyImage.shouldScaleCenterMemoryPreview(
+        contentFit: .center,
+        candidate: memoryVariant(96),
+        target: memoryVariant(96)
+      )
+    )
+    XCTAssertFalse(
+      HybridOneKeyImage.shouldScaleCenterMemoryPreview(
+        contentFit: .cover,
+        candidate: memoryVariant(48),
+        target: memoryVariant(96)
+      )
+    )
+  }
+
+  func testReplacingMemoryPreviewSkipsWholeViewFade() {
+    XCTAssertFalse(
+      HybridOneKeyImage.shouldAnimateLoadedImageTransition(
+        cacheType: .disk,
+        requestDuration: 1,
+        reduceMotionEnabled: false,
+        replacingMemoryPreview: true
+      )
+    )
+    XCTAssertTrue(
+      HybridOneKeyImage.shouldAnimateLoadedImageTransition(
+        cacheType: .disk,
+        requestDuration: 1,
+        reduceMotionEnabled: false,
+        replacingMemoryPreview: false
+      )
+    )
+  }
+
   private func memoryVariant(_ size: Int) -> OneKeyImageMemoryVariant {
     OneKeyImageMemoryVariant(
       requestURL: URL(string: "https://example.com/image-\(size).png")!,
