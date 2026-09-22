@@ -59,9 +59,15 @@ export async function loadReleaseWorkspaces(repoRoot) {
         workspacePackage.private !== true &&
         typeof workspacePackage.scripts?.release === "string"
       ) {
+        const manifestPath = join(
+          workspacePattern.slice(0, -2),
+          entry.name,
+          "package.json"
+        );
         releaseWorkspaces.push({
           name: workspacePackage.name,
           version: workspacePackage.version,
+          manifestPath,
         });
       }
     }

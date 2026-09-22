@@ -76,7 +76,7 @@ test("reports every package that never became available", async () => {
   });
   try {
     const missing = await verifyPublished(workspaces, "latest", {
-      timeoutMs: 0,
+      maxAttempts: 1,
       log: () => {},
     });
     assert.deepEqual(
@@ -99,10 +99,36 @@ test("returns nothing missing once every package is visible", async () => {
   });
   try {
     const missing = await verifyPublished(workspaces, "latest", {
-      timeoutMs: 0,
+      maxAttempts: 1,
       log: () => {},
     });
     assert.deepEqual(missing, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("checks a missing package at most ten times", async () => {
+  const originalFetch = globalThis.fetch;
+  let checks = 0;
+  let waits = 0;
+  globalThis.fetch = async () => {
+    checks += 1;
+    return {
+      ok: true,
+      json: async () => ({ versions: {}, "dist-tags": {} }),
+    };
+  };
+  try {
+    const missing = await verifyPublished([workspaces[0]], "latest", {
+      pollIntervalMs: 0,
+      log: (message) => {
+        if (message.includes("waiting")) waits += 1;
+      },
+    });
+    assert.equal(checks, 10);
+    assert.equal(waits, 9);
+    assert.deepEqual(missing.map(({ name }) => name), [workspaces[0].name]);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -1,6 +1,9 @@
 name: package-publish
 
 on:
+  pull_request:
+    types: [closed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       npm_dist_tag:
@@ -12,55 +15,194 @@ on:
           - next
           - latest
       only_workspace:
-        # A failed package cannot be retried by re-running the whole release:
-        # the 39 that already published reject with E403 and the run goes red
-        # before proving anything about the one that matters.
         description: "Publish only this workspace, e.g. @onekeyfe/react-native-bundle-crypto. Leave empty to publish every package."
         required: false
         default: ""
         type: string
 
+permissions:
+  contents: read
+
+concurrency:
+  group: app-modules-package-publish
+  # Supported on GitHub.com; keep pending publish runs instead of replacing them.
+  # https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency
+  queue: max
+
 jobs:
-  package-publish:
+  notice-fork-merge:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
+      - name: Explain manual release requirement
+        run: |
+          echo 'A merged fork PR does not trigger an automatic package release. Run package-publish manually when ready.' >> "$GITHUB_STEP_SUMMARY"
+
+  package-publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    outputs:
+      dist_tag: ${{ steps.channel.outputs.dist_tag }}
+    env:
+      ONLY_WORKSPACE: ${{ inputs.only_workspace || '' }}
+    steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.merge_commit_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: "24.x"
           registry-url: "https://registry.npmjs.org"
-      - name: Validate npm dist-tag
+      - name: Select release channel
+        id: channel
         env:
-          NPM_DIST_TAG: ${{ inputs.npm_dist_tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_DIST_TAG: ${{ inputs.npm_dist_tag || '' }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+        run: |
+          if test "$EVENT_NAME" = 'workflow_dispatch'; then
+            dist_tag="$MANUAL_DIST_TAG"
+          else
+            dist_tag=$(node scripts/detect-release-channel.mjs "$PR_BASE_SHA" "$PR_HEAD_SHA")
+          fi
+          echo "dist_tag=$dist_tag" >> "$GITHUB_OUTPUT"
+          echo "Selected npm dist-tag: $dist_tag" >> "$GITHUB_STEP_SUMMARY"
+      - name: Install and test release tooling
+        run: |
+          corepack enable
+          yarn install --immutable
+          node --test scripts/*.test.mjs
+      - name: Prepare automatic preview version
+        if: github.event_name == 'pull_request' && steps.channel.outputs.dist_tag == 'next'
+        env:
+          PREVIEW_NUMBER: ${{ github.run_number }}
+        run: |
+          preview_version=$(node scripts/prepare-preview.mjs "$PREVIEW_NUMBER")
+          YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
+          node scripts/validate-npm-dist-tag.mjs next
+          git diff --check
+          echo "Publishing preview $preview_version with the next tag" >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate release version and dist-tag
+        env:
+          NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
         run: node scripts/validate-npm-dist-tag.mjs "$NPM_DIST_TAG"
-      - name: Install Package
-        run: corepack enable && yarn install
-      - name: Publish packages (4 concurrent)
-        if: inputs.only_workspace == ''
+      - name: Publish missing packages after merge
+        if: github.event_name == 'pull_request'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_DIST_TAG: ${{ inputs.npm_dist_tag }}
-        run: yarn version:publish --tag "$NPM_DIST_TAG"
-      - name: Publish NativeList after shared build dependencies
-        if: inputs.only_workspace == ''
+          NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
+        run: node scripts/publish-missing.mjs "$NPM_DIST_TAG"
+      - name: Publish missing packages manually
+        if: github.event_name == 'workflow_dispatch' && inputs.only_workspace == ''
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_DIST_TAG: ${{ inputs.npm_dist_tag }}
-        run: yarn workspace @onekeyfe/react-native-native-list release --tag "$NPM_DIST_TAG"
-      - name: Publish a single workspace
-        if: inputs.only_workspace != ''
+          NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
+        run: node scripts/publish-missing.mjs "$NPM_DIST_TAG"
+      - name: Publish a single workspace manually
+        if: github.event_name == 'workflow_dispatch' && inputs.only_workspace != ''
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_DIST_TAG: ${{ inputs.npm_dist_tag }}
-          ONLY_WORKSPACE: ${{ inputs.only_workspace }}
+          NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
         run: yarn workspace "$ONLY_WORKSPACE" release --tag "$NPM_DIST_TAG"
-      # npm reports success the moment it accepts a tarball, which is not the
-      # same as the version becoming available. 3.0.137 went out green with
-      # @onekeyfe/react-native-bundle-crypto staged but never committed: the
-      # version was undownloadable AND unrepublishable, and nothing in this
-      # workflow noticed. Fail the run that produced it instead.
       - name: Verify the published versions are on the registry
         env:
-          NPM_DIST_TAG: ${{ inputs.npm_dist_tag }}
-          ONLY_WORKSPACE: ${{ inputs.only_workspace }}
+          NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
         run: node scripts/verify-published.mjs "$NPM_DIST_TAG" "$ONLY_WORKSPACE"
+
+  sync-app-monorepo:
+    needs: package-publish
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.package-publish.outputs.dist_tag == 'latest'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create read-only app-monorepo token
+        id: read-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.APP_RELEASE_APP_ID }}
+          private-key: ${{ secrets.APP_RELEASE_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: app-monorepo
+          permission-contents: read
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          path: app-modules
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: OneKeyHQ/app-monorepo
+          ref: x
+          path: app-monorepo
+          token: ${{ steps.read-token.outputs.token }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+      - name: Update only app-modules mobile dependencies
+        id: dependencies
+        working-directory: app-monorepo
+        run: |
+          node ../app-modules/scripts/sync-app-monorepo.mjs .
+          if git diff --quiet -- apps/mobile/package.json packages/components/package.json package.json; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Refresh lockfile and check module registry
+        if: steps.dependencies.outputs.changed == 'true'
+        working-directory: app-monorepo
+        run: |
+          corepack enable
+          YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install --mode=skip-build
+          yarn install --immutable --mode=skip-build
+          yarn workspace @onekeyhq/mobile module-id:check
+          git diff --check
+      - name: Create app-monorepo write token
+        if: steps.dependencies.outputs.changed == 'true'
+        id: write-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.APP_RELEASE_APP_ID }}
+          private-key: ${{ secrets.APP_RELEASE_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: app-monorepo
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Create or update app-monorepo PR
+        if: steps.dependencies.outputs.changed == 'true'
+        working-directory: app-monorepo
+        env:
+          GH_TOKEN: ${{ steps.write-token.outputs.token }}
+        run: |
+          version=$(node -p "require('../app-modules/native-views/react-native-native-list/package.json').version")
+          branch="codex/app-modules-v${version}"
+          git config user.name 'onekey-release[bot]'
+          git config user.email 'onekey-release[bot]@users.noreply.github.com'
+          git add -u apps/mobile/package.json packages/components/package.json package.json yarn.lock
+          git diff --cached --check
+          git commit -m "chore: update app-modules to ${version}"
+          gh auth setup-git
+          remote_sha=$(git ls-remote --heads origin "refs/heads/${branch}" | cut -f1)
+          if test -n "$remote_sha"; then
+            git push --force-with-lease="refs/heads/${branch}:${remote_sha}" origin "HEAD:refs/heads/${branch}"
+          else
+            git push origin "HEAD:refs/heads/${branch}"
+          fi
+          body="Update app-modules mobile dependencies to ${version} after all 41 packages passed npm registry verification. Source: ${GITHUB_REPOSITORY}@${GITHUB_SHA}. Module-ID registry structure is checked; new native runtime modules require a fresh Union Build map before registry update."
+          pr_number=$(gh pr list --repo OneKeyHQ/app-monorepo --state open --base x --head "$branch" --json number,headRepositoryOwner --jq "[.[] | select(.headRepositoryOwner.login == \"$GITHUB_REPOSITORY_OWNER\")][0].number")
+          if test -n "$pr_number"; then
+            gh pr edit "$pr_number" --repo OneKeyHQ/app-monorepo --title "chore: update app-modules to ${version}" --body "$body"
+          else
+            gh pr create --repo OneKeyHQ/app-monorepo --base x --head "$branch" --title "chore: update app-modules to ${version}" --body "$body"
+          fi
