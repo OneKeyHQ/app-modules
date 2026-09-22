@@ -2696,7 +2696,7 @@ private class ItemSpacingDecoration(
     val sourceWallet = item?.type == "identity" && item.json.optString("presentation") == "walletSidebar" && item.json.has("height")
     // OneKey patch: V1 measures the wallet and its bottom padding as one sortable row.
     val itemSpacing = if (!horizontal && sourceWallet) {
-      val sourceHeight = item!!.json.optInt("height")
+      val sourceHeight = item!!.styledHeight ?: item.json.optDouble("height")
       ((sourceHeight + sourceSpacing) * density).roundToInt() - (sourceHeight * density).roundToInt()
     } else spacing
     if (horizontal) outRect.right = itemSpacing else outRect.bottom = itemSpacing

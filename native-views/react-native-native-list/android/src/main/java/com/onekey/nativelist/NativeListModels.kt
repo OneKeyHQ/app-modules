@@ -127,6 +127,9 @@ internal data class NativeListItem(
   val json: JSONObject,
 ) {
   val content: String = json.toString()
+  val styledHeight: Double?
+    get() = json.optJSONObject("style")?.optJSONObject("container")
+      ?.takeIf { it.has("height") }?.optDouble("height")
   // OneKey patch: only a host-validated stable snapshot can request a lightweight diff payload.
   var selectionUpdateFromContent: String? = null
 

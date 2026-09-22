@@ -184,7 +184,7 @@ function buildRows(styled: boolean): RowModel[] {
   });
 
   // Cover remaining templates with local text/image/gap overrides. Outer row
-  // allocation stays fixed; callers choose fitting dimensions.
+  // callers can override allocation with container.height and choose fitting dimensions.
   const additional: readonly [RowModel, RowModel['style']][] = [
     [
       {
@@ -360,7 +360,7 @@ function buildRows(styled: boolean): RowModel[] {
   });
 
   rows.push(
-    header('text-layout', 'Text layout / row container', 'same allocation'),
+    header('text-layout', 'Text layout / row container', 'height: 180 → 200'),
   );
   for (const alignment of ['top', 'center', 'bottom'] as const) {
     rows.push({
@@ -378,6 +378,7 @@ function buildRows(styled: boolean): RowModel[] {
               verticalPadding: 12,
               lineGap: 6,
               container: {
+                height: 200,
                 backgroundColor: '#EDF6FF',
                 opacity: 0.9,
                 cornerRadius: 14,

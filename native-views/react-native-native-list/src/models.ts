@@ -80,6 +80,8 @@ export type NativeListImageStyle = Readonly<{
 export type MarketImageStyle = NativeListImageStyle;
 
 export type NativeListRowContainerStyle = Readonly<{
+  /** Explicit row height in logical units; overrides RowBase.height. */
+  height?: number;
   backgroundColor?: string;
   opacity?: number;
   cornerRadius?: number;

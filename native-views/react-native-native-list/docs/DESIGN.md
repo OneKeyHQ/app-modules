@@ -133,8 +133,11 @@ and `reorder`.
 
 ## Height, layout, and performance constraints
 
-Template sizes are fixed to a small set of variants. `message` body text is
-bounded to three lines and uses a deterministic template height. System spacers
+`style.container.height` defines an explicit row height before legacy `row.height`.
+Without either, templates use their existing preset or measured sizes. Styling
+can change measured sizes; explicit heights remain exact, and clearing the style
+restores the model/template height. `message` body text is bounded to three lines
+and uses a deterministic measurement. System spacers
 are explicit and bounded. Images have explicit sizes, and grid columns are fixed
 per snapshot. This keeps layout work predictable for 1,000- and 5,000-row
 workloads without an unbounded self-sizing pass.

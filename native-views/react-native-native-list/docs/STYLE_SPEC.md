@@ -44,7 +44,7 @@ belong to the list container, independently of the content template.
 | List container | Viewport, header/footer placement, sections, scroll position, refresh/load more, indexed bar and list chrome | The business meaning of a content row |
 | Layout | Orientation, row allocation, grid spans/table columns, content padding and item spacing | Typography of a particular row field |
 | Row template + variant | Slot order, hierarchy, required/optional fields, compression and bounded line counts | Whether the list has a header, footer, section index or scroll API |
-| `row.style` | Allowlisted typography, colors and bounded local metrics | Arbitrary children, flex direction, positioning, reparenting or list-level geometry |
+| `row.style` | Allowlisted typography, colors, local metrics and explicit container height | Arbitrary children, flex direction, positioning, reparenting or list-level geometry |
 
 **Normative requirement:** replacing an `identity` row with a `market` or
 `dataRow` in the same valid container must not remove that container's common
@@ -75,9 +75,11 @@ by styling them. See the complete applicability matrix in §4.1.
 
 The 12 templates each have a definition and schematic in ROW_TEMPLATES.md.
 Overflow fitting remains the integrating developer's responsibility: choose
-fitting text/image/padding values and row heights. Automatic overflow fitting, combination-fit rejection and converting fixed rows
-to auto-height are outside this contract. Existing measured templates account
-for explicit text metrics in their existing height calculation.
+fitting text/image/padding values and row heights. `style.container.height` can
+define a new row height; omission preserves the model/template measurement rules.
+Existing measured templates account for explicit text/image/padding metrics.
+Automatic overflow fitting, combination-fit rejection and automatic font shrinking
+remain outside this contract.
 The five source PRs are closed; implementation continues in the consolidated PR.
 
 ## 2. How this spec is enforced
@@ -110,7 +112,7 @@ object identity.
 | `dataRow` column styles | Independent primary/secondary text on all platforms, in linear and table layouts |
 | Sticky header styles | Android uses the same row view/binder as normal headers; iOS and Web also reuse their row renderers |
 | `listStyle.separator` / `groupCornerRadius` | Initial/update propagation and actual-group scope aligned |
-| Row heights and overflow | Caller owns fixed allocation and fitting; existing measured message/warning paths account for text metrics |
+| Row heights and overflow | `style.container.height` overrides `row.height`; omission retains template measurement, including existing style-dependent sizing; caller owns content fitting |
 | Legacy baseline dimensions | Inventory in §4/§6; explicit style values use logical units independently of Android's legacy list scale |
 | Rendered acceptance | The source contract and build checks do not establish full native interaction/pixel acceptance (§9) |
 
@@ -228,7 +230,10 @@ Every supported image role accepts `width`, `height`, `shape`, `cornerRadius`,
 Fit is `cover | contain | fill | center`. These parameters target the primary
 visual, not network badges, corner decorations, message thumbnails or nested
 metric images. A media tile keeps its square default when only width is set;
-an explicit height overrides that aspect. Width/height do not change the outer row allocation.
+an explicit image height overrides that aspect. Image/text/padding metrics can
+participate in an existing intrinsic/measured template, such as Market or message.
+They do not override an explicit row height. Use `style.container.height` to
+define a new outer height for any template.
 
 In the matrix, **padding** means both `horizontalPadding` and `verticalPadding`.
 Each cell describes the same public contract on **Web + iOS + Android**.
@@ -281,6 +286,7 @@ container including descendants.
 
 | Property | Values / default when supplied | Meaning |
 | --- | --- | --- |
+| `height` | `0…4096` logical units | Explicit row allocation; takes precedence over `row.height` and template measurement |
 | `backgroundColor` | `#RRGGBB` / `#RRGGBBAA` | Resting row background |
 | `opacity` | `0…1` | Opacity of the whole row, multiplied by disabled dimming |
 | `cornerRadius` | `0…80` logical units | All four outer row corners |
@@ -298,16 +304,17 @@ change `listStyle.groupCornerRadius`. `backgroundFullWidth` remains a layout/mod
 option and uses the resolved resting background. A border never changes padding.
 
 `horizontalPadding` / `verticalPadding` remain on `row.style`; there is no second
-padding entry under `container`. Outer margin, width, height, positioning,
-visibility, flex direction, column weights and hit-area changes are not container
-style properties. Row allocation remains with the existing model/layout API.
+padding entry under `container`. Outer margin, width, positioning, visibility,
+flex direction, column weights and independent hit-area changes are not container
+style properties. `height` changes the row frame and its normal row hit area; it
+does not rearrange slots or resize their contents.
 Shadows, gradients and per-corner/per-edge styling are outside this version.
 
 ```ts
-// Inside an identity row; the caller supplies a fitting row.height separately.
+// Inside an identity row; the style itself can allocate a new row height.
 style: {
   container: {
-    backgroundColor: '#EDF6FF', cornerRadius: 12,
+    height: 112, backgroundColor: '#EDF6FF', cornerRadius: 12,
     borderWidth: 1, borderColor: '#8DB7E4', contentVerticalAlignment: 'center',
   },
   horizontalPadding: 16, verticalPadding: 12, leadingGap: 10, lineGap: 4,
@@ -342,8 +349,17 @@ absent. `style.title.lines` overrides legacy `titleLines`,
 style restores the model/default value. `patch.changes.style` replaces the whole
 style object; `{}` clears it, including container and text overrides.
 
-Fixed row heights are never expanded automatically. Integrators choose a fitting
-height; this is not automatic overflow prevention. Existing intrinsic/measured
+Height precedence is `style.container.height` → `row.height` → existing
+template/layout measurement. A style height is an exact logical height, not a
+minimum. It applies to every template, normal rows, grid/horizontal layouts,
+wallet members, sticky headers and fixed footers. Clearing the whole style or
+omitting `container.height` restores the original model height or measurement;
+the original `row.height` is never rewritten. Wallet-group compact reorder keeps
+its temporary drag height and restores the styled height afterward. Android
+uses unscaled logical dp, with `heightRounding` when supplied (nearest otherwise).
+
+An explicit height is not automatically expanded. With neither explicit height,
+styles may change an existing measured/intrinsic row height. Existing intrinsic/measured
 paths must account for explicit text metrics within their declared measurement
 model. Font shaping and exact wrap points can vary across platform fonts; the
 property meanings and maximum line counts must agree.
@@ -699,8 +715,28 @@ exposed — a hairline is correct on iOS and a whole pixel is correct elsewhere.
 | Android sticky header uses a separate partial renderer | Normal row view renders pinned text, values and controls | Pin/push-off, checkbox/action taps, scrolling and accessibility |
 | List chrome propagation and group scope | Initial/update paths receive listStyle; custom radius only applies to actual groups | Initial and chrome-only snapshot interactions |
 | Parent style cascades to wallet members | Group exposes container appearance and padding; members bind their own styles | Independent group/member styling during reorder |
-| Row container surface | Shared `style.container`, explicit-over-legacy precedence, disabled opacity, border/radius and content alignment | Press/selection/reorder and nested members on device |
+| Row container surface | Shared `style.container`, explicit height and appearance precedence, disabled opacity, border/radius and content alignment | Press/selection/reorder and nested members on device |
 | Text line controls | Shared 1–3 lines, tail/clip, vertical alignment and optical offset; measured text paths updated | Long/CJK/RTL/rich text and fixed-height clipping on device |
+
+### 6.6 Follow-up source audit (2026-09-22)
+
+| Difference found | Repair |
+| --- | --- |
+| Web clip height guessed before CSS was mounted; iOS clip disabled natural wrapping | CSS line-height-relative clipping and iOS wrapping without ellipsis |
+| Web ignored legacy identity line limits and Market badge metrics | Apply declared fields with style precedence and restore defaults on clear |
+| Market rich subscripts retained their old size despite explicit font size | Explicit field size overrides every run on all three platforms |
+| Web Market center fit used an invalid CSS value; change color used reversed precedence | Map center to object-fit none; explicit style color wins |
+| Android line height excluded first/last text lines | Apply an exact line-height span including first/last font metrics |
+| Legacy native centering overrode container alignment | Apply legacy positioning only when container alignment is omitted |
+| Media leading gap changed when container alignment was supplied | Keep image-to-metadata spacing independent from vertical alignment |
+| Opaque group members covered Web/Android explicit borders | Draw the border above member content without changing padding or hit targets |
+| Web fixed footer was laid out beside the viewport | Stack viewport and footer vertically; styled footer height participates in allocation |
+| Message timestamp line limits were absent from measured height | Include the timestamp text style in the existing message measurement |
+| Runtime Market badge validation accepted text properties absent from its public type | Restrict badge style to its five declared metrics; it is not a row text role |
+
+Market badge metrics remain `fontSize`, `fontWeight`, `lineHeight`, `height` and
+`horizontalPadding`; badge colors stay on its existing model fields. This does
+not extend the row-style vocabulary to arbitrary nested parts.
 
 Common headers/footers already exist through structural rows, `fixedFooter` and
 pager composition (§5.1). This work does not add an arbitrary React header slot.
@@ -740,15 +776,16 @@ are explicitly out of scope. The following rules distinguish those responsibilit
    change slot order, orientation, column count/weight, structural spans, section
    membership, control placement or parent constraints. Those belong to the
    template, its explicit variant, or the container layout.
-2. **Keep fixed row allocation authoritative.** An explicit `row.height` and
-   fixed template allocation do not expand to fit style changes. If more space is
-   needed, the caller supplies a fitting height and verifies container geometry.
-   Existing measured message/warning paths include explicit text metrics in their
-   calculation; they do not turn other templates into auto-height rows.
+2. **Resolve row height consistently.** `style.container.height` defines the row
+   allocation before legacy `row.height`; without either, retain the template
+   measurement rules, including existing style-dependent text/image/padding
+   sizing. A new template documents whether its default height is a preset or
+   measured. Integrators can set a fitting style height without changing the
+   row model. Do not add automatic content fitting or font shrinking.
 3. **Integrator: fit content within that frame.** After local padding, each visual/control
    and text line box must fit. For a simple two-line identity row, a necessary
    check is `2 * verticalPadding + max(visualHeight, titleLineHeight + lineGap +
-   subtitleLineHeight, trailingHeight) <= row.height`. More lines and template
+   subtitleLineHeight, trailingHeight) <= resolvedRowHeight`. More lines and template
    subrows add their own budget. This formula is an example, not a general row
    measurement algorithm; it does not cover platform font scaling or rounding.
 4. **Integrator: verify compression and interaction.** Text may truncate/wrap only inside

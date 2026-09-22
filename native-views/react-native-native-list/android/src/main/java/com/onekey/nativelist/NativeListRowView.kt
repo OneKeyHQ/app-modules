@@ -833,7 +833,7 @@ internal class NativeListRowView(
       // OneKey patch: Yoga rounds the two absolute edges, not both padding values.
       val sourcePadding = marketStyle.optDouble("horizontalPadding") * resources.displayMetrics.density
       val width = MeasureSpec.getSize(widthMeasureSpec)
-      val rowHeight = selectorHeight
+      val rowHeight = marketItem.styledHeight?.let(::styleDp) ?: selectorHeight
       val sourceVerticalPadding = marketStyle.takeIf { it.has("verticalPadding") && rowHeight != null }
         ?.optDouble("verticalPadding")?.times(resources.displayMetrics.density)
       setPadding(
@@ -857,7 +857,11 @@ internal class NativeListRowView(
       leadingFrame.layoutParams = params
     }
     // OneKey patch: RecyclerView must use the adapter's measured selector height.
-    super.onMeasure(widthMeasureSpec, selectorHeight?.let { MeasureSpec.makeMeasureSpec(it, MeasureSpec.EXACTLY) } ?: heightMeasureSpec)
+    val heightItem = tag as? NativeListItem
+    val styledHeight = heightItem?.let(::styledHeightPixels)?.takeUnless {
+      heightItem.type == "walletGroup" && (reorderActive || walletGroupExpandAnimator?.isRunning == true)
+    }
+    super.onMeasure(widthMeasureSpec, (styledHeight ?: selectorHeight)?.let { MeasureSpec.makeMeasureSpec(it, MeasureSpec.EXACTLY) } ?: heightMeasureSpec)
     val item = tag as? NativeListItem ?: return
     if (item.json.has("height") && item.json.optString("presentation") == "networkSelector" && item.type in setOf("identity", "sectionHeader") && checkbox.visibility == VISIBLE && trailingColumn.parent === this) {
       // OneKey patch: Yoga snaps the compound accessory before its children; their rounded edges can overflow it.
@@ -875,15 +879,16 @@ internal class NativeListRowView(
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
     super.onLayout(changed, left, top, right, bottom)
     val item = tag as? NativeListItem ?: return
+    val hasContainerAlignment = item.json.optJSONObject("style")?.optJSONObject("container")?.has("contentVerticalAlignment") == true
     if (item.type == "market" && item.json.optJSONObject("style") != null) {
       // OneKey patch: preserve Yoga's half-pixel centering for Market columns and badges.
       for (column in listOf(leadingFrame, mainColumn, trailingColumn)) {
-        if (column.parent === this && column.visibility != GONE) {
+        if (!hasContainerAlignment && column.parent === this && column.visibility != GONE) {
           column.offsetTopAndBottom((height - column.height + 1) / 2 - column.top)
         }
       }
       // OneKey patch: token avatars stay centered in the row when text rounding adds a pixel.
-      if (item.json.optString("variant") != "token" && leadingFrame.parent === this && mainColumn.parent === this) {
+      if (!hasContainerAlignment && item.json.optString("variant") != "token" && leadingFrame.parent === this && mainColumn.parent === this) {
         leadingFrame.offsetTopAndBottom(mainColumn.top + (mainColumn.height - leadingFrame.height + 1) / 2 - leadingFrame.top)
       }
       // OneKey patch: preserve Yoga's absolute-edge rounding for the Market network badge.
@@ -933,7 +938,7 @@ internal class NativeListRowView(
       }
     }
     val accessory = item.json.optJSONArray("trailing")?.optJSONObject(0)
-    if (item.type == "identity" && item.json.has("height") && item.json.optString("presentation") == "accountSelector" && accessory?.optString("kind") == "icon" && accessory.optString("name") == "PlusSmallOutline") {
+    if (!hasContainerAlignment && item.type == "identity" && item.json.has("height") && item.json.optString("presentation") == "accountSelector" && accessory?.optString("kind") == "icon" && accessory.optString("name") == "PlusSmallOutline") {
       // OneKey patch: the borderless Plus retains the source's fixed top18/negative7 slot.
       val icon = trailingIcons[0]
       trailingColumn.offsetTopAndBottom(dp(18) - dp(7) - trailingColumn.top - icon.top)
@@ -943,7 +948,7 @@ internal class NativeListRowView(
       leadingIcon.offsetLeftAndRight((leadingFrame.width - leadingIcon.width + 1) / 2 - leadingIcon.left)
       leadingIcon.offsetTopAndBottom((leadingFrame.height - leadingIcon.height + 1) / 2 - leadingIcon.top)
     }
-    if (!item.json.has("height")) return
+    if (!item.json.has("height") || hasContainerAlignment) return
     val isNetworkIdentity = item.type == "identity" && item.json.optString("presentation") == "networkSelector"
     val isAccountAction = item.type == "action" && item.json.optString("presentation") == "accountSelector"
     val isNetworkSummary = item.type == "sectionHeader" && item.json.optString("presentation") == "networkSelector" && item.json.optString("variant") == "summary"
@@ -1123,6 +1128,16 @@ internal class NativeListRowView(
     }
     restingRowBackground = decorate(restingRowBackground, true)
     pressedRowBackground = decorate(pressedRowBackground, false)
+    if (style.has("borderWidth")) {
+      val originalForeground = foreground
+      styledBoxRestorations.add { foreground = originalForeground }
+      foreground = (restingRowBackground?.constantState?.newDrawable()?.mutate() as? GradientDrawable)?.apply {
+        setColor(Color.TRANSPARENT)
+      }
+      // Background strokes are covered by opaque wallet members. Paint once above them.
+      (restingRowBackground as? GradientDrawable)?.setStroke(0, Color.TRANSPARENT)
+      (pressedRowBackground as? GradientDrawable)?.setStroke(0, Color.TRANSPARENT)
+    }
     background = if (touchPressed || reorderActive) pressedRowBackground else restingRowBackground
     val oldClip = clipToOutline
     val oldGravity = gravity
@@ -1253,6 +1268,11 @@ internal class NativeListRowView(
 
   private fun styleDp(value: Double): Int = (value * resources.displayMetrics.density).roundToInt()
 
+  private fun styledHeightPixels(item: NativeListItem): Int? = item.styledHeight?.let { height ->
+    val pixels = height * resources.displayMetrics.density
+    if (item.json.optString("heightRounding") == "floor") pixels.toInt() else pixels.roundToInt()
+  }
+
   private fun styleMargins(view: View, start: Int? = null, end: Int? = null, top: Int? = null, bottom: Int? = null) {
     val params = view.layoutParams as? MarginLayoutParams ?: return
     val saved = intArrayOf(params.marginStart, params.marginEnd, params.topMargin, params.bottomMargin)
@@ -1334,8 +1354,9 @@ internal class NativeListRowView(
     if (style.has("lineHeight")) {
       val text = SpannableStringBuilder(view.text)
       text.getSpans(0, text.length, SelectorLineHeightSpan::class.java).forEach(text::removeSpan)
+      text.setSpan(SelectorLineHeightSpan(styleDp(style.optDouble("lineHeight"))), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+      view.setLineSpacing(0f, 1f)
       view.text = text
-      TextViewCompat.setLineHeight(view, styleDp(style.optDouble("lineHeight")))
     }
     if (style.has("lines")) {
       view.maxLines = style.optInt("lines").coerceIn(1, 3)
@@ -1951,7 +1972,10 @@ internal class NativeListRowView(
     walletGroupExpandedHeightPx =
       // OneKey patch: expanded groups include individual wallet badge heights.
       // dp(members.size * 68 + walletGroupDragChildCount * 12)
-      dp(members.sumOf { it.optInt("height", if ((it.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68) } + childCount * 12 + if (members.first().has("height")) 2 else 0)
+      styledHeightPixels(item) ?: (members.sumOf { member ->
+        styledHeightPixels(NativeListItem.parse(member))
+          ?: dp(member.optInt("height", if ((member.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68))
+      } + dp(childCount * 12 + if (members.first().has("height")) 2 else 0))
     walletGroupDragBadgeBackgroundPaint.color = color(
       theme,
       "inverseBackground",
@@ -1999,7 +2023,7 @@ internal class NativeListRowView(
       )
       // OneKey patch: member geometry matches the outer group height calculation.
       // memberRow.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(68)).apply {
-      memberRow.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(memberJson.optInt("height", if ((memberJson.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68))).apply {
+      memberRow.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, styledHeightPixels(member) ?: dp(memberJson.optInt("height", if ((memberJson.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68))).apply {
         if (index > 0) topMargin = dp(12)
       }
       addView(memberRow)
@@ -2449,13 +2473,14 @@ internal class NativeListRowView(
     marketOriginalPaintFlags.putIfAbsent(view, view.paintFlags)
     view.paintFlags = view.paintFlags or Paint.SUBPIXEL_TEXT_FLAG or Paint.LINEAR_TEXT_FLAG
     if (style.has("fontSize")) {
-      val sourceSize = sp(style.optDouble("fontSize").toFloat()) * resources.displayMetrics.density
+      val sourceSize = style.optDouble("fontSize").toFloat() * resources.displayMetrics.density
       view.setTextSize(TypedValue.COMPLEX_UNIT_PX, kotlin.math.ceil(sourceSize.toDouble()).toFloat())
     }
     val text = SpannableStringBuilder(view.text)
+    if (style.has("fontSize")) text.getSpans(0, text.length, AbsoluteSizeSpan::class.java).forEach(text::removeSpan)
     text.getSpans(0, text.length, SelectorLineHeightSpan::class.java).forEach(text::removeSpan)
     if (style.has("lineHeight")) {
-      val lineHeight = kotlin.math.ceil(style.optDouble("lineHeight") * (if (selectorUsesSourceScale) 1f else NativeListScale.factor(resources)) * resources.displayMetrics.density).toInt()
+      val lineHeight = styleDp(style.optDouble("lineHeight"))
       text.setSpan(SelectorLineHeightSpan(lineHeight), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
       view.setLineSpacing(0f, 1f)
     }

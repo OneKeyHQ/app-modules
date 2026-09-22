@@ -9,6 +9,10 @@ struct NativeListItem {
   let data: [String: Any]
   let content: String
 
+  var styledHeight: CGFloat? {
+    (data.dictionary("style")?.dictionary("container")?["height"] as? Double).map { CGFloat($0) }
+  }
+
   var isSelectable: Bool {
     let disabled = data["disabled"] as? Bool ?? false
     return !disabled && Self.selectableTypes.contains(type)

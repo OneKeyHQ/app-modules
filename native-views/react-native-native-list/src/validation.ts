@@ -290,6 +290,7 @@ function assertBoxStyle(style: RowBoxStyle, path: string): void {
     assertUnknownKeys(
       container as Record<string, unknown>,
       [
+        'height',
         'backgroundColor',
         'opacity',
         'cornerRadius',
@@ -310,6 +311,12 @@ function assertBoxStyle(style: RowBoxStyle, path: string): void {
         fail(`${containerPath}.${key}`, 'must be #RRGGBB or #RRGGBBAA');
       }
     }
+    assertBoundedStyleNumber(
+      container.height,
+      `${containerPath}.height`,
+      0,
+      4096
+    );
     assertBoundedStyleNumber(
       container.opacity,
       `${containerPath}.opacity`,
@@ -652,6 +659,13 @@ function assertMarketRow(row: MarketRow, path: string): void {
       'height',
       'horizontalPadding',
     ]);
+    if (badge.style)
+      assertUnknownKeys(
+        badge.style,
+        ['fontSize', 'fontWeight', 'lineHeight', 'height', 'horizontalPadding'],
+        `${badgePath}.style`,
+        'Market badge style key'
+      );
     assertBoundedStyleNumber(
       badge.style?.height,
       `${badgePath}.style.height`,
@@ -947,7 +961,7 @@ function assertRow(
     fail(`${path}.height`, 'must be within 0...4096');
   if (
     row.heightRounding !== undefined &&
-    (row.height === undefined ||
+    ((row.height === undefined && row.style?.container?.height === undefined) ||
       !['floor', 'nearest'].includes(row.heightRounding))
   )
     fail(
@@ -1051,8 +1065,8 @@ function assertRow(
     case 'message':
       assertText(row.title, `${path}.title`);
       assertText(row.body, `${path}.body`);
-      if ((row.bodyLines ?? 3) < 1 || (row.bodyLines ?? 3) > 3) {
-        fail(`${path}.bodyLines`, 'must be within 1...3');
+      if (![1, 2, 3].includes(row.bodyLines ?? 3)) {
+        fail(`${path}.bodyLines`, 'must be 1, 2, or 3');
       }
       assertImage(row.thumbnail, `${path}.thumbnail`);
       break;
@@ -1496,9 +1510,9 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       assertText(patch.changes.time, `${path}.time`);
       if (
         patch.changes.bodyLines !== undefined &&
-        (patch.changes.bodyLines < 1 || patch.changes.bodyLines > 3)
+        ![1, 2, 3].includes(patch.changes.bodyLines)
       ) {
-        fail(`${path}.bodyLines`, 'must be within 1...3');
+        fail(`${path}.bodyLines`, 'must be 1, 2, or 3');
       }
       assertImage(patch.changes.thumbnail, `${path}.thumbnail`);
       break;

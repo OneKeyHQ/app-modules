@@ -900,7 +900,8 @@ final class NativeListCell: UICollectionViewCell {
       let origin = titleLabel.convert(titleLabel.bounds, to: contentView).origin
       let x = floor((contentView.bounds.width - titleLabel.bounds.width) / 2 * scale) / scale
       let contentHeight: CGFloat = item.data.string("variant") == "retry" ? 56 : 24
-      let y = floor(max(32, (contentView.bounds.height - contentHeight) / 2) * scale) / scale
+      let y = item.data.dictionary("style")?.dictionary("container")?["contentVerticalAlignment"] != nil
+        ? origin.y : floor(max(32, (contentView.bounds.height - contentHeight) / 2) * scale) / scale
       titleLabel.transform = CGAffineTransform(translationX: x - origin.x, y: y - origin.y)
     }
     // OneKey patch: extend only the background across the section list outer inset.
@@ -917,6 +918,7 @@ final class NativeListCell: UICollectionViewCell {
       (view.layer.mask as? CAShapeLayer)?.path = UIBezierPath(ovalIn: view.bounds).cgPath
     }
     if currentItem?.type == "identity", currentItem?.data["height"] != nil,
+       currentItem?.data.dictionary("style")?.dictionary("container")?["contentVerticalAlignment"] == nil,
        currentItem?.data.string("presentation") == "accountSelector",
        let accessory = currentItem?.data.dictionaries("trailing").first,
        accessory.string("kind") == "icon", accessory.string("name") == "PlusSmallOutline" {
@@ -1602,7 +1604,7 @@ final class NativeListCell: UICollectionViewCell {
       let memberCell = walletGroupCells[index]
       // OneKey patch: badges add a second line within their logical wallet group.
       memberCell.constraints.filter { $0.firstAttribute == .height && $0.secondItem == nil }.forEach { $0.isActive = false }
-      memberCell.heightAnchor.constraint(equalToConstant: CGFloat(member.data.double("height", default: member.data.dictionaries("badges").isEmpty ? 68 : 92))).isActive = true
+      memberCell.heightAnchor.constraint(equalToConstant: member.styledHeight ?? CGFloat(member.data.double("height", default: member.data.dictionaries("badges").isEmpty ? 68 : 92))).isActive = true
       memberCell.onAction = { [weak self] source, action, target, origin in
         self?.onAction?(source, action, target, origin)
       }
@@ -1782,12 +1784,9 @@ final class NativeListCell: UICollectionViewCell {
       if alignment == "top" { position = rootStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: top) }
       else if alignment == "bottom" { position = rootStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -bottom) }
       else { position = rootStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor, constant: (top - bottom) / 2) }
-      let bounds = [position,
-        rootStack.topAnchor.constraint(greaterThanOrEqualTo: contentView.topAnchor, constant: top),
-        rootStack.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -bottom)]
-      NSLayoutConstraint.activate(bounds)
+      position.isActive = true
       styledTextRestorations.append {
-        NSLayoutConstraint.deactivate(bounds)
+        position.isActive = false
         topConstraint.isActive = true
         bottomConstraint.isActive = true
       }
@@ -2430,7 +2429,12 @@ final class NativeListCell: UICollectionViewCell {
     styledViewsDirty = true
     defer {
       applyContainerAppearance()
-      if let container = style.dictionary("container") { applyContainerAlignment(container) }
+      if var container = style.dictionary("container") {
+        if item.styledHeight != nil, rootStack.axis == .vertical, container["contentVerticalAlignment"] == nil {
+          container["contentVerticalAlignment"] = item.type == "identity" && item.data.string("presentation") == "walletSidebar" ? "center" : "top"
+        }
+        applyContainerAlignment(container)
+      }
     }
     if item.type == "market" {
       applyStyledText(titleLabel, textLayoutStyle(style.dictionary("title")))
@@ -2461,6 +2465,12 @@ final class NativeListCell: UICollectionViewCell {
     if style["lineGap"] != nil, item.type != "walletGroup", item.type != "dataRow" {
       let gap = CGFloat(style.double("lineGap"))
       styleGap(mainStack, gap)
+      if item.type == "message" {
+        let label = statusLabel
+        let inset = label.topInset
+        styledTextRestorations.append { label.topInset = inset }
+        label.topInset = 0
+      }
       if item.type == "metricCard", ["activity", "performance"].contains(item.data.string("variant")) {
         styleGap(metricCompositeStack, gap)
         if item.data.string("variant") == "performance", let summary = metricCompositeStack.arrangedSubviews.first as? UIStackView { styleGap(summary, gap) }
@@ -2586,6 +2596,12 @@ final class NativeListCell: UICollectionViewCell {
     }
   }
 
+  private func styledLineBreakMode(_ style: [String: Any], lines: Int) -> NSLineBreakMode {
+    if style.string("truncate", default: "tail") != "clip" { return .byTruncatingTail }
+    // Clipping disables wrapping; multi-line clip must wrap without adding an ellipsis.
+    return lines == 1 ? .byClipping : .byWordWrapping
+  }
+
   private func applyStyledText(_ label: UILabel, _ style: [String: Any]) {
     let text = label.attributedText?.string ?? label.text ?? ""
     guard !text.isEmpty, !style.isEmpty else { return }
@@ -2632,7 +2648,7 @@ final class NativeListCell: UICollectionViewCell {
       label.textAlignment = marketTextAlignment(alignmentName)
     }
     if style["truncate"] != nil || style["lines"] != nil {
-      label.lineBreakMode = style.string("truncate", default: "tail") == "clip" ? .byClipping : .byTruncatingTail
+      label.lineBreakMode = styledLineBreakMode(style, lines: label.numberOfLines)
     }
     if let alignment = style["verticalAlignment"] as? String { textLabel?.rowVerticalAlignment = alignment }
     if style["offsetY"] != nil { textLabel?.rowOffsetY = CGFloat(style.double("offsetY")) }
@@ -2674,6 +2690,9 @@ final class NativeListCell: UICollectionViewCell {
     let originalVertical = button.contentVerticalAlignment
     let originalBreakMode = button.titleLabel?.lineBreakMode
     let originalOffset = (button as? NativeListAccessoryButton)?.rowTextOffsetY ?? 0
+    let accessory = button as? NativeListAccessoryButton
+    let originalMarketLineHeight = accessory?.marketLineHeight
+    let originalSummaryLineHeight = accessory?.selectorSummaryLineHeight
     if styledTextViews.insert(ObjectIdentifier(button)).inserted {
       styledTextRestorations.append {
         button.titleLabel?.font = originalFont
@@ -2683,6 +2702,8 @@ final class NativeListCell: UICollectionViewCell {
         button.contentVerticalAlignment = originalVertical
         if let originalBreakMode { button.titleLabel?.lineBreakMode = originalBreakMode }
         (button as? NativeListAccessoryButton)?.rowTextOffsetY = originalOffset
+        accessory?.marketLineHeight = originalMarketLineHeight
+        accessory?.selectorSummaryLineHeight = originalSummaryLineHeight
       }
     }
     let baseFont = (originalText?.attribute(.font, at: 0, effectiveRange: nil) as? UIFont) ?? button.titleLabel?.font ?? nativeListFont(ofSize: 14)
@@ -2721,12 +2742,14 @@ final class NativeListCell: UICollectionViewCell {
       paragraph.minimumLineHeight = box
       paragraph.maximumLineHeight = box
       attributes[.baselineOffset] = max(0, (box - font.lineHeight) / 2)
+      if accessory?.marketLineHeight != nil { accessory?.marketLineHeight = box }
+      if accessory?.selectorSummaryLineHeight != nil { accessory?.selectorSummaryLineHeight = box }
     }
     if style["lines"] != nil {
       button.titleLabel?.numberOfLines = min(3, max(1, style.int("lines", default: 1)))
     }
     if style["lines"] != nil || style["truncate"] != nil {
-      let mode: NSLineBreakMode = style.string("truncate", default: "tail") == "clip" ? .byClipping : .byTruncatingTail
+      let mode = styledLineBreakMode(style, lines: button.titleLabel?.numberOfLines ?? 1)
       button.titleLabel?.lineBreakMode = mode
       paragraph.lineBreakMode = mode
       if button.titleLabel?.numberOfLines == 1 { normalizeSingleLine(attributed) }
@@ -2812,7 +2835,7 @@ final class NativeListCell: UICollectionViewCell {
     let result = NSMutableAttributedString(string: "")
     let source = segments.isEmpty ? [["text": text]] : segments
     for segment in source {
-      let segmentSize = segment.string("style") == "subscript" ? ceil(size * 0.6) : size
+      let segmentSize = style?["fontSize"] == nil && segment.string("style") == "subscript" ? ceil(size * 0.6) : size
       result.append(NSAttributedString(string: segment.string("text"), attributes: [
         .font: nativeListTabularFont(ofSize: segmentSize, weight: weight),
         .foregroundColor: resolvedColor,

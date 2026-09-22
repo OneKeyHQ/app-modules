@@ -1679,7 +1679,9 @@ final class NativeListView: UIView {
     usingCompactReorderHeight: Bool = true
   ) -> CGFloat {
     // OneKey patch: honor selector baseline geometry; keep compact drag sizing.
-    if item.type != "walletGroup", item.data["height"] != nil { return CGFloat(item.data.double("height")) }
+    if item.type == "walletGroup", usingCompactReorderHeight, item.key == interactiveReorderCompactKey { return 68 }
+    if let height = item.styledHeight { return height }
+    if item.data["height"] != nil { return CGFloat(item.data.double("height")) }
     if item.type == "system", item.data.string("variant") == "spacer" {
       return CGFloat(item.data.int("height"))
     }
@@ -1706,7 +1708,7 @@ final class NativeListView: UIView {
       // return CGFloat((childCount + 1) * 68 + childCount * 12)
       let members = [item.data.dictionary("parent")].compactMap { $0 } + item.data.dictionaries("children")
       return members.reduce(CGFloat(childCount * 12 + (members.first?["height"] != nil ? 2 : 0))) { total, data in
-        total + CGFloat(data.double("height", default: data.dictionaries("badges").isEmpty ? 68 : 92))
+        total + CGFloat(data.dictionary("style")?.dictionary("container")?.double("height", default: data.double("height", default: data.dictionaries("badges").isEmpty ? 68 : 92)) ?? data.double("height", default: data.dictionaries("badges").isEmpty ? 68 : 92))
       }
     }
     if item.type == "identity", item.data.string("presentation") == "walletSidebar" {
@@ -1831,7 +1833,7 @@ final class NativeListView: UIView {
     return CGFloat(style?.double("verticalPadding", default: 16) ?? 16) * 2
       + textHeight("title", lines: 2, weight: .semibold)
       + textHeight("body", lines: item.data.int("bodyLines", default: 3), weight: .regular)
-      + CGFloat(style?.dictionary("time")?.double("lineHeight", default: 20) ?? 20)
+      + textHeight("time", lines: 1, weight: .regular)
       + CGFloat(style?.double("lineGap", default: 1) ?? 1) * 2
   }
 
@@ -2180,7 +2182,8 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
     if config.orientation == "horizontal" {
       let width: CGFloat = item.type == "rail" ? railWidth(item) : item.type == "mediaTile" ? 200 : 280
       let availableHeight = max(0, collectionView.bounds.height - insets.top - insets.bottom)
-      let height = item.type == "rail" ? min(rowHeight(item), availableHeight) : availableHeight
+      let height = item.type == "walletGroup" && item.key == interactiveReorderCompactKey ? 68
+        : item.styledHeight ?? (item.data["height"] != nil ? rowHeight(item) : item.type == "rail" ? min(rowHeight(item), availableHeight) : availableHeight)
       return CGSize(width: width, height: height)
     }
     let available = max(0, collectionView.bounds.width - insets.left - insets.right)
@@ -2188,7 +2191,7 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
     if config.layout == "grid", !structural {
       let spacing = CGFloat(config.gridColumns - 1) * config.itemSpacing
       let width = floor((available - spacing) / CGFloat(config.gridColumns))
-      let height = item.type == "mediaTile" ? width + 48 : rowHeight(item)
+      let height = item.styledHeight ?? (item.type == "mediaTile" && item.data["height"] == nil ? width + 48 : rowHeight(item))
       return CGSize(width: width, height: height)
     }
     return CGSize(width: available, height: rowHeight(item))

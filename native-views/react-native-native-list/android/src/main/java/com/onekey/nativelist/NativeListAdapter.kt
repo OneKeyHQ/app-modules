@@ -143,7 +143,7 @@ internal class NativeListAdapter(
       items.forEachIndexed { index, item ->
         val style = item.json.optJSONObject("style")
         val height = item.json.optDouble("height", 0.0)
-        val sourceHeight = if (item.type == "market" && style != null) {
+        val sourceHeight = item.styledHeight ?: if (item.type == "market" && style != null) {
           val titleHeight = ceil((style.optJSONObject("title")?.optDouble("lineHeight", 24.0) ?: 24.0) * density) / density
           val subtitleHeight = if (item.json.optString("subtitle").isNotEmpty() || item.json.optJSONObject("subtitlePrefix") != null) {
             ceil((style.optJSONObject("subtitle")?.optDouble("lineHeight", 20.0) ?: 20.0) * density) / density + style.optDouble("lineGap", 0.0)

@@ -591,6 +591,372 @@ describe('web row style', () => {
     return body;
   };
 
+  it('honors legacy identity line limits and restores them when style is cleared', () => {
+    const base: IdentityRow = {
+      type: 'identity',
+      key: 'legacy-lines',
+      leading: { kind: 'icon', name: 'coin' },
+      title: 'First\nSecond',
+      subtitle: 'One\nTwo',
+      titleLines: 2,
+      subtitleLines: 2,
+      titleMatch: [{ start: 0, end: 5 }],
+    };
+    for (const style of [
+      { title: { lines: 1 as const }, subtitle: { lines: 3 as const } },
+      {},
+    ]) {
+      const body = render({ ...base, style });
+      const title = body.querySelector<HTMLElement>('[data-nl-slot="title"]')!;
+      const subtitle = body.querySelector<HTMLElement>(
+        '[data-nl-slot="subtitle"]'
+      )!;
+      expect(title.style.getPropertyValue('-webkit-line-clamp')).toBe(
+        'title' in style ? '' : '2'
+      );
+      expect(title.textContent).toBe(
+        'title' in style ? 'First Second' : base.title
+      );
+      expect(subtitle.style.getPropertyValue('-webkit-line-clamp')).toBe(
+        'subtitle' in style ? '3' : '2'
+      );
+    }
+  });
+
+  it('uses template line height for detached multi-line clip and retains unbounded warning defaults', () => {
+    const message = render({
+      type: 'message',
+      key: 'clip',
+      title: 'Title',
+      body: 'One\nTwo\nThree\nFour',
+      time: 'Now',
+      style: { body: { lines: 3, truncate: 'clip' } },
+    });
+    expect(
+      message.querySelector<HTMLElement>('[data-nl-slot="body"]')!.style
+        .maxHeight
+    ).toBe('3lh');
+    const warning = render({
+      type: 'system',
+      key: 'warning',
+      variant: 'warning',
+      title: 'Warning',
+      message: 'One\nTwo\nThree\nFour',
+      style: { message: { truncate: 'clip' } },
+    });
+    const text = warning.querySelector<HTMLElement>(
+      '[data-nl-slot="message"]'
+    )!;
+    expect(text.style.whiteSpace).toBe('pre-wrap');
+    expect(text.style.maxHeight).toBe('');
+    expect(text.textContent).toContain('\n');
+  });
+
+  it('applies Market badge metrics and center image fitting without changing overlays', () => {
+    const body = render({
+      type: 'market',
+      key: 'market-badge',
+      variant: 'token',
+      title: 'Market',
+      leading: { kind: 'token', image, networkImage: image },
+      price: '$1',
+      change: { text: '+1%', tone: 'positive' },
+      badges: [
+        {
+          key: 'tag',
+          text: 'Tag',
+          style: {
+            fontSize: 15,
+            fontWeight: 'bold',
+            lineHeight: 22,
+            height: 30,
+            horizontalPadding: 7,
+          },
+        },
+      ],
+      style: { image: { contentFit: 'center' }, leadingGap: 9 },
+    });
+    const badge = body.querySelector<HTMLElement>(
+      '.ok-native-list-market-badge'
+    )!;
+    expect(badge.style.fontSize).toBe('15px');
+    expect(badge.style.fontWeight).toBe('700');
+    expect(badge.style.lineHeight).toBe('22px');
+    expect(badge.style.height).toBe('30px');
+    expect(badge.style.paddingInline).toBe('7px');
+    const visual = body.querySelector<HTMLElement>('.ok-native-list-visual')!;
+    expect(visual.style.marginInlineEnd).toBe('9px');
+    expect(
+      visual.querySelector<HTMLElement>('.ok-native-list-visual-main')!.style
+        .objectFit
+    ).toBe('none');
+    expect(
+      visual.querySelector<HTMLElement>('.ok-native-list-visual-corner')!.style
+        .objectFit
+    ).not.toBe('none');
+  });
+
+  it('gives explicit Market typography priority over rich runs and legacy change colors', () => {
+    const body = render({
+      type: 'market',
+      key: 'market-rich',
+      variant: 'token',
+      title: 'Market',
+      leading: { kind: 'icon', name: 'coin' },
+      price: '$01',
+      priceSegments: [{ text: '$0' }, { text: '1', style: 'subscript' }],
+      change: {
+        text: '+01',
+        textSegments: [{ text: '+0' }, { text: '1', style: 'subscript' }],
+        tone: 'positive',
+        textColor: '#ff0000',
+      },
+      style: {
+        price: { fontSize: 18 },
+        change: { fontSize: 17, color: '#123456' },
+      },
+    });
+    const price = body.querySelector<HTMLElement>(
+      '.ok-native-list-market-price'
+    )!;
+    const change = body.querySelector<HTMLElement>(
+      '.ok-native-list-market-change'
+    )!;
+    expect(
+      Array.from(price.querySelectorAll('span')).map(
+        (run) => run.style.fontSize
+      )
+    ).toEqual(['18px', '18px']);
+    expect(
+      Array.from(
+        change.querySelectorAll<HTMLElement>(
+          '.ok-native-list-text-content > span'
+        )
+      ).map((run) => run.style.fontSize)
+    ).toEqual(['17px', '17px']);
+    expect(change.style.color).toBe('rgb(18, 52, 86)');
+  });
+
+  it('allows Market measurement changes while giving explicit style height precedence', () => {
+    const row: RowModel = {
+      type: 'market',
+      key: 'market-height',
+      variant: 'token',
+      title: 'Market',
+      leading: { kind: 'icon', name: 'coin' },
+      price: '$1',
+      change: { text: '+1%', tone: 'positive' },
+    };
+    const config = snapshot({ kind: 'linear' }, [row]);
+    expect(
+      estimateWebRowHeight(
+        { ...row, style: { image: { height: 140 }, verticalPadding: 48 } },
+        config,
+        320
+      )
+    ).toBeGreaterThan(estimateWebRowHeight(row, config, 320));
+    expect(
+      estimateWebRowHeight(
+        {
+          ...row,
+          height: 180,
+          style: { image: { height: 140 }, verticalPadding: 48 },
+        },
+        config,
+        320
+      )
+    ).toBe(180);
+  });
+
+  it('resolves style heights in linear, grid, horizontal, nested and footer paths without overwriting legacy heights', () => {
+    const base: IdentityRow = {
+      type: 'identity',
+      key: 'sized',
+      height: 80,
+      title: 'Sized',
+      leading: { kind: 'icon', name: 'coin' },
+    };
+    const sized: IdentityRow = {
+      ...base,
+      style: { container: { height: 124 } },
+    };
+    for (const layout of [
+      { kind: 'linear' },
+      { kind: 'grid', gridColumns: 2 },
+      { kind: 'linear', orientation: 'horizontal' },
+    ] as const) {
+      expect(
+        computeWebListLayout(snapshot(layout, [sized]), 360, 500).items[0]!
+          .height
+      ).toBe(124);
+      expect(sized.height).toBe(80);
+    }
+    const media: RowModel = {
+      type: 'mediaTile',
+      variant: 'gallery',
+      key: 'media-sized',
+      title: 'Media',
+      style: { container: { height: 150 } },
+    };
+    expect(
+      computeWebListLayout(
+        snapshot({ kind: 'grid', gridColumns: 2 }, [media]),
+        360,
+        500
+      ).items[0]!.height
+    ).toBe(150);
+    const parent: IdentityRow = {
+      ...base,
+      key: 'parent',
+      presentation: 'walletSidebar',
+      style: { container: { height: 100 } },
+    };
+    const group: RowModel = {
+      type: 'walletGroup',
+      key: 'parent',
+      parent,
+      children: [
+        { ...parent, key: 'child', style: { container: { height: 90 } } },
+      ],
+    };
+    expect(
+      estimateWebRowHeight(group, snapshot({ kind: 'linear' }, [group]), 360)
+    ).toBe(204);
+    const groupBody = render(group);
+    expect(
+      Array.from(groupBody.children).map(
+        (node) => (node as HTMLElement).style.height
+      )
+    ).toEqual(['100px', '90px']);
+    const compact = computeWebListLayout(
+      snapshot({ kind: 'linear' }, [
+        { ...group, style: { container: { height: 250 } } },
+      ]),
+      360,
+      500,
+      'parent'
+    );
+    expect(compact.items[0]!.height).toBe(68);
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const footer = {
+      type: 'action',
+      key: 'footer',
+      actionKey: 'footer-action',
+      title: 'Footer',
+      height: 50,
+      style: { container: { height: 92 } },
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      { ...snapshot({ kind: 'sectioned' }, [sized]), fixedFooter: footer },
+      {},
+      false
+    );
+    try {
+      expect(
+        host.querySelector<HTMLElement>('[data-native-list-row-key="sized"]')!
+          .style.height
+      ).toBe('124px');
+      expect(
+        host.querySelector<HTMLElement>(
+          '.ok-native-list-footer > .ok-native-list-item'
+        )!.style.height
+      ).toBe('92px');
+      engine.applySnapshot({
+        ...snapshot({ kind: 'sectioned' }, [{ ...base, style: {} }]),
+        fixedFooter: { ...footer, style: {} },
+      });
+      expect(
+        host.querySelector<HTMLElement>('[data-native-list-row-key="sized"]')!
+          .style.height
+      ).toBe('80px');
+      expect(
+        host.querySelector<HTMLElement>(
+          '.ok-native-list-footer > .ok-native-list-item'
+        )!.style.height
+      ).toBe('50px');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('includes timestamp line limits in measured message height and respects a styled height', () => {
+    const base = {
+      type: 'message',
+      key: 'time-height',
+      title: 'Title',
+      body: 'Body',
+      time: 'One\nTwo\nThree',
+    } as const;
+    const config = snapshot({ kind: 'linear' }, [base]);
+    const single = {
+      ...base,
+      style: { time: { lines: 1 as const, lineHeight: 22 } },
+    };
+    const multi = {
+      ...base,
+      style: { time: { lines: 3 as const, lineHeight: 22 } },
+    };
+    expect(
+      estimateWebRowHeight(multi, config, 400) -
+        estimateWebRowHeight(single, config, 400)
+    ).toBe(44);
+    expect(
+      estimateWebRowHeight(
+        { ...multi, style: { ...multi.style, container: { height: 120 } } },
+        config,
+        400
+      )
+    ).toBe(120);
+  });
+
+  it('preserves the value-pair break inside a shared multi-line budget', () => {
+    const base: IdentityRow = {
+      type: 'identity',
+      key: 'pair-lines',
+      title: 'Pair',
+      leading: { kind: 'icon', name: 'coin' },
+      trailing: [{ kind: 'valuePair', primary: 'One', secondary: 'Two' }],
+    };
+    const multi = render({
+      ...base,
+      style: { value: { lines: 3, truncate: 'clip' } },
+    }).querySelector<HTMLElement>('[data-nl-slot="value"]')!;
+    expect(multi.textContent).toBe('One\nTwo');
+    expect(multi.lastElementChild?.getAttribute('style')).toContain(
+      'white-space: inherit'
+    );
+    const single = render({
+      ...base,
+      style: { value: { lines: 1 } },
+    }).querySelector<HTMLElement>('[data-nl-slot="value"]')!;
+    expect(single.textContent).toBe('One Two');
+  });
+
+  it('keeps the media leading gap independent of container alignment', () => {
+    const body = render({
+      type: 'mediaTile',
+      key: 'media-gap',
+      variant: 'gallery',
+      title: 'Media',
+      image,
+      style: {
+        leadingGap: 11,
+        container: { contentVerticalAlignment: 'bottom' },
+      },
+    });
+    expect(
+      body.querySelector<HTMLElement>('.ok-native-list-media-meta')!.style
+        .paddingTop
+    ).toBe('11px');
+    expect(
+      body.querySelector<HTMLElement>('.ok-native-list-media-image')!.style
+        .marginBottom
+    ).toBe('');
+  });
+
   it('shares container appearance across every template without styling nested text', () => {
     const parent: IdentityRow = {
       type: 'identity',
@@ -622,6 +988,7 @@ describe('web row style', () => {
         ...row,
         style: {
           container: {
+            height: 141,
             backgroundColor: '#123456',
             borderWidth: 2,
             borderColor: '#abcdef',
@@ -630,11 +997,21 @@ describe('web row style', () => {
           },
         },
       } as RowModel);
+      expect(
+        estimateWebRowHeight(
+          { ...row, style: { container: { height: 141 } } } as RowModel,
+          snapshot({ kind: 'linear' }, [row]),
+          320
+        )
+      ).toBe(141);
       expect(body.style.getPropertyValue('--nl-container-background')).toBe(
         '#123456'
       );
       expect(body.style.borderRadius).toBe('7px');
-      expect(body.style.boxShadow).toContain('inset 0 0 0 2px');
+      expect(body.getAttribute('data-nl-container-border')).toBe('true');
+      expect(body.style.getPropertyValue('--nl-container-border-width')).toBe(
+        '2px'
+      );
       expect(
         body.querySelector<HTMLElement>('[data-nl-slot="title"]')?.style
           .color ?? ''
@@ -807,7 +1184,7 @@ describe('web row style', () => {
           change.querySelectorAll('.ok-native-list-text-content')
         ).toHaveLength(1);
         const content = change.firstElementChild as HTMLElement;
-        expect(content.style.maxHeight).toBe('40px');
+        expect(content.style.maxHeight).toBe('2lh');
         expect(content.style.transform).toBe('translateY(2px)');
       }
     } finally {
@@ -1000,7 +1377,7 @@ describe('web row style', () => {
       style: { value: { fontSize: 19, color: '#123456' } },
     });
     const value = body.querySelector<HTMLElement>('[data-nl-slot="value"]')!;
-    expect(value.textContent).toBe('$102 BTC');
+    expect(value.textContent).toBe('$10\n2 BTC');
     expect(value.style.fontSize).toBe('19px');
     expect(
       Array.from(value.children).every(

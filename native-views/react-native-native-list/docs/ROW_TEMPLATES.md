@@ -15,7 +15,10 @@ an optional field does not mean every variant displays it.
 All rows have a stable `key` and discriminant `type`. Shared `RowBase` metadata
 includes `height`, `size`, `density`, `sectionKey`, `groupId`, `groupPosition`,
 selection/disabled state and separator intent. These are model/layout inputs,
-not a freeform style object. Declaring `sectionKey` never makes a business
+not a freeform style object. Every template also accepts `style.container.height`
+to override `row.height`; clearing it restores the original height/measurement.
+The style changes the row allocation without changing its internal slot order.
+Declaring `sectionKey` never makes a business
 template the owner of sections or the indexed bar.
 
 | Type | Purpose | Fixed structure |

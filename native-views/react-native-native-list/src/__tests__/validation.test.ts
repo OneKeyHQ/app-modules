@@ -1431,6 +1431,7 @@ describe('NativeList style contract', () => {
 describe('row container and text layout contract', () => {
   const style = {
     container: {
+      height: 120.5,
       backgroundColor: '#12345678',
       opacity: 0.8,
       cornerRadius: 9,
@@ -1450,6 +1451,7 @@ describe('row container and text layout contract', () => {
   it('round-trips the same nested surface through snapshots and whole-style replacement patches', () => {
     const base = {
       ...row('text-layout'),
+      height: 80,
       backgroundColor: '#FFFFFF',
       opacity: 0.4,
       style,
@@ -1465,6 +1467,7 @@ describe('row container and text layout contract', () => {
     ]);
     expect(cleared.rows[0]).toMatchObject({
       style: {},
+      height: 80,
       backgroundColor: '#FFFFFF',
       opacity: 0.4,
     });
@@ -1472,6 +1475,10 @@ describe('row container and text layout contract', () => {
 
   it.each([
     ['container', { width: 120 }],
+    ['container', { height: -1 }],
+    ['container', { height: 4097 }],
+    ['container', { height: NaN }],
+    ['container', { height: Infinity }],
     ['container', { opacity: 1.1 }],
     ['container', { borderWidth: -1 }],
     ['container', { backgroundColor: 'red' }],
@@ -1498,4 +1505,63 @@ describe('row container and text layout contract', () => {
       ])
     ).toThrow('style');
   });
+});
+
+describe('declared nested style and line-limit boundaries', () => {
+  it.each([
+    'color',
+    'lines',
+    'truncate',
+    'alignment',
+    'verticalAlignment',
+    'offsetY',
+    'token',
+  ])(
+    'rejects undeclared Market badge property %s in snapshots and patches',
+    (key) => {
+      const values: Record<string, unknown> = {
+        color: '#123456',
+        lines: 2,
+        truncate: 'clip',
+        alignment: 'end',
+        verticalAlignment: 'top',
+        offsetY: 1,
+        token: '$bodySm',
+      };
+      const badges = [
+        { key: 'badge', text: 'Badge', style: { [key]: values[key] } },
+      ];
+      expect(() =>
+        validateSnapshot(snapshot([{ ...marketRow(), badges } as MarketRow]))
+      ).toThrow('Market badge style key');
+      expect(() =>
+        validatePatches([
+          { key: 'market', type: 'market', changes: { badges } } as RowPatch,
+        ])
+      ).toThrow('Market badge style key');
+    }
+  );
+  it.each([1.5, NaN, Infinity])(
+    'rejects non-integral message bodyLines %s on both update paths',
+    (bodyLines) => {
+      const message = {
+        type: 'message',
+        key: 'message',
+        title: 'Title',
+        body: 'Body',
+        time: 'Now',
+        bodyLines,
+      } as RowModel;
+      expect(() => validateSnapshot(snapshot([message]))).toThrow('bodyLines');
+      expect(() =>
+        validatePatches([
+          {
+            key: 'message',
+            type: 'message',
+            changes: { bodyLines },
+          } as RowPatch,
+        ])
+      ).toThrow('bodyLines');
+    }
+  );
 });
