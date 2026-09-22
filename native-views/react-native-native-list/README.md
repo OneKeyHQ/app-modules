@@ -402,7 +402,8 @@ use Instruments or Android Studio Profiler for native frame and memory data.
   the React component. It mirrors the mobile data and imperative APIs, but its
   performance must still be measured independently from iOS and Android.
 
-See [docs/DESIGN.md](docs/DESIGN.md) for the architecture and ownership model, and
+Start with [docs/SPEC.md](docs/SPEC.md) for the behavioral contract and migration
+status. See [docs/DESIGN.md](docs/DESIGN.md) for the architecture and ownership model, and
 [docs/STYLE_SPEC.md](docs/STYLE_SPEC.md) for the shared style vocabulary: design
 tokens, local layout-safety rules, common list capabilities and current implementation
 gaps. [docs/ROW_TEMPLATES.md](docs/ROW_TEMPLATES.md) defines all 12 row types with
