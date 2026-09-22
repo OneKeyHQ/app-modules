@@ -1,3 +1,4 @@
+import { measureRailWidth } from './templates/RailRowRenderer';
 import {
   rowRenderer,
   rowRendererKey,
@@ -541,16 +542,9 @@ export function estimateWebRowHeight(
 
   const registered = rowRenderer(row);
   if (registered)
-    return Math.max(
-      0,
-      registered.renderer.measure(registered.row, availableWidth) +
-        sizeModifier(row)
-    );
+    return Math.max(0, registered.measure(availableWidth) + sizeModifier(row));
   let base: number;
   switch (row.type) {
-    case 'rail':
-      base = 40;
-      break;
     case 'activity':
       base = row.footerActions?.length ? 100 : 60;
       break;
@@ -636,13 +630,7 @@ export function estimateWebRowHeight(
 function estimateHorizontalWidth(row: RowModel): number {
   if (row.type === 'mediaTile') return 200;
   if (row.type !== 'rail') return 280;
-  const badgeLength = row.badge?.text.length ?? 0;
-  const statusLength =
-    row.status && row.status !== 'none' ? row.status.length : 0;
-  return Math.min(
-    288,
-    Math.max(72, 50 + (row.title.length + badgeLength + statusLength) * 7)
-  );
+  return measureRailWidth(row);
 }
 
 function sectionIndexEnabled(snapshot: NativeListSnapshot): boolean {
@@ -2615,44 +2603,6 @@ function createSystemRow(
   return body;
 }
 
-function createRailRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'rail' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-rail'
-  );
-  const visual = createVisual(context, row.visual);
-  if (visual) body.appendChild(visual);
-  body.appendChild(
-    tagSlot(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-rail-title',
-        row.title
-      ),
-      'title'
-    )
-  );
-  if (row.badge) body.appendChild(createBadge(context, row.badge));
-  if (row.status && row.status !== 'none')
-    body.appendChild(
-      tagSlot(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          row.status
-        ),
-        'status'
-      )
-    );
-  return body;
-}
-
 function createMediaRow(
   context: RenderContext,
   row: Extract<RowModel, { type: 'mediaTile' }>
@@ -3908,8 +3858,6 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
     body.style.gap ||
     (row.type === 'mediaTile'
       ? '7px'
-      : row.type === 'rail'
-      ? '6px'
       : row.type === 'metricCard'
       ? '5px'
       : row.type === 'identity' && row.presentation === 'walletSidebar'
@@ -3973,12 +3921,6 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
                 : 'calc(' + gap + ' - ' + String(box.lineGap) + 'px)';
           else badges.style.marginInlineStart = gap;
         });
-    if (row.type === 'rail') {
-      const badge = body.querySelector<HTMLElement>('[data-nl-slot="badge"]');
-      if (badge)
-        badge.style.marginInlineStart =
-          'calc(' + gap + ' - ' + defaultGap + ')';
-    }
   }
   if (box.trailingGap !== undefined) {
     const gap = String(box.trailingGap) + 'px';
@@ -3998,12 +3940,6 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
         child.style.marginInlineStart =
           'calc(' + gap + ' - ' + defaultGap + ')';
       });
-    }
-    if (row.type === 'rail') {
-      const status = body.querySelector<HTMLElement>('[data-nl-slot="status"]');
-      if (status)
-        status.style.marginInlineStart =
-          'calc(' + gap + ' - ' + defaultGap + ')';
     }
   }
   if (leading && box.image && !compositeMetric) {
@@ -4082,11 +4018,7 @@ export function createRowBody(
 ): HTMLElement {
   const registered = rowRenderer(row);
   if (registered)
-    return registered.renderer.create(
-      context.document,
-      registered.row,
-      rendererPrimitives(context)
-    );
+    return registered.create(context.document, rendererPrimitives(context));
   switch (row.type) {
     case 'walletGroup':
       return createWalletGroupRow(context, row);
@@ -4096,8 +4028,6 @@ export function createRowBody(
       return createActionRow(context, row);
     case 'system':
       return createSystemRow(context, row);
-    case 'rail':
-      return createRailRow(context, row);
     case 'mediaTile':
       return createMediaRow(context, row);
     case 'metricCard':
@@ -4140,6 +4070,7 @@ export class NativeListWebEngine {
   private readonly pool: Record<RowRendererKey, HTMLElement[]> = {
     legacy: [],
     message: [],
+    rail: [],
   };
   private readonly rendererKeys = new WeakMap<HTMLElement, RowRendererKey>();
   private frameHandle: number | undefined;
@@ -4870,9 +4801,8 @@ export class NativeListWebEngine {
       const row = this.rows[index];
       const registered = row && rowRenderer(row);
       if (registered && element.firstElementChild) {
-        const height = registered.renderer.measureRendered(
-          element.firstElementChild as HTMLElement,
-          registered.row
+        const height = registered.measureRendered(
+          element.firstElementChild as HTMLElement
         );
         if (
           height !== undefined &&
@@ -4928,7 +4858,7 @@ export class NativeListWebEngine {
     const registered = rowRenderer(row);
     const existingBody = element.firstElementChild as HTMLElement | null;
     const reusableBody =
-      registered && existingBody?.dataset.nlRenderer === registered.renderer.key
+      registered && existingBody?.dataset.nlRenderer === registered.key
         ? existingBody
         : undefined;
     if (!reusableBody) disposeWebImageRetries(element);
@@ -4981,11 +4911,7 @@ export class NativeListWebEngine {
     };
     const body = reusableBody ?? createRowBody(context, row);
     if (reusableBody && registered)
-      registered.renderer.bind(
-        body,
-        registered.row,
-        rendererPrimitives(context)
-      );
+      registered.bind(body, rendererPrimitives(context));
     applySelectorTabularNumbers(body, row);
     // OneKey patch: explicit selector fields preserve original page geometry.
     element.style.contain = row.backgroundFullWidth ? 'layout style' : '';

@@ -1007,6 +1007,139 @@ describe('web row style', () => {
     }
   });
 
+  it('retains Rail views and image requests while resetting semantic styles and compatible pools', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const rail = {
+      type: 'rail',
+      key: 'rail-pilot',
+      title: 'Bitcoin',
+      visual: { kind: 'token', image, networkImage: image },
+      badge: { key: 'change', text: '+12%', tone: 'success' },
+      status: 'online',
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [rail]),
+      {},
+      false
+    );
+    const row = () =>
+      host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="rail-pilot"]'
+      )!;
+    try {
+      const wrapper = row();
+      const body = wrapper.firstElementChild as HTMLElement;
+      const title = body.querySelector<HTMLElement>('[data-nl-slot="title"]')!;
+      const visual = body.querySelector<HTMLElement>('.ok-native-list-visual')!;
+      const badge = body.querySelector<HTMLElement>('[data-nl-slot="badge"]')!;
+      const images = Array.from(body.querySelectorAll('img'));
+      const corner = body.querySelector<HTMLElement>(
+        '.ok-native-list-visual-corner'
+      )!;
+      const cornerStyle = corner.style.cssText;
+      engine.applyPatches([
+        {
+          type: 'rail',
+          key: rail.key,
+          changes: {
+            title: 'Updated',
+            style: {
+              container: { height: 96 },
+              horizontalPadding: 12,
+              verticalPadding: 10,
+              leadingGap: 14,
+              titleBadgeGap: 12,
+              trailingGap: 10,
+              title: { fontSize: 18, lineHeight: 24, lines: 2 },
+              badge: { color: '#BC3030' },
+              image: { width: 32, height: 24, shape: 'square' },
+            },
+          },
+        },
+      ]);
+      expect(row()).toBe(wrapper);
+      expect(row().firstElementChild).toBe(body);
+      expect(body.querySelector('[data-nl-slot="title"]')).toBe(title);
+      expect(title.textContent).toBe('Updated');
+      expect(title.style.fontSize).toBe('18px');
+      expect(row().style.height).toBe('96px');
+      expect(visual.style.width).toBe('32px');
+      expect(corner.style.cssText).toBe(cornerStyle);
+      expect(Array.from(body.querySelectorAll('img'))).toEqual(images);
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [rail]));
+      expect(row()).toBe(wrapper);
+      expect(title.style.fontSize).toBe('');
+      expect(visual.style.width).toBe('20px');
+      expect(row().style.height).toBe('40px');
+      expect(Array.from(body.querySelectorAll('img'))).toEqual(images);
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          { ...rail, badge: undefined, status: 'none' },
+        ])
+      );
+      expect(body.querySelector('[data-nl-slot="badge"]')).toBeNull();
+      expect(body.querySelector('[data-nl-slot="status"]')).toBeNull();
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [rail]));
+      expect(body.querySelector('[data-nl-slot="badge"]')).toBe(badge);
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            type: 'message',
+            key: rail.key,
+            title: 'Other',
+            body: 'Body',
+            time: '',
+          },
+        ])
+      );
+      expect(row()).not.toBe(wrapper);
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [rail]));
+      expect(row()).toBe(wrapper);
+      expect(row().firstElementChild).toBe(body);
+      expect(title.textContent).toBe(rail.title);
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('recomputes horizontal Rail placement from styled metrics and restores default widths', () => {
+    const rail = {
+      type: 'rail',
+      key: 'one',
+      title: 'BTC',
+      visual: { kind: 'icon', name: 'StarOutline' },
+      badge: { key: 'change', text: '+1%' },
+    } as const;
+    const layout = (row: RowModel) =>
+      computeWebListLayout(
+        snapshot(
+          { kind: 'linear', orientation: 'horizontal', itemSpacing: 8 },
+          [row, { ...rail, key: 'two' }]
+        ),
+        390,
+        200
+      );
+    const plain = layout(rail);
+    const styled = layout({
+      ...rail,
+      style: {
+        title: { fontSize: 24 },
+        horizontalPadding: 12,
+        leadingGap: 16,
+        titleBadgeGap: 12,
+        image: { width: 32 },
+      },
+    });
+    expect(styled.items[0]!.width).toBeGreaterThan(plain.items[0]!.width);
+    expect(styled.items[1]!.x - plain.items[1]!.x).toBe(
+      styled.items[0]!.width - plain.items[0]!.width
+    );
+    expect(layout({ ...rail, style: {} })).toEqual(plain);
+  });
+
   it('retains Message text and image slots through content/style updates and cancels removed retries', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
