@@ -5,9 +5,10 @@ import UIKit
 enum NativeListRendererRegistry {
   private static let hosts: [NativeListRendererKey: NativeListRowHost.Type] = [
     .legacy: NativeListCell.self, .message: NativeListMessageCell.self,
+    .rail: NativeListRailCell.self,
   ]
   static func key(for type: String) -> NativeListRendererKey {
-    type == "message" ? .message : .legacy
+    NativeListRendererKey(rawValue: type) ?? .legacy
   }
   static func reuseIdentifier(for key: NativeListRendererKey) -> String {
     "NativeList.\(key.rawValue)"
@@ -20,6 +21,7 @@ enum NativeListRendererRegistry {
   static func measure(_ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String)
     -> CGFloat?
   {
+    if item.rendererKey == .rail { return 40 }
     guard item.rendererKey == .message else { return nil }
     return NativeListMessageRenderer.Resolved(item, theme: theme, layout: layout).measure(
       width: width)

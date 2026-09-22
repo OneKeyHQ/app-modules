@@ -993,7 +993,6 @@ final class NativeListCell: NativeListRowHost {
     switch item.type {
     case "walletGroup": bindWalletGroup(item, theme: theme, layout: layout, checkboxState)
     case "identity": bindIdentity(item, theme: theme, selected: selected, checkboxState)
-    case "rail": bindRail(item, theme: theme)
     case "activity": bindActivity(item, theme: theme)
     case "dataRow": bindDataRow(item, theme: theme, checkboxState)
     case "market": bindMarket(item, theme: theme)
@@ -1170,9 +1169,9 @@ final class NativeListCell: NativeListRowHost {
     )
     if item.type == "metricCard", !selected {
       color = nativeListColor(theme, "subduedBackground", "#F9F9F9")
-    } else if item.type == "rail" || item.type == "mediaTile" {
-      // Selection is communicated by the destination state for these source
-      // components; neither has a persistent selected tile background.
+    } else if item.type == "mediaTile" {
+      // Selection is communicated by the destination state, without a
+      // persistent selected tile background.
       color = nativeListColor(theme, "rowBackground", "#FFFFFF")
     } else if layout == "sectioned", !item.data.bool("selected") {
       // Checkbox-backed section lists in app-monorepo keep rows on $bg;
@@ -2053,47 +2052,6 @@ final class NativeListCell: NativeListRowHost {
     }
   }
 
-  private func bindRail(_ item: NativeListItem, theme: [String: Any]?) {
-    rootStack.spacing = 6
-    rootLeadingConstraint.constant = 4
-    rootTrailingConstraint.constant = -4
-    rootTopConstraint.constant = 4
-    rootBottomConstraint.constant = -4
-    leadingWidth.constant = 20
-    leadingHeight.constant = 20
-    addLeading(item.data.dictionary("visual"), key: item.key)
-    show(titleLabel, item.data.string("title"), lines: 1)
-    titleLabel.font = nativeListFont(ofSize: 12, weight: .medium)
-    setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 16)
-    mainStack.axis = .horizontal
-    mainStack.alignment = .center
-    mainStack.spacing = 6
-    mainStack.setContentHuggingPriority(.required, for: .horizontal)
-    mainStack.setContentCompressionResistancePriority(.required, for: .horizontal)
-    titleRowStack.setContentHuggingPriority(.required, for: .horizontal)
-    titleRowStack.setContentCompressionResistancePriority(.required, for: .horizontal)
-    titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-    if let badge = item.data.dictionary("badge") {
-      show(badgeLabel, badge.string("text"), lines: 1)
-      badgeLabel.font = nativeListTabularFont(ofSize: 12, weight: .medium)
-      badgeLabel.textColor = badge.string("tone") == "success"
-        ? nativeListColor(theme, "positive", "#218358")
-        : badge.string("tone") == "danger"
-          ? nativeListColor(theme, "negative", "#CE2C31")
-          : nativeListColor(theme, "secondaryText", "#646464")
-      setLineHeight(badgeLabel, text: badge.string("text"), lineHeight: 16)
-    }
-    let status = item.data.string("status")
-    if !status.isEmpty, status != "none" {
-      show(statusLabel, status, lines: 1)
-      statusLabel.font = nativeListTabularFont(ofSize: 12)
-      setLineHeight(statusLabel, text: status, lineHeight: 16)
-    }
-    rootStack.addArrangedSubview(mainStack)
-    contentView.layer.cornerRadius = 8
-    contentView.clipsToBounds = true
-  }
-
   private func bindActivity(_ item: NativeListItem, theme: [String: Any]?) {
     addLeading(
       item.data.dictionary("leading"),
@@ -2251,8 +2209,6 @@ final class NativeListCell: NativeListRowHost {
     case "identity":
       return ["title", "subtitle", "tertiary", "badge", "value", "valueSecondary"]
         .contains(field) ? field : nil
-    case "rail":
-      return ["title", "badge", "status"].contains(field) ? field : nil
     case "activity":
       switch field {
       case "title", "status": return field
@@ -2362,8 +2318,7 @@ final class NativeListCell: NativeListRowHost {
     }
     if style["trailingGap"] != nil {
       let gap = CGFloat(style.double("trailingGap"))
-      if item.type == "rail" { styleSpacing(mainStack, after: titleRowStack, gap) }
-      else { styleGap(trailingStack, gap) }
+      styleGap(trailingStack, gap)
     }
     if let image = style.dictionary("image"), leadingContainer.superview != nil {
       if image["width"] != nil {

@@ -1736,7 +1736,6 @@ final class NativeListView: UIView {
     }
     let base: CGFloat
     switch item.type {
-    case "rail": base = 40
     case "activity": base = item.data.dictionaries("footerActions").isEmpty ? 60 : 100
     case "mediaTile": base = 244
     case "metricCard":
@@ -2188,21 +2187,7 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
   }
 
   private func railWidth(_ item: NativeListItem) -> CGFloat {
-    let titleWidth = (item.data.string("title") as NSString).size(
-      withAttributes: [.font: nativeListFont(ofSize: 12, weight: .medium)]
-    ).width
-    let badge = item.data.dictionary("badge")?.string("text") ?? ""
-    let badgeWidth = (badge as NSString).size(
-      withAttributes: [.font: nativeListTabularFont(ofSize: 12, weight: .medium)]
-    ).width
-    let status = item.data.string("status")
-    let statusWidth = status.isEmpty || status == "none" ? 0 : (status as NSString).size(
-      withAttributes: [.font: nativeListTabularFont(ofSize: 12)]
-    ).width
-    let visibleTextCount = 1 + (badgeWidth > 0 ? 1 : 0) + (statusWidth > 0 ? 1 : 0)
-    let width = 4 + 20 + 6 + titleWidth + badgeWidth + statusWidth
-      + CGFloat(max(0, visibleTextCount - 1)) * 6 + 4
-    return min(288, max(72, ceil(width + 8)))
+    NativeListRailRenderer.Resolved(item, theme: config?.theme).horizontalWidth
   }
 
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {

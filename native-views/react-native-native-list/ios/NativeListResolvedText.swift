@@ -15,7 +15,8 @@ struct NativeListResolvedText {
 
   init(
     _ value: String, style: [String: Any]?, size: CGFloat, weight: NativeListFontWeight = .regular,
-    color: UIColor, lineHeight: CGFloat, lines: Int, breakMode: NSLineBreakMode = .byTruncatingTail
+    color: UIColor, lineHeight: CGFloat, lines: Int, breakMode: NSLineBreakMode = .byTruncatingTail,
+    tabular: Bool = false
   ) {
     let style = style ?? [:]
     self.lines = min(3, max(1, style.int("lines", default: lines)))
@@ -32,8 +33,11 @@ struct NativeListResolvedText {
     case "bold": resolvedWeight = .bold
     default: resolvedWeight = weight
     }
-    font = nativeListFont(
-      ofSize: CGFloat(style.double("fontSize", default: Double(size))), weight: resolvedWeight)
+    let resolvedSize = CGFloat(style.double("fontSize", default: Double(size)))
+    font =
+      tabular
+      ? nativeListTabularFont(ofSize: resolvedSize, weight: resolvedWeight)
+      : nativeListFont(ofSize: resolvedSize, weight: resolvedWeight)
     self.color =
       (style["color"] as? String).map { UIColor(nativeListHex: $0, fallback: color) } ?? color
     self.lineHeight = CGFloat(style.double("lineHeight", default: Double(lineHeight)))
