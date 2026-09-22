@@ -912,6 +912,98 @@ describe('web row style', () => {
     ).toBe(120);
   });
 
+  it('rebinds a message through styled, cleared and different-template snapshots', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const message = {
+      type: 'message',
+      key: 'reused-message',
+      title: 'First\nSecond',
+      body: 'One\nTwo\nThree',
+      time: 'Now',
+      bodyLines: 1,
+      height: 136,
+      unread: true,
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [message]),
+      {},
+      false
+    );
+    const item = () =>
+      host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="reused-message"]'
+      )!;
+    const body = () =>
+      item().querySelector<HTMLElement>('[data-nl-slot="body"]')!;
+    try {
+      const wrapper = item();
+      expect(body().textContent).toBe('One Two Three');
+      engine.applyPatches([
+        {
+          type: 'message',
+          key: message.key,
+          changes: {
+            style: {
+              container: { height: 192, contentVerticalAlignment: 'bottom' },
+              body: {
+                lines: 3,
+                lineHeight: 22,
+                truncate: 'clip',
+                color: '#FF0000',
+              },
+            },
+          },
+        },
+      ]);
+      expect(item()).toBe(wrapper);
+      expect(item().style.height).toBe('192px');
+      expect(body().textContent).toBe(message.body);
+      expect(body().style.maxHeight).toBe('66px');
+      engine.applyPatches([
+        { type: 'message', key: message.key, changes: { style: {} } },
+      ]);
+      expect(item().style.height).toBe('136px');
+      expect(body().textContent).toBe('One Two Three');
+      expect(body().style.color).toBe('');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...message,
+            title: 'Updated',
+            body: 'Replacement',
+            time: 'Later',
+            unread: false,
+          },
+        ])
+      );
+      expect(item()).toBe(wrapper);
+      expect(item().querySelector('.ok-native-list-unread')).toBeNull();
+      expect(item().querySelector('[data-nl-slot="time"]')?.textContent).toBe(
+        'Later'
+      );
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            type: 'identity',
+            key: message.key,
+            title: 'Identity',
+            leading: { kind: 'icon', name: 'StarOutline' },
+          },
+        ])
+      );
+      expect(item().querySelector('[data-nl-slot="body"]')).toBeNull();
+      expect(item().querySelector('[data-nl-slot="time"]')).toBeNull();
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [message]));
+      expect(item().style.height).toBe('136px');
+      expect(body().textContent).toBe('One Two Three');
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('preserves the value-pair break inside a shared multi-line budget', () => {
     const base: IdentityRow = {
       type: 'identity',
