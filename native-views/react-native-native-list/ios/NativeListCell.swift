@@ -5,26 +5,6 @@ import CryptoKit
 import OneKeyImage
 import UIKit
 
-private enum NativeListSourceFallbackState {
-  private static let sources: NSCache<NSString, NSNumber> = {
-    let cache = NSCache<NSString, NSNumber>()
-    cache.countLimit = 128
-    return cache
-  }()
-
-  static func has(_ key: String) -> Bool {
-    sources.object(forKey: key as NSString) != nil
-  }
-
-  static func remember(_ key: String) {
-    sources.setObject(NSNumber(value: true), forKey: key as NSString)
-  }
-
-  static func forget(_ key: String) {
-    sources.removeObject(forKey: key as NSString)
-  }
-}
-
 // Market/TokenListSkeleton: source geometry and the native Skeleton's 3s shimmer.
 private final class NativeListMarketSkeleton: UIView {
   private let marks = (0..<5).map { _ in UIView() }
@@ -94,7 +74,7 @@ private final class NativeListMarketSkeleton: UIView {
 
 final class NativeListActionOrigin {
   weak var sourceView: UIView?
-  weak var ownerCell: NativeListCell?
+  weak var ownerCell: NativeListRowHost?
   let bindingEpoch: Int
   let source: String
   let slot: Int?
@@ -104,7 +84,7 @@ final class NativeListActionOrigin {
 
   init(
     sourceView: UIView,
-    ownerCell: NativeListCell,
+    ownerCell: NativeListRowHost,
     bindingEpoch: Int,
     source: String,
     slot: Int? = nil,
@@ -454,11 +434,7 @@ private final class NativeListTableColumnView: UIStackView {
   }
 }
 
-final class NativeListCell: UICollectionViewCell {
-  static func reuseIdentifier(for renderer: NativeListRendererKey) -> String {
-    "NativeListCell.\(renderer.rawValue)"
-  }
-
+final class NativeListCell: NativeListRowHost {
   private let rootStack = UIStackView()
   private let mediaVisualWrapper = UIView()
   private var styledCircleViews: [UIView] = []
@@ -572,15 +548,6 @@ final class NativeListCell: UICollectionViewCell {
   private var currentItemIndex: Int?
   // OneKey patch: delayed image retries belong to the current reusable cell binding.
   private var selectorImageRetries: [ObjectIdentifier: DispatchWorkItem] = [:]
-  private(set) var bindingEpoch = 0
-
-  /// docs/STYLE_SPEC.md §5. Set by the list before `bind`, so the row binder and
-  /// `applyGroupPosition` can read it without another parameter.
-  var listStyle: [String: Any]?
-
-  var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Void)?
-  var onBindingInvalidated: ((NativeListCell, Int) -> Void)?
-
   override var isHighlighted: Bool {
     didSet { updateBackgroundColor() }
   }
@@ -925,7 +892,7 @@ final class NativeListCell: UICollectionViewCell {
     mediaNetworkImage.prepareForReuse()
   }
 
-  func bind(
+  override func bind(
     item: NativeListItem,
     theme: [String: Any]?,
     layout: String,
@@ -1028,7 +995,6 @@ final class NativeListCell: UICollectionViewCell {
     case "identity": bindIdentity(item, theme: theme, selected: selected, checkboxState)
     case "rail": bindRail(item, theme: theme)
     case "activity": bindActivity(item, theme: theme)
-    case "message": bindMessage(item, theme: theme)
     case "dataRow": bindDataRow(item, theme: theme, checkboxState)
     case "market": bindMarket(item, theme: theme)
     case "mediaTile": bindMediaTile(item, theme: theme)
@@ -1052,7 +1018,7 @@ final class NativeListCell: UICollectionViewCell {
     }
   }
 
-  func updateSelection(
+  override func updateSelection(
     item: NativeListItem,
     selected: Bool,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
@@ -1633,7 +1599,7 @@ final class NativeListCell: UICollectionViewCell {
     }
   }
 
-  func setPressed(_ pressed: Bool) {
+  override func setPressed(_ pressed: Bool) {
     if currentItem?.type == "walletGroup", walletGroupCompactAppearanceActive {
       walletGroupCompactCell?.setPressed(pressed)
       isHighlighted = false
@@ -1642,7 +1608,7 @@ final class NativeListCell: UICollectionViewCell {
     isHighlighted = pressed && isUserInteractionEnabled
   }
 
-  func canStartWalletGroupReorder(at point: CGPoint) -> Bool {
+  override func canStartWalletGroupReorder(at point: CGPoint) -> Bool {
     guard currentItem?.type == "walletGroup" else { return true }
     let groupPoint = rootStack.convert(point, from: self)
     for (index, cell) in walletGroupCells.prefix(walletGroupMembers.count).enumerated()
@@ -1652,7 +1618,7 @@ final class NativeListCell: UICollectionViewCell {
     return true
   }
 
-  func setWalletGroupReorderCompact(_ compact: Bool) {
+  override func setWalletGroupReorderCompact(_ compact: Bool) {
     guard currentItem?.type == "walletGroup" else { return }
     walletGroupCompactAppearanceActive = compact
     rootStack.isHidden = compact
@@ -1668,7 +1634,7 @@ final class NativeListCell: UICollectionViewCell {
     }
   }
 
-  func prepareWalletGroupReorderExpansion() {
+  override func prepareWalletGroupReorderExpansion() {
     guard currentItem?.type == "walletGroup" else { return }
     walletGroupCompactAppearanceActive = false
     rootStack.isHidden = false
@@ -1678,13 +1644,13 @@ final class NativeListCell: UICollectionViewCell {
     restoreWalletGroupOuterAppearance()
   }
 
-  func animateWalletGroupReorderExpansion() {
+  override func animateWalletGroupReorderExpansion() {
     guard currentItem?.type == "walletGroup" else { return }
     rootStack.alpha = 1
     walletGroupCompactContainer.alpha = 0
   }
 
-  func finishWalletGroupReorderExpansion() {
+  override func finishWalletGroupReorderExpansion() {
     guard currentItem?.type == "walletGroup" else { return }
     rootStack.isHidden = false
     rootStack.alpha = 1
@@ -2193,23 +2159,6 @@ final class NativeListCell: UICollectionViewCell {
     }
   }
 
-  private lazy var messageViews = NativeListMessageRenderer.Views(
-    root: rootStack, unread: unreadDot, thumbnail: secondaryImage,
-    top: rootTopConstraint, bottom: rootBottomConstraint,
-    leadingWidth: leadingWidth, leadingHeight: leadingHeight,
-    thumbnailWidth: secondaryWidth, thumbnailHeight: secondaryHeight
-  )
-
-  private func bindMessage(_ item: NativeListItem, theme: [String: Any]?) {
-    NativeListMessageRenderer.bind(
-      messageViews, item: item, theme: theme,
-      show: show,
-      lineHeight: { self.setLineHeight($0, text: $1, lineHeight: $2) },
-      leading: { self.addLeading($0, key: item.key) },
-      image: { self.bindImage($0, into: $1, token: item.key, slot: 0, variant: "generic") }
-    )
-  }
-
   private func bindDataRow(
     _ item: NativeListItem,
     theme: [String: Any]?,
@@ -2312,13 +2261,6 @@ final class NativeListCell: UICollectionViewCell {
       case "secondaryAmount": return "valueSecondary"
       default: return nil
       }
-    case "message":
-      switch field {
-      case "title": return "title"
-      case "body": return "subtitle"
-      case "time": return "status"
-      default: return nil
-      }
     case "dataRow":
       switch field {
       case "columns": return "dataPrimary"
@@ -2403,13 +2345,7 @@ final class NativeListCell: UICollectionViewCell {
     }
     if style["lineGap"] != nil, item.type != "walletGroup", item.type != "dataRow" {
       let gap = CGFloat(style.double("lineGap"))
-      styleGap(item.type == "message" ? messageViews.column : mainStack, gap)
-      if item.type == "message" {
-        let label = messageViews.time
-        let inset = label.topInset
-        styledTextRestorations.append { label.topInset = inset }
-        label.topInset = 0
-      }
+      styleGap(mainStack, gap)
       if item.type == "metricCard", ["activity", "performance"].contains(item.data.string("variant")) {
         styleGap(metricCompositeStack, gap)
         if item.data.string("variant") == "performance", let summary = metricCompositeStack.arrangedSubviews.first as? UIStackView { styleGap(summary, gap) }
@@ -2465,10 +2401,7 @@ final class NativeListCell: UICollectionViewCell {
     if item.type == "dataRow" {
       tableDataColumns.forEach { $0.applyStyle(style, text: applyStyledText) }
     }
-    if item.type == "message" {
-      NativeListMessageRenderer.applyTextStyles(messageViews, style: style, apply: applyStyledText)
-      return
-    }
+
     let variant = item.data.string("variant")
     if item.type == "metricCard" && ["activity", "performance"].contains(variant) {
       // Composite cards render the heading, not the standard card's value slot.
@@ -3011,7 +2944,7 @@ final class NativeListCell: UICollectionViewCell {
     updateMarketQuote(item, theme: theme)
   }
 
-  func updateMarketQuote(_ item: NativeListItem, theme: [String: Any]?) {
+  override func updateMarketQuote(_ item: NativeListItem, theme: [String: Any]?) {
     guard currentItem?.key == item.key, item.type == "market" else { return }
     currentItem = item
     NSLayoutConstraint.deactivate(accessorySizeConstraints)
@@ -3905,7 +3838,7 @@ final class NativeListCell: UICollectionViewCell {
       showsSourcePlaceholder &&
       (visual["fallbackText"] != nil || fallbackIconData != nil)
     let sourceFallbackKey = handlesSourceFallback
-      ? sources.first.flatMap { sourceFallbackStateKey($0.data) }
+      ? sources.first.flatMap { nativeListSourceFallbackStateKey($0.data) }
       : nil
     let restoresSourceFallback = sourceFallbackKey.map(NativeListSourceFallbackState.has) ?? false
     fallbackLabel.text = handlesSourceFallback && !restoresSourceFallback ? nil : fallbackText
@@ -4156,26 +4089,6 @@ final class NativeListCell: UICollectionViewCell {
       sources.append((networkImage, "network"))
     }
     return sources
-  }
-
-  private func sourceFallbackStateKey(_ source: [String: Any]) -> String? {
-    let uri = source.string("uri").trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !uri.isEmpty else { return nil }
-    // The fallback-state cache is process-wide, so key it by a digest of the request identity
-    // instead of retaining raw header values, which can carry credentials such as Authorization.
-    let headers = source.dictionary("headers") ?? [:]
-    let fields: [(name: String, value: String)] = headers.map { key, value in
-      (name: key.lowercased(), value: String(describing: value))
-    }
-    let sortedFields = fields.sorted { lhs, rhs in
-      lhs.name == rhs.name ? lhs.value < rhs.value : lhs.name < rhs.name
-    }
-    var canonicalValue = "\(uri.utf8.count):\(uri)"
-    for field in sortedFields {
-      canonicalValue += "\(field.name.utf8.count):\(field.name)\(field.value.utf8.count):\(field.value)"
-    }
-    let digest = SHA256.hash(data: Data(canonicalValue.utf8))
-    return digest.map { String(format: "%02x", $0) }.joined()
   }
 
   private func leadingConstraints(
@@ -4755,7 +4668,7 @@ final class NativeListCell: UICollectionViewCell {
     )
   }
 
-  func rowActionOrigin() -> NativeListActionOrigin {
+  override func rowActionOrigin() -> NativeListActionOrigin {
     actionOrigin(sourceView: contentView, source: "row")
   }
 

@@ -16,7 +16,7 @@ struct NativeListItem {
   let content: String
 
   var rendererKey: NativeListRendererKey {
-    type == "message" ? .message : .legacy
+    NativeListRendererRegistry.key(for: type)
   }
 
   var styledHeight: CGFloat? {
