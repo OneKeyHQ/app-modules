@@ -91,19 +91,31 @@ Migration begins with `message`, one platform per commit. Its current boundary:
 | Android | Content binding and direct title/body/time style targets in `NativeListMessageRenderer.kt` | View allocation, default typography in `applySize`, box styles, measurement and reset |
 | iOS | Content binding, direct title/body/time style targets and existing measured height in `NativeListMessageRenderer.swift` | View allocation, box styles, reset and image lifecycle |
 
-This first extraction deliberately keeps existing platform defaults and the
-native monolithic hosts. It does **not** establish a new registry, structural
-reuse pool, renderer-owned view allocation or complete resolved-style pipeline.
+The migration still keeps existing platform defaults and the native monolithic
+hosts. It does **not** yet establish a renderer registry, renderer-owned native
+view allocation or complete resolved-style pipeline.
 The callback parameters are temporary adapters to the existing image/text
 primitives, not a public plugin API. Shared legacy slot maps still serve
 unmigrated templates and will be retired as ownership moves.
 
-The next Message step replaces those temporary adapters with shared primitives
-and a renderer-owned view tree, then connects structural reuse and update
-classification. On iOS, a template change must reload a cell rather than merely
-reconfigure a cell from an incompatible reuse class. On Android, the same change
-must select a different `getItemViewType`; ordinary style changes keep the same
-type. Preserve Market quote and selection update paths throughout migration.
+Structural reuse is now partitioned into two internal families on all platforms:
+`message` and `legacy`. Unmigrated templates retain their existing shared tree.
+Neither `row.key`, content, style, height nor placement changes the family.
+Web selects a compatible wrapper pool even when the row at a mounted index
+changes family. iOS registers separate reuse identifiers and reloads retained
+keys whose family changed; compatible updates still reconfigure, and newly
+inserted keys are not marked for reload/reconfigure. Android uses the family as
+`getItemViewType`; DiffUtil identifies data by `row.key`, allowing RecyclerView
+to replace an incompatible holder. Market quote and selection payloads retain
+their existing full/partial update decisions. Footer and nested-row hosts remain
+outside these scrolling pools.
+
+This is a reuse boundary, not a separate native view implementation: both native
+families still allocate the legacy cell/row class. The next Message step replaces
+the temporary adapters with shared primitives and a renderer-owned view tree,
+connects its factory to the existing reuse family, then moves update
+classification into the renderer. Preserve Market quote and selection update
+paths throughout migration.
 Move the remaining simple templates only after this lifecycle works on all
 three platforms; migrate Market/Identity/Header and composed wallet groups last.
 
@@ -139,6 +151,15 @@ The first extraction was checked on 2026-09-22:
 
 These results cover the Message extraction, not native acceptance of every
 template or completion of the target architecture.
+
+The structural reuse follow-up on 2026-09-22 passed 150 package tests, typecheck,
+lint (zero errors), the Android build/seven unit tests and a full iOS build.
+Chrome, Android API 36 and iOS 26.5 ran 41 alternating Message/Identity rows,
+swapped every template while retaining keys, emptied/repopulated the list and
+scrolled end/back. Style reset, image add/remove and fixed-footer placement were
+checked again. Web additionally verifies wrapper identity in regression tests;
+runtime checks included ten Web and five iOS mixed-template switching cycles.
+No browser page errors, Android crashes or iOS runtime exceptions were observed.
 
 `linear`, `sectioned`, `grid`, and `table` are observable native container
 semantics. Linear is a full-width stream. Sectioned adds a visual break before

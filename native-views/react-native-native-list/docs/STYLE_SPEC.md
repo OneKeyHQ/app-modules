@@ -199,7 +199,7 @@ Radius steps in use: `4` (chip), `8` (rail, small visual), `10` (visual `rounded
 ## 4. T2 — Template style surface
 
 `style.X` modifies the rendering of the **model field named `X`**, regardless of
-which physical view carries it. This matters because the view pool is shared: on
+which physical view carries it. This matters because legacy view slots are shared: on
 every platform `metricCard` renders its *value* through the title label and its
 *title* through the subtitle label, and the status label carries `rail.status`,
 `activity.status`, `message.time`, and `metricCard.trend`. Naming style keys after
@@ -746,8 +746,8 @@ this change is not a wholesale redesign of those defaults.
 
 ## 7. Isolation rules
 
-The view pool is shared across templates, so a styled row must not be able to
-affect any other row. Four rules:
+Message has its own reuse family; unmigrated templates share the legacy pool.
+A styled row must not affect another row in either family. Four rules:
 
 1. **Style types are per template.** `IdentityRowStyle` carries only identity's
    fields; `MetricCardRowStyle` only metricCard's. A key that the row type does not
@@ -831,7 +831,10 @@ for views shared by different templates. Device reuse checks remain required.
 Message is the first incremental renderer extraction: its native title/body/time
 styles now target the renderer's typed view bundle directly, while box styles
 and restoration still run through the existing host. Web Message owns its DOM
-structure and measurement in a separate module. See
+structure and measurement in a separate module. All three scrolling hosts now
+partition Message from legacy reuse; style changes keep the same family, while
+cross-family template changes replace the host. Native view allocation remains
+in the existing classes. See
 [DESIGN.md](DESIGN.md#incremental-renderer-migration) for the current ownership,
 remaining migration steps and acceptance scope.
 
