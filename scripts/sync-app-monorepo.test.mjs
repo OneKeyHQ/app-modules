@@ -99,6 +99,45 @@ test("refuses to downgrade an npm alias", () => {
   );
 });
 
+test("updates a stable dependency to a newer alpha preview", () => {
+  const input = '{"dependencies":{"@onekeyfe/react-native-image":"3.0.152"}}';
+  const previewWorkspaces = workspaces.map((workspace) => ({
+    ...workspace,
+    version: "3.0.153-alpha.248",
+  }));
+  const result = updateMobileManifest(input, previewWorkspaces);
+  assert.equal(
+    JSON.parse(result.text).dependencies["@onekeyfe/react-native-image"],
+    "3.0.153-alpha.248"
+  );
+});
+
+test("refuses to replace a stable release with its alpha preview", () => {
+  const input = '{"dependencies":{"@onekeyfe/react-native-image":"3.0.153"}}';
+  const previewWorkspaces = workspaces.map((workspace) => ({
+    ...workspace,
+    version: "3.0.153-alpha.248",
+  }));
+  assert.throws(
+    () => updateMobileManifest(input, previewWorkspaces),
+    /Refusing to downgrade/
+  );
+});
+
+test("updates an alpha dependency to a newer alpha preview", () => {
+  const input =
+    '{"dependencies":{"@onekeyfe/react-native-image":"3.0.153-alpha.247"}}';
+  const previewWorkspaces = workspaces.map((workspace) => ({
+    ...workspace,
+    version: "3.0.153-alpha.248",
+  }));
+  const result = updateMobileManifest(input, previewWorkspaces);
+  assert.equal(
+    JSON.parse(result.text).dependencies["@onekeyfe/react-native-image"],
+    "3.0.153-alpha.248"
+  );
+});
+
 test("requires a synchronized app-modules release", () => {
   assert.throws(
     () =>

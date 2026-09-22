@@ -49,6 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       dist_tag: ${{ steps.channel.outputs.dist_tag }}
+      release_version: ${{ steps.release.outputs.version }}
     env:
       ONLY_WORKSPACE: ${{ inputs.only_workspace || '' }}
     steps:
@@ -59,7 +60,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version: "24.x"
+          node-version: '24.x'
           registry-url: "https://registry.npmjs.org"
       - name: Select release channel
         id: channel
@@ -91,6 +92,12 @@ jobs:
           node scripts/validate-npm-dist-tag.mjs next
           git diff --check
           echo "Publishing preview $preview_version with the next tag" >> "$GITHUB_STEP_SUMMARY"
+      - name: Resolve published version
+        id: release
+        run: |
+          version=$(node -p "require('./native-views/react-native-native-list/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Published version: $version" >> "$GITHUB_STEP_SUMMARY"
       - name: Validate release version and dist-tag
         env:
           NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
@@ -122,8 +129,10 @@ jobs:
     needs: package-publish
     if: >-
       github.event_name == 'pull_request' &&
-      needs.package-publish.outputs.dist_tag == 'latest'
+      needs.package-publish.result == 'success'
     runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ needs.package-publish.outputs.release_version }}
     steps:
       - name: Create read-only app-monorepo token
         id: read-token
@@ -148,12 +157,12 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version: '24.x'
+          node-version: "24.x"
       - name: Update only app-modules mobile dependencies
         id: dependencies
         working-directory: app-monorepo
         run: |
-          node ../app-modules/scripts/sync-app-monorepo.mjs .
+          node ../app-modules/scripts/sync-app-monorepo.mjs . "$RELEASE_VERSION"
           if git diff --quiet -- apps/mobile/package.json packages/components/package.json package.json; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
@@ -185,7 +194,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.write-token.outputs.token }}
         run: |
-          version=$(node -p "require('../app-modules/native-views/react-native-native-list/package.json').version")
+          version="$RELEASE_VERSION"
           branch="codex/app-modules-v${version}"
           git config user.name 'onekey-release[bot]'
           git config user.email 'onekey-release[bot]@users.noreply.github.com'
