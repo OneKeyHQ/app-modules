@@ -329,6 +329,57 @@ describe('OneKeyImage wrapper', () => {
     });
   });
 
+  it('clips overlays to the same circle as a round native image', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <OneKeyImage
+          source={{ uri: 'https://example.com/avatar.png' }}
+          round
+          placeholder="loading"
+          style={{ width: 40, height: 40, borderTopLeftRadius: 8 }}
+        />
+      );
+    });
+
+    const native = renderer!.root.findByType('NativeOneKeyImage' as never);
+    expect(native.props.round).toBe(true);
+
+    const container = renderer!.root.findByProps({ collapsable: false });
+    expect(StyleSheet.flatten(container.props.style)).toMatchObject({
+      overflow: 'hidden',
+      borderRadius: '50%',
+      // the caller's own corner radius must not survive the round clip
+      borderTopLeftRadius: '50%',
+    });
+  });
+
+  it('draws the border overlay round for a round image', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await act(() => {
+      renderer = ReactTestRenderer.create(
+        <OneKeyImage
+          source={{ uri: 'https://example.com/avatar.png' }}
+          round
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: '#ffffff09',
+          }}
+        />
+      );
+    });
+
+    const overlay = renderer!.root.findByProps({ pointerEvents: 'none' });
+    expect(StyleSheet.flatten(overlay.props.style)).toMatchObject({
+      borderRadius: '50%',
+      borderWidth: 1,
+      borderColor: '#ffffff09',
+    });
+  });
+
   it.each(['ios', 'android'])(
     'draws rounded borders as an overlay on %s',
     async (platform) => {

@@ -355,6 +355,7 @@ export function OneKeyImage({
           borderEndStartRadius: flattenedStyle.borderEndStartRadius,
           borderEndEndRadius: flattenedStyle.borderEndEndRadius,
           zIndex: 1,
+          ...(round ? ROUND_CLIP : null),
         }
       : undefined;
 
@@ -389,6 +390,7 @@ export function OneKeyImage({
         style,
         styles.overlayContainer,
         hasRoundedCorners ? styles.borderlessContainer : undefined,
+        round ? ROUND_CLIP : undefined,
       ]}
       collapsable={false}
     >
@@ -443,6 +445,24 @@ export const OneKeyImageCache = {
   clearDisk: () => nativeCache.clearDisk(),
   clearAll: () => nativeCache.clearAll(),
 };
+
+// `round` clips the native view to a circle: an oval path on Android
+// (`OneKeyImage.kt` `addOval`), a `min(width, height) / 2` corner radius on iOS
+// (`OneKeyImage.swift` `updateRoundMask`). The overlay container has to clip the
+// same way, or a custom placeholder or fallback is painted square over a round
+// image. A percentage radius says that without measuring the view, and covers
+// every per-corner radius the caller's own style may have set.
+const ROUND_CLIP = {
+  borderRadius: '50%',
+  borderTopLeftRadius: '50%',
+  borderTopRightRadius: '50%',
+  borderBottomLeftRadius: '50%',
+  borderBottomRightRadius: '50%',
+  borderStartStartRadius: '50%',
+  borderStartEndRadius: '50%',
+  borderEndStartRadius: '50%',
+  borderEndEndRadius: '50%',
+} as const;
 
 const styles = StyleSheet.create({
   overlayContainer: {
