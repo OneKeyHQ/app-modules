@@ -24,7 +24,7 @@ class NativeListStyleSlotTest {
       Case(type = "identity", field = "title", expected = "title"),
       Case(type = "identity", field = "valueSecondary", expected = "valueSecondary"),
       // Legacy status views only serve unmigrated templates.
-      Case(type = "rail", field = "status", expected = "status"),
+      Case(type = "rail", field = "status", expected = null),
       Case(type = "activity", field = "status", expected = "status"),
       Case(type = "message", field = "time", expected = null),
       // Amounts, indices and values share the two trailing views.
@@ -57,7 +57,6 @@ class NativeListStyleSlotTest {
     // A collision would make one of the two keys silently win.
     val templates = listOf(
       Triple("identity", "", listOf("title", "subtitle", "tertiary", "badge", "value", "valueSecondary")),
-      Triple("rail", "", listOf("title", "badge", "status")),
       Triple("activity", "", listOf("title", "description", "status", "primaryAmount", "secondaryAmount")),
       Triple("dataRow", "", listOf("columns", "columnSecondary", "index")),
       Triple("mediaTile", "", listOf("title", "subtitle", "badge")),

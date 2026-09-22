@@ -29,7 +29,7 @@ internal fun isNativeListWholeRowInteractive(
  * Maps a style key - which names a model field - to the view slot that renders it.
  * The view pool is shared across templates and the mapping is not one to one:
  * metricCard renders `value` through the title view and its own `title` through
- * the subtitle view, and one status view carries rail.status, activity.status,
+ * the subtitle view, and one status view carries activity.status,
  * metricCard.trend. See docs/STYLE_SPEC.md section 4.
  *
  * Returns null when the template does not render that field, so an unmapped key
@@ -39,10 +39,6 @@ internal fun nativeListStyleSlot(type: String, variant: String, field: String): 
   when (type) {
     "identity" -> when (field) {
       "title", "subtitle", "tertiary", "badge", "value", "valueSecondary" -> field
-      else -> null
-    }
-    "rail" -> when (field) {
-      "title", "badge", "status" -> field
       else -> null
     }
     "activity" -> when (field) {
@@ -113,9 +109,9 @@ private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
   digest.update(bytes)
 }
 
-// Message is the first migrated renderer. All remaining templates still share
+// Message and Rail own dedicated renderers. Remaining templates still share
 // a compatible legacy tree; keys and style values never partition the pool.
-internal enum class NativeListRendererKey { LEGACY, MESSAGE }
+internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL }
 
 internal data class NativeListItem(
   val key: String,

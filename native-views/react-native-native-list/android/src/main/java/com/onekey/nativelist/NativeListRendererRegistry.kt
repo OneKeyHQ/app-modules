@@ -7,10 +7,13 @@ internal object NativeListRendererRegistry {
     mapOf(
       NativeListRendererKey.LEGACY to ::NativeListRowView,
       NativeListRendererKey.MESSAGE to ::NativeListMessageRowView,
+      NativeListRendererKey.RAIL to ::NativeListRailRowView,
     )
 
-  fun key(type: String) =
-    if (type == "message") NativeListRendererKey.MESSAGE else NativeListRendererKey.LEGACY
+  private val keys =
+    mapOf("message" to NativeListRendererKey.MESSAGE, "rail" to NativeListRendererKey.RAIL)
+
+  fun key(type: String) = keys[type] ?: NativeListRendererKey.LEGACY
 
   fun create(context: ThemedReactContext, viewType: Int): NativeListRowHost =
     factories.getValue(NativeListRendererKey.entries[viewType])(context)

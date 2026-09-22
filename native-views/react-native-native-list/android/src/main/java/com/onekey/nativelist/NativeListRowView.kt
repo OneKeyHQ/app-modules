@@ -960,14 +960,13 @@ internal class NativeListRowView(
     applySelectionState(item, theme, layout, itemIndex, selected)
     pressedRowBackground = groupedBackground(
       when (item.type) {
-        "rail" -> "rail"
         "mediaTile" -> "mediaTile"
         else -> "single"
       },
       color(
         theme,
-        if (item.type == "rail") "strongBackground" else "rowPressedBackground",
-        if (item.type == "rail") "#0000000F" else "#00000017",
+        "rowPressedBackground",
+        "#00000017",
       ),
     )
     background = if (touchPressed || reorderActive) pressedRowBackground else restingRowBackground
@@ -1005,7 +1004,6 @@ internal class NativeListRowView(
     when (item.type) {
       "walletGroup" -> bindWalletGroup(item, theme, layout, listOrientation, checkboxState)
       "identity" -> bindIdentity(item, theme, selected, checkboxState)
-      "rail" -> bindRail(item, theme)
       "activity" -> bindActivity(item, theme)
       "dataRow" -> bindDataRow(item, theme, checkboxState)
       "market" -> bindMarket(item, theme)
@@ -1116,8 +1114,7 @@ internal class NativeListRowView(
     }
     if (style.has("trailingGap")) {
       val gap = styleDp(style.optDouble("trailingGap"))
-      if (item.type == "rail") styleMargins(status, start = gap)
-      else styleGap(trailingColumn, gap)
+      styleGap(trailingColumn, gap)
     }
     style.optJSONObject("image")?.let { image ->
       if (leadingFrame.parent != null) {
@@ -2164,39 +2161,6 @@ internal class NativeListRowView(
       trailingColumn.gravity = Gravity.END or Gravity.CENTER_VERTICAL
     }
     bindAccessories(item, accessories, theme, checkboxState)
-  }
-
-  private fun bindRail(item: NativeListItem, theme: JSONObject?) {
-    setPadding(dp(4), dp(4), dp(4), dp(4))
-    addLeading(item.json.optJSONObject("visual"), 20, spacingDp = 6)
-    showText(title, item.json.optString("title"), 1)
-    TextViewCompat.setLineHeight(title, dp(16))
-    title.fontFeatureSettings = "tnum"
-    title.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-    titleLine.layoutParams = wrap()
-    mainColumn.orientation = HORIZONTAL
-    mainColumn.gravity = Gravity.CENTER_VERTICAL
-    mainColumn.layoutParams = wrap()
-    title.setHorizontallyScrolling(true)
-    item.json.optJSONObject("badge")?.let { badge ->
-      showText(badgeLine, badge.optString("text"), 1)
-      badgeLine.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-        marginStart = dp(6)
-      }
-      badgeLine.setTextColor(
-        when (badge.optString("tone")) {
-          "success" -> color(theme, "positive", "#00713FDE")
-          "danger" -> color(theme, "negative", "#C40006D3")
-          else -> color(theme, "secondaryText", "#0000009B")
-        },
-      )
-      badgeLine.typeface = NativeListFonts.medium(context)
-      badgeLine.fontFeatureSettings = "tnum"
-      TextViewCompat.setLineHeight(badgeLine, dp(16))
-    }
-    item.json.optString("status").takeUnless { it.isEmpty() || it == "none" }
-      ?.let { showText(status, it, 1) }
-    addView(mainColumn, wrap())
   }
 
   private fun bindActivity(item: NativeListItem, theme: JSONObject?) {
@@ -3931,9 +3895,8 @@ internal class NativeListRowView(
       if (selected) "rowSelectedBackground" else "rowBackground",
       if (selected) "#0000000F" else "#FFFFFF",
     )
-    if (item.type == "rail" || item.type == "mediaTile") {
-      // The source FavoriteTokenItem has no active/resting fill, and the NFT
-      // tile changes only the image opacity while pressed.
+    if (item.type == "mediaTile") {
+      // The NFT tile changes only the image opacity while pressed.
       rowBackground = color(theme, "rowBackground", "#FFFFFF")
     } else if (item.type == "metricCard" && !selected) {
       rowBackground = color(theme, "subduedBackground", "#F9F9F9")
@@ -3944,7 +3907,6 @@ internal class NativeListRowView(
       item.type == "identity" && item.json.optString("presentation") in setOf("accountSelector", "networkSelector") && item.json.has("height") -> "single"
       else -> when (item.type) {
       "metricCard" -> "single"
-      "rail" -> "rail"
       else -> item.json.optString("groupPosition")
       }
     }
@@ -4190,7 +4152,6 @@ internal class NativeListRowView(
             item.json.optString("variant") == "history" || item.sectionKey?.startsWith("history-") == true -> 12f
             else -> 14f
           }
-          "rail" -> 12f
           "system" -> 14f
           "metricCard" -> if (item.json.optString("size") == "large") 24f else 18f
           else -> 16f
@@ -4293,7 +4254,6 @@ internal class NativeListRowView(
       }
       isNetworkSelectorIdentity -> 47
       else -> when (item.type) {
-        "rail" -> 28
         "activity" -> if ((item.json.optJSONArray("footerActions")?.length() ?: 0) > 0) 104 else 60
         "mediaTile" -> 0
         "metricCard" -> when (item.json.optString("variant")) {
@@ -4380,7 +4340,6 @@ internal class NativeListRowView(
     val params = layoutParams ?: return
     if (listOrientation == "horizontal") {
       params.width = when (item.type) {
-        "rail" -> railWidth()
         "mediaTile" -> dp(200)
         else -> dp(280)
       }
@@ -4390,18 +4349,6 @@ internal class NativeListRowView(
       params.height = ViewGroup.LayoutParams.WRAP_CONTENT
     }
     layoutParams = params
-  }
-
-  private fun railWidth(): Int {
-    var width = dp(4 + 20 + 6).toFloat() + title.paint.measureText(title.text.toString())
-    if (badgeLine.visibility == VISIBLE) {
-      width += dp(6) + badgeLine.paint.measureText(badgeLine.text.toString())
-    }
-    if (status.visibility == VISIBLE) {
-      width += dp(6) + status.paint.measureText(status.text.toString())
-    }
-    width += dp(4)
-    return width.roundToInt()
   }
 
   private fun leadingCornerRadius(shape: String, sizeDp: Int): Float = when (shape) {
@@ -4574,7 +4521,6 @@ internal class NativeListRowView(
       "first" -> floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
       "last" -> floatArrayOf(0f, 0f, 0f, 0f, radius, radius, radius, radius)
       "single" -> FloatArray(8) { radius }
-      "rail" -> FloatArray(8) { scaledDp(8f) }
       "mediaTile" -> FloatArray(8) { scaledDp(16f) }
       else -> FloatArray(8)
     }
