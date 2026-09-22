@@ -187,27 +187,6 @@ private class SelectorLineHeightSpan(private val lineHeight: Int) : android.text
   }
 }
 
-private open class NativeListTextView(context: android.content.Context) : TextView(context) {
-  var rowHorizontallyScrolling = false
-    private set
-
-  override fun setHorizontallyScrolling(whether: Boolean) {
-    rowHorizontallyScrolling = whether
-    super.setHorizontallyScrolling(whether)
-  }
-
-  var opticalOffsetY = 0f
-    set(value) { field = value; invalidate() }
-
-  override fun onDraw(canvas: Canvas) {
-    if (opticalOffsetY == 0f) { super.onDraw(canvas); return }
-    val checkpoint = canvas.save()
-    canvas.translate(0f, opticalOffsetY)
-    super.onDraw(canvas)
-    canvas.restoreToCount(checkpoint)
-  }
-}
-
 private class DottedUnderlineTextView(context: android.content.Context) : NativeListTextView(context) {
   var useSourceScale = false
   private fun scaledDp(value: Float) = if (useSourceScale) value * resources.displayMetrics.density else NativeListScale.dp(resources, value)
@@ -1169,7 +1148,11 @@ internal class NativeListRowView(
       setPadding(paddingLeft, inset, paddingRight, inset)
     }
     if (style.has("lineGap") && item.type != "walletGroup" && item.type != "dataRow") {
-      val target = if (item.type == "metricCard" && item.json.optString("variant") in setOf("activity", "performance")) this else mainColumn
+      val target = when {
+        item.type == "message" -> messageViews.column
+        item.type == "metricCard" && item.json.optString("variant") in setOf("activity", "performance") -> this
+        else -> mainColumn
+      }
       styleGap(target, styleDp(style.optDouble("lineGap")))
     }
     if (style.has("leadingGap") && leadingFrame.parent != null) {
@@ -2346,12 +2329,13 @@ internal class NativeListRowView(
   }
 
   private val messageViews by lazy {
-    NativeListMessageRenderer.Views(mainColumn, title, subtitle, status, unreadDot, secondaryImage)
+    NativeListMessageRenderer.Views(context, unreadDot, secondaryImage)
   }
 
   private fun bindMessage(item: NativeListItem, theme: JSONObject?) {
     NativeListMessageRenderer.bind(this, messageViews, item, theme,
       dp = ::dp,
+      sp = ::sp,
       color = ::color,
       showText = ::showText,
       leading = ::addLeading,
@@ -4269,7 +4253,6 @@ internal class NativeListRowView(
         12f
       } else {
         when (item.type) {
-          "message" -> 14f
           "sectionHeader" -> when {
             isNetworkSelectorSection && item.json.optString("variant") != "summary" -> 14f
             item.json.optString("variant") == "gallery" -> 18f
@@ -4300,7 +4283,7 @@ internal class NativeListRowView(
           else -> NativeListFonts.semibold(context)
         }
         "system" -> NativeListFonts.regular(context)
-        "message", "metricCard" -> NativeListFonts.semibold(context)
+        "metricCard" -> NativeListFonts.semibold(context)
         else -> NativeListFonts.medium(context)
       }
     }
