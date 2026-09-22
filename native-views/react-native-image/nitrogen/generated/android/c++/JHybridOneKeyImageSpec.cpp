@@ -138,6 +138,15 @@ namespace margelo::nitro::onekeyimage {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JBoolean> /* optimizeTos */)>("setOptimizeTos");
     method(_javaPart, optimizeTos.has_value() ? jni::JBoolean::valueOf(optimizeTos.value()) : nullptr);
   }
+  std::optional<bool> JHybridOneKeyImageSpec::getRound() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JBoolean>()>("getRound");
+    auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(static_cast<bool>(__result->value())) : std::nullopt;
+  }
+  void JHybridOneKeyImageSpec::setRound(std::optional<bool> round) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JBoolean> /* round */)>("setRound");
+    method(_javaPart, round.has_value() ? jni::JBoolean::valueOf(round.value()) : nullptr);
+  }
   std::optional<double> JHybridOneKeyImageSpec::getResizeWidth() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JDouble>()>("getResizeWidth");
     auto __result = method(_javaPart);

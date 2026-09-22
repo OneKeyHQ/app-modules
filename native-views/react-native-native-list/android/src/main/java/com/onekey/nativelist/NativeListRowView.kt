@@ -3417,6 +3417,7 @@ internal class NativeListRowView(
       val fallbackIcon = if (index == 0) fallbackIconData else null
       val expectedEpoch = bindingEpoch
       bindImage(source, image, boundKey ?: "", index, variant,
+        round = shape == "circle",
         onLoad = if (!ownsSourceFallback) null else ({
           if (bindingEpoch == expectedEpoch) {
             sourceFallbackKey?.let(NativeListSourceFallbackState::forget)
@@ -4226,6 +4227,7 @@ internal class NativeListRowView(
     token: String,
     slot: Int,
     variant: String,
+    round: Boolean = false,
     onLoad: (() -> Unit)? = null,
     onError: (() -> Unit)? = null,
     hideUntilLoaded: Boolean = false,
@@ -4263,6 +4265,7 @@ internal class NativeListRowView(
       autoplay = source.optBoolean("autoplay", false),
       recyclingKey = recyclingKey,
       optimizeTos = retryAttempt == 0 && source.optBoolean("optimizeTos", true),
+      round = round,
       overscan = source.optDouble("overscan", 1.1),
       loadingStrategy = source.optString("loadingStrategy", "none"),
       placeholderColor = imagePlaceholderColor,
@@ -4279,7 +4282,18 @@ internal class NativeListRowView(
             val retry = Runnable {
               if (bindingEpoch == expectedEpoch) {
                 selectorImageRetries.remove(imageView)
-                bindImage(source, imageView, token, slot, variant, onLoad, onError, hideUntilLoaded, retryAttempt + 1)
+                bindImage(
+                  source = source,
+                  imageView = imageView,
+                  token = token,
+                  slot = slot,
+                  variant = variant,
+                  round = round,
+                  onLoad = onLoad,
+                  onError = onError,
+                  hideUntilLoaded = hideUntilLoaded,
+                  retryAttempt = retryAttempt + 1,
+                )
               }
             }
             selectorImageRetries[imageView] = retry

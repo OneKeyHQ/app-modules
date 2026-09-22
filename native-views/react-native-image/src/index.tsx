@@ -153,6 +153,7 @@ export function OneKeyImage({
   autoplay,
   recyclingKey,
   optimizeTos = true,
+  round = false,
   resizeWidth,
   overscan = 1.1,
   loadingStrategy = OneKeyImageLoadingStrategy.STATIC,
@@ -370,6 +371,7 @@ export function OneKeyImage({
     autoplay: autoplay ?? Platform.OS !== 'android',
     recyclingKey,
     optimizeTos,
+    round,
     resizeWidth,
     overscan,
     loadingStrategy:

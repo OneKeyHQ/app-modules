@@ -7,7 +7,9 @@ import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
 import android.os.Build
@@ -15,6 +17,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import com.bumptech.glide.Glide
@@ -44,6 +47,16 @@ private fun Context.findActivity(): Activity? {
 }
 
 private class OneKeyImageHostView(context: ThemedReactContext) : ImageView(context) {
+  private val roundClipPath = Path()
+  private val roundOutlineProvider = object : ViewOutlineProvider() {
+    override fun getOutline(view: View, outline: Outline) {
+      if (view.width > 0 && view.height > 0) {
+        outline.setOval(0, 0, view.width, view.height)
+      } else {
+        outline.setEmpty()
+      }
+    }
+  }
   private val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     color = Color.rgb(110, 110, 120)
     textAlign = Paint.Align.CENTER
@@ -52,6 +65,16 @@ private class OneKeyImageHostView(context: ThemedReactContext) : ImageView(conte
   var drawStateSymbol = false
   var stateSymbol = "◇"
   var autoplayEnabled = false
+  var round = false
+    set(value) {
+      if (field == value) return
+      field = value
+      outlineProvider = if (value) roundOutlineProvider else ViewOutlineProvider.BACKGROUND
+      clipToOutline = value
+      updateRoundClipPath()
+      invalidateOutline()
+      invalidate()
+    }
   private var aggregatedVisible = true
   var skeletonRequested = false
     set(value) {
@@ -65,7 +88,22 @@ private class OneKeyImageHostView(context: ThemedReactContext) : ImageView(conte
     super.onSizeChanged(w, h, oldw, oldh)
     skeleton.updateBounds(w, h)
     fallbackPaint.textSize = minOf(w, h) * 0.35f
+    if (round) {
+      updateRoundClipPath()
+      invalidateOutline()
+    }
     if (w > 0 && h > 0) onReadyForRequest?.invoke()
+  }
+
+  override fun draw(canvas: Canvas) {
+    if (!round || roundClipPath.isEmpty) {
+      super.draw(canvas)
+      return
+    }
+    val saveCount = canvas.save()
+    canvas.clipPath(roundClipPath)
+    super.draw(canvas)
+    canvas.restoreToCount(saveCount)
   }
 
   override fun onDraw(canvas: Canvas) {
@@ -108,6 +146,13 @@ private class OneKeyImageHostView(context: ThemedReactContext) : ImageView(conte
     skeleton.updateBounds(width, height)
   }
 
+  private fun updateRoundClipPath() {
+    roundClipPath.reset()
+    if (round && width > 0 && height > 0) {
+      roundClipPath.addOval(0f, 0f, width.toFloat(), height.toFloat(), Path.Direction.CW)
+    }
+  }
+
   fun syncPlayback() {
     val canRun = isAttachedToWindow && aggregatedVisible
     if (skeletonRequested && canRun) skeleton.start() else skeleton.stop()
@@ -130,6 +175,7 @@ internal fun oneKeyImageRequestSignature(
   contentFit: OneKeyImageContentFit?,
   optimizeTos: Boolean?,
   overscan: Double?,
+  round: Boolean,
   width: Int,
   height: Int,
   density: Float,
@@ -142,6 +188,7 @@ internal fun oneKeyImageRequestSignature(
   (contentFit ?: OneKeyImageContentFit.COVER).name,
   optimizeTos.toString(),
   overscan.toString(),
+  round.toString(),
   resizeWidth.toString(),
   width.toString(),
   height.toString(),
@@ -241,6 +288,10 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       field = value
       requestIdentityChanged()
     }
+  override var round: Boolean? = false
+    set(value) {
+      field = value
+    }
   override var overscan: Double? = 1.1
     set(value) {
       if (field == value) return
@@ -287,6 +338,10 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
 
   override fun afterUpdate() {
     super.afterUpdate()
+    // Fabric can reset `round` before clearing `sourceUri` while removing a view.
+    // Apply the shape once per committed prop batch so the outgoing frame keeps
+    // its clipping, while mounted and recycled views still receive the new value.
+    if (!sourceUri.isNullOrBlank()) hostView.round = round == true
     loadForCurrentLayout()
   }
 
@@ -346,6 +401,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     autoplay = false
     recyclingKey = null
     optimizeTos = true
+    round = false
     resizeWidth = null
     overscan = 1.1
     loadingStrategy = OneKeyImageLoadingStrategy.STATIC
@@ -416,6 +472,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       contentFit = contentFit,
       optimizeTos = optimizeTos,
       overscan = overscan,
+      round = round == true,
       width = hostView.width,
       height = hostView.height,
       density = hostView.resources.displayMetrics.density,
@@ -549,7 +606,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     requestManager()
       .asDrawable()
       .load(OneKeyImageModel.build(requestUrl, headersJson))
-      .apply(requestOptions(policy, requestUrl))
+      .apply(requestOptions(policy, requestUrl, round == true))
       .override(decodeDimensions.width, decodeDimensions.height)
       .listener(object : RequestListener<Drawable> {
         override fun onLoadFailed(
@@ -577,11 +634,15 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       .into(target)
   }
 
-  private fun requestOptions(policy: OneKeyImageCachePolicy, uri: String): RequestOptions {
+  private fun requestOptions(
+    policy: OneKeyImageCachePolicy,
+    uri: String,
+    round: Boolean,
+  ): RequestOptions {
     val options = RequestOptions()
       .withOneKeyAvatarCache(uri)
-      .dontTransform()
       .downsample(OneKeyImageSafeDownsampleStrategy)
+    if (round) options.circleCrop() else options.dontTransform()
     return when (policy) {
       OneKeyImageCachePolicy.MEMORY_DISK -> options.diskCacheStrategy(oneKeyImageMemoryDiskStrategy(uri))
       OneKeyImageCachePolicy.MEMORY -> options.diskCacheStrategy(DiskCacheStrategy.NONE)

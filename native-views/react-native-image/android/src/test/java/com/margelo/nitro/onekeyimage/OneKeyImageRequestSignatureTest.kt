@@ -26,7 +26,19 @@ class OneKeyImageRequestSignatureTest {
     )
   }
 
-  private fun signature(contentFit: OneKeyImageContentFit?, resizeWidth: Double? = null): String = oneKeyImageRequestSignature(
+  @Test
+  fun roundParticipatesInRequestIdentity() {
+    assertNotEquals(
+      signature(OneKeyImageContentFit.COVER, round = false),
+      signature(OneKeyImageContentFit.COVER, round = true),
+    )
+  }
+
+  private fun signature(
+    contentFit: OneKeyImageContentFit?,
+    resizeWidth: Double? = null,
+    round: Boolean = false,
+  ): String = oneKeyImageRequestSignature(
     rawUrl = "https://example.com/image.png",
     sourceHeadersJson = null,
     recyclingKey = null,
@@ -34,6 +46,7 @@ class OneKeyImageRequestSignatureTest {
     contentFit = contentFit,
     optimizeTos = true,
     overscan = 1.1,
+    round = round,
     width = 200,
     height = 100,
     density = 2f,

@@ -7,15 +7,23 @@ import UIKit
 private final class OneKeyImageHostView: SDAnimatedImageView {
   var onLayout: (() -> Void)?
   var onWindowChanged: ((Bool) -> Void)?
+  var round = false {
+    didSet { updateRoundMask() }
+  }
 
   override func layoutSubviews() {
     super.layoutSubviews()
+    updateRoundMask()
     onLayout?()
   }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
     onWindowChanged?(window != nil)
+  }
+
+  private func updateRoundMask() {
+    layer.cornerRadius = round ? min(bounds.width, bounds.height) / 2 : 0
   }
 }
 
@@ -112,7 +120,9 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   var view: UIView { hostView }
 
   var sourceUri: String? {
-    didSet { if sourceUri != oldValue { identityDidChange() } }
+    didSet {
+      if sourceUri != oldValue { identityDidChange() }
+    }
   }
   var sourceHeadersJson: String? {
     didSet { if sourceHeadersJson != oldValue { identityDidChange() } }
@@ -134,6 +144,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   var optimizeTos: Bool? = true {
     didSet { if optimizeTos != oldValue { identityDidChange() } }
   }
+  var round: Bool? = false
   var resizeWidth: Double? {
     didSet {
       if !Self.equalOptionalDouble(resizeWidth, oldValue) { identityDidChange() }
@@ -185,6 +196,12 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   }
 
   func afterUpdate() {
+    // Fabric can reset `round` before clearing `sourceUri` while removing a view.
+    // Apply the shape once per committed prop batch so the outgoing frame keeps
+    // its clipping, while mounted and recycled views still receive the new value.
+    if let sourceUri, !sourceUri.isEmpty {
+      hostView.round = round == true
+    }
     scheduleLoad()
   }
 
@@ -498,6 +515,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     autoplay = true
     recyclingKey = nil
     optimizeTos = true
+    round = false
     resizeWidth = nil
     overscan = 1.1
     loadingStrategy = .static
