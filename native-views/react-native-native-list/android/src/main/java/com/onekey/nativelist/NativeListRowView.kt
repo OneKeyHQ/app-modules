@@ -1240,6 +1240,10 @@ internal class NativeListRowView(
       }
     }
     if (item.type == "dataRow") tableDataColumns.forEach { it.applyStyle(style, ::applyStyledText) }
+    if (item.type == "message") {
+      NativeListMessageRenderer.applyTextStyles(messageViews, style, ::applyStyledText)
+      return
+    }
     val variant = item.json.optString("variant")
     if (item.type == "metricCard" && variant in setOf("activity", "performance")) {
       style.optJSONObject("title")?.let { titleStyle ->
@@ -2341,34 +2345,19 @@ internal class NativeListRowView(
     }
   }
 
+  private val messageViews by lazy {
+    NativeListMessageRenderer.Views(mainColumn, title, subtitle, status, unreadDot, secondaryImage)
+  }
+
   private fun bindMessage(item: NativeListItem, theme: JSONObject?) {
-    gravity = Gravity.TOP
-    setPadding(dp(12), dp(16), dp(12), dp(16))
-    item.json.optJSONObject("leading")?.let { addLeading(it, 28) }
-    unreadDot.visibility = if (item.json.optBoolean("unread", false)) VISIBLE else GONE
-    addView(mainColumn, weighted())
-    showText(title, item.json.optString("title"), 2)
-    showText(subtitle, item.json.optString("body"), item.json.optInt("bodyLines", 3).coerceIn(1, 3))
-    showText(status, item.json.optString("time"), 1)
-    TextViewCompat.setLineHeight(title, dp(20))
-    TextViewCompat.setLineHeight(subtitle, dp(20))
-    TextViewCompat.setLineHeight(status, dp(16))
-    subtitle.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-      topMargin = dp(2)
-    }
-    status.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-      topMargin = dp(4)
-    }
-    status.setTextColor(color(theme, "disabledText", "#00000072"))
-    item.json.optJSONObject("thumbnail")?.let { source ->
-      secondaryImage.visibility = VISIBLE
-      secondaryImage.foreground = roundedHairlineStroke(
-        color(theme, "strongBackground", "#0000000F"),
-        6f,
-      )
-      addView(secondaryImage, LayoutParams(dp(64), dp(64)).apply { marginStart = dp(12) })
-      bindImage(source, secondaryImage, item.key, 0, "generic")
-    }
+    NativeListMessageRenderer.bind(this, messageViews, item, theme,
+      dp = ::dp,
+      color = ::color,
+      showText = ::showText,
+      leading = ::addLeading,
+      thumbnailBorder = ::roundedHairlineStroke,
+      image = { source, view -> bindImage(source, view, item.key, 0, "generic") },
+    )
   }
 
   private fun bindDataRow(
