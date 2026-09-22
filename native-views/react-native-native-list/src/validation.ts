@@ -219,7 +219,10 @@ function assertTextStyle(
       'color',
       'lineHeight',
       'lines',
+      'truncate',
       'alignment',
+      'verticalAlignment',
+      'offsetY',
       ...additionalKeys,
     ],
     path,
@@ -255,12 +258,86 @@ function assertTextStyle(
   ) {
     fail(`${path}.alignment`, 'must be start, center, or end');
   }
-  if (style.lines !== undefined && ![1, 2].includes(style.lines)) {
-    fail(`${path}.lines`, 'must be 1 or 2');
+  if (style.lines !== undefined && ![1, 2, 3].includes(style.lines)) {
+    fail(`${path}.lines`, 'must be 1, 2, or 3');
   }
+  if (
+    style.truncate !== undefined &&
+    !['tail', 'clip'].includes(style.truncate)
+  ) {
+    fail(`${path}.truncate`, 'must be tail or clip');
+  }
+  if (
+    style.verticalAlignment !== undefined &&
+    !['top', 'center', 'bottom'].includes(style.verticalAlignment)
+  ) {
+    fail(`${path}.verticalAlignment`, 'must be top, center, or bottom');
+  }
+  assertBoundedStyleNumber(style.offsetY, `${path}.offsetY`, -8, 8);
 }
 
 function assertBoxStyle(style: RowBoxStyle, path: string): void {
+  const container = style.container;
+  if (container !== undefined) {
+    const containerPath = `${path}.container`;
+    if (
+      typeof container !== 'object' ||
+      container === null ||
+      Array.isArray(container)
+    ) {
+      fail(containerPath, 'must be an object');
+    }
+    assertUnknownKeys(
+      container as Record<string, unknown>,
+      [
+        'backgroundColor',
+        'opacity',
+        'cornerRadius',
+        'borderWidth',
+        'borderColor',
+        'contentVerticalAlignment',
+      ],
+      containerPath,
+      'row container style key'
+    );
+    for (const key of ['backgroundColor', 'borderColor'] as const) {
+      const value = container[key];
+      if (
+        value !== undefined &&
+        (typeof value !== 'string' ||
+          !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value))
+      ) {
+        fail(`${containerPath}.${key}`, 'must be #RRGGBB or #RRGGBBAA');
+      }
+    }
+    assertBoundedStyleNumber(
+      container.opacity,
+      `${containerPath}.opacity`,
+      0,
+      1
+    );
+    assertBoundedStyleNumber(
+      container.cornerRadius,
+      `${containerPath}.cornerRadius`,
+      0,
+      80
+    );
+    assertBoundedStyleNumber(
+      container.borderWidth,
+      `${containerPath}.borderWidth`,
+      0,
+      8
+    );
+    if (
+      container.contentVerticalAlignment !== undefined &&
+      !['top', 'center', 'bottom'].includes(container.contentVerticalAlignment)
+    ) {
+      fail(
+        `${containerPath}.contentVerticalAlignment`,
+        'must be top, center, or bottom'
+      );
+    }
+  }
   for (const field of [
     'horizontalPadding',
     'verticalPadding',
@@ -357,6 +434,7 @@ function assertRowStyle(row: RowModel, path: string): void {
   }
   const textKeys = TEXT_STYLE_KEYS_BY_ROW_TYPE[row.type] ?? [];
   const allowed = new Set([
+    'container',
     ...ROW_BOX_STYLE_KEYS_BY_TYPE[row.type],
     ...textKeys,
     ...(EXTRA_STYLE_KEYS_BY_ROW_TYPE[row.type] ?? []),

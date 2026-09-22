@@ -1685,14 +1685,19 @@ final class NativeListView: UIView {
     }
     // OneKey patch: warning height follows the current native font and available width.
     if item.type == "system", item.data.string("variant") == "warning" {
-      let textWidth = max(1, collectionView.bounds.width - (config?.contentPaddingHorizontal ?? 0) * 2 - 24)
+      let style = item.data.dictionary("style")
+      let textWidth = max(1, collectionView.bounds.width - (config?.contentPaddingHorizontal ?? 0) * 2 - CGFloat(style?.double("horizontalPadding", default: 12) ?? 12) * 2)
       func textHeight(_ key: String, weight: NativeListFontWeight) -> CGFloat {
+        let textStyle = style?.dictionary(key)
+        let lineHeight = CGFloat(textStyle?.double("lineHeight", default: 20) ?? 20)
+        let fontSize = CGFloat(textStyle?.double("fontSize", default: 14) ?? 14)
         let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = 20
-        paragraph.maximumLineHeight = 20
-        return ceil((item.data.string(key) as NSString).boundingRect(with: CGSize(width: textWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: nativeListFont(ofSize: 14, weight: weight), .paragraphStyle: paragraph], context: nil).height / 20) * 20
+        paragraph.minimumLineHeight = lineHeight
+        paragraph.maximumLineHeight = lineHeight
+        let measured = ceil((item.data.string(key) as NSString).boundingRect(with: CGSize(width: textWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: nativeListFont(ofSize: fontSize, weight: measuredTextWeight(textStyle, fallback: weight)), .paragraphStyle: paragraph], context: nil).height / lineHeight)
+        return min(CGFloat(textStyle?.int("lines", default: Int.max) ?? Int.max), max(1, measured)) * lineHeight
       }
-      return 32 + textHeight("title", weight: .medium) + textHeight("message", weight: .regular)
+      return CGFloat(style?.double("verticalPadding", default: 14) ?? 14) * 2 + CGFloat(style?.double("lineGap", default: 4) ?? 4) + textHeight("title", weight: .medium) + textHeight("message", weight: .regular)
     }
     if item.type == "walletGroup" {
       if usingCompactReorderHeight, item.key == interactiveReorderCompactKey { return 68 }
@@ -1796,27 +1801,38 @@ final class NativeListView: UIView {
     return max(0, base + modifier + sectionSpacing + tableAdjustment)
   }
 
+  private func measuredTextWeight(_ style: [String: Any]?, fallback: NativeListFontWeight) -> NativeListFontWeight {
+    switch style?.string("fontWeight") {
+    case "regular": return .regular
+    case "medium": return .medium
+    case "semibold": return .semibold
+    case "bold": return .bold
+    default: return fallback
+    }
+  }
+
   private func messageHeight(_ item: NativeListItem) -> CGFloat {
-    let maximumBodyLines = min(3, max(1, item.data.int("bodyLines", default: 3)))
-    let horizontalInsets = (config?.contentPaddingHorizontal ?? 0) * 2 + 40
-    let leadingWidth: CGFloat = item.data.dictionary("leading") == nil ? 0 : 40
+    let style = item.data.dictionary("style")
+    let horizontalInsets = (config?.contentPaddingHorizontal ?? 0) * 2 + CGFloat(style?.double("horizontalPadding", default: 20) ?? 20) * 2
+    let leadingWidth: CGFloat = item.data.dictionary("leading") == nil ? 0 : CGFloat(style?.dictionary("image")?.double("width", default: 28) ?? 28) + CGFloat(style?.double("leadingGap", default: 12) ?? 12)
     let thumbnailWidth: CGFloat = item.data.dictionary("thumbnail") == nil ? 0 : 76
     let textWidth = max(1, collectionView.bounds.width - horizontalInsets - leadingWidth - thumbnailWidth)
-    let bodyBounds = (item.data.string("body") as NSString).boundingRect(
-      with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
-      options: [.usesLineFragmentOrigin, .usesFontLeading],
-      attributes: [.font: nativeListFont(ofSize: 14)],
-      context: nil
-    )
-    let titleBounds = (item.data.string("title") as NSString).boundingRect(
-      with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
-      options: [.usesLineFragmentOrigin, .usesFontLeading],
-      attributes: [.font: nativeListFont(ofSize: 14, weight: .semibold)],
-      context: nil
-    )
-    let bodyLines = min(maximumBodyLines, max(1, Int(ceil(bodyBounds.height / 20))))
-    let titleLines = min(2, max(1, Int(ceil(titleBounds.height / 20))))
-    return 32 + CGFloat(titleLines * 20 + bodyLines * 20) + 22
+    func textHeight(_ key: String, lines: Int, weight: NativeListFontWeight) -> CGFloat {
+      let textStyle = style?.dictionary(key)
+      let lineHeight = CGFloat(textStyle?.double("lineHeight", default: 20) ?? 20)
+      let size = CGFloat(textStyle?.double("fontSize", default: 14) ?? 14)
+      let paragraph = NSMutableParagraphStyle()
+      paragraph.minimumLineHeight = lineHeight
+      paragraph.maximumLineHeight = lineHeight
+      let bounds = (item.data.string(key) as NSString).boundingRect(with: CGSize(width: textWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: nativeListFont(ofSize: size, weight: measuredTextWeight(textStyle, fallback: weight)), .paragraphStyle: paragraph], context: nil)
+      let maximumLines = min(3, max(1, textStyle?.int("lines", default: lines) ?? lines))
+      return CGFloat(min(maximumLines, max(1, Int(ceil(bounds.height / lineHeight))))) * lineHeight
+    }
+    return CGFloat(style?.double("verticalPadding", default: 16) ?? 16) * 2
+      + textHeight("title", lines: 2, weight: .semibold)
+      + textHeight("body", lines: item.data.int("bodyLines", default: 3), weight: .regular)
+      + CGFloat(style?.dictionary("time")?.double("lineHeight", default: 20) ?? 20)
+      + CGFloat(style?.double("lineGap", default: 1) ?? 1) * 2
   }
 
   private func emit(_ block: ((String) -> Void)?, _ value: [String: Any]) {

@@ -75,8 +75,9 @@ by styling them. See the complete applicability matrix in §4.1.
 
 The 12 templates each have a definition and schematic in ROW_TEMPLATES.md.
 Overflow fitting remains the integrating developer's responsibility: choose
-fitting text/image/padding values and row heights. Automatic measurement,
-combination-fit rejection and style-driven auto-height are outside this contract.
+fitting text/image/padding values and row heights. Automatic overflow fitting, combination-fit rejection and converting fixed rows
+to auto-height are outside this contract. Existing measured templates account
+for explicit text metrics in their existing height calculation.
 The five source PRs are closed; implementation continues in the consolidated PR.
 
 ## 2. How this spec is enforced
@@ -109,7 +110,7 @@ object identity.
 | `dataRow` column styles | Independent primary/secondary text on all platforms, in linear and table layouts |
 | Sticky header styles | Android uses the same row view/binder as normal headers; iOS and Web also reuse their row renderers |
 | `listStyle.separator` / `groupCornerRadius` | Initial/update propagation and actual-group scope aligned |
-| Row heights and overflow | Caller owns row allocation and fitting; style does not introduce auto-height |
+| Row heights and overflow | Caller owns fixed allocation and fitting; existing measured message/warning paths account for text metrics |
 | Legacy baseline dimensions | Inventory in §4/§6; explicit style values use logical units independently of Android's legacy list scale |
 | Rendered acceptance | The source contract and build checks do not establish full native interaction/pixel acceptance (§9) |
 
@@ -214,8 +215,9 @@ meaning is defined in the [catalog](ROW_TEMPLATES.md).
 ### 4.1 Shared configurable properties
 
 Every text role listed below accepts the same `NativeListTextStyle`:
-`token`, `fontSize`, `fontWeight`, `color`, `lineHeight`, `lines`, `alignment`.
-Weights are `regular | medium | semibold | bold`; line counts are `1 | 2`;
+`token`, `fontSize`, `fontWeight`, `color`, `lineHeight`, `lines`, `truncate`,
+`alignment`, `verticalAlignment`, `offsetY`.
+Weights are `regular | medium | semibold | bold`; line counts are `1 | 2 | 3`;
 `start | center | end` alignment follows layout direction. Colors must be
 `#RRGGBB` or `#RRGGBBAA`, the common native/Web color format. Omitted properties
 preserve the template's values. Explicit properties override token values,
@@ -268,6 +270,107 @@ All numeric overrides use logical units (CSS px / iOS pt / Android dp), includin
 explicit typography. Legacy Android scaling may affect omitted defaults, but must
 not rescale an explicit style value. Physical-pixel/font-rasterization differences
 remain platform-specific. See §3.3 for bounds and §7 for fitting responsibility.
+
+### 4.1.1 Row container (all 12 templates)
+
+![Container surface, padding, semantic gaps and text regions](images/row-style-regions.svg)
+
+`style.container` addresses the outer row surface, including `walletGroup` and
+rows used as headers/footers. It never overwrites member styles; opacity naturally composites the entire
+container including descendants.
+
+| Property | Values / default when supplied | Meaning |
+| --- | --- | --- |
+| `backgroundColor` | `#RRGGBB` / `#RRGGBBAA` | Resting row background |
+| `opacity` | `0…1` | Opacity of the whole row, multiplied by disabled dimming |
+| `cornerRadius` | `0…80` logical units | All four outer row corners |
+| `borderWidth` | `0…8` logical units | Inward border; no effect on content allocation |
+| `borderColor` | `#RRGGBB` / `#RRGGBBAA` | Border color; transparent if width is supplied alone |
+| `contentVerticalAlignment` | `top / center / bottom` | Align the row's content within its padded height; preserve slot order and orientation |
+
+Omission preserves the template's existing value. Explicit container background
+and opacity take precedence over legacy `row.backgroundColor` / `row.opacity`.
+Existing top-level fields remain accepted; new integrations use `style.container`.
+An explicit background is the resting surface (including selection); existing
+pressed feedback remains visible. Radius and border remain during press/selection.
+Explicit radius overrides grouped corner geometry for this row only; it does not
+change `listStyle.groupCornerRadius`. `backgroundFullWidth` remains a layout/model
+option and uses the resolved resting background. A border never changes padding.
+
+`horizontalPadding` / `verticalPadding` remain on `row.style`; there is no second
+padding entry under `container`. Outer margin, width, height, positioning,
+visibility, flex direction, column weights and hit-area changes are not container
+style properties. Row allocation remains with the existing model/layout API.
+Shadows, gradients and per-corner/per-edge styling are outside this version.
+
+```ts
+// Inside an identity row; the caller supplies a fitting row.height separately.
+style: {
+  container: {
+    backgroundColor: '#EDF6FF', cornerRadius: 12,
+    borderWidth: 1, borderColor: '#8DB7E4', contentVerticalAlignment: 'center',
+  },
+  horizontalPadding: 16, verticalPadding: 12, leadingGap: 10, lineGap: 4,
+  title: { lines: 1, truncate: 'tail', alignment: 'start' },
+  subtitle: { lines: 3, truncate: 'clip', lineHeight: 18, offsetY: -1 },
+}
+```
+
+### 4.1.2 Text wrapping, truncation and alignment
+
+| Property | Shared meaning |
+| --- | --- |
+| `lines` | Maximum 1, 2 or 3 lines, not a forced reservation of that many lines |
+| `truncate` | `tail` (ellipsis at the end of the last visible line) or `clip` (no ellipsis); default `tail` when line/truncation controls are supplied |
+| `lineHeight` | Line box height inside one text field, distinct from `lineGap` between fields |
+| `alignment` | Horizontal `start / center / end` inside the text region, respecting direction |
+| `verticalAlignment` | `top / center / bottom` for the complete text block inside its allocated text region; no effect without spare height |
+| `offsetY` | `-8…8` logical units of optical translation; does not change measurement, sibling spacing or hit areas |
+
+Single-line text does not wrap; explicit CR/LF line breaks become spaces (CRLF is
+one break). Multi-line text wraps naturally, preserves explicit breaks, and
+truncates after the last permitted line. Rich runs share one line budget. Styling
+one field must not alter adjacent badges, values or member rows. Middle/head
+truncation is not exposed in this version; it needs a separate cross-platform
+contract rather than platform-specific fallback.
+
+Every existing declared text role accepts the same range `1…3`; each template's
+omitted defaults remain documented in the inventory. Optional absent fields stay
+absent. `style.title.lines` overrides legacy `titleLines`,
+`style.subtitle.lines` overrides `subtitleLines`, and `style.body.lines` overrides
+`message.bodyLines`. New callers should use styles for all three. Removing a
+style restores the model/default value. `patch.changes.style` replaces the whole
+style object; `{}` clears it, including container and text overrides.
+
+Fixed row heights are never expanded automatically. Integrators choose a fitting
+height; this is not automatic overflow prevention. Existing intrinsic/measured
+paths must account for explicit text metrics within their declared measurement
+model. Font shaping and exact wrap points can vary across platform fonts; the
+property meanings and maximum line counts must agree.
+
+`container.contentVerticalAlignment` moves the existing content arrangement as a
+whole within the row; text `verticalAlignment` moves only that field's glyph block.
+They must not be substituted for each other. For horizontal rows, the container
+alignment aligns existing immediate content groups on the vertical axis.
+
+### 4.1.3 Spacing and admission rules
+
+Spacing is always between named semantic regions, never arbitrary descendants:
+`leadingGap` is visual-to-content, `titleBadgeGap` is title-to-badge, and
+`trailingGap` is between the template's trailing items (rail: title/badge-to-status).
+`lineGap` is between text fields; the existing composite metric variant explicitly
+uses it between its heading/metric blocks. New templates must identify both
+endpoints in their diagram and must not invent a different meaning for these keys.
+List `layout.itemSpacing` remains the gap between rows.
+
+Before adding a template or style property, update the catalog with its diagram,
+semantic fields, defaults, applicable variants, units/ranges, precedence and
+absent-field behavior. Reuse this shared text/image/container vocabulary. A new
+property requires Web/iOS/Android implementations, validation for snapshot and
+patch paths, and focused checks for replacement/reset, recycling, rich text,
+member isolation, sticky headers and fixed footers where applicable. Source/build
+checks and rendered acceptance must be reported separately. No renderer may
+silently reinterpret an unsupported value.
 
 ### 4.2 Existing defaults (inventory, not a pixel parity claim)
 
@@ -595,7 +698,9 @@ exposed — a hairline is correct on iOS and a whole pixel is correct elsewhere.
 | Native reuse leaks | Restore the actual bound text and local geometry before rebinding; preserve unspecified rich-text attributes | Styled → unstyled → another template during scrolling |
 | Android sticky header uses a separate partial renderer | Normal row view renders pinned text, values and controls | Pin/push-off, checkbox/action taps, scrolling and accessibility |
 | List chrome propagation and group scope | Initial/update paths receive listStyle; custom radius only applies to actual groups | Initial and chrome-only snapshot interactions |
-| Parent style cascades to wallet members | Group exposes padding only; members bind their own styles | Independent group/member styling during reorder |
+| Parent style cascades to wallet members | Group exposes container appearance and padding; members bind their own styles | Independent group/member styling during reorder |
+| Row container surface | Shared `style.container`, explicit-over-legacy precedence, disabled opacity, border/radius and content alignment | Press/selection/reorder and nested members on device |
+| Text line controls | Shared 1–3 lines, tail/clip, vertical alignment and optical offset; measured text paths updated | Long/CJK/RTL/rich text and fixed-height clipping on device |
 
 Common headers/footers already exist through structural rows, `fixedFooter` and
 pager composition (§5.1). This work does not add an arbitrary React header slot.
@@ -635,12 +740,11 @@ are explicitly out of scope. The following rules distinguish those responsibilit
    change slot order, orientation, column count/weight, structural spans, section
    membership, control placement or parent constraints. Those belong to the
    template, its explicit variant, or the container layout.
-2. **Keep the allocated row frame authoritative.** A style-only update must not
-   alter the row's measured outer width/height, the next row's origin, scroll
-   offsets, sticky bounds or footer placement. If content needs more height, the
-   caller must supply an appropriate explicit `row.height` as a separate geometry
-   change and verify it with the container. There is no style-driven auto-height
-   in this stack.
+2. **Keep fixed row allocation authoritative.** An explicit `row.height` and
+   fixed template allocation do not expand to fit style changes. If more space is
+   needed, the caller supplies a fitting height and verifies container geometry.
+   Existing measured message/warning paths include explicit text metrics in their
+   calculation; they do not turn other templates into auto-height rows.
 3. **Integrator: fit content within that frame.** After local padding, each visual/control
    and text line box must fit. For a simple two-line identity row, a necessary
    check is `2 * verticalPadding + max(visualHeight, titleLineHeight + lineGap +

@@ -469,21 +469,47 @@ function sizeModifier(row: RowModel): number {
 
 function approximateMessageHeight(row: RowModel, availableWidth: number) {
   if (row.type !== 'message') return 0;
-  const leadingWidth = row.leading ? 52 : 0;
+  const style = row.style;
+  const leadingWidth = row.leading
+    ? (style?.image?.width ?? 40) + (style?.leadingGap ?? 12)
+    : 0;
   const thumbnailWidth = row.thumbnail ? 88 : 0;
-  const charactersPerLine = Math.max(
-    18,
-    Math.floor((availableWidth - leadingWidth - thumbnailWidth - 40) / 7)
+  const textWidth = Math.max(
+    1,
+    availableWidth -
+      leadingWidth -
+      thumbnailWidth -
+      (style?.horizontalPadding ?? 20) * 2
   );
-  const titleLines = Math.min(
-    2,
-    Math.max(1, Math.ceil(row.title.length / charactersPerLine))
+  const height = (
+    text: string,
+    textStyle: NativeListTextStyle | undefined,
+    fallbackLines: number
+  ) => {
+    const size = textStyle?.fontSize ?? 14;
+    const charactersPerLine = Math.max(
+      textStyle ? 1 : 18,
+      Math.floor(textWidth / (size / 2))
+    );
+    const measured = text
+      .split(/\r\n|[\r\n]/)
+      .reduce(
+        (total, line) =>
+          total + Math.max(1, Math.ceil(line.length / charactersPerLine)),
+        0
+      );
+    return (
+      Math.min(textStyle?.lines ?? fallbackLines, measured) *
+      (textStyle?.lineHeight ?? 20)
+    );
+  };
+  return (
+    (style?.verticalPadding ?? 16) * 2 +
+    height(row.title, style?.title, 2) +
+    height(row.body, style?.body, row.bodyLines ?? 3) +
+    (style?.time?.lineHeight ?? 20) +
+    (style?.lineGap ?? 1) * 2
   );
-  const bodyLines = Math.min(
-    row.bodyLines ?? 3,
-    Math.max(1, Math.ceil(row.body.length / charactersPerLine))
-  );
-  return 32 + titleLines * 20 + bodyLines * 20 + 22;
 }
 
 export function estimateWebRowHeight(
@@ -495,18 +521,39 @@ export function estimateWebRowHeight(
   // if (row.type === 'system' && row.variant === 'spacer') return row.height;
   if (row.height !== undefined) return row.height;
   if (row.type === 'system' && row.variant === 'warning') {
-    const width = Math.max(1, availableWidth - 24);
-    const lines = (text: string) =>
-      Math.max(
-        1,
-        Math.ceil(
-          Array.from(text).reduce(
-            (length, char) => length + (char.charCodeAt(0) > 255 ? 14 : 7),
-            0
-          ) / width
-        )
+    const width = Math.max(
+      1,
+      availableWidth - (row.style?.horizontalPadding ?? 12) * 2
+    );
+    const height = (text: string, style: NativeListTextStyle | undefined) => {
+      const size = style?.fontSize ?? 14;
+      const lines = text
+        .split(/\r\n|[\r\n]/)
+        .reduce(
+          (total, line) =>
+            total +
+            Math.max(
+              1,
+              Math.ceil(
+                Array.from(line).reduce(
+                  (length, char) =>
+                    length + (char.charCodeAt(0) > 255 ? size : size / 2),
+                  0
+                ) / width
+              )
+            ),
+          0
+        );
+      return (
+        Math.min(style?.lines ?? Infinity, lines) * (style?.lineHeight ?? 20)
       );
-    return 32 + 20 * (lines(row.title) + lines(row.message));
+    };
+    return (
+      (row.style?.verticalPadding ?? 14) * 2 +
+      (row.style?.lineGap ?? 4) +
+      height(row.title, row.style?.title) +
+      height(row.message, row.style?.message)
+    );
   }
   if (row.type === 'walletGroup')
     // OneKey patch: wallet badges participate in the outer group height.
@@ -957,11 +1004,11 @@ export const WEB_LIST_CSS = `
 .ok-native-list-viewport-frame{position:relative;flex:1;min-width:0;min-height:0;overflow:hidden}
 .ok-native-list-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
 .ok-native-list-content{position:relative;min-width:100%;min-height:100%}
-.ok-native-list-item{position:absolute;box-sizing:border-box;contain:layout paint style;outline:none}
+.ok-native-list-item{position:absolute;left:0;top:0;box-sizing:border-box;contain:layout paint style;outline:none}
 .ok-native-list-row{width:100%;height:100%;box-sizing:border-box;display:flex;align-items:center;gap:12px;overflow:hidden;background:var(--nl-row);color:var(--nl-primary);cursor:default;user-select:none;-webkit-user-select:none}
 .ok-native-list-item[data-table-alternate="true"]>.ok-native-list-row{background:var(--nl-bg)}
 .ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
-.ok-native-list-item[data-native-list-disabled="true"]>.ok-native-list-row{opacity:.5;cursor:default}
+.ok-native-list-item[data-native-list-disabled="true"]>.ok-native-list-row{cursor:default}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]>.ok-native-list-row{cursor:pointer}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:hover>.ok-native-list-row{background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-row{background:var(--nl-pressed)}
@@ -1044,6 +1091,9 @@ export const WEB_LIST_CSS = `
 .ok-native-list-root .ok-native-list-item>.ok-native-list-wallet-row,.ok-native-list-root .ok-native-list-wallet-member>.ok-native-list-wallet-row,.ok-native-list-root .ok-native-list-item>.ok-native-list-account-row,.ok-native-list-root .ok-native-list-item>.ok-native-list-account-action-row,.ok-native-list-wallet-member{cursor:default}
 /* OneKey patch: Add account hover and pressed backgrounds keep the account row corner radius. */
 .ok-native-list-account-action-row{border-radius:12px}
+
+.ok-native-list-root .ok-native-list-item>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member>[data-nl-container-background="true"]{background:var(--nl-container-background)}
+.ok-native-list-root .ok-native-list-item[data-native-list-row-press-enabled="true"]:hover>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member:hover>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member:active>[data-nl-container-background="true"]{background:var(--nl-pressed)}
 `;
 
 function createElement(
@@ -3096,6 +3146,20 @@ function createIdentityActivityOrMessageRow(
       tertiary: 'tertiary',
     }
   );
+  if (row.type === 'message') {
+    const messageTitle = column.querySelector<HTMLElement>(
+      '[data-nl-slot="title"]'
+    );
+    const messageBody = column.querySelector<HTMLElement>(
+      '[data-nl-slot="body"]'
+    );
+    if (messageTitle)
+      applyTextLayout(messageTitle, { lines: row.style?.title?.lines ?? 2 });
+    if (messageBody)
+      applyTextLayout(messageBody, {
+        lines: row.style?.body?.lines ?? row.bodyLines ?? 3,
+      });
+  }
   // OneKey patch: match existing search, subtitle fragments, and sidebar badges.
   if (row.type === 'identity') {
     const titleElement = column.firstElementChild as HTMLElement;
@@ -3308,7 +3372,12 @@ function createWalletGroupRow(
     memberElement.style.flexBasis =
       String(member.height ?? 68 + (member.badges?.length ? 24 : 0)) + 'px';
     memberElement.style.height = memberElement.style.flexBasis;
-    memberElement.style.opacity = String(member.opacity ?? 1);
+    memberElement.style.opacity = String(
+      (member.style?.container?.opacity ?? member.opacity ?? 1) *
+        (member.disabled ? 0.5 : 1)
+    );
+    if (member.style?.container?.cornerRadius !== undefined)
+      memberElement.style.borderRadius = `${member.style.container.cornerRadius}px`;
     body.appendChild(memberElement);
   });
   return body;
@@ -3343,13 +3412,13 @@ function applyMarketTextStyle(
   );
   element.style.color = style?.color ?? '';
   element.style.textAlign = style?.alignment ?? defaults.alignment;
-  element.style.whiteSpace = style?.lines === 2 ? 'normal' : 'nowrap';
+  element.style.whiteSpace = (style?.lines ?? 1) > 1 ? 'normal' : 'nowrap';
   element.style.display = '';
   element.style.removeProperty('-webkit-line-clamp');
   element.style.removeProperty('-webkit-box-orient');
-  if (style?.lines === 2) {
+  if ((style?.lines ?? 1) > 1) {
     element.style.display = '-webkit-box';
-    element.style.setProperty('-webkit-line-clamp', '2');
+    element.style.setProperty('-webkit-line-clamp', String(style?.lines ?? 2));
     element.style.setProperty('-webkit-box-orient', 'vertical');
   }
 }
@@ -3401,6 +3470,8 @@ function setMarketQuoteContent(element: HTMLElement, row: MarketRow) {
     change.style.color = row.change.textColor ?? style?.change?.color ?? '';
     change.style.background = row.change.backgroundColor ?? '';
   }
+  if (price) applyTextLayout(price, style?.price ?? {}, 1);
+  if (change) applyTextLayout(change, style?.change ?? {}, 1);
   element.setAttribute(
     'aria-label',
     row.accessibilityLabel ??
@@ -3631,10 +3702,21 @@ function createMarketRow(context: RenderContext, row: MarketRow): HTMLElement {
   );
   body.appendChild(trailing);
   setMarketQuoteContent(body, row);
+  for (const key of ['title', 'subtitle'] as const) {
+    const text = body.querySelector<HTMLElement>(
+      `.ok-native-list-market-${key}`
+    );
+    if (text) applyTextLayout(text, style?.[key] ?? {}, 1);
+  }
+  const prefix = body.querySelector<HTMLElement>(
+    '.ok-native-list-market-subtitle-prefix'
+  );
+  if (prefix) applyTextLayout(prefix, row.subtitlePrefix?.style ?? {}, 1);
   return body;
 }
 
 const ROW_BOX_STYLE_KEYS: ReadonlySet<string> = new Set([
+  'container',
   'horizontalPadding',
   'verticalPadding',
   'leadingGap',
@@ -3643,6 +3725,169 @@ const ROW_BOX_STYLE_KEYS: ReadonlySet<string> = new Set([
   'trailingGap',
   'image',
 ]);
+
+/** Text owns a single wrapping budget, including its rich runs. */
+function applyTextLayout(
+  element: HTMLElement,
+  style: NativeListTextStyle,
+  defaultLines?: number
+): void {
+  if (
+    style.lines === undefined &&
+    style.truncate === undefined &&
+    style.verticalAlignment === undefined &&
+    style.offsetY === undefined
+  )
+    return;
+  let content = element.querySelector<HTMLElement>(
+    ':scope > .ok-native-list-text-content'
+  );
+  const computed = element.ownerDocument.defaultView?.getComputedStyle(element);
+  const inheritedClamp = Number(
+    element.style.getPropertyValue('-webkit-line-clamp') ||
+      computed?.getPropertyValue('-webkit-line-clamp')
+  );
+  const lines =
+    style.lines ??
+    defaultLines ??
+    (Number(
+      element.style.getPropertyValue('-webkit-line-clamp') ||
+        computed?.getPropertyValue('-webkit-line-clamp')
+    ) ||
+      1);
+  if (
+    !content &&
+    (style.verticalAlignment !== undefined || style.offsetY !== undefined)
+  ) {
+    content = element.ownerDocument.createElement('span');
+    content.className = 'ok-native-list-text-content';
+    content.append(...Array.from(element.childNodes));
+    element.appendChild(content);
+    element.style.display = 'flex';
+    element.style.flexDirection = 'column';
+    element.style.removeProperty('-webkit-line-clamp');
+    element.style.removeProperty('-webkit-box-orient');
+    content.style.minWidth = '0';
+    content.style.flex = '0 1 auto';
+    content.style.width = '100%';
+  }
+  const text = content ?? element;
+  if (style.verticalAlignment !== undefined) {
+    element.style.justifyContent = {
+      top: 'flex-start',
+      center: 'center',
+      bottom: 'flex-end',
+    }[style.verticalAlignment];
+  }
+  if (style.offsetY !== undefined)
+    text.style.transform = `translateY(${style.offsetY}px)`;
+  if (
+    style.lines === undefined &&
+    style.truncate === undefined &&
+    defaultLines === undefined &&
+    !inheritedClamp
+  ) {
+    if (content) {
+      content.style.whiteSpace = computed?.whiteSpace || 'inherit';
+      content.style.textOverflow = computed?.textOverflow || 'inherit';
+      content.style.overflow = 'hidden';
+    }
+    return;
+  }
+  if (lines === 1) {
+    const walker = element.ownerDocument.createTreeWalker(
+      text,
+      4 /* SHOW_TEXT */
+    );
+    let previousCarriageReturn = false;
+    while (walker.nextNode()) {
+      const value = walker.currentNode.nodeValue ?? '';
+      if (!value) continue;
+      // A CRLF pair may straddle two styled runs.
+      const textValue =
+        previousCarriageReturn && value.startsWith('\n')
+          ? value.slice(1)
+          : value;
+      walker.currentNode.nodeValue = textValue.replace(/\r\n|[\r\n]/g, ' ');
+      previousCarriageReturn = value.endsWith('\r');
+    }
+  }
+  text.style.whiteSpace = lines === 1 ? 'nowrap' : 'pre-wrap';
+  text.style.overflow = 'hidden';
+  text.style.textOverflow = style.truncate === 'clip' ? 'clip' : 'ellipsis';
+  text.style.removeProperty('-webkit-line-clamp');
+  text.style.removeProperty('-webkit-box-orient');
+  text.style.maxHeight = '';
+  if (lines > 1 && style.truncate !== 'clip') {
+    text.style.display = '-webkit-box';
+    text.style.setProperty('-webkit-line-clamp', String(lines));
+    text.style.setProperty('-webkit-box-orient', 'vertical');
+  } else {
+    text.style.display = 'block';
+    if (lines > 1) {
+      const lineHeight =
+        style.lineHeight ??
+        (parseFloat(element.style.lineHeight || computed?.lineHeight || '') ||
+          1.2 * (parseFloat(computed?.fontSize || '') || 14));
+      text.style.maxHeight = `${lines * lineHeight}px`;
+    }
+  }
+}
+
+function applyRowContainerStyle(body: HTMLElement, row: RowModel): void {
+  const container = row.style?.container;
+  if (!container) return;
+  if (container.backgroundColor !== undefined) {
+    body.style.setProperty(
+      '--nl-container-background',
+      container.backgroundColor
+    );
+    body.setAttribute('data-nl-container-background', 'true');
+    // A CSS rule allows existing hover/press feedback to override the resting fill.
+    body.style.removeProperty('background');
+    body.style.removeProperty('background-color');
+  }
+  if (container.cornerRadius !== undefined)
+    body.style.borderRadius = `${container.cornerRadius}px`;
+  if (container.borderWidth !== undefined) {
+    const border = `inset 0 0 0 ${container.borderWidth}px ${
+      container.borderColor ?? 'transparent'
+    }`;
+    body.style.boxShadow = body.style.boxShadow
+      ? `${body.style.boxShadow}, ${border}`
+      : border;
+    body.style.borderColor = 'transparent';
+  } else if (container.borderColor !== undefined)
+    body.style.borderColor = container.borderColor;
+  if (container.contentVerticalAlignment !== undefined) {
+    const alignment = {
+      top: 'flex-start',
+      center: 'center',
+      bottom: 'flex-end',
+    }[container.contentVerticalAlignment];
+    const vertical =
+      row.type === 'walletGroup' ||
+      row.type === 'mediaTile' ||
+      row.type === 'metricCard' ||
+      (row.type === 'identity' && row.presentation === 'walletSidebar') ||
+      (row.type === 'system' && row.variant === 'warning');
+    if (vertical) {
+      body.style.display = 'flex';
+      body.style.flexDirection = 'column';
+      if (row.type === 'mediaTile') body.style.gap = '0px';
+      body.style.justifyContent = alignment;
+      Array.from(body.children).forEach((child) => {
+        (child as HTMLElement).style.flexShrink = '0';
+      });
+    } else {
+      body.style.alignItems = alignment;
+      // Timestamp/accessory defaults may have their own align-self.
+      Array.from(body.children).forEach((child) => {
+        (child as HTMLElement).style.alignSelf = alignment;
+      });
+    }
+  }
+}
 
 function applyTextStyleToSlot(
   element: HTMLElement,
@@ -3666,17 +3911,7 @@ function applyTextStyleToSlot(
       run.style.lineHeight = String(style.lineHeight) + 'px';
   });
   if (style.alignment !== undefined) element.style.textAlign = style.alignment;
-  if (style.lines !== undefined) {
-    element.style.removeProperty('-webkit-line-clamp');
-    element.style.removeProperty('-webkit-box-orient');
-    element.style.display = '';
-    element.style.whiteSpace = style.lines === 2 ? 'normal' : 'nowrap';
-    if (style.lines === 2) {
-      element.style.display = '-webkit-box';
-      element.style.setProperty('-webkit-line-clamp', '2');
-      element.style.setProperty('-webkit-box-orient', 'vertical');
-    }
-  }
+  applyTextLayout(element, style);
 }
 
 /**
@@ -3686,6 +3921,7 @@ function applyTextStyleToSlot(
  * keeps its own richer path. See docs/STYLE_SPEC.md §4 and §8.
  */
 export function applyRowStyle(body: HTMLElement, row: RowModel): void {
+  applyRowContainerStyle(body, row);
   if (row.type === 'market') return;
   const style = (row as { style?: Record<string, unknown> }).style;
   if (!style) return;
@@ -4654,7 +4890,10 @@ export class NativeListWebEngine {
     setData(element, 'nativeListRowPressEnabled', isRowPressEnabled(row));
     setData(element, 'testid', row.testID);
     // OneKey patch: deprecation dims a row without disabling its actions.
-    element.style.opacity = String(row.opacity ?? 1);
+    element.style.opacity = String(
+      (row.style?.container?.opacity ?? row.opacity ?? 1) *
+        (row.disabled ? 0.5 : 1)
+    );
     setData(element, 'nativeListReorderable', this.isReorderable(row));
     setData(
       element,
@@ -4692,18 +4931,20 @@ export class NativeListWebEngine {
     // OneKey patch: explicit selector fields preserve original page geometry.
     element.style.contain = row.backgroundFullWidth ? 'layout style' : '';
     if (row.backgroundColor) body.style.backgroundColor = row.backgroundColor;
-    if (row.backgroundFullWidth && row.backgroundColor) {
+    const restingBackground =
+      row.style?.container?.backgroundColor ?? row.backgroundColor;
+    if (row.backgroundFullWidth && restingBackground) {
       const bleed = paddingValues(this.snapshot).horizontal;
       body.style.position = 'relative';
       body.style.overflow = 'visible';
       body.style.boxShadow =
         String(-bleed) +
         'px 0 ' +
-        row.backgroundColor +
+        restingBackground +
         ',' +
         String(bleed) +
         'px 0 ' +
-        row.backgroundColor;
+        restingBackground;
     }
     if (row.type === 'identity' && row.height !== undefined) {
       const title = body.querySelector<HTMLElement>('.ok-native-list-title');

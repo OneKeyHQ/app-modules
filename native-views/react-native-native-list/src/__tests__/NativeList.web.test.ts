@@ -591,6 +591,230 @@ describe('web row style', () => {
     return body;
   };
 
+  it('shares container appearance across every template without styling nested text', () => {
+    const parent: IdentityRow = {
+      type: 'identity',
+      key: 'parent',
+      presentation: 'walletSidebar',
+      leading: { kind: 'icon', name: 'coin' },
+      title: 'Parent',
+    };
+    const allRows: RowModel[] = [
+      ...rows,
+      {
+        type: 'market',
+        key: 'all-market',
+        variant: 'token',
+        title: 'Market',
+        leading: { kind: 'icon', name: 'coin' },
+        price: '$1',
+        change: { text: '+1%', tone: 'positive' },
+      },
+      {
+        type: 'walletGroup',
+        key: parent.key,
+        parent,
+        children: [{ ...parent, key: 'child' }],
+      },
+    ];
+    for (const row of allRows) {
+      const body = render({
+        ...row,
+        style: {
+          container: {
+            backgroundColor: '#123456',
+            borderWidth: 2,
+            borderColor: '#abcdef',
+            cornerRadius: 7,
+            contentVerticalAlignment: 'bottom',
+          },
+        },
+      } as RowModel);
+      expect(body.style.getPropertyValue('--nl-container-background')).toBe(
+        '#123456'
+      );
+      expect(body.style.borderRadius).toBe('7px');
+      expect(body.style.boxShadow).toContain('inset 0 0 0 2px');
+      expect(
+        body.querySelector<HTMLElement>('[data-nl-slot="title"]')?.style
+          .color ?? ''
+      ).toBe('');
+    }
+  });
+
+  it('treats rich text as one single-line budget and keeps badges independent', () => {
+    const body = render({
+      type: 'identity',
+      key: 'rich-lines',
+      leading: { kind: 'icon', name: 'coin' },
+      title: 'Bit\r\ncoin',
+      titleMatch: [{ start: 0, end: 4 }],
+      badges: [{ key: 'badge', text: 'Badge' }],
+      style: {
+        title: {
+          lines: 1,
+          truncate: 'clip',
+          verticalAlignment: 'bottom',
+          offsetY: -2,
+        },
+      },
+    });
+    const title = body.querySelector<HTMLElement>('[data-nl-slot="title"]')!;
+    const content = title.querySelector<HTMLElement>(
+      '.ok-native-list-text-content'
+    )!;
+    expect(title.textContent).toBe('Bit coin');
+    expect(title.style.justifyContent).toBe('flex-end');
+    expect(content.style.whiteSpace).toBe('nowrap');
+    expect(content.style.textOverflow).toBe('clip');
+    expect(content.style.transform).toBe('translateY(-2px)');
+    expect(
+      body.querySelector('[data-nl-slot="badge"] .ok-native-list-text-content')
+    ).toBeNull();
+  });
+
+  it('lets message style override legacy line limits and distinguishes multi-line clipping', () => {
+    const message = {
+      type: 'message',
+      key: 'message-lines',
+      title: 'Message',
+      body: 'First\nSecond\nThird\nFourth',
+      time: 'Now',
+      bodyLines: 1,
+    } as const;
+    const tail = render({
+      ...message,
+      style: { body: { lines: 3 } },
+    }).querySelector<HTMLElement>('[data-nl-slot="body"]')!;
+    expect(tail.style.getPropertyValue('-webkit-line-clamp')).toBe('3');
+    expect(tail.style.whiteSpace).toBe('pre-wrap');
+    expect(tail.textContent).toBe(message.body);
+    const clip = render({
+      ...message,
+      style: { body: { lines: 3, lineHeight: 18, truncate: 'clip' } },
+    }).querySelector<HTMLElement>('[data-nl-slot="body"]')!;
+    expect(clip.style.getPropertyValue('-webkit-line-clamp')).toBe('');
+    expect(clip.style.maxHeight).toBe('54px');
+    expect(clip.style.textOverflow).toBe('clip');
+  });
+
+  it('restores legacy container appearance and fixed allocation after styles are removed', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const base: IdentityRow = {
+      type: 'identity',
+      key: 'container-reset',
+      leading: { kind: 'icon', name: 'coin' },
+      title: 'Text',
+      height: 80,
+      opacity: 0.6,
+      backgroundColor: '#ffffff',
+      disabled: true,
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [
+        {
+          ...base,
+          style: {
+            container: {
+              backgroundColor: '#123456',
+              opacity: 0.8,
+              cornerRadius: 8,
+              borderWidth: 2,
+              borderColor: '#654321',
+            },
+            title: { lines: 3, truncate: 'clip' },
+          },
+        },
+      ]),
+      {},
+      false
+    );
+    try {
+      const item = host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="container-reset"]'
+      )!;
+      expect(item.style.opacity).toBe('0.4');
+      const height = item.style.height;
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [{ ...base, style: {} }])
+      );
+      expect(item.style.opacity).toBe('0.3');
+      expect(item.style.height).toBe(height);
+      expect(
+        item.firstElementChild?.getAttribute('data-nl-container-background')
+      ).toBeNull();
+      expect((item.firstElementChild as HTMLElement).style.borderRadius).toBe(
+        ''
+      );
+      expect(
+        item.querySelector<HTMLElement>('[data-nl-slot="title"]')?.style
+          .maxHeight
+      ).toBe('');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('keeps the text layout through fast Market quote updates', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const base = {
+      type: 'market',
+      key: 'quote-layout',
+      variant: 'token',
+      height: 108,
+      title: 'Market',
+      leading: { kind: 'icon', name: 'coin' },
+      price: '$1',
+      change: { text: 'Up\n1%', tone: 'positive' },
+      style: {
+        changeHeight: 76,
+        change: {
+          lines: 2,
+          truncate: 'clip',
+          verticalAlignment: 'bottom',
+          offsetY: 2,
+        },
+      },
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [base]),
+      {},
+      false
+    );
+    try {
+      for (let quote = 2; quote <= 5; quote++) {
+        engine.applySnapshot(
+          snapshot({ kind: 'sectioned' }, [
+            {
+              ...base,
+              price: `$${quote}`,
+              change: { ...base.change, text: `Up\n${quote}%` },
+            },
+          ])
+        );
+        const change = host.querySelector<HTMLElement>(
+          '.ok-native-list-market-change'
+        )!;
+        expect(change.textContent).toBe(`Up\n${quote}%`);
+        expect(change.style.justifyContent).toBe('flex-end');
+        expect(
+          change.querySelectorAll('.ok-native-list-text-content')
+        ).toHaveLength(1);
+        const content = change.firstElementChild as HTMLElement;
+        expect(content.style.maxHeight).toBe('40px');
+        expect(content.style.transform).toBe('translateY(2px)');
+      }
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('styles primary and secondary data independently without restyling badges', () => {
     const body = render({
       type: 'dataRow',

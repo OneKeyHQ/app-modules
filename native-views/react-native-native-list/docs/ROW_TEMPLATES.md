@@ -37,7 +37,9 @@ The style roles below form the shared configurable contract on Web, iOS and
 Android. **Template** means structure and content fields; **row style** means
 allowlisted parameters applied to those existing fields. Each template exposes
 only applicable box/image parameters, listed in [STYLE_SPEC §4.1](STYLE_SPEC.md#41-shared-configurable-properties).
-All text roles share the same typography/color/alignment properties; supported
+All templates accept the shared `style.container` surface (background, opacity,
+radius, border and content vertical alignment). All text roles share the same
+typography, 1–3 line limit, truncation, alignment and optical-offset properties; supported
 image roles share the same dimensions/shape/fit properties. An absent optional
 field is not created by styling it. Native rendered acceptance is tracked
 separately from source implementation in STYLE_SPEC §9.
@@ -71,7 +73,7 @@ separately from source implementation in STYLE_SPEC §9.
 - **Required data:** `parent: IdentityRow`, nonempty `children: IdentityRow[]`.
   Every member must use `presentation: 'walletSidebar'`; `parent.key` must equal
   the group row's `key`, and member keys must be unique within the group.
-- **Style surface:** group `style` exposes horizontal/vertical padding only. Text styles belong to
+- **Style surface:** group `style` exposes the shared container appearance and horizontal/vertical padding. Text styles belong to
   `parent.style` or the individual `children[i].style`; there is no inherited
   group `title`/`value` text style.
 - **Layout boundary:** preserve parent-first member order and wallet member
@@ -119,9 +121,8 @@ separately from source implementation in STYLE_SPEC §9.
 
 - **Use:** a notification or message preview.
 - **Required data:** `title`, `body`, `time`; optional `leading`, `thumbnail`,
-  `unread`. `bodyLines` selects one, two or three body lines.
-- **Text style roles:** `title`, `body`, `time`. `NativeListTextStyle.lines`
-  currently allows only one or two; it is not the same field as `bodyLines`.
+  `unread`. `bodyLines` is the legacy fallback for one, two or three body lines.
+- **Text style roles:** `title`, `body`, `time`. `style.body.lines` accepts one, two or three and takes precedence over `bodyLines`.
 - **Layout boundary:** time and thumbnail keep their allocated regions; body
   text wraps/truncates within the message area. Styling cannot displace the
   timestamp, grow over the next row, or turn the preview into unbounded content.
@@ -174,8 +175,8 @@ separately from source implementation in STYLE_SPEC §9.
   overlays keep their template anchors. A text style cannot change the grid
   column count, tile span or move the caption over the image.
 - **Common-capability boundary:** grid columns and list scrolling belong to
-  `snapshot.layout`, not to `MediaTileRowStyle`. Image overrides outside Market
-  are still a declared-but-unapplied surface in this stack.
+  `snapshot.layout`, not to `MediaTileRowStyle`. Primary-image overrides are
+  supported on all three platforms; network/close overlays retain their anchors.
 
 ## metricCard
 

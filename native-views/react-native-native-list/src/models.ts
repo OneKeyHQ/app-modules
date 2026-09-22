@@ -57,8 +57,13 @@ export type NativeListTextStyle = Readonly<{
   fontWeight?: 'regular' | 'medium' | 'semibold' | 'bold';
   color?: string;
   lineHeight?: number;
-  lines?: 1 | 2;
+  /** Maximum visible lines; does not reserve empty lines or enlarge the row. */
+  lines?: 1 | 2 | 3;
+  truncate?: 'tail' | 'clip';
   alignment?: 'start' | 'center' | 'end';
+  verticalAlignment?: 'top' | 'center' | 'bottom';
+  /** Optical translation in logical units; does not affect layout. */
+  offsetY?: number;
 }>;
 
 /** Retained alias: Market shipped this name before the style surface was shared. */
@@ -74,8 +79,18 @@ export type NativeListImageStyle = Readonly<{
 
 export type MarketImageStyle = NativeListImageStyle;
 
+export type NativeListRowContainerStyle = Readonly<{
+  backgroundColor?: string;
+  opacity?: number;
+  cornerRadius?: number;
+  borderWidth?: number;
+  borderColor?: string;
+  contentVerticalAlignment?: 'top' | 'center' | 'bottom';
+}>;
+
 /** Local box vocabulary. Each template exposes only parameters for its own slots. */
 export type RowBoxStyle = Readonly<{
+  container?: NativeListRowContainerStyle;
   horizontalPadding?: number;
   verticalPadding?: number;
   leadingGap?: number;
@@ -170,7 +185,7 @@ export const ROW_BOX_STYLE_KEYS_BY_TYPE = {
 
 type TemplateBoxStyle<T extends keyof typeof ROW_BOX_STYLE_KEYS_BY_TYPE> = Pick<
   RowBoxStyle,
-  (typeof ROW_BOX_STYLE_KEYS_BY_TYPE)[T][number]
+  (typeof ROW_BOX_STYLE_KEYS_BY_TYPE)[T][number] | 'container'
 >;
 
 /**

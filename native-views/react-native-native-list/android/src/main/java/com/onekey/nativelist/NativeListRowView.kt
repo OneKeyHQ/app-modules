@@ -187,7 +187,28 @@ private class SelectorLineHeightSpan(private val lineHeight: Int) : android.text
   }
 }
 
-private class DottedUnderlineTextView(context: android.content.Context) : TextView(context) {
+private open class NativeListTextView(context: android.content.Context) : TextView(context) {
+  var rowHorizontallyScrolling = false
+    private set
+
+  override fun setHorizontallyScrolling(whether: Boolean) {
+    rowHorizontallyScrolling = whether
+    super.setHorizontallyScrolling(whether)
+  }
+
+  var opticalOffsetY = 0f
+    set(value) { field = value; invalidate() }
+
+  override fun onDraw(canvas: Canvas) {
+    if (opticalOffsetY == 0f) { super.onDraw(canvas); return }
+    val checkpoint = canvas.save()
+    canvas.translate(0f, opticalOffsetY)
+    super.onDraw(canvas)
+    canvas.restoreToCount(checkpoint)
+  }
+}
+
+private class DottedUnderlineTextView(context: android.content.Context) : NativeListTextView(context) {
   var useSourceScale = false
   private fun scaledDp(value: Float) = if (useSourceScale) value * resources.displayMetrics.density else NativeListScale.dp(resources, value)
   var showsDottedUnderline = false
@@ -279,11 +300,11 @@ private class SelectorSubtitleLayout(context: android.content.Context) : LinearL
 
 private class NativeListTableColumnView(context: android.content.Context) : LinearLayout(context) {
   private val primaryLine = LinearLayout(context)
-  private val primary = TextView(context)
+  private val primary = NativeListTextView(context)
   private val badges = LinearLayout(context)
   private val secondaryLine = LinearLayout(context)
-  private val secondaryLeading = TextView(context)
-  private val secondary = TextView(context)
+  private val secondaryLeading = NativeListTextView(context)
+  private val secondary = NativeListTextView(context)
 
   init {
     orientation = VERTICAL
@@ -489,13 +510,13 @@ internal class NativeListRowView(
   private val mediaMetadataRow = LinearLayout(context)
   private val titleLine = PackedTitleLineLayout(context)
   private val title = DottedUnderlineTextView(context)
-  private val subtitle = TextView(context)
+  private val subtitle = NativeListTextView(context)
   // OneKey patch: the first text shrinks while the volume retains its width.
   private val marketSubtitleLine = PackedTitleLineLayout(context)
-  private val tertiary = TextView(context)
-  private val status = TextView(context)
-  private val metricSubtitle = TextView(context)
-  private val badgeLine = TextView(context)
+  private val tertiary = NativeListTextView(context)
+  private val status = NativeListTextView(context)
+  private val metricSubtitle = NativeListTextView(context)
+  private val badgeLine = NativeListTextView(context)
   private val marketBadgeViews = List(3) { LinearLayout(context) }
   private val marketBadgeLabels = List(3) { TextView(context) }
   private val marketBadgeImages = List(3) { OneKeyImageReusableView(reactContext) }
@@ -504,14 +525,14 @@ internal class NativeListRowView(
   private val actionLine = LinearLayout(context)
   private val actionViews = List(3) { TextView(context) }
   private val trailingColumn = LinearLayout(context)
-  private val trailingViews = List(2) { TextView(context) }
+  private val trailingViews = List(2) { NativeListTextView(context) }
   private val trailingIcons = List(2) { OneKeyIconView(context) }
   private val checkbox = OneKeyCheckboxView(context)
   private val spinner = ProgressBar(context)
   private val tableDataContainer = LinearLayout(context)
   private val tableDataColumns = List(4) { NativeListTableColumnView(context) }
   private val unreadDot = View(context)
-  private val mediaBadge = TextView(context)
+  private val mediaBadge = NativeListTextView(context)
   private val skeletonPrimary = View(context)
   private val skeletonSecondary = View(context)
   private val walletGroupRows = mutableListOf<NativeListRowView>()
@@ -1086,11 +1107,42 @@ internal class NativeListRowView(
    * A style key names a model field; nativeListStyleSlot maps it to the view that
    * renders that field, because the view pool is shared across templates.
    */
+  private fun applyContainerStyle(item: NativeListItem, style: JSONObject?) {
+    if (style == null) return
+    alpha = style.optDouble("opacity", item.json.optDouble("opacity", 1.0)).toFloat() * (if (isEnabled) 1f else 0.5f)
+    fun decorate(drawable: android.graphics.drawable.Drawable?, resting: Boolean): android.graphics.drawable.Drawable? {
+      val surface = (drawable?.constantState?.newDrawable()?.mutate() as? GradientDrawable) ?: return drawable
+      if (resting && style.has("backgroundColor")) surface.setColor(safeColor(style.optString("backgroundColor"), Color.TRANSPARENT))
+      if (style.has("cornerRadius")) {
+        val radius = styleDp(style.optDouble("cornerRadius")).toFloat()
+        surface.cornerRadii = FloatArray(8) { radius }
+      }
+      if (style.has("borderWidth")) surface.setStroke(styleDp(style.optDouble("borderWidth")), safeColor(style.optString("borderColor"), Color.TRANSPARENT))
+      else if (style.has("borderColor")) surface.setStroke(if (item.type == "walletGroup") dp(1) else 0, safeColor(style.optString("borderColor"), Color.TRANSPARENT))
+      return surface
+    }
+    restingRowBackground = decorate(restingRowBackground, true)
+    pressedRowBackground = decorate(pressedRowBackground, false)
+    background = if (touchPressed || reorderActive) pressedRowBackground else restingRowBackground
+    val oldClip = clipToOutline
+    val oldGravity = gravity
+    styledBoxRestorations.add { clipToOutline = oldClip; gravity = oldGravity }
+    if (style.has("cornerRadius")) clipToOutline = true
+    if (style.has("contentVerticalAlignment")) {
+      gravity = (gravity and Gravity.VERTICAL_GRAVITY_MASK.inv()) or when (style.optString("contentVerticalAlignment")) {
+        "top" -> Gravity.TOP
+        "bottom" -> Gravity.BOTTOM
+        else -> Gravity.CENTER_VERTICAL
+      }
+    }
+  }
+
   private fun applyRowStyle(item: NativeListItem) {
-    // Market owns its own richer style path, applied inside bindMarket.
-    if (item.type == "market") return
     val style = item.json.optJSONObject("style") ?: return
     styledViewsDirty = true
+    applyContainerStyle(item, style.optJSONObject("container"))
+    // Market text/box styles are applied by its quote-aware binder.
+    if (item.type == "market") return
     val padding = intArrayOf(paddingLeft, paddingTop, paddingRight, paddingBottom)
     styledBoxRestorations.add { setPadding(padding[0], padding[1], padding[2], padding[3]) }
     if (style.has("horizontalPadding")) {
@@ -1248,6 +1300,8 @@ internal class NativeListRowView(
       val maxLines = view.maxLines
       val ellipsize = view.ellipsize
       val gravity = view.gravity
+      val offset = (view as? NativeListTextView)?.opticalOffsetY ?: 0f
+      val scrolling = (view as? NativeListTextView)?.rowHorizontallyScrolling ?: false
       styledTextRestorations[view] = {
         view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textSize)
         view.typeface = typeface
@@ -1257,6 +1311,8 @@ internal class NativeListRowView(
         view.maxLines = maxLines
         view.ellipsize = ellipsize
         view.gravity = gravity
+        (view as? NativeListTextView)?.opticalOffsetY = offset
+        view.setHorizontallyScrolling(scrolling)
       }
     }
     if (style.has("fontSize")) {
@@ -1282,9 +1338,26 @@ internal class NativeListRowView(
       TextViewCompat.setLineHeight(view, styleDp(style.optDouble("lineHeight")))
     }
     if (style.has("lines")) {
-      view.maxLines = style.optInt("lines").coerceIn(1, 2)
+      view.maxLines = style.optInt("lines").coerceIn(1, 3)
       view.ellipsize = TextUtils.TruncateAt.END
     }
+    if (style.has("truncate") || style.has("lines")) {
+      view.setHorizontallyScrolling(view.maxLines == 1)
+      view.ellipsize = if (style.optString("truncate", "tail") == "clip") null else TextUtils.TruncateAt.END
+      if (view.maxLines == 1) {
+        val text = SpannableStringBuilder(view.text)
+        Regex("\\r\\n|[\\r\\n]").findAll(text).toList().asReversed().forEach { match -> text.replace(match.range.first, match.range.last + 1, " ") }
+        view.text = text
+      }
+    }
+    if (style.has("verticalAlignment")) {
+      view.gravity = (view.gravity and Gravity.VERTICAL_GRAVITY_MASK.inv()) or when (style.optString("verticalAlignment")) {
+        "top" -> Gravity.TOP
+        "bottom" -> Gravity.BOTTOM
+        else -> Gravity.CENTER_VERTICAL
+      }
+    }
+    if (style.has("offsetY")) (view as? NativeListTextView)?.opticalOffsetY = (style.optDouble("offsetY") * resources.displayMetrics.density).toFloat()
     style.optString("alignment").takeIf(String::isNotEmpty)?.let {
       view.gravity = (view.gravity and Gravity.VERTICAL_GRAVITY_MASK) or when (it) {
         "center" -> Gravity.CENTER_HORIZONTAL
@@ -1386,6 +1459,7 @@ internal class NativeListRowView(
       boundCheckboxData = latestCheckbox ?: boundCheckboxData
       boundCheckboxData?.let { bindCheckbox(item, it, checkboxState) }
     }
+    if (item.type == "market") bindMarketQuote(item, theme)
     applyRowStyle(item)
   }
 
@@ -1985,7 +2059,7 @@ internal class NativeListRowView(
         val badgeHeight = badgeLineHeight + 4
         val line = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER }
         for (index in 0 until badges.length()) {
-          val badge = TextView(context).apply {
+          val badge = NativeListTextView(context).apply {
             text = badges.getJSONObject(index).optString("text")
             textSize = sp(if (isSelector) 11f else 12f)
             typeface = NativeListFonts.regular(context)
@@ -2070,7 +2144,7 @@ internal class NativeListRowView(
           val dot = View(context).apply { background = roundedFill(color(theme, "disabledText", "#00000072"), 2f) }
           line.addView(dot, LayoutParams(dp(4), dp(4)).apply { marginStart = dp(6); marginEnd = dp(6) })
         }
-        val label = TextView(context).apply {
+        val label = NativeListTextView(context).apply {
           text = segment.optString("text")
           typeface = NativeListFonts.regular(context)
           textSize = sp(14f)
@@ -2361,7 +2435,7 @@ internal class NativeListRowView(
       "end" -> Gravity.END
       else -> Gravity.START
     }
-    view.maxLines = style?.optInt("lines", 1)?.coerceIn(1, 2) ?: 1
+    view.maxLines = style?.optInt("lines", 1)?.coerceIn(1, 3) ?: 1
     view.ellipsize = TextUtils.TruncateAt.END
     TextViewCompat.setLineHeight(
       view,
@@ -2386,6 +2460,12 @@ internal class NativeListRowView(
       view.setLineSpacing(0f, 1f)
     }
     view.text = text
+    val layout = JSONObject()
+    listOf("lines", "truncate", "verticalAlignment", "offsetY").forEach { key -> if (style.has(key)) layout.put(key, style.get(key)) }
+    if (layout.length() > 0) {
+      styledViewsDirty = true
+      applyStyledText(view, layout)
+    }
   }
 
   private fun marketText(value: String, segments: JSONArray?, fontSize: Float): CharSequence {
@@ -3080,7 +3160,7 @@ internal class NativeListRowView(
     textColor: Int,
     letterSpacingDp: Float = 0f,
     gravity: Int = Gravity.START,
-  ) = TextView(context).apply {
+  ) = NativeListTextView(context).apply {
     includeFontPadding = false
     text = value
     textSize = sp(size)
@@ -3958,6 +4038,7 @@ internal class NativeListRowView(
     }
     // OneKey patch: section heading backgrounds are independent of list rows.
     if (item.json.has("backgroundColor")) rowBackground = safeColor(item.json.optString("backgroundColor"), rowBackground)
+    item.json.optJSONObject("style")?.optJSONObject("container")?.takeIf { it.has("backgroundColor") }?.let { rowBackground = safeColor(it.optString("backgroundColor"), rowBackground) }
     restingRowBackground = groupedBackground(backgroundGroupPosition, rowBackground)
     background = restingRowBackground
   }

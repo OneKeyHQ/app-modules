@@ -64,7 +64,19 @@ function buildRows(styled: boolean): RowModel[] {
           style: {
             // A named step from the application's scale, resolved to numbers in
             // JavaScript before the snapshot is serialized.
-            title: { token: '$bodyMd' as const },
+            container: {
+              backgroundColor: '#EDF6FF',
+              borderWidth: 1,
+              borderColor: '#8DB7E4',
+              cornerRadius: 12,
+              contentVerticalAlignment: 'top' as const,
+            },
+            title: {
+              token: '$bodyMd' as const,
+              lines: 1 as const,
+              truncate: 'tail' as const,
+              offsetY: -1,
+            },
             subtitle: { fontSize: 12, lineHeight: 16, color: '#8D8D8D' },
             badge: { fontSize: 10 },
             value: { token: '$bodySm' as const },
@@ -122,7 +134,14 @@ function buildRows(styled: boolean): RowModel[] {
       ? {
           style: {
             title: { token: '$bodyMd' as const },
-            body: { fontSize: 12, lineHeight: 16 },
+            body: {
+              fontSize: 12,
+              lineHeight: 16,
+              lines: 3 as const,
+              truncate: 'clip' as const,
+              verticalAlignment: 'top' as const,
+            },
+            container: { backgroundColor: '#FFF8E7', cornerRadius: 8 },
             time: { fontSize: 10, color: '#8D8D8D' },
           },
         }
@@ -339,6 +358,51 @@ function buildRows(styled: boolean): RowModel[] {
         }
       : {}),
   });
+
+  rows.push(
+    header('text-layout', 'Text layout / row container', 'same allocation'),
+  );
+  for (const alignment of ['top', 'center', 'bottom'] as const) {
+    rows.push({
+      type: 'message',
+      key: `text-layout-${alignment}`,
+      sectionKey: 'text-layout',
+      height: 180,
+      title: `${alignment}: single line\nwith an explicit break`,
+      body: 'First line\nSecond line\nThird line\nFourth line is truncated',
+      time: '12:00',
+      ...(styled
+        ? {
+            style: {
+              horizontalPadding: 18,
+              verticalPadding: 12,
+              lineGap: 6,
+              container: {
+                backgroundColor: '#EDF6FF',
+                opacity: 0.9,
+                cornerRadius: 14,
+                borderWidth: 2,
+                borderColor: '#8DB7E4',
+                contentVerticalAlignment: alignment,
+              },
+              title: {
+                lines: 1 as const,
+                truncate: 'tail' as const,
+                alignment: 'center' as const,
+              },
+              body: {
+                lines: 3 as const,
+                truncate:
+                  alignment === 'bottom'
+                    ? ('clip' as const)
+                    : ('tail' as const),
+                lineHeight: 20,
+              },
+            },
+          }
+        : {}),
+    });
+  }
 
   return rows;
 }

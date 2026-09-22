@@ -1427,3 +1427,75 @@ describe('NativeList style contract', () => {
     expect((first as MarketRow).style?.changeWidth).toBe(80);
   });
 });
+
+describe('row container and text layout contract', () => {
+  const style = {
+    container: {
+      backgroundColor: '#12345678',
+      opacity: 0.8,
+      cornerRadius: 9,
+      borderWidth: 1.5,
+      borderColor: '#654321',
+      contentVerticalAlignment: 'top' as const,
+    },
+    title: {
+      lines: 3 as const,
+      truncate: 'clip' as const,
+      alignment: 'end' as const,
+      verticalAlignment: 'bottom' as const,
+      offsetY: -2,
+    },
+  };
+
+  it('round-trips the same nested surface through snapshots and whole-style replacement patches', () => {
+    const base = {
+      ...row('text-layout'),
+      backgroundColor: '#FFFFFF',
+      opacity: 0.4,
+      style,
+    };
+    expect(
+      JSON.parse(serializeSnapshot(snapshot([base]))).rows[0].style
+    ).toEqual(style);
+    expect(
+      validatePatches([{ key: base.key, type: 'identity', changes: { style } }])
+    ).toHaveLength(1);
+    const cleared = applyRowPatches(snapshot([base]), [
+      { key: base.key, type: 'identity', changes: { style: {} } },
+    ]);
+    expect(cleared.rows[0]).toMatchObject({
+      style: {},
+      backgroundColor: '#FFFFFF',
+      opacity: 0.4,
+    });
+  });
+
+  it.each([
+    ['container', { width: 120 }],
+    ['container', { opacity: 1.1 }],
+    ['container', { borderWidth: -1 }],
+    ['container', { backgroundColor: 'red' }],
+    ['container', { contentVerticalAlignment: 'stretch' }],
+    ['title', { lines: 4 }],
+    ['title', { lines: 1.5 }],
+    ['title', { truncate: 'middle' }],
+    ['title', { verticalAlignment: 'baseline' }],
+    ['title', { offsetY: 9 }],
+  ])('rejects invalid %s on snapshot and patch paths', (field, value) => {
+    const invalid = { [field as string]: value };
+    expect(() =>
+      validateSnapshot(
+        snapshot([{ ...row('invalid'), style: invalid } as IdentityRow])
+      )
+    ).toThrow('style');
+    expect(() =>
+      validatePatches([
+        {
+          key: 'invalid',
+          type: 'identity',
+          changes: { style: invalid },
+        } as RowPatch,
+      ])
+    ).toThrow('style');
+  });
+});
