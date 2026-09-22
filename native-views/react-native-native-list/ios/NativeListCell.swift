@@ -2232,43 +2232,25 @@ final class NativeListCell: UICollectionViewCell {
     }
   }
 
-  private func bindMessage(_ item: NativeListItem, theme: [String: Any]?) {
-    rootStack.alignment = .top
-    rootTopConstraint.constant = 16
-    rootBottomConstraint.constant = -16
-    leadingWidth.constant = 28
-    leadingHeight.constant = 28
-    if let leading = item.data.dictionary("leading") { addLeading(leading, key: item.key) }
-    unreadDot.isHidden = !item.data.bool("unread")
-    rootStack.addArrangedSubview(mainStack)
-    show(titleLabel, item.data.string("title"), lines: 2)
-    titleLabel.font = nativeListFont(ofSize: 14, weight: .semibold)
-    setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 20)
-    show(
-      subtitleLabel,
-      item.data.string("body"),
-      lines: min(3, max(1, item.data.int("bodyLines", default: 3)))
+  private var messageViews: NativeListMessageRenderer.Views {
+    NativeListMessageRenderer.Views(
+      root: rootStack, column: mainStack, title: titleLabel, body: subtitleLabel,
+      time: statusLabel, unread: unreadDot, thumbnail: secondaryImage,
+      top: rootTopConstraint, bottom: rootBottomConstraint,
+      leadingWidth: leadingWidth, leadingHeight: leadingHeight,
+      thumbnailWidth: secondaryWidth, thumbnailHeight: secondaryHeight
     )
-    subtitleLabel.font = nativeListFont(ofSize: 14)
-    setLineHeight(subtitleLabel, text: item.data.string("body"), lineHeight: 20)
-    show(statusLabel, item.data.string("time"), lines: 1)
-    statusLabel.font = nativeListFont(ofSize: 12)
-    statusLabel.textColor = nativeListColor(theme, "disabledText", "#8D8D8D")
-    statusLabel.topInset = 2
-    setLineHeight(statusLabel, text: item.data.string("time"), lineHeight: 16)
-    if let thumbnail = item.data.dictionary("thumbnail") {
-      rootStack.addArrangedSubview(secondaryImage)
-      secondaryWidth.constant = 64
-      secondaryHeight.constant = 64
-      secondaryWidth.isActive = true
-      secondaryHeight.isActive = true
-      secondaryImage.layer.borderWidth = 1 / UIScreen.main.scale
-      secondaryImage.layer.borderColor = UIColor(
-        nativeListHex: "#0000000F",
-        fallback: .lightGray
-      ).cgColor
-      bindImage(thumbnail, into: secondaryImage, token: item.key, slot: 0, variant: "generic")
-    }
+  }
+
+  private func bindMessage(_ item: NativeListItem, theme: [String: Any]?) {
+    NativeListMessageRenderer.bind(
+      messageViews, item: item, theme: theme,
+      show: show,
+      lineHeight: { self.setLineHeight($0, text: $1, lineHeight: $2) },
+      timeInset: { self.statusLabel.topInset = $0 },
+      leading: { self.addLeading($0, key: item.key) },
+      image: { self.bindImage($0, into: $1, token: item.key, slot: 0, variant: "generic") }
+    )
   }
 
   private func bindDataRow(
@@ -2525,6 +2507,10 @@ final class NativeListCell: UICollectionViewCell {
     }
     if item.type == "dataRow" {
       tableDataColumns.forEach { $0.applyStyle(style, text: applyStyledText) }
+    }
+    if item.type == "message" {
+      NativeListMessageRenderer.applyTextStyles(messageViews, style: style, apply: applyStyledText)
+      return
     }
     let variant = item.data.string("variant")
     if item.type == "metricCard" && ["activity", "performance"].contains(variant) {

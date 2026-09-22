@@ -1814,27 +1814,10 @@ final class NativeListView: UIView {
   }
 
   private func messageHeight(_ item: NativeListItem) -> CGFloat {
-    let style = item.data.dictionary("style")
-    let horizontalInsets = (config?.contentPaddingHorizontal ?? 0) * 2 + CGFloat(style?.double("horizontalPadding", default: 20) ?? 20) * 2
-    let leadingWidth: CGFloat = item.data.dictionary("leading") == nil ? 0 : CGFloat(style?.dictionary("image")?.double("width", default: 28) ?? 28) + CGFloat(style?.double("leadingGap", default: 12) ?? 12)
-    let thumbnailWidth: CGFloat = item.data.dictionary("thumbnail") == nil ? 0 : 76
-    let textWidth = max(1, collectionView.bounds.width - horizontalInsets - leadingWidth - thumbnailWidth)
-    func textHeight(_ key: String, lines: Int, weight: NativeListFontWeight) -> CGFloat {
-      let textStyle = style?.dictionary(key)
-      let lineHeight = CGFloat(textStyle?.double("lineHeight", default: 20) ?? 20)
-      let size = CGFloat(textStyle?.double("fontSize", default: 14) ?? 14)
-      let paragraph = NSMutableParagraphStyle()
-      paragraph.minimumLineHeight = lineHeight
-      paragraph.maximumLineHeight = lineHeight
-      let bounds = (item.data.string(key) as NSString).boundingRect(with: CGSize(width: textWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: nativeListFont(ofSize: size, weight: measuredTextWeight(textStyle, fallback: weight)), .paragraphStyle: paragraph], context: nil)
-      let maximumLines = min(3, max(1, textStyle?.int("lines", default: lines) ?? lines))
-      return CGFloat(min(maximumLines, max(1, Int(ceil(bounds.height / lineHeight))))) * lineHeight
-    }
-    return CGFloat(style?.double("verticalPadding", default: 16) ?? 16) * 2
-      + textHeight("title", lines: 2, weight: .semibold)
-      + textHeight("body", lines: item.data.int("bodyLines", default: 3), weight: .regular)
-      + textHeight("time", lines: 1, weight: .regular)
-      + CGFloat(style?.double("lineGap", default: 1) ?? 1) * 2
+    NativeListMessageRenderer.measure(
+      item, availableWidth: collectionView.bounds.width,
+      contentPaddingHorizontal: config?.contentPaddingHorizontal ?? 0
+    )
   }
 
   private func emit(_ block: ((String) -> Void)?, _ value: [String: Any]) {
