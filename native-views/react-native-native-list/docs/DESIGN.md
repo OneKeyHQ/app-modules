@@ -80,28 +80,33 @@ ownership is container → template registry → renderer → shared primitives:
   the same resolved inputs. Height precedence remains `style.container.height`
   → `row.height` → template measurement/default. There is no automatic fit pass.
 - Full binding must be correct without a preceding recycle callback. Image
-  descriptors that did not change should retain their bindings. Async work and
-  action anchors must still be invalidated by the host's binding epoch.
+  descriptors that did not change should retain their bindings. Image requests have their own
+  slot epoch; source changes/recycle invalidate them. Row rebind/recycle still
+  invalidates action anchors through the host's binding epoch.
 
-Migration begins with `message`, one platform per commit. Its current boundary:
+Message completes the first renderer pilot, with one platform per commit:
 
-| Platform | Extracted | Still owned by the existing host |
+| Platform | Renderer and host ownership | Container ownership |
 | --- | --- | --- |
-| Web | DOM structure, semantic text roles, estimated measurement in `src/web/templates/MessageRowRenderer.ts` | Shared style/asset primitives; wrapper pooling and body replacement |
-| Android | Text subtree allocation, default typography/reset, content binding and direct title/body/time style targets in `NativeListMessageRenderer.kt` | Legacy host allocation, image slots, box styles, measurement and style restoration |
-| iOS | Text subtree allocation, default typography/reset, content binding, semantic text targets and existing measured height in `NativeListMessageRenderer.swift` | Legacy host allocation, image slots, box styles, style restoration and image lifecycle |
+| Web | `MessageRowRenderer`: persistent body/text/image nodes, resolved styles, update classification and intrinsic estimate/DOM measurement | Registered family pooling, placement, shared row appearance/events and layout correction |
+| Android | `NativeListMessageRowView`: lightweight host; `NativeListMessageRenderer`: owned column, resolved text/spacing/images and update classification; native `onMeasure` consumes the bound views | Registered holder factories, DiffUtil, selection/reorder routing and viewport allocation |
+| iOS | `NativeListMessageCell`: lightweight host; `NativeListMessageRenderer`: owned column, resolved text/spacing/images and width-aware measurement | Registered cell factories, data-source reload/reconfigure, selection/reorder routing and viewport allocation |
 
-The migration still keeps existing platform defaults and the native monolithic
-hosts. It does **not** yet establish a renderer registry, lightweight native
-hosts or complete resolved-style pipeline. Native Message text views are now
-allocated lazily by the renderer and no longer borrow the legacy title/body/time
-slots. Their text primitives are shared with the legacy templates; line-gap
-styling targets the renderer's own column. The legacy host still allocates its
-unused text views, so this intermediate extraction makes no allocation savings
-claim. [SPEC.md](SPEC.md#conformance-and-six-stage-migration) tracks all six stages.
-The callback parameters are temporary adapters to the existing image/text
-primitives, not a public plugin API. Shared legacy slot maps still serve
-unmigrated templates and will be retired as ownership moves.
+`NativeListResolvedText`, `NativeListLeadingVisual` and `NativeListImageSlot`
+are internal primitives. The image slot owns request identity, bounded retries,
+completion-once guards and stale-write invalidation. A text/style-only update
+retains the existing image slot and, when its effective image request is
+unchanged, the request. Geometry/content-fit changes may require the image
+module to decode/request again. The existing bounded source-fallback cache is
+shared with legacy visuals. Image slots are lazy and bounded to the template's
+visible assets; Message never allocates the unused legacy Market/Wallet/table
+subtrees. This is source-level ownership evidence, not a performance benchmark.
+
+The renderer resolves defaults from current data/theme/style rather than
+capturing a previous row's view state. Legacy global slot maps no longer contain
+Message. No public plugin API or Nitro schema is added. Remaining template maps
+and partial updates are retired only with their own migration. See
+[SPEC.md](SPEC.md#conformance-and-six-stage-migration) for all six stages.
 
 Structural reuse is now partitioned into two internal families on all platforms:
 `message` and `legacy`. Unmigrated templates retain their existing shared tree.
@@ -115,47 +120,11 @@ to replace an incompatible holder. Market quote and selection payloads retain
 their existing full/partial update decisions. Footer and nested-row hosts remain
 outside these scrolling pools.
 
-Both native families still allocate the legacy cell/row class. The next Message
-step extracts the remaining shared image primitives and replaces that class with
-a lightweight host for the renderer-owned tree, connecting its factory to the
-existing reuse family. Resolved styles and update classification still need to
-move into the renderer. Preserve Market quote and selection update paths
-throughout migration.
-Move the remaining simple templates only after this lifecycle works on all
-three platforms; migrate Market/Identity/Header and composed wallet groups last.
-
-Acceptance for every step includes style set/change/clear, binding A → B without
-recycle, same-key template changes, scrolling away/back, image add/remove,
-explicit height restoration and shared footer placement. Keep geometry and
-typography changes in separate commits from structural extraction.
-
-The first extraction was checked on 2026-09-22:
-
-- Web: 149 tests, typecheck and lint (zero errors); actual Chrome desktop and
-  390px RTL rendering, rapid style/template switching, image decoding and
-  scrolling through 41 messages. Styled height 192 returns to model height 136.
-- Android: Kotlin build and seven unit tests; an isolated RN app using the real
-  NativeList/Image/Logger/Skeleton/Nitro packages ran on API 36. Style clearing,
-  same-key Message/Identity switching, content updates, image add/remove,
-  scroll-to-end/back and the fixed footer were checked. At the test device's
-  density, legacy model height 136 rendered as 122px through the existing scale;
-  explicit style height rendered as 192px and clearing restored 122px. The
-  styled three-line body measured 66px; clearing restored its one-line box.
-- iOS: the isolated RN app compiled and linked with the real
-  NativeList/Image/Logger/Skeleton/Nitro packages, then ran on a dedicated
-  iPhone 17 Pro simulator with iOS 26.5. Its data volume is an APFS sparsebundle
-  stored on the external drive and mounted at the simulator's standard data
-  directory. Style set/clear restored row height 136 → 192 → 136pt and body
-  height 20 → 66 → 20pt. Same-key Message/Identity switching, content updates,
-  leading image/thumbnail add/remove and scrolling to row 39/back passed;
-  fixed-footer placement stayed unchanged. Screenshots, accessibility trees
-  and a screen recording were retained. The build used the example app's iOS
-  16.4 deployment target for all pods because Xcode 27 rejects older pod targets.
-  Sampled gallery scrolling and style off/on checks also covered Message
-  appearance reset and top/center/bottom container alignment with explicit height.
-
-These results cover the Message extraction, not native acceptance of every
-template or completion of the target architecture.
+The two native reuse families now allocate different classes through the closed
+registry. The list only uses `NativeListRowHost` lifecycle operations; Message
+binds and measures its own resolved model. Market quote, selection echo,
+WalletGroup compact/expanded reorder and fixed-footer behavior remain on their
+existing paths. The next step is stage 3: migrate simple templates one at a time.
 
 The structural reuse follow-up on 2026-09-22 passed 150 package tests, typecheck,
 lint (zero errors), the Android build/seven unit tests and a full iOS build.
@@ -180,6 +149,25 @@ Chrome desktop and 390px RTL passed the same applicable Message cases. Runtime
 screenshots, accessibility trees and an iOS recording were retained outside the
 repository. These checks cover this text-subtree increment, not completion of
 stage 2 or full native acceptance of every template.
+
+The Message host completion on 2026-09-22 adds the implicit-key inventory and
+finishes stage 2. Package regression tests cover persistent text/image identity,
+style clearing, removed-image cleanup and incompatible-family reuse. Both native
+apps were rebuilt and installed on the dedicated external-drive iOS 26.5/API 36
+simulators. Runtime cases cover style/height set-clear, intrinsic height with
+missing fields, narrow grid columns, local/HTTP images, text-only image updates,
+failed-image fallback/recovery, delayed-source removal, mixed-family swaps,
+empty/repopulation and scrolling with the common fixed footer. Chrome also runs
+these flows at desktop width and 390px RTL. The baseline explicit row heights
+remain iOS 136 → 192 → 136pt and Android 122 → 192 → 122px on the narrow device;
+Web remains 136 → 192 → 136px. Automatic measurement now follows actual resolved
+metrics (the title/body/time intrinsic example is iOS 114pt and Web 74px),
+including the allocated iOS grid column width. A grid text-only patch shrinks
+the Message from 114 to 94pt; the same full-width text would occupy one line,
+so patch invalidation is checked against the actual column. The Web primary
+image style leaves network/corner decorations at their original dimensions. Runtime evidence is retained in
+the task's external validation directory. The dated earlier paragraphs describe
+intermediate commits, not the current stage-2 boundary.
 
 `linear`, `sectioned`, `grid`, and `table` are observable native container
 semantics. Linear is a full-width stream. Sectioned adds a visual break before

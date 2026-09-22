@@ -200,9 +200,9 @@ Radius steps in use: `4` (chip), `8` (rail, small visual), `10` (visual `rounded
 
 `style.X` modifies the rendering of the **model field named `X`**, regardless of
 which physical view carries it. This matters because legacy view slots are shared: on
-every platform `metricCard` renders its *value* through the title label and its
+native legacy `metricCard` renders its *value* through the title label and its
 *title* through the subtitle label, and the status label carries `rail.status`,
-`activity.status`, `message.time`, and `metricCard.trend`. Naming style keys after
+`activity.status` and `metricCard.trend`. Naming style keys after
 views would therefore mis-target. `market` already follows this rule with
 `style.price` / `style.change`.
 
@@ -649,8 +649,11 @@ Row height is computed from data by three independent implementations —
 | `sectionHeader` value + checkbox | 56 | 40 | 56 |
 | `message`, `mediaTile`, composite `metricCard` | computed / 244 / 160+ | 0 (wrap content) | computed / 244 / 161 |
 
-Within iOS, `NativeListCell.bindMessage()` sizes the leading slot at 28 while
-`rowHeight()` estimates text width against 40; `bindSystem()` uses 52/120 for a
+Message now uses its resolved text/spacing/image metrics for intrinsic
+measurement; iOS measures the actual allocated column width and Web corrects
+its conservative estimate from the rendered DOM. This explicitly fixes the old
+Message estimator-only fallback differences. Explicit/model heights keep their
+precedence. Other legacy mismatches remain: iOS `bindSystem()` uses 52/120 for a
 market retry row where `rowHeight()` uses 44, and 88 for `noMatch` where
 `rowHeight()` uses 44.
 
@@ -822,23 +825,22 @@ All three are implemented as `applyRowStyle`.
 | Android | `NativeListRowView.bind()`, **after** `applySize(item)` | `applySize` re-dispatches font size and typeface by row type and would otherwise overwrite the style |
 | Web | `renderElement()`, after template and presentation defaults | Wallet-group members apply their own local pass before the group pass |
 
-Both native platforms use `resetRowStyle` before the binder, per §7 rule 2.
+Both native legacy hosts use `resetRowStyle` before the binder, per §7 rule 2.
 They capture the bound text view's defaults before modifying it and restore that
 state before the normal template reset. This includes text metrics, color and
 alignment; iOS also restores attributed text. This avoids guessing one baseline
 for views shared by different templates. Device reuse checks remain required.
 
-Message is the first incremental renderer extraction: its renderer allocates and
-resets the native title/body/time subtree, and text styles and line gaps target
-that subtree directly. Box styles and style restoration still run through the
-existing host. Web Message owns its DOM
-structure and measurement in a separate module. All three scrolling hosts now
-partition Message from legacy reuse; style changes keep the same family, while
-cross-family template changes replace the host. The legacy native host and image
-slots are still allocated; lightweight hosts and resolved style inputs shared
-with measurement remain pending. See
-[DESIGN.md](DESIGN.md#incremental-renderer-migration) for the current ownership,
-remaining migration steps and acceptance scope.
+Message completes the first renderer pilot. Its native registry creates a
+lightweight host, and its renderer owns the title/body/time column and optional
+image slots. Text, box and image styles resolve from current defaults/data/theme;
+clearing a style rebinds those defaults without using the legacy restoration map.
+Native measurement and binding share resolved inputs; Web keeps a persistent
+body and corrects intrinsic estimates from DOM measurements. Unchanged effective
+image requests survive text-only binding. All three platforms separate Message
+from legacy reuse; cross-family changes replace the host. See
+[DESIGN.md](DESIGN.md#incremental-renderer-migration) for source boundaries and
+runtime acceptance. Stages 3–6 remain pending.
 
 The existing market helpers generalize rather than being rewritten:
 `applyMarketTextStyle` / `applyMarketButtonStyle` / `marketAttributedText` (iOS),

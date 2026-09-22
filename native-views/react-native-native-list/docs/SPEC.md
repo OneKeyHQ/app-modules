@@ -67,9 +67,9 @@ migration adds no new input limits, retry policy or automatic layout correction.
 ## Performance and resources
 
 Snapshots and patches cross the bridge in batches. Visible rows use platform
-recycling/windowing; shared primitives own image cancellation. The Message
-pilot still allocates the legacy native host, so renderer extraction alone is
-not evidence of lower allocations or faster scrolling. Performance claims need
+recycling/windowing; shared primitives own image cancellation. Message uses a dedicated lightweight native host and persistent Web body.
+The legacy native tree is not allocated for Message. This structural change is
+not a measured scrolling-performance result; performance claims still need a
 separate workload and measurements.
 
 ## Conformance and six-stage migration
@@ -77,28 +77,31 @@ separate workload and measurements.
 | Stage | Current status | Exit condition |
 | --- | --- | --- |
 | 1. Baseline | Complete: [implicit keys, defaults, special updates and acceptance baseline](MIGRATION_BASELINE.md) inventoried | Preserve each existing rule or explicitly migrate its caller |
-| 2. Message pilot | In progress: three-platform binding/reuse families and renderer-owned text subtrees implemented; Message runtime cases verified | Lightweight native hosts, resolved styling/measurement, update classification and lifecycle acceptance |
+| 2. Message pilot | Complete: registered lightweight native hosts, persistent Web body, resolved styling/measurement and lifecycle acceptance | Lightweight native hosts, resolved styling/measurement, update classification and lifecycle acceptance |
 | 3. Simple templates | Not started | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
 | 4. Complex templates | Not started | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
 | 5. WalletGroup | Not started | Independent member renderers; verify member events/styles, compact dragging and height restoration |
 | 6. Cleanup | Not started | Remove migrated key inference and global style maps; container no longer manipulates template internals |
 
-Native Message now owns its text subtree and typography; Web owns its DOM
-structure and still uses shared CSS defaults. Shared leading/thumbnail image
-slots and generic native host lifecycle stay in place
-until their primitives are extracted. The legacy host remains allocated.
+The closed internal registry selects Message or the legacy family. Message owns
+its text column, optional leading visual and thumbnail; its native host does not
+allocate Market, WalletGroup or table views. Web preserves the Message body,
+text nodes and unchanged image elements when rebinding. Remaining templates
+continue through the legacy family.
 
-Stage 2 completion requires registered Message factories to create lightweight
-hosts on both native platforms and a persistent Web Message body. The renderer
-resolves text/spacing/image inputs from data/theme/styles, classifies updates,
-and binds/measures using that resolved model. Unchanged assets keep their slot
-and request identity; changed/removed assets invalidate stale callbacks and
-retries. The legacy Message binding and slot-map branches must be removed.
+Message resolves text/spacing/image inputs from data/theme/styles, classifies
+updates as unchanged, content/style, assets or replacement, and binds/measures
+using those resolved values. Image slots retain an unchanged effective request;
+source/row/slot or image-request-option changes invalidate old callbacks and
+retries. Image request epochs are independent of row action-anchor epochs, so
+text-only updates preserve in-flight images. Legacy Message binding, slot-map
+and measurement branches have been removed. The named Android separator-key
+compatibility policy is retained outside the renderer's style resolver.
 
-Message intrinsic measurement will use its actual resolved view metrics rather
+Message intrinsic measurement now uses its actual resolved view metrics rather
 than the historical estimator-only defaults listed in MIGRATION_BASELINE.md.
 This can change **automatic** Message heights; explicit row/container heights
-and unstyled drawing defaults remain unchanged. Native measurement must account
+and unstyled drawing defaults remain unchanged. Native measurement accounts
 for the allocated column width, line limits, gaps and optional images. Web uses
 the same resolved geometry with a conservative text estimate, then corrects the
 visible intrinsic height from its rendered DOM; it does not auto-fit content.
