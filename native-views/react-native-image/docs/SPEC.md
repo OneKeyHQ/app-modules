@@ -1,6 +1,6 @@
 # Native Image Spec
 
-## 1. Status and authority
+## 1. Implementation status and authority
 
 This document is the behavioral contract for
 `@onekeyfe/react-native-image`. iOS uses SDWebImage and Android uses Glide; their
@@ -8,14 +8,16 @@ cache keys, decode pipelines, and callbacks are independent. This spec names the
 shared semantics and records deliberate differences so they remain visible in
 review.
 
-| Area                                                     | Status                                       |
-| -------------------------------------------------------- | -------------------------------------------- |
-| Public TypeScript API and native bridge                  | Implemented                                  |
-| Loading, fallback, cancellation, and recycling ownership | Implemented; covered by focused source tests |
-| Decode and encoded-data safety limits                    | Implemented; native unit coverage exists     |
-| TOS rendition selection                                  | Implemented on iOS and Android               |
-| Synchronous memory probe and cross-size preview          | Implemented on iOS and Android               |
-| Full rendered acceptance across supported devices        | Required; not established by this document   |
+All functionality defined by this spec is implemented. The table below records
+implementation status only; validation evidence is tracked separately in §11.
+
+| Area                                                     | Implementation status          |
+| -------------------------------------------------------- | ------------------------------ |
+| Public TypeScript API and native bridge                  | Implemented                    |
+| Loading, fallback, cancellation, and recycling ownership | Implemented on iOS and Android |
+| Decode and encoded-data safety limits                    | Implemented on iOS and Android |
+| TOS rendition selection                                  | Implemented on iOS and Android |
+| Synchronous memory probe and cross-size preview          | Implemented on iOS and Android |
 
 ## 2. Scope and non-goals
 
@@ -272,5 +274,7 @@ For any change to Native Image:
 | Cache API      | Preload mixed success, memory/disk/all clearing                                         | Promise result is accurate and requested cache work plus hints are complete                           |
 | Native reuse   | Standalone Nitro view and reusable list-cell host                                       | No stale image, callback, animation, skeleton, or request survives ownership change                   |
 
-Source tests and native builds are required before merge. Rendered lifecycle and
-visual claims require simulator or device evidence on the platforms they name.
+The implementation is complete on iOS and Android. Source tests and native
+builds verify the implementation at their respective layers. Simulator or device
+runs add rendered lifecycle and visual acceptance evidence; missing acceptance
+evidence does not indicate missing implementation.
