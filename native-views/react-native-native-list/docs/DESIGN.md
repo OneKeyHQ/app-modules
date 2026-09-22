@@ -124,11 +124,18 @@ The first extraction was checked on 2026-09-22:
   density, legacy model height 136 rendered as 122px through the existing scale;
   explicit style height rendered as 192px and clearing restored 122px. The
   styled three-line body measured 66px; clearing restored its one-line box.
-- iOS: models/assets/cell/Message renderer typechecked against the simulator
-  UIKit SDK with a OneKeyImage interface test double; the list view parsed.
-  Full app compilation/linking and rendered acceptance remain unverified.
-  Creation of the required external-drive simulator remained stuck in the
-  creation state; no existing simulator owned by another task was reused.
+- iOS: the isolated RN app compiled and linked with the real
+  NativeList/Image/Logger/Skeleton/Nitro packages, then ran on a dedicated
+  iPhone 17 Pro simulator with iOS 26.5. Its data volume is an APFS sparsebundle
+  stored on the external drive and mounted at the simulator's standard data
+  directory. Style set/clear restored row height 136 → 192 → 136pt and body
+  height 20 → 66 → 20pt. Same-key Message/Identity switching, content updates,
+  leading image/thumbnail add/remove and scrolling to row 39/back passed;
+  fixed-footer placement stayed unchanged. Screenshots, accessibility trees
+  and a screen recording were retained. The build used the example app's iOS
+  16.4 deployment target for all pods because Xcode 27 rejects older pod targets.
+  Sampled gallery scrolling and style off/on checks also covered Message
+  appearance reset and top/center/bottom container alignment with explicit height.
 
 These results cover the Message extraction, not native acceptance of every
 template or completion of the target architecture.
