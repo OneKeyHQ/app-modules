@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+- **image (iOS)**: Show a memory-cached image on the mount frame instead of an icon skeleton (OK-63873). The memory probe skipped every image whose JS side left `cachePolicy` unset (Fabric hands Nitro a nil, which the request path already treats as memory-disk), and before layout it keyed the decode thumbnail from the empty bounds, so a freshly mounted image never matched what the prewarm or a previous mount had stored. The probe now coalesces a nil policy to memory-disk and, before layout, tries the decode-thumbnail keys the laid-out request (`resizeWidth`/`resizeHeight` hint + the view's `contentFit`) and a preload (hint + cover) would use. An image already on screen for the same identity is kept as the placeholder while a load for another key runs, instead of being blanked to a skeleton.
+- **image**: Clip the RN overlay container to the same circle as a `round` native image. `round` clips the native view to an oval on Android and to a `min(width, height) / 2` corner radius on iOS, but the wrapper that hosts a custom `placeholder` or `fallback` only ever clipped to the caller's own `borderRadius`, so those overlays were painted square over a round image — against the clipping contract the README states. The container and the drawn border overlay now take a percentage radius when `round` is set, overriding any per-corner radius from the caller's style.
+
+### Features
+- **image**: New `resizeHeight` view prop, the pair of `resizeWidth`, so a non-square image can hand the pre-layout probe the same hints its preload used.
+
+### Chores
+- Stop tracking `nitrogen/generated` for `react-native-image` and `react-native-native-list`. Every other Nitro package already ignores `nitrogen/` and regenerates it from the spec at release time; these two were missing a package `.gitignore`, so 117 generated files rode along in every diff that touched a prop. `react-native-native-list` now runs `yarn nitrogen` in its `release` script like the other view packages, and local builds need `yarn nitrogen` in the package before the first native build.
+- No version bump here; these changes ship with the next release. Note that 3.0.157 was published from this branch before the review fixes landed and should not be used.
+
 ## [3.0.156] - 2026-09-21
 
 ### Features

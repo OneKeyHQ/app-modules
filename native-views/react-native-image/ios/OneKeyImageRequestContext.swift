@@ -610,6 +610,61 @@ enum OneKeyImageDecodeSizing {
     }
   }
 
+  /// The logical display size the TOS rendition is picked for. A preload picks
+  /// it from the long edge of its `resizeWidth`/`resizeHeight` hint, so a view
+  /// carrying the same hint must do the same (before AND after layout) or its
+  /// request URL, and with it the cache key, diverges from what the preload
+  /// stored. Without a hint the laid-out bounds decide; nil before layout.
+  static func tosDisplaySize(
+    bounds: CGSize,
+    resizeWidth: Double?,
+    resizeHeight: Double?
+  ) -> CGFloat? {
+    if let hint = logicalViewSize(width: resizeWidth, height: resizeHeight) {
+      return max(hint.width, hint.height)
+    }
+    let edge = max(bounds.width, bounds.height)
+    return edge.isFinite && edge > 0 ? edge : nil
+  }
+
+  /// Decode-thumbnail sizes worth probing the memory cache with, most specific
+  /// first. The thumbnail size is part of the SDWebImage cache key, so a probe
+  /// only hits when it reproduces the key some earlier load stored under.
+  ///
+  /// - Laid out: exactly the size this view's own request uses (`bounds` +
+  ///   `contentFit`), nothing else.
+  /// - Before layout the bounds are empty, but the JS side already knows the
+  ///   display size through the `resizeWidth` / `resizeHeight` hints (the same
+  ///   fields a preload takes). Two keys can hold the image then: the one the
+  ///   laid-out request will ask for (hint + this view's `contentFit`) and the
+  ///   one a preload stored (hint + `.cover`, see `HybridOneKeyImageCache`).
+  ///   They coincide for a square hint or `.cover`; otherwise both are probed.
+  /// - No bounds and no usable hint: nothing to probe with.
+  static func probeThumbnailPixelSizes(
+    bounds: CGSize,
+    resizeWidth: Double?,
+    resizeHeight: Double?,
+    scale: CGFloat,
+    contentFit: OneKeyImageContentFit
+  ) -> [CGSize] {
+    if bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0 {
+      return thumbnailPixelSize(viewSize: bounds, scale: scale, contentFit: contentFit)
+        .map { [$0] } ?? []
+    }
+    guard let hint = logicalViewSize(width: resizeWidth, height: resizeHeight) else {
+      return []
+    }
+    var sizes: [CGSize] = []
+    for fit in [contentFit, .cover] {
+      if let size = thumbnailPixelSize(viewSize: hint, scale: scale, contentFit: fit),
+        !sizes.contains(size)
+      {
+        sizes.append(size)
+      }
+    }
+    return sizes
+  }
+
   static func thumbnailPixelSize(
     viewSize: CGSize,
     scale: CGFloat,
