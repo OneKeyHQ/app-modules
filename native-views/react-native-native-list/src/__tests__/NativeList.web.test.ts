@@ -1018,7 +1018,11 @@ describe('web row style', () => {
       body: 'Body',
       time: 'Now',
       height: 136,
-      leading: { kind: 'image', image: { ...image, retryTimes: 2 } },
+      leading: {
+        kind: 'token',
+        image: { ...image, retryTimes: 2 },
+        networkImage: image,
+      },
       thumbnail: image,
     } as const;
     const engine = new NativeListWebEngine(
@@ -1035,7 +1039,11 @@ describe('web row style', () => {
       const body = row().firstElementChild!;
       const title = body.querySelector('[data-nl-slot="title"]')!;
       const images = Array.from(body.querySelectorAll('img'));
-      expect(images).toHaveLength(2);
+      expect(images).toHaveLength(3);
+      const corner = body.querySelector<HTMLElement>(
+        '.ok-native-list-visual-corner'
+      )!;
+      const cornerStyle = corner.style.cssText;
       engine.applySnapshot(
         snapshot({ kind: 'sectioned' }, [
           {
@@ -1051,6 +1059,7 @@ describe('web row style', () => {
       expect(row().firstElementChild).toBe(body);
       expect(body.querySelector('[data-nl-slot="title"]')).toBe(title);
       expect(title.textContent).toBe('Updated');
+      expect(corner.style.cssText).toBe(cornerStyle);
       expect(Array.from(body.querySelectorAll('img'))).toEqual(images);
       engine.applySnapshot(snapshot({ kind: 'sectioned' }, [message]));
       expect(Array.from(body.querySelectorAll('img'))).toEqual(images);

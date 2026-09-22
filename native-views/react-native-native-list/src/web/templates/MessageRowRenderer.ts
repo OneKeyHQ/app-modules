@@ -215,7 +215,7 @@ export function bindMessageRow(
     const images = leading.matches('img')
       ? [leading]
       : leading.querySelectorAll<HTMLElement>(
-          ':scope > img, :scope > .ok-native-list-visual-fallback'
+          ':scope > img:not(.ok-native-list-visual-corner), :scope > .ok-native-list-visual-fallback:not(.ok-native-list-visual-corner)'
         );
     images.forEach((bitmap) => {
       if (bitmap !== leading) {
