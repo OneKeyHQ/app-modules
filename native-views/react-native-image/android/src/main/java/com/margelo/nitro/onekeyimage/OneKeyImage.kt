@@ -26,6 +26,7 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.RequestOptions
+import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.target.CustomViewTarget
 import com.bumptech.glide.request.target.Target
 import com.bumptech.glide.request.transition.Transition
@@ -215,12 +216,15 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   }
   private var loadRunnable: Runnable? = null
   private var currentTarget: CustomViewTarget<OneKeyImageHostView, Drawable>? = null
+  private var memoryPreviewTarget: CustomTarget<Drawable>? = null
+  private var memoryPreviewFamily: OneKeyImageMemoryFamilyKey? = null
   private var generation = 0L
   private var lastSignature: String? = null
   private var disposed = false
   private var suppressPropEffects = false
   private var requestActive = false
   private var displayState = DisplayState.LOADING
+  private var isPreservingDisplayedImage = false
   private var displayRunnable: Runnable? = null
   private var pendingDisplayGeneration: Long? = null
   private var fallbackRunnable: Runnable? = null
@@ -306,8 +310,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       field = value
       requestIdentityChanged()
     }
-  // Layout hint pair with resizeWidth; only the iOS pre-layout memory probe
-  // consumes it today, Android keys the request on the measured view size.
+  // Layout hint pair with resizeWidth; the pre-layout memory probe uses both
+  // values to reproduce a preload's physical decode size.
   override var resizeHeight: Double? = null
     set(value) {
       if (field == value) return
@@ -395,7 +399,11 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     if (suppressPropEffects || disposed) return
     lastSignature = null
     cancelCurrent(invalidateGeneration = true)
-    if (sourceUri.isNullOrBlank()) showFallback() else showLoading(requestIsActive = false)
+    if (sourceUri.isNullOrBlank()) {
+      showFallback()
+    } else if (!showMemoryCachedPreviewBeforeLayout()) {
+      showLoading(requestIsActive = false)
+    }
     scheduleLoad()
   }
 
@@ -425,6 +433,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     suppressPropEffects = false
     requestActive = false
     displayState = DisplayState.LOADING
+    isPreservingDisplayedImage = false
     hostView.setImageDrawable(null)
     hostView.drawStateSymbol = false
     hostView.skeletonRequested = false
@@ -460,12 +469,140 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     }
   }
 
+  private fun showMemoryCachedPreviewBeforeLayout(): Boolean {
+    if (Looper.myLooper() != Looper.getMainLooper()) return false
+    val rawUrl = sourceUri?.takeIf { it.isNotBlank() } ?: return false
+    val policy = cachePolicy ?: OneKeyImageCachePolicy.MEMORY_DISK
+    if (
+      policy != OneKeyImageCachePolicy.MEMORY &&
+      policy != OneKeyImageCachePolicy.MEMORY_DISK
+    ) {
+      return false
+    }
+    val displayWidth = resizeWidth?.takeIf { it.isFinite() && it > 0.0 }
+    val displayHeight = resizeHeight?.takeIf { it.isFinite() && it > 0.0 }
+    if (displayWidth == null && displayHeight == null) return false
+    val density = hostView.resources.displayMetrics.density.coerceAtLeast(1f)
+    val displaySize = when {
+      displayWidth != null && displayHeight != null -> maxOf(displayWidth, displayHeight)
+      displayWidth != null -> displayWidth
+      else -> requireNotNull(displayHeight)
+    }
+    val customIdentity = OneKeyImageModel.headers(sourceHeadersJson).isNotEmpty()
+    val requestUrl = if (optimizeTos != false) {
+      OneKeyTosUrl.optimized(
+        rawUrl,
+        ceil(displaySize).toInt(),
+        density,
+        overscan ?: 1.1,
+        customIdentity,
+      )
+    } else rawUrl
+    val dimensions = OneKeyImageDecodeDimensions.forPreload(
+      displayWidth,
+      displayHeight,
+      density.toDouble(),
+    )
+    return showMemoryCachedPreview(
+      family = OneKeyImageMemoryFamilyKey.from(rawUrl, sourceHeadersJson),
+      exactVariant = OneKeyImageMemoryVariant(
+        requestUrl = requestUrl,
+        width = dimensions.width,
+        height = dimensions.height,
+        round = round == true,
+      ),
+      includeExact = true,
+      policy = policy,
+      requestGeneration = generation,
+    )
+  }
+
+  private fun showMemoryCachedPreview(
+    family: OneKeyImageMemoryFamilyKey,
+    exactVariant: OneKeyImageMemoryVariant,
+    includeExact: Boolean,
+    policy: OneKeyImageCachePolicy,
+    requestGeneration: Long,
+  ): Boolean {
+    if (
+      Looper.myLooper() != Looper.getMainLooper() ||
+      disposed ||
+      requestGeneration != generation ||
+      (policy != OneKeyImageCachePolicy.MEMORY &&
+        policy != OneKeyImageCachePolicy.MEMORY_DISK)
+    ) {
+      return false
+    }
+    val candidates = buildList {
+      if (includeExact) {
+        add(exactVariant)
+        if (exactVariant.requestUrl != family.rawUrl) {
+          add(exactVariant.copy(requestUrl = family.rawUrl))
+        }
+      }
+      addAll(OneKeyImageMemoryVariantRegistry.candidates(family, exactVariant))
+    }.distinct()
+
+    for (candidate in candidates) {
+      var synchronousResource: Drawable? = null
+      val target = object : CustomTarget<Drawable>(candidate.width, candidate.height) {
+        override fun onResourceReady(
+          resource: Drawable,
+          transition: Transition<in Drawable>?,
+        ) {
+          if (
+            requestGeneration == generation &&
+            !disposed &&
+            resource !is Animatable
+          ) {
+            synchronousResource = resource
+          }
+        }
+
+        override fun onLoadCleared(placeholder: Drawable?) = Unit
+      }
+      requestManager()
+        .asDrawable()
+        .load(OneKeyImageModel.build(candidate.requestUrl, sourceHeadersJson))
+        .apply(
+          requestOptions(policy, candidate.requestUrl, candidate.round)
+            .onlyRetrieveFromCache(true),
+        )
+        .override(candidate.width, candidate.height)
+        .into(target)
+
+      val resource = synchronousResource
+      if (resource == null) {
+        requestManager().clear(target)
+        OneKeyImageMemoryVariantRegistry.remove(family, candidate)
+        continue
+      }
+
+      clearMemoryPreviewTarget()
+      memoryPreviewTarget = target
+      memoryPreviewFamily = family
+      displayState = DisplayState.IMAGE
+      requestActive = false
+      isPreservingDisplayedImage = false
+      hostView.skeletonRequested = false
+      hostView.drawStateSymbol = false
+      hostView.setBackgroundColor(Color.TRANSPARENT)
+      hostView.setImageDrawable(resource)
+      applyAutoplay()
+      OneKeyImageMemoryVariantRegistry.record(family, candidate)
+      return true
+    }
+    return false
+  }
+
   private fun startLoad(force: Boolean) {
     if (disposed) return
     if (hostView.width <= 0 || hostView.height <= 0) {
-      cancelCurrent(invalidateGeneration = true)
+      cancelCurrent(invalidateGeneration = true, clearMemoryPreview = false)
       lastSignature = null
-      showLoading(requestIsActive = false)
+      if (memoryPreviewTarget == null || hostView.drawable == null) {
+        showLoading(requestIsActive = false)
+      }
       return
     }
     val rawUrl = sourceUri?.takeIf { it.isNotBlank() }
@@ -493,7 +630,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     if (!force && signature == lastSignature) return
     lastSignature = signature
 
-    cancelCurrent(invalidateGeneration = true)
+    cancelCurrent(invalidateGeneration = true, clearMemoryPreview = false)
     val requestGeneration = generation
     requestStartedAtMs = SystemClock.uptimeMillis()
     onLoadStart?.invoke()
@@ -501,8 +638,14 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     val customIdentity = OneKeyImageModel.headers(sourceHeadersJson).isNotEmpty()
     val optimizedUrl = if (optimizeTos != false) {
       val density = hostView.resources.displayMetrics.density.coerceAtLeast(1f)
-      val displaySize = resizeWidth?.takeIf { it.isFinite() && it > 0.0 }
-        ?: (maxOf(hostView.width, hostView.height) / density.toDouble())
+      val displayWidth = resizeWidth?.takeIf { it.isFinite() && it > 0.0 }
+      val displayHeight = resizeHeight?.takeIf { it.isFinite() && it > 0.0 }
+      val displaySize = when {
+        displayWidth != null && displayHeight != null -> maxOf(displayWidth, displayHeight)
+        displayWidth != null -> displayWidth
+        displayHeight != null -> displayHeight
+        else -> maxOf(hostView.width, hostView.height) / density.toDouble()
+      }
       OneKeyTosUrl.optimized(
         rawUrl,
         ceil(displaySize).toInt(),
@@ -512,6 +655,22 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       )
     } else rawUrl
     val decodeDimensions = OneKeyImageDecodeDimensions.forRender(hostView.width, hostView.height)
+    val memoryFamily = OneKeyImageMemoryFamilyKey.from(rawUrl, sourceHeadersJson)
+    val exactVariant = OneKeyImageMemoryVariant(
+      requestUrl = optimizedUrl,
+      width = decodeDimensions.width,
+      height = decodeDimensions.height,
+      round = round == true,
+    )
+    if (memoryPreviewTarget == null || memoryPreviewFamily != memoryFamily) {
+      showMemoryCachedPreview(
+        family = memoryFamily,
+        exactVariant = exactVariant,
+        includeExact = false,
+        policy = cachePolicy ?: OneKeyImageCachePolicy.MEMORY_DISK,
+        requestGeneration = requestGeneration,
+      )
+    }
     performRequest(
       requestUrl = optimizedUrl,
       rawUrl = rawUrl,
@@ -520,6 +679,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
       headersJson = sourceHeadersJson,
       policy = cachePolicy ?: OneKeyImageCachePolicy.MEMORY_DISK,
       decodeDimensions = decodeDimensions,
+      memoryFamily = memoryFamily,
+      memoryVariant = exactVariant,
     )
   }
 
@@ -531,6 +692,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     headersJson: String?,
     policy: OneKeyImageCachePolicy,
     decodeDimensions: OneKeyImageDecodeDimensions,
+    memoryFamily: OneKeyImageMemoryFamilyKey,
+    memoryVariant: OneKeyImageMemoryVariant,
   ) {
     if (requestGeneration != generation || disposed) return
     clearCurrentTarget()
@@ -540,7 +703,10 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     val target = object : CustomViewTarget<OneKeyImageHostView, Drawable>(hostView) {
       override fun onResourceLoading(placeholder: Drawable?) {
         if (requestGeneration != generation || disposed) return
-        showLoading(requestIsActive = true)
+        showLoading(
+          requestIsActive = true,
+          preserveDisplayedImage = memoryPreviewTarget != null && hostView.drawable != null,
+        )
       }
 
       override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
@@ -551,6 +717,15 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
         hostView.drawStateSymbol = false
         hostView.setBackgroundColor(Color.TRANSPARENT)
         hostView.setImageDrawable(resource)
+        isPreservingDisplayedImage = false
+        if (
+          resource !is Animatable &&
+          (policy == OneKeyImageCachePolicy.MEMORY ||
+            policy == OneKeyImageCachePolicy.MEMORY_DISK)
+        ) {
+          OneKeyImageMemoryVariantRegistry.record(memoryFamily, memoryVariant)
+        }
+        clearMemoryPreviewTarget()
         applyLoadedImageTransition(resolvedCacheType)
         applyAutoplay()
         val loadCallback = onLoad
@@ -603,6 +778,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
                 headersJson = headersJson,
                 policy = policy,
                 decodeDimensions = decodeDimensions,
+                memoryFamily = memoryFamily,
+                memoryVariant = memoryVariant.copy(requestUrl = rawUrl),
               )
             }
           }
@@ -618,7 +795,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     requestManager()
       .asDrawable()
       .load(OneKeyImageModel.build(requestUrl, headersJson))
-      .apply(requestOptions(policy, requestUrl, round == true))
+      .apply(requestOptions(policy, requestUrl, memoryVariant.round))
       .override(decodeDimensions.width, decodeDimensions.height)
       .listener(object : RequestListener<Drawable> {
         override fun onLoadFailed(
@@ -678,7 +855,10 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     )
   }
 
-  private fun cancelCurrent(invalidateGeneration: Boolean) {
+  private fun cancelCurrent(
+    invalidateGeneration: Boolean,
+    clearMemoryPreview: Boolean = true,
+  ) {
     loadRunnable?.let(hostView::removeCallbacks)
     loadRunnable = null
     displayRunnable?.let(hostView::removeCallbacks)
@@ -687,7 +867,9 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     fallbackRunnable?.let(hostView::removeCallbacks)
     fallbackRunnable = null
     clearCurrentTarget()
+    if (clearMemoryPreview) clearMemoryPreviewTarget()
     requestActive = false
+    isPreservingDisplayedImage = false
     hostView.skeletonRequested = false
     requestStartedAtMs = null
     resetImageTransition()
@@ -699,6 +881,13 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     // Clear the field first so onResourceCleared from our own cancellation
     // cannot erase state belonging to the next generation/request.
     currentTarget = null
+    requestManager().clear(target)
+  }
+
+  private fun clearMemoryPreviewTarget() {
+    val target = memoryPreviewTarget ?: return
+    memoryPreviewTarget = null
+    memoryPreviewFamily = null
     requestManager().clear(target)
   }
 
@@ -730,10 +919,22 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     hostView.postOnAnimation(runnable)
   }
 
-  private fun showLoading(requestIsActive: Boolean) {
+  private fun showLoading(
+    requestIsActive: Boolean,
+    preserveDisplayedImage: Boolean = false,
+  ) {
     displayState = DisplayState.LOADING
     requestActive = requestIsActive
     resetImageTransition()
+    if (preserveDisplayedImage && hostView.drawable != null) {
+      isPreservingDisplayedImage = true
+      hostView.skeletonRequested = false
+      hostView.drawStateSymbol = false
+      hostView.setBackgroundColor(Color.TRANSPARENT)
+      hostView.invalidate()
+      return
+    }
+    isPreservingDisplayedImage = false
     hostView.setImageDrawable(null)
     hostView.drawStateSymbol = false
     applyLoadingAppearance()
@@ -750,6 +951,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private fun showTerminalState(state: DisplayState) {
     displayState = state
     requestActive = false
+    isPreservingDisplayedImage = false
     resetImageTransition()
     hostView.setImageDrawable(null)
     hostView.skeletonRequested = false
@@ -819,7 +1021,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
   private fun applyVariant() {
     when (displayState) {
       DisplayState.IMAGE -> Unit
-      DisplayState.LOADING -> applyLoadingAppearance()
+      DisplayState.LOADING -> if (!isPreservingDisplayedImage) applyLoadingAppearance()
       DisplayState.ERROR, DisplayState.FALLBACK -> {
         val hidesTerminalState = loadingStrategy == OneKeyImageLoadingStrategy.NONE
         hostView.setBackgroundColor(

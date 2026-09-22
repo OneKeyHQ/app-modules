@@ -389,6 +389,40 @@ final class OneKeyImageInfrastructureTests: XCTestCase {
     )
   }
 
+  func testMemoryVariantsChooseNearestLargerThenNearestSmaller() {
+    let target = memoryVariant(96)
+    XCTAssertEqual(
+      OneKeyImageMemoryVariantRegistry.orderedCandidates(
+        variants: [memoryVariant(48), memoryVariant(72), memoryVariant(120), memoryVariant(144)],
+        target: target
+      ),
+      [memoryVariant(120), memoryVariant(72)]
+    )
+  }
+
+  func testMemoryVariantsIgnoreExactAndIncompatibleAspectRatios() {
+    let target = memoryVariant(96)
+    let wide = OneKeyImageMemoryVariant(
+      requestURL: URL(string: "https://example.com/wide.png")!,
+      thumbnailPixelSize: CGSize(width: 120, height: 60)
+    )
+    XCTAssertEqual(
+      OneKeyImageMemoryVariantRegistry.orderedCandidates(
+        variants: [target, wide, memoryVariant(120)],
+        target: target,
+        excluding: [target]
+      ),
+      [memoryVariant(120)]
+    )
+  }
+
+  private func memoryVariant(_ size: Int) -> OneKeyImageMemoryVariant {
+    OneKeyImageMemoryVariant(
+      requestURL: URL(string: "https://example.com/image-\(size).png")!,
+      thumbnailPixelSize: CGSize(width: size, height: size)
+    )
+  }
+
   func testDisplayedImageIsPreservedOnlyWhileShowingOne() {
     XCTAssertTrue(HybridOneKeyImage.shouldPreserveDisplayedImage(isShowingImage: true, hasImage: true))
     XCTAssertFalse(HybridOneKeyImage.shouldPreserveDisplayedImage(isShowingImage: true, hasImage: false))

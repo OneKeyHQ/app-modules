@@ -98,6 +98,7 @@ private final class OneKeyImageSkeletonIndicator: NSObject, SDWebImageIndicator 
 
 final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
   private enum DisplayState { case loading, image, error, fallback }
+  private enum MemoryProbeResult { case miss, preview, exact }
   private static let fadeDelayThreshold: CFTimeInterval = 0.1
   private static let fadeDuration: TimeInterval = 0.14
 
@@ -254,7 +255,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       self.cancelCurrentRequest(invalidateGeneration: true)
       self.lastRequestSignature = nil
       if let source = self.sourceUri, !source.isEmpty {
-        if !self.showMemoryCachedImageIfAvailable(requestIsActive: false) {
+        if self.showMemoryCachedImageIfAvailable(requestIsActive: false) == .miss {
           self.showLoading(requestIsActive: false, letLibraryStartIndicator: false)
         }
       } else {
@@ -310,7 +311,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     requestStartedAt = CACurrentMediaTime()
     onLoadStart?()
     guard Self.isCurrentRequestGeneration(generation, current: requestGeneration) else { return }
-    if showMemoryCachedImageIfAvailable(requestIsActive: true) { return }
+    if showMemoryCachedImageIfAvailable(requestIsActive: true) == .exact { return }
     // The pre-layout probe may have shown this identity from another thumbnail
     // key (a preload's, or an earlier layout size). Keep it on screen as the
     // placeholder while the exact rendition loads: blanking to a skeleton and
@@ -435,12 +436,29 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
               url: rawURL,
               rawURL: rawURL,
               generation: generation,
-              mayFallbackToRaw: false
+              mayFallbackToRaw: false,
+              placeholderImage: self.hostView.image
             )
             return
           }
           self.finishWithError(safetyViolation ?? error, generation: generation)
           return
+        }
+        if let image,
+          Self.canUseAsMemoryPreview(image),
+          let thumbnailPixelSize,
+          self.cachePolicy == .memory || self.cachePolicy == .memoryDisk || self.cachePolicy == nil
+        {
+          OneKeyImageMemoryVariantRegistry.shared.record(
+            OneKeyImageMemoryVariant(
+              requestURL: url,
+              thumbnailPixelSize: thumbnailPixelSize
+            ),
+            for: OneKeyImageMemoryFamilyKey(
+              rawURL: rawURL,
+              headersJson: self.sourceHeadersJson
+            )
+          )
         }
         guard self.claimTerminal(generation) else { return }
         self.requestActive = false
@@ -627,7 +645,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     isShowingImage && hasImage
   }
 
-  private func showMemoryCachedImageIfAvailable(requestIsActive: Bool) -> Bool {
+  private func showMemoryCachedImageIfAvailable(requestIsActive: Bool) -> MemoryProbeResult {
     // JS leaves `cachePolicy` unset for the common case and Fabric then hands
     // Nitro a nil, which the request path already treats as memory-disk; the
     // probe must agree, otherwise a nil policy skips the memory lookup entirely
@@ -637,7 +655,7 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     guard effectivePolicy == .memory || effectivePolicy == .memoryDisk,
           let sourceUri,
           let rawURL = URL(string: sourceUri) else {
-      return false
+      return .miss
     }
     let rawScreenScale: CGFloat = hostView.window?.screen.scale ?? UIScreen.main.scale
     let screenScale = min(max(rawScreenScale, 1), 3)
@@ -686,20 +704,69 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
       }
       return cache.imageFromMemoryCache(forKey: key)
     }
-    func memoryCachedImage(for url: URL) -> UIImage? {
-      for thumbnailPixelSize in thumbnailCandidates {
-        if let image = memoryCachedImage(for: url, thumbnailPixelSize: thumbnailPixelSize) {
-          return image
-        }
+
+    var exactProbes: [(variant: OneKeyImageMemoryVariant?, url: URL, size: CGSize?)] = []
+    for url in requestURL == rawURL ? [requestURL] : [requestURL, rawURL] {
+      for size in thumbnailCandidates {
+        exactProbes.append(
+          (
+            variant: size.map {
+              OneKeyImageMemoryVariant(requestURL: url, thumbnailPixelSize: $0)
+            },
+            url: url,
+            size: size
+          )
+        )
       }
-      return nil
     }
-    guard let image = memoryCachedImage(for: requestURL)
-      ?? (requestURL == rawURL ? nil : memoryCachedImage(for: rawURL)) else {
-      return false
+    let family = OneKeyImageMemoryFamilyKey(rawURL: rawURL, headersJson: sourceHeadersJson)
+    let exactVariants = Set(exactProbes.compactMap(\.variant))
+    for probe in exactProbes {
+      guard let image = memoryCachedImage(for: probe.url, thumbnailPixelSize: probe.size) else {
+        if let variant = probe.variant {
+          OneKeyImageMemoryVariantRegistry.shared.remove(variant, for: family)
+        }
+        continue
+      }
+      if let variant = probe.variant, Self.canUseAsMemoryPreview(image) {
+        OneKeyImageMemoryVariantRegistry.shared.record(variant, for: family)
+      }
+      displayMemoryCachedImage(image, requestIsActive: requestIsActive, terminal: true)
+      return .exact
     }
+
+    if let target = exactProbes.compactMap(\.variant).first {
+      let candidates = OneKeyImageMemoryVariantRegistry.shared.candidates(
+        for: family,
+        target: target,
+        excluding: exactVariants
+      )
+      for candidate in candidates {
+        guard
+          let image = memoryCachedImage(
+            for: candidate.requestURL,
+            thumbnailPixelSize: candidate.thumbnailPixelSize
+          ),
+          Self.canUseAsMemoryPreview(image)
+        else {
+          OneKeyImageMemoryVariantRegistry.shared.remove(candidate, for: family)
+          continue
+        }
+        displayMemoryCachedImage(image, requestIsActive: false, terminal: false)
+        OneKeyImageMemoryVariantRegistry.shared.record(candidate, for: family)
+        return .preview
+      }
+    }
+    return .miss
+  }
+
+  private func displayMemoryCachedImage(
+    _ image: UIImage,
+    requestIsActive: Bool,
+    terminal: Bool
+  ) {
     let generation = requestGeneration
-    if requestIsActive, !claimTerminal(generation) { return true }
+    if terminal, requestIsActive, !claimTerminal(generation) { return }
     displayState = .image
     isPreservingDisplayedImage = false
     requestActive = false
@@ -708,11 +775,11 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     resetImageTransition()
     applyDisplayedImage(image, generation: generation)
     hostView.backgroundColor = .clear
-    if requestIsActive {
+    if terminal, requestIsActive {
       applyLoadedImageTransition(cacheType: .memory)
     }
     applyAutoplay()
-    if requestIsActive {
+    if terminal, requestIsActive {
       let onLoad = onLoad
       let onLoadEnd = onLoadEnd
       Self.deliverTerminalCallbacks(
@@ -721,11 +788,14 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
         },
         onLoadEnd: { onLoadEnd?() }
       )
-      guard requestGeneration == generation else { return true }
+      guard requestGeneration == generation else { return }
       pendingDisplayGeneration = generation
       schedulePendingDisplayIfNeeded()
     }
-    return true
+  }
+
+  private static func canUseAsMemoryPreview(_ image: UIImage) -> Bool {
+    !(image is SDAnimatedImage) && image.images == nil
   }
 
   private func showError() {
