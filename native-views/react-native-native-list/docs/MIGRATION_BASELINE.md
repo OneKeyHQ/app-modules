@@ -70,3 +70,17 @@ body/time, same-key Message/Identity changes, images, end/top scrolling, 41-row
 mixed swaps, empty/repopulate and the fixed footer on all three platforms.
 Full native acceptance of the later templates remains a gate for stages 3–5,
 not an implied result of finishing this inventory.
+
+## Rail extraction baseline (stage 3)
+
+Rail keeps iOS title/badge gap 8 versus Android/Web 6. Android's default status
+margin is 0 even though its historical width reserves 6; iOS/Web use 6. Default
+height remains iOS/Web 40 and Android's scaled minimum 28. Native text is 12,
+with 16-unit title/badge line metrics; Android status keeps its natural line
+height. Web retains 12/11/13 for title/badge/status. Leading size is 20 and
+padding is 4. These are existing differences, not different style property APIs.
+Horizontal sizing retains the legacy allowances (including iOS's old 6-unit
+badge-gap estimate inside its trailing budget and Android's status allowance)
+and now applies explicit resolved style metrics. Style removal restores the
+baseline dimensions. Rail does not show persistent row selection; press and
+reorder feedback remain container-owned.

@@ -104,12 +104,12 @@ subtrees. This is source-level ownership evidence, not a performance benchmark.
 
 The renderer resolves defaults from current data/theme/style rather than
 capturing a previous row's view state. Legacy global slot maps no longer contain
-Message. No public plugin API or Nitro schema is added. Remaining template maps
+Message or Rail. No public plugin API or Nitro schema is added. Remaining template maps
 and partial updates are retired only with their own migration. See
 [SPEC.md](SPEC.md#conformance-and-six-stage-migration) for all six stages.
 
-Structural reuse is now partitioned into two internal families on all platforms:
-`message` and `legacy`. Unmigrated templates retain their existing shared tree.
+Structural reuse is partitioned into three internal families on all platforms:
+`message`, `rail` and `legacy`. Unmigrated templates retain their existing shared tree.
 Neither `row.key`, content, style, height nor placement changes the family.
 Web selects a compatible wrapper pool even when the row at a mounted index
 changes family. iOS registers separate reuse identifiers and reloads retained
@@ -120,11 +120,11 @@ to replace an incompatible holder. Market quote and selection payloads retain
 their existing full/partial update decisions. Footer and nested-row hosts remain
 outside these scrolling pools.
 
-The two native reuse families now allocate different classes through the closed
+The native reuse families allocate different classes through the closed
 registry. The list only uses `NativeListRowHost` lifecycle operations; Message
 binds and measures its own resolved model. Market quote, selection echo,
 WalletGroup compact/expanded reorder and fixed-footer behavior remain on their
-existing paths. The next step is stage 3: migrate simple templates one at a time.
+existing paths. Stage 3 migrates simple templates one at a time.
 
 The structural reuse follow-up on 2026-09-22 passed 150 package tests, typecheck,
 lint (zero errors), the Android build/seven unit tests and a full iOS build.
@@ -176,6 +176,39 @@ makes structural rows full-span. Table uses compact alternating rows and fixed
 weighted/aligned columns. Orientation, refresh, load-more, visibility events,
 empty state, fixed footer, and native reordering are capabilities, not row
 types.
+
+
+### Stage 3: Rail increment (2026-09-22)
+
+Rail joins the closed registry on Web, Android and iOS. Its title, badge, status
+and leading visual belong to the Rail renderer; it no longer allocates the
+legacy composite tree. Message and Rail share `NativeListRendererCell` /
+`NativeListRendererRowView` for appearance, binding classification, action-anchor
+invalidation and recycling. Each declares its own asset fields. Web uses a
+shared primitive contract and visual-style restoration without touching async
+image visibility. No public API or generated bridge change is involved.
+
+Unstyled typography, gaps, platform height defaults and horizontal width
+allowances are preserved. Explicit row styles participate in horizontal sizing;
+this repairs the previous fixed-metric estimator. The Android resolved-text
+primitive also fixes an omitted `offsetY` being read as NaN when another text
+style was provided; it now resolves to zero. Explicit line heights without an
+offset visibly render in both Rail and Message.
+
+The increment passes 153 package tests, TypeScript, lint (zero errors), Android
+build/seven unit tests, and a full iOS build. Chrome, Android API 36 and iOS 26.5
+ran style set/clear, local images and corner badges, text/image replacement,
+badge/status removal, horizontal sizing, same-key Rail/Message/Identity swaps,
+end/top scrolling, empty/repopulate and the shared fixed footer. iOS default and
+styled text bounds match the captured legacy Rail baseline. Chrome additionally
+ran a 390px RTL viewport. All three platforms verified row clicks, disabled clicks and drag reorder.
+iOS reorder used XCTest long-press-and-drag with a 600ms hold; a synthesized
+swipe alone did not exercise the long-press recognizer.
+
+This is stage 3's first template, not completion of the seven-template stage.
+mediaTile, action, system, activity, dataRow and metricCard remain in the legacy
+family. Their variants, embedded actions and table semantics require their own
+increments and runtime acceptance.
 
 ## Section index
 
