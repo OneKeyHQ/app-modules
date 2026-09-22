@@ -56,8 +56,8 @@ listed in STYLE_SPEC §6.5. An absent optional field is not created by styling i
 - **Layout boundary:** reserve visual and accessory slots; text compresses within
   its own column. Styling cannot move a checkbox/menu into the title column,
   reorder accessories or convert a horizontal row into the sidebar presentation.
-- **Current gap:** Web explicit-height selector defaults can overwrite title
-  style. Verify both selector presentations, not just the default identity row.
+- **Verification:** Web style ordering and removal have DOM regression coverage
+  for both selector presentations. Rendered geometry remains to be verified.
 
 ## walletGroup
 
@@ -72,6 +72,7 @@ listed in STYLE_SPEC §6.5. An absent optional field is not created by styling i
   group `title`/`value` text style.
 - **Layout boundary:** preserve parent-first member order and wallet member
   structure. Local padding cannot change ownership, member count or drag identity.
+  Group `lineGap` does not override the text spacing inside member rows.
 - **Common-capability boundary:** this is not a generic section and does not
   control header/footer placement. General grouped cards use `groupId` and
   `groupPosition`; do not conflate those with this composite template.
@@ -185,11 +186,13 @@ listed in STYLE_SPEC §6.5. An absent optional field is not created by styling i
 - **Text style roles:** `title` is the small label on the standard card; `value`
   is the large number; `subtitle` and `trend` have their own roles. Do not map them
   by shared UIKit/Android view names, which are different from these meanings.
+  In `activity`/`performance`, only `title` maps to the composite heading. The
+  other standard-card roles do not address `metrics[].label` or `metrics[].value`.
 - **Layout boundary:** styles cannot change the number/order of metric cells or
   turn the standard card into a composite card. Composite subfield mapping needs
   explicit coverage; do not assume `style.value` reaches every nested metric.
-- **Current gap:** Web composite variants lack the standard card's text slot tags.
-  The standard card example alone cannot validate composite styling.
+- **Current gap:** nested metric fields have no declared local text-style roles.
+  The standard card example alone cannot validate composite heading styling.
 
 ## sectionHeader
 

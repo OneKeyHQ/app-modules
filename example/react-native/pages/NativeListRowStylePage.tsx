@@ -161,6 +161,118 @@ function buildRows(styled: boolean): RowModel[] {
       : {}),
   });
 
+  // Cover the remaining row types with appearance-only overrides. These pairs
+  // keep geometry identical so field targeting can be checked independently.
+  const additional: readonly [RowModel, RowModel['style']][] = [
+    [
+      {
+        type: 'activity',
+        key: 'activity',
+        leading: { kind: 'icon', name: 'StarOutline' },
+        title: 'Sent Bitcoin',
+        description: 'Confirmed',
+        primaryAmount: '-0.5 BTC',
+        secondaryAmount: '$32,115',
+      },
+      { title: { color: '#0D74CE' }, primaryAmount: { color: '#CE2C31' } },
+    ],
+    [
+      {
+        type: 'dataRow',
+        key: 'data',
+        index: 1,
+        columns: [
+          { key: 'asset', text: 'Bitcoin', secondaryText: 'BTC' },
+          { key: 'value', text: '$64,230', alignment: 'end' },
+        ],
+      },
+      { index: { color: '#0D74CE' } },
+    ],
+    [
+      {
+        type: 'market',
+        key: 'market',
+        variant: 'token',
+        leading: { kind: 'token', fallbackText: 'BTC' },
+        title: 'Bitcoin',
+        subtitle: 'BTC',
+        price: '$64,230',
+        change: { text: '+2.4%', tone: 'positive' },
+      },
+      { title: { color: '#0D74CE' }, price: { color: '#108303' } },
+    ],
+    [
+      {
+        type: 'mediaTile',
+        key: 'media',
+        variant: 'gallery',
+        imageState: 'empty',
+        title: 'Collectible',
+        subtitle: 'Ethereum',
+      },
+      { title: { color: '#0D74CE' }, subtitle: { color: '#108303' } },
+    ],
+    [
+      {
+        type: 'sectionHeader',
+        key: 'section',
+        sectionKey: 'section',
+        title: 'Section heading',
+        subtitle: 'Shared list structure',
+      },
+      { title: { color: '#0D74CE' }, subtitle: { color: '#108303' } },
+    ],
+    [
+      {
+        type: 'system',
+        key: 'system',
+        variant: 'warning',
+        title: 'Connection unavailable',
+        message: 'Please try again later.',
+      },
+      { title: { color: '#CE2C31' }, message: { color: '#0D74CE' } },
+    ],
+  ];
+  additional.forEach(([base, style]) => {
+    rows.push(header(base.key, base.type, 'plain / styled'));
+    rows.push({ ...base, key: `${base.key}-plain` });
+    rows.push({
+      ...base,
+      key: `${base.key}-styled`,
+      ...(styled ? { style } : {}),
+    } as RowModel);
+  });
+
+  rows.push(header('wallet-group', 'walletGroup', 'member text styles'));
+  for (const variant of ['plain', 'styled'] as const) {
+    const key = `wallet-group-${variant}`;
+    const memberStyle =
+      styled && variant === 'styled'
+        ? { title: { color: '#0D74CE' } }
+        : undefined;
+    rows.push({
+      type: 'walletGroup',
+      key,
+      parent: {
+        type: 'identity',
+        key,
+        presentation: 'walletSidebar',
+        leading: { kind: 'wallet', fallbackText: 'A' },
+        title: 'Wallet A',
+        ...(memberStyle ? { style: memberStyle } : {}),
+      },
+      children: [
+        {
+          type: 'identity',
+          key: `${key}-child`,
+          presentation: 'walletSidebar',
+          leading: { kind: 'wallet', fallbackText: 'B' },
+          title: 'Unstyled child',
+        },
+      ],
+    });
+  }
+
   // listStyle is chrome, not a row: the separator inset and the group card
   // radius below come from the snapshot, not from these rows.
   rows.push(header('chrome', 'listStyle', 'separator / group'));

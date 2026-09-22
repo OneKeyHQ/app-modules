@@ -2,6 +2,7 @@ import type { IdentityRow, NativeListSnapshot, RowModel } from '../models';
 import {
   WEB_LIST_CSS,
   WEB_REORDER_ANIMATION,
+  NativeListWebEngine,
   applyRowStyle,
   canStartWebWalletGroupReorder,
   cancelWebReorderRows,
@@ -628,6 +629,64 @@ describe('web row style', () => {
     expect(value?.style.fontWeight).toBe('700');
   });
 
+  it.each(['activity', 'performance'] as const)(
+    'targets the %s metric heading without restyling nested metric values',
+    (variant) => {
+      const body = render({
+        type: 'metricCard',
+        key: 'composite',
+        variant,
+        title: 'Summary',
+        value: 'Unused standard value',
+        metrics: [
+          { key: 'a', label: 'Sent', value: '12' },
+          { key: 'b', label: 'Received', value: '34' },
+        ],
+        style: {
+          title: { color: '#ff0000' },
+          value: { color: '#00ff00' },
+        },
+      });
+      const heading = body.querySelector<HTMLElement>('[data-nl-slot="title"]');
+      expect(heading?.textContent).toBe('Summary');
+      expect(heading?.style.color).toBe('rgb(255, 0, 0)');
+      expect(body.querySelector('[data-nl-slot="value"]')).toBeNull();
+      expect(body.textContent).toContain('12');
+      expect(body.textContent).toContain('34');
+      expect(body.querySelector('[style*="rgb(0, 255, 0)"]')).toBeNull();
+    }
+  );
+
+  it('keeps wallet member typography independent from the group and siblings', () => {
+    const parent: IdentityRow = {
+      type: 'identity',
+      key: 'wallet',
+      presentation: 'walletSidebar',
+      leading: { kind: 'icon', name: 'StarOutline' },
+      title: 'Parent wallet',
+      style: { title: { color: '#ff0000' }, lineGap: 7 },
+    };
+    const body = render({
+      type: 'walletGroup',
+      key: 'wallet',
+      parent,
+      children: [
+        { ...parent, key: 'child', title: 'Child wallet', style: undefined },
+      ],
+      style: { lineGap: 13 },
+    });
+    const titles = body.querySelectorAll<HTMLElement>('[data-nl-slot="title"]');
+    expect(titles).toHaveLength(2);
+    expect(titles[0]?.style.color).toBe('rgb(255, 0, 0)');
+    expect(titles[1]?.style.color).toBe('');
+    expect(
+      titles[0]?.closest<HTMLElement>('.ok-native-list-flex')?.style.rowGap
+    ).toBe('7px');
+    expect(
+      titles[1]?.closest<HTMLElement>('.ok-native-list-flex')?.style.rowGap
+    ).toBe('');
+  });
+
   it("keeps today's numbers as the chrome fallbacks", () => {
     // An untouched list must render exactly as before, so every chrome variable
     // carries the current value as its CSS fallback.
@@ -657,4 +716,51 @@ describe('web row style', () => {
     expect(styled.style.paddingInline).toBe('16px');
     expect(styled.style.paddingBlock).toBe('10px');
   });
+
+  it.each(['accountSelector', 'networkSelector'] as const)(
+    'applies %s styles after presentation defaults and restores them on removal',
+    (presentation) => {
+      const { document } = new JSDOM('<!doctype html><body></body>').window;
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      const base: IdentityRow = {
+        type: 'identity',
+        key: 'selector',
+        height: 76,
+        presentation,
+        leading: { kind: 'icon', name: 'StarOutline' },
+        title: 'Selector title',
+      };
+      const engine = new NativeListWebEngine(
+        host,
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...base,
+            style: {
+              title: { fontSize: 18, lineHeight: 28, fontWeight: 'bold' },
+            },
+          },
+        ]),
+        {},
+        false
+      );
+      try {
+        const title = () =>
+          host.querySelector<HTMLElement>('[data-nl-slot="title"]');
+        expect(title()?.style.fontSize).toBe('18px');
+        expect(title()?.style.lineHeight).toBe('28px');
+        expect(title()?.style.fontWeight).toBe('700');
+        const item = host.querySelector<HTMLElement>(
+          '[data-native-list-row-key="selector"]'
+        );
+        const height = item?.style.height;
+        engine.applySnapshot(snapshot({ kind: 'sectioned' }, [base]));
+        expect(title()?.style.lineHeight).toBe('24px');
+        expect(title()?.style.fontWeight).not.toBe('700');
+        expect(item?.style.height).toBe(height);
+      } finally {
+        engine.destroy();
+      }
+    }
+  );
 });

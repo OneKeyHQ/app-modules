@@ -1269,6 +1269,34 @@ describe('NativeList style contract', () => {
     );
   });
 
+  it.each([
+    ['title', null],
+    ['title', 'large'],
+    ['title', []],
+    ['image', null],
+    ['image', 32],
+    ['image', []],
+  ])('rejects malformed nested %s styles', (field, value) => {
+    expect(() => validateSnapshot(styled({ [field]: value }))).toThrow(
+      `style.${field}: must be an object`
+    );
+  });
+
+  it('rejects arbitrary nested layout styles in snapshots and patches', () => {
+    for (const style of [
+      { title: { position: 'absolute' } },
+      { image: { transform: 'scale(2)' } },
+      { subtitle: { color: 123 } },
+    ]) {
+      expect(() => validateSnapshot(styled(style))).toThrow('style.');
+      expect(() =>
+        validatePatches([
+          { type: 'identity', key: 'btc', changes: { style } },
+        ] as unknown as RowPatch[])
+      ).toThrow('style.');
+    }
+  });
+
   it('rejects an unknown token and out-of-range metrics', () => {
     expect(() =>
       validateSnapshot(styled({ title: { token: '$displayXl' } }))

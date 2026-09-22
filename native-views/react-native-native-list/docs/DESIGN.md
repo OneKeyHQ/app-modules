@@ -132,7 +132,7 @@ and `reorder`.
 ## Height, layout, and performance constraints
 
 Template sizes are fixed to a small set of variants. `message` body text is
-bounded to four lines and uses a deterministic template height. System spacers
+bounded to three lines and uses a deterministic template height. System spacers
 are explicit and bounded. Images have explicit sizes, and grid columns are fixed
 per snapshot. This keeps layout work predictable for 1,000- and 5,000-row
 workloads without an unbounded self-sizing pass.

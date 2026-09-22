@@ -2748,11 +2748,14 @@ function createMetricRow(
       'ok-native-list-row ok-native-list-composite'
     );
     body.appendChild(
-      createElement(
-        context.document,
-        'div',
-        'ok-native-list-composite-heading',
-        row.title
+      tagSlot(
+        createElement(
+          context.document,
+          'div',
+          'ok-native-list-composite-heading',
+          row.title
+        ),
+        'title'
       )
     );
     const metrics = row.metrics ?? [];
@@ -3263,6 +3266,7 @@ function createWalletGroupRow(
     // memberElement.appendChild(createIdentityActivityOrMessageRow(context, member));
     const memberBody = createIdentityActivityOrMessageRow(context, member);
     applySelectorTabularNumbers(memberBody, member);
+    applyRowStyle(memberBody, member);
     memberElement.appendChild(memberBody);
     // OneKey patch: group children use their own measured badge height.
     memberElement.style.flexBasis =
@@ -3644,7 +3648,7 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
     body.style.paddingInline = String(box.horizontalPadding) + 'px';
   if (box.verticalPadding !== undefined)
     body.style.paddingBlock = String(box.verticalPadding) + 'px';
-  if (box.lineGap !== undefined) {
+  if (box.lineGap !== undefined && row.type !== 'walletGroup') {
     const lineGap = String(box.lineGap) + 'px';
     body
       .querySelectorAll<HTMLElement>('.ok-native-list-flex')
@@ -4495,7 +4499,6 @@ export class NativeListWebEngine {
     };
     const body = createRowBody(context, row);
     applySelectorTabularNumbers(body, row);
-    applyRowStyle(body, row);
     // OneKey patch: explicit selector fields preserve original page geometry.
     element.style.contain = row.backgroundFullWidth ? 'layout style' : '';
     if (row.backgroundColor) body.style.backgroundColor = row.backgroundColor;
@@ -4571,6 +4574,8 @@ export class NativeListWebEngine {
           });
       }
     }
+    // Template and presentation defaults must precede caller overrides.
+    applyRowStyle(body, row);
     element.replaceChildren(body);
     if (
       row.type === 'market' &&

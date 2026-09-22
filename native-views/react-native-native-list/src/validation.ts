@@ -212,9 +212,31 @@ const EXTRA_STYLE_KEYS_BY_ROW_TYPE: Readonly<
 
 function assertTextStyle(
   style: NativeListTextStyle | undefined,
-  path: string
+  path: string,
+  additionalKeys: readonly string[] = []
 ): void {
-  if (!style) return;
+  if (style === undefined) return;
+  if (typeof style !== 'object' || style === null || Array.isArray(style)) {
+    fail(path, 'must be an object');
+  }
+  assertUnknownKeys(
+    style as Record<string, unknown>,
+    [
+      'token',
+      'fontSize',
+      'fontWeight',
+      'color',
+      'lineHeight',
+      'lines',
+      'alignment',
+      ...additionalKeys,
+    ],
+    path,
+    'text style key'
+  );
+  if (style.color !== undefined && typeof style.color !== 'string') {
+    fail(`${path}.color`, 'must be a color string');
+  }
   if (
     style.token !== undefined &&
     !Object.prototype.hasOwnProperty.call(TYPOGRAPHY_TOKENS, style.token)
@@ -254,7 +276,20 @@ function assertBoxStyle(style: RowBoxStyle, path: string): void {
     assertBoundedStyleNumber(style[field], `${path}.${field}`, 0, 64);
   }
   assertBoundedStyleNumber(style.lineGap, `${path}.lineGap`, 0, 16);
-  if (style.image) {
+  if (style.image !== undefined) {
+    if (
+      typeof style.image !== 'object' ||
+      style.image === null ||
+      Array.isArray(style.image)
+    ) {
+      fail(`${path}.image`, 'must be an object');
+    }
+    assertUnknownKeys(
+      style.image as Record<string, unknown>,
+      ['width', 'height', 'shape', 'cornerRadius', 'contentFit'],
+      `${path}.image`,
+      'image style key'
+    );
     assertBoundedStyleNumber(style.image.width, `${path}.image.width`, 1, 160);
     assertBoundedStyleNumber(
       style.image.height,
@@ -540,7 +575,10 @@ function assertMarketRow(row: MarketRow, path: string): void {
     badgeKeys.add(badge.key);
     assertText(badge.text, `${badgePath}.text`);
     // OneKey patch: share typography bounds with Market text styles.
-    assertTextStyle(badge.style, `${badgePath}.style`);
+    assertTextStyle(badge.style, `${badgePath}.style`, [
+      'height',
+      'horizontalPadding',
+    ]);
     assertBoundedStyleNumber(
       badge.style?.height,
       `${badgePath}.style.height`,

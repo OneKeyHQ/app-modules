@@ -53,6 +53,22 @@ example the indexed bar requires vertical sections), not a particular business
 row template. This requirement does not claim every current renderer satisfies it.
 Current API limits and implementation gaps are explicit in §5 and §6.5.
 
+### 1.2 Design audit — 2026-09-22
+
+The ownership model matches the intended design. The consolidated documents are
+not yet a fully implemented contract:
+
+| Design intent | Audit conclusion / remaining decision |
+| --- | --- |
+| Each row template has a clear definition and illustration | All 12 types have a catalog entry and structural diagram. Variant-specific style applicability still needs coverage: composite metric-card `title` means its heading; the standard card's `value`, `subtitle` and `trend` do not name nested metric fields. |
+| Local styles cannot break the row layout | §7.1 states the requirement, but numeric bounds do not enforce it. Retaining dimension overrides requires a fitting/rejection policy, including updates against existing row data, available width and native font metrics. Alternatively, the public surface can be restricted to appearance. This is an unresolved contract decision. |
+| Header/footer/sections/scroll/indexed bar are common capabilities | Ownership is correctly assigned to the container. Existing section headers and fixed action/system footers are independent of business templates. A generic header/footer slot needs an explicit interface decision covering placement, measurement, scroll indexing and event routing. |
+
+The five source PRs are closed; implementation continues on the consolidated
+branch. The first refactor pass fixes existing field targeting, nested style
+validation, text-state restoration and list-chrome scope. It does not settle the
+open interface decisions or claim layout-fit enforcement.
+
 ## 2. How this spec is enforced
 
 The three renderers cannot constrain each other, but they all read the same
@@ -78,10 +94,10 @@ object identity.
 
 | Layer | State |
 | --- | --- |
-| Contract, validation, token resolution, patch support | Implemented |
+| Key validation, token resolution, patch support | Implemented; combination-fit protection is pending |
 | Text slots, `horizontalPadding`, `verticalPadding`, `lineGap` | Style passes exist on Web, iOS and Android; coverage and reset gaps remain (§6.5) |
 | `leadingGap`, `trailingGap`, `titleBadgeGap`, `image` | Validated but applied only on `market`. The others need a per-template default gap, which is not readable from the DOM on Web and is spread across the binders on the native sides |
-| `listStyle.separator` and `listStyle.groupCornerRadius` | Implementations exist; Android initial snapshot propagation and radius scope have known gaps (§6.5) |
+| `listStyle.separator` and `listStyle.groupCornerRadius` | Android initial snapshot propagation and radius scope corrected; rendered verification pending (§6.5) |
 | `dataRow` column styles | Web has primary/secondary slots. Native linear primary styling exists; native secondary and table column styling are incomplete (§6.5) |
 | Row heights | Unchanged. A styled row that grows still needs an explicit `row.height` (§6.1) |
 | Android list-wide source scale (§6.3) | Unchanged. Making it per-row would move every selector list's metrics and needs device verification |
@@ -91,11 +107,11 @@ in `NativeListModels.kt` and `styleSlot` in `NativeListCell.swift`. §4 is the s
 truth for both; the Kotlin copy is unit-tested, including a check that no template maps
 two style keys onto one view.
 
-The example application's **Native List Row Style** page currently has plain/styled
-pairs for `identity`, `metricCard`, `message`, `rail` and `action`, plus list chrome
-and an explicit-height example. It is not yet the complete catalog or acceptance
-suite. §9 defines the remaining coverage. The catalog illustrations are structural
-diagrams, not screenshots or proof of rendering parity.
+The example application's **Native List Row Style** page has plain/styled pairs
+for all 12 types, plus list chrome and an explicit-height example. Its wallet
+group styles the parent member while leaving a child unstyled to expose leakage.
+Variant and rendered acceptance coverage is still pending (§9). The catalog
+illustrations are structural diagrams, not screenshots or proof of rendering parity.
 
 ## 3. T1 — Design tokens
 
@@ -503,20 +519,20 @@ exposed — a hairline is correct on iOS and a whole pixel is correct elsewhere.
 
 ### 6.5 Consolidated implementation gaps
 
-These items were checked against the consolidated source on 2026-09-22. The
-linked PR discussions provide context; none of these entries means a device
-reproduction or a fix has been completed.
+These items were checked against the consolidated source on 2026-09-22. Source
+fixes and regression tests below do not establish native rendered acceptance.
 
 | Gap | Source anchor / context | Acceptance needed |
 | --- | --- | --- |
-| Web selector defaults overwrite caller styles | `renderElement` calls `applyRowStyle` before the explicit-height account/network selector overrides ([#109](https://github.com/OneKeyHQ/app-modules/pull/109)) | Apply title size/line height/weight after defaults for both presentations |
-| Composite metric-card text lacks Web slots | `createMetricRow` branches on `variant: activity/performance`; those elements do not get the standard card's slot tags ([#109](https://github.com/OneKeyHQ/app-modules/pull/109)) | Define composite heading/metric role mapping and test both variants; do not infer support from the standard card |
+| Web selector style order | Corrected: `renderElement` now applies styles after presentation defaults. DOM regressions cover account/network selectors and style removal | Rendered geometry and interactions still need verification |
+| Composite metric-card heading | `style.title` now targets the heading on Web/iOS/Android. Standard-card value/subtitle/trend roles must not target the heading or nested metrics | Verify both variants; nested metric styling needs a separate declared role before implementation |
 | Native data secondary/table styles are missing | `nativeListStyleSlot` / `styleSlot` omit `columnSecondary`; native table labels have their own renderer ([#110](https://github.com/OneKeyHQ/app-modules/pull/110)) | Verify primary and secondary text in both linear and table layouts |
-| Android alignment can survive reuse | `applyStyledText` writes gravity; `resetRowStyle` does not restore every styled label's baseline gravity ([#110](https://github.com/OneKeyHQ/app-modules/pull/110)) | Bind centered/end-aligned content, then unstyled content into the same holder and verify every label |
-| Android initial list chrome is not propagated | Normal `NativeListView` snapshot path sets `adapter.theme` but omits `adapter.listStyle`; only the stable-content path assigns it ([#112](https://github.com/OneKeyHQ/app-modules/pull/112)) | Initial mount, normal update, chrome-only update and footer must use the same list style |
-| Android group radius affects non-group cards | `applySelectionState` synthesizes `single` for some selectors/metric cards; `groupedBackground` reads the custom radius without checking actual `groupId` membership ([#112](https://github.com/OneKeyHQ/app-modules/pull/112)) | Grouped rows change; standalone selectors and metric cards retain template geometry |
-| Example does not cover all templates | `NativeListRowStylePage.buildRows` has five template pairs ([#111](https://github.com/OneKeyHQ/app-modules/pull/111)) | Add the seven missing row types and relevant variants, then execute §9 |
-| Validation is not a layout-fit check | `assertRowStyle`, `assertTextStyle`, `assertBoundedStyleNumber` | Numeric bounds alone do not detect clipping, insufficient row height, or all unsupported nested keys; satisfy §7.1 before claiming safe arbitrary overrides |
+| Native text state on reuse | The style pass now saves the bound view's actual text defaults and restores them before reuse, including alignment. iOS retains attributed-string properties not overridden by a style | Styled → unstyled → different-template reuse still needs device verification |
+| Android initial list chrome | Normal snapshots now assign `adapter.listStyle`, matching the stable-content path | Initial mount, normal update, chrome-only update and footer must use the same list style |
+| Android grouped-radius scope | Custom radius now requires actual `groupId` membership, not a synthetic `single` position | Grouped rows change; standalone selectors and metric cards retain template geometry |
+| Wallet-group member scope on Web | Members now apply their own styles; group `lineGap` no longer traverses member text columns | Parent and child styles must remain independent on every platform |
+| Example inventory | `NativeListRowStylePage.buildRows` now covers all 12 types | Complete relevant variants and execute §9 |
+| Validation is not a layout-fit check | Text/image nested object shape and unknown keys are now checked. Numeric bounds still do not detect insufficient space | Decide fitting policy and satisfy §7.1 before claiming safe arbitrary overrides |
 | General header slot is absent | `NativeListProps`, `NativeListSnapshot` | Define one container-level header contract before expanding the public API |
 
 `leadingGap`, `trailingGap`, `titleBadgeGap` and `image` remain accepted but unused
@@ -535,7 +551,8 @@ affect any other row. Four rules:
    declare fails `validateSnapshot` instead of silently hitting a shared view.
 2. **Every property gets an explicit default.** Restore font, line height, line
    count, alignment/gravity, padding, color and all other changed state before
-   binding the next row. Current native resets are incomplete (§6.5). An omitted
+   binding the next row. Native style passes save the actual bound text defaults
+   for restoration (§6.5). An omitted
    value must use that template's default, never a previous row's value.
 3. **No list-wide side effects.** Any style-dependent decision is made per row.
    `usesSelectorSourceScale` (§6.3) is the counter-example to avoid.
@@ -574,8 +591,8 @@ the current validators enforce geometry:
 5. **Reject unsupported structure.** No arbitrary React/RN/CSS style bag is part
    of this contract. `position`, `transform`, `flexDirection`, negative margins,
    freeform children and view-slot names are not supported style parameters.
-   Public types and row-level allowlists already constrain part of this; deeper
-   runtime validation and combination-fit protection remain incomplete (§6.5).
+   Public types and nested runtime allowlists constrain this surface;
+   combination-fit protection remains incomplete (§6.5).
 6. **Retain local scope through every path.** Snapshot, patch, style removal,
    scrolling reuse, footer binding and sticky rendering must agree. A parent
    `walletGroup.style` must not silently become the child members' text style;
@@ -596,15 +613,15 @@ All three are implemented as `applyRowStyle`.
 
 | Platform | Anchor | Note |
 | --- | --- | --- |
-| iOS | `NativeListCell.bind()`, after the `switch item.type` | The binders install an attributed string through `setLineHeight`, so assigning `font` or `textColor` alone would not take effect — the style pass rebuilds the line box |
+| iOS | `NativeListCell.bind()`, after the `switch item.type` | The style pass updates specified attributed-string properties while preserving omitted template attributes |
 | Android | `NativeListRowView.bind()`, **after** `applySize(item)` | `applySize` re-dispatches font size and typeface by row type and would otherwise overwrite the style |
-| Web | `renderElement()`, after `createRowBody()` | Currently before some selector overrides; move after those defaults to satisfy the contract (§6.5) |
+| Web | `renderElement()`, after template and presentation defaults | Wallet-group members apply their own local pass before the group pass |
 
-Both native platforms gained a `resetRowStyle` before the binder, per §7 rule 2.
-On Android `resetViews()` restores neither `textSize`, `typeface` nor `lineHeight`; on iOS
-`reset()` restores the shared label fonts but not the data, metric and media label fonts,
-nor any text alignment. Without the reset, a style would leak into the next row that
-reuses the view.
+Both native platforms use `resetRowStyle` before the binder, per §7 rule 2.
+They capture the bound text view's defaults before modifying it and restore that
+state before the normal template reset. This includes text metrics, color and
+alignment; iOS also restores attributed text. This avoids guessing one baseline
+for views shared by different templates. Device reuse checks remain required.
 
 The existing market helpers generalize rather than being rewritten:
 `applyMarketTextStyle` / `applyMarketButtonStyle` / `marketAttributedText` (iOS),
@@ -650,3 +667,17 @@ rendered interaction checks.
 Next implementation work should close §6.5, complete the example coverage, and
 record platform-specific build and interaction evidence. The shared document is
 the contract; no shared cross-language renderer or code generator is required.
+
+### First-pass verification — 2026-09-22
+
+- JavaScript: 95 tests across five suites pass, including selector style removal,
+  composite heading targeting, wallet-member isolation and nested style validation.
+- TypeScript: package, example page and documented composition sample pass.
+- Lint: package has no errors (21 existing warnings); example page passes.
+- Example data: both toggle states validate, each with 42 rows covering all 12 types.
+- Android: `compileDebugKotlin` and `testDebugUnitTest` pass; seven tests in three
+  suites. Dependency Nitrogen outputs were generated locally for the build.
+- iOS: `NativeListCell.swift` passes Swift syntax parsing only.
+- No device or browser rendering/interaction acceptance has been completed for
+  this refactor. Geometry fitting, native data secondary/table style coverage,
+  non-Market image/gap support and the generic header/footer decision remain open.

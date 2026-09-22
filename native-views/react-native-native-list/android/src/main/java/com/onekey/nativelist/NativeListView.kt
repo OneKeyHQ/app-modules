@@ -536,6 +536,7 @@ class NativeListView(
     if (previous?.generation != next.generation) endReachedGeneration = null
     pendingReorder = null
     adapter.theme = next.theme
+    adapter.listStyle = next.listStyle
     adapter.layout = next.layout
     adapter.orientation = next.orientation
     adapter.selectedKeys = next.selectedKeys

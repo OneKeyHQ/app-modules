@@ -550,6 +550,7 @@ final class NativeListCell: UICollectionViewCell {
   private var currentLayout = "linear"
   // OneKey patch: a row style wrote view properties that reset() does not restore.
   private var styledViewsDirty = false
+  private var styledTextRestorations: [() -> Void] = []
   private var currentTheme: [String: Any]?
   private var currentItemIndex: Int?
   // OneKey patch: delayed image retries belong to the current reusable cell binding.
@@ -1213,16 +1214,8 @@ final class NativeListCell: UICollectionViewCell {
   private func resetRowStyle() {
     guard styledViewsDirty else { return }
     styledViewsDirty = false
-    metricSubtitleLabel.font = nativeListFont(ofSize: 12)
-    mediaBadgeLabel.font = nativeListFont(ofSize: 14, weight: .medium)
-    dataLabels.forEach { $0.font = nativeListFont(ofSize: 12) }
-    let aligned: [UILabel] = [
-      subtitleLabel, tertiaryLabel, statusLabel, badgeLabel, metricSubtitleLabel,
-    ]
-    aligned.forEach {
-      $0.textAlignment = .natural
-      $0.lineBreakMode = .byTruncatingTail
-    }
+    styledTextRestorations.reversed().forEach { $0() }
+    styledTextRestorations.removeAll(keepingCapacity: true)
   }
 
   private func reset() {
@@ -2392,6 +2385,13 @@ final class NativeListCell: UICollectionViewCell {
       mainStack.spacing = CGFloat(style.double("lineGap"))
     }
     let variant = item.data.string("variant")
+    if item.type == "metricCard" && ["activity", "performance"].contains(variant) {
+      // Composite cards render the heading, not the standard card's value slot.
+      if let titleStyle = style.dictionary("title") {
+        applyStyledText(titleLabel, titleStyle)
+      }
+      return
+    }
     for (field, value) in style {
       guard let slotStyle = value as? [String: Any],
             let slot = styleSlot(type: item.type, variant: variant, field: field)
@@ -2419,6 +2419,20 @@ final class NativeListCell: UICollectionViewCell {
   private func applyStyledText(_ label: UILabel, _ style: [String: Any]) {
     let text = label.attributedText?.string ?? label.text ?? ""
     guard !text.isEmpty else { return }
+    let originalFont = label.font
+    let originalColor = label.textColor
+    let originalText = label.attributedText
+    let originalLines = label.numberOfLines
+    let originalAlignment = label.textAlignment
+    let originalBreakMode = label.lineBreakMode
+    styledTextRestorations.append {
+      label.font = originalFont
+      label.textColor = originalColor
+      label.attributedText = originalText
+      label.numberOfLines = originalLines
+      label.textAlignment = originalAlignment
+      label.lineBreakMode = originalBreakMode
+    }
     let baseFont = label.font ?? nativeListFont(ofSize: 14)
     let size = CGFloat(style.double("fontSize", default: Double(baseFont.pointSize)))
     let font: UIFont
@@ -2442,14 +2456,18 @@ final class NativeListCell: UICollectionViewCell {
     }
     label.font = font
     label.textColor = color
-    let paragraph = NSMutableParagraphStyle()
-    paragraph.alignment = label.textAlignment
-    paragraph.lineBreakMode = label.lineBreakMode
-    var attributes: [NSAttributedString.Key: Any] = [
-      .font: font,
-      .foregroundColor: color,
-      .paragraphStyle: paragraph,
-    ]
+    let attributed = originalText.map { NSMutableAttributedString(attributedString: $0) }
+      ?? NSMutableAttributedString(string: text)
+    let paragraph = (attributed.attribute(.paragraphStyle, at: 0, effectiveRange: nil)
+      as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+    if style["alignment"] != nil { paragraph.alignment = label.textAlignment }
+    if style["lines"] != nil { paragraph.lineBreakMode = label.lineBreakMode }
+    var attributes: [NSAttributedString.Key: Any] = [:]
+    if style["fontSize"] != nil || style["fontWeight"] != nil { attributes[.font] = font }
+    if style["color"] != nil { attributes[.foregroundColor] = color }
+    if style["alignment"] != nil || style["lines"] != nil || style["lineHeight"] != nil {
+      attributes[.paragraphStyle] = paragraph
+    }
     if style["lineHeight"] != nil {
       let box = CGFloat(style.double("lineHeight"))
       paragraph.minimumLineHeight = box
@@ -2457,7 +2475,8 @@ final class NativeListCell: UICollectionViewCell {
       // React Native centers font metrics inside an explicit line height.
       attributes[.baselineOffset] = max(0, (box - font.lineHeight) / 2)
     }
-    label.attributedText = NSAttributedString(string: text, attributes: attributes)
+    attributed.addAttributes(attributes, range: NSRange(location: 0, length: attributed.length))
+    label.attributedText = attributed
   }
 
   private func applyStyledButton(_ button: UIButton, _ style: [String: Any]) {
@@ -2465,6 +2484,16 @@ final class NativeListCell: UICollectionViewCell {
       ?? button.title(for: .normal)
       ?? ""
     guard !text.isEmpty else { return }
+    let originalFont = button.titleLabel?.font
+    let originalLines = button.titleLabel?.numberOfLines
+    let originalText = button.attributedTitle(for: .normal)
+    let originalAlignment = button.contentHorizontalAlignment
+    styledTextRestorations.append {
+      button.titleLabel?.font = originalFont
+      if let originalLines { button.titleLabel?.numberOfLines = originalLines }
+      button.setAttributedTitle(originalText, for: .normal)
+      button.contentHorizontalAlignment = originalAlignment
+    }
     let baseFont = button.titleLabel?.font ?? nativeListFont(ofSize: 14)
     let size = CGFloat(style.double("fontSize", default: Double(baseFont.pointSize)))
     let font: UIFont
@@ -2480,19 +2509,22 @@ final class NativeListCell: UICollectionViewCell {
     let color = (style["color"] as? String)
       .map { UIColor(nativeListHex: $0, fallback: fallbackColor) }
       ?? fallbackColor
-    let paragraph = NSMutableParagraphStyle()
-    paragraph.alignment = button.titleLabel?.textAlignment ?? .natural
+    let attributed = button.attributedTitle(for: .normal)
+      .map { NSMutableAttributedString(attributedString: $0) } ?? NSMutableAttributedString(string: text)
+    let paragraph = (attributed.attribute(.paragraphStyle, at: 0, effectiveRange: nil)
+      as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
     if let alignmentName = style["alignment"] as? String {
       paragraph.alignment = marketTextAlignment(alignmentName)
       button.contentHorizontalAlignment = alignmentName == "start"
         ? .leading
         : alignmentName == "end" ? .trailing : .center
     }
-    var attributes: [NSAttributedString.Key: Any] = [
-      .font: font,
-      .foregroundColor: color,
-      .paragraphStyle: paragraph,
-    ]
+    var attributes: [NSAttributedString.Key: Any] = [:]
+    if style["fontSize"] != nil || style["fontWeight"] != nil { attributes[.font] = font }
+    if style["color"] != nil { attributes[.foregroundColor] = color }
+    if style["alignment"] != nil || style["lineHeight"] != nil {
+      attributes[.paragraphStyle] = paragraph
+    }
     if style["lineHeight"] != nil {
       let box = CGFloat(style.double("lineHeight"))
       paragraph.minimumLineHeight = box
@@ -2503,10 +2535,8 @@ final class NativeListCell: UICollectionViewCell {
       button.titleLabel?.numberOfLines = min(2, max(1, style.int("lines", default: 1)))
     }
     button.titleLabel?.font = font
-    button.setAttributedTitle(
-      NSAttributedString(string: text, attributes: attributes),
-      for: .normal
-    )
+    attributed.addAttributes(attributes, range: NSRange(location: 0, length: attributed.length))
+    button.setAttributedTitle(attributed, for: .normal)
   }
 
   private func applyMarketTextStyle(

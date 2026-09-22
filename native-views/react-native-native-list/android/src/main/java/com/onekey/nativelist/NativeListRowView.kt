@@ -525,6 +525,8 @@ internal class NativeListRowView(
   private var marketLongPressFired = false
   // OneKey patch: a row style wrote view properties that resetViews does not restore.
   private var styledViewsDirty = false
+  private val styledTextRestorations = mutableMapOf<TextView, () -> Unit>()
+  private var compositeMetricTitle: TextView? = null
   private var reorderActive = false
   private var checkboxCheckedColor = Color.rgb(32, 32, 32)
   private var checkboxUncheckedColor = Color.rgb(252, 252, 252)
@@ -1070,6 +1072,12 @@ internal class NativeListRowView(
         dp(style.optDouble("lineGap").roundToInt())
     }
     val variant = item.json.optString("variant")
+    if (item.type == "metricCard" && variant in setOf("activity", "performance")) {
+      style.optJSONObject("title")?.let { titleStyle ->
+        compositeMetricTitle?.let { applyStyledText(it, titleStyle) }
+      }
+      return
+    }
     val fields = style.keys()
     while (fields.hasNext()) {
       val field = fields.next()
@@ -1096,6 +1104,27 @@ internal class NativeListRowView(
   }
 
   private fun applyStyledText(view: TextView, style: JSONObject) {
+    // Save the bound template's actual defaults, including alignment. Guessing
+    // one shared baseline loses the differences between labels and variants.
+    if (view !in styledTextRestorations) {
+      val textSize = view.textSize
+      val typeface = view.typeface
+      val colors = view.textColors
+      val lineSpacingExtra = view.lineSpacingExtra
+      val lineSpacingMultiplier = view.lineSpacingMultiplier
+      val maxLines = view.maxLines
+      val ellipsize = view.ellipsize
+      val gravity = view.gravity
+      styledTextRestorations[view] = {
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textSize)
+        view.typeface = typeface
+        view.setTextColor(colors)
+        view.setLineSpacing(lineSpacingExtra, lineSpacingMultiplier)
+        view.maxLines = maxLines
+        view.ellipsize = ellipsize
+        view.gravity = gravity
+      }
+    }
     if (style.has("fontSize")) view.textSize = sp(style.optDouble("fontSize").toFloat())
     style.optString("fontWeight").takeIf(String::isNotEmpty)?.let {
       view.typeface = marketTypeface(it, "regular")
@@ -1302,32 +1331,20 @@ internal class NativeListRowView(
   }
 
   /**
-   * docs/STYLE_SPEC.md section 7 rule 2: resetViews() restores visibility, gravity,
-   * maxLines, layout params, background and padding - but not textSize, typeface or
-   * lineHeight, which each binding path re-establishes for itself. A style that wrote
-   * one of those would therefore leak into the next row reusing the view, so put them
-   * back to the constructor baseline before the binder runs.
+   * docs/STYLE_SPEC.md section 7 rule 2: restore the bound template's actual text
+   * defaults before the normal reset and next binder. Shared constructor defaults
+   * cannot represent the alignment and metrics of every template and variant.
    */
   private fun resetRowStyle() {
     if (!styledViewsDirty) return
     styledViewsDirty = false
-    listOf(title, subtitle, tertiary, status, metricSubtitle).forEach { view ->
-      view.typeface = NativeListFonts.regular(context)
-      view.setLineSpacing(0f, 1f)
-    }
-    badgeLine.typeface = NativeListFonts.medium(context)
-    badgeLine.setLineSpacing(0f, 1f)
-    mediaBadge.typeface = NativeListFonts.regular(context)
-    mediaBadge.setLineSpacing(0f, 1f)
-    trailingViews.forEach { it.setLineSpacing(0f, 1f) }
-    dataColumns.forEach {
-      it.typeface = NativeListFonts.medium(context)
-      it.setLineSpacing(0f, 1f)
-    }
+    styledTextRestorations.values.forEach { it() }
+    styledTextRestorations.clear()
   }
 
   private fun resetViews() {
     resetRowStyle()
+    compositeMetricTitle = null
     clipChildren = true
     clipToPadding = true
     selectorOriginalFontFeatures.forEach { (view, original) -> view.fontFeatureSettings = original }
@@ -2751,7 +2768,7 @@ internal class NativeListRowView(
         typeface = NativeListFonts.regular(context),
         textColor = color(theme, "disabledText", "#00000072"),
         letterSpacingDp = 1.2f,
-      ),
+      ).also { compositeMetricTitle = it },
       weightedWidth(),
     )
     if (variant == "activity") {
@@ -4457,7 +4474,9 @@ internal class NativeListRowView(
 
   private fun groupedBackground(position: String, color: Int) = GradientDrawable().apply {
     setColor(color)
-    val radius = listStyle?.takeIf { it.has("groupCornerRadius") }
+    val radius = listStyle?.takeIf {
+      it.has("groupCornerRadius") && !(tag as? NativeListItem)?.json?.optString("groupId").isNullOrEmpty()
+    }
       ?.let { scaledDp(it.optDouble("groupCornerRadius").toFloat()) }
       ?: scaledDp(12f)
     cornerRadii = when (position) {
