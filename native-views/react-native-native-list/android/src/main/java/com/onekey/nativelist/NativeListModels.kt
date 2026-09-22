@@ -119,6 +119,10 @@ private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
   digest.update(bytes)
 }
 
+// Message is the first migrated renderer. All remaining templates still share
+// a compatible legacy tree; keys and style values never partition the pool.
+internal enum class NativeListRendererKey { LEGACY, MESSAGE }
+
 internal data class NativeListItem(
   val key: String,
   val type: String,
@@ -127,6 +131,8 @@ internal data class NativeListItem(
   val json: JSONObject,
 ) {
   val content: String = json.toString()
+  val rendererKey: NativeListRendererKey
+    get() = if (type == "message") NativeListRendererKey.MESSAGE else NativeListRendererKey.LEGACY
   val styledHeight: Double?
     get() = json.optJSONObject("style")?.optJSONObject("container")
       ?.takeIf { it.has("height") }?.optDouble("height")

@@ -69,6 +69,9 @@ internal class NativeListAdapter(
 
   override fun getItemCount(): Int = reorderItems?.size ?: differ.currentList.size
 
+  override fun getItemViewType(position: Int): Int =
+    requireNotNull(itemAt(position)).rendererKey.ordinal
+
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NativeListViewHolder {
     val view = NativeListRowView(context)
     view.layoutParams = ViewGroup.LayoutParams(
@@ -216,7 +219,7 @@ internal class NativeListAdapter(
   companion object {
     private val DIFF = object : DiffUtil.ItemCallback<NativeListItem>() {
       override fun areItemsTheSame(oldItem: NativeListItem, newItem: NativeListItem): Boolean =
-        oldItem.key == newItem.key && oldItem.type == newItem.type
+        oldItem.key == newItem.key
 
       override fun areContentsTheSame(oldItem: NativeListItem, newItem: NativeListItem): Boolean =
         oldItem.revision == newItem.revision && oldItem.content == newItem.content
