@@ -29,8 +29,10 @@ the per-template style surface with each platform's current values, the template
 isolation rules, and the cross-platform divergences that are registered rather
 than fixed. Its container capability contract keeps header/footer placement,
 sections, scrolling and the indexed bar independent of content templates. A local
-style must preserve the template skeleton and allocated row frame; current
-numeric validation alone does not guarantee that a combination fits.
+style must preserve the template skeleton and allocated row frame. Developers
+integrating the list own overflow prevention and choose fitting content, style
+values and row heights; the component does not implement combination-fit checks
+or automatic size correction.
 
 The wrapper validates and normalizes data before serializing it. A structural
 change is one snapshot payload. Frequently changing fields use one batch patch

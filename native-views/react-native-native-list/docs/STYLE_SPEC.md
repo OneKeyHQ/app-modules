@@ -61,13 +61,14 @@ not yet a fully implemented contract:
 | Design intent | Audit conclusion / remaining decision |
 | --- | --- |
 | Each row template has a clear definition and illustration | All 12 types have a catalog entry and structural diagram. Variant-specific style applicability still needs coverage: composite metric-card `title` means its heading; the standard card's `value`, `subtitle` and `trend` do not name nested metric fields. |
-| Local styles cannot break the row layout | §7.1 states the requirement, but numeric bounds do not enforce it. Retaining dimension overrides requires a fitting/rejection policy, including updates against existing row data, available width and native font metrics. Alternatively, the public surface can be restricted to appearance. This is an unresolved contract decision. |
+| Local styles cannot change the template structure | The component owns the slot structure and style isolation. By the 2026-09-22 scope decision, developers integrating the list own overflow prevention: they choose fitting text/image/padding values and row heights. Automatic measurement, combination-fit rejection and style-driven auto-height are not part of this work. |
 | Header/footer/sections/scroll/indexed bar are common capabilities | Ownership is correctly assigned to the container. Existing section headers and fixed action/system footers are independent of business templates. A generic header/footer slot needs an explicit interface decision covering placement, measurement, scroll indexing and event routing. |
 
 The five source PRs are closed; implementation continues on the consolidated
 branch. The first refactor pass fixes existing field targeting, nested style
 validation, text-state restoration and list-chrome scope. It does not settle the
-open interface decisions or claim layout-fit enforcement.
+header/footer interface questions or provide layout-fit enforcement. Overflow
+handling belongs to the developer integrating the list, not a pending component feature.
 
 ## 2. How this spec is enforced
 
@@ -94,7 +95,7 @@ object identity.
 
 | Layer | State |
 | --- | --- |
-| Key validation, token resolution, patch support | Implemented; combination-fit protection is pending |
+| Key validation, token resolution, patch support | Implemented; combination fitting is the integrator's responsibility |
 | Text slots, `horizontalPadding`, `verticalPadding`, `lineGap` | Style passes exist on Web, iOS and Android; coverage and reset gaps remain (§6.5) |
 | `leadingGap`, `trailingGap`, `titleBadgeGap`, `image` | Validated but applied only on `market`. The others need a per-template default gap, which is not readable from the DOM on Web and is spread across the binders on the native sides |
 | `listStyle.separator` and `listStyle.groupCornerRadius` | Android initial snapshot propagation and radius scope corrected; rendered verification pending (§6.5) |
@@ -532,7 +533,7 @@ fixes and regression tests below do not establish native rendered acceptance.
 | Android grouped-radius scope | Custom radius now requires actual `groupId` membership, not a synthetic `single` position | Grouped rows change; standalone selectors and metric cards retain template geometry |
 | Wallet-group member scope on Web | Members now apply their own styles; group `lineGap` no longer traverses member text columns | Parent and child styles must remain independent on every platform |
 | Example inventory | `NativeListRowStylePage.buildRows` now covers all 12 types | Complete relevant variants and execute §9 |
-| Validation is not a layout-fit check | Text/image nested object shape and unknown keys are now checked. Numeric bounds still do not detect insufficient space | Decide fitting policy and satisfy §7.1 before claiming safe arbitrary overrides |
+| Layout fitting is an integration responsibility | Text/image nested object shape, unknown keys and numeric bounds are checked; available space is not | Integrators choose fitting parameters and verify their layouts (§7.1); no component-level overflow prevention is planned |
 | General header slot is absent | `NativeListProps`, `NativeListSnapshot` | Define one container-level header contract before expanding the public API |
 
 `leadingGap`, `trailingGap`, `titleBadgeGap` and `image` remain accepted but unused
@@ -561,10 +562,12 @@ affect any other row. Four rules:
    prove that the whole combination fits. Invalid style must not affect another
    row or crash the list. §7.1 states the required layout boundary.
 
-### 7.1 Local styling must preserve template layout
+### 7.1 Template structure and integration layout responsibility
 
-These are **normative acceptance rules**, not additional API keys or a claim that
-the current validators enforce geometry:
+The component preserves template structure and style isolation. Developers
+integrating the list are responsible for choosing sizes and content that fit;
+overflow measurement, automatic size correction and combination-fit rejection
+are explicitly out of scope. The following rules distinguish those responsibilities:
 
 1. **Keep the skeleton fixed.** A style may change a declared semantic field's
    typography/color and supported local padding/gaps/image metrics. It cannot
@@ -577,13 +580,13 @@ the current validators enforce geometry:
    caller must supply an appropriate explicit `row.height` as a separate geometry
    change and verify it with the container. There is no style-driven auto-height
    in this stack.
-3. **Fit all content within that frame.** After local padding, each visual/control
+3. **Integrator: fit content within that frame.** After local padding, each visual/control
    and text line box must fit. For a simple two-line identity row, a necessary
    check is `2 * verticalPadding + max(visualHeight, titleLineHeight + lineGap +
    subtitleLineHeight, trailingHeight) <= row.height`. More lines and template
    subrows add their own budget. This formula is an example, not a general row
    measurement algorithm; it does not cover platform font scaling or rounding.
-4. **Preserve compression and interaction.** Text may truncate/wrap only inside
+4. **Integrator: verify compression and interaction.** Text may truncate/wrap only inside
    its declared slot and line limit. It must not push a checkbox, menu, price or
    action outside the row, overlap a neighbor, or steal another control's hit
    target. Do not shrink hit areas to make an oversized style fit. `start`/`end`
@@ -591,8 +594,8 @@ the current validators enforce geometry:
 5. **Reject unsupported structure.** No arbitrary React/RN/CSS style bag is part
    of this contract. `position`, `transform`, `flexDirection`, negative margins,
    freeform children and view-slot names are not supported style parameters.
-   Public types and nested runtime allowlists constrain this surface;
-   combination-fit protection remains incomplete (§6.5).
+   Public types and nested runtime allowlists constrain this surface. These
+   checks deliberately do not validate whether a combination fits the row.
 6. **Retain local scope through every path.** Snapshot, patch, style removal,
    scrolling reuse, footer binding and sticky rendering must agree. A parent
    `walletGroup.style` must not silently become the child members' text style;
@@ -643,8 +646,8 @@ For any PR that touches list typography or geometry:
       (§7 rule 3)?
 - [ ] For a section header: does the Android sticky decoration need the same change
       (§6.3)?
-- [ ] Does each style-only update preserve the allocated row frame, slot order,
-      neighbor position and control hit areas (§7.1)?
+- [ ] Does each style-only update preserve the allocated row frame and slot order?
+      Has the integrator verified fitting content and control hit areas (§7.1)?
 - [ ] Can a content template be replaced while retaining header/footer, sections,
       scrolling and the indexed bar (§5.1)?
 
@@ -658,7 +661,7 @@ rendered interaction checks.
 | --- | --- | --- |
 | Template inventory | All 12 types in the catalog; selector presentations; composite metric cards; linear/table data rows; system variants | Named fields receive the intended style, unsupported fields fail explicitly |
 | Baseline | Style omitted, style toggled off, existing Market consumers | Platform's baseline rendering and row geometry preserved |
-| Layout boundary | Narrow width, long/localized text, one/two lines, RTL, supported font scaling, largest supported fitting style | No overlap, clipping, moved controls or neighbor-frame drift; invalid combinations are not advertised as safe |
+| Integration layout | Integrator-selected values at narrow widths, with long/localized text, RTL and supported font scaling | The integrator verifies overflow and hit areas; the component preserves the template structure and allocated frame |
 | Reuse and updates | Styled → unstyled → another template; snapshot and patch; rapid scrolling | No leaked typography, alignment, colors or metrics |
 | Public composition | Mixed `identity`/`market`/`dataRow` sections, summary header, fixed footer, indexed bar | Swapping content templates preserves common capabilities and stable scroll targets |
 | Scroll / chrome | Initial scroll, scroll to key/index/location/end, resize, refresh, pagination, initial/chrome-only snapshots | Correct target/offset and consistent separator/group style without row-size changes |
@@ -679,5 +682,6 @@ the contract; no shared cross-language renderer or code generator is required.
   suites. Dependency Nitrogen outputs were generated locally for the build.
 - iOS: `NativeListCell.swift` passes Swift syntax parsing only.
 - No device or browser rendering/interaction acceptance has been completed for
-  this refactor. Geometry fitting, native data secondary/table style coverage,
-  non-Market image/gap support and the generic header/footer decision remain open.
+  this refactor. Native data secondary/table style coverage, non-Market image/gap
+  support and the generic header/footer question remain open. Geometry fitting
+  is assigned to integrators and is not a remaining implementation gap.
