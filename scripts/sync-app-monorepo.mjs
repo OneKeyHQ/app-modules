@@ -8,19 +8,28 @@ const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 function compareVersions(left, right) {
   const parse = (version) => {
-    if (!/^\d+\.\d+\.\d+$/.test(version)) {
-      throw new Error(`Expected an exact stable version, got ${version}`);
+    const match = /^(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?$/.exec(version);
+    if (!match) {
+      throw new Error(
+        `Expected an exact stable or alpha version, got ${version}`
+      );
     }
-    return version.split(".").map(Number);
+    return {
+      core: match.slice(1, 4).map(Number),
+      preview: match[4] === undefined ? undefined : Number(match[4]),
+    };
   };
   const a = parse(left);
   const b = parse(right);
   for (let index = 0; index < 3; index += 1) {
-    if (a[index] !== b[index]) {
-      return a[index] - b[index];
+    if (a.core[index] !== b.core[index]) {
+      return a.core[index] - b.core[index];
     }
   }
-  return 0;
+  if (a.preview === undefined || b.preview === undefined) {
+    return a.preview === b.preview ? 0 : a.preview === undefined ? 1 : -1;
+  }
+  return a.preview - b.preview;
 }
 
 export function updateMobileManifest(
@@ -67,13 +76,15 @@ export function updateMobileManifest(
 }
 
 async function main() {
-  const [appMonorepoArg] = process.argv.slice(2);
-  if (!appMonorepoArg) {
+  const [appMonorepoArg, releaseVersion] = process.argv.slice(2);
+  if (!appMonorepoArg || !releaseVersion) {
     throw new Error(
-      "Usage: node scripts/sync-app-monorepo.mjs <app-monorepo-path>"
+      "Usage: node scripts/sync-app-monorepo.mjs <app-monorepo-path> <release-version>"
     );
   }
-  const workspaces = await loadReleaseWorkspaces(repoRoot);
+  const workspaces = (await loadReleaseWorkspaces(repoRoot)).map(
+    (workspace) => ({ ...workspace, version: releaseVersion })
+  );
   const manifests = [
     ["apps/mobile/package.json", ["dependencies"]],
     ["packages/components/package.json", ["dependencies"]],
