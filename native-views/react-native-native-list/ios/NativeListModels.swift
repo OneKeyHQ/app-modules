@@ -1,6 +1,12 @@
 import Foundation
 import UIKit
 
+// Message is the first migrated renderer. Other templates still use the
+// compatible legacy tree; style, content and row keys do not affect reuse.
+enum NativeListRendererKey: String, CaseIterable {
+  case legacy, message
+}
+
 struct NativeListItem {
   let key: String
   let type: String
@@ -8,6 +14,10 @@ struct NativeListItem {
   let revision: Int
   let data: [String: Any]
   let content: String
+
+  var rendererKey: NativeListRendererKey {
+    type == "message" ? .message : .legacy
+  }
 
   var styledHeight: CGFloat? {
     (data.dictionary("style")?.dictionary("container")?["height"] as? Double).map { CGFloat($0) }

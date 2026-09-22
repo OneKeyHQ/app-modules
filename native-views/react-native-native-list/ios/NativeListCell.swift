@@ -496,7 +496,9 @@ private final class NativeListTableColumnView: UIStackView {
 }
 
 final class NativeListCell: UICollectionViewCell {
-  static let reuseIdentifier = "NativeListCell"
+  static func reuseIdentifier(for renderer: NativeListRendererKey) -> String {
+    "NativeListCell.\(renderer.rawValue)"
+  }
 
   private let rootStack = UIStackView()
   private let mediaVisualWrapper = UIView()

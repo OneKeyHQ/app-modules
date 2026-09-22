@@ -129,7 +129,9 @@ final class NativeListView: UIView {
 
   override init(frame: CGRect) {
     super.init(frame: frame)
-    collectionView.register(NativeListCell.self, forCellWithReuseIdentifier: NativeListCell.reuseIdentifier)
+    for renderer in NativeListRendererKey.allCases {
+      collectionView.register(NativeListCell.self, forCellWithReuseIdentifier: NativeListCell.reuseIdentifier(for: renderer))
+    }
     collectionView.backgroundColor = .clear
     collectionView.delegate = self
     collectionView.dragDelegate = self
@@ -228,7 +230,7 @@ final class NativeListView: UIView {
       guard let self,
             let item = self.itemsByKey[key],
             let cell = collectionView.dequeueReusableCell(
-              withReuseIdentifier: NativeListCell.reuseIdentifier,
+              withReuseIdentifier: NativeListCell.reuseIdentifier(for: item.rendererKey),
               for: indexPath
             ) as? NativeListCell else { return nil }
       cell.onAction = { [weak self] item, action, target, origin in
@@ -374,7 +376,13 @@ final class NativeListView: UIView {
     })
     changedKeys.formUnion(deferredReorderReconfigureKeys)
     deferredReorderReconfigureKeys.removeAll()
-    snapshot.reconfigureItems(changedKeys.filter { itemsByKey[$0] != nil })
+    let retainedKeys = Set(dataSource.snapshot().itemIdentifiers).intersection(keys)
+    let changedRetainedKeys = changedKeys.filter { retainedKeys.contains($0) }
+    // Reconfigure must keep its existing reuse identifier. A same-key renderer
+    // change needs reload so UIKit dequeues from the new structural pool.
+    let replacedKeys = changedRetainedKeys.filter { oldItems[$0]?.rendererKey != itemsByKey[$0]?.rendererKey }
+    snapshot.reloadItems(Array(replacedKeys))
+    snapshot.reconfigureItems(Array(changedRetainedKeys.subtracting(replacedKeys)))
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
       guard let self else { return }
       self.collectionView.layoutIfNeeded()
