@@ -1,3 +1,7 @@
+import {
+  createMessageRow,
+  measureMessageRow,
+} from './templates/MessageRowRenderer';
 import type {
   ActionAnchorInvalidatedEvent,
   CheckboxState,
@@ -467,51 +471,6 @@ function sizeModifier(row: RowModel): number {
   return 0;
 }
 
-function approximateMessageHeight(row: RowModel, availableWidth: number) {
-  if (row.type !== 'message') return 0;
-  const style = row.style;
-  const leadingWidth = row.leading
-    ? (style?.image?.width ?? 40) + (style?.leadingGap ?? 12)
-    : 0;
-  const thumbnailWidth = row.thumbnail ? 88 : 0;
-  const textWidth = Math.max(
-    1,
-    availableWidth -
-      leadingWidth -
-      thumbnailWidth -
-      (style?.horizontalPadding ?? 20) * 2
-  );
-  const height = (
-    text: string,
-    textStyle: NativeListTextStyle | undefined,
-    fallbackLines: number
-  ) => {
-    const size = textStyle?.fontSize ?? 14;
-    const charactersPerLine = Math.max(
-      textStyle ? 1 : 18,
-      Math.floor(textWidth / (size / 2))
-    );
-    const measured = text
-      .split(/\r\n|[\r\n]/)
-      .reduce(
-        (total, line) =>
-          total + Math.max(1, Math.ceil(line.length / charactersPerLine)),
-        0
-      );
-    return (
-      Math.min(textStyle?.lines ?? fallbackLines, measured) *
-      (textStyle?.lineHeight ?? 20)
-    );
-  };
-  return (
-    (style?.verticalPadding ?? 16) * 2 +
-    height(row.title, style?.title, 2) +
-    height(row.body, style?.body, row.bodyLines ?? 3) +
-    height(row.time, style?.time, 1) +
-    (style?.lineGap ?? 1) * 2
-  );
-}
-
 export function estimateWebRowHeight(
   row: RowModel,
   snapshot: NativeListSnapshot,
@@ -587,7 +546,7 @@ export function estimateWebRowHeight(
       base = row.footerActions?.length ? 100 : 60;
       break;
     case 'message':
-      base = approximateMessageHeight(row, availableWidth);
+      base = measureMessageRow(row, availableWidth);
       break;
     case 'mediaTile':
       base = 244;
@@ -3041,9 +3000,9 @@ function createDataRow(
   return body;
 }
 
-function createIdentityActivityOrMessageRow(
+function createIdentityOrActivityRow(
   context: RenderContext,
-  row: Extract<RowModel, { type: 'identity' | 'activity' | 'message' }>
+  row: Extract<RowModel, { type: 'identity' | 'activity' }>
 ): HTMLElement {
   const presentation = row.type === 'identity' ? row.presentation : undefined;
   const body = createElement(
@@ -3125,17 +3084,8 @@ function createIdentityActivityOrMessageRow(
     const secondVisual = createVisual(context, row.secondaryLeading);
     if (secondVisual) body.appendChild(secondVisual);
   }
-  if (row.type === 'message' && row.unread)
-    body.appendChild(
-      createElement(context.document, 'span', 'ok-native-list-unread')
-    );
   const title = row.title;
-  const subtitle =
-    row.type === 'identity'
-      ? row.subtitle
-      : row.type === 'activity'
-      ? row.description
-      : row.body;
+  const subtitle = row.type === 'identity' ? row.subtitle : row.description;
   const column = createTextColumn(
     context,
     title,
@@ -3147,29 +3097,10 @@ function createIdentityActivityOrMessageRow(
       : undefined,
     {
       title: 'title',
-      subtitle:
-        row.type === 'activity'
-          ? 'description'
-          : row.type === 'message'
-          ? 'body'
-          : 'subtitle',
+      subtitle: row.type === 'activity' ? 'description' : 'subtitle',
       tertiary: 'tertiary',
     }
   );
-  if (row.type === 'message') {
-    const messageTitle = column.querySelector<HTMLElement>(
-      '[data-nl-slot="title"]'
-    );
-    const messageBody = column.querySelector<HTMLElement>(
-      '[data-nl-slot="body"]'
-    );
-    if (messageTitle)
-      applyTextLayout(messageTitle, { lines: row.style?.title?.lines ?? 2 });
-    if (messageBody)
-      applyTextLayout(messageBody, {
-        lines: row.style?.body?.lines ?? row.bodyLines ?? 3,
-      });
-  }
   // OneKey patch: match existing search, subtitle fragments, and sidebar badges.
   if (row.type === 'identity') {
     const titleElement = column.firstElementChild as HTMLElement;
@@ -3319,26 +3250,6 @@ function createIdentityActivityOrMessageRow(
         )
       );
     body.appendChild(amounts);
-  } else if (row.type === 'message') {
-    body.appendChild(
-      tagSlot(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-time',
-          row.time
-        ),
-        'time'
-      )
-    );
-    if (row.thumbnail) {
-      const thumbnail = createImage(
-        context,
-        row.thumbnail,
-        'ok-native-list-thumbnail'
-      );
-      if (thumbnail) body.appendChild(thumbnail);
-    }
   } else {
     appendAccessories(body, context, row.key, row.trailing);
   }
@@ -3380,8 +3291,8 @@ function createWalletGroupRow(
     setData(memberElement, 'nativeListGroupParent', memberIndex === 0);
     setData(memberElement, 'nativeListSelected', member.selected);
     // OneKey patch: grouped members have the same selector typography as standalone wallets.
-    // memberElement.appendChild(createIdentityActivityOrMessageRow(context, member));
-    const memberBody = createIdentityActivityOrMessageRow(context, member);
+    // memberElement.appendChild(createIdentityOrActivityRow(context, member));
+    const memberBody = createIdentityOrActivityRow(context, member);
     applySelectorTabularNumbers(memberBody, member);
     applyRowStyle(memberBody, member);
     memberElement.appendChild(memberBody);
@@ -4173,8 +4084,14 @@ export function createRowBody(
       return createMarketRow(context, row);
     case 'identity':
     case 'activity':
+      return createIdentityOrActivityRow(context, row);
     case 'message':
-      return createIdentityActivityOrMessageRow(context, row);
+      return createMessageRow(context.document, row, {
+        visual: (source) => createVisual(context, source),
+        thumbnail: (source) =>
+          createImage(context, source, 'ok-native-list-thumbnail'),
+        textLayout: applyTextLayout,
+      });
   }
 }
 
