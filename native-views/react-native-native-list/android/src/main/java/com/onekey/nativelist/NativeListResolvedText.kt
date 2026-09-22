@@ -67,7 +67,7 @@ internal data class NativeListResolvedText(
         }
     } else {
       view.text = text
-      androidx.core.widget.TextViewCompat.setLineHeight(view, lineHeight)
+      if (lineHeight > 0) androidx.core.widget.TextViewCompat.setLineHeight(view, lineHeight)
     }
     view.visibility = if (text.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
   }
@@ -129,7 +129,7 @@ internal data class NativeListResolvedText(
         truncation,
         style?.optString("truncate") == "clip",
         horizontal or vertical,
-        ((style?.optDouble("offsetY") ?: 0.0) * density).toFloat(),
+        ((style?.optDouble("offsetY", 0.0) ?: 0.0) * density).toFloat(),
       )
     }
   }
