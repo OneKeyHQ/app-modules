@@ -635,7 +635,7 @@ describe('web row style', () => {
     expect(
       message.querySelector<HTMLElement>('[data-nl-slot="body"]')!.style
         .maxHeight
-    ).toBe('3lh');
+    ).toBe('54px');
     const warning = render({
       type: 'system',
       key: 'warning',
@@ -902,7 +902,7 @@ describe('web row style', () => {
     expect(
       estimateWebRowHeight(multi, config, 400) -
         estimateWebRowHeight(single, config, 400)
-    ).toBe(44);
+    ).toBe(28); // Time is beside the 38px title/body column: max(66,38)-max(22,38).
     expect(
       estimateWebRowHeight(
         { ...multi, style: { ...multi.style, container: { height: 120 } } },
@@ -967,7 +967,7 @@ describe('web row style', () => {
       ]);
       expect(item().style.height).toBe('136px');
       expect(body().textContent).toBe('One Two Three');
-      expect(body().style.color).toBe('');
+      expect(body().style.color).toBe('var(--nl-secondary)');
       engine.applySnapshot(
         snapshot({ kind: 'sectioned' }, [
           {
@@ -1002,6 +1002,70 @@ describe('web row style', () => {
       expect(item()).toBe(wrapper);
       expect(item().style.height).toBe('136px');
       expect(body().textContent).toBe('One Two Three');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('retains Message text and image slots through content/style updates and cancels removed retries', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const message = {
+      type: 'message',
+      key: 'persistent',
+      title: 'First',
+      body: 'Body',
+      time: 'Now',
+      height: 136,
+      leading: { kind: 'image', image: { ...image, retryTimes: 2 } },
+      thumbnail: image,
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [message]),
+      {},
+      false
+    );
+    const row = () =>
+      host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="persistent"]'
+      )!;
+    try {
+      const body = row().firstElementChild!;
+      const title = body.querySelector('[data-nl-slot="title"]')!;
+      const images = Array.from(body.querySelectorAll('img'));
+      expect(images).toHaveLength(2);
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...message,
+            title: 'Updated',
+            style: {
+              image: { width: 56, height: 32, cornerRadius: 3 },
+              title: { fontSize: 18 },
+            },
+          },
+        ])
+      );
+      expect(row().firstElementChild).toBe(body);
+      expect(body.querySelector('[data-nl-slot="title"]')).toBe(title);
+      expect(title.textContent).toBe('Updated');
+      expect(Array.from(body.querySelectorAll('img'))).toEqual(images);
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [message]));
+      expect(Array.from(body.querySelectorAll('img'))).toEqual(images);
+      expect((title as HTMLElement).style.fontSize).toBe('15px');
+      const source = images[0]!.src;
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          { ...message, leading: undefined, thumbnail: undefined },
+        ])
+      );
+      images[0]!.dispatchEvent(new document.defaultView!.Event('error'));
+      expect(images[0]!.isConnected).toBe(false);
+      expect(images[0]!.src).toBe(source);
+      expect(body.querySelector('img')).toBeNull();
+      expect(body.querySelector('[data-nl-slot="title"]')).toBe(title);
     } finally {
       engine.destroy();
     }
@@ -1056,7 +1120,7 @@ describe('web row style', () => {
       expect(
         messageHost.querySelector<HTMLElement>('[data-nl-slot="body"]')!.style
           .color
-      ).toBe('');
+      ).toBe('var(--nl-secondary)');
       expect(messageHost.textContent).toContain('Fresh');
       expect(messageHost.textContent).not.toContain('Old body');
       engine.applySnapshot(
@@ -1172,7 +1236,7 @@ describe('web row style', () => {
       expect(
         body.querySelector<HTMLElement>('[data-nl-slot="title"]')?.style
           .color ?? ''
-      ).toBe('');
+      ).toBe(row.type === 'message' ? 'var(--nl-primary)' : '');
     }
   });
 

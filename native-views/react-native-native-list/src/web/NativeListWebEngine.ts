@@ -1,7 +1,9 @@
 import {
-  createMessageRow,
-  measureMessageRow,
-} from './templates/MessageRowRenderer';
+  rowRenderer,
+  rowRendererKey,
+  recycleRowBody,
+  type RowRendererKey,
+} from './templates/RowRendererRegistry';
 import type {
   ActionAnchorInvalidatedEvent,
   CheckboxState,
@@ -537,6 +539,13 @@ export function estimateWebRowHeight(
   if (row.type === 'identity' && row.presentation === 'accountSelector')
     return 58;
 
+  const registered = rowRenderer(row);
+  if (registered)
+    return Math.max(
+      0,
+      registered.renderer.measure(registered.row, availableWidth) +
+        sizeModifier(row)
+    );
   let base: number;
   switch (row.type) {
     case 'rail':
@@ -544,9 +553,6 @@ export function estimateWebRowHeight(
       break;
     case 'activity':
       base = row.footerActions?.length ? 100 : 60;
-      break;
-    case 'message':
-      base = measureMessageRow(row, availableWidth);
       break;
     case 'mediaTile':
       base = 244;
@@ -3880,7 +3886,7 @@ function applyTextStyleToSlot(
  */
 export function applyRowStyle(body: HTMLElement, row: RowModel): void {
   applyRowContainerStyle(body, row);
-  if (row.type === 'market') return;
+  if (row.type === 'market' || rowRenderer(row)) return;
   const style = (row as { style?: Record<string, unknown> }).style;
   if (!style) return;
   const box = style as RowBoxStyle;
@@ -4059,10 +4065,28 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
   });
 }
 
+function rendererPrimitives(context: RenderContext) {
+  return {
+    visual: (source: LeadingVisual | undefined) =>
+      createVisual(context, source),
+    thumbnail: (source: ImageSource) =>
+      createImage(context, source, 'ok-native-list-thumbnail'),
+    textStyle: applyTextStyleToSlot,
+    dispose: disposeWebImageRetries,
+  };
+}
+
 export function createRowBody(
   context: RenderContext,
   row: RowModel
 ): HTMLElement {
+  const registered = rowRenderer(row);
+  if (registered)
+    return registered.renderer.create(
+      context.document,
+      registered.row,
+      rendererPrimitives(context)
+    );
   switch (row.type) {
     case 'walletGroup':
       return createWalletGroupRow(context, row);
@@ -4085,22 +4109,8 @@ export function createRowBody(
     case 'identity':
     case 'activity':
       return createIdentityOrActivityRow(context, row);
-    case 'message':
-      return createMessageRow(context.document, row, {
-        visual: (source) => createVisual(context, source),
-        thumbnail: (source) =>
-          createImage(context, source, 'ok-native-list-thumbnail'),
-        textLayout: applyTextLayout,
-      });
   }
-}
-
-// Only Message has begun renderer migration. The other templates still share
-// the legacy view tree; data keys and style values never partition reuse.
-type RowRendererKey = 'legacy' | 'message';
-
-function rowRendererKey(row: RowModel): RowRendererKey {
-  return row.type === 'message' ? 'message' : 'legacy';
+  throw new Error('No renderer registered for ' + row.type);
 }
 
 export class NativeListWebEngine {
@@ -4186,6 +4196,10 @@ export class NativeListWebEngine {
   private sectionIndexAlignStart = false;
   // OneKey patch: warning banners are measured after normal browser text wrapping.
   private measuredWarningHeights = new Map<string, number>();
+  private measuredRendererHeights = new Map<
+    string,
+    { signature: string; height: number }
+  >();
 
   constructor(
     host: HTMLElement,
@@ -4595,6 +4609,7 @@ export class NativeListWebEngine {
   ) {
     this.cancelMarketPointer();
     this.measuredWarningHeights.clear();
+    this.measuredRendererHeights.clear();
     this.snapshot = snapshot;
     this.rows = effectiveRows(snapshot);
     this.selectedKeys =
@@ -4693,6 +4708,7 @@ export class NativeListWebEngine {
     ) {
       this.invalidateActionAnchor('layout');
       this.measuredWarningHeights.clear();
+      this.measuredRendererHeights.clear();
     }
     this.lastViewportWidth = viewportWidth;
     this.lastViewportHeight = viewportHeight;
@@ -4700,11 +4716,20 @@ export class NativeListWebEngine {
     const measuredSnapshot: NativeListSnapshot = {
       ...this.snapshot,
       rows: this.snapshot.rows.map((row) =>
-        row.type === 'system' &&
-        row.variant === 'warning' &&
+        rowRenderer(row) &&
         row.style?.container?.height === undefined &&
         row.height === undefined &&
-        this.measuredWarningHeights.has(row.key)
+        this.measuredRendererHeights.get(row.key)?.signature ===
+          webRowRenderSignature(row)
+          ? {
+              ...row,
+              height: this.measuredRendererHeights.get(row.key)!.height,
+            }
+          : row.type === 'system' &&
+            row.variant === 'warning' &&
+            row.style?.container?.height === undefined &&
+            row.height === undefined &&
+            this.measuredWarningHeights.has(row.key)
           ? { ...row, height: this.measuredWarningHeights.get(row.key) }
           : row
       ),
@@ -4806,7 +4831,10 @@ export class NativeListWebEngine {
       ) {
         this.invalidateActionAnchorForElement(element);
         this.mounted.delete(index);
-        if (disposeWebImageRetries(element))
+        const recycled = element.firstElementChild
+          ? recycleRowBody(element.firstElementChild as HTMLElement)
+          : false;
+        if (disposeWebImageRetries(element) || recycled)
           element.removeAttribute('data-render-signature');
         element.remove();
         if (rendererKey) this.pool[rendererKey].push(element);
@@ -4840,6 +4868,26 @@ export class NativeListWebEngine {
     let measuredWarningChanged = false;
     this.mounted.forEach((element, index) => {
       const row = this.rows[index];
+      const registered = row && rowRenderer(row);
+      if (registered && element.firstElementChild) {
+        const height = registered.renderer.measureRendered(
+          element.firstElementChild as HTMLElement,
+          registered.row
+        );
+        if (
+          height !== undefined &&
+          (height !== this.measuredRendererHeights.get(row.key)?.height ||
+            webRowRenderSignature(row) !==
+              this.measuredRendererHeights.get(row.key)?.signature)
+        ) {
+          this.measuredRendererHeights.set(row.key, {
+            signature: webRowRenderSignature(row),
+            height,
+          });
+          measuredWarningChanged = true;
+        }
+        return;
+      }
       if (
         row?.type !== 'system' ||
         row.variant !== 'warning' ||
@@ -4877,7 +4925,13 @@ export class NativeListWebEngine {
     overlay = false
   ) {
     this.invalidateActionAnchorForElement(element);
-    disposeWebImageRetries(element);
+    const registered = rowRenderer(row);
+    const existingBody = element.firstElementChild as HTMLElement | null;
+    const reusableBody =
+      registered && existingBody?.dataset.nlRenderer === registered.renderer.key
+        ? existingBody
+        : undefined;
+    if (!reusableBody) disposeWebImageRetries(element);
     const bindingEpoch = String(++this.bindingEpochCounter);
     element.className = overlay
       ? 'ok-native-list-item ok-native-list-sticky'
@@ -4925,7 +4979,13 @@ export class NativeListWebEngine {
       selectedKeys: this.selectedKeys,
       itemIndex: index,
     };
-    const body = createRowBody(context, row);
+    const body = reusableBody ?? createRowBody(context, row);
+    if (reusableBody && registered)
+      registered.renderer.bind(
+        body,
+        registered.row,
+        rendererPrimitives(context)
+      );
     applySelectorTabularNumbers(body, row);
     // OneKey patch: explicit selector fields preserve original page geometry.
     element.style.contain = row.backgroundFullWidth ? 'layout style' : '';
@@ -5006,7 +5066,7 @@ export class NativeListWebEngine {
     }
     // Template and presentation defaults must precede caller overrides.
     applyRowStyle(body, row);
-    element.replaceChildren(body);
+    if (body.parentElement !== element) element.replaceChildren(body);
     if (
       row.type === 'market' &&
       row.diagnostics?.imageBindActionKey &&
