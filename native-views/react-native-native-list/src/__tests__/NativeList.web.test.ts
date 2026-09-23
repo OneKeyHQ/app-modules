@@ -2471,3 +2471,129 @@ describe('MetricCard renderer lifecycle', () => {
     }
   });
 });
+
+describe('complex renderer lifecycle', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => { window: { document: Document } };
+  };
+  const snap = (row: RowModel): NativeListSnapshot => ({
+    schemaVersion: 1,
+    generation: 1,
+    layout: { kind: 'linear' },
+    rows: [row],
+  });
+  it('keeps Market image slots and action context through quotes, styles and clear', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: Extract<RowModel, { type: 'market' }> = {
+      type: 'market',
+      key: 'quote',
+      variant: 'token',
+      leading: { kind: 'token', image },
+      title: 'Bitcoin',
+      price: '$42',
+      change: { text: '+2%', tone: 'positive' },
+      badges: [{ key: 'badge', text: 'Info', icon: image, actionKey: 'info' }],
+    };
+    const engine = new NativeListWebEngine(host, snap(row), {}, false);
+    try {
+      const body = host.querySelector<HTMLElement>(
+        '[data-nl-renderer="market"]'
+      )!;
+      const images = Array.from(body.querySelectorAll('img'));
+      images.forEach((bitmap) =>
+        bitmap.dispatchEvent(new document.defaultView!.Event('load'))
+      );
+      const badge = body.querySelector('.ok-native-list-market-badge');
+      engine.applyPatches([
+        {
+          type: 'market',
+          key: row.key,
+          changes: { price: '$43', change: { text: '-1%', tone: 'negative' } },
+        },
+      ]);
+      expect(body.querySelector('.ok-native-list-market-badge')).toBe(badge);
+      expect(
+        body.querySelector('.ok-native-list-market-price')?.textContent
+      ).toBe('$43');
+      const styled = {
+        ...row,
+        title: 'Updated',
+        style: {
+          container: { height: 100 },
+          image: { width: 38 },
+          title: { fontSize: 19 },
+          price: { fontSize: 20 },
+        },
+      };
+      engine.applySnapshot(snap(styled));
+      expect(host.querySelector('[data-nl-renderer="market"]')).toBe(body);
+      expect(Array.from(body.querySelectorAll('img'))).toEqual(images);
+      expect(images.every((bitmap) => bitmap.style.opacity === '1')).toBe(true);
+      engine.applySnapshot(snap(row));
+      expect(Array.from(body.querySelectorAll('img'))).toEqual(images);
+      expect(images.every((bitmap) => bitmap.style.opacity === '1')).toBe(true);
+      expect(
+        body.querySelector<HTMLElement>('.ok-native-list-market-title')?.style
+          .fontSize
+      ).toBe('16px');
+      expect(
+        body.querySelector<HTMLElement>('.ok-native-list-visual')?.style.width
+      ).toBe('32px');
+    } finally {
+      engine.destroy();
+    }
+  });
+  it('retains Identity images while replacing accessories and switching to a header on the same key', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: IdentityRow = {
+      type: 'identity',
+      key: 'complex',
+      title: 'Wallet',
+      leading: { kind: 'account', image },
+      trailing: [{ kind: 'value', text: '$42' }],
+    };
+    const engine = new NativeListWebEngine(host, snap(row), {}, false);
+    try {
+      const body = host.querySelector<HTMLElement>(
+        '[data-nl-renderer="identity"]'
+      )!;
+      const imageElement = body.querySelector('img');
+      engine.applySnapshot(
+        snap({
+          ...row,
+          title: 'Renamed',
+          trailing: [{ kind: 'menu', actionKey: 'menu' }],
+          style: { image: { width: 30 }, title: { fontSize: 20 } },
+        })
+      );
+      expect(body.querySelector('img')).toBe(imageElement);
+      expect(body.textContent).not.toContain('$42');
+      engine.applySnapshot(snap(row));
+      expect(body.querySelector('img')).toBe(imageElement);
+      expect(
+        body.querySelector<HTMLElement>('[data-nl-slot="title"]')?.style
+          .fontSize
+      ).toBe('');
+      engine.applySnapshot(
+        snap({
+          type: 'sectionHeader',
+          key: row.key,
+          sectionKey: 'a',
+          variant: 'summary',
+          title: 'Assets',
+          value: '$100',
+        })
+      );
+      expect(host.querySelector('[data-nl-renderer="identity"]')).toBeNull();
+      expect(
+        host.querySelector('[data-nl-renderer="sectionHeader"]')?.textContent
+      ).toBe('Assets$100');
+    } finally {
+      engine.destroy();
+    }
+  });
+});

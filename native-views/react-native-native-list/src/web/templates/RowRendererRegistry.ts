@@ -1,3 +1,8 @@
+import type { IdentityRow, SectionHeaderRow } from '../../models';
+import { identityRowRenderer } from './IdentityRowRenderer';
+import { sectionHeaderRowRenderer } from './SectionHeaderRowRenderer';
+import type { MarketRow } from '../../models';
+import { marketRowRenderer } from './MarketRowRenderer';
 import type { MetricCardRow } from '../../models';
 import { metricCardRowRenderer } from './MetricCardRowRenderer';
 import type { DataRow } from '../../models';
@@ -23,7 +28,7 @@ type Renderer<R extends RowModel> = {
     primitives: RowPrimitives
   ) => HTMLElement;
   bind: (body: HTMLElement, row: R, primitives: RowPrimitives) => void;
-  measure: (row: R, width: number) => number;
+  measure: (row: R, width: number, layout?: string) => number;
   measureRendered: (body: HTMLElement, row: R) => number | undefined;
   recycle: (body: HTMLElement) => void;
 };
@@ -35,11 +40,17 @@ function registration<R extends RowModel>(renderer: Renderer<R>, row: R) {
       renderer.create(document, row, primitives),
     bind: (body: HTMLElement, primitives: RowPrimitives) =>
       renderer.bind(body, row, primitives),
-    measure: (width: number) => renderer.measure(row, width),
+    measure: (width: number, layout?: string) =>
+      renderer.measure(row, width, layout),
     measureRendered: (body: HTMLElement) => renderer.measureRendered(body, row),
   };
 }
 const factories = {
+  identity: (row: RowModel) =>
+    registration(identityRowRenderer, row as IdentityRow),
+  sectionHeader: (row: RowModel) =>
+    registration(sectionHeaderRowRenderer, row as SectionHeaderRow),
+  market: (row: RowModel) => registration(marketRowRenderer, row as MarketRow),
   metricCard: (row: RowModel) =>
     registration(metricCardRowRenderer, row as MetricCardRow),
   dataRow: (row: RowModel) => registration(dataRowRenderer, row as DataRow),
@@ -54,6 +65,9 @@ const factories = {
     registration(mediaTileRowRenderer, row as MediaTileRow),
 };
 const renderers = {
+  identity: identityRowRenderer,
+  sectionHeader: sectionHeaderRowRenderer,
+  market: marketRowRenderer,
   metricCard: metricCardRowRenderer,
   dataRow: dataRowRenderer,
   activity: activityRowRenderer,

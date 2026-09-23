@@ -1,3 +1,10 @@
+import { identityRowRenderer } from './templates/IdentityRowRenderer';
+import { applyTextStyleToSlot, applyValueSegments } from './templates/RowText';
+import { setMarketQuoteContent } from './templates/MarketRowRenderer';
+export {
+  resolveWebMarketLayoutStyle,
+  type WebMarketLayoutStyle,
+} from './templates/MarketRowRenderer';
 import { measureRailWidth } from './templates/RailRowRenderer';
 import {
   rowRenderer,
@@ -10,16 +17,12 @@ import type {
   CheckboxState,
   ImageSource,
   LeadingVisual,
-  MarketRow,
-  MarketTextStyle,
   NativeListSnapshot,
   NativeListActionAnchor,
   NativeListActionSource,
   NativeListTheme,
-  NativeListTextStyle,
   ReorderEvent,
   RowActionEvent,
-  RowBoxStyle,
   RowModel,
   RowPatch,
   SelectionDeltaEvent,
@@ -198,49 +201,7 @@ export function webSectionIndexActiveKey(
   return activeKey;
 }
 
-export type WebMarketLayoutStyle = Readonly<{
-  horizontalPadding: number;
-  verticalPadding: number;
-  leadingGap: number;
-  titleBadgeGap: number;
-  trailingGap: number;
-  imageWidth: number;
-  imageHeight: number;
-  imageCornerRadius: number;
-  changeWidth: number;
-  changeHeight: number;
-  changeCornerRadius: number;
-}>;
-
 /** Resolves every reusable Market geometry field, including legacy defaults. */
-export function resolveWebMarketLayoutStyle(
-  row: MarketRow
-): WebMarketLayoutStyle {
-  const style = row.style;
-  const imageWidth = style?.image?.width ?? (row.variant === 'stock' ? 40 : 32);
-  const imageHeight =
-    style?.image?.height ?? (row.variant === 'stock' ? 40 : 32);
-  return {
-    horizontalPadding:
-      style?.horizontalPadding ?? (row.variant === 'perp' ? 16 : 20),
-    verticalPadding: style?.verticalPadding ?? 12,
-    leadingGap: style?.leadingGap ?? (row.variant === 'perp' ? 8 : 14),
-    titleBadgeGap: style?.titleBadgeGap ?? 4,
-    trailingGap: style?.trailingGap ?? 8,
-    imageWidth,
-    imageHeight,
-    imageCornerRadius:
-      style?.image?.cornerRadius ??
-      (style?.image?.shape === 'square'
-        ? 0
-        : style?.image?.shape === 'rounded'
-        ? 8
-        : Math.min(imageWidth, imageHeight) / 2),
-    changeWidth: style?.changeWidth ?? 80,
-    changeHeight: style?.changeHeight ?? 32,
-    changeCornerRadius: style?.changeCornerRadius ?? 8,
-  };
-}
 
 export type NativeListWebCallbacks = Readonly<{
   onRowAction?: (event: RowActionEvent) => void;
@@ -495,69 +456,14 @@ export function estimateWebRowHeight(
       row.children.length * 12 +
       (row.parent.height !== undefined ? 2 : 0)
     );
-  // OneKey patch: reserve the source badge line below wallet names.
-  // if (row.type === 'identity' && row.presentation === 'walletSidebar')
-  // return 68;
-  if (row.type === 'identity' && row.presentation === 'walletSidebar')
-    return 68 + (row.badges?.length ? 24 : 0);
-  if (row.type === 'identity' && row.presentation === 'networkSelector')
-    return 47;
-  if (row.type === 'identity' && row.presentation === 'accountSelector')
-    return 58;
-
   const registered = rowRenderer(row);
   if (registered)
     return Math.max(
       0,
-      registered.measure(availableWidth) +
+      registered.measure(availableWidth, snapshot.layout.kind) +
         (registered.appliesSizePreset ? sizeModifier(row) : 0)
     );
-  let base: number;
-  switch (row.type) {
-    case 'sectionHeader': {
-      const isHistory =
-        row.variant === 'history' ||
-        row.key.startsWith('history-') ||
-        row.sectionKey.startsWith('history-');
-      base =
-        snapshot.layout.kind === 'table'
-          ? 28
-          : row.presentation === 'networkSelector'
-          ? 47
-          : isHistory
-          ? 16
-          : row.variant === 'summary'
-          ? 68
-          : row.variant === 'gallery'
-          ? 32
-          : row.checkbox
-          ? 56
-          : snapshot.layout.kind === 'linear'
-          ? 30
-          : 36;
-      break;
-    }
-    case 'market': {
-      const marketStyle = resolveWebMarketLayoutStyle(row);
-      base = Math.max(
-        row.variant === 'stock' ? 72 : 68,
-        marketStyle.imageHeight + marketStyle.verticalPadding * 2
-      );
-      break;
-    }
-    case 'identity':
-      base = row.tertiary ? 72 : row.subtitle ? 60 : 56;
-      break;
-    default:
-      base = 56;
-  }
-  const tableAdjustment =
-    snapshot.layout.kind === 'table' &&
-    row.type === 'dataRow' &&
-    !row.columns.some((column) => column.secondaryText)
-      ? -8
-      : 0;
-  return Math.max(0, base + sizeModifier(row) + tableAdjustment);
+  return Math.max(0, 56 + sizeModifier(row));
 }
 
 function estimateHorizontalWidth(row: RowModel): number {
@@ -1550,17 +1456,6 @@ function iconGlyph(name: string): string {
   return name.slice(0, 1).toLocaleUpperCase();
 }
 
-function visualFromRow(row: RowModel): LeadingVisual | undefined {
-  if (row.type === 'identity') return row.leading;
-  if (row.type === 'rail') return row.visual;
-  if (row.type === 'activity') return row.leading;
-  if (row.type === 'message') return row.leading;
-  if (row.type === 'dataRow') return row.leading;
-  if (row.type === 'market') return row.leading;
-  if (row.type === 'metricCard') return row.visual;
-  return undefined;
-}
-
 function createVisual(
   context: RenderContext,
   visual: LeadingVisual | undefined,
@@ -1774,18 +1669,6 @@ function toneColor(
   return fallback === 'secondary' ? 'var(--nl-secondary)' : 'var(--nl-primary)';
 }
 
-function createBadge(
-  context: RenderContext,
-  badge: Readonly<{ text: string; tone?: string }>
-): HTMLElement {
-  const element = tagSlot(
-    createElement(context.document, 'span', 'ok-native-list-badge', badge.text),
-    'badge'
-  );
-  setData(element, 'tone', badge.tone);
-  return element;
-}
-
 function selectionKeysForTarget(
   target: SelectionTarget | undefined,
   rowKey: string,
@@ -1922,34 +1805,6 @@ function markActionAnchorSource(
 }
 
 // OneKey patch: the compact zero-count digits share the amount baseline.
-function applyValueSegments(
-  element: HTMLElement,
-  segments:
-    | readonly Readonly<{ text: string; style?: 'subscript' }>[]
-    | undefined,
-  fontSize = 16,
-  lineHeight = 24,
-  weight = 500
-) {
-  if (!segments?.length) return;
-  element.textContent = '';
-  element.style.fontSize = String(fontSize) + 'px';
-  element.style.lineHeight = String(lineHeight) + 'px';
-  element.style.fontWeight = String(weight);
-  segments.forEach((segment) => {
-    const span = createElement(
-      element.ownerDocument,
-      'span',
-      undefined,
-      segment.text
-    );
-    if (segment.style === 'subscript') {
-      span.style.fontSize = String(Math.ceil(fontSize * 0.6)) + 'px';
-      span.style.lineHeight = String(fontSize) + 'px';
-    }
-    element.appendChild(span);
-  });
-}
 
 function createAccessory(
   context: RenderContext,
@@ -2056,463 +1911,10 @@ function createAccessory(
   return element;
 }
 
-function appendAccessories(
-  parent: HTMLElement,
-  context: RenderContext,
-  rowKey: string,
-  accessories: readonly TrailingAccessory[] | undefined
-) {
-  if (!accessories?.length) return;
-  const container = createElement(
-    context.document,
-    'span',
-    'ok-native-list-accessories'
-  );
-  const row = context.snapshot.rows[context.itemIndex];
-  if (
-    row &&
-    row.height !== undefined &&
-    'presentation' in row &&
-    row.presentation === 'networkSelector'
-  ) {
-    container.style.gap = accessories.some(
-      (accessory) => accessory.kind === 'checkbox'
-    )
-      ? '12px'
-      : '20px';
-  }
-  if (
-    row &&
-    row.height !== undefined &&
-    'presentation' in row &&
-    row.presentation === 'accountSelector' &&
-    accessories.length === 1 &&
-    accessories[0]?.kind === 'icon' &&
-    accessories[0].name === 'PlusSmallOutline'
-  ) {
-    setData(container, 'nativeListAccountControl', 'createAddress');
-  }
-  let valueIndex = 0;
-  accessories.forEach((accessory, slot) => {
-    const element = createAccessory(context, rowKey, accessory, slot);
-    if (accessory.kind === 'value' || accessory.kind === 'valuePair') {
-      tagSlot(element, valueIndex++ === 0 ? 'value' : 'valueSecondary');
-    }
-    container.appendChild(element);
-  });
-  parent.appendChild(container);
-}
-
 /**
  * Marks the element that renders one model field. Style keys name model fields,
  * not views, and the view pool is shared. See docs/STYLE_SPEC.md §4.
  */
-function tagSlot<T extends HTMLElement>(element: T, slot: string): T {
-  element.dataset.nlSlot = slot;
-  return element;
-}
-
-function createTextColumn(
-  context: RenderContext,
-  title: string,
-  subtitle?: string,
-  tertiary?: string,
-  tertiaryTone?: 'secondary' | 'info',
-  badges?: readonly Readonly<{ text: string; tone?: string }>[],
-  slots: Readonly<{ title: string; subtitle: string; tertiary: string }> = {
-    title: 'title',
-    subtitle: 'subtitle',
-    tertiary: 'tertiary',
-  }
-): HTMLElement {
-  const column = createElement(context.document, 'span', 'ok-native-list-flex');
-  const titleLine = tagSlot(
-    createElement(context.document, 'span', 'ok-native-list-title', title),
-    slots.title
-  );
-  if (badges?.length) {
-    titleLine.removeAttribute('data-nl-slot');
-    titleLine.replaceChildren(
-      tagSlot(
-        createElement(context.document, 'span', undefined, title),
-        slots.title
-      )
-    );
-    const badgeLine = createElement(
-      context.document,
-      'span',
-      'ok-native-list-badges'
-    );
-    badges.forEach((badge) =>
-      badgeLine.appendChild(createBadge(context, badge))
-    );
-    titleLine.appendChild(badgeLine);
-  }
-  column.appendChild(titleLine);
-  if (subtitle)
-    column.appendChild(
-      tagSlot(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          subtitle
-        ),
-        slots.subtitle
-      )
-    );
-  if (tertiary) {
-    const element = tagSlot(
-      createElement(
-        context.document,
-        'span',
-        tertiaryTone === 'info'
-          ? 'ok-native-list-secondary ok-native-list-info'
-          : 'ok-native-list-secondary ok-native-list-tertiary',
-        tertiary
-      ),
-      slots.tertiary
-    );
-    column.appendChild(element);
-  }
-  return column;
-}
-
-function createSectionHeader(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'sectionHeader' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-section'
-  );
-  setData(body, 'variant', row.variant);
-  if (row.titleIcon) {
-    const titleIcon = createIconAction(
-      context,
-      row.titleIcon.name,
-      row.titleIcon.actionKey,
-      row.titleIcon.disabled,
-      row.titleIcon.tintColor
-    );
-    markActionAnchorSource(titleIcon, 'leadingAction');
-    body.appendChild(titleIcon);
-  }
-  // OneKey patch: section title help has its own measurable action target.
-  // body.appendChild(createTextColumn(context, row.title, row.subtitle));
-  const column = createTextColumn(context, row.title, row.subtitle);
-  const title = column.firstElementChild as HTMLElement;
-  title.classList.add('ok-native-list-section-title');
-  if (row.titleActionKey) {
-    setData(title, 'nativeListAction', row.titleActionKey);
-    markActionAnchorSource(title, 'leadingAction');
-    title.setAttribute('role', 'button');
-    title.tabIndex = 0;
-    title.style.alignSelf = 'flex-start';
-    title.style.maxWidth = '100%';
-    // OneKey patch: explicit network headers reserve a separate 3-point underline area.
-    if (row.presentation !== 'networkSelector' || row.height === undefined) {
-      title.style.textDecoration = 'underline dotted';
-      title.style.textUnderlineOffset = '6px';
-    }
-    if (row.titleActionOnHover) setData(title, 'nativeListHoverAction', true);
-  }
-  if (row.presentation === 'networkSelector' && row.height !== undefined) {
-    body.style.padding =
-      row.variant === 'summary' ? '24px 12px 20px' : '0 12px';
-    body.style.backgroundColor = 'var(--nl-bg)';
-    body.style.gap = row.checkbox ? '12px' : '8px';
-    title.style.fontSize = row.variant === 'summary' ? '16px' : '14px';
-    title.style.lineHeight = row.variant === 'summary' ? '24px' : '20px';
-    title.style.fontWeight =
-      row.variant === 'summary' || (row.titleActionKey && !row.checkbox)
-        ? '500'
-        : '600';
-    if (row.titleActionKey) {
-      const text = createElement(
-        context.document,
-        'span',
-        'ok-native-list-section-title-text',
-        row.title
-      );
-      text.style.overflow = 'hidden';
-      text.style.textOverflow = 'ellipsis';
-      text.style.maxWidth = '100%';
-      const dotted = context.document.createElementNS(
-        'http://www.w3.org/2000/svg',
-        'svg'
-      );
-      dotted.setAttribute('height', '2');
-      dotted.style.cssText =
-        'display:block;position:absolute;left:0;bottom:0;width:100%;height:2px;color:var(--nl-secondary)';
-      const line = context.document.createElementNS(
-        'http://www.w3.org/2000/svg',
-        'line'
-      );
-      for (const [key, value] of Object.entries({
-        x1: '1',
-        y1: '1',
-        x2: '100%',
-        y2: '1',
-        stroke: 'currentColor',
-        'stroke-width': '1.5',
-        'stroke-dasharray': '0,4',
-        'stroke-linecap': 'round',
-      }))
-        line.setAttribute(key, value);
-      // OneKey patch: keep both round caps inside the original full-width viewport.
-      const lineViewport = context.document.createElementNS(
-        'http://www.w3.org/2000/svg',
-        'svg'
-      );
-      lineViewport.setAttribute('width', 'calc(100% - 1px)');
-      lineViewport.setAttribute('height', '2');
-      lineViewport.setAttribute('overflow', 'visible');
-      lineViewport.appendChild(line);
-      dotted.appendChild(lineViewport);
-      // OneKey patch: SVG intrinsic width must not expand the title action beyond its text.
-      title.style.display = 'block';
-      title.style.position = 'relative';
-      title.style.width = 'fit-content';
-      title.style.paddingBottom = '3px';
-      text.style.display = 'block';
-      title.replaceChildren(text, dotted);
-    }
-  }
-  body.appendChild(column);
-  if (row.value) {
-    const value = tagSlot(
-      createElement(
-        context.document,
-        row.valueActionKey ? 'button' : 'span',
-        row.valueActionKey
-          ? 'ok-native-list-action-button ok-native-list-section-value'
-          : 'ok-native-list-value ok-native-list-section-value',
-        row.value
-      ),
-      'value'
-    );
-    applyValueSegments(value, row.valueSegments);
-    if (row.presentation === 'networkSelector' && row.height !== undefined) {
-      value.style.fontFamily = 'inherit';
-      value.style.fontSize = '16px';
-      value.style.lineHeight = '24px';
-      value.style.fontWeight = '500';
-      if (row.valueActionKey) {
-        value.style.color = 'var(--nl-secondary)';
-        value.style.padding = '0';
-        value.style.flexShrink = '0';
-      }
-    }
-    if (row.valueActionTestID) setData(value, 'testid', row.valueActionTestID);
-    if (row.valueActionKey) {
-      value.setAttribute('type', 'button');
-      setData(value, 'nativeListAction', row.valueActionKey);
-      markActionAnchorSource(value, 'trailingAccessory', 0);
-    }
-    body.appendChild(value);
-  }
-  if (row.valueIcon) {
-    const valueIcon = createIconAction(
-      context,
-      row.valueIcon.name,
-      row.valueIcon.actionKey,
-      row.valueIcon.disabled,
-      row.valueIcon.tintColor
-    );
-    markActionAnchorSource(valueIcon, 'trailingAccessory', 1);
-    body.appendChild(valueIcon);
-  }
-  if (row.checkbox)
-    body.appendChild(createCheckbox(context, row.key, row.checkbox));
-  return body;
-}
-
-function createIdentityRow(
-  context: RenderContext,
-  row: Extract<
-    RowModel,
-    {
-      type: 'identity';
-    }
-  >
-): HTMLElement {
-  const presentation = row.presentation;
-  const body = createElement(
-    context.document,
-    'div',
-    [
-      'ok-native-list-row',
-      'ok-native-list-standard',
-      !presentation ? 'ok-native-list-identity-row' : '',
-      presentation === 'networkSelector' ? 'ok-native-list-network-row' : '',
-      presentation === 'walletSidebar' ? 'ok-native-list-wallet-row' : '',
-      presentation === 'accountSelector' ? 'ok-native-list-account-row' : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-  );
-  setData(
-    body,
-    'nativeListSelector',
-    row.height !== undefined ? presentation : undefined
-  );
-  if (row.titleActionKey && row.titleActionOnHover) {
-    setData(body, 'nativeListHoverAction', row.titleActionKey);
-    markActionAnchorSource(body, 'leadingAction');
-  }
-  if (row.leadingAction) {
-    const action = createIconAction(
-      context,
-      row.leadingAction.name,
-      row.leadingAction.actionKey,
-      row.leadingAction.disabled,
-      row.leadingAction.tintColor
-    );
-    markActionAnchorSource(action, 'leadingAction');
-    body.appendChild(action);
-  }
-  const visual = createVisual(
-    context,
-    visualFromRow(row),
-    row.height !== undefined ? presentation : undefined
-  );
-  if (
-    visual &&
-    true &&
-    row.height !== undefined &&
-    row.presentation === 'walletSidebar' &&
-    'fallbackIcon' in row.leading &&
-    row.leading.fallbackIcon?.name === 'LockSolid'
-  ) {
-    // OneKey patch: hidden-wallet locks use WalletAvatar's full 40-point icon.
-    const icon = visual.querySelector<SVGElement>(
-      '.ok-native-list-visual-fallback svg'
-    );
-    if (icon) {
-      icon.style.width = '40px';
-      icon.style.height = '40px';
-    }
-    const fallback = visual.querySelector<HTMLElement>(
-      '.ok-native-list-visual-fallback'
-    );
-    if (fallback) {
-      fallback.style.borderRadius = '0';
-      fallback.style.overflow = 'visible';
-    }
-  }
-  if (
-    visual &&
-    true &&
-    row.height !== undefined &&
-    row.presentation === 'walletSidebar' &&
-    'borderStyle' in row.leading &&
-    row.leading.borderStyle === 'dashed'
-  )
-    visual.style.borderWidth = '1px';
-  if (visual) body.appendChild(visual);
-  const title = row.title;
-  const subtitle = row.subtitle;
-  const column = createTextColumn(
-    context,
-    title,
-    subtitle,
-    row.tertiary,
-    row.tertiaryTone,
-    presentation !== 'walletSidebar' ? row.badges : undefined,
-    {
-      title: 'title',
-      subtitle: 'subtitle',
-      tertiary: 'tertiary',
-    }
-  );
-  {
-    const titleElement = column.firstElementChild as HTMLElement;
-    if (row.titleMatch?.length) {
-      const textTarget =
-        titleElement.querySelector<HTMLElement>('[data-nl-slot="title"]') ??
-        titleElement;
-      const firstText = textTarget.firstChild;
-      if (firstText) firstText.remove();
-      const fragment = context.document.createDocumentFragment();
-      let offset = 0;
-      row.titleMatch.forEach(({ start, end }) => {
-        fragment.appendChild(
-          context.document.createTextNode(row.title.slice(offset, start))
-        );
-        const match = createElement(
-          context.document,
-          'span',
-          'ok-native-list-info',
-          row.title.slice(start, end)
-        );
-        fragment.appendChild(match);
-        offset = end;
-      });
-      fragment.appendChild(
-        context.document.createTextNode(row.title.slice(offset))
-      );
-      textTarget.prepend(fragment);
-    }
-    if (row.subtitleSegments?.length) {
-      column.querySelector('.ok-native-list-secondary')?.remove();
-      const segments = createElement(
-        context.document,
-        'span',
-        'ok-native-list-subtitle-segments'
-      );
-      row.subtitleSegments.forEach((segment) => {
-        if (segment.separatorBefore)
-          segments.appendChild(
-            createElement(
-              context.document,
-              'span',
-              'ok-native-list-subtitle-dot'
-            )
-          );
-        const text = createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          segment.text
-        );
-        tagSlot(text, 'subtitle');
-        applyValueSegments(text, segment.textSegments, 14, 20, 400);
-        setData(text, 'tone', segment.tone);
-        text.style.color =
-          segment.tone === 'disabled'
-            ? 'var(--nl-disabled)'
-            : segment.tone === 'caution'
-            ? 'var(--nl-caution)'
-            : toneColor(segment.tone, 'secondary');
-        segments.appendChild(text);
-      });
-      column.insertBefore(segments, titleElement.nextSibling);
-    }
-    if (presentation === 'walletSidebar' && row.badges?.length) {
-      const badges = createElement(
-        context.document,
-        'span',
-        'ok-native-list-wallet-badges'
-      );
-      row.badges.forEach((badge) =>
-        badges.appendChild(createBadge(context, badge))
-      );
-      column.appendChild(badges);
-    }
-    for (const key of ['title', 'subtitle'] as const) {
-      const lines = row.style?.[key]?.lines ?? row[`${key}Lines`];
-      if (lines !== undefined)
-        column
-          .querySelectorAll<HTMLElement>(`[data-nl-slot="${key}"]`)
-          .forEach((text) => applyTextLayout(text, { lines }));
-    }
-  }
-  body.appendChild(column);
-  appendAccessories(body, context, row.key, row.trailing);
-  return body;
-}
 
 // OneKey patch: SizableText enables tabular digits without replacing its font family.
 function applySelectorTabularNumbers(body: HTMLElement, row: RowModel) {
@@ -2549,8 +1951,12 @@ function createWalletGroupRow(
     setData(memberElement, 'nativeListGroupParent', memberIndex === 0);
     setData(memberElement, 'nativeListSelected', member.selected);
     // OneKey patch: grouped members have the same selector typography as standalone wallets.
-    // memberElement.appendChild(createIdentityRow(context, member));
-    const memberBody = createIdentityRow(context, member);
+    // memberElement.appendChild(identityRowRenderer.create(context.document,member,rendererPrimitives(context)));
+    const memberBody = identityRowRenderer.create(
+      context.document,
+      member,
+      rendererPrimitives(context)
+    );
     applySelectorTabularNumbers(memberBody, member);
     applyRowStyle(memberBody, member);
     memberElement.appendChild(memberBody);
@@ -2573,469 +1979,7 @@ function createWalletGroupRow(
   return body;
 }
 
-function marketFontWeight(
-  value: MarketTextStyle['fontWeight'] | undefined,
-  fallback: number
-): number {
-  if (value === 'bold') return 700;
-  if (value === 'semibold') return 600;
-  if (value === 'medium') return 500;
-  if (value === 'regular') return 400;
-  return fallback;
-}
-
-function applyMarketTextStyle(
-  element: HTMLElement,
-  style: MarketTextStyle | undefined,
-  defaults: Readonly<{
-    fontSize: number;
-    lineHeight: number;
-    weight: number;
-    alignment: 'start' | 'center' | 'end';
-  }>
-) {
-  element.style.fontSize = String(style?.fontSize ?? defaults.fontSize) + 'px';
-  element.style.lineHeight =
-    String(style?.lineHeight ?? defaults.lineHeight) + 'px';
-  element.style.fontWeight = String(
-    marketFontWeight(style?.fontWeight, defaults.weight)
-  );
-  element.style.color = style?.color ?? '';
-  element.style.textAlign = style?.alignment ?? defaults.alignment;
-  element.style.whiteSpace = (style?.lines ?? 1) > 1 ? 'normal' : 'nowrap';
-  element.style.display = '';
-  element.style.removeProperty('-webkit-line-clamp');
-  element.style.removeProperty('-webkit-box-orient');
-  if ((style?.lines ?? 1) > 1) {
-    element.style.display = '-webkit-box';
-    element.style.setProperty('-webkit-line-clamp', String(style?.lines ?? 2));
-    element.style.setProperty('-webkit-box-orient', 'vertical');
-  }
-}
-
-function setMarketQuoteContent(element: HTMLElement, row: MarketRow) {
-  const style = row.style;
-  const layoutStyle = resolveWebMarketLayoutStyle(row);
-  const price = element.querySelector<HTMLElement>(
-    '.ok-native-list-market-price'
-  );
-  if (price) {
-    price.textContent = row.price;
-    applyMarketTextStyle(price, style?.price, {
-      fontSize: 16,
-      lineHeight: 24,
-      weight: 500,
-      alignment: 'end',
-    });
-    applyValueSegments(
-      price,
-      row.priceSegments,
-      style?.price?.fontSize ?? 16,
-      style?.price?.lineHeight ?? 24,
-      marketFontWeight(style?.price?.fontWeight, 500)
-    );
-  }
-  const change = element.querySelector<HTMLElement>(
-    '.ok-native-list-market-change'
-  );
-  if (change) {
-    change.textContent = row.change.text;
-    setData(change, 'tone', row.change.tone);
-    applyMarketTextStyle(change, style?.change, {
-      fontSize: 14,
-      lineHeight: 20,
-      weight: 500,
-      alignment: 'center',
-    });
-    applyValueSegments(
-      change,
-      row.change.textSegments,
-      style?.change?.fontSize ?? 14,
-      style?.change?.lineHeight ?? 20,
-      marketFontWeight(style?.change?.fontWeight, 500)
-    );
-    change.style.width = String(layoutStyle.changeWidth) + 'px';
-    change.style.height = String(layoutStyle.changeHeight) + 'px';
-    change.style.borderRadius = String(layoutStyle.changeCornerRadius) + 'px';
-    change.style.color = style?.change?.color ?? row.change.textColor ?? '';
-    change.style.background = row.change.backgroundColor ?? '';
-  }
-  if (price) applyTextStyleToSlot(price, style?.price ?? {}, 1);
-  if (change) applyTextStyleToSlot(change, style?.change ?? {}, 1);
-  element.setAttribute(
-    'aria-label',
-    row.accessibilityLabel ??
-      [row.title, row.subtitle, row.price, row.change.text]
-        .filter(Boolean)
-        .join(', ')
-  );
-}
-
-function createMarketRow(context: RenderContext, row: MarketRow): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-market'
-  );
-  setData(body, 'variant', row.variant);
-  const style = row.style;
-  const layoutStyle = resolveWebMarketLayoutStyle(row);
-  body.style.padding =
-    String(layoutStyle.verticalPadding) +
-    'px ' +
-    String(layoutStyle.horizontalPadding) +
-    'px';
-  body.style.gap = '0px';
-  if (row.leadingAction) {
-    const action = createIconAction(
-      context,
-      row.leadingAction.name,
-      row.leadingAction.actionKey,
-      row.leadingAction.disabled,
-      row.leadingAction.tintColor
-    );
-    action.style.flex = '0 0 36px';
-    action.style.width = '36px';
-    action.style.height = '36px';
-    action.style.marginRight = '5px';
-    setData(action, 'testid', row.leadingAction.testID);
-    if (row.leadingAction.accessibilityLabel)
-      action.setAttribute('aria-label', row.leadingAction.accessibilityLabel);
-    markActionAnchorSource(action, 'leadingAction');
-    body.appendChild(action);
-  }
-  const visual = createVisual(context, row.leading);
-  if (visual) {
-    const width = layoutStyle.imageWidth;
-    const height = layoutStyle.imageHeight;
-    visual.style.width = String(width) + 'px';
-    visual.style.height = String(height) + 'px';
-    visual.style.flexBasis = String(width) + 'px';
-    visual.style.borderRadius = String(layoutStyle.imageCornerRadius) + 'px';
-    const borderColor =
-      'borderColor' in row.leading ? row.leading.borderColor : undefined;
-    if (borderColor) {
-      visual.style.border = '1px solid ' + borderColor;
-      visual.style.boxSizing = 'border-box';
-    }
-    visual.querySelectorAll<HTMLElement>('img').forEach((image) => {
-      if (!image.classList.contains('ok-native-list-visual-corner')) {
-        image.style.width = '100%';
-        image.style.height = '100%';
-        if (borderColor) {
-          image.style.borderRadius = '0';
-          image.style.clipPath =
-            'inset(-1px round ' + String(layoutStyle.imageCornerRadius) + 'px)';
-        }
-        image.style.objectFit =
-          style?.image?.contentFit === 'center'
-            ? 'none'
-            : style?.image?.contentFit ?? image.style.objectFit;
-      } else {
-        image.style.width = '20px';
-        image.style.height = '20px';
-        if (borderColor) {
-          image.style.right = '-5px';
-          image.style.bottom = '-5px';
-        }
-      }
-    });
-    visual.style.marginInlineEnd = String(layoutStyle.leadingGap) + 'px';
-    body.appendChild(visual);
-  }
-  const main = createElement(
-    context.document,
-    'span',
-    'ok-native-list-market-main'
-  );
-  main.style.gap = String(style?.lineGap ?? 0) + 'px';
-  const titleLine = createElement(
-    context.document,
-    'span',
-    'ok-native-list-market-title-line'
-  );
-  titleLine.style.gap = String(layoutStyle.titleBadgeGap) + 'px';
-  const title = createElement(
-    context.document,
-    'span',
-    'ok-native-list-market-title',
-    row.title
-  );
-  applyMarketTextStyle(title, style?.title, {
-    fontSize: 16,
-    lineHeight: 24,
-    weight: 500,
-    alignment: 'start',
-  });
-  titleLine.appendChild(title);
-  row.badges?.forEach((badge, slot) => {
-    const element = createElement(
-      context.document,
-      badge.actionKey ? 'button' : 'span',
-      'ok-native-list-market-badge',
-      badge.text
-    );
-    if (badge.actionKey) {
-      element.setAttribute('type', 'button');
-      setData(element, 'nativeListAction', badge.actionKey);
-      markActionAnchorSource(element, 'marketBadge', slot);
-    }
-    setData(element, 'tone', badge.tone);
-    element.style.color =
-      badge.textColor ??
-      (badge.tone === 'success'
-        ? 'var(--nl-positive)'
-        : badge.tone === 'danger'
-        ? 'var(--nl-negative)'
-        : badge.tone === 'info'
-        ? 'var(--nl-info)'
-        : badge.tone === 'warning'
-        ? 'var(--nl-primary)'
-        : '');
-    element.style.background =
-      badge.backgroundColor ??
-      ((badge.icon || badge.iconName) && !badge.text ? 'transparent' : '');
-    if ((badge.icon || badge.iconName) && !badge.text) {
-      element.style.padding = '0';
-    }
-    if (badge.style) {
-      applyTextStyleToSlot(element, badge.style);
-      if (badge.style.height !== undefined)
-        element.style.height = `${badge.style.height}px`;
-      if (badge.style.horizontalPadding !== undefined && badge.text)
-        element.style.paddingInline = `${badge.style.horizontalPadding}px`;
-    }
-    if (badge.accessibilityLabel)
-      element.setAttribute('aria-label', badge.accessibilityLabel);
-    if (badge.icon) {
-      const icon = createImage(context, badge.icon);
-      if (icon) {
-        icon.style.borderRadius = '50%';
-        element.prepend(icon);
-      }
-    }
-    if (badge.iconName === 'verified') {
-      const icon = createElement(
-        context.document,
-        'span',
-        'ok-native-list-market-badge-icon'
-      );
-      applySelectorIcon(icon, 'BadgeVerifiedSolid');
-      element.prepend(icon);
-    }
-    titleLine.appendChild(element);
-  });
-  main.appendChild(titleLine);
-  if (row.subtitlePrefix || row.subtitle || row.subtitleSegments?.length) {
-    const subtitleLine = createElement(
-      context.document,
-      'span',
-      'ok-native-list-market-subtitle-line'
-    );
-    subtitleLine.style.display = 'flex';
-    subtitleLine.style.alignItems = 'center';
-    subtitleLine.style.minWidth = '0';
-    subtitleLine.style.overflow = 'hidden';
-    subtitleLine.style.gap =
-      String(row.subtitlePrefix ? row.subtitlePrefix.gap ?? 4 : 0) + 'px';
-    if (row.subtitlePrefix) {
-      const prefix = createElement(
-        context.document,
-        'span',
-        'ok-native-list-market-subtitle-prefix',
-        row.subtitlePrefix.text
-      );
-      applyMarketTextStyle(prefix, row.subtitlePrefix.style, {
-        fontSize: 12,
-        lineHeight: 16,
-        weight: 400,
-        alignment: 'start',
-      });
-      prefix.style.display = 'block';
-      prefix.style.flex = '1 1 auto';
-      prefix.style.minWidth = '0';
-      prefix.style.overflow = 'hidden';
-      prefix.style.textOverflow = 'ellipsis';
-      prefix.style.color =
-        row.subtitlePrefix.style?.color ?? 'var(--nl-secondary)';
-      if (row.subtitlePrefix.maxWidth !== undefined) {
-        prefix.style.maxWidth = String(row.subtitlePrefix.maxWidth) + 'px';
-      }
-      subtitleLine.appendChild(prefix);
-    }
-    if (row.subtitle || row.subtitleSegments?.length) {
-      const subtitle = createElement(
-        context.document,
-        'span',
-        'ok-native-list-market-subtitle',
-        row.subtitle
-      );
-      applyMarketTextStyle(subtitle, style?.subtitle, {
-        fontSize: 14,
-        lineHeight: 20,
-        weight: 400,
-        alignment: 'start',
-      });
-      applyValueSegments(
-        subtitle,
-        row.subtitleSegments,
-        style?.subtitle?.fontSize ?? 14,
-        style?.subtitle?.lineHeight ?? 20,
-        marketFontWeight(style?.subtitle?.fontWeight, 400)
-      );
-      subtitle.style.flex = row.subtitlePrefix ? '0 0 auto' : '1 1 auto';
-      subtitleLine.appendChild(subtitle);
-    }
-    main.appendChild(subtitleLine);
-  }
-  body.appendChild(main);
-  const trailing = createElement(
-    context.document,
-    'span',
-    'ok-native-list-market-trailing'
-  );
-  trailing.style.gap = String(layoutStyle.trailingGap) + 'px';
-  trailing.append(
-    createElement(context.document, 'span', 'ok-native-list-market-price'),
-    createElement(context.document, 'span', 'ok-native-list-market-change')
-  );
-  body.appendChild(trailing);
-  setMarketQuoteContent(body, row);
-  for (const key of ['title', 'subtitle'] as const) {
-    const text = body.querySelector<HTMLElement>(
-      `.ok-native-list-market-${key}`
-    );
-    if (text) applyTextStyleToSlot(text, style?.[key] ?? {}, 1);
-  }
-  const prefix = body.querySelector<HTMLElement>(
-    '.ok-native-list-market-subtitle-prefix'
-  );
-  if (prefix) applyTextStyleToSlot(prefix, row.subtitlePrefix?.style ?? {}, 1);
-  return body;
-}
-
-const ROW_BOX_STYLE_KEYS: ReadonlySet<string> = new Set([
-  'container',
-  'horizontalPadding',
-  'verticalPadding',
-  'leadingGap',
-  'lineGap',
-  'titleBadgeGap',
-  'trailingGap',
-  'image',
-]);
-
 /** Text owns a single wrapping budget, including its rich runs. */
-function applyTextLayout(
-  element: HTMLElement,
-  style: NativeListTextStyle,
-  defaultLines?: number
-): void {
-  if (
-    style.lines === undefined &&
-    style.truncate === undefined &&
-    style.verticalAlignment === undefined &&
-    style.offsetY === undefined &&
-    defaultLines === undefined
-  )
-    return;
-  let content = element.querySelector<HTMLElement>(
-    ':scope > .ok-native-list-text-content'
-  );
-  const computed = element.ownerDocument.defaultView?.getComputedStyle(element);
-  const inheritedClamp = Number(
-    element.style.getPropertyValue('-webkit-line-clamp') ||
-      computed?.getPropertyValue('-webkit-line-clamp')
-  );
-  const lines =
-    style.lines ??
-    defaultLines ??
-    (Number(
-      element.style.getPropertyValue('-webkit-line-clamp') ||
-        computed?.getPropertyValue('-webkit-line-clamp')
-    ) ||
-      1);
-  if (
-    !content &&
-    (style.verticalAlignment !== undefined ||
-      style.offsetY !== undefined ||
-      element.classList.contains('ok-native-list-market-change'))
-  ) {
-    content = element.ownerDocument.createElement('span');
-    content.className = 'ok-native-list-text-content';
-    content.append(...Array.from(element.childNodes));
-    element.appendChild(content);
-    element.style.display = 'flex';
-    element.style.flexDirection = 'column';
-    element.style.removeProperty('-webkit-line-clamp');
-    element.style.removeProperty('-webkit-box-orient');
-    content.style.minWidth = '0';
-    content.style.flex = '0 1 auto';
-    content.style.width = '100%';
-  }
-  const text = content ?? element;
-  if (style.verticalAlignment !== undefined) {
-    element.style.justifyContent = {
-      top: 'flex-start',
-      center: 'center',
-      bottom: 'flex-end',
-    }[style.verticalAlignment];
-  }
-  if (style.offsetY !== undefined)
-    text.style.transform = `translateY(${style.offsetY}px)`;
-  if (
-    style.lines === undefined &&
-    style.truncate === undefined &&
-    defaultLines === undefined &&
-    !inheritedClamp
-  ) {
-    if (content) {
-      content.style.whiteSpace = computed?.whiteSpace || 'inherit';
-      content.style.textOverflow = computed?.textOverflow || 'inherit';
-      content.style.overflow = 'hidden';
-    }
-    return;
-  }
-  if (lines === 1) {
-    const walker = element.ownerDocument.createTreeWalker(
-      text,
-      4 /* SHOW_TEXT */
-    );
-    let previousCarriageReturn = false;
-    while (walker.nextNode()) {
-      const value = walker.currentNode.nodeValue ?? '';
-      if (!value) continue;
-      // A CRLF pair may straddle two styled runs.
-      const textValue =
-        previousCarriageReturn && value.startsWith('\n')
-          ? value.slice(1)
-          : value;
-      walker.currentNode.nodeValue = textValue.replace(/\r\n|[\r\n]/g, ' ');
-      previousCarriageReturn = value.endsWith('\r');
-    }
-  }
-  text.style.whiteSpace = lines === 1 ? 'nowrap' : 'pre-wrap';
-  text.style.overflow = 'hidden';
-  text.style.textOverflow = style.truncate === 'clip' ? 'clip' : 'ellipsis';
-  text.style.removeProperty('-webkit-line-clamp');
-  text.style.removeProperty('-webkit-box-orient');
-  text.style.maxHeight = '';
-  if (lines > 1 && style.truncate !== 'clip') {
-    text.style.display = '-webkit-box';
-    text.style.setProperty('-webkit-line-clamp', String(lines));
-    text.style.setProperty('-webkit-box-orient', 'vertical');
-  } else {
-    text.style.display = 'block';
-    if (lines > 1) {
-      // Rows are styled before mounting, when computed typography is unavailable.
-      // Resolve omitted line height in CSS after the template rules take effect.
-      text.style.maxHeight =
-        style.lineHeight !== undefined
-          ? `${lines * style.lineHeight}px`
-          : `${lines}lh`;
-    }
-  }
-}
 
 function applyRowContainerStyle(body: HTMLElement, row: RowModel): void {
   if (
@@ -3102,171 +2046,30 @@ function applyRowContainerStyle(body: HTMLElement, row: RowModel): void {
   }
 }
 
-function applyTextStyleToSlot(
-  element: HTMLElement,
-  style: NativeListTextStyle,
-  defaultLines?: number
-): void {
-  if (style.fontSize !== undefined)
-    element.style.fontSize = String(style.fontSize) + 'px';
-  if (style.lineHeight !== undefined)
-    element.style.lineHeight = String(style.lineHeight) + 'px';
-  if (style.fontWeight !== undefined)
-    element.style.fontWeight = String(marketFontWeight(style.fontWeight, 400));
-  if (style.color !== undefined) element.style.color = style.color;
-  // Explicit overrides also apply to rich text runs, but never to sibling badges.
-  element.querySelectorAll<HTMLElement>('span').forEach((run) => {
-    if (style.color !== undefined) run.style.color = style.color;
-    if (style.fontSize !== undefined)
-      run.style.fontSize = String(style.fontSize) + 'px';
-    if (style.fontWeight !== undefined)
-      run.style.fontWeight = String(marketFontWeight(style.fontWeight, 400));
-    if (style.lineHeight !== undefined)
-      run.style.lineHeight = String(style.lineHeight) + 'px';
-    if (style.lines !== undefined || style.truncate !== undefined)
-      run.style.whiteSpace = 'inherit';
-  });
-  if (style.alignment !== undefined) element.style.textAlign = style.alignment;
-  applyTextLayout(element, style, defaultLines);
-}
-
 /**
  * Applies a row style once the template has been built. A style key names the
  * model field it modifies and the element rendering that field carries
  * `data-nl-slot`, because the view pool is shared across templates. Market
  * keeps its own richer path. See docs/STYLE_SPEC.md §4 and §8.
  */
-export function applyRowStyle(body: HTMLElement, row: RowModel): void {
-  applyRowContainerStyle(body, row);
-  if (row.type === 'market' || rowRenderer(row)) return;
-  const style = (row as { style?: Record<string, unknown> }).style;
-  if (!style) return;
-  const box = style as RowBoxStyle;
-  if (box.horizontalPadding !== undefined)
-    body.style.paddingInline = String(box.horizontalPadding) + 'px';
-  if (box.verticalPadding !== undefined)
-    body.style.paddingBlock = String(box.verticalPadding) + 'px';
-  const vertical =
-    row.type === 'identity' && row.presentation === 'walletSidebar';
-  const leading = body.querySelector<HTMLElement>(
-    ':scope > .ok-native-list-visual, :scope > .ok-native-list-stacked'
-  );
-  const defaultGap =
-    body.style.gap ||
-    (row.type === 'identity' && row.presentation === 'walletSidebar'
-      ? '4px'
-      : row.type === 'identity' && row.presentation === 'accountSelector'
-      ? '8px'
-      : '12px');
-  if (box.lineGap !== undefined) {
-    const targets = body.querySelectorAll<HTMLElement>(
-      ':scope > .ok-native-list-flex'
-    );
-    targets.forEach((column) => {
-      column.style.rowGap = String(box.lineGap) + 'px';
-    });
-  }
-  if (leading && box.leadingGap !== undefined) {
-    const gap = 'calc(' + String(box.leadingGap) + 'px - ' + defaultGap + ')';
-    if (vertical) leading.style.marginBottom = gap;
-    else leading.style.marginInlineEnd = gap;
-  }
-  if (box.titleBadgeGap !== undefined) {
-    const gap = String(box.titleBadgeGap) + 'px';
-    body
-      .querySelectorAll<HTMLElement>(
-        '.ok-native-list-badges, .ok-native-list-wallet-badges'
-      )
-      .forEach((badges) => {
-        if (badges.classList.contains('ok-native-list-wallet-badges'))
-          badges.style.marginTop =
-            box.lineGap === undefined
-              ? gap
-              : 'calc(' + gap + ' - ' + String(box.lineGap) + 'px)';
-        else badges.style.marginInlineStart = gap;
-      });
-  }
-  if (box.trailingGap !== undefined) {
-    const gap = String(box.trailingGap) + 'px';
-    body
-      .querySelectorAll<HTMLElement>(
-        '.ok-native-list-accessories, .ok-native-list-amounts'
-      )
-      .forEach((trailing) => {
-        trailing.style.gap = gap;
-      });
-    if (row.type === 'sectionHeader') {
-      const children = Array.from(body.children) as HTMLElement[];
-      const columnIndex = children.findIndex((child) =>
-        child.classList.contains('ok-native-list-flex')
-      );
-      children.slice(columnIndex + 2).forEach((child) => {
-        child.style.marginInlineStart =
-          'calc(' + gap + ' - ' + defaultGap + ')';
-      });
-    }
-  }
-  if (leading && box.image) {
-    const image = box.image;
-    if (image.width !== undefined) {
-      leading.style.width = String(image.width) + 'px';
-      if (!vertical) leading.style.flexBasis = String(image.width) + 'px';
-    }
-    if (image.height !== undefined)
-      leading.style.height = String(image.height) + 'px';
-    const radius =
-      image.cornerRadius !== undefined
-        ? String(image.cornerRadius) + 'px'
-        : image.shape === 'circle'
-        ? '50%'
-        : image.shape === 'square'
-        ? '0px'
-        : image.shape === 'rounded'
-        ? '10px'
-        : undefined;
-    if (radius !== undefined) {
-      leading.style.setProperty('border-radius', radius, 'important');
-      // Clip the bitmap itself; decorations may extend beyond the visual slot.
-      leading.style.overflow = leading.matches('img') ? 'hidden' : 'visible';
-    }
-    const images = leading.matches('img')
-      ? [leading]
-      : leading.querySelectorAll<HTMLElement>(
-          ':scope > img, :scope > .ok-native-list-visual-fallback'
-        );
-    images.forEach((bitmap) => {
-      if (bitmap !== leading) {
-        if (image.width !== undefined) bitmap.style.width = '100%';
-        if (image.height !== undefined) bitmap.style.height = '100%';
-      }
-      if (radius !== undefined) bitmap.style.borderRadius = radius;
-      if (image.contentFit !== undefined)
-        bitmap.style.objectFit =
-          image.contentFit === 'center' ? 'none' : image.contentFit;
-    });
-  }
-  Object.keys(style).forEach((key) => {
-    if (ROW_BOX_STYLE_KEYS.has(key)) return;
-    const slotStyle = style[key] as NativeListTextStyle | undefined;
-    if (!slotStyle) return;
-    body
-      .querySelectorAll<HTMLElement>('[data-nl-slot="' + key + '"]')
-      .forEach((element) => {
-        applyTextStyleToSlot(element, slotStyle);
-      });
-  });
-}
 
 function rendererPrimitives(context: RenderContext) {
   return {
     background: resolvedTheme(context.snapshot).background,
     accessory: (key: string, descriptor: TrailingAccessory, slot: number) =>
       createAccessory(context, key, descriptor, slot),
-    visual: (source: LeadingVisual | undefined) =>
-      createVisual(context, source),
+    visual: (source: LeadingVisual | undefined, presentation?: string) =>
+      createVisual(context, source, presentation),
     thumbnail: (source: ImageSource) =>
       createImage(context, source, 'ok-native-list-thumbnail'),
     textStyle: applyTextStyleToSlot,
+    icon: applySelectorIcon,
+    iconAction: (
+      name: string,
+      actionKey: string | undefined,
+      disabled?: boolean,
+      tintColor?: string
+    ) => createIconAction(context, name, actionKey, disabled, tintColor),
     dispose: disposeWebImageRetries,
   };
 }
@@ -3281,12 +2084,6 @@ export function createRowBody(
   switch (row.type) {
     case 'walletGroup':
       return createWalletGroupRow(context, row);
-    case 'sectionHeader':
-      return createSectionHeader(context, row);
-    case 'market':
-      return createMarketRow(context, row);
-    case 'identity':
-      return createIdentityRow(context, row);
   }
   throw new Error('No renderer registered for ' + row.type);
 }
@@ -3325,6 +2122,9 @@ export class NativeListWebEngine {
     activity: [],
     dataRow: [],
     metricCard: [],
+    market: [],
+    identity: [],
+    sectionHeader: [],
   };
   private readonly rendererKeys = new WeakMap<HTMLElement, RowRendererKey>();
   private frameHandle: number | undefined;
@@ -4184,65 +2984,6 @@ export class NativeListWebEngine {
         String(bleed) +
         'px 0 ' +
         restingBackground;
-    }
-    if (row.type === 'identity' && row.height !== undefined) {
-      const title = body.querySelector<HTMLElement>('.ok-native-list-title');
-      if (row.presentation === 'accountSelector') {
-        body.style.gap = '12px';
-        body.style.borderRadius = '12px';
-        if ('shape' in row.leading && row.leading.shape === 'rounded') {
-          const visual = body.querySelector<HTMLElement>(
-            '.ok-native-list-visual'
-          );
-          if (visual) visual.style.borderRadius = '8px';
-        }
-        if (title) title.style.lineHeight = '24px';
-      }
-      if (row.presentation === 'networkSelector') {
-        body.style.borderRadius = '12px';
-        const visual = body.querySelector<HTMLElement>(
-          '.ok-native-list-visual'
-        );
-        if (visual) {
-          visual.style.width = '32px';
-          visual.style.height = '32px';
-          visual.style.flexBasis = '32px';
-        }
-        if (
-          row.leading.kind === 'network' &&
-          !row.leading.image &&
-          !row.leading.fallbackIcon &&
-          row.leading.fallbackText
-        ) {
-          const fallback = visual?.querySelector<HTMLElement>(
-            '.ok-native-list-visual-fallback'
-          );
-          if (fallback) {
-            fallback.style.fontSize = '19px';
-            fallback.style.lineHeight = '27px';
-            fallback.style.fontWeight = '600';
-            fallback.style.color = 'var(--nl-inverse-text)';
-          }
-        }
-        visual
-          ?.querySelectorAll<HTMLElement>('.ok-native-list-visual-main')
-          .forEach((image) => {
-            image.style.width = '32px';
-            image.style.height = '32px';
-          });
-        if (title) {
-          title.style.fontSize = '16px';
-          title.style.lineHeight = '24px';
-          title.style.fontWeight = '500';
-        }
-        body
-          .querySelectorAll<HTMLElement>('.ok-native-list-accessory')
-          .forEach((value) => {
-            value.style.fontSize = '16px';
-            value.style.lineHeight = '24px';
-            value.style.fontWeight = '500';
-          });
-      }
     }
     // Template and presentation defaults must precede caller overrides.
     applyRowStyle(body, row);
@@ -6079,4 +4820,8 @@ export class NativeListWebEngine {
       else element.removeAttribute('aria-grabbed');
     });
   }
+}
+
+export function applyRowStyle(body: HTMLElement, row: RowModel): void {
+  applyRowContainerStyle(body, row);
 }

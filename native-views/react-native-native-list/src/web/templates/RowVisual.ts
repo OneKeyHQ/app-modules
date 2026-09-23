@@ -8,12 +8,22 @@ import type {
 
 export type RowPrimitives = Readonly<{
   background: string;
+  icon: (element: HTMLElement, name: string) => void;
+  iconAction: (
+    name: string,
+    actionKey: string | undefined,
+    disabled?: boolean,
+    tintColor?: string
+  ) => HTMLElement;
   accessory: (
     rowKey: string,
     descriptor: TrailingAccessory,
     slot: number
   ) => HTMLElement;
-  visual: (source: LeadingVisual | undefined) => HTMLElement | undefined;
+  visual: (
+    source: LeadingVisual | undefined,
+    presentation?: string
+  ) => HTMLElement | undefined;
   thumbnail: (source: ImageSource) => HTMLElement | undefined;
   textStyle: (
     element: HTMLElement,
@@ -32,6 +42,10 @@ const properties = [
   'object-fit',
   'margin-inline-end',
   'align-self',
+  'border',
+  'box-sizing',
+  'clip-path',
+  'flex',
 ];
 
 /** Restores factory geometry without touching async loading visibility. */
@@ -47,18 +61,21 @@ export class RowVisualStyle {
       );
     });
   }
-  apply(
-    image: NativeListImageStyle | undefined,
-    width: number,
-    height: number,
-    margin: number
-  ) {
+  restore() {
     this.defaults.forEach((style, element) =>
       style.forEach((value, key) => {
         element.style.removeProperty(key);
         if (value) element.style.setProperty(key, value);
       })
     );
+  }
+  apply(
+    image: NativeListImageStyle | undefined,
+    width: number,
+    height: number,
+    margin: number
+  ) {
+    this.restore();
     const leading = this.view;
     leading.style.width = `${width}px`;
     leading.style.height = `${height}px`;
