@@ -82,7 +82,7 @@ separate workload and measurements.
 | 2. Message pilot | Complete: registered lightweight native hosts, persistent Web body, resolved styling/measurement and lifecycle acceptance | Lightweight native hosts, resolved styling/measurement, update classification and lifecycle acceptance |
 | 3. Simple templates | Complete (7/7): Rail, MediaTile, Action, System, Activity, DataRow and MetricCard migrated on all three platforms | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
 | 4. Complex templates | Complete (3/3): Market, Identity and SectionHeader migrated on all three platforms | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
-| 5. WalletGroup | Not started | Independent member renderers; verify member events/styles, compact dragging and height restoration |
+| 5. WalletGroup | In progress | Independent member renderers; verify member events/styles, compact dragging and height restoration |
 | 6. Cleanup | Not started | Remove migrated key inference and global style maps; container no longer manipulates template internals |
 
 The closed internal registry selects eleven renderers by template type. WalletGroup
@@ -191,3 +191,21 @@ native simulators and headed Chrome exercised the acceptance cases above.
 The section fixture additionally verified imperative scroll pinning and active
 index updates after the container fixes. Remaining stages are WalletGroup (5)
 and compatibility/global-map cleanup (6); this is not a performance signoff.
+
+### Stage 5 acceptance contract (implementation in progress)
+
+WalletGroup owns only member composition, measurement and compact presentation.
+Each member uses the registered Identity renderer and retains its own key, style,
+selection, action origin and binding lifetime. Group styles never cascade into
+members. Rebinding reconciles by member key; removed members are recycled
+immediately, so retention is bounded by the current member count (plus one
+compact parent on native). Recycling releases every member and compact parent.
+
+Acceptance covers member press/accessory routing, disabled and pressDisabled
+members, selection-only changes, style set/change/clear, member reorder/removal,
+family replacement and reuse. Native and Web drag previews keep the existing
+68-point compact allocation; `+N` counts children whose draggable is not false.
+A non-draggable member cannot initiate group drag. Drop/cancel restore the
+resolved group height and all configured member/container styles. Reorder
+orchestration stays in the list container. Existing platform defaults stay
+unchanged. Verify on the dedicated external-drive simulators and headed Web.

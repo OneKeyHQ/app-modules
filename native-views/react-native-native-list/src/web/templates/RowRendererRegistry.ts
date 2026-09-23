@@ -1,3 +1,5 @@
+import type { WalletGroupRow } from '../../models';
+import { walletGroupRowRenderer } from './WalletGroupRowRenderer';
 import type { IdentityRow, SectionHeaderRow } from '../../models';
 import { identityRowRenderer } from './IdentityRowRenderer';
 import { sectionHeaderRowRenderer } from './SectionHeaderRowRenderer';
@@ -46,6 +48,8 @@ function registration<R extends RowModel>(renderer: Renderer<R>, row: R) {
   };
 }
 const factories = {
+  walletGroup: (row: RowModel) =>
+    registration(walletGroupRowRenderer, row as WalletGroupRow),
   identity: (row: RowModel) =>
     registration(identityRowRenderer, row as IdentityRow),
   sectionHeader: (row: RowModel) =>
@@ -65,6 +69,7 @@ const factories = {
     registration(mediaTileRowRenderer, row as MediaTileRow),
 };
 const renderers = {
+  walletGroup: walletGroupRowRenderer,
   identity: identityRowRenderer,
   sectionHeader: sectionHeaderRowRenderer,
   market: marketRowRenderer,

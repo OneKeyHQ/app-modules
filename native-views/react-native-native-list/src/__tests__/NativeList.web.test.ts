@@ -2596,4 +2596,88 @@ describe('complex renderer lifecycle', () => {
       engine.destroy();
     }
   });
+  it('reconciles WalletGroup members by key and clears local styles without replacing images', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const parent: IdentityRow = {
+      type: 'identity',
+      key: 'group',
+      presentation: 'walletSidebar',
+      title: 'Parent',
+      leading: { kind: 'wallet', image },
+      height: 68,
+    };
+    const child = { ...parent, key: 'child', title: 'Child' };
+    const removed = { ...parent, key: 'removed', title: 'Removed' };
+    const row: Extract<RowModel, { type: 'walletGroup' }> = {
+      type: 'walletGroup',
+      key: parent.key,
+      parent,
+      children: [child, removed],
+    };
+    const engine = new NativeListWebEngine(host, snap(row), {}, false);
+    try {
+      const body = host.querySelector<HTMLElement>(
+        '[data-nl-renderer="walletGroup"]'
+      )!;
+      const member = body.querySelector<HTMLElement>(
+        '[data-native-list-group-member-key="child"]'
+      )!;
+      const imageElement = member.querySelector('img');
+      const discarded = body.querySelector<HTMLElement>(
+        '[data-native-list-group-member-key="removed"]'
+      )!;
+      engine.applySnapshot(
+        snap({
+          ...row,
+          children: [
+            removed,
+            {
+              ...child,
+              style: {
+                container: { height: 96, opacity: 0.6 },
+                title: { fontSize: 21 },
+              },
+            },
+          ],
+          style: {
+            horizontalPadding: 9,
+            verticalPadding: 3,
+            container: { backgroundColor: '#123456' },
+          },
+        })
+      );
+      expect(body.children[2]).toBe(member);
+      expect(member.querySelector('img')).toBe(imageElement);
+      expect(member.style.height).toBe('96px');
+      expect(body.style.paddingInline).toBe('9px');
+      expect(
+        body.querySelector<HTMLElement>('[data-nl-slot="title"]')!.style
+          .fontSize
+      ).not.toContain('21px');
+      engine.applySnapshot(snap({ ...row, children: [child] }));
+      expect(body.children).toHaveLength(2);
+      expect(body.children[1]).toBe(member);
+      expect(member.querySelector('img')).toBe(imageElement);
+      expect(member.style.height).toBe('68px');
+      expect(member.style.opacity).toBe('1');
+      expect(
+        member.querySelector<HTMLElement>('[data-nl-slot="title"]')!.style
+          .fontSize
+      ).toBe('');
+      expect(body.style.paddingInline).toBe('');
+      expect(body.style.getPropertyValue('--nl-container-background')).toBe('');
+      expect(
+        discarded.querySelector('[data-nl-renderer="identity"]')!.childNodes
+      ).toHaveLength(0);
+      engine.applySnapshot(snap(parent));
+      expect(host.querySelector('[data-nl-renderer="walletGroup"]')).toBeNull();
+      expect(
+        host.querySelector('[data-nl-renderer="identity"]')!.textContent
+      ).toContain('Parent');
+    } finally {
+      engine.destroy();
+    }
+  });
 });

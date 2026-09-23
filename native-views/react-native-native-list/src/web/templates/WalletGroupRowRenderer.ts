@@ -1,0 +1,109 @@
+import type { IdentityRow, WalletGroupRow } from '../../models';
+import { identityRowRenderer } from './IdentityRowRenderer';
+import { applyRowContainerStyle } from './RowContainerStyle';
+import { setData } from './RowElements';
+import type { RowPrimitives } from './RowVisual';
+
+type Member = { wrapper: HTMLElement; body: HTMLElement };
+const membersByBody = new WeakMap<HTMLElement, Map<string, Member>>();
+const memberHeight = (member: IdentityRow, width: number) =>
+  member.style?.container?.height ??
+  member.height ??
+  identityRowRenderer.measure(member, width);
+
+function bind(
+  body: HTMLElement,
+  row: WalletGroupRow,
+  primitives: RowPrimitives
+) {
+  const members = membersByBody.get(body)!;
+  const nextKeys = new Set(
+    [row.parent, ...row.children].map((member) => member.key)
+  );
+  for (const [key, member] of members) {
+    if (!nextKeys.has(key)) {
+      identityRowRenderer.recycle(member.body);
+      member.wrapper.remove();
+      members.delete(key);
+    }
+  }
+  body.style.cssText = '';
+  for (const name of body.getAttributeNames())
+    if (name.startsWith('data-') && name !== 'data-nl-renderer')
+      body.removeAttribute(name);
+  if (row.style?.horizontalPadding !== undefined)
+    body.style.paddingInline = `${row.style.horizontalPadding}px`;
+  if (row.style?.verticalPadding !== undefined)
+    body.style.paddingBlock = `${row.style.verticalPadding}px`;
+  [row.parent, ...row.children].forEach((memberRow, index) => {
+    let member = members.get(memberRow.key);
+    if (member) identityRowRenderer.bind(member.body, memberRow, primitives);
+    else {
+      const wrapper = body.ownerDocument.createElement('div');
+      wrapper.className = 'ok-native-list-wallet-member';
+      const memberBody = identityRowRenderer.create(
+        body.ownerDocument,
+        memberRow,
+        primitives
+      );
+      wrapper.appendChild(memberBody);
+      member = { wrapper, body: memberBody };
+      members.set(memberRow.key, member);
+    }
+    const { wrapper, body: memberBody } = member;
+    setData(wrapper, 'nativeListGroupMemberKey', memberRow.key);
+    setData(wrapper, 'testid', memberRow.testID);
+    setData(wrapper, 'nativeListGroupParent', index === 0);
+    setData(wrapper, 'nativeListSelected', memberRow.selected);
+    wrapper.style.cssText = '';
+    wrapper.style.flexBasis = `${memberHeight(memberRow, 0)}px`;
+    wrapper.style.height = wrapper.style.flexBasis;
+    wrapper.style.opacity = String(
+      (memberRow.style?.container?.opacity ?? memberRow.opacity ?? 1) *
+        (memberRow.disabled ? 0.5 : 1)
+    );
+    if (memberRow.style?.container?.cornerRadius !== undefined)
+      wrapper.style.borderRadius = `${memberRow.style.container.cornerRadius}px`;
+    memberBody.style.fontVariantNumeric = 'tabular-nums';
+    if (memberRow.backgroundColor)
+      memberBody.style.backgroundColor = memberRow.backgroundColor;
+    applyRowContainerStyle(memberBody, memberRow);
+    body.appendChild(wrapper);
+  });
+}
+function create(
+  document: Document,
+  row: WalletGroupRow,
+  primitives: RowPrimitives
+) {
+  const body = document.createElement('div');
+  body.className = 'ok-native-list-wallet-group';
+  body.dataset.nlRenderer = 'walletGroup';
+  membersByBody.set(body, new Map());
+  bind(body, row, primitives);
+  return body;
+}
+function recycle(body: HTMLElement) {
+  const members = membersByBody.get(body);
+  members?.forEach((member) => identityRowRenderer.recycle(member.body));
+  members?.clear();
+  body.replaceChildren();
+}
+export const walletGroupRowRenderer = {
+  key: 'walletGroup' as const,
+  create,
+  bind,
+  recycle,
+  appliesSizePreset: () => false,
+  measure: (row: WalletGroupRow, width: number) =>
+    [row.parent, ...row.children].reduce(
+      (total, member) => total + memberHeight(member, width),
+      0
+    ) +
+    row.children.length * 12 +
+    (row.parent.height !== undefined ? 2 : 0),
+  measureRendered: (
+    _body: HTMLElement,
+    _row: WalletGroupRow
+  ): number | undefined => undefined,
+};

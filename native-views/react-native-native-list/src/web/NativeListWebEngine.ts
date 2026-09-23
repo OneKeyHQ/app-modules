@@ -1,4 +1,4 @@
-import { identityRowRenderer } from './templates/IdentityRowRenderer';
+import { applyRowContainerStyle } from './templates/RowContainerStyle';
 import { applyTextStyleToSlot, applyValueSegments } from './templates/RowText';
 import { setMarketQuoteContent } from './templates/MarketRowRenderer';
 export {
@@ -444,18 +444,6 @@ export function estimateWebRowHeight(
   // if (row.type === 'system' && row.variant === 'spacer') return row.height;
   const explicitHeight = row.style?.container?.height ?? row.height;
   if (explicitHeight !== undefined) return explicitHeight;
-  if (row.type === 'walletGroup')
-    // OneKey patch: wallet badges participate in the outer group height.
-    // return (row.children.length + 1) * 68 + row.children.length * 12;
-    return (
-      [row.parent, ...row.children].reduce(
-        (height, member) =>
-          height + estimateWebRowHeight(member, snapshot, availableWidth),
-        0
-      ) +
-      row.children.length * 12 +
-      (row.parent.height !== undefined ? 2 : 0)
-    );
   const registered = rowRenderer(row);
   if (registered)
     return Math.max(
@@ -1931,120 +1919,7 @@ function applySelectorTabularNumbers(body: HTMLElement, row: RowModel) {
   });
 }
 
-function createWalletGroupRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'walletGroup' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-wallet-group'
-  );
-  [row.parent, ...row.children].forEach((member, memberIndex) => {
-    const memberElement = createElement(
-      context.document,
-      'div',
-      'ok-native-list-wallet-member'
-    );
-    setData(memberElement, 'nativeListGroupMemberKey', member.key);
-    setData(memberElement, 'testid', member.testID);
-    setData(memberElement, 'nativeListGroupParent', memberIndex === 0);
-    setData(memberElement, 'nativeListSelected', member.selected);
-    // OneKey patch: grouped members have the same selector typography as standalone wallets.
-    // memberElement.appendChild(identityRowRenderer.create(context.document,member,rendererPrimitives(context)));
-    const memberBody = identityRowRenderer.create(
-      context.document,
-      member,
-      rendererPrimitives(context)
-    );
-    applySelectorTabularNumbers(memberBody, member);
-    applyRowStyle(memberBody, member);
-    memberElement.appendChild(memberBody);
-    // OneKey patch: group children use their own measured badge height.
-    memberElement.style.flexBasis =
-      String(
-        member.style?.container?.height ??
-          member.height ??
-          68 + (member.badges?.length ? 24 : 0)
-      ) + 'px';
-    memberElement.style.height = memberElement.style.flexBasis;
-    memberElement.style.opacity = String(
-      (member.style?.container?.opacity ?? member.opacity ?? 1) *
-        (member.disabled ? 0.5 : 1)
-    );
-    if (member.style?.container?.cornerRadius !== undefined)
-      memberElement.style.borderRadius = `${member.style.container.cornerRadius}px`;
-    body.appendChild(memberElement);
-  });
-  return body;
-}
-
 /** Text owns a single wrapping budget, including its rich runs. */
-
-function applyRowContainerStyle(body: HTMLElement, row: RowModel): void {
-  if (
-    row.type === 'system' &&
-    row.variant === 'warning' &&
-    (row.style?.container?.height ?? row.height) !== undefined
-  )
-    body.style.height = '100%';
-  const container = row.style?.container;
-  if (!container) return;
-  if (container.backgroundColor !== undefined) {
-    body.style.setProperty(
-      '--nl-container-background',
-      container.backgroundColor
-    );
-    body.setAttribute('data-nl-container-background', 'true');
-    // A CSS rule allows existing hover/press feedback to override the resting fill.
-    body.style.removeProperty('background');
-    body.style.removeProperty('background-color');
-  }
-  if (container.cornerRadius !== undefined)
-    body.style.borderRadius = `${container.cornerRadius}px`;
-  if (container.borderWidth !== undefined) {
-    // Paint above member backgrounds without changing the content box or hit targets.
-    body.setAttribute('data-nl-container-border', 'true');
-    body.style.setProperty(
-      '--nl-container-border-width',
-      `${container.borderWidth}px`
-    );
-    body.style.setProperty(
-      '--nl-container-border-color',
-      container.borderColor ?? 'transparent'
-    );
-    body.style.borderColor = 'transparent';
-  } else if (container.borderColor !== undefined)
-    body.style.borderColor = container.borderColor;
-  if (container.contentVerticalAlignment !== undefined) {
-    const alignment = {
-      top: 'flex-start',
-      center: 'center',
-      bottom: 'flex-end',
-    }[container.contentVerticalAlignment];
-    const vertical =
-      row.type === 'walletGroup' ||
-      row.type === 'mediaTile' ||
-      row.type === 'metricCard' ||
-      (row.type === 'identity' && row.presentation === 'walletSidebar') ||
-      (row.type === 'system' && row.variant === 'warning');
-    if (vertical) {
-      body.style.display = 'flex';
-      body.style.flexDirection = 'column';
-      if (row.type === 'mediaTile') body.style.gap = '0px';
-      body.style.justifyContent = alignment;
-      Array.from(body.children).forEach((child) => {
-        (child as HTMLElement).style.flexShrink = '0';
-      });
-    } else {
-      body.style.alignItems = alignment;
-      // Timestamp/accessory defaults may have their own align-self.
-      Array.from(body.children).forEach((child) => {
-        (child as HTMLElement).style.alignSelf = alignment;
-      });
-    }
-  }
-}
 
 /**
  * Applies a row style once the template has been built. A style key names the
@@ -2081,10 +1956,6 @@ export function createRowBody(
   const registered = rowRenderer(row);
   if (registered)
     return registered.create(context.document, rendererPrimitives(context));
-  switch (row.type) {
-    case 'walletGroup':
-      return createWalletGroupRow(context, row);
-  }
   throw new Error('No renderer registered for ' + row.type);
 }
 
@@ -2114,6 +1985,7 @@ export class NativeListWebEngine {
   private readonly mounted = new Map<number, HTMLElement>();
   private readonly pool: Record<RowRendererKey, HTMLElement[]> = {
     legacy: [],
+    walletGroup: [],
     message: [],
     rail: [],
     mediaTile: [],
