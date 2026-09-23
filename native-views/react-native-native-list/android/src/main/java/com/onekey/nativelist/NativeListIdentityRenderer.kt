@@ -517,6 +517,19 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
             LayoutParams(LayoutParams.WRAP_CONTENT, dp(badgeHeight)).apply { topMargin = dp(4) },
           )
         }
+      val accessories = item.json.optJSONArray("trailing") ?: JSONArray()
+      if (accessories.length() > 0) {
+        addView(trailingColumn, wrap().apply { topMargin = dp(4) })
+        trailingColumn.bind(
+          item,
+          accessories,
+          theme,
+          item.json.optJSONObject("style") ?: JSONObject(),
+          sourceScale,
+          checkboxState,
+          horizontal = true,
+        )
+      }
       return
     }
     if (item.json.optString("presentation") == "networkSelector") {

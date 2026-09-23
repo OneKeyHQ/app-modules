@@ -88,6 +88,12 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
 
   protected open fun horizontalWidth(item: NativeListItem) = dp(280)
 
+  protected open val defaultBorderWidth = 0
+
+  protected open fun defaultBorderColor(theme: JSONObject?) = Color.TRANSPARENT
+
+  protected open fun resolvedMeasureHeight(explicit: Int?): Int? = explicit
+
   protected open val defaultCornerRadius = 0
   protected open val defaultSeparatorInset = 12
   protected open val pressChangesBackground = true
@@ -264,7 +270,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
       )
   }
 
-  private fun appearance() {
+  protected open fun appearance() {
     val item = current ?: return
     val pressed = touchPressed || reorderActive
     pressContent(pressed)
@@ -310,13 +316,14 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
         cornerRadii = radii
       }
     foreground =
-      if (container.has("borderWidth"))
+      if (container.has("borderWidth") || defaultBorderWidth > 0)
         GradientDrawable().apply {
           setColor(Color.TRANSPARENT)
           cornerRadii = radii
           setStroke(
-            stylePx(container.optDouble("borderWidth")),
-            color(container.optString("borderColor", "#00000000")),
+            if (container.has("borderWidth")) stylePx(container.optDouble("borderWidth"))
+            else dp(defaultBorderWidth),
+            color(container.optString("borderColor"), defaultBorderColor(theme)),
           )
         }
       else null
@@ -344,8 +351,9 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     // Android's native measurement consumes the exact resolved text/image views.
     super.onMeasure(
       widthMeasureSpec,
-      explicitHeight?.let { MeasureSpec.makeMeasureSpec(it, MeasureSpec.EXACTLY) }
-        ?: heightMeasureSpec,
+      resolvedMeasureHeight(explicitHeight)?.let {
+        MeasureSpec.makeMeasureSpec(it, MeasureSpec.EXACTLY)
+      } ?: heightMeasureSpec,
     )
   }
 

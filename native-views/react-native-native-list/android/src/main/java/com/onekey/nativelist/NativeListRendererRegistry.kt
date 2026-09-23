@@ -6,6 +6,7 @@ internal object NativeListRendererRegistry {
   private val factories: Map<NativeListRendererKey, (ThemedReactContext) -> NativeListRowHost> =
     mapOf(
       NativeListRendererKey.SECTION_HEADER to ::NativeListSectionHeaderRowView,
+      NativeListRendererKey.WALLET_GROUP to ::NativeListWalletGroupRowView,
       NativeListRendererKey.IDENTITY to ::NativeListIdentityRowView,
       NativeListRendererKey.MARKET to ::NativeListMarketRowView,
       NativeListRendererKey.LEGACY to ::NativeListRowView,
@@ -22,6 +23,7 @@ internal object NativeListRendererRegistry {
   private val keys =
     mapOf(
       "sectionHeader" to NativeListRendererKey.SECTION_HEADER,
+      "walletGroup" to NativeListRendererKey.WALLET_GROUP,
       "identity" to NativeListRendererKey.IDENTITY,
       "market" to NativeListRendererKey.MARKET,
       "message" to NativeListRendererKey.MESSAGE,

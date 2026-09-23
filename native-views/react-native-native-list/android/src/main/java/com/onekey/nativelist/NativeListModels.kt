@@ -71,7 +71,7 @@ private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
 
 // Message and Rail own dedicated renderers. Remaining templates still share
 // a compatible legacy tree; keys and style values never partition the pool.
-internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD, MARKET, IDENTITY, SECTION_HEADER }
+internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD, MARKET, IDENTITY, SECTION_HEADER, WALLET_GROUP }
 
 internal data class NativeListItem(
   val key: String,
