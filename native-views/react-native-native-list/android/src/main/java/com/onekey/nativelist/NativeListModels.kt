@@ -27,10 +27,8 @@ internal fun isNativeListWholeRowInteractive(
 
 /**
  * Maps a style key - which names a model field - to the view slot that renders it.
- * The view pool is shared across templates and the mapping is not one to one:
- * metricCard renders `value` through the title view and its own `title` through
- * the subtitle view, and one status view carries activity.status,
- * metricCard.trend. See docs/STYLE_SPEC.md section 4.
+ * Legacy Identity and SectionHeader share a small text view pool.
+ * Migrated templates resolve their own slots. See docs/STYLE_SPEC.md section 4.
  *
  * Returns null when the template does not render that field, so an unmapped key
  * is ignored rather than reaching an unrelated view.
@@ -39,14 +37,6 @@ internal fun nativeListStyleSlot(type: String, variant: String, field: String): 
   when (type) {
     "identity" -> when (field) {
       "title", "subtitle", "tertiary", "badge", "value", "valueSecondary" -> field
-      else -> null
-    }
-    // The large number and the small label sit in swapped views.
-    "metricCard" -> when (field) {
-      "value" -> "title"
-      "title" -> "subtitle"
-      "subtitle" -> "metricSubtitle"
-      "trend" -> "status"
       else -> null
     }
     "sectionHeader" -> when (field) {
@@ -81,7 +71,7 @@ private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
 
 // Message and Rail own dedicated renderers. Remaining templates still share
 // a compatible legacy tree; keys and style values never partition the pool.
-internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW }
+internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD }
 
 internal data class NativeListItem(
   val key: String,

@@ -514,14 +514,6 @@ export function estimateWebRowHeight(
     );
   let base: number;
   switch (row.type) {
-    case 'metricCard':
-      base =
-        row.variant === 'activity'
-          ? 161
-          : row.variant === 'performance'
-          ? 178
-          : 132;
-      break;
     case 'sectionHeader': {
       const isHistory =
         row.variant === 'history' ||
@@ -2337,186 +2329,6 @@ function createSectionHeader(
   return body;
 }
 
-function createMetricCell(
-  context: RenderContext,
-  metric: NonNullable<
-    Extract<RowModel, { type: 'metricCard' }>['metrics']
-  >[number],
-  shaded: boolean
-): HTMLElement {
-  const cell = createElement(
-    context.document,
-    'div',
-    'ok-native-list-composite-cell'
-  );
-  setData(cell, 'shaded', shaded);
-  cell.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-secondary',
-      metric.label
-    )
-  );
-  const valueLine = createElement(context.document, 'div');
-  valueLine.style.display = 'flex';
-  valueLine.style.alignItems = 'center';
-  valueLine.style.gap = '6px';
-  if (metric.visual) {
-    const visual = createVisual(context, metric.visual);
-    if (visual) {
-      visual.style.width = '16px';
-      visual.style.height = '16px';
-      visual.style.flexBasis = '16px';
-      const image = visual.querySelector('img');
-      if (image) {
-        image.style.width = '16px';
-        image.style.height = '16px';
-      }
-      valueLine.appendChild(visual);
-    }
-  }
-  const value = createElement(
-    context.document,
-    'span',
-    'ok-native-list-composite-value',
-    metric.value
-  );
-  value.style.color = toneColor(metric.tone, 'primary');
-  valueLine.appendChild(value);
-  cell.appendChild(valueLine);
-  return cell;
-}
-
-function createMetricRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'metricCard' }>
-): HTMLElement {
-  if (row.variant === 'activity' || row.variant === 'performance') {
-    const body = createElement(
-      context.document,
-      'div',
-      'ok-native-list-row ok-native-list-composite'
-    );
-    body.appendChild(
-      tagSlot(
-        createElement(
-          context.document,
-          'div',
-          'ok-native-list-composite-heading',
-          row.title
-        ),
-        'title'
-      )
-    );
-    const metrics = row.metrics ?? [];
-    const firstLine = createElement(
-      context.document,
-      'div',
-      'ok-native-list-composite-row'
-    );
-    metrics
-      .slice(0, 2)
-      .forEach((metric) =>
-        firstLine.appendChild(createMetricCell(context, metric, false))
-      );
-    body.appendChild(firstLine);
-    if (row.variant === 'activity') {
-      body.appendChild(
-        createElement(context.document, 'div', 'ok-native-list-divider')
-      );
-    } else {
-      const progress = createElement(
-        context.document,
-        'div',
-        'ok-native-list-progress'
-      );
-      const fill = createElement(context.document, 'span');
-      fill.style.width = String(Math.round((row.progress ?? 0) * 100)) + '%';
-      progress.appendChild(fill);
-      body.appendChild(progress);
-    }
-    const secondLine = createElement(
-      context.document,
-      'div',
-      'ok-native-list-composite-row'
-    );
-    metrics
-      .slice(2)
-      .forEach((metric) =>
-        secondLine.appendChild(
-          createMetricCell(context, metric, row.variant === 'performance')
-        )
-      );
-    body.appendChild(secondLine);
-    return body;
-  }
-
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-metric'
-  );
-  if (row.visual) {
-    const visual = createVisual(context, row.visual);
-    if (visual) body.appendChild(visual);
-  }
-  body.appendChild(
-    tagSlot(
-      createElement(
-        context.document,
-        'div',
-        'ok-native-list-secondary',
-        row.title
-      ),
-      'title'
-    )
-  );
-  body.appendChild(
-    tagSlot(
-      createElement(
-        context.document,
-        'div',
-        'ok-native-list-metric-value',
-        row.value
-      ),
-      'value'
-    )
-  );
-  if (row.trend) {
-    const trend = tagSlot(
-      createElement(
-        context.document,
-        'div',
-        'ok-native-list-secondary',
-        row.trend
-      ),
-      'trend'
-    );
-    trend.style.color =
-      row.trendTone === 'positive'
-        ? 'var(--nl-positive)'
-        : row.trendTone === 'negative'
-        ? 'var(--nl-negative)'
-        : 'var(--nl-secondary)';
-    body.appendChild(trend);
-  }
-  if (row.subtitle)
-    body.appendChild(
-      tagSlot(
-        createElement(
-          context.document,
-          'div',
-          'ok-native-list-secondary',
-          row.subtitle
-        ),
-        'subtitle'
-      )
-    );
-  if (row.badge) body.appendChild(createBadge(context, row.badge));
-  return body;
-}
-
 function createIdentityRow(
   context: RenderContext,
   row: Extract<
@@ -3334,69 +3146,45 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
     body.style.paddingInline = String(box.horizontalPadding) + 'px';
   if (box.verticalPadding !== undefined)
     body.style.paddingBlock = String(box.verticalPadding) + 'px';
-  const compositeMetric =
-    row.type === 'metricCard' &&
-    (row.variant === 'activity' || row.variant === 'performance');
   const vertical =
-    row.type === 'metricCard' ||
-    (row.type === 'identity' && row.presentation === 'walletSidebar');
+    row.type === 'identity' && row.presentation === 'walletSidebar';
   const leading = body.querySelector<HTMLElement>(
     ':scope > .ok-native-list-visual, :scope > .ok-native-list-stacked'
   );
   const defaultGap =
     body.style.gap ||
-    (row.type === 'metricCard'
-      ? '5px'
-      : row.type === 'identity' && row.presentation === 'walletSidebar'
+    (row.type === 'identity' && row.presentation === 'walletSidebar'
       ? '4px'
       : row.type === 'identity' && row.presentation === 'accountSelector'
       ? '8px'
       : '12px');
   if (box.lineGap !== undefined) {
-    const targets =
-      row.type === 'dataRow'
-        ? body.querySelectorAll<HTMLElement>('.ok-native-list-data-cell')
-        : row.type === 'metricCard' ||
-          (row.type === 'system' && row.variant === 'warning')
-        ? [body]
-        : body.querySelectorAll<HTMLElement>(':scope > .ok-native-list-flex');
+    const targets = body.querySelectorAll<HTMLElement>(
+      ':scope > .ok-native-list-flex'
+    );
     targets.forEach((column) => {
       column.style.rowGap = String(box.lineGap) + 'px';
     });
   }
   if (leading && box.leadingGap !== undefined) {
-    const gap =
-      'calc(' +
-      String(box.leadingGap) +
-      'px - ' +
-      (row.type === 'metricCard' && box.lineGap !== undefined
-        ? String(box.lineGap) + 'px'
-        : defaultGap) +
-      ')';
+    const gap = 'calc(' + String(box.leadingGap) + 'px - ' + defaultGap + ')';
     if (vertical) leading.style.marginBottom = gap;
     else leading.style.marginInlineEnd = gap;
   }
   if (box.titleBadgeGap !== undefined) {
     const gap = String(box.titleBadgeGap) + 'px';
-    if (row.type === 'dataRow')
-      body
-        .querySelectorAll<HTMLElement>('.ok-native-list-data-primary')
-        .forEach((line) => {
-          line.style.gap = gap;
-        });
-    else
-      body
-        .querySelectorAll<HTMLElement>(
-          '.ok-native-list-badges, .ok-native-list-wallet-badges'
-        )
-        .forEach((badges) => {
-          if (badges.classList.contains('ok-native-list-wallet-badges'))
-            badges.style.marginTop =
-              box.lineGap === undefined
-                ? gap
-                : 'calc(' + gap + ' - ' + String(box.lineGap) + 'px)';
-          else badges.style.marginInlineStart = gap;
-        });
+    body
+      .querySelectorAll<HTMLElement>(
+        '.ok-native-list-badges, .ok-native-list-wallet-badges'
+      )
+      .forEach((badges) => {
+        if (badges.classList.contains('ok-native-list-wallet-badges'))
+          badges.style.marginTop =
+            box.lineGap === undefined
+              ? gap
+              : 'calc(' + gap + ' - ' + String(box.lineGap) + 'px)';
+        else badges.style.marginInlineStart = gap;
+      });
   }
   if (box.trailingGap !== undefined) {
     const gap = String(box.trailingGap) + 'px';
@@ -3418,7 +3206,7 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
       });
     }
   }
-  if (leading && box.image && !compositeMetric) {
+  if (leading && box.image) {
     const image = box.image;
     if (image.width !== undefined) {
       leading.style.width = String(image.width) + 'px';
@@ -3464,15 +3252,7 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
     body
       .querySelectorAll<HTMLElement>('[data-nl-slot="' + key + '"]')
       .forEach((element) => {
-        applyTextStyleToSlot(
-          element,
-          slotStyle,
-          row.type === 'system' && row.variant === 'warning' ? 0 : undefined
-        );
-        if (row.type === 'dataRow' && slotStyle.alignment) {
-          element.style.flex = '1';
-          if (element.parentElement) element.parentElement.style.width = '100%';
-        }
+        applyTextStyleToSlot(element, slotStyle);
       });
   });
 }
@@ -3503,8 +3283,6 @@ export function createRowBody(
       return createWalletGroupRow(context, row);
     case 'sectionHeader':
       return createSectionHeader(context, row);
-    case 'metricCard':
-      return createMetricRow(context, row);
     case 'market':
       return createMarketRow(context, row);
     case 'identity':
@@ -3546,6 +3324,7 @@ export class NativeListWebEngine {
     system: [],
     activity: [],
     dataRow: [],
+    metricCard: [],
   };
   private readonly rendererKeys = new WeakMap<HTMLElement, RowRendererKey>();
   private frameHandle: number | undefined;

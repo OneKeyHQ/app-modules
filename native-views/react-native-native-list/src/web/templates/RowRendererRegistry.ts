@@ -1,3 +1,5 @@
+import type { MetricCardRow } from '../../models';
+import { metricCardRowRenderer } from './MetricCardRowRenderer';
 import type { DataRow } from '../../models';
 import { dataRowRenderer } from './DataRowRenderer';
 import type { ActivityRow } from '../../models';
@@ -38,6 +40,8 @@ function registration<R extends RowModel>(renderer: Renderer<R>, row: R) {
   };
 }
 const factories = {
+  metricCard: (row: RowModel) =>
+    registration(metricCardRowRenderer, row as MetricCardRow),
   dataRow: (row: RowModel) => registration(dataRowRenderer, row as DataRow),
   activity: (row: RowModel) =>
     registration(activityRowRenderer, row as ActivityRow),
@@ -50,6 +54,7 @@ const factories = {
     registration(mediaTileRowRenderer, row as MediaTileRow),
 };
 const renderers = {
+  metricCard: metricCardRowRenderer,
   dataRow: dataRowRenderer,
   activity: activityRowRenderer,
   system: systemRowRenderer,

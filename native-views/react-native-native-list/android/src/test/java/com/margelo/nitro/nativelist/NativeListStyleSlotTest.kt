@@ -14,22 +14,16 @@ class NativeListStyleSlotTest {
   @Test
   fun styleKeyResolvesToTheViewThatRendersThatModelField() {
     val cases = listOf(
-      // metricCard swaps the two views: the large number is drawn by the title
-      // view and the small label by the subtitle view.
-      Case(type = "metricCard", field = "value", expected = "title"),
-      Case(type = "metricCard", field = "title", expected = "subtitle"),
-      Case(type = "metricCard", field = "subtitle", expected = "metricSubtitle"),
-      Case(type = "metricCard", field = "trend", expected = "status"),
       // identity keeps its own names.
       Case(type = "identity", field = "title", expected = "title"),
       Case(type = "identity", field = "valueSecondary", expected = "valueSecondary"),
       // Legacy status views only serve unmigrated templates.
       Case(type = "rail", field = "status", expected = null),
       Case(type = "message", field = "time", expected = null),
-      // Amounts, indices and values share the two trailing views.
+      // Migrated templates no longer resolve slots through the legacy pool.
       Case(type = "system", field = "title", variant = "retry", expected = null),
       Case(type = "sectionHeader", field = "value", expected = "value"),
-      // Only the warning variant renders a separate title.
+
       Case(type = "system", field = "message", variant = "warning", expected = null),
       Case(type = "system", field = "message", variant = "noMatch", expected = null),
       // A field the template does not render is ignored, never remapped onto
@@ -51,14 +45,8 @@ class NativeListStyleSlotTest {
     // A collision would make one of the two keys silently win.
     val templates = listOf(
       Triple("identity", "", listOf("title", "subtitle", "tertiary", "badge", "value", "valueSecondary")),
-      Triple("activity", "", listOf("title", "description", "status", "primaryAmount", "secondaryAmount")),
-      Triple("dataRow", "", listOf("columns", "columnSecondary", "index")),
-      Triple("metricCard", "", listOf("title", "value", "subtitle", "trend")),
       Triple("sectionHeader", "", listOf("title", "subtitle", "value")),
-      // Only `warning` carries both a title and a message; the other variants
-      // have no title field at all, so their message owning the title view is
-      // not a collision.
-      Triple("system", "warning", listOf("title", "message", "actionText")),
+
     )
 
     templates.forEach { (type, variant, fields) ->

@@ -67,7 +67,7 @@ migration adds no new input limits, retry policy or automatic layout correction.
 ## Performance and resources
 
 Snapshots and patches cross the bridge in batches. Visible rows use platform
-recycling/windowing; shared primitives own image cancellation. Message, Rail, MediaTile and Action use dedicated lightweight native hosts and persistent Web bodies.
+recycling/windowing; shared primitives own image cancellation. Message and all seven stage 3 templates use dedicated lightweight native hosts and persistent Web bodies.
 None allocates the legacy native tree. This structural change is
 not a measured scrolling-performance result; performance claims still need a
 separate workload and measurements.
@@ -78,12 +78,12 @@ separate workload and measurements.
 | --- | --- | --- |
 | 1. Baseline | Complete: [implicit keys, defaults, special updates and acceptance baseline](MIGRATION_BASELINE.md) inventoried | Preserve each existing rule or explicitly migrate its caller |
 | 2. Message pilot | Complete: registered lightweight native hosts, persistent Web body, resolved styling/measurement and lifecycle acceptance | Lightweight native hosts, resolved styling/measurement, update classification and lifecycle acceptance |
-| 3. Simple templates | In progress (6/7): Rail, MediaTile, Action, System, Activity and DataRow migrated on all three platforms; MetricCard remains | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
+| 3. Simple templates | Complete (7/7): Rail, MediaTile, Action, System, Activity, DataRow and MetricCard migrated on all three platforms | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
 | 4. Complex templates | Not started | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
 | 5. WalletGroup | Not started | Independent member renderers; verify member events/styles, compact dragging and height restoration |
 | 6. Cleanup | Not started | Remove migrated key inference and global style maps; container no longer manipulates template internals |
 
-The closed internal registry selects Message, Rail, MediaTile, Action or the legacy family. Message owns
+The closed internal registry selects Message and the seven stage 3 renderers by template type. Market, Identity, SectionHeader and WalletGroup remain in the legacy family. Message owns
 its text column, optional leading visual and thumbnail; its native host does not
 allocate Market, WalletGroup or table views. Web preserves the Message body,
 text nodes and unchanged image elements when rebinding. Remaining templates
@@ -131,7 +131,7 @@ style-slot, reset and width branches have been removed. Horizontal measurement
 now responds to explicit fonts, image dimensions, padding and gaps while
 retaining the existing default width allowances and platform limits. Text-only
 rebinding preserves unchanged image requests; clearing styles restores defaults.
-Stage 3 still requires mediaTile, action, system, activity, dataRow and metricCard.
+All seven stage 3 templates are now migrated; dated acceptance for each is recorded in DESIGN.md.
 
 MediaTile owns its picture, network indicator, title/subtitle, badge and close
 control. Its legacy bind/style/reset allocation paths are removed. Images retain
@@ -147,3 +147,16 @@ carry the shared host epoch and preserve the original account-control anchor
 inset. Fixed footers now also resolve their host through the closed registry
 and replace it when their renderer family changes. Placement and gesture
 routing remain list-owned.
+
+MetricCard owns standard, activity and performance variants. Its existing
+per-platform measurement, badge colors, composite spacing and progress layout
+remain template defaults. Standard-card styles address title/value/subtitle/trend;
+composite cards expose the heading slot and keep metric internals fixed as
+defined in STYLE_SPEC.md. Image slots retain unchanged requests across rebinding
+and reset when a source disappears or its slot identity changes.
+
+Stage 3 completion is not completion of the six-stage architecture plan.
+Remaining work is stage 4 (Market, Identity, SectionHeader), stage 5
+(WalletGroup member rendering and drag acceptance), then stage 6 (retire the
+remaining compatibility inference/style maps and container access to internals).
+No migrated simple template dispatches through a legacy binder.

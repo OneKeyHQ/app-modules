@@ -388,3 +388,36 @@ changes three columns to two and back, clearing secondary labels and styles
 while retaining the unchanged image. Native builds and Android unit tests
 pass; all 158 package tests and typecheck pass. Evidence: external runtime
 `ios-data-*`, `android-data-*`; MetricCard is the last stage 3 template.
+
+### Stage 3: MetricCard acceptance and closeout (2026-09-23)
+
+MetricCard completes the seven-template migration. Standard, activity and
+performance layouts use dedicated native hosts and a persistent Web body.
+Legacy metric allocations, composite builders, slot remapping and height
+dispatch are removed. Shared iOS asset classification also accepts arrays;
+metric visuals use independent slot identities even when metric keys repeat.
+Text changes retain unchanged image requests. Removing an image invalidates
+its pending work before a different visual is bound.
+
+The dedicated iOS/Android runtimes exercised all three variants, style
+set/clear, explicit height restoration, end/top scroll, empty/repopulate,
+incompatible-family replacement and fixed-footer display. Their default
+geometry was compared with pre-migration captures; standard badge color and
+Android subtitle sizing retain their original defaults. Final DataRow audit
+also restored native table padding to 20 horizontal / 10 vertical.
+Headed Chrome exercised the same transitions. The regression changes content
+while styled, clears styles, cycles the three variants, and verifies stable
+image elements and restored 40px standard / 16px composite visual dimensions.
+
+Validation: iOS Debug build/link, Android Debug APK and seven Android unit tests
+pass; package typecheck and all 159 tests in five suites pass. Focused lint has
+zero errors. Evidence remains in the external-drive validation runtime as
+`ios-metric-*`, `android-metric-*`, `web-metric-*`, `ios-data-*`,
+`android-data-*` and native build logs. These are functional/visual checks,
+not scrolling-performance measurements.
+
+Stage 3 is complete: Rail, MediaTile, Action, System, Activity, DataRow and
+MetricCard (7/7). With the earlier Message pilot, eight template types now use
+the closed renderer registry. Stage 4 still owns Market/Identity/SectionHeader,
+stage 5 owns WalletGroup, and stage 6 removes their remaining legacy policies.
+Historical “remaining stage 3” lists above describe each incremental checkpoint.

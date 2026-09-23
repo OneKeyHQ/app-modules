@@ -242,7 +242,6 @@ internal class NativeListRowView(
   private val headerValueIcon = OneKeyIconView(context)
   private val leadingActionIcon = OneKeyIconView(context)
   private val secondaryImage = OneKeyImageReusableView(reactContext)
-  private val metricVisualImages = List(5) { OneKeyImageReusableView(reactContext) }
   private val mainColumn = LinearLayout(context)
   private val titleLine = PackedTitleLineLayout(context)
   private val title = DottedUnderlineTextView(context)
@@ -251,7 +250,6 @@ internal class NativeListRowView(
   private val marketSubtitleLine = PackedTitleLineLayout(context)
   private val tertiary = NativeListTextView(context)
   private val status = NativeListTextView(context)
-  private val metricSubtitle = NativeListTextView(context)
   private val badgeLine = NativeListTextView(context)
   private val marketBadgeViews = List(3) { LinearLayout(context) }
   private val marketBadgeLabels = List(3) { TextView(context) }
@@ -294,7 +292,6 @@ internal class NativeListRowView(
   // OneKey patch: a row style wrote view properties that resetViews does not restore.
   private var styledViewsDirty = false
   private val styledTextRestorations = mutableMapOf<TextView, () -> Unit>()
-  private var compositeMetricTitle: TextView? = null
   private val styledBoxRestorations = mutableListOf<() -> Unit>()
   private val semanticBadgeLabels = mutableListOf<TextView>()
   private val semanticSubtitleLabels = mutableListOf<TextView>()
@@ -345,15 +342,13 @@ internal class NativeListRowView(
     subtitle.typeface = NativeListFonts.regular(context)
     tertiary.typeface = NativeListFonts.regular(context)
     status.typeface = NativeListFonts.regular(context)
-    metricSubtitle.typeface = NativeListFonts.regular(context)
     badgeLine.typeface = NativeListFonts.medium(context)
-    listOf(title, subtitle, tertiary, status, metricSubtitle, badgeLine).forEach {
+    listOf(title, subtitle, tertiary, status, badgeLine).forEach {
       it.includeFontPadding = false
       it.fontFeatureSettings = "tnum"
     }
     subtitle.maxLines = 2
     status.maxLines = 1
-    metricSubtitle.maxLines = 1
     badgeLine.maxLines = 1
     titleLine.orientation = HORIZONTAL
     titleLine.gravity = Gravity.CENTER_VERTICAL
@@ -380,7 +375,6 @@ internal class NativeListRowView(
     mainColumn.addView(subtitle)
     mainColumn.addView(tertiary)
     mainColumn.addView(status)
-    mainColumn.addView(metricSubtitle)
 
 
 
@@ -670,7 +664,6 @@ internal class NativeListRowView(
       selectorImages.forEach(OneKeyImageReusableView::prepareForReuse)
       leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
       secondaryImage.prepareForReuse()
-      metricVisualImages.forEach(OneKeyImageReusableView::prepareForReuse)
     }
     resetViews()
 
@@ -704,9 +697,7 @@ internal class NativeListRowView(
     )
     applySelectionState(item, theme, layout, itemIndex, selected)
     pressedRowBackground = groupedBackground(
-      when (item.type) {
-        else -> "single"
-      },
+      "single",
       color(
         theme,
         "rowPressedBackground",
@@ -715,17 +706,12 @@ internal class NativeListRowView(
     )
     background = if (touchPressed || reorderActive) pressedRowBackground else restingRowBackground
     if (layout == "table") {
-      if (item.type == "dataRow") {
-        setPadding(dp(20), dp(10), dp(20), dp(10))
-      } else {
-        setPadding(dp(16), dp(8), dp(16), dp(8))
-      }
+      setPadding(dp(16), dp(8), dp(16), dp(8))
     }
     title.setTextColor(primary)
     subtitle.setTextColor(secondary)
     tertiary.setTextColor(secondary)
     status.setTextColor(secondary)
-    metricSubtitle.setTextColor(secondary)
     badgeLine.setTextColor(accent)
     separatorPaint.color = safeColor(
       listStyle?.optJSONObject("separator")?.optString("color"),
@@ -749,7 +735,6 @@ internal class NativeListRowView(
       "walletGroup" -> bindWalletGroup(item, theme, layout, listOrientation, checkboxState)
       "identity" -> bindIdentity(item, theme, selected, checkboxState)
       "market" -> bindMarket(item, theme)
-      "metricCard" -> bindMetricCard(item, theme)
       "sectionHeader" -> bindSectionHeader(item, theme, checkboxState)
     }
     // Keep passive rows out of accessibility and keyboard focus while allowing
@@ -825,11 +810,8 @@ internal class NativeListRowView(
       val inset = styleDp(style.optDouble("verticalPadding"))
       setPadding(paddingLeft, inset, paddingRight, inset)
     }
-    if (style.has("lineGap") && item.type != "walletGroup" && item.type != "dataRow") {
-      val target = when {
-        item.type == "metricCard" && item.json.optString("variant") in setOf("activity", "performance") -> this
-        else -> mainColumn
-      }
+    if (style.has("lineGap") && item.type != "walletGroup") {
+      val target = mainColumn
       styleGap(target, styleDp(style.optDouble("lineGap")))
     }
     if (style.has("leadingGap") && leadingFrame.parent != null) {
@@ -895,12 +877,6 @@ internal class NativeListRowView(
 
 
     val variant = item.json.optString("variant")
-    if (item.type == "metricCard" && variant in setOf("activity", "performance")) {
-      style.optJSONObject("title")?.let { titleStyle ->
-        compositeMetricTitle?.let { applyStyledText(it, titleStyle) }
-      }
-      return
-    }
     val fields = style.keys()
     while (fields.hasNext()) {
       val field = fields.next()
@@ -952,7 +928,6 @@ internal class NativeListRowView(
     "subtitle" -> subtitle
     "tertiary" -> tertiary
     "status" -> status
-    "metricSubtitle" -> metricSubtitle
     "badge" -> badgeLine
     "value" -> trailingViews[0]
     "valueSecondary" -> trailingViews[1]
@@ -1064,7 +1039,6 @@ internal class NativeListRowView(
     selectorImages.forEach(OneKeyImageReusableView::prepareForReuse)
     leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
     secondaryImage.prepareForReuse()
-    metricVisualImages.forEach(OneKeyImageReusableView::prepareForReuse)
     walletGroupRows.forEach { row ->
       row.visibility = VISIBLE
       row.alpha = 1f
@@ -1159,7 +1133,6 @@ internal class NativeListRowView(
     selectorImages.clear()
     leadingImages.forEach(OneKeyImageReusableView::dispose)
     secondaryImage.dispose()
-    metricVisualImages.forEach(OneKeyImageReusableView::dispose)
     marketBadgeImages.forEach(OneKeyImageReusableView::dispose)
     walletGroupRows.forEach(NativeListRowView::dispose)
   }
@@ -1241,7 +1214,6 @@ internal class NativeListRowView(
 
   private fun resetViews() {
     resetRowStyle()
-    compositeMetricTitle = null
     semanticBadgeLabels.clear()
     semanticSubtitleLabels.clear()
     semanticValueViews.clear()
@@ -1341,7 +1313,6 @@ internal class NativeListRowView(
     subtitle.text = ""
     tertiary.text = ""
     status.text = ""
-    metricSubtitle.text = ""
     badgeLine.text = ""
     title.setLineSpacing(0f, 1f)
     subtitle.setLineSpacing(0f, 1f)
@@ -1364,7 +1335,6 @@ internal class NativeListRowView(
     subtitle.visibility = GONE
     tertiary.visibility = GONE
     status.visibility = GONE
-    metricSubtitle.visibility = GONE
     badgeLine.visibility = GONE
     badgeLine.background = null
     badgeLine.setPadding(0, 0, 0, 0)
@@ -1406,13 +1376,6 @@ internal class NativeListRowView(
     leadingFrame.clipToPadding = false
     secondaryImage.visibility = GONE
     secondaryImage.foreground = null
-    metricVisualImages.forEach {
-      (it.parent as? ViewGroup)?.removeView(it)
-      it.visibility = GONE
-      it.background = null
-      it.clipToOutline = false
-      it.outlineProvider = ViewOutlineProvider.BACKGROUND
-    }
     unreadDot.visibility = GONE
     leadingIcon.visibility = GONE
     leadingIcon.iconName = ""
@@ -2251,295 +2214,6 @@ internal class NativeListRowView(
     else -> color(theme, "primaryText", "#000000DF")
   }
 
-  private fun bindMetricCard(item: NativeListItem, theme: JSONObject?) {
-    orientation = VERTICAL
-    gravity = Gravity.START
-    setPadding(dp(14), dp(14), dp(14), dp(14))
-    val variant = item.json.optString("variant", "standard")
-    if (variant == "activity" || variant == "performance") {
-      bindCompositeMetricCard(item, theme, variant)
-      return
-    }
-    item.json.optJSONObject("visual")?.let {
-      addLeading(it, 32)
-      leadingFrame.clipChildren = true
-      leadingFrame.clipToPadding = true
-    }
-    showText(subtitle, item.json.optString("title"), 1)
-    subtitle.setTextColor(color(theme, "disabledText", "#00000072"))
-    showText(title, item.json.optString("value"), 1)
-    title.textSize = sp(if (item.json.optString("size") == "large") 24f else 18f)
-    title.typeface = NativeListFonts.semibold(context)
-    showText(status, item.json.optString("trend"), 1)
-    status.setTextColor(
-      when (item.json.optString("trendTone", "neutral")) {
-        "positive" -> color(theme, "positive", "#00713FDE")
-        "negative" -> color(theme, "negative", "#C40006D3")
-        else -> color(theme, "secondaryText", "#0000009B")
-      },
-    )
-    showText(metricSubtitle, item.json.optString("subtitle"), 1)
-    item.json.optJSONObject("badge")?.optString("text")?.let { showText(badgeLine, it, 1) }
-    addView(mainColumn, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-  }
-
-  private fun bindCompositeMetricCard(item: NativeListItem, theme: JSONObject?, variant: String) {
-    val metrics = item.json.optJSONArray("metrics") ?: JSONArray()
-    addView(
-      metricText(
-        value = item.json.optString("title").uppercase(),
-        size = 11f,
-        lineHeight = 14,
-        typeface = NativeListFonts.regular(context),
-        textColor = color(theme, "disabledText", "#00000072"),
-        letterSpacingDp = 1.2f,
-      ).also { compositeMetricTitle = it },
-      weightedWidth(),
-    )
-    if (variant == "activity") {
-      addView(activityHeroMetrics(metrics, theme), weightedWidth().apply {
-        topMargin = dp(14)
-      })
-      addView(View(context).apply {
-        setBackgroundColor(color(theme, "separator", "#0000001F"))
-      }, LayoutParams(LayoutParams.MATCH_PARENT, 1).apply {
-        topMargin = dp(14)
-        bottomMargin = dp(14)
-      })
-      addView(activityCompactMetrics(metrics, theme), weightedWidth())
-    } else {
-      val winRateRow = LinearLayout(context).apply {
-        orientation = HORIZONTAL
-        gravity = Gravity.BOTTOM
-        if (metrics.length() > 0) {
-          addView(
-            makeMetricColumn(
-              metric = metrics.getJSONObject(0),
-              visualSlot = 0,
-              theme = theme,
-              alignment = Gravity.START,
-              valueSize = 18f,
-              valueLineHeight = 24,
-              valueTypeface = NativeListFonts.semibold(context),
-            ),
-            LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
-          )
-        }
-        if (metrics.length() > 1) {
-          addView(
-            makeMetricColumn(
-              metric = metrics.getJSONObject(1),
-              visualSlot = 1,
-              theme = theme,
-              alignment = Gravity.END,
-              valueSize = 14f,
-              valueLineHeight = 20,
-              valueTypeface = NativeListFonts.semibold(context),
-            ),
-            LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
-          )
-        }
-      }
-      addView(winRateRow, weightedWidth().apply { topMargin = dp(14) })
-      val progressValue = item.json.optDouble("progress", 0.0).coerceIn(0.0, 1.0)
-      val progress = LinearLayout(context).apply {
-        orientation = HORIZONTAL
-        clipToOutline = true
-        outlineProvider = object : ViewOutlineProvider() {
-          override fun getOutline(view: View, outline: Outline) {
-            outline.setRoundRect(0, 0, view.width, view.height, dp(2).toFloat())
-          }
-        }
-        if (progressValue > 0.0) {
-          addView(View(context).apply {
-            setBackgroundColor(parseNativeListColor("#22AB15"))
-          }, LayoutParams(0, LayoutParams.MATCH_PARENT, progressValue.toFloat()))
-        }
-        if (progressValue < 1.0) {
-          addView(View(context).apply {
-            setBackgroundColor(parseNativeListColor("#E5484D"))
-          }, LayoutParams(0, LayoutParams.MATCH_PARENT, (1.0 - progressValue).toFloat()))
-        }
-      }
-      addView(progress, LayoutParams(LayoutParams.MATCH_PARENT, dp(4)).apply {
-        topMargin = dp(8)
-      })
-      addView(performanceAverageMetrics(metrics, theme), weightedWidth().apply {
-        topMargin = dp(14)
-      })
-    }
-  }
-
-  private fun activityHeroMetrics(metrics: JSONArray, theme: JSONObject?) =
-    LinearLayout(context).apply {
-      orientation = HORIZONTAL
-      gravity = Gravity.BOTTOM
-      if (metrics.length() > 0) {
-        addView(
-          makeMetricColumn(
-            metric = metrics.getJSONObject(0),
-            visualSlot = 0,
-            theme = theme,
-            alignment = Gravity.START,
-            valueSize = 16f,
-            valueLineHeight = 24,
-            valueTypeface = NativeListFonts.semibold(context),
-          ),
-          LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
-        )
-      }
-      if (metrics.length() > 1) {
-        addView(
-          makeMetricColumn(
-            metric = metrics.getJSONObject(1),
-            visualSlot = 1,
-            theme = theme,
-            alignment = Gravity.END,
-            valueSize = 14f,
-            valueLineHeight = 20,
-            valueTypeface = NativeListFonts.semibold(context),
-          ),
-          LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
-        )
-      }
-    }
-
-  private fun activityCompactMetrics(metrics: JSONArray, theme: JSONObject?) =
-    LinearLayout(context).apply {
-      orientation = HORIZONTAL
-      gravity = Gravity.CENTER_VERTICAL
-      for (index in 2 until metrics.length()) {
-        val alignment = when (index) {
-          2 -> Gravity.START
-          metrics.length() - 1 -> Gravity.END
-          else -> Gravity.CENTER_HORIZONTAL
-        }
-        addView(
-          makeMetricColumn(
-            metric = metrics.getJSONObject(index),
-            visualSlot = index,
-            theme = theme,
-            alignment = alignment,
-            valueSize = 14f,
-            valueLineHeight = 20,
-            valueTypeface = NativeListFonts.medium(context),
-          ),
-          LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f),
-        )
-      }
-    }
-
-  private fun performanceAverageMetrics(metrics: JSONArray, theme: JSONObject?) =
-    LinearLayout(context).apply {
-      orientation = HORIZONTAL
-      val indices = listOf(2, metrics.length() - 1).distinct().filter { it in 0 until metrics.length() }
-      indices.forEachIndexed { position, index ->
-        val metric = metrics.getJSONObject(index)
-        val card = makeMetricColumn(
-          metric = metric,
-          visualSlot = index,
-          theme = theme,
-          alignment = Gravity.START,
-          valueSize = 14f,
-          valueLineHeight = 20,
-          valueTypeface = NativeListFonts.medium(context),
-        ).apply {
-          setPadding(dp(10), dp(10), dp(10), dp(10))
-          background = roundedFill(color(theme, "strongBackground", "#0000000F"), 8f)
-        }
-        addView(card, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply {
-          if (position > 0) marginStart = dp(8)
-        })
-      }
-    }
-
-  private fun makeMetricColumn(
-    metric: JSONObject,
-    visualSlot: Int,
-    theme: JSONObject?,
-    alignment: Int,
-    valueSize: Float,
-    valueLineHeight: Int,
-    valueTypeface: Typeface,
-  ) = LinearLayout(context).apply {
-    orientation = VERTICAL
-    gravity = alignment
-    addView(
-      metricText(
-        value = metric.optString("label"),
-        size = 11f,
-        lineHeight = 14,
-        typeface = NativeListFonts.regular(context),
-        textColor = color(theme, "disabledText", "#00000072"),
-        gravity = alignment,
-      ),
-    )
-    val valueText = metricText(
-      value = metric.optString("value"),
-      size = valueSize,
-      lineHeight = valueLineHeight,
-      typeface = valueTypeface,
-      textColor = dataTextColor(metric.optString("tone"), theme),
-      gravity = alignment,
-    )
-    val valueVisual = metric.optJSONObject("visual")
-    val valueView = if (valueVisual != null && visualSlot in metricVisualImages.indices) {
-      LinearLayout(context).apply {
-        orientation = HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        val image = metricVisualImages[visualSlot]
-        image.visibility = VISIBLE
-        image.outlineProvider = circleOutlineProvider
-        image.clipToOutline = true
-        valueVisual.optString("backgroundColor").takeIf(String::isNotEmpty)?.let { backgroundColor ->
-          image.background = roundedFill(
-            safeColor(backgroundColor, Color.WHITE),
-            8f,
-          )
-        }
-        visualSources(valueVisual).firstOrNull()?.let { (source, variant) ->
-          bindImage(source, image, boundKey ?: "metric", visualSlot, variant)
-        }
-        addView(image, LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(6) })
-        addView(valueText, wrap())
-      }
-    } else {
-      valueText
-    }
-    addView(
-      valueView,
-      LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-        topMargin = dp(2)
-      },
-    )
-  }
-
-  private fun metricText(
-    value: String,
-    size: Float,
-    lineHeight: Int,
-    typeface: Typeface,
-    textColor: Int,
-    letterSpacingDp: Float = 0f,
-    gravity: Int = Gravity.START,
-  ) = NativeListTextView(context).apply {
-    includeFontPadding = false
-    text = value
-    textSize = sp(size)
-    this.typeface = typeface
-    setTextColor(textColor)
-    this.gravity = gravity
-    maxLines = 1
-    ellipsize = TextUtils.TruncateAt.END
-    fontFeatureSettings = "tnum"
-    TextViewCompat.setLineHeight(this, dp(lineHeight))
-    if (letterSpacingDp > 0f) {
-      letterSpacing = letterSpacingDp / sp(size)
-    }
-  }
-
-  private fun weightedWidth() = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-
   private fun bindSectionHeader(
     item: NativeListItem,
     theme: JSONObject?,
@@ -3200,17 +2874,11 @@ internal class NativeListRowView(
       if (selected) "rowSelectedBackground" else "rowBackground",
       if (selected) "#0000000F" else "#FFFFFF",
     )
-    if (item.type == "metricCard" && !selected) {
-      rowBackground = color(theme, "subduedBackground", "#F9F9F9")
-    }
     val groupPosition = when {
       item.type == "identity" && item.json.optString("presentation") == "walletSidebar" -> "single"
       // OneKey patch: explicit selector rows preserve the v1 ListItem corner radius.
       item.type == "identity" && item.json.optString("presentation") in setOf("accountSelector", "networkSelector") && item.json.has("height") -> "single"
-      else -> when (item.type) {
-      "metricCard" -> "single"
       else -> item.json.optString("groupPosition")
-      }
     }
     var backgroundGroupPosition = groupPosition
     if (layout == "sectioned" && !item.json.optBoolean("selected", false)) {
@@ -3218,14 +2886,6 @@ internal class NativeListRowView(
       // matching iOS and the app-monorepo network selector.
       rowBackground = color(theme, "rowBackground", "#FFFFFF")
       if (item.type == "sectionHeader") backgroundGroupPosition = ""
-    } else if (
-      layout == "table" &&
-      item.type == "dataRow" &&
-      (if (item.json.has("index")) item.json.optInt("index") else itemIndex)?.rem(2) == 0 &&
-      !selected
-    ) {
-      rowBackground = color(theme, "subduedBackground", "#F9F9F9")
-      backgroundGroupPosition = ""
     }
     // OneKey patch: section heading backgrounds are independent of list rows.
     if (item.json.has("backgroundColor")) rowBackground = safeColor(item.json.optString("backgroundColor"), rowBackground)
@@ -3445,7 +3105,6 @@ internal class NativeListRowView(
             item.json.optString("variant") == "history" || item.sectionKey?.startsWith("history-") == true -> 12f
             else -> 14f
           }
-          "metricCard" -> if (item.json.optString("size") == "large") 24f else 18f
           else -> 16f
         }
       },
@@ -3462,12 +3121,10 @@ internal class NativeListRowView(
           item.sectionKey in setOf("linear-tokens", "action-tokens") -> NativeListFonts.regular(context)
           else -> NativeListFonts.semibold(context)
         }
-        "metricCard" -> NativeListFonts.semibold(context)
         else -> NativeListFonts.medium(context)
       }
     }
     subtitle.textSize = sp(when (item.type) {
-      "metricCard" -> 11f
       else -> 14f
     })
     tertiary.textSize = sp(14f)
@@ -3533,11 +3190,6 @@ internal class NativeListRowView(
       }
       isNetworkSelectorIdentity -> 47
       else -> when (item.type) {
-        "metricCard" -> when (item.json.optString("variant")) {
-          "activity" -> 0
-          "performance" -> 0
-          else -> 132
-        }
         "sectionHeader" -> when {
           isNetworkSelectorSection -> 44
           currentLayout == "table" -> 28

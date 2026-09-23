@@ -2267,7 +2267,12 @@ describe('DataRow renderer lifecycle', () => {
   const dataSnapshot = (
     layout: NativeListSnapshot['layout'],
     items: readonly RowModel[]
-  ): NativeListSnapshot => ({ schemaVersion: 1, generation: 1, layout, rows: items });
+  ): NativeListSnapshot => ({
+    schemaVersion: 1,
+    generation: 1,
+    layout,
+    rows: items,
+  });
   const { JSDOM } = require('jsdom') as {
     JSDOM: new (html: string) => { window: { document: Document } };
   };
@@ -2339,6 +2344,128 @@ describe('DataRow renderer lifecycle', () => {
       engine.applySnapshot(dataSnapshot({ kind: 'table' }, [row]));
       expect(body.querySelectorAll('[data-nl-slot="columns"]')).toHaveLength(3);
       expect(body.textContent).toContain('BTC');
+    } finally {
+      engine.destroy();
+    }
+  });
+});
+
+describe('MetricCard renderer lifecycle', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => { window: { document: Document } };
+  };
+  it('restores standard and composite defaults without restarting unchanged images', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: Extract<RowModel, { type: 'metricCard' }> = {
+      type: 'metricCard',
+      key: 'metric',
+      title: 'Portfolio',
+      value: '$42,000',
+      subtitle: 'Total balance',
+      trend: '+2.4%',
+      visual: { kind: 'image', image },
+      metrics: [
+        {
+          key: 'volume',
+          label: 'Volume',
+          value: '$42M',
+          visual: { kind: 'image', image },
+        },
+        { key: 'trades', label: 'Trades', value: '123' },
+        { key: 'change', label: 'Change', value: '+2.4%' },
+      ],
+      progress: 0.5,
+    };
+    const metricSnapshot = (item: typeof row): NativeListSnapshot => ({
+      schemaVersion: 1,
+      generation: 1,
+      layout: { kind: 'linear' },
+      rows: [item],
+    });
+    const engine = new NativeListWebEngine(
+      host,
+      metricSnapshot(row),
+      {},
+      false
+    );
+    try {
+      const body = host.querySelector<HTMLElement>(
+        '[data-nl-renderer="metricCard"]'
+      )!;
+      const leading = body.querySelector('img');
+      const styled: typeof row = {
+        ...row,
+        style: {
+          container: { height: 240 },
+          image: { width: 28, height: 30 },
+          value: { fontSize: 22 },
+          lineGap: 9,
+        },
+      };
+      engine.applySnapshot(metricSnapshot(styled));
+      expect(body.querySelector('img')).toBe(leading);
+      expect(
+        body.querySelector<HTMLElement>('[data-nl-slot="value"]')?.style
+          .fontSize
+      ).toBe('22px');
+      // A content update during styling must not promote styles into defaults.
+      engine.applySnapshot(metricSnapshot({ ...styled, value: '$43,000' }));
+      engine.applySnapshot(metricSnapshot({ ...row, value: '$43,000' }));
+      expect(body.querySelector('img')).toBe(leading);
+      expect(
+        body.querySelector<HTMLElement>('[data-nl-slot="value"]')?.style
+          .fontSize
+      ).toBe('');
+      expect(
+        body.querySelector<HTMLElement>('.ok-native-list-visual')?.style.width
+      ).toBe('40px');
+      for (const variant of ['activity', 'performance'] as const) {
+        const composite = { ...row, variant };
+        engine.applySnapshot(metricSnapshot(composite));
+        expect(host.querySelector('[data-nl-renderer="metricCard"]')).toBe(
+          body
+        );
+        const icon = body.querySelector('img');
+        engine.applySnapshot(
+          metricSnapshot({
+            ...composite,
+            style: {
+              title: { fontSize: 20 },
+              value: { fontSize: 30 },
+              image: { width: 80, height: 80 },
+            },
+          })
+        );
+        expect(body.querySelector('img')).toBe(icon);
+        expect(
+          body.querySelector<HTMLElement>('[data-nl-slot="title"]')?.style
+            .fontSize
+        ).toBe('20px');
+        expect(
+          body.querySelector<HTMLElement>('.ok-native-list-composite-value')
+            ?.style.fontSize
+        ).toBe('');
+        expect(
+          body.querySelector<HTMLElement>('.ok-native-list-visual')?.style.width
+        ).toBe('16px');
+        engine.applySnapshot(metricSnapshot(composite));
+        expect(
+          body.querySelector<HTMLElement>('[data-nl-slot="title"]')?.style
+            .fontSize
+        ).toBe('');
+        expect(body.querySelectorAll('.ok-native-list-progress')).toHaveLength(
+          variant === 'performance' ? 1 : 0
+        );
+      }
+      engine.applySnapshot(metricSnapshot(row));
+      expect(
+        body.querySelectorAll('.ok-native-list-composite-cell')
+      ).toHaveLength(0);
+      expect(
+        body.querySelector<HTMLElement>('.ok-native-list-visual')?.style.width
+      ).toBe('40px');
     } finally {
       engine.destroy();
     }

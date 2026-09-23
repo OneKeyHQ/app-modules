@@ -1731,10 +1731,6 @@ final class NativeListView: UIView {
     }
     let base: CGFloat
     switch item.type {
-    case "metricCard":
-      base = item.data.string("variant") == "activity"
-        ? 160 + 1 / UIScreen.main.scale
-        : item.data.string("variant") == "performance" ? 178 : 132
     case "sectionHeader":
       let variant = item.data.string("variant")
       let isNetworkSelector = item.data.string("presentation") == "networkSelector"

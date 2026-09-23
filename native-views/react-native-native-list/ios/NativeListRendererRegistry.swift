@@ -9,6 +9,7 @@ enum NativeListRendererRegistry {
       .message: (NativeListMessageCell.self, { NativeListMessageCell(frame: .zero) }),
       .rail: (NativeListRailCell.self, { NativeListRailCell(frame: .zero) }),
       .mediaTile: (NativeListMediaTileCell.self, { NativeListMediaTileCell(frame: .zero) }),
+      .metricCard: (NativeListMetricCardCell.self, { NativeListMetricCardCell(frame: .zero) }),
       .dataRow: (NativeListDataRowCell.self, { NativeListDataRowCell(frame: .zero) }),
       .activity: (NativeListActivityCell.self, { NativeListActivityCell(frame: .zero) }),
       .system: (NativeListSystemCell.self, { NativeListSystemCell(frame: .zero) }),
@@ -32,6 +33,9 @@ enum NativeListRendererRegistry {
   static func measure(_ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String)
     -> CGFloat?
   {
+    if item.rendererKey == .metricCard {
+      return item.data.string("variant") == "activity" ? 160 + 1 / UIScreen.main.scale : item.data.string("variant") == "performance" ? 178 : 132
+    }
     if item.rendererKey == .dataRow {
       let secondary = item.data.dictionaries("columns").contains { !$0.string("secondaryText").isEmpty }
       return secondary ? 60 : layout == "table" ? 48 : 56

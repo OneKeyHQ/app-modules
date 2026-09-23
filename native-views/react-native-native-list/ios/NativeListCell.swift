@@ -218,8 +218,6 @@ final class NativeListCell: NativeListRowHost {
   private let marketSubtitleSpacer = UIView()
   private let tertiaryLabel = NativeListTextLabel()
   private let statusLabel = NativeListInsetLabel()
-  private let metricSubtitleLabel = NativeListTextLabel()
-  private let metricCompositeStack = UIStackView()
   private let badgeLabel = NativeListInsetLabel()
   // OneKey patch: reuse the existing explicit line-box layout for styled Market badges.
   // private let marketBadgeButtons = (0..<3).map { _ in UIButton(type: .system) }
@@ -465,12 +463,8 @@ final class NativeListCell: NativeListRowHost {
     subtitleLabel.font = nativeListFont(ofSize: 14)
     tertiaryLabel.font = nativeListFont(ofSize: 14)
     statusLabel.font = nativeListFont(ofSize: 12)
-    metricSubtitleLabel.font = nativeListFont(ofSize: 12)
-    metricCompositeStack.axis = .vertical
-    metricCompositeStack.alignment = .fill
-    metricCompositeStack.spacing = 12
     badgeLabel.font = nativeListFont(ofSize: 12, weight: .medium)
-    [titleRowStack, subtitleLabel, tertiaryLabel, statusLabel, metricSubtitleLabel]
+    [titleRowStack, subtitleLabel, tertiaryLabel, statusLabel]
       .forEach(mainStack.addArrangedSubview)
 
     trailingStack.axis = .vertical
@@ -606,7 +600,6 @@ final class NativeListCell: NativeListRowHost {
     subtitleLabel.textColor = secondary
     tertiaryLabel.textColor = secondary
     statusLabel.textColor = secondary
-    metricSubtitleLabel.textColor = secondary
     badgeLabel.textColor = accent
     accessoryButtons.forEach { $0.setTitleColor(primary, for: .normal) }
     unreadDot.backgroundColor = UIColor(nativeListHex: "#E5484D", fallback: .systemRed)
@@ -627,9 +620,6 @@ final class NativeListCell: NativeListRowHost {
       selected: selected
     )
     pressedBackgroundColor = nativeListColor(theme, "rowPressedBackground", "#E8E8E8")
-    if item.type == "rail" {
-      pressedBackgroundColor = UIColor(nativeListHex: "#F0F0F0", fallback: .lightGray)
-    }
     updateBackgroundColor()
     if item.data.bool("backgroundFullWidth"), let background = (item.data.dictionary("style")?.dictionary("container")?["backgroundColor"] ?? item.data["backgroundColor"]) as? String {
       selectorFullWidthBackground.backgroundColor = UIColor(nativeListHex: background, fallback: .clear).cgColor
@@ -637,16 +627,8 @@ final class NativeListCell: NativeListRowHost {
       clipsToBounds = false
     }
     if layout == "table" {
-      if item.type == "dataRow" {
-        rootLeadingConstraint.constant = 20
-        rootTrailingConstraint.constant = -20
-        rootTopConstraint.constant = 10
-        rootBottomConstraint.constant = -10
-        rootStack.spacing = 10
-      } else {
-        rootLeadingConstraint.constant = 16
-        rootTrailingConstraint.constant = -16
-      }
+      rootLeadingConstraint.constant = 16
+      rootTrailingConstraint.constant = -16
     }
     applyGroupPosition(item.data.string("groupPosition"))
     isUserInteractionEnabled = !item.data.bool("disabled")
@@ -661,7 +643,6 @@ final class NativeListCell: NativeListRowHost {
     case "walletGroup": bindWalletGroup(item, theme: theme, layout: layout, checkboxState)
     case "identity": bindIdentity(item, theme: theme, selected: selected, checkboxState)
     case "market": bindMarket(item, theme: theme)
-    case "metricCard": bindMetricCard(item, theme: theme)
     case "sectionHeader": bindSectionHeader(item, theme: theme, layout: layout, checkboxState)
     default: break
     }
@@ -829,18 +810,8 @@ final class NativeListCell: NativeListRowHost {
       selected ? "rowSelectedBackground" : "rowBackground",
       selected ? "#F0F0F0" : "#FFFFFF"
     )
-    if item.type == "metricCard", !selected {
-      color = nativeListColor(theme, "subduedBackground", "#F9F9F9")
-
-    } else if layout == "sectioned", !item.data.bool("selected") {
-      // Checkbox-backed section lists in app-monorepo keep rows on $bg;
-      // selection is represented by the checkbox itself.
+    if layout == "sectioned", !item.data.bool("selected") {
       color = nativeListColor(theme, "rowBackground", "#FFFFFF")
-    } else if layout == "table",
-              item.type == "dataRow",
-              (item.data["index"] == nil ? itemIndex : item.data.int("index")).map({ $0 % 2 == 0 }) == true,
-              !selected {
-      color = nativeListColor(theme, "subduedBackground", "#F9F9F9")
     }
     // OneKey patch: portfolio group headers retain their source background.
     if let backgroundColor = item.data["backgroundColor"] as? String {
@@ -1007,13 +978,6 @@ final class NativeListCell: NativeListRowHost {
     statusLabel.text = nil
     statusLabel.topInset = 0
     statusLabel.bottomInset = 0
-    metricSubtitleLabel.text = nil
-    metricCompositeStack.arrangedSubviews.forEach {
-      metricCompositeStack.removeArrangedSubview($0)
-      $0.removeFromSuperview()
-    }
-    mainStack.removeArrangedSubview(metricCompositeStack)
-    metricCompositeStack.removeFromSuperview()
     badgeLabel.text = nil
     badgeLabel.horizontalInset = 0
     badgeLabel.topInset = 0
@@ -1047,7 +1011,7 @@ final class NativeListCell: NativeListRowHost {
       $0.imageEdgeInsets = .zero
       $0.titleEdgeInsets = .zero
     }
-    [titleLabel, subtitleLabel, tertiaryLabel, statusLabel, metricSubtitleLabel, badgeLabel]
+    [titleLabel, subtitleLabel, tertiaryLabel, statusLabel, badgeLabel]
       .forEach { $0.isHidden = true }
     separatorView.isHidden = true
     separatorLeadingConstraint.constant = 0
@@ -1390,7 +1354,7 @@ final class NativeListCell: NativeListRowHost {
       if isWalletSidebar {
         radius = 20
       } else {
-        radius = currentItem?.type == "rail" ? 8 : 12
+        radius = 12
       }
       layer.maskedCorners = [
         .layerMinXMinYCorner,
@@ -1407,11 +1371,10 @@ final class NativeListCell: NativeListRowHost {
     } else {
       applyGroupPosition(currentItem?.data.string("groupPosition") ?? "")
       // OneKey patch: explicit account and network selectors preserve ListItem radius while idle.
-      // let restingRadius: CGFloat = currentItem?.type == "metricCard" ? 12 : 0
       let isSelectorIdentity = currentItem?.type == "identity" && currentItem?.data["height"] != nil
       let isAccountSelector = isSelectorIdentity && ["accountSelector", "networkSelector"].contains(currentItem?.data.string("presentation") ?? "")
       let isWalletSidebar = isSelectorIdentity && currentItem?.data.string("presentation") == "walletSidebar"
-      let restingRadius: CGFloat = isWalletSidebar ? 20 : currentItem?.type == "metricCard" || isAccountSelector ? 12 : 0
+      let restingRadius: CGFloat = isWalletSidebar ? 20 : isAccountSelector ? 12 : 0
       contentView.layer.cornerRadius = restingRadius
       contentView.layer.cornerCurve = isWalletSidebar ? .continuous : .circular
       contentView.clipsToBounds = restingRadius > 0
@@ -1705,15 +1668,6 @@ final class NativeListCell: NativeListRowHost {
     case "identity":
       return ["title", "subtitle", "tertiary", "badge", "value", "valueSecondary"]
         .contains(field) ? field : nil
-    // The large number and the small label sit in swapped views.
-    case "metricCard":
-      switch field {
-      case "value": return "title"
-      case "title": return "subtitle"
-      case "subtitle": return "metricSubtitle"
-      case "trend": return "status"
-      default: return nil
-      }
     case "sectionHeader":
       return ["title", "subtitle", "value"].contains(field) ? field : nil
     default:
@@ -1763,13 +1717,10 @@ final class NativeListCell: NativeListRowHost {
       rootTopConstraint.constant = inset
       rootBottomConstraint.constant = -inset
     }
-    if style["lineGap"] != nil, item.type != "walletGroup", item.type != "dataRow" {
+    if style["lineGap"] != nil, item.type != "walletGroup" {
       let gap = CGFloat(style.double("lineGap"))
       styleGap(mainStack, gap)
-      if item.type == "metricCard", ["activity", "performance"].contains(item.data.string("variant")) {
-        styleGap(metricCompositeStack, gap)
-        if item.data.string("variant") == "performance", let summary = metricCompositeStack.arrangedSubviews.first as? UIStackView { styleGap(summary, gap) }
-      }
+
     }
     let leadingSlot = leadingContainer
     if style["leadingGap"] != nil, let stack = leadingSlot.superview as? UIStackView {
@@ -1820,13 +1771,6 @@ final class NativeListCell: NativeListRowHost {
 
 
     let variant = item.data.string("variant")
-    if item.type == "metricCard" && ["activity", "performance"].contains(variant) {
-      // Composite cards render the heading, not the standard card's value slot.
-      if let titleStyle = style.dictionary("title") {
-        applyStyledText(titleLabel, titleStyle)
-      }
-      return
-    }
     for (field, value) in style {
       guard let slotStyle = value as? [String: Any],
             let slot = styleSlot(type: item.type, variant: variant, field: field)
@@ -1836,7 +1780,6 @@ final class NativeListCell: NativeListRowHost {
       case "subtitle": (semanticSubtitleLabels.isEmpty ? [subtitleLabel] : semanticSubtitleLabels).forEach { applyStyledText($0, slotStyle) }
       case "tertiary": applyStyledText(tertiaryLabel, slotStyle)
       case "status": applyStyledText(statusLabel, slotStyle)
-      case "metricSubtitle": applyStyledText(metricSubtitleLabel, slotStyle)
       case "badge": (semanticBadgeLabels.isEmpty ? [badgeLabel] : semanticBadgeLabels).forEach { applyStyledText($0, slotStyle) }
       case "value", "valueSecondary":
         let index = slot == "value" ? 0 : 1
@@ -2404,261 +2347,6 @@ final class NativeListCell: NativeListRowHost {
       applyStyledButton(change, textLayoutStyle(changeStyle))
     }
     accessibilityLabel = item.data.string("accessibilityLabel", default: [item.data.string("title"), item.data.string("subtitle"), item.data.string("price"), changeData.string("text")].filter { !$0.isEmpty }.joined(separator: ", "))
-  }
-
-  private func bindMetricCard(_ item: NativeListItem, theme: [String: Any]?) {
-    rootStack.axis = .vertical
-    rootStack.alignment = .leading
-    rootStack.spacing = 4
-    rootLeadingConstraint.constant = 14
-    rootTrailingConstraint.constant = -14
-    rootTopConstraint.constant = 14
-    rootBottomConstraint.constant = -14
-    let variant = item.data.string("variant", default: "standard")
-    if variant == "activity" || variant == "performance" {
-      bindCompositeMetricCard(item, theme: theme, variant: variant)
-      return
-    }
-    if let visual = item.data.dictionary("visual") {
-      leadingWidth.constant = 32
-      leadingHeight.constant = 32
-      addLeading(visual, key: item.key, to: rootStack)
-      leadingContainer.clipsToBounds = true
-    }
-    show(subtitleLabel, item.data.string("title"), lines: 1)
-    subtitleLabel.font = nativeListFont(ofSize: 11)
-    subtitleLabel.textColor = nativeListColor(theme, "disabledText", "#8D8D8D")
-    show(titleLabel, item.data.string("value"), lines: 1)
-    titleLabel.font = nativeListFont(
-      ofSize: item.data.string("size") == "large" ? 24 : 18,
-      weight: .semibold
-    )
-    show(statusLabel, item.data.string("trend"), lines: 1)
-    let tone = item.data.string("trendTone", default: "neutral")
-    if tone == "positive" {
-      statusLabel.textColor = nativeListColor(theme, "positive", "#218358")
-    } else if tone == "negative" {
-      statusLabel.textColor = nativeListColor(theme, "negative", "#CE2C31")
-    }
-    show(metricSubtitleLabel, item.data.string("subtitle"), lines: 1)
-    if let badge = item.data.dictionary("badge") {
-      show(badgeLabel, badge.string("text"), lines: 1)
-    }
-    rootStack.addArrangedSubview(mainStack)
-    contentView.layer.cornerRadius = 12
-    contentView.clipsToBounds = true
-  }
-
-  private func bindCompositeMetricCard(
-    _ item: NativeListItem,
-    theme: [String: Any]?,
-    variant: String
-  ) {
-    rootStack.alignment = .fill
-    show(titleLabel, item.data.string("title"), lines: 1)
-    titleLabel.font = nativeListFont(ofSize: 11)
-    titleLabel.textColor = nativeListColor(theme, "disabledText", "#8D8D8D")
-    setLineHeight(
-      titleLabel,
-      text: item.data.string("title").uppercased(),
-      lineHeight: 14,
-      letterSpacing: 1.2
-    )
-    mainStack.spacing = 14
-    metricCompositeStack.spacing = 14
-    mainStack.addArrangedSubview(metricCompositeStack)
-    rootStack.addArrangedSubview(mainStack)
-
-    let metrics = item.data.dictionaries("metrics")
-    let topCount = min(2, metrics.count)
-    if variant == "activity" {
-      metricCompositeStack.addArrangedSubview(
-        makeMetricRow(
-          Array(metrics.prefix(topCount)),
-          theme: theme,
-          style: "activityHero"
-        )
-      )
-      let divider = UIView()
-      divider.backgroundColor = nativeListColor(theme, "separator", "#E0E0E0")
-      divider.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale).isActive = true
-      metricCompositeStack.addArrangedSubview(divider)
-      metricCompositeStack.addArrangedSubview(
-        makeMetricRow(
-          Array(metrics.dropFirst(topCount)),
-          theme: theme,
-          style: "compact"
-        )
-      )
-    } else {
-      let performanceSummary = UIStackView()
-      performanceSummary.axis = .vertical
-      performanceSummary.alignment = .fill
-      performanceSummary.spacing = 8
-      performanceSummary.addArrangedSubview(
-        makeMetricRow(
-          Array(metrics.prefix(topCount)),
-          theme: theme,
-          style: "performanceHero"
-        )
-      )
-      let progress = min(1, max(0, item.data.double("progress")))
-      let progressRow = UIStackView()
-      progressRow.axis = .horizontal
-      progressRow.spacing = 0
-      progressRow.layer.cornerRadius = 2
-      progressRow.clipsToBounds = true
-      let wins = UIView()
-      wins.backgroundColor = nativeListColor(theme, "positive", "#218358")
-      let losses = UIView()
-      losses.backgroundColor = nativeListColor(theme, "negative", "#CE2C31")
-      progressRow.addArrangedSubview(wins)
-      progressRow.addArrangedSubview(losses)
-      progressRow.heightAnchor.constraint(equalToConstant: 4).isActive = true
-      if progress <= 0 {
-        wins.isHidden = true
-      } else if progress >= 1 {
-        losses.isHidden = true
-      } else {
-        wins.widthAnchor.constraint(
-          equalTo: progressRow.widthAnchor,
-          multiplier: CGFloat(progress)
-        ).isActive = true
-      }
-      performanceSummary.addArrangedSubview(progressRow)
-      metricCompositeStack.addArrangedSubview(performanceSummary)
-      metricCompositeStack.addArrangedSubview(
-        makeMetricRow(
-          Array(metrics.dropFirst(topCount)),
-          theme: theme,
-          style: "compactShaded"
-        )
-      )
-    }
-    contentView.layer.cornerRadius = 12
-    contentView.clipsToBounds = true
-  }
-
-  private func makeMetricRow(
-    _ metrics: [[String: Any]],
-    theme: [String: Any]?,
-    style: String
-  ) -> UIStackView {
-    let shaded = style == "compactShaded"
-    let row = UIStackView()
-    row.axis = .horizontal
-    row.alignment = style.hasSuffix("Hero") ? .bottom : .fill
-    row.distribution = .fillEqually
-    row.spacing = shaded ? 8 : 12
-    metrics.enumerated().forEach { index, metric in
-      let column = UIStackView()
-      column.axis = .vertical
-      column.alignment = shaded
-        ? .leading
-        : index == 0 ? .leading : index == metrics.count - 1 ? .trailing : .center
-      column.spacing = 2
-      if shaded {
-        column.isLayoutMarginsRelativeArrangement = true
-        column.layoutMargins = UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
-        column.backgroundColor = UIColor(nativeListHex: "#0000000F", fallback: .lightGray)
-        column.layer.cornerRadius = 8
-      }
-      let label = UILabel()
-      label.font = nativeListFont(ofSize: 11)
-      label.textColor = nativeListColor(theme, "disabledText", "#8D8D8D")
-      setLineHeight(label, text: metric.string("label"), lineHeight: 14)
-      let value = UILabel()
-      let valueSize: CGFloat
-      let valueLineHeight: CGFloat
-      let valueWeight: NativeListFontWeight
-      switch style {
-      case "activityHero" where index == 0:
-        valueSize = 16
-        valueLineHeight = 24
-        valueWeight = .semibold
-      case "performanceHero" where index == 0:
-        valueSize = 18
-        valueLineHeight = 24
-        valueWeight = .semibold
-      case "activityHero", "performanceHero":
-        valueSize = 14
-        valueLineHeight = 20
-        valueWeight = .semibold
-      default:
-        valueSize = 14
-        valueLineHeight = 20
-        valueWeight = .medium
-      }
-      value.font = nativeListTabularFont(ofSize: valueSize, weight: valueWeight)
-      value.textColor = dataTextColor(metric.string("tone"), theme: theme)
-      setLineHeight(value, text: metric.string("value"), lineHeight: valueLineHeight)
-      column.addArrangedSubview(label)
-      if let visual = metric.dictionary("visual") {
-        let valueRow = UIStackView()
-        valueRow.axis = .horizontal
-        valueRow.alignment = .center
-        valueRow.spacing = 6
-        valueRow.addArrangedSubview(
-          makeMetricVisual(visual, key: metric.string("key"), slot: index)
-        )
-        valueRow.addArrangedSubview(value)
-        column.addArrangedSubview(valueRow)
-      } else {
-        column.addArrangedSubview(value)
-      }
-      row.addArrangedSubview(column)
-    }
-    return row
-  }
-
-  private func makeMetricVisual(
-    _ visual: [String: Any],
-    key: String,
-    slot: Int
-  ) -> UIView {
-    let container = UIView()
-    container.translatesAutoresizingMaskIntoConstraints = false
-    container.backgroundColor = UIColor(
-      nativeListHex: visual.string("backgroundColor", default: "#0000000F"),
-      fallback: .lightGray
-    )
-    container.layer.cornerRadius = visual.string("shape") == "square" ? 0 : 8
-    container.clipsToBounds = true
-    NSLayoutConstraint.activate([
-      container.widthAnchor.constraint(equalToConstant: 16),
-      container.heightAnchor.constraint(equalToConstant: 16),
-    ])
-
-    if visual.string("kind") == "icon" {
-      let imageView = UIImageView(image: nativeListIcon(named: visual.string("name")))
-      imageView.translatesAutoresizingMaskIntoConstraints = false
-      imageView.tintColor = UIColor(
-        nativeListHex: visual.string("tintColor", default: "#00000072"),
-        fallback: .darkGray
-      )
-      imageView.contentMode = .scaleAspectFit
-      container.addSubview(imageView)
-      NSLayoutConstraint.activate([
-        imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-        imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-        imageView.topAnchor.constraint(equalTo: container.topAnchor),
-        imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-      ])
-    } else if let source = visualSources(visual).first {
-      let imageView = OneKeyImageReusableView(frame: .zero)
-      imageView.translatesAutoresizingMaskIntoConstraints = false
-      imageView.clipsToBounds = true
-      imageView.layer.cornerRadius = container.layer.cornerRadius
-      container.addSubview(imageView)
-      NSLayoutConstraint.activate([
-        imageView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-        imageView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-        imageView.topAnchor.constraint(equalTo: container.topAnchor),
-        imageView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-      ])
-      bindImage(source.data, into: imageView, token: key, slot: slot, variant: source.variant)
-    }
-    return container
   }
 
   private func bindSectionHeader(

@@ -25,8 +25,8 @@ class NativeListRendererCell: NativeListRowHost {
     guard let old, old.key == new.key, old.rendererKey == new.rendererKey else { return .replace }
     if old.content == new.content { return .unchanged }
     for field in assetFields {
-      if NativeListImageSlot.signature(old.data.dictionary(field) ?? [:])
-        != NativeListImageSlot.signature(new.data.dictionary(field) ?? [:])
+      if NativeListImageSlot.signature([field: old.data[field] ?? NSNull()])
+        != NativeListImageSlot.signature([field: new.data[field] ?? NSNull()])
       {
         return .assets
       }
