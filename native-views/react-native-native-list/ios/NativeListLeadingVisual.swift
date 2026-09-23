@@ -4,7 +4,14 @@ import UIKit
 // visual descriptors and request lifetimes, never row types or business keys.
 final class NativeListLeadingVisual: UIView {
   var glyphSize: CGFloat = 18
-  private let fallback = UILabel()
+  var bitmapBorderWidth: CGFloat = 0
+  private let fallback = NativeListTextLabel()
+  var fallbackTextView: UILabel { fallback }
+  var singleOuterMask = false
+  var dashedBorderWidth: CGFloat = 2
+  var overlayTextFontSize: CGFloat = 10
+  var overlayTextLineHeight: CGFloat?
+  var overlayTextHorizontalInset: CGFloat?
   private let icon = UIImageView()
   private let unread = UIView()
   private let networkBackdrop = UIView()
@@ -97,6 +104,11 @@ final class NativeListLeadingVisual: UIView {
       sourceFallback ? UIColor(nativeListHex: placeholder, fallback: .clear) : visualBackground
     layer.borderWidth = kind == "icon" ? 1 / UIScreen.main.scale : 0
     layer.borderColor = UIColor(nativeListHex: "#0000001F", fallback: .clear).cgColor
+    if bitmapBorderWidth > 0 {
+      layer.borderWidth = bitmapBorderWidth
+      layer.borderColor =
+        UIColor(nativeListHex: visual.string("borderColor"), fallback: .clear).cgColor
+    }
     for (index, slot) in slots.enumerated() {
       guard index < sources.count else {
         slot.recycle()
@@ -162,7 +174,16 @@ final class NativeListLeadingVisual: UIView {
         let label = frame.subviews.first as? UILabel ?? UILabel()
         label.text = data.string("text")
         label.textAlignment = .center
-        label.font = nativeListFont(ofSize: 10, weight: .medium)
+        label.font = nativeListFont(ofSize: overlayTextFontSize, weight: .medium)
+        if let line = overlayTextLineHeight {
+          let paragraph = NSMutableParagraphStyle()
+          paragraph.minimumLineHeight = line
+          paragraph.maximumLineHeight = line
+          paragraph.alignment = .center
+          label.attributedText = NSAttributedString(
+            string: data.string("text"),
+            attributes: [.font: label.font as Any, .paragraphStyle: paragraph])
+        }
         label.textColor = UIColor(
           nativeListHex: data.string("tintColor", default: "#646464"), fallback: .darkGray)
         child = label
@@ -239,13 +260,27 @@ final class NativeListLeadingVisual: UIView {
           x: CGFloat(index) * (bounds.width - side) / CGFloat(max(1, sources.count - 1)),
           y: (bounds.height - side) / 2, width: side, height: side)
       }
-      slot.view.frame = logical(frame)
-      slot.view.clipsToBounds = true
+      slot.view.frame = logical(
+        index == 0 ? frame.insetBy(dx: bitmapBorderWidth, dy: bitmapBorderWidth) : frame)
+      slot.view.clipsToBounds =
+        !(singleOuterMask && sources.count == 1 && overlays.isEmpty
+        && visual.dictionary("cornerIcon") == nil)
       slot.view.layer.cornerRadius =
-        index == 0 && (sources.count == 1 || tokenPair) ? radius : frame.height / 2
+        index == 0 && singleOuterMask && sources.count == 1 && overlays.isEmpty
+          && visual.dictionary("cornerIcon") == nil
+        ? 0 : index == 0 && (sources.count == 1 || tokenPair) ? radius : frame.height / 2
     }
     for (index, slot) in slots.enumerated() {
-      if ellipse && index == 0 {
+      if index == 0 && bitmapBorderWidth > 0 {
+        let mask = slot.view.layer.mask as? CAShapeLayer ?? CAShapeLayer()
+        mask.path =
+          UIBezierPath(
+            roundedRect: slot.view.bounds.insetBy(dx: -bitmapBorderWidth, dy: -bitmapBorderWidth),
+            cornerRadius: radius
+          ).cgPath
+        slot.view.layer.mask = mask
+        slot.view.layer.cornerRadius = 0
+      } else if ellipse && index == 0 {
         let mask = slot.view.layer.mask as? CAShapeLayer ?? CAShapeLayer()
         mask.path = UIBezierPath(ovalIn: slot.view.bounds).cgPath
         slot.view.layer.mask = mask
@@ -273,17 +308,19 @@ final class NativeListLeadingVisual: UIView {
       frame.layer.cornerRadius = min(width, height) / 2
       let inset = CGFloat(data.double("padding", default: 0))
       frame.subviews.first?.frame = frame.bounds.insetBy(
-        dx: inset,
-        dy: inset)
+        dx: data["text"] != nil ? overlayTextHorizontalInset ?? inset : inset,
+        dy: data["text"] != nil && overlayTextHorizontalInset != nil ? 0 : inset)
     }
     dashedBorder.isHidden = visual.string("borderStyle") != "dashed"
     dashedBorder.strokeColor =
       UIColor(nativeListHex: visual.string("borderColor", default: "#8D8D8D"), fallback: .gray)
       .cgColor
     dashedBorder.fillColor = UIColor.clear.cgColor
-    dashedBorder.lineWidth = 2
+    dashedBorder.lineWidth = dashedBorderWidth
     dashedBorder.lineDashPattern = [4, 4]
-    dashedBorder.path = UIBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1)).cgPath
+    dashedBorder.path =
+      UIBezierPath(ovalIn: bounds.insetBy(dx: dashedBorderWidth / 2, dy: dashedBorderWidth / 2))
+      .cgPath
   }
   func recycle() {
     slots.forEach { $0.recycle() }

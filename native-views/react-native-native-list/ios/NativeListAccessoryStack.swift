@@ -18,6 +18,7 @@ final class NativeListAccessoryStack: UIStackView {
   private var checkboxUncheckedColor = UIColor.white
   private var checkboxIconColor = UIColor.white
   private var checkboxBorderColor = UIColor.lightGray
+  var firstVisibleControl: UIView? { accessoryButtons.first { !$0.isHidden } }
   var endInset: CGFloat?
   var contentGap: CGFloat?
   var onAction: ((String, UIView, Int?, NativeSelectionTarget?) -> Void)?
@@ -50,22 +51,31 @@ final class NativeListAccessoryStack: UIStackView {
 
   func bind(
     _ item: NativeListItem, descriptors: [[String: Any]], theme: [String: Any]?,
-    style: [String: Any], checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+    style: [String: Any], defaultSpacing: CGFloat = 2,
+    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
     reset()
     currentItem = item
     currentTheme = theme
-    spacing = CGFloat(style.double("trailingGap", default: 2))
+    spacing = CGFloat(style.double("trailingGap", default: Double(defaultSpacing)))
     checkboxCheckedColor = nativeListColor(theme, "primaryText", "#202020")
     checkboxUncheckedColor = nativeListColor(theme, "inverseText", "#FCFCFC")
     checkboxIconColor = checkboxUncheckedColor
     checkboxBorderColor = UIColor(nativeListHex: "#00000031", fallback: .lightGray)
+    if item.data.string("presentation") == "networkSelector" {
+      checkboxCheckedColor = nativeListColor(theme, "checkboxBackground", "#202020")
+      checkboxBorderColor = nativeListColor(theme, "checkboxBorder", "#00000031")
+      checkboxIconColor = nativeListColor(theme, "checkboxIcon", "#FFFFFF")
+      checkboxUncheckedColor = checkboxIconColor
+    }
     accessoryButtons.forEach {
       $0.setTitleColor(nativeListColor(theme, "primaryText", "#202020"), for: .normal)
     }
     bindAccessories(item, descriptors, theme, checkboxState)
-    if let value = style.dictionary("value"), let button = semanticValueButtons.first {
-      applyStyledButton(button, value)
+    for (index, key) in ["value", "valueSecondary"].enumerated() {
+      if let value = style.dictionary(key), semanticValueButtons.indices.contains(index) {
+        applyStyledButton(semanticValueButtons[index], value)
+      }
     }
     isHidden = arrangedSubviews.allSatisfy { $0.isHidden }
   }
@@ -74,10 +84,16 @@ final class NativeListAccessoryStack: UIStackView {
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
     currentItem = item
-    if let data = boundCheckboxData { bindCheckbox(item, data, checkboxState) }
+    if boundCheckboxData != nil,
+      let data = item.data.dictionaries("trailing").last(where: { $0.string("kind") == "checkbox" })
+        ?? item.data.dictionary("checkbox")
+    {
+      bindCheckbox(item, data, checkboxState)
+    }
   }
   func anchorInset(for view: UIView) -> CGFloat {
-    currentItem?.data.string("presentation") == "accountSelector" && accessoryButtons.contains { $0 === view } && view.bounds.width == 38 ? 7 : 0
+    currentItem?.data.string("presentation") == "accountSelector"
+      && accessoryButtons.contains { $0 === view } && view.bounds.width == 38 ? 7 : 0
   }
   func reset() {
     NSLayoutConstraint.deactivate(accessorySizeConstraints)
@@ -102,6 +118,7 @@ final class NativeListAccessoryStack: UIStackView {
       button.contentHorizontalAlignment = .center
       button.contentVerticalAlignment = .center
       button.rowTextOffsetY = 0
+      button.transform = .identity
       button.marketLineHeight = nil
       button.selectorSummaryLineHeight = nil
       button.backgroundColor = .clear

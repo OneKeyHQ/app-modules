@@ -7,8 +7,10 @@ class NativeListRendererCell: NativeListRowHost {
   let root = UIStackView()
   var contentInsets = UIEdgeInsets.zero
   var defaultCornerRadius: CGFloat { 0 }
+  var defaultCornerCurve: CALayerCornerCurve { .circular }
   var pressChangesBackground: Bool { true }
   var showsSelection: Bool { true }
+  var defaultVerticalAlignment: String? { nil }
   var defaultSeparatorInset: CGFloat { 12 }
   func bindContent(
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
@@ -41,8 +43,10 @@ class NativeListRendererCell: NativeListRowHost {
   private var theme: [String: Any]?
   private var layout = "linear"
   private var itemIndex: Int?
-  func unselectedBackground(_ item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int?) -> UIColor { nativeListColor(theme, "rowBackground", "#FFFFFF") }
-  private var selectedState = false
+  func unselectedBackground(
+    _ item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int?
+  ) -> UIColor { nativeListColor(theme, "rowBackground", "#FFFFFF") }
+  private(set) var selectedState = false
   private var inputSignature = ""
 
   override init(frame: CGRect) {
@@ -59,6 +63,15 @@ class NativeListRendererCell: NativeListRowHost {
     NSLayoutConstraint.activate(rootConstraints)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  func accessibilityText(_ item: NativeListItem) -> String {
+    item.data.string("accessibilityLabel", default: item.data.string("title"))
+  }
+  @discardableResult func retainBoundItem(_ item: NativeListItem) -> Bool {
+    guard self.item?.key == item.key else { return false }
+    self.item = item
+    return true
+  }
 
   override func bind(
     item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int? = nil,
@@ -86,7 +99,7 @@ class NativeListRendererCell: NativeListRowHost {
       if root.axis == .vertical,
         let alignment = item.data.dictionary("style")?.dictionary("container")?[
           "contentVerticalAlignment"] as? String
-          ?? (item.styledHeight != nil ? "top" : nil)
+          ?? (item.styledHeight != nil ? (defaultVerticalAlignment ?? "top") : nil)
       {
         NSLayoutConstraint.deactivate(Array(rootConstraints.suffix(2)))
         contentPosition =
@@ -108,7 +121,7 @@ class NativeListRendererCell: NativeListRowHost {
     self.itemIndex = itemIndex
     self.selectedState = selected
     bindSelectionContent(item, checkboxState: checkboxState)
-    accessibilityLabel = item.data.string("accessibilityLabel", default: item.data.string("title"))
+    accessibilityLabel = accessibilityText(item)
     accessibilityIdentifier = item.data["testID"] as? String
     isUserInteractionEnabled = !item.data.bool("disabled")
     if !isUserInteractionEnabled { isHighlighted = false }
@@ -145,7 +158,10 @@ class NativeListRendererCell: NativeListRowHost {
     let container = item.data.dictionary("style")?.dictionary("container") ?? [:]
     let showSelection =
       showsSelection && selectedState && (layout != "sectioned" || item.data.bool("selected"))
-    var background = showSelection ? nativeListColor(theme, "rowSelectedBackground", "#F0F0F0") : unselectedBackground(item, theme: theme, layout: layout, itemIndex: itemIndex)
+    var background =
+      showSelection
+      ? nativeListColor(theme, "rowSelectedBackground", "#F0F0F0")
+      : unselectedBackground(item, theme: theme, layout: layout, itemIndex: itemIndex)
     if let color = (container["backgroundColor"] ?? item.data["backgroundColor"]) as? String {
       background = UIColor(nativeListHex: color, fallback: background)
     }
@@ -168,6 +184,8 @@ class NativeListRendererCell: NativeListRowHost {
     layer.maskedCorners =
       container["cornerRadius"] != nil || position == "single" || defaultCornerRadius > 0
       ? top.union(bottom) : position == "first" ? top : position == "last" ? bottom : []
+    layer.cornerCurve = defaultCornerCurve
+    contentView.layer.cornerCurve = defaultCornerCurve
     layer.cornerRadius = radius
     layer.masksToBounds = radius > 0
     contentView.layer.cornerRadius = radius

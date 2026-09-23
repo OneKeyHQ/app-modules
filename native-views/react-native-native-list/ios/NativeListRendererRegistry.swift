@@ -5,6 +5,11 @@ import UIKit
 enum NativeListRendererRegistry {
   private static let hosts:
     [NativeListRendererKey: (type: NativeListRowHost.Type, create: () -> NativeListRowHost)] = [
+      .sectionHeader: (
+        NativeListSectionHeaderCell.self, { NativeListSectionHeaderCell(frame: .zero) }
+      ),
+      .identity: (NativeListIdentityCell.self, { NativeListIdentityCell(frame: .zero) }),
+      .market: (NativeListMarketCell.self, { NativeListMarketCell(frame: .zero) }),
       .legacy: (NativeListCell.self, { NativeListCell(frame: .zero) }),
       .message: (NativeListMessageCell.self, { NativeListMessageCell(frame: .zero) }),
       .rail: (NativeListRailCell.self, { NativeListRailCell(frame: .zero) }),

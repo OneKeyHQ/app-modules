@@ -1296,9 +1296,12 @@ final class NativeListView: UIView {
 
   private func syncSectionIndexToVisibleRows() {
     guard !sectionIndexScrubbing, !sectionIndexEntries.isEmpty else { return }
-    let firstVisible = collectionView.indexPathsForVisibleItems.map(\.item).min() ?? 0
-    let index = sectionIndexEntries.lastIndex { $0.position <= firstVisible }
-    sectionIndexView.setActiveIndex(index)
+    let offset = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
+    let index = sectionIndexEntries.lastIndex {
+      guard let attributes = flowLayout.layoutAttributesForItem(at: IndexPath(item: $0.position, section: 0)) else { return false }
+      return attributes.frame.minY <= offset + 1
+    }
+    sectionIndexView.setActiveIndex(index ?? 0)
   }
 
   private func configureRefresh(_ config: NativeListConfig) {
@@ -1713,14 +1716,6 @@ final class NativeListView: UIView {
         total + CGFloat(data.dictionary("style")?.dictionary("container")?.double("height", default: data.double("height", default: data.dictionaries("badges").isEmpty ? 68 : 92)) ?? data.double("height", default: data.dictionaries("badges").isEmpty ? 68 : 92))
       }
     }
-    if item.type == "identity", item.data.string("presentation") == "walletSidebar" {
-      // OneKey patch: default sidebar badge geometry is 24 points taller.
-      // return 68
-      return item.data.dictionaries("badges").isEmpty ? 68 : 92
-    }
-    if item.type == "identity", item.data.string("presentation") == "networkSelector" {
-      return 47
-    }
     let availableWidth = max(0, collectionView.bounds.width - flowLayout.sectionInset.left - flowLayout.sectionInset.right)
     let columnWidth = config?.layout == "grid"
       ? floor((availableWidth - CGFloat((config?.gridColumns ?? 2) - 1) * (config?.itemSpacing ?? 0)) / CGFloat(config?.gridColumns ?? 2))
@@ -1729,53 +1724,7 @@ final class NativeListView: UIView {
     if let height = NativeListRendererRegistry.measure(item, width: rowWidth, theme: config?.theme, layout: config?.layout ?? "linear") {
       return max(0, height + (NativeListRendererRegistry.appliesSizePreset(item) ? (item.data.string("size") == "small" ? -8 : item.data.string("size") == "large" ? 12 : 0) : 0))
     }
-    let base: CGFloat
-    switch item.type {
-    case "sectionHeader":
-      let variant = item.data.string("variant")
-      let isNetworkSelector = item.data.string("presentation") == "networkSelector"
-      let isHistory = variant == "history" ||
-        item.key.hasPrefix("history-") ||
-        (item.sectionKey?.hasPrefix("history-") ?? false)
-      base = config?.layout == "table"
-        ? 28
-        : isNetworkSelector
-          ? 47
-        : isHistory
-          ? 16
-          : variant == "summary"
-            ? 68
-            : variant == "gallery"
-              ? 32
-              : item.data.dictionary("checkbox") != nil
-                ? 56
-                : config?.layout == "linear" ? 30 : 36
-    case "market":
-      let style = item.data.dictionary("style")
-      let imageHeight = CGFloat(style?.dictionary("image")?.double(
-        "height",
-        default: item.data.string("variant") == "stock" ? 40 : 32
-      ) ?? (item.data.string("variant") == "stock" ? 40 : 32))
-      let verticalPadding = CGFloat(style?.double("verticalPadding", default: 12) ?? 12)
-      base = max(item.data.string("variant") == "stock" ? 72 : 68, imageHeight + verticalPadding * 2)
-    default:
-      if item.type == "identity", !item.data.string("tertiary").isEmpty {
-        base = 72
-      } else if item.type == "identity", !item.data.string("subtitle").isEmpty {
-        base = 60
-      } else {
-        base = 56
-      }
-    }
-    let hasFixedHeaderHeight = item.type == "sectionHeader" &&
-      ["summary", "gallery"].contains(item.data.string("variant"))
-    let modifier: CGFloat = hasFixedHeaderHeight
-      ? 0
-      : item.data.string("size", default: "medium") == "small"
-        ? -8
-        : item.data.string("size") == "large" ? 12 : 0
-    let sectionSpacing: CGFloat = 0
-    return max(0, base + modifier + sectionSpacing)
+    return 56
   }
 
 
@@ -2318,11 +2267,15 @@ final class NativeListFlowLayout: UICollectionViewFlowLayout {
           !stickyItemIndexes.isEmpty,
           let collectionView else { return super.layoutAttributesForElements(in: rect) }
     let base = super.layoutAttributesForElements(in: rect)?.compactMap { $0.copy() as? UICollectionViewLayoutAttributes } ?? []
-    let firstVisible = collectionView.indexPathsForVisibleItems.map(\.item).min() ?? 0
-    guard let stickyIndex = stickyItemIndexes.filter({ $0 <= firstVisible }).max(),
+    let pinY = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
+    // Visible cells can still describe the old viewport during an imperative
+    // scroll. Resolve the pinned header from unmodified layout positions.
+    guard let stickyIndex = stickyItemIndexes.filter({
+      guard let attributes = super.layoutAttributesForItem(at: IndexPath(item: $0, section: 0)) else { return false }
+      return attributes.frame.minY <= pinY
+    }).max(),
           let original = super.layoutAttributesForItem(at: IndexPath(item: stickyIndex, section: 0)),
           let sticky = original.copy() as? UICollectionViewLayoutAttributes else { return base }
-    let pinY = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
     let nextHeaderY = stickyItemIndexes
       .filter { $0 > stickyIndex }
       .min()

@@ -106,7 +106,7 @@ final class NativeListAccessoryButton: UIButton {
   }
 }
 
-private final class NativeListDottedUnderlineLabel: NativeListTextLabel {
+final class NativeListDottedUnderlineLabel: NativeListTextLabel {
   var showsDottedUnderline = false {
     didSet { setNeedsLayout() }
   }
