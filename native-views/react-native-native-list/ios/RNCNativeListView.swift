@@ -1706,16 +1706,6 @@ final class NativeListView: UIView {
     if item.type == "walletGroup", usingCompactReorderHeight, item.key == interactiveReorderCompactKey { return 68 }
     if let height = item.styledHeight { return height }
     if item.data["height"] != nil { return CGFloat(item.data.double("height")) }
-    if item.type == "walletGroup" {
-      if usingCompactReorderHeight, item.key == interactiveReorderCompactKey { return 68 }
-      let childCount = item.data.dictionaries("children").count
-      // OneKey patch: wallet badges contribute their own member heights.
-      // return CGFloat((childCount + 1) * 68 + childCount * 12)
-      let members = [item.data.dictionary("parent")].compactMap { $0 } + item.data.dictionaries("children")
-      return members.reduce(CGFloat(childCount * 12 + (members.first?["height"] != nil ? 2 : 0))) { total, data in
-        total + CGFloat(data.dictionary("style")?.dictionary("container")?.double("height", default: data.double("height", default: data.dictionaries("badges").isEmpty ? 68 : 92)) ?? data.double("height", default: data.dictionaries("badges").isEmpty ? 68 : 92))
-      }
-    }
     let availableWidth = max(0, collectionView.bounds.width - flowLayout.sectionInset.left - flowLayout.sectionInset.right)
     let columnWidth = config?.layout == "grid"
       ? floor((availableWidth - CGFloat((config?.gridColumns ?? 2) - 1) * (config?.itemSpacing ?? 0)) / CGFloat(config?.gridColumns ?? 2))

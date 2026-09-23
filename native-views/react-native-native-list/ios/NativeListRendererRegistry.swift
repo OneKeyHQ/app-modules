@@ -8,6 +8,7 @@ enum NativeListRendererRegistry {
       .sectionHeader: (
         NativeListSectionHeaderCell.self, { NativeListSectionHeaderCell(frame: .zero) }
       ),
+      .walletGroup: (NativeListWalletGroupCell.self, { NativeListWalletGroupCell(frame: .zero) }),
       .identity: (NativeListIdentityCell.self, { NativeListIdentityCell(frame: .zero) }),
       .market: (NativeListMarketCell.self, { NativeListMarketCell(frame: .zero) }),
       .legacy: (NativeListCell.self, { NativeListCell(frame: .zero) }),

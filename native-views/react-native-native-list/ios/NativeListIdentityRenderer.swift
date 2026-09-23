@@ -373,6 +373,17 @@ final class NativeListIdentityCell: NativeListRendererCell {
         mainStack.addArrangedSubview(line)
         selectorViews.append(line)
       }
+      let accessories = item.data.dictionaries("trailing")
+      if !accessories.isEmpty {
+        trailingStack.axis = .horizontal
+        trailingStack.alignment = .center
+        trailingStack.spacing = 8
+        root.addArrangedSubview(trailingStack)
+        trailingStack.bind(
+          item, descriptors: accessories, theme: theme,
+          style: item.data.dictionary("style") ?? [:], defaultSpacing: 8,
+          checkboxState: checkboxState)
+      }
       return
     }
     if item.data.string("presentation") == "accountSelector" {

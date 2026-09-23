@@ -6,6 +6,9 @@ enum NativeListRendererUpdate { case unchanged, content, assets, replace }
 class NativeListRendererCell: NativeListRowHost {
   let root = UIStackView()
   var contentInsets = UIEdgeInsets.zero
+  var usesIntrinsicContentHeight: Bool { false }
+  var defaultBorderWidth: CGFloat { 0 }
+  func defaultBorderColor(_ theme: [String: Any]?) -> UIColor { .clear }
   var defaultCornerRadius: CGFloat { 0 }
   var defaultCornerCurve: CALayerCornerCurve { .circular }
   var pressChangesBackground: Bool { true }
@@ -99,7 +102,8 @@ class NativeListRendererCell: NativeListRowHost {
       if root.axis == .vertical,
         let alignment = item.data.dictionary("style")?.dictionary("container")?[
           "contentVerticalAlignment"] as? String
-          ?? (item.styledHeight != nil ? (defaultVerticalAlignment ?? "top") : nil)
+          ?? (item.styledHeight != nil || usesIntrinsicContentHeight
+            ? (defaultVerticalAlignment ?? "top") : nil)
       {
         NSLayoutConstraint.deactivate(Array(rootConstraints.suffix(2)))
         contentPosition =
@@ -153,7 +157,7 @@ class NativeListRendererCell: NativeListRowHost {
         bindingEpoch: bindingEpoch, source: source, slot: slot, anchorInset: anchorInset))
   }
 
-  private func applyAppearance() {
+  func applyAppearance() {
     guard let item else { return }
     let container = item.data.dictionary("style")?.dictionary("container") ?? [:]
     let showSelection =
@@ -190,10 +194,11 @@ class NativeListRendererCell: NativeListRowHost {
     layer.masksToBounds = radius > 0
     contentView.layer.cornerRadius = radius
     contentView.layer.maskedCorners = layer.maskedCorners
-    contentView.layer.borderWidth = CGFloat(container.double("borderWidth"))
+    contentView.layer.borderWidth = CGFloat(
+      container.double("borderWidth", default: Double(defaultBorderWidth)))
     contentView.layer.borderColor =
       UIColor(
-        nativeListHex: container.string("borderColor", default: "#00000000"), fallback: .clear
+        nativeListHex: container.string("borderColor"), fallback: defaultBorderColor(theme)
       ).cgColor
     if item.data.bool("backgroundFullWidth"),
       let fill = (container["backgroundColor"] ?? item.data["backgroundColor"]) as? String
