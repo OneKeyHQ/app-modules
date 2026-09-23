@@ -1,9 +1,20 @@
 package com.margelo.nitro.nativelist
 
 import android.animation.TimeInterpolator
+import android.view.View
 import android.widget.LinearLayout
 import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONObject
+
+internal data class NativeListActionOrigin(
+  val sourceView: View,
+  val ownerRowView: NativeListRowHost,
+  val bindingEpoch: Long,
+  val source: String,
+  val slot: Int? = null,
+  val anchorInsetPixels: Int = 0,
+  val windowPointPixels: android.graphics.PointF? = null,
+)
 
 /** List-facing lifecycle shared by lightweight and legacy row implementations. */
 internal abstract class NativeListRowHost(context: ThemedReactContext) : LinearLayout(context) {

@@ -13,6 +13,9 @@ import java.util.WeakHashMap
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
+internal class NativeListViewHolder(val rowView: NativeListRowHost) :
+  androidx.recyclerview.widget.RecyclerView.ViewHolder(rowView)
+
 internal class NativeListAdapter(
   private val context: ThemedReactContext,
 ) : RecyclerView.Adapter<NativeListViewHolder>() {

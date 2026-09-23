@@ -1,7 +1,6 @@
 import UIKit
 
-// Closed internal registry. Legacy templates keep their existing implementation
-// until their own migration; no public plugin or bridge surface is introduced.
+// Closed internal registry; no public plugin or bridge surface.
 enum NativeListRendererRegistry {
   private static let hosts:
     [NativeListRendererKey: (type: NativeListRowHost.Type, create: () -> NativeListRowHost)] = [
@@ -11,7 +10,6 @@ enum NativeListRendererRegistry {
       .walletGroup: (NativeListWalletGroupCell.self, { NativeListWalletGroupCell(frame: .zero) }),
       .identity: (NativeListIdentityCell.self, { NativeListIdentityCell(frame: .zero) }),
       .market: (NativeListMarketCell.self, { NativeListMarketCell(frame: .zero) }),
-      .legacy: (NativeListCell.self, { NativeListCell(frame: .zero) }),
       .message: (NativeListMessageCell.self, { NativeListMessageCell(frame: .zero) }),
       .rail: (NativeListRailCell.self, { NativeListRailCell(frame: .zero) }),
       .mediaTile: (NativeListMediaTileCell.self, { NativeListMediaTileCell(frame: .zero) }),
@@ -22,9 +20,6 @@ enum NativeListRendererRegistry {
       .action: (NativeListActionCell.self, { NativeListActionCell(frame: .zero) }),
     ]
   static func create(_ key: NativeListRendererKey) -> NativeListRowHost { hosts[key]!.create() }
-  static func key(for type: String) -> NativeListRendererKey {
-    NativeListRendererKey(rawValue: type) ?? .legacy
-  }
   static func reuseIdentifier(for key: NativeListRendererKey) -> String {
     "NativeList.\(key.rawValue)"
   }

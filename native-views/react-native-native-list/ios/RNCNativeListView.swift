@@ -62,8 +62,8 @@ final class NativeListView: UIView {
   private let flowLayout = NativeListFlowLayout()
   private lazy var collectionView = NativeListCollectionView(frame: .zero, collectionViewLayout: flowLayout)
   private let footerContainer = UIView()
-  private var footerCell: NativeListRowHost = NativeListRendererRegistry.create(.legacy)
-  private var footerRendererKey = NativeListRendererKey.legacy
+  private var footerCell: NativeListRowHost = NativeListRendererRegistry.create(.action)
+  private var footerRendererKey = NativeListRendererKey.action
   private let sectionIndexView = NativeListSectionIndexView()
   private let sectionIndexPreview = NativeListSectionIndexPreviewView()
   private var sectionIndexLayoutConstraints: [NSLayoutConstraint] = []

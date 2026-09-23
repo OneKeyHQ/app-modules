@@ -82,7 +82,7 @@ separate workload and measurements.
 | 3. Simple templates | Complete (7/7): Rail, MediaTile, Action, System, Activity, DataRow and MetricCard migrated on all three platforms | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
 | 4. Complex templates | Complete (3/3): Market, Identity and SectionHeader migrated on all three platforms | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
 | 5. WalletGroup | Complete: registered composites and independent keyed Identity members on all three platforms | Independent member renderers; verify member events/styles, compact dragging and height restoration |
-| 6. Cleanup | Not started | Remove migrated key inference and global style maps; container no longer manipulates template internals |
+| 6. Cleanup | In progress: remove obsolete hosts/registries, then key-based styling and container fallbacks | Remove migrated key inference and global style maps; container no longer manipulates template internals |
 
 The closed internal registry selects all twelve renderers by template type.
 No supported template dispatches to the legacy native tree. WalletGroup owns

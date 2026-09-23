@@ -226,8 +226,8 @@ class NativeListView(
     mass = REORDER_SPRING_MASS,
     durationSeconds = REORDER_SPRING_DURATION_MS / 1_000.0,
   )
-  private var footerView: NativeListRowHost = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.LEGACY.ordinal)
-  private var footerRendererKey = NativeListRendererKey.LEGACY
+  private var footerView: NativeListRowHost = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.ACTION.ordinal)
+  private var footerRendererKey = NativeListRendererKey.ACTION
   private val sectionIndexView = NativeListSectionIndexView(context)
   private val sectionIndexPreview = TextView(context)
   private var config: NativeListConfig? = null

@@ -9,7 +9,6 @@ internal object NativeListRendererRegistry {
       NativeListRendererKey.WALLET_GROUP to ::NativeListWalletGroupRowView,
       NativeListRendererKey.IDENTITY to ::NativeListIdentityRowView,
       NativeListRendererKey.MARKET to ::NativeListMarketRowView,
-      NativeListRendererKey.LEGACY to ::NativeListRowView,
       NativeListRendererKey.MESSAGE to ::NativeListMessageRowView,
       NativeListRendererKey.RAIL to ::NativeListRailRowView,
       NativeListRendererKey.MEDIA_TILE to ::NativeListMediaTileRowView,
@@ -36,7 +35,7 @@ internal object NativeListRendererRegistry {
       "action" to NativeListRendererKey.ACTION,
     )
 
-  fun key(type: String) = keys[type] ?: NativeListRendererKey.LEGACY
+  fun key(type: String) = keys.getValue(type)
 
   fun create(context: ThemedReactContext, viewType: Int): NativeListRowHost =
     factories.getValue(NativeListRendererKey.entries[viewType])(context)

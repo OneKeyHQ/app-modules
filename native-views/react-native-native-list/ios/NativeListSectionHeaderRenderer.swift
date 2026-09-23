@@ -1,5 +1,94 @@
 import UIKit
 
+final class NativeListDottedUnderlineLabel: NativeListTextLabel {
+  var showsDottedUnderline = false {
+    didSet { setNeedsLayout() }
+  }
+
+  // OneKey patch: migrated section titles include the source 3-point underline box.
+  var reservesDottedUnderlineSpace = false {
+    didSet {
+      invalidateIntrinsicContentSize()
+      setNeedsLayout()
+      setNeedsDisplay()
+    }
+  }
+
+  override var intrinsicContentSize: CGSize {
+    var size = super.intrinsicContentSize
+    if reservesDottedUnderlineSpace && showsDottedUnderline { size.height += 3 }
+    return size
+  }
+
+  override func drawText(in rect: CGRect) {
+    let textRect =
+      reservesDottedUnderlineSpace && showsDottedUnderline
+      ? CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: max(0, rect.height - 3))
+      : rect
+    super.drawText(in: textRect)
+  }
+
+  var dottedUnderlineColor: UIColor = .clear {
+    didSet {
+      dottedUnderlineLayer.strokeColor = dottedUnderlineColor.cgColor
+      setNeedsLayout()
+    }
+  }
+
+  var dottedUnderlineVerticalOffset: CGFloat = 0 {
+    didSet { setNeedsLayout() }
+  }
+
+  private let dottedUnderlineLayer = CAShapeLayer()
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    dottedUnderlineLayer.fillColor = UIColor.clear.cgColor
+    dottedUnderlineLayer.lineWidth = 1.5
+    dottedUnderlineLayer.lineCap = .round
+    dottedUnderlineLayer.lineDashPattern = [0, 4]
+    layer.addSublayer(dottedUnderlineLayer)
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    defer { CATransaction.commit() }
+    guard showsDottedUnderline, let attributedText else {
+      dottedUnderlineLayer.path = nil
+      dottedUnderlineLayer.isHidden = true
+      return
+    }
+    let textWidth = ceil(
+      attributedText.boundingRect(
+        with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: 24),
+        options: [.usesLineFragmentOrigin, .usesFontLeading],
+        context: nil
+      ).width)
+    dottedUnderlineLayer.frame = CGRect(
+      x: 0,
+      y: 0,
+      width: bounds.width,
+      height: bounds.height + 2 + dottedUnderlineVerticalOffset
+    )
+    // OneKey patch: explicit header underline occupies the reserved final two points.
+    // let y = bounds.height + 1 + dottedUnderlineVerticalOffset
+    let y =
+      reservesDottedUnderlineSpace
+      ? bounds.height - 1 : bounds.height + 1 + dottedUnderlineVerticalOffset
+    let path = UIBezierPath()
+    path.move(to: CGPoint(x: 1, y: y))
+    path.addLine(to: CGPoint(x: max(1, textWidth - 1), y: y))
+    dottedUnderlineLayer.path = path.cgPath
+    dottedUnderlineLayer.isHidden = false
+  }
+}
+
 final class NativeListSectionHeaderCell: NativeListRendererCell {
   override class func appliesSizePreset(_ item: NativeListItem) -> Bool {
     !["summary", "gallery"].contains(item.data.string("variant"))

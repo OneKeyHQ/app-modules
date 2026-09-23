@@ -1,10 +1,9 @@
 import Foundation
 import UIKit
 
-// Message is the first migrated renderer. Other templates still use the
-// compatible legacy tree; style, content and row keys do not affect reuse.
+// Template type alone partitions reuse; data keys and styles never select a renderer.
 enum NativeListRendererKey: String, CaseIterable {
-  case legacy, message, rail, mediaTile, action, system, activity, dataRow, metricCard, market, identity, sectionHeader, walletGroup
+  case message, rail, mediaTile, action, system, activity, dataRow, metricCard, market, identity, sectionHeader, walletGroup
 }
 
 struct NativeListItem {
@@ -15,9 +14,7 @@ struct NativeListItem {
   let data: [String: Any]
   let content: String
 
-  var rendererKey: NativeListRendererKey {
-    NativeListRendererRegistry.key(for: type)
-  }
+  let rendererKey: NativeListRendererKey
 
   var styledHeight: CGFloat? {
     (data.dictionary("style")?.dictionary("container")?["height"] as? Double).map { CGFloat($0) }
@@ -44,11 +41,13 @@ struct NativeListItem {
 
   init(data: [String: Any]) throws {
     guard let key = data["key"] as? String, !key.isEmpty,
-          let type = data["type"] as? String, !type.isEmpty else {
+          let type = data["type"] as? String,
+          let rendererKey = NativeListRendererKey(rawValue: type) else {
       throw NativeListModelError.invalidRow
     }
     self.key = key
     self.type = type
+    self.rendererKey = rendererKey
     self.sectionKey = data["sectionKey"] as? String
     self.revision = data["revision"] as? Int ?? 0
     self.data = data

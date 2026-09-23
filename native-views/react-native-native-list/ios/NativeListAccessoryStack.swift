@@ -1,5 +1,98 @@
 import UIKit
 
+// OneKey patch: explicit summary actions use the source text's physical-pixel line box.
+final class NativeListAccessoryButton: UIButton {
+  var pressedBackgroundColor: UIColor?
+  var rowTextOffsetY: CGFloat = 0
+
+  override var isHighlighted: Bool {
+    didSet {
+      guard let pressedBackgroundColor else { return }
+      backgroundColor = isHighlighted ? pressedBackgroundColor : .clear
+    }
+  }
+
+  var selectorSummaryLineHeight: CGFloat? {
+    didSet {
+      invalidateIntrinsicContentSize()
+      setNeedsLayout()
+    }
+  }
+
+  var marketLineHeight: CGFloat? {
+    didSet {
+      invalidateIntrinsicContentSize()
+      setNeedsLayout()
+    }
+  }
+
+  private var sourcePixelScale: CGFloat {
+    max(1, window?.screen.scale ?? traitCollection.displayScale)
+  }
+
+  override var intrinsicContentSize: CGSize {
+    var size = super.intrinsicContentSize
+    guard selectorSummaryLineHeight != nil || marketLineHeight != nil,
+      let title = attributedTitle(for: .normal)
+    else { return size }
+    let width = title.boundingRect(
+      with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+      options: [.usesLineFragmentOrigin, .usesFontLeading],
+      context: nil
+    ).width
+    size.width = ceil(width * sourcePixelScale) / sourcePixelScale
+    return size
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    defer {
+      if let titleLabel {
+        var frame = titleLabel.frame
+        if contentVerticalAlignment == .top {
+          frame.origin.y = contentEdgeInsets.top
+        } else if contentVerticalAlignment == .bottom {
+          frame.origin.y = bounds.height - contentEdgeInsets.bottom - frame.height
+        }
+        frame.origin.y += rowTextOffsetY
+        titleLabel.frame = frame
+      }
+    }
+    if let lineHeight = marketLineHeight, let titleLabel, let title = attributedTitle(for: .normal)
+    {
+      let measured = title.boundingRect(
+        with: CGSize(
+          width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+        options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil
+      ).width
+      let width = min(bounds.width, ceil(measured * sourcePixelScale) / sourcePixelScale)
+      let x =
+        contentHorizontalAlignment == .trailing
+        ? bounds.width - width
+        : contentHorizontalAlignment == .leading ? 0 : (bounds.width - width) / 2
+      let textHeight =
+        titleLabel.numberOfLines > 1
+        ? min(
+          CGFloat(titleLabel.numberOfLines) * lineHeight,
+          titleLabel.sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude))
+            .height)
+        : lineHeight
+      titleLabel.frame = CGRect(
+        x: floor(x * sourcePixelScale) / sourcePixelScale,
+        y: (bounds.height - textHeight) / 2,
+        width: width, height: textHeight
+      )
+      return
+    }
+    guard let lineHeight = selectorSummaryLineHeight, let titleLabel else { return }
+    // OneKey patch: position the final source line box after UIKit has measured the button.
+    let top = ceil((bounds.height - lineHeight) / 2 * sourcePixelScale) / sourcePixelScale
+    var frame = titleLabel.frame
+    frame.origin.y = top
+    titleLabel.frame = frame
+  }
+}
+
 // Bounded trailing controls shared by migrated templates. The owning host supplies
 // action epochs; selection-only updates touch only the existing checkbox.
 final class NativeListAccessoryStack: UIStackView {

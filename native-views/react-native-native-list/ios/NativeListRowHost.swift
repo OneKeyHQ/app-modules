@@ -1,7 +1,33 @@
 import UIKit
 
-// Common list-facing lifecycle. Legacy templates and migrated renderers share
-// this contract, not their view allocation or reset implementation.
+final class NativeListActionOrigin {
+  weak var sourceView: UIView?
+  weak var ownerCell: NativeListRowHost?
+  let bindingEpoch: Int
+  let source: String
+  let slot: Int?
+  // OneKey patch: expose the layout slot while preserving the larger hit target.
+  let anchorInset: CGFloat
+  var windowPoint: CGPoint?
+
+  init(
+    sourceView: UIView,
+    ownerCell: NativeListRowHost,
+    bindingEpoch: Int,
+    source: String,
+    slot: Int? = nil,
+    anchorInset: CGFloat = 0
+  ) {
+    self.sourceView = sourceView
+    self.ownerCell = ownerCell
+    self.bindingEpoch = bindingEpoch
+    self.source = source
+    self.slot = slot
+    self.anchorInset = anchorInset
+  }
+}
+
+// Common list-facing lifecycle; each renderer owns its view allocation and reset.
 class NativeListRowHost: UICollectionViewCell {
   class func measure(_ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String)
     -> CGFloat?

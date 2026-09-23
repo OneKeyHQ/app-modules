@@ -6,6 +6,8 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.Locale
 
+internal data class NativeSelectionTarget(val scope: String, val key: String?)
+
 internal fun isNativeListRowPressEnabled(
   type: String,
   variant: String,
@@ -24,28 +26,6 @@ internal fun isNativeListWholeRowInteractive(
   disabled = disabled,
   pressDisabled = pressDisabled,
 )
-
-/**
- * Maps a style key - which names a model field - to the view slot that renders it.
- * Legacy Identity and SectionHeader share a small text view pool.
- * Migrated templates resolve their own slots. See docs/STYLE_SPEC.md section 4.
- *
- * Returns null when the template does not render that field, so an unmapped key
- * is ignored rather than reaching an unrelated view.
- */
-internal fun nativeListStyleSlot(type: String, variant: String, field: String): String? =
-  when (type) {
-    "identity" -> when (field) {
-      "title", "subtitle", "tertiary", "badge", "value", "valueSecondary" -> field
-      else -> null
-    }
-    "sectionHeader" -> when (field) {
-      "title", "subtitle", "value" -> field
-      else -> null
-    }
-    // Market owns its own richer style path.
-    else -> null
-  }
 
 // The image fallback-state cache is process-wide, so it is keyed by a digest of the request
 // identity instead of the raw headers, which can carry credentials such as Authorization.
@@ -69,9 +49,8 @@ private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
   digest.update(bytes)
 }
 
-// Message and Rail own dedicated renderers. Remaining templates still share
-// a compatible legacy tree; keys and style values never partition the pool.
-internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD, MARKET, IDENTITY, SECTION_HEADER, WALLET_GROUP }
+// Template type alone partitions reuse; data keys and styles never select a renderer.
+internal enum class NativeListRendererKey { MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD, MARKET, IDENTITY, SECTION_HEADER, WALLET_GROUP }
 
 internal data class NativeListItem(
   val key: String,
@@ -138,6 +117,7 @@ internal data class NativeListItem(
     fun parse(json: JSONObject): NativeListItem {
       val key = json.getString("key")
       val type = json.getString("type")
+      NativeListRendererRegistry.key(type) // Reject unsupported templates at the model boundary.
       return NativeListItem(
         key = key,
         type = type,
