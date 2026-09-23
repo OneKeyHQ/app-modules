@@ -79,6 +79,10 @@ separately from source implementation in STYLE_SPEC §9.
 - **Style surface:** group `style` exposes the shared container appearance and horizontal/vertical padding. Text styles belong to
   `parent.style` or the individual `children[i].style`; there is no inherited
   group `title`/`value` text style.
+- **Member lifecycle:** each member uses an independent Identity renderer, reused
+  by member key. Removed members release their images/actions immediately.
+  Press and accessory events use the member key; group dragging remains atomic.
+  Optional trailing controls require sufficient caller-supplied member height.
 - **Layout boundary:** preserve parent-first member order and wallet member
   structure. Local padding cannot change ownership, member count or drag identity.
   Group `lineGap` does not override the text spacing inside member rows.

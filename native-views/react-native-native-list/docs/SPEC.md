@@ -44,10 +44,9 @@ UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
 
 `row.key` identifies data; renderer reuse identity describes compatible view
 structure. Content, styles, height and placement must not enter reuse identity.
-Eleven templates have their own renderer family: Message, Rail, MediaTile, Action,
-System, Activity, DataRow, MetricCard, Market, Identity and SectionHeader.
-The `legacy` family serves WalletGroup until stage 5. Same-key family changes must replace the incompatible
-host. OneKeyImage owns image caches; NativeList owns row/slot binding identity.
+All twelve templates have their own renderer family: Message, Rail, MediaTile,
+Action, System, Activity, DataRow, MetricCard, Market, Identity, SectionHeader and
+WalletGroup. Same-key family changes must replace the incompatible host. OneKeyImage owns image caches; NativeList owns row/slot binding identity.
 
 ## Platform contract
 
@@ -68,8 +67,8 @@ migration adds no new input limits, retry policy or automatic layout correction.
 ## Performance and resources
 
 Snapshots and patches cross the bridge in batches. Visible rows use platform
-recycling/windowing; shared primitives own image cancellation. Message, all seven stage 3 templates, and Market/Identity/SectionHeader use dedicated
-lightweight native hosts and persistent Web bodies.
+recycling/windowing; shared primitives own image cancellation. All twelve templates use dedicated lightweight native hosts and persistent Web
+bodies. WalletGroup composes the migrated Identity member hosts.
 None allocates the legacy native tree. This structural change is
 not a measured scrolling-performance result; performance claims still need a
 separate workload and measurements.
@@ -82,15 +81,15 @@ separate workload and measurements.
 | 2. Message pilot | Complete: registered lightweight native hosts, persistent Web body, resolved styling/measurement and lifecycle acceptance | Lightweight native hosts, resolved styling/measurement, update classification and lifecycle acceptance |
 | 3. Simple templates | Complete (7/7): Rail, MediaTile, Action, System, Activity, DataRow and MetricCard migrated on all three platforms | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
 | 4. Complex templates | Complete (3/3): Market, Identity and SectionHeader migrated on all three platforms | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
-| 5. WalletGroup | In progress | Independent member renderers; verify member events/styles, compact dragging and height restoration |
+| 5. WalletGroup | Complete: registered composites and independent keyed Identity members on all three platforms | Independent member renderers; verify member events/styles, compact dragging and height restoration |
 | 6. Cleanup | Not started | Remove migrated key inference and global style maps; container no longer manipulates template internals |
 
-The closed internal registry selects eleven renderers by template type. WalletGroup
-remains in the legacy family. Message owns
-its text column, optional leading visual and thumbnail; its native host does not
-allocate Market, WalletGroup or table views. Web preserves the Message body,
-text nodes and unchanged image elements when rebinding. WalletGroup is the
-only remaining top-level legacy template.
+The closed internal registry selects all twelve renderers by template type.
+No supported template dispatches to the legacy native tree. WalletGroup owns
+composition and compact appearance; its members use independent Identity
+renderers. Legacy native classes/global maps remain unreachable for supported
+rows and will be removed in stage 6. Web preserves compatible bodies and
+unchanged member image elements across rebinding.
 
 Message resolves text/spacing/image inputs from data/theme/styles, classifies
 updates as unchanged, content/style, assets or replacement, and binds/measures
@@ -159,9 +158,8 @@ defined in STYLE_SPEC.md. Image slots retain unchanged requests across rebinding
 and reset when a source disappears or its slot identity changes.
 
 Stage 3 completion is not completion of the six-stage architecture plan.
-Stage 4 is recorded below. Remaining work after it is stage 5
-(WalletGroup member rendering and drag acceptance), then stage 6 (retire the
-remaining compatibility inference/style maps and container access to internals).
+Stages 4 and 5 are recorded below. Stage 6 remains: retire the remaining
+compatibility inference/style maps and container access to internals.
 No migrated simple template dispatches through a legacy binder.
 
 ### Stage 4 acceptance scope
@@ -181,18 +179,18 @@ measurement. Native hosts share bounded leading/image/accessory primitives. Web
 retains the compatible body and unchanged image elements; loaded image state is
 not reset when geometry is restored. Quote and summary updates keep the latest
 row model for subsequent action/selection dispatch. No new public API or Nitro
-schema is introduced. The remaining native composite tree is retained only for
-WalletGroup and its nested members until stages 5–6.
+schema is introduced. Stage 5 below also replaces the native WalletGroup composite tree. The now
+unreachable legacy classes remain for stage 6 cleanup.
 
 Stage 4 validation: package typecheck and all 161 tests in five suites pass;
 focused lint has zero errors and two existing shadowing warnings. iOS Debug
 build/link and Android Debug APK plus seven unit tests pass. Both dedicated
 native simulators and headed Chrome exercised the acceptance cases above.
 The section fixture additionally verified imperative scroll pinning and active
-index updates after the container fixes. Remaining stages are WalletGroup (5)
-and compatibility/global-map cleanup (6); this is not a performance signoff.
+index updates after the container fixes. Stage 5 acceptance follows below; stage 6 compatibility/global-map cleanup
+remains. This is not a performance signoff.
 
-### Stage 5 acceptance contract (implementation in progress)
+### Stage 5 ownership and acceptance
 
 WalletGroup owns only member composition, measurement and compact presentation.
 Each member uses the registered Identity renderer and retains its own key, style,
@@ -205,7 +203,23 @@ Acceptance covers member press/accessory routing, disabled and pressDisabled
 members, selection-only changes, style set/change/clear, member reorder/removal,
 family replacement and reuse. Native and Web drag previews keep the existing
 68-point compact allocation; `+N` counts children whose draggable is not false.
-A non-draggable member cannot initiate group drag. Drop/cancel restore the
+A non-draggable or disabled member cannot initiate group drag. Drop/cancel restore the
 resolved group height and all configured member/container styles. Reorder
 orchestration stays in the list container. Existing platform defaults stay
 unchanged. Verify on the dedicated external-drive simulators and headed Web.
+
+Stage 5 runtime verification: iOS and Android member press/menu actions carry
+the member key and current action origin, including after content updates.
+Both platforms verified selected/disabled members, style set/clear, member
+removal/reordering, same-key family replacement, empty/repopulation, scrolling
+and the shared fixed footer. Real member/parent drags move the group atomically;
+excluded members do not start dragging. Default 274-point and styled 340-point
+fixture heights restore after drop. iOS also verified a no-op long press;
+Android verified touch cancellation; Web verified Escape cancellation.
+
+All 163 package tests and typecheck pass; focused lint has zero errors (two
+existing warnings). iOS Debug build/link, Android Debug APK and seven Android
+unit tests pass. Headed Chrome includes a 390px viewport and in-drag captures.
+Native simulator captures, action payloads and iOS recordings are stored with
+the stage 5 harness in the external validation runtime. These are standalone
+NativeList checks, not a consumer-app release or scrolling-performance signoff.

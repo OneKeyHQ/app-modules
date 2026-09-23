@@ -108,9 +108,9 @@ Message or Rail. No public plugin API or Nitro schema is added. Remaining templa
 and partial updates are retired only with their own migration. See
 [SPEC.md](SPEC.md#conformance-and-six-stage-migration) for all six stages.
 
-Structural reuse now has eleven dedicated families on all platforms; see the
-current registry inventory in SPEC.md. The `legacy` family serves WalletGroup
-and retains its shared native member tree until stage 5.
+Structural reuse now has twelve dedicated families on all platforms; see the
+current registry inventory in SPEC.md. WalletGroup composes keyed Identity
+hosts. The old native classes remain only as stage 6 cleanup.
 Neither `row.key`, content, style, height nor placement changes the family.
 Web selects a compatible wrapper pool even when the row at a mounted index
 changes family. iOS registers separate reuse identifiers and reloads retained
@@ -487,3 +487,54 @@ with zero focused lint errors (two existing shadowing warnings). iOS Debug
 build/link passes; Android Debug APK and seven unit tests across three suites
 pass. Both native runtimes passed the interaction sequence after the container
 fixes. Stage 5 WalletGroup/member dragging and stage 6 legacy/key cleanup remain.
+
+## Stage 5: WalletGroup (2026-09-23)
+
+All twelve templates now enter through the closed registry. The new native
+WalletGroup hosts and Web renderer reconcile member views by member key, bind
+each through the migrated Identity renderer, and recycle removed members
+immediately. Retention is bounded by the current member count; native holds one
+additional compact parent. There is no spare-member high-water pool. Recycle
+releases member images, action bindings and the compact parent. Group appearance
+and padding stay on the composite; member text/image/container styles stay local.
+
+iOS and Web expanded measurement moved from the list container into WalletGroup.
+Android uses its registered composite host to resolve expanded, compact and
+animated heights. Explicit group/member style heights retain precedence, and
+member defaults/badges keep the previous measurement. The list continues to own
+reorder activation, destination selection, scroll and final order events. Native
+compact rendering uses a separate Identity parent and `+N` badge; Web uses the
+existing leased preview. Only children whose draggable is not false count toward
+`+N`; non-draggable and disabled members cannot initiate a drag. Drop restoration
+uses the current configured height/appearance rather than default chrome.
+
+Member event origins retain the nested Identity host and its binding epoch.
+Removing/rebinding a member invalidates its previous action anchor. The iOS
+member tap recognizer ignores UIControls so menu actions do not also emit a row
+press. Native WalletSidebar now binds optional trailing controls, matching Web;
+callers allocate sufficient height for these controls. Member selection visuals
+continue to follow each Identity's selected field. This migration does not add
+nested members to the list's existing top-level selection domain. Web now gates
+disabled member actions as well as group-level disabled state.
+
+Acceptance ran on the task's independent external-drive iOS 26.5 simulator,
+Android API 36 emulator and headed Chrome. Member press/menu and updated action
+keys/anchors, selected/disabled state, member removal/swap, style set/reset,
+same-key Identity/composite replacement, empty/refill, recycle and the shared
+footer passed. Child-initiated drags reorder the whole group; excluded members
+do not reorder. Captures show the 68-point preview and +1 badge (one draggable
+child and one excluded add-wallet row). The fixture restores 274-point default
+and 340-point styled heights. iOS no-op drag, Android touch cancel and Web Escape
+cancel also restore the expanded appearance. A fast iOS QA scroll initially
+moved the group outside the viewport; returning to Top verified the full settled
+340-point group, without a product-code change.
+
+Validation: TypeScript and 163 tests in five suites; focused lint zero errors
+with two pre-existing warnings; iOS Debug build/link; Android Debug APK plus
+seven tests in three suites. Web tests additionally assert keyed member/image
+retention, removed-member disposal, style clearing and disabled menu dispatch.
+The validation runtime's `stage5` directory contains fixture, scripts, screenshots,
+accessibility trees and iOS drag recordings. This is functional/visual simulator
+acceptance, not a performance benchmark. Stage 6 alone remains in this six-stage
+architecture plan: remove dead native composite/global maps and retire the
+inventoried compatibility policies after checking their callers.
