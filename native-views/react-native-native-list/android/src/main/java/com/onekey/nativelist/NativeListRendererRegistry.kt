@@ -9,6 +9,7 @@ internal object NativeListRendererRegistry {
             NativeListRendererKey.MESSAGE to ::NativeListMessageRowView,
             NativeListRendererKey.RAIL to ::NativeListRailRowView,
             NativeListRendererKey.MEDIA_TILE to ::NativeListMediaTileRowView,
+      NativeListRendererKey.SYSTEM to ::NativeListSystemRowView,
       NativeListRendererKey.ACTION to ::NativeListActionRowView,
         )
 
@@ -17,6 +18,7 @@ internal object NativeListRendererRegistry {
             "message" to NativeListRendererKey.MESSAGE,
             "rail" to NativeListRendererKey.RAIL,
             "mediaTile" to NativeListRendererKey.MEDIA_TILE,
+      "system" to NativeListRendererKey.SYSTEM,
       "action" to NativeListRendererKey.ACTION,
         )
 

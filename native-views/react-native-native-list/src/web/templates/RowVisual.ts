@@ -7,6 +7,7 @@ import type {
 } from '../../models';
 
 export type RowPrimitives = Readonly<{
+  background: string;
   accessory: (
     rowKey: string,
     descriptor: TrailingAccessory,
@@ -14,7 +15,11 @@ export type RowPrimitives = Readonly<{
   ) => HTMLElement;
   visual: (source: LeadingVisual | undefined) => HTMLElement | undefined;
   thumbnail: (source: ImageSource) => HTMLElement | undefined;
-  textStyle: (element: HTMLElement, style: NativeListTextStyle) => void;
+  textStyle: (
+    element: HTMLElement,
+    style: NativeListTextStyle,
+    defaultLines?: number
+  ) => void;
   dispose: (element: HTMLElement) => void;
 }>;
 

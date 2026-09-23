@@ -1,3 +1,5 @@
+import type { SystemRow } from '../../models';
+import { systemRowRenderer } from './SystemRowRenderer';
 import type { ActionRow } from '../../models';
 import { actionRowRenderer } from './ActionRowRenderer';
 import { mediaTileRowRenderer } from './MediaTileRowRenderer';
@@ -8,6 +10,7 @@ import { railRowRenderer } from './RailRowRenderer';
 
 type Renderer<R extends RowModel> = {
   key: string;
+  appliesSizePreset?: (row: R) => boolean;
   create: (
     document: Document,
     row: R,
@@ -21,6 +24,7 @@ type Renderer<R extends RowModel> = {
 function registration<R extends RowModel>(renderer: Renderer<R>, row: R) {
   return {
     key: renderer.key,
+    appliesSizePreset: renderer.appliesSizePreset?.(row) ?? true,
     create: (document: Document, primitives: RowPrimitives) =>
       renderer.create(document, row, primitives),
     bind: (body: HTMLElement, primitives: RowPrimitives) =>
@@ -30,6 +34,7 @@ function registration<R extends RowModel>(renderer: Renderer<R>, row: R) {
   };
 }
 const factories = {
+  system: (row: RowModel) => registration(systemRowRenderer, row as SystemRow),
   action: (row: RowModel) => registration(actionRowRenderer, row as ActionRow),
   message: (row: RowModel) =>
     registration(messageRowRenderer, row as MessageRow),
@@ -38,6 +43,7 @@ const factories = {
     registration(mediaTileRowRenderer, row as MediaTileRow),
 };
 const renderers = {
+  system: systemRowRenderer,
   action: actionRowRenderer,
   message: messageRowRenderer,
   rail: railRowRenderer,

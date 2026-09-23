@@ -1703,25 +1703,6 @@ final class NativeListView: UIView {
     if item.type == "walletGroup", usingCompactReorderHeight, item.key == interactiveReorderCompactKey { return 68 }
     if let height = item.styledHeight { return height }
     if item.data["height"] != nil { return CGFloat(item.data.double("height")) }
-    if item.type == "system", item.data.string("variant") == "spacer" {
-      return CGFloat(item.data.int("height"))
-    }
-    // OneKey patch: warning height follows the current native font and available width.
-    if item.type == "system", item.data.string("variant") == "warning" {
-      let style = item.data.dictionary("style")
-      let textWidth = max(1, collectionView.bounds.width - (config?.contentPaddingHorizontal ?? 0) * 2 - CGFloat(style?.double("horizontalPadding", default: 12) ?? 12) * 2)
-      func textHeight(_ key: String, weight: NativeListFontWeight) -> CGFloat {
-        let textStyle = style?.dictionary(key)
-        let lineHeight = CGFloat(textStyle?.double("lineHeight", default: 20) ?? 20)
-        let fontSize = CGFloat(textStyle?.double("fontSize", default: 14) ?? 14)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = lineHeight
-        paragraph.maximumLineHeight = lineHeight
-        let measured = ceil((item.data.string(key) as NSString).boundingRect(with: CGSize(width: textWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: nativeListFont(ofSize: fontSize, weight: measuredTextWeight(textStyle, fallback: weight)), .paragraphStyle: paragraph], context: nil).height / lineHeight)
-        return min(CGFloat(textStyle?.int("lines", default: Int.max) ?? Int.max), max(1, measured)) * lineHeight
-      }
-      return CGFloat(style?.double("verticalPadding", default: 14) ?? 14) * 2 + CGFloat(style?.double("lineGap", default: 4) ?? 4) + textHeight("title", weight: .medium) + textHeight("message", weight: .regular)
-    }
     if item.type == "walletGroup" {
       if usingCompactReorderHeight, item.key == interactiveReorderCompactKey { return 68 }
       let childCount = item.data.dictionaries("children").count
@@ -1746,7 +1727,7 @@ final class NativeListView: UIView {
       : availableWidth
     let rowWidth = allocatedWidth ?? (config?.orientation == "horizontal" ? 280 : columnWidth)
     if let height = NativeListRendererRegistry.measure(item, width: rowWidth, theme: config?.theme, layout: config?.layout ?? "linear") {
-      return max(0, height + (item.data.string("size") == "small" ? -8 : item.data.string("size") == "large" ? 12 : 0))
+      return max(0, height + (NativeListRendererRegistry.appliesSizePreset(item) ? (item.data.string("size") == "small" ? -8 : item.data.string("size") == "large" ? 12 : 0) : 0))
     }
     let base: CGFloat
     switch item.type {
@@ -1774,20 +1755,6 @@ final class NativeListView: UIView {
               : item.data.dictionary("checkbox") != nil
                 ? 56
                 : config?.layout == "linear" ? 30 : 36
-    case "system":
-      if item.data.string("variant") == "loading" && item.data.string("loadingStyle") == "skeleton" {
-        base = 56
-      } else if item.data.string("variant") == "loading" && item.data.string("loadingStyle") == "spinner" {
-        base = 52
-      } else if item.data.string("presentation") == "market" {
-        base = item.data.string("variant") == "loading" ? 68 : 44
-      } else {
-        switch item.data.string("variant") {
-        case "noMatch", "end": base = 36
-        case "retry": base = 44
-        default: base = 56
-        }
-      }
     case "dataRow":
       base = item.data.dictionaries("columns").contains {
         !$0.string("secondaryText").isEmpty
@@ -1825,15 +1792,6 @@ final class NativeListView: UIView {
     return max(0, base + modifier + sectionSpacing + tableAdjustment)
   }
 
-  private func measuredTextWeight(_ style: [String: Any]?, fallback: NativeListFontWeight) -> NativeListFontWeight {
-    switch style?.string("fontWeight") {
-    case "regular": return .regular
-    case "medium": return .medium
-    case "semibold": return .semibold
-    case "bold": return .bold
-    default: return fallback
-    }
-  }
 
   private func emit(_ block: ((String) -> Void)?, _ value: [String: Any]) {
     guard JSONSerialization.isValidJSONObject(value),

@@ -9,6 +9,7 @@ enum NativeListRendererRegistry {
       .message: (NativeListMessageCell.self, { NativeListMessageCell(frame: .zero) }),
       .rail: (NativeListRailCell.self, { NativeListRailCell(frame: .zero) }),
       .mediaTile: (NativeListMediaTileCell.self, { NativeListMediaTileCell(frame: .zero) }),
+      .system: (NativeListSystemCell.self, { NativeListSystemCell(frame: .zero) }),
       .action: (NativeListActionCell.self, { NativeListActionCell(frame: .zero) }),
     ]
   static func create(_ key: NativeListRendererKey) -> NativeListRowHost { hosts[key]!.create() }
@@ -23,9 +24,13 @@ enum NativeListRendererRegistry {
       collectionView.register(host.type, forCellWithReuseIdentifier: reuseIdentifier(for: key))
     }
   }
+  static func appliesSizePreset(_ item: NativeListItem) -> Bool {
+    item.rendererKey != .system || NativeListSystemRenderer.appliesSizePreset(item)
+  }
   static func measure(_ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String)
     -> CGFloat?
   {
+    if item.rendererKey == .system { return NativeListSystemRenderer.measure(item, width: width) }
     if item.rendererKey == .action {
       return item.data.string("presentation") == "accountSelector"
         ? 48 : item.data.dictionary("icon") == nil ? 44 : 60

@@ -54,6 +54,18 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
 
   protected open fun defaultHeight(item: NativeListItem, layout: String) = 0
 
+  protected open fun minimumContentHeight(item: NativeListItem, layout: String, sizeDelta: Int) =
+    dp((defaultHeight(item, layout) + sizeDelta).coerceAtLeast(0))
+
+  protected open fun modelHeight(item: NativeListItem, layout: String): Int? =
+    if (item.json.has("height"))
+      when (item.json.optString("heightRounding")) {
+        "floor" -> (item.json.optDouble("height") * resources.displayMetrics.density).toInt()
+        "nearest" -> stylePx(item.json.optDouble("height"))
+        else -> dp(item.json.optInt("height"))
+      }
+    else null
+
   protected open fun horizontalWidth(item: NativeListItem) = dp(280)
 
   protected open val defaultCornerRadius = 0
@@ -138,24 +150,14 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     this.theme = theme
     listLayout = layout
     this.selected = selected
-    explicitHeight =
-      item.styledHeight?.let(::stylePx)
-        ?: if (item.json.has("height"))
-          when (item.json.optString("heightRounding")) {
-            "floor" -> (item.json.optDouble("height") * resources.displayMetrics.density).toInt()
-            "nearest" -> stylePx(item.json.optDouble("height"))
-            else -> dp(item.json.optInt("height"))
-          }
-        else null
+    explicitHeight = item.styledHeight?.let(::stylePx) ?: modelHeight(item, layout)
     val sizeDelta =
       when (item.json.optString("size")) {
         "small" -> -8
         "large" -> 12
         else -> 0
       }
-    minimumHeight =
-      if (explicitHeight == null) dp((defaultHeight(item, layout) + sizeDelta).coerceAtLeast(0))
-      else 0
+    minimumHeight = if (explicitHeight == null) minimumContentHeight(item, layout, sizeDelta) else 0
     layoutParams =
       (layoutParams
           ?: android.view.ViewGroup.LayoutParams(

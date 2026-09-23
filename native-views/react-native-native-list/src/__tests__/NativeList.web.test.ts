@@ -1197,6 +1197,80 @@ describe('web row style', () => {
     }
   });
 
+  it('restores System warning styles and replaces variant content in its own host', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const warning = {
+      type: 'system',
+      key: 'status',
+      variant: 'warning',
+      title: 'Warning',
+      message: 'Multiple lines of warning content',
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [warning]),
+      {},
+      false
+    );
+    const body = host.querySelector<HTMLElement>(
+      '[data-nl-renderer="system"]'
+    )!;
+    const title = body.querySelector<HTMLElement>('[data-nl-slot="title"]')!;
+    try {
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...warning,
+            style: {
+              container: { height: 160 },
+              title: { fontSize: 18, lines: 2 },
+              message: { lines: 1, truncate: 'clip' },
+              lineGap: 8,
+            },
+          },
+        ])
+      );
+      expect(host.querySelector('[data-nl-renderer="system"]')).toBe(body);
+      expect(body.querySelector('[data-nl-slot="title"]')).toBe(title);
+      expect(title.style.fontSize).toBe('18px');
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [warning]));
+      expect(title.style.fontSize).toBe('');
+      expect(body.style.rowGap).toBe('');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            type: 'system',
+            key: 'status',
+            variant: 'loading',
+            loadingStyle: 'spinner',
+          },
+        ])
+      );
+      expect(host.querySelector('[data-nl-renderer="system"]')).toBe(body);
+      expect(body.querySelector('[data-nl-slot="title"]')).toBeNull();
+      expect(body.querySelector('[role="progressbar"]')).not.toBeNull();
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            type: 'system',
+            key: 'status',
+            variant: 'retry',
+            message: 'Retry connection',
+            actionKey: 'retry',
+          },
+        ])
+      );
+      expect(body.querySelector('[role="progressbar"]')).toBeNull();
+      expect(
+        body.querySelector('[data-native-list-action="retry"]')
+      ).not.toBeNull();
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('preserves Action views through style clearing and selection echoes', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');

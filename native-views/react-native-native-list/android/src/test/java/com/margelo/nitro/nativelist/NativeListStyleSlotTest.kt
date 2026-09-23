@@ -36,8 +36,8 @@ class NativeListStyleSlotTest {
       Case(type = "system", field = "title", variant = "retry", expected = null),
       Case(type = "sectionHeader", field = "value", expected = "value"),
       // Only the warning variant renders a separate title.
-      Case(type = "system", field = "message", variant = "warning", expected = "subtitle"),
-      Case(type = "system", field = "message", variant = "noMatch", expected = "title"),
+      Case(type = "system", field = "message", variant = "warning", expected = null),
+      Case(type = "system", field = "message", variant = "noMatch", expected = null),
       // A field the template does not render is ignored, never remapped onto
       // whichever view happens to be free.
       Case(type = "identity", field = "price", expected = null),

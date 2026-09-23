@@ -51,69 +51,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
 
-// Market/TokenListSkeleton: source geometry and the native Skeleton's 3s shimmer.
-private class NativeListMarketSkeleton(context: android.content.Context, backgroundColor: Int) : View(context) {
-  private val marks = Array(5) { RectF() }
-  private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-  private val matrix = Matrix()
-  private val shaders = arrayOfNulls<LinearGradient>(5)
-  private val dark = Color.red(backgroundColor) * 0.299 + Color.green(backgroundColor) * 0.587 + Color.blue(backgroundColor) * 0.114 < 128
-  private val colors = intArrayOf(
-    Color.parseColor(if (dark) "#111111" else "#FAFAFA"),
-    Color.parseColor(if (dark) "#333333" else "#CDCDCD"),
-    Color.parseColor(if (dark) "#111111" else "#FAFAFA"),
-  )
-  private var phase = 0f
-  private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-    duration = 3000
-    repeatCount = ValueAnimator.INFINITE
-    interpolator = LinearInterpolator()
-    addUpdateListener { phase = it.animatedValue as Float; invalidate() }
-  }
-
-  private fun dp(value: Float) = NativeListScale.dp(resources, value)
-
-  override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-    super.onSizeChanged(w, h, oldw, oldh)
-    marks[0].set(0f, 0f, dp(32f), dp(32f))
-    marks[1].set(dp(44f), 0f, dp(124f), dp(16f))
-    marks[2].set(dp(44f), dp(20f), dp(104f), dp(32f))
-    marks[3].set(w - dp(168f), dp(7f), w - dp(88f), dp(25f))
-    marks[4].set(w - dp(80f), dp(7f), w.toFloat(), dp(25f))
-    marks.forEachIndexed { index, mark ->
-      shaders[index] = LinearGradient(0f, 0f, mark.width(), 0f, colors, floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
-    }
-  }
-
-  override fun onDraw(canvas: Canvas) {
-    super.onDraw(canvas)
-    marks.forEachIndexed { index, mark ->
-      matrix.setTranslate(mark.left - mark.width() + phase * mark.width() * 3f, 0f)
-      shaders[index]?.setLocalMatrix(matrix)
-      paint.shader = shaders[index]
-      val radius = dp(if (index == 0) 16f else 8f)
-      canvas.drawRoundRect(mark, radius, radius, paint)
-    }
-  }
-
-  override fun onAttachedToWindow() {
-    super.onAttachedToWindow()
-    if (windowVisibility == VISIBLE) animator.start()
-  }
-
-  override fun onDetachedFromWindow() {
-    animator.cancel()
-    super.onDetachedFromWindow()
-  }
-
-  override fun onWindowVisibilityChanged(visibility: Int) {
-    super.onWindowVisibilityChanged(visibility)
-    if (visibility == VISIBLE && isAttachedToWindow) {
-      if (!animator.isStarted) animator.start()
-    } else animator.cancel()
-  }
-}
-
 internal data class NativeListActionOrigin(
   val sourceView: View,
   val ownerRowView: NativeListRowHost,
@@ -474,8 +411,6 @@ internal class NativeListRowView(
   private val tableDataContainer = LinearLayout(context)
   private val tableDataColumns = List(4) { NativeListTableColumnView(context) }
   private val unreadDot = View(context)
-  private val skeletonPrimary = View(context)
-  private val skeletonSecondary = View(context)
   private val walletGroupRows = mutableListOf<NativeListRowView>()
   private val walletGroupDragBadgeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val walletGroupDragBadgeBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -889,7 +824,7 @@ internal class NativeListRowView(
     touchPressed = shouldRestorePressed
     currentLayout = layout
     tag = item
-    selectorUsesSourceScale = item.type == "market" || item.type == "system" && item.json.optString("presentation") == "market" && item.json.optString("variant") == "retry" || item.usesSelectorSourceScale || useSourceScale
+    selectorUsesSourceScale = item.type == "market" || item.usesSelectorSourceScale || useSourceScale
     reorderActive = false
     if (!reusesImageIdentity) {
       selectorImages.forEach(OneKeyImageReusableView::prepareForReuse)
@@ -978,7 +913,6 @@ internal class NativeListRowView(
       "market" -> bindMarket(item, theme)
       "metricCard" -> bindMetricCard(item, theme)
       "sectionHeader" -> bindSectionHeader(item, theme, checkboxState)
-      "system" -> bindSystem(item, theme)
     }
     // Keep passive rows out of accessibility and keyboard focus while allowing
     // their independently bound accessory controls to remain interactive.
@@ -986,14 +920,6 @@ internal class NativeListRowView(
     isClickable = wholeRowPressEnabled
     isFocusable = wholeRowPressEnabled
     applySize(item)
-    if (item.type == "system" && item.json.optString("variant") == "warning") {
-      title.typeface = NativeListFonts.medium(context)
-      title.textSize = sp(14f)
-      subtitle.textSize = sp(14f)
-      TextViewCompat.setLineHeight(title, dp(20))
-      TextViewCompat.setLineHeight(subtitle, dp(20))
-      minimumHeight = 0
-    }
     applyListOrientation(item, listOrientation)
     applySelectorTypography(item)
     applyRowStyle(item)
@@ -1427,7 +1353,7 @@ internal class NativeListRowView(
 
   // OneKey patch: match SizableText TABULAR_NUMS on dynamic labels without replacing their typeface.
   private fun applySelectorTypography(item: NativeListItem) {
-    val usesSelectorTypography = item.json.optString("presentation") in setOf("accountSelector", "networkSelector", "walletSidebar") || item.type == "system" && item.json.optString("variant") == "warning"
+    val usesSelectorTypography = item.json.optString("presentation") in setOf("accountSelector", "networkSelector", "walletSidebar")
     fun visit(view: View) {
       if (view is OneKeyIconView) view.useSourceScale = selectorUsesSourceScale
       if (view is DottedUnderlineTextView) view.useSourceScale = selectorUsesSourceScale
@@ -1437,7 +1363,7 @@ internal class NativeListRowView(
         if (!selectorOriginalFontFeatures.containsKey(view)) selectorOriginalFontFeatures[view] = original
         view.fontFeatureSettings = if (original.isNullOrEmpty()) "tnum" else if (original.contains("tnum")) original else "$original, 'tnum' 1"
         // OneKey patch: SizableText disables font scaling and rounds font sizes to whole pixels.
-        val sourceTypography = selectorUsesSourceScale || item.type == "system" && item.json.optString("variant") == "warning"
+        val sourceTypography = selectorUsesSourceScale
         if (sourceTypography) {
           // OneKey patch: React Native CustomStyleSpan disables hinting and preserves fractional advances.
           selectorOriginalPaintFlags.putIfAbsent(view, view.paintFlags)
@@ -1702,8 +1628,6 @@ internal class NativeListRowView(
     leadingFallback.visibility = GONE
     leadingFallback.background = null
     showsSeparator = false
-    mainColumn.removeView(skeletonPrimary)
-    mainColumn.removeView(skeletonSecondary)
     setOnClickListener { view ->
       (view.tag as? NativeListItem)?.let { item ->
         if (item.type == "market" && marketLongPressFired) {
@@ -3097,139 +3021,6 @@ internal class NativeListRowView(
   }
 
 
-  private fun bindSystem(item: NativeListItem, theme: JSONObject?) {
-    val variant = item.json.optString("variant")
-    val isMarket = item.json.optString("presentation") == "market"
-    if (isMarket) setPadding(dp(20), dp(12), dp(20), dp(12))
-    if (variant == "loading" && item.json.optString("loadingStyle") == "skeleton") {
-      setPadding(dp(20), dp(12), dp(20), dp(12))
-      addView(
-        NativeListMarketSkeleton(context, color(theme, "background", "#FFFFFF")),
-        LayoutParams(LayoutParams.MATCH_PARENT, dp(32)),
-      )
-      return
-    }
-    if (variant == "loading" && item.json.optString("loadingStyle") == "spinner") {
-      gravity = Gravity.CENTER
-      setPadding(0, dp(16), 0, dp(16))
-      addView(
-        ProgressBar(context, null, android.R.attr.progressBarStyleSmall).apply {
-          isIndeterminate = true
-          indeterminateTintList = android.content.res.ColorStateList.valueOf(color(theme, "icon", "#0000009B"))
-        },
-        LayoutParams(dp(20), dp(20)),
-      )
-      return
-    }
-    if (isMarket && variant == "retry") {
-      val message = item.json.optString("message")
-      orientation = VERTICAL
-      gravity = Gravity.CENTER
-      setPadding(dp(32), dp(if (message.isEmpty()) 11 else 32), dp(32), dp(if (message.isEmpty()) 11 else 27))
-      if (message.isNotEmpty()) {
-        showText(title, message, 2)
-        val style = JSONObject().put("fontSize", 16).put("lineHeight", 24)
-        applyMarketTextStyle(title, style, 16f, 24, "regular", color(theme, "secondaryText", "#0000009B"), "center")
-        applyMarketTextMetrics(title, style)
-        addView(mainColumn, wrap().apply { bottomMargin = kotlin.math.ceil(7.0 * resources.displayMetrics.density).toInt() })
-      }
-      showTrailing(0, item.json.optString("actionText", "Retry"), true, item.json.optString("actionKey"))
-      val button = trailingViews[0]
-      val style = JSONObject().put("fontSize", 14).put("lineHeight", 20)
-      applyMarketTextStyle(button, style, 14f, 20, "medium", color(theme, "secondaryText", "#0000009B"), "center")
-      applyMarketTextMetrics(button, style)
-      button.background = null
-      // Match Yoga's text rounding before adding the tertiary Button's border/padding.
-      val density = resources.displayMetrics.density
-      val buttonWidth = (kotlin.math.ceil(button.paint.measureText(button.text.toString()).toDouble()) + 18 * density).roundToInt()
-      val buttonHeight = kotlin.math.ceil(kotlin.math.ceil(20.0 * density) + 10 * density).toInt()
-      button.setPadding(0, 0, 0, 0)
-      button.layoutParams = LayoutParams(buttonWidth, buttonHeight)
-      addView(trailingColumn, wrap())
-      return
-    }
-    if (isMarket && variant == "noMatch") {
-      gravity = Gravity.CENTER
-      setPadding(dp(32), dp(32), dp(32), dp(32))
-      showText(title, item.json.optString("message"), 1)
-      val style = JSONObject().put("fontSize", 16).put("lineHeight", 24)
-      applyMarketTextStyle(title, style, 16f, 24, "regular", color(theme, "secondaryText", "#0000009B"), "center")
-      applyMarketTextMetrics(title, style)
-      addView(mainColumn, wrap())
-      return
-    }
-    // OneKey patch: warning title/description wrap inside the actual scroll content.
-    if (variant == "warning") {
-      setPadding(dp(12), dp(14), dp(12), dp(14))
-      addView(mainColumn, weighted())
-      showText(title, item.json.optString("title"), Int.MAX_VALUE)
-      showText(subtitle, item.json.optString("message"), Int.MAX_VALUE)
-      title.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
-      subtitle.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) }
-      titleLine.packsChildrenAtStart = false
-      return
-    }
-    if (variant == "spacer") {
-      minimumHeight = dp(item.json.optInt("height", 0))
-      return
-    }
-    if (variant == "end") {
-      // components/ListEndIndicator: py=16, gap=8, 80x1 lines and a 4dp dot.
-      gravity = Gravity.CENTER
-      setPadding(0, dp(16), 0, dp(16))
-      val indicatorColor = color(theme, "separator", "#0000001F")
-      addView(View(context).apply { setBackgroundColor(indicatorColor) }, LayoutParams(dp(80), 1))
-      addView(
-        View(context).apply { background = roundedFill(indicatorColor, 2f) },
-        LayoutParams(dp(4), dp(4)).apply {
-          marginStart = dp(8)
-          marginEnd = dp(8)
-        },
-      )
-      addView(View(context).apply { setBackgroundColor(indicatorColor) }, LayoutParams(dp(80), 1))
-      return
-    }
-    gravity = Gravity.CENTER
-    if (variant == "loading") {
-      addLeading(JSONObject().put("kind", "skeleton"), if (isMarket) 32 else 40)
-      leadingFallback.text = ""
-      leadingFallback.background = roundedFill(
-        color(theme, "strongBackground", "#0000000F"),
-        if (isMarket) 16f else 20f,
-      )
-      addSkeleton(skeletonPrimary, 120, 12, theme, bottomMarginDp = 8)
-      addSkeleton(skeletonSecondary, 80, 12, theme)
-    }
-    showText(title, item.json.optString("message"), 2)
-    title.gravity = if (variant == "retry" || variant == "noMatch") {
-      Gravity.START
-    } else {
-      Gravity.CENTER
-    }
-    mainColumn.gravity = Gravity.CENTER_VERTICAL
-    if (variant == "noMatch") {
-      setPadding(dp(12), 0, dp(12), 0)
-      title.setTextColor(color(theme, "secondaryText", "#0000009B"))
-    } else if (variant == "retry") {
-      setPadding(dp(12), dp(8), dp(12), dp(8))
-      title.setTextColor(color(theme, "secondaryText", "#0000009B"))
-    }
-    addView(
-      mainColumn,
-      if (variant == "retry" || variant == "noMatch") weighted() else wrap(),
-    )
-    if (variant == "retry") {
-      setOnClickListener {
-        onRowPress?.invoke(item, actionOrigin(this, "row"))
-      }
-      showTrailing(0, item.json.optString("actionText", "Retry"), true, item.json.optString("actionKey"))
-      trailingViews[0].textSize = sp(14f)
-      trailingViews[0].background = roundedFill(color(theme, "strongBackground", "#0000000F"), 16f)
-      trailingViews[0].setPadding(dp(10), dp(4), dp(10), dp(4))
-      TextViewCompat.setLineHeight(trailingViews[0], dp(20))
-      addView(trailingColumn, wrap().apply { marginStart = dp(12) })
-    }
-  }
 
   private fun addLeading(
     visual: JSONObject?,
@@ -3929,13 +3720,6 @@ internal class NativeListRowView(
   }
 
   private fun applySize(item: NativeListItem) {
-    if (item.type == "system" && item.json.optString("presentation") == "market" &&
-      item.json.optString("variant") in setOf("retry", "noMatch")) {
-      val defaultHeight = if (item.json.optString("variant") == "noMatch") 88.0 else if (item.json.optString("message").isEmpty()) 52.0 else 120.0
-      minimumHeight = (item.json.optDouble("height", defaultHeight).toFloat() * resources.displayMetrics.density).roundToInt()
-      selectorHeight = if (item.json.has("height")) minimumHeight else null
-      return
-    }
     if (item.type == "market") {
       val style = item.json.optJSONObject("style")
       val imageHeight = style?.optJSONObject("image")?.optDouble(
@@ -3976,7 +3760,6 @@ internal class NativeListRowView(
             item.json.optString("variant") == "history" || item.sectionKey?.startsWith("history-") == true -> 12f
             else -> 14f
           }
-          "system" -> 14f
           "metricCard" -> if (item.json.optString("size") == "large") 24f else 18f
           else -> 16f
         }
@@ -3994,7 +3777,6 @@ internal class NativeListRowView(
           item.sectionKey in setOf("linear-tokens", "action-tokens") -> NativeListFonts.regular(context)
           else -> NativeListFonts.semibold(context)
         }
-        "system" -> NativeListFonts.regular(context)
         "metricCard" -> NativeListFonts.semibold(context)
         else -> NativeListFonts.medium(context)
       }
@@ -4027,9 +3809,6 @@ internal class NativeListRowView(
       TextViewCompat.setLineHeight(subtitle, dp(20))
       TextViewCompat.setLineHeight(tertiary, dp(20))
 
-    } else if (item.type == "system") {
-      TextViewCompat.setLineHeight(title, dp(20))
-
     }
     status.textSize = sp(12f)
     badgeLine.textSize = sp(12f)
@@ -4039,9 +3818,7 @@ internal class NativeListRowView(
     val isSelectorLetter = isNetworkSelectorSection && item.json.has("height") &&
       item.json.optString("variant") != "summary" && item.json.optString("titleActionKey").isEmpty() &&
       item.json.optJSONObject("checkbox") == null
-    val isSelectorSectionSpacer = selectorUsesSourceScale && currentLayout == "sectioned" &&
-      item.type == "system" && item.json.optString("variant") == "spacer"
-    if (isSelectorLetter || isSelectorSectionSpacer) {
+    if (isSelectorLetter) {
       selectorHeight = (item.json.optInt("height") * resources.displayMetrics.density).toInt()
     }
     if (isSelectorLetter) {
@@ -4062,7 +3839,6 @@ internal class NativeListRowView(
     }
     val baseHeight = when {
       item.json.has("height") -> item.json.optInt("height")
-      item.type == "system" && item.json.optString("variant") == "spacer" -> item.json.optInt("height", 0)
       item.type == "walletGroup" -> {
         val childCount = item.json.optJSONArray("children")?.length() ?: 0
         // OneKey patch: include badge heights in the group layout.
@@ -4087,17 +3863,6 @@ internal class NativeListRowView(
           item.sectionKey in setOf("linear-tokens", "action-tokens") -> 30
           item.json.optString("value").isNotEmpty() && item.json.optJSONObject("checkbox") != null -> 40
           else -> 36
-        }
-        "system" -> when (item.json.optString("variant")) {
-          "loading" -> when (item.json.optString("loadingStyle")) {
-            "skeleton" -> 56
-            "spinner" -> 52
-            else -> if (item.json.optString("presentation") == "market") 68 else 56
-          }
-          "noMatch", "retry" -> if (item.json.optString("presentation") == "market") 44 else if (item.json.optString("variant") == "noMatch") 36 else 44
-          "warning" -> 0
-          "end" -> if (item.json.optString("presentation") == "market") 44 else 36
-          else -> 56
         }
         "dataRow" -> if (currentLayout == "table") {
           60
@@ -4134,19 +3899,6 @@ internal class NativeListRowView(
     minimumHeight = dp((baseHeight + modifier + sectionSpacing + tableAdjustment).coerceAtLeast(0))
   }
 
-  private fun addSkeleton(
-    view: View,
-    widthDp: Int,
-    heightDp: Int,
-    theme: JSONObject?,
-    bottomMarginDp: Int = 0,
-  ) {
-    view.background = roundedFill(color(theme, "strongBackground", "#0000000F"), 6f)
-    mainColumn.addView(
-      view,
-      LayoutParams(dp(widthDp), dp(heightDp)).apply { bottomMargin = dp(bottomMarginDp) },
-    )
-  }
 
   private fun applyListOrientation(item: NativeListItem, listOrientation: String) {
     val params = layoutParams ?: return

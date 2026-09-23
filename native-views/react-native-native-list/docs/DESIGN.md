@@ -338,3 +338,20 @@ Build/type/unit checks pass; 155 package tests include style restoration, stable
 Action title/icon nodes, selection echoes and incompatible-family reuse.
 An Android input timeout also affected Launcher; its captured main stack was in the display event loop. After restarting the task emulator, menu, checkbox, scroll, repopulate and footer checks passed (action counter 3). This does not establish a library-level ANR cause.
 Remaining stage 3 templates: System, Activity, DataRow and MetricCard.
+
+### Stage 3: System acceptance (2026-09-23)
+
+System owns loading, retry, warning, noMatch, end and spacer rendering and
+warning measurement on all three platforms. Its skeleton views and legacy
+binders are removed from the universal host. Native source pixel rounding,
+warning wrapping and existing per-platform default geometries remain intact.
+The shared footer factory can reuse System and Action through the same registry.
+
+The dedicated iOS and Android runtimes exercised default retry, style set/clear,
+warning, skeleton, spinner, Market retry/noMatch/end, spacer, retry action,
+empty/repopulate and end/top scrolling. Default retry captures match the old
+geometry. Headed Chrome exercised the same variant cycle and retry action;
+regression tests cover style clearing, retained warning nodes and variant reuse.
+Evidence: external runtime `ios-system-*`, `android-system-*`, `web-system-*`.
+iOS/Android Debug builds, Android unit tests and 156 package tests pass.
+Remaining stage 3 templates: Activity, DataRow and MetricCard.

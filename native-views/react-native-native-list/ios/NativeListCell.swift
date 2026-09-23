@@ -5,73 +5,6 @@ import CryptoKit
 import OneKeyImage
 import UIKit
 
-// Market/TokenListSkeleton: source geometry and the native Skeleton's 3s shimmer.
-private final class NativeListMarketSkeleton: UIView {
-  private let marks = (0..<5).map { _ in UIView() }
-  private let gradients = (0..<5).map { _ in CAGradientLayer() }
-
-  init(background: UIColor) {
-    super.init(frame: .zero)
-    var white: CGFloat = 1
-    background.getWhite(&white, alpha: nil)
-    let base = UIColor(nativeListHex: white < 0.5 ? "#111111" : "#FAFAFA", fallback: .white)
-    let highlight = UIColor(nativeListHex: white < 0.5 ? "#333333" : "#CDCDCD", fallback: .lightGray)
-    for (index, mark) in marks.enumerated() {
-      mark.backgroundColor = base
-      mark.clipsToBounds = true
-      mark.layer.cornerRadius = index == 0 ? 16 : 8
-      let gradient = gradients[index]
-      gradient.cornerRadius = mark.layer.cornerRadius
-      gradient.colors = [base.cgColor, highlight.cgColor, base.cgColor]
-      gradient.locations = [0, 0.5, 1]
-      gradient.startPoint = CGPoint(x: 0, y: 0.5)
-      gradient.endPoint = CGPoint(x: 1, y: 0.5)
-      mark.layer.addSublayer(gradient)
-      addSubview(mark)
-    }
-  }
-
-  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    let frames = [
-      CGRect(x: 0, y: 0, width: 32, height: 32),
-      CGRect(x: 44, y: 0, width: 80, height: 16),
-      CGRect(x: 44, y: 20, width: 60, height: 12),
-      CGRect(x: bounds.width - 168, y: 7, width: 80, height: 18),
-      CGRect(x: bounds.width - 80, y: 7, width: 80, height: 18),
-    ]
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    for (index, frame) in frames.enumerated() {
-      marks[index].frame = frame
-      gradients[index].frame = marks[index].bounds
-    }
-    CATransaction.commit()
-    updateAnimation()
-  }
-
-  override func didMoveToWindow() {
-    super.didMoveToWindow()
-    updateAnimation()
-  }
-
-  private func updateAnimation() {
-    for gradient in gradients {
-      guard window != nil else { gradient.removeAllAnimations(); continue }
-      guard gradient.bounds.width > 0, gradient.animation(forKey: "shimmer") == nil else { continue }
-      let animation = CABasicAnimation(keyPath: "transform.translation.x")
-      animation.fromValue = -gradient.bounds.width
-      animation.toValue = gradient.bounds.width
-      animation.duration = 3
-      animation.repeatCount = .infinity
-      animation.timingFunction = CAMediaTimingFunction(name: .linear)
-      gradient.add(animation, forKey: "shimmer")
-    }
-  }
-}
-
 final class NativeListActionOrigin {
   weak var sourceView: UIView?
   weak var ownerCell: NativeListRowHost?
@@ -483,8 +416,6 @@ final class NativeListCell: NativeListRowHost {
   private let spinner = UIActivityIndicatorView(style: .medium)
   private let tableDataStack = UIStackView()
   private let tableDataColumns = (0..<4).map { _ in NativeListTableColumnView() }
-  private let skeletonPrimary = UIView()
-  private let skeletonSecondary = UIView()
   private var walletGroupCells: [NativeListCell] = []
   private var walletGroupMembers: [NativeListItem] = []
   private let walletGroupCompactContainer = UIView()
@@ -788,23 +719,7 @@ final class NativeListCell: NativeListRowHost {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    if let item = currentItem, item.type == "system", item.data.string("presentation") == "market",
-       ["noMatch", "retry"].contains(item.data.string("variant")), !titleLabel.isHidden {
-      titleLabel.transform = .identity
-      // Settle each nested stack before measuring; the content view alone can leave stale descendant frames.
-      contentView.layoutIfNeeded()
-      rootStack.layoutIfNeeded()
-      mainStack.layoutIfNeeded()
-      titleRowStack.layoutIfNeeded()
-      // React Native floors text origins to physical pixels after centering the line box.
-      let scale = max(1, window?.screen.scale ?? traitCollection.displayScale)
-      let origin = titleLabel.convert(titleLabel.bounds, to: contentView).origin
-      let x = floor((contentView.bounds.width - titleLabel.bounds.width) / 2 * scale) / scale
-      let contentHeight: CGFloat = item.data.string("variant") == "retry" ? 56 : 24
-      let y = item.data.dictionary("style")?.dictionary("container")?["contentVerticalAlignment"] != nil
-        ? origin.y : floor(max(32, (contentView.bounds.height - contentHeight) / 2) * scale) / scale
-      titleLabel.transform = CGAffineTransform(translationX: x - origin.x, y: y - origin.y)
-    }
+
     // OneKey patch: extend only the background across the section list outer inset.
     if currentItem?.data.bool("backgroundFullWidth") == true {
       selectorFullWidthBackground.frame = CGRect(x: -frame.minX, y: 0, width: superview?.bounds.width ?? bounds.width, height: bounds.height)
@@ -959,7 +874,6 @@ final class NativeListCell: NativeListRowHost {
     case "market": bindMarket(item, theme: theme)
     case "metricCard": bindMetricCard(item, theme: theme)
     case "sectionHeader": bindSectionHeader(item, theme: theme, layout: layout, checkboxState)
-    case "system": bindSystem(item, theme: theme)
     default: break
     }
     applyRowStyle(item)
@@ -1073,7 +987,7 @@ final class NativeListCell: NativeListRowHost {
   }
 
   private func applySelectorTypography(_ item: NativeListItem) {
-    guard ["accountSelector", "networkSelector", "walletSidebar"].contains(item.data.string("presentation")) || item.type == "system" && item.data.string("variant") == "warning" else { return }
+    guard ["accountSelector", "networkSelector", "walletSidebar"].contains(item.data.string("presentation")) else { return }
     func visit(_ view: UIView) {
       if let button = view as? UIButton {
         if let original = button.attributedTitle(for: .normal) {
@@ -1392,8 +1306,6 @@ final class NativeListCell: NativeListRowHost {
       $0.reset()
       $0.isHidden = true
     }
-    skeletonPrimary.removeFromSuperview()
-    skeletonSecondary.removeFromSuperview()
     accessoryActions = []
     footerActionKeys = []
     checkboxAction = nil
@@ -2169,15 +2081,6 @@ final class NativeListCell: NativeListRowHost {
       }
     case "sectionHeader":
       return ["title", "subtitle", "value"].contains(field) ? field : nil
-    case "system":
-      switch field {
-      case "title": return variant == "warning" ? "title" : nil
-      // Only the warning variant renders a separate title; every other variant
-      // puts its message in the title view.
-      case "message": return variant == "warning" ? "subtitle" : "title"
-      case "actionText": return "value"
-      default: return nil
-      }
     default:
       return nil
     }
@@ -3367,190 +3270,6 @@ final class NativeListCell: NativeListRowHost {
     }
   }
 
-  private func bindSystem(_ item: NativeListItem, theme: [String: Any]?) {
-    rootStack.alignment = .center
-    rootStack.distribution = .fill
-    let variant = item.data.string("variant")
-    let isMarket = item.data.string("presentation") == "market"
-    if isMarket {
-      rootLeadingConstraint.constant = 20
-      rootTrailingConstraint.constant = -20
-      rootTopConstraint.constant = 12
-      rootBottomConstraint.constant = -12
-    }
-    if isMarket && variant == "retry" {
-      let message = item.data.string("message")
-      let text = item.data.string("actionText", default: "Retry")
-      rootStack.axis = .vertical
-      // The source tertiary Button has -5 vertical margins around its 30pt frame.
-      rootStack.spacing = 7
-      rootLeadingConstraint.constant = 32
-      rootTrailingConstraint.constant = -32
-      let height = CGFloat(item.data.double("height", default: message.isEmpty ? 52 : 120))
-      let top = message.isEmpty ? 11 : max(32, (height - 56) / 2)
-      rootTopConstraint.constant = top
-      rootBottomConstraint.constant = -(height - top - (message.isEmpty ? 30 : 61))
-      if !message.isEmpty {
-        show(titleLabel, message, lines: 2)
-        titleLabel.font = nativeListTabularFont(ofSize: 16)
-        titleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
-        titleLabel.textAlignment = .center
-        setLineHeight(titleLabel, text: message, lineHeight: 24)
-        rootStack.addArrangedSubview(mainStack)
-      }
-      showAccessory(0, text, action: (item.data.string("actionKey"), nil))
-      let button = accessoryButtons[0]
-      button.backgroundColor = .clear
-      button.layer.cornerRadius = 15
-      setButtonLine(button, text: text, font: nativeListTabularFont(ofSize: 14, weight: .medium),
-                    color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 20)
-      let textWidth = button.intrinsicContentSize.width
-      selectorConstraints.append(contentsOf: [
-        button.widthAnchor.constraint(equalToConstant: textWidth + 18),
-        button.heightAnchor.constraint(equalToConstant: 30),
-      ])
-      NSLayoutConstraint.activate(selectorConstraints)
-      rootStack.addArrangedSubview(trailingStack)
-      return
-    }
-    if variant == "loading" && item.data.string("loadingStyle") == "skeleton" {
-      rootLeadingConstraint.constant = 20
-      rootTrailingConstraint.constant = -20
-      rootTopConstraint.constant = 12
-      rootBottomConstraint.constant = -12
-      let skeleton = NativeListMarketSkeleton(background: nativeListColor(theme, "background", "#FFFFFF"))
-      skeleton.translatesAutoresizingMaskIntoConstraints = false
-      skeleton.heightAnchor.constraint(equalToConstant: 32).isActive = true
-      rootStack.addArrangedSubview(skeleton)
-      selectorViews.append(skeleton)
-      return
-    }
-    if variant == "loading" && item.data.string("loadingStyle") == "spinner" {
-      rootTopConstraint.constant = 16
-      rootBottomConstraint.constant = -16
-      rootStack.addArrangedSubview(mainStack)
-      mainStack.alignment = .center
-      mainStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-      let indicator = UIActivityIndicatorView(style: .medium)
-      indicator.color = nativeListColor(theme, "icon", "#0000009B")
-      indicator.startAnimating()
-      mainStack.addArrangedSubview(indicator)
-      selectorViews.append(indicator)
-      return
-    }
-    if isMarket && variant == "noMatch" {
-      let padding = max(32, (CGFloat(item.data.double("height", default: 88)) - 24) / 2)
-      rootTopConstraint.constant = padding
-      rootBottomConstraint.constant = -padding
-      rootStack.addArrangedSubview(mainStack)
-      mainStack.alignment = .center
-      mainStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-      titleLabel.font = nativeListTabularFont(ofSize: 16)
-      titleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
-      titleLabel.textAlignment = .center
-      show(titleLabel, item.data.string("message"), lines: 1)
-      setLineHeight(titleLabel, text: item.data.string("message"), lineHeight: 24)
-      return
-    }
-    if isMarket && variant == "end" {
-      rootTopConstraint.constant = 16
-      rootBottomConstraint.constant = -16
-      // OneKey patch: an empty title stack must not consume the dot's line height.
-      titleRowStack.isHidden = true
-      rootStack.addArrangedSubview(mainStack)
-      mainStack.alignment = .center
-      mainStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-      let indicator = UIStackView()
-      indicator.axis = .horizontal
-      indicator.alignment = .center
-      indicator.spacing = 8
-      for width in [CGFloat(80), 4, 80] {
-        let mark = UIView()
-        mark.translatesAutoresizingMaskIntoConstraints = false
-        mark.backgroundColor = nativeListColor(theme, "separator", "#0000001F")
-        mark.layer.cornerRadius = width == 4 ? 2 : 0
-        NSLayoutConstraint.activate([
-          mark.widthAnchor.constraint(equalToConstant: width),
-          mark.heightAnchor.constraint(equalToConstant: width == 4 ? 4 : 1),
-        ])
-        indicator.addArrangedSubview(mark)
-      }
-      mainStack.addArrangedSubview(indicator)
-      selectorViews.append(indicator)
-      return
-    }
-    // OneKey patch: deprecated-wallet warnings stay inside the scrolling list.
-    if variant == "warning" {
-      rootStack.addArrangedSubview(mainStack)
-      rootTopConstraint.constant = 14
-      rootBottomConstraint.constant = -14
-      mainStack.spacing = 4
-      titleLabel.font = nativeListFont(ofSize: 14, weight: .medium)
-      titleLabel.numberOfLines = 0
-      subtitleLabel.font = nativeListFont(ofSize: 14)
-      subtitleLabel.numberOfLines = 0
-      show(titleLabel, item.data.string("title"), lines: 0)
-      show(subtitleLabel, item.data.string("message"), lines: 0)
-      setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 20)
-      setLineHeight(subtitleLabel, text: item.data.string("message"), lineHeight: 20)
-      let borderColor = UIColor(nativeListHex: item.data.string("borderColor", default: "#E0E0E0"), fallback: .lightGray)
-      for top in [true, false] {
-        let border = UIView()
-        border.translatesAutoresizingMaskIntoConstraints = false
-        border.backgroundColor = borderColor
-        contentView.addSubview(border)
-        NSLayoutConstraint.activate([
-          border.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: -8),
-          border.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: 8),
-          border.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
-          top ? border.topAnchor.constraint(equalTo: contentView.topAnchor) : border.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-        ])
-        selectorViews.append(border)
-      }
-      return
-    }
-    if variant == "loading" {
-      leadingWidth.constant = isMarket ? 32 : 40
-      leadingHeight.constant = isMarket ? 32 : 40
-      leadingContainer.backgroundColor = nativeListColor(theme, "strongBackground", "#F0F0F0")
-      leadingContainer.layer.cornerRadius = isMarket ? 16 : 20
-      rootStack.addArrangedSubview(leadingContainer)
-      configureSkeleton(skeletonPrimary, width: 120, height: 12, theme: theme)
-      configureSkeleton(skeletonSecondary, width: 80, height: 12, theme: theme)
-      mainStack.spacing = 8
-      mainStack.addArrangedSubview(skeletonPrimary)
-      mainStack.addArrangedSubview(skeletonSecondary)
-    }
-    show(
-      titleLabel,
-      item.data.string("message", default: variant == "end" ? "End" : ""),
-      lines: 2
-    )
-    let alignsToStart = variant == "retry" || variant == "noMatch" || variant == "end"
-    titleLabel.textAlignment = alignsToStart ? .natural : .center
-    mainStack.alignment = variant == "loading" || alignsToStart ? .leading : .center
-    if alignsToStart {
-      mainStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-      titleLabel.font = nativeListFont(ofSize: 14)
-      titleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
-      setLineHeight(titleLabel, text: titleLabel.text ?? "", lineHeight: 20)
-    }
-    rootStack.addArrangedSubview(mainStack)
-    if variant == "retry" {
-      showAccessory(0, "Retry", action: (item.data.string("actionKey"), nil))
-      accessoryButtons[0].backgroundColor = nativeListColor(theme, "strongBackground", "#F0F0F0")
-      accessoryButtons[0].layer.cornerRadius = 14
-      accessoryButtons[0].contentEdgeInsets = UIEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
-      setButtonLine(
-        accessoryButtons[0],
-        text: "Retry",
-        font: nativeListFont(ofSize: 14, weight: .medium),
-        color: nativeListColor(theme, "primaryText", "#202020"),
-        lineHeight: 20
-      )
-      rootStack.addArrangedSubview(trailingStack)
-    }
-  }
 
   private func addLeading(
     _ visual: [String: Any]?,
@@ -4023,7 +3742,7 @@ final class NativeListCell: NativeListRowHost {
       label === fallbackLabel &&
       currentItem?.type == "identity" &&
       currentItem?.data.string("presentation") == "networkSelector"
-    if currentItem?.type == "market" || currentItem?.type == "system" && currentItem?.data.string("presentation") == "market" && currentItem?.data.string("variant") == "noMatch" || (currentItem?.data["height"] != nil && (["accountSelector", "walletSidebar"].contains(currentItem?.data.string("presentation") ?? "") || currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector")) || currentItem?.type == "system" && currentItem?.data.string("variant") == "warning" || isNetworkFallback {
+    if currentItem?.type == "market" || (currentItem?.data["height"] != nil && (["accountSelector", "walletSidebar"].contains(currentItem?.data.string("presentation") ?? "") || currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector")) || isNetworkFallback {
       // OneKey patch: React Native centers font metrics inside explicit line heights.
       let baselineOffset = max(0, (lineHeight - label.font.lineHeight) / 2)
       // OneKey patch: TextKit's 14/20 headings align their baseline to the upper physical pixel.
@@ -4046,7 +3765,7 @@ final class NativeListCell: NativeListRowHost {
     let paragraphStyle = NSMutableParagraphStyle()
     paragraphStyle.minimumLineHeight = lineHeight
     paragraphStyle.maximumLineHeight = lineHeight
-    let isMarketText = currentItem?.type == "market" || currentItem?.type == "system" && currentItem?.data.string("presentation") == "market" && currentItem?.data.string("variant") == "retry"
+    let isMarketText = currentItem?.type == "market"
     let isSelectorValue = currentItem?.data.string("presentation") == "networkSelector" && currentItem?.data["height"] != nil && currentItem?.data.string("variant") != "summary"
     let isSelectorSummary = currentItem?.type == "sectionHeader" && currentItem?.data.string("presentation") == "networkSelector" && currentItem?.data["height"] != nil && currentItem?.data.string("variant") == "summary"
     (button as? NativeListAccessoryButton)?.selectorSummaryLineHeight = isSelectorSummary ? lineHeight : nil
@@ -4324,22 +4043,6 @@ final class NativeListCell: NativeListRowHost {
     layer.masksToBounds = true
   }
 
-  private func configureSkeleton(
-    _ view: UIView,
-    width: CGFloat,
-    height: CGFloat,
-    theme: [String: Any]?
-  ) {
-    view.backgroundColor = nativeListColor(theme, "rowPressedBackground", "#E8E8E8")
-    view.layer.cornerRadius = 4
-    view.translatesAutoresizingMaskIntoConstraints = false
-    if view.constraints.isEmpty {
-      NSLayoutConstraint.activate([
-        view.widthAnchor.constraint(equalToConstant: width),
-        view.heightAnchor.constraint(equalToConstant: height),
-      ])
-    }
-  }
 
   @objc private func accessoryPressed(_ sender: UIButton) {
     guard let item = currentItem, accessoryActions.indices.contains(sender.tag) else { return }
