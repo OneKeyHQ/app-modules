@@ -43,8 +43,8 @@ final class NativeListDataRowCell: NativeListRendererCell {
       ? .top
       : style.dictionary("container")?.string("contentVerticalAlignment") == "bottom"
         ? .bottom : .center
-    let hp = CGFloat(style.double("horizontalPadding", default: layout == "table" ? 16 : 12))
-    let vp = CGFloat(style.double("verticalPadding", default: 8))
+    let hp = CGFloat(style.double("horizontalPadding", default: layout == "table" ? 20 : 12))
+    let vp = CGFloat(style.double("verticalPadding", default: layout == "table" ? 10 : 8))
     contentInsets = UIEdgeInsets(top: vp, left: hp, bottom: vp, right: hp)
     favorite.isHidden = !data.bool("favorite") && !data.bool("favoriteActive")
     favorite.image = nativeListIcon(

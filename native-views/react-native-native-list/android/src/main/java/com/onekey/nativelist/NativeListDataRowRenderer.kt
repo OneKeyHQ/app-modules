@@ -86,9 +86,10 @@ internal class NativeListDataRowView(context: ThemedReactContext) :
       }
     val hp =
       if (style.has("horizontalPadding")) stylePx(style.optDouble("horizontalPadding"))
-      else dp(if (layout == "table") 16 else 12)
+      else dp(if (layout == "table") 20 else 12)
     val vp =
-      if (style.has("verticalPadding")) stylePx(style.optDouble("verticalPadding")) else dp(8)
+      if (style.has("verticalPadding")) stylePx(style.optDouble("verticalPadding"))
+      else dp(if (layout == "table") 10 else 8)
     setPadding(hp, vp, hp, vp)
     val active = data.optBoolean("favoriteActive")
     favorite.visibility = if (active || data.optBoolean("favorite")) VISIBLE else GONE
