@@ -448,10 +448,8 @@ internal class NativeListRowView(
   private val headerValueIcon = OneKeyIconView(context)
   private val leadingActionIcon = OneKeyIconView(context)
   private val secondaryImage = OneKeyImageReusableView(reactContext)
-  private val mediaNetworkImage = OneKeyImageReusableView(reactContext)
   private val metricVisualImages = List(5) { OneKeyImageReusableView(reactContext) }
   private val mainColumn = LinearLayout(context)
-  private val mediaMetadataRow = LinearLayout(context)
   private val titleLine = PackedTitleLineLayout(context)
   private val title = DottedUnderlineTextView(context)
   private val subtitle = NativeListTextView(context)
@@ -476,7 +474,6 @@ internal class NativeListRowView(
   private val tableDataContainer = LinearLayout(context)
   private val tableDataColumns = List(4) { NativeListTableColumnView(context) }
   private val unreadDot = View(context)
-  private val mediaBadge = NativeListTextView(context)
   private val skeletonPrimary = View(context)
   private val skeletonSecondary = View(context)
   private val walletGroupRows = mutableListOf<NativeListRowView>()
@@ -491,7 +488,6 @@ internal class NativeListRowView(
   private var walletGroupDragChildCount = 0
   private var walletGroupExpandedHeightPx = 0
   private var walletGroupExpandAnimator: ValueAnimator? = null
-  private var isMediaTile = false
   private var boundKey: String? = null
   // OneKey patch: delayed retries cannot survive cell rebinding or recycling.
   private val selectorImageRetries = mutableMapOf<OneKeyImageReusableView, Runnable>()
@@ -550,7 +546,6 @@ internal class NativeListRowView(
     leadingCornerIconFrame.addView(leadingCornerIcon)
     leadingFrame.addView(leadingCornerIconFrame)
     leadingFrame.addView(unreadDot)
-    leadingFrame.addView(mediaBadge)
     leadingFrame.clipChildren = false
     leadingFrame.clipToPadding = false
     leadingIcon.layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
@@ -623,8 +618,6 @@ internal class NativeListRowView(
     tableDataContainer.gravity = Gravity.CENTER_VERTICAL
     tableDataColumns.forEach { tableDataContainer.addView(it) }
 
-    mediaBadge.gravity = Gravity.CENTER
-    mediaBadge.typeface = NativeListFonts.regular(context)
     secondaryImage.outlineProvider = object : ViewOutlineProvider() {
       override fun getOutline(view: View, outline: Outline) {
         outline.setRoundRect(0, 0, view.width, view.height, dp(6).toFloat())
@@ -664,11 +657,7 @@ internal class NativeListRowView(
               marketLongPressHandler.postDelayed(runnable, 800L)
             }
           }
-          if ((tag as? NativeListItem)?.type == "mediaTile") {
-            leadingFrame.alpha = 0.8f
-          } else {
-            background = pressedRowBackground
-          }
+          background = pressedRowBackground
         }
         MotionEvent.ACTION_MOVE -> {
           marketTouchX = event.x
@@ -775,19 +764,7 @@ internal class NativeListRowView(
         if (sourceVerticalPadding != null && rowHeight != null) rowHeight - (rowHeight - sourceVerticalPadding).roundToInt() else paddingBottom,
       )
     }
-    if (isMediaTile) {
-      val availableWidth = (MeasureSpec.getSize(widthMeasureSpec) - paddingLeft - paddingRight)
-        .coerceAtLeast(0)
-      val imageStyle = (tag as? NativeListItem)?.json?.optJSONObject("style")?.optJSONObject("image")
-      val params = leadingFrame.layoutParams
-      params.width = if (imageStyle?.has("width") == true) styleDp(imageStyle.optDouble("width")) else LayoutParams.MATCH_PARENT
-      params.height = when {
-        imageStyle?.has("height") == true -> styleDp(imageStyle.optDouble("height"))
-        imageStyle?.has("width") == true -> styleDp(imageStyle.optDouble("width"))
-        else -> availableWidth
-      }
-      leadingFrame.layoutParams = params
-    }
+
     // OneKey patch: RecyclerView must use the adapter's measured selector height.
     val heightItem = tag as? NativeListItem
     val styledHeight = heightItem?.let(::styledHeightPixels)?.takeUnless {
@@ -924,7 +901,6 @@ internal class NativeListRowView(
       selectorImages.forEach(OneKeyImageReusableView::prepareForReuse)
       leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
       secondaryImage.prepareForReuse()
-      mediaNetworkImage.prepareForReuse()
       metricVisualImages.forEach(OneKeyImageReusableView::prepareForReuse)
     }
     resetViews()
@@ -960,7 +936,6 @@ internal class NativeListRowView(
     applySelectionState(item, theme, layout, itemIndex, selected)
     pressedRowBackground = groupedBackground(
       when (item.type) {
-        "mediaTile" -> "mediaTile"
         else -> "single"
       },
       color(
@@ -1007,7 +982,6 @@ internal class NativeListRowView(
       "activity" -> bindActivity(item, theme)
       "dataRow" -> bindDataRow(item, theme, checkboxState)
       "market" -> bindMarket(item, theme)
-      "mediaTile" -> bindMediaTile(item, theme)
       "metricCard" -> bindMetricCard(item, theme)
       "sectionHeader" -> bindSectionHeader(item, theme, checkboxState)
       "action" -> bindAction(item, theme, checkboxState)
@@ -1230,7 +1204,6 @@ internal class NativeListRowView(
     "status" -> status
     "metricSubtitle" -> metricSubtitle
     "badge" -> badgeLine
-    "mediaBadge" -> mediaBadge
     "value" -> trailingViews[0]
     "valueSecondary" -> trailingViews[1]
     else -> null
@@ -1341,7 +1314,6 @@ internal class NativeListRowView(
     selectorImages.forEach(OneKeyImageReusableView::prepareForReuse)
     leadingImages.forEach(OneKeyImageReusableView::prepareForReuse)
     secondaryImage.prepareForReuse()
-    mediaNetworkImage.prepareForReuse()
     metricVisualImages.forEach(OneKeyImageReusableView::prepareForReuse)
     walletGroupRows.forEach { row ->
       row.visibility = VISIBLE
@@ -1437,7 +1409,6 @@ internal class NativeListRowView(
     selectorImages.clear()
     leadingImages.forEach(OneKeyImageReusableView::dispose)
     secondaryImage.dispose()
-    mediaNetworkImage.dispose()
     metricVisualImages.forEach(OneKeyImageReusableView::dispose)
     marketBadgeImages.forEach(OneKeyImageReusableView::dispose)
     walletGroupRows.forEach(NativeListRowView::dispose)
@@ -1597,7 +1568,6 @@ internal class NativeListRowView(
     gravity = Gravity.CENTER_VERTICAL
     minimumHeight = 0
     setPadding(dp(12), dp(8), dp(12), dp(8))
-    isMediaTile = false
     walletGroupDragChildCount = 0
     walletGroupExpandedHeightPx = 0
     boundCheckboxData = null
@@ -1606,9 +1576,6 @@ internal class NativeListRowView(
     // OneKey patch: remove the Market group before restoring shared labels.
     marketSubtitleLine.removeAllViews()
     mainColumn.removeView(marketSubtitleLine)
-    mediaMetadataRow.removeView(subtitle)
-    mediaMetadataRow.removeView(mediaNetworkImage)
-    mainColumn.removeView(mediaMetadataRow)
     mainColumn.removeView(titleLine)
     mainColumn.removeView(subtitle)
     mainColumn.removeView(tertiary)
@@ -1698,7 +1665,6 @@ internal class NativeListRowView(
     leadingFrame.clipToPadding = false
     secondaryImage.visibility = GONE
     secondaryImage.foreground = null
-    mediaNetworkImage.visibility = GONE
     metricVisualImages.forEach {
       (it.parent as? ViewGroup)?.removeView(it)
       it.visibility = GONE
@@ -1707,8 +1673,6 @@ internal class NativeListRowView(
       it.outlineProvider = ViewOutlineProvider.BACKGROUND
     }
     unreadDot.visibility = GONE
-    mediaBadge.visibility = GONE
-    mediaBadge.text = ""
     leadingIcon.visibility = GONE
     leadingIcon.iconName = ""
     leadingIcon.layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
@@ -2685,101 +2649,6 @@ internal class NativeListRowView(
     else -> color(theme, "primaryText", "#000000DF")
   }
 
-  private fun bindMediaTile(item: NativeListItem, theme: JSONObject?) {
-    isMediaTile = true
-    orientation = VERTICAL
-    gravity = Gravity.START
-    setPadding(dp(10), dp(10), dp(10), dp(10))
-    val imageState = item.json.optString("imageState", "loaded")
-    when (imageState) {
-      "empty" -> {
-        addLeading(null, 160)
-        leadingFrame.background = roundedFill(Color.WHITE, 10f)
-      }
-      "error" -> {
-        addLeading(null, 160)
-        leadingFallback.visibility = VISIBLE
-        leadingFallback.background = roundedFill(
-          color(theme, "strongBackground", "#0000000F"),
-          10f,
-        )
-        leadingIcon.visibility = VISIBLE
-        leadingIcon.iconName = "ImageSquareWavesOutline"
-        leadingIcon.tintColor = parseNativeListColor("#00000044")
-        leadingIcon.layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
-      }
-      else -> {
-        addLeading(
-          JSONObject().put("kind", "image").put("image", item.json.getJSONObject("image")),
-          160,
-        )
-      }
-    }
-    leadingFrame.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(160))
-    leadingFallback.layoutParams = FrameLayout.LayoutParams(
-      LayoutParams.MATCH_PARENT,
-      LayoutParams.MATCH_PARENT,
-    )
-    leadingImages[0].layoutParams = FrameLayout.LayoutParams(
-      LayoutParams.MATCH_PARENT,
-      LayoutParams.MATCH_PARENT,
-    )
-    leadingImages[0].outlineProvider = object : ViewOutlineProvider() {
-      override fun getOutline(view: View, outline: Outline) {
-        outline.setRoundRect(0, 0, view.width, view.height, dp(10).toFloat())
-      }
-    }
-    leadingImages[0].clipToOutline = true
-    mainColumn.removeView(titleLine)
-    mainColumn.removeView(subtitle)
-    mediaMetadataRow.orientation = HORIZONTAL
-    mediaMetadataRow.gravity = Gravity.CENTER_VERTICAL
-    mediaMetadataRow.addView(subtitle, weighted().apply { marginEnd = dp(8) })
-    item.json.optJSONObject("networkImage")?.let { networkImage ->
-      // OneKey patch: Preserve badge layout without exposing a loading/error tile.
-      // mediaNetworkImage.visibility = VISIBLE
-      mediaNetworkImage.outlineProvider = circleOutlineProvider
-      mediaNetworkImage.clipToOutline = true
-      mediaMetadataRow.addView(mediaNetworkImage, LayoutParams(dp(14), dp(14)))
-      bindImage(networkImage, mediaNetworkImage, item.key, 2, "network", hideUntilLoaded = true)
-    }
-    mainColumn.addView(mediaMetadataRow, 0)
-    mainColumn.addView(titleLine, 1)
-    showText(subtitle, item.json.optString("subtitle"), 1)
-    showText(title, item.json.optString("title"), 1)
-    item.json.optJSONObject("badge")?.optString("text")?.let { value ->
-      mediaBadge.text = value
-      mediaBadge.setTextColor(parseNativeListColor("#FCFCFC"))
-      mediaBadge.textSize = sp(14f)
-      mediaBadge.background = roundedStroke(
-        Color.WHITE,
-        parseNativeListColor("#000000DF"),
-        10f,
-      )
-      mediaBadge.setPadding(dp(8), 0, dp(8), 0)
-      mediaBadge.layoutParams = FrameLayout.LayoutParams(
-        LayoutParams.WRAP_CONTENT,
-        dp(24),
-        Gravity.END or Gravity.BOTTOM,
-      )
-      mediaBadge.visibility = VISIBLE
-    }
-    addView(mainColumn, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-      topMargin = dp(8)
-    })
-    item.json.optString("closeActionKey").takeIf { it.isNotEmpty() }?.let { actionKey ->
-      val close = trailingViews[0]
-      close.text = "×"
-      close.textSize = sp(22f)
-      close.gravity = Gravity.END
-      close.visibility = VISIBLE
-      close.setOnClickListener {
-        emitAction(item, actionKey, null, close, "mediaClose")
-      }
-      addView(trailingColumn, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-    }
-  }
-
   private fun bindMetricCard(item: NativeListItem, theme: JSONObject?) {
     orientation = VERTICAL
     gravity = Gravity.START
@@ -3425,7 +3294,7 @@ internal class NativeListRowView(
     val kind = visual.optString("kind")
     val shape = visual.optString(
       "shape",
-      if (kind == "image" || isMediaTile) "rounded" else "circle",
+      if (kind == "image") "rounded" else "circle",
     )
     val sources = visualSources(visual).toMutableList()
     secondaryVisual?.let { sources.addAll(visualSources(it).take(1)) }
@@ -3895,10 +3764,7 @@ internal class NativeListRowView(
       if (selected) "rowSelectedBackground" else "rowBackground",
       if (selected) "#0000000F" else "#FFFFFF",
     )
-    if (item.type == "mediaTile") {
-      // The NFT tile changes only the image opacity while pressed.
-      rowBackground = color(theme, "rowBackground", "#FFFFFF")
-    } else if (item.type == "metricCard" && !selected) {
+    if (item.type == "metricCard" && !selected) {
       rowBackground = color(theme, "subduedBackground", "#F9F9F9")
     }
     val groupPosition = when {
@@ -3910,7 +3776,7 @@ internal class NativeListRowView(
       else -> item.json.optString("groupPosition")
       }
     }
-    var backgroundGroupPosition = if (item.type == "mediaTile") "mediaTile" else groupPosition
+    var backgroundGroupPosition = groupPosition
     if (layout == "sectioned" && !item.json.optBoolean("selected", false)) {
       // Selection in sectioned lists is represented by the OneKey checkbox,
       // matching iOS and the app-monorepo network selector.
@@ -4178,7 +4044,6 @@ internal class NativeListRowView(
       }
     }
     subtitle.textSize = sp(when (item.type) {
-      "mediaTile" -> 12f
       "metricCard" -> 11f
       else -> 14f
     })
@@ -4209,9 +4074,7 @@ internal class NativeListRowView(
       TextViewCompat.setLineHeight(title, dp(24))
     } else if (item.type == "system") {
       TextViewCompat.setLineHeight(title, dp(20))
-    } else if (item.type == "mediaTile") {
-      TextViewCompat.setLineHeight(title, dp(24))
-      TextViewCompat.setLineHeight(subtitle, dp(16))
+
     }
     status.textSize = sp(12f)
     badgeLine.textSize = sp(12f)
@@ -4255,7 +4118,6 @@ internal class NativeListRowView(
       isNetworkSelectorIdentity -> 47
       else -> when (item.type) {
         "activity" -> if ((item.json.optJSONArray("footerActions")?.length() ?: 0) > 0) 104 else 60
-        "mediaTile" -> 0
         "metricCard" -> when (item.json.optString("variant")) {
           "activity" -> 0
           "performance" -> 0
@@ -4340,7 +4202,6 @@ internal class NativeListRowView(
     val params = layoutParams ?: return
     if (listOrientation == "horizontal") {
       params.width = when (item.type) {
-        "mediaTile" -> dp(200)
         else -> dp(280)
       }
       params.height = ViewGroup.LayoutParams.WRAP_CONTENT
@@ -4521,7 +4382,6 @@ internal class NativeListRowView(
       "first" -> floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
       "last" -> floatArrayOf(0f, 0f, 0f, 0f, radius, radius, radius, radius)
       "single" -> FloatArray(8) { radius }
-      "mediaTile" -> FloatArray(8) { scaledDp(16f) }
       else -> FloatArray(8)
     }
   }

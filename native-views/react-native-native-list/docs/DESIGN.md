@@ -295,3 +295,24 @@ The [shared style matrix](STYLE_SPEC.md#41-shared-configurable-properties) defin
 the same configurable properties and semantics for Web, iOS and Android.
 Header/footer placement, sections, scrolling and indexed bar belong to the
 container. The integrating developer owns content fitting and row-height choices.
+
+### Stage 3: MediaTile acceptance (2026-09-23)
+
+Dedicated Swift/Kotlin hosts and a persistent Web body now own MediaTile. Old
+MediaTile binders, native-only view allocations and semantic style-map branches
+were removed. Shared hosts provide vertical container alignment and epoch-owned
+action dispatch without allocating other templates.
+
+Validation used the external-drive runtime and its dedicated iOS 26 simulator
+and Android API 36 emulator, plus headed Chrome. Native before/after captures
+confirmed the grid geometry; styled height 260 restores to the iOS 233-point
+grid default on clear. iOS retains its legacy title compression with a close
+control at the default grid height. Style set/clear, empty/error images, close
+action counter, end/top scroll, empty/repopulate and fixed footer were exercised
+on all three platforms. Web also verifies same-key incompatible-family reuse,
+retained image elements and source contentFit restoration in regression tests.
+Evidence: external validation runtime `ios-media-*`, `android-media-*` and
+`web-media-*`; build logs retained there. iOS and Android Debug builds and
+Android unit tests pass; package typecheck and all 154 tests pass. Focused ESLint
+has no errors (six pre-existing engine warnings). Remaining stage 3 templates:
+Action, System, Activity, DataRow and MetricCard.

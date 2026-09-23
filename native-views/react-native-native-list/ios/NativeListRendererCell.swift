@@ -7,6 +7,7 @@ class NativeListRendererCell: NativeListRowHost {
   let root = UIStackView()
   var contentInsets = UIEdgeInsets.zero
   var defaultCornerRadius: CGFloat { 0 }
+  var pressChangesBackground: Bool { true }
   var showsSelection: Bool { true }
   var defaultSeparatorInset: CGFloat { 12 }
   func bindContent(
@@ -30,6 +31,7 @@ class NativeListRendererCell: NativeListRowHost {
   }
   private let separator = UIView()
   private let fullWidthBackground = CALayer()
+  private var contentPosition: NSLayoutConstraint?
   private var rootConstraints: [NSLayoutConstraint] = []
   private var item: NativeListItem?
   private var theme: [String: Any]?
@@ -67,11 +69,31 @@ class NativeListRendererCell: NativeListRowHost {
         recycleContent()
         isHighlighted = false
       }
+      contentPosition?.isActive = false
+      contentPosition = nil
+      NSLayoutConstraint.activate(Array(rootConstraints.suffix(2)))
       bindContent(item, theme: theme, layout: layout, checkboxState: checkboxState)
       rootConstraints[0].constant = contentInsets.left
       rootConstraints[1].constant = -contentInsets.right
       rootConstraints[2].constant = contentInsets.top
       rootConstraints[3].constant = -contentInsets.bottom
+      if root.axis == .vertical,
+        let alignment = item.data.dictionary("style")?.dictionary("container")?[
+          "contentVerticalAlignment"] as? String
+          ?? (item.styledHeight != nil ? "top" : nil)
+      {
+        NSLayoutConstraint.deactivate(Array(rootConstraints.suffix(2)))
+        contentPosition =
+          alignment == "bottom"
+          ? root.bottomAnchor.constraint(
+            equalTo: contentView.bottomAnchor, constant: -contentInsets.bottom)
+          : alignment == "center"
+            ? root.centerYAnchor.constraint(
+              equalTo: contentView.centerYAnchor,
+              constant: (contentInsets.top - contentInsets.bottom) / 2)
+            : root.topAnchor.constraint(equalTo: contentView.topAnchor, constant: contentInsets.top)
+        contentPosition?.isActive = true
+      }
       inputSignature = signature
     }
     self.item = item
@@ -97,6 +119,18 @@ class NativeListRendererCell: NativeListRowHost {
   }
   override var isHighlighted: Bool { didSet { applyAppearance() } }
 
+  func emitAction(
+    _ key: String, from view: UIView, source: String, slot: Int? = nil,
+    target: NativeSelectionTarget? = nil
+  ) {
+    guard let item, !key.isEmpty, !item.data.bool("disabled") else { return }
+    onAction?(
+      item, key, target,
+      NativeListActionOrigin(
+        sourceView: view, ownerCell: self,
+        bindingEpoch: bindingEpoch, source: source, slot: slot))
+  }
+
   private func applyAppearance() {
     guard let item else { return }
     let container = item.data.dictionary("style")?.dictionary("container") ?? [:]
@@ -109,7 +143,8 @@ class NativeListRendererCell: NativeListRowHost {
       background = UIColor(nativeListHex: color, fallback: background)
     }
     contentView.backgroundColor =
-      isHighlighted ? nativeListColor(theme, "rowPressedBackground", "#E8E8E8") : background
+      isHighlighted && pressChangesBackground
+      ? nativeListColor(theme, "rowPressedBackground", "#E8E8E8") : background
     contentView.alpha =
       CGFloat(container.double("opacity", default: item.data.double("opacity", default: 1)))
       * (item.data.bool("disabled") ? 0.5 : 1)

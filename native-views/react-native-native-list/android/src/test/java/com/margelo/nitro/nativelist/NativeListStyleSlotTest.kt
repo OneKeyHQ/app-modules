@@ -59,7 +59,6 @@ class NativeListStyleSlotTest {
       Triple("identity", "", listOf("title", "subtitle", "tertiary", "badge", "value", "valueSecondary")),
       Triple("activity", "", listOf("title", "description", "status", "primaryAmount", "secondaryAmount")),
       Triple("dataRow", "", listOf("columns", "columnSecondary", "index")),
-      Triple("mediaTile", "", listOf("title", "subtitle", "badge")),
       Triple("metricCard", "", listOf("title", "value", "subtitle", "trend")),
       Triple("sectionHeader", "", listOf("title", "subtitle", "value")),
       Triple("action", "", listOf("title", "value")),

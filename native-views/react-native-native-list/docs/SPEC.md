@@ -44,7 +44,7 @@ UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
 
 `row.key` identifies data; renderer reuse identity describes compatible view
 structure. Content, styles, height and placement must not enter reuse identity.
-The implemented families are `message`, `rail` and `legacy`; the latter serves all
+The implemented families are `message`, `rail`, `mediaTile` and `legacy`; the latter serves all
 unmigrated templates. Same-key family changes must replace the incompatible
 host. OneKeyImage owns image caches; NativeList owns row/slot binding identity.
 
@@ -67,8 +67,8 @@ migration adds no new input limits, retry policy or automatic layout correction.
 ## Performance and resources
 
 Snapshots and patches cross the bridge in batches. Visible rows use platform
-recycling/windowing; shared primitives own image cancellation. Message and Rail use dedicated lightweight native hosts and persistent Web bodies.
-Neither allocates the legacy native tree. This structural change is
+recycling/windowing; shared primitives own image cancellation. Message, Rail and MediaTile use dedicated lightweight native hosts and persistent Web bodies.
+None allocates the legacy native tree. This structural change is
 not a measured scrolling-performance result; performance claims still need a
 separate workload and measurements.
 
@@ -78,12 +78,12 @@ separate workload and measurements.
 | --- | --- | --- |
 | 1. Baseline | Complete: [implicit keys, defaults, special updates and acceptance baseline](MIGRATION_BASELINE.md) inventoried | Preserve each existing rule or explicitly migrate its caller |
 | 2. Message pilot | Complete: registered lightweight native hosts, persistent Web body, resolved styling/measurement and lifecycle acceptance | Lightweight native hosts, resolved styling/measurement, update classification and lifecycle acceptance |
-| 3. Simple templates | In progress (1/7): Rail migrated on all three platforms; six templates remain | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
+| 3. Simple templates | In progress (2/7): Rail and MediaTile migrated on all three platforms; five templates remain | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
 | 4. Complex templates | Not started | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
 | 5. WalletGroup | Not started | Independent member renderers; verify member events/styles, compact dragging and height restoration |
 | 6. Cleanup | Not started | Remove migrated key inference and global style maps; container no longer manipulates template internals |
 
-The closed internal registry selects Message, Rail or the legacy family. Message owns
+The closed internal registry selects Message, Rail, MediaTile or the legacy family. Message owns
 its text column, optional leading visual and thumbnail; its native host does not
 allocate Market, WalletGroup or table views. Web preserves the Message body,
 text nodes and unchanged image elements when rebinding. Remaining templates
@@ -132,3 +132,11 @@ now responds to explicit fonts, image dimensions, padding and gaps while
 retaining the existing default width allowances and platform limits. Text-only
 rebinding preserves unchanged image requests; clearing styles restores defaults.
 Stage 3 still requires mediaTile, action, system, activity, dataRow and metricCard.
+
+MediaTile owns its picture, network indicator, title/subtitle, badge and close
+control. Its legacy bind/style/reset allocation paths are removed. Images retain
+unchanged requests across content/style updates; close events use the shared
+host epoch with `mediaClose` source. Grid and horizontal allocation remain
+container-owned. Default iOS grid height stays width + 48, including existing
+compression when a close control is present; explicit container heights let the
+caller allocate more room. No overflow fitting is added.

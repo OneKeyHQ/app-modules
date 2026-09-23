@@ -1105,6 +1105,98 @@ describe('web row style', () => {
     }
   });
 
+  it('retains MediaTile assets and restores styles, empty states and close actions across family reuse', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const media = {
+      type: 'mediaTile',
+      variant: 'gallery',
+      key: 'media-pilot',
+      title: 'Collectible',
+      subtitle: 'Collection',
+      image: { ...image, contentFit: 'contain' },
+      networkImage: image,
+      badge: { key: 'amount', text: '×2' },
+      closeActionKey: 'close',
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [media]),
+      {},
+      false
+    );
+    const current = () =>
+      host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="media-pilot"]'
+      )!;
+    try {
+      const wrapper = current();
+      const body = wrapper.firstElementChild as HTMLElement;
+      const picture = body.querySelector<HTMLElement>(
+        '.ok-native-list-media-image'
+      )!;
+      const title = body.querySelector<HTMLElement>('[data-nl-slot="title"]')!;
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...media,
+            title: 'Updated',
+            style: {
+              container: { height: 260 },
+              image: { width: 120, height: 100, contentFit: 'cover' },
+              title: { fontSize: 13, lines: 2 },
+              lineGap: 6,
+              leadingGap: 14,
+            },
+          },
+        ])
+      );
+      expect(current().firstElementChild).toBe(body);
+      expect(body.querySelector('.ok-native-list-media-image')).toBe(picture);
+      expect(title.textContent).toBe('Updated');
+      expect(picture.style.width).toBe('120px');
+      expect(picture.style.objectFit).toBe('cover');
+      expect(current().style.height).toBe('260px');
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [media]));
+      expect(title.style.fontSize).toBe('');
+      expect(picture.style.width).toBe('');
+      expect(picture.style.objectFit).toBe('contain');
+      expect(current().style.height).toBe('244px');
+      expect(
+        body
+          .querySelector('[data-native-list-action="close"]')
+          ?.getAttribute('data-native-list-anchor-source')
+      ).toBe('mediaClose');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          { ...media, imageState: 'error', closeActionKey: undefined },
+        ])
+      );
+      expect(body.querySelector('[data-state="error"]')).not.toBeNull();
+      expect(body.querySelector('[data-native-list-action]')).toBeNull();
+      expect(picture.isConnected).toBe(false);
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            type: 'rail',
+            key: media.key,
+            title: 'Other',
+            visual: { kind: 'icon', name: 'star' },
+          },
+        ])
+      );
+      expect(current()).not.toBe(wrapper);
+      engine.applySnapshot(snapshot({ kind: 'sectioned' }, [media]));
+      expect(current()).toBe(wrapper);
+      expect(current().firstElementChild).toBe(body);
+      expect(title.textContent).toBe(media.title);
+      expect(body.querySelectorAll('img')).toHaveLength(2);
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('recomputes horizontal Rail placement from styled metrics and restores default widths', () => {
     const rail = {
       type: 'rail',

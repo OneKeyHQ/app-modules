@@ -1,4 +1,5 @@
-import type { MessageRow, RailRow, RowModel } from '../../models';
+import { mediaTileRowRenderer } from './MediaTileRowRenderer';
+import type { MessageRow, RailRow, MediaTileRow, RowModel } from '../../models';
 import { messageRowRenderer } from './MessageRowRenderer';
 import type { RowPrimitives } from './RowVisual';
 import { railRowRenderer } from './RailRowRenderer';
@@ -30,8 +31,14 @@ const factories = {
   message: (row: RowModel) =>
     registration(messageRowRenderer, row as MessageRow),
   rail: (row: RowModel) => registration(railRowRenderer, row as RailRow),
+  mediaTile: (row: RowModel) =>
+    registration(mediaTileRowRenderer, row as MediaTileRow),
 };
-const renderers = { message: messageRowRenderer, rail: railRowRenderer };
+const renderers = {
+  message: messageRowRenderer,
+  rail: railRowRenderer,
+  mediaTile: mediaTileRowRenderer,
+};
 export type RowRendererKey = 'legacy' | keyof typeof factories;
 const isRegistered = (key: string): key is keyof typeof factories =>
   Object.prototype.hasOwnProperty.call(factories, key);

@@ -2603,87 +2603,6 @@ function createSystemRow(
   return body;
 }
 
-function createMediaRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'mediaTile' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-media'
-  );
-  if (row.image && !row.imageState) {
-    const image = createImage(context, row.image, 'ok-native-list-media-image');
-    if (image) body.appendChild(image);
-  } else {
-    const placeholder = createElement(
-      context.document,
-      'span',
-      'ok-native-list-media-image',
-      row.imageState === 'error' ? '▧' : ''
-    );
-    setData(placeholder, 'state', row.imageState ?? 'empty');
-    body.appendChild(placeholder);
-  }
-  const metadata = createElement(
-    context.document,
-    'div',
-    'ok-native-list-media-meta'
-  );
-  const subtitleLine = createElement(
-    context.document,
-    'div',
-    'ok-native-list-media-subtitle-row'
-  );
-  subtitleLine.appendChild(
-    tagSlot(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-media-subtitle',
-        row.subtitle || '-'
-      ),
-      'subtitle'
-    )
-  );
-  if (row.networkImage) {
-    const network = createImage(
-      context,
-      row.networkImage,
-      'ok-native-list-media-network'
-    );
-    if (network) subtitleLine.appendChild(network);
-  }
-  metadata.appendChild(subtitleLine);
-  metadata.appendChild(
-    tagSlot(
-      createElement(
-        context.document,
-        'div',
-        'ok-native-list-media-title',
-        row.title
-      ),
-      'title'
-    )
-  );
-  if (row.badge) metadata.appendChild(createBadge(context, row.badge));
-  body.appendChild(metadata);
-  if (row.closeActionKey) {
-    const close = createElement(
-      context.document,
-      'button',
-      'ok-native-list-media-close',
-      '×'
-    );
-    close.setAttribute('type', 'button');
-    close.setAttribute('aria-label', 'Close');
-    setData(close, 'nativeListAction', row.closeActionKey);
-    markActionAnchorSource(close, 'mediaClose');
-    body.appendChild(close);
-  }
-  return body;
-}
-
 function createMetricCell(
   context: RenderContext,
   metric: NonNullable<
@@ -3848,17 +3767,14 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
     row.type === 'metricCard' &&
     (row.variant === 'activity' || row.variant === 'performance');
   const vertical =
-    row.type === 'mediaTile' ||
     row.type === 'metricCard' ||
     (row.type === 'identity' && row.presentation === 'walletSidebar');
   const leading = body.querySelector<HTMLElement>(
-    ':scope > .ok-native-list-visual, :scope > .ok-native-list-stacked, :scope > .ok-native-list-media-image'
+    ':scope > .ok-native-list-visual, :scope > .ok-native-list-stacked'
   );
   const defaultGap =
     body.style.gap ||
-    (row.type === 'mediaTile'
-      ? '7px'
-      : row.type === 'metricCard'
+    (row.type === 'metricCard'
       ? '5px'
       : row.type === 'identity' && row.presentation === 'walletSidebar'
       ? '4px'
@@ -3869,17 +3785,11 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
     const targets =
       row.type === 'dataRow'
         ? body.querySelectorAll<HTMLElement>('.ok-native-list-data-cell')
-        : row.type === 'mediaTile'
-        ? body.querySelectorAll<HTMLElement>('.ok-native-list-media-meta')
         : row.type === 'metricCard' ||
           (row.type === 'system' && row.variant === 'warning')
         ? [body]
         : body.querySelectorAll<HTMLElement>(':scope > .ok-native-list-flex');
     targets.forEach((column) => {
-      if (row.type === 'mediaTile') {
-        column.style.display = 'flex';
-        column.style.flexDirection = 'column';
-      }
       column.style.rowGap = String(box.lineGap) + 'px';
     });
   }
@@ -3892,12 +3802,7 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
         ? String(box.lineGap) + 'px'
         : defaultGap) +
       ')';
-    if (row.type === 'mediaTile') {
-      const metadata = body.querySelector<HTMLElement>(
-        '.ok-native-list-media-meta'
-      );
-      if (metadata) metadata.style.paddingTop = `${box.leadingGap}px`;
-    } else if (vertical) leading.style.marginBottom = gap;
+    if (vertical) leading.style.marginBottom = gap;
     else leading.style.marginInlineEnd = gap;
   }
   if (box.titleBadgeGap !== undefined) {
@@ -4028,8 +3933,6 @@ export function createRowBody(
       return createActionRow(context, row);
     case 'system':
       return createSystemRow(context, row);
-    case 'mediaTile':
-      return createMediaRow(context, row);
     case 'metricCard':
       return createMetricRow(context, row);
     case 'dataRow':
@@ -4071,6 +3974,7 @@ export class NativeListWebEngine {
     legacy: [],
     message: [],
     rail: [],
+    mediaTile: [],
   };
   private readonly rendererKeys = new WeakMap<HTMLElement, RowRendererKey>();
   private frameHandle: number | undefined;

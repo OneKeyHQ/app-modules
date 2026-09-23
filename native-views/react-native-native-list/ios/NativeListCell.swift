@@ -436,7 +436,6 @@ private final class NativeListTableColumnView: UIStackView {
 
 final class NativeListCell: NativeListRowHost {
   private let rootStack = UIStackView()
-  private let mediaVisualWrapper = UIView()
   private var styledCircleViews: [UIView] = []
   private let leadingImages = (0..<3).map { _ in OneKeyImageReusableView(frame: .zero) }
   private let leadingOverlayBackground = UIView()
@@ -450,7 +449,6 @@ final class NativeListCell: NativeListRowHost {
   private let selectorFullWidthBackground = CALayer()
   private lazy var selectorTitleTap = UITapGestureRecognizer(target: self, action: #selector(selectorTitlePressed))
   private let secondaryImage = OneKeyImageReusableView(frame: .zero)
-  private let mediaNetworkImage = OneKeyImageReusableView(frame: .zero)
   private let fallbackLabel = UILabel()
   private let leadingIconImageView = UIImageView()
   private let favoriteIconImageView = UIImageView()
@@ -460,7 +458,6 @@ final class NativeListCell: NativeListRowHost {
   private let leadingContainer = UIView()
   private let unreadDot = UIView()
   private let mainStack = UIStackView()
-  private let mediaMetadataStack = UIStackView()
   private let titleRowStack = UIStackView()
   private let titleLabel = NativeListDottedUnderlineLabel()
   private let subtitleLabel = NativeListTextLabel()
@@ -486,7 +483,6 @@ final class NativeListCell: NativeListRowHost {
   private let spinner = UIActivityIndicatorView(style: .medium)
   private let tableDataStack = UIStackView()
   private let tableDataColumns = (0..<4).map { _ in NativeListTableColumnView() }
-  private let mediaBadgeLabel = NativeListTextLabel()
   private let skeletonPrimary = UIView()
   private let skeletonSecondary = UIView()
   private var walletGroupCells: [NativeListCell] = []
@@ -505,7 +501,6 @@ final class NativeListCell: NativeListRowHost {
   private var leadingHeight: NSLayoutConstraint!
   private var leadingIconWidth: NSLayoutConstraint!
   private var leadingIconHeight: NSLayoutConstraint!
-  private var mediaHeight: NSLayoutConstraint!
   private var secondaryWidth: NSLayoutConstraint!
   private var secondaryHeight: NSLayoutConstraint!
   private var rootLeadingConstraint: NSLayoutConstraint!
@@ -674,7 +669,6 @@ final class NativeListCell: NativeListRowHost {
     ])
     leadingWidth = leadingContainer.widthAnchor.constraint(equalToConstant: 40)
     leadingHeight = leadingContainer.heightAnchor.constraint(equalToConstant: 40)
-    mediaHeight = leadingContainer.heightAnchor.constraint(equalToConstant: 120)
     leadingWidth.isActive = true
     leadingHeight.isActive = true
     fallbackLabel.textAlignment = .center
@@ -685,14 +679,6 @@ final class NativeListCell: NativeListRowHost {
     secondaryImage.translatesAutoresizingMaskIntoConstraints = false
     secondaryWidth = secondaryImage.widthAnchor.constraint(equalToConstant: 56)
     secondaryHeight = secondaryImage.heightAnchor.constraint(equalToConstant: 56)
-    mediaNetworkImage.translatesAutoresizingMaskIntoConstraints = false
-    NSLayoutConstraint.activate([
-      mediaNetworkImage.widthAnchor.constraint(equalToConstant: 14),
-      mediaNetworkImage.heightAnchor.constraint(equalToConstant: 14),
-    ])
-    mediaNetworkImage.layer.cornerRadius = 7
-    mediaNetworkImage.clipsToBounds = true
-
     leadingContainer.addSubview(unreadDot)
     unreadDot.translatesAutoresizingMaskIntoConstraints = false
     unreadDot.layer.cornerRadius = 4
@@ -701,19 +687,6 @@ final class NativeListCell: NativeListRowHost {
       unreadDot.heightAnchor.constraint(equalToConstant: 8),
       unreadDot.topAnchor.constraint(equalTo: leadingContainer.topAnchor),
       unreadDot.trailingAnchor.constraint(equalTo: leadingContainer.trailingAnchor),
-    ])
-
-    leadingContainer.addSubview(mediaBadgeLabel)
-    mediaBadgeLabel.translatesAutoresizingMaskIntoConstraints = false
-    mediaBadgeLabel.font = nativeListFont(ofSize: 14, weight: .medium)
-    mediaBadgeLabel.textAlignment = .center
-    mediaBadgeLabel.layer.cornerRadius = 10
-    mediaBadgeLabel.layer.borderWidth = 2
-    mediaBadgeLabel.clipsToBounds = true
-    NSLayoutConstraint.activate([
-      mediaBadgeLabel.trailingAnchor.constraint(equalTo: leadingContainer.trailingAnchor),
-      mediaBadgeLabel.bottomAnchor.constraint(equalTo: leadingContainer.bottomAnchor),
-      mediaBadgeLabel.heightAnchor.constraint(equalToConstant: 24),
     ])
 
     mainStack.axis = .vertical
@@ -836,12 +809,7 @@ final class NativeListCell: NativeListRowHost {
     if currentItem?.data.bool("backgroundFullWidth") == true {
       selectorFullWidthBackground.frame = CGRect(x: -frame.minX, y: 0, width: superview?.bounds.width ?? bounds.width, height: bounds.height)
     }
-    if currentItem?.type == "mediaTile" {
-      let image = currentItem?.data.dictionary("style")?.dictionary("image")
-      if let image, image["height"] != nil { mediaHeight.constant = CGFloat(image.double("height")) }
-      else if let image, image["width"] != nil { mediaHeight.constant = CGFloat(image.double("width")) }
-      else { mediaHeight.constant = max(0, contentView.bounds.width - rootLeadingConstraint.constant + rootTrailingConstraint.constant) }
-    }
+
     for view in styledCircleViews {
       (view.layer.mask as? CAShapeLayer)?.path = UIBezierPath(ovalIn: view.bounds).cgPath
     }
@@ -889,7 +857,6 @@ final class NativeListCell: NativeListRowHost {
     if canTrimMembers { trimWalletGroupCells(keeping: 0) }
     leadingImages.forEach { $0.prepareForReuse() }
     secondaryImage.prepareForReuse()
-    mediaNetworkImage.prepareForReuse()
   }
 
   override func bind(
@@ -910,7 +877,6 @@ final class NativeListCell: NativeListRowHost {
     currentItem = item
     leadingImages.forEach { $0.prepareForReuse() }
     secondaryImage.prepareForReuse()
-    mediaNetworkImage.prepareForReuse()
     reset()
 
     let primary = nativeListColor(theme, "primaryText", "#202020")
@@ -938,9 +904,6 @@ final class NativeListCell: NativeListRowHost {
     badgeLabel.textColor = accent
     accessoryButtons.forEach { $0.setTitleColor(primary, for: .normal) }
     unreadDot.backgroundColor = UIColor(nativeListHex: "#E5484D", fallback: .systemRed)
-    mediaBadgeLabel.backgroundColor = nativeListColor(theme, "inverseBackground", "#202020")
-    mediaBadgeLabel.textColor = nativeListColor(theme, "inverseText", "#FCFCFC")
-    mediaBadgeLabel.layer.borderColor = nativeListColor(theme, "rowBackground", "#FFFFFF").cgColor
     let separatorStyle = listStyle?.dictionary("separator")
     let separatorColor = nativeListColor(theme, "separator", "#E0E0E0")
     separatorView.backgroundColor = (separatorStyle?["color"] as? String)
@@ -960,8 +923,6 @@ final class NativeListCell: NativeListRowHost {
     pressedBackgroundColor = nativeListColor(theme, "rowPressedBackground", "#E8E8E8")
     if item.type == "rail" {
       pressedBackgroundColor = UIColor(nativeListHex: "#F0F0F0", fallback: .lightGray)
-    } else if item.type == "mediaTile" {
-      pressedBackgroundColor = restingBackgroundColor
     }
     updateBackgroundColor()
     if item.data.bool("backgroundFullWidth"), let background = (item.data.dictionary("style")?.dictionary("container")?["backgroundColor"] ?? item.data["backgroundColor"]) as? String {
@@ -996,7 +957,6 @@ final class NativeListCell: NativeListRowHost {
     case "activity": bindActivity(item, theme: theme)
     case "dataRow": bindDataRow(item, theme: theme, checkboxState)
     case "market": bindMarket(item, theme: theme)
-    case "mediaTile": bindMediaTile(item, theme: theme)
     case "metricCard": bindMetricCard(item, theme: theme)
     case "sectionHeader": bindSectionHeader(item, theme: theme, layout: layout, checkboxState)
     case "action": bindAction(item, theme: theme, checkboxState)
@@ -1169,10 +1129,7 @@ final class NativeListCell: NativeListRowHost {
     )
     if item.type == "metricCard", !selected {
       color = nativeListColor(theme, "subduedBackground", "#F9F9F9")
-    } else if item.type == "mediaTile" {
-      // Selection is communicated by the destination state, without a
-      // persistent selected tile background.
-      color = nativeListColor(theme, "rowBackground", "#FFFFFF")
+
     } else if layout == "sectioned", !item.data.bool("selected") {
       // Checkbox-backed section lists in app-monorepo keep rows on $bg;
       // selection is represented by the checkbox itself.
@@ -1283,9 +1240,6 @@ final class NativeListCell: NativeListRowHost {
     marketSubtitleStack.removeFromSuperview()
     mainStack.removeArrangedSubview(tertiaryLabel)
     tertiaryLabel.removeFromSuperview()
-    mediaMetadataStack.removeArrangedSubview(subtitleLabel)
-    mediaMetadataStack.removeArrangedSubview(mediaNetworkImage)
-    mediaMetadataStack.removeFromSuperview()
     mainStack.removeArrangedSubview(titleRowStack)
     titleRowStack.removeFromSuperview()
     mainStack.removeArrangedSubview(subtitleLabel)
@@ -1299,7 +1253,6 @@ final class NativeListCell: NativeListRowHost {
     leadingIconHeight.constant = 18
     leadingWidth.isActive = true
     leadingHeight.isActive = true
-    mediaHeight.isActive = false
     secondaryWidth.isActive = false
     secondaryHeight.isActive = false
     NSLayoutConstraint.deactivate(leadingSlotConstraints)
@@ -1330,15 +1283,12 @@ final class NativeListCell: NativeListRowHost {
     leadingActionButton.accessibilityIdentifier = nil
     leadingActionButton.accessibilityLabel = nil
     unreadDot.isHidden = true
-    mediaBadgeLabel.isHidden = true
-    mediaBadgeLabel.text = nil
     fallbackLabel.isHidden = false
     fallbackLabel.text = nil
     fallbackLabel.font = nativeListFont(ofSize: 13, weight: .bold)
     secondaryImage.isHidden = false
     secondaryImage.layer.borderWidth = 0
     secondaryImage.layer.borderColor = nil
-    mediaNetworkImage.isHidden = true
     titleLabel.text = nil
     titleLabel.font = nativeListFont(ofSize: 16, weight: .medium)
     titleLabel.lineBreakMode = .byTruncatingTail
@@ -1745,22 +1695,7 @@ final class NativeListCell: NativeListRowHost {
       contentView.clipsToBounds = true
       return
     }
-    if currentItem?.type == "mediaTile" {
-      // NFTListItem's group hover/press style belongs to the image wrapper,
-      // not to the complete card.
-      leadingContainer.alpha = pressed ? 0.8 : 1
-      layer.maskedCorners = [
-        .layerMinXMinYCorner,
-        .layerMaxXMinYCorner,
-        .layerMinXMaxYCorner,
-        .layerMaxXMaxYCorner,
-      ]
-      layer.cornerRadius = 16
-      layer.masksToBounds = true
-      contentView.layer.cornerRadius = 16
-      contentView.clipsToBounds = true
-      return
-    }
+
     if pressed {
       let isWalletSidebar = currentItem?.type == "identity"
         && currentItem?.data.string("presentation") == "walletSidebar"
@@ -2224,12 +2159,6 @@ final class NativeListCell: NativeListRowHost {
       case "index": return "value"
       default: return nil
       }
-    case "mediaTile":
-      switch field {
-      case "title", "subtitle": return field
-      case "badge": return "mediaBadge"
-      default: return nil
-      }
     // The large number and the small label sit in swapped views.
     case "metricCard":
       switch field {
@@ -2280,7 +2209,7 @@ final class NativeListCell: NativeListRowHost {
       updateMarketQuote(item, theme: currentTheme)
       return
     }
-    let constraints = [rootLeadingConstraint!, rootTrailingConstraint!, rootTopConstraint!, rootBottomConstraint!, leadingWidth!, leadingHeight!, mediaHeight!]
+    let constraints = [rootLeadingConstraint!, rootTrailingConstraint!, rootTopConstraint!, rootBottomConstraint!, leadingWidth!, leadingHeight!]
     let constants = constraints.map { $0.constant }
     let active = constraints.map { $0.isActive }
     styledTextRestorations.append {
@@ -2307,7 +2236,7 @@ final class NativeListCell: NativeListRowHost {
         if item.data.string("variant") == "performance", let summary = metricCompositeStack.arrangedSubviews.first as? UIStackView { styleGap(summary, gap) }
       }
     }
-    let leadingSlot = item.type == "mediaTile" ? mediaVisualWrapper : leadingContainer
+    let leadingSlot = leadingContainer
     if style["leadingGap"] != nil, let stack = leadingSlot.superview as? UIStackView {
       styleSpacing(stack, after: leadingSlot, CGFloat(style.double("leadingGap")))
     }
@@ -2326,8 +2255,8 @@ final class NativeListCell: NativeListRowHost {
         leadingWidth.isActive = true
       }
       if image["height"] != nil {
-        if mediaHeight.isActive { mediaHeight.constant = CGFloat(image.double("height")) }
-        else { leadingHeight.constant = CGFloat(image.double("height")); leadingHeight.isActive = true }
+        leadingHeight.constant = CGFloat(image.double("height"))
+        leadingHeight.isActive = true
       }
       let radius: CGFloat? = image["cornerRadius"] != nil ? CGFloat(image.double("cornerRadius"))
         : image.string("shape") == "circle" ? min(leadingWidth.constant, leadingHeight.constant) / 2
@@ -2376,7 +2305,6 @@ final class NativeListCell: NativeListRowHost {
       case "status": applyStyledText(item.type == "activity" && item.data.string("status") == "Failed" ? badgeLabel : statusLabel, slotStyle)
       case "metricSubtitle": applyStyledText(metricSubtitleLabel, slotStyle)
       case "badge": (semanticBadgeLabels.isEmpty ? [badgeLabel] : semanticBadgeLabels).forEach { applyStyledText($0, slotStyle) }
-      case "mediaBadge": applyStyledText(mediaBadgeLabel, slotStyle)
       case "dataPrimary", "dataSecondary": break // Applied to independent column labels above.
       case "value", "valueSecondary":
         let index = slot == "value" ? 0 : 1
@@ -2944,88 +2872,6 @@ final class NativeListCell: NativeListRowHost {
       applyStyledButton(change, textLayoutStyle(changeStyle))
     }
     accessibilityLabel = item.data.string("accessibilityLabel", default: [item.data.string("title"), item.data.string("subtitle"), item.data.string("price"), changeData.string("text")].filter { !$0.isEmpty }.joined(separator: ", "))
-  }
-
-  private func bindMediaTile(_ item: NativeListItem, theme: [String: Any]?) {
-    rootStack.axis = .vertical
-    rootStack.alignment = .fill
-    rootStack.spacing = 8
-    rootLeadingConstraint.constant = 10
-    rootTrailingConstraint.constant = -10
-    rootTopConstraint.constant = 10
-    rootBottomConstraint.constant = -10
-    leadingWidth.isActive = false
-    leadingHeight.isActive = false
-    mediaHeight.isActive = true
-    let imageState = item.data.string("imageState")
-    let imageVisual = imageState == "empty" || imageState == "error"
-      ? nil
-      : item.data.dictionary("image").map { ["kind": "image", "image": $0] }
-    addLeading(imageVisual, key: item.key, to: rootStack)
-    rootStack.removeArrangedSubview(leadingContainer)
-    leadingContainer.removeFromSuperview()
-    mediaVisualWrapper.addSubview(leadingContainer)
-    rootStack.addArrangedSubview(mediaVisualWrapper)
-    let imageStyle = item.data.dictionary("style")?.dictionary("image")
-    let mediaConstraints = [
-      leadingContainer.leadingAnchor.constraint(equalTo: mediaVisualWrapper.leadingAnchor),
-      leadingContainer.topAnchor.constraint(equalTo: mediaVisualWrapper.topAnchor),
-      leadingContainer.bottomAnchor.constraint(equalTo: mediaVisualWrapper.bottomAnchor),
-    ] + (imageStyle?["width"] == nil ? [leadingContainer.widthAnchor.constraint(equalTo: mediaVisualWrapper.widthAnchor)] : [])
-    selectorConstraints.append(contentsOf: mediaConstraints)
-    NSLayoutConstraint.activate(mediaConstraints)
-    leadingContainer.layer.cornerRadius = 10
-    leadingContainer.clipsToBounds = true
-    if imageState == "empty" {
-      leadingContainer.backgroundColor = .clear
-      fallbackLabel.isHidden = true
-    } else if imageState == "error" {
-      leadingContainer.backgroundColor = nativeListColor(theme, "strongBackground", "#0000000F")
-      fallbackLabel.isHidden = true
-      leadingIconWidth.constant = 24
-      leadingIconHeight.constant = 24
-      leadingIconImageView.image = nativeListIcon(named: "ImageSquareWavesOutline")
-      leadingIconImageView.tintColor = UIColor(nativeListHex: "#00000044", fallback: .lightGray)
-      leadingIconImageView.isHidden = false
-    }
-    mainStack.removeArrangedSubview(titleRowStack)
-    titleRowStack.removeFromSuperview()
-    mainStack.removeArrangedSubview(subtitleLabel)
-    subtitleLabel.removeFromSuperview()
-    mediaMetadataStack.axis = .horizontal
-    mediaMetadataStack.alignment = .center
-    mediaMetadataStack.spacing = 8
-    mediaMetadataStack.addArrangedSubview(subtitleLabel)
-    subtitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    if let networkImage = item.data.dictionary("networkImage") {
-      mediaMetadataStack.addArrangedSubview(mediaNetworkImage)
-      // OneKey patch: Preserve badge layout without exposing a loading/error tile.
-      // mediaNetworkImage.isHidden = false
-      bindImage(
-        networkImage,
-        into: mediaNetworkImage,
-        token: item.key,
-        slot: 2,
-        variant: "network",
-        hideUntilLoaded: true
-      )
-    }
-    mainStack.insertArrangedSubview(mediaMetadataStack, at: 0)
-    mainStack.insertArrangedSubview(titleRowStack, at: 1)
-    show(subtitleLabel, item.data.string("subtitle"), lines: 1)
-    subtitleLabel.font = nativeListFont(ofSize: 12)
-    show(titleLabel, item.data.string("title"), lines: 1)
-    titleLabel.font = nativeListFont(ofSize: 16, weight: .medium)
-    if let badge = item.data.dictionary("badge") {
-      mediaBadgeLabel.text = "  \(badge.string("text"))  "
-      mediaBadgeLabel.isHidden = false
-    }
-    rootStack.addArrangedSubview(mainStack)
-    let closeAction = item.data.string("closeActionKey")
-    if !closeAction.isEmpty {
-      showAccessory(0, "×", action: (closeAction, nil))
-      rootStack.addArrangedSubview(trailingStack)
-    }
   }
 
   private func bindMetricCard(_ item: NativeListItem, theme: [String: Any]?) {
@@ -3778,7 +3624,7 @@ final class NativeListCell: NativeListRowHost {
     let isIcon = kind == "icon"
     let shape = visual.string(
       "shape",
-      default: kind == "image" || mediaHeight.isActive ? "rounded" : "circle"
+      default: kind == "image" ? "rounded" : "circle"
     )
     let cornerIcon = visual.dictionary("cornerIcon")
     let fallbackText = String(visual.string("fallbackText").prefix(2))
@@ -4550,9 +4396,7 @@ final class NativeListCell: NativeListRowHost {
     guard let item = currentItem, accessoryActions.indices.contains(sender.tag) else { return }
     let action = accessoryActions[sender.tag]
     guard !action.0.isEmpty else { return }
-    let source = item.type == "mediaTile" && item.data.string("closeActionKey") == action.0
-      ? "mediaClose"
-      : "trailingAccessory"
+    let source = "trailingAccessory"
     onAction?(
       item,
       action.0,

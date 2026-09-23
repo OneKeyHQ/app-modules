@@ -5,7 +5,7 @@ import UIKit
 enum NativeListRendererRegistry {
   private static let hosts: [NativeListRendererKey: NativeListRowHost.Type] = [
     .legacy: NativeListCell.self, .message: NativeListMessageCell.self,
-    .rail: NativeListRailCell.self,
+    .rail: NativeListRailCell.self, .mediaTile: NativeListMediaTileCell.self,
   ]
   static func key(for type: String) -> NativeListRendererKey {
     NativeListRendererKey(rawValue: type) ?? .legacy
@@ -22,6 +22,7 @@ enum NativeListRendererRegistry {
     -> CGFloat?
   {
     if item.rendererKey == .rail { return 40 }
+    if item.rendererKey == .mediaTile { return 244 }
     guard item.rendererKey == .message else { return nil }
     return NativeListMessageRenderer.Resolved(item, theme: theme, layout: layout).measure(
       width: width)

@@ -1737,7 +1737,6 @@ final class NativeListView: UIView {
     let base: CGFloat
     switch item.type {
     case "activity": base = item.data.dictionaries("footerActions").isEmpty ? 60 : 100
-    case "mediaTile": base = 244
     case "metricCard":
       base = item.data.string("variant") == "activity"
         ? 160 + 1 / UIScreen.main.scale
