@@ -1,6 +1,13 @@
 import UIKit
 
 final class NativeListMetricCardCell: NativeListRendererCell {
+  override class func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+  ) -> CGFloat? {
+    return item.data.string("variant") == "activity"
+      ? 160 + 1 / UIScreen.main.scale : item.data.string("variant") == "performance" ? 178 : 132
+  }
+
   private let visual = NativeListLeadingVisual()
   private let mainStack = UIStackView()
   private let titleLine = UIStackView()

@@ -1,6 +1,15 @@
 import UIKit
 
 final class NativeListSystemCell: NativeListRendererCell {
+  override class func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+  ) -> CGFloat? {
+    return NativeListSystemRenderer.measure(item, width: width)
+  }
+  override class func appliesSizePreset(_ item: NativeListItem) -> Bool {
+    NativeListSystemRenderer.appliesSizePreset(item)
+  }
+
   private let mainStack = UIStackView()
   private let titleRowStack = UIStackView()
   private let titleLabel = NativeListTextLabel()
@@ -498,7 +507,9 @@ private final class NativeListMarketSkeleton: UIView {
 }
 
 enum NativeListSystemRenderer {
-  static func appliesSizePreset(_ item: NativeListItem) -> Bool { !["warning", "spacer"].contains(item.data.string("variant")) }
+  static func appliesSizePreset(_ item: NativeListItem) -> Bool {
+    !["warning", "spacer"].contains(item.data.string("variant"))
+  }
   static func measure(_ item: NativeListItem, width: CGFloat) -> CGFloat {
     if item.type == "system", item.data.string("variant") == "spacer" {
       return CGFloat(item.data.int("height"))

@@ -143,6 +143,13 @@ enum NativeListMessageRenderer {
 }
 
 final class NativeListMessageCell: NativeListRendererCell {
+  override class func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+  ) -> CGFloat? {
+    return NativeListMessageRenderer.Resolved(item, theme: theme, layout: layout).measure(
+      width: width)
+  }
+
   override var assetFields: [String] { ["leading", "thumbnail"] }
   private lazy var views = NativeListMessageRenderer.Views(root: root)
   override init(frame: CGRect) { super.init(frame: frame) }

@@ -1,6 +1,15 @@
 import UIKit
 
 final class NativeListDataRowCell: NativeListRendererCell {
+  override class func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+  ) -> CGFloat? {
+    let secondary = item.data.dictionaries("columns").contains {
+      !$0.string("secondaryText").isEmpty
+    }
+    return secondary ? 60 : layout == "table" ? 48 : 56
+  }
+
   private let visual = NativeListLeadingVisual()
   private let favorite = UIImageView()
   private let accessories = NativeListAccessoryStack()

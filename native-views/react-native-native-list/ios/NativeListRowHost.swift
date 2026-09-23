@@ -3,6 +3,11 @@ import UIKit
 // Common list-facing lifecycle. Legacy templates and migrated renderers share
 // this contract, not their view allocation or reset implementation.
 class NativeListRowHost: UICollectionViewCell {
+  class func measure(_ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String)
+    -> CGFloat?
+  { nil }
+  class func appliesSizePreset(_ item: NativeListItem) -> Bool { true }
+
   var bindingEpoch = 0
   var listStyle: [String: Any]?
   var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Void)?

@@ -421,3 +421,10 @@ MetricCard (7/7). With the earlier Message pilot, eight template types now use
 the closed renderer registry. Stage 4 still owns Market/Identity/SectionHeader,
 stage 5 owns WalletGroup, and stage 6 removes their remaining legacy policies.
 Historical “remaining stage 3” lists above describe each incremental checkpoint.
+
+The final iOS ownership pass moves measurement and size-preset policy into each
+registered renderer host. The registry now only forwards through its type table.
+After rebuilding and reinstalling, default → styled → cleared heights were
+verified as MediaTile 233 → 260 → 233, Action 60 → 100 → 60, System retry
+44 → 160 → 44, Activity 60 → 160 → 60, DataRow 60 → 120 → 60 and MetricCard
+132 → 240 → 132 points. The runtime stores `ios-renderer-measurement-final.json`.

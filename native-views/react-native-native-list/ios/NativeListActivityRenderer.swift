@@ -1,6 +1,12 @@
 import UIKit
 
 final class NativeListActivityCell: NativeListRendererCell {
+  override class func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+  ) -> CGFloat? {
+    return item.data.dictionaries("footerActions").isEmpty ? 60 : 100
+  }
+
   private let visual = NativeListLeadingVisual()
   private let column = UIStackView()
   private let titleLine = UIStackView()

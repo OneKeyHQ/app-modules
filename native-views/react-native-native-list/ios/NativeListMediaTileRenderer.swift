@@ -1,6 +1,12 @@
 import UIKit
 
 final class NativeListMediaTileCell: NativeListRendererCell {
+  override class func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+  ) -> CGFloat? {
+    return 244
+  }
+
   private let picture = UIView()
   private let image = NativeListImageSlot()
   private let network = NativeListImageSlot()

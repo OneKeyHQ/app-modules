@@ -74,6 +74,12 @@ enum NativeListRailRenderer {
 }
 
 final class NativeListRailCell: NativeListRendererCell {
+  override class func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+  ) -> CGFloat? {
+    return 40
+  }
+
   private let title = NativeListTextLabel()
   private let badge = NativeListTextLabel()
   private let status = NativeListTextLabel()

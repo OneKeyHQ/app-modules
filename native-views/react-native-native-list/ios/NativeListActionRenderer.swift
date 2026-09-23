@@ -1,6 +1,13 @@
 import UIKit
 
 final class NativeListActionCell: NativeListRendererCell {
+  override class func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+  ) -> CGFloat? {
+    return item.data.string("presentation") == "accountSelector"
+      ? 48 : item.data.dictionary("icon") == nil ? 44 : 60
+  }
+
   private let visual = NativeListLeadingVisual(frame: .zero)
   private let title = NativeListTextLabel()
   private let accessories = NativeListAccessoryStack(frame: .zero)
@@ -21,7 +28,9 @@ final class NativeListActionCell: NativeListRendererCell {
     title.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
     title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     accessories.onAction = { [weak self] key, view, slot, target in
-      self?.emitAction(key, from: view, source: "trailingAccessory", slot: slot, target: target, anchorInset: self?.accessories.anchorInset(for: view) ?? 0)
+      self?.emitAction(
+        key, from: view, source: "trailingAccessory", slot: slot, target: target,
+        anchorInset: self?.accessories.anchorInset(for: view) ?? 0)
     }
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
