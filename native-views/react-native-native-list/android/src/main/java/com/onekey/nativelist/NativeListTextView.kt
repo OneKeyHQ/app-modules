@@ -23,4 +23,3 @@ internal open class NativeListTextView(context: android.content.Context) : TextV
     canvas.restoreToCount(checkpoint)
   }
 }
-
