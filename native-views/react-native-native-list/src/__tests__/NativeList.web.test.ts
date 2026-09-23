@@ -1197,6 +1197,69 @@ describe('web row style', () => {
     }
   });
 
+  it('retains Activity images while resetting amount styles and footer actions', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row = {
+      type: 'activity',
+      key: 'tx',
+      leading: { kind: 'image', image: { uri: 'https://example.com/a.png', width: 40, height: 40 } },
+      title: 'Received',
+      description: 'From Alice',
+      status: 'Failed',
+      primaryAmount: '+1 BTC',
+      secondaryAmount: '$42',
+      footerActions: [{ key: 'retry', label: 'Retry' }],
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      {},
+      false
+    );
+    const body = host.querySelector<HTMLElement>(
+      '[data-nl-renderer="activity"]'
+    )!;
+    const image = body.querySelector('img');
+    try {
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...row,
+            style: {
+              container: { height: 120 },
+              primaryAmount: { fontSize: 12 },
+              status: { color: '#ff0000' },
+              image: { width: 28 },
+            },
+          },
+        ])
+      );
+      expect(body.querySelector('img')).toBe(image);
+      expect(
+        body.querySelector<HTMLElement>('[data-nl-slot="primaryAmount"]')!.style
+          .fontSize
+      ).toBe('12px');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          { ...row, status: 'Confirmed', footerActions: undefined },
+        ])
+      );
+      expect(body.querySelector('img')).toBe(image);
+      expect(
+        body.querySelector<HTMLElement>('[data-nl-slot="primaryAmount"]')!.style
+          .fontSize
+      ).toBe('');
+      expect(
+        body.querySelector('[data-native-list-action="retry"]')
+      ).toBeNull();
+      expect(body.textContent).toContain('Confirmed');
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('restores System warning styles and replaces variant content in its own host', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
@@ -1329,6 +1392,7 @@ describe('web row style', () => {
               title: { fontSize: 20, lines: 2 },
               value: { fontSize: 12, lines: 1 },
               leadingGap: 18,
+              image: { width: 28, height: 30 },
             },
           },
         ])
@@ -1337,6 +1401,8 @@ describe('web row style', () => {
       expect(body.querySelector('[data-nl-slot="title"]')).toBe(title);
       expect(body.querySelector('.ok-native-list-visual')).toBe(icon);
       expect(current().style.height).toBe('100px');
+      expect((icon as HTMLElement).style.width).toBe('28px');
+      expect((icon as HTMLElement).style.height).toBe('30px');
       const selected = snapshot({ kind: 'sectioned' }, [action, selectable]);
       engine.applySnapshot({
         ...selected,

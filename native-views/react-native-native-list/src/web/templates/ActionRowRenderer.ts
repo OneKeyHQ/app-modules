@@ -47,8 +47,8 @@ function bind(body: HTMLElement, row: ActionRow, primitives: RowPrimitives) {
     const size = row.presentation === 'accountSelector' ? 32 : 40;
     v.visualStyle.apply(
       style?.image,
-      size,
-      size,
+      style?.image?.width ?? size,
+      style?.image?.height ?? size,
       (style?.leadingGap ?? 12) - 12
     );
   }

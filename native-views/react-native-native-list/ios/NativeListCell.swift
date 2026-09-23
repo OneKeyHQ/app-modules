@@ -406,8 +406,6 @@ final class NativeListCell: NativeListRowHost {
   // private let marketBadgeButtons = (0..<3).map { _ in UIButton(type: .system) }
   private let marketBadgeButtons = (0..<3).map { _ in NativeListAccessoryButton(type: .system) }
   private let marketBadgeImages = (0..<3).map { _ in OneKeyImageReusableView(frame: .zero) }
-  private let actionStack = UIStackView()
-  private let actionButtons = (0..<3).map { _ in UIButton(type: .system) }
   private let trailingStack = UIStackView()
   // OneKey patch: summary actions opt into source typography while other buttons keep UIKit layout.
   // private let accessoryButtons = (0..<2).map { _ in UIButton(type: .system) }
@@ -445,7 +443,6 @@ final class NativeListCell: NativeListRowHost {
   private var selectorTypographyRestorers: [() -> Void] = []
   private var currentItem: NativeListItem?
   private var accessoryActions: [(String, NativeSelectionTarget?)] = []
-  private var footerActionKeys: [String] = []
   private var checkboxAction: (String, NativeSelectionTarget?)?
   private var boundCheckboxData: [String: Any]?
   private var boundCheckboxTarget: NativeSelectionTarget?
@@ -665,19 +662,6 @@ final class NativeListCell: NativeListRowHost {
     [titleRowStack, subtitleLabel, tertiaryLabel, statusLabel, metricSubtitleLabel]
       .forEach(mainStack.addArrangedSubview)
 
-    actionStack.axis = .horizontal
-    actionStack.alignment = .center
-    actionStack.spacing = 8
-    actionButtons.enumerated().forEach { index, button in
-      button.titleLabel?.font = nativeListFont(ofSize: 12, weight: .medium)
-      button.layer.cornerRadius = 8
-      button.contentEdgeInsets = UIEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
-      button.tag = index
-      button.addTarget(self, action: #selector(footerActionPressed(_:)), for: .touchUpInside)
-      actionStack.addArrangedSubview(button)
-    }
-    mainStack.addArrangedSubview(actionStack)
-
     trailingStack.axis = .vertical
     trailingStack.alignment = .trailing
     trailingStack.spacing = 2
@@ -869,7 +853,6 @@ final class NativeListCell: NativeListRowHost {
     switch item.type {
     case "walletGroup": bindWalletGroup(item, theme: theme, layout: layout, checkboxState)
     case "identity": bindIdentity(item, theme: theme, selected: selected, checkboxState)
-    case "activity": bindActivity(item, theme: theme)
     case "dataRow": bindDataRow(item, theme: theme, checkboxState)
     case "market": bindMarket(item, theme: theme)
     case "metricCard": bindMetricCard(item, theme: theme)
@@ -1262,15 +1245,10 @@ final class NativeListCell: NativeListRowHost {
       $0.imageEdgeInsets = .zero
       $0.titleEdgeInsets = .zero
     }
-    [titleLabel, subtitleLabel, tertiaryLabel, statusLabel, metricSubtitleLabel, badgeLabel, actionStack]
+    [titleLabel, subtitleLabel, tertiaryLabel, statusLabel, metricSubtitleLabel, badgeLabel]
       .forEach { $0.isHidden = true }
     separatorView.isHidden = true
     separatorLeadingConstraint.constant = 0
-    actionButtons.forEach {
-      $0.isHidden = true
-      $0.setTitle(nil, for: .normal)
-      $0.backgroundColor = .clear
-    }
     accessoryButtons.enumerated().forEach { index, button in
       button.isUserInteractionEnabled = true
       button.selectorSummaryLineHeight = nil
@@ -1307,7 +1285,6 @@ final class NativeListCell: NativeListRowHost {
       $0.isHidden = true
     }
     accessoryActions = []
-    footerActionKeys = []
     checkboxAction = nil
     boundCheckboxData = nil
     boundCheckboxTarget = nil
@@ -1898,70 +1875,6 @@ final class NativeListCell: NativeListRowHost {
     }
   }
 
-  private func bindActivity(_ item: NativeListItem, theme: [String: Any]?) {
-    addLeading(
-      item.data.dictionary("leading"),
-      secondaryVisual: item.data.dictionary("secondaryLeading"),
-      key: item.key
-    )
-    rootStack.addArrangedSubview(mainStack)
-    show(titleLabel, item.data.string("title"), lines: 1)
-    show(subtitleLabel, item.data.string("description"), lines: 2)
-    mainStack.spacing = 0
-    setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 24)
-    setLineHeight(subtitleLabel, text: item.data.string("description"), lineHeight: 20)
-    if item.data.string("status") == "Failed" {
-      show(badgeLabel, "  Failed  ", lines: 1)
-      badgeLabel.textColor = nativeListColor(theme, "negative", "#CE2C31")
-      badgeLabel.backgroundColor = nativeListColor(
-        theme,
-        "criticalBackground",
-        "#F3000D14"
-      )
-      badgeLabel.layer.cornerRadius = 4
-      badgeLabel.clipsToBounds = true
-    } else {
-      show(statusLabel, item.data.string("status"), lines: 1)
-    }
-    rootStack.addArrangedSubview(trailingStack)
-    showAccessory(0, item.data.string("primaryAmount"))
-    showAccessory(1, item.data.string("secondaryAmount"))
-    let primaryAmountColor = item.data.string("primaryAmount").hasPrefix("+")
-      ? nativeListColor(theme, "positive", "#218358")
-      : nativeListColor(theme, "primaryText", "#202020")
-    setButtonLine(
-      accessoryButtons[0],
-      text: item.data.string("primaryAmount"),
-      font: nativeListTabularFont(ofSize: 16, weight: .medium),
-      color: primaryAmountColor,
-      lineHeight: 24
-    )
-    setButtonLine(
-      accessoryButtons[1],
-      text: item.data.string("secondaryAmount"),
-      font: nativeListTabularFont(ofSize: 14),
-      color: nativeListColor(theme, "secondaryText", "#646464"),
-      lineHeight: 20
-    )
-    let actions = item.data.dictionaries("footerActions").prefix(3)
-    if !actions.isEmpty {
-      actionStack.isHidden = false
-      for (index, action) in actions.enumerated() {
-        let button = actionButtons[index]
-        button.isHidden = false
-        button.isEnabled = !action.bool("disabled")
-        button.setTitle(action.string("label"), for: .normal)
-        button.backgroundColor = nativeListColor(theme, "strongBackground", "#F0F0F0")
-        button.setTitleColor(
-          action.string("tone") == "danger"
-            ? nativeListColor(theme, "negative", "#CE2C31")
-            : nativeListColor(theme, "primaryText", "#202020"),
-          for: .normal
-        )
-        footerActionKeys.append(action.string("key"))
-      }
-    }
-  }
 
   private func bindDataRow(
     _ item: NativeListItem,
@@ -2055,14 +1968,6 @@ final class NativeListCell: NativeListRowHost {
     case "identity":
       return ["title", "subtitle", "tertiary", "badge", "value", "valueSecondary"]
         .contains(field) ? field : nil
-    case "activity":
-      switch field {
-      case "title", "status": return field
-      case "description": return "subtitle"
-      case "primaryAmount": return "value"
-      case "secondaryAmount": return "valueSecondary"
-      default: return nil
-      }
     case "dataRow":
       switch field {
       case "columns": return "dataPrimary"
@@ -2202,7 +2107,7 @@ final class NativeListCell: NativeListRowHost {
       case "title": applyStyledText(titleLabel, slotStyle)
       case "subtitle": (semanticSubtitleLabels.isEmpty ? [subtitleLabel] : semanticSubtitleLabels).forEach { applyStyledText($0, slotStyle) }
       case "tertiary": applyStyledText(tertiaryLabel, slotStyle)
-      case "status": applyStyledText(item.type == "activity" && item.data.string("status") == "Failed" ? badgeLabel : statusLabel, slotStyle)
+      case "status": applyStyledText(statusLabel, slotStyle)
       case "metricSubtitle": applyStyledText(metricSubtitleLabel, slotStyle)
       case "badge": (semanticBadgeLabels.isEmpty ? [badgeLabel] : semanticBadgeLabels).forEach { applyStyledText($0, slotStyle) }
       case "dataPrimary", "dataSecondary": break // Applied to independent column labels above.
@@ -4070,15 +3975,6 @@ final class NativeListCell: NativeListRowHost {
     )
   }
 
-  @objc private func footerActionPressed(_ sender: UIButton) {
-    guard let item = currentItem, footerActionKeys.indices.contains(sender.tag) else { return }
-    onAction?(
-      item,
-      footerActionKeys[sender.tag],
-      nil,
-      actionOrigin(sourceView: sender, source: "footerAction", slot: sender.tag)
-    )
-  }
 
   @objc private func checkboxPressed() {
     guard let item = currentItem, let action = checkboxAction else { return }

@@ -35,7 +35,7 @@ final class NativeListLeadingVisual: UIView {
 
   func bind(
     _ visual: [String: Any], style: [String: Any], key: String, theme: [String: Any]?,
-    isUnread: Bool
+    isUnread: Bool, secondaryVisual: [String: Any]? = nil
   ) {
     self.visual = visual
     imageStyle = style
@@ -50,6 +50,23 @@ final class NativeListLeadingVisual: UIView {
       : kind == "icon" ? [] : visual.dictionary("image").map { [($0, variant)] } ?? []
     if kind == "token", !sources.isEmpty, let network = visual.dictionary("networkImage") {
       sources.append((network, "network"))
+    }
+    if let secondaryVisual {
+      let secondaryKind = secondaryVisual.string("kind")
+      let source =
+        secondaryKind == "stackedImages"
+        ? secondaryVisual.dictionaries("images").first
+        : secondaryKind == "icon" ? nil : secondaryVisual.dictionary("image")
+      if let source {
+        sources.append(
+          (
+            source,
+            secondaryKind == "token"
+              ? "token"
+              : secondaryKind == "network"
+                ? "network" : ["account", "wallet"].contains(secondaryKind) ? "avatar" : "generic"
+          ))
+      }
     }
     while slots.count < sources.count {
       let slot = NativeListImageSlot()

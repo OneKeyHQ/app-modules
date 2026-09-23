@@ -41,13 +41,6 @@ internal fun nativeListStyleSlot(type: String, variant: String, field: String): 
       "title", "subtitle", "tertiary", "badge", "value", "valueSecondary" -> field
       else -> null
     }
-    "activity" -> when (field) {
-      "title", "status" -> field
-      "description" -> "subtitle"
-      "primaryAmount" -> "value"
-      "secondaryAmount" -> "valueSecondary"
-      else -> null
-    }
     "dataRow" -> when (field) {
       "columns" -> "dataPrimary"
       "columnSecondary" -> "dataSecondary"
@@ -94,7 +87,7 @@ private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
 
 // Message and Rail own dedicated renderers. Remaining templates still share
 // a compatible legacy tree; keys and style values never partition the pool.
-internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM }
+internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY }
 
 internal data class NativeListItem(
   val key: String,

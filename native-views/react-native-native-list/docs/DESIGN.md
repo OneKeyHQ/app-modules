@@ -355,3 +355,20 @@ regression tests cover style clearing, retained warning nodes and variant reuse.
 Evidence: external runtime `ios-system-*`, `android-system-*`, `web-system-*`.
 iOS/Android Debug builds, Android unit tests and 156 package tests pass.
 Remaining stage 3 templates: Activity, DataRow and MetricCard.
+
+### Stage 3: Activity acceptance (2026-09-23)
+
+Activity owns its leading visuals, text, amounts and three bounded footer-action
+buttons. Its legacy dispatch and exclusive native allocations are removed; Web
+Identity no longer dispatches Activity internally. Secondary image descriptors
+use the shared bounded image primitive. Action's Web visual now also applies
+explicit image width/height and clears them back to its defaults.
+
+The dedicated native runtimes and headed Chrome exercised default captures,
+style set/clear, secondary images, row footer actions, end/top scrolling and
+empty/repopulate with incompatible-family reuse. iOS preserves its pre-existing
+text compression for content exceeding the default 60-point height. Native
+builds and Android unit tests pass; 157 package tests cover image retention,
+amount/style clearing, action replacement and Action image dimensions.
+Evidence is retained as `ios-activity-*`, `android-activity-*`, `web-activity-*`
+in the external runtime. Remaining stage 3 templates: DataRow and MetricCard.

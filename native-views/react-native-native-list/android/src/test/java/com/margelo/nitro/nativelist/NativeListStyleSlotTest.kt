@@ -25,11 +25,8 @@ class NativeListStyleSlotTest {
       Case(type = "identity", field = "valueSecondary", expected = "valueSecondary"),
       // Legacy status views only serve unmigrated templates.
       Case(type = "rail", field = "status", expected = null),
-      Case(type = "activity", field = "status", expected = "status"),
       Case(type = "message", field = "time", expected = null),
       // Amounts, indices and values share the two trailing views.
-      Case(type = "activity", field = "primaryAmount", expected = "value"),
-      Case(type = "activity", field = "secondaryAmount", expected = "valueSecondary"),
       Case(type = "dataRow", field = "index", expected = "value"),
       Case(type = "dataRow", field = "columns", expected = "dataPrimary"),
       Case(type = "dataRow", field = "columnSecondary", expected = "dataSecondary"),

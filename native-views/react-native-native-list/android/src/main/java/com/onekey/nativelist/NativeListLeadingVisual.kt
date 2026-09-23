@@ -62,6 +62,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     theme: JSONObject?,
     isUnread: Boolean,
     sourceScale: Boolean,
+    secondaryVisual: JSONObject? = null,
   ) {
     this.visual = visual
     this.style = style
@@ -91,6 +92,26 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
       else visual.optJSONObject("image")?.let { listOf(it to variant) }.orEmpty()
     if (kind == "token" && sources.isNotEmpty())
       visual.optJSONObject("networkImage")?.let { sources = sources + (it to "network") }
+    secondaryVisual?.let { second ->
+      val kind = second.optString("kind")
+      val source =
+        when (kind) {
+          "stackedImages" -> second.optJSONArray("images")?.optJSONObject(0)
+          "icon" -> null
+          else -> second.optJSONObject("image")
+        }
+      if (source != null)
+        sources =
+          sources +
+            (source to
+              when (kind) {
+                "token" -> "token"
+                "network" -> "network"
+                "account",
+                "wallet" -> "avatar"
+                else -> "generic"
+              })
+    }
     while (slots.size < sources.size) {
       val slot = NativeListImageSlot(reactContext)
       slots.add(slot)
@@ -303,7 +324,13 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
             else 1f)
           .roundToInt()
       else dp(glyphSize)
-    place(icon, (w - iconSize + if(roundedGlyphOrigin) 1 else 0) / 2, (h - iconSize + if(roundedGlyphOrigin) 1 else 0) / 2, iconSize, iconSize)
+    place(
+      icon,
+      (w - iconSize + if (roundedGlyphOrigin) 1 else 0) / 2,
+      (h - iconSize + if (roundedGlyphOrigin) 1 else 0) / 2,
+      iconSize,
+      iconSize,
+    )
     val tokenPair = kind == "token" && sources.size > 1
     slots.take(sources.size).forEachIndexed { index, slot ->
       val size =

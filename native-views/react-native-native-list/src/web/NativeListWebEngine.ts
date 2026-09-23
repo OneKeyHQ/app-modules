@@ -507,12 +507,13 @@ export function estimateWebRowHeight(
 
   const registered = rowRenderer(row);
   if (registered)
-    return Math.max(0, registered.measure(availableWidth) + (registered.appliesSizePreset ? sizeModifier(row) : 0));
+    return Math.max(
+      0,
+      registered.measure(availableWidth) +
+        (registered.appliesSizePreset ? sizeModifier(row) : 0)
+    );
   let base: number;
   switch (row.type) {
-    case 'activity':
-      base = row.footerActions?.length ? 100 : 60;
-      break;
     case 'metricCard':
       base =
         row.variant === 'activity'
@@ -2611,20 +2612,23 @@ function createDataRow(
   return body;
 }
 
-function createIdentityOrActivityRow(
+function createIdentityRow(
   context: RenderContext,
-  row: Extract<RowModel, { type: 'identity' | 'activity' }>
+  row: Extract<
+    RowModel,
+    {
+      type: 'identity';
+    }
+  >
 ): HTMLElement {
-  const presentation = row.type === 'identity' ? row.presentation : undefined;
+  const presentation = row.presentation;
   const body = createElement(
     context.document,
     'div',
     [
       'ok-native-list-row',
       'ok-native-list-standard',
-      row.type === 'identity' && !presentation
-        ? 'ok-native-list-identity-row'
-        : '',
+      !presentation ? 'ok-native-list-identity-row' : '',
       presentation === 'networkSelector' ? 'ok-native-list-network-row' : '',
       presentation === 'walletSidebar' ? 'ok-native-list-wallet-row' : '',
       presentation === 'accountSelector' ? 'ok-native-list-account-row' : '',
@@ -2637,11 +2641,11 @@ function createIdentityOrActivityRow(
     'nativeListSelector',
     row.height !== undefined ? presentation : undefined
   );
-  if (row.type === 'identity' && row.titleActionKey && row.titleActionOnHover) {
+  if (row.titleActionKey && row.titleActionOnHover) {
     setData(body, 'nativeListHoverAction', row.titleActionKey);
     markActionAnchorSource(body, 'leadingAction');
   }
-  if (row.type === 'identity' && row.leadingAction) {
+  if (row.leadingAction) {
     const action = createIconAction(
       context,
       row.leadingAction.name,
@@ -2659,7 +2663,7 @@ function createIdentityOrActivityRow(
   );
   if (
     visual &&
-    row.type === 'identity' &&
+    true &&
     row.height !== undefined &&
     row.presentation === 'walletSidebar' &&
     'fallbackIcon' in row.leading &&
@@ -2683,7 +2687,7 @@ function createIdentityOrActivityRow(
   }
   if (
     visual &&
-    row.type === 'identity' &&
+    true &&
     row.height !== undefined &&
     row.presentation === 'walletSidebar' &&
     'borderStyle' in row.leading &&
@@ -2691,29 +2695,22 @@ function createIdentityOrActivityRow(
   )
     visual.style.borderWidth = '1px';
   if (visual) body.appendChild(visual);
-  if (row.type === 'activity' && row.secondaryLeading) {
-    const secondVisual = createVisual(context, row.secondaryLeading);
-    if (secondVisual) body.appendChild(secondVisual);
-  }
   const title = row.title;
-  const subtitle = row.type === 'identity' ? row.subtitle : row.description;
+  const subtitle = row.subtitle;
   const column = createTextColumn(
     context,
     title,
     subtitle,
-    row.type === 'identity' ? row.tertiary : undefined,
-    row.type === 'identity' ? row.tertiaryTone : undefined,
-    row.type === 'identity' && presentation !== 'walletSidebar'
-      ? row.badges
-      : undefined,
+    row.tertiary,
+    row.tertiaryTone,
+    presentation !== 'walletSidebar' ? row.badges : undefined,
     {
       title: 'title',
-      subtitle: row.type === 'activity' ? 'description' : 'subtitle',
+      subtitle: 'subtitle',
       tertiary: 'tertiary',
     }
   );
-  // OneKey patch: match existing search, subtitle fragments, and sidebar badges.
-  if (row.type === 'identity') {
+  {
     const titleElement = column.firstElementChild as HTMLElement;
     if (row.titleMatch?.length) {
       const textTarget =
@@ -2795,75 +2792,8 @@ function createIdentityOrActivityRow(
           .forEach((text) => applyTextLayout(text, { lines }));
     }
   }
-  if (row.type === 'activity' && row.status)
-    column.appendChild(
-      tagSlot(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          row.status
-        ),
-        'status'
-      )
-    );
-  if (row.type === 'activity' && row.footerActions?.length) {
-    const actions = createElement(
-      context.document,
-      'span',
-      'ok-native-list-actions'
-    );
-    row.footerActions.forEach((action, slot) => {
-      const button = createElement(
-        context.document,
-        'button',
-        'ok-native-list-action-button',
-        action.label
-      );
-      button.setAttribute('type', 'button');
-      button.toggleAttribute('disabled', Boolean(action.disabled));
-      setData(button, 'tone', action.tone);
-      setData(button, 'nativeListAction', action.key);
-      markActionAnchorSource(button, 'footerAction', slot);
-      actions.appendChild(button);
-    });
-    column.appendChild(actions);
-  }
   body.appendChild(column);
-  if (row.type === 'activity') {
-    const amounts = createElement(
-      context.document,
-      'span',
-      'ok-native-list-amounts'
-    );
-    if (row.primaryAmount)
-      amounts.appendChild(
-        tagSlot(
-          createElement(
-            context.document,
-            'span',
-            'ok-native-list-value',
-            row.primaryAmount
-          ),
-          'primaryAmount'
-        )
-      );
-    if (row.secondaryAmount)
-      amounts.appendChild(
-        tagSlot(
-          createElement(
-            context.document,
-            'span',
-            'ok-native-list-secondary',
-            row.secondaryAmount
-          ),
-          'secondaryAmount'
-        )
-      );
-    body.appendChild(amounts);
-  } else {
-    appendAccessories(body, context, row.key, row.trailing);
-  }
+  appendAccessories(body, context, row.key, row.trailing);
   return body;
 }
 
@@ -2902,8 +2832,8 @@ function createWalletGroupRow(
     setData(memberElement, 'nativeListGroupParent', memberIndex === 0);
     setData(memberElement, 'nativeListSelected', member.selected);
     // OneKey patch: grouped members have the same selector typography as standalone wallets.
-    // memberElement.appendChild(createIdentityOrActivityRow(context, member));
-    const memberBody = createIdentityOrActivityRow(context, member);
+    // memberElement.appendChild(createIdentityRow(context, member));
+    const memberBody = createIdentityRow(context, member);
     applySelectorTabularNumbers(memberBody, member);
     applyRowStyle(memberBody, member);
     memberElement.appendChild(memberBody);
@@ -3675,8 +3605,7 @@ export function createRowBody(
     case 'market':
       return createMarketRow(context, row);
     case 'identity':
-    case 'activity':
-      return createIdentityOrActivityRow(context, row);
+      return createIdentityRow(context, row);
   }
   throw new Error('No renderer registered for ' + row.type);
 }
@@ -3712,6 +3641,7 @@ export class NativeListWebEngine {
     mediaTile: [],
     action: [],
     system: [],
+    activity: [],
   };
   private readonly rendererKeys = new WeakMap<HTMLElement, RowRendererKey>();
   private frameHandle: number | undefined;

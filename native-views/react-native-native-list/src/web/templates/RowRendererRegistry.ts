@@ -1,3 +1,5 @@
+import type { ActivityRow } from '../../models';
+import { activityRowRenderer } from './ActivityRowRenderer';
 import type { SystemRow } from '../../models';
 import { systemRowRenderer } from './SystemRowRenderer';
 import type { ActionRow } from '../../models';
@@ -34,6 +36,8 @@ function registration<R extends RowModel>(renderer: Renderer<R>, row: R) {
   };
 }
 const factories = {
+  activity: (row: RowModel) =>
+    registration(activityRowRenderer, row as ActivityRow),
   system: (row: RowModel) => registration(systemRowRenderer, row as SystemRow),
   action: (row: RowModel) => registration(actionRowRenderer, row as ActionRow),
   message: (row: RowModel) =>
@@ -43,6 +47,7 @@ const factories = {
     registration(mediaTileRowRenderer, row as MediaTileRow),
 };
 const renderers = {
+  activity: activityRowRenderer,
   system: systemRowRenderer,
   action: actionRowRenderer,
   message: messageRowRenderer,

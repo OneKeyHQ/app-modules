@@ -400,9 +400,6 @@ internal class NativeListRowView(
   private val marketBadgeLabels = List(3) { TextView(context) }
   private val marketBadgeImages = List(3) { OneKeyImageReusableView(reactContext) }
   private val marketBadgeGlyphs = List(3) { OneKeyIconView(context) }
-  private val activityContentRow = LinearLayout(context)
-  private val actionLine = LinearLayout(context)
-  private val actionViews = List(3) { TextView(context) }
   private val trailingColumn = LinearLayout(context)
   private val trailingViews = List(2) { NativeListTextView(context) }
   private val trailingIcons = List(2) { OneKeyIconView(context) }
@@ -531,16 +528,7 @@ internal class NativeListRowView(
     mainColumn.addView(status)
     mainColumn.addView(metricSubtitle)
 
-    actionLine.orientation = HORIZONTAL
-    actionViews.forEach { action ->
-      action.typeface = NativeListFonts.semibold(context)
-      action.includeFontPadding = false
-      action.textSize = sp(14f)
-      TextViewCompat.setLineHeight(action, dp(20))
-      action.setPadding(dp(8), dp(4), dp(8), dp(4))
-      actionLine.addView(action)
-    }
-    mainColumn.addView(actionLine)
+
 
     trailingColumn.orientation = VERTICAL
     trailingColumn.gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -908,7 +896,6 @@ internal class NativeListRowView(
     when (item.type) {
       "walletGroup" -> bindWalletGroup(item, theme, layout, listOrientation, checkboxState)
       "identity" -> bindIdentity(item, theme, selected, checkboxState)
-      "activity" -> bindActivity(item, theme)
       "dataRow" -> bindDataRow(item, theme, checkboxState)
       "market" -> bindMarket(item, theme)
       "metricCard" -> bindMetricCard(item, theme)
@@ -1053,13 +1040,7 @@ internal class NativeListRowView(
         }
       }
     }
-    if (item.type == "activity" && actionLine.parent === this) {
-      if (style.has("lineGap")) styleMargins(actionLine, top = styleDp(style.optDouble("lineGap")))
-      if (style.has("leadingGap") || style.optJSONObject("image")?.has("width") == true) {
-        val leading = leadingFrame.layoutParams as MarginLayoutParams
-        styleMargins(actionLine, start = leading.width + leading.marginEnd)
-      }
-    }
+
     if (item.type == "dataRow") tableDataColumns.forEach { it.applyStyle(style, ::applyStyledText) }
 
     val variant = item.json.optString("variant")
@@ -1080,7 +1061,7 @@ internal class NativeListRowView(
           val view = if (item.type == "identity") semanticValueViews.getOrNull(if (slot == "value") 0 else 1) else styledSlotView(slot)
           view?.let { applyStyledText(it, slotStyle) }
         }
-        "status" -> applyStyledText(if (item.type == "activity" && item.json.optString("status") == "Failed") badgeLine else status, slotStyle)
+        "status" -> applyStyledText(if (false) badgeLine else status, slotStyle)
         "badge" -> (semanticBadgeLabels.ifEmpty { listOf(badgeLine) }).forEach { applyStyledText(it, slotStyle) }
         "subtitle" -> (semanticSubtitleLabels.ifEmpty { listOf(subtitle) }).forEach { applyStyledText(it, slotStyle) }
         else -> styledSlotView(slot)?.let { applyStyledText(it, slotStyle) }
@@ -1475,8 +1456,6 @@ internal class NativeListRowView(
       row.alpha = 1f
       row.recycle()
     }
-    activityContentRow.removeAllViews()
-    (actionLine.parent as? ViewGroup)?.removeView(actionLine)
     removeAllViews()
     // OneKey patch: the old animator is cancelled and old children are detached.
     // Do not trim currently needed members when re-binding an expanded group.
@@ -1501,7 +1480,6 @@ internal class NativeListRowView(
     mainColumn.addView(titleLine, 0)
     mainColumn.addView(subtitle, 1)
     mainColumn.addView(tertiary, 2)
-    mainColumn.addView(actionLine)
     titleLine.packsChildrenAtStart = false
     titleLine.removeView(headerTitleIcon)
     trailingColumn.removeView(headerValueIcon)
@@ -1540,12 +1518,6 @@ internal class NativeListRowView(
     badgeLine.visibility = GONE
     badgeLine.background = null
     badgeLine.setPadding(0, 0, 0, 0)
-    actionLine.visibility = GONE
-    actionViews.forEach {
-      it.visibility = GONE
-      it.background = null
-      it.setOnClickListener(null)
-    }
     trailingColumn.gravity = Gravity.END or Gravity.CENTER_VERTICAL
     trailingColumn.orientation = VERTICAL
     trailingColumn.layoutParams = wrap()
@@ -2044,79 +2016,6 @@ internal class NativeListRowView(
     bindAccessories(item, accessories, theme, checkboxState)
   }
 
-  private fun bindActivity(item: NativeListItem, theme: JSONObject?) {
-    addLeading(
-      item.json.optJSONObject("leading"),
-      secondaryVisual = item.json.optJSONObject("secondaryLeading"),
-    )
-    addView(mainColumn, weighted())
-    showText(title, item.json.optString("title"), 1)
-    showText(subtitle, item.json.optString("description"), 2)
-    TextViewCompat.setLineHeight(title, dp(24))
-    TextViewCompat.setLineHeight(subtitle, dp(20))
-    if (item.json.optString("status") == "Failed") {
-      showText(badgeLine, "Failed", 1)
-      badgeLine.setTextColor(color(theme, "negative", "#C40006D3"))
-      badgeLine.background = roundedFill(
-        color(theme, "criticalBackground", "#F3000D14"),
-        4f,
-      )
-      badgeLine.setPadding(dp(8), dp(2), dp(8), dp(2))
-    } else {
-      showText(status, item.json.optString("status"), 1)
-    }
-    addView(trailingColumn, wrap())
-    showTrailing(0, item.json.optString("primaryAmount"), true)
-    showTrailing(1, item.json.optString("secondaryAmount"), false)
-    if (item.json.optString("primaryAmount").startsWith("+")) {
-      trailingViews[0].setTextColor(color(theme, "positive", "#00713FDE"))
-    }
-    val actions = item.json.optJSONArray("footerActions")
-    if (actions != null && actions.length() > 0) {
-      actionLine.visibility = VISIBLE
-      for (index in 0 until minOf(3, actions.length())) {
-        val action = actions.getJSONObject(index)
-        val actionView = actionViews[index]
-        actionView.text = action.optString("label")
-        actionView.visibility = VISIBLE
-        actionView.isEnabled = isEnabled && !action.optBoolean("disabled", false)
-        actionView.background = roundedFill(color(theme, "strongBackground", "#0000000F"), 8f)
-        actionView.setTextColor(
-          if (action.optString("tone") == "danger") {
-            color(theme, "negative", "#C40006D3")
-          } else {
-            color(theme, "primaryText", "#000000DF")
-          },
-        )
-        actionView.layoutParams = LayoutParams(
-          LayoutParams.WRAP_CONTENT,
-          LayoutParams.WRAP_CONTENT,
-        ).apply { marginEnd = dp(8) }
-        actionView.setOnClickListener {
-          emitAction(item, action.optString("key"), null, actionView, "footerAction", index)
-        }
-      }
-      // TxActionCommonListView is one column ListItem with an 8dp gap between
-      // its content XStack and the pending action footer.
-      removeView(leadingFrame)
-      removeView(mainColumn)
-      removeView(trailingColumn)
-      mainColumn.removeView(actionLine)
-      activityContentRow.orientation = HORIZONTAL
-      activityContentRow.gravity = Gravity.CENTER_VERTICAL
-      activityContentRow.addView(leadingFrame)
-      activityContentRow.addView(mainColumn)
-      activityContentRow.addView(trailingColumn)
-      orientation = VERTICAL
-      gravity = Gravity.START
-      addView(activityContentRow, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-      addView(actionLine, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-        marginStart = if (leadingFrame.visibility == VISIBLE) dp(52) else 0
-        topMargin = dp(8)
-        bottomMargin = dp(4)
-      })
-    }
-  }
 
   private fun bindDataRow(
     item: NativeListItem,
@@ -3848,7 +3747,6 @@ internal class NativeListRowView(
       }
       isNetworkSelectorIdentity -> 47
       else -> when (item.type) {
-        "activity" -> if ((item.json.optJSONArray("footerActions")?.length() ?: 0) > 0) 104 else 60
         "metricCard" -> when (item.json.optString("variant")) {
           "activity" -> 0
           "performance" -> 0

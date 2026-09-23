@@ -4,7 +4,7 @@ import UIKit
 // Message is the first migrated renderer. Other templates still use the
 // compatible legacy tree; style, content and row keys do not affect reuse.
 enum NativeListRendererKey: String, CaseIterable {
-  case legacy, message, rail, mediaTile, action, system
+  case legacy, message, rail, mediaTile, action, system, activity
 }
 
 struct NativeListItem {
