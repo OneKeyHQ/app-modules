@@ -545,9 +545,6 @@ export function estimateWebRowHeight(
           : 36;
       break;
     }
-    case 'dataRow':
-      base = row.columns.some((column) => column.secondaryText) ? 60 : 56;
-      break;
     case 'market': {
       const marketStyle = resolveWebMarketLayoutStyle(row);
       base = Math.max(
@@ -2520,98 +2517,6 @@ function createMetricRow(
   return body;
 }
 
-function createDataRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'dataRow' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-data'
-  );
-  if (row.checkbox)
-    body.appendChild(createCheckbox(context, row.key, row.checkbox));
-  if (row.index !== undefined)
-    body.appendChild(
-      tagSlot(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-index',
-          String(row.index)
-        ),
-        'index'
-      )
-    );
-  if (row.favorite) {
-    const favorite = createElement(
-      context.document,
-      'span',
-      'ok-native-list-favorite',
-      row.favoriteActive ? '★' : '☆'
-    );
-    setData(favorite, 'active', row.favoriteActive);
-    body.appendChild(favorite);
-  }
-  if (row.leading) {
-    const visual = createVisual(context, row.leading);
-    if (visual) body.appendChild(visual);
-  }
-  row.columns.forEach((column) => {
-    const cell = createElement(
-      context.document,
-      'span',
-      'ok-native-list-data-cell'
-    );
-    cell.style.flex = String(column.weight ?? 1);
-    setData(cell, 'align', column.alignment ?? 'start');
-    const primary = createElement(
-      context.document,
-      'span',
-      'ok-native-list-data-primary'
-    );
-    primary.style.color = toneColor(column.tone, 'primary');
-    primary.appendChild(
-      tagSlot(
-        createElement(context.document, 'span', undefined, column.text),
-        'columns'
-      )
-    );
-    if (column.key === 'asset' && row.badges?.length) {
-      row.badges.forEach((badge) =>
-        primary.appendChild(createBadge(context, badge))
-      );
-    }
-    cell.appendChild(primary);
-    if (column.secondaryLeadingText || column.secondaryText) {
-      const secondaryLine = createElement(
-        context.document,
-        'span',
-        'ok-native-list-data-secondary-line'
-      );
-      secondaryLine.style.display = 'flex';
-      secondaryLine.style.gap = '4px';
-      for (const text of [column.secondaryLeadingText, column.secondaryText]) {
-        if (!text) continue;
-        const secondary = tagSlot(
-          createElement(
-            context.document,
-            'span',
-            'ok-native-list-secondary',
-            text
-          ),
-          'columnSecondary'
-        );
-        secondary.style.color = toneColor(column.secondaryTone, 'secondary');
-        secondaryLine.appendChild(secondary);
-      }
-      cell.appendChild(secondaryLine);
-    }
-    body.appendChild(cell);
-  });
-  return body;
-}
-
 function createIdentityRow(
   context: RenderContext,
   row: Extract<
@@ -3600,8 +3505,6 @@ export function createRowBody(
       return createSectionHeader(context, row);
     case 'metricCard':
       return createMetricRow(context, row);
-    case 'dataRow':
-      return createDataRow(context, row);
     case 'market':
       return createMarketRow(context, row);
     case 'identity':
@@ -3642,6 +3545,7 @@ export class NativeListWebEngine {
     action: [],
     system: [],
     activity: [],
+    dataRow: [],
   };
   private readonly rendererKeys = new WeakMap<HTMLElement, RowRendererKey>();
   private frameHandle: number | undefined;

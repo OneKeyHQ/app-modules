@@ -27,9 +27,6 @@ class NativeListStyleSlotTest {
       Case(type = "rail", field = "status", expected = null),
       Case(type = "message", field = "time", expected = null),
       // Amounts, indices and values share the two trailing views.
-      Case(type = "dataRow", field = "index", expected = "value"),
-      Case(type = "dataRow", field = "columns", expected = "dataPrimary"),
-      Case(type = "dataRow", field = "columnSecondary", expected = "dataSecondary"),
       Case(type = "system", field = "title", variant = "retry", expected = null),
       Case(type = "sectionHeader", field = "value", expected = "value"),
       // Only the warning variant renders a separate title.

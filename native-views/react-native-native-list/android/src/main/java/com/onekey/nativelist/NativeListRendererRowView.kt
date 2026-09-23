@@ -79,6 +79,22 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
   private var current: NativeListItem? = null
   private var theme: JSONObject? = null
   private var listLayout = "linear"
+  private var itemIndex: Int? = null
+
+  protected open fun unselectedBackground(
+    item: NativeListItem,
+    theme: JSONObject?,
+    layout: String,
+    itemIndex: Int?,
+  ) = color(theme?.optString("rowBackground", "#FFFFFF") ?: "#FFFFFF")
+
+  protected open fun backgroundGroupPosition(
+    item: NativeListItem,
+    layout: String,
+    itemIndex: Int?,
+    selected: Boolean,
+  ) = item.json.optString("groupPosition")
+
   private var selected = false
   protected var sourceScale = false
   private var inputSignature = ""
@@ -149,6 +165,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     tag = item
     this.theme = theme
     listLayout = layout
+    this.itemIndex = itemIndex
     this.selected = selected
     explicitHeight = item.styledHeight?.let(::stylePx) ?: modelHeight(item, layout)
     val sizeDelta =
@@ -198,6 +215,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     this.theme = theme
     this.selected = selected
     listLayout = layout
+    this.itemIndex = itemIndex
     bindSelectionContent(item, checkboxState)
     appearance()
   }
@@ -233,14 +251,16 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     val backgroundFallback =
       if (pressed && pressChangesBackground) pressedColorFallback
       else if (showSelected) "#0000000F" else "#FFFFFF"
-    var fill = color(theme?.optString(backgroundName, backgroundFallback) ?: backgroundFallback)
+    var fill =
+      if (!pressed && !showSelected) unselectedBackground(item, theme, listLayout, itemIndex)
+      else color(theme?.optString(backgroundName, backgroundFallback) ?: backgroundFallback)
     if (!pressed || !pressChangesBackground) {
       if (item.json.has("backgroundColor"))
         fill = color(item.json.optString("backgroundColor"), fill)
       if (container.has("backgroundColor"))
         fill = color(container.optString("backgroundColor"), fill)
     }
-    val position = item.json.optString("groupPosition")
+    val position = backgroundGroupPosition(item, listLayout, itemIndex, showSelected)
     val radius =
       if (container.has("cornerRadius")) stylePx(container.optDouble("cornerRadius")).toFloat()
       else if (defaultCornerRadius > 0) dp(defaultCornerRadius).toFloat()

@@ -372,3 +372,19 @@ builds and Android unit tests pass; 157 package tests cover image retention,
 amount/style clearing, action replacement and Action image dimensions.
 Evidence is retained as `ios-activity-*`, `android-activity-*`, `web-activity-*`
 in the external runtime. Remaining stage 3 templates: DataRow and MetricCard.
+
+### Stage 3: DataRow acceptance (2026-09-23)
+
+DataRow owns four bounded column views, leading visual, favorite, index and
+checkbox controls. Its table striping retains the effective row index and
+platform defaults. Dedicated native hosts and the persistent Web body replace
+the legacy table allocations, dispatch and style paths.
+
+The dedicated iOS/Android simulators and headed Chrome exercised selection
+(callback counter increment), linear/table switching, style set/clear,
+end/top scrolling and empty/repopulate with family replacement. Native default
+captures preserve column geometry and existing truncation. The Web regression
+changes three columns to two and back, clearing secondary labels and styles
+while retaining the unchanged image. Native builds and Android unit tests
+pass; all 158 package tests and typecheck pass. Evidence: external runtime
+`ios-data-*`, `android-data-*`; MetricCard is the last stage 3 template.

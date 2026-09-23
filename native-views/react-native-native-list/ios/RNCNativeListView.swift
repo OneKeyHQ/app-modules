@@ -1754,10 +1754,6 @@ final class NativeListView: UIView {
               : item.data.dictionary("checkbox") != nil
                 ? 56
                 : config?.layout == "linear" ? 30 : 36
-    case "dataRow":
-      base = item.data.dictionaries("columns").contains {
-        !$0.string("secondaryText").isEmpty
-      } ? 60 : 56
     case "market":
       let style = item.data.dictionary("style")
       let imageHeight = CGFloat(style?.dictionary("image")?.double(
@@ -1783,12 +1779,7 @@ final class NativeListView: UIView {
         ? -8
         : item.data.string("size") == "large" ? 12 : 0
     let sectionSpacing: CGFloat = 0
-    let tableAdjustment: CGFloat = config?.layout == "table" &&
-      item.type == "dataRow" &&
-      !item.data.dictionaries("columns").contains(where: { !$0.string("secondaryText").isEmpty })
-      ? -8
-      : 0
-    return max(0, base + modifier + sectionSpacing + tableAdjustment)
+    return max(0, base + modifier + sectionSpacing)
   }
 
 

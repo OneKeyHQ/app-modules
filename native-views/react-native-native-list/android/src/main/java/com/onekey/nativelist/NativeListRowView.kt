@@ -203,148 +203,6 @@ private class SelectorSubtitleLayout(context: android.content.Context) : LinearL
   }
 }
 
-private class NativeListTableColumnView(context: android.content.Context) : LinearLayout(context) {
-  private val primaryLine = LinearLayout(context)
-  private val primary = NativeListTextView(context)
-  private val badges = LinearLayout(context)
-  private val secondaryLine = LinearLayout(context)
-  private val secondaryLeading = NativeListTextView(context)
-  private val secondary = NativeListTextView(context)
-
-  init {
-    orientation = VERTICAL
-    primaryLine.orientation = HORIZONTAL
-    primaryLine.gravity = Gravity.CENTER_VERTICAL
-    badges.orientation = HORIZONTAL
-    badges.gravity = Gravity.CENTER_VERTICAL
-    primary.includeFontPadding = false
-    primary.fontFeatureSettings = "tnum"
-    primary.maxLines = 1
-    primary.ellipsize = TextUtils.TruncateAt.END
-    primary.textSize = sp(14f)
-    primary.typeface = NativeListFonts.medium(context)
-    TextViewCompat.setLineHeight(primary, dp(20))
-    secondaryLine.orientation = HORIZONTAL
-    secondaryLine.gravity = Gravity.CENTER_VERTICAL
-    listOf(secondaryLeading, secondary).forEach { label ->
-      label.includeFontPadding = false
-      label.fontFeatureSettings = "tnum"
-      label.maxLines = 1
-      label.ellipsize = TextUtils.TruncateAt.END
-      label.textSize = sp(12f)
-      label.typeface = NativeListFonts.regular(context)
-      TextViewCompat.setLineHeight(label, dp(16))
-    }
-    secondaryLeading.maxWidth = dp(120)
-    secondaryLine.addView(secondaryLeading, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
-    secondaryLine.addView(secondary, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-      marginStart = dp(4)
-    })
-    primaryLine.addView(primary, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
-    primaryLine.addView(badges, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-      marginStart = dp(6)
-    })
-    addView(primaryLine, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
-    addView(secondaryLine, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-      topMargin = dp(4)
-    })
-  }
-
-  fun reset() {
-    primaryLine.layoutParams.width = LayoutParams.WRAP_CONTENT
-    primary.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-    secondary.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginStart = dp(4) }
-    (secondaryLine.layoutParams as MarginLayoutParams).topMargin = dp(4)
-    (badges.layoutParams as MarginLayoutParams).marginStart = dp(6)
-    primary.text = ""
-    secondaryLeading.text = ""
-    secondary.text = ""
-    secondaryLeading.visibility = GONE
-    secondary.visibility = GONE
-    secondaryLine.visibility = GONE
-    badges.removeAllViews()
-    badges.visibility = GONE
-  }
-
-  fun bind(
-    column: JSONObject,
-    rowBadges: JSONArray?,
-    primaryColor: Int,
-    secondaryColor: Int,
-    infoColor: Int,
-    primarySize: Float,
-  ) {
-    reset()
-    primary.textSize = sp(primarySize)
-    gravity = when (column.optString("alignment", "start")) {
-      "center" -> Gravity.CENTER_HORIZONTAL
-      "end" -> Gravity.END
-      else -> Gravity.START
-    }
-    primary.gravity = gravity
-    secondaryLeading.gravity = gravity
-    secondary.gravity = gravity
-    primary.text = column.optString("text")
-    primary.setTextColor(primaryColor)
-    if (rowBadges != null && rowBadges.length() > 0) {
-      badges.visibility = VISIBLE
-      for (index in 0 until minOf(2, rowBadges.length())) {
-        val badge = TextView(context).apply {
-          includeFontPadding = false
-          fontFeatureSettings = "tnum"
-          gravity = Gravity.CENTER
-          text = rowBadges.getJSONObject(index).optString("text")
-          textSize = sp(10f)
-          typeface = NativeListFonts.regular(context)
-          setTextColor(infoColor)
-          setPadding(dp(6), 0, dp(6), 0)
-          background = GradientDrawable().apply {
-            setColor(parseNativeListColor("#008FF519"))
-            cornerRadius = dp(4).toFloat()
-          }
-        }
-        badges.addView(badge, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-          if (index > 0) marginStart = dp(4)
-        })
-      }
-    }
-    val secondaryLeadingText = column.optString("secondaryLeadingText")
-    if (secondaryLeadingText.isNotEmpty()) {
-      secondaryLeading.text = secondaryLeadingText
-      secondaryLeading.setTextColor(secondaryColor)
-      secondaryLeading.visibility = VISIBLE
-      secondaryLine.visibility = VISIBLE
-    }
-    val secondaryText = column.optString("secondaryText")
-    if (secondaryText.isNotEmpty()) {
-      secondary.text = secondaryText
-      secondary.setTextColor(secondaryColor)
-      secondary.visibility = VISIBLE
-      secondaryLine.visibility = VISIBLE
-    }
-  }
-
-  fun applyStyle(style: JSONObject, applyText: (TextView, JSONObject) -> Unit) {
-    style.optJSONObject("columns")?.let {
-      applyText(primary, it)
-      if (it.has("alignment")) {
-        primaryLine.layoutParams.width = LayoutParams.MATCH_PARENT
-        primary.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
-      }
-    }
-    style.optJSONObject("columnSecondary")?.let {
-      applyText(secondaryLeading, it)
-      applyText(secondary, it)
-      if (it.has("alignment")) secondary.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(4) }
-    }
-    (secondaryLine.layoutParams as MarginLayoutParams).topMargin = style.optDouble("lineGap", 4.0).let { (it * resources.displayMetrics.density).roundToInt() }
-    (badges.layoutParams as MarginLayoutParams).marginStart = style.optDouble("titleBadgeGap", 6.0).let { (it * resources.displayMetrics.density).roundToInt() }
-  }
-
-  private fun dp(value: Int): Int = NativeListScale.dp(resources, value)
-  private fun sp(value: Float): Float = NativeListScale.font(resources, value)
-}
-
 internal class NativeListRowView(
   private val reactContext: ThemedReactContext,
 ) : NativeListRowHost(reactContext) {
@@ -380,7 +238,6 @@ internal class NativeListRowView(
   private val leadingCornerIcon = OneKeyIconView(context)
   private val leadingFallback = TextView(context)
   private val leadingIcon = OneKeyIconView(context)
-  private val favoriteIcon = OneKeyIconView(context)
   private val headerTitleIcon = OneKeyIconView(context)
   private val headerValueIcon = OneKeyIconView(context)
   private val leadingActionIcon = OneKeyIconView(context)
@@ -405,8 +262,6 @@ internal class NativeListRowView(
   private val trailingIcons = List(2) { OneKeyIconView(context) }
   private val checkbox = OneKeyCheckboxView(context)
   private val spinner = ProgressBar(context)
-  private val tableDataContainer = LinearLayout(context)
-  private val tableDataColumns = List(4) { NativeListTableColumnView(context) }
   private val unreadDot = View(context)
   private val walletGroupRows = mutableListOf<NativeListRowView>()
   private val walletGroupDragBadgeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -481,7 +336,6 @@ internal class NativeListRowView(
     leadingFrame.clipChildren = false
     leadingFrame.clipToPadding = false
     leadingIcon.layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
-    favoriteIcon.layoutParams = LayoutParams(dp(24), dp(24))
     leadingActionIcon.layoutParams = LayoutParams(dp(24), dp(24))
     leadingCornerIcon.layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
     unreadDot.layoutParams = FrameLayout.LayoutParams(dp(8), dp(8), Gravity.TOP or Gravity.END)
@@ -537,9 +391,7 @@ internal class NativeListRowView(
     trailingColumn.addView(checkbox)
     trailingColumn.addView(spinner)
 
-    tableDataContainer.orientation = HORIZONTAL
-    tableDataContainer.gravity = Gravity.CENTER_VERTICAL
-    tableDataColumns.forEach { tableDataContainer.addView(it) }
+
 
     secondaryImage.outlineProvider = object : ViewOutlineProvider() {
       override fun getOutline(view: View, outline: Outline) {
@@ -896,7 +748,6 @@ internal class NativeListRowView(
     when (item.type) {
       "walletGroup" -> bindWalletGroup(item, theme, layout, listOrientation, checkboxState)
       "identity" -> bindIdentity(item, theme, selected, checkboxState)
-      "dataRow" -> bindDataRow(item, theme, checkboxState)
       "market" -> bindMarket(item, theme)
       "metricCard" -> bindMetricCard(item, theme)
       "sectionHeader" -> bindSectionHeader(item, theme, checkboxState)
@@ -1041,7 +892,7 @@ internal class NativeListRowView(
       }
     }
 
-    if (item.type == "dataRow") tableDataColumns.forEach { it.applyStyle(style, ::applyStyledText) }
+
 
     val variant = item.json.optString("variant")
     if (item.type == "metricCard" && variant in setOf("activity", "performance")) {
@@ -1056,7 +907,6 @@ internal class NativeListRowView(
       val slotStyle = style.optJSONObject(field) ?: continue
       when (val slot = nativeListStyleSlot(item.type, variant, field)) {
         null -> continue
-        "dataPrimary", "dataSecondary" -> Unit // Independent column labels are styled above.
         "value", "valueSecondary" -> {
           val view = if (item.type == "identity") semanticValueViews.getOrNull(if (slot == "value") 0 else 1) else styledSlotView(slot)
           view?.let { applyStyledText(it, slotStyle) }
@@ -1568,8 +1418,6 @@ internal class NativeListRowView(
     leadingIcon.iconName = ""
     leadingIcon.layoutParams = FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
     leadingIcon.glyphSizeDp = null
-    favoriteIcon.visibility = GONE
-    favoriteIcon.iconName = ""
     headerTitleIcon.visibility = GONE
     headerTitleIcon.iconName = ""
     headerValueIcon.visibility = GONE
@@ -1581,11 +1429,7 @@ internal class NativeListRowView(
     leadingActionIcon.setTag(com.facebook.react.R.id.react_test_id, null)
     leadingActionIcon.contentDescription = null
     mainColumn.visibility = VISIBLE
-    tableDataContainer.visibility = GONE
-    tableDataColumns.forEach {
-      it.reset()
-      it.visibility = GONE
-    }
+
     leadingOverlayBackground.visibility = GONE
     leadingCornerIconFrame.visibility = GONE
     leadingCornerIcon.iconName = ""
@@ -2017,64 +1861,6 @@ internal class NativeListRowView(
   }
 
 
-  private fun bindDataRow(
-    item: NativeListItem,
-    theme: JSONObject?,
-    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
-  ) {
-    if (
-      item.json.optBoolean("favorite", false) ||
-      item.json.optBoolean("favoriteActive", false)
-    ) {
-      val favoriteActive = item.json.optBoolean("favoriteActive", false)
-      favoriteIcon.visibility = VISIBLE
-      favoriteIcon.iconName = if (favoriteActive) "StarSolid" else "StarOutline"
-      favoriteIcon.tintColor = color(
-        theme,
-        if (favoriteActive) "icon" else "iconSubdued",
-        if (favoriteActive) "#0000009B" else "#00000072",
-      )
-      addView(favoriteIcon, LayoutParams(dp(20), dp(20)).apply {
-        marginEnd = dp(if (currentLayout == "table") 8 else 12)
-      })
-    }
-    item.json.optJSONObject("leading")?.let {
-      addLeading(it, 40, spacingDp = if (currentLayout == "table") 10 else 12)
-    }
-    var hasLeadingAccessory = false
-    item.json.optJSONObject("checkbox")?.let {
-      bindCheckbox(item, it, checkboxState)
-      hasLeadingAccessory = true
-    }
-    if (item.json.has("index")) {
-      val indexView = trailingViews[0]
-      indexView.text = item.json.optInt("index").toString()
-      indexView.visibility = VISIBLE
-      hasLeadingAccessory = true
-    }
-    if (hasLeadingAccessory) {
-      addView(trailingColumn, LayoutParams(dp(32), LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(10) })
-    }
-    val columns = item.json.getJSONArray("columns")
-    val rowBadges = item.json.optJSONArray("badges")
-    tableDataContainer.visibility = VISIBLE
-    for (index in 0 until minOf(4, columns.length())) {
-      val column = columns.getJSONObject(index)
-      tableDataColumns[index].visibility = VISIBLE
-      tableDataColumns[index].bind(
-        column = column,
-        rowBadges = if (index == 0) rowBadges else null,
-        primaryColor = dataTextColor(column.optString("tone"), theme),
-        secondaryColor = dataTextColor(column.optString("secondaryTone", "secondary"), theme),
-        infoColor = color(theme, "info", "#006DCBF2"),
-        primarySize = if (currentLayout == "table") 14f else 16f,
-      )
-      tableDataColumns[index].layoutParams = LayoutParams(
-        0, LayoutParams.WRAP_CONTENT, column.optInt("weight", 1).toFloat(),
-      )
-    }
-    addView(tableDataContainer, weighted())
-  }
 
   private fun marketTypeface(weight: String, fallback: String): Typeface = when (
     weight.ifEmpty { fallback }
@@ -3762,15 +3548,6 @@ internal class NativeListRowView(
           item.json.optString("value").isNotEmpty() && item.json.optJSONObject("checkbox") != null -> 40
           else -> 36
         }
-        "dataRow" -> if (currentLayout == "table") {
-          60
-        } else if ((0 until item.json.getJSONArray("columns").length()).any {
-          item.json.getJSONArray("columns").getJSONObject(it).optString("secondaryText").isNotEmpty()
-        }) {
-          64
-        } else {
-          56
-        }
         else -> when {
           item.type == "identity" && item.json.optString("presentation") == "walletSidebar" -> if ((item.json.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68
           item.type == "identity" && item.json.optString("tertiary").isNotEmpty() -> 72
@@ -3789,12 +3566,7 @@ internal class NativeListRowView(
       when (item.json.optString("size", "medium")) { "small" -> -8; "large" -> 12; else -> 0 }
     }
     val sectionSpacing = 0
-    val hasSecondaryColumn = item.type == "dataRow" &&
-      (0 until item.json.getJSONArray("columns").length()).any {
-        item.json.getJSONArray("columns").getJSONObject(it).optString("secondaryText").isNotEmpty()
-      }
-    val tableAdjustment = if (item.type == "dataRow" && currentLayout == "table" && !hasSecondaryColumn) -8 else 0
-    minimumHeight = dp((baseHeight + modifier + sectionSpacing + tableAdjustment).coerceAtLeast(0))
+    minimumHeight = dp((baseHeight + modifier + sectionSpacing).coerceAtLeast(0))
   }
 
 

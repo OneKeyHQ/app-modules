@@ -9,6 +9,7 @@ enum NativeListRendererRegistry {
       .message: (NativeListMessageCell.self, { NativeListMessageCell(frame: .zero) }),
       .rail: (NativeListRailCell.self, { NativeListRailCell(frame: .zero) }),
       .mediaTile: (NativeListMediaTileCell.self, { NativeListMediaTileCell(frame: .zero) }),
+      .dataRow: (NativeListDataRowCell.self, { NativeListDataRowCell(frame: .zero) }),
       .activity: (NativeListActivityCell.self, { NativeListActivityCell(frame: .zero) }),
       .system: (NativeListSystemCell.self, { NativeListSystemCell(frame: .zero) }),
       .action: (NativeListActionCell.self, { NativeListActionCell(frame: .zero) }),
@@ -31,6 +32,10 @@ enum NativeListRendererRegistry {
   static func measure(_ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String)
     -> CGFloat?
   {
+    if item.rendererKey == .dataRow {
+      let secondary = item.data.dictionaries("columns").contains { !$0.string("secondaryText").isEmpty }
+      return secondary ? 60 : layout == "table" ? 48 : 56
+    }
     if item.rendererKey == .activity { return item.data.dictionaries("footerActions").isEmpty ? 60 : 100 }
     if item.rendererKey == .system { return NativeListSystemRenderer.measure(item, width: width) }
     if item.rendererKey == .action {

@@ -1204,7 +1204,10 @@ describe('web row style', () => {
     const row = {
       type: 'activity',
       key: 'tx',
-      leading: { kind: 'image', image: { uri: 'https://example.com/a.png', width: 40, height: 40 } },
+      leading: {
+        kind: 'image',
+        image: { uri: 'https://example.com/a.png', width: 40, height: 40 },
+      },
       title: 'Received',
       description: 'From Alice',
       status: 'Failed',
@@ -2258,4 +2261,86 @@ describe('web row style', () => {
       }
     }
   );
+});
+
+describe('DataRow renderer lifecycle', () => {
+  const dataSnapshot = (
+    layout: NativeListSnapshot['layout'],
+    items: readonly RowModel[]
+  ): NativeListSnapshot => ({ schemaVersion: 1, generation: 1, layout, rows });
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => { window: { document: Document } };
+  };
+  it('retains the image while removing columns and restoring text styles', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const row: Extract<RowModel, { type: 'dataRow' }> = {
+      type: 'dataRow',
+      key: 'data',
+      leading: { kind: 'image', image },
+      index: 2,
+      columns: [
+        { key: 'asset', text: 'Bitcoin', secondaryText: 'BTC', weight: 2 },
+        { key: 'price', text: '$42,000', alignment: 'end' },
+        { key: 'change', text: '+2.4%' },
+      ],
+    };
+    const engine = new NativeListWebEngine(
+      host,
+      dataSnapshot({ kind: 'table' }, [row]),
+      {},
+      false
+    );
+    try {
+      const body = host.querySelector<HTMLElement>(
+        '[data-nl-renderer="dataRow"]'
+      )!;
+      const leading = body.querySelector('img');
+      engine.applySnapshot(
+        dataSnapshot({ kind: 'table' }, [
+          {
+            ...row,
+            style: {
+              columns: { fontSize: 22, lines: 2 },
+              columnSecondary: { color: '#ff0000' },
+              image: { width: 28, height: 30 },
+            },
+          },
+        ])
+      );
+      expect(body.querySelector('img')).toBe(leading);
+      expect(
+        body.querySelector<HTMLElement>('[data-nl-slot="columns"]')?.style
+          .fontSize
+      ).toBe('22px');
+      engine.applySnapshot(
+        dataSnapshot({ kind: 'table' }, [
+          {
+            ...row,
+            columns: [
+              { key: 'asset', text: 'Ether' },
+              { key: 'price', text: '$2,000' },
+            ],
+          },
+        ])
+      );
+      expect(host.querySelector('[data-nl-renderer="dataRow"]')).toBe(body);
+      expect(body.querySelector('img')).toBe(leading);
+      expect(body.querySelectorAll('[data-nl-slot="columns"]')).toHaveLength(2);
+      expect(
+        body.querySelectorAll('[data-nl-slot="columnSecondary"]')
+      ).toHaveLength(0);
+      expect(
+        body.querySelector<HTMLElement>('[data-nl-slot="columns"]')?.style
+          .fontSize
+      ).not.toBe('22px');
+      expect(body.textContent).not.toContain('$42,000');
+      engine.applySnapshot(dataSnapshot({ kind: 'table' }, [row]));
+      expect(body.querySelectorAll('[data-nl-slot="columns"]')).toHaveLength(3);
+      expect(body.textContent).toContain('BTC');
+    } finally {
+      engine.destroy();
+    }
+  });
 });

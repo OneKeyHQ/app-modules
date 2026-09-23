@@ -40,6 +40,8 @@ class NativeListRendererCell: NativeListRowHost {
   private var item: NativeListItem?
   private var theme: [String: Any]?
   private var layout = "linear"
+  private var itemIndex: Int?
+  func unselectedBackground(_ item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int?) -> UIColor { nativeListColor(theme, "rowBackground", "#FFFFFF") }
   private var selectedState = false
   private var inputSignature = ""
 
@@ -103,6 +105,7 @@ class NativeListRendererCell: NativeListRowHost {
     self.item = item
     self.theme = theme
     self.layout = layout
+    self.itemIndex = itemIndex
     self.selectedState = selected
     bindSelectionContent(item, checkboxState: checkboxState)
     accessibilityLabel = item.data.string("accessibilityLabel", default: item.data.string("title"))
@@ -142,9 +145,7 @@ class NativeListRendererCell: NativeListRowHost {
     let container = item.data.dictionary("style")?.dictionary("container") ?? [:]
     let showSelection =
       showsSelection && selectedState && (layout != "sectioned" || item.data.bool("selected"))
-    var background = nativeListColor(
-      theme, showSelection ? "rowSelectedBackground" : "rowBackground",
-      showSelection ? "#F0F0F0" : "#FFFFFF")
+    var background = showSelection ? nativeListColor(theme, "rowSelectedBackground", "#F0F0F0") : unselectedBackground(item, theme: theme, layout: layout, itemIndex: itemIndex)
     if let color = (container["backgroundColor"] ?? item.data["backgroundColor"]) as? String {
       background = UIColor(nativeListHex: color, fallback: background)
     }

@@ -41,12 +41,6 @@ internal fun nativeListStyleSlot(type: String, variant: String, field: String): 
       "title", "subtitle", "tertiary", "badge", "value", "valueSecondary" -> field
       else -> null
     }
-    "dataRow" -> when (field) {
-      "columns" -> "dataPrimary"
-      "columnSecondary" -> "dataSecondary"
-      "index" -> "value"
-      else -> null
-    }
     // The large number and the small label sit in swapped views.
     "metricCard" -> when (field) {
       "value" -> "title"
@@ -87,7 +81,7 @@ private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
 
 // Message and Rail own dedicated renderers. Remaining templates still share
 // a compatible legacy tree; keys and style values never partition the pool.
-internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY }
+internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW }
 
 internal data class NativeListItem(
   val key: String,
