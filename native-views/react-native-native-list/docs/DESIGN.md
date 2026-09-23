@@ -316,3 +316,25 @@ Evidence: external validation runtime `ios-media-*`, `android-media-*` and
 Android unit tests pass; package typecheck and all 154 tests pass. Focused ESLint
 has no errors (six pre-existing engine warnings). Remaining stage 3 templates:
 Action, System, Activity, DataRow and MetricCard.
+
+### Stage 3: Action acceptance (2026-09-23)
+
+Action uses a dedicated renderer on all three platforms. Native accessories
+are a bounded primitive (two accessory slots plus checkbox/spinner), shared
+through the host action epoch and a selection-only presentation hook. Legacy
+Action dispatch, typography, style-slot and default-height branches are removed.
+Fixed-footer creation was migrated to the same registry after runtime QA found
+that the old direct legacy allocation no longer rendered Action. Footer family
+replacement invalidates the previous host and keeps list-owned gestures/events.
+
+On the task's iOS and Android simulators, default and value-pair/menu bounds
+match the pre-migration captures. Style set/clear, same-key accessory variants,
+menu and select-all checkbox actions, end/top, empty/repopulate, Media/Action
+family replacement and fixed-footer rendering/clicks were exercised. The iOS
+event counter reached 3 after menu, checkbox and footer; Web checked select-all
+state and footer dispatch in headed Chrome. Evidence is `ios-action-*`,
+`android-action-*` and `web-action-*` in the external validation runtime.
+Build/type/unit checks pass; 155 package tests include style restoration, stable
+Action title/icon nodes, selection echoes and incompatible-family reuse.
+An Android input timeout also affected Launcher; its captured main stack was in the display event loop. After restarting the task emulator, menu, checkbox, scroll, repopulate and footer checks passed (action counter 3). This does not establish a library-level ANR cause.
+Remaining stage 3 templates: System, Activity, DataRow and MetricCard.

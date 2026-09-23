@@ -226,7 +226,8 @@ class NativeListView(
     mass = REORDER_SPRING_MASS,
     durationSeconds = REORDER_SPRING_DURATION_MS / 1_000.0,
   )
-  private val footerView = NativeListRowView(reactContext)
+  private var footerView: NativeListRowHost = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.LEGACY.ordinal)
+  private var footerRendererKey = NativeListRendererKey.LEGACY
   private val sectionIndexView = NativeListSectionIndexView(context)
   private val sectionIndexPreview = TextView(context)
   private var config: NativeListConfig? = null
@@ -1479,6 +1480,19 @@ class NativeListView(
       footerView.visibility = GONE
       footerView.recycle()
     } else {
+      if (footer.rendererKey != footerRendererKey) {
+        val previous = footerView
+        val position = indexOfChild(previous)
+        previous.recycle()
+        previous.dispose()
+        footerView = NativeListRendererRegistry.create(reactContext, footer.rendererKey.ordinal)
+        footerView.onRowPress = ::handleRowPress
+        footerView.onAction = ::handleAction
+        footerView.onBindingInvalidated = ::handleBindingInvalidated
+        removeView(previous)
+        addView(footerView, position, previous.layoutParams)
+        footerRendererKey = footer.rendererKey
+      }
       footerView.visibility = VISIBLE
       footerView.listStyle = next.listStyle
       footerView.bind(

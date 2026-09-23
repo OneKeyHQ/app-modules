@@ -62,7 +62,8 @@ final class NativeListView: UIView {
   private let flowLayout = NativeListFlowLayout()
   private lazy var collectionView = NativeListCollectionView(frame: .zero, collectionViewLayout: flowLayout)
   private let footerContainer = UIView()
-  private let footerCell = NativeListCell(frame: .zero)
+  private var footerCell: NativeListRowHost = NativeListRendererRegistry.create(.legacy)
+  private var footerRendererKey = NativeListRendererKey.legacy
   private let sectionIndexView = NativeListSectionIndexView()
   private let sectionIndexPreview = NativeListSectionIndexPreviewView()
   private var sectionIndexLayoutConstraints: [NSLayoutConstraint] = []
@@ -1320,6 +1321,19 @@ final class NativeListView: UIView {
       footerCell.isHidden = true
       return
     }
+    if footer.rendererKey != footerRendererKey {
+      let previous = footerCell
+      previous.prepareForReuse()
+      footerCell = NativeListRendererRegistry.create(footer.rendererKey)
+      footerCell.onAction = previous.onAction
+      footerCell.onBindingInvalidated = previous.onBindingInvalidated
+      for recognizer in previous.gestureRecognizers ?? [] { footerCell.addGestureRecognizer(recognizer) }
+      previous.removeFromSuperview()
+      footerContainer.addSubview(footerCell)
+      footerCell.frame = footerContainer.bounds
+      footerCell.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      footerRendererKey = footer.rendererKey
+    }
     footerCell.isHidden = false
     footerHeightConstraint.constant = rowHeight(footer)
     bind(cell: footerCell, item: footer, itemIndex: nil)
@@ -1774,10 +1788,6 @@ final class NativeListView: UIView {
         default: base = 56
         }
       }
-    case "action":
-      base = item.data.string("presentation") == "accountSelector"
-        ? 48
-        : item.data.dictionary("icon") == nil ? 44 : 60
     case "dataRow":
       base = item.data.dictionaries("columns").contains {
         !$0.string("secondaryText").isEmpty

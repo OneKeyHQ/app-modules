@@ -66,10 +66,6 @@ internal fun nativeListStyleSlot(type: String, variant: String, field: String): 
       "title", "subtitle", "value" -> field
       else -> null
     }
-    "action" -> when (field) {
-      "title", "value" -> field
-      else -> null
-    }
     "system" -> when (field) {
       "title" -> if (variant == "warning") "title" else null
       // Only the warning variant renders a separate title; every other variant
@@ -106,7 +102,7 @@ private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
 
 // Message and Rail own dedicated renderers. Remaining templates still share
 // a compatible legacy tree; keys and style values never partition the pool.
-internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL, MEDIA_TILE }
+internal enum class NativeListRendererKey { LEGACY, MESSAGE, RAIL, MEDIA_TILE, ACTION }
 
 internal data class NativeListItem(
   val key: String,

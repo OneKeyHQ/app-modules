@@ -1,4 +1,5 @@
 import type {
+  TrailingAccessory,
   ImageSource,
   LeadingVisual,
   NativeListTextStyle,
@@ -6,6 +7,11 @@ import type {
 } from '../../models';
 
 export type RowPrimitives = Readonly<{
+  accessory: (
+    rowKey: string,
+    descriptor: TrailingAccessory,
+    slot: number
+  ) => HTMLElement;
   visual: (source: LeadingVisual | undefined) => HTMLElement | undefined;
   thumbnail: (source: ImageSource) => HTMLElement | undefined;
   textStyle: (element: HTMLElement, style: NativeListTextStyle) => void;

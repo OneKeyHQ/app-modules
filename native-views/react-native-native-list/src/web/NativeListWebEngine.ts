@@ -548,9 +548,6 @@ export function estimateWebRowHeight(
     case 'activity':
       base = row.footerActions?.length ? 100 : 60;
       break;
-    case 'mediaTile':
-      base = 244;
-      break;
     case 'metricCard':
       base =
         row.variant === 'activity'
@@ -597,9 +594,6 @@ export function estimateWebRowHeight(
           : row.variant === 'retry'
           ? 44
           : 56;
-      break;
-    case 'action':
-      base = row.presentation === 'accountSelector' ? 48 : row.icon ? 60 : 44;
       break;
     case 'dataRow':
       base = row.columns.some((column) => column.secondaryText) ? 60 : 56;
@@ -2396,43 +2390,6 @@ function createSectionHeader(
   return body;
 }
 
-function createActionRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'action' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    [
-      'ok-native-list-row',
-      'ok-native-list-action-row',
-      row.presentation === 'accountSelector'
-        ? 'ok-native-list-account-action-row'
-        : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-  );
-  if (row.icon) body.appendChild(createVisual(context, row.icon)!);
-  const title = tagSlot(
-    createElement(
-      context.document,
-      'span',
-      'ok-native-list-action-title',
-      row.title
-    ),
-    'title'
-  );
-  setData(title, 'tone', row.tone);
-  if (row.presentation === 'accountSelector' && row.icon)
-    title.style.fontWeight = '500';
-  body.appendChild(title);
-  if (row.checkbox)
-    body.appendChild(createCheckbox(context, row.key, row.checkbox));
-  appendAccessories(body, context, row.key, row.trailing);
-  return body;
-}
-
 function createSystemRow(
   context: RenderContext,
   row: Extract<RowModel, { type: 'system' }>
@@ -3908,6 +3865,8 @@ export function applyRowStyle(body: HTMLElement, row: RowModel): void {
 
 function rendererPrimitives(context: RenderContext) {
   return {
+    accessory: (key: string, descriptor: TrailingAccessory, slot: number) =>
+      createAccessory(context, key, descriptor, slot),
     visual: (source: LeadingVisual | undefined) =>
       createVisual(context, source),
     thumbnail: (source: ImageSource) =>
@@ -3929,8 +3888,6 @@ export function createRowBody(
       return createWalletGroupRow(context, row);
     case 'sectionHeader':
       return createSectionHeader(context, row);
-    case 'action':
-      return createActionRow(context, row);
     case 'system':
       return createSystemRow(context, row);
     case 'metricCard':
@@ -3975,6 +3932,7 @@ export class NativeListWebEngine {
     message: [],
     rail: [],
     mediaTile: [],
+    action: [],
   };
   private readonly rendererKeys = new WeakMap<HTMLElement, RowRendererKey>();
   private frameHandle: number | undefined;

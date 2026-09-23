@@ -3,6 +3,7 @@ import UIKit
 // Bounded visual primitive: three source slots, two optional overlays. It knows
 // visual descriptors and request lifetimes, never row types or business keys.
 final class NativeListLeadingVisual: UIView {
+  var glyphSize: CGFloat = 18
   private let fallback = UILabel()
   private let icon = UIImageView()
   private let unread = UIView()
@@ -204,7 +205,7 @@ final class NativeListLeadingVisual: UIView {
     let iconSize: CGFloat =
       !sources.isEmpty && fallbackIcon != nil
       ? min(bounds.width, bounds.height)
-        * (fallbackIcon?.string("name") == "GlobusOutline" ? 1.2 : 1) : 18
+        * (fallbackIcon?.string("name") == "GlobusOutline" ? 1.2 : 1) : glyphSize
     icon.frame = CGRect(
       x: (bounds.width - iconSize) / 2, y: (bounds.height - iconSize) / 2, width: iconSize,
       height: iconSize)

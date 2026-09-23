@@ -9,6 +9,7 @@ internal object NativeListRendererRegistry {
             NativeListRendererKey.MESSAGE to ::NativeListMessageRowView,
             NativeListRendererKey.RAIL to ::NativeListRailRowView,
             NativeListRendererKey.MEDIA_TILE to ::NativeListMediaTileRowView,
+      NativeListRendererKey.ACTION to ::NativeListActionRowView,
         )
 
     private val keys =
@@ -16,6 +17,7 @@ internal object NativeListRendererRegistry {
             "message" to NativeListRendererKey.MESSAGE,
             "rail" to NativeListRendererKey.RAIL,
             "mediaTile" to NativeListRendererKey.MEDIA_TILE,
+      "action" to NativeListRendererKey.ACTION,
         )
 
     fun key(type: String) = keys[type] ?: NativeListRendererKey.LEGACY

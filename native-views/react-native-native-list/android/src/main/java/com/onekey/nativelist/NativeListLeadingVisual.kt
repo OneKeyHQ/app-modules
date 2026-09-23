@@ -31,6 +31,9 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
   private var visual = JSONObject()
   private var style = JSONObject()
   private var sources = emptyList<Pair<JSONObject, String>>()
+  var glyphSize = 18
+  var roundedGlyphOrigin = false
+  var iconBorder = true
   private var sourceScale = false
 
   private fun dp(value: Int) =
@@ -132,7 +135,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     val backgroundColor = if (sourceFallback) color(placeholder) else visualBackground
     background =
       fill(backgroundColor, 0f).apply {
-        if (kind == "icon") setStroke(1, color("#0000001F"))
+        if (kind == "icon" && iconBorder) setStroke(1, color("#0000001F"))
         if (visual.optString("borderStyle") == "dashed")
           setStroke(
             dp(2),
@@ -299,8 +302,8 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
             if (visual.optJSONObject("fallbackIcon")?.optString("name") == "GlobusOutline") 1.2f
             else 1f)
           .roundToInt()
-      else dp(18)
-    place(icon, (w - iconSize) / 2, (h - iconSize) / 2, iconSize, iconSize)
+      else dp(glyphSize)
+    place(icon, (w - iconSize + if(roundedGlyphOrigin) 1 else 0) / 2, (h - iconSize + if(roundedGlyphOrigin) 1 else 0) / 2, iconSize, iconSize)
     val tokenPair = kind == "token" && sources.size > 1
     slots.take(sources.size).forEachIndexed { index, slot ->
       val size =

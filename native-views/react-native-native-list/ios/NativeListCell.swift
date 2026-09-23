@@ -100,7 +100,7 @@ final class NativeListActionOrigin {
 }
 
 // OneKey patch: explicit summary actions use the source text's physical-pixel line box.
-private final class NativeListAccessoryButton: UIButton {
+final class NativeListAccessoryButton: UIButton {
   var pressedBackgroundColor: UIColor?
   var rowTextOffsetY: CGFloat = 0
 
@@ -959,7 +959,6 @@ final class NativeListCell: NativeListRowHost {
     case "market": bindMarket(item, theme: theme)
     case "metricCard": bindMetricCard(item, theme: theme)
     case "sectionHeader": bindSectionHeader(item, theme: theme, layout: layout, checkboxState)
-    case "action": bindAction(item, theme: theme, checkboxState)
     case "system": bindSystem(item, theme: theme)
     default: break
     }
@@ -2170,8 +2169,6 @@ final class NativeListCell: NativeListRowHost {
       }
     case "sectionHeader":
       return ["title", "subtitle", "value"].contains(field) ? field : nil
-    case "action":
-      return ["title", "value"].contains(field) ? field : nil
     case "system":
       switch field {
       case "title": return variant == "warning" ? "title" : nil
@@ -2308,7 +2305,7 @@ final class NativeListCell: NativeListRowHost {
       case "dataPrimary", "dataSecondary": break // Applied to independent column labels above.
       case "value", "valueSecondary":
         let index = slot == "value" ? 0 : 1
-        let buttons = ["identity", "action"].contains(item.type) ? semanticValueButtons : accessoryButtons
+        let buttons = item.type == "identity" ? semanticValueButtons : accessoryButtons
         if buttons.indices.contains(index) { applyStyledButton(buttons[index], slotStyle) }
       default: break
       }
@@ -3349,54 +3346,6 @@ final class NativeListCell: NativeListRowHost {
     button.setAttributedTitle(value, for: .normal)
   }
 
-  private func bindAction(
-    _ item: NativeListItem,
-    theme: [String: Any]?,
-    _ checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
-  ) {
-    let isAccountSelector = item.data.string("presentation") == "accountSelector"
-    if let icon = item.data.dictionary("icon") {
-      leadingWidth.constant = isAccountSelector ? 32 : 40
-      leadingHeight.constant = isAccountSelector ? 32 : 40
-      leadingIconWidth.constant = 24
-      leadingIconHeight.constant = 24
-      addLeading(icon, key: item.key)
-      if isAccountSelector {
-        leadingContainer.layer.cornerCurve = .continuous
-        leadingContainer.layer.cornerRadius = 8
-        leadingContainer.layer.borderWidth = 0
-      }
-      if icon["backgroundColor"] == nil {
-        leadingContainer.backgroundColor = .clear
-        leadingContainer.layer.borderWidth = 0
-        leadingContainer.layer.borderColor = nil
-      }
-    }
-    rootStack.addArrangedSubview(mainStack)
-    show(titleLabel, item.data.string("title"), lines: 1)
-    if isAccountSelector {
-      // OneKey patch: ListItem.Text is medium; empty-search actions use regular body text.
-      titleLabel.font = nativeListFont(ofSize: 16, weight: item.data.dictionary("icon") == nil ? .regular : .medium)
-      titleLabel.textColor = nativeListColor(theme, item.data.string("tone") == "primary" ? "primaryText" : "secondaryText", item.data.string("tone") == "primary" ? "#202020" : "#646464")
-    } else if item.data.string("tone") == "danger" {
-      titleLabel.textColor = nativeListColor(theme, "negative", "#CE2C31")
-    }
-    setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 24)
-    if let checkbox = item.data.dictionary("checkbox") {
-      bindCheckbox(item, checkbox, checkboxState)
-      rootStack.addArrangedSubview(trailingStack)
-    } else {
-      let accessories = item.data.dictionaries("trailing")
-      if !accessories.isEmpty {
-        rootStack.addArrangedSubview(trailingStack)
-        bindAccessories(item, accessories, theme, checkboxState)
-        if accessories.count == 1, accessories[0].string("kind") == "chevron" {
-          // ListItem.DrillIn uses mx=-6 around its 24-point icon.
-          rootTrailingConstraint.constant = -6
-        }
-      }
-    }
-  }
 
   // OneKey patch: preserve the actual title frame for Popover placement.
   @objc private func selectorTitlePressed() {

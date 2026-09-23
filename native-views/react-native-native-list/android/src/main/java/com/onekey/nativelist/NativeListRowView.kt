@@ -852,17 +852,11 @@ internal class NativeListRowView(
       val icon = trailingIcons[0]
       trailingColumn.offsetTopAndBottom(dp(18) - dp(7) - trailingColumn.top - icon.top)
     }
-    if (item.type == "action" && item.json.has("height") && item.json.optString("presentation") == "accountSelector" && leadingIcon.visibility == VISIBLE) {
-      // OneKey patch: Yoga rounds the 4dp padding inside the 32dp Add account icon upward.
-      leadingIcon.offsetLeftAndRight((leadingFrame.width - leadingIcon.width + 1) / 2 - leadingIcon.left)
-      leadingIcon.offsetTopAndBottom((leadingFrame.height - leadingIcon.height + 1) / 2 - leadingIcon.top)
-    }
     if (!item.json.has("height") || hasContainerAlignment) return
     val isNetworkIdentity = item.type == "identity" && item.json.optString("presentation") == "networkSelector"
-    val isAccountAction = item.type == "action" && item.json.optString("presentation") == "accountSelector"
     val isNetworkSummary = item.type == "sectionHeader" && item.json.optString("presentation") == "networkSelector" && item.json.optString("variant") == "summary"
     val centeredColumns = when {
-      isNetworkIdentity || isAccountAction -> listOf(mainColumn, trailingColumn)
+      isNetworkIdentity -> listOf(mainColumn, trailingColumn)
       isNetworkSummary -> listOf(trailingColumn)
       else -> return
     }
@@ -984,7 +978,6 @@ internal class NativeListRowView(
       "market" -> bindMarket(item, theme)
       "metricCard" -> bindMetricCard(item, theme)
       "sectionHeader" -> bindSectionHeader(item, theme, checkboxState)
-      "action" -> bindAction(item, theme, checkboxState)
       "system" -> bindSystem(item, theme)
     }
     // Keep passive rows out of accessibility and keyboard focus while allowing
@@ -1158,7 +1151,7 @@ internal class NativeListRowView(
         null -> continue
         "dataPrimary", "dataSecondary" -> Unit // Independent column labels are styled above.
         "value", "valueSecondary" -> {
-          val view = if (item.type in setOf("identity", "action")) semanticValueViews.getOrNull(if (slot == "value") 0 else 1) else styledSlotView(slot)
+          val view = if (item.type == "identity") semanticValueViews.getOrNull(if (slot == "value") 0 else 1) else styledSlotView(slot)
           view?.let { applyStyledText(it, slotStyle) }
         }
         "status" -> applyStyledText(if (item.type == "activity" && item.json.optString("status") == "Failed") badgeLine else status, slotStyle)
@@ -3103,39 +3096,6 @@ internal class NativeListRowView(
     view.text = value
   }
 
-  private fun bindAction(
-    item: NativeListItem,
-    theme: JSONObject?,
-    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
-  ) {
-    val isAccountSelector = item.json.optString("presentation") == "accountSelector"
-    item.json.optJSONObject("icon")?.let { icon ->
-      addLeading(icon, if (isAccountSelector) 32 else 40)
-      leadingIcon.layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
-      if (!icon.has("backgroundColor")) leadingFrame.background = null
-      if (isAccountSelector) leadingFrame.background = roundedFill(safeColor(icon.optString("backgroundColor"), color(theme, "strongBackground", "#0000000F")), 8f)
-    }
-    addView(mainColumn, weighted())
-    showText(title, item.json.optString("title"), 1)
-    if (isAccountSelector) {
-      title.typeface = if (item.json.has("icon")) NativeListFonts.medium(context) else NativeListFonts.regular(context)
-      title.setTextColor(color(theme, if (item.json.optString("tone") == "primary") "primaryText" else "secondaryText", "#0000009B"))
-    } else if (item.json.optString("tone") == "danger") {
-      title.setTextColor(color(theme, "negative", "#C40006D3"))
-    }
-    item.json.optJSONObject("checkbox")?.let {
-      bindCheckbox(item, it, checkboxState)
-      addView(trailingColumn, wrap())
-    } ?: item.json.optJSONArray("trailing")?.let { accessories ->
-      if (accessories.length() > 0) {
-        addView(trailingColumn, wrap())
-        bindAccessories(item, accessories, theme, checkboxState)
-      }
-    }
-    setOnClickListener {
-      onRowPress?.invoke(item, actionOrigin(this, "row"))
-    }
-  }
 
   private fun bindSystem(item: NativeListItem, theme: JSONObject?) {
     val variant = item.json.optString("variant")
@@ -4001,8 +3961,6 @@ internal class NativeListRowView(
       item.type == "identity" && item.json.optString("presentation") == "accountSelector"
     val isNetworkSelectorIdentity =
       item.type == "identity" && item.json.optString("presentation") == "networkSelector"
-    val isAccountSelectorAction =
-      item.type == "action" && item.json.optString("presentation") == "accountSelector"
     val isNetworkSelectorSection =
       item.type == "sectionHeader" && item.json.optString("presentation") == "networkSelector"
     title.textSize = sp(
@@ -4024,9 +3982,7 @@ internal class NativeListRowView(
         }
       },
     )
-    title.typeface = if (isAccountSelectorAction && item.json.has("icon")) {
-      NativeListFonts.medium(context)
-    } else if (isWalletSidebar || isAccountSelectorIdentity || isAccountSelectorAction) {
+    title.typeface = if (isWalletSidebar || isAccountSelectorIdentity) {
       NativeListFonts.regular(context)
     } else {
       when (item.type) {
@@ -4070,8 +4026,7 @@ internal class NativeListRowView(
       TextViewCompat.setLineHeight(title, dp(24))
       TextViewCompat.setLineHeight(subtitle, dp(20))
       TextViewCompat.setLineHeight(tertiary, dp(20))
-    } else if (item.type == "action") {
-      TextViewCompat.setLineHeight(title, dp(24))
+
     } else if (item.type == "system") {
       TextViewCompat.setLineHeight(title, dp(20))
 
@@ -4143,11 +4098,6 @@ internal class NativeListRowView(
           "warning" -> 0
           "end" -> if (item.json.optString("presentation") == "market") 44 else 36
           else -> 56
-        }
-        "action" -> when {
-          item.json.optString("presentation") == "accountSelector" -> 48
-          item.json.has("icon") -> 60
-          else -> 44
         }
         "dataRow" -> if (currentLayout == "table") {
           60
@@ -4542,7 +4492,7 @@ internal class OneKeyIconView(context: android.content.Context) : View(context) 
   }
 }
 
-private class OneKeyCheckboxView(context: android.content.Context) : View(context) {
+internal class OneKeyCheckboxView(context: android.content.Context) : View(context) {
   var usesSelectorGeometry = false
   private val glyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
   private var state = "unchecked"

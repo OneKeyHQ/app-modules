@@ -61,7 +61,6 @@ class NativeListStyleSlotTest {
       Triple("dataRow", "", listOf("columns", "columnSecondary", "index")),
       Triple("metricCard", "", listOf("title", "value", "subtitle", "trend")),
       Triple("sectionHeader", "", listOf("title", "subtitle", "value")),
-      Triple("action", "", listOf("title", "value")),
       // Only `warning` carries both a title and a message; the other variants
       // have no title field at all, so their message owning the title view is
       // not a collision.

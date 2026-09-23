@@ -15,6 +15,10 @@ class NativeListRendererCell: NativeListRowHost {
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {}
   func recycleContent() {}
+  func bindSelectionContent(
+    _ item: NativeListItem,
+    checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+  ) {}
   var assetFields: [String] { [] }
   private func update(from old: NativeListItem?, to new: NativeListItem) -> NativeListRendererUpdate
   {
@@ -100,6 +104,7 @@ class NativeListRendererCell: NativeListRowHost {
     self.theme = theme
     self.layout = layout
     self.selectedState = selected
+    bindSelectionContent(item, checkboxState: checkboxState)
     accessibilityLabel = item.data.string("accessibilityLabel", default: item.data.string("title"))
     accessibilityIdentifier = item.data["testID"] as? String
     isUserInteractionEnabled = !item.data.bool("disabled")
@@ -115,20 +120,21 @@ class NativeListRendererCell: NativeListRowHost {
     guard self.item?.key == item.key else { return }
     self.item = item
     self.selectedState = selected
+    bindSelectionContent(item, checkboxState: checkboxState)
     applyAppearance()
   }
   override var isHighlighted: Bool { didSet { applyAppearance() } }
 
   func emitAction(
     _ key: String, from view: UIView, source: String, slot: Int? = nil,
-    target: NativeSelectionTarget? = nil
+    target: NativeSelectionTarget? = nil, anchorInset: CGFloat = 0
   ) {
     guard let item, !key.isEmpty, !item.data.bool("disabled") else { return }
     onAction?(
       item, key, target,
       NativeListActionOrigin(
         sourceView: view, ownerCell: self,
-        bindingEpoch: bindingEpoch, source: source, slot: slot))
+        bindingEpoch: bindingEpoch, source: source, slot: slot, anchorInset: anchorInset))
   }
 
   private func applyAppearance() {

@@ -1197,6 +1197,110 @@ describe('web row style', () => {
     }
   });
 
+  it('preserves Action views through style clearing and selection echoes', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const action = {
+      type: 'action',
+      key: 'action-pilot',
+      title: 'Action',
+      actionKey: 'open',
+      icon: { kind: 'icon', name: 'PlusSmallOutline' },
+      checkbox: {
+        kind: 'checkbox',
+        state: 'unchecked',
+        target: { scope: 'list' },
+      },
+      trailing: [
+        {
+          kind: 'value',
+          text: '$0.012',
+          textSegments: [
+            { text: '$0.0' },
+            { text: '5', style: 'subscript' },
+            { text: '12' },
+          ],
+        },
+        { kind: 'checkbox', state: 'unchecked', target: { scope: 'row' } },
+      ],
+    } as const;
+    const selectable = {
+      type: 'identity',
+      key: 'selectable',
+      title: 'Other',
+      leading: { kind: 'icon', name: 'star' },
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [action, selectable]),
+      {},
+      false
+    );
+    const current = () =>
+      host.querySelector<HTMLElement>(
+        '[data-native-list-row-key="action-pilot"]'
+      )!;
+    try {
+      const wrapper = current();
+      const body = wrapper.firstElementChild as HTMLElement;
+      const title = body.querySelector('[data-nl-slot="title"]');
+      const icon = body.querySelector('.ok-native-list-visual');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            ...action,
+            style: {
+              container: { height: 100 },
+              title: { fontSize: 20, lines: 2 },
+              value: { fontSize: 12, lines: 1 },
+              leadingGap: 18,
+            },
+          },
+        ])
+      );
+      expect(current().firstElementChild).toBe(body);
+      expect(body.querySelector('[data-nl-slot="title"]')).toBe(title);
+      expect(body.querySelector('.ok-native-list-visual')).toBe(icon);
+      expect(current().style.height).toBe('100px');
+      const selected = snapshot({ kind: 'sectioned' }, [action, selectable]);
+      engine.applySnapshot({
+        ...selected,
+        selection: { ...selected.selection!, selectedKeys: [selectable.key] },
+      });
+      expect(current().firstElementChild).toBe(body);
+      expect(current().style.height).toBe('60px');
+      expect(
+        body.querySelector<HTMLElement>('[data-nl-slot="title"]')!.style
+          .fontSize
+      ).toBe('');
+      expect(
+        body.querySelector('[role="checkbox"]')?.getAttribute('aria-checked')
+      ).toBe('true');
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [
+          {
+            type: 'message',
+            key: action.key,
+            title: 'Other',
+            body: 'Body',
+            time: '',
+          },
+        ])
+      );
+      expect(current()).not.toBe(wrapper);
+      engine.applySnapshot(
+        snapshot({ kind: 'sectioned' }, [action, selectable])
+      );
+      expect(current()).toBe(wrapper);
+      expect(
+        body.querySelector('[role="checkbox"]')?.getAttribute('aria-checked')
+      ).toBe('false');
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('recomputes horizontal Rail placement from styled metrics and restores default widths', () => {
     const rail = {
       type: 'rail',
