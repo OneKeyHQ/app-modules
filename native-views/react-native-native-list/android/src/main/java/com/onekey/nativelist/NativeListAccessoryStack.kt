@@ -41,6 +41,15 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
   private var checkboxIconColor = Color.WHITE
   private var checkboxBorderColor = Color.LTGRAY
   private var iconSubduedColor = Color.GRAY
+  val firstVisibleIcon: View?
+    get() = trailingIcons.firstOrNull { it.visibility == VISIBLE }
+
+  val hasCheckbox: Boolean
+    get() = checkbox.visibility == VISIBLE
+
+  val visibleValues: List<TextView>
+    get() = trailingViews.filter { it.visibility == VISIBLE }
+
   var endInset: Int? = null
   var onAction: ((String, View, Int?, NativeSelectionTarget?) -> Unit)? = null
   private val selectorAccessibilityDelegate =
@@ -70,6 +79,7 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     style: JSONObject,
     sourceScale: Boolean,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
+    horizontal: Boolean = false,
   ) {
     selectorUsesSourceScale = sourceScale
     reset()
@@ -79,18 +89,35 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     checkboxIconColor = checkboxUncheckedColor
     checkboxBorderColor = Color.argb(0x31, 0, 0, 0)
     iconSubduedColor = color(theme, "iconSubdued", "#00000072")
+    checkboxUsesSelectorStyle = item.json.optString("presentation") == "networkSelector"
+    if (checkboxUsesSelectorStyle) {
+      checkboxCheckedColor = color(theme, "checkboxBackground", "#202020")
+      checkboxBorderColor = color(theme, "checkboxBorder", "#00000031")
+      checkboxIconColor = color(theme, "checkboxIcon", "#FFFFFF")
+      checkboxUncheckedColor = checkboxIconColor
+    }
+    val kinds =
+      (0 until descriptors.length()).map { descriptors.getJSONObject(it).optString("kind") }
+    orientation = if (horizontal) HORIZONTAL else VERTICAL
+    gravity = Gravity.END or Gravity.CENTER_VERTICAL
     trailingViews.forEach { it.setTextColor(checkboxCheckedColor) }
     bindAccessories(item, descriptors, theme, checkboxState)
-    style.optJSONObject("value")?.let { value ->
-      semanticValueViews.firstOrNull()?.let { applyStyledText(it, value) }
+    if (horizontal && "checkbox" in kinds)
+      (checkbox.layoutParams as LayoutParams).marginStart = dp(12)
+    for ((index, key) in listOf("value", "valueSecondary").withIndex()) {
+      style.optJSONObject(key)?.let { value ->
+        semanticValueViews.getOrNull(index)?.let { applyStyledText(it, value) }
+      }
     }
     if (style.has("trailingGap")) {
       var previous = false
       for (i in 0 until childCount) {
         val v = getChildAt(i)
         if (v.visibility != GONE) {
-          (v.layoutParams as LayoutParams).topMargin =
-            if (previous) styleDp(style.optDouble("trailingGap")) else 0
+          val params = v.layoutParams as LayoutParams
+          if (orientation == HORIZONTAL)
+            params.marginStart = if (previous) styleDp(style.optDouble("trailingGap")) else 0
+          else params.topMargin = if (previous) styleDp(style.optDouble("trailingGap")) else 0
           previous = true
         }
       }
@@ -104,10 +131,25 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
     tag = item
-    boundCheckboxData?.let { bindCheckbox(item, it, checkboxState) }
+    if (boundCheckboxData != null) {
+      val descriptors = item.json.optJSONArray("trailing")
+      val latest =
+        (0 until (descriptors?.length() ?: 0))
+          .mapNotNull { descriptors?.optJSONObject(it) }
+          .lastOrNull { it.optString("kind") == "checkbox" } ?: item.json.optJSONObject("checkbox")
+      latest?.let { bindCheckbox(item, it, checkboxState) }
+    }
   }
 
-  fun anchorInset(view: View): Int = if ((tag as? NativeListItem)?.json?.optString("presentation") == "accountSelector" && view in trailingIcons && (view.layoutParams as MarginLayoutParams).marginStart < 0) dp(7) else 0
+  fun anchorInset(view: View): Int =
+    if (
+      (tag as? NativeListItem)?.json?.optString("presentation") == "accountSelector" &&
+        view in trailingIcons &&
+        (view.layoutParams as MarginLayoutParams).marginStart < 0
+    )
+      dp(7)
+    else 0
+
   fun reset() {
     tag = null
     endInset = null

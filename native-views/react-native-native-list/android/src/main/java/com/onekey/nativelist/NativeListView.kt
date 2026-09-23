@@ -232,7 +232,7 @@ class NativeListView(
   private val sectionIndexPreview = TextView(context)
   private var config: NativeListConfig? = null
   private var usesSelectorSourceScale = false
-  private val stickyHeaderView = NativeListRowView(reactContext)
+  private val stickyHeaderView = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.SECTION_HEADER.ordinal)
   private var stickyHeaderSignature: String? = null
   private var stickyHeaderConfig: NativeListConfig? = null
   private val stickyHeaderHost = object : FrameLayout(reactContext) {

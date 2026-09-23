@@ -113,7 +113,7 @@ internal object NativeListFonts {
 
 internal data class NativeSelectionTarget(val scope: String, val key: String?)
 
-private class DottedUnderlineTextView(context: android.content.Context) : NativeListTextView(context) {
+internal class DottedUnderlineTextView(context: android.content.Context) : NativeListTextView(context) {
   var useSourceScale = false
   private fun scaledDp(value: Float) = if (useSourceScale) value * resources.displayMetrics.density else NativeListScale.dp(resources, value)
   var showsDottedUnderline = false
@@ -136,7 +136,7 @@ private class DottedUnderlineTextView(context: android.content.Context) : Native
   }
 }
 
-private class PackedTitleLineLayout(context: android.content.Context) : LinearLayout(context) {
+internal class PackedTitleLineLayout(context: android.content.Context) : LinearLayout(context) {
   var packsChildrenAtStart = false
   // OneKey patch: optional cap for the Market subtitle's localized name.
   var leadingTextMaxWidth = Int.MAX_VALUE
@@ -181,7 +181,7 @@ private class PackedTitleLineLayout(context: android.content.Context) : LinearLa
 }
 
 // OneKey patch: fit subtitle segments at intrinsic width, shrinking text only when necessary.
-private class SelectorSubtitleLayout(context: android.content.Context) : LinearLayout(context) {
+internal class SelectorSubtitleLayout(context: android.content.Context) : LinearLayout(context) {
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
     val available = MeasureSpec.getSize(widthMeasureSpec)
     val labels = mutableListOf<Pair<TextView, Int>>()

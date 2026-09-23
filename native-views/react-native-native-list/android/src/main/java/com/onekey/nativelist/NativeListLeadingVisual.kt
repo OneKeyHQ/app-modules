@@ -31,6 +31,18 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
   private var visual = JSONObject()
   private var style = JSONObject()
   private var sources = emptyList<Pair<JSONObject, String>>()
+  val fallbackTextView: TextView
+    get() = fallback
+
+  var dashedBorderWidth = 2
+  var overlayTextFontSize = 10f
+  var overlayTextLineHeight: Int? = null
+  var bitmapBorderWidth = 0
+
+  fun layoutNetworkBackdrop(top: Int, height: Int) {
+    networkBackdrop.layout(networkBackdrop.left, top, networkBackdrop.right, top + height)
+  }
+
   var glyphSize = 18
   var roundedGlyphOrigin = false
   var iconBorder = true
@@ -159,7 +171,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         if (kind == "icon" && iconBorder) setStroke(1, color("#0000001F"))
         if (visual.optString("borderStyle") == "dashed")
           setStroke(
-            dp(2),
+            dp(dashedBorderWidth),
             color(visual.optString("borderColor", "#00000072")),
             dp(4).toFloat(),
             dp(4).toFloat(),
@@ -253,7 +265,12 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
               text = data.optString("text")
               gravity = Gravity.CENTER
               includeFontPadding = false
-              textSize = NativeListScale.font(resources, 10f)
+              textSize =
+                if (sourceScale) overlayTextFontSize
+                else NativeListScale.font(resources, overlayTextFontSize)
+              overlayTextLineHeight?.let {
+                androidx.core.widget.TextViewCompat.setLineHeight(this, dp(it))
+              }
               typeface = NativeListFonts.medium(context)
               setTextColor(color(data.optString("tintColor", "#0000009B")))
             }
@@ -316,6 +333,12 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         else GradientDrawable.RECTANGLE
       cornerRadius = radius
     }
+    if (bitmapBorderWidth > 0) {
+      (background as? GradientDrawable)?.setStroke(
+        bitmapBorderWidth,
+        color(visual.optString("borderColor")),
+      )
+    }
     place(fallback, 0, 0, w, h)
     val iconSize =
       if (sources.isNotEmpty() && visual.optJSONObject("fallbackIcon") != null)
@@ -346,14 +369,15 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         MeasureSpec.makeMeasureSpec(imageWidth, MeasureSpec.EXACTLY),
         MeasureSpec.makeMeasureSpec(size, MeasureSpec.EXACTLY),
       )
-      place(slot.view, x, y, imageWidth, size)
+      val inset = if (index == 0) bitmapBorderWidth else 0
+      place(slot.view, x + inset, y + inset, imageWidth - 2 * inset, size - 2 * inset)
       val r = if (index == 0 && (sources.size == 1 || tokenPair)) radius else size / 2f
       slot.view.outlineProvider =
         object : ViewOutlineProvider() {
           override fun getOutline(view: View, outline: Outline) {
             if (index == 0 && style.optString("shape") == "circle" && !style.has("cornerRadius"))
               outline.setOval(0, 0, view.width, view.height)
-            else outline.setRoundRect(0, 0, view.width, view.height, r)
+            else outline.setRoundRect(-inset, -inset, view.width + inset, view.height + inset, r)
           }
         }
       slot.view.clipToOutline = true

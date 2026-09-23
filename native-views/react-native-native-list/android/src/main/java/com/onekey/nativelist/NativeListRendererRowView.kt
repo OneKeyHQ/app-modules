@@ -37,6 +37,26 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
 
   protected abstract fun disposeContent()
 
+  protected open fun usesSourceScale(item: NativeListItem, provided: Boolean) = provided
+
+  protected open fun onRowTouch(event: MotionEvent) {}
+
+  protected open fun consumesRowClick() = false
+
+  protected fun setTouchPressed(value: Boolean) {
+    touchPressed = value
+  }
+
+  protected fun retainBoundItem(item: NativeListItem): Boolean {
+    if (current?.key != item.key) return false
+    current = item
+    tag = item
+    return true
+  }
+
+  protected open fun accessibilityText(item: NativeListItem) =
+    item.json.optString("accessibilityLabel", item.json.optString("title"))
+
   protected open val assetFields: List<String> = emptyList()
 
   private fun update(old: NativeListItem?, next: NativeListItem): NativeListRendererUpdate {
@@ -69,6 +89,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
   protected open fun horizontalWidth(item: NativeListItem) = dp(280)
 
   protected open val defaultCornerRadius = 0
+  protected open val defaultSeparatorInset = 12
   protected open val pressChangesBackground = true
 
   protected open fun pressContent(pressed: Boolean) {}
@@ -96,6 +117,9 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
   ) = item.json.optString("groupPosition")
 
   private var selected = false
+  protected val rowSelected
+    get() = selected
+
   protected var sourceScale = false
   private var inputSignature = ""
   private var explicitHeight: Int? = null
@@ -115,6 +139,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
   init {
     orientation = HORIZONTAL
     setOnClickListener {
+      if (consumesRowClick()) return@setOnClickListener
       current
         ?.takeIf { it.isRowPressEnabled }
         ?.let { onRowPress?.invoke(it, NativeListActionOrigin(this, this, bindingEpoch, "row")) }
@@ -125,6 +150,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
         MotionEvent.ACTION_UP,
         MotionEvent.ACTION_CANCEL -> touchPressed = false
       }
+      onRowTouch(event)
       appearance()
       false
     }
@@ -150,7 +176,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
           .put("sourceScale", useSourceScale)
           .put("listStyle", listStyle)
       )
-    sourceScale = useSourceScale
+    sourceScale = usesSourceScale(item, useSourceScale)
     if (update != NativeListRendererUpdate.UNCHANGED || signature != inputSignature) {
       if (current != null) onBindingInvalidated?.invoke(this, bindingEpoch)
       bindingEpoch++
@@ -187,7 +213,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
             else LayoutParams.MATCH_PARENT
           height = LayoutParams.WRAP_CONTENT
         }
-    contentDescription = item.json.optString("accessibilityLabel", item.json.optString("title"))
+    contentDescription = accessibilityText(item)
     setTag(
       com.facebook.react.R.id.react_test_id,
       item.json.optString("testID").takeIf { it.isNotEmpty() },
