@@ -1255,6 +1255,15 @@ class NativeListView(
     }
     stickyHeaderHost.translationY = minOf(0, nextTop - height).toFloat()
     stickyHeaderHost.visibility = VISIBLE
+    // React Native can retain the measured parent while this overlay becomes
+    // visible in pre-draw. Lay out the container-owned header immediately.
+    if (stickyHeaderHost.isLayoutRequested || stickyHeaderHost.width != width || stickyHeaderHost.height != height) {
+      stickyHeaderHost.measure(
+        View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY),
+      )
+      stickyHeaderHost.layout(recyclerView.paddingLeft, 0, recyclerView.paddingLeft + width, height)
+    }
   }
 
   private fun configureSectionIndex(next: NativeListConfig) {

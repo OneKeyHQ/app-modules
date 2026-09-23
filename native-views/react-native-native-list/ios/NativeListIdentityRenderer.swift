@@ -645,9 +645,8 @@ final class NativeListIdentityCell: NativeListRendererCell {
     paragraphStyle.minimumLineHeight = lineHeight
     paragraphStyle.maximumLineHeight = lineHeight
     paragraphStyle.alignment = label.textAlignment
-    if currentItem?.type == "market" || currentItem?.data.string("presentation") == "walletSidebar"
-    {
-      // Attributed paragraphs must preserve the tail ellipsis.
+    let presentation = currentItem?.data.string("presentation") ?? ""
+    if presentation == "walletSidebar" {
       paragraphStyle.lineBreakMode = label.lineBreakMode
     }
     var attributes: [NSAttributedString.Key: Any] = [
@@ -655,33 +654,13 @@ final class NativeListIdentityCell: NativeListRendererCell {
       .foregroundColor: label.textColor as Any,
       .paragraphStyle: paragraphStyle,
     ]
-    let isNetworkFallback =
-      label === fallbackLabel && currentItem?.data.string("presentation") == "networkSelector"
-    if currentItem?.type == "market"
-      || (currentItem?.data["height"] != nil
-        && (["accountSelector", "walletSidebar"].contains(
-          currentItem?.data.string("presentation") ?? "")
-          || currentItem?.type == "sectionHeader"
-            && currentItem?.data.string("presentation") == "networkSelector"))
-      || isNetworkFallback
+    let isNetworkFallback = label === fallbackLabel && presentation == "networkSelector"
+    if (currentItem?.data["height"] != nil
+      && ["accountSelector", "walletSidebar"].contains(presentation)) || isNetworkFallback
     {
-      // OneKey patch: React Native centers font metrics inside explicit line heights.
-      let baselineOffset = max(0, (lineHeight - label.font.lineHeight) / 2)
-      // OneKey patch: TextKit's 14/20 headings align their baseline to the upper physical pixel.
-      let isSelectorHeading =
-        lineHeight == 20
-        && (currentItem?.type == "sectionHeader"
-          && currentItem?.data.string("presentation") == "networkSelector"
-          || currentItem?.type == "market" && label.font.pointSize == 14)
-      let scale = window?.screen.scale ?? traitCollection.displayScale
-      attributes[.baselineOffset] =
-        isSelectorHeading && scale > 0 ? ceil(baselineOffset * scale) / scale : baselineOffset
+      attributes[.baselineOffset] = max(0, (lineHeight - label.font.lineHeight) / 2)
     }
-    if letterSpacing != 0 || currentItem?.type == "market"
-      || currentItem?.data.string("presentation") == "market"
-    {
-      attributes[.kern] = letterSpacing
-    }
+    if letterSpacing != 0 { attributes[.kern] = letterSpacing }
     label.attributedText = NSAttributedString(string: text, attributes: attributes)
   }
 }

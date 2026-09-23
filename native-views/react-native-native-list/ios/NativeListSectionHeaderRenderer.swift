@@ -447,42 +447,20 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     paragraphStyle.minimumLineHeight = lineHeight
     paragraphStyle.maximumLineHeight = lineHeight
     paragraphStyle.alignment = label.textAlignment
-    if currentItem?.type == "market" || currentItem?.data.string("presentation") == "walletSidebar"
-    {
-      // Attributed paragraphs must preserve the tail ellipsis.
-      paragraphStyle.lineBreakMode = label.lineBreakMode
-    }
     var attributes: [NSAttributedString.Key: Any] = [
       .font: label.font as Any,
       .foregroundColor: label.textColor as Any,
       .paragraphStyle: paragraphStyle,
     ]
-    let isNetworkFallback = false
-    if currentItem?.type == "market"
-      || (currentItem?.data["height"] != nil
-        && (["accountSelector", "walletSidebar"].contains(
-          currentItem?.data.string("presentation") ?? "")
-          || currentItem?.type == "sectionHeader"
-            && currentItem?.data.string("presentation") == "networkSelector"))
-      || isNetworkFallback
+    if currentItem?.data["height"] != nil
+      && currentItem?.data.string("presentation") == "networkSelector"
     {
-      // OneKey patch: React Native centers font metrics inside explicit line heights.
       let baselineOffset = max(0, (lineHeight - label.font.lineHeight) / 2)
-      // OneKey patch: TextKit's 14/20 headings align their baseline to the upper physical pixel.
-      let isSelectorHeading =
-        lineHeight == 20
-        && (currentItem?.type == "sectionHeader"
-          && currentItem?.data.string("presentation") == "networkSelector"
-          || currentItem?.type == "market" && label.font.pointSize == 14)
       let scale = window?.screen.scale ?? traitCollection.displayScale
       attributes[.baselineOffset] =
-        isSelectorHeading && scale > 0 ? ceil(baselineOffset * scale) / scale : baselineOffset
+        lineHeight == 20 && scale > 0 ? ceil(baselineOffset * scale) / scale : baselineOffset
     }
-    if letterSpacing != 0 || currentItem?.type == "market"
-      || currentItem?.data.string("presentation") == "market"
-    {
-      attributes[.kern] = letterSpacing
-    }
+    if letterSpacing != 0 { attributes[.kern] = letterSpacing }
     label.attributedText = NSAttributedString(string: text, attributes: attributes)
   }
   private func setButtonLine(
@@ -496,21 +474,17 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     let paragraphStyle = NSMutableParagraphStyle()
     paragraphStyle.minimumLineHeight = lineHeight
     paragraphStyle.maximumLineHeight = lineHeight
-    let isMarketText = currentItem?.type == "market"
     let isSelectorValue =
       currentItem?.data.string("presentation") == "networkSelector"
       && currentItem?.data["height"] != nil && currentItem?.data.string("variant") != "summary"
     let isSelectorSummary =
-      currentItem?.type == "sectionHeader"
-      && currentItem?.data.string("presentation") == "networkSelector"
+      currentItem?.data.string("presentation") == "networkSelector"
       && currentItem?.data["height"] != nil && currentItem?.data.string("variant") == "summary"
     (button as? NativeListAccessoryButton)?.selectorSummaryLineHeight =
       isSelectorSummary ? lineHeight : nil
-    (button as? NativeListAccessoryButton)?.marketLineHeight = isMarketText ? lineHeight : nil
     // OneKey patch: summary text uses its source line box; currency retains trailing alignment.
-    // Market's line box already handles alignment; source text starts at its origin.
     paragraphStyle.alignment =
-      isSelectorValue ? .right : isSelectorSummary || isMarketText ? .natural : .center
+      isSelectorValue ? .right : isSelectorSummary ? .natural : .center
     if isSelectorSummary {
       button.contentHorizontalAlignment = .leading
       button.titleLabel?.textAlignment = .natural
@@ -520,20 +494,14 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       button.titleLabel?.textAlignment = .right
     }
     let baselineOffset: CGFloat =
-      isMarketText
-        || currentItem?.type == "sectionHeader"
-          && currentItem?.data.string("presentation") == "networkSelector"
-          && currentItem?.data["height"] != nil
+      isSelectorValue || isSelectorSummary
       ? max(0, (lineHeight - font.lineHeight) / 2) : 0
-    var attributes: [NSAttributedString.Key: Any] = [
+    let attributes: [NSAttributedString.Key: Any] = [
       .font: font,
       .foregroundColor: color,
       .paragraphStyle: paragraphStyle,
-      .baselineOffset: isMarketText && lineHeight == 20 && font.pointSize == 14
-        ? ceil(baselineOffset * max(1, traitCollection.displayScale))
-          / max(1, traitCollection.displayScale) : baselineOffset,
+      .baselineOffset: baselineOffset,
     ]
-    if isMarketText { attributes[.kern] = 0 }
     button.setAttributedTitle(
       NSAttributedString(string: text, attributes: attributes),
       for: .normal
