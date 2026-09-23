@@ -44,8 +44,9 @@ UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
 
 `row.key` identifies data; renderer reuse identity describes compatible view
 structure. Content, styles, height and placement must not enter reuse identity.
-The implemented families are `message`, `rail`, `mediaTile`, `action` and `legacy`; the latter serves all
-unmigrated templates. Same-key family changes must replace the incompatible
+Eleven templates have their own renderer family: Message, Rail, MediaTile, Action,
+System, Activity, DataRow, MetricCard, Market, Identity and SectionHeader.
+The `legacy` family serves WalletGroup until stage 5. Same-key family changes must replace the incompatible
 host. OneKeyImage owns image caches; NativeList owns row/slot binding identity.
 
 ## Platform contract
@@ -67,7 +68,8 @@ migration adds no new input limits, retry policy or automatic layout correction.
 ## Performance and resources
 
 Snapshots and patches cross the bridge in batches. Visible rows use platform
-recycling/windowing; shared primitives own image cancellation. Message and all seven stage 3 templates use dedicated lightweight native hosts and persistent Web bodies.
+recycling/windowing; shared primitives own image cancellation. Message, all seven stage 3 templates, and Market/Identity/SectionHeader use dedicated
+lightweight native hosts and persistent Web bodies.
 None allocates the legacy native tree. This structural change is
 not a measured scrolling-performance result; performance claims still need a
 separate workload and measurements.
@@ -79,15 +81,16 @@ separate workload and measurements.
 | 1. Baseline | Complete: [implicit keys, defaults, special updates and acceptance baseline](MIGRATION_BASELINE.md) inventoried | Preserve each existing rule or explicitly migrate its caller |
 | 2. Message pilot | Complete: registered lightweight native hosts, persistent Web body, resolved styling/measurement and lifecycle acceptance | Lightweight native hosts, resolved styling/measurement, update classification and lifecycle acceptance |
 | 3. Simple templates | Complete (7/7): Rail, MediaTile, Action, System, Activity, DataRow and MetricCard migrated on all three platforms | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
-| 4. Complex templates | Not started | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
+| 4. Complex templates | Complete (3/3): Market, Identity and SectionHeader migrated on all three platforms | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
 | 5. WalletGroup | Not started | Independent member renderers; verify member events/styles, compact dragging and height restoration |
 | 6. Cleanup | Not started | Remove migrated key inference and global style maps; container no longer manipulates template internals |
 
-The closed internal registry selects Message and the seven stage 3 renderers by template type. Market, Identity, SectionHeader and WalletGroup remain in the legacy family. Message owns
+The closed internal registry selects eleven renderers by template type. WalletGroup
+remains in the legacy family. Message owns
 its text column, optional leading visual and thumbnail; its native host does not
 allocate Market, WalletGroup or table views. Web preserves the Message body,
-text nodes and unchanged image elements when rebinding. Remaining templates
-continue through the legacy family.
+text nodes and unchanged image elements when rebinding. WalletGroup is the
+only remaining top-level legacy template.
 
 Message resolves text/spacing/image inputs from data/theme/styles, classifies
 updates as unchanged, content/style, assets or replacement, and binds/measures
@@ -156,7 +159,35 @@ defined in STYLE_SPEC.md. Image slots retain unchanged requests across rebinding
 and reset when a source disappears or its slot identity changes.
 
 Stage 3 completion is not completion of the six-stage architecture plan.
-Remaining work is stage 4 (Market, Identity, SectionHeader), stage 5
+Stage 4 is recorded below. Remaining work after it is stage 5
 (WalletGroup member rendering and drag acceptance), then stage 6 (retire the
 remaining compatibility inference/style maps and container access to internals).
 No migrated simple template dispatches through a legacy binder.
+
+### Stage 4 acceptance scope
+
+Market, Identity and SectionHeader move to dedicated registered renderers on all
+three platforms. This stage preserves existing defaults and implicit-key
+compatibility recorded in MIGRATION_BASELINE.md. It adds no public style fields.
+Market owns quote-only binding and its platform row interactions; Identity owns
+selection presentation; SectionHeader owns stable summary updates and measurement.
+Sticky placement and header/footer routing stay in the list container.
+Acceptance includes variant changes on the same key, styled → unstyled rebinding,
+unchanged image requests, partial updates with current action context, selection,
+scroll/recycle, and shared footer/sticky-header behavior.
+
+Each complex renderer now owns its view tree, defaults, semantic style slots and
+measurement. Native hosts share bounded leading/image/accessory primitives. Web
+retains the compatible body and unchanged image elements; loaded image state is
+not reset when geometry is restored. Quote and summary updates keep the latest
+row model for subsequent action/selection dispatch. No new public API or Nitro
+schema is introduced. The remaining native composite tree is retained only for
+WalletGroup and its nested members until stages 5–6.
+
+Stage 4 validation: package typecheck and all 161 tests in five suites pass;
+focused lint has zero errors and two existing shadowing warnings. iOS Debug
+build/link and Android Debug APK plus seven unit tests pass. Both dedicated
+native simulators and headed Chrome exercised the acceptance cases above.
+The section fixture additionally verified imperative scroll pinning and active
+index updates after the container fixes. Remaining stages are WalletGroup (5)
+and compatibility/global-map cleanup (6); this is not a performance signoff.

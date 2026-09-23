@@ -108,8 +108,9 @@ Message or Rail. No public plugin API or Nitro schema is added. Remaining templa
 and partial updates are retired only with their own migration. See
 [SPEC.md](SPEC.md#conformance-and-six-stage-migration) for all six stages.
 
-Structural reuse is partitioned into three internal families on all platforms:
-`message`, `rail` and `legacy`. Unmigrated templates retain their existing shared tree.
+Structural reuse now has eleven dedicated families on all platforms; see the
+current registry inventory in SPEC.md. The `legacy` family serves WalletGroup
+and retains its shared native member tree until stage 5.
 Neither `row.key`, content, style, height nor placement changes the family.
 Web selects a compatible wrapper pool even when the row at a mounted index
 changes family. iOS registers separate reuse identifiers and reloads retained
@@ -418,8 +419,8 @@ not scrolling-performance measurements.
 
 Stage 3 is complete: Rail, MediaTile, Action, System, Activity, DataRow and
 MetricCard (7/7). With the earlier Message pilot, eight template types now use
-the closed renderer registry. Stage 4 still owns Market/Identity/SectionHeader,
-stage 5 owns WalletGroup, and stage 6 removes their remaining legacy policies.
+the closed renderer registry at that checkpoint. Stage 4 completion is recorded
+below; stage 5 owns WalletGroup, and stage 6 removes remaining legacy policies.
 Historical “remaining stage 3” lists above describe each incremental checkpoint.
 
 The final iOS ownership pass moves measurement and size-preset policy into each
@@ -428,3 +429,61 @@ After rebuilding and reinstalling, default → styled → cleared heights were
 verified as MediaTile 233 → 260 → 233, Action 60 → 100 → 60, System retry
 44 → 160 → 44, Activity 60 → 160 → 60, DataRow 60 → 120 → 60 and MetricCard
 132 → 240 → 132 points. The runtime stores `ios-renderer-measurement-final.json`.
+
+## Stage 4: Market, Identity and SectionHeader (2026-09-23)
+
+The closed registries now dispatch eleven templates to dedicated native hosts
+and Web bodies. Market owns its leading visual, bounded badge slots, quote
+controls and quote-only binding. Identity owns title/subtitle/tertiary, selector
+presentation and trailing controls. SectionHeader owns title/value/checkbox,
+summary updates and the platform-specific header measurement. iOS container
+measurement no longer contains branches for these three templates. Android's
+sticky header uses the same registered SectionHeader host as ordinary rows.
+WalletGroup's nested native Identity implementation remains scoped to stage 5;
+the unused legacy Market/Header branches and global style maps are stage 6
+cleanup, not an alternative dispatch path for these migrated rows.
+
+Shared primitives accept only the geometry/typography needed by these renderers.
+They retain unchanged image requests and reset style defaults before each full
+bind. Web restores image geometry without restoring stale async opacity.
+Accessory orientation/spacing starts from the renderer's defaults on every bind,
+including style removal without recycling. Selector rounding, native idle corner
+radii and explicit-height precedence remain intact. Header partial updates
+retain resolved font metrics, so repeated updates do not rescale Android text.
+The template-local iOS helpers no longer branch on other template types.
+
+The baseline comparison included token/stock/perp Market, standard/account/
+network/sidebar Identity, and standard/summary/gallery/history/network headers.
+All were exercised with style set/clear and same-key family changes. Fresh legacy
+iOS Identity/Header hosts matched the extracted text layouts; the original
+mixed-family baseline also exposed stale text attributes inherited from Market.
+Dedicated reuse families prevent that cross-template state from being reused.
+
+Interaction acceptance covers quote patches with preserved style/image state,
+badge actions, press-in and long-press anchors with a window point, checkbox
+selection, summary title/value patches and subsequent value actions, end/top
+scroll, empty/repopulation and the common fixed footer. The real section fixture
+contains three indexed headers and ten Identity members per section. It exposed
+two container problems: iOS selected pinned headers from the previous visible-cell
+set during imperative scrolling; Android's pre-draw overlay could remain at zero
+size beneath a React Native parent. The iOS container now uses original layout
+positions for pinning/index highlighting, and Android lays out its measured
+header overlay when needed. These policies remain outside row renderers.
+
+The repository caller audit is recorded in MIGRATION_BASELINE.md. History
+examples already specify their variant; both Token Manager example headers now
+specify rowStyle height/typography/spacing. External-consumer compatibility
+fallbacks remain until the stage 6 audit.
+
+Validation artifacts are in the task's external-drive validation runtime:
+`ios-stage4-*` and `android-stage4-*` screenshots/accessibility trees, with Web
+captures under the stage 4 harness. These are native simulator and headed Chrome
+functional/visual checks, not a consumer-app release acceptance or a scrolling
+performance measurement. Web also exercised narrow/RTL sections, index clicks
+and image-node retention after a quote patch.
+
+Stage 4 completion: package typecheck and 161 tests across five suites pass,
+with zero focused lint errors (two existing shadowing warnings). iOS Debug
+build/link passes; Android Debug APK and seven unit tests across three suites
+pass. Both native runtimes passed the interaction sequence after the container
+fixes. Stage 5 WalletGroup/member dragging and stage 6 legacy/key cleanup remain.

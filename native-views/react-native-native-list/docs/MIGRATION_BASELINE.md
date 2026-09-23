@@ -14,9 +14,9 @@ sets. Generated bindings and examples do not define renderer semantics.
 
 | Rule | Existing behavior and source | Disposition |
 | --- | --- | --- |
-| `history-` prefix | iOS `NativeListCell.bindSectionHeader` and `RNCNativeListView.rowHeight`: row key **or** section key implies history title/height. Web `estimateWebRowHeight`: same two keys imply 16-unit header height; its rendering still follows the explicit variant. Android `bindSectionHeader`/`applySize`: only **section key** implies uppercase 12/16 title, 0 padding and 16-unit minimum height. Explicit `variant: history` works independently. | Preserve the platform differences in legacy renderers. Stage 4 must migrate callers to explicit `variant: history`; stage 6 can remove these fallbacks after that audit. |
+| `history-` prefix | iOS `NativeListCell.bindSectionHeader` and `RNCNativeListView.rowHeight`: row key **or** section key implies history title/height. Web `estimateWebRowHeight`: same two keys imply 16-unit header height; its rendering still follows the explicit variant. Android `bindSectionHeader`/`applySize`: only **section key** implies uppercase 12/16 title, 0 padding and 16-unit minimum height. Explicit `variant: history` works independently. | Stage 4 moved these defaults into the SectionHeader renderers. Both example history headers and the validation fixture already set `variant: history`; no implicit history-header caller remains in this repository. Stage 6 still requires an external-consumer audit before deleting the compatibility fallback. |
 | `token-`, `balance-token-`, exact `linear-custom-token` | Android `NativeListRowView.bind` suppresses `separator: true` for these keys across row types. iOS/Web have no equivalent key exception. | Preserve as an explicitly named Android legacy container policy, including Message. Do not embed it in Message style resolution. Stage 6 requires caller-owned `separator: false` before removal. |
-| exact section keys `linear-tokens`, `action-tokens` | Android `bindSectionHeader`/`applySize` applies token-manager 14/20 regular typography, horizontal 12/top 10/bottom 0 padding and 30-unit minimum height (subject to earlier explicit presentation/variant branches). No matching iOS/Web rule. | Preserve until stage 4 moves the caller to explicit style/height; then remove in stage 6. |
+| exact section keys `linear-tokens`, `action-tokens` | Android `bindSectionHeader`/`applySize` applies token-manager 14/20 regular typography, horizontal 12/top 10/bottom 0 padding and 30-unit minimum height (subject to earlier explicit presentation/variant branches). No matching iOS/Web rule. | Stage 4 migrated both example callers to an explicit 30-unit container height, bottom alignment, 12-unit horizontal / zero vertical padding and regular 14/20 title. The fallback remains in SectionHeader until stage 6 verifies external consumers. |
 | exact tail keys `market-loading-more`, `market-load-more-retry`, `market-end` | Android `NativeListView.isMarketPaginationUpdate` drops those trailing rows before checking a stable Market prefix when either snapshot has loadMore; this keeps the scroll anchor during pagination. It is a container update optimization, not a row renderer. | Preserve in the container. Replace with explicit structural-row recognition in a separately validated pagination change. |
 | exact column key `asset` | Web `createDataRow` adds row badges only to that table column. Native table binders attach row badges to the first column instead. | Preserve until stage 3 audits DataRow callers; do not silently broaden every column's badge behavior. |
 
@@ -84,3 +84,20 @@ badge-gap estimate inside its trailing budget and Android's status allowance)
 and now applies explicit resolved style metrics. Style removal restores the
 baseline dimensions. Rail does not show persistent row selection; press and
 reorder feedback remain container-owned.
+
+## Stage 4 caller audit
+
+The 2026-09-23 search covered all tracked source and examples.
+`example/react-native/pages/NativeListExamplePage.tsx` has two history headers;
+both already supply `variant: history`. Other `history-` occurrences identify
+Activity section membership or explicitly styled validation fixtures. The two
+Token Manager headers now declare their geometry and typography through the
+shared rowStyle contract. Bottom alignment puts the 20-unit title at the bottom
+of its 30-unit row without requiring a new asymmetric-padding property.
+Those explicit style values use logical units on all platforms, replacing
+Android's old scaled default at these caller sites.
+
+This repository audit does not establish that external app-monorepo consumers
+have migrated. Keep the documented native/Web key fallbacks until stage 6
+checks those callers. WalletGroup's nested native Identity cells continue to
+use the old implementation until the separately scoped stage 5 migration.
