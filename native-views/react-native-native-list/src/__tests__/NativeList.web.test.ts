@@ -2267,7 +2267,7 @@ describe('DataRow renderer lifecycle', () => {
   const dataSnapshot = (
     layout: NativeListSnapshot['layout'],
     items: readonly RowModel[]
-  ): NativeListSnapshot => ({ schemaVersion: 1, generation: 1, layout, rows });
+  ): NativeListSnapshot => ({ schemaVersion: 1, generation: 1, layout, rows: items });
   const { JSDOM } = require('jsdom') as {
     JSDOM: new (html: string) => { window: { document: Document } };
   };
