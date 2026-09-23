@@ -359,7 +359,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
 
   override fun dispatchDraw(canvas: Canvas) {
     super.dispatchDraw(canvas)
-    current?.takeIf(::nativeListLegacyShowsSeparator)?.let {
+    current?.takeIf { it.json.optBoolean("separator") }?.let {
       val start =
         listStyle
           ?.optJSONObject("separator")

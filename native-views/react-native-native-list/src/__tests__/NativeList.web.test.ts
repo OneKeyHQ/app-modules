@@ -191,6 +191,41 @@ describe('NativeList pure DOM web layout', () => {
     expect(webSectionIndexInverseScale(640, 0)).toBe(1);
   });
 
+  it('uses explicit header variants instead of row or section key naming', () => {
+    const header = {
+      type: 'sectionHeader',
+      key: 'ordinary',
+      sectionKey: 'ordinary',
+      title: 'Date',
+    } as const;
+    const state = snapshot({ kind: 'sectioned' }, [header]);
+    const height = estimateWebRowHeight(header, state, 320);
+    for (const keys of [
+      { key: 'history-today', sectionKey: 'ordinary' },
+      { key: 'ordinary', sectionKey: 'history-today' },
+      { key: 'ordinary', sectionKey: 'linear-tokens' },
+      { key: 'ordinary', sectionKey: 'action-tokens' },
+    ]) {
+      expect(estimateWebRowHeight({ ...header, ...keys }, state, 320)).toBe(
+        height
+      );
+      expect(
+        estimateWebRowHeight(
+          { ...header, ...keys, variant: 'history' },
+          state,
+          320
+        )
+      ).toBe(16);
+      expect(
+        estimateWebRowHeight(
+          { ...header, ...keys, style: { container: { height: 30 } } },
+          state,
+          320
+        )
+      ).toBe(30);
+    }
+  });
+
   it('keeps the final indexed section active at the scroll limit', () => {
     const indexedRows: readonly RowModel[] = [
       {

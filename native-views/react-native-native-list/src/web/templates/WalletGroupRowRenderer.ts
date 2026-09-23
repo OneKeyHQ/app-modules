@@ -64,7 +64,6 @@ function bind(
     );
     if (memberRow.style?.container?.cornerRadius !== undefined)
       wrapper.style.borderRadius = `${memberRow.style.container.cornerRadius}px`;
-    memberBody.style.fontVariantNumeric = 'tabular-nums';
     if (memberRow.backgroundColor)
       memberBody.style.backgroundColor = memberRow.backgroundColor;
     applyRowContainerStyle(memberBody, memberRow);
@@ -91,6 +90,10 @@ function recycle(body: HTMLElement) {
 }
 export const walletGroupRowRenderer = {
   key: 'walletGroup' as const,
+  reorderPreview: (body: HTMLElement, row: WalletGroupRow) => {
+    const parent = membersByBody.get(body)?.get(row.parent.key);
+    return parent ? { element: parent.body, height: 68 } : undefined;
+  },
   create,
   bind,
   recycle,

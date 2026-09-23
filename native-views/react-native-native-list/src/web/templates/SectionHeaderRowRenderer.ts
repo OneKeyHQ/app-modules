@@ -1,3 +1,4 @@
+import { applyTabularNumbers } from './RowElements';
 import type { SectionHeaderRow } from '../../models';
 import {
   createElement,
@@ -166,6 +167,7 @@ function bind(
   body.replaceChildren(...Array.from(next.childNodes));
   body.className = next.className;
   body.style.cssText = next.style.cssText;
+  if (row.presentation === 'networkSelector') applyTabularNumbers(body);
   body.dataset.variant = row.variant ?? '';
   body.removeAttribute('data-nl-container-background');
   body.removeAttribute('data-nl-container-border');
@@ -223,9 +225,7 @@ export const sectionHeaderRowRenderer = {
       ? 28
       : row.presentation === 'networkSelector'
       ? 47
-      : row.variant === 'history' ||
-        row.key.startsWith('history-') ||
-        row.sectionKey.startsWith('history-')
+      : row.variant === 'history'
       ? 16
       : row.variant === 'summary'
       ? 68

@@ -33,6 +33,10 @@ type Renderer<R extends RowModel> = {
   measure: (row: R, width: number, layout?: string) => number;
   measureRendered: (body: HTMLElement, row: R) => number | undefined;
   recycle: (body: HTMLElement) => void;
+  reorderPreview?: (
+    body: HTMLElement,
+    row: R
+  ) => { element: HTMLElement; height: number } | undefined;
 };
 function registration<R extends RowModel>(renderer: Renderer<R>, row: R) {
   return {
@@ -45,6 +49,7 @@ function registration<R extends RowModel>(renderer: Renderer<R>, row: R) {
     measure: (width: number, layout?: string) =>
       renderer.measure(row, width, layout),
     measureRendered: (body: HTMLElement) => renderer.measureRendered(body, row),
+    reorderPreview: (body: HTMLElement) => renderer.reorderPreview?.(body, row),
   };
 }
 const factories = {
@@ -67,7 +72,10 @@ const factories = {
   rail: (row: RowModel) => registration(railRowRenderer, row as RailRow),
   mediaTile: (row: RowModel) =>
     registration(mediaTileRowRenderer, row as MediaTileRow),
-};
+} satisfies Record<
+  RowModel['type'],
+  (row: RowModel) => ReturnType<typeof registration>
+>;
 const renderers = {
   walletGroup: walletGroupRowRenderer,
   identity: identityRowRenderer,
@@ -82,16 +90,18 @@ const renderers = {
   rail: railRowRenderer,
   mediaTile: mediaTileRowRenderer,
 };
-export type RowRendererKey = 'legacy' | keyof typeof factories;
+export type RowRendererKey = RowModel['type'];
 const isRegistered = (key: string): key is keyof typeof factories =>
   Object.prototype.hasOwnProperty.call(factories, key);
 
 // Closed registration; a row's data key, styles and placement never affect reuse.
 export function rowRenderer(row: RowModel) {
-  return isRegistered(row.type) ? factories[row.type](row) : undefined;
+  if (!isRegistered(row.type))
+    throw new Error('No renderer registered for ' + row.type);
+  return factories[row.type](row);
 }
 export function rowRendererKey(row: RowModel): RowRendererKey {
-  return isRegistered(row.type) ? row.type : 'legacy';
+  return row.type;
 }
 export function recycleRowBody(body: HTMLElement): boolean {
   const key = body.dataset.nlRenderer ?? '';

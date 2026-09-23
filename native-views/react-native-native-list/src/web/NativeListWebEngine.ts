@@ -440,18 +440,15 @@ export function estimateWebRowHeight(
   snapshot: NativeListSnapshot,
   availableWidth: number
 ): number {
-  // OneKey patch: explicit selector height takes precedence over presets.
-  // if (row.type === 'system' && row.variant === 'spacer') return row.height;
+  // Explicit container/model height takes precedence over template presets.
   const explicitHeight = row.style?.container?.height ?? row.height;
   if (explicitHeight !== undefined) return explicitHeight;
   const registered = rowRenderer(row);
-  if (registered)
-    return Math.max(
-      0,
-      registered.measure(availableWidth, snapshot.layout.kind) +
-        (registered.appliesSizePreset ? sizeModifier(row) : 0)
-    );
-  return Math.max(0, 56 + sizeModifier(row));
+  return Math.max(
+    0,
+    registered.measure(availableWidth, snapshot.layout.kind) +
+      (registered.appliesSizePreset ? sizeModifier(row) : 0)
+  );
 }
 
 function estimateHorizontalWidth(row: RowModel): number {
@@ -1899,35 +1896,6 @@ function createAccessory(
   return element;
 }
 
-/**
- * Marks the element that renders one model field. Style keys name model fields,
- * not views, and the view pool is shared. See docs/STYLE_SPEC.md §4.
- */
-
-// OneKey patch: SizableText enables tabular digits without replacing its font family.
-function applySelectorTabularNumbers(body: HTMLElement, row: RowModel) {
-  if (
-    !('presentation' in row) ||
-    !['accountSelector', 'networkSelector', 'walletSidebar'].includes(
-      row.presentation ?? ''
-    )
-  )
-    return;
-  body.style.fontVariantNumeric = 'tabular-nums';
-  body.querySelectorAll<HTMLElement>('span,button').forEach((text) => {
-    text.style.fontVariantNumeric = 'tabular-nums';
-  });
-}
-
-/** Text owns a single wrapping budget, including its rich runs. */
-
-/**
- * Applies a row style once the template has been built. A style key names the
- * model field it modifies and the element rendering that field carries
- * `data-nl-slot`, because the view pool is shared across templates. Market
- * keeps its own richer path. See docs/STYLE_SPEC.md §4 and §8.
- */
-
 function rendererPrimitives(context: RenderContext) {
   return {
     background: resolvedTheme(context.snapshot).background,
@@ -1953,10 +1921,7 @@ export function createRowBody(
   context: RenderContext,
   row: RowModel
 ): HTMLElement {
-  const registered = rowRenderer(row);
-  if (registered)
-    return registered.create(context.document, rendererPrimitives(context));
-  throw new Error('No renderer registered for ' + row.type);
+  return rowRenderer(row).create(context.document, rendererPrimitives(context));
 }
 
 export class NativeListWebEngine {
@@ -1984,7 +1949,6 @@ export class NativeListWebEngine {
   };
   private readonly mounted = new Map<number, HTMLElement>();
   private readonly pool: Record<RowRendererKey, HTMLElement[]> = {
-    legacy: [],
     walletGroup: [],
     message: [],
     rail: [],
@@ -2051,8 +2015,7 @@ export class NativeListWebEngine {
   private lastViewportHeight = -1;
   private destroyed = false;
   private sectionIndexAlignStart = false;
-  // OneKey patch: warning banners are measured after normal browser text wrapping.
-  private measuredWarningHeights = new Map<string, number>();
+  // Renderers report intrinsic height after browser text wrapping.
   private measuredRendererHeights = new Map<
     string,
     { signature: string; height: number }
@@ -2465,7 +2428,6 @@ export class NativeListWebEngine {
     selectedKeys?: ReadonlySet<string>
   ) {
     this.cancelMarketPointer();
-    this.measuredWarningHeights.clear();
     this.measuredRendererHeights.clear();
     this.snapshot = snapshot;
     this.rows = effectiveRows(snapshot);
@@ -2564,7 +2526,6 @@ export class NativeListWebEngine {
         viewportHeight !== this.lastViewportHeight)
     ) {
       this.invalidateActionAnchor('layout');
-      this.measuredWarningHeights.clear();
       this.measuredRendererHeights.clear();
     }
     this.lastViewportWidth = viewportWidth;
@@ -2573,7 +2534,6 @@ export class NativeListWebEngine {
     const measuredSnapshot: NativeListSnapshot = {
       ...this.snapshot,
       rows: this.snapshot.rows.map((row) =>
-        rowRenderer(row) &&
         row.style?.container?.height === undefined &&
         row.height === undefined &&
         this.measuredRendererHeights.get(row.key)?.signature ===
@@ -2582,12 +2542,6 @@ export class NativeListWebEngine {
               ...row,
               height: this.measuredRendererHeights.get(row.key)!.height,
             }
-          : row.type === 'system' &&
-            row.variant === 'warning' &&
-            row.style?.container?.height === undefined &&
-            row.height === undefined &&
-            this.measuredWarningHeights.has(row.key)
-          ? { ...row, height: this.measuredWarningHeights.get(row.key) }
           : row
       ),
     };
@@ -2722,7 +2676,7 @@ export class NativeListWebEngine {
         element.dataset.renderSignature = signature;
       }
     });
-    let measuredWarningChanged = false;
+    let measuredHeightChanged = false;
     this.mounted.forEach((element, index) => {
       const row = this.rows[index];
       const registered = row && rowRenderer(row);
@@ -2740,26 +2694,12 @@ export class NativeListWebEngine {
             signature: webRowRenderSignature(row),
             height,
           });
-          measuredWarningChanged = true;
+          measuredHeightChanged = true;
         }
         return;
       }
-      if (
-        row?.type !== 'system' ||
-        row.variant !== 'warning' ||
-        row.style?.container?.height !== undefined ||
-        row.height !== undefined
-      )
-        return;
-      const height =
-        element.querySelector<HTMLElement>('.ok-native-list-warning')
-          ?.offsetHeight ?? 0;
-      if (height > 0 && height !== this.measuredWarningHeights.get(row.key)) {
-        this.measuredWarningHeights.set(row.key, height);
-        measuredWarningChanged = true;
-      }
     });
-    if (measuredWarningChanged) {
+    if (measuredHeightChanged) {
       this.recomputeLayout();
       return;
     }
@@ -2784,7 +2724,7 @@ export class NativeListWebEngine {
     const registered = rowRenderer(row);
     const existingBody = element.firstElementChild as HTMLElement | null;
     const reusableBody =
-      registered && existingBody?.dataset.nlRenderer === registered.key
+      existingBody?.dataset.nlRenderer === registered.key
         ? existingBody
         : undefined;
     if (!reusableBody) disposeWebImageRetries(element);
@@ -2836,9 +2776,7 @@ export class NativeListWebEngine {
       itemIndex: index,
     };
     const body = reusableBody ?? createRowBody(context, row);
-    if (reusableBody && registered)
-      registered.bind(body, rendererPrimitives(context));
-    applySelectorTabularNumbers(body, row);
+    if (reusableBody) registered.bind(body, rendererPrimitives(context));
     // OneKey patch: explicit selector fields preserve original page geometry.
     element.style.contain = row.backgroundFullWidth ? 'layout style' : '';
     if (row.backgroundColor) body.style.backgroundColor = row.backgroundColor;
@@ -4258,11 +4196,11 @@ export class NativeListWebEngine {
     const row = source?.firstElementChild;
     if (!source || !row) return;
     const rect = source.getBoundingClientRect();
-    const groupParent = row.querySelector<HTMLElement>(
-      '[data-native-list-group-parent="true"]>.ok-native-list-wallet-row'
-    );
-    const previewRow = groupParent ?? row;
-    const previewHeight = groupParent ? 68 : rect.height;
+    const sourceRow = state.workingRows[state.currentIndex];
+    const preview =
+      sourceRow && rowRenderer(sourceRow).reorderPreview(row as HTMLElement);
+    const previewRow = preview?.element ?? row;
+    const previewHeight = preview?.height ?? rect.height;
     state.previewOffsetX = state.startX - rect.left;
     state.previewOffsetY = Math.min(
       previewHeight,
@@ -4286,7 +4224,6 @@ export class NativeListWebEngine {
       }
       configureWebAvatar(image, avatar.source, avatar.uri);
     });
-    const sourceRow = state.workingRows[state.currentIndex];
     const badgeText = sourceRow
       ? webWalletGroupReorderBadge(sourceRow)
       : undefined;

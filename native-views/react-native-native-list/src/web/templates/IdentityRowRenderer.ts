@@ -1,3 +1,4 @@
+import { applyTabularNumbers } from './RowElements';
 import type {
   IdentityRow,
   NativeListTextStyle,
@@ -411,6 +412,13 @@ function bind(body: HTMLElement, row: IdentityRow, primitives: RowPrimitives) {
   body.replaceChildren(...Array.from(next.childNodes));
   body.className = next.className;
   body.style.cssText = next.style.cssText;
+  if (
+    row.presentation &&
+    ['accountSelector', 'networkSelector', 'walletSidebar'].includes(
+      row.presentation
+    )
+  )
+    applyTabularNumbers(body);
   for (const name of body.getAttributeNames())
     if (name.startsWith('data-') && name !== 'data-nl-renderer')
       body.removeAttribute(name);

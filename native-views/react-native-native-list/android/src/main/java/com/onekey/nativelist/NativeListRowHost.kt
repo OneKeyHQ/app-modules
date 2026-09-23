@@ -16,7 +16,7 @@ internal data class NativeListActionOrigin(
   val windowPointPixels: android.graphics.PointF? = null,
 )
 
-/** List-facing lifecycle shared by lightweight and legacy row implementations. */
+/** List-facing lifecycle shared by template renderers. */
 internal abstract class NativeListRowHost(context: ThemedReactContext) : LinearLayout(context) {
   var bindingEpoch: Long = 0
     protected set

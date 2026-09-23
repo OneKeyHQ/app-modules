@@ -98,9 +98,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
   ) -> CGFloat? {
     if layout == "table" { return 28 }
     if item.data.string("presentation") == "networkSelector" { return 47 }
-    if item.data.string("variant") == "history" || item.key.hasPrefix("history-")
-      || item.sectionKey?.hasPrefix("history-") == true
-    {
+    if item.data.string("variant") == "history" {
       return 16
     }
     if item.data.string("variant") == "summary" { return 68 }
@@ -345,9 +343,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     }
     titleLabel.reservesDottedUnderlineSpace =
       isExplicitNetworkHeader && !item.data.string("titleActionKey").isEmpty
-    let isHistory =
-      variant == "history" || item.key.hasPrefix("history-")
-      || (item.sectionKey?.hasPrefix("history-") ?? false)
+    let isHistory = variant == "history"
     let headerWeight: NativeListFontWeight =
       isSummary
       ? .medium

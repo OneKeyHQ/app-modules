@@ -40,11 +40,3 @@ internal object NativeListRendererRegistry {
   fun create(context: ThemedReactContext, viewType: Int): NativeListRowHost =
     factories.getValue(NativeListRendererKey.entries[viewType])(context)
 }
-
-// Compatibility belongs to list chrome, never to Message style resolution.
-// docs/MIGRATION_BASELINE.md records the callers that must migrate before removal.
-internal fun nativeListLegacyShowsSeparator(item: NativeListItem): Boolean =
-  item.json.optBoolean("separator") &&
-    !item.key.startsWith("token-") &&
-    !item.key.startsWith("balance-token-") &&
-    item.key != "linear-custom-token"

@@ -14,17 +14,31 @@ sets. Generated bindings and examples do not define renderer semantics.
 
 | Rule | Existing behavior and source | Disposition |
 | --- | --- | --- |
-| `history-` prefix | iOS `NativeListCell.bindSectionHeader` and `RNCNativeListView.rowHeight`: row key **or** section key implies history title/height. Web `estimateWebRowHeight`: same two keys imply 16-unit header height; its rendering still follows the explicit variant. Android `bindSectionHeader`/`applySize`: only **section key** implies uppercase 12/16 title, 0 padding and 16-unit minimum height. Explicit `variant: history` works independently. | Stage 4 moved these defaults into the SectionHeader renderers. Both example history headers and the validation fixture already set `variant: history`; no implicit history-header caller remains in this repository. Stage 6 still requires an external-consumer audit before deleting the compatibility fallback. |
-| `token-`, `balance-token-`, exact `linear-custom-token` | Android `NativeListRowView.bind` suppresses `separator: true` for these keys across row types. iOS/Web have no equivalent key exception. | Preserve as an explicitly named Android legacy container policy, including Message. Do not embed it in Message style resolution. Stage 6 requires caller-owned `separator: false` before removal. |
-| exact section keys `linear-tokens`, `action-tokens` | Android `bindSectionHeader`/`applySize` applies token-manager 14/20 regular typography, horizontal 12/top 10/bottom 0 padding and 30-unit minimum height (subject to earlier explicit presentation/variant branches). No matching iOS/Web rule. | Stage 4 migrated both example callers to an explicit 30-unit container height, bottom alignment, 12-unit horizontal / zero vertical padding and regular 14/20 title. The fallback remains in SectionHeader until stage 6 verifies external consumers. |
+| `history-` prefix | iOS `NativeListCell.bindSectionHeader` and `RNCNativeListView.rowHeight`: row key **or** section key implies history title/height. Web `estimateWebRowHeight`: same two keys imply 16-unit header height; its rendering still follows the explicit variant. Android `bindSectionHeader`/`applySize`: only **section key** implies uppercase 12/16 title, 0 padding and 16-unit minimum height. Explicit `variant: history` works independently. | Stage 4 moved these defaults into the SectionHeader renderers. Both example history headers and the validation fixture already set `variant: history`; no implicit history-header caller remains in this repository. Stage 6 audited the app-monorepo callers and removes the compatibility fallback; only the explicit variant selects history styling. |
+| `token-`, `balance-token-`, exact `linear-custom-token` | Android `NativeListRowView.bind` suppresses `separator: true` for these keys across row types. iOS/Web have no equivalent key exception. | Removed in stage 6 after auditing examples and app-monorepo: no matching caller sets `separator: true`. Separators now obey the explicit field on every platform. |
+| exact section keys `linear-tokens`, `action-tokens` | Android `bindSectionHeader`/`applySize` applies token-manager 14/20 regular typography, horizontal 12/top 10/bottom 0 padding and 30-unit minimum height (subject to earlier explicit presentation/variant branches). No matching iOS/Web rule. | Stage 4 migrated both example callers to an explicit 30-unit container height, bottom alignment, 12-unit horizontal / zero vertical padding and regular 14/20 title. Stage 6 verified external consumers and removes the fallback. Renaming either key no longer changes typography or geometry. |
 | exact tail keys `market-loading-more`, `market-load-more-retry`, `market-end` | Android `NativeListView.isMarketPaginationUpdate` drops those trailing rows before checking a stable Market prefix when either snapshot has loadMore; this keeps the scroll anchor during pagination. It is a container update optimization, not a row renderer. | Preserve in the container. Replace with explicit structural-row recognition in a separately validated pagination change. |
-| exact column key `asset` | Web `createDataRow` adds row badges only to that table column. Native table binders attach row badges to the first column instead. | Preserve until stage 3 audits DataRow callers; do not silently broaden every column's badge behavior. |
+| exact column key `asset` | Web `createDataRow` adds row badges only to that table column. Native table binders attach row badges to the first column instead. | Retained as a documented DataRow compatibility rule. No app-monorepo DataRow caller was found in the stage 6 audit; changing badge placement requires a separate explicit API/caller migration. |
 
 There are no other business-key-dependent decisions in the audited production
 paths. Equality for identity/diffing, selection targets, section membership,
 scroll targets, reorder membership, action lookup, image recycling keys and
 stale-callback guards is intentional identity usage, not a business-key rule.
 Keyboard event keys and style-property whitelist keys are also unrelated.
+
+## Stage 6 consumer audit
+
+Audited on 2026-09-23: local app-monorepo `67fcc71204` and `origin/x`
+`62c645f906`. NativeList imports/builders in AccountSelector, UnifiedNetworkSelector
+and Market have no history/token key styling dependencies. Repository token rows
+omit `separator` (false); history headers specify `variant: history`; token
+headers already specify their height, alignment, spacing and typography.
+No external checkout changes were needed. This is a source audit of these refs,
+not a claim about all published consumers.
+
+The two retained rules above are the container pagination optimization and
+DataRow badge-column ownership. Neither chooses a renderer or maps `row.style`
+fields. List event/selection/reorder identities continue to use keys normally.
 
 ## Default geometry and precedence
 
@@ -97,7 +111,7 @@ of its 30-unit row without requiring a new asymmetric-padding property.
 Those explicit style values use logical units on all platforms, replacing
 Android's old scaled default at these caller sites.
 
-This repository audit does not establish that external app-monorepo consumers
-have migrated. Keep the documented native/Web key fallbacks until stage 6
-checks those callers. WalletGroup's nested native Identity cells continue to
-use the old implementation until the separately scoped stage 5 migration.
+Stage 6 completed the external-consumer source audit described above and removed
+the native/Web header key fallbacks. Stage 5 also migrated WalletGroup members
+to independent Identity hosts. The historical defaults in this baseline remain
+useful when reviewing explicitly styled caller behavior.

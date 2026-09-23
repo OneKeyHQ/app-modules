@@ -98,3 +98,11 @@ export function createBadge(
   setData(element, 'tone', badge.tone);
   return element;
 }
+
+// Selector digits retain their font family, including explicit button fonts.
+export function applyTabularNumbers(body: HTMLElement): void {
+  body.style.fontVariantNumeric = 'tabular-nums';
+  body.querySelectorAll<HTMLElement>('span,button').forEach((text) => {
+    text.style.fontVariantNumeric = 'tabular-nums';
+  });
+}

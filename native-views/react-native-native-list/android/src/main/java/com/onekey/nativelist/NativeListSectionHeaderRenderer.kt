@@ -64,9 +64,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
       layout == "table" -> 28
       item.json.optString("variant") == "summary" -> 80
       item.json.optString("variant") == "gallery" -> 32
-      item.json.optString("variant") == "history" ||
-        item.sectionKey?.startsWith("history-") == true -> 16
-      item.sectionKey in setOf("linear-tokens", "action-tokens") -> 30
+      item.json.optString("variant") == "history" -> 16
       item.json.optString("value").isNotEmpty() && item.json.optJSONObject("checkbox") != null -> 40
       else -> 36
     }
@@ -223,7 +221,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
           variant == "gallery" -> 18f
           variant == "summary" -> 16f
           layout == "table" -> 11f
-          variant == "history" || item.sectionKey?.startsWith("history-") == true -> 12f
+          variant == "history" -> 12f
           else -> 14f
         }
       )
@@ -237,8 +235,6 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
         network -> NativeListFonts.medium(context)
         layout == "table" -> NativeListFonts.regular(context)
         variant == "summary" -> NativeListFonts.medium(context)
-        item.sectionKey in setOf("linear-tokens", "action-tokens") ->
-          NativeListFonts.regular(context)
         else -> NativeListFonts.semibold(context)
       }
     TextViewCompat.setLineHeight(
@@ -248,7 +244,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
           network && variant != "summary" -> 20
           variant in setOf("gallery", "summary") -> 24
           layout == "table" -> 14
-          variant == "history" || item.sectionKey?.startsWith("history-") == true -> 16
+          variant == "history" -> 16
           else -> 20
         }
       ),
@@ -416,8 +412,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
         title.setOnClickListener { emitAction(item, key, null, title, "leadingAction") }
       }
     val isNetworkSelector = item.json.optString("presentation") == "networkSelector"
-    val isHistory = variant == "history" || item.sectionKey?.startsWith("history-") == true
-    val isTokenManager = item.sectionKey in setOf("linear-tokens", "action-tokens")
+    val isHistory = variant == "history"
     val isExplicitNetworkHeader = isNetworkSelector && item.json.has("height")
     val hasDottedTitle =
       isSummary ||
@@ -460,11 +455,6 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
       title.typeface = NativeListFonts.semibold(context)
       title.letterSpacing = 0.8f / sp(12f)
       TextViewCompat.setLineHeight(title, dp(16))
-    } else if (isTokenManager) {
-      setPadding(dp(headerHorizontalInset), dp(10), dp(headerHorizontalInset), 0)
-      title.textSize = sp(14f)
-      title.typeface = NativeListFonts.regular(context)
-      TextViewCompat.setLineHeight(title, dp(20))
     } else if (!isTable && !isGallery && !isSummary) {
       // SectionList.SectionHeader: h=36, px=20, headingSm 14/20 semibold.
       setPadding(dp(headerHorizontalInset), dp(8), dp(headerHorizontalInset), dp(8))
@@ -514,7 +504,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
       if (isExplicitNetworkHeader) trailingViews[0].setPadding(0, 0, 0, 0)
       else trailingViews[0].setPadding(dp(14), dp(6), dp(14), dp(6))
       trailingViews[0].layoutParams = wrap()
-    } else if (!isGallery && !isHistory && !isTokenManager) {
+    } else if (!isGallery && !isHistory) {
       val value = item.json.optString("value")
       val checkboxData = item.json.optJSONObject("checkbox")
       if (isExplicitNetworkHeader && checkboxData != null) {

@@ -1,3 +1,4 @@
+import { applyTabularNumbers } from './RowElements';
 import type { ActionRow } from '../../models';
 import { RowVisualStyle, type RowPrimitives } from './RowVisual';
 
@@ -84,6 +85,7 @@ function bind(body: HTMLElement, row: ActionRow, primitives: RowPrimitives) {
     v.controls.appendChild(trailing);
   }
   v.controls.style.display = 'contents';
+  if (row.presentation === 'accountSelector') applyTabularNumbers(body);
 }
 function create(document: Document, row: ActionRow, primitives: RowPrimitives) {
   const body = document.createElement('div');
