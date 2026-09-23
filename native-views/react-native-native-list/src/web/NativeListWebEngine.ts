@@ -643,7 +643,7 @@ export function canStartWebWalletGroupReorder(
   const member = [row.parent, ...row.children].find(
     (candidate) => candidate.key === memberKey
   );
-  return member?.draggable !== false;
+  return member?.draggable !== false && !member?.disabled;
 }
 
 function itemStart(item: WebLayoutItem, horizontal: boolean): number {
@@ -3730,7 +3730,7 @@ export class NativeListWebEngine {
       action.dataset.nativeListHoverAction === 'true'
         ? action.dataset.nativeListAction
         : action.dataset.nativeListHoverAction;
-    if (sourceRow && !sourceRow.disabled && actionKey)
+    if (sourceRow && !row?.disabled && !sourceRow.disabled && actionKey)
       this.emitRowAction(sourceRow, actionKey, action, rowElement ?? undefined);
   };
 
@@ -3774,6 +3774,7 @@ export class NativeListWebEngine {
             (member) => member.key === memberKey
           ) ?? row
         : row;
+    if (sourceRow.disabled) return;
     const action = target.closest<HTMLElement>('[data-native-list-action]');
     if (action) {
       const scope = action.dataset.selectionScope;

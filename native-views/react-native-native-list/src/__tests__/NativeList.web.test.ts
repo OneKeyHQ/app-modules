@@ -2680,4 +2680,61 @@ describe('complex renderer lifecycle', () => {
       engine.destroy();
     }
   });
+  it('gates disabled group member controls after rebinding', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const member: IdentityRow = {
+      type: 'identity',
+      key: 'child',
+      presentation: 'walletSidebar',
+      title: 'Child',
+      leading: { kind: 'icon', name: 'StarOutline' },
+      trailing: [
+        { kind: 'menu', actionKey: 'menu' },
+        { kind: 'checkbox', target: { scope: 'row' }, state: 'unchecked' },
+      ],
+    };
+    const row: Extract<RowModel, { type: 'walletGroup' }> = {
+      type: 'walletGroup',
+      key: 'parent',
+      parent: { ...member, key: 'parent' },
+      children: [member],
+    };
+    const onRowAction = jest.fn();
+    const onSelectionDelta = jest.fn();
+    const engine = new NativeListWebEngine(
+      host,
+      { ...snap(row), selection: { mode: 'multiple', selectedKeys: [] } },
+      { onRowAction, onSelectionDelta },
+      false
+    );
+    const previousElement = global.Element;
+    global.Element = document.defaultView!.Element;
+    const buttons = () =>
+      host
+        .querySelector('[data-native-list-group-member-key="child"]')!
+        .querySelectorAll<HTMLButtonElement>('button');
+    try {
+      buttons()[0]!.click();
+      expect(onRowAction.mock.calls[0]![0]).toMatchObject({
+        rowKey: 'child',
+        actionKey: 'menu',
+      });
+      engine.applySnapshot(
+        snap({ ...row, children: [{ ...member, disabled: true }] })
+      );
+      buttons()[0]!.click();
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      expect(
+        canStartWebWalletGroupReorder(
+          { ...row, children: [{ ...member, disabled: true }] },
+          'child'
+        )
+      ).toBe(false);
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+    }
+  });
 });
