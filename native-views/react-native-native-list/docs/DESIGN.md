@@ -98,19 +98,18 @@ completion-once guards and stale-write invalidation. A text/style-only update
 retains the existing image slot and, when its effective image request is
 unchanged, the request. Geometry/content-fit changes may require the image
 module to decode/request again. The existing bounded source-fallback cache is
-shared with legacy visuals. Image slots are lazy and bounded to the template's
+shared by image primitives. Image slots are lazy and bounded to the template's
 visible assets; Message never allocates the unused legacy Market/Wallet/table
 subtrees. This is source-level ownership evidence, not a performance benchmark.
 
 The renderer resolves defaults from current data/theme/style rather than
-capturing a previous row's view state. Legacy global slot maps no longer contain
-Message or Rail. No public plugin API or Nitro schema is added. Remaining template maps
-and partial updates are retired only with their own migration. See
+capturing a previous row's view state. Global cross-template slot maps and legacy hosts are removed after all twelve
+renderer migrations. No public plugin API or Nitro schema is added. See
 [SPEC.md](SPEC.md#conformance-and-six-stage-migration) for all six stages.
 
 Structural reuse now has twelve dedicated families on all platforms; see the
 current registry inventory in SPEC.md. WalletGroup composes keyed Identity
-hosts. The old native classes remain only as stage 6 cleanup.
+hosts. The old native classes and fallback registry entries are deleted in stage 6.
 Neither `row.key`, content, style, height nor placement changes the family.
 Web selects a compatible wrapper pool even when the row at a mounted index
 changes family. iOS registers separate reuse identifiers and reloads retained
@@ -535,6 +534,51 @@ seven tests in three suites. Web tests additionally assert keyed member/image
 retention, removed-member disposal, style clearing and disabled menu dispatch.
 The validation runtime's `stage5` directory contains fixture, scripts, screenshots,
 accessibility trees and iOS drag recordings. This is functional/visual simulator
-acceptance, not a performance benchmark. Stage 6 alone remains in this six-stage
-architecture plan: remove dead native composite/global maps and retire the
-inventoried compatibility policies after checking their callers.
+acceptance, not a performance benchmark. Stage 6 completion and retained compatibility boundaries are recorded below.
+
+### Stage 6: remove migration scaffolding (2026-09-23)
+
+Deleted `NativeListCell.swift` and `NativeListRowView.kt`, their global style-slot
+maps, and the obsolete slot-map tests. Still-used fonts, icons, controls and
+layout helpers keep their existing behavior in shared primitive/host files.
+The registry has only the twelve supported families; native parsing rejects
+unknown types. Footer initialization starts with the lightweight Action host.
+
+Web removes the legacy pool and warning-specific container measurement cache.
+Selector tabular typography belongs to Identity, Header and Action. WalletGroup
+provides its compact parent preview through the internal renderer registration;
+the container no longer selects a parent DOM node from the composite internals.
+Common event hit-testing, selection primitives and cloned-image leases remain
+container responsibilities.
+
+The source audit at the app-monorepo refs in MIGRATION_BASELINE.md found no
+callers dependent on history/token key styling or separator suppression.
+Removed those three inference rules. Explicit variant/style/separator fields
+now determine the behavior. The audited Market pagination-tail optimization and
+Web DataRow `asset` badge placement remain documented compatibility boundaries;
+this cleanup does not alter pagination or introduce a new column-badge API.
+
+Acceptance ran on the same task-owned external-drive iOS 26.5 and Android API 36
+simulators and headed Chrome. The same row key cycles through all twelve families;
+each survives an explicit styled height/background and clearing back to its
+original geometry. Ordinary/history-named headers match; explicit history uses
+16 units, and explicit token-header styles use 30. Action → System retry → Action
+footers render and emit their current action. Scrolling/reuse and member/menu
+routing pass. WalletGroup drag previews remain 68 high with +1 for one draggable
+child, excluded add-wallet members do not reorder, and dropping restores default
+274 or explicit 340 heights. Web also checks a 390px viewport and changing family
+while scrolled. Screenshots show controls/footer within the viewport; list content
+scrolls normally. No stale prior-template content or cleared-style leakage was
+observed in these scenarios.
+
+Validation: TypeScript, 164 tests in five suites, focused ESLint (zero errors,
+two pre-existing shadowing warnings), iOS Debug build/link and Android Debug APK
+plus five unit tests in two suites. The two deleted tests only exercised the
+removed global slot mapper. The source audit finds no legacy host/registry/global
+slot references in production code and no header/separator business-key styling.
+
+Fixtures, scripts, build/test logs, screenshots, accessibility trees, event/geometry
+results and iOS drag recordings are saved under the validation runtime's `stage6`
+directory. This completes all six architecture stages, with the two explicit
+compatibility boundaries above. It is functional/visual simulator acceptance,
+not a scrolling-performance benchmark or a full app-monorepo release signoff.

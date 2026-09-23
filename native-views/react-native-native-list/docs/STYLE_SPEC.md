@@ -116,15 +116,16 @@ object identity.
 | Legacy baseline dimensions | Inventory in §4/§6; explicit style values use logical units independently of Android's legacy list scale |
 | Rendered acceptance | The source contract and build checks do not establish full native interaction/pixel acceptance (§9) |
 
-The field-to-view mapping exists twice, once per native language — `nativeListStyleSlot`
-in `NativeListModels.kt` and `styleSlot` in `NativeListCell.swift`. §4 is the source of
-truth for both; the Kotlin copy is unit-tested, including a check that no template maps
-two style keys onto one view.
+Each renderer maps its own model fields to owned views. There is no global
+cross-template style-slot map or shared legacy text-view pool. §4 remains the
+contract for the Swift, Kotlin and Web implementations; regression tests check
+semantic isolation and style set/clear behavior.
 
 The example application's **Native List Row Style** page has plain/styled pairs
 for all 12 types, plus list chrome and an explicit-height example. Its wallet
 group styles the parent member while leaving a child unstyled to expose leakage.
-Variant and rendered acceptance coverage is still pending (§9). The catalog
+Migration/runtime acceptance is recorded in DESIGN.md; the checklist in §9 still
+applies to future changes. The catalog
 illustrations are structural diagrams, not screenshots or proof of rendering parity.
 
 ## 3. T1 — Design tokens
@@ -637,8 +638,8 @@ that cites this table and carries device verification.
 ### 6.1 Row heights
 
 Row height is computed from data by three independent implementations —
-`RNCNativeListView.rowHeight()`, `NativeListRowView.applySize()`, and
-`estimateWebRowHeight()`. They disagree:
+the iOS registered renderer measurement, Android registered row measurement, and
+Web registered estimate/DOM measurement. Preserved defaults still differ:
 
 | Template | iOS | Android | Web |
 | --- | --- | --- | --- |
@@ -683,7 +684,7 @@ exposed — a hairline is correct on iOS and a whole pixel is correct elsewhere.
 ### 6.3 Behavioral
 
 - **Android pinned headers reuse normal row rendering.** The old Canvas-only
-  `StickySectionHeaderDecoration` is replaced by an overlay `NativeListRowView`.
+  `StickySectionHeaderDecoration` is replaced by an overlay registered `NativeListSectionHeaderRowView`.
   Typography, local metrics, values, checkbox/action callbacks and theme now follow
   the same binding path. The overlay pushes away for the next sticky header and
   forwards drag gestures to the RecyclerView. Summary and `sticky: false` headers
@@ -817,35 +818,34 @@ verify the result. Do not describe numeric bounds as a clipping-prevention featu
 The style pass belongs after template and presentation defaults. All 12 row types
 retain their own binders; adding a local style must not replace their structure.
 
-All three are implemented as `applyRowStyle`.
-
-| Platform | Anchor | Note |
+| Platform | Owner | Order and reset |
 | --- | --- | --- |
-| iOS | `NativeListCell.bind()`, after the `switch item.type` | The style pass updates specified attributed-string properties while preserving omitted template attributes |
-| Android | `NativeListRowView.bind()`, **after** `applySize(item)` | `applySize` re-dispatches font size and typeface by row type and would otherwise overwrite the style |
-| Web | `renderElement()`, after template and presentation defaults | Wallet-group members apply their own local pass before the group pass |
+| iOS | Registered template renderer and `NativeListRendererCell` | Renderer restores/resolves current template defaults, then applies semantic text/image/spacing styles; host owns common container appearance and action epochs |
+| Android | Registered template renderer and `NativeListRendererRowView` | Renderer applies current defaults and local styles; shared host owns allocation, container appearance and separators |
+| Web | Registered template `bind()` plus `RowContainerStyle` | Template resets its own nodes and applies local styles; engine applies common row chrome. WalletGroup delegates each member to Identity before applying its group container |
 
-Both native legacy hosts use `resetRowStyle` before the binder, per §7 rule 2.
-They capture the bound text view's defaults before modifying it and restore that
-state before the normal template reset. This includes text metrics, color and
-alignment; iOS also restores attributed text. This avoids guessing one baseline
-for views shared by different templates. Device reuse checks remain required.
+All twelve templates have dedicated renderer families. Bind must restore omitted
+style fields even without a prior recycle call; same-key template changes replace
+an incompatible host/body. No global restoration/slot map remains. A renderer
+may retain a bounded, template-local typography baseline where its platform
+needs it; it must never obtain defaults from another template's previous binding.
 
-Message completes the first renderer pilot. Its native registry creates a
-lightweight host, and its renderer owns the title/body/time column and optional
-image slots. Text, box and image styles resolve from current defaults/data/theme;
-clearing a style rebinds those defaults without using the legacy restoration map.
-Native measurement and binding share resolved inputs; Web keeps a persistent
-body and corrects intrinsic estimates from DOM measurements. Unchanged effective
-image requests survive text-only binding. All three platforms separate Message
-from legacy reuse; cross-family changes replace the host. See
-[DESIGN.md](DESIGN.md#incremental-renderer-migration) for source boundaries and
-runtime acceptance. Stages 3–6 remain pending.
+Measurement uses the current data/theme/style inputs. Web renderers report
+rendered intrinsic heights through the registry; the container has no separate
+warning-view measurement fallback. Image primitives retain unchanged effective
+requests and invalidate callbacks on source/slot replacement or recycle.
 
-The existing market helpers generalize rather than being rewritten:
-`applyMarketTextStyle` / `applyMarketButtonStyle` / `marketAttributedText` (iOS),
-`applyMarketTextStyle` / `applyMarketTextMetrics` (Android),
-`applyMarketTextStyle` / `resolveWebMarketLayoutStyle` (Web).
+Selector tabular typography belongs to Identity, SectionHeader and Action.
+WalletGroup supplies its own compact preview through the internal renderer
+contract; the container does not search for a parent view inside its DOM.
+Native containers likewise call the row-host lifecycle instead of casting to
+concrete template views. Shared action hit-testing, checkbox/selection routing
+and image leases remain common list capabilities.
+
+The six-stage migration and dated runtime results are recorded in
+[DESIGN.md](DESIGN.md#incremental-renderer-migration) and SPEC.md. New templates
+must implement the same binding/reset/measurement lifecycle and register a
+family on all three platforms; there is no legacy fallback or public plugin API.
 
 ## 9. Review checklist
 

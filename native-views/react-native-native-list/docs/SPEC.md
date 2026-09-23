@@ -82,13 +82,13 @@ separate workload and measurements.
 | 3. Simple templates | Complete (7/7): Rail, MediaTile, Action, System, Activity, DataRow and MetricCard migrated on all three platforms | Migrate mediaTile, rail, action, system, activity, dataRow and metricCard; remove each old dispatch/reset path |
 | 4. Complex templates | Complete (3/3): Market, Identity and SectionHeader migrated on all three platforms | Migrate Market, Identity and SectionHeader while preserving quote, selection and header behavior |
 | 5. WalletGroup | Complete: registered composites and independent keyed Identity members on all three platforms | Independent member renderers; verify member events/styles, compact dragging and height restoration |
-| 6. Cleanup | In progress: remove obsolete hosts/registries, then key-based styling and container fallbacks | Remove migrated key inference and global style maps; container no longer manipulates template internals |
+| 6. Cleanup | Complete: obsolete hosts/maps/fallback pools and audited key styling removed | Remove migrated key inference and global style maps; container no longer manipulates template internals |
 
 The closed internal registry selects all twelve renderers by template type.
 No supported template dispatches to the legacy native tree. WalletGroup owns
 composition and compact appearance; its members use independent Identity
-renderers. Legacy native classes/global maps remain unreachable for supported
-rows and will be removed in stage 6. Web preserves compatible bodies and
+renderers. Legacy native classes, global style maps and fallback registry entries
+are removed, including footer initialization. Web preserves compatible bodies and
 unchanged member image elements across rebinding.
 
 Message resolves text/spacing/image inputs from data/theme/styles, classifies
@@ -97,8 +97,8 @@ using those resolved values. Image slots retain an unchanged effective request;
 source/row/slot or image-request-option changes invalidate old callbacks and
 retries. Image request epochs are independent of row action-anchor epochs, so
 text-only updates preserve in-flight images. Legacy Message binding, slot-map
-and measurement branches have been removed. The named Android separator-key
-compatibility policy is retained outside the renderer's style resolver.
+and measurement branches have been removed. Stage 6 also removes the audited Android separator-key
+compatibility policy; the explicit separator field controls visibility.
 
 Message intrinsic measurement now uses its actual resolved view metrics rather
 than the historical estimator-only defaults listed in MIGRATION_BASELINE.md.
@@ -157,9 +157,9 @@ composite cards expose the heading slot and keep metric internals fixed as
 defined in STYLE_SPEC.md. Image slots retain unchanged requests across rebinding
 and reset when a source disappears or its slot identity changes.
 
-Stage 3 completion is not completion of the six-stage architecture plan.
-Stages 4 and 5 are recorded below. Stage 6 remains: retire the remaining
-compatibility inference/style maps and container access to internals.
+All six stages are complete. Stages 4–6 and their acceptance scopes are recorded
+below; the baseline inventory explicitly identifies two retained compatibility
+policies outside renderer selection/style mapping.
 No migrated simple template dispatches through a legacy binder.
 
 ### Stage 4 acceptance scope
@@ -179,16 +179,15 @@ measurement. Native hosts share bounded leading/image/accessory primitives. Web
 retains the compatible body and unchanged image elements; loaded image state is
 not reset when geometry is restored. Quote and summary updates keep the latest
 row model for subsequent action/selection dispatch. No new public API or Nitro
-schema is introduced. Stage 5 below also replaces the native WalletGroup composite tree. The now
-unreachable legacy classes remain for stage 6 cleanup.
+schema is introduced. Stage 5 below also replaces the native WalletGroup composite tree. Stage 6 below removes the
+obsolete native classes and maps.
 
 Stage 4 validation: package typecheck and all 161 tests in five suites pass;
 focused lint has zero errors and two existing shadowing warnings. iOS Debug
 build/link and Android Debug APK plus seven unit tests pass. Both dedicated
 native simulators and headed Chrome exercised the acceptance cases above.
 The section fixture additionally verified imperative scroll pinning and active
-index updates after the container fixes. Stage 5 acceptance follows below; stage 6 compatibility/global-map cleanup
-remains. This is not a performance signoff.
+index updates after the container fixes. Stages 5 and 6 acceptance follow below. This is not a performance signoff.
 
 ### Stage 5 ownership and acceptance
 
@@ -223,3 +222,25 @@ unit tests pass. Headed Chrome includes a 390px viewport and in-drag captures.
 Native simulator captures, action payloads and iOS recordings are stored with
 the stage 5 harness in the external validation runtime. These are standalone
 NativeList checks, not a consumer-app release or scrolling-performance signoff.
+
+### Stage 6 cleanup and acceptance
+
+The native monoliths and global style-slot maps are deleted. Their still-used
+fonts, icons, layout helpers, action origins and controls remain shared primitives.
+All twelve registry families are explicit; unsupported native model types are
+rejected during parsing. Footer initialization uses a registered Action host.
+Web has no legacy pool or warning-specific container measurement path; template
+renderers own selector typography and WalletGroup compact-preview lookup.
+
+The consumer audit in MIGRATION_BASELINE.md allows removal of history-key header
+inference, Android token-section typography inference, and separator-key exceptions.
+Callers choose `variant`, `style` and `separator` explicitly. Market pagination-tail
+recognition and the existing Web DataRow `asset` badge column are deliberately
+retained under the separately documented migration boundaries.
+
+Validation covers same-key cycling through twelve templates, style set/clear,
+ordinary/history-named/explicit-history headers, explicit 30-unit token headers,
+Action/System footer replacement and callbacks, scrolling/reuse and WalletGroup
+member actions and compact dragging. Source/type checks and runtime evidence
+are recorded separately in DESIGN.md. This completes the architecture migration;
+it does not add automatic overflow fitting or claim a performance benchmark.
