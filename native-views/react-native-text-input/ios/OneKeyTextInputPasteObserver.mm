@@ -7,10 +7,56 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <objc/runtime.h>
 
+#include <atomic>
+
 static NSString *const OneKeyTextInputPasteEvent = @"OneKeyTextInputPaste";
 static __weak OneKeyTextInputPasteObserver *OneKeyPasteObserver = nil;
 static BOOL OneKeyPasteObserverHasListeners = NO;
 static const void *OneKeyPasteInFlightKey = &OneKeyPasteInFlightKey;
+
+// canPerformAction: runs on the main thread, and iOS 27 also calls it from
+// system command validation without any user action. Reading UIPasteboard
+// there is a synchronous XPC call that can block until the watchdog kills the
+// app, so the image check reads this cache and refreshes it off the main thread.
+static std::atomic<bool> OneKeyPasteboardHasImages{false};
+static std::atomic<bool> OneKeyPasteboardRefreshPending{false};
+
+static void OneKeyRefreshPasteboardImageState(void)
+{
+  if (OneKeyPasteboardRefreshPending.exchange(true)) {
+    return;
+  }
+  static dispatch_queue_t queue;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    queue = dispatch_queue_create("so.onekey.textinput.pasteboard", DISPATCH_QUEUE_SERIAL);
+  });
+  dispatch_async(queue, ^{
+    OneKeyPasteboardRefreshPending.store(false);
+    OneKeyPasteboardHasImages.store(UIPasteboard.generalPasteboard.hasImages);
+  });
+}
+
+static void OneKeyStartObservingPasteboard(void)
+{
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    for (NSNotificationName name in @[
+           UIPasteboardChangedNotification,
+           UIApplicationDidBecomeActiveNotification,
+           UITextFieldTextDidBeginEditingNotification,
+           UITextViewTextDidBeginEditingNotification,
+         ]) {
+      [center addObserverForName:name
+                          object:nil
+                           queue:nil
+                      usingBlock:^(__unused NSNotification *note) {
+                        OneKeyRefreshPasteboardImageState();
+                      }];
+    }
+  });
+}
 
 @implementation OneKeyTextInputPasteObserver
 
@@ -145,6 +191,7 @@ static void OneKeySwizzle(Class cls, SEL originalSelector, SEL replacementSelect
   dispatch_once(&onceToken, ^{
     OneKeySwizzle(self, @selector(paste:), @selector(onekey_paste:));
     OneKeySwizzle(self, @selector(canPerformAction:withSender:), @selector(onekey_canPerformAction:withSender:));
+    OneKeyStartObservingPasteboard();
   });
 }
 
@@ -162,7 +209,7 @@ static void OneKeySwizzle(Class cls, SEL originalSelector, SEL replacementSelect
 
 - (BOOL)onekey_canPerformAction:(SEL)action withSender:(id)sender
 {
-  if (action == @selector(paste:) && UIPasteboard.generalPasteboard.hasImages) {
+  if (action == @selector(paste:) && OneKeyPasteboardHasImages.load()) {
     return YES;
   }
   return [self onekey_canPerformAction:action withSender:sender];
@@ -178,6 +225,7 @@ static void OneKeySwizzle(Class cls, SEL originalSelector, SEL replacementSelect
   dispatch_once(&onceToken, ^{
     OneKeySwizzle(self, @selector(paste:), @selector(onekey_paste:));
     OneKeySwizzle(self, @selector(canPerformAction:withSender:), @selector(onekey_canPerformAction:withSender:));
+    OneKeyStartObservingPasteboard();
   });
 }
 
@@ -195,7 +243,7 @@ static void OneKeySwizzle(Class cls, SEL originalSelector, SEL replacementSelect
 
 - (BOOL)onekey_canPerformAction:(SEL)action withSender:(id)sender
 {
-  if (action == @selector(paste:) && UIPasteboard.generalPasteboard.hasImages) {
+  if (action == @selector(paste:) && OneKeyPasteboardHasImages.load()) {
     return YES;
   }
   return [self onekey_canPerformAction:action withSender:sender];
