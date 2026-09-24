@@ -210,8 +210,8 @@ final class HybridOneKeyImage: HybridOneKeyImageSpec, RecyclableView {
     // Fabric can reset `round` before clearing `sourceUri` while removing a view.
     // Apply the shape once per committed prop batch so the outgoing frame keeps
     // its clipping, while mounted and recycled views still receive the new value.
-    if let sourceUri, !sourceUri.isEmpty {
-      hostView.round = round == true
+    if let sourceUri, !sourceUri.isEmpty, let round {
+      hostView.round = round
     }
     scheduleLoad()
   }
