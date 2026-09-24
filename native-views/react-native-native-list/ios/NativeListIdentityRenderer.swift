@@ -44,9 +44,9 @@ final class NativeListIdentityCell: NativeListRendererCell {
   override var defaultCornerRadius: CGFloat {
     guard let item = currentItem else { return 0 }
     let presentation = item.data.string("presentation")
-    if presentation == "walletSidebar", isHighlighted || item.data["height"] != nil { return 20 }
+    if presentation == "walletSidebar", isHighlighted || item.hasExplicitHeight { return 20 }
     if isHighlighted
-      || (item.data["height"] != nil
+      || (item.hasExplicitHeight
         && ["accountSelector", "networkSelector"].contains(presentation))
     {
       return 12
@@ -244,7 +244,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
   }
   override func layoutSubviews() {
     super.layoutSubviews()
-    if currentItem?.data["height"] != nil,
+    if currentItem?.hasExplicitHeight == true,
       currentItem?.data.string("presentation") == "accountSelector",
       currentItem?.data.dictionary("style")?.dictionary("container")?["contentVerticalAlignment"]
         == nil, let descriptor = currentItem?.data.dictionaries("trailing").first,
@@ -283,10 +283,10 @@ final class NativeListIdentityCell: NativeListRendererCell {
     if image["height"] != nil { leadingHeight.constant = CGFloat(image.double("height")) }
     let wallet =
       currentItem?.data.string("presentation") == "walletSidebar"
-      && currentItem?.data["height"] != nil
+      && currentItem?.hasExplicitHeight == true
     visual.singleOuterMask =
       currentItem?.data.string("presentation") == "networkSelector"
-      && currentItem?.data["height"] != nil
+      && currentItem?.hasExplicitHeight == true
     visual.dashedBorderWidth = wallet ? 1 : 2
     visual.overlayTextFontSize = wallet ? 12 : 10
     visual.overlayTextLineHeight = wallet ? 16 : nil
@@ -326,7 +326,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
       addLeading(item.data.dictionary("leading"), key: item.key)
       root.addArrangedSubview(mainStack)
       // OneKey patch: activate width constraints only after both stacks share an ancestor.
-      if item.data["height"] != nil {
+      if item.hasExplicitHeight {
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         titleRowStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let width = mainStack.widthAnchor.constraint(equalTo: root.widthAnchor)
@@ -353,7 +353,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
         line.alignment = .center
         for badge in badges {
           let label = NativeListInsetLabel()
-          let isSelector = item.data["height"] != nil
+          let isSelector = item.hasExplicitHeight
           let isWarning = badge.string("tone") == "warning"
           label.font = nativeListFont(ofSize: isSelector ? 11 : 12)
           label.textColor = nativeListColor(
@@ -674,7 +674,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
       .paragraphStyle: paragraphStyle,
     ]
     let isNetworkFallback = label === fallbackLabel && presentation == "networkSelector"
-    if (currentItem?.data["height"] != nil
+    if (currentItem?.hasExplicitHeight == true
       && ["accountSelector", "walletSidebar"].contains(presentation)) || isNetworkFallback
     {
       attributes[.baselineOffset] = max(0, (lineHeight - label.font.lineHeight) / 2)

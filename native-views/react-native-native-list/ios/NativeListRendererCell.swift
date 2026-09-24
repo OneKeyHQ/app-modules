@@ -20,6 +20,9 @@ class NativeListRendererCell: NativeListRowHost {
     nativeListColor(theme, "rowPressedBackground", "#E8E8E8")
   }
   var showsSelection: Bool { true }
+  /// Whether the legacy row-level `backgroundColor` paints this row (resting and full-width
+  /// fills). `style.container.backgroundColor` always applies.
+  var honorsRowBackgroundColor: Bool { true }
   var defaultVerticalAlignment: String? { nil }
   var defaultSeparatorInset: CGFloat { 12 }
   func bindContent(
@@ -184,7 +187,10 @@ class NativeListRendererCell: NativeListRowHost {
       showSelection
       ? nativeListColor(theme, "rowSelectedBackground", "#F0F0F0")
       : unselectedBackground(item, theme: theme, layout: layout, itemIndex: itemIndex)
-    if let color = (container["backgroundColor"] ?? item.data["backgroundColor"]) as? String {
+    let rowFill =
+      container["backgroundColor"]
+      ?? (honorsRowBackgroundColor ? item.data["backgroundColor"] : nil)
+    if let color = rowFill as? String {
       background = UIColor(nativeListHex: color, fallback: background)
     }
     contentView.backgroundColor =
@@ -225,7 +231,7 @@ class NativeListRendererCell: NativeListRowHost {
         nativeListHex: container.string("borderColor"), fallback: defaultBorderColor(theme)
       ).cgColor
     if item.data.bool("backgroundFullWidth"),
-      let fill = (container["backgroundColor"] ?? item.data["backgroundColor"]) as? String
+      let fill = rowFill as? String
     {
       fullWidthBackground.backgroundColor = UIColor(nativeListHex: fill, fallback: .clear).cgColor
       contentView.layer.insertSublayer(fullWidthBackground, at: 0)

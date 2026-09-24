@@ -247,7 +247,7 @@ final class NativeListAccessoryStack: UIStackView {
       case "value":
         showAccessory(textIndex, accessory.string("text"))
         semanticValueButtons.append(accessoryButtons[textIndex])
-        if item.data.string("presentation") == "networkSelector" && item.data["height"] != nil {
+        if item.data.string("presentation") == "networkSelector" && item.hasExplicitHeight {
           accessoryButtons[textIndex].contentHorizontalAlignment = .trailing
           accessoryButtons[textIndex].titleLabel?.textAlignment = .right
         }
@@ -469,7 +469,7 @@ final class NativeListAccessoryStack: UIStackView {
     button.alpha = button.isEnabled ? 1 : 0.4
     let isAccountCreate =
       currentItem?.data.string("presentation") == "accountSelector"
-      && currentItem?.data["height"] != nil && data.string("name") == "PlusSmallOutline"
+      && currentItem?.hasExplicitHeight == true && data.string("name") == "PlusSmallOutline"
     let tintColor =
       data["tintColor"] == nil && isAccountCreate
       ? nativeListColor(currentTheme, "iconSubdued", "#8D8D8D")
@@ -532,7 +532,7 @@ final class NativeListAccessoryStack: UIStackView {
       current.flatMap { $0.length > 0 ? $0.attributes(at: 0, effectiveRange: nil) : nil } ?? [:]
     attributes[.foregroundColor] = color
     if currentItem?.data.string("presentation") == "networkSelector"
-      && currentItem?.data["height"] != nil
+      && currentItem?.hasExplicitHeight == true
     {
       let paragraph =
         (attributes[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy()

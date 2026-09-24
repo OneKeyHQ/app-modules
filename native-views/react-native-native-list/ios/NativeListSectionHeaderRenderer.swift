@@ -253,7 +253,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
         ? .bottom : .center
     applySelectorTypography(item)
     // Legacy measured the value after selector typography (tabular digits, kern 0).
-    if item.data.string("presentation") == "networkSelector", item.data["height"] != nil,
+    if item.data.string("presentation") == "networkSelector", item.hasExplicitHeight,
       item.data.dictionary("checkbox") != nil, !item.data.string("value").isEmpty
     {
       let width = trailingStack.widthAnchor.constraint(
@@ -336,7 +336,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     let isGallery = variant == "gallery"
     let isTable = layout == "table"
     let isNetworkSelector = item.data.string("presentation") == "networkSelector"
-    let isExplicitNetworkHeader = isNetworkSelector && item.data["height"] != nil
+    let isExplicitNetworkHeader = isNetworkSelector && item.hasExplicitHeight
     if isExplicitNetworkHeader {
       // OneKey patch: the flexible title consumes spare space before trailing totals.
       trailingStack.setContentHuggingPriority(.required, for: .horizontal)
@@ -538,7 +538,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       .foregroundColor: label.textColor as Any,
       .paragraphStyle: paragraphStyle,
     ]
-    if currentItem?.data["height"] != nil
+    if currentItem?.hasExplicitHeight == true
       && currentItem?.data.string("presentation") == "networkSelector"
     {
       let baselineOffset = max(0, (lineHeight - label.font.lineHeight) / 2)
@@ -562,10 +562,10 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     paragraphStyle.maximumLineHeight = lineHeight
     let isSelectorValue =
       currentItem?.data.string("presentation") == "networkSelector"
-      && currentItem?.data["height"] != nil && currentItem?.data.string("variant") != "summary"
+      && currentItem?.hasExplicitHeight == true && currentItem?.data.string("variant") != "summary"
     let isSelectorSummary =
       currentItem?.data.string("presentation") == "networkSelector"
-      && currentItem?.data["height"] != nil && currentItem?.data.string("variant") == "summary"
+      && currentItem?.hasExplicitHeight == true && currentItem?.data.string("variant") == "summary"
     (button as? NativeListAccessoryButton)?.selectorSummaryLineHeight =
       isSelectorSummary ? lineHeight : nil
     // OneKey patch: summary text uses its source line box; currency retains trailing alignment.
@@ -605,7 +605,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       current.flatMap { $0.length > 0 ? $0.attributes(at: 0, effectiveRange: nil) : nil } ?? [:]
     attributes[.foregroundColor] = color
     if currentItem?.data.string("presentation") == "networkSelector"
-      && currentItem?.data["height"] != nil
+      && currentItem?.hasExplicitHeight == true
     {
       let paragraph =
         (attributes[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy()
@@ -643,7 +643,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
 
     let value = item.data.string("value")
     let isExplicitNetworkHeader =
-      item.data.string("presentation") == "networkSelector" && item.data["height"] != nil
+      item.data.string("presentation") == "networkSelector" && item.hasExplicitHeight
     let valueButton = accessoryButtons[0]
     valueButton.isHidden = value.isEmpty
     if value.isEmpty {

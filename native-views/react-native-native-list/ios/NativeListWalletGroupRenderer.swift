@@ -20,6 +20,8 @@ final class NativeListWalletGroupCell: NativeListRendererCell, UIGestureRecogniz
   override var defaultBorderWidth: CGFloat { 1 }
   override var pressChangesBackground: Bool { false }
   override var showsSelection: Bool { false }
+  // Legacy fill is `subduedBackground`; the group's row-level `backgroundColor` is ignored.
+  override var honorsRowBackgroundColor: Bool { false }
   override func defaultBorderColor(_ theme: [String: Any]?) -> UIColor {
     nativeListColor(theme, "separator", "#E0E0E0")
   }

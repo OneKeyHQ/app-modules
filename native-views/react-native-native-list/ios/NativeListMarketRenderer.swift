@@ -343,9 +343,8 @@ final class NativeListMarketCell: NativeListRendererCell {
     let result = NSMutableAttributedString(string: "")
     let source = segments.isEmpty ? [["text": text]] : segments
     for segment in source {
-      let segmentSize =
-        style?["fontSize"] == nil && segment.string("style") == "subscript"
-        ? ceil(size * 0.6) : size
+      // Legacy parity: subscript runs always use ceil(0.6 x fontSize), styled or not.
+      let segmentSize = segment.string("style") == "subscript" ? ceil(size * 0.6) : size
       result.append(
         NSAttributedString(
           string: segment.string("text"),

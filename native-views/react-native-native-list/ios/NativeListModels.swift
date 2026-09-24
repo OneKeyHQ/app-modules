@@ -23,6 +23,12 @@ struct NativeListItem {
     (data.dictionary("style")?.dictionary("container")?["height"] as? Double).map { CGFloat($0) }
   }
 
+  /// Selector presentations use their explicit-height geometry when either
+  /// `style.container.height` or `row.height` is set (Web `hasExplicitRowHeight`).
+  var hasExplicitHeight: Bool {
+    data.dictionary("style")?.dictionary("container")?["height"] != nil || data["height"] != nil
+  }
+
   var isSelectable: Bool {
     let disabled = data["disabled"] as? Bool ?? false
     return !disabled && Self.selectableTypes.contains(type)
