@@ -108,6 +108,7 @@ second delta.
 | Row type        | Intended template                                          |
 | --------------- | ---------------------------------------------------------- |
 | `identity`      | Asset, account, wallet, network, or settings identity      |
+| `walletGroup`   | Parent and child wallet-sidebar identity rows in one group |
 | `rail`          | Compact horizontal item with optional native drag support  |
 | `activity`      | Transaction/activity with amounts and up to three actions  |
 | `message`       | Notification/message with bounded body lines and thumbnail |
@@ -208,10 +209,20 @@ scrolls. The optional diagnostic action fires when a row binds an image; quote-
 only patches (`price`, `priceSegments`, `change`, `accessibilityLabel`, and
 `revision`) update visible labels without rebinding that image.
 
-`style` is deliberately finite: row padding/gaps, image width/height/shape/
-corner radius/content fit, title/subtitle/price/change font size, weight,
-color, line height, one-or-two-line truncation and alignment, plus change-block
-width/height/radius. Omitting it preserves the defaults. Loading, empty, retry,
+`style` is deliberately finite and uses the shared row-style vocabulary in
+[docs/STYLE_SPEC.md](docs/STYLE_SPEC.md): `horizontalPadding`,
+`verticalPadding`, `leadingGap`, `lineGap`, `titleBadgeGap`, `trailingGap`,
+the Market-only `titleBadgeLayout: 'inline'`, `contentTrailingGap` and
+`subtitleTrailingPadding`, the primary `image` (width/height/shape/corner
+radius/content fit), `title`/`subtitle`/`price`/`change` text styles (`token`,
+font size, weight, `#RRGGBB`/`#RRGGBBAA` color, line height, 1–3 `lines`,
+`truncate`, alignment, vertical alignment and `offsetY`), the change block's
+`changeWidth`/`changeHeight`/`changeCornerRadius`, and the common
+`style.container` (explicit height, background, opacity, radius, border and
+content alignment). Badge `style` accepts only `fontSize`, `fontWeight`,
+`lineHeight`, `height` and `horizontalPadding`. Unknown keys at any level are
+rejected by `validateSnapshot`/`validatePatches` rather than ignored. Omitting
+`style` preserves the defaults. Loading, empty, retry,
 and pagination states use the existing `system` rows with
 `presentation: 'market'`. Loading rows accept `loadingStyle: 'skeleton'` for
 the 56-point token skeleton or `'spinner'` for the centered 52-point pagination
@@ -401,4 +412,9 @@ use Instruments or Android Studio Profiler for native frame and memory data.
   the React component. It mirrors the mobile data and imperative APIs, but its
   performance must still be measured independently from iOS and Android.
 
-See [docs/DESIGN.md](docs/DESIGN.md) for the architecture and ownership model.
+Start with [docs/SPEC.md](docs/SPEC.md) for the behavioral contract and migration
+status. See [docs/DESIGN.md](docs/DESIGN.md) for the architecture and ownership model, and
+[docs/STYLE_SPEC.md](docs/STYLE_SPEC.md) for the shared style vocabulary: design
+tokens, local layout-safety rules, common list capabilities and current implementation
+gaps. [docs/ROW_TEMPLATES.md](docs/ROW_TEMPLATES.md) defines all 12 row types with
+structural illustrations, required fields, variants and styling boundaries.

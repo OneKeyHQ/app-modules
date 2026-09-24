@@ -226,12 +226,69 @@ class NativeListView(
     mass = REORDER_SPRING_MASS,
     durationSeconds = REORDER_SPRING_DURATION_MS / 1_000.0,
   )
-  private val footerView = NativeListRowView(reactContext)
+  private var footerView: NativeListRowHost = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.ACTION.ordinal)
+  private var footerRendererKey = NativeListRendererKey.ACTION
   private val sectionIndexView = NativeListSectionIndexView(context)
   private val sectionIndexPreview = TextView(context)
   private var config: NativeListConfig? = null
   private var usesSelectorSourceScale = false
-  private var stickyDecoration: StickySectionHeaderDecoration? = null
+  private val stickyHeaderView = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.SECTION_HEADER.ordinal)
+  private var stickyHeaderSignature: String? = null
+  private var stickyHeaderConfig: NativeListConfig? = null
+  private val stickyHeaderHost = object : FrameLayout(reactContext) {
+    private var down: MotionEvent? = null
+    private var forwarding = false
+
+    private fun forward(event: MotionEvent) {
+      val copy = MotionEvent.obtain(event)
+      copy.offsetLocation(x - refreshLayout.x - recyclerView.x, y - refreshLayout.y - recyclerView.y)
+      recyclerView.dispatchTouchEvent(copy)
+      copy.recycle()
+    }
+
+    override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> { down?.recycle(); down = MotionEvent.obtain(event); forwarding = false }
+        MotionEvent.ACTION_MOVE -> {
+          val initial = down
+          if (initial != null && kotlin.math.abs(event.y - initial.y) > pagerGestureTouchSlop) {
+            startForwarding(initial, event)
+            return true
+          }
+        }
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { down?.recycle(); down = null }
+      }
+      return false
+    }
+
+    // The intercepting MOVE is not redelivered to onTouchEvent, so forward it
+    // together with the initial DOWN to keep the list's drag continuous.
+    private fun startForwarding(initial: MotionEvent, event: MotionEvent) {
+      forward(initial)
+      forward(event)
+      forwarding = true
+      parent?.requestDisallowInterceptTouchEvent(true)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+      if (!forwarding) return super.onTouchEvent(event)
+      forward(event)
+      if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+        forwarding = false
+        down?.recycle(); down = null
+      }
+      return true
+    }
+
+    override fun onDetachedFromWindow() { down?.recycle(); down = null; super.onDetachedFromWindow() }
+  }
+  private val stickyPreDraw = android.view.ViewTreeObserver.OnPreDrawListener {
+    updateStickyHeader()
+    true
+  }
+  // Registered only while attached, on the captured window observer, so detach
+  // removes the same instance the listener was merged into.
+  private var stickyObservedTree: ViewTreeObserver? = null
   private var spacingDecoration: ItemSpacingDecoration? = null
   private var itemTouchHelper: ItemTouchHelper? = null
   private var reorderTouchListener: RecyclerView.OnItemTouchListener? = null
@@ -307,6 +364,9 @@ class NativeListView(
         FrameLayout.LayoutParams.MATCH_PARENT,
       ),
     )
+    stickyHeaderHost.visibility = GONE
+    stickyHeaderHost.addView(stickyHeaderView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+    contentContainer.addView(stickyHeaderHost, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
     contentContainer.addView(
       sectionIndexView,
       FrameLayout.LayoutParams(
@@ -342,6 +402,9 @@ class NativeListView(
     adapter.onAction = ::handleAction
     adapter.onBindingInvalidated = ::handleBindingInvalidated
     adapter.checkboxState = ::resolveCheckboxState
+    stickyHeaderView.onRowPress = ::handleRowPress
+    stickyHeaderView.onAction = ::handleAction
+    stickyHeaderView.onBindingInvalidated = ::handleBindingInvalidated
     footerView.onRowPress = ::handleRowPress
     footerView.onAction = ::handleAction
     footerView.onBindingInvalidated = ::handleBindingInvalidated
@@ -459,6 +522,7 @@ class NativeListView(
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
+    startStickyHeaderTracking()
     updateSectionIndexAttachment()
     val first = config?.items?.firstOrNull()
     if (recyclerView.isLayoutRequested && (first?.type == "market" || first?.json?.optString("presentation") == "market")) {
@@ -467,6 +531,7 @@ class NativeListView(
   }
 
   override fun onDetachedFromWindow() {
+    stopStickyHeaderTracking()
     stopSectionIndexAttachmentTracking()
     scheduleSectionIndexAttachmentToList()
     updateRefreshIndicatorOffset(0)
@@ -500,9 +565,13 @@ class NativeListView(
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
     adapter.usesSelectorSourceScale = usesSelectorSourceScale
       adapter.theme = next.theme
+      adapter.listStyle = next.listStyle
       adapter.layout = next.layout
       adapter.orientation = next.orientation
       adapter.selectedKeys = next.selectedKeys
+      // Rows rebind through the adapter's listStyle invalidation; the fixed footer is bound
+      // outside the adapter, so a listStyle-only snapshot must rebind it here.
+      if (previous.listStyle?.toString() != next.listStyle?.toString()) bindFooter(next)
       adapter.submitList(next.items) {
         // OneKey patch: DiffUtil has dispatched its payloads; release the old serialized rows.
         next.items.forEach { it.selectionUpdateFromContent = null }
@@ -535,6 +604,7 @@ class NativeListView(
     if (previous?.generation != next.generation) endReachedGeneration = null
     pendingReorder = null
     adapter.theme = next.theme
+    adapter.listStyle = next.listStyle
     adapter.layout = next.layout
     adapter.orientation = next.orientation
     adapter.selectedKeys = next.selectedKeys
@@ -1119,6 +1189,9 @@ class NativeListView(
     itemTouchHelper = null
     footerView.recycle()
     footerView.dispose()
+    stopStickyHeaderTracking()
+    stickyHeaderView.dispose()
+    stickyHeaderHost.visibility = GONE
     recyclerView.swapAdapter(null, false)
     adapter.dispose()
   }
@@ -1151,10 +1224,63 @@ class NativeListView(
 
     spacingDecoration?.let(recyclerView::removeItemDecoration)
     spacingDecoration = ItemSpacingDecoration(dp(next.itemSpacing), next.itemSpacing, density).also(recyclerView::addItemDecoration)
-    stickyDecoration?.let(recyclerView::removeItemDecoration)
-    stickyDecoration = if (next.stickyHeaders && orientation == RecyclerView.VERTICAL) {
-      StickySectionHeaderDecoration(adapter, context, next.theme, density).also(recyclerView::addItemDecoration)
-    } else null
+    stickyHeaderSignature = null
+    if (!next.stickyHeaders || orientation != RecyclerView.VERTICAL) stickyHeaderHost.visibility = GONE
+  }
+
+  private fun updateStickyHeader() {
+    val current = config
+    if (current == null || !current.stickyHeaders || layoutManager.orientation != RecyclerView.VERTICAL || recyclerView.width <= 0) {
+      stickyHeaderHost.visibility = GONE
+      return
+    }
+    val first = layoutManager.findFirstVisibleItemPosition()
+    var position = first
+    while (position >= 0 && adapter.itemAt(position)?.let(::isStickySectionHeader) != true) position--
+    val item = adapter.itemAt(position)
+    if (item == null || first == RecyclerView.NO_POSITION || (layoutManager.findViewByPosition(position)?.top ?: -1) > 0) {
+      stickyHeaderHost.visibility = GONE
+      return
+    }
+    val width = recyclerView.width - recyclerView.paddingLeft - recyclerView.paddingRight
+    if (width <= 0) {
+      stickyHeaderHost.visibility = GONE
+      return
+    }
+    val signature = "${item.content}:$width:${recyclerView.layoutDirection}:$usesSelectorSourceScale"
+    if (stickyHeaderConfig !== current || stickyHeaderSignature != signature) {
+      stickyHeaderConfig = current
+      stickyHeaderSignature = signature
+      stickyHeaderView.listStyle = current.listStyle
+      stickyHeaderView.bind(item, current.theme, current.layout, current.orientation, position,
+        item.json.optBoolean("selected", false) || current.selectedKeys.contains(item.key), ::resolveCheckboxState,
+        useSourceScale = usesSelectorSourceScale)
+      stickyHeaderView.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+      stickyHeaderHost.layoutParams = (stickyHeaderHost.layoutParams as FrameLayout.LayoutParams).apply {
+        this.width = width
+        height = stickyHeaderView.measuredHeight
+        leftMargin = recyclerView.paddingLeft
+        rightMargin = recyclerView.paddingRight
+      }
+    }
+    val height = stickyHeaderView.measuredHeight
+    var nextTop = Int.MAX_VALUE
+    for (index in 0 until recyclerView.childCount) {
+      val child = recyclerView.getChildAt(index)
+      val childPosition = recyclerView.getChildAdapterPosition(child)
+      if (childPosition > position && adapter.itemAt(childPosition)?.let(::isStickySectionHeader) == true) nextTop = minOf(nextTop, child.top)
+    }
+    stickyHeaderHost.translationY = minOf(0, nextTop - height).toFloat()
+    stickyHeaderHost.visibility = VISIBLE
+    // React Native can retain the measured parent while this overlay becomes
+    // visible in pre-draw. Lay out the container-owned header immediately.
+    if (stickyHeaderHost.isLayoutRequested || stickyHeaderHost.width != width || stickyHeaderHost.height != height) {
+      stickyHeaderHost.measure(
+        View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY),
+      )
+      stickyHeaderHost.layout(recyclerView.paddingLeft, 0, recyclerView.paddingLeft + width, height)
+    }
   }
 
   private fun configureSectionIndex(next: NativeListConfig) {
@@ -1262,6 +1388,20 @@ class NativeListView(
     } else {
       attachSectionIndexToList()
     }
+  }
+
+  private fun startStickyHeaderTracking() {
+    if (resourcesDisposed) return
+    val observer = viewTreeObserver
+    if (stickyObservedTree === observer) return
+    stopStickyHeaderTracking()
+    observer.addOnPreDrawListener(stickyPreDraw)
+    stickyObservedTree = observer
+  }
+
+  private fun stopStickyHeaderTracking() {
+    stickyObservedTree?.takeIf(ViewTreeObserver::isAlive)?.removeOnPreDrawListener(stickyPreDraw)
+    stickyObservedTree = null
   }
 
   private fun startSectionIndexAttachmentTracking() {
@@ -1380,7 +1520,21 @@ class NativeListView(
       footerView.visibility = GONE
       footerView.recycle()
     } else {
+      if (footer.rendererKey != footerRendererKey) {
+        val previous = footerView
+        val position = indexOfChild(previous)
+        previous.recycle()
+        previous.dispose()
+        footerView = NativeListRendererRegistry.create(reactContext, footer.rendererKey.ordinal)
+        footerView.onRowPress = ::handleRowPress
+        footerView.onAction = ::handleAction
+        footerView.onBindingInvalidated = ::handleBindingInvalidated
+        removeView(previous)
+        addView(footerView, position, previous.layoutParams)
+        footerRendererKey = footer.rendererKey
+      }
       footerView.visibility = VISIBLE
+      footerView.listStyle = next.listStyle
       footerView.bind(
         footer,
         next.theme,
@@ -1490,7 +1644,7 @@ class NativeListView(
     return false
   }
 
-  private fun handleBindingInvalidated(row: NativeListRowView, epoch: Long) {
+  private fun handleBindingInvalidated(row: NativeListRowHost, epoch: Long) {
     val anchor = actionAnchor ?: return
     if (anchor.ownerRowView.get() === row && anchor.bindingEpoch == epoch) {
       invalidateActionAnchor("rebind")
@@ -2593,109 +2747,18 @@ private class ItemSpacingDecoration(
     if (spacing <= 0) return
     val horizontal = (parent.layoutManager as? LinearLayoutManager)?.orientation == RecyclerView.HORIZONTAL
     val item = view.tag as? NativeListItem
-    val sourceWallet = item?.type == "identity" && item.json.optString("presentation") == "walletSidebar" && item.json.has("height")
+    val sourceWallet = item?.type == "identity" && item.json.optString("presentation") == "walletSidebar" && item.hasExplicitHeight
     // OneKey patch: V1 measures the wallet and its bottom padding as one sortable row.
     val itemSpacing = if (!horizontal && sourceWallet) {
-      val sourceHeight = item!!.json.optInt("height")
+      val sourceHeight = item!!.styledHeight ?: item.json.optDouble("height")
       ((sourceHeight + sourceSpacing) * density).roundToInt() - (sourceHeight * density).roundToInt()
     } else spacing
     if (horizontal) outRect.right = itemSpacing else outRect.bottom = itemSpacing
   }
 }
 
-private class StickySectionHeaderDecoration(
-  private val adapter: NativeListAdapter,
-  private val context: android.content.Context,
-  theme: JSONObject?,
-  private val density: Float,
-) : RecyclerView.ItemDecoration() {
-  private val backgroundPaint = Paint().apply {
-    color = parseColor(theme?.optString("rowBackground"), "#FFFFFF")
-  }
-  private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    color = parseColor(theme?.optString("secondaryText"), "#0000009B")
-    textSize = NativeListScale.font(context.resources, 14f) * density
-    typeface = NativeListFonts.semibold(context)
-  }
-
-  override fun onDrawOver(canvas: Canvas, parent: RecyclerView, state: RecyclerView.State) {
-    val manager = parent.layoutManager as? LinearLayoutManager ?: return
-    val first = manager.findFirstVisibleItemPosition()
-    if (first == RecyclerView.NO_POSITION) return
-    var header: NativeListItem? = null
-    for (index in first downTo 0) {
-      val candidate = adapter.itemAt(index)
-      if (candidate?.type == "sectionHeader") {
-        if (candidate.json.optString("variant") == "summary" || !candidate.json.optBoolean("sticky", true)) continue
-        header = candidate.takeIf(::isSimpleStickySectionHeader)
-        break
-      }
-    }
-    val item = header ?: return
-    // OneKey patch: a pinned selector heading must use the same text rasterization as its row.
-    textPaint.flags = if (item.usesSelectorSourceScale) Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG or Paint.LINEAR_TEXT_FLAG else Paint.ANTI_ALIAS_FLAG
-    val isHistory = item.json.optString("variant") == "history" ||
-      item.sectionKey?.startsWith("history-") == true
-    val sourceHeight = item.json.optInt("height", 36) * density
-    val height = if (item.usesSelectorSourceScale) {
-      if (item.json.optString("heightRounding") == "nearest") sourceHeight.roundToInt() else sourceHeight.toInt()
-    } else NativeListScale.dp(context.resources, if (isHistory) 16 else 36)
-    val textSize = if (item.usesSelectorSourceScale) 14f else NativeListScale.font(context.resources, if (isHistory) 12f else 14f)
-    textPaint.textSize = if (item.usesSelectorSourceScale) kotlin.math.ceil((textSize * density).toDouble()).toFloat() else textSize * density
-    val horizontalInset = if (item.usesSelectorSourceScale) ((20 * density).toInt() - parent.paddingLeft).toFloat() else NativeListScale.dp(context.resources, if (isHistory) 8 else 20).toFloat()
-    val left = parent.paddingLeft.toFloat()
-    val right = (parent.width - parent.paddingRight).toFloat()
-    canvas.drawRect(left, 0f, right, height.toFloat(), backgroundPaint)
-    val baseline = if (item.usesSelectorSourceScale) {
-      val metrics = textPaint.fontMetricsInt
-      val lineHeight = kotlin.math.ceil(20 * density.toDouble()).toInt()
-      val leading = lineHeight - (metrics.descent - metrics.ascent)
-      (height - lineHeight) / 2 - metrics.ascent + kotlin.math.ceil(leading / 2.0).toFloat()
-    } else height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
-    val value = item.json.optString("title").let { if (isHistory) it.uppercase() else it }
-    val isRightToLeft = parent.layoutDirection == View.LAYOUT_DIRECTION_RTL
-    val textWidth = if (isHistory) {
-      spacedTextWidth(value, NativeListScale.dp(context.resources, 1).toFloat())
-    } else {
-      textPaint.measureText(value)
-    }
-    val x = if (isRightToLeft) right - horizontalInset - textWidth else left + horizontalInset
-    if (isHistory) {
-      drawSpacedText(canvas, value, x, baseline, NativeListScale.dp(context.resources, 1).toFloat())
-    } else {
-      canvas.drawText(value, x, baseline, textPaint)
-    }
-  }
-
-  private fun drawSpacedText(canvas: Canvas, value: String, x: Float, baseline: Float, spacing: Float) {
-    var cursor = x
-    value.forEachIndexed { index, character ->
-      val glyph = character.toString()
-      canvas.drawText(glyph, cursor, baseline, textPaint)
-      cursor += textPaint.measureText(glyph)
-      if (index < value.lastIndex) cursor += spacing * 0.8f
-    }
-  }
-
-  private fun spacedTextWidth(value: String, spacing: Float): Float =
-    value.sumOf { textPaint.measureText(it.toString()).toDouble() }.toFloat() +
-      max(0, value.length - 1) * spacing * 0.8f
-
-  companion object {
-    private fun parseColor(value: String?, fallback: String): Int = try {
-      parseNativeListColor(if (value.isNullOrEmpty()) fallback else value)
-    } catch (_: IllegalArgumentException) {
-      parseNativeListColor(fallback)
-    }
-  }
-}
-
-internal fun isSimpleStickySectionHeader(item: NativeListItem): Boolean =
-  item.type == "sectionHeader" &&
-    item.json.optBoolean("sticky", true) &&
-    item.json.optString("variant") != "summary" &&
-    item.json.optString("value").isEmpty() &&
-    item.json.optJSONObject("checkbox") == null
+internal fun isStickySectionHeader(item: NativeListItem): Boolean =
+  item.type == "sectionHeader" && item.json.optBoolean("sticky", true) && item.json.optString("variant") != "summary"
 
 // OneKey patch: paint only explicitly requested backgrounds into list side padding.
 private class SelectorBackgroundDecoration(private val adapter: NativeListAdapter) : RecyclerView.ItemDecoration() {
@@ -2705,9 +2768,16 @@ private class SelectorBackgroundDecoration(private val adapter: NativeListAdapte
       val child = parent.getChildAt(index)
       val item = adapter.itemAt(parent.getChildAdapterPosition(child)) ?: continue
       if (!item.json.optBoolean("backgroundFullWidth", false)) continue
-      val color = item.json.optString("backgroundColor")
-      if (color.isEmpty()) continue
+      val color = resolveNativeListSelectorBackgroundColor(
+        rowType = item.type,
+        styleBackgroundColor = item.json.optJSONObject("style")
+          ?.optJSONObject("container")
+          ?.optString("backgroundColor"),
+        rowBackgroundColor = item.json.optString("backgroundColor"),
+      ) ?: continue
       paint.color = try { parseNativeListColor(color) } catch (_: IllegalArgumentException) { Color.TRANSPARENT }
+      val opacity = item.json.optJSONObject("style")?.optJSONObject("container")?.optDouble("opacity", item.json.optDouble("opacity", 1.0)) ?: item.json.optDouble("opacity", 1.0)
+      paint.alpha = (Color.alpha(paint.color) * opacity * (if (item.json.optBoolean("disabled", false)) 0.5 else 1.0)).toInt()
       val top = child.y
       canvas.drawRect(0f, top, parent.width.toFloat(), top + child.height, paint)
       if (item.type == "system" && item.json.optString("variant") == "warning") {

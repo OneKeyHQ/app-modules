@@ -1,10 +1,26 @@
+import {
+  applyRowContainerStyle,
+  resetRowContainerStyle,
+} from './templates/RowContainerStyle';
+import { hasExplicitRowHeight, rowSizeModifier } from './templates/RowElements';
+import { applyTextStyleToSlot, applyValueSegments } from './templates/RowText';
+import { setMarketQuoteContent } from './templates/MarketRowRenderer';
+export {
+  resolveWebMarketLayoutStyle,
+  type WebMarketLayoutStyle,
+} from './templates/MarketRowRenderer';
+import { measureRailWidth } from './templates/RailRowRenderer';
+import {
+  rowRenderer,
+  rowRendererKey,
+  recycleRowBody,
+  type RowRendererKey,
+} from './templates/RowRendererRegistry';
 import type {
   ActionAnchorInvalidatedEvent,
   CheckboxState,
   ImageSource,
   LeadingVisual,
-  MarketRow,
-  MarketTextStyle,
   NativeListSnapshot,
   NativeListActionAnchor,
   NativeListActionSource,
@@ -189,49 +205,7 @@ export function webSectionIndexActiveKey(
   return activeKey;
 }
 
-export type WebMarketLayoutStyle = Readonly<{
-  horizontalPadding: number;
-  verticalPadding: number;
-  leadingGap: number;
-  titleBadgeGap: number;
-  trailingGap: number;
-  imageWidth: number;
-  imageHeight: number;
-  imageCornerRadius: number;
-  changeWidth: number;
-  changeHeight: number;
-  changeCornerRadius: number;
-}>;
-
 /** Resolves every reusable Market geometry field, including legacy defaults. */
-export function resolveWebMarketLayoutStyle(
-  row: MarketRow
-): WebMarketLayoutStyle {
-  const style = row.style;
-  const imageWidth = style?.image?.width ?? (row.variant === 'stock' ? 40 : 32);
-  const imageHeight =
-    style?.image?.height ?? (row.variant === 'stock' ? 40 : 32);
-  return {
-    horizontalPadding:
-      style?.horizontalPadding ?? (row.variant === 'perp' ? 16 : 20),
-    verticalPadding: style?.verticalPadding ?? 12,
-    leadingGap: style?.leadingGap ?? (row.variant === 'perp' ? 8 : 14),
-    titleBadgeGap: style?.titleBadgeGap ?? 4,
-    trailingGap: style?.trailingGap ?? 8,
-    imageWidth,
-    imageHeight,
-    imageCornerRadius:
-      style?.image?.cornerRadius ??
-      (style?.image?.shape === 'square'
-        ? 0
-        : style?.image?.shape === 'rounded'
-        ? 8
-        : Math.min(imageWidth, imageHeight) / 2),
-    changeWidth: style?.changeWidth ?? 80,
-    changeHeight: style?.changeHeight ?? 32,
-    changeCornerRadius: style?.changeCornerRadius ?? 8,
-  };
-}
 
 export type NativeListWebCallbacks = Readonly<{
   onRowAction?: (event: RowActionEvent) => void;
@@ -460,28 +434,7 @@ function sizeModifier(row: RowModel): number {
     (row.variant === 'summary' || row.variant === 'gallery')
   )
     return 0;
-  if (row.size === 'small') return -8;
-  if (row.size === 'large') return 12;
-  return 0;
-}
-
-function approximateMessageHeight(row: RowModel, availableWidth: number) {
-  if (row.type !== 'message') return 0;
-  const leadingWidth = row.leading ? 52 : 0;
-  const thumbnailWidth = row.thumbnail ? 88 : 0;
-  const charactersPerLine = Math.max(
-    18,
-    Math.floor((availableWidth - leadingWidth - thumbnailWidth - 40) / 7)
-  );
-  const titleLines = Math.min(
-    2,
-    Math.max(1, Math.ceil(row.title.length / charactersPerLine))
-  );
-  const bodyLines = Math.min(
-    row.bodyLines ?? 3,
-    Math.max(1, Math.ceil(row.body.length / charactersPerLine))
-  );
-  return 32 + titleLines * 20 + bodyLines * 20 + 22;
+  return rowSizeModifier(row.size);
 }
 
 export function estimateWebRowHeight(
@@ -489,145 +442,21 @@ export function estimateWebRowHeight(
   snapshot: NativeListSnapshot,
   availableWidth: number
 ): number {
-  // OneKey patch: explicit selector height takes precedence over presets.
-  // if (row.type === 'system' && row.variant === 'spacer') return row.height;
-  if (row.height !== undefined) return row.height;
-  if (row.type === 'system' && row.variant === 'warning') {
-    const width = Math.max(1, availableWidth - 24);
-    const lines = (text: string) =>
-      Math.max(
-        1,
-        Math.ceil(
-          Array.from(text).reduce(
-            (length, char) => length + (char.charCodeAt(0) > 255 ? 14 : 7),
-            0
-          ) / width
-        )
-      );
-    return 32 + 20 * (lines(row.title) + lines(row.message));
-  }
-  if (row.type === 'walletGroup')
-    // OneKey patch: wallet badges participate in the outer group height.
-    // return (row.children.length + 1) * 68 + row.children.length * 12;
-    return (
-      [row.parent, ...row.children].reduce(
-        (height, member) =>
-          height + estimateWebRowHeight(member, snapshot, availableWidth),
-        0
-      ) +
-      row.children.length * 12 +
-      (row.parent.height !== undefined ? 2 : 0)
-    );
-  // OneKey patch: reserve the source badge line below wallet names.
-  // if (row.type === 'identity' && row.presentation === 'walletSidebar')
-  // return 68;
-  if (row.type === 'identity' && row.presentation === 'walletSidebar')
-    return 68 + (row.badges?.length ? 24 : 0);
-  if (row.type === 'identity' && row.presentation === 'networkSelector')
-    return 47;
-  if (row.type === 'identity' && row.presentation === 'accountSelector')
-    return 58;
-
-  let base: number;
-  switch (row.type) {
-    case 'rail':
-      base = 40;
-      break;
-    case 'activity':
-      base = row.footerActions?.length ? 100 : 60;
-      break;
-    case 'message':
-      base = approximateMessageHeight(row, availableWidth);
-      break;
-    case 'mediaTile':
-      base = 244;
-      break;
-    case 'metricCard':
-      base =
-        row.variant === 'activity'
-          ? 161
-          : row.variant === 'performance'
-          ? 178
-          : 132;
-      break;
-    case 'sectionHeader': {
-      const isHistory =
-        row.variant === 'history' ||
-        row.key.startsWith('history-') ||
-        row.sectionKey.startsWith('history-');
-      base =
-        snapshot.layout.kind === 'table'
-          ? 28
-          : row.presentation === 'networkSelector'
-          ? 47
-          : isHistory
-          ? 16
-          : row.variant === 'summary'
-          ? 68
-          : row.variant === 'gallery'
-          ? 32
-          : row.checkbox
-          ? 56
-          : snapshot.layout.kind === 'linear'
-          ? 30
-          : 36;
-      break;
-    }
-    case 'system':
-      base =
-        row.variant === 'loading' && row.loadingStyle === 'skeleton'
-          ? 56
-          : row.variant === 'loading' && row.loadingStyle === 'spinner'
-          ? 52
-          : 'presentation' in row && row.presentation === 'market'
-          ? row.variant === 'loading'
-            ? 68
-            : 44
-          : row.variant === 'noMatch' || row.variant === 'end'
-          ? 36
-          : row.variant === 'retry'
-          ? 44
-          : 56;
-      break;
-    case 'action':
-      base = row.presentation === 'accountSelector' ? 48 : row.icon ? 60 : 44;
-      break;
-    case 'dataRow':
-      base = row.columns.some((column) => column.secondaryText) ? 60 : 56;
-      break;
-    case 'market': {
-      const marketStyle = resolveWebMarketLayoutStyle(row);
-      base = Math.max(
-        row.variant === 'stock' ? 72 : 68,
-        marketStyle.imageHeight + marketStyle.verticalPadding * 2
-      );
-      break;
-    }
-    case 'identity':
-      base = row.tertiary ? 72 : row.subtitle ? 60 : 56;
-      break;
-    default:
-      base = 56;
-  }
-  const tableAdjustment =
-    snapshot.layout.kind === 'table' &&
-    row.type === 'dataRow' &&
-    !row.columns.some((column) => column.secondaryText)
-      ? -8
-      : 0;
-  return Math.max(0, base + sizeModifier(row) + tableAdjustment);
+  // Explicit container/model height takes precedence over template presets.
+  const explicitHeight = row.style?.container?.height ?? row.height;
+  if (explicitHeight !== undefined) return explicitHeight;
+  const registered = rowRenderer(row);
+  return Math.max(
+    0,
+    registered.measure(availableWidth, snapshot.layout.kind) +
+      (registered.appliesSizePreset ? sizeModifier(row) : 0)
+  );
 }
 
 function estimateHorizontalWidth(row: RowModel): number {
   if (row.type === 'mediaTile') return 200;
   if (row.type !== 'rail') return 280;
-  const badgeLength = row.badge?.text.length ?? 0;
-  const statusLength =
-    row.status && row.status !== 'none' ? row.status.length : 0;
-  return Math.min(
-    288,
-    Math.max(72, 50 + (row.title.length + badgeLength + statusLength) * 7)
-  );
+  return measureRailWidth(row);
 }
 
 function sectionIndexEnabled(snapshot: NativeListSnapshot): boolean {
@@ -680,9 +509,14 @@ export function computeWebListLayout(
         y: padding.top,
         width: itemWidth,
         height:
-          row.type === 'rail'
+          (row.type === 'walletGroup' && row.key === compactRowKey
+            ? WALLET_REORDER_COMPACT_HEIGHT
+            : undefined) ??
+          row.style?.container?.height ??
+          row.height ??
+          (row.type === 'rail'
             ? Math.min(rowHeight, availableHeight)
-            : availableHeight,
+            : availableHeight),
       });
       x += itemWidth + spacing;
     });
@@ -760,9 +594,11 @@ export function computeWebListLayout(
       return;
     }
     const itemHeight =
-      row.type === 'mediaTile'
+      row.style?.container?.height ??
+      row.height ??
+      (row.type === 'mediaTile'
         ? itemWidth + 48
-        : estimateWebRowHeight(row, snapshot, itemWidth);
+        : estimateWebRowHeight(row, snapshot, itemWidth));
     items.push({
       index,
       key: row.key,
@@ -806,6 +642,8 @@ export function canStartWebWalletGroupReorder(
   const member = [row.parent, ...row.children].find(
     (candidate) => candidate.key === memberKey
   );
+  // Legacy: only `draggable: false` excludes a member; disabled members may
+  // still start the atomic group drag.
   return member?.draggable !== false;
 }
 
@@ -951,15 +789,15 @@ export function webMarketImageBindDeltaForPatches(
 // OneKey patch: selector names must shrink before the sidebar clips their contents.
 export const WEB_LIST_CSS = `
 [data-native-list-selector="walletSidebar"] .ok-native-list-title{max-width:100%;min-width:0}
-.ok-native-list-root{--nl-bg:#f7f7f7;--nl-row:#fff;--nl-selected:#eaf2ff;--nl-pressed:#e8e8e8;--nl-subdued:#f9f9f9;--nl-strong:#0000000f;--nl-primary:#111;--nl-secondary:#6b7280;--nl-disabled:#8d8d8d;--nl-icon:#111;--nl-icon-subdued:#8d8d8d;--nl-separator:#e5e7eb;--nl-accent:#2f6bff;--nl-positive:#15803d;--nl-negative:#dc2626;--nl-critical:#feecec;--nl-inverse:#202020;--nl-inverse-text:#fcfcfc;--nl-info:#0d74ce;position:absolute;inset:0;display:flex;min-width:0;min-height:0;overflow:hidden;background:var(--nl-bg);color:var(--nl-primary);font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-synthesis:none}
+.ok-native-list-root{--nl-bg:#f7f7f7;--nl-row:#fff;--nl-selected:#eaf2ff;--nl-pressed:#e8e8e8;--nl-subdued:#f9f9f9;--nl-strong:#0000000f;--nl-primary:#111;--nl-secondary:#6b7280;--nl-disabled:#8d8d8d;--nl-icon:#111;--nl-icon-subdued:#8d8d8d;--nl-separator:#e5e7eb;--nl-accent:#2f6bff;--nl-positive:#15803d;--nl-negative:#dc2626;--nl-critical:#feecec;--nl-inverse:#202020;--nl-inverse-text:#fcfcfc;--nl-info:#0d74ce;position:absolute;inset:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:var(--nl-bg);color:var(--nl-primary);font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-synthesis:none}
 .ok-native-list-viewport-frame{position:relative;flex:1;min-width:0;min-height:0;overflow:hidden}
 .ok-native-list-viewport{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-gutter:stable}
 .ok-native-list-content{position:relative;min-width:100%;min-height:100%}
-.ok-native-list-item{position:absolute;box-sizing:border-box;contain:layout paint style;outline:none}
+.ok-native-list-item{position:absolute;left:0;top:0;box-sizing:border-box;contain:layout paint style;outline:none}
 .ok-native-list-row{width:100%;height:100%;box-sizing:border-box;display:flex;align-items:center;gap:12px;overflow:hidden;background:var(--nl-row);color:var(--nl-primary);cursor:default;user-select:none;-webkit-user-select:none}
 .ok-native-list-item[data-table-alternate="true"]>.ok-native-list-row{background:var(--nl-bg)}
 .ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
-.ok-native-list-item[data-native-list-disabled="true"]>.ok-native-list-row{opacity:.5;cursor:default}
+.ok-native-list-item[data-native-list-disabled="true"]>.ok-native-list-row{cursor:default}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]>.ok-native-list-row{cursor:pointer}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:hover>.ok-native-list-row{background:var(--nl-pressed)}
 .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>.ok-native-list-row{background:var(--nl-pressed)}
@@ -984,10 +822,13 @@ export const WEB_LIST_CSS = `
 .ok-native-list-reorder-preview>.ok-native-list-row{background:var(--nl-pressed);cursor:grabbing}
 .ok-native-list-reorder-preview[data-native-list-selected="true"]>.ok-native-list-row{background:var(--nl-selected)}
 .ok-native-list-reorder-count{position:absolute;right:4px;bottom:4px;display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:24px;height:24px;padding:0 6px;border:1px solid var(--nl-row);border-radius:12px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;line-height:22px;font-weight:600}
-.ok-native-list-item[data-separator="true"]>.ok-native-list-row{border-bottom:1px solid var(--nl-separator)}
-.ok-native-list-item[data-group-position="first"]>.ok-native-list-row{border-radius:12px 12px 0 0}
-.ok-native-list-item[data-group-position="last"]>.ok-native-list-row{border-radius:0 0 12px 12px}
-.ok-native-list-item[data-group-position="single"]>.ok-native-list-row{border-radius:12px}
+.ok-native-list-item[data-separator="true"]>.ok-native-list-row{border-bottom:1px solid var(--nl-separator-color,var(--nl-separator))}
+/* An inset separator keeps the transparent border so the row's height is unchanged, and paints the visible line with a logical-inset overlay so it follows RTL. */
+.ok-native-list-root[data-separator-inset="true"] .ok-native-list-item[data-separator="true"]>.ok-native-list-row{position:relative;border-bottom-color:transparent}
+.ok-native-list-root[data-separator-inset="true"] .ok-native-list-item[data-separator="true"]>.ok-native-list-row::after{content:"";position:absolute;inset-inline-start:var(--nl-separator-inset,0);inset-inline-end:0;bottom:-1px;height:1px;background:var(--nl-separator-color,var(--nl-separator))}
+.ok-native-list-item[data-group-position="first"]>.ok-native-list-row{border-radius:var(--nl-group-radius,12px) var(--nl-group-radius,12px) 0 0}
+.ok-native-list-item[data-group-position="last"]>.ok-native-list-row{border-radius:0 0 var(--nl-group-radius,12px) var(--nl-group-radius,12px)}
+.ok-native-list-item[data-group-position="single"]>.ok-native-list-row{border-radius:var(--nl-group-radius,12px)}
 .ok-native-list-standard{padding:8px 12px}.ok-native-list-network-row{padding:0 12px}.ok-native-list-wallet-row{padding:4px 8px;flex-direction:column;justify-content:center;gap:4px}.ok-native-list-account-row{padding:4px 12px;gap:8px}
 .ok-native-list-account-row .ok-native-list-visual,.ok-native-list-account-action-row .ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-account-row .ok-native-list-visual>img,.ok-native-list-account-row .ok-native-list-visual-main,.ok-native-list-account-action-row .ok-native-list-visual>img,.ok-native-list-account-action-row .ok-native-list-visual-main{width:32px;height:32px}.ok-native-list-account-row .ok-native-list-visual>.ok-native-list-visual-corner{width:20px;height:20px;padding:2px}.ok-native-list-account-action-row .ok-native-list-visual{border-radius:8px!important}.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-secondary);font-size:12px;line-height:16px;font-weight:400}.ok-native-list-item[data-native-list-selected="true"]>.ok-native-list-wallet-row .ok-native-list-title{color:var(--nl-primary)}.ok-native-list-account-row .ok-native-list-title{font-size:16px;line-height:20px;font-weight:400}.ok-native-list-account-row .ok-native-list-secondary{font-size:14px;line-height:20px;font-weight:400}
 .ok-native-list-flex{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-title{font-size:15px;line-height:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-secondary{font-size:13px;line-height:18px;color:var(--nl-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ok-native-list-tertiary{color:var(--nl-secondary)}.ok-native-list-info{color:var(--nl-info)}
@@ -1007,18 +848,13 @@ export const WEB_LIST_CSS = `
 .ok-native-list-data{padding:6px 12px}.ok-native-list-index{flex:0 0 28px;color:var(--nl-secondary);font-size:13px}.ok-native-list-favorite{flex:0 0 24px;color:var(--nl-icon-subdued);font-size:22px}.ok-native-list-favorite[data-active="true"]{color:var(--nl-accent)}.ok-native-list-data-cell{display:flex;flex-direction:column;min-width:0}.ok-native-list-data-cell[data-align="center"]{align-items:center}.ok-native-list-data-cell[data-align="end"]{align-items:flex-end}.ok-native-list-data-primary{display:flex;align-items:center;gap:5px;max-width:100%;font-size:16px;font-weight:500;white-space:nowrap}.ok-native-list-unread{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:var(--nl-accent)}.ok-native-list-thumbnail{width:64px;height:64px;border-radius:10px;object-fit:cover}
 .ok-native-list-market{padding:12px 20px;gap:14px}.ok-native-list-market>.ok-native-list-visual{width:32px;height:32px;flex-basis:32px}.ok-native-list-market[data-variant="stock"]>.ok-native-list-visual{width:40px;height:40px;flex-basis:40px}.ok-native-list-market>.ok-native-list-visual>.ok-native-list-visual-main{width:100%;height:100%}.ok-native-list-market-main{display:flex;flex:1;min-width:0;flex-direction:column;justify-content:center}.ok-native-list-market-title-line{display:flex;align-items:center;min-width:0;gap:4px}.ok-native-list-market-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nl-primary);font-size:16px;line-height:24px;font-weight:500}.ok-native-list-market-subtitle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--nl-secondary);font-size:14px;line-height:20px;font-weight:400}.ok-native-list-market-badge{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;box-sizing:border-box;max-width:72px;height:18px;padding:0 5px;border:0;border-radius:4px;background:var(--nl-strong);color:var(--nl-secondary);font:500 11px/18px inherit;overflow:hidden;white-space:nowrap}.ok-native-list-market-badge img{width:14px;height:14px;object-fit:contain}.ok-native-list-market-trailing{display:flex;flex:0 0 auto;align-items:center;gap:8px}.ok-native-list-market-price{max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;color:var(--nl-primary);font-size:16px;line-height:24px;font-weight:500;font-variant-numeric:tabular-nums}.ok-native-list-market-change{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:80px;height:32px;border-radius:8px;color:#fff;background:#8d8d8d;font-size:14px;line-height:20px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}.ok-native-list-market-change[data-tone="positive"]{background:var(--nl-positive)}.ok-native-list-market-change[data-tone="negative"]{background:var(--nl-negative)}
 .ok-native-list-market-badge>svg,.ok-native-list-market-badge>.ok-native-list-market-badge-icon>svg{display:block;width:16px;height:16px;flex:0 0 16px}.ok-native-list-system[data-native-list-presentation="market"]{box-sizing:border-box;padding:12px 20px}.ok-native-list-system[data-native-list-presentation="market"]>.ok-native-list-spinner{width:32px;height:32px}
-.ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:6px;display:flex;width:20px;height:16px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:8px;background:transparent;color:var(--nl-secondary);font:600 10px/1 inherit;cursor:pointer}.ok-native-list-index-button[data-active="true"]{background:var(--nl-accent);color:var(--nl-inverse-text)}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-accent);outline-offset:1px}.ok-native-list-index-preview{position:absolute;z-index:8;right:40px;top:50%;display:flex;width:48px;height:48px;align-items:center;justify-content:center;transform:translateY(-50%) scale(.92);border-radius:14px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:22px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translateY(-50%) scale(1)}
-.ok-native-list-refresh{position:absolute;z-index:7;left:50%;top:8px;display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;opacity:0;transform:translate(-50%,-16px);transition:opacity .15s ease,transform .15s ease;pointer-events:none}.ok-native-list-refresh[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
-.ok-native-list-warning{height:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:14px 12px;border-top:1px solid;border-bottom:1px solid;box-sizing:border-box;cursor:default}.ok-native-list-warning-title,.ok-native-list-warning-message{font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}.ok-native-list-warning-title{font-weight:500;color:var(--nl-primary)}.ok-native-list-warning-message{font-weight:400;color:var(--nl-secondary)}
-.ok-native-list-subtitle-segments{display:flex;align-items:center;min-width:0;max-width:100%;height:20px}.ok-native-list-subtitle-segments>.ok-native-list-secondary{flex:0 1 auto;min-width:0}.ok-native-list-subtitle-dot{flex:0 0 4px;width:4px;height:4px;margin:0 6px;border-radius:50%;background:var(--nl-disabled)}.ok-native-list-wallet-row>.ok-native-list-flex{flex:0 1 auto;width:100%;align-items:center}.ok-native-list-wallet-badges{display:flex;gap:4px;justify-content:center;margin-top:4px;height:20px;max-width:100%}.ok-native-list-wallet-badges>.ok-native-list-badge{background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;height:20px;box-sizing:border-box;padding:2px 4px}.ok-native-list-visual-overlay{position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;line-height:1;font-size:10px}.ok-native-list-visual-overlay img,.ok-native-list-visual-overlay svg{width:100%;height:100%;object-fit:contain}
+.ok-native-list-index-preview{position:absolute;z-index:8;right:40px;top:50%;display:flex;width:48px;height:48px;align-items:center;justify-content:center;transform:translateY(-50%) scale(.92);border-radius:14px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:22px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}.ok-native-list-index-preview[data-visible="true"]{opacity:1;transform:translateY(-50%) scale(1)}
 .ok-native-list-row.ok-native-list-market-skeleton{padding:12px 20px;gap:0}.ok-native-list-skeleton-left{display:flex;align-items:center;gap:12px;flex:1}.ok-native-list-skeleton-text{display:flex;flex-direction:column;gap:4px}.ok-native-list-skeleton-right{display:flex;align-items:center;gap:8px}.ok-native-list-skeleton-mark{display:block;flex-shrink:0;border-radius:8px;animation:ok-native-list-skeleton 1.5s linear infinite alternate}@keyframes ok-native-list-skeleton{from{background-color:var(--nl-skeleton-base)}to{background-color:var(--nl-skeleton-highlight)}}.ok-native-list-market-spinner{display:block;width:20px;height:20px;flex-shrink:0;color:var(--nl-icon);animation:ok-native-list-spin .75s linear infinite}
 @media (prefers-reduced-motion:reduce){.ok-native-list-index-preview,.ok-native-list-refresh{transition:none}.ok-native-list-spinner,.ok-native-list-market-spinner{animation:none}.ok-native-list-skeleton-mark{animation:none;background:var(--nl-skeleton-base)}}
 .ok-native-list-footer{flex:0 0 auto;min-height:0}.ok-native-list-sticky{position:absolute;z-index:4;left:0;right:0;top:0;pointer-events:auto;box-shadow:0 1px 0 var(--nl-separator)}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport{scrollbar-width:none}.ok-native-list-viewport-frame:has(>.ok-native-list-index-rail:not([hidden]))>.ok-native-list-viewport::-webkit-scrollbar,.ok-native-list-viewport-frame[data-section-index-visible="true"]>.ok-native-list-viewport::-webkit-scrollbar{display:none}.ok-native-list-index-rail{position:absolute;z-index:6;top:0;right:0;bottom:0;width:${SECTION_INDEX_RAIL_WIDTH}px;touch-action:none;cursor:pointer;font-family:Roobert,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.ok-native-list-index-rail[hidden]{display:none}.ok-native-list-index-button{appearance:none;position:absolute;left:15px;display:flex;width:14px;height:14px;align-items:center;justify-content:center;padding:0;transform:translateY(-50%);border:0;border-radius:7px;background:transparent;color:var(--nl-disabled);font-family:inherit;font-size:10px;font-weight:400;line-height:1;cursor:pointer;opacity:.5;transition:opacity .15s ease}.ok-native-list-index-rail:hover .ok-native-list-index-button,.ok-native-list-index-rail:focus-within .ok-native-list-index-button,.ok-native-list-index-button[data-active="true"]{opacity:1}.ok-native-list-index-button[data-active="true"]{background:var(--nl-positive);color:var(--nl-inverse-text);font-weight:500}.ok-native-list-index-button:focus-visible{outline:2px solid var(--nl-positive);outline-offset:1px}
 .ok-native-list-refresh{position:absolute;z-index:7;left:50%;top:8px;display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--nl-inverse);color:var(--nl-inverse-text);font-size:12px;opacity:0;transform:translate(-50%,-16px);transition:opacity .15s ease,transform .15s ease;pointer-events:none}.ok-native-list-refresh[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
 .ok-native-list-warning{height:auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:14px 12px;border-top:1px solid;border-bottom:1px solid;box-sizing:border-box;cursor:default}.ok-native-list-warning-title,.ok-native-list-warning-message{font-size:14px;line-height:20px;white-space:normal;overflow-wrap:anywhere}.ok-native-list-warning-title{font-weight:500;color:var(--nl-primary)}.ok-native-list-warning-message{font-weight:400;color:var(--nl-secondary)}
-.ok-native-list-subtitle-segments{display:flex;align-items:center;min-width:0;max-width:100%;height:20px}.ok-native-list-subtitle-segments>.ok-native-list-secondary{flex:0 1 auto;min-width:0}.ok-native-list-subtitle-dot{flex:0 0 4px;width:4px;height:4px;margin:0 6px;border-radius:50%;background:var(--nl-disabled)}.ok-native-list-wallet-row>.ok-native-list-flex{flex:0 1 auto;width:100%;align-items:center}.ok-native-list-wallet-badges{display:flex;gap:4px;justify-content:center;margin-top:4px;height:20px;max-width:100%}.ok-native-list-wallet-badges>.ok-native-list-badge{background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;height:20px;box-sizing:border-box;padding:2px 4px}.ok-native-list-visual-overlay{position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;line-height:1;font-size:10px}.ok-native-list-visual-overlay img,.ok-native-list-visual-overlay svg{width:100%;height:100%;object-fit:contain}
-@media (prefers-reduced-motion:reduce){.ok-native-list-refresh{transition:none}.ok-native-list-spinner{animation:none}}
-/* OneKey patch: selector controls follow their original semantic colors and geometry. */
+.ok-native-list-subtitle-segments{display:flex;align-items:center;min-width:0;max-width:100%;height:20px}.ok-native-list-subtitle-segments>.ok-native-list-secondary{flex:0 1 auto;min-width:0}.ok-native-list-subtitle-dot{flex:0 0 4px;width:4px;height:4px;margin:0 6px;border-radius:50%;background:var(--nl-disabled)}.ok-native-list-wallet-row>.ok-native-list-flex{flex:0 1 auto;width:100%;align-items:center}.ok-native-list-wallet-badges{display:flex;gap:4px;justify-content:center;margin-top:4px;height:20px;max-width:100%}.ok-native-list-wallet-badges>.ok-native-list-badge{background:var(--nl-strong);color:var(--nl-secondary);font-size:12px;line-height:16px;height:20px;box-sizing:border-box;padding:2px 4px}.ok-native-list-visual-overlay{position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border-radius:50%;overflow:hidden;line-height:1;font-size:10px}.ok-native-list-visual-overlay img,.ok-native-list-visual-overlay svg{width:100%;height:100%;object-fit:contain}/* OneKey patch: selector controls follow their original semantic colors and geometry. */
 .ok-native-list-checkbox[data-selector="networkSelector"]{padding:0;border-radius:4px;border-color:var(--nl-checkbox-border,var(--nl-separator));background:var(--nl-checkbox-icon,var(--nl-inverse-text))}
 .ok-native-list-checkbox[data-selector="networkSelector"]::after{display:none}
 .ok-native-list-checkbox[data-selector="networkSelector"]>svg{display:none;width:16px;height:16px;color:var(--nl-checkbox-icon,var(--nl-inverse-text));flex-shrink:0}
@@ -1044,6 +880,11 @@ export const WEB_LIST_CSS = `
 .ok-native-list-root .ok-native-list-item>.ok-native-list-wallet-row,.ok-native-list-root .ok-native-list-wallet-member>.ok-native-list-wallet-row,.ok-native-list-root .ok-native-list-item>.ok-native-list-account-row,.ok-native-list-root .ok-native-list-item>.ok-native-list-account-action-row,.ok-native-list-wallet-member{cursor:default}
 /* OneKey patch: Add account hover and pressed backgrounds keep the account row corner radius. */
 .ok-native-list-account-action-row{border-radius:12px}
+
+.ok-native-list-root .ok-native-list-item>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member>[data-nl-container-background="true"]{background:var(--nl-container-background)}
+.ok-native-list-root [data-nl-container-border="true"]{position:relative}
+.ok-native-list-root [data-nl-container-border="true"]::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 var(--nl-container-border-width) var(--nl-container-border-color);z-index:2;pointer-events:none}
+.ok-native-list-root .ok-native-list-item[data-native-list-row-press-enabled="true"]:hover>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-item[data-native-list-row-press-enabled="true"]:active>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member:hover>[data-nl-container-background="true"],.ok-native-list-root .ok-native-list-wallet-member:active>[data-nl-container-background="true"]{background:var(--nl-pressed)}
 `;
 
 function createElement(
@@ -1604,17 +1445,6 @@ function iconGlyph(name: string): string {
   return name.slice(0, 1).toLocaleUpperCase();
 }
 
-function visualFromRow(row: RowModel): LeadingVisual | undefined {
-  if (row.type === 'identity') return row.leading;
-  if (row.type === 'rail') return row.visual;
-  if (row.type === 'activity') return row.leading;
-  if (row.type === 'message') return row.leading;
-  if (row.type === 'dataRow') return row.leading;
-  if (row.type === 'market') return row.leading;
-  if (row.type === 'metricCard') return row.visual;
-  return undefined;
-}
-
 function createVisual(
   context: RenderContext,
   visual: LeadingVisual | undefined,
@@ -1828,20 +1658,6 @@ function toneColor(
   return fallback === 'secondary' ? 'var(--nl-secondary)' : 'var(--nl-primary)';
 }
 
-function createBadge(
-  context: RenderContext,
-  badge: Readonly<{ text: string; tone?: string }>
-): HTMLElement {
-  const element = createElement(
-    context.document,
-    'span',
-    'ok-native-list-badge',
-    badge.text
-  );
-  setData(element, 'tone', badge.tone);
-  return element;
-}
-
 function selectionKeysForTarget(
   target: SelectionTarget | undefined,
   rowKey: string,
@@ -1978,34 +1794,6 @@ function markActionAnchorSource(
 }
 
 // OneKey patch: the compact zero-count digits share the amount baseline.
-function applyValueSegments(
-  element: HTMLElement,
-  segments:
-    | readonly Readonly<{ text: string; style?: 'subscript' }>[]
-    | undefined,
-  fontSize = 16,
-  lineHeight = 24,
-  weight = 500
-) {
-  if (!segments?.length) return;
-  element.textContent = '';
-  element.style.fontSize = String(fontSize) + 'px';
-  element.style.lineHeight = String(lineHeight) + 'px';
-  element.style.fontWeight = String(weight);
-  segments.forEach((segment) => {
-    const span = createElement(
-      element.ownerDocument,
-      'span',
-      undefined,
-      segment.text
-    );
-    if (segment.style === 'subscript') {
-      span.style.fontSize = String(Math.ceil(fontSize * 0.6)) + 'px';
-      span.style.lineHeight = String(fontSize) + 'px';
-    }
-    element.appendChild(span);
-  });
-}
 
 function createAccessory(
   context: RenderContext,
@@ -2040,7 +1828,7 @@ function createAccessory(
     ) {
       setData(element, 'nativeListAnchorInset', 7);
       // OneKey patch: the create-address button omits IconButton's one-point border.
-      if (row.height !== undefined && accessory.name === 'PlusSmallOutline') {
+      if (hasExplicitRowHeight(row) && accessory.name === 'PlusSmallOutline') {
         setData(element, 'nativeListAccountControl', 'createAddress');
         if (!accessory.tintColor)
           element.style.color = 'var(--nl-icon-subdued)';
@@ -2084,7 +1872,7 @@ function createAccessory(
         accessory.secondary
       );
       secondary.style.color = toneColor(accessory.secondaryTone, 'secondary');
-      element.replaceChildren(primary, secondary);
+      element.replaceChildren(primary, '\n', secondary);
       element.classList.add('ok-native-list-amounts');
       break;
     }
@@ -2112,1422 +1900,32 @@ function createAccessory(
   return element;
 }
 
-function appendAccessories(
-  parent: HTMLElement,
-  context: RenderContext,
-  rowKey: string,
-  accessories: readonly TrailingAccessory[] | undefined
-) {
-  if (!accessories?.length) return;
-  const container = createElement(
-    context.document,
-    'span',
-    'ok-native-list-accessories'
-  );
-  const row = context.snapshot.rows[context.itemIndex];
-  if (
-    row &&
-    row.height !== undefined &&
-    'presentation' in row &&
-    row.presentation === 'networkSelector'
-  ) {
-    container.style.gap = accessories.some(
-      (accessory) => accessory.kind === 'checkbox'
-    )
-      ? '12px'
-      : '20px';
-  }
-  if (
-    row &&
-    row.height !== undefined &&
-    'presentation' in row &&
-    row.presentation === 'accountSelector' &&
-    accessories.length === 1 &&
-    accessories[0]?.kind === 'icon' &&
-    accessories[0].name === 'PlusSmallOutline'
-  ) {
-    setData(container, 'nativeListAccountControl', 'createAddress');
-  }
-  accessories.forEach((accessory, slot) =>
-    container.appendChild(createAccessory(context, rowKey, accessory, slot))
-  );
-  parent.appendChild(container);
+function rendererPrimitives(context: RenderContext) {
+  return {
+    background: resolvedTheme(context.snapshot).background,
+    accessory: (key: string, descriptor: TrailingAccessory, slot: number) =>
+      createAccessory(context, key, descriptor, slot),
+    visual: (source: LeadingVisual | undefined, presentation?: string) =>
+      createVisual(context, source, presentation),
+    thumbnail: (source: ImageSource) =>
+      createImage(context, source, 'ok-native-list-thumbnail'),
+    textStyle: applyTextStyleToSlot,
+    icon: applySelectorIcon,
+    iconAction: (
+      name: string,
+      actionKey: string | undefined,
+      disabled?: boolean,
+      tintColor?: string
+    ) => createIconAction(context, name, actionKey, disabled, tintColor),
+    dispose: disposeWebImageRetries,
+  };
 }
 
-function createTextColumn(
+export function createRowBody(
   context: RenderContext,
-  title: string,
-  subtitle?: string,
-  tertiary?: string,
-  tertiaryTone?: 'secondary' | 'info',
-  badges?: readonly Readonly<{ text: string; tone?: string }>[]
+  row: RowModel
 ): HTMLElement {
-  const column = createElement(context.document, 'span', 'ok-native-list-flex');
-  const titleLine = createElement(
-    context.document,
-    'span',
-    'ok-native-list-title',
-    title
-  );
-  if (badges?.length) {
-    const badgeLine = createElement(
-      context.document,
-      'span',
-      'ok-native-list-badges'
-    );
-    badges.forEach((badge) =>
-      badgeLine.appendChild(createBadge(context, badge))
-    );
-    titleLine.appendChild(badgeLine);
-  }
-  column.appendChild(titleLine);
-  if (subtitle)
-    column.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        subtitle
-      )
-    );
-  if (tertiary) {
-    const element = createElement(
-      context.document,
-      'span',
-      tertiaryTone === 'info'
-        ? 'ok-native-list-secondary ok-native-list-info'
-        : 'ok-native-list-secondary ok-native-list-tertiary',
-      tertiary
-    );
-    column.appendChild(element);
-  }
-  return column;
-}
-
-function createSectionHeader(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'sectionHeader' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-section'
-  );
-  setData(body, 'variant', row.variant);
-  if (row.titleIcon) {
-    const titleIcon = createIconAction(
-      context,
-      row.titleIcon.name,
-      row.titleIcon.actionKey,
-      row.titleIcon.disabled,
-      row.titleIcon.tintColor
-    );
-    markActionAnchorSource(titleIcon, 'leadingAction');
-    body.appendChild(titleIcon);
-  }
-  // OneKey patch: section title help has its own measurable action target.
-  // body.appendChild(createTextColumn(context, row.title, row.subtitle));
-  const column = createTextColumn(context, row.title, row.subtitle);
-  const title = column.firstElementChild as HTMLElement;
-  title.classList.add('ok-native-list-section-title');
-  if (row.titleActionKey) {
-    setData(title, 'nativeListAction', row.titleActionKey);
-    markActionAnchorSource(title, 'leadingAction');
-    title.setAttribute('role', 'button');
-    title.tabIndex = 0;
-    title.style.alignSelf = 'flex-start';
-    title.style.maxWidth = '100%';
-    // OneKey patch: explicit network headers reserve a separate 3-point underline area.
-    if (row.presentation !== 'networkSelector' || row.height === undefined) {
-      title.style.textDecoration = 'underline dotted';
-      title.style.textUnderlineOffset = '6px';
-    }
-    if (row.titleActionOnHover) setData(title, 'nativeListHoverAction', true);
-  }
-  if (row.presentation === 'networkSelector' && row.height !== undefined) {
-    body.style.padding =
-      row.variant === 'summary' ? '24px 12px 20px' : '0 12px';
-    body.style.backgroundColor = 'var(--nl-bg)';
-    body.style.gap = row.checkbox ? '12px' : '8px';
-    title.style.fontSize = row.variant === 'summary' ? '16px' : '14px';
-    title.style.lineHeight = row.variant === 'summary' ? '24px' : '20px';
-    title.style.fontWeight =
-      row.variant === 'summary' || (row.titleActionKey && !row.checkbox)
-        ? '500'
-        : '600';
-    if (row.titleActionKey) {
-      const text = createElement(
-        context.document,
-        'span',
-        'ok-native-list-section-title-text',
-        row.title
-      );
-      text.style.overflow = 'hidden';
-      text.style.textOverflow = 'ellipsis';
-      text.style.maxWidth = '100%';
-      const dotted = context.document.createElementNS(
-        'http://www.w3.org/2000/svg',
-        'svg'
-      );
-      dotted.setAttribute('height', '2');
-      dotted.style.cssText =
-        'display:block;position:absolute;left:0;bottom:0;width:100%;height:2px;color:var(--nl-secondary)';
-      const line = context.document.createElementNS(
-        'http://www.w3.org/2000/svg',
-        'line'
-      );
-      for (const [key, value] of Object.entries({
-        x1: '1',
-        y1: '1',
-        x2: '100%',
-        y2: '1',
-        stroke: 'currentColor',
-        'stroke-width': '1.5',
-        'stroke-dasharray': '0,4',
-        'stroke-linecap': 'round',
-      }))
-        line.setAttribute(key, value);
-      // OneKey patch: keep both round caps inside the original full-width viewport.
-      const lineViewport = context.document.createElementNS(
-        'http://www.w3.org/2000/svg',
-        'svg'
-      );
-      lineViewport.setAttribute('width', 'calc(100% - 1px)');
-      lineViewport.setAttribute('height', '2');
-      lineViewport.setAttribute('overflow', 'visible');
-      lineViewport.appendChild(line);
-      dotted.appendChild(lineViewport);
-      // OneKey patch: SVG intrinsic width must not expand the title action beyond its text.
-      title.style.display = 'block';
-      title.style.position = 'relative';
-      title.style.width = 'fit-content';
-      title.style.paddingBottom = '3px';
-      text.style.display = 'block';
-      title.replaceChildren(text, dotted);
-    }
-  }
-  body.appendChild(column);
-  if (row.value) {
-    const value = createElement(
-      context.document,
-      row.valueActionKey ? 'button' : 'span',
-      row.valueActionKey
-        ? 'ok-native-list-action-button ok-native-list-section-value'
-        : 'ok-native-list-value ok-native-list-section-value',
-      row.value
-    );
-    applyValueSegments(value, row.valueSegments);
-    if (row.presentation === 'networkSelector' && row.height !== undefined) {
-      value.style.fontFamily = 'inherit';
-      value.style.fontSize = '16px';
-      value.style.lineHeight = '24px';
-      value.style.fontWeight = '500';
-      if (row.valueActionKey) {
-        value.style.color = 'var(--nl-secondary)';
-        value.style.padding = '0';
-        value.style.flexShrink = '0';
-      }
-    }
-    if (row.valueActionTestID) setData(value, 'testid', row.valueActionTestID);
-    if (row.valueActionKey) {
-      value.setAttribute('type', 'button');
-      setData(value, 'nativeListAction', row.valueActionKey);
-      markActionAnchorSource(value, 'trailingAccessory', 0);
-    }
-    body.appendChild(value);
-  }
-  if (row.valueIcon) {
-    const valueIcon = createIconAction(
-      context,
-      row.valueIcon.name,
-      row.valueIcon.actionKey,
-      row.valueIcon.disabled,
-      row.valueIcon.tintColor
-    );
-    markActionAnchorSource(valueIcon, 'trailingAccessory', 1);
-    body.appendChild(valueIcon);
-  }
-  if (row.checkbox)
-    body.appendChild(createCheckbox(context, row.key, row.checkbox));
-  return body;
-}
-
-function createActionRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'action' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    [
-      'ok-native-list-row',
-      'ok-native-list-action-row',
-      row.presentation === 'accountSelector'
-        ? 'ok-native-list-account-action-row'
-        : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-  );
-  if (row.icon) body.appendChild(createVisual(context, row.icon)!);
-  const title = createElement(
-    context.document,
-    'span',
-    'ok-native-list-action-title',
-    row.title
-  );
-  setData(title, 'tone', row.tone);
-  if (row.presentation === 'accountSelector' && row.icon)
-    title.style.fontWeight = '500';
-  body.appendChild(title);
-  if (row.checkbox)
-    body.appendChild(createCheckbox(context, row.key, row.checkbox));
-  appendAccessories(body, context, row.key, row.trailing);
-  return body;
-}
-
-function createSystemRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'system' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-system'
-  );
-  setData(body, 'variant', row.variant);
-  if ('presentation' in row)
-    setData(body, 'nativeListPresentation', row.presentation);
-  if (row.variant === 'loading' && row.loadingStyle === 'skeleton') {
-    body.classList.add('ok-native-list-market-skeleton');
-    const background = resolvedTheme(context.snapshot).background;
-    const rgb = Number.parseInt(background.slice(1, 7), 16);
-    const dark =
-      ((rgb >> 16) & 255) * 0.299 +
-        ((rgb >> 8) & 255) * 0.587 +
-        (rgb & 255) * 0.114 <
-      128;
-    body.style.setProperty('--nl-skeleton-base', dark ? '#111111' : '#fafafa');
-    body.style.setProperty(
-      '--nl-skeleton-highlight',
-      dark ? '#333333' : '#cdcdcd'
-    );
-    const left = createElement(
-      context.document,
-      'div',
-      'ok-native-list-skeleton-left'
-    );
-    const mark = (width: number, height: number, circle = false) => {
-      const element = createElement(
-        context.document,
-        'span',
-        'ok-native-list-skeleton-mark'
-      );
-      element.style.width = `${width}px`;
-      element.style.height = `${height}px`;
-      if (circle) element.style.borderRadius = '50%';
-      return element;
-    };
-    left.appendChild(mark(32, 32, true));
-    const text = createElement(
-      context.document,
-      'div',
-      'ok-native-list-skeleton-text'
-    );
-    text.appendChild(mark(80, 16));
-    text.appendChild(mark(60, 12));
-    left.appendChild(text);
-    body.appendChild(left);
-    const right = createElement(
-      context.document,
-      'div',
-      'ok-native-list-skeleton-right'
-    );
-    right.appendChild(mark(80, 18));
-    right.appendChild(mark(80, 18));
-    body.appendChild(right);
-    return body;
-  }
-  if (row.variant === 'loading' && row.loadingStyle === 'spinner') {
-    body.style.justifyContent = 'center';
-    body.style.padding = '16px';
-    const spinner = createElement(
-      context.document,
-      'span',
-      'ok-native-list-market-spinner'
-    );
-    spinner.setAttribute('role', 'progressbar');
-    // Same 20px SVG and 750ms rotation as react-native-web ActivityIndicator.
-    spinner.innerHTML =
-      '<svg viewBox="0 0 32 32" width="20" height="20"><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="4" opacity="0.2"/><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="80" stroke-dashoffset="60"/></svg>';
-    body.appendChild(spinner);
-    return body;
-  }
-  if ('presentation' in row && row.presentation === 'market') {
-    if (row.variant === 'noMatch') {
-      body.style.justifyContent = 'center';
-      body.style.padding = '32px';
-      const message = createElement(context.document, 'span', '', row.message);
-      message.style.fontSize = '16px';
-      message.style.lineHeight = '24px';
-      body.appendChild(message);
-      return body;
-    }
-    if (row.variant === 'end') {
-      body.style.justifyContent = 'center';
-      body.style.padding = '16px';
-      body.style.gap = '8px';
-      for (const width of [80, 4, 80]) {
-        const mark = createElement(context.document, 'span', '');
-        mark.style.width = String(width) + 'px';
-        mark.style.height = width === 4 ? '4px' : '1px';
-        mark.style.borderRadius = width === 4 ? '2px' : '0';
-        mark.style.background = 'var(--nl-separator)';
-        body.appendChild(mark);
-      }
-      return body;
-    }
-  }
-  if (row.variant === 'warning') {
-    body.classList.add('ok-native-list-warning');
-    body.style.borderColor = row.borderColor ?? 'var(--nl-separator)';
-    body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-warning-title',
-        row.title
-      )
-    );
-    body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-warning-message',
-        row.message
-      )
-    );
-    return body;
-  }
-  if (row.variant === 'loading')
-    body.appendChild(
-      createElement(context.document, 'span', 'ok-native-list-spinner')
-    );
-  const message =
-    row.variant === 'spacer'
-      ? ''
-      : row.message ?? (row.variant === 'end' ? 'End' : '');
-  if (message)
-    body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        message
-      )
-    );
-  return body;
-}
-
-function createRailRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'rail' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-rail'
-  );
-  const visual = createVisual(context, row.visual);
-  if (visual) body.appendChild(visual);
-  body.appendChild(
-    createElement(
-      context.document,
-      'span',
-      'ok-native-list-rail-title',
-      row.title
-    )
-  );
-  if (row.status && row.status !== 'none')
-    body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        row.status
-      )
-    );
-  if (row.badge) body.appendChild(createBadge(context, row.badge));
-  return body;
-}
-
-function createMediaRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'mediaTile' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-media'
-  );
-  if (row.image && !row.imageState) {
-    const image = createImage(context, row.image, 'ok-native-list-media-image');
-    if (image) body.appendChild(image);
-  } else {
-    const placeholder = createElement(
-      context.document,
-      'span',
-      'ok-native-list-media-image',
-      row.imageState === 'error' ? '▧' : ''
-    );
-    setData(placeholder, 'state', row.imageState ?? 'empty');
-    body.appendChild(placeholder);
-  }
-  const metadata = createElement(
-    context.document,
-    'div',
-    'ok-native-list-media-meta'
-  );
-  const subtitleLine = createElement(
-    context.document,
-    'div',
-    'ok-native-list-media-subtitle-row'
-  );
-  subtitleLine.appendChild(
-    createElement(
-      context.document,
-      'span',
-      'ok-native-list-media-subtitle',
-      row.subtitle || '-'
-    )
-  );
-  if (row.networkImage) {
-    const network = createImage(
-      context,
-      row.networkImage,
-      'ok-native-list-media-network'
-    );
-    if (network) subtitleLine.appendChild(network);
-  }
-  metadata.appendChild(subtitleLine);
-  metadata.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-media-title',
-      row.title
-    )
-  );
-  if (row.badge) metadata.appendChild(createBadge(context, row.badge));
-  body.appendChild(metadata);
-  if (row.closeActionKey) {
-    const close = createElement(
-      context.document,
-      'button',
-      'ok-native-list-media-close',
-      '×'
-    );
-    close.setAttribute('type', 'button');
-    close.setAttribute('aria-label', 'Close');
-    setData(close, 'nativeListAction', row.closeActionKey);
-    markActionAnchorSource(close, 'mediaClose');
-    body.appendChild(close);
-  }
-  return body;
-}
-
-function createMetricCell(
-  context: RenderContext,
-  metric: NonNullable<
-    Extract<RowModel, { type: 'metricCard' }>['metrics']
-  >[number],
-  shaded: boolean
-): HTMLElement {
-  const cell = createElement(
-    context.document,
-    'div',
-    'ok-native-list-composite-cell'
-  );
-  setData(cell, 'shaded', shaded);
-  cell.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-secondary',
-      metric.label
-    )
-  );
-  const valueLine = createElement(context.document, 'div');
-  valueLine.style.display = 'flex';
-  valueLine.style.alignItems = 'center';
-  valueLine.style.gap = '6px';
-  if (metric.visual) {
-    const visual = createVisual(context, metric.visual);
-    if (visual) {
-      visual.style.width = '16px';
-      visual.style.height = '16px';
-      visual.style.flexBasis = '16px';
-      const image = visual.querySelector('img');
-      if (image) {
-        image.style.width = '16px';
-        image.style.height = '16px';
-      }
-      valueLine.appendChild(visual);
-    }
-  }
-  const value = createElement(
-    context.document,
-    'span',
-    'ok-native-list-composite-value',
-    metric.value
-  );
-  value.style.color = toneColor(metric.tone, 'primary');
-  valueLine.appendChild(value);
-  cell.appendChild(valueLine);
-  return cell;
-}
-
-function createMetricRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'metricCard' }>
-): HTMLElement {
-  if (row.variant === 'activity' || row.variant === 'performance') {
-    const body = createElement(
-      context.document,
-      'div',
-      'ok-native-list-row ok-native-list-composite'
-    );
-    body.appendChild(
-      createElement(
-        context.document,
-        'div',
-        'ok-native-list-composite-heading',
-        row.title
-      )
-    );
-    const metrics = row.metrics ?? [];
-    const firstLine = createElement(
-      context.document,
-      'div',
-      'ok-native-list-composite-row'
-    );
-    metrics
-      .slice(0, 2)
-      .forEach((metric) =>
-        firstLine.appendChild(createMetricCell(context, metric, false))
-      );
-    body.appendChild(firstLine);
-    if (row.variant === 'activity') {
-      body.appendChild(
-        createElement(context.document, 'div', 'ok-native-list-divider')
-      );
-    } else {
-      const progress = createElement(
-        context.document,
-        'div',
-        'ok-native-list-progress'
-      );
-      const fill = createElement(context.document, 'span');
-      fill.style.width = String(Math.round((row.progress ?? 0) * 100)) + '%';
-      progress.appendChild(fill);
-      body.appendChild(progress);
-    }
-    const secondLine = createElement(
-      context.document,
-      'div',
-      'ok-native-list-composite-row'
-    );
-    metrics
-      .slice(2)
-      .forEach((metric) =>
-        secondLine.appendChild(
-          createMetricCell(context, metric, row.variant === 'performance')
-        )
-      );
-    body.appendChild(secondLine);
-    return body;
-  }
-
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-metric'
-  );
-  if (row.visual) {
-    const visual = createVisual(context, row.visual);
-    if (visual) body.appendChild(visual);
-  }
-  body.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-secondary',
-      row.title
-    )
-  );
-  body.appendChild(
-    createElement(
-      context.document,
-      'div',
-      'ok-native-list-metric-value',
-      row.value
-    )
-  );
-  if (row.trend) {
-    const trend = createElement(
-      context.document,
-      'div',
-      'ok-native-list-secondary',
-      row.trend
-    );
-    trend.style.color =
-      row.trendTone === 'positive'
-        ? 'var(--nl-positive)'
-        : row.trendTone === 'negative'
-        ? 'var(--nl-negative)'
-        : 'var(--nl-secondary)';
-    body.appendChild(trend);
-  }
-  if (row.subtitle)
-    body.appendChild(
-      createElement(
-        context.document,
-        'div',
-        'ok-native-list-secondary',
-        row.subtitle
-      )
-    );
-  if (row.badge) body.appendChild(createBadge(context, row.badge));
-  return body;
-}
-
-function createDataRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'dataRow' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-data'
-  );
-  if (row.checkbox)
-    body.appendChild(createCheckbox(context, row.key, row.checkbox));
-  if (row.index !== undefined)
-    body.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-index',
-        String(row.index)
-      )
-    );
-  if (row.favorite) {
-    const favorite = createElement(
-      context.document,
-      'span',
-      'ok-native-list-favorite',
-      row.favoriteActive ? '★' : '☆'
-    );
-    setData(favorite, 'active', row.favoriteActive);
-    body.appendChild(favorite);
-  }
-  if (row.leading) {
-    const visual = createVisual(context, row.leading);
-    if (visual) body.appendChild(visual);
-  }
-  row.columns.forEach((column) => {
-    const cell = createElement(
-      context.document,
-      'span',
-      'ok-native-list-data-cell'
-    );
-    cell.style.flex = String(column.weight ?? 1);
-    setData(cell, 'align', column.alignment ?? 'start');
-    const primary = createElement(
-      context.document,
-      'span',
-      'ok-native-list-data-primary'
-    );
-    primary.style.color = toneColor(column.tone, 'primary');
-    if (column.secondaryLeadingText)
-      primary.appendChild(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          column.secondaryLeadingText
-        )
-      );
-    primary.appendChild(
-      createElement(context.document, 'span', undefined, column.text)
-    );
-    if (column.key === 'asset' && row.badges?.length) {
-      row.badges.forEach((badge) =>
-        primary.appendChild(createBadge(context, badge))
-      );
-    }
-    cell.appendChild(primary);
-    if (column.secondaryText) {
-      const secondary = createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        column.secondaryText
-      );
-      secondary.style.color = toneColor(column.secondaryTone, 'secondary');
-      cell.appendChild(secondary);
-    }
-    body.appendChild(cell);
-  });
-  return body;
-}
-
-function createIdentityActivityOrMessageRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'identity' | 'activity' | 'message' }>
-): HTMLElement {
-  const presentation = row.type === 'identity' ? row.presentation : undefined;
-  const body = createElement(
-    context.document,
-    'div',
-    [
-      'ok-native-list-row',
-      'ok-native-list-standard',
-      row.type === 'identity' && !presentation
-        ? 'ok-native-list-identity-row'
-        : '',
-      presentation === 'networkSelector' ? 'ok-native-list-network-row' : '',
-      presentation === 'walletSidebar' ? 'ok-native-list-wallet-row' : '',
-      presentation === 'accountSelector' ? 'ok-native-list-account-row' : '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-  );
-  setData(
-    body,
-    'nativeListSelector',
-    row.height !== undefined ? presentation : undefined
-  );
-  if (row.type === 'identity' && row.titleActionKey && row.titleActionOnHover) {
-    setData(body, 'nativeListHoverAction', row.titleActionKey);
-    markActionAnchorSource(body, 'leadingAction');
-  }
-  if (row.type === 'identity' && row.leadingAction) {
-    const action = createIconAction(
-      context,
-      row.leadingAction.name,
-      row.leadingAction.actionKey,
-      row.leadingAction.disabled,
-      row.leadingAction.tintColor
-    );
-    markActionAnchorSource(action, 'leadingAction');
-    body.appendChild(action);
-  }
-  const visual = createVisual(
-    context,
-    visualFromRow(row),
-    row.height !== undefined ? presentation : undefined
-  );
-  if (
-    visual &&
-    row.type === 'identity' &&
-    row.height !== undefined &&
-    row.presentation === 'walletSidebar' &&
-    'fallbackIcon' in row.leading &&
-    row.leading.fallbackIcon?.name === 'LockSolid'
-  ) {
-    // OneKey patch: hidden-wallet locks use WalletAvatar's full 40-point icon.
-    const icon = visual.querySelector<SVGElement>(
-      '.ok-native-list-visual-fallback svg'
-    );
-    if (icon) {
-      icon.style.width = '40px';
-      icon.style.height = '40px';
-    }
-    const fallback = visual.querySelector<HTMLElement>(
-      '.ok-native-list-visual-fallback'
-    );
-    if (fallback) {
-      fallback.style.borderRadius = '0';
-      fallback.style.overflow = 'visible';
-    }
-  }
-  if (
-    visual &&
-    row.type === 'identity' &&
-    row.height !== undefined &&
-    row.presentation === 'walletSidebar' &&
-    'borderStyle' in row.leading &&
-    row.leading.borderStyle === 'dashed'
-  )
-    visual.style.borderWidth = '1px';
-  if (visual) body.appendChild(visual);
-  if (row.type === 'activity' && row.secondaryLeading) {
-    const secondVisual = createVisual(context, row.secondaryLeading);
-    if (secondVisual) body.appendChild(secondVisual);
-  }
-  if (row.type === 'message' && row.unread)
-    body.appendChild(
-      createElement(context.document, 'span', 'ok-native-list-unread')
-    );
-  const title = row.title;
-  const subtitle =
-    row.type === 'identity'
-      ? row.subtitle
-      : row.type === 'activity'
-      ? row.description
-      : row.body;
-  const column = createTextColumn(
-    context,
-    title,
-    subtitle,
-    row.type === 'identity' ? row.tertiary : undefined,
-    row.type === 'identity' ? row.tertiaryTone : undefined,
-    row.type === 'identity' && presentation !== 'walletSidebar'
-      ? row.badges
-      : undefined
-  );
-  // OneKey patch: match existing search, subtitle fragments, and sidebar badges.
-  if (row.type === 'identity') {
-    const titleElement = column.firstElementChild as HTMLElement;
-    if (row.titleMatch?.length) {
-      const firstText = titleElement.firstChild;
-      if (firstText) firstText.remove();
-      const fragment = context.document.createDocumentFragment();
-      let offset = 0;
-      row.titleMatch.forEach(({ start, end }) => {
-        fragment.appendChild(
-          context.document.createTextNode(row.title.slice(offset, start))
-        );
-        const match = createElement(
-          context.document,
-          'span',
-          'ok-native-list-info',
-          row.title.slice(start, end)
-        );
-        fragment.appendChild(match);
-        offset = end;
-      });
-      fragment.appendChild(
-        context.document.createTextNode(row.title.slice(offset))
-      );
-      titleElement.prepend(fragment);
-    }
-    if (row.subtitleSegments?.length) {
-      column.querySelector('.ok-native-list-secondary')?.remove();
-      const segments = createElement(
-        context.document,
-        'span',
-        'ok-native-list-subtitle-segments'
-      );
-      row.subtitleSegments.forEach((segment) => {
-        if (segment.separatorBefore)
-          segments.appendChild(
-            createElement(
-              context.document,
-              'span',
-              'ok-native-list-subtitle-dot'
-            )
-          );
-        const text = createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          segment.text
-        );
-        applyValueSegments(text, segment.textSegments, 14, 20, 400);
-        setData(text, 'tone', segment.tone);
-        text.style.color =
-          segment.tone === 'disabled'
-            ? 'var(--nl-disabled)'
-            : segment.tone === 'caution'
-            ? 'var(--nl-caution)'
-            : toneColor(segment.tone, 'secondary');
-        segments.appendChild(text);
-      });
-      column.insertBefore(segments, titleElement.nextSibling);
-    }
-    if (presentation === 'walletSidebar' && row.badges?.length) {
-      const badges = createElement(
-        context.document,
-        'span',
-        'ok-native-list-wallet-badges'
-      );
-      row.badges.forEach((badge) =>
-        badges.appendChild(createBadge(context, badge))
-      );
-      column.appendChild(badges);
-    }
-  }
-  if (row.type === 'activity' && row.status)
-    column.appendChild(
-      createElement(
-        context.document,
-        'span',
-        'ok-native-list-secondary',
-        row.status
-      )
-    );
-  if (row.type === 'activity' && row.footerActions?.length) {
-    const actions = createElement(
-      context.document,
-      'span',
-      'ok-native-list-actions'
-    );
-    row.footerActions.forEach((action, slot) => {
-      const button = createElement(
-        context.document,
-        'button',
-        'ok-native-list-action-button',
-        action.label
-      );
-      button.setAttribute('type', 'button');
-      button.toggleAttribute('disabled', Boolean(action.disabled));
-      setData(button, 'tone', action.tone);
-      setData(button, 'nativeListAction', action.key);
-      markActionAnchorSource(button, 'footerAction', slot);
-      actions.appendChild(button);
-    });
-    column.appendChild(actions);
-  }
-  body.appendChild(column);
-  if (row.type === 'activity') {
-    const amounts = createElement(
-      context.document,
-      'span',
-      'ok-native-list-amounts'
-    );
-    if (row.primaryAmount)
-      amounts.appendChild(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-value',
-          row.primaryAmount
-        )
-      );
-    if (row.secondaryAmount)
-      amounts.appendChild(
-        createElement(
-          context.document,
-          'span',
-          'ok-native-list-secondary',
-          row.secondaryAmount
-        )
-      );
-    body.appendChild(amounts);
-  } else if (row.type === 'message') {
-    body.appendChild(
-      createElement(context.document, 'span', 'ok-native-list-time', row.time)
-    );
-    if (row.thumbnail) {
-      const thumbnail = createImage(
-        context,
-        row.thumbnail,
-        'ok-native-list-thumbnail'
-      );
-      if (thumbnail) body.appendChild(thumbnail);
-    }
-  } else {
-    appendAccessories(body, context, row.key, row.trailing);
-  }
-  return body;
-}
-
-// OneKey patch: SizableText enables tabular digits without replacing its font family.
-function applySelectorTabularNumbers(body: HTMLElement, row: RowModel) {
-  if (
-    !('presentation' in row) ||
-    !['accountSelector', 'networkSelector', 'walletSidebar'].includes(
-      row.presentation ?? ''
-    )
-  )
-    return;
-  body.style.fontVariantNumeric = 'tabular-nums';
-  body.querySelectorAll<HTMLElement>('span,button').forEach((text) => {
-    text.style.fontVariantNumeric = 'tabular-nums';
-  });
-}
-
-function createWalletGroupRow(
-  context: RenderContext,
-  row: Extract<RowModel, { type: 'walletGroup' }>
-): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-wallet-group'
-  );
-  [row.parent, ...row.children].forEach((member, memberIndex) => {
-    const memberElement = createElement(
-      context.document,
-      'div',
-      'ok-native-list-wallet-member'
-    );
-    setData(memberElement, 'nativeListGroupMemberKey', member.key);
-    setData(memberElement, 'testid', member.testID);
-    setData(memberElement, 'nativeListGroupParent', memberIndex === 0);
-    setData(memberElement, 'nativeListSelected', member.selected);
-    // OneKey patch: grouped members have the same selector typography as standalone wallets.
-    // memberElement.appendChild(createIdentityActivityOrMessageRow(context, member));
-    const memberBody = createIdentityActivityOrMessageRow(context, member);
-    applySelectorTabularNumbers(memberBody, member);
-    memberElement.appendChild(memberBody);
-    // OneKey patch: group children use their own measured badge height.
-    memberElement.style.flexBasis =
-      String(member.height ?? 68 + (member.badges?.length ? 24 : 0)) + 'px';
-    memberElement.style.height = memberElement.style.flexBasis;
-    memberElement.style.opacity = String(member.opacity ?? 1);
-    body.appendChild(memberElement);
-  });
-  return body;
-}
-
-function marketFontWeight(
-  value: MarketTextStyle['fontWeight'] | undefined,
-  fallback: number
-): number {
-  if (value === 'bold') return 700;
-  if (value === 'semibold') return 600;
-  if (value === 'medium') return 500;
-  if (value === 'regular') return 400;
-  return fallback;
-}
-
-function applyMarketTextStyle(
-  element: HTMLElement,
-  style: MarketTextStyle | undefined,
-  defaults: Readonly<{
-    fontSize: number;
-    lineHeight: number;
-    weight: number;
-    alignment: 'start' | 'center' | 'end';
-  }>
-) {
-  element.style.fontSize = String(style?.fontSize ?? defaults.fontSize) + 'px';
-  element.style.lineHeight =
-    String(style?.lineHeight ?? defaults.lineHeight) + 'px';
-  element.style.fontWeight = String(
-    marketFontWeight(style?.fontWeight, defaults.weight)
-  );
-  element.style.color = style?.color ?? '';
-  element.style.textAlign = style?.alignment ?? defaults.alignment;
-  element.style.whiteSpace = style?.lines === 2 ? 'normal' : 'nowrap';
-  element.style.display = '';
-  element.style.removeProperty('-webkit-line-clamp');
-  element.style.removeProperty('-webkit-box-orient');
-  if (style?.lines === 2) {
-    element.style.display = '-webkit-box';
-    element.style.setProperty('-webkit-line-clamp', '2');
-    element.style.setProperty('-webkit-box-orient', 'vertical');
-  }
-}
-
-function setMarketQuoteContent(element: HTMLElement, row: MarketRow) {
-  const style = row.style;
-  const layoutStyle = resolveWebMarketLayoutStyle(row);
-  const price = element.querySelector<HTMLElement>(
-    '.ok-native-list-market-price'
-  );
-  if (price) {
-    price.textContent = row.price;
-    applyMarketTextStyle(price, style?.price, {
-      fontSize: 16,
-      lineHeight: 24,
-      weight: 500,
-      alignment: 'end',
-    });
-    applyValueSegments(
-      price,
-      row.priceSegments,
-      style?.price?.fontSize ?? 16,
-      style?.price?.lineHeight ?? 24,
-      marketFontWeight(style?.price?.fontWeight, 500)
-    );
-  }
-  const change = element.querySelector<HTMLElement>(
-    '.ok-native-list-market-change'
-  );
-  if (change) {
-    change.textContent = row.change.text;
-    setData(change, 'tone', row.change.tone);
-    applyMarketTextStyle(change, style?.change, {
-      fontSize: 14,
-      lineHeight: 20,
-      weight: 500,
-      alignment: 'center',
-    });
-    applyValueSegments(
-      change,
-      row.change.textSegments,
-      style?.change?.fontSize ?? 14,
-      style?.change?.lineHeight ?? 20,
-      marketFontWeight(style?.change?.fontWeight, 500)
-    );
-    change.style.width = String(layoutStyle.changeWidth) + 'px';
-    change.style.height = String(layoutStyle.changeHeight) + 'px';
-    change.style.borderRadius = String(layoutStyle.changeCornerRadius) + 'px';
-    change.style.color = row.change.textColor ?? style?.change?.color ?? '';
-    change.style.background = row.change.backgroundColor ?? '';
-  }
-  element.setAttribute(
-    'aria-label',
-    row.accessibilityLabel ??
-      [row.title, row.subtitle, row.price, row.change.text]
-        .filter(Boolean)
-        .join(', ')
-  );
-}
-
-function createMarketRow(context: RenderContext, row: MarketRow): HTMLElement {
-  const body = createElement(
-    context.document,
-    'div',
-    'ok-native-list-row ok-native-list-market'
-  );
-  setData(body, 'variant', row.variant);
-  const style = row.style;
-  const layoutStyle = resolveWebMarketLayoutStyle(row);
-  body.style.padding =
-    String(layoutStyle.verticalPadding) +
-    'px ' +
-    String(layoutStyle.horizontalPadding) +
-    'px';
-  body.style.gap = '0px';
-  if (row.leadingAction) {
-    const action = createIconAction(
-      context,
-      row.leadingAction.name,
-      row.leadingAction.actionKey,
-      row.leadingAction.disabled,
-      row.leadingAction.tintColor
-    );
-    action.style.flex = '0 0 36px';
-    action.style.width = '36px';
-    action.style.height = '36px';
-    action.style.marginRight = '5px';
-    setData(action, 'testid', row.leadingAction.testID);
-    if (row.leadingAction.accessibilityLabel)
-      action.setAttribute('aria-label', row.leadingAction.accessibilityLabel);
-    markActionAnchorSource(action, 'leadingAction');
-    body.appendChild(action);
-  }
-  const visual = createVisual(context, row.leading);
-  if (visual) {
-    const width = layoutStyle.imageWidth;
-    const height = layoutStyle.imageHeight;
-    visual.style.width = String(width) + 'px';
-    visual.style.height = String(height) + 'px';
-    visual.style.flexBasis = String(width) + 'px';
-    visual.style.borderRadius = String(layoutStyle.imageCornerRadius) + 'px';
-    const borderColor =
-      'borderColor' in row.leading ? row.leading.borderColor : undefined;
-    if (borderColor) {
-      visual.style.border = '1px solid ' + borderColor;
-      visual.style.boxSizing = 'border-box';
-    }
-    visual.querySelectorAll<HTMLElement>('img').forEach((image) => {
-      if (!image.classList.contains('ok-native-list-visual-corner')) {
-        image.style.width = '100%';
-        image.style.height = '100%';
-        if (borderColor) {
-          image.style.borderRadius = '0';
-          image.style.clipPath =
-            'inset(-1px round ' + String(layoutStyle.imageCornerRadius) + 'px)';
-        }
-        image.style.objectFit =
-          style?.image?.contentFit ?? image.style.objectFit;
-      } else {
-        image.style.width = '20px';
-        image.style.height = '20px';
-        if (borderColor) {
-          image.style.right = '-5px';
-          image.style.bottom = '-5px';
-        }
-      }
-    });
-    visual.style.marginRight = String(layoutStyle.leadingGap) + 'px';
-    body.appendChild(visual);
-  }
-  const main = createElement(
-    context.document,
-    'span',
-    'ok-native-list-market-main'
-  );
-  main.style.gap = String(style?.lineGap ?? 0) + 'px';
-  const titleLine = createElement(
-    context.document,
-    'span',
-    'ok-native-list-market-title-line'
-  );
-  titleLine.style.gap = String(layoutStyle.titleBadgeGap) + 'px';
-  const title = createElement(
-    context.document,
-    'span',
-    'ok-native-list-market-title',
-    row.title
-  );
-  applyMarketTextStyle(title, style?.title, {
-    fontSize: 16,
-    lineHeight: 24,
-    weight: 500,
-    alignment: 'start',
-  });
-  titleLine.appendChild(title);
-  row.badges?.forEach((badge, slot) => {
-    const element = createElement(
-      context.document,
-      badge.actionKey ? 'button' : 'span',
-      'ok-native-list-market-badge',
-      badge.text
-    );
-    if (badge.actionKey) {
-      element.setAttribute('type', 'button');
-      setData(element, 'nativeListAction', badge.actionKey);
-      markActionAnchorSource(element, 'marketBadge', slot);
-    }
-    setData(element, 'tone', badge.tone);
-    element.style.color =
-      badge.textColor ??
-      (badge.tone === 'success'
-        ? 'var(--nl-positive)'
-        : badge.tone === 'danger'
-        ? 'var(--nl-negative)'
-        : badge.tone === 'info'
-        ? 'var(--nl-info)'
-        : badge.tone === 'warning'
-        ? 'var(--nl-primary)'
-        : '');
-    element.style.background =
-      badge.backgroundColor ??
-      ((badge.icon || badge.iconName) && !badge.text ? 'transparent' : '');
-    if ((badge.icon || badge.iconName) && !badge.text) {
-      element.style.padding = '0';
-    }
-    if (badge.accessibilityLabel)
-      element.setAttribute('aria-label', badge.accessibilityLabel);
-    if (badge.icon) {
-      const icon = createImage(context, badge.icon);
-      if (icon) {
-        icon.style.borderRadius = '50%';
-        element.prepend(icon);
-      }
-    }
-    if (badge.iconName === 'verified') {
-      const icon = createElement(
-        context.document,
-        'span',
-        'ok-native-list-market-badge-icon'
-      );
-      applySelectorIcon(icon, 'BadgeVerifiedSolid');
-      element.prepend(icon);
-    }
-    titleLine.appendChild(element);
-  });
-  main.appendChild(titleLine);
-  if (row.subtitlePrefix || row.subtitle || row.subtitleSegments?.length) {
-    const subtitleLine = createElement(
-      context.document,
-      'span',
-      'ok-native-list-market-subtitle-line'
-    );
-    subtitleLine.style.display = 'flex';
-    subtitleLine.style.alignItems = 'center';
-    subtitleLine.style.minWidth = '0';
-    subtitleLine.style.overflow = 'hidden';
-    subtitleLine.style.gap =
-      String(row.subtitlePrefix ? row.subtitlePrefix.gap ?? 4 : 0) + 'px';
-    if (row.subtitlePrefix) {
-      const prefix = createElement(
-        context.document,
-        'span',
-        'ok-native-list-market-subtitle-prefix',
-        row.subtitlePrefix.text
-      );
-      applyMarketTextStyle(prefix, row.subtitlePrefix.style, {
-        fontSize: 12,
-        lineHeight: 16,
-        weight: 400,
-        alignment: 'start',
-      });
-      prefix.style.display = 'block';
-      prefix.style.flex = '1 1 auto';
-      prefix.style.minWidth = '0';
-      prefix.style.overflow = 'hidden';
-      prefix.style.textOverflow = 'ellipsis';
-      prefix.style.color =
-        row.subtitlePrefix.style?.color ?? 'var(--nl-secondary)';
-      if (row.subtitlePrefix.maxWidth !== undefined) {
-        prefix.style.maxWidth = String(row.subtitlePrefix.maxWidth) + 'px';
-      }
-      subtitleLine.appendChild(prefix);
-    }
-    if (row.subtitle || row.subtitleSegments?.length) {
-      const subtitle = createElement(
-        context.document,
-        'span',
-        'ok-native-list-market-subtitle',
-        row.subtitle
-      );
-      applyMarketTextStyle(subtitle, style?.subtitle, {
-        fontSize: 14,
-        lineHeight: 20,
-        weight: 400,
-        alignment: 'start',
-      });
-      applyValueSegments(
-        subtitle,
-        row.subtitleSegments,
-        style?.subtitle?.fontSize ?? 14,
-        style?.subtitle?.lineHeight ?? 20,
-        marketFontWeight(style?.subtitle?.fontWeight, 400)
-      );
-      subtitle.style.flex = row.subtitlePrefix ? '0 0 auto' : '1 1 auto';
-      subtitleLine.appendChild(subtitle);
-    }
-    main.appendChild(subtitleLine);
-  }
-  body.appendChild(main);
-  const trailing = createElement(
-    context.document,
-    'span',
-    'ok-native-list-market-trailing'
-  );
-  trailing.style.gap = String(layoutStyle.trailingGap) + 'px';
-  trailing.append(
-    createElement(context.document, 'span', 'ok-native-list-market-price'),
-    createElement(context.document, 'span', 'ok-native-list-market-change')
-  );
-  body.appendChild(trailing);
-  setMarketQuoteContent(body, row);
-  return body;
-}
-
-function createRowBody(context: RenderContext, row: RowModel): HTMLElement {
-  switch (row.type) {
-    case 'walletGroup':
-      return createWalletGroupRow(context, row);
-    case 'sectionHeader':
-      return createSectionHeader(context, row);
-    case 'action':
-      return createActionRow(context, row);
-    case 'system':
-      return createSystemRow(context, row);
-    case 'rail':
-      return createRailRow(context, row);
-    case 'mediaTile':
-      return createMediaRow(context, row);
-    case 'metricCard':
-      return createMetricRow(context, row);
-    case 'dataRow':
-      return createDataRow(context, row);
-    case 'market':
-      return createMarketRow(context, row);
-    case 'identity':
-    case 'activity':
-    case 'message':
-      return createIdentityActivityOrMessageRow(context, row);
-  }
+  return rowRenderer(row).create(context.document, rendererPrimitives(context));
 }
 
 export class NativeListWebEngine {
@@ -3554,7 +1952,21 @@ export class NativeListWebEngine {
     horizontal: false,
   };
   private readonly mounted = new Map<number, HTMLElement>();
-  private readonly pool: HTMLElement[] = [];
+  private readonly pool: Record<RowRendererKey, HTMLElement[]> = {
+    walletGroup: [],
+    message: [],
+    rail: [],
+    mediaTile: [],
+    action: [],
+    system: [],
+    activity: [],
+    dataRow: [],
+    metricCard: [],
+    market: [],
+    identity: [],
+    sectionHeader: [],
+  };
+  private readonly rendererKeys = new WeakMap<HTMLElement, RowRendererKey>();
   private frameHandle: number | undefined;
   private resizeObserver: ResizeObserver | undefined;
   private sectionIndexTransformObserver: MutationObserver | undefined;
@@ -3607,8 +2019,11 @@ export class NativeListWebEngine {
   private lastViewportHeight = -1;
   private destroyed = false;
   private sectionIndexAlignStart = false;
-  // OneKey patch: warning banners are measured after normal browser text wrapping.
-  private measuredWarningHeights = new Map<string, number>();
+  // Renderers report intrinsic height after browser text wrapping.
+  private measuredRendererHeights = new Map<
+    string,
+    { signature: string; height: number }
+  >();
 
   constructor(
     host: HTMLElement,
@@ -3996,14 +2411,18 @@ export class NativeListWebEngine {
     this.viewport.removeEventListener('pointercancel', this.handlePullEnd);
     const host = this.root.parentElement;
     disposeWebImageRetries(this.root);
-    this.pool.forEach(disposeWebImageRetries);
+    Object.values(this.pool).forEach((elements) =>
+      elements.forEach(disposeWebImageRetries)
+    );
     this.root.remove();
     this.indexRail.remove();
     this.hideReorderPreview();
     this.reorderPreview.remove();
     if (host) host.style.position = this.previousHostPosition;
     this.mounted.clear();
-    this.pool.length = 0;
+    Object.values(this.pool).forEach((elements) => {
+      elements.length = 0;
+    });
     this.avatarLeases.forEach((release) => release());
     this.avatarLeases.clear();
   }
@@ -4013,7 +2432,7 @@ export class NativeListWebEngine {
     selectedKeys?: ReadonlySet<string>
   ) {
     this.cancelMarketPointer();
-    this.measuredWarningHeights.clear();
+    this.measuredRendererHeights.clear();
     this.snapshot = snapshot;
     this.rows = effectiveRows(snapshot);
     this.selectedKeys =
@@ -4060,6 +2479,31 @@ export class NativeListWebEngine {
       this.indexRail.style.setProperty(name, value);
       this.reorderPreview.style.setProperty(name, value);
     });
+    this.applyListStyle();
+  }
+
+  /**
+   * List chrome from `snapshot.listStyle`. Every value is absent by default and
+   * the stylesheet carries today's number as the fallback, so an untouched list
+   * renders exactly as before. See docs/STYLE_SPEC.md §5.
+   */
+  private applyListStyle() {
+    const listStyle = this.snapshot.listStyle;
+    const inset = listStyle?.separator?.inset;
+    setData(this.root, 'separatorInset', inset !== undefined && inset > 0);
+    const chrome: Readonly<Record<string, string | undefined>> = {
+      '--nl-separator-inset':
+        inset === undefined ? undefined : String(inset) + 'px',
+      '--nl-separator-color': listStyle?.separator?.color,
+      '--nl-group-radius':
+        listStyle?.groupCornerRadius === undefined
+          ? undefined
+          : String(listStyle.groupCornerRadius) + 'px',
+    };
+    Object.entries(chrome).forEach(([name, value]) => {
+      if (value === undefined) this.root.style.removeProperty(name);
+      else this.root.style.setProperty(name, value);
+    });
   }
 
   private recomputeLayout = () => {
@@ -4086,7 +2530,7 @@ export class NativeListWebEngine {
         viewportHeight !== this.lastViewportHeight)
     ) {
       this.invalidateActionAnchor('layout');
-      this.measuredWarningHeights.clear();
+      this.measuredRendererHeights.clear();
     }
     this.lastViewportWidth = viewportWidth;
     this.lastViewportHeight = viewportHeight;
@@ -4094,11 +2538,14 @@ export class NativeListWebEngine {
     const measuredSnapshot: NativeListSnapshot = {
       ...this.snapshot,
       rows: this.snapshot.rows.map((row) =>
-        row.type === 'system' &&
-        row.variant === 'warning' &&
+        row.style?.container?.height === undefined &&
         row.height === undefined &&
-        this.measuredWarningHeights.has(row.key)
-          ? { ...row, height: this.measuredWarningHeights.get(row.key) }
+        this.measuredRendererHeights.get(row.key)?.signature ===
+          webRowRenderSignature(row)
+          ? {
+              ...row,
+              height: this.measuredRendererHeights.get(row.key)!.height,
+            }
           : row
       ),
     };
@@ -4190,13 +2637,22 @@ export class NativeListWebEngine {
     );
     const desired = new Set(visible.map((item) => item.index));
     this.mounted.forEach((element, index) => {
-      if (!desired.has(index)) {
+      const nextRow = this.rows[index];
+      const rendererKey = this.rendererKeys.get(element);
+      if (
+        !desired.has(index) ||
+        !nextRow ||
+        rendererKey !== rowRendererKey(nextRow)
+      ) {
         this.invalidateActionAnchorForElement(element);
         this.mounted.delete(index);
-        if (disposeWebImageRetries(element))
+        const recycled = element.firstElementChild
+          ? recycleRowBody(element.firstElementChild as HTMLElement)
+          : false;
+        if (disposeWebImageRetries(element) || recycled)
           element.removeAttribute('data-render-signature');
         element.remove();
-        this.pool.push(element);
+        if (rendererKey) this.pool[rendererKey].push(element);
       }
     });
 
@@ -4205,9 +2661,11 @@ export class NativeListWebEngine {
       if (!row) return;
       let element = this.mounted.get(layoutItem.index);
       if (!element) {
+        const rendererKey = rowRendererKey(row);
         element =
-          this.pool.pop() ??
+          this.pool[rendererKey].pop() ??
           createElement(this.document, 'div', 'ok-native-list-item');
+        this.rendererKeys.set(element, rendererKey);
         setData(element, 'nativeListAnimateReorder', false);
         this.mounted.set(layoutItem.index, element);
         this.content.appendChild(element);
@@ -4222,24 +2680,30 @@ export class NativeListWebEngine {
         element.dataset.renderSignature = signature;
       }
     });
-    let measuredWarningChanged = false;
+    let measuredHeightChanged = false;
     this.mounted.forEach((element, index) => {
       const row = this.rows[index];
-      if (
-        row?.type !== 'system' ||
-        row.variant !== 'warning' ||
-        row.height !== undefined
-      )
+      const registered = row && rowRenderer(row);
+      if (registered && element.firstElementChild) {
+        const height = registered.measureRendered(
+          element.firstElementChild as HTMLElement
+        );
+        if (
+          height !== undefined &&
+          (height !== this.measuredRendererHeights.get(row.key)?.height ||
+            webRowRenderSignature(row) !==
+              this.measuredRendererHeights.get(row.key)?.signature)
+        ) {
+          this.measuredRendererHeights.set(row.key, {
+            signature: webRowRenderSignature(row),
+            height,
+          });
+          measuredHeightChanged = true;
+        }
         return;
-      const height =
-        element.querySelector<HTMLElement>('.ok-native-list-warning')
-          ?.offsetHeight ?? 0;
-      if (height > 0 && height !== this.measuredWarningHeights.get(row.key)) {
-        this.measuredWarningHeights.set(row.key, height);
-        measuredWarningChanged = true;
       }
     });
-    if (measuredWarningChanged) {
+    if (measuredHeightChanged) {
       this.recomputeLayout();
       return;
     }
@@ -4261,7 +2725,13 @@ export class NativeListWebEngine {
     overlay = false
   ) {
     this.invalidateActionAnchorForElement(element);
-    disposeWebImageRetries(element);
+    const registered = rowRenderer(row);
+    const existingBody = element.firstElementChild as HTMLElement | null;
+    const reusableBody =
+      existingBody?.dataset.nlRenderer === registered.key
+        ? existingBody
+        : undefined;
+    if (!reusableBody) disposeWebImageRetries(element);
     const bindingEpoch = String(++this.bindingEpochCounter);
     element.className = overlay
       ? 'ok-native-list-item ok-native-list-sticky'
@@ -4273,7 +2743,10 @@ export class NativeListWebEngine {
     setData(element, 'nativeListRowPressEnabled', isRowPressEnabled(row));
     setData(element, 'testid', row.testID);
     // OneKey patch: deprecation dims a row without disabling its actions.
-    element.style.opacity = String(row.opacity ?? 1);
+    element.style.opacity = String(
+      (row.style?.container?.opacity ?? row.opacity ?? 1) *
+        (row.disabled ? 0.5 : 1)
+    );
     setData(element, 'nativeListReorderable', this.isReorderable(row));
     setData(
       element,
@@ -4306,84 +2779,32 @@ export class NativeListWebEngine {
       selectedKeys: this.selectedKeys,
       itemIndex: index,
     };
-    const body = createRowBody(context, row);
-    applySelectorTabularNumbers(body, row);
+    const body = reusableBody ?? createRowBody(context, row);
+    if (reusableBody) {
+      resetRowContainerStyle(body);
+      registered.bind(body, rendererPrimitives(context));
+    }
     // OneKey patch: explicit selector fields preserve original page geometry.
     element.style.contain = row.backgroundFullWidth ? 'layout style' : '';
     if (row.backgroundColor) body.style.backgroundColor = row.backgroundColor;
-    if (row.backgroundFullWidth && row.backgroundColor) {
+    const restingBackground =
+      row.style?.container?.backgroundColor ?? row.backgroundColor;
+    if (row.backgroundFullWidth && restingBackground) {
       const bleed = paddingValues(this.snapshot).horizontal;
       body.style.position = 'relative';
       body.style.overflow = 'visible';
       body.style.boxShadow =
         String(-bleed) +
         'px 0 ' +
-        row.backgroundColor +
+        restingBackground +
         ',' +
         String(bleed) +
         'px 0 ' +
-        row.backgroundColor;
+        restingBackground;
     }
-    if (row.type === 'identity' && row.height !== undefined) {
-      const title = body.querySelector<HTMLElement>('.ok-native-list-title');
-      if (row.presentation === 'accountSelector') {
-        body.style.gap = '12px';
-        body.style.borderRadius = '12px';
-        if ('shape' in row.leading && row.leading.shape === 'rounded') {
-          const visual = body.querySelector<HTMLElement>(
-            '.ok-native-list-visual'
-          );
-          if (visual) visual.style.borderRadius = '8px';
-        }
-        if (title) title.style.lineHeight = '24px';
-      }
-      if (row.presentation === 'networkSelector') {
-        body.style.borderRadius = '12px';
-        const visual = body.querySelector<HTMLElement>(
-          '.ok-native-list-visual'
-        );
-        if (visual) {
-          visual.style.width = '32px';
-          visual.style.height = '32px';
-          visual.style.flexBasis = '32px';
-        }
-        if (
-          row.leading.kind === 'network' &&
-          !row.leading.image &&
-          !row.leading.fallbackIcon &&
-          row.leading.fallbackText
-        ) {
-          const fallback = visual?.querySelector<HTMLElement>(
-            '.ok-native-list-visual-fallback'
-          );
-          if (fallback) {
-            fallback.style.fontSize = '19px';
-            fallback.style.lineHeight = '27px';
-            fallback.style.fontWeight = '600';
-            fallback.style.color = 'var(--nl-inverse-text)';
-          }
-        }
-        visual
-          ?.querySelectorAll<HTMLElement>('.ok-native-list-visual-main')
-          .forEach((image) => {
-            image.style.width = '32px';
-            image.style.height = '32px';
-          });
-        if (title) {
-          title.style.fontSize = '16px';
-          title.style.lineHeight = '24px';
-          title.style.fontWeight = '500';
-        }
-        body
-          .querySelectorAll<HTMLElement>('.ok-native-list-accessory')
-          .forEach((value) => {
-            value.style.fontSize = '16px';
-            value.style.lineHeight = '24px';
-            value.style.fontWeight = '500';
-          });
-      }
-    }
-    element.replaceChildren(body);
+    // Template and presentation defaults must precede caller overrides.
+    applyRowStyle(body, row);
+    if (body.parentElement !== element) element.replaceChildren(body);
     if (
       row.type === 'market' &&
       row.diagnostics?.imageBindActionKey &&
@@ -5254,6 +3675,8 @@ export class NativeListWebEngine {
       action.dataset.nativeListHoverAction === 'true'
         ? action.dataset.nativeListAction
         : action.dataset.nativeListHoverAction;
+    // Legacy Web: hover checks only the resolved source (the member for a
+    // WalletGroup), not the enclosing row's `disabled`.
     if (sourceRow && !sourceRow.disabled && actionKey)
       this.emitRowAction(sourceRow, actionKey, action, rowElement ?? undefined);
   };
@@ -5298,6 +3721,9 @@ export class NativeListWebEngine {
             (member) => member.key === memberKey
           ) ?? row
         : row;
+    // Legacy Web: a disabled row (or whole WalletGroup) blocks everything
+    // above. A disabled WalletGroup member still emits its own actions, but its
+    // member press is blocked by `isRowPressEnabled` in `handleRowPress`.
     const action = target.closest<HTMLElement>('[data-native-list-action]');
     if (action) {
       const scope = action.dataset.selectionScope;
@@ -5781,11 +4207,11 @@ export class NativeListWebEngine {
     const row = source?.firstElementChild;
     if (!source || !row) return;
     const rect = source.getBoundingClientRect();
-    const groupParent = row.querySelector<HTMLElement>(
-      '[data-native-list-group-parent="true"]>.ok-native-list-wallet-row'
-    );
-    const previewRow = groupParent ?? row;
-    const previewHeight = groupParent ? 68 : rect.height;
+    const sourceRow = state.workingRows[state.currentIndex];
+    const preview =
+      sourceRow && rowRenderer(sourceRow).reorderPreview(row as HTMLElement);
+    const previewRow = preview?.element ?? row;
+    const previewHeight = preview?.height ?? rect.height;
     state.previewOffsetX = state.startX - rect.left;
     state.previewOffsetY = Math.min(
       previewHeight,
@@ -5809,7 +4235,6 @@ export class NativeListWebEngine {
       }
       configureWebAvatar(image, avatar.source, avatar.uri);
     });
-    const sourceRow = state.workingRows[state.currentIndex];
     const badgeText = sourceRow
       ? webWalletGroupReorderBadge(sourceRow)
       : undefined;
@@ -6216,4 +4641,8 @@ export class NativeListWebEngine {
       else element.removeAttribute('aria-grabbed');
     });
   }
+}
+
+export function applyRowStyle(body: HTMLElement, row: RowModel): void {
+  applyRowContainerStyle(body, row);
 }

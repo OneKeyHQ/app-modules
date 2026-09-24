@@ -6,6 +6,8 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.Locale
 
+internal data class NativeSelectionTarget(val scope: String, val key: String?)
+
 internal fun isNativeListRowPressEnabled(
   type: String,
   variant: String,
@@ -24,6 +26,13 @@ internal fun isNativeListWholeRowInteractive(
   disabled = disabled,
   pressDisabled = pressDisabled,
 )
+
+internal fun resolveNativeListSelectorBackgroundColor(
+  rowType: String,
+  styleBackgroundColor: String?,
+  rowBackgroundColor: String?,
+): String? = styleBackgroundColor?.takeIf(String::isNotEmpty)
+  ?: rowBackgroundColor?.takeIf { rowType != "walletGroup" && it.isNotEmpty() }
 
 // The image fallback-state cache is process-wide, so it is keyed by a digest of the request
 // identity instead of the raw headers, which can carry credentials such as Authorization.
@@ -47,6 +56,9 @@ private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
   digest.update(bytes)
 }
 
+// Template type alone partitions reuse; data keys and styles never select a renderer.
+internal enum class NativeListRendererKey { MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD, MARKET, IDENTITY, SECTION_HEADER, WALLET_GROUP }
+
 internal data class NativeListItem(
   val key: String,
   val type: String,
@@ -55,6 +67,15 @@ internal data class NativeListItem(
   val json: JSONObject,
 ) {
   val content: String = json.toString()
+  val rendererKey: NativeListRendererKey
+    get() = NativeListRendererRegistry.key(type)
+  val styledHeight: Double?
+    get() = json.optJSONObject("style")?.optJSONObject("container")
+      ?.takeIf { it.has("height") }?.optDouble("height")
+  // Selector presentations use their explicit-height geometry when either explicit height field
+  // is set (Web `hasExplicitRowHeight`). Row-local only; list-wide source scale stays row.height.
+  val hasExplicitHeight: Boolean
+    get() = styledHeight != null || json.has("height")
   // OneKey patch: only a host-validated stable snapshot can request a lightweight diff payload.
   var selectionUpdateFromContent: String? = null
 
@@ -107,6 +128,7 @@ internal data class NativeListItem(
     fun parse(json: JSONObject): NativeListItem {
       val key = json.getString("key")
       val type = json.getString("type")
+      NativeListRendererRegistry.key(type) // Reject unsupported templates at the model boundary.
       return NativeListItem(
         key = key,
         type = type,
@@ -141,6 +163,7 @@ internal data class NativeListConfig(
   val sectionIndexHapticsEnabled: Boolean,
   val sectionIndexCenteredInWindow: Boolean,
   val theme: JSONObject?,
+  val listStyle: JSONObject?,
   val fixedFooter: NativeListItem?,
   val items: List<NativeListItem>,
 ) {
@@ -190,6 +213,7 @@ internal data class NativeListConfig(
         sectionIndexHapticsEnabled = sectionIndex?.optBoolean("hapticsEnabled", true) ?: true,
         sectionIndexCenteredInWindow = sectionIndex?.optBoolean("centeredInWindow", false) ?: false,
         theme = root.optJSONObject("theme"),
+        listStyle = root.optJSONObject("listStyle"),
         fixedFooter = fixedFooter,
         items = items,
       )

@@ -1,6 +1,14 @@
 import Foundation
 import UIKit
 
+// Template type alone partitions reuse; data keys and styles never select a renderer.
+enum NativeListRendererKey: String, CaseIterable {
+  case message, rail, mediaTile, action, system, activity, dataRow, metricCard, market, identity, sectionHeader, walletGroup
+  /// Not a template: legacy accepted any non-empty type and drew an empty row with the
+  /// shared chrome. Unknown types keep that placeholder instead of failing the snapshot.
+  case unsupported = "__nativeListUnsupported"
+}
+
 struct NativeListItem {
   let key: String
   let type: String
@@ -8,6 +16,18 @@ struct NativeListItem {
   let revision: Int
   let data: [String: Any]
   let content: String
+
+  let rendererKey: NativeListRendererKey
+
+  var styledHeight: CGFloat? {
+    (data.dictionary("style")?.dictionary("container")?["height"] as? Double).map { CGFloat($0) }
+  }
+
+  /// Selector presentations use their explicit-height geometry when either
+  /// `style.container.height` or `row.height` is set (Web `hasExplicitRowHeight`).
+  var hasExplicitHeight: Bool {
+    data.dictionary("style")?.dictionary("container")?["height"] != nil || data["height"] != nil
+  }
 
   var isSelectable: Bool {
     let disabled = data["disabled"] as? Bool ?? false
@@ -33,13 +53,23 @@ struct NativeListItem {
           let type = data["type"] as? String, !type.isEmpty else {
       throw NativeListModelError.invalidRow
     }
+    let rendererKey = NativeListRendererKey(rawValue: type)
+      .flatMap { $0 == .unsupported ? nil : $0 } ?? .unsupported
+    if rendererKey == .unsupported { Self.logUnsupported(type) }
     self.key = key
     self.type = type
+    self.rendererKey = rendererKey
     self.sectionKey = data["sectionKey"] as? String
     self.revision = data["revision"] as? Int ?? 0
     self.data = data
     let jsonData = try JSONSerialization.data(withJSONObject: data, options: [.sortedKeys])
     self.content = String(data: jsonData, encoding: .utf8) ?? ""
+  }
+
+  private static var loggedUnsupportedTypes = Set<String>()
+  private static func logUnsupported(_ type: String) {
+    guard loggedUnsupportedTypes.insert(type).inserted else { return }
+    NSLog("[NativeList] Unsupported row type '%@' rendered as an empty placeholder row", type)
   }
 
   private static let selectableTypes: Set<String> = [
@@ -70,6 +100,7 @@ struct NativeListConfig {
   let sectionIndexHapticsEnabled: Bool
   let sectionIndexCenteredInWindow: Bool
   let theme: [String: Any]?
+  let listStyle: [String: Any]?
   let fixedFooter: NativeListItem?
   var items: [NativeListItem]
 
@@ -132,6 +163,7 @@ struct NativeListConfig {
       sectionIndexHapticsEnabled: sectionIndex?["hapticsEnabled"] as? Bool ?? true,
       sectionIndexCenteredInWindow: sectionIndex?["centeredInWindow"] as? Bool ?? false,
       theme: root["theme"] as? [String: Any],
+      listStyle: root["listStyle"] as? [String: Any],
       fixedFooter: footer,
       items: items
     )

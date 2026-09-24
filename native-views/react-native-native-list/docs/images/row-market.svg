@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="260" viewBox="0 0 900 260" role="img" aria-labelledby="title desc">
+<title id="title">market · identity / price / change</title>
+<desc id="desc">Structural schematic. Blue is content; green is controls; dashed slots are optional. Not a device screenshot or a pixel specification.</desc>
+<rect width="900" height="100%" rx="16" fill="#f5f7fa"/>
+<g font-family="Arial, Helvetica, sans-serif">
+<text x="24" y="36" font-size="22" fill="#172a3a" font-weight="600">market · identity / price / change</text>
+<rect x="24" y="66" width="852" height="142" rx="8" fill="#fff" stroke="#bfcbd5"/>
+<rect x="40" y="84" width="100" height="106" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="52" y="142.0" font-size="15" fill="#294766" font-weight="400">leading</text>
+<rect x="156" y="84" width="238" height="42" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="168" y="110.0" font-size="15" fill="#294766" font-weight="400">title</text>
+<rect x="408" y="84" width="102" height="42" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="420" y="110.0" font-size="15" fill="#294766" font-weight="400">badges</text>
+<rect x="156" y="140" width="354" height="50" rx="8" fill="#eaf1fb" stroke="#91add0" stroke-dasharray="5 4"/>
+<text x="168" y="170.0" font-size="15" fill="#294766" font-weight="400">subtitle</text>
+<rect x="526" y="84" width="170" height="106" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="538" y="142.0" font-size="15" fill="#294766" font-weight="400">price</text>
+<rect x="712" y="84" width="144" height="106" rx="8" fill="#eaf1fb" stroke="#91add0"/>
+<text x="724" y="131.0" font-size="15" fill="#294766" font-weight="400">change</text>
+<text x="724" y="153.0" font-size="15" fill="#294766" font-weight="400">text + tone</text>
+<text x="24" y="240" font-size="13" fill="#64798b" font-weight="400">Explicit variants: token, stock, perp. Local metrics keep price/change inside the allocated row frame.</text>
+</g>
+</svg>

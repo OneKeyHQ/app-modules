@@ -1,3 +1,4 @@
+import { ROW_BOX_STYLE_KEYS_BY_TYPE } from './models';
 import type {
   ActivityRow,
   IdentityRow,
@@ -5,8 +6,11 @@ import type {
   LeadingVisual,
   MarketRow,
   MarketRowStyle,
-  MarketTextStyle,
+  NativeListListStyle,
   NativeListSnapshot,
+  NativeListTextStyle,
+  NativeListTypographyToken,
+  RowBoxStyle,
   RowModel,
   RowPatch,
   WalletGroupRow,
@@ -127,11 +131,119 @@ function assertBoundedStyleNumber(
   }
 }
 
-function assertMarketTextStyle(
-  style: MarketTextStyle | undefined,
-  path: string
+/**
+ * The named typography scale from docs/STYLE_SPEC.md §3.2. Tokens are resolved
+ * to numbers here, before serialization, so the iOS, Android, and Web renderers
+ * never learn the vocabulary and cannot drift from it.
+ */
+const TYPOGRAPHY_TOKENS: Readonly<
+  Record<
+    NativeListTypographyToken,
+    Readonly<{
+      fontSize: number;
+      lineHeight: number;
+      fontWeight: NonNullable<NativeListTextStyle['fontWeight']>;
+    }>
+  >
+> = {
+  $headingXl: { fontSize: 24, lineHeight: 32, fontWeight: 'semibold' },
+  $headingLg: { fontSize: 20, lineHeight: 28, fontWeight: 'semibold' },
+  $headingMd: { fontSize: 18, lineHeight: 24, fontWeight: 'semibold' },
+  $headingSm: { fontSize: 16, lineHeight: 24, fontWeight: 'medium' },
+  $headingXs: { fontSize: 14, lineHeight: 20, fontWeight: 'semibold' },
+  $bodyLg: { fontSize: 16, lineHeight: 24, fontWeight: 'regular' },
+  $bodyMd: { fontSize: 14, lineHeight: 20, fontWeight: 'regular' },
+  $bodySm: { fontSize: 12, lineHeight: 16, fontWeight: 'regular' },
+  $bodyXs: { fontSize: 11, lineHeight: 16, fontWeight: 'regular' },
+};
+
+/** Style keys name model fields, never views. See docs/STYLE_SPEC.md §4. */
+const TEXT_STYLE_KEYS_BY_ROW_TYPE: Readonly<
+  Record<RowModel['type'], readonly string[]>
+> = {
+  identity: [
+    'title',
+    'subtitle',
+    'tertiary',
+    'badge',
+    'value',
+    'valueSecondary',
+  ],
+  walletGroup: [],
+  rail: ['title', 'badge', 'status'],
+  activity: [
+    'title',
+    'description',
+    'status',
+    'primaryAmount',
+    'secondaryAmount',
+  ],
+  message: ['title', 'body', 'time'],
+  dataRow: ['columns', 'columnSecondary', 'index'],
+  market: ['title', 'subtitle', 'price', 'change'],
+  mediaTile: ['title', 'subtitle', 'badge'],
+  metricCard: ['title', 'value', 'subtitle', 'trend'],
+  sectionHeader: ['title', 'subtitle', 'value'],
+  action: ['title', 'value'],
+  system: ['title', 'message', 'actionText'],
+};
+
+const EXTRA_STYLE_KEYS_BY_ROW_TYPE: Readonly<
+  Partial<Record<RowModel['type'], readonly string[]>>
+> = {
+  market: [
+    'titleBadgeLayout',
+    'contentTrailingGap',
+    'subtitleTrailingPadding',
+    'changeWidth',
+    'changeHeight',
+    'changeCornerRadius',
+  ],
+};
+
+function assertTextStyle(
+  style: NativeListTextStyle | undefined,
+  path: string,
+  additionalKeys: readonly string[] = []
 ): void {
-  if (!style) return;
+  if (style === undefined) return;
+  if (typeof style !== 'object' || style === null || Array.isArray(style)) {
+    fail(path, 'must be an object');
+  }
+  assertUnknownKeys(
+    style as Record<string, unknown>,
+    [
+      'token',
+      'fontSize',
+      'fontWeight',
+      'color',
+      'lineHeight',
+      'lines',
+      'truncate',
+      'alignment',
+      'verticalAlignment',
+      'offsetY',
+      ...additionalKeys,
+    ],
+    path,
+    'text style key'
+  );
+  if (
+    style.color !== undefined &&
+    (typeof style.color !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(style.color))
+  ) {
+    fail(`${path}.color`, 'must be #RRGGBB or #RRGGBBAA');
+  }
+  if (
+    style.token !== undefined &&
+    !Object.prototype.hasOwnProperty.call(TYPOGRAPHY_TOKENS, style.token)
+  ) {
+    fail(
+      `${path}.token`,
+      `must be one of ${Object.keys(TYPOGRAPHY_TOKENS).join(', ')}`
+    );
+  }
   assertBoundedStyleNumber(style.fontSize, `${path}.fontSize`, 8, 48);
   assertBoundedStyleNumber(style.lineHeight, `${path}.lineHeight`, 8, 64);
   if (
@@ -146,44 +258,117 @@ function assertMarketTextStyle(
   ) {
     fail(`${path}.alignment`, 'must be start, center, or end');
   }
-  if (style.lines !== undefined && ![1, 2].includes(style.lines)) {
-    fail(`${path}.lines`, 'must be 1 or 2');
+  if (style.lines !== undefined && ![1, 2, 3].includes(style.lines)) {
+    fail(`${path}.lines`, 'must be 1, 2, or 3');
   }
+  if (
+    style.truncate !== undefined &&
+    !['tail', 'clip'].includes(style.truncate)
+  ) {
+    fail(`${path}.truncate`, 'must be tail or clip');
+  }
+  if (
+    style.verticalAlignment !== undefined &&
+    !['top', 'center', 'bottom'].includes(style.verticalAlignment)
+  ) {
+    fail(`${path}.verticalAlignment`, 'must be top, center, or bottom');
+  }
+  assertBoundedStyleNumber(style.offsetY, `${path}.offsetY`, -8, 8);
 }
 
-function assertMarketStyle(
-  style: MarketRowStyle | undefined,
-  path: string
-): void {
-  if (!style) return;
+function assertBoxStyle(style: RowBoxStyle, path: string): void {
+  const container = style.container;
+  if (container !== undefined) {
+    const containerPath = `${path}.container`;
+    if (
+      typeof container !== 'object' ||
+      container === null ||
+      Array.isArray(container)
+    ) {
+      fail(containerPath, 'must be an object');
+    }
+    assertUnknownKeys(
+      container as Record<string, unknown>,
+      [
+        'height',
+        'backgroundColor',
+        'opacity',
+        'cornerRadius',
+        'borderWidth',
+        'borderColor',
+        'contentVerticalAlignment',
+      ],
+      containerPath,
+      'row container style key'
+    );
+    for (const key of ['backgroundColor', 'borderColor'] as const) {
+      const value = container[key];
+      if (
+        value !== undefined &&
+        (typeof value !== 'string' ||
+          !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value))
+      ) {
+        fail(`${containerPath}.${key}`, 'must be #RRGGBB or #RRGGBBAA');
+      }
+    }
+    assertBoundedStyleNumber(
+      container.height,
+      `${containerPath}.height`,
+      0,
+      4096
+    );
+    assertBoundedStyleNumber(
+      container.opacity,
+      `${containerPath}.opacity`,
+      0,
+      1
+    );
+    assertBoundedStyleNumber(
+      container.cornerRadius,
+      `${containerPath}.cornerRadius`,
+      0,
+      80
+    );
+    assertBoundedStyleNumber(
+      container.borderWidth,
+      `${containerPath}.borderWidth`,
+      0,
+      8
+    );
+    if (
+      container.contentVerticalAlignment !== undefined &&
+      !['top', 'center', 'bottom'].includes(container.contentVerticalAlignment)
+    ) {
+      fail(
+        `${containerPath}.contentVerticalAlignment`,
+        'must be top, center, or bottom'
+      );
+    }
+  }
   for (const field of [
     'horizontalPadding',
     'verticalPadding',
     'leadingGap',
     'titleBadgeGap',
     'trailingGap',
-    'contentTrailingGap',
-    'subtitleTrailingPadding',
   ] as const) {
     assertBoundedStyleNumber(style[field], `${path}.${field}`, 0, 64);
   }
-  // OneKey patch: validate the opt-in Market badge layout.
-  if (
-    style.titleBadgeLayout !== undefined &&
-    style.titleBadgeLayout !== 'inline'
-  ) {
-    fail(`${path}.titleBadgeLayout`, 'must be inline when provided');
-  }
   assertBoundedStyleNumber(style.lineGap, `${path}.lineGap`, 0, 16);
-  assertBoundedStyleNumber(style.changeWidth, `${path}.changeWidth`, 1, 160);
-  assertBoundedStyleNumber(style.changeHeight, `${path}.changeHeight`, 1, 160);
-  assertBoundedStyleNumber(
-    style.changeCornerRadius,
-    `${path}.changeCornerRadius`,
-    0,
-    80
-  );
-  if (style.image) {
+  if (style.image !== undefined) {
+    if (
+      typeof style.image !== 'object' ||
+      style.image === null ||
+      Array.isArray(style.image)
+    ) {
+      fail(`${path}.image`, 'must be an object');
+    }
+    assertUnknownKeys(
+      style.image as Record<string, unknown>,
+      ['width', 'height', 'shape', 'cornerRadius', 'contentFit'],
+      `${path}.image`,
+      'image style key'
+    );
     assertBoundedStyleNumber(style.image.width, `${path}.image.width`, 1, 160);
     assertBoundedStyleNumber(
       style.image.height,
@@ -208,10 +393,205 @@ function assertMarketStyle(
       );
     }
   }
-  assertMarketTextStyle(style.title, `${path}.title`);
-  assertMarketTextStyle(style.subtitle, `${path}.subtitle`);
-  assertMarketTextStyle(style.price, `${path}.price`);
-  assertMarketTextStyle(style.change, `${path}.change`);
+}
+
+function assertMarketStyle(
+  style: MarketRowStyle | undefined,
+  path: string
+): void {
+  if (!style) return;
+  assertBoxStyle(style, path);
+  for (const field of [
+    'contentTrailingGap',
+    'subtitleTrailingPadding',
+  ] as const) {
+    assertBoundedStyleNumber(style[field], `${path}.${field}`, 0, 64);
+  }
+  // OneKey patch: validate the opt-in Market badge layout.
+  if (
+    style.titleBadgeLayout !== undefined &&
+    style.titleBadgeLayout !== 'inline'
+  ) {
+    fail(`${path}.titleBadgeLayout`, 'must be inline when provided');
+  }
+  assertBoundedStyleNumber(style.changeWidth, `${path}.changeWidth`, 1, 160);
+  assertBoundedStyleNumber(style.changeHeight, `${path}.changeHeight`, 1, 160);
+  assertBoundedStyleNumber(
+    style.changeCornerRadius,
+    `${path}.changeCornerRadius`,
+    0,
+    80
+  );
+  assertTextStyle(style.title, `${path}.title`);
+  assertTextStyle(style.subtitle, `${path}.subtitle`);
+  assertTextStyle(style.price, `${path}.price`);
+  assertTextStyle(style.change, `${path}.change`);
+}
+
+/**
+ * Rejects keys the template does not declare, so a style written for one
+ * template cannot reach a shared view through another. See docs/STYLE_SPEC.md
+ * §7 rule 1.
+ */
+function assertRowStyle(row: RowModel, path: string): void {
+  const style = (row as { style?: unknown }).style;
+  if (style === undefined) return;
+  if (typeof style !== 'object' || style === null || Array.isArray(style)) {
+    fail(`${path}.style`, 'must be an object');
+  }
+  const textKeys = TEXT_STYLE_KEYS_BY_ROW_TYPE[row.type] ?? [];
+  const allowed = new Set([
+    'container',
+    ...ROW_BOX_STYLE_KEYS_BY_TYPE[row.type],
+    ...textKeys,
+    ...(EXTRA_STYLE_KEYS_BY_ROW_TYPE[row.type] ?? []),
+  ]);
+  Object.keys(style as Record<string, unknown>).forEach((key) => {
+    if (!allowed.has(key)) {
+      fail(
+        `${path}.style.${key}`,
+        `is not a style key of the "${row.type}" template`
+      );
+    }
+  });
+  // Market keeps its own richer assertions, driven from assertMarketRow.
+  if (row.type === 'market') return;
+  assertBoxStyle(style as RowBoxStyle, `${path}.style`);
+  const slots = style as Record<string, NativeListTextStyle | undefined>;
+  textKeys.forEach((key) =>
+    assertTextStyle(slots[key], `${path}.style.${key}`)
+  );
+}
+
+const LIST_STYLE_KEYS: readonly string[] = ['separator', 'groupCornerRadius'];
+const SEPARATOR_STYLE_KEYS: readonly string[] = ['inset', 'color'];
+
+function assertUnknownKeys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  path: string,
+  subject: string
+): void {
+  Object.keys(value).forEach((key) => {
+    if (!allowed.includes(key)) fail(`${path}.${key}`, `is not a ${subject}`);
+  });
+}
+
+function assertListStyle(
+  listStyle: NativeListListStyle | undefined,
+  path: string
+): void {
+  if (listStyle === undefined) return;
+  if (
+    typeof listStyle !== 'object' ||
+    listStyle === null ||
+    Array.isArray(listStyle)
+  ) {
+    fail(path, 'must be an object');
+  }
+  assertUnknownKeys(
+    listStyle as Record<string, unknown>,
+    LIST_STYLE_KEYS,
+    path,
+    'list style key'
+  );
+  assertBoundedStyleNumber(
+    listStyle.groupCornerRadius,
+    `${path}.groupCornerRadius`,
+    0,
+    40
+  );
+  const separator = listStyle.separator;
+  if (separator === undefined) return;
+  if (
+    typeof separator !== 'object' ||
+    separator === null ||
+    Array.isArray(separator)
+  ) {
+    fail(`${path}.separator`, 'must be an object');
+  }
+  assertUnknownKeys(
+    separator as Record<string, unknown>,
+    SEPARATOR_STYLE_KEYS,
+    `${path}.separator`,
+    'separator style key'
+  );
+  assertBoundedStyleNumber(separator.inset, `${path}.separator.inset`, 0, 64);
+  // Same format as every row style color; renderers parse it directly.
+  if (
+    separator.color !== undefined &&
+    (typeof separator.color !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(separator.color))
+  ) {
+    fail(`${path}.separator.color`, 'must be #RRGGBB or #RRGGBBAA');
+  }
+}
+
+/** Token resolution is idempotent: a resolved style carries no token. */
+function resolveTextStyle(
+  style: NativeListTextStyle | undefined
+): NativeListTextStyle | undefined {
+  if (!style?.token) return style;
+  const { token, ...overrides } = style;
+  return { ...TYPOGRAPHY_TOKENS[token], ...overrides };
+}
+
+function resolveStyleTokens(
+  style: Record<string, unknown>,
+  rowType: RowModel['type']
+): Record<string, unknown> {
+  const textKeys = TEXT_STYLE_KEYS_BY_ROW_TYPE[rowType] ?? [];
+  let changed = false;
+  const next: Record<string, unknown> = { ...style };
+  textKeys.forEach((key) => {
+    const slot = style[key] as NativeListTextStyle | undefined;
+    const resolved = resolveTextStyle(slot);
+    if (resolved !== slot) {
+      next[key] = resolved;
+      changed = true;
+    }
+  });
+  return changed ? next : style;
+}
+
+function normalizeRowStyles<T extends RowModel>(row: T): T {
+  // Narrowing a generic does not reach the walletGroup members; go through the
+  // union type instead.
+  const model: RowModel = row;
+  const style = (row as { style?: Record<string, unknown> }).style;
+  const nextStyle = style ? resolveStyleTokens(style, row.type) : style;
+  const prefix = model.type === 'market' ? model.subtitlePrefix : undefined;
+  const nextPrefixStyle = resolveTextStyle(prefix?.style);
+  let nextParent: IdentityRow | undefined;
+  let nextChildren: readonly IdentityRow[] | undefined;
+  if (model.type === 'walletGroup') {
+    const parent = normalizeRowStyles(model.parent);
+    const children = model.children.map(normalizeRowStyles);
+    if (
+      parent !== model.parent ||
+      children.some((child, index) => child !== model.children[index])
+    ) {
+      nextParent = parent;
+      nextChildren = children;
+    }
+  }
+  if (
+    nextStyle === style &&
+    nextPrefixStyle === prefix?.style &&
+    nextParent === undefined
+  ) {
+    return row;
+  }
+  const next: Record<string, unknown> = { ...row };
+  if (nextStyle !== style) next.style = nextStyle;
+  if (prefix && nextPrefixStyle !== prefix.style) {
+    next.subtitlePrefix = { ...prefix, style: nextPrefixStyle };
+  }
+  if (nextParent !== undefined) {
+    next.parent = nextParent;
+    next.children = nextChildren;
+  }
+  return next as T;
 }
 
 function assertMarketRow(row: MarketRow, path: string): void {
@@ -235,10 +615,7 @@ function assertMarketRow(row: MarketRow, path: string): void {
       1,
       320
     );
-    assertMarketTextStyle(
-      row.subtitlePrefix.style,
-      `${path}.subtitlePrefix.style`
-    );
+    assertTextStyle(row.subtitlePrefix.style, `${path}.subtitlePrefix.style`);
   }
   assertText(row.price, `${path}.price`);
   assertText(row.change.text, `${path}.change.text`);
@@ -286,7 +663,17 @@ function assertMarketRow(row: MarketRow, path: string): void {
     badgeKeys.add(badge.key);
     assertText(badge.text, `${badgePath}.text`);
     // OneKey patch: share typography bounds with Market text styles.
-    assertMarketTextStyle(badge.style, `${badgePath}.style`);
+    assertTextStyle(badge.style, `${badgePath}.style`, [
+      'height',
+      'horizontalPadding',
+    ]);
+    if (badge.style)
+      assertUnknownKeys(
+        badge.style,
+        ['fontSize', 'fontWeight', 'lineHeight', 'height', 'horizontalPadding'],
+        `${badgePath}.style`,
+        'Market badge style key'
+      );
     assertBoundedStyleNumber(
       badge.style?.height,
       `${badgePath}.style.height`,
@@ -571,18 +958,31 @@ function assertWalletGroup(row: WalletGroupRow, path: string): void {
   });
 }
 
+function assertRowType(
+  type: unknown,
+  path: string
+): asserts type is RowModel['type'] {
+  if (
+    typeof type !== 'string' ||
+    !Object.prototype.hasOwnProperty.call(ROW_BOX_STYLE_KEYS_BY_TYPE, type)
+  ) {
+    fail(`${path}.type`, 'is not supported');
+  }
+}
+
 function assertRow(
   row: RowModel,
   index: number,
   path = `rows[${index}]`
 ): void {
+  assertRowType(row.type, path);
   assertKey(row.key, `${path}.key`);
   // OneKey patch: explicit dimensions and opacity cannot corrupt list layout.
   if (row.height !== undefined && (row.height < 0 || row.height > 4096))
     fail(`${path}.height`, 'must be within 0...4096');
   if (
     row.heightRounding !== undefined &&
-    (row.height === undefined ||
+    ((row.height === undefined && row.style?.container?.height === undefined) ||
       !['floor', 'nearest'].includes(row.heightRounding))
   )
     fail(
@@ -597,6 +997,7 @@ function assertRow(
   if (!row.groupId && row.groupPosition) {
     fail(`${path}.groupId`, 'is required when groupPosition is present');
   }
+  assertRowStyle(row, path);
   assertVisual(row, path);
 
   switch (row.type) {
@@ -685,8 +1086,8 @@ function assertRow(
     case 'message':
       assertText(row.title, `${path}.title`);
       assertText(row.body, `${path}.body`);
-      if ((row.bodyLines ?? 3) < 1 || (row.bodyLines ?? 3) > 3) {
-        fail(`${path}.bodyLines`, 'must be within 1...3');
+      if (![1, 2, 3].includes(row.bodyLines ?? 3)) {
+        fail(`${path}.bodyLines`, 'must be 1, 2, or 3');
       }
       assertImage(row.thumbnail, `${path}.thumbnail`);
       break;
@@ -964,6 +1365,8 @@ export function validateSnapshot(
     }
   }
 
+  assertListStyle(snapshot.listStyle, 'snapshot.listStyle');
+
   const rowKeys = new Set<string>();
   const sectionIndexTitles = new Set<string>();
   snapshot.rows.forEach((row, index) => {
@@ -1016,11 +1419,44 @@ export function validateSnapshot(
       'supports at most one key in single mode'
     );
   }
-  return snapshot;
+  return normalizeSnapshotStyles(snapshot);
+}
+
+/**
+ * Resolves typography tokens to numbers. Returns the original snapshot when
+ * nothing needs resolving, so the common no-style path keeps object identity.
+ */
+function normalizeSnapshotStyles(
+  snapshot: NativeListSnapshot
+): NativeListSnapshot {
+  let changed = false;
+  const rows = snapshot.rows.map((row) => {
+    const next = normalizeRowStyles(row);
+    if (next !== row) changed = true;
+    return next;
+  });
+  const emptyState = snapshot.emptyState
+    ? normalizeRowStyles(snapshot.emptyState)
+    : snapshot.emptyState;
+  const fixedFooter = snapshot.fixedFooter
+    ? normalizeRowStyles(snapshot.fixedFooter)
+    : snapshot.fixedFooter;
+  if (
+    !changed &&
+    emptyState === snapshot.emptyState &&
+    fixedFooter === snapshot.fixedFooter
+  ) {
+    return snapshot;
+  }
+  return { ...snapshot, rows, emptyState, fixedFooter };
 }
 
 function assertPatchChanges(patch: RowPatch, index: number): void {
   const path = `patches[${index}].changes`;
+  const patchedStyle = (patch.changes as { style?: unknown }).style;
+  if (patchedStyle !== undefined) {
+    assertRowStyle({ type: patch.type, style: patchedStyle } as RowModel, path);
+  }
   // OneKey patch: partial balance updates retain a valid, current accessibility label.
   if ('accessibilityLabel' in patch.changes) {
     assertText(patch.changes.accessibilityLabel, `${path}.accessibilityLabel`);
@@ -1095,9 +1531,9 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       assertText(patch.changes.time, `${path}.time`);
       if (
         patch.changes.bodyLines !== undefined &&
-        (patch.changes.bodyLines < 1 || patch.changes.bodyLines > 3)
+        ![1, 2, 3].includes(patch.changes.bodyLines)
       ) {
-        fail(`${path}.bodyLines`, 'must be within 1...3');
+        fail(`${path}.bodyLines`, 'must be 1, 2, or 3');
       }
       assertImage(patch.changes.thumbnail, `${path}.thumbnail`);
       break;
@@ -1236,7 +1672,26 @@ export function validatePatches(
     }
     assertPatchChanges(patch, index);
   });
-  return patches;
+  return normalizePatchStyles(patches);
+}
+
+/** Patches reach the native side without passing through a snapshot. */
+function normalizePatchStyles(
+  patches: readonly RowPatch[]
+): readonly RowPatch[] {
+  let changed = false;
+  const next = patches.map((patch) => {
+    const style = (patch.changes as { style?: Record<string, unknown> }).style;
+    if (!style) return patch;
+    const resolved = resolveStyleTokens(style, patch.type);
+    if (resolved === style) return patch;
+    changed = true;
+    return {
+      ...patch,
+      changes: { ...patch.changes, style: resolved },
+    } as RowPatch;
+  });
+  return changed ? next : patches;
 }
 
 export function applyRowPatches(
