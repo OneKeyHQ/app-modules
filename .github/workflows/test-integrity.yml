@@ -1,0 +1,26 @@
+name: test-integrity
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+      - name: Install dependencies
+        run: |
+          corepack enable
+          yarn install --immutable
+      - name: Test integrity checker
+        run: node --test development/lint/test-integrity.node-test.js
+      - name: Check repository tests
+        run: yarn lint:test-integrity
