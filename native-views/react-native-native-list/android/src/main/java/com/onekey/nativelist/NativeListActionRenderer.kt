@@ -51,7 +51,7 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
         else -> Gravity.CENTER_VERTICAL
       }
     val selector = item.json.optString("presentation") == "accountSelector"
-    visual.roundedGlyphOrigin = selector && item.json.has("height")
+    visual.roundedGlyphOrigin = selector && item.hasExplicitHeight
     val descriptors =
       item.json.optJSONObject("checkbox")?.let { JSONArray().put(it) }
         ?: item.json.optJSONArray("trailing")
@@ -121,7 +121,7 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
             marginEnd =
               if (style.has("leadingGap")) stylePx(style.optDouble("leadingGap"))
               // Legacy: Yoga rounds the cumulative selector edges, not each gap.
-              else if (selector && item.json.has("height")) dp(56) - dp(12) - dp(32)
+              else if (selector && item.hasExplicitHeight) dp(56) - dp(12) - dp(32)
               else dp(12)
           }
       visual.bind(source, image, item.key, theme, false, sourceScale)
@@ -136,7 +136,7 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
     super.onLayout(changed, l, t, r, b)
     val item = tag as? NativeListItem ?: return
     if (
-      item.json.has("height") &&
+      item.hasExplicitHeight &&
         item.json.optString("presentation") == "accountSelector" &&
         item.json
           .optJSONObject("style")

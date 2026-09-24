@@ -367,9 +367,8 @@ internal class NativeListMarketRowView(context: ThemedReactContext) :
         kotlin.math.ceil(sourceSize.toDouble()).toFloat(),
       )
     }
+    // Legacy parity: keep marketText's subscript AbsoluteSizeSpan (ceil(0.6 x fontSize)).
     val text = SpannableStringBuilder(view.text)
-    if (style.has("fontSize"))
-      text.getSpans(0, text.length, AbsoluteSizeSpan::class.java).forEach(text::removeSpan)
     text.getSpans(0, text.length, NativeListLineHeightSpan::class.java).forEach(text::removeSpan)
     if (style.has("lineHeight")) {
       val lineHeight = stylePx(style.optDouble("lineHeight"))

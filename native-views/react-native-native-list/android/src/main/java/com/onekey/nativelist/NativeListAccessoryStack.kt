@@ -336,7 +336,7 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     }
     checkbox.visibility = VISIBLE
     checkbox.setState(state, checkboxIconColor)
-    val usesSourceCheckboxGeometry = checkboxUsesSelectorStyle && item.json.has("height")
+    val usesSourceCheckboxGeometry = checkboxUsesSelectorStyle && item.hasExplicitHeight
     checkbox.usesSelectorGeometry = usesSourceCheckboxGeometry
     if (usesSourceCheckboxGeometry) {
       // OneKey patch: source Yoga children may round into padding; retain their complete border.
@@ -514,8 +514,8 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     icon.contentDescription = data.optString("accessibilityLabel").takeIf { it.isNotEmpty() }
     if (item.json.optString("presentation") == "accountSelector") {
       icon.glyphSizeDp = 24
-      val isSourceMenu = item.json.has("height") && icon.iconName == "DotHorOutline"
-      val size = if (item.json.has("height") && icon.iconName == "PlusSmallOutline") 36 else 38
+      val isSourceMenu = item.hasExplicitHeight && icon.iconName == "DotHorOutline"
+      val size = if (item.hasExplicitHeight && icon.iconName == "PlusSmallOutline") 36 else 38
       icon.layoutParams =
         LayoutParams(dp(size), dp(size)).apply {
           gravity = Gravity.CENTER_VERTICAL

@@ -228,7 +228,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
     title.typeface =
       when {
         network &&
-          item.json.has("height") &&
+          item.hasExplicitHeight &&
           variant != "summary" &&
           (item.json.optJSONObject("checkbox") != null ||
             item.json.optString("titleActionKey").isEmpty()) -> NativeListFonts.semibold(context)
@@ -252,7 +252,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
     if (layout == "table") TextViewCompat.setLineHeight(trailingViews[0], dp(14))
     if (
       network &&
-        item.json.has("height") &&
+        item.hasExplicitHeight &&
         variant != "summary" &&
         item.json.optString("titleActionKey").isEmpty() &&
         item.json.optJSONObject("checkbox") == null
@@ -359,7 +359,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
     super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     val item = currentItem ?: return
     if (
-      item.json.has("height") &&
+      item.hasExplicitHeight &&
         item.json.optString("presentation") == "networkSelector" &&
         checkboxControl.visibility == VISIBLE &&
         trailingColumn.parent === this
@@ -383,7 +383,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
     super.onLayout(changed, left, top, right, bottom)
     val item = currentItem ?: return
     if (
-      item.json.has("height") &&
+      item.hasExplicitHeight &&
         item.json.optString("presentation") == "networkSelector" &&
         item.json.optString("variant") == "summary" &&
         item.json
@@ -428,7 +428,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
       }
     val isNetworkSelector = item.json.optString("presentation") == "networkSelector"
     val isHistory = variant == "history"
-    val isExplicitNetworkHeader = isNetworkSelector && item.json.has("height")
+    val isExplicitNetworkHeader = isNetworkSelector && item.hasExplicitHeight
     val hasDottedTitle =
       isSummary ||
         (isNetworkSelector &&

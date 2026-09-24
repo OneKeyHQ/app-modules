@@ -569,6 +569,9 @@ class NativeListView(
       adapter.layout = next.layout
       adapter.orientation = next.orientation
       adapter.selectedKeys = next.selectedKeys
+      // Rows rebind through the adapter's listStyle invalidation; the fixed footer is bound
+      // outside the adapter, so a listStyle-only snapshot must rebind it here.
+      if (previous.listStyle?.toString() != next.listStyle?.toString()) bindFooter(next)
       adapter.submitList(next.items) {
         // OneKey patch: DiffUtil has dispatched its payloads; release the old serialized rows.
         next.items.forEach { it.selectionUpdateFromContent = null }
@@ -2744,7 +2747,7 @@ private class ItemSpacingDecoration(
     if (spacing <= 0) return
     val horizontal = (parent.layoutManager as? LinearLayoutManager)?.orientation == RecyclerView.HORIZONTAL
     val item = view.tag as? NativeListItem
-    val sourceWallet = item?.type == "identity" && item.json.optString("presentation") == "walletSidebar" && item.json.has("height")
+    val sourceWallet = item?.type == "identity" && item.json.optString("presentation") == "walletSidebar" && item.hasExplicitHeight
     // OneKey patch: V1 measures the wallet and its bottom padding as one sortable row.
     val itemSpacing = if (!horizontal && sourceWallet) {
       val sourceHeight = item!!.styledHeight ?: item.json.optDouble("height")

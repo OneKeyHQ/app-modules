@@ -65,6 +65,10 @@ internal data class NativeListItem(
   val styledHeight: Double?
     get() = json.optJSONObject("style")?.optJSONObject("container")
       ?.takeIf { it.has("height") }?.optDouble("height")
+  // Selector presentations use their explicit-height geometry when either explicit height field
+  // is set (Web `hasExplicitRowHeight`). Row-local only; list-wide source scale stays row.height.
+  val hasExplicitHeight: Boolean
+    get() = styledHeight != null || json.has("height")
   // OneKey patch: only a host-validated stable snapshot can request a lightweight diff payload.
   var selectionUpdateFromContent: String? = null
 

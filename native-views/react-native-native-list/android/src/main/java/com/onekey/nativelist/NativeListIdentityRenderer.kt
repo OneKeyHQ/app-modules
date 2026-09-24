@@ -47,7 +47,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
   ) =
     if (
       item.json.optString("presentation") == "walletSidebar" ||
-        item.json.has("height") &&
+        item.hasExplicitHeight &&
           item.json.optString("presentation") in setOf("accountSelector", "networkSelector")
     )
       "single"
@@ -307,7 +307,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
       else 18
     leadingFrame.walletTextOverlays = walletSource
     leadingFrame.roundedImageRadius =
-      if (item.json.optString("presentation") == "accountSelector" && item.json.has("height")) 8
+      if (item.json.optString("presentation") == "accountSelector" && item.hasExplicitHeight) 8
       else 10
     leadingFrame.bind(descriptor, style, item.key, currentTheme, false, sourceScale)
     leadingFallback.typeface = NativeListFonts.bold(context)
@@ -323,7 +323,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
           // Legacy: Yoga rounds cumulative selector edges, not each gap separately.
           marginEnd =
             if (
-              item.json.has("height") &&
+              item.hasExplicitHeight &&
                 item.json.optString("presentation") in setOf("accountSelector", "networkSelector")
             )
               dp(12 + sizeDp + spacingDp) - dp(12) - dp(sizeDp)
@@ -359,7 +359,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     val item = currentItem ?: return
     if (
-      item.json.has("height") &&
+      item.hasExplicitHeight &&
         item.json.optString("presentation") == "networkSelector" &&
         trailingColumn.hasCheckbox &&
         trailingColumn.parent === this
@@ -389,7 +389,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
         ?.has("contentVerticalAlignment") == true
     )
       return
-    if (!item.json.has("height")) return
+    if (!item.hasExplicitHeight) return
     val accessory = item.json.optJSONArray("trailing")?.optJSONObject(0)
     if (
       item.json.optString("presentation") == "accountSelector" &&
@@ -445,7 +445,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
       title.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
       title.gravity = Gravity.CENTER
       // OneKey patch: this branch returns before the common identity ellipsis setup.
-      if (item.json.has("height")) title.ellipsize = TextUtils.TruncateAt.END
+      if (item.hasExplicitHeight) title.ellipsize = TextUtils.TruncateAt.END
       showText(title, item.json.optString("title"), 1)
       title.setTextColor(
         color(
@@ -458,7 +458,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
         mainColumn,
         LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
           // OneKey patch: snap the source 4 + 40 + 4 sequence once instead of rounding each gap.
-          topMargin = if (item.json.has("height")) dp(48) - dp(44) else dp(4)
+          topMargin = if (item.hasExplicitHeight) dp(48) - dp(44) else dp(4)
         },
       )
       // OneKey patch: wallet tags are a centered line below the wallet name.
@@ -466,7 +466,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
         .optJSONArray("badges")
         ?.takeIf { it.length() > 0 }
         ?.let { badges ->
-          val isSelector = item.json.has("height")
+          val isSelector = item.hasExplicitHeight
           val badgeLineHeight = if (isSelector) 14 else 16
           val badgeHeight = badgeLineHeight + 4
           val line =
@@ -537,7 +537,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     if (item.json.optString("presentation") == "networkSelector") {
       // OneKey patch: the explicit 48-point row centers its 32-point network icon.
       // setPadding(dp(12), dp(7), dp(12), dp(8))
-      setPadding(dp(12), dp(if (item.json.has("height")) 8 else 7), dp(12), dp(8))
+      setPadding(dp(12), dp(if (item.hasExplicitHeight) 8 else 7), dp(12), dp(8))
     }
     val leading = item.json.optJSONObject("leading")
     item.json.optJSONObject("leadingAction")?.let { action ->
@@ -681,7 +681,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     addView(trailingColumn, wrap())
     val accessories = item.json.optJSONArray("trailing") ?: JSONArray()
     if (
-      item.json.has("height") &&
+      item.hasExplicitHeight &&
         item.json.optString("presentation") == "networkSelector" &&
         accessories.hasAccessory("checkbox")
     ) {
