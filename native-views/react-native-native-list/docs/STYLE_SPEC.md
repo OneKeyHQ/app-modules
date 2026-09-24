@@ -1,7 +1,11 @@
 # NativeList Style Spec
 
-Status: **shared style contract implemented in source; native rendered acceptance pending**. Consolidated on 2026-09-22
-from PRs #107, #109, #110, #111 and #112, on main `feac35eb6`.
+Status: **shared style contract implemented on Web, iOS and Android through the
+registered template renderers**. Consolidated on 2026-09-22 from PRs #107, #109,
+#110, #111 and #112, on main `feac35eb6`; the renderer migration and its dated
+per-stage runtime acceptance are recorded in [SPEC.md](SPEC.md) and
+[DESIGN.md](DESIGN.md). The full §9 matrix (pixel parity, localized/RTL text and
+font scaling on every template) has not been executed as one pass.
 Use symbol names as source anchors. Tables of legacy defaults below are an
 inventory, not evidence of three-platform visual acceptance.
 
@@ -114,7 +118,7 @@ object identity.
 | `listStyle.separator` / `groupCornerRadius` | Initial/update propagation and actual-group scope aligned |
 | Row heights and overflow | `style.container.height` overrides `row.height`; omission retains template measurement, including existing style-dependent sizing; caller owns content fitting |
 | Legacy baseline dimensions | Inventory in §4/§6; explicit style values use logical units independently of Android's legacy list scale |
-| Rendered acceptance | The source contract and build checks do not establish full native interaction/pixel acceptance (§9) |
+| Rendered acceptance | Per-stage renderer runtime cases are recorded in SPEC.md/DESIGN.md; source and unit checks alone do not establish the full §9 pixel/interaction matrix |
 
 Each renderer maps its own model fields to owned views. There is no global
 cross-template style-slot map or shared legacy text-view pool. §4 remains the
@@ -200,11 +204,11 @@ Radius steps in use: `4` (chip), `8` (rail, small visual), `10` (visual `rounded
 ## 4. T2 — Template style surface
 
 `style.X` modifies the rendering of the **model field named `X`**, regardless of
-which physical view carries it. This matters because legacy view slots are shared: on
-native legacy `metricCard` renders its *value* through the title label and its
-*title* through the subtitle label, and the status label carries `rail.status`,
-`activity.status` and `metricCard.trend`. Naming style keys after
-views would therefore mis-target. `market` already follows this rule with
+which physical view carries it. Each registered template renderer owns its views
+and maps the key to the view rendering that field. The removed legacy native
+views shared slots (for example legacy `metricCard` rendered its *value* through
+the title label and its *title* through the subtitle label), which is why style
+keys were never named after views. `market` follows the same rule with
 `style.price` / `style.change`.
 
 On Web the element rendering a field carries `data-nl-slot="<field>"`, so the
@@ -221,7 +225,8 @@ Every text role listed below accepts the same `NativeListTextStyle`:
 `token`, `fontSize`, `fontWeight`, `color`, `lineHeight`, `lines`, `truncate`,
 `alignment`, `verticalAlignment`, `offsetY`.
 Weights are `regular | medium | semibold | bold`; line counts are `1 | 2 | 3`;
-`start | center | end` alignment follows layout direction. Colors must be
+`start | center | end` alignment follows layout direction on all three
+platforms (`end` is the left edge in RTL). Colors must be
 `#RRGGBB` or `#RRGGBBAA`, the common native/Web color format. Omitted properties
 preserve the template's values. Explicit properties override token values,
 presentation defaults and rich-text runs only for that property.
@@ -268,7 +273,9 @@ does not change the typography or inner label/value gap of each metric.
 
 Variant applicability is also shared: composite metric-card `title` styles its
 heading, while standard-card `value`/`subtitle`/`trend` do not style nested metrics;
-`system.title` applies to warning, `actionText` to retry. A missing leading visual,
+`system.title` applies to warning, `actionText` to the retry button. Web draws
+that button only for the Market retry (legacy), so on a non-Market Web retry row
+`actionText` has no target and is ignored; iOS/Android style their button. A missing leading visual,
 badge, subtitle or trailing value remains absent. New nested-metric/thumbnail
 style roles require a separately declared cross-platform contract.
 
@@ -400,6 +407,7 @@ Legend: **=** inventoried defaults agree; **≠** legacy divergence, see §6.
 | `title` | `$headingSm` | 16 medium / 24 | sp(16) medium / dp(24) | 16px / 20px / 600 **≠** |
 | `subtitle` | `$bodyMd` | 14 regular / 20 | sp(14) regular / dp(20) | 14px / 20px **=** |
 | `tertiary` | `$bodyMd` | 14 regular / 20 | sp(14) / dp(20) | 14px / 20px **=** |
+| `subtitle` lines | model `subtitleLines` | default 1 | default **2** | default 1 **≠** |
 | `badge` | `$bodySm` | 12 medium / 16, pad 8/2, r4 | sp(12) / dp(16), pad 8/2, r4 | 11px / 18px, pad 0 5, r5 **≠** |
 | `value` | `$headingSm` | 16 medium | sp(16) medium / dp(24) | 14px / 20px / 500 **≠** |
 | `valueSecondary` | `$bodyMd` | 14 regular | sp(14) regular / dp(20) | 14px **=** |
@@ -439,7 +447,8 @@ Legend: **=** inventoried defaults agree; **≠** legacy divergence, see §6.
 | --- | --- | --- | --- | --- |
 | member gap | 12 | stack spacing 12 | topMargin dp(12) | `gap:12px` **=** |
 | container radius | 12 | 20 | dp(12) | 12px **≠** |
-| container border | 1, `borderSubdued` | 1 | dp(1) | 1px **=** |
+| container border | 1, `borderSubdued`, drawn beneath members | 1 | dp(1) | 1px **=** |
+| compact drag height | 68 | 68 | max(68, parent + 2 × inset) | 68 **≠** |
 
 ### rail
 
@@ -511,8 +520,8 @@ defaults applied when `style` is absent.
 
 ### metricCard
 
-`title` is the small label; `value` is the large number. They are rendered through
-the subtitle and title views respectively — do not follow the view names.
+`title` is the small label; `value` is the large number. Style keys follow these
+model fields, whatever the renderer's internal view names are.
 
 | Key | Default | iOS | Android | Web |
 | --- | --- | --- | --- | --- |
@@ -625,6 +634,11 @@ is deliberately excluded rather than declared and half-implemented:
 - **Content padding and item spacing** are already `layout.contentPadding*` and
   `layout.itemSpacing`; duplicating them here would give one value two homes.
 
+Validated values: `separator.inset` is `0…64` logical units; `separator.color`
+must be `#RRGGBB` or `#RRGGBBAA`, the same format as every row style color;
+`groupCornerRadius` is `0…40` logical units. Any other `listStyle` or separator
+key is rejected.
+
 Every `listStyle` value is absent by default, and each platform keeps its own number
 as the fallback, so an untouched list renders exactly as before. On Web that required
 the inset separator to keep the transparent `border-bottom` for layout and paint the
@@ -646,6 +660,7 @@ Web registered estimate/DOM measurement. Preserved defaults still differ:
 | `rail` | 40 | 28 | 40 |
 | `activity` + footer actions | 100 | 104 | 100 |
 | `dataRow` + secondary text | 60 | 64 | 60 |
+| `dataRow` table, no secondary text | — | — | 48 (56 − 8) |
 | `sectionHeader` `summary` | 68 | 80 | 68 |
 | `sectionHeader` value + checkbox | 56 | 40 | 56 |
 | `message`, `mediaTile`, composite `metricCard` | computed / 244 / 160+ | 0 (wrap content) | computed / 244 / 161 |
@@ -674,6 +689,10 @@ here and left alone.
 | `metricCard.value` | 18 semibold | sp(18) semibold | **22 / 28 / 700** |
 | visual `rounded` radius | `min(10, h/4)` | `min(10, size/4)`; 8 for accountSelector | **10px**; 8 `!important` for account action; 8 for market |
 | `walletSidebar` row radius | **20** | 12 | 12 |
+| `identity` subtitle lines (no `subtitleLines`) | 1 | **2** | 1 (CSS single line) |
+| pressed row corners | 12 all corners (rail 8, mediaTile 16, wallet sidebar 20), ignoring `groupPosition` | same as iOS | background only; resting group/template radius kept **≠** |
+| `walletGroup` row `backgroundColor` | ignored | ignored | applied **≠** |
+| non-Market System retry | literal "Retry" button | literal "Retry" button | no button; message only, row press retries **≠** |
 | separator default inset | 60 identity / 12 | dp(60) identity / dp(12) | **0** |
 | separator thickness | `1 / scale` (hairline) | `1f` raw px | `1px` |
 
@@ -750,17 +769,23 @@ this change is not a wholesale redesign of those defaults.
 
 ## 7. Isolation rules
 
-Message has its own reuse family; unmigrated templates share the legacy pool.
-A styled row must not affect another row in either family. Four rules:
+Every template has its own renderer reuse family; there is no shared legacy
+pool. A styled row must not affect another row, whether it reuses the same host
+or not. Four rules:
 
 1. **Style types are per template.** `IdentityRowStyle` carries only identity's
    fields; `MetricCardRowStyle` only metricCard's. A key that the row type does not
-   declare fails `validateSnapshot` instead of silently hitting a shared view.
+   declare fails `validateSnapshot`/`validatePatches` instead of being ignored.
+   This strictness is new with the style surface: extra keys used to be ignored.
 2. **Every property gets an explicit default.** Restore font, line height, line
    count, alignment/gravity, padding, color and all other changed state before
    binding the next row. Native style passes save the actual bound text defaults
    for restoration (§6.5). An omitted
-   value must use that template's default, never a previous row's value.
+   value must use that template's default, never a previous row's value. The
+   shared container pass clears every property it wrote on the next bind,
+   including `align-self`/`flex-shrink` on template children. Image loading
+   visibility is image lifecycle state, not a template default: restoring
+   defaults must not hide an image that already loaded.
 3. **No list-wide side effects.** Any style-dependent decision is made per row.
    `usesSelectorSourceScale` (§6.3) is the counter-example to avoid.
 4. **Bounded and fail-soft.** Validate input in JavaScript before serialization;
@@ -887,7 +912,20 @@ Next acceptance work should execute the device cases in §6.5 and record
 platform-specific build and interaction evidence. The shared document is
 the contract; no shared cross-language renderer or code generator is required.
 
-### Verification — 2026-09-22
+### Verification — 2026-09-24 (Web legacy-default audit)
+
+- Package typecheck passes; 173 package tests in five suites pass, including
+  regressions for loaded MetricCard images across content/style rebinding,
+  WalletGroup vertical padding in measured height, container alignment cleared
+  from reused Activity/DataRow children, legacy table DataRow height (48) and
+  linear column structure,
+  selector geometry from `style.container.height`, attached/detached text
+  styling parity, `listStyle.separator.color` validation and the app Market
+  builder's style keys.
+- These are jsdom/unit checks of the Web renderers and validation; they are not
+  rendered browser or native device acceptance.
+
+### Verification — 2026-09-22 (historical, before the renderer migration)
 
 - Package TypeScript and JavaScript: 109 tests in five suites pass. Added cases
   cover per-template keys/colors, rich text and badge isolation, independent data

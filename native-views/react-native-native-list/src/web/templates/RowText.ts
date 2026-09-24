@@ -44,19 +44,13 @@ export function applyTextLayout(
   let content = element.querySelector<HTMLElement>(
     ':scope > .ok-native-list-text-content'
   );
-  const computed = element.ownerDocument.defaultView?.getComputedStyle(element);
+  // Line clamps are only ever written inline by templates (no stylesheet rule
+  // sets them), so no computed-style read is needed; this also keeps the result
+  // identical for attached and detached rows.
   const inheritedClamp = Number(
-    element.style.getPropertyValue('-webkit-line-clamp') ||
-      computed?.getPropertyValue('-webkit-line-clamp')
+    element.style.getPropertyValue('-webkit-line-clamp')
   );
-  const lines =
-    style.lines ??
-    defaultLines ??
-    (Number(
-      element.style.getPropertyValue('-webkit-line-clamp') ||
-        computed?.getPropertyValue('-webkit-line-clamp')
-    ) ||
-      1);
+  const lines = style.lines ?? defaultLines ?? (inheritedClamp || 1);
   if (
     !content &&
     (style.verticalAlignment !== undefined ||
@@ -92,8 +86,9 @@ export function applyTextLayout(
     !inheritedClamp
   ) {
     if (content) {
-      content.style.whiteSpace = computed?.whiteSpace || 'inherit';
-      content.style.textOverflow = computed?.textOverflow || 'inherit';
+      // Inherit the slot's resolved wrapping/truncation from CSS or inline style.
+      content.style.whiteSpace = 'inherit';
+      content.style.textOverflow = 'inherit';
       content.style.overflow = 'hidden';
     }
     return;

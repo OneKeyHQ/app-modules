@@ -1,4 +1,4 @@
-import { applyTabularNumbers } from './RowElements';
+import { applyTabularNumbers, hasExplicitRowHeight } from './RowElements';
 import type { ActionRow } from '../../models';
 import { RowVisualStyle, type RowPrimitives } from './RowVisual';
 
@@ -65,7 +65,7 @@ function bind(body: HTMLElement, row: ActionRow, primitives: RowPrimitives) {
     if (style?.trailingGap !== undefined)
       trailing.style.gap = `${style.trailingGap}px`;
     if (
-      row.height !== undefined &&
+      hasExplicitRowHeight(row) &&
       row.presentation === 'accountSelector' &&
       descriptors.length === 1 &&
       descriptors[0]?.kind === 'icon' &&

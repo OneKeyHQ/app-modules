@@ -57,6 +57,12 @@ separately from source implementation in STYLE_SPEC §9.
 - **Variants:** default horizontal row; `accountSelector` and `networkSelector`
   preserve selector control geometry; `walletSidebar` uses a compact, centered
   wallet presentation. A variant is explicit model data, never inferred from font size.
+  Selector control geometry applies when the row has an explicit height from
+  either `style.container.height` or the legacy `row.height`.
+- **Separator:** the default native separator inset is 60 for identity rows
+  and 12 for other templates (Web 0).
+- **Platform default:** without `subtitleLines` or `style.subtitle.lines`, the
+  subtitle shows one line on iOS and Web but two on Android (STYLE_SPEC §6.2).
 - **Text style roles:** `title`, `subtitle`, `tertiary`, `badge`, `value`,
   `valueSecondary`. The last two refer to value accessories in `trailing`; `badge`
   refers to badge text. `value`/`valueSecondary` select the first/second value
@@ -76,9 +82,17 @@ separately from source implementation in STYLE_SPEC §9.
 - **Required data:** `parent: IdentityRow`, nonempty `children: IdentityRow[]`.
   Every member must use `presentation: 'walletSidebar'`; `parent.key` must equal
   the group row's `key`, and member keys must be unique within the group.
+- **Default appearance:** the group border is drawn beneath member content.
+  Native groups ignore the row-level `backgroundColor`, while legacy Web still
+  applies it. `style.container` background, border and radius override the
+  group fill, border and radius on every platform.
+- **Drag:** only `draggable: false` excludes a member from starting the group
+  drag; disabled members can start it. The compact allocation is 68 on iOS/Web
+  and `max(68, parent height + 2 × vertical inset)` on Android.
 - **Style surface:** group `style` exposes the shared container appearance and horizontal/vertical padding. Text styles belong to
   `parent.style` or the individual `children[i].style`; there is no inherited
-  group `title`/`value` text style.
+  group `title`/`value` text style. Measured group height is the sum of member
+  heights, 12-unit member gaps and twice the group `verticalPadding`.
 - **Member lifecycle:** each member uses an independent Identity renderer, reused
   by member key. Removed members release their images/actions immediately.
   Press and accessory events use the member key; group dragging remains atomic.
@@ -149,7 +163,23 @@ separately from source implementation in STYLE_SPEC §9.
   semantic roles, not arbitrary per-native-label selectors.
 - **Layout boundary:** column order/count/weights are data, shared table column
   alignment is layout. Text styles cannot change those or move favorite/checkbox
-  controls into a data column.
+  controls into a data column. Default heights are 56, or 60 with secondary
+  text; Web table rows without secondary text are 48.
+- **Linear layout per platform (legacy defaults):**
+  - *iOS and Android, unstyled:* one label per column holding the primary text,
+    up to two inline badge runs and the secondary text on a second line.
+    `secondaryLeadingText` is not rendered. On Android, `disabled`/`caution`
+    tones render as primary text (legacy tone mapping).
+  - *iOS, styled:* the same single label. `columns`/`columnSecondary` apply
+    font, weight, color, line height and alignment to their text runs/lines;
+    `lines`, `truncate`, `verticalAlignment` and `offsetY` act on the whole
+    label; `titleBadgeGap` replaces the legacy two-space badge lead-in.
+  - *Android, styled (any non-empty `style`):* the separate column view is used
+    (primary line with pill badges, secondary line with secondary leading text),
+    so each role styles its own view.
+  - *Web:* `secondaryLeadingText` precedes the primary text on the same line,
+    badges follow it, and secondary text is directly below.
+  - Table layout uses the column view on every platform.
 - **Style isolation:** primary and secondary text use independent style targets in
   linear and table layouts on all three platforms. Column badges keep their own typography.
 
@@ -250,7 +280,9 @@ separately from source implementation in STYLE_SPEC §9.
   action text; `warning` requires title/message; `noMatch` requires message;
   `end` has optional message; `spacer` requires explicit height.
 - **Text style roles:** `title` for a visible title, `message` for status copy,
-  `actionText` for retry text. A spacer has no text slot; skeleton/spinner styling
+  `actionText` for the retry button text. On Web only the Market retry has a
+  button; a non-Market Web retry is message-only (the row press retries), so
+  `actionText` has no target there. A spacer has no text slot; skeleton/spinner styling
   does not become arbitrary drawing through these text roles.
 - **Layout boundary:** keep each variant's indicator/text/action structure and
   bounded height. Styling cannot convert loading into retry, turn a spacer into

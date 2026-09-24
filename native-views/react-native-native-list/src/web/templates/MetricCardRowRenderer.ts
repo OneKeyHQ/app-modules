@@ -3,7 +3,13 @@ import type {
   NativeListTextStyle,
   TextTone,
 } from '../../models';
-import { createElement, setData, tagSlot } from './RowElements';
+import {
+  captureInlineStyles,
+  createElement,
+  restoreInlineStyles,
+  setData,
+  tagSlot,
+} from './RowElements';
 import { RowVisualStyle, type RowPrimitives } from './RowVisual';
 const toneColor = (tone: TextTone | undefined, fallback: string) =>
   tone === 'positive'
@@ -206,9 +212,7 @@ function bind(
   const contentKey = JSON.stringify({ ...row, style: undefined });
   if (contentKey !== v.contentKey) {
     let index = 0;
-    v.defaults.forEach((css, node) => {
-      node.style.cssText = css;
-    });
+    restoreInlineStyles(v.defaults);
     const next = createMetricRow(
       body.ownerDocument,
       {
@@ -235,21 +239,15 @@ function bind(
     body.replaceChildren(...Array.from(next.childNodes));
     body.className = next.className;
     body.style.cssText = next.style.cssText;
-    v.defaults = new Map(
-      [body, ...body.querySelectorAll<HTMLElement>('*')].map((node) => [
-        node,
-        node.style.cssText,
-      ])
-    );
+    // Image opacity is loading state; restoring it would hide loaded images.
+    v.defaults = captureInlineStyles(body);
     const leading = body.querySelector<HTMLElement>(
       ':scope > .ok-native-list-visual, :scope > .ok-native-list-stacked'
     );
     v.visualStyle = leading ? new RowVisualStyle(leading) : undefined;
     v.contentKey = contentKey;
   }
-  v.defaults.forEach((css, node) => {
-    node.style.cssText = css;
-  });
+  restoreInlineStyles(v.defaults);
   body.removeAttribute('data-nl-container-background');
   body.removeAttribute('data-nl-container-border');
   const style = row.style;

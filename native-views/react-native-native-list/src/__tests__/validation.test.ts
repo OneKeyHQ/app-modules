@@ -1410,6 +1410,106 @@ describe('NativeList style contract', () => {
     ).toThrow('is not a separator style key');
   });
 
+  it('validates the separator color with the shared row color format', () => {
+    const withChrome = (listStyle: unknown): NativeListSnapshot =>
+      ({ ...snapshot(), listStyle } as NativeListSnapshot);
+    expect(
+      validateSnapshot(withChrome({ separator: { color: '#11223344' } }))
+        .listStyle
+    ).toEqual({ separator: { color: '#11223344' } });
+    for (const color of ['red', '#fff', 'rgba(0,0,0,0.1)', '#1122334', 42]) {
+      expect(() =>
+        validateSnapshot(withChrome({ separator: { color } }))
+      ).toThrow('listStyle.separator.color: must be #RRGGBB or #RRGGBBAA');
+    }
+  });
+
+  it('accepts every style key sent by the app Market list builder', () => {
+    // Mirrors TOKEN_ROW_STYLE, rowStyleForChange, subtitle prefixes and the
+    // token/perps badge styles in app-monorepo marketNativeListRows.ts.
+    const style = {
+      horizontalPadding: 20,
+      verticalPadding: 12,
+      leadingGap: 14,
+      lineGap: 4,
+      titleBadgeGap: 4,
+      titleBadgeLayout: 'inline',
+      trailingGap: 8,
+      image: {
+        width: 32,
+        height: 32,
+        shape: 'circle',
+        cornerRadius: 16,
+        contentFit: 'cover',
+      },
+      title: {
+        fontSize: 16,
+        fontWeight: 'medium',
+        lineHeight: 24,
+        lines: 1,
+        alignment: 'start',
+      },
+      subtitle: {
+        fontSize: 12,
+        fontWeight: 'regular',
+        lineHeight: 16,
+        lines: 1,
+        alignment: 'start',
+      },
+      price: {
+        fontSize: 16,
+        fontWeight: 'medium',
+        lineHeight: 24,
+        lines: 1,
+        alignment: 'end',
+      },
+      change: {
+        fontSize: 13,
+        fontWeight: 'medium',
+        lineHeight: 20,
+        lines: 1,
+        alignment: 'center',
+      },
+      changeWidth: 80,
+      changeHeight: 32,
+      changeCornerRadius: 8,
+    } as const;
+    expect(() =>
+      validateSnapshot(
+        snapshot([
+          {
+            ...marketRow(),
+            style,
+            badges: [
+              {
+                key: 'stock-source',
+                icon: {
+                  uri: 'https://example.com/s.png',
+                  width: 14,
+                  height: 14,
+                },
+                style: { height: 14 },
+                tone: 'neutral',
+              },
+              {
+                key: 'leverage',
+                text: '10x',
+                tone: 'info',
+                style: {
+                  fontSize: 10,
+                  fontWeight: 'regular',
+                  lineHeight: 16,
+                  height: 16,
+                  horizontalPadding: 6,
+                },
+              },
+            ],
+          } as MarketRow,
+        ])
+      )
+    ).not.toThrow();
+  });
+
   it('keeps the Market style surface intact', () => {
     const [first] = validateSnapshot(
       snapshot([

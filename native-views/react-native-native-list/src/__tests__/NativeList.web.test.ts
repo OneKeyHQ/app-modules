@@ -26,6 +26,7 @@ import {
   webRowRenderSignature,
   webWalletGroupReorderBadge,
 } from '../web/NativeListWebEngine';
+import { applyTextStyleToSlot } from '../web/templates/RowText';
 
 jest.mock('../web/NativeListWebAvatarCache', () => ({
   acquireNativeListAvatar: jest.fn(),
@@ -1364,9 +1365,12 @@ describe('web row style', () => {
         ])
       );
       expect(body.querySelector('[role="progressbar"]')).toBeNull();
+      // Legacy Web: a non-Market retry shows only its message; the row press
+      // carries the retry action.
       expect(
         body.querySelector('[data-native-list-action="retry"]')
-      ).not.toBeNull();
+      ).toBeNull();
+      expect(body.textContent).toBe('Retry connection');
     } finally {
       engine.destroy();
     }
@@ -2052,10 +2056,12 @@ describe('web row style', () => {
       identity.querySelector<HTMLElement>('[data-nl-slot="subtitle"]')!.style
         .fontSize
     ).toBe('18px');
+    // Only the Market retry has a Web retry button (legacy Web).
     const retry = render({
       type: 'system',
       key: 's',
       variant: 'retry',
+      presentation: 'market',
       message: 'Failed',
       actionText: 'Try again',
       actionKey: 'retry',
@@ -2715,7 +2721,7 @@ describe('complex renderer lifecycle', () => {
       engine.destroy();
     }
   });
-  it('gates disabled group member controls after rebinding', () => {
+  it('keeps legacy disabled group member actions and drag after rebinding', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const host = document.createElement('div');
     document.body.appendChild(host);
@@ -2759,14 +2765,460 @@ describe('complex renderer lifecycle', () => {
       engine.applySnapshot(
         snap({ ...row, children: [{ ...member, disabled: true }] })
       );
+      // Legacy Web: a disabled member keeps its own actions.
       buttons()[0]!.click();
-      expect(onRowAction).toHaveBeenCalledTimes(1);
+      expect(onRowAction).toHaveBeenCalledTimes(2);
+      expect(onRowAction.mock.calls[1]![0]).toMatchObject({
+        rowKey: 'child',
+        actionKey: 'menu',
+      });
+      // Legacy: a disabled member can still start the atomic group drag;
+      // only `draggable: false` excludes it.
       expect(
         canStartWebWalletGroupReorder(
           { ...row, children: [{ ...member, disabled: true }] },
           'child'
         )
+      ).toBe(true);
+      expect(
+        canStartWebWalletGroupReorder(
+          { ...row, children: [{ ...member, draggable: false }] },
+          'child'
+        )
       ).toBe(false);
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+    }
+  });
+});
+
+describe('legacy default regressions', () => {
+  const { JSDOM } = require('jsdom') as {
+    JSDOM: new (html: string) => {
+      window: { document: Document; Event: typeof Event };
+    };
+  };
+  const snap = (
+    items: readonly RowModel[],
+    layout: NativeListSnapshot['layout'] = { kind: 'linear' }
+  ): NativeListSnapshot => ({
+    schemaVersion: 1,
+    generation: 1,
+    layout,
+    rows: items,
+  });
+  const mount = (initial: NativeListSnapshot) => {
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const host = window.document.createElement('div');
+    window.document.body.appendChild(host);
+    const engine = new NativeListWebEngine(host, initial, {}, false);
+    return { window, host, engine };
+  };
+
+  it('keeps loaded MetricCard images visible across content and style rebinding', () => {
+    const row: Extract<RowModel, { type: 'metricCard' }> = {
+      type: 'metricCard',
+      key: 'metric',
+      title: 'Portfolio',
+      value: '$42,000',
+      visual: { kind: 'image', image },
+    };
+    const composite: typeof row = {
+      ...row,
+      key: 'composite',
+      variant: 'activity',
+      metrics: [
+        { key: 'a', label: 'A', value: '1', visual: { kind: 'image', image } },
+        { key: 'b', label: 'B', value: '2' },
+      ],
+    };
+    const { window, host, engine } = mount(snap([row, composite]));
+    try {
+      const images = Array.from(host.querySelectorAll('img'));
+      expect(images).toHaveLength(2);
+      images.forEach((img) => {
+        expect(img.style.opacity).toBe('0');
+        img.dispatchEvent(new window.Event('load'));
+        expect(img.style.opacity).toBe('1');
+      });
+      const updates: readonly (readonly RowModel[])[] = [
+        // Content-only change rebuilds the template while reusing the image.
+        [
+          { ...row, value: '$43,000' },
+          { ...composite, title: 'Changed' },
+        ],
+        // Style-only change restores defaults before applying the style.
+        [
+          { ...row, value: '$43,000', style: { value: { fontSize: 22 } } },
+          {
+            ...composite,
+            title: 'Changed',
+            style: { title: { fontSize: 20 } },
+          },
+        ],
+        // Clearing the style restores defaults again.
+        [
+          { ...row, value: '$43,000' },
+          { ...composite, title: 'Changed' },
+        ],
+      ];
+      updates.forEach((items) => {
+        engine.applySnapshot(snap(items));
+        const current = Array.from(host.querySelectorAll('img'));
+        expect(current).toEqual(images);
+        current.forEach((img) => expect(img.style.opacity).toBe('1'));
+      });
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('includes group vertical padding in WalletGroup height and keeps legacy member presets', () => {
+    const member = (
+      key: string,
+      extra: Partial<IdentityRow> = {}
+    ): IdentityRow => ({
+      type: 'identity',
+      key,
+      presentation: 'walletSidebar',
+      leading: { kind: 'wallet', fallbackText: key },
+      title: key,
+      ...extra,
+    });
+    const group: Extract<RowModel, { type: 'walletGroup' }> = {
+      type: 'walletGroup',
+      key: 'parent',
+      // Legacy walletSidebar presets ignore `size`; badges add 24.
+      parent: member('parent', { size: 'large' }),
+      children: [
+        member('badged', { badges: [{ key: 'hidden', text: 'Hidden' }] }),
+        member('plain', { size: 'small' }),
+      ],
+    };
+    const unstyled = 68 + 92 + 68 + 2 * 12;
+    expect(estimateWebRowHeight(group, snap([group]), 320)).toBe(unstyled);
+    const padded = { ...group, style: { verticalPadding: 10 } };
+    expect(estimateWebRowHeight(padded, snap([padded]), 320)).toBe(
+      unstyled + 20
+    );
+    // Explicit-height selector members keep the legacy 2-unit border budget.
+    const explicit = {
+      ...padded,
+      parent: { ...group.parent, style: { container: { height: 60 } } },
+    };
+    expect(estimateWebRowHeight(explicit, snap([explicit]), 320)).toBe(
+      60 + 92 + 68 + 2 * 12 + 2 + 20
+    );
+
+    const { host, engine } = mount(snap([padded]));
+    try {
+      const wrappers = Array.from(
+        host.querySelectorAll<HTMLElement>('.ok-native-list-wallet-member')
+      );
+      expect(wrappers.map((wrapper) => wrapper.style.height)).toEqual([
+        '68px',
+        '92px',
+        '68px',
+      ]);
+      const body = host.querySelector<HTMLElement>(
+        '.ok-native-list-wallet-group'
+      )!;
+      expect(body.style.paddingBlock).toBe('10px');
+      expect(
+        host.querySelector<HTMLElement>('.ok-native-list-item')?.style.height
+      ).toBe(`${unstyled + 20}px`);
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('clears container alignment from reused Activity and DataRow children', () => {
+    const activity: Extract<RowModel, { type: 'activity' }> = {
+      type: 'activity',
+      key: 'activity',
+      leading: { kind: 'icon', name: 'coin' },
+      title: 'Sent',
+      primaryAmount: '-1 BTC',
+    };
+    const data: Extract<RowModel, { type: 'dataRow' }> = {
+      type: 'dataRow',
+      key: 'data',
+      favorite: true,
+      columns: [
+        { key: 'asset', text: 'BTC' },
+        { key: 'price', text: '$1' },
+      ],
+    };
+    const aligned = (alignment: 'top' | 'bottom') => ({
+      container: { contentVerticalAlignment: alignment },
+    });
+    const { host, engine } = mount(
+      snap([
+        { ...activity, style: aligned('bottom') },
+        { ...data, style: aligned('bottom') },
+      ])
+    );
+    try {
+      const activityBody = host.querySelector<HTMLElement>(
+        '[data-nl-renderer="activity"]'
+      )!;
+      const dataBody = host.querySelector<HTMLElement>(
+        '[data-nl-renderer="dataRow"]'
+      )!;
+      const favorite = dataBody.querySelector<HTMLElement>(
+        '.ok-native-list-favorite'
+      )!;
+      const column = activityBody.querySelector<HTMLElement>(
+        ':scope > .ok-native-list-flex'
+      )!;
+      const amounts = activityBody.querySelector<HTMLElement>(
+        '.ok-native-list-amounts'
+      )!;
+      [column, amounts, favorite].forEach((node) =>
+        expect(node.style.alignSelf).toBe('flex-end')
+      );
+      engine.applySnapshot(
+        snap([
+          { ...activity, style: aligned('top') },
+          { ...data, style: aligned('top') },
+        ])
+      );
+      [column, amounts, favorite].forEach((node) =>
+        expect(node.style.alignSelf).toBe('flex-start')
+      );
+      engine.applySnapshot(snap([activity, data]));
+      expect(host.querySelector('[data-nl-renderer="activity"]')).toBe(
+        activityBody
+      );
+      expect(host.querySelector('[data-nl-renderer="dataRow"]')).toBe(dataBody);
+      [column, amounts, favorite].forEach((node) =>
+        expect(node.style.alignSelf).toBe('')
+      );
+      expect(activityBody.style.alignItems).toBe('');
+      expect(dataBody.style.alignItems).toBe('');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('keeps legacy DataRow table/linear measurement', () => {
+    const data = (secondary: boolean, size?: 'small'): RowModel => ({
+      type: 'dataRow',
+      key: `data-${secondary}-${size}`,
+      size,
+      columns: [
+        {
+          key: 'asset',
+          text: 'BTC',
+          secondaryText: secondary ? 'Bitcoin' : undefined,
+        },
+        { key: 'price', text: '$1' },
+      ],
+    });
+    const items = [data(false), data(true), data(false, 'small')];
+    const heights = (kind: 'table' | 'linear') =>
+      computeWebListLayout(snap(items, { kind }), 320, 640).items.map(
+        (item) => item.height
+      );
+    expect(heights('table')).toEqual([48, 60, 40]);
+    expect(heights('linear')).toEqual([56, 60, 48]);
+  });
+
+  it('enables selector layout for row.height and style.container.height alike', () => {
+    const selectorRows = (
+      height: Partial<{
+        height: number;
+        style: { container: { height: number } };
+      }>
+    ): readonly RowModel[] => [
+      {
+        type: 'identity',
+        key: 'account',
+        presentation: 'accountSelector',
+        leading: { kind: 'icon', name: 'coin' },
+        title: 'Account',
+        trailing: [
+          { kind: 'icon', name: 'PlusSmallOutline', actionKey: 'create' },
+        ],
+        ...height,
+      } as RowModel,
+      {
+        type: 'action',
+        key: 'action',
+        presentation: 'accountSelector',
+        title: 'Add',
+        actionKey: 'add',
+        trailing: [
+          { kind: 'icon', name: 'PlusSmallOutline', actionKey: 'create' },
+        ],
+        ...height,
+      } as RowModel,
+    ];
+    const selectorState = (items: readonly RowModel[]) => {
+      const { host, engine } = mount(snap(items));
+      try {
+        const identity = host.querySelector<HTMLElement>(
+          '[data-nl-renderer="identity"]'
+        )!;
+        const action = host.querySelector<HTMLElement>(
+          '[data-nl-renderer="action"]'
+        )!;
+        return {
+          selector: identity.dataset.nativeListSelector,
+          identityControl: identity.querySelector(
+            '[data-native-list-account-control="createAddress"]'
+          )
+            ? 'createAddress'
+            : undefined,
+          actionControl: action.querySelector(
+            '[data-native-list-account-control="createAddress"]'
+          )
+            ? 'createAddress'
+            : undefined,
+        };
+      } finally {
+        engine.destroy();
+      }
+    };
+    const legacy = selectorState(selectorRows({ height: 58 }));
+    expect(legacy).toEqual({
+      selector: 'accountSelector',
+      identityControl: 'createAddress',
+      actionControl: 'createAddress',
+    });
+    expect(
+      selectorState(selectorRows({ style: { container: { height: 58 } } }))
+    ).toEqual(legacy);
+    expect(selectorState(selectorRows({}))).toEqual({
+      selector: undefined,
+      identityControl: undefined,
+      actionControl: undefined,
+    });
+  });
+
+  it('styles text identically whether or not the row is attached', () => {
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const style = window.document.createElement('style');
+    style.textContent = WEB_LIST_CSS;
+    window.document.head.appendChild(style);
+    const output = (
+      attached: boolean,
+      text: Parameters<typeof applyTextStyleToSlot>[1]
+    ) => {
+      const element = window.document.createElement('span');
+      element.className = 'ok-native-list-title';
+      element.textContent = 'Title';
+      if (attached) window.document.body.appendChild(element);
+      applyTextStyleToSlot(element, text);
+      const html = element.outerHTML;
+      element.remove();
+      return html;
+    };
+    for (const text of [
+      { offsetY: 2 },
+      { verticalAlignment: 'center' as const },
+      { lines: 2 as const },
+      { lines: 1 as const, truncate: 'clip' as const },
+    ])
+      expect(output(true, text)).toBe(output(false, text));
+    expect(output(false, { offsetY: 2 })).toContain(
+      'white-space: inherit; text-overflow: inherit'
+    );
+  });
+
+  it('keeps the legacy Web DataRow column structure', () => {
+    const data: Extract<RowModel, { type: 'dataRow' }> = {
+      type: 'dataRow',
+      key: 'data',
+      badges: [{ key: 'b', text: 'NEW' }],
+      columns: [
+        {
+          key: 'asset',
+          text: 'BTC',
+          secondaryLeadingText: '1',
+          secondaryText: 'Bitcoin',
+          secondaryTone: 'positive',
+        },
+        { key: 'price', text: '$1' },
+      ],
+    };
+    const { host, engine } = mount(snap([data]));
+    try {
+      const cell = host.querySelector<HTMLElement>(
+        '.ok-native-list-data-cell'
+      )!;
+      const primaryLine = cell.querySelector<HTMLElement>(
+        '.ok-native-list-data-primary'
+      )!;
+      // Leading text, primary text and badges share the primary line.
+      expect(primaryLine.textContent).toBe('1BTCNEW');
+      const [leading, secondary] = Array.from(
+        cell.querySelectorAll<HTMLElement>('[data-nl-slot="columnSecondary"]')
+      );
+      expect(leading?.parentElement).toBe(primaryLine);
+      expect(leading?.style.color).toBe('');
+      expect(secondary?.textContent).toBe('Bitcoin');
+      expect(secondary?.style.color).toBe('var(--nl-positive)');
+      expect(secondary?.parentElement?.style.display).toBe('contents');
+      // Removing the secondary text removes the second line again.
+      engine.applySnapshot(
+        snap([
+          {
+            ...data,
+            columns: [{ key: 'asset', text: 'BTC' }, data.columns[1]!],
+          },
+        ])
+      );
+      expect(
+        cell.querySelectorAll('[data-nl-slot="columnSecondary"]')
+      ).toHaveLength(0);
+      expect(
+        cell.querySelector<HTMLElement>('.ok-native-list-data-secondary-line')
+          ?.style.display
+      ).toBe('none');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('renders non-Market retry as legacy message-only row that fires on press', () => {
+    const retry: RowModel = {
+      type: 'system',
+      key: 'retry',
+      variant: 'retry',
+      message: 'Failed to load',
+      actionText: 'Try again',
+      actionKey: 'reload',
+    };
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const host = window.document.createElement('div');
+    window.document.body.appendChild(host);
+    const onRowAction = jest.fn();
+    const engine = new NativeListWebEngine(
+      host,
+      snap([retry, { ...retry, key: 'market', presentation: 'market' }]),
+      { onRowAction },
+      false
+    );
+    const previousElement = global.Element;
+    global.Element = (window as unknown as { Element: typeof Element }).Element;
+    try {
+      const [plain, market] = Array.from(
+        host.querySelectorAll<HTMLElement>('[data-nl-renderer="system"]')
+      );
+      expect(plain!.querySelector('button')).toBeNull();
+      expect(plain!.querySelector('[data-nl-slot="actionText"]')).toBeNull();
+      expect(plain!.textContent).toBe('Failed to load');
+      expect(
+        market!.querySelector('[data-nl-slot="actionText"]')?.textContent
+      ).toBe('Try again');
+      plain!.click();
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      expect(onRowAction.mock.calls[0]![0]).toMatchObject({
+        rowKey: 'retry',
+        actionKey: 'reload',
+      });
     } finally {
       engine.destroy();
       global.Element = previousElement;

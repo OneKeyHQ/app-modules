@@ -1,4 +1,5 @@
 import { applyRowContainerStyle } from './templates/RowContainerStyle';
+import { hasExplicitRowHeight, rowSizeModifier } from './templates/RowElements';
 import { applyTextStyleToSlot, applyValueSegments } from './templates/RowText';
 import { setMarketQuoteContent } from './templates/MarketRowRenderer';
 export {
@@ -430,9 +431,7 @@ function sizeModifier(row: RowModel): number {
     (row.variant === 'summary' || row.variant === 'gallery')
   )
     return 0;
-  if (row.size === 'small') return -8;
-  if (row.size === 'large') return 12;
-  return 0;
+  return rowSizeModifier(row.size);
 }
 
 export function estimateWebRowHeight(
@@ -640,7 +639,9 @@ export function canStartWebWalletGroupReorder(
   const member = [row.parent, ...row.children].find(
     (candidate) => candidate.key === memberKey
   );
-  return member?.draggable !== false && !member?.disabled;
+  // Legacy: only `draggable: false` excludes a member; disabled members may
+  // still start the atomic group drag.
+  return member?.draggable !== false;
 }
 
 function itemStart(item: WebLayoutItem, horizontal: boolean): number {
@@ -1824,7 +1825,7 @@ function createAccessory(
     ) {
       setData(element, 'nativeListAnchorInset', 7);
       // OneKey patch: the create-address button omits IconButton's one-point border.
-      if (row.height !== undefined && accessory.name === 'PlusSmallOutline') {
+      if (hasExplicitRowHeight(row) && accessory.name === 'PlusSmallOutline') {
         setData(element, 'nativeListAccountControl', 'createAddress');
         if (!accessory.tintColor)
           element.style.color = 'var(--nl-icon-subdued)';
@@ -3712,7 +3713,8 @@ export class NativeListWebEngine {
             (member) => member.key === memberKey
           ) ?? row
         : row;
-    if (sourceRow.disabled) return;
+    // Legacy Web: a disabled WalletGroup member does not block its own
+    // actions or press; only a disabled row (or group) does.
     const action = target.closest<HTMLElement>('[data-native-list-action]');
     if (action) {
       const scope = action.dataset.selectionScope;

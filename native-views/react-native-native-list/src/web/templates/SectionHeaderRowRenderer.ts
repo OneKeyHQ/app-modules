@@ -1,4 +1,4 @@
-import { applyTabularNumbers } from './RowElements';
+import { applyTabularNumbers, hasExplicitRowHeight } from './RowElements';
 import type { SectionHeaderRow } from '../../models';
 import {
   createElement,
@@ -43,13 +43,13 @@ function createSectionHeader(
     title.style.alignSelf = 'flex-start';
     title.style.maxWidth = '100%';
     // OneKey patch: explicit network headers reserve a separate 3-point underline area.
-    if (row.presentation !== 'networkSelector' || row.height === undefined) {
+    if (row.presentation !== 'networkSelector' || !hasExplicitRowHeight(row)) {
       title.style.textDecoration = 'underline dotted';
       title.style.textUnderlineOffset = '6px';
     }
     if (row.titleActionOnHover) setData(title, 'nativeListHoverAction', true);
   }
-  if (row.presentation === 'networkSelector' && row.height !== undefined) {
+  if (row.presentation === 'networkSelector' && hasExplicitRowHeight(row)) {
     body.style.padding =
       row.variant === 'summary' ? '24px 12px 20px' : '0 12px';
     body.style.backgroundColor = 'var(--nl-bg)';
@@ -125,7 +125,7 @@ function createSectionHeader(
       'value'
     );
     applyValueSegments(value, row.valueSegments);
-    if (row.presentation === 'networkSelector' && row.height !== undefined) {
+    if (row.presentation === 'networkSelector' && hasExplicitRowHeight(row)) {
       value.style.fontFamily = 'inherit';
       value.style.fontSize = '16px';
       value.style.lineHeight = '24px';

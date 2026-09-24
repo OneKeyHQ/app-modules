@@ -105,17 +105,22 @@ function bind(body: HTMLElement, row: DataRow, primitives: RowPrimitives) {
         label.dataset.tone = badge.tone ?? '';
         cell.badges.appendChild(label);
       });
-    cell.secondaryLine.style.display =
-      !column.secondaryLeadingText && !column.secondaryText ? 'none' : 'flex';
+    // Legacy Web layout: secondary leading text sits inline before the primary
+    // text; secondary text is a direct line below it, toned by secondaryTone.
+    cell.secondaryLine.style.display = column.secondaryText
+      ? 'contents'
+      : 'none';
     [column.secondaryLeadingText, column.secondaryText].forEach(
       (text, slot) => {
         const label = cell.secondary[slot]!;
         label.hidden = !text;
-        if (text) cell.secondaryLine.appendChild(label);
-        else label.remove();
+        if (!text) label.remove();
+        else if (slot === 0) cell.primaryLine.insertBefore(label, cell.primary);
+        else cell.secondaryLine.appendChild(label);
         label.style.cssText = '';
         label.textContent = text ?? '';
-        label.style.color = tone(column.secondaryTone, 'secondary');
+        if (slot === 1)
+          label.style.color = tone(column.secondaryTone, 'secondary');
         if (style?.columnSecondary)
           primitives.textStyle(label, style.columnSecondary);
       }
@@ -151,8 +156,6 @@ function create(document: Document, row: DataRow, primitives: RowPrimitives) {
       'span',
       'ok-native-list-data-secondary-line'
     );
-    secondaryLine.style.display = 'flex';
-    secondaryLine.style.gap = '4px';
     const secondary = Array.from({ length: 2 }, () =>
       tagSlot(
         createElement(document, 'span', 'ok-native-list-secondary'),
@@ -199,8 +202,11 @@ export const dataRowRenderer = {
   create,
   bind,
   recycle,
-  measure: (row: DataRow, _width: number) =>
-    row.columns.some((column) => column.secondaryText) ? 60 : 56,
+  // Legacy presets: table rows without secondary text are 8 units shorter.
+  measure: (row: DataRow, _width: number, layout?: string) => {
+    const secondary = row.columns.some((column) => column.secondaryText);
+    return (secondary ? 60 : 56) + (layout === 'table' && !secondary ? -8 : 0);
+  },
   measureRendered: (_body: HTMLElement, _row: DataRow): number | undefined =>
     undefined,
 };

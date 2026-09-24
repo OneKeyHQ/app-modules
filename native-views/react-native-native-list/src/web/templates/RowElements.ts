@@ -106,3 +106,55 @@ export function applyTabularNumbers(body: HTMLElement): void {
     text.style.fontVariantNumeric = 'tabular-nums';
   });
 }
+
+/**
+ * Selector presentations use their explicit-height geometry whenever the row
+ * has a resolved explicit height: the legacy `row.height` or the preferred
+ * `style.container.height`.
+ */
+export function hasExplicitRowHeight(
+  row: Readonly<{
+    height?: number;
+    style?: Readonly<{ container?: Readonly<{ height?: number }> }>;
+  }>
+): boolean {
+  return (row.style?.container?.height ?? row.height) !== undefined;
+}
+
+/** Legacy `size` preset adjustment, applied by templates that opt in. */
+export function rowSizeModifier(size: string | undefined): number {
+  if (size === 'small') return -8;
+  if (size === 'large') return 12;
+  return 0;
+}
+
+// Async image reveal state is owned by the image lifecycle, not by template
+// defaults: a reused image that already fired `load` never fires it again.
+const isImageLoadingNode = (node: HTMLElement) =>
+  node.tagName === 'IMG' ||
+  node.classList.contains('ok-native-list-selector-image-background');
+
+/** Captures factory inline styles of a template subtree. */
+export function captureInlineStyles(
+  root: HTMLElement
+): Map<HTMLElement, string> {
+  return new Map(
+    [root, ...root.querySelectorAll<HTMLElement>('*')].map((node) => [
+      node,
+      node.style.cssText,
+    ])
+  );
+}
+
+/** Restores captured factory styles while keeping image loading visibility. */
+export function restoreInlineStyles(defaults: Map<HTMLElement, string>) {
+  defaults.forEach((css, node) => {
+    if (!isImageLoadingNode(node)) {
+      node.style.cssText = css;
+      return;
+    }
+    const opacity = node.style.opacity;
+    node.style.cssText = css;
+    node.style.opacity = opacity;
+  });
+}

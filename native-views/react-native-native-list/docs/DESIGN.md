@@ -383,7 +383,13 @@ the legacy table allocations, dispatch and style paths.
 The dedicated iOS/Android simulators and headed Chrome exercised selection
 (callback counter increment), linear/table switching, style set/clear,
 end/top scrolling and empty/repopulate with family replacement. Native default
-captures preserve column geometry and existing truncation. The Web regression
+captures preserve column geometry and existing truncation for the **table**
+layout only; the 2026-09-24 audit found that native linear DataRows had been
+moved to the table column structure (pill badges, separate secondary lines) instead of
+the legacy single label with inline badges. The same audit restored the legacy
+Web linear structure (secondary leading text inline before the primary text,
+secondary text directly below) and the 48-unit Web table height for rows
+without secondary text. The Web regression
 changes three columns to two and back, clearing secondary labels and styles
 while retaining the unchanged image. Native builds and Android unit tests
 pass; all 158 package tests and typecheck pass. Evidence: external runtime
@@ -504,8 +510,12 @@ member defaults/badges keep the previous measurement. The list continues to own
 reorder activation, destination selection, scroll and final order events. Native
 compact rendering uses a separate Identity parent and `+N` badge; Web uses the
 existing leased preview. Only children whose draggable is not false count toward
-`+N`; non-draggable and disabled members cannot initiate a drag. Drop restoration
+`+N`; non-draggable members cannot initiate a drag. (Correction, 2026-09-24:
+this stage also blocked disabled members; the audit restored the legacy rule on
+all platforms, so only `draggable: false` excludes a member.) Drop restoration
 uses the current configured height/appearance rather than default chrome.
+The compact allocation is 68 on iOS and Web; Android keeps its legacy
+`max(68, parent member height + 2 × group vertical inset)`.
 
 Member event origins retain the nested Identity host and its binding epoch.
 Removing/rebinding a member invalidates its previous action anchor. The iOS
@@ -513,8 +523,12 @@ member tap recognizer ignores UIControls so menu actions do not also emit a row
 press. Native WalletSidebar now binds optional trailing controls, matching Web;
 callers allocate sufficient height for these controls. Member selection visuals
 continue to follow each Identity's selected field. This migration does not add
-nested members to the list's existing top-level selection domain. Web now gates
-disabled member actions as well as group-level disabled state.
+nested members to the list's existing top-level selection domain. Group-level
+disabled state gates member actions on Web. (Correction, 2026-09-24: this stage
+also gated disabled members on Web; the audit removed that non-legacy gate, so a
+disabled member in an enabled group keeps its actions.) Android keeps its
+legacy rule that a disabled group does not block member actions; the resulting
+per-platform differences are listed in SPEC.md.
 
 Acceptance ran on the task's independent external-drive iOS 26.5 simulator,
 Android API 36 emulator and headed Chrome. Member press/menu and updated action
@@ -582,3 +596,28 @@ results and iOS drag recordings are saved under the validation runtime's `stage6
 directory. This completes all six architecture stages, with the two explicit
 compatibility boundaries above. It is functional/visual simulator acceptance,
 not a scrolling-performance benchmark or a full app-monorepo release signoff.
+
+### Legacy-default audit (2026-09-24)
+
+A review of the completed migration compared every renderer with the
+pre-migration engines and restored legacy unstyled rendering inside the
+renderer structure; implicit key-based styling stays removed. Notable outcomes:
+
+- Native DataRow linear rows use the legacy single-label column again (see
+  ROW_TEMPLATES.md); Web restored its own legacy linear structure.
+- Pressed feedback, WalletGroup appearance, separator insets, disabled-row
+  action rules and the System retry label are documented as retained platform
+  differences in SPEC.md.
+- Android's pinned-header pre-draw listener is registered only while the list
+  is attached, on the captured view-tree observer, and removed on detach, so
+  detached lists no longer leak it.
+- iOS caches measured Message text heights per resolved text/width input in a
+  process-wide `NSCache` bounded to 4,096 entries (system eviction), which
+  avoids repeating text layout for unchanged rows during scrolling. This is a
+  cost reduction, not a measured scrolling benchmark.
+- Web: MetricCard keeps loaded images visible across rebinding, WalletGroup
+  height includes group vertical padding, container alignment no longer leaks
+  into reused rows, and selector geometry follows either explicit height field.
+
+Web validation is jsdom/unit level (package typecheck and tests); native
+validation for this round is reported with the native changes.

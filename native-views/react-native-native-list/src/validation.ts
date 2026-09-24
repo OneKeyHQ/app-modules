@@ -517,6 +517,14 @@ function assertListStyle(
     'separator style key'
   );
   assertBoundedStyleNumber(separator.inset, `${path}.separator.inset`, 0, 64);
+  // Same format as every row style color; renderers parse it directly.
+  if (
+    separator.color !== undefined &&
+    (typeof separator.color !== 'string' ||
+      !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(separator.color))
+  ) {
+    fail(`${path}.separator.color`, 'must be #RRGGBB or #RRGGBBAA');
+  }
 }
 
 /** Token resolution is idempotent: a resolved style carries no token. */

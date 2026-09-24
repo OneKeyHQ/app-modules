@@ -1,7 +1,9 @@
 import type { NativeListTextStyle, SystemRow } from '../../models';
 import type { RowPrimitives } from './RowVisual';
 import {
+  captureInlineStyles,
   createElement,
+  restoreInlineStyles,
   setData,
   tagSlot,
   markActionAnchorSource,
@@ -144,7 +146,14 @@ function createSystemRow(
         'message'
       )
     );
-  if (row.variant === 'retry') {
+  // Legacy Web: only the Market retry draws a button. A non-Market retry shows
+  // its message and the whole row triggers the retry action, so
+  // `style.actionText` has no target there.
+  if (
+    row.variant === 'retry' &&
+    'presentation' in row &&
+    row.presentation === 'market'
+  ) {
     const action = tagSlot(
       createElement(
         document,
@@ -178,18 +187,11 @@ function bind(body: HTMLElement, row: SystemRow, primitives: RowPrimitives) {
       'presentation' in row ? row.presentation ?? '' : '';
     binding = {
       key,
-      defaults: new Map(
-        [body, ...body.querySelectorAll<HTMLElement>('*')].map((node) => [
-          node,
-          node.style.cssText,
-        ])
-      ),
+      defaults: captureInlineStyles(body),
     };
     bindings.set(body, binding);
   }
-  binding.defaults.forEach((css, node) => {
-    node.style.cssText = css;
-  });
+  restoreInlineStyles(binding.defaults);
   body.removeAttribute('data-nl-container-background');
   body.removeAttribute('data-nl-container-border');
   const style = row.style;

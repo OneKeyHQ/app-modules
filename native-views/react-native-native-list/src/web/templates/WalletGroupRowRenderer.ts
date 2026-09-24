@@ -1,11 +1,13 @@
 import type { IdentityRow, WalletGroupRow } from '../../models';
 import { identityRowRenderer } from './IdentityRowRenderer';
 import { applyRowContainerStyle } from './RowContainerStyle';
-import { setData } from './RowElements';
+import { hasExplicitRowHeight, setData } from './RowElements';
 import type { RowPrimitives } from './RowVisual';
 
 type Member = { wrapper: HTMLElement; body: HTMLElement };
 const membersByBody = new WeakMap<HTMLElement, Map<string, Member>>();
+// Members are walletSidebar identities; like the legacy engine, their preset
+// height (68, +24 with badges) ignores the `size` preset adjustment.
 const memberHeight = (member: IdentityRow, width: number) =>
   member.style?.container?.height ??
   member.height ??
@@ -98,13 +100,16 @@ export const walletGroupRowRenderer = {
   bind,
   recycle,
   appliesSizePreset: () => false,
+  // Legacy group height (the 1px border pair is budgeted for explicit-height
+  // selector members) plus the group's own resolved vertical padding.
   measure: (row: WalletGroupRow, width: number) =>
     [row.parent, ...row.children].reduce(
       (total, member) => total + memberHeight(member, width),
       0
     ) +
     row.children.length * 12 +
-    (row.parent.height !== undefined ? 2 : 0),
+    (hasExplicitRowHeight(row.parent) ? 2 : 0) +
+    (row.style?.verticalPadding ?? 0) * 2,
   measureRendered: (
     _body: HTMLElement,
     _row: WalletGroupRow

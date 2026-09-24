@@ -192,10 +192,9 @@ type TemplateBoxStyle<T extends keyof typeof ROW_BOX_STYLE_KEYS_BY_TYPE> = Pick<
 
 /**
  * A style key names the model field it modifies, never the view that carries
- * it. The view pool is shared and the mapping is not one to one: metricCard
- * renders `value` through the same label identity uses for `title`, and the
- * status view carries rail.status, activity.status, message.time and
- * metricCard.trend. See docs/STYLE_SPEC.md §4.
+ * it. Each template renderer owns its views and maps the key to whichever view
+ * renders that field (for example metricCard `value` is its large number), so
+ * the same key name keeps one meaning across platforms. See docs/STYLE_SPEC.md §4.
  */
 export type IdentityRowStyle = TemplateBoxStyle<'identity'> &
   Readonly<{
@@ -289,6 +288,10 @@ export type SystemRowStyle = TemplateBoxStyle<'system'> &
   Readonly<{
     title?: NativeListTextStyle;
     message?: NativeListTextStyle;
+    /**
+     * Retry button text. Web draws a retry button only for the Market retry;
+     * a non-Market Web retry is message-only, so this has no target there.
+     */
     actionText?: NativeListTextStyle;
   }>;
 
@@ -764,7 +767,10 @@ export type NativeListSeparatorStyle = Readonly<{
    * which is not the same everywhere — see docs/STYLE_SPEC.md §6.2.
    */
   inset?: number;
-  /** Overrides the `separator` theme token for this list only. */
+  /**
+   * Overrides the `separator` theme token for this list only. Must be
+   * `#RRGGBB` or `#RRGGBBAA`, like every row style color.
+   */
   color?: string;
 }>;
 
@@ -776,7 +782,10 @@ export type NativeListSeparatorStyle = Readonly<{
  */
 export type NativeListListStyle = Readonly<{
   separator?: NativeListSeparatorStyle;
-  /** Corner radius of a `groupId` card. Does not affect rail or media tiles. */
+  /**
+   * Corner radius of a `groupId` card, `0…40` logical units. Does not affect
+   * rail or media tiles.
+   */
   groupCornerRadius?: number;
 }>;
 

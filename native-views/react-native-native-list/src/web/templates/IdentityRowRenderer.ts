@@ -1,4 +1,4 @@
-import { applyTabularNumbers } from './RowElements';
+import { applyTabularNumbers, hasExplicitRowHeight } from './RowElements';
 import type {
   IdentityRow,
   NativeListTextStyle,
@@ -45,7 +45,7 @@ function appendAccessories(
 
   if (
     row &&
-    row.height !== undefined &&
+    hasExplicitRowHeight(row) &&
     'presentation' in row &&
     row.presentation === 'networkSelector'
   ) {
@@ -57,7 +57,7 @@ function appendAccessories(
   }
   if (
     row &&
-    row.height !== undefined &&
+    hasExplicitRowHeight(row) &&
     'presentation' in row &&
     row.presentation === 'accountSelector' &&
     accessories.length === 1 &&
@@ -99,7 +99,7 @@ function createIdentityRow(
   setData(
     body,
     'nativeListSelector',
-    row.height !== undefined ? presentation : undefined
+    hasExplicitRowHeight(row) ? presentation : undefined
   );
   if (row.titleActionKey && row.titleActionOnHover) {
     setData(body, 'nativeListHoverAction', row.titleActionKey);
@@ -117,12 +117,12 @@ function createIdentityRow(
   }
   const visual = primitives.visual(
     row.leading,
-    row.height !== undefined ? presentation : undefined
+    hasExplicitRowHeight(row) ? presentation : undefined
   );
   if (
     visual &&
     true &&
-    row.height !== undefined &&
+    hasExplicitRowHeight(row) &&
     row.presentation === 'walletSidebar' &&
     'fallbackIcon' in row.leading &&
     row.leading.fallbackIcon?.name === 'LockSolid'
@@ -146,7 +146,7 @@ function createIdentityRow(
   if (
     visual &&
     true &&
-    row.height !== undefined &&
+    hasExplicitRowHeight(row) &&
     row.presentation === 'walletSidebar' &&
     'borderStyle' in row.leading &&
     row.leading.borderStyle === 'dashed'
@@ -425,7 +425,7 @@ function bind(body: HTMLElement, row: IdentityRow, primitives: RowPrimitives) {
   for (const name of next.getAttributeNames())
     if (name.startsWith('data-'))
       body.setAttribute(name, next.getAttribute(name)!);
-  if (row.type === 'identity' && row.height !== undefined) {
+  if (row.type === 'identity' && hasExplicitRowHeight(row)) {
     const title = body.querySelector<HTMLElement>('.ok-native-list-title');
     if (row.presentation === 'accountSelector') {
       body.style.gap = '12px';
