@@ -21,7 +21,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
-          cache: yarn
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -154,7 +153,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
-          cache: yarn
       - uses: ruby/setup-ruby@v1
         with:
           working-directory: example/react-native
