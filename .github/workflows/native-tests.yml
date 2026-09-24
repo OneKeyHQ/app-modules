@@ -211,7 +211,7 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
-          schemes=(NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests)
+          schemes=(NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyImage-Unit-Tests OneKeyTextInput-Unit-Tests)
           xcodebuild -list -workspace "$workspace" > artifacts/ios/schemes.log
           for scheme in "${schemes[@]}"; do
             grep -Fxq "        $scheme" artifacts/ios/schemes.log

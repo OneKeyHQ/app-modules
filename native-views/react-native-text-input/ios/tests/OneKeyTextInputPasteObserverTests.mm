@@ -54,7 +54,7 @@ static dispatch_semaphore_t OneKeyTestReleaseRead;
     }
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-      Method original = class_getInstanceMethod(UIPasteboard.class, @selector(hasImages));
+      Method original = class_getInstanceMethod(object_getClass(pasteboard), @selector(hasImages));
       Method replacement = class_getInstanceMethod(UIPasteboard.class, @selector(onekey_test_hasImages));
       method_exchangeImplementations(original, replacement);
     });
