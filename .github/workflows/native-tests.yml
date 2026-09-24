@@ -172,9 +172,39 @@ jobs:
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'cd "$(dirname "$0")" && yarn nitrogen > /dev/null'
-      - name: Install CocoaPods test specs from lockfile
+      - name: Install CocoaPods test specs and verify lockfile
         working-directory: example/react-native/ios
-        run: bundle exec pod install --deployment
+        run: |
+          bundle exec pod install
+          ruby - <<'RUBY'
+          require 'yaml'
+
+          def normalized_lockfile(text)
+            lockfile = YAML.safe_load(text, permitted_classes: [Symbol], aliases: true)
+            checksums = lockfile.fetch('SPEC CHECKSUMS')
+            checksum = checksums.fetch('hermes-engine')
+            abort 'Invalid Hermes podspec checksum' unless checksum.match?(/\A[0-9a-f]{40}\z/)
+            checksums['hermes-engine'] = '<host-path-dependent>'
+
+            # CocoaPods may retain the previous Specs Git URL in the lockfile
+            # even when the Podfile now resolves the same specs through trunk CDN.
+            repos = lockfile.fetch('SPEC REPOS')
+            git_specs = repos.delete('https://github.com/CocoaPods/Specs.git')
+            if git_specs
+              repos['trunk'] = ((repos['trunk'] || []) + git_specs).sort
+            end
+            lockfile
+          end
+
+          committed = IO.popen(
+            ['git', 'show', 'HEAD:example/react-native/ios/Podfile.lock'], &:read
+          )
+          installed = File.read('Podfile.lock')
+          unless normalized_lockfile(committed) == normalized_lockfile(installed)
+            abort 'CocoaPods changed the locked dependencies or checksums'
+          end
+          puts 'Podfile.lock matches: only the Hermes checksum and Specs CDN URL may differ'
+          RUBY
       - name: Run four pod XCTest suites on iOS Simulator
         shell: bash
         run: |

@@ -1,6 +1,6 @@
 # Spec sources. The default CDN plus Aliyun's repo, which hosts EMASCurl
 # (a transitive native dependency of @onekeyfe/react-native-sni-connect).
-source 'https://github.com/CocoaPods/Specs.git'
+source 'https://cdn.cocoapods.org/'
 source 'https://github.com/aliyun/aliyun-specs.git'
 
 # Resolve react_native_pods.rb with node to allow for hoisting

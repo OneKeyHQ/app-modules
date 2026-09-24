@@ -3162,7 +3162,7 @@ DEPENDENCIES:
 SPEC REPOS:
   https://github.com/aliyun/aliyun-specs.git:
     - EMASCurl
-  https://github.com/CocoaPods/Specs.git:
+  trunk:
     - CocoaLumberjack
     - libwebp
     - MMKV
@@ -3540,6 +3540,6 @@ SPEC CHECKSUMS:
   TcpSocket: 2725be5301911fb4a3bcc4f85915dcacfd0ccfb1
   Yoga: 9891cfb1c680f64de9c41b09e7453dea33454d2b
 
-PODFILE CHECKSUM: 6d7345646c6ab6ae641cea028c7600f99b4a7364
+PODFILE CHECKSUM: 225cc4ef7243271a31edb13b0c0b95d857fdcd05
 
 COCOAPODS: 1.16.2
