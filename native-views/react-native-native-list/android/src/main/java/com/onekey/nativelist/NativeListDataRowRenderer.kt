@@ -130,11 +130,14 @@ internal class NativeListDataRowView(context: ThemedReactContext) :
     accessories.layoutParams =
       LayoutParams(dp(32), LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(10) }
     val values = data.getJSONArray("columns")
+    // Only the keys NativeListTableColumnView consumes switch a row off the legacy
+    // single-label / fixed-geometry text layout; container, padding, image and
+    // index styles keep legacy text rendering.
+    val unstyled = TEXT_STYLE_KEYS.none(style::has)
     cells.forEachIndexed { index, cell ->
       cell.visibility = if (index < values.length()) VISIBLE else GONE
       if (index < values.length()) {
         val value = values.getJSONObject(index)
-        val unstyled = style.length() == 0
         val infoColor = parseNativeListColor(theme?.optString("info", "#006DCBF2") ?: "#006DCBF2")
         if (unstyled && layout != "table")
           // Legacy linear default: one label per column with appended spans.
@@ -202,6 +205,10 @@ internal class NativeListDataRowView(context: ThemedReactContext) :
   override fun disposeContent() {
     visual.dispose()
     accessories.reset()
+  }
+
+  private companion object {
+    val TEXT_STYLE_KEYS = listOf("columns", "columnSecondary", "lineGap", "titleBadgeGap")
   }
 }
 
@@ -375,7 +382,7 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
       secondary.visibility = VISIBLE
       secondaryLine.visibility = VISIBLE
     }
-    if (style.length() > 0) applyStyle(style)
+    if (!fixedTableGeometry) applyStyle(style)
     if (fixedTableGeometry) {
       // Legacy table lines: fixed 20dp primary and 16dp secondary/badge boxes.
       primaryLine.layoutParams.height = dp(20)

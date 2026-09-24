@@ -67,6 +67,24 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
       }
     }
 
+  private val trailingPaintFlags = trailingViews.map { it.paintFlags }
+
+  /** The caller's `value` / `valueSecondary` text style bound to [view], if any. */
+  fun explicitTextStyle(view: TextView, style: JSONObject?): JSONObject? =
+    when (semanticValueViews.indexOf(view)) {
+      0 -> style?.optJSONObject("value")
+      1 -> style?.optJSONObject("valueSecondary")
+      else -> null
+    }
+
+  /** Legacy selector source-scale typography for every visible trailing text. */
+  fun applySourceTypography(style: JSONObject?) {
+    trailingViews.forEach { view ->
+      if (view.visibility == VISIBLE)
+        applyNativeListSourceTypography(view, explicitTextStyle(view, style))
+    }
+  }
+
   init {
     orientation = VERTICAL
     gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -164,7 +182,8 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     clipToPadding = true
     semanticValueViews.clear()
     boundCheckboxData = null
-    trailingViews.forEach { v ->
+    trailingViews.forEachIndexed { index, v ->
+      v.paintFlags = trailingPaintFlags[index]
       v.visibility = GONE
       v.text = ""
       v.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)

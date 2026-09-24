@@ -1,6 +1,5 @@
 package com.margelo.nitro.nativelist
 
-import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
@@ -228,6 +227,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
       if (walletBadgeLine != null) (walletBadgeLine!!.layoutParams as LayoutParams).topMargin = gap
       else (badgeLine.layoutParams as LayoutParams).marginStart = gap
     }
+    val explicitTextStyles = mutableMapOf<View, JSONObject>()
     for ((slot, targets) in
       listOf(
         "title" to listOf(title),
@@ -235,7 +235,12 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
         "tertiary" to listOf(tertiary),
         "badge" to semanticBadgeLabels.ifEmpty { listOf(badgeLine) },
       )) {
-      style.optJSONObject(slot)?.let { text -> targets.forEach { applyStyledText(it, text) } }
+      style.optJSONObject(slot)?.let { text ->
+        targets.forEach {
+          applyStyledText(it, text)
+          explicitTextStyles[it] = text
+        }
+      }
     }
     val alignment = style.optJSONObject("container")?.optString("contentVerticalAlignment")
     if (!alignment.isNullOrEmpty())
@@ -246,7 +251,9 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
             "bottom" -> Gravity.BOTTOM
             else -> Gravity.CENTER_VERTICAL
           }
-    applySelectorTypography(item)
+    applySelectorTypography(item) { view ->
+      explicitTextStyles[view] ?: trailingColumn.explicitTextStyle(view, style)
+    }
     // Legacy: overhanging selector icons/checkboxes must not be clipped by row padding.
     if (trailingColumn.parent === this && trailingColumn.requestsUnclippedHost) clipToPadding = false
   }
@@ -261,7 +268,10 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     }
   }
 
-  private fun applySelectorTypography(item: NativeListItem) {
+  private fun applySelectorTypography(
+    item: NativeListItem,
+    explicitStyle: (TextView) -> JSONObject?,
+  ) {
     if (
       item.json.optString("presentation") !in
         setOf("accountSelector", "networkSelector", "walletSidebar")
@@ -272,33 +282,8 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
         view.fontFeatureSettings = "tnum"
         if (sourceScale) {
           paintDefaults.putIfAbsent(view, view.paintFlags)
-          view.paintFlags = view.paintFlags or Paint.SUBPIXEL_TEXT_FLAG or Paint.LINEAR_TEXT_FLAG
-          val line = view.lineHeight
-          view.setTextSize(
-            TypedValue.COMPLEX_UNIT_PX,
-            kotlin.math
-              .ceil(
-                (view.textSize * resources.displayMetrics.density /
-                    resources.displayMetrics.scaledDensity)
-                  .toDouble()
-              )
-              .toFloat(),
-          )
-          view.letterSpacing = 0f
-          if (view.text.isNotEmpty()) {
-            val text = SpannableStringBuilder(view.text)
-            text
-              .getSpans(0, text.length, NativeListLineHeightSpan::class.java)
-              .forEach(text::removeSpan)
-            text.setSpan(
-              NativeListLineHeightSpan(line),
-              0,
-              text.length,
-              Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-            )
-            view.setLineSpacing(0f, 1f)
-            view.text = text
-          }
+          // Explicit style fontSize/lineHeight are kept as the caller set them.
+          applyNativeListSourceTypography(view, explicitStyle(view))
         }
       }
       if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
@@ -312,7 +297,6 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     if (visual == null) leadingFrame.recycle()
     val item = currentItem!!
     val style = item.json.optJSONObject("style")?.optJSONObject("image") ?: JSONObject()
-    val wallet = item.json.optString("presentation") == "walletSidebar" && item.json.has("height")
     // Legacy wallet-sidebar glyph/overlay sizing applies with source scaling.
     val walletSource = item.json.optString("presentation") == "walletSidebar" && sourceScale
     val fallbackIconName =
@@ -325,9 +309,6 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     leadingFrame.roundedImageRadius =
       if (item.json.optString("presentation") == "accountSelector" && item.json.has("height")) 8
       else 10
-    leadingFrame.dashedBorderWidth = if (wallet) 1 else 2
-    leadingFrame.overlayTextFontSize = if (wallet) 12f else 10f
-    leadingFrame.overlayTextLineHeight = if (wallet) 16 else null
     leadingFrame.bind(descriptor, style, item.key, currentTheme, false, sourceScale)
     leadingFallback.typeface = NativeListFonts.bold(context)
     leadingFallback.textSize = sp(13f)

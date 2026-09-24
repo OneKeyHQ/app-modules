@@ -9,6 +9,7 @@ import android.text.TextUtils
 import android.text.style.LineHeightSpan
 import android.util.TypedValue
 import android.view.Gravity
+import android.widget.TextView
 import kotlin.math.roundToInt
 import org.json.JSONObject
 
@@ -132,5 +133,31 @@ internal data class NativeListResolvedText(
         ((style?.optDouble("offsetY", 0.0) ?: 0.0) * density).toFloat(),
       )
     }
+  }
+}
+
+/**
+ * Legacy selector source-scale typography (accountSelector / networkSelector /
+ * walletSidebar with source scaling): whole-pixel unscaled font size, unhinted
+ * fractional advances and the original line box. A property explicitly set by the
+ * caller's text style (`fontSize`, `lineHeight`) is already resolved in source
+ * units and is left untouched so user style still takes effect.
+ */
+internal fun applyNativeListSourceTypography(view: TextView, style: JSONObject?) {
+  val metrics = view.resources.displayMetrics
+  val line = view.lineHeight
+  view.paintFlags = view.paintFlags or Paint.SUBPIXEL_TEXT_FLAG or Paint.LINEAR_TEXT_FLAG
+  if (style?.has("fontSize") != true)
+    view.setTextSize(
+      TypedValue.COMPLEX_UNIT_PX,
+      kotlin.math.ceil((view.textSize * metrics.density / metrics.scaledDensity).toDouble()).toFloat(),
+    )
+  view.letterSpacing = 0f
+  if (style?.has("lineHeight") != true && view.text.isNotEmpty()) {
+    val text = SpannableStringBuilder(view.text)
+    text.getSpans(0, text.length, NativeListLineHeightSpan::class.java).forEach(text::removeSpan)
+    text.setSpan(NativeListLineHeightSpan(line), 0, text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    view.setLineSpacing(0f, 1f)
+    view.text = text
   }
 }

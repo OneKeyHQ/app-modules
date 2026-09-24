@@ -192,9 +192,9 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
           dp(if (value.isEmpty()) 11 else 27),
         )
         if (value.isNotEmpty()) {
-          // Legacy market text: one line, ellipsized unless a style overrides it.
+          // Legacy market text: one line, ellipsized unless style sets lines/truncate.
           text(title, value, "message", 16f, line = 24, lines = 1, alignment = "center", physical = true)
-          if (style.optJSONObject("message")?.has("lines") != true)
+          if (!hasExplicitTruncation(style, "message"))
             title.ellipsize = android.text.TextUtils.TruncateAt.END
           column.addView(title)
           addView(
@@ -213,7 +213,9 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
           "center",
           physical = true,
         )
-        action.ellipsize = android.text.TextUtils.TruncateAt.END
+        // Legacy retry button ellipsizes; an explicit style truncate/lines wins.
+        if (!hasExplicitTruncation(style, "actionText"))
+          action.ellipsize = android.text.TextUtils.TruncateAt.END
         val density = resources.displayMetrics.density
         val width =
           (ceil(action.paint.measureText(action.text.toString()).toDouble()) + 18 * density)
@@ -235,7 +237,7 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
           alignment = "center",
           physical = true,
         )
-        if (style.optJSONObject("message")?.has("lines") != true)
+        if (!hasExplicitTruncation(style, "message"))
           title.ellipsize = android.text.TextUtils.TruncateAt.END
         column.addView(title)
         addView(column, wrap())
@@ -456,3 +458,7 @@ private class NativeListMarketSkeleton(context: android.content.Context, backgro
     } else animator.cancel()
   }
 }
+
+/** True when the caller's text style for [slot] sets its own truncation (`lines` / `truncate`). */
+private fun hasExplicitTruncation(style: JSONObject, slot: String): Boolean =
+  style.optJSONObject(slot)?.let { it.has("lines") || it.has("truncate") } == true

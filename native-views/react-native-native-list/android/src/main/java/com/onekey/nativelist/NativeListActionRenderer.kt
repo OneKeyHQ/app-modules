@@ -26,39 +26,7 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
   }
 
   private val titlePaintFlags = title.paintFlags
-
-  // Legacy selector typography: whole-pixel source font size, unhinted
-  // fractional advances and the original line box.
-  private fun applySourceTypography(view: NativeListTextView) {
-    val line = view.lineHeight
-    view.paintFlags =
-      view.paintFlags or android.graphics.Paint.SUBPIXEL_TEXT_FLAG or
-        android.graphics.Paint.LINEAR_TEXT_FLAG
-    view.setTextSize(
-      android.util.TypedValue.COMPLEX_UNIT_PX,
-      kotlin.math
-        .ceil(
-          (view.textSize * resources.displayMetrics.density / resources.displayMetrics.scaledDensity)
-            .toDouble()
-        )
-        .toFloat(),
-    )
-    view.letterSpacing = 0f
-    if (view.text.isNotEmpty()) {
-      val text = android.text.SpannableStringBuilder(view.text)
-      text
-        .getSpans(0, text.length, NativeListLineHeightSpan::class.java)
-        .forEach(text::removeSpan)
-      text.setSpan(
-        NativeListLineHeightSpan(line),
-        0,
-        text.length,
-        android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-      )
-      view.setLineSpacing(0f, 1f)
-      view.text = text
-    }
-  }
+  private val fallbackPaintFlags = visual.fallbackTextView.paintFlags
 
   override fun defaultHeight(item: NativeListItem, layout: String) =
     when {
@@ -121,7 +89,12 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
       )
       .bind(title)
     title.paintFlags = titlePaintFlags
-    if (selector && sourceScale) applySourceTypography(title)
+    // Legacy selector typography covered every text in the row, including the
+    // trailing accessory text; explicit style fontSize/lineHeight stay as set.
+    if (selector && sourceScale) {
+      applyNativeListSourceTypography(title, style.optJSONObject("title"))
+      accessories.applySourceTypography(style)
+    }
     visual.visibility = if (icon == null) GONE else VISIBLE
     // Legacy: the 1px icon outline is kept only for a non-selector icon with an
     // explicit background; selector icons use a plain 8dp rounded fill.
@@ -153,6 +126,10 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
           }
       visual.bind(source, image, item.key, theme, false, sourceScale)
     } else visual.recycle()
+    visual.fallbackTextView.paintFlags = fallbackPaintFlags
+    // Legacy selector typography also covered the leading fallback text.
+    if (selector && sourceScale && icon != null)
+      applyNativeListSourceTypography(visual.fallbackTextView, null)
   }
 
   override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {

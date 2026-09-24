@@ -34,12 +34,12 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
   val fallbackTextView: TextView
     get() = fallback
 
-  var dashedBorderWidth = 2
-  var overlayTextFontSize = 10f
-  var overlayTextLineHeight: Int? = null
   var bitmapBorderWidth = 0
 
-  /** Legacy wallet-sidebar text overlays: 16dp tall pills that wrap their text. */
+  /**
+   * Legacy wallet-sidebar source-scale leading visual: text-only overlays are 16dp
+   * tall pills with 12sp text on a 16dp line box, and a dashed frame border is 1dp.
+   */
   var walletTextOverlays = false
 
   private fun isWalletText(data: JSONObject) =
@@ -189,7 +189,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
         if (kind == "icon" && iconBorder) setStroke(1, color("#0000001F"))
         if (visual.optString("borderStyle") == "dashed")
           setStroke(
-            dp(dashedBorderWidth),
+            dp(if (walletTextOverlays) 1 else 2),
             color(visual.optString("borderColor", "#00000072")),
             dp(4).toFloat(),
             dp(4).toFloat(),
@@ -282,12 +282,12 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
               text = data.optString("text")
               gravity = Gravity.CENTER
               includeFontPadding = false
-              textSize =
-                if (sourceScale) overlayTextFontSize
-                else NativeListScale.font(resources, overlayTextFontSize)
-              overlayTextLineHeight?.let {
-                androidx.core.widget.TextViewCompat.setLineHeight(this, dp(it))
-              }
+              val walletText = isWalletText(data)
+              val size = if (walletText) 12f else 10f
+              textSize = if (sourceScale) size else NativeListScale.font(resources, size)
+              // The overlay TextView is reused: reset the line box for non-wallet text.
+              if (walletText) androidx.core.widget.TextViewCompat.setLineHeight(this, dp(16))
+              else setLineSpacing(0f, 1f)
               typeface =
                 if (isWalletText(data)) NativeListFonts.regular(context)
                 else NativeListFonts.medium(context)
