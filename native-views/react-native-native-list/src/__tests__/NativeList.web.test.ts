@@ -2056,7 +2056,8 @@ describe('web row style', () => {
       identity.querySelector<HTMLElement>('[data-nl-slot="subtitle"]')!.style
         .fontSize
     ).toBe('18px');
-    // Only the Market retry has a Web retry button (legacy Web).
+    // Legacy Web draws no retry button, so `style.actionText` has no Web
+    // target (it styles the native retry button only).
     const retry = render({
       type: 'system',
       key: 's',
@@ -2065,14 +2066,14 @@ describe('web row style', () => {
       message: 'Failed',
       actionText: 'Try again',
       actionKey: 'retry',
-      style: { actionText: { fontSize: 20 } },
+      style: { actionText: { fontSize: 20 }, message: { fontSize: 15 } },
     });
-    const action = retry.querySelector<HTMLElement>(
-      '[data-nl-slot="actionText"]'
-    )!;
-    expect(action.textContent).toBe('Try again');
-    expect(action.style.fontSize).toBe('20px');
-    expect(action.dataset.nativeListAction).toBe('retry');
+    expect(retry.querySelector('[data-nl-slot="actionText"]')).toBeNull();
+    expect(retry.querySelector('button')).toBeNull();
+    expect(
+      retry.querySelector<HTMLElement>('[data-nl-slot="message"]')!.style
+        .fontSize
+    ).toBe('15px');
   });
 
   it('applies header accessory spacing and keeps rail badge before status', () => {
@@ -2692,7 +2693,7 @@ describe('complex renderer lifecycle', () => {
       expect(body.children[2]).toBe(member);
       expect(member.querySelector('img')).toBe(imageElement);
       expect(member.style.height).toBe('96px');
-      expect(body.style.paddingInline).toBe('9px');
+      expect(body.style.paddingInline).toBe('8px');
       expect(
         body.querySelector<HTMLElement>('[data-nl-slot="title"]')!.style
           .fontSize
@@ -2786,9 +2787,73 @@ describe('complex renderer lifecycle', () => {
           'child'
         )
       ).toBe(false);
+      // Legacy: the disabled member's own press stays blocked.
+      host
+        .querySelector<HTMLElement>(
+          '[data-native-list-group-member-key="child"]'
+        )!
+        .click();
+      expect(onRowAction).toHaveBeenCalledTimes(2);
     } finally {
       engine.destroy();
       global.Element = previousElement;
+    }
+  });
+  it('keeps legacy WalletGroup member hover actions keyed on the member only', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const window = document.defaultView!;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const member: IdentityRow = {
+      type: 'identity',
+      key: 'child',
+      presentation: 'walletSidebar',
+      title: 'Child',
+      leading: { kind: 'icon', name: 'StarOutline' },
+      titleActionKey: 'help',
+      titleActionOnHover: true,
+    };
+    const row: Extract<RowModel, { type: 'walletGroup' }> = {
+      type: 'walletGroup',
+      key: 'parent',
+      disabled: true,
+      parent: { ...member, key: 'parent', titleActionKey: undefined },
+      children: [member],
+    };
+    const onRowAction = jest.fn();
+    const engine = new NativeListWebEngine(
+      host,
+      snap(row),
+      { onRowAction },
+      false
+    );
+    const previousElement = global.Element;
+    const previousNode = global.Node;
+    global.Element = document.defaultView!.Element;
+    global.Node = document.defaultView!.Node;
+    const hover = () =>
+      host
+        .querySelector<HTMLElement>(
+          '[data-native-list-group-member-key="child"] [data-native-list-hover-action]'
+        )!
+        .dispatchEvent(new window.Event('pointerover', { bubbles: true }));
+    try {
+      // Legacy Web checks only the member's `disabled`, not the group's.
+      hover();
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+      expect(onRowAction.mock.calls[0]![0]).toMatchObject({
+        rowKey: 'child',
+        actionKey: 'help',
+      });
+      engine.applySnapshot(
+        snap({ ...row, children: [{ ...member, disabled: true }] })
+      );
+      hover();
+      expect(onRowAction).toHaveBeenCalledTimes(1);
+    } finally {
+      engine.destroy();
+      global.Element = previousElement;
+      global.Node = previousNode;
     }
   });
 });
@@ -2902,14 +2967,27 @@ describe('legacy default regressions', () => {
     expect(estimateWebRowHeight(padded, snap([padded]), 320)).toBe(
       unstyled + 20
     );
-    // Explicit-height selector members keep the legacy 2-unit border budget.
+    // An explicit parent `height` keeps the legacy 2-unit border budget
+    // (native: a 1-unit inset); a container-only height does not.
     const explicit = {
-      ...padded,
-      parent: { ...group.parent, style: { container: { height: 60 } } },
+      ...group,
+      parent: { ...group.parent, height: 60 },
     };
     expect(estimateWebRowHeight(explicit, snap([explicit]), 320)).toBe(
-      60 + 92 + 68 + 2 * 12 + 2 + 20
+      60 + 92 + 68 + 2 * 12 + 2
     );
+    const containerOnly = {
+      ...group,
+      parent: { ...group.parent, style: { container: { height: 60 } } },
+    };
+    expect(
+      estimateWebRowHeight(containerOnly, snap([containerOnly]), 320)
+    ).toBe(60 + 92 + 68 + 2 * 12);
+    // `verticalPadding` replaces that inset instead of adding to it (native).
+    const explicitPadded = { ...explicit, style: { verticalPadding: 10 } };
+    expect(
+      estimateWebRowHeight(explicitPadded, snap([explicitPadded]), 320)
+    ).toBe(60 + 92 + 68 + 2 * 12 + 20);
 
     const { host, engine } = mount(snap([padded]));
     try {
@@ -2924,10 +3002,47 @@ describe('legacy default regressions', () => {
       const body = host.querySelector<HTMLElement>(
         '.ok-native-list-wallet-group'
       )!;
-      expect(body.style.paddingBlock).toBe('10px');
+      // The 1px group border is the first unit of the 10-unit inset, so the
+      // rendered box matches the measured height exactly.
+      expect(body.style.paddingBlock).toBe('9px');
       expect(
         host.querySelector<HTMLElement>('.ok-native-list-item')?.style.height
       ).toBe(`${unstyled + 20}px`);
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('keeps a renderer value that equals the previous container write', () => {
+    const plain: IdentityRow = {
+      type: 'identity',
+      key: 'selector',
+      leading: { kind: 'icon', name: 'StarOutline' },
+      title: 'Selector',
+      style: { container: { cornerRadius: 12 } },
+    };
+    const { host, engine } = mount(snap([plain]));
+    const body = () =>
+      host.querySelector<HTMLElement>('[data-nl-renderer="identity"]')!;
+    try {
+      const reused = body();
+      expect(reused.style.borderRadius).toBe('12px');
+      // The accountSelector preset re-writes the same 12px radius itself; the
+      // stale container write must not revert it on this rebind.
+      engine.applySnapshot(
+        snap([
+          {
+            ...plain,
+            presentation: 'accountSelector',
+            height: 76,
+            style: undefined,
+          },
+        ])
+      );
+      expect(body()).toBe(reused);
+      expect(reused.style.borderRadius).toBe('12px');
+      engine.applySnapshot(snap([{ ...plain, style: undefined }]));
+      expect(reused.style.borderRadius).toBe('');
     } finally {
       engine.destroy();
     }
@@ -3182,7 +3297,7 @@ describe('legacy default regressions', () => {
     }
   });
 
-  it('renders non-Market retry as legacy message-only row that fires on press', () => {
+  it('renders every retry as a legacy message-only row that fires on press', () => {
     const retry: RowModel = {
       type: 'system',
       key: 'retry',
@@ -3201,27 +3316,44 @@ describe('legacy default regressions', () => {
       { onRowAction },
       false
     );
+    const domWindow = window as unknown as {
+      Element: typeof Element;
+      HTMLElement: typeof HTMLElement;
+      KeyboardEvent: typeof KeyboardEvent;
+    };
     const previousElement = global.Element;
-    global.Element = (window as unknown as { Element: typeof Element }).Element;
+    const previousHTMLElement = global.HTMLElement;
+    global.Element = domWindow.Element;
+    global.HTMLElement = domWindow.HTMLElement;
     try {
-      const [plain, market] = Array.from(
+      const bodies = Array.from(
         host.querySelectorAll<HTMLElement>('[data-nl-renderer="system"]')
       );
-      expect(plain!.querySelector('button')).toBeNull();
-      expect(plain!.querySelector('[data-nl-slot="actionText"]')).toBeNull();
-      expect(plain!.textContent).toBe('Failed to load');
-      expect(
-        market!.querySelector('[data-nl-slot="actionText"]')?.textContent
-      ).toBe('Try again');
-      plain!.click();
-      expect(onRowAction).toHaveBeenCalledTimes(1);
-      expect(onRowAction.mock.calls[0]![0]).toMatchObject({
-        rowKey: 'retry',
-        actionKey: 'reload',
-      });
+      expect(bodies).toHaveLength(2);
+      for (const body of bodies) {
+        expect(body.querySelector('button')).toBeNull();
+        expect(body.querySelector('[data-nl-slot="actionText"]')).toBeNull();
+        expect(body.textContent).toBe('Failed to load');
+      }
+      bodies[0]!.click();
+      bodies[1]!.click();
+      bodies[1]!
+        .closest<HTMLElement>('[data-native-list-row-key]')!
+        .dispatchEvent(
+          new domWindow.KeyboardEvent('keydown', {
+            key: 'Enter',
+            bubbles: true,
+          })
+        );
+      expect(onRowAction.mock.calls.map(([event]) => event)).toEqual([
+        expect.objectContaining({ rowKey: 'retry', actionKey: 'reload' }),
+        expect.objectContaining({ rowKey: 'market', actionKey: 'reload' }),
+        expect.objectContaining({ rowKey: 'market', actionKey: 'reload' }),
+      ]);
     } finally {
       engine.destroy();
       global.Element = previousElement;
+      global.HTMLElement = previousHTMLElement;
     }
   });
 });

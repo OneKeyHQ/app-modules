@@ -273,9 +273,9 @@ does not change the typography or inner label/value gap of each metric.
 
 Variant applicability is also shared: composite metric-card `title` styles its
 heading, while standard-card `value`/`subtitle`/`trend` do not style nested metrics;
-`system.title` applies to warning, `actionText` to the retry button. Web draws
-that button only for the Market retry (legacy), so on a non-Market Web retry row
-`actionText` has no target and is ignored; iOS/Android style their button. A missing leading visual,
+`system.title` applies to warning, `actionText` to the native retry button. Web
+(legacy) draws no retry button for any presentation, so `style.actionText` has
+no Web target and is ignored there; iOS/Android style their button. A missing leading visual,
 badge, subtitle or trailing value remains absent. New nested-metric/thumbnail
 style roles require a separately declared cross-platform contract.
 
@@ -659,11 +659,21 @@ Web registered estimate/DOM measurement. Preserved defaults still differ:
 | --- | --- | --- | --- |
 | `rail` | 40 | 28 | 40 |
 | `activity` + footer actions | 100 | 104 | 100 |
-| `dataRow` + secondary text | 60 | 64 | 60 |
-| `dataRow` table, no secondary text | — | — | 48 (56 − 8) |
+| `dataRow` linear, no secondary text | 56 | 56 | 56 |
+| `dataRow` linear + secondary text | 60 | **64** | 60 |
+| `dataRow` table, no secondary text | 48 (56 − 8) | **52** (60 − 8) | 48 (56 − 8) |
+| `dataRow` table + secondary text | 60 | 60 | 60 |
 | `sectionHeader` `summary` | 68 | 80 | 68 |
 | `sectionHeader` value + checkbox | 56 | 40 | 56 |
 | `message`, `mediaTile`, composite `metricCard` | computed / 244 / 160+ | 0 (wrap content) | computed / 244 / 161 |
+
+DataRow provenance (pre-migration engines at `52849b86f`): iOS
+`RNCNativeListView.rowHeight()` used base 56, or 60 with secondary text, then
+−8 in table layout without secondary text; legacy Web applied the same rule.
+Android `NativeListRowView` used base 60 for every table row (−8 without
+secondary text) and 64/56 for linear rows with/without secondary text. The
+registered renderers return these values directly; `size` and explicit heights
+apply as for other templates.
 
 Message now uses its resolved text/spacing/image metrics for intrinsic
 measurement; iOS measures the actual allocated column width and Web corrects
@@ -690,9 +700,10 @@ here and left alone.
 | visual `rounded` radius | `min(10, h/4)` | `min(10, size/4)`; 8 for accountSelector | **10px**; 8 `!important` for account action; 8 for market |
 | `walletSidebar` row radius | **20** | 12 | 12 |
 | `identity` subtitle lines (no `subtitleLines`) | 1 | **2** | 1 (CSS single line) |
-| pressed row corners | 12 all corners (rail 8, mediaTile 16, wallet sidebar 20), ignoring `groupPosition` | same as iOS | background only; resting group/template radius kept **≠** |
-| `walletGroup` row `backgroundColor` | ignored | ignored | applied **≠** |
-| non-Market System retry | literal "Retry" button | literal "Retry" button | no button; message only, row press retries **≠** |
+| pressed row corners | 12 all corners (rail 8, mediaTile 16 resting, wallet sidebar **20**), ignoring `groupPosition` | 12 all corners (rail 8, mediaTile 16 resting); no wallet-sidebar exception | background only; resting group/template radius kept **≠** |
+| `walletGroup` row `backgroundColor` | ignored (`style.container.backgroundColor` or theme `subduedBackground`) | ignored (same) | applied inline **≠** |
+| `walletGroup` `row.height` | ignored (members / `style.container.height`) | ignored (same) | honored **≠** |
+| System retry | literal "Retry" button (non-Market); `actionText` button (Market) | same as iOS | no button for any presentation; message only, row press retries **≠** |
 | separator default inset | 60 identity / 12 | dp(60) identity / dp(12) | **0** |
 | separator thickness | `1 / scale` (hairline) | `1f` raw px | `1px` |
 
@@ -714,6 +725,13 @@ exposed — a hairline is correct on iOS and a whole pixel is correct elsewhere.
   `NativeListTableColumnView`, the market skeleton, and the section index never
   follow it. Explicit non-Market row styles now use density directly, so this
   legacy baseline policy cannot scale an explicitly supplied style value.
+  Under source scaling, accountSelector/networkSelector/walletSidebar rows apply
+  the legacy selector typography (whole-pixel unscaled size, fractional advances,
+  original line box) to every text in the row, including trailing accessory
+  text and the action leading fallback text; a `fontSize` or `lineHeight` set in
+  that slot's style is applied as given. A walletSidebar leading visual under
+  source scaling draws a 1dp dashed border (else 2dp); its text-only overlays
+  are 16dp pills with 12sp text on a 16dp line, and other text overlays use 10sp.
 - **`accent` is not an accent.** The consumer maps the application's `iconActive`
   onto the theme key `accent`. The name should be retired in favour of an alias.
 
@@ -914,9 +932,13 @@ the contract; no shared cross-language renderer or code generator is required.
 
 ### Verification — 2026-09-24 (Web legacy-default audit)
 
-- Package typecheck passes; 173 package tests in five suites pass, including
+- Package typecheck passes; 176 package tests in five suites pass, including
   regressions for loaded MetricCard images across content/style rebinding,
-  WalletGroup vertical padding in measured height, container alignment cleared
+  WalletGroup vertical padding replacing the legacy inset in measured and
+  rendered height, message-only retry rows (Market included) firing on click
+  and Enter, member-only hover and member-press blocking for WalletGroup,
+  renderer values equal to the previous container write surviving a rebind,
+  container alignment cleared
   from reused Activity/DataRow children, legacy table DataRow height (48) and
   linear column structure,
   selector geometry from `style.container.height`, attached/detached text

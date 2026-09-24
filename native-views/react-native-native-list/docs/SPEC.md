@@ -272,19 +272,25 @@ it does not add automatic overflow fitting or claim a performance benchmark.
 The renderer structure is retained; these legacy Web defaults are restored
 inside it. MetricCard/System default restoration keeps image loading visibility
 (a loaded image stays visible after content or style rebinding). WalletGroup
-measurement adds the group's `style.verticalPadding` to the legacy member sum;
-walletSidebar members keep their legacy 68/92 presets, which never applied the
-`size` adjustment. The shared container pass records and clears its own inline
-writes, so alignment set on template children does not leak into a reused,
-unstyled row. DataRow measurement is layout-aware again (table rows without
-secondary text are 48) and linear columns keep the legacy structure: secondary
-leading text inline before the primary text, secondary text directly below.
-Selector geometry follows either explicit height field. A disabled WalletGroup
-member can start the group drag and emit its own actions again, and a
-non-Market System retry is message-only with a row-press action, as in the
-legacy engine. Text styling no longer
-reads computed style, so attached and detached rows style identically.
-Validation: package typecheck and 173 tests pass (jsdom/unit level); this is
+measurement keeps the legacy member sum, 12-unit gaps and the 1px border pair
+(budgeted only when the parent member carries `height`, like native's 1-unit
+inset); `style.verticalPadding` replaces that inset instead of adding to it, and
+the rendered padding matches the measurement (the border supplies the first
+unit). walletSidebar members keep their legacy 68/92 presets, which never
+applied the `size` adjustment. The shared container pass records its own inline
+writes and the engine (and WalletGroup, per member) undoes them before the
+renderer rebinds, so alignment set on template children does not leak into a
+reused, unstyled row and a renderer value equal to the previous container value
+is never reverted. DataRow measurement is layout-aware again (table rows
+without secondary text are 48) and linear columns keep the legacy structure:
+secondary leading text inline before the primary text, secondary text directly
+below. Selector geometry follows either explicit height field. A disabled
+WalletGroup member can start the group drag and emit its own actions again
+while its member press stays blocked; title-help hover checks only the resolved
+member. Every System retry (Market or not) is message-only with a row-press
+action, as in the legacy engine. Text styling no longer reads computed style, so
+attached and detached rows style identically.
+Validation: package typecheck and 176 tests pass (jsdom/unit level); this is
 not new rendered browser or native device evidence.
 
 ### Platform interaction and appearance differences (legacy, retained)
@@ -298,19 +304,39 @@ audit; they are not new in this change.
   System Retry, but still emits trailing/leading icon actions, Market badges,
   media close, title help and WalletGroup member actions; a disabled group does
   not block its members' actions on Android. Web (legacy) blocks row press and
-  actions on a disabled row or disabled WalletGroup, but not on a disabled
-  member inside an enabled group.
+  click actions on a disabled row or disabled WalletGroup. A disabled member
+  inside an enabled group still emits its own actions, but its member press is
+  blocked.
+- **Web hover actions.** Web only: a title marked `titleActionOnHover` or an icon
+  accessory with `hoverActionKey` emits that action with an anchor on
+  `pointerover` (not on moves inside the element) and invalidates the anchor
+  with reason `pointerLeave` on `pointerout`. The check is the resolved source's
+  `disabled` only: a WalletGroup member's own flag, never the group's, so a
+  member of a disabled group still emits its hover action (legacy). Native has
+  no hover; the same keys fire on tap.
 - **System retry.** Android and iOS show a literal "Retry" button on non-Market
   retry rows and read `actionText` only for the Market retry. Web keeps its
-  legacy rendering: a non-Market retry shows only its message and the whole row
-  press emits `actionKey`; only the Market retry draws a button
-  (`actionText ?? 'Retry'`). `style.actionText` therefore has no target on a
-  non-Market Web retry row; it is accepted by validation and ignored there.
-- **Pressed corners.** Native pressed feedback uses 12 on all corners (Rail 8,
-  MediaTile 16, wallet sidebar 20) regardless of `groupPosition`. Web changes
-  only the pressed background and keeps the resting (group or template) radius.
+  legacy rendering for every presentation: a retry row shows only its message
+  and the row press (click, Enter or Space) emits `actionKey` with a `row`
+  anchor; no retry button is drawn. `actionText` and `style.actionText` are
+  accepted by validation and have no Web target (native only).
+- **Pressed corners.** Native pressed feedback ignores `groupPosition` and uses
+  12 on all corners; templates with their own resting radius keep it (Rail 8,
+  MediaTile 16). iOS walletSidebar identity rows use 20; Android has no
+  wallet-sidebar exception (12). Web changes only the pressed background and
+  keeps the resting (group or template) radius.
+- **WalletGroup row appearance.** The group's row-level `backgroundColor` is
+  ignored on iOS and Android (legacy): the group fill is
+  `style.container.backgroundColor` or the theme `subduedBackground`. Web
+  (legacy) applies it inline over the group fill. Use
+  `style.container.backgroundColor` for a cross-platform group fill.
+- **WalletGroup height.** iOS and Android (legacy) ignore the group's
+  `row.height`: `style.container.height` wins, otherwise the height comes from
+  the members. Web (legacy) honors `row.height` for a WalletGroup like any other
+  row.
 - **Text direction.** `start`/`end` text alignment follows the layout direction
-  on all platforms.
+  on all platforms. On iOS a runtime layout-direction change re-resolves it:
+  visible rows and the fixed footer rebind immediately, offscreen rows on reuse.
 - **Separator inset.** Identity rows default to a 60-unit inset and other
   templates to 12 on native; Web defaults to 0 (STYLE_SPEC §6.2).
 - **DataRow linear layout.** See ROW_TEMPLATES.md: native unstyled linear rows

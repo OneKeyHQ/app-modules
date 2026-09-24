@@ -6,7 +6,6 @@ import {
   restoreInlineStyles,
   setData,
   tagSlot,
-  markActionAnchorSource,
 } from './RowElements';
 function createSystemRow(
   document: Document,
@@ -146,28 +145,10 @@ function createSystemRow(
         'message'
       )
     );
-  // Legacy Web: only the Market retry draws a button. A non-Market retry shows
-  // its message and the whole row triggers the retry action, so
-  // `style.actionText` has no target there.
-  if (
-    row.variant === 'retry' &&
-    'presentation' in row &&
-    row.presentation === 'market'
-  ) {
-    const action = tagSlot(
-      createElement(
-        document,
-        'button',
-        'ok-native-list-action-button',
-        row.actionText ?? 'Retry'
-      ),
-      'actionText'
-    );
-    action.setAttribute('type', 'button');
-    setData(action, 'nativeListAction', row.actionKey);
-    markActionAnchorSource(action, 'trailingAccessory', 0);
-    body.appendChild(action);
-  }
+  // Legacy Web draws no retry button for any presentation: a retry row shows
+  // only its message and the whole row (click, Enter or Space) emits the
+  // retry `actionKey`. `actionText` / `style.actionText` therefore have no Web
+  // target; they style the native retry button only.
   return body;
 }
 
@@ -201,7 +182,7 @@ function bind(body: HTMLElement, row: SystemRow, primitives: RowPrimitives) {
     body.style.paddingBlock = `${style.verticalPadding}px`;
   if (style?.lineGap !== undefined && row.variant === 'warning')
     body.style.rowGap = `${style.lineGap}px`;
-  for (const slot of ['title', 'message', 'actionText'] as const) {
+  for (const slot of ['title', 'message'] as const) {
     const text = style?.[slot];
     if (!text) continue;
     body

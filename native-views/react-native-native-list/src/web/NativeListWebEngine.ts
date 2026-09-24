@@ -1,4 +1,7 @@
-import { applyRowContainerStyle } from './templates/RowContainerStyle';
+import {
+  applyRowContainerStyle,
+  resetRowContainerStyle,
+} from './templates/RowContainerStyle';
 import { hasExplicitRowHeight, rowSizeModifier } from './templates/RowElements';
 import { applyTextStyleToSlot, applyValueSegments } from './templates/RowText';
 import { setMarketQuoteContent } from './templates/MarketRowRenderer';
@@ -2777,7 +2780,10 @@ export class NativeListWebEngine {
       itemIndex: index,
     };
     const body = reusableBody ?? createRowBody(context, row);
-    if (reusableBody) registered.bind(body, rendererPrimitives(context));
+    if (reusableBody) {
+      resetRowContainerStyle(body);
+      registered.bind(body, rendererPrimitives(context));
+    }
     // OneKey patch: explicit selector fields preserve original page geometry.
     element.style.contain = row.backgroundFullWidth ? 'layout style' : '';
     if (row.backgroundColor) body.style.backgroundColor = row.backgroundColor;
@@ -3669,7 +3675,9 @@ export class NativeListWebEngine {
       action.dataset.nativeListHoverAction === 'true'
         ? action.dataset.nativeListAction
         : action.dataset.nativeListHoverAction;
-    if (sourceRow && !row?.disabled && !sourceRow.disabled && actionKey)
+    // Legacy Web: hover checks only the resolved source (the member for a
+    // WalletGroup), not the enclosing row's `disabled`.
+    if (sourceRow && !sourceRow.disabled && actionKey)
       this.emitRowAction(sourceRow, actionKey, action, rowElement ?? undefined);
   };
 
@@ -3713,8 +3721,9 @@ export class NativeListWebEngine {
             (member) => member.key === memberKey
           ) ?? row
         : row;
-    // Legacy Web: a disabled WalletGroup member does not block its own
-    // actions or press; only a disabled row (or group) does.
+    // Legacy Web: a disabled row (or whole WalletGroup) blocks everything
+    // above. A disabled WalletGroup member still emits its own actions, but its
+    // member press is blocked by `isRowPressEnabled` in `handleRowPress`.
     const action = target.closest<HTMLElement>('[data-native-list-action]');
     if (action) {
       const scope = action.dataset.selectionScope;

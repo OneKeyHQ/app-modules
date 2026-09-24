@@ -1,7 +1,10 @@
 import type { IdentityRow, WalletGroupRow } from '../../models';
 import { identityRowRenderer } from './IdentityRowRenderer';
-import { applyRowContainerStyle } from './RowContainerStyle';
-import { hasExplicitRowHeight, setData } from './RowElements';
+import {
+  applyRowContainerStyle,
+  resetRowContainerStyle,
+} from './RowContainerStyle';
+import { setData } from './RowElements';
 import type { RowPrimitives } from './RowVisual';
 
 type Member = { wrapper: HTMLElement; body: HTMLElement };
@@ -33,14 +36,24 @@ function bind(
   for (const name of body.getAttributeNames())
     if (name.startsWith('data-') && name !== 'data-nl-renderer')
       body.removeAttribute(name);
+  // The group's legacy 1px border is its default one-unit inset (native: a
+  // 1-unit padding when the parent has `height`). A style padding replaces that
+  // inset, so the border supplies its first unit and CSS padding the rest; the
+  // edge-to-content distance is then exactly the style value, as on native and
+  // as `measure` budgets it.
   if (row.style?.horizontalPadding !== undefined)
-    body.style.paddingInline = `${row.style.horizontalPadding}px`;
+    body.style.paddingInline = `${Math.max(
+      0,
+      row.style.horizontalPadding - 1
+    )}px`;
   if (row.style?.verticalPadding !== undefined)
-    body.style.paddingBlock = `${row.style.verticalPadding}px`;
+    body.style.paddingBlock = `${Math.max(0, row.style.verticalPadding - 1)}px`;
   [row.parent, ...row.children].forEach((memberRow, index) => {
     let member = members.get(memberRow.key);
-    if (member) identityRowRenderer.bind(member.body, memberRow, primitives);
-    else {
+    if (member) {
+      resetRowContainerStyle(member.body);
+      identityRowRenderer.bind(member.body, memberRow, primitives);
+    } else {
       const wrapper = body.ownerDocument.createElement('div');
       wrapper.className = 'ok-native-list-wallet-member';
       const memberBody = identityRowRenderer.create(
@@ -100,16 +113,17 @@ export const walletGroupRowRenderer = {
   bind,
   recycle,
   appliesSizePreset: () => false,
-  // Legacy group height (the 1px border pair is budgeted for explicit-height
-  // selector members) plus the group's own resolved vertical padding.
+  // Legacy group height: members, 12-unit gaps and the 1px border pair, which
+  // (like native's 1-unit inset) is budgeted only when the parent carries
+  // `height`. `style.verticalPadding` replaces that inset, as on native.
   measure: (row: WalletGroupRow, width: number) =>
     [row.parent, ...row.children].reduce(
       (total, member) => total + memberHeight(member, width),
       0
     ) +
     row.children.length * 12 +
-    (hasExplicitRowHeight(row.parent) ? 2 : 0) +
-    (row.style?.verticalPadding ?? 0) * 2,
+    (row.style?.verticalPadding ?? (row.parent.height !== undefined ? 1 : 0)) *
+      2,
   measureRendered: (
     _body: HTMLElement,
     _row: WalletGroupRow

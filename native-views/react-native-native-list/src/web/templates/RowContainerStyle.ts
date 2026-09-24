@@ -9,10 +9,10 @@ type Write = {
 };
 
 // Inline properties written by the container pass, per row body. Renderers only
-// reset the nodes they own, so the container clears its own writes on rebind.
+// reset the nodes they own, so the container undoes its own writes on rebind.
 const writesByBody = new WeakMap<HTMLElement, Write[]>();
 
-function restoreContainerWrites(body: HTMLElement) {
+function restoreContainerWrites(body: HTMLElement, force: boolean) {
   body.removeAttribute('data-nl-container-background');
   body.removeAttribute('data-nl-container-border');
   const writes = writesByBody.get(body);
@@ -22,12 +22,25 @@ function restoreContainerWrites(body: HTMLElement) {
   for (let index = writes.length - 1; index >= 0; index -= 1) {
     const write = writes[index]!;
     const { style } = write.element;
-    // A renderer that already reset this property owns its current value.
-    if (style.getPropertyValue(write.property) !== write.written) continue;
+    // Fallback path only (no reset before the renderer bind): a renderer that
+    // already rewrote this property owns its current value. It cannot tell a
+    // renderer rewrite of the same value apart, which is why the engine and
+    // WalletGroup reset before binding instead.
+    if (!force && style.getPropertyValue(write.property) !== write.written)
+      continue;
     style.removeProperty(write.property);
     if (write.previous)
       style.setProperty(write.property, write.previous, write.previousPriority);
   }
+}
+
+/**
+ * Undo the previous container pass before a renderer rebinds `body`, so the
+ * renderer always writes over its own baseline and the next
+ * `applyRowContainerStyle` records that fresh value as the value to restore.
+ */
+export function resetRowContainerStyle(body: HTMLElement): void {
+  restoreContainerWrites(body, true);
 }
 
 function writeProperty(
@@ -53,7 +66,7 @@ function writeProperty(
 }
 
 export function applyRowContainerStyle(body: HTMLElement, row: RowModel): void {
-  restoreContainerWrites(body);
+  restoreContainerWrites(body, false);
   const set = (element: HTMLElement, property: string, value: string) =>
     writeProperty(body, element, property, value);
   if (

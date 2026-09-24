@@ -264,7 +264,11 @@ pool.
 Snapshot application uses stable keys and platform diffing. A patch updates only
 changed models and rebinds/reconfigures only the corresponding visible cells.
 Selection-only changes use native payload updates and never require rebuilding
-all JavaScript rows.
+all JavaScript rows. On iOS a cell also rebinds when its list-level inputs
+change: layout, layout direction, or `theme`/`listStyle` under type-aware
+structural equality (`true` differs from `1`, `1` equals `1.0`, an explicit
+`null` inside an object differs from a missing key, and a missing
+`theme`/`listStyle` equals `{}`).
 
 `visibleRangeChanged` is coalesced to at most once per animation frame and only
 emitted when the first/last visible keys change. `endReached` is edge-triggered
@@ -616,8 +620,10 @@ renderer structure; implicit key-based styling stays removed. Notable outcomes:
   avoids repeating text layout for unchanged rows during scrolling. This is a
   cost reduction, not a measured scrolling benchmark.
 - Web: MetricCard keeps loaded images visible across rebinding, WalletGroup
-  height includes group vertical padding, container alignment no longer leaks
-  into reused rows, and selector geometry follows either explicit height field.
+  `verticalPadding` replaces the legacy border inset in both measurement and
+  rendering, container writes are undone before each renderer rebind (no leaked
+  alignment, no reverted renderer values), every System retry is message-only
+  again, and selector geometry follows either explicit height field.
 
 Web validation is jsdom/unit level (package typecheck and tests); native
 validation for this round is reported with the native changes.
