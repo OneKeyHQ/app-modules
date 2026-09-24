@@ -868,6 +868,17 @@ describe('NativeList model validation', () => {
     );
   });
 
+  it('rejects an unknown row type before renderer lookup', () => {
+    const unknown = {
+      type: 'unknown',
+      key: 'unknown-row',
+    } as unknown as RowModel;
+
+    expect(() => validateSnapshot(snapshot([unknown]))).toThrow(
+      'rows[0].type: is not supported'
+    );
+  });
+
   it('rejects accessory and badge counts above their hard caps', () => {
     const invalid = row('btc') as unknown as {
       trailing: unknown[];

@@ -3451,7 +3451,7 @@ describe('legacy default regressions', () => {
       )!;
       // Image load start times differ between the two engines by design.
       return body.outerHTML.replace(
-        / data-native-list-image-started-at="\d+"/g,
+        / data-native-list-image-started-at="[^"]*"/g,
         ''
       );
     };

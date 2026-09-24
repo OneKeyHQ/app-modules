@@ -27,6 +27,13 @@ internal fun isNativeListWholeRowInteractive(
   pressDisabled = pressDisabled,
 )
 
+internal fun resolveNativeListSelectorBackgroundColor(
+  rowType: String,
+  styleBackgroundColor: String?,
+  rowBackgroundColor: String?,
+): String? = styleBackgroundColor?.takeIf(String::isNotEmpty)
+  ?: rowBackgroundColor?.takeIf { rowType != "walletGroup" && it.isNotEmpty() }
+
 // The image fallback-state cache is process-wide, so it is keyed by a digest of the request
 // identity instead of the raw headers, which can carry credentials such as Authorization.
 internal fun nativeListSourceFallbackStateKey(uri: String, headers: Map<String, String>): String? {

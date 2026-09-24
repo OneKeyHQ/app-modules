@@ -304,7 +304,7 @@ walletSidebar `leadingGap` leaves no residue. iOS and Android gate every
 selector explicit-height geometry on `style.container.height ?? row.height`
 (Android's list-wide source scale stays keyed on `row.height` only); Android
 rebinds the fixed footer on a `listStyle`-only snapshot.
-Validation: package typecheck and 179 tests pass (jsdom/unit level); this is
+Validation: package typecheck and 180 tests pass (jsdom/unit level); this is
 not new rendered browser or native device evidence.
 
 ### Platform interaction and appearance differences (legacy, retained)

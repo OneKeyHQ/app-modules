@@ -937,7 +937,7 @@ the contract; no shared cross-language renderer or code generator is required.
 
 ### Verification — 2026-09-24 (Web legacy-default audit)
 
-- Package typecheck passes; 179 package tests in five suites pass, including
+- Package typecheck passes; 180 package tests in five suites pass, including
   (review round 3) Market subscript runs keeping the legacy 60% size under an
   explicit `fontSize`, System warning layout at its rendered DOM height,
   System/MetricCard text-layout styles (`lines: 1` text rewrite, `offsetY`

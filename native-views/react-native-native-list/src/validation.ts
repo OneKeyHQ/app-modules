@@ -958,11 +958,24 @@ function assertWalletGroup(row: WalletGroupRow, path: string): void {
   });
 }
 
+function assertRowType(
+  type: unknown,
+  path: string
+): asserts type is RowModel['type'] {
+  if (
+    typeof type !== 'string' ||
+    !Object.prototype.hasOwnProperty.call(ROW_BOX_STYLE_KEYS_BY_TYPE, type)
+  ) {
+    fail(`${path}.type`, 'is not supported');
+  }
+}
+
 function assertRow(
   row: RowModel,
   index: number,
   path = `rows[${index}]`
 ): void {
+  assertRowType(row.type, path);
   assertKey(row.key, `${path}.key`);
   // OneKey patch: explicit dimensions and opacity cannot corrupt list layout.
   if (row.height !== undefined && (row.height < 0 || row.height > 4096))

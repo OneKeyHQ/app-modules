@@ -2768,8 +2768,13 @@ private class SelectorBackgroundDecoration(private val adapter: NativeListAdapte
       val child = parent.getChildAt(index)
       val item = adapter.itemAt(parent.getChildAdapterPosition(child)) ?: continue
       if (!item.json.optBoolean("backgroundFullWidth", false)) continue
-      val color = item.json.optJSONObject("style")?.optJSONObject("container")?.optString("backgroundColor")?.takeIf { it.isNotEmpty() } ?: item.json.optString("backgroundColor")
-      if (color.isEmpty()) continue
+      val color = resolveNativeListSelectorBackgroundColor(
+        rowType = item.type,
+        styleBackgroundColor = item.json.optJSONObject("style")
+          ?.optJSONObject("container")
+          ?.optString("backgroundColor"),
+        rowBackgroundColor = item.json.optString("backgroundColor"),
+      ) ?: continue
       paint.color = try { parseNativeListColor(color) } catch (_: IllegalArgumentException) { Color.TRANSPARENT }
       val opacity = item.json.optJSONObject("style")?.optJSONObject("container")?.optDouble("opacity", item.json.optDouble("opacity", 1.0)) ?: item.json.optDouble("opacity", 1.0)
       paint.alpha = (Color.alpha(paint.color) * opacity * (if (item.json.optBoolean("disabled", false)) 0.5 else 1.0)).toInt()
