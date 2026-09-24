@@ -143,7 +143,8 @@ final class NativeListActivityCell: NativeListRendererCell {
       let resolved = NativeListResolvedText(
         value, style: nil, size: index == 0 ? 16 : 14, weight: index == 0 ? .medium : .regular,
         color: color, lineHeight: index == 0 ? 24 : 20, lines: 1, tabular: true)
-      button.setAttributedTitle(resolved.attributed, for: .normal)
+      button.setAttributedTitle(
+        resolved.attributed(direction: button.effectiveUserInterfaceLayoutDirection), for: .normal)
       button.titleLabel?.font = resolved.font
       button.isHidden = value.isEmpty
       if let text = style.dictionary(slot) { NativeListTextStyles.applyStyledButton(button, text) }

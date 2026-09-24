@@ -330,8 +330,36 @@ final class NativeListView: UIView {
     lastLayoutSize = bounds.size
     if lastLayoutDirection != direction, let config {
       configureLayout(config)
+      rebindRowsForLayoutDirection(config)
     }
     performPendingScrollIfNeeded()
+  }
+
+  // A layout-direction change may arrive without a layout pass (semantic attribute or trait).
+  override var semanticContentAttribute: UISemanticContentAttribute {
+    didSet { if semanticContentAttribute != oldValue { setNeedsLayout() } }
+  }
+
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    if previousTraitCollection?.layoutDirection != traitCollection.layoutDirection {
+      setNeedsLayout()
+    }
+  }
+
+  /// Renderers resolve start/end alignment at bind time, and the layout direction is one of a
+  /// cell's bound inputs; rebinding visible rows and the footer re-resolves it. A cell whose
+  /// bound direction already matches only refreshes selection and appearance. Offscreen rows
+  /// rebind when they are next dequeued.
+  private func rebindRowsForLayoutDirection(_ config: NativeListConfig) {
+    for case let cell as NativeListRowHost in collectionView.visibleCells {
+      guard let indexPath = collectionView.indexPath(for: cell),
+            let item = item(at: indexPath) else { continue }
+      bind(cell: cell, item: item, itemIndex: indexPath.item)
+    }
+    if let footer = config.fixedFooter, !footerCell.isHidden {
+      bind(cell: footerCell, item: footer, itemIndex: nil)
+    }
   }
 
   func applySnapshotJson(_ json: String) {
@@ -1708,7 +1736,11 @@ final class NativeListView: UIView {
     // OneKey patch: honor selector baseline geometry; keep compact drag sizing.
     if item.type == "walletGroup", usingCompactReorderHeight, item.key == interactiveReorderCompactKey { return 68 }
     if let height = item.styledHeight { return height }
-    if item.data["height"] != nil { return CGFloat(item.data.double("height")) }
+    // Legacy WalletGroup ignored `row.height` (its height comes from its members);
+    // `style.container.height` above still wins.
+    if item.type != "walletGroup", item.data["height"] != nil {
+      return CGFloat(item.data.double("height"))
+    }
     let availableWidth = max(0, collectionView.bounds.width - flowLayout.sectionInset.left - flowLayout.sectionInset.right)
     let columnWidth = config?.layout == "grid"
       ? floor((availableWidth - CGFloat((config?.gridColumns ?? 2) - 1) * (config?.itemSpacing ?? 0)) / CGFloat(config?.gridColumns ?? 2))

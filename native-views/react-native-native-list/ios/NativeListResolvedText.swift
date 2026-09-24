@@ -64,10 +64,6 @@ struct NativeListResolvedText {
     return NativeListTextStyles.marketTextAlignment(alignmentName, direction: direction)
   }
 
-  var attributed: NSAttributedString {
-    attributed(direction: UIView.userInterfaceLayoutDirection(for: .unspecified))
-  }
-
   func attributed(direction: UIUserInterfaceLayoutDirection) -> NSAttributedString {
     let paragraph = NSMutableParagraphStyle()
     paragraph.minimumLineHeight = lineHeight
@@ -83,6 +79,8 @@ struct NativeListResolvedText {
     return NSAttributedString(string: text, attributes: attributes)
   }
 
+  /// Resolves start/end once from the label's current direction; the list rebinds bound rows
+  /// when its effective layout direction changes (NativeListRendererCell bound inputs).
   func bind(_ label: NativeListTextLabel) {
     let direction = label.effectiveUserInterfaceLayoutDirection
     label.font = font

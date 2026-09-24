@@ -336,22 +336,25 @@ private final class NativeListTableColumnView: UIStackView {
         .foregroundColor: color(primaryStyle, textColor(column.string("tone"), theme: theme)),
       ])
     let primaryLength = attributed.length
-    for (index, badge) in badges.prefix(2).enumerated() {
-      // `titleBadgeGap` replaces the legacy two-space lead-in with an exact kern gap.
-      let gap = index == 0 && style["titleBadgeGap"] != nil
+    // Every badge run is the legacy "  text " pill: both lead spaces sit inside the badge
+    // background and are its left padding. `titleBadgeGap` adds an exact, unfilled gap between
+    // the title and the first pill as kern on the title's last composed character; unstyled
+    // rows add no kern and stay byte-identical to legacy.
+    if style["titleBadgeGap"] != nil, !badges.isEmpty, primaryLength > 0 {
+      attributed.addAttribute(
+        .kern, value: CGFloat(style.double("titleBadgeGap")),
+        range: (attributed.string as NSString).rangeOfComposedCharacterSequence(
+          at: primaryLength - 1))
+    }
+    for badge in badges.prefix(2) {
       attributed.append(
         NSAttributedString(
-          string: gap ? " \(badge.string("text")) " : "  \(badge.string("text")) ",
+          string: "  \(badge.string("text")) ",
           attributes: [
             .font: nativeListFont(ofSize: 12, weight: .medium),
             .foregroundColor: nativeListColor(theme, "info", "#0D74CE"),
             .backgroundColor: UIColor(nativeListHex: "#008FF519", fallback: .systemBlue),
           ]))
-      if gap, primaryLength > 0 {
-        attributed.addAttribute(
-          .kern, value: CGFloat(style.double("titleBadgeGap")),
-          range: NSRange(location: primaryLength - 1, length: 1))
-      }
     }
     let primaryParagraph = paragraph(
       primaryStyle, font: primaryFont,

@@ -54,7 +54,12 @@ class NativeListRendererCell: NativeListRowHost {
   ) -> UIColor { nativeListColor(theme, "rowBackground", "#FFFFFF") }
   private(set) var selectedState = false
   // Last applied list-level inputs; compared structurally (no serialization/hashing per bind).
-  private var boundInputs: (theme: NSDictionary?, layout: String, listStyle: NSDictionary?)?
+  // The layout direction is an input because renderers resolve start/end alignment at bind.
+  private var boundInputs:
+    (
+      theme: NSDictionary?, layout: String, listStyle: NSDictionary?,
+      direction: UIUserInterfaceLayoutDirection
+    )?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -87,12 +92,15 @@ class NativeListRendererCell: NativeListRowHost {
     let update = update(from: self.item, to: item)
     let inputs = (
       theme: theme.map { $0 as NSDictionary }, layout: layout,
-      listStyle: listStyle.map { $0 as NSDictionary }
+      listStyle: listStyle.map { $0 as NSDictionary },
+      direction: effectiveUserInterfaceLayoutDirection
     )
     let inputsChanged =
       boundInputs.map {
-        $0.layout != inputs.layout || !nativeListValuesEqual($0.theme, inputs.theme)
-          || !nativeListValuesEqual($0.listStyle, inputs.listStyle)
+        // A missing theme/listStyle is the empty object, as in the former `?? [:]` JSON digest.
+        $0.layout != inputs.layout || $0.direction != inputs.direction
+          || !nativeListValuesEqual($0.theme ?? [:], inputs.theme ?? [:])
+          || !nativeListValuesEqual($0.listStyle ?? [:], inputs.listStyle ?? [:])
       } ?? true
     if update != .unchanged || inputsChanged {
       if self.item != nil { onBindingInvalidated?(self, bindingEpoch) }
@@ -255,11 +263,43 @@ class NativeListRendererCell: NativeListRowHost {
   }
 }
 
-/// Structural equality for bridged JSON values (identity short-circuits in `isEqual`).
+/// Type-aware structural equality for bridged JSON values, matching the former
+/// sorted-keys JSON digest without serializing: `true` != `1` (CFBoolean vs NSNumber),
+/// numbers compare by value (`1` == `1.0`), strings by UTF-16 code units, and inside objects
+/// an explicit `null` differs from a missing key. At the top level a missing value equals
+/// `NSNull` (the digest used `value ?? NSNull()`).
 func nativeListValuesEqual(_ lhs: Any?, _ rhs: Any?) -> Bool {
-  switch (lhs, rhs) {
+  switch (lhs.flatMap { $0 is NSNull ? nil : $0 }, rhs.flatMap { $0 is NSNull ? nil : $0 }) {
   case (nil, nil): return true
-  case let (lhs?, rhs?): return (lhs as AnyObject).isEqual(rhs as AnyObject)
+  case let (lhs?, rhs?): return nativeListJSONEqual(lhs as AnyObject, rhs as AnyObject)
   default: return false
   }
+}
+
+private func nativeListJSONEqual(_ lhs: AnyObject, _ rhs: AnyObject) -> Bool {
+  if lhs === rhs { return true }
+  if let lhs = lhs as? NSNumber, let rhs = rhs as? NSNumber {
+    let boolean = CFBooleanGetTypeID()
+    return (CFGetTypeID(lhs) == boolean) == (CFGetTypeID(rhs) == boolean) && lhs.isEqual(to: rhs)
+  }
+  if let lhs = lhs as? NSString, let rhs = rhs as? NSString { return lhs.isEqual(to: rhs as String) }
+  if let lhs = lhs as? NSDictionary, let rhs = rhs as? NSDictionary {
+    guard lhs.count == rhs.count else { return false }
+    for (key, value) in lhs {
+      guard let other = rhs.object(forKey: key),
+        nativeListJSONEqual(value as AnyObject, other as AnyObject)
+      else { return false }
+    }
+    return true
+  }
+  if let lhs = lhs as? NSArray, let rhs = rhs as? NSArray {
+    guard lhs.count == rhs.count else { return false }
+    for index in 0..<lhs.count
+    where !nativeListJSONEqual(lhs[index] as AnyObject, rhs[index] as AnyObject) {
+      return false
+    }
+    return true
+  }
+  if lhs is NSNull || rhs is NSNull { return lhs is NSNull && rhs is NSNull }
+  return lhs.isEqual(rhs)
 }
