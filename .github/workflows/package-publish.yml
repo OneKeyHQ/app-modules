@@ -134,15 +134,14 @@ jobs:
     env:
       RELEASE_VERSION: ${{ needs.package-publish.outputs.release_version }}
     steps:
-      - name: Create read-only app-monorepo token
-        id: read-token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ vars.APP_RELEASE_APP_ID }}
-          private-key: ${{ secrets.APP_RELEASE_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: app-monorepo
-          permission-contents: read
+      - name: Require app-monorepo token
+        env:
+          APP_MONOREPO_SYNC_TOKEN: ${{ secrets.APP_MONOREPO_SYNC_TOKEN }}
+        run: |
+          if test -z "$APP_MONOREPO_SYNC_TOKEN"; then
+            echo '::error::Set the APP_MONOREPO_SYNC_TOKEN repository secret before syncing app-monorepo.'
+            exit 1
+          fi
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
@@ -153,7 +152,7 @@ jobs:
           repository: OneKeyHQ/app-monorepo
           ref: x
           path: app-monorepo
-          token: ${{ steps.read-token.outputs.token }}
+          token: ${{ secrets.APP_MONOREPO_SYNC_TOKEN }}
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
@@ -177,22 +176,11 @@ jobs:
           yarn install --immutable --mode=skip-build
           yarn workspace @onekeyhq/mobile module-id:check
           git diff --check
-      - name: Create app-monorepo write token
-        if: steps.dependencies.outputs.changed == 'true'
-        id: write-token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ vars.APP_RELEASE_APP_ID }}
-          private-key: ${{ secrets.APP_RELEASE_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: app-monorepo
-          permission-contents: write
-          permission-pull-requests: write
       - name: Create or update app-monorepo PR
         if: steps.dependencies.outputs.changed == 'true'
         working-directory: app-monorepo
         env:
-          GH_TOKEN: ${{ steps.write-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.APP_MONOREPO_SYNC_TOKEN }}
         run: |
           version="$RELEASE_VERSION"
           branch="codex/app-modules-v${version}"

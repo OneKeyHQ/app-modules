@@ -24,6 +24,6 @@ Every merged same-repository PR is classified by whether it changes a publishabl
 
 Merged fork PRs are intentionally skipped with a workflow summary notice; run `package-publish` manually when ready. The manual action remains available for `next`, `latest`, and single-workspace recovery.
 
-Before enabling the workflow, install a GitHub App on `app-monorepo` with repository Contents (write) and Pull requests (write) permissions. Set repository variable `APP_RELEASE_APP_ID` and secret `APP_RELEASE_PRIVATE_KEY` in `app-modules`, and retain the existing `NPM_TOKEN` secret for npm publishing. The app-monorepo PR is never merged automatically.
+Before enabling the workflow, create a fine-grained personal access token for `app-monorepo` with repository Contents (read and write) and Pull requests (read and write) permissions. Store it as the `APP_MONOREPO_SYNC_TOKEN` repository secret in `app-modules`, and retain the existing `NPM_TOKEN` secret for npm publishing. The token owner must retain access to `app-monorepo`, and the token must be renewed before it expires. The app-monorepo PR is never merged automatically.
 
 The app-monorepo job checks the existing module-ID registry but does not regenerate it: `module-id:update` requires a fresh Union Build module-ID map, which is unavailable in a clean dependency-update job. If a release adds native runtime modules, generate that map and update the registry during app-monorepo PR validation before merging it.
