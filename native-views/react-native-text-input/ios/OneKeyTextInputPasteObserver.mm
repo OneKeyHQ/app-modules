@@ -18,13 +18,25 @@ static const void *OneKeyPasteInFlightKey = &OneKeyPasteInFlightKey;
 // system command validation without any user action. Reading UIPasteboard
 // there is a synchronous XPC call that can block until the watchdog kills the
 // app, so the image check reads this cache and refreshes it off the main thread.
-static std::atomic<bool> OneKeyPasteboardHasImages{false};
-static std::atomic<bool> OneKeyPasteboardRefreshPending{false};
+enum class OneKeyPasteboardImageState { Unknown, NoImages, HasImages };
+enum class OneKeyPasteboardRefreshState { Idle, Scheduled, Dirty };
+static std::atomic<OneKeyPasteboardImageState> OneKeyPasteboardImageCache{OneKeyPasteboardImageState::Unknown};
+static std::atomic<OneKeyPasteboardRefreshState> OneKeyPasteboardRefresh{OneKeyPasteboardRefreshState::Idle};
 
 static void OneKeyRefreshPasteboardImageState(void)
 {
-  if (OneKeyPasteboardRefreshPending.exchange(true)) {
-    return;
+  for (;;) {
+    OneKeyPasteboardRefreshState state = OneKeyPasteboardRefresh.load();
+    if (state == OneKeyPasteboardRefreshState::Dirty) {
+      return;
+    }
+    if (state == OneKeyPasteboardRefreshState::Scheduled) {
+      if (OneKeyPasteboardRefresh.compare_exchange_weak(state, OneKeyPasteboardRefreshState::Dirty)) {
+        return;
+      }
+    } else if (OneKeyPasteboardRefresh.compare_exchange_weak(state, OneKeyPasteboardRefreshState::Scheduled)) {
+      break;
+    }
   }
   static dispatch_queue_t queue;
   static dispatch_once_t onceToken;
@@ -32,8 +44,18 @@ static void OneKeyRefreshPasteboardImageState(void)
     queue = dispatch_queue_create("so.onekey.textinput.pasteboard", DISPATCH_QUEUE_SERIAL);
   });
   dispatch_async(queue, ^{
-    OneKeyPasteboardRefreshPending.store(false);
-    OneKeyPasteboardHasImages.store(UIPasteboard.generalPasteboard.hasImages);
+    for (;;) {
+      BOOL hasImages = UIPasteboard.generalPasteboard.hasImages;
+      OneKeyPasteboardImageCache.store(hasImages ? OneKeyPasteboardImageState::HasImages
+                                                : OneKeyPasteboardImageState::NoImages);
+      OneKeyPasteboardRefreshState expected = OneKeyPasteboardRefreshState::Scheduled;
+      if (OneKeyPasteboardRefresh.compare_exchange_strong(expected, OneKeyPasteboardRefreshState::Idle)) {
+        return;
+      }
+      // A notification arrived during the read. Keep Paste available until
+      // another read observes the latest clipboard state.
+      OneKeyPasteboardRefresh.store(OneKeyPasteboardRefreshState::Scheduled);
+    }
   });
 }
 
@@ -55,6 +77,7 @@ static void OneKeyStartObservingPasteboard(void)
                         OneKeyRefreshPasteboardImageState();
                       }];
     }
+    OneKeyRefreshPasteboardImageState();
   });
 }
 
@@ -209,7 +232,9 @@ static void OneKeySwizzle(Class cls, SEL originalSelector, SEL replacementSelect
 
 - (BOOL)onekey_canPerformAction:(SEL)action withSender:(id)sender
 {
-  if (action == @selector(paste:) && OneKeyPasteboardHasImages.load()) {
+  if (action == @selector(paste:) &&
+      (OneKeyPasteboardRefresh.load() != OneKeyPasteboardRefreshState::Idle ||
+       OneKeyPasteboardImageCache.load() != OneKeyPasteboardImageState::NoImages)) {
     return YES;
   }
   return [self onekey_canPerformAction:action withSender:sender];
@@ -243,7 +268,9 @@ static void OneKeySwizzle(Class cls, SEL originalSelector, SEL replacementSelect
 
 - (BOOL)onekey_canPerformAction:(SEL)action withSender:(id)sender
 {
-  if (action == @selector(paste:) && OneKeyPasteboardHasImages.load()) {
+  if (action == @selector(paste:) &&
+      (OneKeyPasteboardRefresh.load() != OneKeyPasteboardRefreshState::Idle ||
+       OneKeyPasteboardImageCache.load() != OneKeyPasteboardImageState::NoImages)) {
     return YES;
   }
   return [self onekey_canPerformAction:action withSender:sender];
