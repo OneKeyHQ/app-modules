@@ -25,6 +25,41 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
     }
   }
 
+  private val titlePaintFlags = title.paintFlags
+
+  // Legacy selector typography: whole-pixel source font size, unhinted
+  // fractional advances and the original line box.
+  private fun applySourceTypography(view: NativeListTextView) {
+    val line = view.lineHeight
+    view.paintFlags =
+      view.paintFlags or android.graphics.Paint.SUBPIXEL_TEXT_FLAG or
+        android.graphics.Paint.LINEAR_TEXT_FLAG
+    view.setTextSize(
+      android.util.TypedValue.COMPLEX_UNIT_PX,
+      kotlin.math
+        .ceil(
+          (view.textSize * resources.displayMetrics.density / resources.displayMetrics.scaledDensity)
+            .toDouble()
+        )
+        .toFloat(),
+    )
+    view.letterSpacing = 0f
+    if (view.text.isNotEmpty()) {
+      val text = android.text.SpannableStringBuilder(view.text)
+      text
+        .getSpans(0, text.length, NativeListLineHeightSpan::class.java)
+        .forEach(text::removeSpan)
+      text.setSpan(
+        NativeListLineHeightSpan(line),
+        0,
+        text.length,
+        android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+      )
+      view.setLineSpacing(0f, 1f)
+      view.text = text
+    }
+  }
+
   override fun defaultHeight(item: NativeListItem, layout: String) =
     when {
       item.json.optString("presentation") == "accountSelector" -> 48
@@ -54,6 +89,8 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
         ?: item.json.optJSONArray("trailing")
         ?: JSONArray()
     accessories.bind(item, descriptors, theme, style, sourceScale, checkboxState)
+    // Legacy: overhanging selector icons/checkboxes must not be clipped by row padding.
+    clipToPadding = !accessories.requestsUnclippedHost
     val hp =
       if (style.has("horizontalPadding")) stylePx(style.optDouble("horizontalPadding"))
       else dp(if (layout == "table") 16 else 12)
@@ -61,7 +98,8 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
       if (style.has("verticalPadding")) stylePx(style.optDouble("verticalPadding")) else dp(8)
     setPadding(hp, vp, if (style.has("horizontalPadding")) hp else accessories.endInset ?: hp, vp)
     val titleParams = title.layoutParams as LayoutParams
-    titleParams.marginEnd = if (accessories.visibility == GONE) 0 else dp(12)
+    // Legacy: the weighted title abuts the trailing accessories without a gap.
+    titleParams.marginEnd = 0
     title.layoutParams = titleParams
     val tone = item.json.optString("tone")
     val token =
@@ -69,7 +107,7 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
       else if (!selector && tone == "danger") "negative" else "primaryText"
     val fallback =
       if (token == "negative") "#C40006D3"
-      else if (token == "secondaryText") "#0000009B" else "#1D1D1D"
+      else if (selector || token == "secondaryText") "#0000009B" else "#000000DF"
     NativeListResolvedText.resolve(
         context,
         item.json.optString("title"),
@@ -82,8 +120,12 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
         sourceScale,
       )
       .bind(title)
-    title.ellipsize = android.text.TextUtils.TruncateAt.END
+    title.paintFlags = titlePaintFlags
+    if (selector && sourceScale) applySourceTypography(title)
     visual.visibility = if (icon == null) GONE else VISIBLE
+    // Legacy: the 1px icon outline is kept only for a non-selector icon with an
+    // explicit background; selector icons use a plain 8dp rounded fill.
+    visual.iconBorder = !selector && icon?.has("backgroundColor") == true
     if (icon != null) {
       val source = JSONObject(icon.toString())
       if (!source.has("backgroundColor"))
@@ -94,7 +136,7 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
         )
       val image = JSONObject(style.optJSONObject("image")?.toString() ?: "{}")
       if (selector && !image.has("cornerRadius") && !image.has("shape"))
-        image.put("cornerRadius", 8)
+        image.put("cornerRadius", scaledDp(8f) / resources.displayMetrics.density)
       visual.layoutParams =
         LayoutParams(
             if (image.has("width")) stylePx(image.optDouble("width"))
@@ -104,7 +146,10 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
           )
           .apply {
             marginEnd =
-              if (style.has("leadingGap")) stylePx(style.optDouble("leadingGap")) else dp(12)
+              if (style.has("leadingGap")) stylePx(style.optDouble("leadingGap"))
+              // Legacy: Yoga rounds the cumulative selector edges, not each gap.
+              else if (selector && item.json.has("height")) dp(56) - dp(12) - dp(32)
+              else dp(12)
           }
       visual.bind(source, image, item.key, theme, false, sourceScale)
     } else visual.recycle()

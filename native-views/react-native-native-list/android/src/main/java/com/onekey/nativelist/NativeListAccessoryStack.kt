@@ -51,6 +51,10 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     get() = trailingViews.filter { it.visibility == VISIBLE }
 
   var endInset: Int? = null
+
+  /** Legacy: overhanging selector controls require the host row not to clip its padding. */
+  var requestsUnclippedHost = false
+    private set
   var onAction: ((String, View, Int?, NativeSelectionTarget?) -> Unit)? = null
   private val selectorAccessibilityDelegate =
     object : View.AccessibilityDelegate() {
@@ -84,7 +88,8 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     selectorUsesSourceScale = sourceScale
     reset()
     tag = item
-    checkboxCheckedColor = color(theme, "primaryText", "#1D1D1D")
+    val primaryText = color(theme, "primaryText", "#000000DF")
+    checkboxCheckedColor = primaryText
     checkboxUncheckedColor = color(theme, "inverseText", "#FCFCFC")
     checkboxIconColor = checkboxUncheckedColor
     checkboxBorderColor = Color.argb(0x31, 0, 0, 0)
@@ -100,7 +105,8 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
       (0 until descriptors.length()).map { descriptors.getJSONObject(it).optString("kind") }
     orientation = if (horizontal) HORIZONTAL else VERTICAL
     gravity = Gravity.END or Gravity.CENTER_VERTICAL
-    trailingViews.forEach { it.setTextColor(checkboxCheckedColor) }
+    // Legacy: trailing text uses primaryText, never the selector checkbox fill.
+    trailingViews.forEach { it.setTextColor(primaryText) }
     bindAccessories(item, descriptors, theme, checkboxState)
     if (horizontal && "checkbox" in kinds)
       (checkbox.layoutParams as LayoutParams).marginStart = dp(12)
@@ -153,6 +159,9 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
   fun reset() {
     tag = null
     endInset = null
+    requestsUnclippedHost = false
+    clipChildren = true
+    clipToPadding = true
     semanticValueViews.clear()
     boundCheckboxData = null
     trailingViews.forEach { v ->
@@ -162,11 +171,12 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
       v.setOnClickListener(null)
       v.background = null
       v.setPadding(0, 0, 0, 0)
-      v.gravity = Gravity.END or Gravity.CENTER_VERTICAL
+      // Legacy trailing text: END gravity, one line, no ellipsis.
+      v.gravity = Gravity.END
       v.opticalOffsetY = 0f
       v.maxLines = 1
       v.setHorizontallyScrolling(false)
-      v.ellipsize = TextUtils.TruncateAt.END
+      v.ellipsize = null
       v.setLineSpacing(0f, 1f)
       v.letterSpacing = 0f
     }
@@ -195,7 +205,8 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     source: String,
     slot: Int? = null,
   ) {
-    if (!item.json.optBoolean("disabled")) onAction?.invoke(key, view, slot, target)
+    // Row-level disabled gating is per control (see showTrailing/bindCheckbox), as in legacy.
+    onAction?.invoke(key, view, slot, target)
   }
 
   private fun dp(value: Int) =
@@ -311,6 +322,7 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
     if (usesSourceCheckboxGeometry) {
       // OneKey patch: source Yoga children may round into padding; retain their complete border.
       clipToPadding = false
+      requestsUnclippedHost = true
       // OneKey patch: even a transparent source border changes RN's background clipping path.
       checkbox.background = null
       BackgroundStyleApplicator.setBackgroundColor(
@@ -496,6 +508,7 @@ internal class NativeListAccessoryStack(context: android.content.Context) : Line
       // the pressed circle down to a 24dp-wide pill.
       this@NativeListAccessoryStack.clipChildren = false
       clipToPadding = false
+      requestsUnclippedHost = true
       if (isSourceMenu && data.optString("actionKey").isNotEmpty()) {
         icon.background =
           StateListDrawable().apply {

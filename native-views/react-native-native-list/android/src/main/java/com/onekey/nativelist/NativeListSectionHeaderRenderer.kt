@@ -334,8 +334,22 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
     if (item.json.optString("variant") != "summary" || !retainBoundItem(item)) return
     currentItem = item
     contentDescription = accessibilityText(item)
-    title.text = item.json.optString("title")
-    trailingViews[0].text = item.json.optString("value")
+    // The retained item makes the next full bind a no-op, so this path must
+    // leave text and visibility exactly as bindSectionHeader would.
+    showText(title, item.json.optString("title"), 1)
+    val value = item.json.optString("value")
+    if (value.isEmpty()) {
+      trailingViews[0].text = ""
+      trailingViews[0].visibility = GONE
+    } else {
+      showTrailing(
+        0,
+        value,
+        true,
+        item.json.optString("valueActionKey"),
+        color(currentTheme, "secondaryText", "#0000009B"),
+      )
+    }
     applyValueSegments(trailingViews[0], item.json.optJSONArray("valueSegments"))
     applyTextStyle(item)
     applySelectorTypography(item)
@@ -404,6 +418,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
     val isSummary = variant == "summary"
     val isGallery = variant == "gallery"
     val isTable = currentLayout == "table"
+    clipToPadding = true
     // OneKey patch: title help emits its own frame instead of toggling the section.
     item.json
       .optString("titleActionKey")
@@ -542,6 +557,8 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
         }
       }
       checkboxData?.let { bindCheckbox(item, it, checkboxState) }
+      // Legacy: selector checkbox borders may round into the row padding.
+      if (checkboxControl.requestsUnclippedHost) clipToPadding = false
     }
     applyValueSegments(trailingViews[0], item.json.optJSONArray("valueSegments"))
   }

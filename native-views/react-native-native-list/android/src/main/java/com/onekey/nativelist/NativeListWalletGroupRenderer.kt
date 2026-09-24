@@ -4,7 +4,6 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.TimeInterpolator
 import android.animation.ValueAnimator
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
@@ -34,15 +33,13 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
   private var currentTheme: JSONObject? = null
   private var currentLayout = "linear"
   override val defaultCornerRadius = 12
-  override val defaultBorderWidth = 1
   override val pressChangesBackground = false
+  private var containerStyle = JSONObject()
+  private var compactHeight = 0
   override val showsSelection = false
 
   override fun usesSourceScale(item: NativeListItem, provided: Boolean) =
     item.usesSelectorSourceScale || provided
-
-  override fun defaultBorderColor(theme: JSONObject?) =
-    parseNativeListColor(theme?.optString("separator", "#0000001F") ?: "#0000001F")
 
   override fun unselectedBackground(
     item: NativeListItem,
@@ -52,7 +49,7 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
   ) = parseNativeListColor(theme?.optString("subduedBackground", "#F9F9F9") ?: "#F9F9F9")
 
   override fun resolvedMeasureHeight(explicit: Int?): Int? =
-    if (compact) dp(68) else animatedHeight ?: explicit ?: expandedHeight
+    if (compact) compactHeight else animatedHeight ?: explicit ?: expandedHeight
 
   override fun accessibilityText(item: NativeListItem) =
     item.json.optString(
@@ -66,21 +63,18 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
       (0 until children.length()).map { NativeListItem.parse(children.getJSONObject(it)) }
   }
 
+  private fun defaultMemberHeight(item: NativeListItem) =
+    item.json.optInt("height", if ((item.json.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68)
+
   private fun memberHeight(item: NativeListItem) =
-    item.styledHeight?.let(::stylePx)
-      ?: dp(
-        item.json.optInt(
-          "height",
-          if ((item.json.optJSONArray("badges")?.length() ?: 0) > 0) 92 else 68,
-        )
-      )
+    item.styledHeight?.let(::stylePx) ?: dp(defaultMemberHeight(item))
 
   init {
     orientation = VERTICAL
     addView(membersColumn, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     addView(compactContainer, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     dragBadge.gravity = Gravity.CENTER
-    dragBadge.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    dragBadge.typeface = NativeListFonts.semibold(context)
     compactContainer.addView(dragBadge)
   }
 
@@ -104,14 +98,15 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
         }
       }
     val style = item.json.optJSONObject("style")
+    containerStyle = style?.optJSONObject("container") ?: JSONObject()
     val inset = if (members.first().json.has("height")) dp(1) else 0
     val horizontal =
       style
         ?.takeIf { it.has("horizontalPadding") }
         ?.let { stylePx(it.optDouble("horizontalPadding")) } ?: inset
-    val vertical =
+    val styledVertical =
       style?.takeIf { it.has("verticalPadding") }?.let { stylePx(it.optDouble("verticalPadding")) }
-        ?: inset
+    val vertical = styledVertical ?: inset
     membersColumn.setPadding(horizontal, vertical, horizontal, vertical)
     setPadding(0, 0, 0, 0)
     gravity =
@@ -124,16 +119,27 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
     expandedHeight =
       item.styledHeight?.let(::stylePx)
         ?: modelHeight(item, layout)
-        ?: (members.sumOf(::memberHeight) + dp((members.size - 1) * 12) + inset * 2)
+        ?: if (styledVertical == null && members.none { it.styledHeight != null }) {
+          // Legacy default: one rounding pass over the whole unstyled group; the
+          // row size modifier can only raise the minimum.
+          val base =
+            members.sumOf(::defaultMemberHeight) + (members.size - 1) * 12 + if (inset > 0) 2 else 0
+          val sizeDelta =
+            when (item.json.optString("size")) {
+              "small" -> -8
+              "large" -> 12
+              else -> 0
+            }
+          maxOf(dp(base), dp((base + sizeDelta).coerceAtLeast(0)))
+        } else members.sumOf(::memberHeight) + dp((members.size - 1) * 12) + vertical * 2
     members.forEachIndexed { index, member ->
       val view =
         memberViews.getOrPut(member.key) {
           NativeListIdentityRowView(reactContext).also { view ->
-            view.onRowPress = { source, origin ->
-              if (isEnabled) onRowPress?.invoke(source, origin)
-            }
+            // Legacy: members own their disabled state; the group never gates them.
+            view.onRowPress = { source, origin -> onRowPress?.invoke(source, origin) }
             view.onAction = { source, key, target, origin ->
-              if (isEnabled) onAction?.invoke(source, key, target, origin)
+              onAction?.invoke(source, key, target, origin)
             }
             view.onBindingInvalidated = { source, epoch ->
               onBindingInvalidated?.invoke(source, epoch)
@@ -182,7 +188,11 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
       checkboxState,
       sourceScale,
     )
-    compactContainer.layoutParams.height = dp(68)
+    // Legacy compact drag: the parent keeps its own height (92 with badges) plus
+    // the group inset, never less than the 68dp allocation.
+    compactHeight = maxOf(dp(68), memberHeight(parent) + vertical * 2)
+    compactContainer.setPadding(horizontal, vertical, horizontal, vertical)
+    compactContainer.layoutParams.height = compactHeight
     val count = members.drop(1).count { it.json.optBoolean("draggable", true) }
     dragBadge.text = "+$count"
     dragBadge.visibility = if (count == 0) GONE else VISIBLE
@@ -206,8 +216,9 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
     dragBadge.layoutParams =
       FrameLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(24), Gravity.END or Gravity.BOTTOM)
         .apply {
-          rightMargin = dp(4)
-          bottomMargin = dp(4)
+          // Legacy: the badge is inset 4dp from the group's own edges.
+          rightMargin = dp(4) - horizontal
+          bottomMargin = dp(4) - vertical
         }
   }
 
@@ -243,32 +254,79 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
     members.forEach { member ->
       val view = memberViews[member.key] ?: return@forEach
       if (y >= view.top && y < view.bottom)
-        return member.json.optBoolean("draggable", true) && !member.json.optBoolean("disabled")
+        // Legacy: only `draggable: false` excludes a member from starting a group drag.
+        return member.json.optBoolean("draggable", true)
     }
     return true
   }
 
+  private var expansionCompletion: (() -> Unit)? = null
+
+  // Legacy group chrome: subdued fill with the separator border drawn beneath the
+  // members (not as a foreground); row-level backgroundColor does not apply.
   override fun appearance() {
     super.appearance()
-    if (compact) {
-      background = null
-      foreground = null
+    val theme = currentTheme
+    fun parse(value: String, fallback: String) =
+      runCatching { parseNativeListColor(value) }.getOrElse { parseNativeListColor(fallback) }
+    val fill =
+      if (containerStyle.has("backgroundColor"))
+        parse(containerStyle.optString("backgroundColor"), "#F9F9F9")
+      else parse(theme?.optString("subduedBackground", "#F9F9F9") ?: "#F9F9F9", "#F9F9F9")
+    val stroke =
+      if (containerStyle.has("borderColor")) parse(containerStyle.optString("borderColor"), "#0000001F")
+      else parse(theme?.optString("separator", "#0000001F") ?: "#0000001F", "#0000001F")
+    background =
+      GradientDrawable().apply {
+        setColor(fill)
+        cornerRadius =
+          if (containerStyle.has("cornerRadius")) stylePx(containerStyle.optDouble("cornerRadius")).toFloat()
+          else dp(12).toFloat()
+        setStroke(
+          if (containerStyle.has("borderWidth")) stylePx(containerStyle.optDouble("borderWidth")) else dp(1),
+          stroke,
+        )
+      }
+    foreground = null
+  }
+
+  private fun showExpandedMembers(restAlpha: Float) {
+    membersColumn.visibility = VISIBLE
+    membersColumn.alpha = 1f
+    for (index in 0 until membersColumn.childCount) {
+      membersColumn.getChildAt(index).apply {
+        visibility = VISIBLE
+        alpha = if (index == 0) 1f else restAlpha
+      }
     }
   }
 
+  // Cancelling still settles the expanded state and runs the pending completion,
+  // so the container's post-drop relayout is never lost.
   private fun cancelExpansion() {
-    expandAnimator?.removeAllListeners()
-    expandAnimator?.cancel()
+    val completion = expansionCompletion
+    expansionCompletion = null
+    val animator = expandAnimator
     expandAnimator = null
     animatedHeight = null
+    if (animator != null) {
+      animator.removeAllListeners()
+      animator.cancel()
+      showExpandedMembers(1f)
+      requestLayout()
+    }
+    completion?.invoke()
   }
 
   override fun setReorderActive(active: Boolean) {
     if (compact == active && expandAnimator == null) return
     cancelExpansion()
     compact = active
-    membersColumn.visibility = if (active) GONE else VISIBLE
-    membersColumn.alpha = 1f
+    if (active) {
+      membersColumn.visibility = GONE
+    } else {
+      showExpandedMembers(1f)
+    }
     compactContainer.visibility = if (active) VISIBLE else GONE
     compactContainer.alpha = 1f
     compactParent?.setReorderActive(active)
@@ -282,32 +340,44 @@ internal class NativeListWalletGroupRowView(context: ThemedReactContext) :
     completion: (() -> Unit)?,
   ) {
     cancelExpansion()
-    val startHeight = height
+    val startHeight = height.coerceAtLeast(dp(68))
     compact = false
     compactParent?.setReorderActive(false)
-    membersColumn.visibility = VISIBLE
-    membersColumn.alpha = 0f
+    compactContainer.visibility = GONE
+    compactContainer.alpha = 1f
+    // Legacy: the first member stays opaque while the remaining members fade in.
+    showExpandedMembers(0f)
     appearance()
+    if (expandedHeight <= startHeight) {
+      showExpandedMembers(1f)
+      requestLayout()
+      completion?.invoke()
+      return
+    }
+    animatedHeight = startHeight
+    requestLayout()
+    expansionCompletion = completion
     expandAnimator =
       ValueAnimator.ofInt(startHeight, expandedHeight).apply {
         duration = durationMs
         this.interpolator = interpolator
         addUpdateListener {
           animatedHeight = it.animatedValue as Int
-          membersColumn.alpha = it.animatedFraction
-          compactContainer.alpha = 1f - it.animatedFraction
+          val fraction = it.animatedFraction
+          for (index in 1 until membersColumn.childCount) membersColumn.getChildAt(index).alpha = fraction
           requestLayout()
         }
         addListener(
           object : AnimatorListenerAdapter() {
             override fun onAnimationEnd(animation: Animator) {
+              if (expandAnimator !== animation) return
               expandAnimator = null
               animatedHeight = null
-              membersColumn.alpha = 1f
-              compactContainer.visibility = GONE
-              compactContainer.alpha = 1f
+              showExpandedMembers(1f)
               requestLayout()
-              completion?.invoke()
+              val pending = expansionCompletion
+              expansionCompletion = null
+              pending?.invoke()
             }
           }
         )

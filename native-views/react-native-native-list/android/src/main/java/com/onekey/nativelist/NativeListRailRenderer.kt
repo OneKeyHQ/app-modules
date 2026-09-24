@@ -110,17 +110,13 @@ internal class NativeListRailRowView(context: ThemedReactContext) :
     val image = style.optJSONObject("image") ?: JSONObject()
     leadingWidth = if (image.has("width")) stylePx(image.optDouble("width")) else dp(20)
     val imageHeight = if (image.has("height")) stylePx(image.optDouble("height")) else dp(20)
-    val source = item.json.optJSONObject("visual")
-    if (source != null) {
-      val view = visual ?: NativeListLeadingVisual(reactContext).also { visual = it }
-      view.bind(source, image, item.key, theme, false, sourceScale)
-      val params = LayoutParams(leadingWidth, imageHeight).apply { marginEnd = leadingGap }
-      if (view.parent == null) addView(view, 0, params) else view.layoutParams = params
-    } else
-      visual?.let {
-        it.recycle()
-        removeView(it)
-      }
+    // Legacy: a rail without a visual still reserves its empty 20dp slot and gap.
+    val source =
+      item.json.optJSONObject("visual") ?: JSONObject().put("backgroundColor", "#00000000")
+    val view = visual ?: NativeListLeadingVisual(reactContext).also { visual = it }
+    view.bind(source, image, item.key, theme, false, sourceScale)
+    val params = LayoutParams(leadingWidth, imageHeight).apply { marginEnd = leadingGap }
+    if (view.parent == null) addView(view, 0, params) else view.layoutParams = params
   }
 
   // Retain the legacy 6-unit trailing allowance when a status is present.

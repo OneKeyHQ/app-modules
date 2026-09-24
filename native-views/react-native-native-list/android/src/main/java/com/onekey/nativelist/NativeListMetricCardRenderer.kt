@@ -169,6 +169,9 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
           )
           .bind(heading)
         heading.letterSpacing = spacing
+        // Legacy metricText headings always ellipsize unless a style clips them.
+        if (style.optJSONObject("title")?.optString("truncate") != "clip")
+          heading.ellipsize = TextUtils.TruncateAt.END
       }
       if (style.has("lineGap")) {
         val gap = stylePx(style.optDouble("lineGap"))
@@ -237,7 +240,8 @@ internal class NativeListMetricCardRowView(context: ThemedReactContext) :
           sourceScale,
         )
         .bind(badge)
-      (badge.layoutParams as LayoutParams).marginStart = dp(8)
+      // Legacy: the badge follows the weighted title without an extra margin.
+      (badge.layoutParams as LayoutParams).marginStart = 0
       for (view in listOf(label, trend, detail)) (view.layoutParams as LayoutParams).topMargin =
         if (style.has("lineGap")) stylePx(style.optDouble("lineGap")) else 0
       (column.parent as? android.view.ViewGroup)?.removeView(column)

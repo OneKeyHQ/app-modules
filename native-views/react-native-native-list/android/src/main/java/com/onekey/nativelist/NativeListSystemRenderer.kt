@@ -58,6 +58,13 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
   }
 
   override fun modelHeight(item: NativeListItem, layout: String): Int? {
+    // Legacy market retry/noMatch: round(height * density).
+    if (
+      item.json.has("height") &&
+        item.json.optString("presentation") == "market" &&
+        item.json.optString("variant") in setOf("retry", "noMatch")
+    )
+      return stylePx(item.json.optDouble("height"))
     if (
       sourceScale &&
         layout == "sectioned" &&
@@ -79,6 +86,11 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
 
   private fun wrap() = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
 
+  // Legacy: market retry rows always use source (unscaled) dimensions.
+  override fun usesSourceScale(item: NativeListItem, provided: Boolean) =
+    (item.json.optString("presentation") == "market" && item.json.optString("variant") == "retry") ||
+      super.usesSourceScale(item, provided)
+
   override fun bindContent(
     item: NativeListItem,
     theme: JSONObject?,
@@ -89,7 +101,6 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
     val data = item.json
     val variant = data.optString("variant")
     val market = data.optString("presentation") == "market"
-    if (market && variant == "retry") sourceScale = true
     val style = data.optJSONObject("style") ?: JSONObject()
     orientation = HORIZONTAL
     gravity = Gravity.CENTER_VERTICAL
@@ -97,7 +108,7 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
     setPadding(hp, dp(8), hp, dp(8))
     if (market) setPadding(dp(20), dp(12), dp(20), dp(12))
     column.gravity = Gravity.CENTER_VERTICAL
-    val primary = color(theme, "primaryText", "#1D1D1D")
+    val primary = color(theme, "primaryText", "#000000DF")
     val secondary = color(theme, "secondaryText", "#0000009B")
     fun text(
       view: NativeListTextView,
@@ -181,7 +192,10 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
           dp(if (value.isEmpty()) 11 else 27),
         )
         if (value.isNotEmpty()) {
-          text(title, value, "message", 16f, line = 24, alignment = "center", physical = true)
+          // Legacy market text: one line, ellipsized unless a style overrides it.
+          text(title, value, "message", 16f, line = 24, lines = 1, alignment = "center", physical = true)
+          if (style.optJSONObject("message")?.has("lines") != true)
+            title.ellipsize = android.text.TextUtils.TruncateAt.END
           column.addView(title)
           addView(
             column,
@@ -199,6 +213,7 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
           "center",
           physical = true,
         )
+        action.ellipsize = android.text.TextUtils.TruncateAt.END
         val density = resources.displayMetrics.density
         val width =
           (ceil(action.paint.measureText(action.text.toString()).toDouble()) + 18 * density)
@@ -220,6 +235,8 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
           alignment = "center",
           physical = true,
         )
+        if (style.optJSONObject("message")?.has("lines") != true)
+          title.ellipsize = android.text.TextUtils.TruncateAt.END
         column.addView(title)
         addView(column, wrap())
       }
@@ -285,7 +302,7 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
         column.addView(title)
         if (variant == "loading")
           bars.forEachIndexed { index, view ->
-            view.background = fill(color(theme, "strongBackground", "#0000000F"), 4)
+            view.background = fill(color(theme, "strongBackground", "#0000000F"), 6)
             column.addView(
               view,
               LayoutParams(dp(if (index == 0) 120 else 80), dp(12)).apply {
@@ -305,7 +322,8 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
         if (variant == "retry") {
           text(
             action,
-            data.optString("actionText", "Retry"),
+            // Legacy: only the market retry reads actionText; this label is fixed.
+            "Retry",
             "actionText",
             14f,
             "medium",
@@ -321,7 +339,8 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
       }
     }
     action.setOnClickListener {
-      emitAction(data.optString("actionKey"), action, "trailingAccessory", 0)
+      // Legacy Retry was a text accessory: gated by the row's disabled state.
+      if (!data.optBoolean("disabled")) emitAction(data.optString("actionKey"), action, "trailingAccessory", 0)
     }
     if (style.has("horizontalPadding")) {
       val padding = stylePx(style.optDouble("horizontalPadding"))

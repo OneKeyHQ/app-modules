@@ -37,7 +37,9 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
 
   protected abstract fun disposeContent()
 
-  protected open fun usesSourceScale(item: NativeListItem, provided: Boolean) = provided
+  // Evaluated on every bind (including unchanged rebinds), before bindContent.
+  protected open fun usesSourceScale(item: NativeListItem, provided: Boolean) =
+    item.usesSelectorSourceScale || provided
 
   protected open fun onRowTouch(event: MotionEvent) {}
 
@@ -137,6 +139,10 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     if (sourceScale) (value * resources.displayMetrics.density).roundToInt()
     else NativeListScale.dp(resources, value)
 
+  protected fun scaledDp(value: Float) =
+    if (sourceScale) value * resources.displayMetrics.density
+    else NativeListScale.dp(resources, value)
+
   protected fun stylePx(value: Double) = (value * resources.displayMetrics.density).roundToInt()
 
   private fun color(value: String, fallback: Int = Color.TRANSPARENT) =
@@ -151,13 +157,19 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
         ?.let { onRowPress?.invoke(it, NativeListActionOrigin(this, this, bindingEpoch, "row")) }
     }
     setOnTouchListener { _, event ->
+      val wasPressed = touchPressed
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> touchPressed = current?.isRowPressEnabled == true
+        // Legacy: leaving the row clears the pressed highlight before release.
+        MotionEvent.ACTION_MOVE ->
+          if (event.x < 0 || event.y < 0 || event.x >= width || event.y >= height)
+            touchPressed = false
         MotionEvent.ACTION_UP,
         MotionEvent.ACTION_CANCEL -> touchPressed = false
       }
       onRowTouch(event)
-      appearance()
+      // Rebuild drawables only when the pressed state actually changes.
+      if (touchPressed != wasPressed) appearance()
       false
     }
   }
@@ -261,7 +273,10 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     anchorInset: Int = 0,
   ) {
     val item = current ?: return
-    if (key.isNotEmpty() && !item.json.optBoolean("disabled"))
+    // Legacy: row disabled/deprecated state only gates the controls that opted
+    // into it (text accessories, checkboxes, footer actions, retry); icon menus,
+    // leading actions, badges and close controls keep working.
+    if (key.isNotEmpty())
       onAction?.invoke(
         item,
         key,
@@ -307,7 +322,13 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
       container.has("cornerRadius") ||
         defaultCornerRadius > 0 ||
         position in setOf("last", "single")
-    val radii = FloatArray(8) { if (it < 4 && top || it >= 4 && bottom) radius else 0f }
+    // Legacy: the pressed fill is always a fully rounded 12dp "single" shape,
+    // independent of the resting group position.
+    val pressedShape =
+      pressed && pressChangesBackground && !container.has("cornerRadius") && defaultCornerRadius <= 0
+    val radii =
+      if (pressedShape) FloatArray(8) { scaledDp(12f) }
+      else FloatArray(8) { if (it < 4 && top || it >= 4 && bottom) radius else 0f }
     outlineProvider = ViewOutlineProvider.BACKGROUND
     clipToOutline = container.has("cornerRadius")
     background =
@@ -364,7 +385,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
         listStyle
           ?.optJSONObject("separator")
           ?.takeIf { it.has("inset") }
-          ?.let { stylePx(it.optDouble("inset")) } ?: dp(12)
+          ?.let { stylePx(it.optDouble("inset")) } ?: dp(defaultSeparatorInset)
       canvas.drawLine(start.toFloat(), height - 1f, width.toFloat(), height - 1f, separator)
     }
   }

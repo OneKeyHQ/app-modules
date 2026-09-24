@@ -134,29 +134,46 @@ internal class NativeListDataRowView(context: ThemedReactContext) :
       cell.visibility = if (index < values.length()) VISIBLE else GONE
       if (index < values.length()) {
         val value = values.getJSONObject(index)
-        cell.bind(
-          value,
-          if (index == 0) data.optJSONArray("badges") else null,
-          dataColor(value.optString("tone"), theme),
-          dataColor(value.optString("secondaryTone", "secondary"), theme),
-          parseNativeListColor(theme?.optString("info", "#006DCBF2") ?: "#006DCBF2"),
-          if (layout == "table") 14f else 16f,
-          style,
-        )
+        val unstyled = style.length() == 0
+        val infoColor = parseNativeListColor(theme?.optString("info", "#006DCBF2") ?: "#006DCBF2")
+        if (unstyled && layout != "table")
+          // Legacy linear default: one label per column with appended spans.
+          cell.bindLegacyLinear(
+            value,
+            if (index == 0) data.optJSONArray("badges") else null,
+            dataColor(value.optString("tone"), theme),
+            dataColor(value.optString("secondaryTone", "secondary"), theme),
+            infoColor,
+          )
+        else
+          cell.bind(
+            value,
+            if (index == 0) data.optJSONArray("badges") else null,
+            dataColor(value.optString("tone"), theme),
+            dataColor(value.optString("secondaryTone", "secondary"), theme),
+            infoColor,
+            if (layout == "table") 14f else 16f,
+            style,
+            fixedTableGeometry = unstyled,
+          )
+        // Legacy table default: every column is a fixed 40dp, top-aligned block.
         cell.layoutParams =
-          LayoutParams(0, LayoutParams.WRAP_CONTENT, value.optInt("weight", 1).toFloat())
+          LayoutParams(
+            0,
+            if (unstyled && layout == "table") dp(40) else LayoutParams.WRAP_CONTENT,
+            value.optInt("weight", 1).toFloat(),
+          )
       } else cell.reset()
     }
   }
 
   private fun dataColor(tone: String, theme: JSONObject?): Int {
+    // Legacy tone mapping: any other tone renders as primaryText.
     val token =
       when (tone) {
         "positive" -> "positive"
         "negative" -> "negative"
         "secondary" -> "secondaryText"
-        "disabled" -> "disabledText"
-        "caution" -> "caution"
         else -> "primaryText"
       }
     val fallback =
@@ -164,8 +181,6 @@ internal class NativeListDataRowView(context: ThemedReactContext) :
         "positive" -> "#00713FDE"
         "negative" -> "#C40006D3"
         "secondaryText" -> "#0000009B"
-        "disabledText" -> "#00000072"
-        "caution" -> "#AB6400"
         else -> "#000000DF"
       }
     return parseNativeListColor(theme?.optString(token, fallback) ?: fallback)
@@ -249,6 +264,10 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
 
   fun reset() {
     primaryLine.layoutParams.width = LayoutParams.WRAP_CONTENT
+    primaryLine.layoutParams.height = LayoutParams.WRAP_CONTENT
+    secondaryLine.layoutParams.height = LayoutParams.WRAP_CONTENT
+    badges.layoutParams.height = LayoutParams.WRAP_CONTENT
+    secondaryLeading.layoutParams.height = LayoutParams.WRAP_CONTENT
     primary.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
     secondary.layoutParams =
       LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
@@ -274,6 +293,7 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
     infoColor: Int,
     primarySize: Float,
     style: JSONObject,
+    fixedTableGeometry: Boolean = false,
   ) {
     reset()
     gravity =
@@ -356,6 +376,82 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
       secondaryLine.visibility = VISIBLE
     }
     if (style.length() > 0) applyStyle(style)
+    if (fixedTableGeometry) {
+      // Legacy table lines: fixed 20dp primary and 16dp secondary/badge boxes.
+      primaryLine.layoutParams.height = dp(20)
+      primary.layoutParams.height = dp(20)
+      badges.layoutParams.height = dp(16)
+      for (index in 0 until badges.childCount) badges.getChildAt(index).layoutParams.height = dp(16)
+      secondaryLine.layoutParams.height = dp(16)
+      secondaryLeading.layoutParams.height = dp(16)
+      secondary.layoutParams.height = dp(16)
+    }
+  }
+
+  fun bindLegacyLinear(
+    column: JSONObject,
+    rowBadges: JSONArray?,
+    primaryColor: Int,
+    secondaryColor: Int,
+    infoColor: Int,
+  ) {
+    reset()
+    gravity = Gravity.START
+    val value = android.text.SpannableStringBuilder(column.optString("text"))
+    value.setSpan(
+      android.text.style.ForegroundColorSpan(primaryColor),
+      0,
+      value.length,
+      android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+    )
+    if (rowBadges != null)
+      for (index in 0 until minOf(2, rowBadges.length())) {
+        val start = value.length
+        value.append("  ${rowBadges.getJSONObject(index).optString("text")} ")
+        value.setSpan(
+          android.text.style.ForegroundColorSpan(infoColor),
+          start,
+          value.length,
+          android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+        value.setSpan(
+          android.text.style.BackgroundColorSpan(parseNativeListColor("#008FF519")),
+          start,
+          value.length,
+          android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+      }
+    val secondaryText = column.optString("secondaryText")
+    if (secondaryText.isNotEmpty()) {
+      val start = value.length
+      value.append("\n$secondaryText")
+      value.setSpan(
+        android.text.style.ForegroundColorSpan(secondaryColor),
+        start,
+        value.length,
+        android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+      )
+    }
+    primaryLine.layoutParams.width = LayoutParams.MATCH_PARENT
+    primary.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
+    primary.includeFontPadding = true
+    primary.fontFeatureSettings = "tnum"
+    primary.textSize = sp(16f)
+    primary.typeface = NativeListFonts.medium(context)
+    primary.setLineSpacing(0f, 1f)
+    primary.letterSpacing = 0f
+    primary.opticalOffsetY = 0f
+    primary.setHorizontallyScrolling(false)
+    primary.ellipsize = null
+    primary.maxLines = if (secondaryText.isEmpty()) 1 else 2
+    primary.gravity =
+      when (column.optString("alignment", "start")) {
+        "center" -> Gravity.CENTER
+        "end" -> Gravity.END
+        else -> Gravity.START
+      }
+    primary.text = value
+    primary.visibility = VISIBLE
   }
 
   private fun applyStyle(style: JSONObject) {

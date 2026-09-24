@@ -190,6 +190,8 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     tertiary.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
     badgeLine.typeface = NativeListFonts.medium(context)
     badgeLine.textSize = sp(12f)
+    // Legacy: tertiary always ellipsizes at the end.
+    tertiary.ellipsize = TextUtils.TruncateAt.END
     mainColumn.addView(titleLine)
     mainColumn.addView(subtitle)
     mainColumn.addView(tertiary)
@@ -245,6 +247,8 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
             else -> Gravity.CENTER_VERTICAL
           }
     applySelectorTypography(item)
+    // Legacy: overhanging selector icons/checkboxes must not be clipped by row padding.
+    if (trailingColumn.parent === this && trailingColumn.requestsUnclippedHost) clipToPadding = false
   }
 
   private fun styleGap(column: LinearLayout, gap: Int) {
@@ -302,17 +306,25 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
     visit(this)
   }
 
-  private fun addLeading(descriptor: JSONObject?, sizeDp: Int, spacingDp: Int = 12) {
-    if (descriptor == null) {
-      leadingFrame.recycle()
-      return
-    }
+  private fun addLeading(visual: JSONObject?, sizeDp: Int, spacingDp: Int = 12) {
+    // Legacy: a missing visual still reserves an empty, transparent leading slot.
+    val descriptor = visual ?: JSONObject().put("backgroundColor", "#00000000")
+    if (visual == null) leadingFrame.recycle()
     val item = currentItem!!
     val style = item.json.optJSONObject("style")?.optJSONObject("image") ?: JSONObject()
     val wallet = item.json.optString("presentation") == "walletSidebar" && item.json.has("height")
+    // Legacy wallet-sidebar glyph/overlay sizing applies with source scaling.
+    val walletSource = item.json.optString("presentation") == "walletSidebar" && sourceScale
+    val fallbackIconName =
+      descriptor.optJSONObject("fallbackIcon")?.takeIf { descriptor.optJSONObject("image") == null }?.optString("name")
     leadingFrame.glyphSize =
-      if (wallet && descriptor.optJSONObject("fallbackIcon")?.optString("name") == "LockSolid") 40
+      if (walletSource && fallbackIconName == "LockSolid") 40
+      else if (walletSource && fallbackIconName == "PlusSmallOutline") 24
       else 18
+    leadingFrame.walletTextOverlays = walletSource
+    leadingFrame.roundedImageRadius =
+      if (item.json.optString("presentation") == "accountSelector" && item.json.has("height")) 8
+      else 10
     leadingFrame.dashedBorderWidth = if (wallet) 1 else 2
     leadingFrame.overlayTextFontSize = if (wallet) 12f else 10f
     leadingFrame.overlayTextLineHeight = if (wallet) 16 else null
@@ -326,7 +338,16 @@ internal class NativeListIdentityRowView(context: ThemedReactContext) :
           if (style.has("width")) stylePx(style.optDouble("width")) else dp(sizeDp),
           if (style.has("height")) stylePx(style.optDouble("height")) else dp(sizeDp),
         )
-        .apply { marginEnd = dp(spacingDp) },
+        .apply {
+          // Legacy: Yoga rounds cumulative selector edges, not each gap separately.
+          marginEnd =
+            if (
+              item.json.has("height") &&
+                item.json.optString("presentation") in setOf("accountSelector", "networkSelector")
+            )
+              dp(12 + sizeDp + spacingDp) - dp(12) - dp(sizeDp)
+            else dp(spacingDp)
+        },
     )
   }
 

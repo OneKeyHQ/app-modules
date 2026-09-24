@@ -117,6 +117,11 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext) :
                 sourceScale,
             )
             .bind(badge)
+        if (style.optJSONObject("badge") == null) {
+            // Legacy badge text keeps the platform font padding and proportional digits.
+            badge.includeFontPadding = true
+            badge.fontFeatureSettings = null
+        }
         if (!style.optJSONObject("badge").let { it?.has("alignment") == true })
             badge.gravity = Gravity.CENTER
         badge.setPadding(dp(8), 0, dp(8), 0)
@@ -124,7 +129,7 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext) :
             GradientDrawable().apply {
                 setColor(parseNativeListColor("#000000DF"))
                 cornerRadius = dp(10).toFloat()
-                setStroke(dp(1), Color.WHITE)
+                setStroke(dp(2), Color.WHITE)
             }
         badge.layoutParams = FrameLayout.LayoutParams(-2, dp(24), Gravity.END or Gravity.BOTTOM)
         title.layoutParams = LayoutParams(-1, -2).apply { topMargin = size("lineGap", 0) }
@@ -141,13 +146,18 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext) :
                 item.json.getJSONObject("image"),
                 "${item.key}:media",
                 fit = imageStyle.optString("contentFit").takeIf { it.isNotEmpty() },
+                placeholder =
+                    theme?.optString("strongBackground", "#0000000F")?.takeIf(String::isNotEmpty)
+                        ?: "#0000000F",
             )
         else image.recycle()
+        // Legacy: only the empty/error states paint a slot fill; loaded images show
+        // their own placeholder without a white backing.
         image.view.background =
-            GradientDrawable().apply {
-                setColor(
-                    if (state == "error") tint("strongBackground", "#0000000F") else Color.WHITE
-                )
+            when (state) {
+                "error" -> GradientDrawable().apply { setColor(tint("strongBackground", "#0000000F")) }
+                "empty" -> GradientDrawable().apply { setColor(Color.WHITE) }
+                else -> null
             }
         image.view.outlineProvider =
             object : ViewOutlineProvider() {

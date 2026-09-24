@@ -100,11 +100,14 @@ internal class NativeListActivityRowView(context: ThemedReactContext) :
         if (textStyle.optString("truncate") == "clip") null else TextUtils.TruncateAt.END
     }
     orientation = VERTICAL
+    val hasFooterActions = (data.optJSONArray("footerActions")?.length() ?: 0) > 0
     gravity =
       when (style.optJSONObject("container")?.optString("contentVerticalAlignment")) {
         "bottom" -> Gravity.BOTTOM
         "top" -> Gravity.TOP
-        else -> Gravity.CENTER_VERTICAL
+        "center" -> Gravity.CENTER_VERTICAL
+        // Legacy: the footer-action column is top/start aligned.
+        else -> if (hasFooterActions) Gravity.START else Gravity.CENTER_VERTICAL
       }
     content.gravity =
       when (style.optJSONObject("container")?.optString("contentVerticalAlignment")) {
@@ -123,7 +126,8 @@ internal class NativeListActivityRowView(context: ThemedReactContext) :
     val gap = if (style.has("leadingGap")) stylePx(style.optDouble("leadingGap")) else dp(12)
     visual.layoutParams = LayoutParams(iw, ih).apply { marginEnd = gap }
     visual.bind(
-      data.optJSONObject("leading") ?: JSONObject(),
+      // Legacy: a missing visual still reserves an empty, transparent slot.
+      data.optJSONObject("leading") ?: JSONObject().put("backgroundColor", "#00000000"),
       image,
       item.key,
       theme,
@@ -155,7 +159,7 @@ internal class NativeListActivityRowView(context: ThemedReactContext) :
     failure.setPadding(dp(8), dp(2), dp(8), dp(2))
     (failure.layoutParams as LayoutParams).apply {
       marginStart =
-        if (style.has("titleBadgeGap")) stylePx(style.optDouble("titleBadgeGap")) else dp(8)
+        if (style.has("titleBadgeGap")) stylePx(style.optDouble("titleBadgeGap")) else 0
     }
     for (view in listOf(description, status)) (view.layoutParams as LayoutParams).apply {
       topMargin = if (style.has("lineGap")) stylePx(style.optDouble("lineGap")) else 0
@@ -173,7 +177,8 @@ internal class NativeListActivityRowView(context: ThemedReactContext) :
             if (value.startsWith("+")) "positive" else "primaryText",
             if (value.startsWith("+")) "#00713FDE" else "#000000DF",
           )
-        else color("secondaryText", "#0000009B"),
+        // Legacy: both amounts default to primaryText; only "+" amounts are positive.
+        else color("primaryText", "#000000DF"),
         line = if (index == 0) 24 else 20,
         align = "end",
       )
@@ -201,13 +206,14 @@ internal class NativeListActivityRowView(context: ThemedReactContext) :
           context,
           action.optString("label"),
           null,
-          12f,
-          "medium",
+          // Legacy footer action: 14sp semibold on a 20dp line.
+          14f,
+          "semibold",
           color(
             if (action.optString("tone") == "danger") "negative" else "primaryText",
             if (action.optString("tone") == "danger") "#C40006D3" else "#000000DF",
           ),
-          0,
+          20,
           1,
           sourceScale,
         )

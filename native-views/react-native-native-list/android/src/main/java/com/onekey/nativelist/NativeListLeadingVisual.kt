@@ -39,10 +39,28 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
   var overlayTextLineHeight: Int? = null
   var bitmapBorderWidth = 0
 
+  /** Legacy wallet-sidebar text overlays: 16dp tall pills that wrap their text. */
+  var walletTextOverlays = false
+
+  private fun isWalletText(data: JSONObject) =
+    walletTextOverlays &&
+      data.optString("text").isNotEmpty() &&
+      data.optJSONObject("image") == null &&
+      data.optString("name").isEmpty()
+
+  private fun overlayHeight(data: JSONObject) =
+    data.optInt("height", if (isWalletText(data)) 16 else data.optInt("size", 20))
+
   fun layoutNetworkBackdrop(top: Int, height: Int) {
     networkBackdrop.layout(networkBackdrop.left, top, networkBackdrop.right, top + height)
   }
 
+  // Legacy: loaded images in a "rounded" slot clip at a fixed radius (10dp;
+  // 8dp for explicit-height account selectors), independent of slot size.
+  var roundedImageRadius = 10
+
+  /** Market resolves its own radius; legacy still decoded circular bitmaps by shape. */
+  var roundFollowsVisualShape = false
   var glyphSize = 18
   var roundedGlyphOrigin = false
   var iconBorder = true
@@ -191,8 +209,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
           placeholder,
           round =
             visual.optString("shape", if (kind == "image") "rounded" else "circle") == "circle" &&
-              !style.has("shape") &&
-              !style.has("cornerRadius"),
+              (roundFollowsVisualShape || !style.has("shape") && !style.has("cornerRadius")),
         ) { loaded ->
           slot.view.visibility =
             if (!loaded && (index > 0 || sourceFallback)) INVISIBLE else VISIBLE
@@ -245,7 +262,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
           color(data.optString("backgroundColor", "#00000000")),
           minOf(
             dp(data.optInt("width", data.optInt("size", 20))),
-            dp(data.optInt("height", data.optInt("size", 20))),
+            dp(overlayHeight(data)),
           ) / 2f,
         )
       frame.outlineProvider = ViewOutlineProvider.BACKGROUND
@@ -271,7 +288,9 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
               overlayTextLineHeight?.let {
                 androidx.core.widget.TextViewCompat.setLineHeight(this, dp(it))
               }
-              typeface = NativeListFonts.medium(context)
+              typeface =
+                if (isWalletText(data)) NativeListFonts.regular(context)
+                else NativeListFonts.medium(context)
               setTextColor(color(data.optString("tintColor", "#0000009B")))
             }
           } else {
@@ -283,15 +302,22 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
             }
           }
       val inset = data.optInt("padding", 0)
-      frame.setPadding(dp(inset), dp(inset), dp(inset), dp(inset))
+      if (isWalletText(data)) frame.setPadding(dp(2), 0, dp(2), 0)
+      else frame.setPadding(dp(inset), dp(inset), dp(inset), dp(inset))
       if (child.parent !== frame) {
         frame.removeAllViews()
+        // A reused slot view may still belong to a frame dropped by an earlier bind.
+        (child.parent as? android.view.ViewGroup)?.removeView(child)
         frame.addView(child, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
       }
       if (frame.parent == null) addView(frame)
       overlays.add(frame to data)
     }
-    previousOverlays.drop(descriptors.size).forEach { removeView(it.first) }
+    previousOverlays.drop(descriptors.size).forEach { (frame, _) ->
+      // Release the overlay child so its image slot can join a later frame.
+      frame.removeAllViews()
+      removeView(frame)
+    }
     overlaySlots.drop(descriptors.size).forEach { it.recycle() }
     unread.bringToFront()
     requestLayout()
@@ -371,7 +397,11 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
       )
       val inset = if (index == 0) bitmapBorderWidth else 0
       place(slot.view, x + inset, y + inset, imageWidth - 2 * inset, size - 2 * inset)
-      val r = if (index == 0 && (sources.size == 1 || tokenPair)) radius else size / 2f
+      val imageRadius =
+        if (shape == "rounded" && !style.has("shape") && !style.has("cornerRadius"))
+          dp(roundedImageRadius).toFloat()
+        else radius
+      val r = if (index == 0 && (sources.size == 1 || tokenPair)) imageRadius else size / 2f
       slot.view.outlineProvider =
         object : ViewOutlineProvider() {
           override fun getOutline(view: View, outline: Outline) {
@@ -388,8 +418,17 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     place(unread, w - dp(8), 0, dp(8), dp(8))
     overlays.forEach { (frame, data) ->
       val size = data.optInt("size", 20)
-      val ow = dp(data.optInt("width", size))
-      val oh = dp(data.optInt("height", size))
+      val oh = dp(overlayHeight(data))
+      val ow =
+        if (isWalletText(data) && !data.has("width")) {
+          // Legacy: wallet text pills wrap their label plus horizontal padding.
+          val child = frame.getChildAt(0)
+          child?.measure(
+            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+            MeasureSpec.makeMeasureSpec(oh, MeasureSpec.EXACTLY),
+          )
+          (child?.measuredWidth ?: 0) + frame.paddingLeft + frame.paddingRight
+        } else dp(data.optInt("width", size))
       val x = dp(data.optInt("offsetX", data.optInt("offset", 2)))
       val y = dp(data.optInt("offsetY", data.optInt("offset", 2)))
       val ox = if (data.optString("position") == "topLeft") -x else w - ow + x

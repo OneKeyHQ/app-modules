@@ -544,6 +544,7 @@ internal class NativeListMarketRowView(context: ThemedReactContext) :
     val resolved = JSONObject(imageStyle?.toString() ?: "{}")
     resolved.put("cornerRadius", cornerRadius.toDouble())
     leadingFrame.bitmapBorderWidth = if (leading.optString("borderColor").isEmpty()) 0 else dp(1)
+    leadingFrame.roundFollowsVisualShape = true
     leadingFrame.bind(leading, resolved, item.key, theme, false, true)
     addView(
       leadingFrame,

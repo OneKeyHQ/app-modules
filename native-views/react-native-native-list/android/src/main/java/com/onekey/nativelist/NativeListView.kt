@@ -252,15 +252,22 @@ class NativeListView(
         MotionEvent.ACTION_MOVE -> {
           val initial = down
           if (initial != null && kotlin.math.abs(event.y - initial.y) > pagerGestureTouchSlop) {
-            forward(initial)
-            forwarding = true
-            parent?.requestDisallowInterceptTouchEvent(true)
+            startForwarding(initial, event)
             return true
           }
         }
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { down?.recycle(); down = null }
       }
       return false
+    }
+
+    // The intercepting MOVE is not redelivered to onTouchEvent, so forward it
+    // together with the initial DOWN to keep the list's drag continuous.
+    private fun startForwarding(initial: MotionEvent, event: MotionEvent) {
+      forward(initial)
+      forward(event)
+      forwarding = true
+      parent?.requestDisallowInterceptTouchEvent(true)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -279,6 +286,9 @@ class NativeListView(
     updateStickyHeader()
     true
   }
+  // Registered only while attached, on the captured window observer, so detach
+  // removes the same instance the listener was merged into.
+  private var stickyObservedTree: ViewTreeObserver? = null
   private var spacingDecoration: ItemSpacingDecoration? = null
   private var itemTouchHelper: ItemTouchHelper? = null
   private var reorderTouchListener: RecyclerView.OnItemTouchListener? = null
@@ -357,7 +367,6 @@ class NativeListView(
     stickyHeaderHost.visibility = GONE
     stickyHeaderHost.addView(stickyHeaderView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
     contentContainer.addView(stickyHeaderHost, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP))
-    recyclerView.viewTreeObserver.addOnPreDrawListener(stickyPreDraw)
     contentContainer.addView(
       sectionIndexView,
       FrameLayout.LayoutParams(
@@ -513,6 +522,7 @@ class NativeListView(
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
+    startStickyHeaderTracking()
     updateSectionIndexAttachment()
     val first = config?.items?.firstOrNull()
     if (recyclerView.isLayoutRequested && (first?.type == "market" || first?.json?.optString("presentation") == "market")) {
@@ -521,6 +531,7 @@ class NativeListView(
   }
 
   override fun onDetachedFromWindow() {
+    stopStickyHeaderTracking()
     stopSectionIndexAttachmentTracking()
     scheduleSectionIndexAttachmentToList()
     updateRefreshIndicatorOffset(0)
@@ -1175,7 +1186,7 @@ class NativeListView(
     itemTouchHelper = null
     footerView.recycle()
     footerView.dispose()
-    recyclerView.viewTreeObserver.removeOnPreDrawListener(stickyPreDraw)
+    stopStickyHeaderTracking()
     stickyHeaderView.dispose()
     stickyHeaderHost.visibility = GONE
     recyclerView.swapAdapter(null, false)
@@ -1229,7 +1240,10 @@ class NativeListView(
       return
     }
     val width = recyclerView.width - recyclerView.paddingLeft - recyclerView.paddingRight
-    if (width <= 0) return
+    if (width <= 0) {
+      stickyHeaderHost.visibility = GONE
+      return
+    }
     val signature = "${item.content}:$width:${recyclerView.layoutDirection}:$usesSelectorSourceScale"
     if (stickyHeaderConfig !== current || stickyHeaderSignature != signature) {
       stickyHeaderConfig = current
@@ -1371,6 +1385,20 @@ class NativeListView(
     } else {
       attachSectionIndexToList()
     }
+  }
+
+  private fun startStickyHeaderTracking() {
+    if (resourcesDisposed) return
+    val observer = viewTreeObserver
+    if (stickyObservedTree === observer) return
+    stopStickyHeaderTracking()
+    observer.addOnPreDrawListener(stickyPreDraw)
+    stickyObservedTree = observer
+  }
+
+  private fun stopStickyHeaderTracking() {
+    stickyObservedTree?.takeIf(ViewTreeObserver::isAlive)?.removeOnPreDrawListener(stickyPreDraw)
+    stickyObservedTree = null
   }
 
   private fun startSectionIndexAttachmentTracking() {
