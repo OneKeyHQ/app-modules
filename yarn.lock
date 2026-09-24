@@ -2962,6 +2962,7 @@ __metadata:
     "@onekeyfe/react-native-lite-card": "workspace:*"
     "@onekeyfe/react-native-native-list": "workspace:*"
     "@onekeyfe/react-native-native-logger": "workspace:*"
+    "@onekeyfe/react-native-native-sheet": "workspace:*"
     "@onekeyfe/react-native-network-info": "workspace:*"
     "@onekeyfe/react-native-pager-view": "workspace:*"
     "@onekeyfe/react-native-pbkdf2": "workspace:*"
@@ -3734,7 +3735,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@onekeyfe/react-native-native-sheet@workspace:native-views/react-native-native-sheet":
+"@onekeyfe/react-native-native-sheet@workspace:*, @onekeyfe/react-native-native-sheet@workspace:native-views/react-native-native-sheet":
   version: 0.0.0-use.local
   resolution: "@onekeyfe/react-native-native-sheet@workspace:native-views/react-native-native-sheet"
   dependencies:

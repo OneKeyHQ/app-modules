@@ -1,0 +1,211 @@
+name: native-tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          cache: yarn
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install and generate native bindings
+        run: |
+          corepack enable
+          yarn install --immutable
+          # shellcheck disable=SC2016
+          find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
+            xargs -0 -n1 -P4 bash -c 'cd "$(dirname "$0")" && yarn nitrogen > /dev/null'
+      - name: Run seven Android unit test suites
+        working-directory: example/react-native/android
+        run: |
+          ./gradlew --continue --no-daemon --max-workers=2 --console=plain \
+            :onekeyfe_react-native-app-update:testDebugUnitTest \
+            :onekeyfe_react-native-network-throttle:testDebugUnitTest \
+            :onekeyfe_react-native-range-downloader:testDebugUnitTest \
+            :onekeyfe_react-native-sni-connect:testDebugUnitTest \
+            :onekeyfe_react-native-auto-size-input:testDebugUnitTest \
+            :onekeyfe_react-native-image:testDebugUnitTest \
+            :onekeyfe_react-native-native-list:testDebugUnitTest
+      - name: Verify every Android suite executed tests
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          packages = {
+              'native-modules/react-native-app-update',
+              'native-modules/react-native-network-throttle',
+              'native-modules/react-native-range-downloader',
+              'native-modules/react-native-sni-connect',
+              'native-views/react-native-auto-size-input',
+              'native-views/react-native-image',
+              'native-views/react-native-native-list',
+          }
+          total = 0
+          for package in sorted(packages):
+              reports = list((Path(package) / 'android/build/test-results/testDebugUnitTest').glob('TEST-*.xml'))
+              count = sum(int(ET.parse(report).getroot().attrib['tests']) for report in reports)
+              print(f'{package}: {count} tests in {len(reports)} reports')
+              if count == 0:
+                  raise SystemExit(f'No executed tests for {package}')
+              total += count
+          print(f'Android unit tests executed: {total}')
+          PY
+      - name: Upload Android test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-native-test-reports
+          path: |
+            native-modules/*/android/build/test-results/testDebugUnitTest/*.xml
+            native-views/*/android/build/test-results/testDebugUnitTest/*.xml
+            example/react-native/android/build/reports/problems/
+          if-no-files-found: warn
+
+  kotlin-cli:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install verified Kotlin 2.3.21 compiler
+        run: |
+          curl -fsSLo kotlin-compiler.zip https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip
+          curl -fsSLo kotlin-compiler.sha256 https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip.sha256
+          echo "$(cat kotlin-compiler.sha256)  kotlin-compiler.zip" | sha256sum --check
+          unzip -q kotlin-compiler.zip -d "$RUNNER_TEMP"
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" -version 2>&1 | grep -F '2.3.21'
+      - name: Run bundle-update Kotlin policy tests
+        working-directory: native-modules/react-native-bundle-update
+        run: |
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" \
+            android/src/main/java/com/margelo/nitro/reactnativebundleupdate/BundleStorageSchemaPolicy.kt \
+            tests/kotlin/BundleStorageSchemaPolicyTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/bundle-storage-schema-tests.jar"
+          java -jar "$RUNNER_TEMP/bundle-storage-schema-tests.jar" | tee "$RUNNER_TEMP/kotlin-tests.log"
+          grep -Eq 'BundleStorageSchemaPolicy: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/kotlin-tests.log"
+
+  swiftpm:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select and verify Xcode 26.6
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          xcodebuild -version
+          xcodebuild -version | grep -F 'Xcode 26.6'
+      - name: Run three SwiftPM suites and verify execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/swiftpm
+          packages=(
+            native-modules/react-native-sni-connect
+            native-modules/react-native-bundle-update
+            native-modules/react-native-range-downloader/tests/swiftpm
+          )
+          for package in "${packages[@]}"; do
+            name=$(basename "$package")
+            if [[ "$package" == *range-downloader* ]]; then name=range-downloader; fi
+            swift test --package-path "$package" --scratch-path "$RUNNER_TEMP/swift-$name" \
+              2>&1 | tee "artifacts/swiftpm/$name.log"
+            if ! grep -Eq 'Executed [1-9][0-9]* tests?|Test run with [1-9][0-9]* tests?' "artifacts/swiftpm/$name.log"; then
+              echo "No executed Swift tests for $package" >&2
+              exit 1
+            fi
+          done
+      - name: Upload SwiftPM logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swiftpm-native-test-logs
+          path: artifacts/swiftpm/*.log
+          if-no-files-found: warn
+
+  ios-xctest:
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          cache: yarn
+      - uses: ruby/setup-ruby@v1
+        with:
+          working-directory: example/react-native
+          ruby-version: '3.4.4'
+          bundler-cache: true
+      - name: Select and verify Xcode and simulator
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          xcodebuild -version | grep -F 'Xcode 26.6'
+          xcrun simctl list devices available | grep -F 'iOS 26.5'
+          xcrun simctl list devices available | grep -F 'iPhone 17 Pro ('
+          df -h .
+      - name: Install and generate native bindings
+        run: |
+          corepack enable
+          yarn install --immutable
+          # shellcheck disable=SC2016
+          find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
+            xargs -0 -n1 -P4 bash -c 'cd "$(dirname "$0")" && yarn nitrogen > /dev/null'
+      - name: Install CocoaPods test specs from lockfile
+        working-directory: example/react-native/ios
+        run: bundle exec pod install --deployment
+      - name: Run four pod XCTest suites on iOS Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/ios
+          workspace=example/react-native/ios/example.xcworkspace
+          schemes=(OneKeyImage-Unit-Tests NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests)
+          xcodebuild -list -workspace "$workspace" > artifacts/ios/schemes.log
+          for scheme in "${schemes[@]}"; do
+            grep -Fxq "        $scheme" artifacts/ios/schemes.log
+            # shellcheck disable=SC2016
+            xcodebuild test -workspace "$workspace" -scheme "$scheme" \
+              -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' \
+              -derivedDataPath "$RUNNER_TEMP/native-tests-derived-data" \
+              -resultBundlePath "$PWD/artifacts/ios/$scheme.xcresult" \
+              -parallel-testing-enabled NO -jobs 2 CODE_SIGNING_ALLOWED=NO \
+              IPHONEOS_DEPLOYMENT_TARGET=16.4 \
+              'OTHER_LDFLAGS=$(inherited) -lc++' \
+              2>&1 | tee "artifacts/ios/$scheme.log"
+            xcrun xcresulttool get test-results summary \
+              --path "artifacts/ios/$scheme.xcresult" \
+              > "artifacts/ios/$scheme-summary.json"
+            jq -e '.totalTestCount > 0' "artifacts/ios/$scheme-summary.json"
+          done
+          df -h .
+      - name: Upload iOS result bundles and logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-test-results
+          path: artifacts/ios/
+          if-no-files-found: warn

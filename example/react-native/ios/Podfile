@@ -41,6 +41,12 @@ target 'example' do
   pod 'SDWebImageSVGCoder', '1.7.0', :modular_headers => true
   pod 'SDWebImageWebPCoder', '0.14.6', :modular_headers => true
 
+  # CocoaPods does not install test specs unless they are requested explicitly.
+  pod 'OneKeyImage', :path => '../../../node_modules/@onekeyfe/react-native-image', :testspecs => ['Tests']
+  pod 'NativeSheet', :path => '../../../node_modules/@onekeyfe/react-native-native-sheet', :testspecs => ['Tests']
+  pod 'react-native-pager-view', :path => '../../../node_modules/@onekeyfe/react-native-pager-view', :testspecs => ['Tests']
+  pod 'OneKeyTextInput', :path => '../../../node_modules/@onekeyfe/react-native-text-input', :testspecs => ['Tests']
+
   # Copy optional offline TradingView chart material into the app bundle as
   # `tradingview-assets/`, preserving the
   # directory tree so react-native-chart-webview's WKURLSchemeHandler can serve it.
