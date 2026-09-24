@@ -722,6 +722,9 @@ exposed — a hairline is correct on iOS and a whole pixel is correct elsewhere.
 - **Source scale is list-wide on Android.**
   `usesSelectorSourceScale` is computed with `items.any { … }`, so one selector row
   switches the metric system (the sub-400dp 0.9 factor) for the entire list.
+  Only the legacy `row.height` (a WalletGroup's parent `height`) triggers it;
+  `style.container.height` switches its own row to selector explicit-height
+  geometry (as on iOS and Web) but never this list-wide metric system (§7 rule 3).
   `NativeListTableColumnView`, the market skeleton, and the section index never
   follow it. Explicit non-Market row styles now use density directly, so this
   legacy baseline policy cannot scale an explicitly supplied style value.
@@ -765,7 +768,7 @@ exposed — a hairline is correct on iOS and a whole pixel is correct elsewhere.
 | --- | --- |
 | Web clip height guessed before CSS was mounted; iOS clip disabled natural wrapping | CSS line-height-relative clipping and iOS wrapping without ellipsis |
 | Web ignored legacy identity line limits and Market badge metrics | Apply declared fields with style precedence and restore defaults on clear |
-| Market rich subscripts retained their old size despite explicit font size | Explicit field size overrides every run on all three platforms |
+| Market rich subscripts retained their old size despite explicit font size | Superseded 2026-09-24: legacy (all platforms) sized a subscript at `ceil(0.6 × field fontSize)`. Web, iOS and Android restore that ratio for an explicit `fontSize` (native keeps the field line height, Web a `fontSize` line box, each as in legacy) |
 | Web Market center fit used an invalid CSS value; change color used reversed precedence | Map center to object-fit none; explicit style color wins |
 | Android line height excluded first/last text lines | Apply an exact line-height span including first/last font metrics |
 | Legacy native centering overrode container alignment | Apply legacy positioning only when container alignment is omitted |
@@ -875,7 +878,9 @@ needs it; it must never obtain defaults from another template's previous binding
 
 Measurement uses the current data/theme/style inputs. Web renderers report
 rendered intrinsic heights through the registry; the container has no separate
-warning-view measurement fallback. Image primitives retain unchanged effective
+warning-view measurement fallback. The System renderer reports an automatic-height
+warning's rendered border-box height (padding, both borders, wrapped text), as
+the legacy engine did; `row.height`/`style.container.height` skip it. Image primitives retain unchanged effective
 requests and invalidate callbacks on source/slot replacement or recycle.
 
 Selector tabular typography belongs to Identity, SectionHeader and Action.
@@ -932,7 +937,12 @@ the contract; no shared cross-language renderer or code generator is required.
 
 ### Verification — 2026-09-24 (Web legacy-default audit)
 
-- Package typecheck passes; 176 package tests in five suites pass, including
+- Package typecheck passes; 179 package tests in five suites pass, including
+  (review round 3) Market subscript runs keeping the legacy 60% size under an
+  explicit `fontSize`, System warning layout at its rendered DOM height,
+  System/MetricCard text-layout styles (`lines: 1` text rewrite, `offsetY`
+  wrapper) clearing to a fresh unstyled render, walletSidebar `leadingGap`
+  cleared from reused visuals (standalone and WalletGroup members),
   regressions for loaded MetricCard images across content/style rebinding,
   WalletGroup vertical padding replacing the legacy inset in measured and
   rendered height, message-only retry rows (Market included) firing on click

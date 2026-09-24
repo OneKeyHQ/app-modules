@@ -57,8 +57,8 @@ separately from source implementation in STYLE_SPEC §9.
 - **Variants:** default horizontal row; `accountSelector` and `networkSelector`
   preserve selector control geometry; `walletSidebar` uses a compact, centered
   wallet presentation. A variant is explicit model data, never inferred from font size.
-  Selector control geometry applies when the row has an explicit height from
-  either `style.container.height` or the legacy `row.height`.
+  Selector control geometry applies on all platforms when the row has an
+  explicit height from either `style.container.height` or the legacy `row.height`.
 - **Separator:** the default native separator inset is 60 for identity rows
   and 12 for other templates (Web 0).
 - **Platform default:** without `subtitleLines` or `style.subtitle.lines`, the
@@ -211,6 +211,9 @@ separately from source implementation in STYLE_SPEC §9.
   `contentTrailingGap`, `subtitleTrailingPadding`, `changeWidth`, `changeHeight`,
   `changeCornerRadius`, plus box/image metrics. Badge models and subtitle prefix
   have their own existing style fields; they do not create arbitrary child views.
+  A `subscript` segment is `ceil(0.6 × field fontSize)` on a `fontSize` line box
+  (legacy), including under an explicit `fontSize`. Web uses a `fontSize` line box;
+  iOS/Android keep the field line height, as their legacy renderers did.
 - **Layout boundary:** price and change keep their regions; the localized name
   compresses independently from volume where supported. Styling does not change
   token/stock/perp structure or affect sections, index navigation or pagination.
@@ -302,6 +305,9 @@ separately from source implementation in STYLE_SPEC §9.
   retry/noMatch message and the retry `actionText` ellipsize at the end by
   default; an explicit `lines` or `truncate` (including `clip`) wins. A spacer has no text slot; skeleton/spinner styling
   does not become arbitrary drawing through these text roles.
+- **Height:** without `row.height`/`style.container.height`, Web lays out a
+  warning at its rendered height (padding, both borders, wrapped text), as the
+  legacy engine did; native measures its text.
 - **Layout boundary:** keep each variant's indicator/text/action structure and
   bounded height. Styling cannot convert loading into retry, turn a spacer into
   content, or hide adjacent rows.

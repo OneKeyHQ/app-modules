@@ -22,11 +22,16 @@ export function applyValueSegments(
       segment.text
     );
     if (segment.style === 'subscript') {
-      span.style.fontSize = String(Math.ceil(fontSize * 0.6)) + 'px';
-      span.style.lineHeight = String(fontSize) + 'px';
+      span.dataset.nlSegment = 'subscript';
+      applySubscriptMetrics(span, fontSize);
     }
     element.appendChild(span);
   });
+}
+// Legacy subscript metrics: 60% of the field size on a field-size line box.
+function applySubscriptMetrics(span: HTMLElement, fontSize: number) {
+  span.style.fontSize = String(Math.ceil(fontSize * 0.6)) + 'px';
+  span.style.lineHeight = String(fontSize) + 'px';
 }
 export function applyTextLayout(
   element: HTMLElement,
@@ -146,13 +151,17 @@ export function applyTextStyleToSlot(
     element.style.fontWeight = String(fontWeight(style.fontWeight, 400));
   if (style.color !== undefined) element.style.color = style.color;
   // Explicit overrides also apply to rich text runs, but never to sibling badges.
+  // Subscript segments keep their legacy size relative to the field size.
   element.querySelectorAll<HTMLElement>('span').forEach((run) => {
+    const subscript = run.dataset.nlSegment === 'subscript';
     if (style.color !== undefined) run.style.color = style.color;
-    if (style.fontSize !== undefined)
-      run.style.fontSize = String(style.fontSize) + 'px';
+    if (style.fontSize !== undefined) {
+      if (subscript) applySubscriptMetrics(run, style.fontSize);
+      else run.style.fontSize = String(style.fontSize) + 'px';
+    }
     if (style.fontWeight !== undefined)
       run.style.fontWeight = String(fontWeight(style.fontWeight, 400));
-    if (style.lineHeight !== undefined)
+    if (style.lineHeight !== undefined && !subscript)
       run.style.lineHeight = String(style.lineHeight) + 'px';
     if (style.lines !== undefined || style.truncate !== undefined)
       run.style.whiteSpace = 'inherit';

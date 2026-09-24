@@ -562,7 +562,8 @@ layout helpers keep their existing behavior in shared primitive/host files.
 The registry has only the twelve supported families; native parsing rejects
 unknown types. Footer initialization starts with the lightweight Action host.
 
-Web removes the legacy pool and warning-specific container measurement cache.
+Web removes the legacy pool and warning-specific container measurement cache;
+the System renderer reports a warning's rendered height through the registry.
 Selector tabular typography belongs to Identity, Header and Action. WalletGroup
 provides its compact parent preview through the internal renderer registration;
 the container no longer selects a parent DOM node from the composite internals.
@@ -624,6 +625,14 @@ renderer structure; implicit key-based styling stays removed. Notable outcomes:
   rendering, container writes are undone before each renderer rebind (no leaked
   alignment, no reverted renderer values), every System retry is message-only
   again, and selector geometry follows either explicit height field.
+- Review round 3: Web restores the legacy Market subscript ratio under an
+  explicit `fontSize` (iOS/Android too), System warning DOM-height layout, a
+  text-style rebuild for System/MetricCard so cleared `lines`/`offsetY` leave
+  no wrapper or rewritten text, and `margin-bottom` restoration on reused
+  visuals. iOS/Android selector geometry now follows either explicit height
+  field (Android source scale still keys on `row.height`), Android rebinds the
+  fixed footer on a `listStyle`-only change, and iOS WalletGroup ignores the
+  row-level `backgroundColor` in its full-width fill too.
 
 Web validation is jsdom/unit level (package typecheck and tests); native
 validation for this round is reported with the native changes.

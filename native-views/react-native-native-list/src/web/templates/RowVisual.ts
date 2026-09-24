@@ -41,6 +41,7 @@ const properties = [
   'overflow',
   'object-fit',
   'margin-inline-end',
+  'margin-bottom',
   'align-self',
   'border',
   'box-sizing',

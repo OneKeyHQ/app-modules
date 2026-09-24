@@ -252,7 +252,8 @@ unknown row type before serialization. If one still reaches native code, iOS
 keeps its legacy behavior: an empty 56-point placeholder row with shared chrome
 and a single log message. Android rejects the snapshot while parsing it. Footer initialization uses a registered Action host.
 Web has no legacy pool or warning-specific container measurement path; template
-renderers own selector typography and WalletGroup compact-preview lookup.
+renderers own selector typography, System warning DOM measurement and
+WalletGroup compact-preview lookup.
 
 The consumer audit in MIGRATION_BASELINE.md allows removal of history-key header
 inference, Android token-section typography inference, and separator-key exceptions.
@@ -290,7 +291,20 @@ while its member press stays blocked; title-help hover checks only the resolved
 member. Every System retry (Market or not) is message-only with a row-press
 action, as in the legacy engine. Text styling no longer reads computed style, so
 attached and detached rows style identically.
-Validation: package typecheck and 176 tests pass (jsdom/unit level); this is
+
+Review round 3 (2026-09-24). Web: a Market subscript run keeps the legacy
+`ceil(0.6 × fontSize)` size on a `fontSize` line box when the field has an
+explicit `fontSize`, and iOS/Android again draw it at `ceil(0.6 × fontSize)` on the
+field's own line height (legacy on each platform);
+an automatic-height System warning is laid out at its rendered border-box
+height again; System and MetricCard rebuild their text when a text style
+changes, so clearing `lines`/`offsetY` restores the original text and removes
+the layout wrapper; a reused visual restores `margin-bottom`, so a cleared
+walletSidebar `leadingGap` leaves no residue. iOS and Android gate every
+selector explicit-height geometry on `style.container.height ?? row.height`
+(Android's list-wide source scale stays keyed on `row.height` only); Android
+rebinds the fixed footer on a `listStyle`-only snapshot.
+Validation: package typecheck and 179 tests pass (jsdom/unit level); this is
 not new rendered browser or native device evidence.
 
 ### Platform interaction and appearance differences (legacy, retained)
@@ -326,7 +340,8 @@ audit; they are not new in this change.
   wallet-sidebar exception (12). Web changes only the pressed background and
   keeps the resting (group or template) radius.
 - **WalletGroup row appearance.** The group's row-level `backgroundColor` is
-  ignored on iOS and Android (legacy): the group fill is
+  ignored on iOS and Android (legacy), in both the resting and the
+  `backgroundFullWidth` fill: the group fill is
   `style.container.backgroundColor` or the theme `subduedBackground`. Web
   (legacy) applies it inline over the group fill. Use
   `style.container.backgroundColor` for a cross-platform group fill.

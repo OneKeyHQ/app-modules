@@ -732,7 +732,7 @@ describe('web row style', () => {
     ).not.toBe('none');
   });
 
-  it('gives explicit Market typography priority over rich runs and legacy change colors', () => {
+  it('scales Market subscript runs with explicit typography and legacy change colors', () => {
     const body = render({
       type: 'market',
       key: 'market-rich',
@@ -759,18 +759,43 @@ describe('web row style', () => {
       '.ok-native-list-market-change'
     )!;
     expect(
-      Array.from(price.querySelectorAll('span')).map(
-        (run) => run.style.fontSize
-      )
-    ).toEqual(['18px', '18px']);
+      Array.from(price.querySelectorAll('span')).map((run) => [
+        run.style.fontSize,
+        run.style.lineHeight,
+      ])
+    ).toEqual([
+      ['18px', ''],
+      // Legacy subscript metrics: ceil(size * 0.6) on a field-size line box.
+      ['11px', '18px'],
+    ]);
     expect(
       Array.from(
         change.querySelectorAll<HTMLElement>(
           '.ok-native-list-text-content > span'
         )
       ).map((run) => run.style.fontSize)
-    ).toEqual(['17px', '17px']);
+    ).toEqual(['17px', '11px']);
     expect(change.style.color).toBe('rgb(18, 52, 86)');
+    const styledLine = render({
+      type: 'market',
+      key: 'market-rich-line',
+      variant: 'token',
+      title: 'Market',
+      leading: { kind: 'icon', name: 'coin' },
+      price: '$01',
+      priceSegments: [{ text: '$0' }, { text: '1', style: 'subscript' }],
+      change: { text: '+1', tone: 'positive' },
+      style: { price: { fontSize: 20, lineHeight: 28 } },
+    }).querySelectorAll<HTMLElement>('.ok-native-list-market-price span');
+    expect(
+      Array.from(styledLine).map((run) => [
+        run.style.fontSize,
+        run.style.lineHeight,
+      ])
+    ).toEqual([
+      ['20px', '28px'],
+      ['12px', '20px'],
+    ]);
   });
 
   it('allows Market measurement changes while giving explicit style height precedence', () => {
@@ -1319,7 +1344,10 @@ describe('web row style', () => {
     const body = host.querySelector<HTMLElement>(
       '[data-nl-renderer="system"]'
     )!;
-    const title = body.querySelector<HTMLElement>('[data-nl-slot="title"]')!;
+    // Text styles rebuild the text nodes (see the set→clear regression test);
+    // the renderer host is what stays.
+    const title = () =>
+      body.querySelector<HTMLElement>('[data-nl-slot="title"]')!;
     try {
       engine.applySnapshot(
         snapshot({ kind: 'sectioned' }, [
@@ -1335,10 +1363,10 @@ describe('web row style', () => {
         ])
       );
       expect(host.querySelector('[data-nl-renderer="system"]')).toBe(body);
-      expect(body.querySelector('[data-nl-slot="title"]')).toBe(title);
-      expect(title.style.fontSize).toBe('18px');
+      expect(title().style.fontSize).toBe('18px');
       engine.applySnapshot(snapshot({ kind: 'sectioned' }, [warning]));
-      expect(title.style.fontSize).toBe('');
+      expect(host.querySelector('[data-nl-renderer="system"]')).toBe(body);
+      expect(title().style.fontSize).toBe('');
       expect(body.style.rowGap).toBe('');
       engine.applySnapshot(
         snapshot({ kind: 'sectioned' }, [
@@ -3354,6 +3382,175 @@ describe('legacy default regressions', () => {
       engine.destroy();
       global.Element = previousElement;
       global.HTMLElement = previousHTMLElement;
+    }
+  });
+
+  it('lays out an automatic-height warning at its legacy DOM border-box height', () => {
+    const warning: RowModel = {
+      type: 'system',
+      key: 'warning',
+      variant: 'warning',
+      title: 'Warning',
+      message: 'A long message that wraps in the rendered row',
+    };
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const domWindow = window as unknown as { HTMLElement: typeof HTMLElement };
+    // Legacy read offsetHeight (padding + both borders + wrapped text).
+    Object.defineProperty(domWindow.HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains('ok-native-list-warning') ? 150 : 0;
+      },
+    });
+    const host = window.document.createElement('div');
+    window.document.body.appendChild(host);
+    const engine = new NativeListWebEngine(
+      host,
+      snap([
+        warning,
+        { ...warning, key: 'row-height', height: 80 },
+        {
+          ...warning,
+          key: 'container-height',
+          style: { container: { height: 90 } },
+        },
+      ]),
+      {},
+      false
+    );
+    const itemHeight = (key: string) =>
+      host.querySelector<HTMLElement>(`[data-native-list-row-key="${key}"]`)!
+        .style.height;
+    try {
+      expect(itemHeight('warning')).toBe('150px');
+      expect(itemHeight('row-height')).toBe('80px');
+      expect(itemHeight('container-height')).toBe('90px');
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('restores a fresh unstyled render after clearing System and MetricCard text layout styles', () => {
+    const warning: RowModel = {
+      type: 'system',
+      key: 'warning',
+      variant: 'warning',
+      title: 'Warning',
+      message: 'One\nTwo',
+    };
+    const metric: RowModel = {
+      type: 'metricCard',
+      key: 'metric',
+      title: 'Portfolio',
+      value: '$42,000',
+      visual: { kind: 'image', image },
+    };
+    const markup = (host: HTMLElement, renderer: string) => {
+      const body = host.querySelector<HTMLElement>(
+        `[data-nl-renderer="${renderer}"]`
+      )!;
+      // Image load start times differ between the two engines by design.
+      return body.outerHTML.replace(
+        / data-native-list-image-started-at="\d+"/g,
+        ''
+      );
+    };
+    const fresh = mount(snap([warning, metric]));
+    const reused = mount(snap([warning, metric]));
+    try {
+      const image = reused.host.querySelector('img');
+      reused.engine.applySnapshot(
+        snap([
+          {
+            ...warning,
+            style: { message: { lines: 1, offsetY: 3 } },
+          },
+          { ...metric, style: { value: { offsetY: 4, lines: 1 } } },
+        ])
+      );
+      const message = reused.host.querySelector<HTMLElement>(
+        '[data-nl-slot="message"]'
+      )!;
+      expect(message.textContent).toBe('One Two');
+      expect(
+        message.querySelector<HTMLElement>('.ok-native-list-text-content')!
+          .style.transform
+      ).toBe('translateY(3px)');
+      expect(
+        reused.host.querySelector<HTMLElement>(
+          '[data-nl-slot="value"] > .ok-native-list-text-content'
+        )!.style.transform
+      ).toBe('translateY(4px)');
+      reused.engine.applySnapshot(snap([warning, metric]));
+      expect(markup(reused.host, 'system')).toBe(markup(fresh.host, 'system'));
+      expect(markup(reused.host, 'metricCard')).toBe(
+        markup(fresh.host, 'metricCard')
+      );
+      expect(
+        reused.host.querySelector('[data-nl-slot="message"]')!.textContent
+      ).toBe('One\nTwo');
+      // Rebuilding text reuses the loaded image node.
+      expect(reused.host.querySelector('img')).toBe(image);
+    } finally {
+      fresh.engine.destroy();
+      reused.engine.destroy();
+    }
+  });
+
+  it('clears walletSidebar leadingGap from reused visuals, standalone and in a WalletGroup', () => {
+    const sidebar: IdentityRow = {
+      type: 'identity',
+      key: 'sidebar',
+      presentation: 'walletSidebar',
+      title: 'Wallet',
+      leading: { kind: 'wallet', image },
+    };
+    const group: Extract<RowModel, { type: 'walletGroup' }> = {
+      type: 'walletGroup',
+      key: 'group',
+      parent: { ...sidebar, key: 'group', title: 'Parent' },
+      children: [{ ...sidebar, key: 'child', title: 'Child' }],
+    };
+    const visuals = (host: HTMLElement) =>
+      Array.from(
+        host.querySelectorAll<HTMLElement>(
+          '[data-nl-renderer="identity"] > .ok-native-list-visual'
+        )
+      );
+    const fresh = mount(snap([sidebar, group]));
+    const reused = mount(snap([sidebar, group]));
+    try {
+      const nodes = visuals(reused.host);
+      expect(nodes).toHaveLength(3);
+      const styled = { leadingGap: 10 };
+      reused.engine.applySnapshot(
+        snap([
+          { ...sidebar, style: styled },
+          {
+            ...group,
+            parent: { ...group.parent, style: styled },
+            children: [{ ...group.children[0]!, style: styled }],
+          },
+        ])
+      );
+      expect(visuals(reused.host)).toEqual(nodes);
+      nodes.forEach((node) => expect(node.style.marginBottom).not.toBe(''));
+      reused.engine.applySnapshot(snap([sidebar, group]));
+      expect(visuals(reused.host)).toEqual(nodes);
+      // Restoring re-sets properties, so compare declarations, not order.
+      const declarations = (node: HTMLElement) =>
+        node.style.cssText
+          .split(';')
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .sort();
+      expect(nodes.map(declarations)).toEqual(
+        visuals(fresh.host).map(declarations)
+      );
+      nodes.forEach((node) => expect(node.style.marginBottom).toBe(''));
+    } finally {
+      fresh.engine.destroy();
+      reused.engine.destroy();
     }
   });
 });

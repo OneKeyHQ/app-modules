@@ -209,7 +209,18 @@ function bind(
 ) {
   const v = views.get(body)!;
   v.primitives = primitives;
-  const contentKey = JSON.stringify({ ...row, style: undefined });
+  // Text styles are part of the key: applyTextLayout inserts wrappers and
+  // rewrites text (lines: 1), which restoring inline styles cannot undo.
+  // Rebuilding reuses equal visual slots, so images never restart.
+  const contentKey = JSON.stringify({
+    ...row,
+    style: {
+      title: row.style?.title,
+      value: row.style?.value,
+      trend: row.style?.trend,
+      subtitle: row.style?.subtitle,
+    },
+  });
   if (contentKey !== v.contentKey) {
     let index = 0;
     restoreInlineStyles(v.defaults);

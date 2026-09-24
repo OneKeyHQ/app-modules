@@ -3,6 +3,7 @@ import type { RowPrimitives } from './RowVisual';
 import {
   captureInlineStyles,
   createElement,
+  hasExplicitRowHeight,
   restoreInlineStyles,
   setData,
   tagSlot,
@@ -155,7 +156,12 @@ function createSystemRow(
 type Binding = { key: string; defaults: Map<HTMLElement, string> };
 const bindings = new WeakMap<HTMLElement, Binding>();
 function bind(body: HTMLElement, row: SystemRow, primitives: RowPrimitives) {
-  const content = { ...row, style: undefined };
+  // Text styles are part of the key: applyTextLayout inserts wrappers and
+  // rewrites text (lines: 1), which restoring inline styles cannot undo.
+  const content = {
+    ...row,
+    style: { title: row.style?.title, message: row.style?.message },
+  };
   const key = JSON.stringify([content, primitives.background]);
   let binding = bindings.get(body);
   if (!binding || binding.key !== key) {
@@ -261,8 +267,14 @@ export const systemRowRenderer = {
   create,
   bind,
   measure,
-  measureRendered: (_body: HTMLElement, _row: SystemRow): number | undefined =>
-    undefined,
+  // Legacy Web lays out an automatic-height warning at its rendered border-box
+  // height (padding, both borders and wrapped text), not the estimate above.
+  measureRendered: (body: HTMLElement, row: SystemRow): number | undefined => {
+    if (row.variant !== 'warning' || hasExplicitRowHeight(row))
+      return undefined;
+    const height = body.offsetHeight;
+    return height > 0 ? height : undefined;
+  },
   recycle: (body: HTMLElement) => {
     bindings.delete(body);
     body.replaceChildren();
