@@ -11,9 +11,8 @@ final class OneKeyAvatarImageTests: XCTestCase {
     let first = OneKeyImagePipeline.makeIsolatedManager()
     let second = OneKeyImagePipeline.makeIsolatedManager()
     func context(_ manager: SDWebImageManager, headers: String) -> [SDWebImageContextOption: Any] {
-      OneKeyImageRequestContext.make(headersJson: headers, cachePolicy: .memoryDisk,
-        thumbnailPixelSize: CGSize(width: 96, height: 96), safetyTracker: nil,
-        manager: manager, url: url)
+      OneKeyImageRequestContext.testContext(headersJson: headers,
+        thumbnailPixelSize: CGSize(width: 96, height: 96), manager: manager, url: url)
     }
     let a = context(first, headers: "{\"X-Test\":\"a\"}")
     let b = context(second, headers: "{\"X-Test\":\"b\"}")
@@ -26,8 +25,8 @@ final class OneKeyAvatarImageTests: XCTestCase {
     let firstFilter = try XCTUnwrap(a[.cacheKeyFilter] as? SDWebImageCacheKeyFilter)
     let secondFilter = try XCTUnwrap(b[.cacheKeyFilter] as? SDWebImageCacheKeyFilter)
     XCTAssertEqual(firstFilter.cacheKey(for: url), secondFilter.cacheKey(for: url))
-    let remote = OneKeyImageRequestContext.make(headersJson: nil, cachePolicy: .memoryDisk,
-      thumbnailPixelSize: nil, safetyTracker: nil, manager: first,
+    let remote = OneKeyImageRequestContext.testContext(headersJson: nil,
+      thumbnailPixelSize: nil, manager: first,
       url: URL(string: "https://example.com/image.png"))
     XCTAssertNil(remote[.imageLoader])
     XCTAssertNil(remote[.imageCache])
