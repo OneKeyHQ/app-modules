@@ -23,7 +23,7 @@ final class NativeListIdentityCell: NativeListRendererCell {
   private let tertiaryLabel = NativeListTextLabel()
   private let badgeLabel = NativeListInsetLabel()
   private let trailingStack = NativeListAccessoryStack(frame: .zero)
-  private let leadingActionButton = UIButton(type: .custom)
+  private let leadingActionButton = UIButton(type: .system)
   private var leadingWidth: NSLayoutConstraint!
   private var leadingHeight: NSLayoutConstraint!
   private var leftInset: CGFloat = 12
@@ -53,6 +53,10 @@ final class NativeListIdentityCell: NativeListRendererCell {
     }
     return 0
   }
+  private var isWalletSidebar: Bool { currentItem?.data.string("presentation") == "walletSidebar" }
+  override var pressedCornerRadius: CGFloat? { isWalletSidebar ? 20 : 12 }
+  // Legacy grouped wallet sidebar rows used the sidebar radius.
+  override var groupCornerRadius: CGFloat { isWalletSidebar ? 20 : 12 }
   override var defaultCornerCurve: CALayerCornerCurve {
     currentItem?.data.string("presentation") == "walletSidebar" ? .continuous : .circular
   }
@@ -270,7 +274,8 @@ final class NativeListIdentityCell: NativeListRendererCell {
   private func addLeading(_ descriptor: [String: Any]?, key: String) {
     root.addArrangedSubview(visual)
     guard let descriptor else {
-      visual.recycle()
+      // Legacy reset the leading container: no stale avatar, initials, border or overlays.
+      visual.clear()
       return
     }
     let image = currentItem?.data.dictionary("style")?.dictionary("image") ?? [:]
@@ -576,6 +581,9 @@ final class NativeListIdentityCell: NativeListRendererCell {
     trailingStack.bind(
       item, descriptors: accessories, theme: theme, style: item.data.dictionary("style") ?? [:],
       defaultSpacing: trailingStack.spacing, checkboxState: checkboxState)
+    // Legacy kept the (possibly empty) trailing stack arranged, so the text column always
+    // ends 12 points before the trailing edge inset.
+    trailingStack.isHidden = false
     if let gap = trailingStack.contentGap { root.setCustomSpacing(gap, after: mainStack) }
     if let inset = trailingStack.endInset { rightInset = -inset }
     if item.data.string("presentation") == "accountSelector",

@@ -332,6 +332,8 @@ final class NativeListSystemCell: NativeListRendererCell {
       show(subtitleLabel, item.data.string("message"), lines: 0)
       setLineHeight(titleLabel, text: item.data.string("title"), lineHeight: 20)
       setLineHeight(subtitleLabel, text: item.data.string("message"), lineHeight: 20)
+      // Legacy applied selector typography (tabular digits, kern 0) to warnings.
+      [titleLabel, subtitleLabel].forEach(NativeListTextStyles.applyTabularDigits)
       let borderColor = UIColor(
         nativeListHex: item.data.string("borderColor", default: "#E0E0E0"), fallback: .lightGray)
       for top in [true, false] {
@@ -538,6 +540,8 @@ enum NativeListSystemRenderer {
               .paragraphStyle: paragraph,
             ], context: nil
           ).height / lineHeight)
+        // Legacy: an empty title/message contributes no line.
+        guard !item.data.string(key).isEmpty else { return 0 }
         return min(CGFloat(textStyle?.int("lines", default: Int.max) ?? Int.max), max(1, measured))
           * lineHeight
       }

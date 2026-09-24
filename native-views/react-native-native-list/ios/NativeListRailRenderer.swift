@@ -88,9 +88,13 @@ final class NativeListRailCell: NativeListRendererCell {
   private var visual: NativeListLeadingVisual?
   private var dimensions: [NSLayoutConstraint] = []
   override var defaultCornerRadius: CGFloat { 8 }
+  override var pressedCornerRadius: CGFloat? { 8 }
   override var assetFields: [String] { ["visual"] }
   override var showsSelection: Bool { false }
-  override var defaultSeparatorInset: CGFloat { 0 }
+  // Legacy Rail used a fixed pressed tint, independent of theme.rowPressedBackground.
+  override func pressedBackground(_ theme: [String: Any]?) -> UIColor {
+    UIColor(nativeListHex: "#F0F0F0", fallback: .lightGray)
+  }
 
   override init(frame: CGRect) {
     super.init(frame: frame)

@@ -36,7 +36,20 @@ final class NativeListWalletGroupCell: NativeListRendererCell, UIGestureRecogniz
     item.styledHeight
       ?? (item.data["height"] != nil
         ? CGFloat(item.data.double("height"))
-        : NativeListIdentityCell.measure(item, width: 0, theme: nil, layout: "linear") ?? 68)
+        // Legacy member default is independent of the member's presentation.
+        : item.data.dictionaries("badges").isEmpty ? 68 : 92)
+  }
+  /// Legacy default: a one-point inset (source group border) when the parent carries an
+  /// explicit height, otherwise none. `style.*Padding` overrides it; bind and measure share it.
+  private static func padding(_ item: NativeListItem, members: [NativeListItem]) -> (
+    horizontal: CGFloat, vertical: CGFloat
+  ) {
+    let style = item.data.dictionary("style") ?? [:]
+    let inset: Double = members.first?.data["height"] != nil ? 1 : 0
+    return (
+      CGFloat(style.double("horizontalPadding", default: inset)),
+      CGFloat(style.double("verticalPadding", default: inset))
+    )
   }
   override class func appliesSizePreset(_ item: NativeListItem) -> Bool { false }
   override class func measure(
@@ -44,7 +57,7 @@ final class NativeListWalletGroupCell: NativeListRendererCell, UIGestureRecogniz
   ) -> CGFloat? {
     let members = memberItems(item)
     return members.reduce(
-      CGFloat(max(0, members.count - 1) * 12 + (members.first?.data["height"] != nil ? 2 : 0))
+      CGFloat(max(0, members.count - 1) * 12) + padding(item, members: members).vertical * 2
     ) { $0 + memberHeight($1) }
   }
   override init(frame: CGRect) {
@@ -94,10 +107,7 @@ final class NativeListWalletGroupCell: NativeListRendererCell, UIGestureRecogniz
       root.removeArrangedSubview(view.cell)
       view.cell.removeFromSuperview()
     }
-    let style = item.data.dictionary("style") ?? [:]
-    let inset: Double = members.first?.data["height"] != nil ? 1 : 0
-    let horizontal = CGFloat(style.double("horizontalPadding", default: inset))
-    let vertical = CGFloat(style.double("verticalPadding", default: inset))
+    let (horizontal, vertical) = Self.padding(item, members: members)
     contentInsets = UIEdgeInsets(
       top: vertical, left: horizontal, bottom: vertical, right: horizontal)
     for (index, member) in members.enumerated() {
@@ -187,7 +197,8 @@ final class NativeListWalletGroupCell: NativeListRendererCell, UIGestureRecogniz
   override func canStartWalletGroupReorder(at point: CGPoint) -> Bool {
     let point = root.convert(point, from: self)
     for member in members where memberViews[member.key]?.cell.frame.contains(point) == true {
-      return (member.data["draggable"] as? Bool) != false && !member.data.bool("disabled")
+      // Legacy: only `draggable: false` excludes a member; disabled members may start a drag.
+      return (member.data["draggable"] as? Bool) != false
     }
     return true
   }

@@ -21,11 +21,11 @@ final class NativeListMarketCell: NativeListRendererCell {
   private let marketSubtitleStack = UIStackView()
   private let marketSubtitleSpacer = UIView()
   private let trailingStack = UIStackView()
-  private let accessoryButtons = (0..<2).map { _ in NativeListAccessoryButton(type: .custom) }
-  private let marketBadgeButtons = (0..<3).map { _ in NativeListAccessoryButton(type: .custom) }
+  private let accessoryButtons = (0..<2).map { _ in NativeListAccessoryButton(type: .system) }
+  private let marketBadgeButtons = (0..<3).map { _ in NativeListAccessoryButton(type: .system) }
   private let badgeSlots = (0..<3).map { _ in NativeListImageSlot() }
   private var marketBadgeImages: [UIView] { badgeSlots.map { $0.view } }
-  private let leadingActionButton = UIButton(type: .custom)
+  private let leadingActionButton = UIButton(type: .system)
   private var leadingWidth: NSLayoutConstraint!
   private var leadingHeight: NSLayoutConstraint!
   private var selectorConstraints: [NSLayoutConstraint] = []

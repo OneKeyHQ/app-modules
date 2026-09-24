@@ -74,7 +74,11 @@ final class NativeListDataRowCell: NativeListRendererCell {
     if data["index"] != nil {
       descriptors.append(["kind": "value", "text": String(data.int("index"))])
     }
-    if let checkbox = data.dictionary("checkbox") { descriptors.append(checkbox) }
+    if var checkbox = data.dictionary("checkbox") {
+      // Legacy bound the checkbox field directly; it does not need an explicit kind.
+      if checkbox["kind"] == nil { checkbox["kind"] = "checkbox" }
+      descriptors.append(checkbox)
+    }
     var accessoryStyle = style
     accessoryStyle["value"] = style.dictionary("index")
     accessories.bind(
@@ -95,8 +99,12 @@ final class NativeListDataRowCell: NativeListRendererCell {
         cell.reset()
         continue
       }
-      cell.bind(
-        column: values[index], badges: index == 0 ? data.dictionaries("badges") : [], theme: theme)
+      let badges = index == 0 ? data.dictionaries("badges") : []
+      if layout == "table" {
+        cell.bind(column: values[index], badges: badges, theme: theme)
+      } else {
+        cell.bindLinear(column: values[index], badges: badges, theme: theme, style: style)
+      }
       cell.applyStyle(style, text: NativeListTextStyles.applyStyledText)
       if index > 0 {
         rowConstraints.append(
@@ -126,6 +134,7 @@ private final class NativeListTableColumnView: UIStackView {
   private let secondaryLine = UIStackView()
   private let secondaryLeadingLabel = NativeListTextLabel()
   private let secondaryLabel = NativeListTextLabel()
+  private var linear = false
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -167,6 +176,7 @@ private final class NativeListTableColumnView: UIStackView {
   }
 
   func reset() {
+    linear = false
     for label in [primaryLabel, secondaryLeadingLabel, secondaryLabel] {
       label.rowVerticalAlignment = nil
       label.rowOffsetY = 0
@@ -263,7 +273,129 @@ private final class NativeListTableColumnView: UIStackView {
     }
   }
 
+  /// Legacy linear layout: one label per column holding the primary text, up to two inline
+  /// badge runs and the secondary text on a second line. `secondaryLeadingText` is not shown.
+  /// Unstyled output is exactly the legacy label. `style.columns` / `style.columnSecondary`
+  /// map onto their attributed ranges (font, weight, color) and paragraphs (lineHeight,
+  /// alignment); `lines`/`truncate` and vertical alignment/offset act on the single label.
+  func bindLinear(
+    column: [String: Any], badges: [[String: Any]], theme: [String: Any]?,
+    style: [String: Any] = [:]
+  ) {
+    reset()
+    linear = true
+    alignment = .fill
+    badgesStack.isHidden = true
+    let primaryStyle = style.dictionary("columns") ?? [:]
+    let secondaryStyle = style.dictionary("columnSecondary") ?? [:]
+    func font(_ textStyle: [String: Any], size: CGFloat, weight: NativeListFontWeight) -> UIFont {
+      guard textStyle["fontSize"] != nil || textStyle["fontWeight"] != nil else {
+        return nativeListFont(ofSize: size, weight: weight)
+      }
+      return nativeListFont(
+        ofSize: CGFloat(textStyle.double("fontSize", default: Double(size))),
+        weight: NativeListTextStyles.marketFontWeight(
+          textStyle.string("fontWeight"), fallback: weight))
+    }
+    func color(_ textStyle: [String: Any], _ fallback: UIColor) -> UIColor {
+      (textStyle["color"] as? String).map { UIColor(nativeListHex: $0, fallback: fallback) }
+        ?? fallback
+    }
+    let direction = primaryLabel.effectiveUserInterfaceLayoutDirection
+    /// Paragraph attributes only when the style asks for them, so unstyled text stays legacy.
+    func paragraph(_ textStyle: [String: Any], font: UIFont, spacing: CGFloat?)
+      -> [NSAttributedString.Key: Any]
+    {
+      guard textStyle["lineHeight"] != nil || textStyle["alignment"] != nil || spacing != nil
+      else { return [:] }
+      let paragraph = NSMutableParagraphStyle()
+      paragraph.alignment = NativeListTextStyles.marketTextAlignment(
+        textStyle.string("alignment"), direction: direction)
+      if textStyle["alignment"] == nil { paragraph.alignment = primaryLabel.textAlignment }
+      var attributes: [NSAttributedString.Key: Any] = [.paragraphStyle: paragraph]
+      if textStyle["lineHeight"] != nil {
+        let box = CGFloat(textStyle.double("lineHeight"))
+        paragraph.minimumLineHeight = box
+        paragraph.maximumLineHeight = box
+        attributes[.baselineOffset] = max(0, (box - font.lineHeight) / 2)
+      }
+      if let spacing { paragraph.paragraphSpacing = spacing }
+      return attributes
+    }
+    // Legacy physical alignment from the column data; set before the attributed text so that
+    // unstyled paragraphs inherit it.
+    primaryLabel.textAlignment =
+      column.string("alignment") == "end"
+      ? .right : column.string("alignment") == "center" ? .center : .left
+    let secondary = column.string("secondaryText")
+    let primaryFont = font(primaryStyle, size: 14, weight: .medium)
+    let attributed = NSMutableAttributedString(
+      string: column.string("text"),
+      attributes: [
+        .font: primaryFont,
+        .foregroundColor: color(primaryStyle, textColor(column.string("tone"), theme: theme)),
+      ])
+    let primaryLength = attributed.length
+    for (index, badge) in badges.prefix(2).enumerated() {
+      // `titleBadgeGap` replaces the legacy two-space lead-in with an exact kern gap.
+      let gap = index == 0 && style["titleBadgeGap"] != nil
+      attributed.append(
+        NSAttributedString(
+          string: gap ? " \(badge.string("text")) " : "  \(badge.string("text")) ",
+          attributes: [
+            .font: nativeListFont(ofSize: 12, weight: .medium),
+            .foregroundColor: nativeListColor(theme, "info", "#0D74CE"),
+            .backgroundColor: UIColor(nativeListHex: "#008FF519", fallback: .systemBlue),
+          ]))
+      if gap, primaryLength > 0 {
+        attributed.addAttribute(
+          .kern, value: CGFloat(style.double("titleBadgeGap")),
+          range: NSRange(location: primaryLength - 1, length: 1))
+      }
+    }
+    let primaryParagraph = paragraph(
+      primaryStyle, font: primaryFont,
+      spacing: !secondary.isEmpty && style["lineGap"] != nil
+        ? CGFloat(style.double("lineGap")) : nil)
+    if !primaryParagraph.isEmpty {
+      attributed.addAttributes(
+        primaryParagraph, range: NSRange(location: 0, length: attributed.length))
+    }
+    var lines = min(3, max(1, primaryStyle.int("lines", default: 1)))
+    if !secondary.isEmpty {
+      let secondaryFont = font(secondaryStyle, size: 12, weight: .regular)
+      var attributes: [NSAttributedString.Key: Any] = [
+        .font: secondaryFont,
+        .foregroundColor: color(
+          secondaryStyle,
+          textColor(column.string("secondaryTone", default: "secondary"), theme: theme)),
+      ]
+      attributes.merge(paragraph(secondaryStyle, font: secondaryFont, spacing: nil)) { $1 }
+      attributed.append(NSAttributedString(string: "\n\(secondary)", attributes: attributes))
+      lines = min(3, lines + max(1, secondaryStyle.int("lines", default: 1)))
+    }
+    primaryLabel.font = nativeListFont(ofSize: 12)
+    primaryLabel.numberOfLines = lines
+    primaryLabel.attributedText = attributed
+    let truncation =
+      primaryStyle["truncate"] != nil || primaryStyle["lines"] != nil
+      ? primaryStyle
+      : secondaryStyle["truncate"] != nil || secondaryStyle["lines"] != nil ? secondaryStyle : nil
+    primaryLabel.lineBreakMode =
+      truncation.map { NativeListTextStyles.styledLineBreakMode($0, lines: lines) }
+      ?? .byTruncatingTail
+    if let vertical = (primaryStyle["verticalAlignment"] ?? secondaryStyle["verticalAlignment"])
+      as? String
+    {
+      primaryLabel.rowVerticalAlignment = vertical
+    }
+    primaryLabel.rowOffsetY = CGFloat(
+      primaryStyle.double("offsetY", default: secondaryStyle.double("offsetY")))
+  }
+
   func applyStyle(_ style: [String: Any], text: (UILabel, [String: Any]) -> Void) {
+    // The linear single label already mapped its styles onto attributed ranges.
+    guard !linear else { return }
     if let primary = style.dictionary("columns") {
       if primary["alignment"] != nil { alignment = .fill }
       text(primaryLabel, primary)

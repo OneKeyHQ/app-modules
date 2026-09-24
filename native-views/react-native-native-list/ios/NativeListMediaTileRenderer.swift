@@ -20,6 +20,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
   private let closeStack = UIStackView()
   private let titleLine = UIStackView()
   private var closeKey = ""
+  private var ownsImageFill = false
   private var imageStyle: [String: Any] = [:]
   private var imageWidth: NSLayoutConstraint!
   private var imageHeight: NSLayoutConstraint!
@@ -97,39 +98,52 @@ final class NativeListMediaTileCell: NativeListRendererCell {
       item.data.string("title"), style: style.dictionary("title"), size: 16,
       weight: .medium, color: nativeListColor(theme, "primaryText", "#202020"),
       lineHeight: nativeListFont(ofSize: 16, weight: .medium).lineHeight,
-      lines: 1
+      lines: 1, preservesBreakMode: true
     ).bind(title)
     NativeListResolvedText(
       item.data.string("subtitle"), style: style.dictionary("subtitle"), size: 12,
       color: nativeListColor(theme, "secondaryText", "#646464"),
-      lineHeight: nativeListFont(ofSize: 12).lineHeight, lines: 1
+      lineHeight: nativeListFont(ofSize: 12).lineHeight, lines: 1, preservesBreakMode: true
     ).bind(subtitle)
     let badgeText = item.data.dictionary("badge")?.string("text") ?? ""
     NativeListResolvedText(
       badgeText.isEmpty ? "" : "  \(badgeText)  ", style: style.dictionary("badge"), size: 14,
       weight: .medium, color: nativeListColor(theme, "inverseText", "#FCFCFC"),
       lineHeight: nativeListFont(ofSize: 14, weight: .medium).lineHeight,
-      lines: 1
+      lines: 1, preservesBreakMode: true
     ).bind(badge)
     if style.dictionary("badge")?["alignment"] == nil { badge.textAlignment = .center }
     badge.backgroundColor = nativeListColor(theme, "inverseBackground", "#202020")
     badge.layer.borderColor = nativeListColor(theme, "rowBackground", "#FFFFFF").cgColor
     let state = item.data.string("imageState")
+    let placeholder = theme?.string("strongBackground", default: "#0000000F") ?? "#0000000F"
     errorIcon.isHidden = state != "error"
     errorIcon.image = nativeListIcon(named: "ImageSquareWavesOutline")
     errorIcon.tintColor = UIColor(nativeListHex: "#00000044", fallback: .lightGray)
     if state != "empty", state != "error", let source = item.data.dictionary("image") {
-      image.bind(source, key: "\(item.key):media", fit: imageStyle["contentFit"] as? String)
+      // Legacy source-backed media had a transparent container. Clear only a fill this
+      // renderer applied, so OneKeyImage keeps ownership of its own placeholder color.
+      if ownsImageFill {
+        image.view.backgroundColor = .clear
+        ownsImageFill = false
+      }
+      image.bind(
+        source, key: "\(item.key):media", fit: imageStyle["contentFit"] as? String,
+        placeholder: placeholder)
     } else {
       image.recycle()
       image.view.backgroundColor =
         state == "error" ? nativeListColor(theme, "strongBackground", "#0000000F") : .clear
+      ownsImageFill = true
     }
     if let source = item.data.dictionary("networkImage") {
-      network.view.isHidden = false
-      network.view.alpha = 0
-      network.bind(source, key: "\(item.key):network", variant: "network") { [weak self] loaded in
-        self?.network.view.alpha = loaded ? 1 : 0
+      // Legacy hid the network badge until it loaded, so it takes no layout space before.
+      network.view.isHidden = true
+      network.view.alpha = 1
+      network.bind(
+        source, key: "\(item.key):network", variant: "network", placeholder: placeholder
+      ) { [weak self] loaded in
+        self?.network.view.isHidden = !loaded
       }
     } else {
       network.recycle()

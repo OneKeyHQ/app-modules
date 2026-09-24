@@ -21,11 +21,18 @@ final class NativeListMetricCardCell: NativeListRendererCell {
   private var metricVisuals: [String: NativeListMetricVisual] = [:]
   private var usedVisuals = Set<String>()
   private var rowKey = ""
+  private var boundTheme: [String: Any]?
   override var assetFields: [String] { ["visual", "metrics"] }
   override var defaultCornerRadius: CGFloat { 12 }
   override func unselectedBackground(
     _ item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int?
-  ) -> UIColor { nativeListColor(theme, "subduedBackground", "#F9F9F9") }
+  ) -> UIColor {
+    // Legacy: a selected card in a sectioned list without its own `selected` flag falls back
+    // to rowBackground (the checkbox carries selection), not the subdued card fill.
+    selectedState && layout == "sectioned"
+      ? nativeListColor(theme, "rowBackground", "#FFFFFF")
+      : nativeListColor(theme, "subduedBackground", "#F9F9F9")
+  }
   override init(frame: CGRect) {
     super.init(frame: frame)
     mainStack.axis = .vertical
@@ -40,6 +47,8 @@ final class NativeListMetricCardCell: NativeListRendererCell {
     [titleLine, subtitleLabel, statusLabel, detailLabel].forEach(mainStack.addArrangedSubview)
     metricCompositeStack.axis = .vertical
     metricCompositeStack.alignment = .fill
+    // Legacy clipped the standard visual container to its shape even with overlays.
+    visual.alwaysClips = true
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override func bindContent(
@@ -47,6 +56,7 @@ final class NativeListMetricCardCell: NativeListRendererCell {
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
     rowKey = item.key
+    boundTheme = theme
     usedVisuals = []
     contentView.clipsToBounds = true
     root.arrangedSubviews.forEach {
@@ -179,7 +189,10 @@ final class NativeListMetricCardCell: NativeListRendererCell {
     usedVisuals.insert(identity)
     let view = metricVisuals[identity] ?? NativeListMetricVisual()
     metricVisuals[identity] = view
-    view.bind(visual, key: identity)
+    // Legacy metric images used the themed strongBackground placeholder.
+    view.bind(
+      visual, key: identity,
+      placeholder: boundTheme?.string("strongBackground", default: "#0000000F") ?? "#0000000F")
     return view
   }
   private func bindCompositeMetricCard(
@@ -371,7 +384,7 @@ private final class NativeListMetricVisual: UIView {
     clipsToBounds = true
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-  func bind(_ visual: [String: Any], key: String) {
+  func bind(_ visual: [String: Any], key: String, placeholder: String) {
     backgroundColor = UIColor(
       nativeListHex: visual.string("backgroundColor", default: "#0000000F"), fallback: .lightGray)
     layer.cornerRadius = visual.string("shape") == "square" ? 0 : 8
@@ -393,7 +406,7 @@ private final class NativeListMetricVisual: UIView {
           ? "token"
           : kind == "network"
             ? "network" : ["wallet", "account"].contains(kind) ? "avatar" : "generic", fit: nil,
-        placeholder: "#00000000")
+        placeholder: placeholder)
     } else {
       image.recycle()
     }

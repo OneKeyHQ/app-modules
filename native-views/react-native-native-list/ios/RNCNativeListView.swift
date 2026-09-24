@@ -1297,11 +1297,14 @@ final class NativeListView: UIView {
   private func syncSectionIndexToVisibleRows() {
     guard !sectionIndexScrubbing, !sectionIndexEntries.isEmpty else { return }
     let offset = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
+    // Legacy semantics: a header at the first position is active even while overscrolled;
+    // no entry is active while rows above the first header are still visible.
     let index = sectionIndexEntries.lastIndex {
+      if $0.position == 0 { return true }
       guard let attributes = flowLayout.layoutAttributesForItem(at: IndexPath(item: $0.position, section: 0)) else { return false }
       return attributes.frame.minY <= offset + 1
     }
-    sectionIndexView.setActiveIndex(index ?? 0)
+    sectionIndexView.setActiveIndex(index)
   }
 
   private func configureRefresh(_ config: NativeListConfig) {

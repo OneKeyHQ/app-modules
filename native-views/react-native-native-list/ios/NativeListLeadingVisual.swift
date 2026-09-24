@@ -8,6 +8,7 @@ final class NativeListLeadingVisual: UIView {
   private let fallback = NativeListTextLabel()
   var fallbackTextView: UILabel { fallback }
   var singleOuterMask = false
+  var alwaysClips = false
   var dashedBorderWidth: CGFloat = 2
   var overlayTextFontSize: CGFloat = 10
   var overlayTextLineHeight: CGFloat?
@@ -174,7 +175,9 @@ final class NativeListLeadingVisual: UIView {
         let label = frame.subviews.first as? UILabel ?? UILabel()
         label.text = data.string("text")
         label.textAlignment = .center
-        label.font = nativeListFont(ofSize: overlayTextFontSize, weight: .medium)
+        // A line-height box is the legacy wallet text badge: regular weight, centered metrics.
+        label.font = nativeListFont(
+          ofSize: overlayTextFontSize, weight: overlayTextLineHeight == nil ? .medium : .regular)
         if let line = overlayTextLineHeight {
           let paragraph = NSMutableParagraphStyle()
           paragraph.minimumLineHeight = line
@@ -182,7 +185,10 @@ final class NativeListLeadingVisual: UIView {
           paragraph.alignment = .center
           label.attributedText = NSAttributedString(
             string: data.string("text"),
-            attributes: [.font: label.font as Any, .paragraphStyle: paragraph])
+            attributes: [
+              .font: label.font as Any, .paragraphStyle: paragraph,
+              .baselineOffset: max(0, (line - label.font.lineHeight) / 2),
+            ])
         }
         label.textColor = UIColor(
           nativeListHex: data.string("tintColor", default: "#646464"), fallback: .darkGray)
@@ -229,7 +235,9 @@ final class NativeListLeadingVisual: UIView {
           ? (imageStyle["shape"] != nil ? 10 : min(10, bounds.height / 4))
           : min(bounds.width, bounds.height) / 2
     layer.cornerRadius = radius
-    clipsToBounds = sources.count < 2 && overlays.isEmpty && visual.dictionary("cornerIcon") == nil
+    clipsToBounds =
+      alwaysClips
+      || sources.count < 2 && overlays.isEmpty && visual.dictionary("cornerIcon") == nil
     let ellipse = imageStyle.string("shape") == "circle" && imageStyle["cornerRadius"] == nil
     if ellipse && clipsToBounds {
       let mask = layer.mask as? CAShapeLayer ?? CAShapeLayer()
@@ -295,8 +303,19 @@ final class NativeListLeadingVisual: UIView {
     unread.frame = logical(CGRect(x: bounds.width - 8, y: 0, width: 8, height: 8))
     for (frame, data) in overlays {
       let size = CGFloat(data.double("size", default: 20))
-      let width = CGFloat(data.double("width", default: Double(size)))
-      let height = CGFloat(data.double("height", default: Double(size)))
+      // Legacy wallet text badges size to their text (tabular 12pt + 4) at the line height.
+      let textBadgeLine =
+        data.dictionary("image") == nil && !data.string("text").isEmpty
+          && data.string("name").isEmpty ? overlayTextLineHeight : nil
+      let naturalWidth = textBadgeLine.map { _ -> CGFloat in
+        let scale = max(1, window?.screen.scale ?? traitCollection.displayScale)
+        let textWidth = (data.string("text") as NSString).size(withAttributes: [
+          .font: nativeListTabularFont(ofSize: overlayTextFontSize), .kern: 0,
+        ]).width
+        return ceil(textWidth * scale) / scale + 4
+      }
+      let width = CGFloat(data.double("width", default: Double(naturalWidth ?? size)))
+      let height = CGFloat(data.double("height", default: Double(textBadgeLine ?? size)))
       let offset = data.double("offset", default: 2)
       let x = CGFloat(data.double("offsetX", default: offset))
       let y = CGFloat(data.double("offsetY", default: offset))
@@ -325,5 +344,29 @@ final class NativeListLeadingVisual: UIView {
   func recycle() {
     slots.forEach { $0.recycle() }
     overlaySlots.forEach { $0.recycle() }
+  }
+  /// Empty slot (legacy leading container without a visual): no image, fallback, fill,
+  /// border or overlays from a previous binding.
+  func clear() {
+    recycle()
+    visual = [:]
+    sources = []
+    slots.forEach { $0.view.isHidden = true }
+    overlays.forEach { $0.0.removeFromSuperview() }
+    overlays.removeAll()
+    fallback.text = nil
+    fallback.isHidden = true
+    icon.image = nil
+    icon.isHidden = true
+    networkBackdrop.isHidden = true
+    corner.isHidden = true
+    cornerBackdrop.isHidden = true
+    unread.isHidden = true
+    backgroundColor = .clear
+    layer.borderWidth = 0
+    layer.mask = nil
+    dashedBorder.isHidden = true
+    dashedBorder.path = nil
+    setNeedsLayout()
   }
 }

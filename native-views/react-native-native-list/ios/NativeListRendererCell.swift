@@ -10,8 +10,15 @@ class NativeListRendererCell: NativeListRowHost {
   var defaultBorderWidth: CGFloat { 0 }
   func defaultBorderColor(_ theme: [String: Any]?) -> UIColor { .clear }
   var defaultCornerRadius: CGFloat { 0 }
+  /// Legacy pressed rows round all corners (12pt) while highlighted; nil opts out.
+  var pressedCornerRadius: CGFloat? { pressChangesBackground ? 12 : nil }
+  /// Radius for `groupPosition` rows when listStyle does not set one (legacy 12).
+  var groupCornerRadius: CGFloat { 12 }
   var defaultCornerCurve: CALayerCornerCurve { .circular }
   var pressChangesBackground: Bool { true }
+  func pressedBackground(_ theme: [String: Any]?) -> UIColor {
+    nativeListColor(theme, "rowPressedBackground", "#E8E8E8")
+  }
   var showsSelection: Bool { true }
   var defaultVerticalAlignment: String? { nil }
   var defaultSeparatorInset: CGFloat { 12 }
@@ -29,12 +36,8 @@ class NativeListRendererCell: NativeListRowHost {
   {
     guard let old, old.key == new.key, old.rendererKey == new.rendererKey else { return .replace }
     if old.content == new.content { return .unchanged }
-    for field in assetFields {
-      if NativeListImageSlot.signature([field: old.data[field] ?? NSNull()])
-        != NativeListImageSlot.signature([field: new.data[field] ?? NSNull()])
-      {
-        return .assets
-      }
+    for field in assetFields where !nativeListValuesEqual(old.data[field], new.data[field]) {
+      return .assets
     }
     return .content
   }
@@ -50,7 +53,8 @@ class NativeListRendererCell: NativeListRowHost {
     _ item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int?
   ) -> UIColor { nativeListColor(theme, "rowBackground", "#FFFFFF") }
   private(set) var selectedState = false
-  private var inputSignature = ""
+  // Last applied list-level inputs; compared structurally (no serialization/hashing per bind).
+  private var boundInputs: (theme: NSDictionary?, layout: String, listStyle: NSDictionary?)?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -81,10 +85,16 @@ class NativeListRendererCell: NativeListRowHost {
     selected: Bool, checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
     let update = update(from: self.item, to: item)
-    let signature = NativeListImageSlot.signature([
-      "theme": theme ?? [:], "layout": layout, "listStyle": listStyle ?? [:],
-    ])
-    if update != .unchanged || signature != inputSignature {
+    let inputs = (
+      theme: theme.map { $0 as NSDictionary }, layout: layout,
+      listStyle: listStyle.map { $0 as NSDictionary }
+    )
+    let inputsChanged =
+      boundInputs.map {
+        $0.layout != inputs.layout || !nativeListValuesEqual($0.theme, inputs.theme)
+          || !nativeListValuesEqual($0.listStyle, inputs.listStyle)
+      } ?? true
+    if update != .unchanged || inputsChanged {
       if self.item != nil { onBindingInvalidated?(self, bindingEpoch) }
       bindingEpoch &+= 1
       if update == .replace {
@@ -117,7 +127,7 @@ class NativeListRendererCell: NativeListRowHost {
             : root.topAnchor.constraint(equalTo: contentView.topAnchor, constant: contentInsets.top)
         contentPosition?.isActive = true
       }
-      inputSignature = signature
+      boundInputs = inputs
     }
     self.item = item
     self.theme = theme
@@ -171,22 +181,28 @@ class NativeListRendererCell: NativeListRowHost {
     }
     contentView.backgroundColor =
       isHighlighted && pressChangesBackground
-      ? nativeListColor(theme, "rowPressedBackground", "#E8E8E8") : background
+      ? pressedBackground(theme) : background
     contentView.alpha =
       CGFloat(container.double("opacity", default: item.data.double("opacity", default: 1)))
       * (item.data.bool("disabled") ? 0.5 : 1)
     let position = item.data.string("groupPosition")
     let grouped = ["first", "last", "single"].contains(position)
+    let pressedRadius =
+      isHighlighted && isUserInteractionEnabled ? pressedCornerRadius.map(Double.init) : nil
+    let fallbackRadius =
+      defaultCornerRadius > 0
+      ? Double(defaultCornerRadius)
+      : grouped
+        ? listStyle?.double("groupCornerRadius", default: Double(groupCornerRadius))
+          ?? Double(groupCornerRadius) : 0
     let radius = CGFloat(
       container.double(
-        "cornerRadius",
-        default: defaultCornerRadius > 0
-          ? Double(defaultCornerRadius)
-          : grouped ? listStyle?.double("groupCornerRadius", default: 12) ?? 12 : 0))
+        "cornerRadius", default: pressedRadius ?? fallbackRadius))
     let top: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
     let bottom: CACornerMask = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
     layer.maskedCorners =
       container["cornerRadius"] != nil || position == "single" || defaultCornerRadius > 0
+        || pressedRadius != nil
       ? top.union(bottom) : position == "first" ? top : position == "last" ? bottom : []
     layer.cornerCurve = defaultCornerCurve
     contentView.layer.cornerCurve = defaultCornerCurve
@@ -232,9 +248,18 @@ class NativeListRendererCell: NativeListRowHost {
     if item != nil { onBindingInvalidated?(self, bindingEpoch) }
     bindingEpoch &+= 1
     item = nil
-    inputSignature = ""
+    boundInputs = nil
     recycleContent()
     fullWidthBackground.removeFromSuperlayer()
     isHighlighted = false
+  }
+}
+
+/// Structural equality for bridged JSON values (identity short-circuits in `isEqual`).
+func nativeListValuesEqual(_ lhs: Any?, _ rhs: Any?) -> Bool {
+  switch (lhs, rhs) {
+  case (nil, nil): return true
+  case let (lhs?, rhs?): return (lhs as AnyObject).isEqual(rhs as AnyObject)
+  default: return false
   }
 }

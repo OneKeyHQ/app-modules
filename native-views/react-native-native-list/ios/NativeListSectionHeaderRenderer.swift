@@ -244,14 +244,6 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     if style["lineGap"] != nil { mainStack.spacing = CGFloat(style.double("lineGap")) }
     if style["trailingGap"] != nil { trailingStack.spacing = CGFloat(style.double("trailingGap")) }
     applyTextStyle(item)
-    if item.data.string("presentation") == "networkSelector", item.data["height"] != nil,
-      item.data.dictionary("checkbox") != nil, !item.data.string("value").isEmpty
-    {
-      let width = trailingStack.widthAnchor.constraint(
-        equalToConstant: accessoryButtons[0].intrinsicContentSize.width + 12 + 20)
-      width.isActive = true
-      selectorConstraints.append(width)
-    }
     contentInsets = UIEdgeInsets(
       top: topInset, left: leftInset, bottom: -bottomInset, right: -rightInset)
     root.alignment =
@@ -260,6 +252,15 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       : style.dictionary("container")?.string("contentVerticalAlignment") == "bottom"
         ? .bottom : .center
     applySelectorTypography(item)
+    // Legacy measured the value after selector typography (tabular digits, kern 0).
+    if item.data.string("presentation") == "networkSelector", item.data["height"] != nil,
+      item.data.dictionary("checkbox") != nil, !item.data.string("value").isEmpty
+    {
+      let width = trailingStack.widthAnchor.constraint(
+        equalToConstant: accessoryButtons[0].intrinsicContentSize.width + 12 + 20)
+      width.isActive = true
+      selectorConstraints.append(width)
+    }
   }
   private func applyTextStyle(_ item: NativeListItem) {
     let style = item.data.dictionary("style") ?? [:]

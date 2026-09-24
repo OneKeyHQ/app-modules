@@ -1,3 +1,4 @@
+import CoreText
 import UIKit
 
 // Apply semantic overrides after a renderer has restored its resolved defaults.
@@ -193,6 +194,33 @@ enum NativeListTextStyles {
     case "medium": return .medium
     default: return fallback
     }
+  }
+
+  /// Legacy selector/warning typography: monospaced digits and zero kerning on the label.
+  static func applyTabularDigits(_ label: UILabel) {
+    guard let font = label.font else { return }
+    label.font = tabularDigitsFont(font)
+    guard let original = label.attributedText else { return }
+    let result = NSMutableAttributedString(attributedString: original)
+    let range = NSRange(location: 0, length: result.length)
+    result.addAttribute(.kern, value: 0, range: range)
+    original.enumerateAttribute(.font, in: range) { value, range, _ in
+      if let font = value as? UIFont {
+        result.addAttribute(.font, value: tabularDigitsFont(font), range: range)
+      }
+    }
+    label.attributedText = result
+  }
+
+  static func tabularDigitsFont(_ font: UIFont) -> UIFont {
+    var settings =
+      font.fontDescriptor.fontAttributes[.featureSettings] as? [[UIFontDescriptor.FeatureKey: Int]]
+      ?? []
+    settings.removeAll { $0[.type] == kNumberSpacingType }
+    settings.append([.type: kNumberSpacingType, .selector: kMonospacedNumbersSelector])
+    return UIFont(
+      descriptor: font.fontDescriptor.addingAttributes([.featureSettings: settings]),
+      size: font.pointSize)
   }
 
   static func marketTextAlignment(_ value: String, direction: UIUserInterfaceLayoutDirection)

@@ -43,7 +43,12 @@ final class NativeListActivityCell: NativeListRendererCell {
     amounts.alignment = .trailing
     amounts.setContentHuggingPriority(.required, for: .horizontal)
     amounts.setContentCompressionResistancePriority(.required, for: .horizontal)
-    amountLabels.forEach(amounts.addArrangedSubview)
+    amountLabels.forEach {
+      amounts.addArrangedSubview($0)
+      // Legacy amounts keep their full width; the text column yields first.
+      $0.setContentHuggingPriority(.required, for: .horizontal)
+      $0.setContentCompressionResistancePriority(.required, for: .horizontal)
+    }
     actions.axis = .horizontal
     actions.alignment = .center
     actions.spacing = 8
@@ -86,9 +91,14 @@ final class NativeListActivityCell: NativeListRendererCell {
       visual.heightAnchor.constraint(equalToConstant: CGFloat(image.double("height", default: 40))),
     ]
     NSLayoutConstraint.activate(dimensions)
-    visual.bind(
-      data.dictionary("leading") ?? [:], style: image, key: item.key, theme: theme, isUnread: false,
-      secondaryVisual: data.dictionary("secondaryLeading"))
+    if let leading = data.dictionary("leading") {
+      visual.bind(
+        leading, style: image, key: item.key, theme: theme, isUnread: false,
+        secondaryVisual: data.dictionary("secondaryLeading"))
+    } else {
+      // Legacy kept an empty leading slot (no placeholder disc) when no visual was given.
+      visual.clear()
+    }
     func bind(
       _ view: NativeListTextLabel, _ value: String, _ slot: String, size: CGFloat,
       weight: NativeListFontWeight = .regular, color: UIColor, line: CGFloat, lines: Int = 1
@@ -146,7 +156,9 @@ final class NativeListActivityCell: NativeListRendererCell {
       guard index < descriptors.count else { continue }
       let action = descriptors[index]
       button.setTitle(action.string("label"), for: .normal)
-      button.isEnabled = !data.bool("disabled") && !action.bool("disabled")
+      // Legacy: only the action's own flag disables it; a disabled row is already dimmed
+      // and non-interactive as a whole.
+      button.isEnabled = !action.bool("disabled")
       button.backgroundColor = nativeListColor(theme, "strongBackground", "#F0F0F0")
       button.setTitleColor(
         nativeListColor(

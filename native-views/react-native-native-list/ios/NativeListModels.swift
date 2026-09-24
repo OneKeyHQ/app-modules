@@ -4,6 +4,9 @@ import UIKit
 // Template type alone partitions reuse; data keys and styles never select a renderer.
 enum NativeListRendererKey: String, CaseIterable {
   case message, rail, mediaTile, action, system, activity, dataRow, metricCard, market, identity, sectionHeader, walletGroup
+  /// Not a template: legacy accepted any non-empty type and drew an empty row with the
+  /// shared chrome. Unknown types keep that placeholder instead of failing the snapshot.
+  case unsupported = "__nativeListUnsupported"
 }
 
 struct NativeListItem {
@@ -41,10 +44,12 @@ struct NativeListItem {
 
   init(data: [String: Any]) throws {
     guard let key = data["key"] as? String, !key.isEmpty,
-          let type = data["type"] as? String,
-          let rendererKey = NativeListRendererKey(rawValue: type) else {
+          let type = data["type"] as? String, !type.isEmpty else {
       throw NativeListModelError.invalidRow
     }
+    let rendererKey = NativeListRendererKey(rawValue: type)
+      .flatMap { $0 == .unsupported ? nil : $0 } ?? .unsupported
+    if rendererKey == .unsupported { Self.logUnsupported(type) }
     self.key = key
     self.type = type
     self.rendererKey = rendererKey
@@ -53,6 +58,12 @@ struct NativeListItem {
     self.data = data
     let jsonData = try JSONSerialization.data(withJSONObject: data, options: [.sortedKeys])
     self.content = String(data: jsonData, encoding: .utf8) ?? ""
+  }
+
+  private static var loggedUnsupportedTypes = Set<String>()
+  private static func logUnsupported(_ type: String) {
+    guard loggedUnsupportedTypes.insert(type).inserted else { return }
+    NSLog("[NativeList] Unsupported row type '%@' rendered as an empty placeholder row", type)
   }
 
   private static let selectableTypes: Set<String> = [

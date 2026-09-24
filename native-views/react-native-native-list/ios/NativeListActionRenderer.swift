@@ -47,7 +47,11 @@ final class NativeListActionCell: NativeListRendererCell {
     let selector = item.data.string("presentation") == "accountSelector"
     let icon = item.data.dictionary("icon")
     let descriptors =
-      item.data.dictionary("checkbox").map { [$0] } ?? item.data.dictionaries("trailing")
+      item.data.dictionary("checkbox").map { checkbox -> [[String: Any]] in
+        var checkbox = checkbox
+        if checkbox["kind"] == nil { checkbox["kind"] = "checkbox" }
+        return [checkbox]
+      } ?? item.data.dictionaries("trailing")
     accessories.bind(
       item, descriptors: descriptors, theme: theme, style: style, checkboxState: checkboxState)
     let hp = CGFloat(style.double("horizontalPadding", default: layout == "table" ? 16 : 12))
@@ -75,6 +79,9 @@ final class NativeListActionCell: NativeListRendererCell {
     ).bind(title)
     visual.isHidden = icon == nil
     if var icon {
+      // Legacy kept the icon hairline border unless the selector or a transparent default
+      // background (no explicit backgroundColor) removed it.
+      let keepsBorder = !selector && icon["backgroundColor"] != nil
       if icon["backgroundColor"] == nil { icon["backgroundColor"] = "#00000000" }
       var image = style.dictionary("image") ?? [:]
       if selector && image["cornerRadius"] == nil && image["shape"] == nil {
@@ -83,7 +90,7 @@ final class NativeListActionCell: NativeListRendererCell {
       visualWidth.constant = CGFloat(image.double("width", default: selector ? 32 : 40))
       visualHeight.constant = CGFloat(image.double("height", default: selector ? 32 : 40))
       visual.bind(icon, style: image, key: item.key, theme: theme, isUnread: false)
-      visual.layer.borderWidth = 0
+      if !keepsBorder { visual.layer.borderWidth = 0 }
     } else {
       visual.recycle()
     }

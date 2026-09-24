@@ -18,6 +18,9 @@ enum NativeListRendererRegistry {
       .activity: (NativeListActivityCell.self, { NativeListActivityCell(frame: .zero) }),
       .system: (NativeListSystemCell.self, { NativeListSystemCell(frame: .zero) }),
       .action: (NativeListActionCell.self, { NativeListActionCell(frame: .zero) }),
+      .unsupported: (
+        NativeListUnsupportedCell.self, { NativeListUnsupportedCell(frame: .zero) }
+      ),
     ]
   static func create(_ key: NativeListRendererKey) -> NativeListRowHost { hosts[key]!.create() }
   static func reuseIdentifier(for key: NativeListRendererKey) -> String {
@@ -36,4 +39,12 @@ enum NativeListRendererRegistry {
   {
     hosts[item.rendererKey]!.type.measure(item, width: width, theme: theme, layout: layout)
   }
+}
+
+/// Legacy fallback for unknown row types: shared chrome only, 56-point default height
+/// (plus the size preset), no template content.
+final class NativeListUnsupportedCell: NativeListRendererCell {
+  override class func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+  ) -> CGFloat? { 56 }
 }
