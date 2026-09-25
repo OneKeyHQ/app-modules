@@ -785,6 +785,25 @@ enum OneKeyImageRequestContext {
     return context
   }
 
+  #if DEBUG
+  // The separate pod test module cannot import make's full signature.
+  static func testContext(
+    headersJson: String?,
+    thumbnailPixelSize: CGSize?,
+    manager: SDWebImageManager,
+    url: URL?
+  ) -> [SDWebImageContextOption: Any] {
+    make(
+      headersJson: headersJson,
+      cachePolicy: .memoryDisk,
+      thumbnailPixelSize: thumbnailPixelSize,
+      safetyTracker: nil,
+      manager: manager,
+      url: url
+    )
+  }
+  #endif
+
   static func transportGuards(
     tracker: OneKeyImageSafetyTracker
   ) -> [SDWebImageContextOption: Any] {

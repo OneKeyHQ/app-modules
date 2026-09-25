@@ -1,6 +1,6 @@
 # Spec sources. The default CDN plus Aliyun's repo, which hosts EMASCurl
 # (a transitive native dependency of @onekeyfe/react-native-sni-connect).
-source 'https://github.com/CocoaPods/Specs.git'
+source 'https://cdn.cocoapods.org/'
 source 'https://github.com/aliyun/aliyun-specs.git'
 
 # Resolve react_native_pods.rb with node to allow for hoisting
@@ -40,6 +40,14 @@ target 'example' do
   pod 'SDWebImage', '5.21.7', :modular_headers => true
   pod 'SDWebImageSVGCoder', '1.7.0', :modular_headers => true
   pod 'SDWebImageWebPCoder', '0.14.6', :modular_headers => true
+
+  # CocoaPods does not install test specs unless they are requested explicitly.
+  pod 'OneKeyImage', :path => '../../../node_modules/@onekeyfe/react-native-image', :testspecs => ['Tests']
+  pod 'NativeSheet', :path => '../../../node_modules/@onekeyfe/react-native-native-sheet', :testspecs => ['Tests']
+  pod 'react-native-pager-view', :path => '../../../node_modules/@onekeyfe/react-native-pager-view', :testspecs => ['Tests']
+  pod 'OneKeyTextInput', :path => '../../../node_modules/@onekeyfe/react-native-text-input', :testspecs => ['Tests']
+  pod 'react-native-native-list', :path => '../../../node_modules/@onekeyfe/react-native-native-list', :testspecs => ['Tests']
+  pod 'ReactNativeBundleCrypto', :path => '../../../node_modules/@onekeyfe/react-native-bundle-crypto', :testspecs => ['Tests']
 
   # Copy optional offline TradingView chart material into the app bundle as
   # `tradingview-assets/`, preserving the

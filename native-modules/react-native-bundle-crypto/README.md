@@ -2,6 +2,8 @@
 
 react-native-bundle-crypto
 
+[Native behavior specification](docs/SPEC.md)
+
 ## Installation
 
 ```sh

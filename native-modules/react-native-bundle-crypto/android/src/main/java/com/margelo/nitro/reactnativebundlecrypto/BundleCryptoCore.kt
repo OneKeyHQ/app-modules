@@ -391,8 +391,14 @@ object BundleCryptoCore {
       return false
     }
     val jsBundleDir = dir.absolutePath + "/"
+    val resolvedDir = try { dir.canonicalFile.toPath() } catch (e: Exception) { return false }
     val expected = HashMap<String, String>()
-    for (entry in entries) expected[entry.relativePath] = entry.sha256
+    for (entry in entries) {
+      if (entry.relativePath.isEmpty() || File(entry.relativePath).isAbsolute) return false
+      val resolvedFile = try { File(dir, entry.relativePath).canonicalFile.toPath() } catch (e: Exception) { return false }
+      if (resolvedFile == resolvedDir || !resolvedFile.startsWith(resolvedDir)) return false
+      expected[entry.relativePath] = entry.sha256
+    }
 
     if (!validateFilesRecursive(dir, expected, jsBundleDir)) return false
 

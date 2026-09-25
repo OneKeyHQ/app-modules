@@ -74,6 +74,11 @@ own image bytes and a stale hint is removed after a memory miss.
 | `loadingStrategy`             | `static` by default; `skeleton` and `none` are supported. A React `placeholder` disables the native loading strategy for that instance.                |
 | `placeholderColor`            | Optional theme-aware native color for loading and terminal native states.                                                                              |
 
+On iOS, an explicit `round` value updates the shape while a source is active.
+A native `nil` during a Fabric prop reset retains the last committed shape until
+an explicit value arrives or a new source is committed after reuse. The React
+wrapper supplies `false` when the prop is omitted.
+
 React `placeholder` and `fallback` are optional overlay content. Their container
 clips to the same rounded bounds as the native image and does not receive pointer
 events.

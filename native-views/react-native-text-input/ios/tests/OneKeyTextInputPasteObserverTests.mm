@@ -54,7 +54,7 @@ static dispatch_semaphore_t OneKeyTestReleaseRead;
     }
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-      Method original = class_getInstanceMethod(UIPasteboard.class, @selector(hasImages));
+      Method original = class_getInstanceMethod(object_getClass(pasteboard), @selector(hasImages));
       Method replacement = class_getInstanceMethod(UIPasteboard.class, @selector(onekey_test_hasImages));
       method_exchangeImplementations(original, replacement);
     });
@@ -64,6 +64,7 @@ static dispatch_semaphore_t OneKeyTestReleaseRead;
       [UIColor.blackColor setFill];
       UIRectFill(CGRectMake(0, 0, 1, 1));
     }];
+    [NSNotificationCenter.defaultCenter postNotificationName:UIPasteboardChangedNotification object:pasteboard];
     XCTAssertEqual(dispatch_semaphore_wait(OneKeyTestReadStarted, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)), 0L);
 
     [NSNotificationCenter.defaultCenter postNotificationName:name object:field];
