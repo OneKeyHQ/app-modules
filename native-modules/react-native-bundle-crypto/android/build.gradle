@@ -133,4 +133,6 @@ dependencies {
   // react-native-app-update (the modules this security logic was migrated from).
   implementation "org.bouncycastle:bcpg-jdk15to18:1.78.1"
   implementation "org.bouncycastle:bcprov-jdk15to18:1.78.1"
+
+  testImplementation "junit:junit:4.13.2"
 }

@@ -77,8 +77,10 @@ Paste appears and emits the image event in both cases.
 
 The Android implementation is in `android/src/main/java/com/textinput/`
 (`TextInputView.kt`, `TextInputViewManager.kt`, and
-`TextInputPasteEvent.kt`). No focused Android paste test exists yet. Device
-acceptance should check text and image-URI clipboard items with `onPaste`
-enabled and disabled, missing URI/MIME fallback, and that the underlying
-plain-text paste action still runs. Neither platform's interaction cases have
-been runtime verified for this change.
+`TextInputPasteEvent.kt`). Focused Android Robolectric tests exercise both
+Paste menu actions for text, URI reporting with and without a resolved MIME
+type, watcher removal, and the underlying plain-text paste action. Device
+acceptance should still check text and image-URI clipboard items with `onPaste`
+enabled and disabled, missing URI/MIME fallback, and the actual menu interaction.
+Neither platform's device interaction cases have been runtime verified for this
+change.

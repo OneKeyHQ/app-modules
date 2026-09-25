@@ -411,9 +411,17 @@ public enum BundleCryptoCore {
     }
     // Normalize the directory prefix so relative paths match.
     let normalizedDir = (dirPath as NSString).hasSuffix("/") ? dirPath : dirPath + "/"
+    let resolvedDir = (dirPath as NSString).resolvingSymlinksInPath
+    let resolvedPrefix = resolvedDir == "/" ? "/" : resolvedDir + "/"
 
     var expected: [String: String] = [:]
-    for entry in entries { expected[entry.relativePath] = entry.sha256 }
+    for entry in entries {
+      guard !entry.relativePath.isEmpty,
+            !(entry.relativePath as NSString).isAbsolutePath else { return false }
+      let resolvedFile = ((normalizedDir + entry.relativePath) as NSString).resolvingSymlinksInPath
+      guard resolvedFile.hasPrefix(resolvedPrefix) else { return false }
+      expected[entry.relativePath] = entry.sha256
+    }
 
     guard let enumerator = fm.enumerator(atPath: dirPath) else { return false }
     while let file = enumerator.nextObject() as? String {

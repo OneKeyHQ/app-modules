@@ -96,6 +96,37 @@ final class BundleCryptoCoreTests: XCTestCase {
     }
   }
 
+  func testDirectoryHashesRejectExpectedPathsOutsideBundle() throws {
+    try withTemporaryDirectory { root in
+      let bundle = root.appendingPathComponent("bundle", isDirectory: true)
+      let outside = root.appendingPathComponent("outside.txt")
+      try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+      try "outside".write(to: outside, atomically: true, encoding: .utf8)
+      let wrongHash = String(repeating: "0", count: 64)
+
+      XCTAssertFalse(BundleCryptoCore.verifyDirAgainstHashes(
+        dirPath: bundle.path,
+        entries: [.init(relativePath: "../outside.txt", sha256: wrongHash)]
+      ))
+      XCTAssertFalse(BundleCryptoCore.verifyDirAgainstHashes(
+        dirPath: bundle.path,
+        entries: [.init(relativePath: outside.path, sha256: wrongHash)]
+      ))
+      try FileManager.default.createSymbolicLink(
+        at: bundle.appendingPathComponent("link.txt"),
+        withDestinationURL: outside
+      )
+      XCTAssertFalse(BundleCryptoCore.verifyDirAgainstHashes(
+        dirPath: bundle.path,
+        entries: [.init(relativePath: "link.txt", sha256: wrongHash)]
+      ))
+      XCTAssertFalse(BundleCryptoCore.verifyDirAgainstHashes(
+        dirPath: bundle.path,
+        entries: [.init(relativePath: "", sha256: wrongHash)]
+      ))
+    }
+  }
+
   private func withTemporaryDirectory(_ body: (URL) throws -> Void) throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

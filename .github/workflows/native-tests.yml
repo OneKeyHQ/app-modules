@@ -33,17 +33,19 @@ jobs:
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'cd "$(dirname "$0")" && yarn nitrogen > /dev/null'
-      - name: Run seven Android unit test suites
+      - name: Run nine Android unit test suites
         working-directory: example/react-native/android
         run: |
           ./gradlew --continue --no-daemon --max-workers=2 --console=plain \
             :onekeyfe_react-native-app-update:testDebugUnitTest \
+            :onekeyfe_react-native-bundle-crypto:testDebugUnitTest \
             :onekeyfe_react-native-network-throttle:testDebugUnitTest \
             :onekeyfe_react-native-range-downloader:testDebugUnitTest \
             :onekeyfe_react-native-sni-connect:testDebugUnitTest \
             :onekeyfe_react-native-auto-size-input:testDebugUnitTest \
             :onekeyfe_react-native-image:testDebugUnitTest \
-            :onekeyfe_react-native-native-list:testDebugUnitTest
+            :onekeyfe_react-native-native-list:testDebugUnitTest \
+            :onekeyfe_react-native-text-input:testDebugUnitTest
       - name: Verify every Android suite executed tests
         if: always()
         run: |
@@ -53,12 +55,14 @@ jobs:
 
           packages = {
               'native-modules/react-native-app-update',
+              'native-modules/react-native-bundle-crypto',
               'native-modules/react-native-network-throttle',
               'native-modules/react-native-range-downloader',
               'native-modules/react-native-sni-connect',
               'native-views/react-native-auto-size-input',
               'native-views/react-native-image',
               'native-views/react-native-native-list',
+              'native-views/react-native-text-input',
           }
           total = 0
           for package in sorted(packages):
