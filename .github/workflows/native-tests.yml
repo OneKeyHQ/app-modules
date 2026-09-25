@@ -205,13 +205,13 @@ jobs:
           end
           puts 'Podfile.lock matches: only the Hermes checksum and Specs CDN URL may differ'
           RUBY
-      - name: Run four pod XCTest suites on iOS Simulator
+      - name: Run six pod XCTest suites on iOS Simulator
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
-          schemes=(NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests)
+          schemes=(NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests ReactNativeBundleCrypto-Unit-Tests)
           xcodebuild -list -workspace "$workspace" > artifacts/ios/schemes.log
           for scheme in "${schemes[@]}"; do
             grep -Fxq "        $scheme" artifacts/ios/schemes.log

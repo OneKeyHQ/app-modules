@@ -46,6 +46,8 @@ target 'example' do
   pod 'NativeSheet', :path => '../../../node_modules/@onekeyfe/react-native-native-sheet', :testspecs => ['Tests']
   pod 'react-native-pager-view', :path => '../../../node_modules/@onekeyfe/react-native-pager-view', :testspecs => ['Tests']
   pod 'OneKeyTextInput', :path => '../../../node_modules/@onekeyfe/react-native-text-input', :testspecs => ['Tests']
+  pod 'react-native-native-list', :path => '../../../node_modules/@onekeyfe/react-native-native-list', :testspecs => ['Tests']
+  pod 'ReactNativeBundleCrypto', :path => '../../../node_modules/@onekeyfe/react-native-bundle-crypto', :testspecs => ['Tests']
 
   # Copy optional offline TradingView chart material into the app bundle as
   # `tradingview-assets/`, preserving the

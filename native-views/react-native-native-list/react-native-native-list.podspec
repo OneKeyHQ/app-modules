@@ -13,6 +13,7 @@ Pod::Spec.new do |s|
   s.module_name  = "NativeListModule"
   s.source       = { :git => "https://github.com/OneKeyHQ/app-modules.git", :tag => "#{s.version}" }
   s.source_files = ["ios/**/*.{swift,h,m,mm,cpp}"]
+  s.exclude_files = "ios/tests/**/*"
   s.resource_bundles = {
     "NativeListResources" => [
       "common/fonts/*.ttf",
@@ -31,6 +32,11 @@ Pod::Spec.new do |s|
   s.dependency "OneKeyImage", package["peerDependencies"]["@onekeyfe/react-native-image"]
   s.dependency "React-jsi"
   s.dependency "React-callinvoker"
+
+  s.test_spec "Tests" do |test_spec|
+    test_spec.source_files = "ios/tests/**/*.swift"
+    test_spec.pod_target_xcconfig = { "PRODUCT_MODULE_NAME" => "NativeListModuleTests" }
+  end
 
   load "nitrogen/generated/ios/NativeListModule+autolinking.rb"
   add_nitrogen_files(s)
