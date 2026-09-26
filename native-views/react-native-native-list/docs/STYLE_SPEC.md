@@ -976,3 +976,11 @@ the contract; no shared cross-language renderer or code generator is required.
   before treating the refactor as device-accepted.
 
 Overflow fitting is the integrating developer's responsibility.
+
+### Native tablet grid allocation
+
+`layout.gridColumns` accepts integers 2 through 7. The container derives tile
+width from available width, content padding and spacing; mediaTile styles do
+not choose the column count. This extends native parser limits from four to
+seven without changing existing 2/3/4 geometry. Runtime acceptance for 6/7
+columns, rotation, and text scaling remains required.

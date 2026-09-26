@@ -508,6 +508,19 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     applyHeaderOffset()
   }
 
+  private fun publishConsumedOffset(recycler: RecyclerView, remove: Boolean = false) {
+    val key = R.id.onekey_native_scroll_coordinator_consumed_offsets
+    val existing = recycler.getTag(key) as? NativeScrollCoordinatorContributions
+    val contributions = existing ?: if (remove) return else NativeScrollCoordinatorContributions().also {
+      recycler.setTag(key, it)
+    }
+    val changed = if (remove) contributions.clearOwner(this) else contributions.update(this, headerOffsetPx)
+    if (changed) {
+      (recycler.getTag(R.id.onekey_native_scroll_coordinator_offset_listener) as? Runnable)?.run()
+    }
+    if (contributions.isEmpty()) recycler.setTag(key, null)
+  }
+
   private fun applyHeaderOffset() {
     val offset = headerOffsetPx.toFloat()
     pager.translationY = -offset
@@ -515,6 +528,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     stickyHeaderView?.translationY = -offset
     nativeTabBarView.translationY = -offset
     nativeSubHeaderView.translationY = -offset
+    observedRecyclerView?.let { publishConsumedOffset(it) }
   }
 
   private fun pageKey(index: Int): String = pageKeys.getOrNull(index) ?: "page-$index"
@@ -616,12 +630,14 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private fun attachRecyclerObserver(recycler: RecyclerView) {
     if (observedRecyclerView === recycler) {
       applyRecyclerInsets(recycler, selectedPage)
+      publishConsumedOffset(recycler)
       return
     }
 
     detachPrimaryScrollObserver()
     observedRecyclerView = recycler
     applyRecyclerInsets(recycler, selectedPage)
+    publishConsumedOffset(recycler)
     val listener = object : RecyclerView.OnScrollListener() {
       override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
         val contentOffset = recyclerView.computeVerticalScrollOffset()
@@ -646,6 +662,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val listener = observedScrollListener
     if (recycler != null) {
       pageOffsets[currentPageKey()] = recycler.computeVerticalScrollOffset()
+      publishConsumedOffset(recycler, remove = true)
     }
     if (recycler != null && listener != null) recycler.removeOnScrollListener(listener)
     if (recycler != null) {
@@ -835,6 +852,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   private fun restoreRecyclerInsets(recycler: RecyclerView) {
+    publishConsumedOffset(recycler, remove = true)
     val original = originalRecyclerPadding.remove(recycler) ?: return
     updateRecyclerPaddingOwnership(recycler, original)
     restoredRecyclerKeys.remove(recycler)

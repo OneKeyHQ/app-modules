@@ -4,6 +4,51 @@ import UIKit
 import UniformTypeIdentifiers
 
 final class NativeListView: UIView {
+  private var refreshEmittedForDrag = false
+  private var minimumDragOffset: CGFloat = 0
+  private var reactContainerSlots: [UIView] = []
+  private var containerSlotHeights: [CGFloat] = [0, 0, 0]
+
+  @objc func mountContainerSlot(_ view: UIView, atIndex index: Int) {
+    reactContainerSlots.insert(view, at: min(index, reactContainerSlots.count))
+    collectionView.addSubview(view)
+    setNeedsLayout()
+  }
+
+  @objc func unmountContainerSlot(_ view: UIView) {
+    reactContainerSlots.removeAll { $0 === view }
+    view.removeFromSuperview()
+  }
+
+  func setContainerSlotHeightsJson(_ json: String) {
+    guard let data = json.data(using: .utf8),
+          let heights = try? JSONSerialization.jsonObject(with: data) as? [Double],
+          heights.count == 3, heights.allSatisfy({ $0.isFinite && $0 >= 0 }) else { return }
+    containerSlotHeights = heights.map { CGFloat($0) }
+    if let config { configureLayout(config) }
+    setNeedsLayout()
+  }
+
+  private func layoutContainerSlots() {
+    guard reactContainerSlots.count == 3 else { return }
+    let empty = config?.items.isEmpty ?? true
+    let header = containerSlotHeights[0]
+    let emptyHeight = empty ? containerSlotHeights[1] : 0
+    let footer = containerSlotHeights[2]
+    let paddingTop = config?.contentPaddingTop ?? 0
+    let paddingBottom = config?.contentPaddingBottom ?? 0
+    let footerY = max(paddingTop + header + emptyHeight,
+      collectionView.contentSize.height - paddingBottom - footer)
+    let positions = [paddingTop, paddingTop + header, footerY]
+    for (index, view) in reactContainerSlots.enumerated() {
+      view.isHidden = index == 1 && !empty
+      let horizontalPadding = config?.contentPaddingHorizontal ?? 0
+      view.frame = CGRect(x: horizontalPadding, y: positions[index],
+        width: max(0, collectionView.bounds.width - horizontalPadding * 2),
+        height: containerSlotHeights[index])
+    }
+  }
+
   private final class ActionAnchorRecord {
     let token: String
     weak var sourceView: UIView?
@@ -47,6 +92,26 @@ final class NativeListView: UIView {
     case end(Bool)
   }
 
+  private var scrollPositionTracker = NativeListScrollPositionTracker()
+  var onScrollPositionThresholdChange: ((Bool) -> Void)? {
+    didSet {
+      scrollPositionTracker.resetDelivery()
+      emitScrollPositionThresholdIfNeeded()
+    }
+  }
+
+  func setScrollPositionThresholdsJson(_ json: String) {
+    scrollPositionTracker.configure(json: json)
+    emitScrollPositionThresholdIfNeeded()
+  }
+
+  private func emitScrollPositionThresholdIfNeeded() {
+    guard let callback = onScrollPositionThresholdChange,
+          let next = scrollPositionTracker.update(offset: Double(max(0,
+            collectionView.contentOffset.y + collectionView.contentInset.top))) else { return }
+    callback(next)
+  }
+
   var onRowAction: ((String) -> Void)?
   var onActionAnchorInvalidated: ((String) -> Void)?
   var onSelectionDelta: ((String) -> Void)?
@@ -60,7 +125,11 @@ final class NativeListView: UIView {
   }
 
   private let flowLayout = NativeListFlowLayout()
-  private lazy var collectionView = NativeListCollectionView(frame: .zero, collectionViewLayout: flowLayout)
+  private lazy var collectionView: NativeListCollectionView = {
+    let view = NativeListCollectionView(frame: .zero, collectionViewLayout: flowLayout)
+    view.onContentLayout = { [weak self] in self?.layoutContainerSlots() }
+    return view
+  }()
   private let footerContainer = UIView()
   private var footerCell: NativeListRowHost = NativeListRendererRegistry.create(.action)
   private var footerRendererKey = NativeListRendererKey.action
@@ -333,6 +402,7 @@ final class NativeListView: UIView {
       rebindRowsForLayoutDirection(config)
     }
     performPendingScrollIfNeeded()
+    layoutContainerSlots()
   }
 
   // A layout-direction change may arrive without a layout pass (semantic attribute or trait).
@@ -693,11 +763,14 @@ final class NativeListView: UIView {
     flowLayout.minimumLineSpacing = config.itemSpacing
     flowLayout.minimumInteritemSpacing = config.itemSpacing
     flowLayout.sectionInset = UIEdgeInsets(
-      top: config.contentPaddingTop,
+      top: config.contentPaddingTop + containerSlotHeights[0],
       left: config.contentPaddingHorizontal + (isRightToLeft ? indexGutter : 0),
-      bottom: config.contentPaddingBottom,
+      bottom: config.contentPaddingBottom + containerSlotHeights[2],
       right: config.contentPaddingHorizontal + (isRightToLeft ? 0 : indexGutter)
     )
+    flowLayout.minimumContainerContentHeight = config.items.isEmpty
+      ? config.contentPaddingTop + config.contentPaddingBottom + containerSlotHeights.reduce(0, +)
+      : 0
     flowLayout.stickyItemIndexes = config.stickyHeaders
       ? Set(config.items.enumerated().compactMap {
           $0.element.type == "sectionHeader" && $0.element.data.bool("sticky", default: true) && $0.element.data.string("variant") != "summary"
@@ -1539,6 +1612,7 @@ final class NativeListView: UIView {
           current.rowPressToggles == next.rowPressToggles,
           current.reorderable == next.reorderable,
           current.pullToRefresh == next.pullToRefresh,
+          current.refreshTriggerDistance == next.refreshTriggerDistance,
           current.refreshing == next.refreshing,
           current.loadMore == next.loadMore,
           current.endReachedThreshold == next.endReachedThreshold,
@@ -1856,6 +1930,7 @@ final class NativeListView: UIView {
     onReorder = nil
     onEndReached = nil
     onVisibleRangeChanged = nil
+    onScrollPositionThresholdChange = nil
   }
 
   private func createActionAnchor(origin: NativeListActionOrigin) -> [String: Any]? {
@@ -1921,6 +1996,9 @@ final class NativeListView: UIView {
   }
 
   @objc private func refreshTriggered() {
+    guard !disposed, config?.pullToRefresh == true,
+          config?.refreshing != true, !refreshEmittedForDrag else { return }
+    refreshEmittedForDrag = true
     emit(onRowAction, ["actionKey": "nativeList.refresh"])
   }
 
@@ -2142,7 +2220,26 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
     return item.isRowPressEnabled
   }
 
+  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    minimumDragOffset = 0
+    refreshEmittedForDrag = false
+  }
+
+  func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    minimumDragOffset = min(minimumDragOffset, scrollView.contentOffset.y + scrollView.contentInset.top)
+    guard let threshold = config?.refreshTriggerDistance,
+          config?.pullToRefresh == true, config?.refreshing != true,
+          minimumDragOffset <= -threshold, !refreshEmittedForDrag else { return }
+    collectionView.refreshControl?.beginRefreshing()
+    refreshTriggered()
+  }
+
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    if scrollView.isDragging {
+      minimumDragOffset = min(minimumDragOffset, scrollView.contentOffset.y + scrollView.contentInset.top)
+    }
+    layoutContainerSlots()
+    emitScrollPositionThresholdIfNeeded()
     invalidateActionAnchor(reason: "scroll")
     syncSectionIndexToVisibleRows()
     emitVisibleRangeIfNeeded()
@@ -2205,6 +2302,13 @@ extension NativeListView: UICollectionViewDragDelegate, UICollectionViewDropDele
 // quick tap highlighted and unhighlighted a row within one frame and the pressed background never
 // rendered. Deliver touches immediately, as Android rows do.
 private final class NativeListCollectionView: UICollectionView {
+  var onContentLayout: (() -> Void)?
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    onContentLayout?()
+  }
+
   override init(frame: CGRect, collectionViewLayout layout: UICollectionViewLayout) {
     super.init(frame: frame, collectionViewLayout: layout)
     delaysContentTouches = false
@@ -2223,6 +2327,7 @@ private final class NativeListCollectionView: UICollectionView {
 
 final class NativeListFlowLayout: UICollectionViewFlowLayout {
   var stickyItemIndexes: Set<Int> = []
+  var minimumContainerContentHeight: CGFloat = 0
   private var horizontalAttributes: [IndexPath: UICollectionViewLayoutAttributes] = [:]
   private var horizontalContentSize: CGSize = .zero
 
@@ -2251,7 +2356,9 @@ final class NativeListFlowLayout: UICollectionViewFlowLayout {
   }
 
   override var collectionViewContentSize: CGSize {
-    scrollDirection == .horizontal ? horizontalContentSize : super.collectionViewContentSize
+    if scrollDirection == .horizontal { return horizontalContentSize }
+    let size = super.collectionViewContentSize
+    return CGSize(width: size.width, height: max(size.height, minimumContainerContentHeight))
   }
 
   override func shouldInvalidateLayout(forBoundsChange newBounds: CGRect) -> Bool {

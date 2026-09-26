@@ -43,8 +43,10 @@ applying them.
 Section headers and scrolling footer/status rows use the flattened row stream.
 `fixedFooter` is a separate descriptor outside that stream, and `emptyState` is
 used when content is empty; both reuse row binders and currently accept only
-`action` or `system` through the public API. A generic public list-header slot is
-not yet exposed. `groupId` and `groupPosition` preserve continuous card geometry
+`action` or `system` through the public API. Native vertical lists additionally
+expose `listHeader`, `listEmpty`, and `listFooter` React container slots. These
+three fixed roots remain outside row identity and scroll with the native list;
+see SPEC.md for mounting, index translation, measurement and platform limits. `groupId` and `groupPosition` preserve continuous card geometry
 without nesting lists inside cells. These placement/grouping rules belong to the
 container even when the displayed content uses an existing row template.
 

@@ -4,6 +4,7 @@ import React, {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from 'react';
 import {
   OneKeyImageCache,
@@ -13,6 +14,7 @@ import {
   NativeAvatarPrefetchModel,
   NativeAvatarPrefetchQueue,
 } from './avatarPrefetch';
+import { View } from 'react-native';
 import { callback, getHostComponent } from 'react-native-nitro-modules';
 import type {
   NativeListMethods,
@@ -96,6 +98,10 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
   function NativeList(
     {
       snapshot,
+      listHeader,
+      listFooter,
+      listEmpty,
+      scrollPositionThresholds,
       webVirtualizationEnabled: _webVirtualizationEnabled,
       webSectionIndexContainerRef: _webSectionIndexContainerRef,
       keyboardDismissMode = 'none',
@@ -106,6 +112,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       onReorder,
       onEndReached,
       onVisibleRangeChanged,
+      onScrollPositionThresholdChange,
       onRefresh,
       onScrollToIndexFailed,
       initialScrollIndex,
@@ -116,6 +123,21 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     },
     forwardedRef
   ) {
+    const [slotHeights, setSlotHeights] = useState([0, 0, 0]);
+    const containerSlotHeightsJson = JSON.stringify(slotHeights);
+    const slotInset =
+      snapshot.layout.contentPaddingHorizontal ??
+      snapshot.layout.contentPadding ??
+      0;
+    if (
+      snapshot.layout.orientation === 'horizontal' &&
+      (listHeader || listEmpty || listFooter)
+    ) {
+      throw new Error(
+        'NativeList container slots require vertical orientation'
+      );
+    }
+    const slotContents = [listHeader, listEmpty, listFooter];
     const normalizedKeyboardShouldPersistTaps =
       keyboardShouldPersistTaps === true
         ? 'always'
@@ -130,6 +152,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       onReorder,
       onEndReached,
       onVisibleRangeChanged,
+      onScrollPositionThresholdChange,
       onRefresh,
       onScrollToIndexFailed,
     });
@@ -140,9 +163,29 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       onReorder,
       onEndReached,
       onVisibleRangeChanged,
+      onScrollPositionThresholdChange,
       onRefresh,
       onScrollToIndexFailed,
     };
+    const scrollPositionThresholdsJson = useMemo(() => {
+      if (
+        !scrollPositionThresholds ||
+        scrollPositionThresholds.enabled === false
+      )
+        return '';
+      const { start, end } = scrollPositionThresholds;
+      if (
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        start < 0 ||
+        end <= start
+      ) {
+        throw new Error(
+          'scrollPositionThresholds requires 0 <= start < end and finite values'
+        );
+      }
+      return JSON.stringify({ start, end });
+    }, [scrollPositionThresholds]);
     const snapshotJson = useMemo(() => serializeSnapshot(snapshot), [snapshot]);
     const snapshotRef = useRef(snapshot);
     const previousSnapshotJsonRef = useRef(snapshotJson);
@@ -427,6 +470,13 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
             parsePayload<EndReachedEvent>(payloadJson)
           );
         }),
+        onScrollPositionThresholdChange: callback(
+          (isBeyondThreshold: boolean) => {
+            callbacksRef.current.onScrollPositionThresholdChange?.({
+              isBeyondThreshold,
+            });
+          }
+        ),
         onVisibleRangeChanged: callback((payloadJson: string) => {
           const payload = parsePayload<VisibleRangeChangedEvent>(payloadJson);
           const previous = avatarRangeRef.current;
@@ -450,9 +500,36 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         {...viewProps}
         {...nativeCallbacks}
         snapshotJson={snapshotJson}
+        containerSlotHeightsJson={containerSlotHeightsJson}
+        scrollPositionThresholdsJson={scrollPositionThresholdsJson}
         keyboardDismissMode={keyboardDismissMode}
         keyboardShouldPersistTaps={normalizedKeyboardShouldPersistTaps}
-      />
+      >
+        {slotContents.map((content, index) => (
+          <View
+            key={index}
+            collapsable={false}
+            style={{
+              position: 'absolute',
+              left: slotInset,
+              right: slotInset,
+              top: 0,
+            }}
+            onLayout={(event) => {
+              const height = Math.ceil(event.nativeEvent.layout.height);
+              setSlotHeights((previous) =>
+                previous[index] === height
+                  ? previous
+                  : previous.map((value, slot) =>
+                      slot === index ? height : value
+                    )
+              );
+            }}
+          >
+            {content}
+          </View>
+        ))}
+      </NativeListHost>
     );
   }
 );

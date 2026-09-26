@@ -11,6 +11,9 @@ import type {
  */
 export interface NativeListNativeProps extends HybridViewProps {
   snapshotJson: string;
+  containerSlotHeightsJson: string;
+  scrollPositionThresholdsJson: string;
+  onScrollPositionThresholdChange?: (isBeyondThreshold: boolean) => void;
   keyboardDismissMode: NativeListKeyboardDismissMode;
   keyboardShouldPersistTaps: NativeListKeyboardShouldPersistTaps;
   onRowAction?: (payloadJson: string) => void;
