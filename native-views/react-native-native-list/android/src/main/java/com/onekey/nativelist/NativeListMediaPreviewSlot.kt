@@ -43,6 +43,7 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
   private var playerGeneration = 0
   private var result: Boolean? = null
   private var completion: ((Boolean) -> Unit)? = null
+  private var pendingCompletion: Runnable? = null
   private var player: ExoPlayer? = null
   private var resumeVideo: (() -> Unit)? = null
   private var viewportObserver: ViewTreeObserver? = null
@@ -95,17 +96,26 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
       completion?.invoke(false)
       return
     }
-    val finished: (Boolean) -> Unit = { loaded ->
-      if (epoch == token && candidateGeneration == candidate) {
+    fun finished(loaded: Boolean, expectedPlayerGeneration: Int? = null) {
+      if (epoch != token || candidateGeneration != candidate) return
+      pendingCompletion?.let(view::removeCallbacks)
+      // Glide forbids clearing/rebinding a request from either terminal callback.
+      // Media3 callbacks also defer release so the emitting player is not reentered.
+      val task = Runnable {
+        pendingCompletion = null
+        if (epoch != token || candidateGeneration != candidate ||
+            (expectedPlayerGeneration != null && playerGeneration != expectedPlayerGeneration)) return@Runnable
         if (loaded) {
           if (result != true) { result = true; completion?.invoke(true) }
         } else probe(source, key, fit, placeholder, order, attempt + 1, token)
       }
+      pendingCompletion = task
+      view.post(task)
     }
     if (order[attempt] == "image") {
       video.visibility = View.GONE
       image.view.visibility = View.VISIBLE
-      image.bind(source, key, fit = fit, placeholder = placeholder, completion = finished)
+      image.bind(source, key, fit = fit, placeholder = placeholder, completion = { loaded -> finished(loaded) })
       return
     }
     image.recycle()
@@ -137,8 +147,8 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
         next.setAudioAttributes(androidx.media3.common.AudioAttributes.DEFAULT, false)
         next.setVideoTextureView(texture)
         next.addListener(object : Player.Listener {
-          override fun onRenderedFirstFrame() { if (playerGeneration == generation) finished(true) }
-          override fun onPlayerError(error: PlaybackException) { if (playerGeneration == generation) finished(false) }
+          override fun onRenderedFirstFrame() { if (playerGeneration == generation) finished(true, generation) }
+          override fun onPlayerError(error: PlaybackException) { if (playerGeneration == generation) finished(false, generation) }
           override fun onVideoSizeChanged(size: VideoSize) {
             if (playerGeneration == generation && size.height > 0) video.setAspectRatio(size.width * size.pixelWidthHeightRatio / size.height)
           }
@@ -190,6 +200,8 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
   }
   fun recycle() {
     epoch++; candidateGeneration++
+    pendingCompletion?.let(view::removeCallbacks)
+    pendingCompletion = null
     resumeVideo = null
     stopObservingViewport()
     releasePlayer()

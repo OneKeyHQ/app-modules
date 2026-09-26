@@ -434,8 +434,13 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         }),
         onRowAction: callback((payloadJson: string) => {
           const payload = parsePayload<RowActionEvent>(payloadJson);
-          if (payload.actionKey === 'nativeList.refresh')
+          if (
+            payload.actionKey === 'nativeList.refresh' &&
+            payload.rowKey === undefined
+          ) {
             callbacksRef.current.onRefresh?.();
+            return;
+          }
           callbacksRef.current.onRowAction?.(payload);
         }),
         onActionAnchorInvalidated: callback((payloadJson: string) => {

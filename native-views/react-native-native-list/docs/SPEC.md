@@ -423,7 +423,14 @@ existing native Video views. No code calls play or requests audio focus.
 A failed candidate advances once; exhaustion displays the existing error
 placeholder. New source/row identity resets probing; binding, candidate and
 player generations reject stale callbacks, including A→B→A. Text-only updates
-preserve the current request. A tile owns at most one native player. On iOS,
+preserve the current request. On Android, terminal image/player completion is
+posted to the next UI queue turn before advancing probes or notifying the row;
+it MUST NOT clear or rebind a Glide request inside its terminal listener.
+Posted work rechecks binding/candidate generations, and player callbacks also
+recheck the player generation. Recycling removes queued completion work before
+releasing resources. This repairs the image-to-video fallback crash without
+changing probe order or the terminal result contract; native runtime regression
+acceptance is still required. A tile owns at most one native player. On iOS,
 eligibility requires intersection with the window and every clipping/scroll
 ancestor viewport; native scroll, bounds, layer transform/position and visibility
 observations release retained offscreen pager pages. Detach, background,
@@ -500,6 +507,12 @@ at most one refresh action per drag. Android passes the distance to
 SwipeRefreshLayout's native trigger setting. These native controls differ in
 rubber-band/drag scaling, so equal values do not promise equal finger travel.
 The caller continues to own refreshing state, completion, and optional haptic feedback.
+On native, the row-less `nativeList.refresh` bridge envelope is container-owned:
+the JS wrapper consumes it and invokes only `onRefresh`, when supplied. It MUST
+NOT also invoke the public `onRowAction`, even when `onRefresh` is absent.
+An actual row action carrying a `rowKey` remains a row action, including one
+whose caller-defined action key matches this internal name. Web retains its
+legacy dual notification behavior; this native correction does not change Web.
 The container does not emit a second haptic for the release fallback. The fallback is
 inactive unless pull-to-refresh is enabled; no product-specific threshold is
 hardcoded into the module.
