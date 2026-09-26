@@ -4,6 +4,42 @@ import XCTest
 
 @MainActor
 final class NativeListLifecycleTests: XCTestCase {
+  func testSectionLoadingStopsOnRebindReuseAndDetach() throws {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    window.isHidden = false
+    defer { window.isHidden = true }
+    let cell = NativeListSectionHeaderCell(frame: CGRect(x: 0, y: 0, width: 320, height: 40))
+    controller.view.addSubview(cell)
+    func bind(loading: Bool) throws {
+      let item = try NativeListItem(data: [
+        "key": "section", "type": "sectionHeader", "sectionKey": "pending",
+        "title": "Confirming", "variant": "history", "titleLoading": loading,
+        "style": ["title": ["color": "#FFAA00"]],
+      ])
+      cell.bind(item: item, theme: nil, layout: "sectioned", selected: false,
+                checkboxState: { _, _, fallback in fallback })
+    }
+    try bind(loading: true)
+    let spinner = try XCTUnwrap(cell.root.arrangedSubviews.first as? UIActivityIndicatorView)
+    XCTAssertTrue(spinner.isAnimating)
+    XCTAssertFalse(spinner.isAccessibilityElement)
+    XCTAssertEqual(spinner.color, UIColor(nativeListHex: "#FFAA00", fallback: .clear))
+
+    try bind(loading: false)
+    XCTAssertFalse(spinner.isAnimating)
+    XCTAssertNil(spinner.superview)
+    try bind(loading: true)
+    XCTAssertTrue(spinner.isAnimating)
+    cell.removeFromSuperview()
+    XCTAssertFalse(spinner.isAnimating)
+    controller.view.addSubview(cell)
+    XCTAssertTrue(spinner.isAnimating)
+    cell.prepareForReuse()
+    XCTAssertFalse(spinner.isAnimating)
+  }
+
   func testRebindingAndReuseInvalidateThePreviousActionEpoch() throws {
     let cell = NativeListActionCell(frame: CGRect(x: 0, y: 0, width: 320, height: 60))
     let first = try NativeListItem(data: ["key": "row", "type": "action", "title": "First"])

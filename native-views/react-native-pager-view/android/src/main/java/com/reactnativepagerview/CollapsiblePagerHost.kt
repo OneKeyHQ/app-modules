@@ -20,6 +20,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.facebook.react.R as ReactR
 import com.facebook.react.uimanager.events.NativeGestureUtil
+import com.facebook.react.views.scroll.ReactScrollView
 import com.margelo.nitro.nativelogger.OneKeyLog
 import java.util.WeakHashMap
 import kotlin.math.max
@@ -508,6 +509,19 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     applyHeaderOffset()
   }
 
+  private fun publishConsumedOffset(recycler: RecyclerView, remove: Boolean = false) {
+    val key = R.id.onekey_native_scroll_coordinator_consumed_offsets
+    val existing = recycler.getTag(key) as? NativeScrollCoordinatorContributions
+    val contributions = existing ?: if (remove) return else NativeScrollCoordinatorContributions().also {
+      recycler.setTag(key, it)
+    }
+    val changed = if (remove) contributions.clearOwner(this) else contributions.update(this, headerOffsetPx)
+    if (changed) {
+      (recycler.getTag(R.id.onekey_native_scroll_coordinator_offset_listener) as? Runnable)?.run()
+    }
+    if (contributions.isEmpty()) recycler.setTag(key, null)
+  }
+
   private fun applyHeaderOffset() {
     val offset = headerOffsetPx.toFloat()
     pager.translationY = -offset
@@ -515,6 +529,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     stickyHeaderView?.translationY = -offset
     nativeTabBarView.translationY = -offset
     nativeSubHeaderView.translationY = -offset
+    observedRecyclerView?.let { publishConsumedOffset(it) }
   }
 
   private fun pageKey(index: Int): String = pageKeys.getOrNull(index) ?: "page-$index"
@@ -616,12 +631,14 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private fun attachRecyclerObserver(recycler: RecyclerView) {
     if (observedRecyclerView === recycler) {
       applyRecyclerInsets(recycler, selectedPage)
+      publishConsumedOffset(recycler)
       return
     }
 
     detachPrimaryScrollObserver()
     observedRecyclerView = recycler
     applyRecyclerInsets(recycler, selectedPage)
+    publishConsumedOffset(recycler)
     val listener = object : RecyclerView.OnScrollListener() {
       override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
         val contentOffset = recyclerView.computeVerticalScrollOffset()
@@ -646,6 +663,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val listener = observedScrollListener
     if (recycler != null) {
       pageOffsets[currentPageKey()] = recycler.computeVerticalScrollOffset()
+      publishConsumedOffset(recycler, remove = true)
     }
     if (recycler != null && listener != null) recycler.removeOnScrollListener(listener)
     if (recycler != null) {
@@ -775,11 +793,29 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     }
     updateScrollerPaddingOwnership(scroller, original)
     val topInset = headerHeightPx + stickyHeaderHeightPx
-    val top = original.top + topInset
     scroller.clipToPadding = false
-    if (scroller.paddingLeft != original.left || scroller.paddingTop != top ||
-      scroller.paddingRight != original.right || scroller.paddingBottom != original.bottom) {
-      scroller.setPadding(original.left, top, original.right, original.bottom)
+    if (scroller is ReactScrollView) {
+      // Fabric owns the content child's layout, so ScrollView padding alone
+      // cannot move it. RN's native ScrollAway API also updates Fabric culling.
+      val state = scroller.reactScrollViewScrollState
+      val scrollAwayTop = nativeScrollerScrollAwayTop(
+        state.scrollAwayPaddingTop, original.appliedTopInset, topInset,
+      )
+      if (state.scrollAwayPaddingTop != scrollAwayTop ||
+        scroller.getChildAt(0)?.translationY != scrollAwayTop.toFloat()) {
+        scroller.setScrollAwayPaddingEnabledUnstable(scrollAwayTop, state.scrollAwayPaddingBottom)
+      }
+      val bottom = original.bottom + topInset
+      if (scroller.paddingLeft != original.left || scroller.paddingTop != original.top ||
+        scroller.paddingRight != original.right || scroller.paddingBottom != bottom) {
+        scroller.setPadding(original.left, original.top, original.right, bottom)
+      }
+    } else {
+      val top = original.top + topInset
+      if (scroller.paddingLeft != original.left || scroller.paddingTop != top ||
+        scroller.paddingRight != original.right || scroller.paddingBottom != original.bottom) {
+        scroller.setPadding(original.left, top, original.right, original.bottom)
+      }
     }
     original.appliedTopInset = topInset
 
@@ -804,13 +840,29 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     scroller: ScrollView,
     original: ScrollerPadding,
   ) {
-    val expectedTop = original.top + original.appliedTopInset
+    val isReactScroller = scroller is ReactScrollView
+    if (scroller is ReactScrollView) {
+      val state = scroller.reactScrollViewScrollState
+      if (nativeScrollerPaddingWasResetByScrollAway(
+          original.appliedTopInset,
+          scroller.paddingLeft, scroller.paddingTop, scroller.paddingRight, scroller.paddingBottom,
+          state.scrollAwayPaddingTop, state.scrollAwayPaddingBottom,
+        )) {
+        // RN may replay ScrollAway state before this pass. Its setter clears
+        // caller padding; that native reset must not become our new baseline.
+        return
+      }
+    }
+    val ownedTop = if (isReactScroller) 0 else original.appliedTopInset
+    val ownedBottom = if (isReactScroller) original.appliedTopInset else 0
     if (scroller.paddingLeft != original.left) original.left = scroller.paddingLeft
-    if (scroller.paddingTop != expectedTop) {
-      original.top = (scroller.paddingTop - original.appliedTopInset).coerceAtLeast(0)
+    if (scroller.paddingTop != original.top + ownedTop) {
+      original.top = (scroller.paddingTop - ownedTop).coerceAtLeast(0)
     }
     if (scroller.paddingRight != original.right) original.right = scroller.paddingRight
-    if (scroller.paddingBottom != original.bottom) original.bottom = scroller.paddingBottom
+    if (scroller.paddingBottom != original.bottom + ownedBottom) {
+      original.bottom = (scroller.paddingBottom - ownedBottom).coerceAtLeast(0)
+    }
     if (scroller.clipToPadding) original.clipToPadding = true
   }
 
@@ -835,6 +887,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   private fun restoreRecyclerInsets(recycler: RecyclerView) {
+    publishConsumedOffset(recycler, remove = true)
     val original = originalRecyclerPadding.remove(recycler) ?: return
     updateRecyclerPaddingOwnership(recycler, original)
     restoredRecyclerKeys.remove(recycler)
@@ -846,6 +899,13 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val original = originalScrollerPadding.remove(scroller) ?: return
     updateScrollerPaddingOwnership(scroller, original)
     restoredScrollerKeys.remove(scroller)
+    if (scroller is ReactScrollView) {
+      val state = scroller.reactScrollViewScrollState
+      scroller.setScrollAwayPaddingEnabledUnstable(
+        nativeScrollerScrollAwayTop(state.scrollAwayPaddingTop, original.appliedTopInset, 0),
+        state.scrollAwayPaddingBottom,
+      )
+    }
     scroller.clipToPadding = original.clipToPadding
     scroller.setPadding(original.left, original.top, original.right, original.bottom)
   }

@@ -517,6 +517,16 @@ export type RailRow = RowBase &
     style?: RailRowStyle;
   }>;
 
+export type ActivityAmount = Readonly<{
+  key: string;
+  text: string;
+  textSegments?: readonly ValueTextSegment[];
+  leading?: LeadingVisual;
+  tone?: TextTone;
+  secondaryText?: string;
+  secondaryTextSegments?: readonly ValueTextSegment[];
+}>;
+
 export type ActivityRow = RowBase &
   Readonly<{
     type: 'activity';
@@ -527,6 +537,18 @@ export type ActivityRow = RowBase &
     status?: string;
     primaryAmount?: string;
     secondaryAmount?: string;
+    amounts?: readonly ActivityAmount[];
+    badges?: readonly BadgeModel[];
+    presentation?: 'stacked' | 'table';
+    fee?: Readonly<{
+      label?: string;
+      primary: string;
+      primaryTextSegments?: readonly ValueTextSegment[];
+      secondary?: string;
+      secondaryTextSegments?: readonly ValueTextSegment[];
+      hidden?: boolean;
+    }>;
+    descriptionActionKey?: string;
     footerActions?: readonly FooterAction[];
     style?: ActivityRowStyle;
   }>;
@@ -601,6 +623,11 @@ export type MediaTileRow = RowBase &
   Readonly<{
     type: 'mediaTile';
     variant: 'gallery' | 'browserPreview';
+    /** Native preview; video candidates display a silent first frame, never autoplay. */
+    media?: Readonly<{
+      source: ImageSource;
+      probeOrder: readonly ('image' | 'video')[];
+    }>;
     image?: ImageSource;
     imageState?: 'empty' | 'error';
     networkImage?: ImageSource;
@@ -650,6 +677,7 @@ export type SectionHeaderRow = RowBase &
     indexTitle?: string;
     variant?: 'summary' | 'gallery' | 'history';
     title: string;
+    titleLoading?: boolean;
     subtitle?: string;
     value?: string;
     valueActionKey?: string;
@@ -795,7 +823,7 @@ export type NativeListSnapshot = Readonly<{
   layout: Readonly<{
     kind: NativeListLayout;
     orientation?: NativeListOrientation;
-    gridColumns?: 2 | 3 | 4;
+    gridColumns?: 2 | 3 | 4 | 5 | 6 | 7;
     stickyHeaders?: boolean;
     contentPadding?: number;
     contentPaddingHorizontal?: number;
@@ -813,6 +841,7 @@ export type NativeListSnapshot = Readonly<{
     reorderable?: boolean;
     pullToRefresh?: boolean;
     refreshing?: boolean;
+    refreshTriggerDistance?: number;
     loadMore?: boolean;
     endReachedThreshold?: number;
     sectionIndex?: SectionIndexConfig;
@@ -882,6 +911,11 @@ export type RowPatch =
           | 'title'
           | 'description'
           | 'status'
+          | 'amounts'
+          | 'badges'
+          | 'presentation'
+          | 'fee'
+          | 'descriptionActionKey'
           | 'primaryAmount'
           | 'secondaryAmount'
           | 'leading'
@@ -957,6 +991,7 @@ export type RowPatch =
           | CommonPatchFields
           | 'image'
           | 'imageState'
+          | 'media'
           | 'networkImage'
           | 'title'
           | 'subtitle'
@@ -993,6 +1028,7 @@ export type RowPatch =
           SectionHeaderRow,
           | CommonPatchFields
           | 'variant'
+          | 'titleLoading'
           | 'title'
           | 'subtitle'
           | 'value'
@@ -1036,6 +1072,7 @@ export type NativeListActionSource =
   | 'leadingAction'
   | 'trailingAccessory'
   | 'footerAction'
+  | 'description'
   | 'mediaClose';
 
 export type NativeListWindowRect = Readonly<{

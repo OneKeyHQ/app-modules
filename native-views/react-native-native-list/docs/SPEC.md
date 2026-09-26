@@ -7,7 +7,8 @@ architecture and runtime evidence.
 ## Purpose and non-goals
 
 NativeList renders bounded data with fixed row templates on iOS, Android and
-Web. It does not render arbitrary React children. Integrators own overflow
+Web. Data rows do not render arbitrary React children. Native-only named container slots
+may render React chrome outside the data-row stream. Integrators own overflow
 prevention; there is no automatic fitting or shrinking pass.
 
 ## Definitions and ownership
@@ -51,6 +52,23 @@ the image lifecycle: restoring template defaults on rebind must never hide an
 image that already loaded. Common container styling clears what it wrote on the
 next bind, including properties it set on template children. UI mutation remains on the platform
 UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
+
+### Native section title loading indicator
+
+Status: implemented source; simulator rendering acceptance pending.
+On iOS and Android, `sectionHeader.titleLoading` defaults to `false`. When
+`true`, a 20-point native indeterminate indicator precedes the section heading
+with an 8-point gap and inherits the resolved title color. It emits no action
+and does not create a separate accessibility target. Clearing the field, full
+rebind, recycling and disposal stop and hide the indicator; detached native views do
+not keep a visible animation. The History template's minimum content height
+increases from 16 to 20 points while loading. Explicit caller row/container
+heights still take precedence and must fit their padding. Web does not render
+this new native-only indicator; its existing section presentation is unchanged.
+
+Acceptance requires loading → idle → loading reuse, title color updates and
+detachment on each native platform. A title's localized confirming text remains
+caller-owned; the renderer does not infer transaction status.
 
 ## Data, cache and identity
 
@@ -356,3 +374,202 @@ audit; they are not new in this change.
   templates to 12 on native; Web defaults to 0 (STYLE_SPEC §6.2).
 - **DataRow linear layout.** See ROW_TEMPLATES.md: native unstyled linear rows
   keep the legacy single-label column.
+
+## Native scroll-position thresholds and tablet grids
+
+Status: Source implemented; native runtime acceptance pending. These additions are native
+only. Existing Web rendering and caller behavior are unchanged.
+
+- `scrollPositionThresholds?: { start: number; end: number; enabled?: boolean }`
+  observes the list's logical distance from its content start, in logical pixels.
+  `start` and `end` must be finite, nonnegative, and `start < end`. Omitted or
+  `enabled: false` disables observation.
+- `onScrollPositionThresholdChange({ isBeyondThreshold })` reports initial state
+  after enabling/configuration changes, then only hysteresis transitions: enter
+  when distance >= end, leave when distance <= start. No per-frame JS events.
+  Replacing the JS callback takes effect on the next event; disabling emits no event.
+  Configuration updates reset hysteresis before recomputing current position.
+- iOS uses contentOffset + contentInset, excluding overscroll below zero. Android
+  accumulates consumed child scroll distance and rebases from first-item geometry.
+  Parent-pager header contributions and arbitrary index-jump acceptance are tracked
+  separately; no estimate-based parity claim is made for unverified jumps.
+- `layout.gridColumns` accepts integers 2 through 7 on native. Native parsers
+  clamp malformed external JSON to 1 through 7 as before; public JS validation
+  rejects invalid requested counts. Grid geometry remains container-owned.
+
+Required acceptance: disabled/enable lifecycle, both equality boundaries,
+oscillation inside the band, programmatic scroll, page/identity replacement,
+refresh and header insets, grid 6/7 layout/rotation, and no stale callbacks after
+disposal. Unit checks prove transition semantics, not rendered behavior.
+
+## Native media preview probing
+
+Status: Source implemented; native runtime acceptance pending. `mediaTile.media`
+is an opt-in native-only preview descriptor: `{ source: ImageSource, probeOrder:
+('image' | 'video')[] }`. The order contains one or two distinct candidates.
+The caller supplies the order; the renderer never guesses asset semantics.
+When provided, media takes precedence over `image`, unless `imageState` is
+explicitly empty/error. Web keeps its existing `image` behavior; native callers
+that also target Web must supply that existing image independently.
+
+Image uses the shared OneKeyImage lifecycle. Video uses a paused, muted AVPlayer
+on iOS and Media3 ExoPlayer on Android, preserving the native Video source
+families including streaming media instead of approximating them with a frame
+extractor. Video defaults to contain; an explicit image fit may select cover.
+There are no controls or video touch targets; the row owns press interaction.
+Android preserves a black letterbox and iOS a transparent one, matching the
+existing native Video views. No code calls play or requests audio focus.
+
+A failed candidate advances once; exhaustion displays the existing error
+placeholder. New source/row identity resets probing; binding, candidate and
+player generations reject stale callbacks, including A→B→A. Text-only updates
+preserve the current request. On Android, terminal image/player completion is
+posted to the next UI queue turn before advancing probes or notifying the row;
+it MUST NOT clear or rebind a Glide request inside its terminal listener.
+Posted work rechecks binding/candidate generations, and player callbacks also
+recheck the player generation. Recycling removes queued completion work before
+releasing resources. This repairs the image-to-video fallback crash without
+changing probe order or the terminal result contract; native runtime regression
+acceptance is still required. A tile owns at most one native player. On iOS,
+eligibility requires intersection with the window and every clipping/scroll
+ancestor viewport; native scroll, bounds, layer transform/position and visibility
+observations release retained offscreen pager pages. Detach, background,
+invisibility and recycle release the player; reattachment rebuilds its retained
+source while remaining paused. Android observes native global scroll/layout and
+pre-draw geometry (including property animations), checking ancestor alpha and
+getGlobalVisibleRect before allocating a player. These observers do not schedule
+frames or emit JavaScript events.
+Player count is bounded by intersecting native video tiles, including partially
+visible tiles; there is no numeric cap that blanks visible iPad cells. iOS requests
+one second of forward buffer; AVFoundation treats this as an advisory preference,
+not a hard byte limit. Android uses a 250–1000 ms forward buffer, zero back buffer
+and a 2 MiB target allocator; Media3 may exceed a target by allocation granularity.
+These are per-player buffer targets, not hard total-process memory limits.
+Platform decoder/surface overhead is additional. No
+process-wide player cache or NativeList media disk cache is introduced. Source headers are never
+logged. Android uses Media3 1.4.1 (matching native Video's default), including
+HLS/DASH, UI and OkHttp data source; the existing root media3Version override is
+honored. Cookie handling uses the React Native cookie store without replacing
+the global HTTP client's cookie jar.
+
+Required runtime cases: image→video, video→image, exhaustion, file/HTTP/HLS,
+non-square fit, silent paused initial frame, same-source text update, quick
+A→B→A reuse, detach/background and return, row tap, grid resize, and absence of
+leaked audio/player resources. Static API checks do not prove these cases.
+
+## Native container slots (source implementation, runtime verification pending)
+
+`listHeader`, `listEmpty` and `listFooter` accept React nodes on iOS and Android
+vertical lists only. They are optional and default to absent. They are common
+container capabilities, not row templates, and MUST NOT be used for per-item
+rendering. Horizontal orientation with any supplied slot is rejected. Web ignores
+these new native-only props; existing Web lists and callers retain their behavior.
+
+The order is header, data rows (or empty slot when there are no data rows), footer.
+Slots scroll with the native list. `fixedFooter` remains a separate fixed native
+row descriptor. `scrollToEnd` aligns the final scrolling slot bottom with the
+viewport end, including footer/empty/header-only slots taller than the viewport. Callers using `listEmpty` MUST omit `snapshot.emptyState`, whose
+existing native descriptor becomes a data item. Horizontal content padding applies
+to slots as well as data rows. Slot React trees own their internal layout and
+business actions; NativeList owns their scroll placement and lifecycle.
+
+The wrapper mounts exactly three non-collapsible slot roots and reports measured
+heights through `containerSlotHeightsJson` in header/empty/footer order. Native
+validates three finite, non-negative heights. Slot updates MUST NOT alter data-row
+keys or public row indices. No per-scroll-frame JS position updates are used.
+iOS mounts slot roots inside UICollectionView and reserves native layout space.
+Android uses ConcatAdapter with three single-item slot adapters around the existing
+data adapter; adapter binding indices stay local while layout-manager positions
+are explicitly translated. Slots span all grid columns, do not select/reorder,
+and do not emit row actions, visible-row indices, or image-prefetch work.
+
+Fabric mount/unmount ownership remains explicit even when RecyclerView detaches a
+slot holder. The native manager retains at most three roots until Fabric unmount;
+recycling detaches slot content without disposing its React tree. Unmount removes
+that exact view. Native list disposal MUST NOT dispatch pending row/slot events.
+The generated Nitro 0.37 leaf managers require deterministic child-forwarding
+customization: `scripts/enable-container-slots.mjs` runs after nitrogen and rejects
+unexpected generator output. Generated files are never maintained by hand.
+
+Acceptance requires both platforms: dynamic header height, empty/nonempty changes,
+scrolling footer with pagination, grid full-span slots, scrolling from interactive
+slot content, refresh from header/empty, row-index scroll APIs, reuse/unmount, and
+rapid account changes. Source/type checks do not establish this runtime acceptance.
+
+
+## Refresh trigger distance
+
+Optional `snapshot.capabilities.refreshTriggerDistance` is a positive finite
+logical-pixel distance. Omission preserves the platform control's default.
+iOS adds a release-trigger fallback based on the deepest normalized overscroll
+(contentOffset plus contentInset.top); the fallback and UIRefreshControl emit
+at most one refresh action per drag. Android passes the distance to
+SwipeRefreshLayout's native trigger setting. These native controls differ in
+rubber-band/drag scaling, so equal values do not promise equal finger travel.
+The caller continues to own refreshing state, completion, and optional haptic feedback.
+On native, the row-less `nativeList.refresh` bridge envelope is container-owned:
+the JS wrapper consumes it and invokes only `onRefresh`, when supplied. It MUST
+NOT also invoke the public `onRowAction`, even when `onRefresh` is absent.
+An actual row action carrying a `rowKey` remains a row action, including one
+whose caller-defined action key matches this internal name. Web retains its
+legacy dual notification behavior; this native correction does not change Web.
+The container does not emit a second haptic for the release fallback. The fallback is
+inactive unless pull-to-refresh is enabled; no product-specific threshold is
+hardcoded into the module.
+
+## Native rich activity presentation
+
+Status: Source implemented; native runtime acceptance pending. Optional `amounts`
+supersedes legacy `primaryAmount`/`secondaryAmount` only on native. It accepts at
+most 32 keyed lines, each with formatted text, optional leading visual, tone,
+secondary text and subscript text segments. Segments are caller-formatted and
+never interpreted as numbers by NativeList. Omission preserves the legacy tree.
+
+`presentation: stacked` places the amount lines after the identity column and
+right-aligns them; `table` uses equal identity/amount columns, left-aligns amount
+lines and adds an optional trailing fee column. Fee supports label, primary and
+secondary text with their own segments; `hidden` preserves its column width
+while hiding its contents. Up to four uniquely keyed title badges use declared
+tones. `descriptionActionKey` makes only the description emit that action with
+source `description`; footer actions retain their existing source/keys and
+disabled behavior. All actions use the current host binding epoch.
+
+Rich rows measure the declared line/visual metrics; there is no six-line native
+truncation. The existing height override contract still applies. RTL follows
+semantic leading/trailing anchors. Clearing rich fields returns to the legacy
+renderer, and removing amount lines recycles their visual slots. Web rendering
+remains unchanged; rich fields are native-only until a separate Web migration.
+
+Acceptance: 1/2/6/32 lines, changed keys/order, paired icons and network overlays,
+small-number segments in amounts/fiat/fee (ceil(0.6 × parent font size), unchanged
+baseline, matching NumberSizeableText), badge tone/clear, hidden fee, disabled
+actions, description anchors, dark/RTL/font scaling and explicit/automatic height.
+
+
+### Android ancestor scroll distance
+
+Threshold hysteresis combines the primary RecyclerView's actual consumed scroll
+with all native ancestor header contributions. CollapsiblePagerView publishes
+weak-owner contributions through the namespaced View-tag protocol documented in
+its SPEC.md; no pager dependency or product semantics are required. Absence is
+zero. NativeList owns one native listener, registers it on attach, and removes
+only its own listener on detach. Header-only scrolling therefore crosses the
+same logical Home threshold as iOS normalized content scrolling, without a JS
+scroll-frame event. Changes to the listener or public callbacks do not replace
+native resource ownership.
+
+Child distance uses actual onScrolled dy and rebases from first-item geometry at
+top; scrollToOffset seeds a known explicit offset. It does not use RecyclerView's
+average-height scrollbar estimate. Continuous scrolling and return-to-top are
+covered by this policy; exact classification immediately after arbitrary distant
+scrollToIndex jumps remains pending measured-prefix correction and MUST NOT be
+claimed as verified. A later top anchor restores exact distance.
+
+
+### Container follow-up verification
+
+The pure Android end-alignment policy has four focused JVM tests: tall footer,
+tall empty slot with viewport padding, animated decorated-bottom correction,
+and short footer. These validate geometry, not actual RecyclerView animation or
+Fabric lifecycle. Native simulator acceptance remains required. The iOS fallback
+retains one refresh action per drag and leaves haptic feedback to its caller.

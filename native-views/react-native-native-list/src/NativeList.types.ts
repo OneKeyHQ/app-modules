@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import type { View, ViewProps } from 'react-native';
 import type {
   ActionAnchorInvalidatedEvent,
@@ -119,6 +119,10 @@ export type NativeListRef = Readonly<{
 export type NativeListProps = Omit<ViewProps, 'children'> &
   Readonly<{
     snapshot: NativeListSnapshot;
+    /** Native-only, container-owned scroll content. Never rendered as a data row. */
+    listHeader?: ReactNode;
+    listFooter?: ReactNode;
+    listEmpty?: ReactNode;
     /** Web only. Defaults to true and is ignored by the native host. */
     webVirtualizationEnabled?: boolean;
     /** Web only. Hosts the section index inside this container. */
@@ -136,6 +140,15 @@ export type NativeListProps = Omit<ViewProps, 'children'> &
     onReorder?: (event: ReorderEvent) => void;
     onEndReached?: (event: EndReachedEvent) => void;
     onVisibleRangeChanged?: (event: VisibleRangeChangedEvent) => void;
+    /** Native only. Emits initial state and hysteresis transitions, not scroll frames. */
+    scrollPositionThresholds?: Readonly<{
+      start: number;
+      end: number;
+      enabled?: boolean;
+    }>;
+    onScrollPositionThresholdChange?: (
+      event: Readonly<{ isBeyondThreshold: boolean }>
+    ) => void;
     onRefresh?: () => void;
     onScrollToIndexFailed?: (info: ScrollToIndexFailedInfo) => void;
   }> &

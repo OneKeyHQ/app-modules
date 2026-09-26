@@ -7,6 +7,35 @@ final class HybridNativeList: HybridNativeListSpec {
 
   var view: UIView { hostView ?? disposedView }
 
+  var scrollPositionThresholdsJson: String = "" {
+    didSet {
+      guard scrollPositionThresholdsJson != oldValue else { return }
+      runOnMain { [weak self] in
+        guard let self else { return }
+        self.hostView?.setScrollPositionThresholdsJson(self.scrollPositionThresholdsJson)
+      }
+    }
+  }
+
+  var onScrollPositionThresholdChange: ((Bool) -> Void)? {
+    didSet {
+      runOnMain { [weak self] in
+        guard let self else { return }
+        self.hostView?.onScrollPositionThresholdChange = self.onScrollPositionThresholdChange
+      }
+    }
+  }
+
+  var containerSlotHeightsJson: String = "[]" {
+    didSet {
+      guard containerSlotHeightsJson != oldValue else { return }
+      runOnMain { [weak self] in
+        guard let self else { return }
+        self.hostView?.setContainerSlotHeightsJson(self.containerSlotHeightsJson)
+      }
+    }
+  }
+
   var snapshotJson: String = "" {
     didSet {
       guard snapshotJson != oldValue else { return }
@@ -156,6 +185,7 @@ final class HybridNativeList: HybridNativeListSpec {
     onReorder = nil
     onEndReached = nil
     onVisibleRangeChanged = nil
+    onScrollPositionThresholdChange = nil
     hostView.dispose()
     self.hostView = nil
     snapshotJson = ""

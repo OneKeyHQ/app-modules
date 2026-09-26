@@ -175,6 +175,11 @@ const TEXT_STYLE_KEYS_BY_ROW_TYPE: Readonly<
     'title',
     'description',
     'status',
+    'amounts',
+    'badges',
+    'presentation',
+    'fee',
+    'descriptionActionKey',
     'primaryAmount',
     'secondaryAmount',
   ],
@@ -183,7 +188,7 @@ const TEXT_STYLE_KEYS_BY_ROW_TYPE: Readonly<
   market: ['title', 'subtitle', 'price', 'change'],
   mediaTile: ['title', 'subtitle', 'badge'],
   metricCard: ['title', 'value', 'subtitle', 'trend'],
-  sectionHeader: ['title', 'subtitle', 'value'],
+  sectionHeader: ['titleLoading', 'title', 'subtitle', 'value'],
   action: ['title', 'value'],
   system: ['title', 'message', 'actionText'],
 };
@@ -917,7 +922,84 @@ function assertVisual(row: RowModel, path: string): void {
   });
 }
 
-function assertActivity(row: ActivityRow, path: string): void {
+function assertActivity(row: Partial<ActivityRow>, path: string): void {
+  assertText(row.title, `${path}.title`);
+  assertText(row.description, `${path}.description`);
+  if (
+    row.presentation !== undefined &&
+    !['stacked', 'table'].includes(row.presentation)
+  )
+    fail(`${path}.presentation`, 'must be stacked or table');
+  if (row.descriptionActionKey !== undefined)
+    assertKey(row.descriptionActionKey, `${path}.descriptionActionKey`);
+  if ((row.amounts?.length ?? 0) > 32)
+    fail(`${path}.amounts`, 'supports at most 32 amount lines');
+  const amountKeys = new Set<string>();
+  row.amounts?.forEach((amount, index) => {
+    const amountPath = `${path}.amounts[${index}]`;
+    assertKey(amount.key, `${amountPath}.key`);
+    if (amountKeys.has(amount.key)) fail(amountPath, 'duplicate amount key');
+    amountKeys.add(amount.key);
+    assertText(amount.text, `${amountPath}.text`);
+    assertLeadingVisual(amount.leading, `${amountPath}.leading`);
+    assertText(amount.secondaryText, `${amountPath}.secondaryText`);
+    if (
+      amount.tone !== undefined &&
+      !['primary', 'secondary', 'positive', 'negative'].includes(amount.tone)
+    )
+      fail(`${amountPath}.tone`, 'invalid text tone');
+    amount.textSegments?.forEach((segment, segmentIndex) => {
+      assertText(
+        segment.text,
+        `${amountPath}.textSegments[${segmentIndex}].text`
+      );
+      if (segment.style !== undefined && segment.style !== 'subscript')
+        fail(amountPath, 'invalid text segment style');
+    });
+  });
+  const assertActivitySegments = (
+    segments: readonly { text: string; style?: string }[] | undefined,
+    segmentPath: string
+  ) =>
+    segments?.forEach((segment, index) => {
+      assertText(segment.text, `${segmentPath}[${index}].text`);
+      if (segment.style !== undefined && segment.style !== 'subscript')
+        fail(segmentPath, 'invalid text segment style');
+    });
+  row.amounts?.forEach((amount, index) =>
+    assertActivitySegments(
+      amount.secondaryTextSegments,
+      `${path}.amounts[${index}].secondaryTextSegments`
+    )
+  );
+  assertActivitySegments(
+    row.fee?.primaryTextSegments,
+    `${path}.fee.primaryTextSegments`
+  );
+  assertActivitySegments(
+    row.fee?.secondaryTextSegments,
+    `${path}.fee.secondaryTextSegments`
+  );
+  assertText(row.fee?.label, `${path}.fee.label`);
+  assertText(row.fee?.primary, `${path}.fee.primary`);
+  assertText(row.fee?.secondary, `${path}.fee.secondary`);
+  if ((row.badges?.length ?? 0) > 4)
+    fail(`${path}.badges`, 'supports at most 4 activity badges');
+  const badgeKeys = new Set<string>();
+  row.badges?.forEach((badge, index) => {
+    assertKey(badge.key, `${path}.badges[${index}].key`);
+    if (badgeKeys.has(badge.key)) fail(`${path}.badges`, 'duplicate badge key');
+    badgeKeys.add(badge.key);
+    assertText(badge.text, `${path}.badges[${index}].text`);
+    if (
+      badge.tone !== undefined &&
+      !['neutral', 'info', 'success', 'warning', 'danger'].includes(badge.tone)
+    )
+      fail(`${path}.badges`, 'invalid badge tone');
+  });
+  if (row.fee?.hidden !== undefined && typeof row.fee.hidden !== 'boolean')
+    fail(`${path}.fee.hidden`, 'must be boolean');
+
   if ((row.footerActions?.length ?? 0) > MAX_FOOTER_ACTIONS) {
     fail(
       `${path}.footerActions`,
@@ -1119,6 +1201,7 @@ function assertRow(
       assertMarketRow(row, path);
       break;
     case 'mediaTile':
+      assertMediaPreview(row.media, `${path}.media`);
       assertImage(row.image, `${path}.image`);
       if (
         row.imageState !== undefined &&
@@ -1126,10 +1209,14 @@ function assertRow(
       ) {
         fail(`${path}.imageState`, 'must be empty or error when provided');
       }
-      if (row.imageState === undefined && row.image === undefined) {
+      if (
+        row.imageState === undefined &&
+        row.image === undefined &&
+        row.media === undefined
+      ) {
         fail(
           `${path}.image`,
-          'is required unless imageState is empty or error'
+          'is required unless media is provided or imageState is empty or error'
         );
       }
       assertImage(row.networkImage, `${path}.networkImage`);
@@ -1168,6 +1255,11 @@ function assertRow(
       }
       break;
     case 'sectionHeader':
+      if (
+        row.titleLoading !== undefined &&
+        typeof row.titleLoading !== 'boolean'
+      )
+        fail(`${path}.titleLoading`, 'must be boolean');
       assertKey(row.sectionKey, `${path}.sectionKey`);
       if (
         row.presentation !== undefined &&
@@ -1292,13 +1384,56 @@ function assertGroups(rows: readonly RowModel[]): void {
   }
 }
 
+function assertMediaPreview(value: unknown, path: string) {
+  if (value === undefined) return;
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    fail(path, 'must be a media descriptor');
+  const media = value as {
+    source?: import('./models').ImageSource;
+    probeOrder?: unknown;
+  };
+  assertImage(media.source, `${path}.source`);
+  if (!media.source) fail(`${path}.source`, 'is required');
+  const order = media.probeOrder;
+  if (
+    !Array.isArray(order) ||
+    order.length < 1 ||
+    order.length > 2 ||
+    order.some((kind) => kind !== 'image' && kind !== 'video') ||
+    new Set(order).size !== order.length
+  ) {
+    fail(
+      `${path}.probeOrder`,
+      'must contain one or two distinct image/video candidates'
+    );
+  }
+}
+
 export function validateSnapshot(
   snapshot: NativeListSnapshot
 ): NativeListSnapshot {
+  if (
+    snapshot.capabilities?.refreshTriggerDistance !== undefined &&
+    (!Number.isFinite(snapshot.capabilities.refreshTriggerDistance) ||
+      snapshot.capabilities.refreshTriggerDistance <= 0)
+  )
+    fail(
+      'capabilities.refreshTriggerDistance',
+      'must be a positive finite number'
+    );
+
   assertPlainSerializable(snapshot, 'snapshot', new Set<object>());
   if (snapshot.schemaVersion !== 1) fail('snapshot.schemaVersion', 'must be 1');
   if (!Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0) {
     fail('snapshot.generation', 'must be a non-negative safe integer');
+  }
+  if (
+    snapshot.layout.gridColumns !== undefined &&
+    (!Number.isInteger(snapshot.layout.gridColumns) ||
+      snapshot.layout.gridColumns < 2 ||
+      snapshot.layout.gridColumns > 7)
+  ) {
+    fail('snapshot.layout.gridColumns', 'must be an integer from 2 to 7');
   }
   if (snapshot.layout.kind === 'grid' && !snapshot.layout.gridColumns) {
     fail('snapshot.layout.gridColumns', 'is required for grid layout');
@@ -1508,6 +1643,7 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       assertLeadingVisual(patch.changes.visual, `${path}.visual`);
       break;
     case 'activity':
+      assertActivity(patch.changes, path);
       assertText(patch.changes.title, `${path}.title`);
       assertText(patch.changes.description, `${path}.description`);
       assertText(patch.changes.status, `${path}.status`);
@@ -1576,6 +1712,7 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       );
       break;
     case 'mediaTile':
+      assertMediaPreview(patch.changes.media, `${path}.media`);
       assertImage(patch.changes.image, `${path}.image`);
       if (
         patch.changes.imageState !== undefined &&
@@ -1623,6 +1760,11 @@ function assertPatchChanges(patch: RowPatch, index: number): void {
       }
       break;
     case 'sectionHeader':
+      if (
+        patch.changes.titleLoading !== undefined &&
+        typeof patch.changes.titleLoading !== 'boolean'
+      )
+        fail(`${path}.titleLoading`, 'must be boolean');
       assertSectionHeaderVariant(patch.changes.variant, `${path}.variant`);
       assertText(patch.changes.title, `${path}.title`);
       assertText(patch.changes.subtitle, `${path}.subtitle`);

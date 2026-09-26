@@ -16,6 +16,7 @@ const mockNativeMethods = {
 };
 let mockOnSelectionDelta: (payloadJson: string) => void;
 let mockOnReorder: (payloadJson: string) => void;
+let mockOnRowAction: (payloadJson: string) => void;
 const mockWebEngine = {
   applySnapshot: jest.fn(),
   setVirtualizationEnabled: jest.fn(),
@@ -59,9 +60,11 @@ jest.mock('react-native-nitro-modules', () => ({
       hybridRef: (ref: typeof mockNativeMethods) => void;
       onSelectionDelta: (payloadJson: string) => void;
       onReorder: (payloadJson: string) => void;
+      onRowAction: (payloadJson: string) => void;
     }) {
       mockOnSelectionDelta = props.onSelectionDelta;
       mockOnReorder = props.onReorder;
+      mockOnRowAction = props.onRowAction;
       const ReactForMock = require('react') as typeof React;
       ReactForMock.useEffect(() => props.hybridRef(mockNativeMethods), [props]);
       return null;
@@ -113,6 +116,34 @@ const snapshot: NativeListSnapshot = {
 
 describe('NativeList imperative ref', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it.each([true, false])(
+    'consumes native container refresh separately from row actions (refresh callback: %s)',
+    async (hasRefreshCallback) => {
+      const { NativeList } = jest.requireActual(
+        '../NativeList'
+      ) as typeof import('../NativeList');
+      const onRefresh = jest.fn();
+      const onRowAction = jest.fn();
+      await act(async () => {
+        TestRenderer.create(
+          <NativeList
+            snapshot={snapshot}
+            onRefresh={hasRefreshCallback ? onRefresh : undefined}
+            onRowAction={onRowAction}
+          />
+        );
+      });
+      act(() => mockOnRowAction('{"actionKey":"nativeList.refresh"}'));
+      expect(onRefresh).toHaveBeenCalledTimes(hasRefreshCallback ? 1 : 0);
+      expect(onRowAction).not.toHaveBeenCalled();
+
+      const rowAction = { rowKey: 'a-0', actionKey: 'nativeList.refresh' };
+      act(() => mockOnRowAction(JSON.stringify(rowAction)));
+      expect(onRowAction).toHaveBeenCalledWith(rowAction);
+      expect(onRefresh).toHaveBeenCalledTimes(hasRefreshCallback ? 1 : 0);
+    }
+  );
 
   it('dispatches initial position and every RN-compatible scroll API', async () => {
     const { NativeList } = jest.requireActual(

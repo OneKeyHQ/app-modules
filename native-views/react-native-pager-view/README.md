@@ -75,3 +75,5 @@ including unmounted pages that would show blank.
 
 Thank you again to Callstack and everyone who contributes to
 `react-native-pager-view` 💙
+
+The native ancestor-scroll contribution protocol is specified in [docs/SPEC.md](docs/SPEC.md).

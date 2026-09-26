@@ -1,5 +1,6 @@
 package com.margelo.nitro.nativelist
 
+import android.content.res.ColorStateList
 import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.text.Spannable
@@ -12,6 +13,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.widget.TextViewCompat
 import com.facebook.react.uimanager.ThemedReactContext
@@ -24,6 +26,10 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
   private val mainColumn = LinearLayout(context)
   private val titleLine = PackedTitleLineLayout(context)
   private val title = DottedUnderlineTextView(context)
+  private val titleSpinner = ProgressBar(context, null, android.R.attr.progressBarStyleSmall).apply {
+    isIndeterminate = true
+    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+  }
   private val subtitle = NativeListTextView(context)
   private val trailingColumn = LinearLayout(context)
   private val trailingViews = listOf(NativeListTextView(context))
@@ -64,7 +70,8 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
       layout == "table" -> 28
       item.json.optString("variant") == "summary" -> 80
       item.json.optString("variant") == "gallery" -> 32
-      item.json.optString("variant") == "history" -> 16
+      item.json.optString("variant") == "history" ->
+        if (item.json.optBoolean("titleLoading")) 20 else 16
       item.json.optString("value").isNotEmpty() && item.json.optJSONObject("checkbox") != null -> 40
       else -> 36
     }
@@ -284,6 +291,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
       }
     }
     applyTextStyle(item)
+    titleSpinner.indeterminateTintList = ColorStateList.valueOf(title.currentTextColor)
     style
       .optJSONObject("container")
       ?.optString("contentVerticalAlignment")
@@ -403,6 +411,7 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
   override fun recycleContent() {
     checkboxControl.reset()
     currentItem = null
+    titleSpinner.visibility = GONE
   }
 
   override fun disposeContent() {
@@ -437,6 +446,12 @@ internal class NativeListSectionHeaderRowView(context: ThemedReactContext) :
     // Linear/sectioned snapshots reserve the ListItem mx=8 at RecyclerView
     // level, so header-local insets below are source px minus that outer inset.
     val headerHorizontalInset = 12
+    if (item.json.optBoolean("titleLoading")) {
+      titleSpinner.visibility = VISIBLE
+      addView(titleSpinner, LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) })
+    } else {
+      titleSpinner.visibility = GONE
+    }
     addView(mainColumn, weighted())
     showText(title, item.json.optString("title"), 1)
     if (hasDottedTitle) {
