@@ -57,8 +57,20 @@
 {
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:64];
   UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
+  // UIKit ignores offscreen beginRefreshing calls. Exercise the actual refresh
+  // lifecycle in a visible window rather than weakening the state assertion.
+  UIWindow *window = [[UIWindow alloc] initWithFrame:scroll.frame];
+  UIViewController *controller = [UIViewController new];
+  window.rootViewController = controller;
+  scroll.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+  [controller.view addSubview:scroll];
+  window.hidden = NO;
+  [self addTeardownBlock:^{ window.hidden = YES; }];
   UIRefreshControl *control = [UIRefreshControl new];
   scroll.refreshControl = control;
+  [window layoutIfNeeded];
+  [scroll layoutIfNeeded];
+  XCTAssertEqual(control.window, window);
   [pager updateRefreshControlForScrollView:scroll];
   CGRect bounds = control.bounds;
   bounds.size = CGSizeMake(320, 60);
@@ -73,6 +85,7 @@
   XCTAssertEqualWithAccuracy(control.bounds.origin.y, 0, 0.001);
   [control endRefreshing];
   [control layoutIfNeeded];
+  XCTAssertFalse(control.isRefreshing);
   XCTAssertEqualWithAccuracy(control.layer.sublayerTransform.m42, -108, 0.001);
   XCTAssertEqualWithAccuracy(control.bounds.origin.y, 0, 0.001);
   [pager releaseRefreshControlForScrollView:scroll];
