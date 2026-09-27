@@ -5,7 +5,14 @@ The sections below define native coordination boundaries without new React props
 
 ## iOS refresh indicator placement
 
-Status: source implementation; real refresh-cycle acceptance pending.
+Status: implemented; iOS Home pull-gesture visibility verified on 2026-09-27.
+Spot, Perps and DeFi (RN NativeScroller), plus NFT and History (NativeList),
+each pass header-origin and content-origin pulls: ten recordings show a visible
+indicator above the shared header, one refresh event and normal disappearance.
+This verifies UI feedback and event dispatch, not downstream request completion.
+The Pager UIKit suite passes 14 tests, including six refresh-control cases
+(native-tests run 36318243869). Rapid nested gestures and iPad geometry remain
+separate acceptance work.
 In smooth-header mode, the pager shifts the refresh control's sublayers upward
 by its header-plus-sticky height. It does not change the refresh control frame,
 bounds, scroll offset, refresh state or JavaScript callback. RN's caller-owned
