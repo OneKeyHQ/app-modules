@@ -2580,6 +2580,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     }
     targetOffset = restoredLogicalOffset - next.top;
     targetOffset = MAX(targetOffset, -next.top + _headerOffset);
+    // An inactive list may shrink after its offset observer was detached.
+    // Do not overwrite its corrected offset with a now-unreachable cached one.
+    targetOffset = RNCLimitRestoredScrollOffset(
+      targetOffset,
+      scrollView.contentSize.height,
+      scrollView.bounds.size.height,
+      next.top,
+      next.bottom
+    );
   }
   // A bottom-inset change must not cancel UIKit's refresh or bounce settlement.
   if (restore || previousTopInset != next.top) {

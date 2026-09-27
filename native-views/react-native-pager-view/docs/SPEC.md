@@ -1,8 +1,24 @@
 # PagerView native scrolling contract
 
 Existing PagerView and CollapsiblePagerView APIs are documented in README.md.
-This section defines the added Android coordination boundary; it does not change
-React props, iOS/Web behavior, page retention, or row ownership.
+The sections below define native coordination boundaries without new React props.
+
+## iOS cached-offset restoration after content shrink
+
+When restoring a retained page's cached vertical offset, the pager limits only
+the upper bound to the current content height, viewport and applied insets. A
+cache captured before rows were removed MUST NOT restore an offset below the new
+content bottom, including when removal occurs during a page transition. Valid
+deep offsets and the existing lower-bound/header alignment rules are unchanged.
+This check runs only on explicit restoration, not on scroll frames; UIKit pull
+overscroll and refresh settlement retain their existing ownership. An unmeasured
+zero-height viewport defers this upper-bound limit to a later restoration.
+
+The focused policy test covers shrink after the list has already corrected its
+offset, valid deep offsets, negative pull offsets and an unmeasured viewport.
+Runtime acceptance requires clearing a retained page during a page transition,
+then returning without an extra drag to expose its header/empty/footer slots.
+
 
 ## Ancestor consumed-scroll contributions
 
