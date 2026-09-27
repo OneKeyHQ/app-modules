@@ -466,6 +466,15 @@ rendering. Horizontal orientation with any supplied slot is rejected. Web ignore
 these new native-only props; existing Web lists and callers retain their behavior.
 
 The order is header, data rows (or empty slot when there are no data rows), footer.
+On iOS, after the laid-out vertical content shrinks, an offset beyond the new
+bottom is corrected to the current adjusted-inset-aware maximum. In-range offsets
+and negative pull overscroll remain unchanged. Correction waits until active
+dragging, deceleration and refresh finish; it is not an unconditional layout or
+snapshot reset to the top. The native content-offset change remains observable to
+ancestor pager coordinators so their saved logical offsets stay synchronized.
+Recycling/disposal cancels deferred correction. Runtime acceptance includes a
+scrolled retained-page round trip followed by empty content with scrolling slots.
+
 Slots scroll with the native list. `fixedFooter` remains a separate fixed native
 row descriptor. `scrollToEnd` aligns the final scrolling slot bottom with the
 viewport end, including footer/empty/header-only slots taller than the viewport. Callers using `listEmpty` MUST omit `snapshot.emptyState`, whose

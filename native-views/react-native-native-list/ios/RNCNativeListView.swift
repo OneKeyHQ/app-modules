@@ -8,6 +8,9 @@ final class NativeListView: UIView {
   private var minimumDragOffset: CGFloat = 0
   private var reactContainerSlots: [UIView] = []
   private var containerSlotHeights: [CGFloat] = [0, 0, 0]
+  private var lastLaidOutContentHeight: CGFloat?
+  private var needsContentShrinkCorrection = false
+  private var contentShrinkCorrectionScheduled = false
 
   @objc func mountContainerSlot(_ view: UIView, atIndex index: Int) {
     reactContainerSlots.insert(view, at: min(index, reactContainerSlots.count))
@@ -127,7 +130,10 @@ final class NativeListView: UIView {
   private let flowLayout = NativeListFlowLayout()
   private lazy var collectionView: NativeListCollectionView = {
     let view = NativeListCollectionView(frame: .zero, collectionViewLayout: flowLayout)
-    view.onContentLayout = { [weak self] in self?.layoutContainerSlots() }
+    view.onContentLayout = { [weak self] in
+      self?.layoutContainerSlots()
+      self?.contentLayoutDidChange()
+    }
     return view
   }()
   private let footerContainer = UIView()
@@ -743,6 +749,39 @@ final class NativeListView: UIView {
     collectionView.setContentOffset(point, animated: animated)
   }
 
+  private func contentLayoutDidChange() {
+    let height = collectionView.contentSize.height
+    if config?.orientation != "horizontal",
+       let previous = lastLaidOutContentHeight, height < previous {
+      needsContentShrinkCorrection = true
+    }
+    lastLaidOutContentHeight = height
+    scheduleContentShrinkCorrection()
+  }
+
+  private func scheduleContentShrinkCorrection() {
+    guard needsContentShrinkCorrection, !contentShrinkCorrectionScheduled, !disposed else { return }
+    contentShrinkCorrectionScheduled = true
+    // Wait for the collection layout and ancestor pager inset observers to settle.
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.contentShrinkCorrectionScheduled = false
+      guard !self.disposed, self.needsContentShrinkCorrection,
+            !self.collectionView.isTracking, !self.collectionView.isDragging,
+            !self.collectionView.isDecelerating,
+            self.collectionView.refreshControl?.isRefreshing != true,
+            self.config?.refreshing != true else { return }
+      self.needsContentShrinkCorrection = false
+      guard self.config?.orientation != "horizontal", self.collectionView.bounds.height > 0 else { return }
+      let insets = self.collectionView.adjustedContentInset
+      let maximum = max(-insets.top,
+        self.collectionView.contentSize.height - self.collectionView.bounds.height + insets.bottom)
+      if self.collectionView.contentOffset.y > maximum {
+        self.setScrollOffset(self.collectionView.contentOffset.y, animated: false)
+      }
+    }
+  }
+
   func setRefreshing(_ refreshing: Bool) {
     guard var current = config else { return }
     current.refreshing = refreshing
@@ -751,6 +790,7 @@ final class NativeListView: UIView {
       collectionView.refreshControl?.beginRefreshing()
     } else {
       collectionView.refreshControl?.endRefreshing()
+      scheduleContentShrinkCorrection()
     }
   }
 
@@ -1420,6 +1460,7 @@ final class NativeListView: UIView {
     } else {
       collectionView.refreshControl = nil
     }
+    if !config.refreshing { scheduleContentShrinkCorrection() }
   }
 
   private func configureFooter(_ config: NativeListConfig) {
@@ -1923,6 +1964,8 @@ final class NativeListView: UIView {
     itemsByKey.removeAll()
     sectionIndexEntries.removeAll()
     pendingScrollRequest = nil
+    needsContentShrinkCorrection = false
+    lastLaidOutContentHeight = nil
     lastVisibleRange = nil
     onRowAction = nil
     onActionAnchorInvalidated = nil
@@ -2226,12 +2269,17 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
   }
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    defer { if !decelerate { scheduleContentShrinkCorrection() } }
     minimumDragOffset = min(minimumDragOffset, scrollView.contentOffset.y + scrollView.contentInset.top)
     guard let threshold = config?.refreshTriggerDistance,
           config?.pullToRefresh == true, config?.refreshing != true,
           minimumDragOffset <= -threshold, !refreshEmittedForDrag else { return }
     collectionView.refreshControl?.beginRefreshing()
     refreshTriggered()
+  }
+
+  func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    scheduleContentShrinkCorrection()
   }
 
   func scrollViewDidScroll(_ scrollView: UIScrollView) {

@@ -118,6 +118,93 @@ final class NativeListLifecycleTests: XCTestCase {
     return String(decoding: data, as: UTF8.self)
   }
 
+  func testContentShrinkCorrectsRestoredOffsetAfterPagerInsetsAndUpdatesObserver() throws {
+    let view = try makeScrollingList()
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    list.contentInset = UIEdgeInsets(top: 108, left: 0, bottom: 0, right: 0)
+    list.contentOffset.y = 600
+    var savedLogicalOffset = list.contentOffset.y + list.contentInset.top
+    let offsetObserver = list.observe(\.contentOffset, options: [.new]) { list, _ in
+      savedLogicalOffset = list.contentOffset.y + list.contentInset.top
+    }
+    // Model the pager's synchronous content-size observer and cached-offset restoration.
+    let sizeObserver = list.observe(\.contentSize, options: [.old, .new]) { list, change in
+      if change.oldValue != change.newValue, list.contentSize.height < 200 {
+        list.contentInset.bottom = max(0, list.bounds.height - 44 - list.contentSize.height)
+        list.contentOffset.y = 600
+      }
+    }
+    view.applySnapshotJson(try scrollingSnapshot(count: 0))
+    view.layoutIfNeeded()
+    list.layoutIfNeeded()
+    drainMainQueue()
+    XCTAssertEqual(list.contentSize.height, 132, accuracy: 0.5)
+    XCTAssertEqual(list.contentOffset.y, -44, accuracy: 0.5)
+    XCTAssertEqual(savedLogicalOffset, 64, accuracy: 0.5)
+    withExtendedLifetime((offsetObserver, sizeObserver)) {}
+  }
+
+  func testContentShrinkPreservesInRangeAndNegativePullOffsets() throws {
+    for offset in [CGFloat(120), CGFloat(-160)] {
+      let view = try makeScrollingList()
+      let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      list.contentInset.top = 108
+      view.applySnapshotJson(try scrollingSnapshot(count: 20))
+      view.layoutIfNeeded()
+      list.layoutIfNeeded()
+      // Preserve a valid offset or a refresh pull while shrink correction is queued.
+      list.contentOffset.y = offset
+      drainMainQueue()
+      XCTAssertEqual(list.contentOffset.y, offset, accuracy: 0.5)
+    }
+  }
+
+  func testContentShrinkWaitsForRefreshCompletion() throws {
+    let view = try makeScrollingList()
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    view.applySnapshotJson(try scrollingSnapshot(count: 0, refreshing: true))
+    view.layoutIfNeeded()
+    list.layoutIfNeeded()
+    list.contentOffset.y = 600
+    drainMainQueue()
+    XCTAssertEqual(list.contentOffset.y, 600, accuracy: 0.5)
+    view.setRefreshing(false)
+    drainMainQueue()
+    let inset = list.adjustedContentInset
+    let maximum = max(-inset.top, list.contentSize.height - list.bounds.height + inset.bottom)
+    XCTAssertEqual(list.contentOffset.y, maximum, accuracy: 0.5)
+  }
+
+  private func makeScrollingList() throws -> NativeListView {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 708))
+    for index in 0..<3 { view.mountContainerSlot(UIView(), atIndex: index) }
+    view.setContainerSlotHeightsJson("[44,44,44]")
+    view.applySnapshotJson(try scrollingSnapshot(count: 40))
+    view.layoutIfNeeded()
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    list.layoutIfNeeded()
+    drainMainQueue()
+    return view
+  }
+
+  private func scrollingSnapshot(count: Int, refreshing: Bool = false) throws -> String {
+    let rows: [[String: Any]] = (0..<count).map {
+      ["key": "row-\($0)", "type": "action", "title": "Row", "height": 80]
+    }
+    let value: [String: Any] = [
+      "schemaVersion": 1, "generation": count + 1,
+      "layout": ["kind": "linear"], "rows": rows,
+      "capabilities": ["pullToRefresh": true, "refreshing": refreshing],
+    ]
+    return String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+  }
+
+  private func drainMainQueue() {
+    let settled = expectation(description: "Deferred content shrink correction")
+    DispatchQueue.main.async { settled.fulfill() }
+    wait(for: [settled], timeout: 1)
+  }
+
   private func footerCell(in view: NativeListView) -> NativeListRowHost? {
     view.subviews.lazy.compactMap { container in
       container.subviews.compactMap { $0 as? NativeListRowHost }.first
