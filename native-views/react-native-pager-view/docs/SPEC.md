@@ -3,6 +3,31 @@
 Existing PagerView and CollapsiblePagerView APIs are documented in README.md.
 The sections below define native coordination boundaries without new React props.
 
+## iOS refresh indicator placement
+
+Status: source implementation; real refresh-cycle acceptance pending.
+In smooth-header mode, the pager shifts the refresh control's sublayers upward
+by its header-plus-sticky height. It does not change the refresh control frame,
+bounds, scroll offset, refresh state or JavaScript callback. RN's caller-owned
+`progressViewOffset` remains untouched, including dynamic updates whose bounds
+origin could otherwise collide with a coordinator-applied value.
+
+One internal state per UIRefreshControl combines weak pager-owner contributions.
+It preserves the original sublayer transform and clipping setting. Repeated
+attachment and header resizing replace an owner's contribution. Layer clipping
+is disabled while coordinating so it cannot hide the translated indicator.
+A control replacement, scroll-view release, pager recycling or destruction
+removes only that owner's contribution and restores the baseline when none remain.
+Controls installed after the scroller is attached are also coordinated. Native
+UICollectionView controls and RN ScrollView controls use this same UIKit boundary.
+
+Native layer observations reapply the contribution after an external sublayer
+transform change, without observing or interpreting UIKit/RN bounds writes.
+There is no per-frame JavaScript work. Acceptance must cover real UIKit pulling
+and refresh completion, caller offset changes, late installation/replacement,
+retained-page switching, clipping and nested-owner cleanup. Programmatic UIKit
+unit tests do not substitute for real pull-gesture visibility acceptance.
+
 ## iOS shared-header hit testing
 
 Smooth-header hit forwarding is restricted to the pager's own interactive

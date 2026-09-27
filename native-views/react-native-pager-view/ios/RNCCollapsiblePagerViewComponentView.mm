@@ -11,6 +11,7 @@
 #import "React/RCTScrollViewComponentView.h"
 #import "React/RCTSurfaceTouchHandler.h"
 #import "React/RCTTouchHandler.h"
+#import <objc/runtime.h>
 
 // OneKey patch: deduplicate structural mutation parents before scanning the page.
 #include <unordered_set>
@@ -18,6 +19,116 @@
 using namespace facebook::react;
 
 static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerContentOffsetContext;
+static void *RNCRefreshControlLayerContext = &RNCRefreshControlLayerContext;
+static void *RNCScrollRefreshControlContext = &RNCScrollRefreshControlContext;
+static char RNCRefreshControlOffsetKey;
+
+@interface RNCRefreshControlOffsetState : NSObject
++ (void)setOffset:(CGFloat)offset forControl:(UIRefreshControl *)control owner:(id)owner;
++ (void)removeControl:(UIRefreshControl *)control owner:(id)owner;
+@end
+
+@implementation RNCRefreshControlOffsetState {
+  __weak UIRefreshControl *_control;
+  NSMapTable<id, NSNumber *> *_offsets;
+  CATransform3D _baselineTransform;
+  CATransform3D _appliedTransform;
+  BOOL _originalMasksToBounds;
+  BOOL _applying;
+  BOOL _observing;
+}
+
+- (instancetype)initWithControl:(UIRefreshControl *)control
+{
+  if ((self = [super init])) {
+    _control = control;
+    _baselineTransform = control.layer.sublayerTransform;
+    _originalMasksToBounds = control.layer.masksToBounds;
+    _offsets = [NSMapTable weakToStrongObjectsMapTable];
+    [control.layer addObserver:self forKeyPath:@"sublayerTransform"
+                       options:NSKeyValueObservingOptionNew
+                       context:RNCRefreshControlLayerContext];
+    [control.layer addObserver:self forKeyPath:@"masksToBounds"
+                       options:NSKeyValueObservingOptionNew
+                       context:RNCRefreshControlLayerContext];
+    _observing = YES;
+  }
+  return self;
+}
+
+- (void)apply
+{
+  UIRefreshControl *control = _control;
+  if (control == nil) return;
+  CGFloat offset = 0;
+  for (NSNumber *value in _offsets.objectEnumerator) offset += value.doubleValue;
+  CATransform3D transform = CATransform3DConcat(
+    _baselineTransform, CATransform3DMakeTranslation(0, -offset, 0));
+  _appliedTransform = transform;
+  _applying = YES;
+  // Visual placement must not change UIKit's refresh geometry or RN's bounds
+  // origin (progressViewOffset). Allow the shifted indicator outside its host.
+  [CATransaction begin];
+  [CATransaction setDisableActions:YES];
+  control.layer.masksToBounds = _offsets.count == 0 ? _originalMasksToBounds : NO;
+  if (!CATransform3DEqualToTransform(control.layer.sublayerTransform, transform)) {
+    control.layer.sublayerTransform = transform;
+  }
+  [CATransaction commit];
+  _applying = NO;
+}
+
++ (void)setOffset:(CGFloat)offset forControl:(UIRefreshControl *)control owner:(id)owner
+{
+  if (control == nil) return;
+  RNCRefreshControlOffsetState *state = objc_getAssociatedObject(control, &RNCRefreshControlOffsetKey);
+  if (state == nil) {
+    state = [[self alloc] initWithControl:control];
+    objc_setAssociatedObject(control, &RNCRefreshControlOffsetKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+  }
+  [state->_offsets setObject:@(offset) forKey:owner];
+  [state apply];
+}
+
++ (void)removeControl:(UIRefreshControl *)control owner:(id)owner
+{
+  if (control == nil) return;
+  RNCRefreshControlOffsetState *state = objc_getAssociatedObject(control, &RNCRefreshControlOffsetKey);
+  if (state == nil) return;
+  [state->_offsets removeObjectForKey:owner];
+  [state apply];
+  if (state->_offsets.count == 0) {
+    [control.layer removeObserver:state forKeyPath:@"sublayerTransform" context:RNCRefreshControlLayerContext];
+    [control.layer removeObserver:state forKeyPath:@"masksToBounds" context:RNCRefreshControlLayerContext];
+    state->_observing = NO;
+    objc_setAssociatedObject(control, &RNCRefreshControlOffsetKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+  }
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
+                      change:(NSDictionary<NSKeyValueChangeKey, id> *)change context:(void *)context
+{
+  if (context == RNCRefreshControlLayerContext) {
+    if (_applying) return;
+    if ([keyPath isEqualToString:@"sublayerTransform"]) {
+      CATransform3D next = [change[NSKeyValueChangeNewKey] CATransform3DValue];
+      if (CATransform3DEqualToTransform(next, _appliedTransform)) return;
+      _baselineTransform = next;
+    }
+    [self apply];
+    return;
+  }
+  [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+}
+
+- (void)dealloc
+{
+  if (_observing && _control != nil) {
+    [_control.layer removeObserver:self forKeyPath:@"sublayerTransform" context:RNCRefreshControlLayerContext];
+    [_control.layer removeObserver:self forKeyPath:@"masksToBounds" context:RNCRefreshControlLayerContext];
+  }
+}
+@end
 static NSString *const RNCCollapsiblePagerNativeScrollerIDPrefix =
   @"rnc-collapsible-pager-native-scroller:";
 
@@ -973,6 +1084,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)preparePageForHorizontalTransitionAtIndex:(NSInteger)pageIndex;
 - (void)updateSharedHeaderPressCancellationGesture;
 - (void)detachSharedHeaderPressCancellationGesture;
+- (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView;
+- (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView;
 - (void)sharedHeaderPressCancellationGestureChanged:(UIPanGestureRecognizer *)recognizer;
 - (void)outerPagerGestureChanged:(UIPanGestureRecognizer *)recognizer;
 - (void)verticalPagerGuardGestureChanged:(UIPanGestureRecognizer *)recognizer;
@@ -1023,6 +1136,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSString *_retainedPages;
   NSMutableDictionary<NSString *, NSNumber *> *_pageOffsets;
   NSMapTable<UIScrollView *, NSValue *> *_originalInsets;
+  NSMapTable<UIScrollView *, UIRefreshControl *> *_managedRefreshControls;
+  NSHashTable<UIScrollView *> *_refreshControlObservedScrollViews;
   NSMapTable<UIScrollView *, NSNumber *> *_appliedTopInsets;
   NSMapTable<UIScrollView *, NSValue *> *_originalIndicatorInsets;
   NSMapTable<UIScrollView *, NSNumber *> *_originalAlwaysBounceVertical;
@@ -1066,6 +1181,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _pageOffsets = [NSMutableDictionary new];
     _releasedPageScrollStates = [NSMutableDictionary new];
     _originalInsets = [NSMapTable weakToStrongObjectsMapTable];
+    _managedRefreshControls = [NSMapTable weakToWeakObjectsMapTable];
+    _refreshControlObservedScrollViews = [NSHashTable weakObjectsHashTable];
     _appliedTopInsets = [NSMapTable weakToStrongObjectsMapTable];
     _originalIndicatorInsets = [NSMapTable weakToStrongObjectsMapTable];
     _originalAlwaysBounceVertical = [NSMapTable weakToStrongObjectsMapTable];
@@ -1201,6 +1318,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)dealloc
 {
+  for (UIScrollView *scrollView in _refreshControlObservedScrollViews.allObjects) {
+    [self releaseRefreshControlForScrollView:scrollView];
+  }
   [self detachSharedHeaderPressCancellationGesture];
 }
 
@@ -1739,6 +1859,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [self detachSharedHeaderPressCancellationGesture];
   [self detachScrollObserver];
   [self restoreSharedHeadersToContainer];
+  for (UIScrollView *scrollView in _refreshControlObservedScrollViews.allObjects) {
+    [self releaseRefreshControlForScrollView:scrollView];
+  }
   for (UIScrollView *scrollView in _originalInsets.keyEnumerator) {
     NSValue *value = [_originalInsets objectForKey:scrollView];
     if (value != nil) {
@@ -2428,10 +2551,44 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
 }
 
+- (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView
+{
+  if (!_nativeSmoothHeaderScrollEnabled || _isBeingRecycled) {
+    [self releaseRefreshControlForScrollView:scrollView];
+    return;
+  }
+  if (![_refreshControlObservedScrollViews containsObject:scrollView]) {
+    [_refreshControlObservedScrollViews addObject:scrollView];
+    [scrollView addObserver:self forKeyPath:@"refreshControl"
+                   options:NSKeyValueObservingOptionNew
+                   context:RNCScrollRefreshControlContext];
+  }
+  UIRefreshControl *previous = [_managedRefreshControls objectForKey:scrollView];
+  UIRefreshControl *current = scrollView.refreshControl;
+  if (previous != current) {
+    [RNCRefreshControlOffsetState removeControl:previous owner:self];
+    [_managedRefreshControls removeObjectForKey:scrollView];
+    if (current != nil) [_managedRefreshControls setObject:current forKey:scrollView];
+  }
+  [RNCRefreshControlOffsetState setOffset:_headerHeight + _stickyHeaderHeight
+                             forControl:current owner:self];
+}
+
+- (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView
+{
+  if ([_refreshControlObservedScrollViews containsObject:scrollView]) {
+    [scrollView removeObserver:self forKeyPath:@"refreshControl" context:RNCScrollRefreshControlContext];
+    [_refreshControlObservedScrollViews removeObject:scrollView];
+  }
+  [RNCRefreshControlOffsetState removeControl:[_managedRefreshControls objectForKey:scrollView] owner:self];
+  [_managedRefreshControls removeObjectForKey:scrollView];
+}
+
 // OneKey patch: release observers, headers and saved state while the scroll view
 // still represents the old list, before Fabric applies its next owner's props.
 - (void)restoreScrollViewState:(UIScrollView *)scrollView resetSavedOffset:(BOOL)resetSavedOffset
 {
+  [self releaseRefreshControlForScrollView:scrollView];
   if (scrollView == _observedScrollView) {
     [self detachScrollObserver];
     if (resetSavedOffset) _pageOffsets[self.currentPageKey] = @(_headerOffset);
@@ -2548,6 +2705,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   // This host already includes the fixed header and safe area in its frame.
   // UIKit automatic adjustment would add them a second time to short pages.
   scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+  [self updateRefreshControlForScrollView:scrollView];
   CGFloat previousTopInset = scrollView.contentInset.top;
   CGFloat previousLogicalOffset = scrollView.contentOffset.y + previousTopInset;
   NSNumber *appliedTop = [_appliedTopInsets objectForKey:scrollView];
@@ -2636,6 +2794,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
                         change:(NSDictionary<NSKeyValueChangeKey,id> *)change
                        context:(void *)context
 {
+  if (context == RNCScrollRefreshControlContext) {
+    [self updateRefreshControlForScrollView:(UIScrollView *)object];
+    return;
+  }
   if (context == RNCCollapsiblePagerContentOffsetContext && object == _observedScrollView) {
     if ([keyPath isEqualToString:@"contentSize"]) {
       NSValue *oldSize = change[NSKeyValueChangeOldKey];
