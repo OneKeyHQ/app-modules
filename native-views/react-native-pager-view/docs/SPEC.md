@@ -3,6 +3,21 @@
 Existing PagerView and CollapsiblePagerView APIs are documented in README.md.
 The sections below define native coordination boundaries without new React props.
 
+## iOS shared-header hit testing
+
+Smooth-header hit forwarding is restricted to the pager's own interactive
+viewport. A collapsed header clipped above that viewport MUST NOT intercept
+touches intended for a sibling toolbar. Hidden, disabled and effectively
+transparent pagers do not forward touches. Fabric `pointerEvents="none"` and
+`"box-only"` retain their superclass behavior; `"auto"` and `"box-none"` may
+forward to visible shared-header children inside the pager.
+
+The shared header's internal hit testing still supports sticky children that
+have moved outside the header host's original bounds while remaining inside the
+pager. Focused UIKit tests cover sibling-toolbar hit delivery, pinned-child
+delivery, pointer-event modes and interaction flags. Device acceptance includes
+toolbar taps with expanded and collapsed headers on retained pages.
+
 ## iOS cached-offset restoration after content shrink
 
 When restoring a retained page's cached vertical offset, the pager limits only

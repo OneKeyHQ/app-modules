@@ -1145,6 +1145,16 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
 {
+  // Shared headers can sit above their clipped viewport after collapsing.
+  // Forward only viewport touches, so invisible headers cannot cover siblings.
+  if (!self.userInteractionEnabled || self.hidden || self.alpha < 0.01 ||
+      ![self pointInside:point withEvent:event]) return nil;
+  const auto &viewProps =
+    *std::static_pointer_cast<const RNCCollapsiblePagerViewProps>(_props);
+  if (viewProps.pointerEvents == PointerEventsMode::None ||
+      viewProps.pointerEvents == PointerEventsMode::BoxOnly) {
+    return [super hitTest:point withEvent:event];
+  }
   if (_nativeSmoothHeaderScrollEnabled && !_isBeingRecycled &&
       _sharedHeaderHostView.superview != _containerView) {
     CGPoint headerPoint = [_sharedHeaderHostView convertPoint:point fromView:self];
