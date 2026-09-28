@@ -13,7 +13,8 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = "15.1"
   s.source       = { :git => "https://github.com/nicholasxuu/app-modules.git", :tag => "#{s.version}" }
 
-  s.source_files = "ios/**/*.{h,m,mm}"
+  s.source_files = "ios/**/*.{h,m,mm}", "common/cpp/**/*.{h,cpp}"
+  s.pod_target_xcconfig = { "HEADER_SEARCH_PATHS" => '"$(PODS_TARGET_SRCROOT)/common/cpp"' }
   s.exclude_files = "ios/tests/**/*"
 
   s.test_spec "Tests" do |test_spec|

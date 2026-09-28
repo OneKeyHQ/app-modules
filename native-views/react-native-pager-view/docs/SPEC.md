@@ -3,6 +3,177 @@
 Existing PagerView and CollapsiblePagerView APIs are documented in README.md.
 The sections below define native coordination boundaries without new React props.
 
+## Independent NativeScroller migration
+
+Status: implemented in source. Both native builds pass. Android focused emulator
+cases below and the iOS same-source UIKit harness pass; the full acceptance
+matrix remains incomplete. Device evidence is scoped below.
+NativeScroller keeps React children and their Fabric/Yoga layout, but owns its
+vertical native scrolling implementation: AndroidX NestedScrollView on Android
+and UIScrollView on iOS. It MUST NOT inherit ReactScrollView/RCTScrollView or
+require rebuilding ReactAndroid. Web retains its existing implementation.
+
+The initial compatibility contract covers existing Home callers: viewport style,
+contentContainerStyle including padding and flexGrow, dynamically mounted React
+children, vertical scroll enablement/indicator, stable pagerScrollKey, scroll
+throttling, onScroll/onScrollBeginDrag/onScrollEndDrag and momentum callbacks,
+content-size notification, and scrollTo/scrollToEnd commands. Standard RN
+RefreshControl JSX remains a supported input; its props and onRefresh callback
+are adapted to owned native refresh controls rather than mounting an RN-private
+scroll-view implementation. Supported properties and intentional platform limits
+MUST be explicit in the exported types. Unknown RN ScrollView features MUST NOT
+be silently advertised as supported. No business data or Home-specific geometry
+belongs in the native component.
+
+This is a vertical, non-virtualized subset, not a drop-in implementation of every
+ScrollView prop. Horizontal scrolling, sticky rows, snapping, zoom and automatic
+keyboard insets are outside this contract. iOS owns bounces and decelerationRate;
+Android retains AndroidX fling physics without a public friction override.
+Keyboard persist-tap behavior is coordinated by the JS responder wrapper using
+RN 0.86's TextInput registry, while native owns drag-to-dismiss. The RN-private
+registry dependency and keyboard behavior need validation on RN upgrades.
+Arbitrary custom refresh components are not supported.
+
+Native views, gestures, insets and refresh controllers belong to the UI thread.
+React content layout remains Fabric-owned. Layout-size updates may cross the
+bridge when dimensions change; native scrolling and header coordination MUST NOT
+depend on per-frame JS updates. This is a main/UI component, with no background
+runtime, persistent storage or cross-runtime heap state.
+
+The wrapper mounts one non-collapsible React content View. Native MUST preserve
+its Fabric-assigned frame and transform. A shared Fabric ShadowNode reads native
+state describing local content displacement and separate ancestor displacement;
+it MUST apply the ancestor displacement outside the content transform. UIKit
+updates this state from contentOffset; Android updates it from content origin,
+scroll position and pager consumption. Equal values are deduplicated, and a
+replacement state wrapper is synchronized with the current native position.
+These native state updates do not require per-frame JavaScript callbacks.
+Fabric hit testing and descendant measureInWindow MUST include the displacement,
+so measurement follows visible content after scroll, inset changes and page
+return. Geometry acceptance MUST compare a measured React child with its visible
+position, including the last child after scrollToEnd.
+
+The automatic flexGrow minimum MUST use the native usable content viewport,
+not the raw host height. An internal onContentViewportChange({height}) event
+reports logical units only when static geometry changes; it is not a public
+NativeScroller prop. Android reports viewport height minus caller/pager top
+reservation and caller bottom inset. Its pager viewport already includes the
+extra collapsible-header height. iOS reports bounds height minus caller top and
+bottom insets and the sum of pager-owned sticky reservations. Both describe the
+React area available with the shared header collapsed. The height MUST NOT
+depend on contentSize, current header offset, refresh temporary insets or iOS
+synthetic bottom fill, which would create a layout feedback loop. Owners MUST
+remove their reservation on release. The current value MUST be delivered when
+the view first becomes able to dispatch its event and after reattachment. An
+event queued before its initial emitter is ready MUST be delivered when that
+emitter becomes available. Replacing the emitter on the same attached view does
+not require another event when the usable height is unchanged.
+
+Before the first native viewport event, the wrapper contributes no positive
+automatic minimum. It combines valid native height with an explicit numeric
+caller minHeight using the greater value; nonnumeric explicit minima remain
+untouched. Content padding remains part of Yoga layout. Long-to-short replacement
+MUST clamp the local offset without leaving a pager-inset-sized artificial scroll
+range or hiding the first React child. Tests and device acceptance MUST cover
+long-to-empty/restore, page return, header/sticky resizing, refresh completion
+without minimum-height changes, and an intentionally larger caller minimum.
+
+Android MUST dispatch touch and non-touch nested scrolling continuously across
+the content/header boundary. Content returns to its start before downward travel
+expands the header; upward travel collapses the header before scrolling content.
+Consumed and remaining distance MUST be accounted for once. Only touch pull can
+trigger refresh; inertial movement MUST NOT trigger refresh. iOS MUST preserve a
+single UIScrollView trajectory through the inset/header range. Existing Pager
+refresh foreground placement and shared-header press cancellation remain in
+force. NativeList and unrelated RN ScrollViews retain their implementations.
+
+New touch, page deactivation, replacement of the mounted React content root and
+detach MUST stop stale inertia. Every started drag/momentum sequence has one
+terminal notification. An animated scrollTo/scrollToEnd command with a different
+clamped target emits one momentum begin/end pair, including AndroidX's immediate
+execution branch for closely spaced commands. A target equal to the current
+position emits no new pair. A new command ends any previous active sequence
+before starting its own, and non-animated movement does not start momentum;
+recycled views MUST NOT emit into an old owner. Content shrink clamps unreachable
+offsets without a blank tail; resize/inset changes MUST NOT accumulate offsets.
+Refresh is controlled by the caller and emits once per qualifying gesture.
+
+Acceptance requires both native builds, focused contract checks and iOS/Android
+recordings: expanded/collapsed Home Spot/Perps/DeFi, short/empty and dynamically
+resized content, fast return through the header boundary, new-touch interruption,
+adjacent/distant page changes, horizontal gestures versus row presses, pull from
+header/content, refresh completion, retained-page return, imperative
+animation/no-op/interruption, and React child measureInWindow versus visible
+geometry. History/NFT and Market/Discover are regression controls. Source/type/build success alone is not
+device acceptance. Implementation findings and remaining limits are recorded
+after validation, before this section is promoted to runtime verified.
+
+Android acceptance checkpoint (2026-09-28): the official local-shell/local-vendor
+DevSession build passed, with custom Fabric descriptor registration verified.
+On the dedicated emulator, native field inspection confirmed NativeScrollerView
+and its AndroidX viewport. Home Spot/Perps/DeFi return gestures crossed the
+content/header boundary. In the final short-fill binary, Perps content offset
+1389 reached zero and the same non-touch momentum continued header offset
+755 -> 648 -> 441 -> 217 -> 56 before natural exhaustion. This proves continuity,
+not that every gesture must fully expand the header.
+
+The first valid binary exposed an artificial 284 px short-content range. After the
+usable-viewport correction, Gallery long-to-empty replacement had local offset 0
+with short text visible; restoring rows and scrollToEnd reached the final child.
+measureInWindow y746.7/h72.0 matched native visible bounds y1960/h189px at
+pixel density2.625. Short-content refresh advanced the fixture counter once and
+controlled completion removed the indicator. Home three-page refresh visibility,
+History/NFT vertical scrolling and Market/Browser horizontal controls passed on
+the preceding valid binary; these control implementations were unchanged by the
+short-fill correction. Evidence is recorded in the app task's ignored
+`ignore/independent-native-scroller/android-acceptance.md`, alongside screenshots,
+recording chunks and native field samples.
+
+This checkpoint does not cover a physical handset, keyboard/multi-touch/accessory
+interactions, exhaustive event counts and command interruption, explicit larger
+caller minHeight, header/sticky resizing or the full refresh matrix. Existing
+development warnings were observed. Android evidence does not establish iOS
+acceptance, and source/build success is not a substitute for its runtime cases.
+
+iOS acceptance checkpoint (2026-09-28): the final official local-shell/local-vendor
+build passed and launched on the dedicated external-image simulator. Nine
+same-source UIKit harness methods and 36 assertions pass, including negative-pull
+preservation during shrink, caller inset ownership, static usable height and
+refresh/recycle interruption. This is UIKit execution, not a formal XCTest run.
+
+On the final binary, Home Spot/Perps/DeFi horizontal transitions and top-positioned
+refresh feedback passed. Gallery scrollToEnd reached the last React row;
+measureInWindow y786/h72 matched its native frame. Long-to-empty replacement,
+restoring rows, controlled refresh counter 0 -> 1 with indicator dismissal,
+normal row press and retained-page return passed. History/NFT scrolling and
+media, Discover Browser -> DeFi and Market vertical scrolling plus Trending ->
+Stocks horizontal transition passed without unintended detail navigation.
+The final device is left on expanded Home Spot. Evidence is in the app task's
+`ignore/independent-native-scroller/ios-acceptance.md` and associated recordings.
+
+These iOS gestures use public XCTest coordinate drags. Earlier private synthesized
+pan attempts had inconsistent timing and are excluded; their cause is not proven.
+Gallery's floating application tab bar overlaps part of the last row, so matching
+coordinates do not establish an unobscured bottom viewport. Existing development
+warnings were observed. Keyboard, multi-touch, physical-device performance and
+the full lifecycle/interaction matrix remain unverified. These are local source
+builds; the currently installed npm version does not yet contain this migration.
+
+## Native tab-press animation default
+
+On iOS and Android, an omitted `nativeTabPressAnimationEnabled` MUST animate a
+press to an adjacent page and jump directly to a non-adjacent page. Adjacency is
+the absolute difference between the target index and the currently selected
+index, not the last requested target. Explicit `true` continues to animate all
+tab presses, and explicit `false` continues to jump for all tab presses.
+Page retention, selection callbacks, swipe gestures, imperative `setPage` /
+`setPageWithoutAnimation` commands and Web behavior retain their contracts.
+Callers rendering their own JS tab bar choose the matching imperative command.
+
+Status: implemented; focused native-wrapper tests cover both directions and
+explicit overrides. Home applies this policy to its JS tab bar, with iOS and
+Android simulator recordings verifying distant jumps and adjacent transitions.
+
 ## Android refresh foreground coordination
 
 Status: implemented; Android Home simulator placement verified on 2026-09-28.
@@ -61,6 +232,27 @@ gesture may still be settled instead of flung. Required regression cases include
 a stationary release, below-threshold cancellation, ordinary upward fling and
 header expansion before refresh. No JS timeout or data-refresh suppression is
 introduced.
+
+## Android downward scroll ownership
+
+Status: implemented; Android Home History runtime verified on 2026-09-28.
+Downward scrolling MUST move the active content back to its top before expanding
+the shared header. A refresh wrapper forwarding nested scrolling MUST report its
+child's ability to scroll upward; the wrapper's own scroll range is not evidence
+that the content is at the top. SwipeRefreshLayout's public canChildScrollUp()
+contract, including caller overrides, supplies this check. Other nested-scroll
+targets retain their own canScrollVertically(-1) check.
+
+The correction changes only the downward pre-scroll eligibility check. Existing
+delta consumption, content-observer alignment, refresh ownership and release
+settlement remain unchanged. Runtime comparison captured premature expansion
+with content offset 1960 px before the fix. Afterward the header stayed collapsed
+while content returned to zero, and expanded only at the top, without an observer
+forced collapse. Debugger state traces prove ownership, not frame timing;
+recordings with the debugger detached cover History rapid direction reversal
+and top refresh.
+Spot's scroll-then-refresh release-reversal sequence still jumps in both the
+baseline and corrected builds; that existing NativeScroller case remains open.
 
 ## Superseded Android indicator placement
 

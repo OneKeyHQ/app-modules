@@ -109,6 +109,7 @@ describe('CollapsiblePagerView native wrapper', () => {
     const pressTab = async (
       animationEnabled: boolean | undefined,
       position: number,
+      initialPage = 0,
     ) => {
       let renderer!: ReactTestRenderer.ReactTestRenderer;
       await ReactTestRenderer.act(() => {
@@ -116,6 +117,7 @@ describe('CollapsiblePagerView native wrapper', () => {
           <NativeCollapsiblePagerView
             {...requiredProps}
             nativeTabBar={nativeTabBar}
+            initialPage={initialPage}
             nativeTabPressAnimationEnabled={animationEnabled}
           >
             {pages(nativeTabBar.items.length)}
@@ -141,30 +143,29 @@ describe('CollapsiblePagerView native wrapper', () => {
       });
     };
 
-    it('animates the page change by default', async () => {
-      await pressTab(undefined, 3);
-
-      expect(NativeCollapsiblePagerCommands.setPage).toHaveBeenCalledTimes(1);
-      expect(NativeCollapsiblePagerCommands.setPage).toHaveBeenCalledWith(
-        expect.anything(),
-        3,
-      );
-      expect(
-        NativeCollapsiblePagerCommands.setPageWithoutAnimation,
-      ).not.toHaveBeenCalled();
-    });
-
-    it('jumps straight to the pressed page when animation is disabled', async () => {
-      await pressTab(false, 3);
-
-      expect(
-        NativeCollapsiblePagerCommands.setPageWithoutAnimation,
-      ).toHaveBeenCalledTimes(1);
-      expect(
-        NativeCollapsiblePagerCommands.setPageWithoutAnimation,
-      ).toHaveBeenCalledWith(expect.anything(), 3);
-      expect(NativeCollapsiblePagerCommands.setPage).not.toHaveBeenCalled();
-    });
+    it.each([
+      [undefined, 0, 1, true],
+      [undefined, 0, 3, false],
+      [undefined, 3, 2, true],
+      [undefined, 3, 0, false],
+      [true, 0, 3, true],
+      [false, 0, 1, false],
+      [false, 0, 3, false],
+    ] as const)(
+      'uses animation=%s from %s to %s with animated command=%s',
+      async (animationEnabled, initialPage, target, animated) => {
+        await pressTab(animationEnabled, target, initialPage);
+        const command = animated
+          ? NativeCollapsiblePagerCommands.setPage
+          : NativeCollapsiblePagerCommands.setPageWithoutAnimation;
+        const otherCommand = animated
+          ? NativeCollapsiblePagerCommands.setPageWithoutAnimation
+          : NativeCollapsiblePagerCommands.setPage;
+        expect(command).toHaveBeenCalledTimes(1);
+        expect(command).toHaveBeenCalledWith(expect.anything(), target);
+        expect(otherCommand).not.toHaveBeenCalled();
+      },
+    );
   });
 });
 

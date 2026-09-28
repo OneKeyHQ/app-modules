@@ -130,9 +130,8 @@ export interface CollapsiblePagerViewProps
   nativeTabBar?: CollapsiblePagerNativeTabBarConfig;
   onNativeTabPress?: (event: CollapsiblePagerViewOnNativeTabPressEvent) => void;
   /**
-   * Animates the page change started by a native tab press. Defaults to true.
-   * Set false to jump straight to the pressed page, so a distant tab does not
-   * scroll through every page in between, including unmounted ones.
+   * Defaults to animating adjacent native tab presses and jumping directly to
+   * non-adjacent pages. Set true to always animate, or false to always jump.
    */
   nativeTabPressAnimationEnabled?: boolean;
   /** Optional native secondary sticky header for iOS and Android. */
@@ -411,7 +410,8 @@ export class CollapsiblePagerView extends React.PureComponent<
     ) {
       this.dispatchNativeTabPageCommand(
         position,
-        this.props.nativeTabPressAnimationEnabled ?? true
+        this.props.nativeTabPressAnimationEnabled ??
+          Math.abs(position - this.state.selectedPage) <= 1
       );
     }
     this.props.onNativeTabPress?.(event);
