@@ -73,6 +73,10 @@ non-adjacent presses jump directly to the target without passing intermediate
 pages. Set `nativeTabPressAnimationEnabled={true}` to always animate, or `false`
 to always jump. Swipe gestures and imperative page commands are unchanged.
 
+> **Behavior change:** earlier versions animated every native tab press when
+> `nativeTabPressAnimationEnabled` was omitted. Pass
+> `nativeTabPressAnimationEnabled={true}` to keep that behavior.
+
 Thank you again to Callstack and everyone who contributes to
 `react-native-pager-view` 💙
 

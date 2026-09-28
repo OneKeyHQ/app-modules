@@ -166,6 +166,108 @@ describe('CollapsiblePagerView native wrapper', () => {
         expect(otherCommand).not.toHaveBeenCalled();
       },
     );
+
+    const renderTabPager = async () => {
+      let renderer!: ReactTestRenderer.ReactTestRenderer;
+      await ReactTestRenderer.act(() => {
+        renderer = ReactTestRenderer.create(
+          <NativeCollapsiblePagerView
+            {...requiredProps}
+            nativeTabBar={nativeTabBar}
+          >
+            {pages(nativeTabBar.items.length)}
+          </NativeCollapsiblePagerView>,
+          { createNodeMock: () => ({}) },
+        );
+      });
+      const nativeHost = renderer.root.find(
+        node => typeof node.props.retainedPages === 'string',
+      );
+      const press = async (position: number, runFrame = true) => {
+        await ReactTestRenderer.act(() => {
+          nativeHost.props.onNativeTabPress({
+            nativeEvent: { position, key: nativeTabBar.items[position].key },
+          });
+        });
+        if (runFrame) {
+          await ReactTestRenderer.act(() => {
+            jest.runOnlyPendingTimers();
+          });
+        }
+      };
+      const select = async (position: number) => {
+        await ReactTestRenderer.act(() => {
+          nativeHost.props.onPageSelected({ nativeEvent: { position } });
+        });
+      };
+      return { renderer, press, select };
+    };
+
+    const lastCommand = () => {
+      const animated = jest.mocked(NativeCollapsiblePagerCommands.setPage).mock
+        .invocationCallOrder;
+      const jumped = jest.mocked(
+        NativeCollapsiblePagerCommands.setPageWithoutAnimation,
+      ).mock.invocationCallOrder;
+      const lastAnimated = Math.max(-1, ...animated);
+      const lastJump = Math.max(-1, ...jumped);
+      return lastAnimated > lastJump
+        ? {
+            animated: true,
+            target: jest.mocked(NativeCollapsiblePagerCommands.setPage).mock
+              .lastCall?.[1],
+          }
+        : {
+            animated: false,
+            target: jest.mocked(
+              NativeCollapsiblePagerCommands.setPageWithoutAnimation,
+            ).mock.lastCall?.[1],
+          };
+    };
+
+    it.each([
+      [2, true],
+      [0, false],
+      [1, false],
+    ] as const)(
+      'measures adjacency from an in-flight jump target when pressing %s',
+      async (target, animated) => {
+        const { renderer, press } = await renderTabPager();
+        await press(3);
+        expect(lastCommand()).toEqual({ animated: false, target: 3 });
+        // Native has not reported page 3 yet; the wrapper state still says 0.
+        await press(target);
+        expect(lastCommand()).toEqual({ animated, target });
+        await ReactTestRenderer.act(() => {
+          renderer.unmount();
+        });
+      },
+    );
+
+    it('ignores a superseded target that never reached native', async () => {
+      const { renderer, press } = await renderTabPager();
+      await press(3, false);
+      await press(2);
+      expect(NativeCollapsiblePagerCommands.setPage).not.toHaveBeenCalled();
+      expect(lastCommand()).toEqual({ animated: false, target: 2 });
+      await ReactTestRenderer.act(() => {
+        renderer.unmount();
+      });
+    });
+
+    it('measures adjacency from the reported page after the transition', async () => {
+      const { renderer, press, select } = await renderTabPager();
+      await press(3);
+      await select(3);
+      await press(1);
+      expect(lastCommand()).toEqual({ animated: false, target: 1 });
+      await select(1);
+      await press(0);
+      expect(lastCommand()).toEqual({ animated: true, target: 0 });
+      await ReactTestRenderer.act(() => {
+        renderer.unmount();
+      });
+    });
   });
 });
 

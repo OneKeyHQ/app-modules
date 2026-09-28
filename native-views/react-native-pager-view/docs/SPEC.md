@@ -96,7 +96,13 @@ position emits no new pair. A new command ends any previous active sequence
 before starting its own, and non-animated movement does not start momentum;
 recycled views MUST NOT emit into an old owner. Content shrink clamps unreachable
 offsets without a blank tail; resize/inset changes MUST NOT accumulate offsets.
+On Android, a pager offset restoration that is clamped because React content has
+not reached native yet is reapplied on content layout until reached; a new touch,
+drag, scroll command, content-root replacement or pager release cancels it.
+Stopping an idle scroller MUST NOT start or end a non-touch nested scroll.
 Refresh is controlled by the caller and emits once per qualifying gesture.
+Android applies a refreshing value when it changes (or at first layout); later
+layout passes do not reassert it over a gesture-started indicator.
 
 Acceptance requires both native builds, focused contract checks and iOS/Android
 recordings: expanded/collapsed Home Spot/Perps/DeFi, short/empty and dynamically
@@ -161,17 +167,22 @@ builds; the currently installed npm version does not yet contain this migration.
 
 ## Native tab-press animation default
 
+Behavior change: previously an omitted `nativeTabPressAnimationEnabled` animated
+every native tab press. Callers that relied on that default MUST pass `true`.
+
 On iOS and Android, an omitted `nativeTabPressAnimationEnabled` MUST animate a
 press to an adjacent page and jump directly to a non-adjacent page. Adjacency is
-the absolute difference between the target index and the currently selected
-index, not the last requested target. Explicit `true` continues to animate all
+the absolute difference between the target index and the current page. While a
+tab command that native has already received is in flight, its target is the
+current page; otherwise it is the selected index. A request superseded before it
+reached native is ignored. Explicit `true` continues to animate all
 tab presses, and explicit `false` continues to jump for all tab presses.
 Page retention, selection callbacks, swipe gestures, imperative `setPage` /
 `setPageWithoutAnimation` commands and Web behavior retain their contracts.
 Callers rendering their own JS tab bar choose the matching imperative command.
 
-Status: implemented; focused native-wrapper tests cover both directions and
-explicit overrides. Home applies this policy to its JS tab bar, with iOS and
+Status: implemented; focused native-wrapper tests cover both directions,
+explicit overrides and in-flight/superseded command targets. Home applies this policy to its JS tab bar, with iOS and
 Android simulator recordings verifying distant jumps and adjacent transitions.
 
 ## Android refresh foreground coordination
@@ -355,6 +366,10 @@ A new child receives current header travel before threshold evaluation. Native
 list offsets remain local to the leaf, while consumers of this protocol add all
 ancestor contributions exactly once. Programmatic scrolling/header restoration
 must publish the resulting header offset through the same path.
+Every NativeScroller viewport the coordinator owns, including adjacent pages it
+translates, receives each header offset change, not only the observed page.
+Content-offset observers are removed from the observer instance they were
+registered on, and a removed page's scroller stops writing offsets immediately.
 
 ## Acceptance
 

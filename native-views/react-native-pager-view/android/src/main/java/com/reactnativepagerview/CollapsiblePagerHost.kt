@@ -135,8 +135,11 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private var observedOwnedScroller: NativeScrollerViewport? = null
   private var observedOwnedScrollerKey: String? = null
   private var observedOwnedScrollerListener: ViewTreeObserver.OnScrollChangedListener? = null
+  private var observedOwnedScrollerTreeObserver: ViewTreeObserver? = null
   private var observedNativeScroller: ScrollView? = null
   private var observedNativeScrollerListener: ViewTreeObserver.OnScrollChangedListener? = null
+  private var observedNativeScrollerTreeObserver: ViewTreeObserver? = null
+  private var observedPageRemoved = false
   private var attachmentGeneration = 0
   private val touchSlopPx = ViewConfiguration.get(context).scaledTouchSlop
   private val hostIdentity = System.identityHashCode(this)
@@ -340,6 +343,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         stickyHeaderView = null
       }
       else -> {
+        val observed = observedRecyclerView ?: observedOwnedScroller ?: observedNativeScroller
+        if (observed != null && isDescendant(observed, child)) {
+          // The page detaches only later; its scroller must not keep writing this key.
+          detachPrimaryScrollObserver(recordOffset = false)
+          observedPageRemoved = true
+        }
         when (val scrollable =
           findExplicitNativeScrollerInView(child) ?: findVerticalScrollableView(child)) {
           is RecyclerView -> restoreRecyclerInsets(scrollable)
@@ -554,7 +563,8 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     nativeTabBarView.translationY = -offset
     nativeSubHeaderView.translationY = -offset
     observedRecyclerView?.let { publishConsumedOffset(it) }
-    observedOwnedScroller?.let { publishConsumedOffset(it) }
+    // Adjacent owned pages are translated too; unchanged values are not republished.
+    for (scroller in ownedScrollerKeys.keys) publishConsumedOffset(scroller)
   }
 
   private fun pageKey(index: Int): String = pageKeys.getOrNull(index) ?: "page-$index"
@@ -647,7 +657,8 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private fun attachPrimaryScrollObserver() {
     if (selectedPage !in 0 until adapter.itemCount) return
     val previous = observedRecyclerView ?: observedOwnedScroller ?: observedNativeScroller
-    if (previous != null && !isDescendant(previous, adapter.pageAt(selectedPage))) {
+    if (observedPageRemoved || previous != null && !isDescendant(previous, adapter.pageAt(selectedPage))) {
+      observedPageRemoved = false
       detachPrimaryScrollObserver()
       // A replacement scroller starts at the beginning while retaining header collapse.
       pageOffsets[currentPageKey()] = 0
@@ -689,11 +700,11 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     )
   }
 
-  private fun detachRecyclerObserver() {
+  private fun detachRecyclerObserver(recordOffset: Boolean) {
     val recycler = observedRecyclerView
     val listener = observedScrollListener
     if (recycler != null) {
-      pageOffsets[currentPageKey()] = recycler.computeVerticalScrollOffset()
+      if (recordOffset) pageOffsets[currentPageKey()] = recycler.computeVerticalScrollOffset()
       publishConsumedOffset(recycler, remove = true)
     }
     if (recycler != null && listener != null) recycler.removeOnScrollListener(listener)
@@ -716,27 +727,35 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     detachPrimaryScrollObserver()
     observedNativeScroller = scroller
     applyNativeScrollerInsets(scroller, selectedPage)
-    val listener = ViewTreeObserver.OnScrollChangedListener {
-      val contentOffset = scroller.scrollY
-      pageOffsets[currentPageKey()] = contentOffset
-      if (contentOffset > 0 && headerOffsetPx < headerHeightPx) {
-        setHeaderOffset(headerHeightPx)
+    val listener = object : ViewTreeObserver.OnScrollChangedListener {
+      override fun onScrollChanged() {
+        if (observedNativeScrollerListener !== this) {
+          removeScrollChangedListener(null, scroller, this)
+          return
+        }
+        val contentOffset = scroller.scrollY
+        pageOffsets[currentPageKey()] = contentOffset
+        if (contentOffset > 0 && headerOffsetPx < headerHeightPx) {
+          setHeaderOffset(headerHeightPx)
+        }
       }
     }
     observedNativeScrollerListener = listener
-    scroller.viewTreeObserver.addOnScrollChangedListener(listener)
+    observedNativeScrollerTreeObserver = scroller.viewTreeObserver.also {
+      it.addOnScrollChangedListener(listener)
+    }
     log(
       "scroller-observer-attach inner=$selectedPage key=${currentPageKey()} " +
         "scroller=${System.identityHashCode(scroller)}",
     )
   }
 
-  private fun detachNativeScrollerObserver() {
+  private fun detachNativeScrollerObserver(recordOffset: Boolean) {
     val scroller = observedNativeScroller
     val listener = observedNativeScrollerListener
-    if (scroller != null) pageOffsets[currentPageKey()] = scroller.scrollY
-    if (scroller != null && listener != null && scroller.viewTreeObserver.isAlive) {
-      scroller.viewTreeObserver.removeOnScrollChangedListener(listener)
+    if (scroller != null && recordOffset) pageOffsets[currentPageKey()] = scroller.scrollY
+    if (scroller != null && listener != null) {
+      removeScrollChangedListener(observedNativeScrollerTreeObserver, scroller, listener)
     }
     if (scroller != null) {
       log(
@@ -746,12 +765,25 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     }
     observedNativeScroller = null
     observedNativeScrollerListener = null
+    observedNativeScrollerTreeObserver = null
   }
 
-  private fun detachPrimaryScrollObserver() {
-    detachOwnedScrollerObserver()
-    detachRecyclerObserver()
-    detachNativeScrollerObserver()
+  private fun detachPrimaryScrollObserver(recordOffset: Boolean = true) {
+    detachOwnedScrollerObserver(recordOffset)
+    detachRecyclerObserver(recordOffset)
+    detachNativeScrollerObserver(recordOffset)
+  }
+
+  private fun removeScrollChangedListener(
+    registered: ViewTreeObserver?,
+    scroller: View,
+    listener: ViewTreeObserver.OnScrollChangedListener,
+  ) {
+    // A detached scroller returns a new floating observer, while the listener is
+    // still registered on the window observer. Try every instance that can own it.
+    for (observer in arrayOf(registered, scroller.viewTreeObserver, viewTreeObserver)) {
+      if (observer != null && observer.isAlive) observer.removeOnScrollChangedListener(listener)
+    }
   }
 
   private fun applyOwnedScrollerInsets(scroller: NativeScrollerViewport, pageIndex: Int) {
@@ -762,13 +794,14 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     ownedScrollerKeys[scroller] = key
     postForCurrentAttachment {
       if (ownedScrollerKeys[scroller] == key && scroller.isAttachedToWindow) {
-        scroller.scrollTo(0, pageOffsets[key] ?: 0)
+        scroller.host.restoreScrollOffset(pageOffsets[key] ?: 0)
       }
     }
   }
 
   private fun restoreOwnedScrollerInsets(scroller: NativeScrollerViewport) {
     scroller.stopMotion()
+    scroller.host.cancelPendingScrollRestore()
     ownedScrollerKeys.remove(scroller)
     publishConsumedOffset(scroller, remove = true)
     scroller.host.setPagerInset(this, null)
@@ -784,26 +817,35 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     observedOwnedScrollerKey = currentPageKey()
     val key = currentPageKey()
     applyOwnedScrollerInsets(scroller, selectedPage)
-    val listener = ViewTreeObserver.OnScrollChangedListener {
-      val contentOffset = scroller.scrollY
-      pageOffsets[key] = contentOffset
-      if (contentOffset > 0 && headerOffsetPx < headerHeightPx) setHeaderOffset(headerHeightPx)
+    val listener = object : ViewTreeObserver.OnScrollChangedListener {
+      override fun onScrollChanged() {
+        if (observedOwnedScrollerListener !== this) {
+          removeScrollChangedListener(null, scroller, this)
+          return
+        }
+        val contentOffset = scroller.scrollY
+        pageOffsets[key] = contentOffset
+        if (contentOffset > 0 && headerOffsetPx < headerHeightPx) setHeaderOffset(headerHeightPx)
+      }
     }
     observedOwnedScrollerListener = listener
-    scroller.viewTreeObserver.addOnScrollChangedListener(listener)
+    observedOwnedScrollerTreeObserver = scroller.viewTreeObserver.also {
+      it.addOnScrollChangedListener(listener)
+    }
   }
 
-  private fun detachOwnedScrollerObserver() {
+  private fun detachOwnedScrollerObserver(recordOffset: Boolean) {
     val scroller = observedOwnedScroller ?: return
     scroller.stopMotion()
     publishConsumedOffset(scroller, remove = true)
-    observedOwnedScrollerKey?.let { pageOffsets[it] = scroller.scrollY }
+    if (recordOffset) observedOwnedScrollerKey?.let { pageOffsets[it] = scroller.scrollY }
     observedOwnedScrollerListener?.let {
-      if (scroller.viewTreeObserver.isAlive) scroller.viewTreeObserver.removeOnScrollChangedListener(it)
+      removeScrollChangedListener(observedOwnedScrollerTreeObserver, scroller, it)
     }
     observedOwnedScroller = null
     observedOwnedScrollerKey = null
     observedOwnedScrollerListener = null
+    observedOwnedScrollerTreeObserver = null
   }
 
   private fun applyRecyclerInsets(recycler: RecyclerView, pageIndex: Int) {

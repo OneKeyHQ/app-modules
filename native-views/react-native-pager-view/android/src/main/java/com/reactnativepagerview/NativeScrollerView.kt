@@ -64,6 +64,8 @@ class NativeScrollerView(context: Context) : FrameLayout(context) {
   private var lastScrollEvent = 0L
   private var laidOut = false
   private var requestedRefresh = false
+  private var refreshStatePending = false
+  private val pendingRestore = NativeScrollerPendingRestore()
   private var refreshOffset = 0
   private var appliedRefreshOffset: Int? = null
   private var appliedRefreshSize = SwipeRefreshLayout.DEFAULT
@@ -175,6 +177,7 @@ class NativeScrollerView(context: Context) : FrameLayout(context) {
 
   internal fun removeReactChild() {
     viewport.stopMotion()
+    pendingRestore.cancel()
     reactChild?.let(contentOriginFrame::removeView)
     reactChild = null
     contentWidthPx = 0
@@ -221,18 +224,34 @@ class NativeScrollerView(context: Context) : FrameLayout(context) {
     )
     refresh.layout(0, 0, width, height)
     // Reapply the current anchor after content shrink; NestedScrollView clamps it.
-    viewport.scrollTo(x, y)
+    // A pager restoration clamped before content reached native resumes as it grows.
+    viewport.scrollTo(x, pendingRestore.anchor(y))
+    pendingRestore.settle(viewport.scrollY)
     laidOut = true
     publishContentViewport()
     publishContentOrigin()
     applyRefreshOffset()
-    if (refresh.isRefreshing != requestedRefresh) refresh.isRefreshing = requestedRefresh
+    // Apply only a prop received before the first layout. Reapplying it on later
+    // layouts would hide a gesture-started spinner before JS commits refreshing.
+    if (refreshStatePending) {
+      refreshStatePending = false
+      if (refresh.isRefreshing != requestedRefresh) refresh.isRefreshing = requestedRefresh
+    }
   }
 
   internal fun setRefreshing(value: Boolean) {
     requestedRefresh = value
-    if (laidOut) refresh.isRefreshing = value
+    if (laidOut) refresh.isRefreshing = value else refreshStatePending = true
   }
+
+  /** Scrolls to a pager-owned saved offset, retrying while content is too short to reach it. */
+  internal fun restoreScrollOffset(y: Int) {
+    val target = y.coerceAtLeast(0)
+    viewport.scrollTo(0, target)
+    pendingRestore.request(target, viewport.scrollY)
+  }
+
+  internal fun cancelPendingScrollRestore() = pendingRestore.cancel()
 
   internal fun setRefreshOffset(value: Int) {
     refreshOffset = value
@@ -273,6 +292,7 @@ class NativeScrollerView(context: Context) : FrameLayout(context) {
 
   internal fun scrollToPosition(x: Int, y: Int, animated: Boolean) {
     viewport.stopMotion()
+    pendingRestore.cancel()
     if (animated) viewport.scrollToAnimated(y)
     else viewport.scrollTo(0, y.coerceAtLeast(0))
     emitScroll(force = true)
@@ -395,6 +415,7 @@ internal class NativeScrollerViewport(context: Context, internal val host: Nativ
   // Record at the refresh boundary so interception does not truncate the pointer history.
   internal fun recordTouchEvent(event: MotionEvent) {
     if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+      host.cancelPendingScrollRestore()
       stopMotion()
       velocityTracker = VelocityTracker.obtain()
       activePointerId = event.getPointerId(0)
@@ -422,6 +443,8 @@ internal class NativeScrollerViewport(context: Context, internal val host: Nativ
   internal fun beginDrag(event: MotionEvent) {
     if (dragging) return
     dragging = true
+    // Header-forwarded touches bypass the refresh boundary's touch stream.
+    host.cancelPendingScrollRestore()
     if (host.keyboardDismissMode != "none") host.dismissKeyboard()
     NativeGestureUtil.notifyNativeGestureStarted(host, event)
     host.emitLifecycle("topScrollBeginDrag")
@@ -481,13 +504,17 @@ internal class NativeScrollerViewport(context: Context, internal val host: Nativ
       try { endDrag(cancel) } finally { cancel.recycle() }
     }
     releaseTouchTracking()
-    stopping = true
-    try {
-      // Replace the same AndroidX trajectory with zero velocity without touching its smooth-scroll clock.
-      super.fling(0)
-      super.stopNestedScroll(ViewCompat.TYPE_NON_TOUCH)
-    } finally {
-      stopping = false
+    // An idle view has nothing to stop. A zero fling would still start and stop a
+    // non-touch nested scroll, which ancestors observe as a finished gesture.
+    if (momentum || hasNestedScrollingParent(ViewCompat.TYPE_NON_TOUCH)) {
+      stopping = true
+      try {
+        // Replace the same AndroidX trajectory with zero velocity without touching its smooth-scroll clock.
+        super.fling(0)
+        super.stopNestedScroll(ViewCompat.TYPE_NON_TOUCH)
+      } finally {
+        stopping = false
+      }
     }
     finishMomentum()
   }

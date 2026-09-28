@@ -2,7 +2,9 @@ package com.reactnativepagerview
 
 import android.graphics.Color
 import android.view.View
+import com.facebook.react.bridge.ColorPropConverter
 import com.facebook.react.bridge.ReadableArray
+import com.facebook.react.bridge.ReadableType
 import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.uimanager.ReactStylesDiffMap
 import com.facebook.react.uimanager.StateWrapper
@@ -100,7 +102,20 @@ class NativeScrollerViewManager : ViewGroupManager<NativeScrollerView>(),
   }
   @ReactProp(name = "refreshColors", customType = "ColorArray")
   override fun setRefreshColors(view: NativeScrollerView, value: ReadableArray?) {
-    view.setRefreshColors(if (value == null) intArrayOf(Color.GRAY) else IntArray(value.size()) { value.getInt(it) })
+    if (value == null) {
+      view.setRefreshColors(intArrayOf(Color.GRAY))
+      return
+    }
+    val colors = ArrayList<Int>(value.size())
+    for (index in 0 until value.size()) {
+      // PlatformColor/DynamicColorIOS values arrive as maps, as in RN's SwipeRefreshLayoutManager.
+      when (value.getType(index)) {
+        ReadableType.Map -> ColorPropConverter.getColor(value.getMap(index), view.context)?.let(colors::add)
+        ReadableType.Number -> colors.add(value.getInt(index))
+        else -> Unit
+      }
+    }
+    view.setRefreshColors(colors.toIntArray())
   }
   @ReactProp(name = "refreshProgressBackgroundColor", customType = "Color")
   override fun setRefreshProgressBackgroundColor(view: NativeScrollerView, value: Int?) =

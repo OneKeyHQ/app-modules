@@ -190,6 +190,10 @@ export class CollapsiblePagerView extends React.PureComponent<
 
   private latestNativeTabTarget: number | null = null;
 
+  // Target of the last tab command native has received and not yet reported
+  // as selected. Commands superseded before their frame never reach native.
+  private dispatchedNativeTabTarget: number | null = null;
+
   private latestNativeSelectedPage = this.state.selectedPage;
 
   private nativePagerScrollState: OnPageScrollStateChangedEventData["pageScrollState"] =
@@ -282,6 +286,7 @@ export class CollapsiblePagerView extends React.PureComponent<
           if (commandId !== this.nativeTabCommandId || !this.nativeRef) {
             return;
           }
+          this.dispatchedNativeTabTarget = position;
           if (animated) {
             CollapsiblePagerViewNativeCommands.setPage(
               this.nativeRef,
@@ -354,6 +359,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       const transitionComplete = pendingTarget === position;
       if (transitionComplete) {
         this.latestNativeTabTarget = null;
+        this.dispatchedNativeTabTarget = null;
         this.nativeTabCommandQueuedDuringScroll = false;
       }
       this.setState(
@@ -386,6 +392,7 @@ export class CollapsiblePagerView extends React.PureComponent<
     ) {
       ++this.nativeTabCommandId;
       this.latestNativeTabTarget = null;
+      this.dispatchedNativeTabTarget = null;
       this.setState(
         { transientRetainedPages: [] },
         this.notifyMountedPagesChanged
@@ -408,10 +415,13 @@ export class CollapsiblePagerView extends React.PureComponent<
       (position !== this.state.selectedPage ||
         this.latestNativeTabTarget !== null)
     ) {
+      // Selection state lags an in-flight transition until native reports it.
+      const currentPage =
+        this.dispatchedNativeTabTarget ?? this.state.selectedPage;
       this.dispatchNativeTabPageCommand(
         position,
         this.props.nativeTabPressAnimationEnabled ??
-          Math.abs(position - this.state.selectedPage) <= 1
+          Math.abs(position - currentPage) <= 1
       );
     }
     this.props.onNativeTabPress?.(event);
