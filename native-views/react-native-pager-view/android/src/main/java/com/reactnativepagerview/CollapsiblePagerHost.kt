@@ -9,6 +9,7 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.ScrollView
 // OneKey patch: FrameLayout is inherited through NestedScrollableHost.
 // import android.widget.FrameLayout
@@ -17,11 +18,14 @@ import androidx.core.view.NestedScrollingParentHelper
 import androidx.core.view.ViewCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.CircularProgressDrawable
 import androidx.viewpager2.widget.ViewPager2
 import com.facebook.react.R as ReactR
 import com.facebook.react.uimanager.events.NativeGestureUtil
 import com.facebook.react.views.scroll.ReactScrollView
+import com.facebook.react.views.swiperefresh.ReactSwipeRefreshLayout
 import com.margelo.nitro.nativelogger.OneKeyLog
+import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import kotlin.math.max
 import kotlin.math.min
@@ -116,6 +120,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private val restoredRecyclerKeys = WeakHashMap<RecyclerView, String>()
   private val originalScrollerPadding = WeakHashMap<ScrollView, ScrollerPadding>()
   private val restoredScrollerKeys = WeakHashMap<ScrollView, String>()
+  private val scrollerRefreshIndicators = WeakHashMap<ScrollView, WeakReference<View>>()
   private val pageOffsets = HashMap<String, Int>()
   private var observedRecyclerView: RecyclerView? = null
   private var observedScrollListener: RecyclerView.OnScrollListener? = null
@@ -604,6 +609,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   private fun prepareAdjacentPages() {
+    // Retained pages and replaced controls may leave the attached view tree.
+    for ((scroller, indicator) in scrollerRefreshIndicators.toMap()) {
+      if (nativeScrollerRefreshIndicator(scroller) !== indicator.get()) {
+        restoreNativeScrollerRefreshIndicator(scroller)
+      }
+    }
     val first = max(0, selectedPage - 1)
     val last = min(adapter.itemCount - 1, selectedPage + 1)
     for (index in first..last) {
@@ -794,6 +805,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     updateScrollerPaddingOwnership(scroller, original)
     val topInset = headerHeightPx + stickyHeaderHeightPx
     scroller.clipToPadding = false
+    applyNativeScrollerRefreshIndicator(scroller, topInset)
     if (scroller is ReactScrollView) {
       // Fabric owns the content child's layout, so ScrollView padding alone
       // cannot move it. RN's native ScrollAway API also updates Fabric culling.
@@ -896,6 +908,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   private fun restoreNativeScrollerInsets(scroller: ScrollView) {
+    restoreNativeScrollerRefreshIndicator(scroller)
     val original = originalScrollerPadding.remove(scroller) ?: return
     updateScrollerPaddingOwnership(scroller, original)
     restoredScrollerKeys.remove(scroller)
@@ -908,6 +921,44 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     }
     scroller.clipToPadding = original.clipToPadding
     scroller.setPadding(original.left, original.top, original.right, original.bottom)
+  }
+
+  private fun nativeScrollerRefreshIndicator(scroller: ScrollView): View? {
+    if (!nativeSmoothHeaderScrollEnabled) return null
+    var ancestor = scroller.parent
+    while (ancestor != null && ancestor !== this) ancestor = ancestor.parent
+    if (ancestor !== this) return null
+    val refresh = scroller.parent as? ReactSwipeRefreshLayout ?: return null
+    for (index in 0 until refresh.childCount) {
+      val child = refresh.getChildAt(index)
+      if (child is ImageView && child.drawable is CircularProgressDrawable) return child
+    }
+    return null
+  }
+
+  private fun applyNativeScrollerRefreshIndicator(scroller: ScrollView, inset: Int) {
+    val indicator = nativeScrollerRefreshIndicator(scroller)
+    if (scrollerRefreshIndicators[scroller]?.get() !== indicator) {
+      restoreNativeScrollerRefreshIndicator(scroller)
+    }
+    if (indicator == null) return
+    if (scrollerRefreshIndicators[scroller]?.get() !== indicator) {
+      scrollerRefreshIndicators[scroller] = WeakReference(indicator)
+    }
+    val translation = refreshIndicatorTranslations.getOrPut(indicator) {
+      NativeScrollerRefreshTranslation(indicator.translationY)
+    }
+    // Moving only the drawing preserves RN's offsets and AndroidX's active pull/refresh animation.
+    // setProgressViewOffset would reset that animation and clear isRefreshing.
+    val next = translation.update(indicator.translationY, this, inset.toFloat())
+    if (indicator.translationY != next) indicator.translationY = next
+  }
+
+  private fun restoreNativeScrollerRefreshIndicator(scroller: ScrollView) {
+    val indicator = scrollerRefreshIndicators.remove(scroller)?.get() ?: return
+    val translation = refreshIndicatorTranslations[indicator] ?: return
+    indicator.translationY = translation.update(indicator.translationY, this, null)
+    if (translation.isEmpty) refreshIndicatorTranslations.remove(indicator)
   }
 
   private fun headerRegionAt(y: Float): String? {
@@ -1232,6 +1283,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   companion object {
+    private val refreshIndicatorTranslations = WeakHashMap<View, NativeScrollerRefreshTranslation>()
     const val NATIVE_SCROLLER_ID_PREFIX = "rnc-collapsible-pager-native-scroller:"
     const val PAGE_SLOT_OFFSET = 2
   }

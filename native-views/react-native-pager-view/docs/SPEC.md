@@ -3,6 +3,40 @@
 Existing PagerView and CollapsiblePagerView APIs are documented in README.md.
 The sections below define native coordination boundaries without new React props.
 
+## Android NativeScroller refresh indicator placement
+
+Status: implemented; Android API 36 Home pull-gesture visibility verified on
+2026-09-28. Spot, Perps and DeFi (RN NativeScroller), plus the unchanged NFT and
+History (NativeList), each pass header-origin and content-origin pulls. Ten
+recordings show a visible indicator below the shared tabs, one refresh event and
+normal disappearance. This verifies UI feedback and event dispatch, not
+downstream request completion. Dynamic caller offset, refresh-time header resize
+and nested-pager replacement remain separate device acceptance work.
+In smooth-header mode, each pager contributes its header-plus-sticky height in
+physical pixels to the RN NativeScroller refresh indicator's `translationY`.
+The coordinator identifies only the refresh layout's direct indicator child;
+it MUST NOT translate the content ScrollView or change refresh offsets, bounds,
+scale, animation, visibility, trigger distance, refreshing state or callbacks.
+RN retains ownership of `progressViewOffset`, including dynamic caller updates.
+NativeList keeps its existing independent refresh-indicator positioning.
+
+One state per indicator combines weak owner contributions on the UI thread.
+Repeated application and header resizing replace only the calling owner's
+contribution. An external translation different from the last applied value
+becomes the new baseline. Removing an owner preserves the remaining contributions;
+removing the final owner restores the latest baseline. A zero contribution still
+has an owner until explicitly released. State MUST NOT strongly retain an owner
+or the indicator. Late mounting, indicator replacement and scroller/pager detach
+use the existing native layout lifecycle; there is no JavaScript frame callback.
+
+The standalone JVM policy test covers nonzero baselines, repeated application,
+resize, nested owners removed in either order, external translation updates,
+zero contributions and final restoration. It does not prove Android view
+discovery, actual refresh state or rendered placement. Runtime acceptance requires
+header-origin and content-origin pulls on NativeScroller pages, caller offset
+changes, refresh-time layout changes, replacement/detach, and visible disappearance
+after completion; existing NativeList pages must remain unchanged.
+
 ## iOS refresh indicator placement
 
 Status: source implementation; real refresh-cycle acceptance pending.
