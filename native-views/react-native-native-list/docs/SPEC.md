@@ -526,6 +526,20 @@ The container does not emit a second haptic for the release fallback. The fallba
 inactive unless pull-to-refresh is enabled; no product-specific threshold is
 hardcoded into the module.
 
+## Android refresh foreground geometry
+
+Status: implemented; NFT/History Home placement verified on Android on 2026-09-28.
+The refresh container publishes its actual coordinator-added indicator inset in
+physical pixels under the native View tag
+`onekey_native_scroll_coordinator_refresh_inset`. Zero means no added inset;
+the value MUST match the offset actually applied by the existing controller,
+including all ancestor padding contributions. A coordinating outer Pager can
+subtract this metadata once when drawing the native indicator above shared
+headers. This metadata does not change refresh trigger distance, callback,
+refreshing state, ordinary-list placement or row templates. It introduces no
+JavaScript API or dependency on Pager classes. The value follows changes to the
+applied inset and remains valid while that inset is retained across detach.
+
 ## Native rich activity presentation
 
 Status: Source implemented; native runtime acceptance pending. Optional `amounts`

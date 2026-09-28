@@ -3,39 +3,73 @@
 Existing PagerView and CollapsiblePagerView APIs are documented in README.md.
 The sections below define native coordination boundaries without new React props.
 
-## Android NativeScroller refresh indicator placement
+## Android refresh foreground coordination
 
-Status: implemented; Android API 36 Home pull-gesture visibility verified on
-2026-09-28. Spot, Perps and DeFi (RN NativeScroller), plus the unchanged NFT and
-History (NativeList), each pass header-origin and content-origin pulls. Ten
-recordings show a visible indicator below the shared tabs, one refresh event and
-normal disappearance. This verifies UI feedback and event dispatch, not
-downstream request completion. Dynamic caller offset, refresh-time header resize
-and nested-pager replacement remain separate device acceptance work.
-In smooth-header mode, each pager contributes its header-plus-sticky height in
-physical pixels to the RN NativeScroller refresh indicator's `translationY`.
-The coordinator identifies only the refresh layout's direct indicator child;
-it MUST NOT translate the content ScrollView or change refresh offsets, bounds,
-scale, animation, visibility, trigger distance, refreshing state or callbacks.
-RN retains ownership of `progressViewOffset`, including dynamic caller updates.
-NativeList keeps its existing independent refresh-indicator positioning.
+Status: implemented; Android Home simulator placement verified on 2026-09-28.
+The previous below-tab placement is not accepted: the Home header can place the
+indicator in the middle of asset rows. In smooth-header mode the outermost
+coordinator MUST draw the active primary scroller's native refresh indicator
+above the shared headers at the coordinator's top. SwipeRefreshLayout retains
+trigger, animation, native visibility and refresh-state ownership. The indicator
+MUST NOT be reparented, and the coordinator MUST NOT reset progress offsets.
 
-One state per indicator combines weak owner contributions on the UI thread.
-Repeated application and header resizing replace only the calling owner's
-contribution. An external translation different from the last applied value
-becomes the new baseline. Removing an owner preserves the remaining contributions;
-removing the final owner restores the latest baseline. A zero contribution still
-has an owner until explicitly released. State MUST NOT strongly retain an owner
-or the indicator. Late mounting, indicator replacement and scroller/pager detach
-use the existing native layout lifecycle; there is no JavaScript frame callback.
+NativeScroller and NativeList use the same foreground drawing boundary. A native
+View tag, `onekey_native_scroll_coordinator_refresh_inset`, reports only the
+refresh controller's actual coordinator-applied inset. An absent tag means zero.
+The outer drawer subtracts that inset once, preserving caller geometry and the
+native indicator matrix. This is native drawing metadata, with no JS API or row
+semantics. Nested owners MUST NOT draw duplicate indicators.
 
-The standalone JVM policy test covers nonzero baselines, repeated application,
-resize, nested owners removed in either order, external translation updates,
-zero contributions and final restoration. It does not prove Android view
-discovery, actual refresh state or rendered placement. Runtime acceptance requires
-header-origin and content-origin pulls on NativeScroller pages, caller offset
-changes, refresh-time layout changes, replacement/detach, and visible disappearance
-after completion; existing NativeList pages must remain unchanged.
+The coordinator suppresses only the indicator's original drawing and restores
+its prior alpha when ownership ends, the target changes, or the pager detaches.
+An inactive page MUST NOT appear in the foreground. The foreground must clear
+when the indicator disappears. Native animation transformations MUST NOT be
+advanced a second time during drawing. Focused policy checks and device evidence
+must cover alpha restoration, nested ownership, page changes and dismissal.
+All five Home tabs require top-positioned feedback and stable header position
+through pull, release and refresh completion. Source/compile success is not
+runtime acceptance. Existing iOS/Web behavior is unchanged.
+
+The five Home tabs were recorded from both header and content origins: the
+foreground arc appears at the coordinator top and dismisses normally. The fast
+release reversal that previously changed header offset from 0 to 767 px now
+consumes the pending pull fling and keeps the header expanded. These recordings
+verify visual feedback, not downstream network completion or new callback counts.
+Production-helper tests cover alpha restoration and combined native insets;
+real nested-owner replacement, dynamic caller geometry and detach remain separate
+acceptance work. Direct foreground View drawing preserves the native circle and
+arc but does not reproduce the original RenderNode elevation shadow.
+
+## Android refresh release settlement
+
+Status: implemented; the captured release reversal passes a device A/B check.
+A downward touch gesture that leaves unconsumed travel for the active
+SwipeRefreshLayout is a pending native refresh pull. While that same gesture's
+indicator is visible, the shared header is expanded, and primary content remains
+at the top, the coordinator MUST consume nested pre-fling on release. A small
+upward reversal before lifting must settle the pull instead of starting a
+content fling and abruptly collapsing the header. SwipeRefreshLayout still owns
+whether the release triggers or cancels refresh.
+
+The pending target is weak, scoped to the current touch nested-scroll gesture,
+and cleared at its stop or replacement. An old indicator's exit animation alone
+is not a pending pull. Ordinary upward swipes, content scrolled away from the
+top, inactive pages and non-smooth mode retain existing fling behavior. A pull
+whose indicator is already hidden no longer qualifies. AndroidX can leave the
+indicator visible when reverse travel exactly exhausts the pull; that same
+gesture may still be settled instead of flung. Required regression cases include immediate reversal release,
+a stationary release, below-threshold cancellation, ordinary upward fling and
+header expansion before refresh. No JS timeout or data-refresh suppression is
+introduced.
+
+## Superseded Android indicator placement
+
+The alpha.257 approach translated the RN indicator below the shared tabs.
+Its ten Home checks established visibility and event dispatch only. Subsequent
+2026-09-28 feedback showed the indicator over asset rows; those checks do not
+establish correct placement. The foreground coordination contract above replaces
+that translation policy. NativeList keeps its controller offset internally and
+publishes only its actual native inset for foreground drawing.
 
 ## iOS refresh indicator placement
 

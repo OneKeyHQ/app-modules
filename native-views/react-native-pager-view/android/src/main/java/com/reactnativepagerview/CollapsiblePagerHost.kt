@@ -1,6 +1,8 @@
 package com.reactnativepagerview
 
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -19,11 +21,11 @@ import androidx.core.view.ViewCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.CircularProgressDrawable
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.viewpager2.widget.ViewPager2
 import com.facebook.react.R as ReactR
 import com.facebook.react.uimanager.events.NativeGestureUtil
 import com.facebook.react.views.scroll.ReactScrollView
-import com.facebook.react.views.swiperefresh.ReactSwipeRefreshLayout
 import com.margelo.nitro.nativelogger.OneKeyLog
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
@@ -120,7 +122,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private val restoredRecyclerKeys = WeakHashMap<RecyclerView, String>()
   private val originalScrollerPadding = WeakHashMap<ScrollView, ScrollerPadding>()
   private val restoredScrollerKeys = WeakHashMap<ScrollView, String>()
-  private val scrollerRefreshIndicators = WeakHashMap<ScrollView, WeakReference<View>>()
+  private var foregroundRefreshIndicator: WeakReference<ImageView>? = null
+  private var refreshForegroundWasVisible = false
+  private val refreshForegroundMatrix = Matrix()
+  private val refreshForegroundOrigin = FloatArray(2)
+  private val refreshForegroundAncestors = ArrayList<View>()
+  private var refreshForegroundAncestorAlpha = 1f
   private val pageOffsets = HashMap<String, Int>()
   private var observedRecyclerView: RecyclerView? = null
   private var observedScrollListener: RecyclerView.OnScrollListener? = null
@@ -139,6 +146,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private var headerDownEvent: MotionEvent? = null
   private var headerHasHorizontalChild = false
   private var forwardedScrollable: View? = null
+  private var pendingRefreshPull: WeakReference<SwipeRefreshLayout>? = null
   private var nativeGestureStarted = false
   private var pressCancelled = false
   private val pageContentLayoutListener = ViewTreeObserver.OnPreDrawListener {
@@ -314,6 +322,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   fun removeReactChild(child: View) {
+    releaseRefreshForeground()
     val index = logicalChildren.indexOf(child)
     if (index < 0) return
     logicalChildren.removeAt(index)
@@ -339,6 +348,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   fun removeAllReactChildren() {
+    releaseRefreshForeground()
     detachPrimaryScrollObserver()
     for (recycler in originalRecyclerPadding.keys.toList()) {
       restoreRecyclerInsets(recycler)
@@ -361,8 +371,10 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   fun reactChildAt(index: Int) = logicalChildren[index]
 
   fun selectPage(position: Int) {
+    pendingRefreshPull = null
     if (adapter.itemCount == 0) return
     detachPrimaryScrollObserver()
+    releaseRefreshForeground()
     selectedPage = position.coerceIn(0, adapter.itemCount - 1)
     val savedOffset = pageOffsets[currentPageKey()]
       ?: primaryScrollableForPage(selectedPage)?.let(::verticalScrollOffset)
@@ -609,12 +621,6 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   private fun prepareAdjacentPages() {
-    // Retained pages and replaced controls may leave the attached view tree.
-    for ((scroller, indicator) in scrollerRefreshIndicators.toMap()) {
-      if (nativeScrollerRefreshIndicator(scroller) !== indicator.get()) {
-        restoreNativeScrollerRefreshIndicator(scroller)
-      }
-    }
     val first = max(0, selectedPage - 1)
     val last = min(adapter.itemCount - 1, selectedPage + 1)
     for (index in first..last) {
@@ -623,6 +629,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         is ScrollView -> applyNativeScrollerInsets(scrollable, index)
       }
     }
+    updateRefreshForeground()
   }
 
   private fun attachPrimaryScrollObserver() {
@@ -805,7 +812,6 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     updateScrollerPaddingOwnership(scroller, original)
     val topInset = headerHeightPx + stickyHeaderHeightPx
     scroller.clipToPadding = false
-    applyNativeScrollerRefreshIndicator(scroller, topInset)
     if (scroller is ReactScrollView) {
       // Fabric owns the content child's layout, so ScrollView padding alone
       // cannot move it. RN's native ScrollAway API also updates Fabric culling.
@@ -908,7 +914,6 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   private fun restoreNativeScrollerInsets(scroller: ScrollView) {
-    restoreNativeScrollerRefreshIndicator(scroller)
     val original = originalScrollerPadding.remove(scroller) ?: return
     updateScrollerPaddingOwnership(scroller, original)
     restoredScrollerKeys.remove(scroller)
@@ -923,12 +928,14 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     scroller.setPadding(original.left, original.top, original.right, original.bottom)
   }
 
-  private fun nativeScrollerRefreshIndicator(scroller: ScrollView): View? {
-    if (!nativeSmoothHeaderScrollEnabled) return null
-    var ancestor = scroller.parent
-    while (ancestor != null && ancestor !== this) ancestor = ancestor.parent
-    if (ancestor !== this) return null
-    val refresh = scroller.parent as? ReactSwipeRefreshLayout ?: return null
+  private fun refreshLayoutFor(scrollable: View): SwipeRefreshLayout? {
+    if (scrollable !is ScrollView && scrollable !is RecyclerView) return null
+    var ancestor = scrollable.parent
+    while (ancestor != null && ancestor !is SwipeRefreshLayout) ancestor = ancestor.parent
+    return ancestor as? SwipeRefreshLayout
+  }
+
+  private fun refreshIndicatorFor(refresh: SwipeRefreshLayout): ImageView? {
     for (index in 0 until refresh.childCount) {
       val child = refresh.getChildAt(index)
       if (child is ImageView && child.drawable is CircularProgressDrawable) return child
@@ -936,29 +943,119 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     return null
   }
 
-  private fun applyNativeScrollerRefreshIndicator(scroller: ScrollView, inset: Int) {
-    val indicator = nativeScrollerRefreshIndicator(scroller)
-    if (scrollerRefreshIndicators[scroller]?.get() !== indicator) {
-      restoreNativeScrollerRefreshIndicator(scroller)
+  private fun refreshForegroundOwner(scrollable: View): CollapsiblePagerHost? {
+    var owner: CollapsiblePagerHost? = null
+    var ancestor = scrollable.parent
+    while (ancestor != null) {
+      if (ancestor is CollapsiblePagerHost && ancestor.nativeSmoothHeaderScrollEnabled &&
+        ancestor.isAttachedToWindow && ancestor.isShown &&
+        ancestor.primaryScrollableForPage(ancestor.selectedPage) === scrollable) {
+        owner = ancestor
+      }
+      ancestor = ancestor.parent
     }
-    if (indicator == null) return
-    if (scrollerRefreshIndicators[scroller]?.get() !== indicator) {
-      scrollerRefreshIndicators[scroller] = WeakReference(indicator)
-    }
-    val translation = refreshIndicatorTranslations.getOrPut(indicator) {
-      NativeScrollerRefreshTranslation(indicator.translationY)
-    }
-    // Moving only the drawing preserves RN's offsets and AndroidX's active pull/refresh animation.
-    // setProgressViewOffset would reset that animation and clear isRefreshing.
-    val next = translation.update(indicator.translationY, this, inset.toFloat())
-    if (indicator.translationY != next) indicator.translationY = next
+    return owner
   }
 
-  private fun restoreNativeScrollerRefreshIndicator(scroller: ScrollView) {
-    val indicator = scrollerRefreshIndicators.remove(scroller)?.get() ?: return
-    val translation = refreshIndicatorTranslations[indicator] ?: return
-    indicator.translationY = translation.update(indicator.translationY, this, null)
-    if (translation.isEmpty) refreshIndicatorTranslations.remove(indicator)
+  private fun updateRefreshForeground() {
+    val scrollable = primaryScrollableForPage(selectedPage)
+    val refresh = scrollable?.takeIf { refreshForegroundOwner(it) === this }?.let(::refreshLayoutFor)
+    val indicator = refresh?.let(::refreshIndicatorFor)
+    if (foregroundRefreshIndicator?.get() !== indicator) releaseRefreshForeground()
+    if (indicator != null) {
+      if (foregroundRefreshIndicator?.get() !== indicator) {
+        foregroundRefreshIndicator = WeakReference(indicator)
+      }
+      val state = refreshIndicatorAlphas.getOrPut(indicator) {
+        NativeRefreshForegroundAlpha(indicator.alpha)
+      }
+      val alpha = state.update(indicator.alpha, this, acquire = true)
+      if (indicator.alpha != alpha) indicator.alpha = alpha
+    }
+    val visible = indicator?.isShown == true &&
+      (refreshIndicatorAlphas[indicator]?.drawingAlpha ?: 0f) > 0f
+    // The foreground lies outside the original child's invalidation rectangle.
+    // Repaint once on disappearance as well as throughout the native animation.
+    if (visible || refreshForegroundWasVisible) postInvalidateOnAnimation()
+    refreshForegroundWasVisible = visible
+  }
+
+  private fun releaseRefreshForeground() {
+    val indicator = foregroundRefreshIndicator?.get()
+    foregroundRefreshIndicator = null
+    if (indicator != null) {
+      refreshIndicatorAlphas[indicator]?.let { state ->
+        indicator.alpha = state.update(indicator.alpha, this, acquire = false)
+        if (state.isEmpty) refreshIndicatorAlphas.remove(indicator)
+      }
+    }
+    if (indicator != null || refreshForegroundWasVisible) invalidate()
+    refreshForegroundWasVisible = false
+  }
+
+  private fun refreshMatrixInHost(refresh: View): Boolean {
+    refreshForegroundMatrix.reset()
+    refreshForegroundAncestorAlpha = 1f
+    refreshForegroundAncestors.clear()
+    try {
+      var current: View? = refresh
+      while (current != null && current !== this) {
+        refreshForegroundAncestors.add(current)
+        current = current.parent as? View
+      }
+      if (current !== this) return false
+      for (index in refreshForegroundAncestors.lastIndex downTo 0) {
+        val child = refreshForegroundAncestors[index]
+        val parent = child.parent as? View ?: return false
+        refreshForegroundMatrix.preTranslate(
+          (child.left - parent.scrollX).toFloat(), (child.top - parent.scrollY).toFloat(),
+        )
+        refreshForegroundMatrix.preConcat(child.matrix)
+        refreshForegroundAncestorAlpha *= child.alpha
+      }
+      return true
+    } finally {
+      refreshForegroundAncestors.clear()
+    }
+  }
+
+  override fun dispatchDraw(canvas: Canvas) {
+    // The original parent advances native refresh animations and their listeners.
+    super.dispatchDraw(canvas)
+    val indicator = foregroundRefreshIndicator?.get() ?: return
+    val scrollable = primaryScrollableForPage(selectedPage) ?: return
+    if (refreshForegroundOwner(scrollable) !== this) return
+    val refresh = refreshLayoutFor(scrollable) ?: return
+    if (refreshIndicatorFor(refresh) !== indicator || !indicator.isShown ||
+      indicator.width <= 0 || indicator.height <= 0 || !refreshMatrixInHost(refresh)) return
+    val alpha = (refreshIndicatorAlphas[indicator]?.drawingAlpha ?: return) *
+      refreshForegroundAncestorAlpha
+    if (alpha <= 0f) return
+    refreshForegroundOrigin[0] = 0f
+    refreshForegroundOrigin[1] = 0f
+    refreshForegroundMatrix.mapPoints(refreshForegroundOrigin)
+    val appliedInset = (refresh.getTag(R.id.onekey_native_scroll_coordinator_refresh_inset) as? Number)
+      ?.toFloat() ?: 0f
+    val save = canvas.save()
+    try {
+      // Pin the refresh container's origin to this Host top while retaining its
+      // horizontal page position, native scale/pivot, and caller translation.
+      canvas.translate(0f, -refreshForegroundOrigin[1])
+      canvas.concat(refreshForegroundMatrix)
+      canvas.translate(indicator.left.toFloat(), nativeRefreshForegroundTop(indicator.top, appliedInset))
+      canvas.concat(indicator.matrix)
+      if (alpha < 1f) {
+        canvas.saveLayerAlpha(
+          0f, 0f, indicator.width.toFloat(), indicator.height.toFloat(),
+          (alpha * 255f).roundToInt().coerceIn(0, 255),
+        )
+      }
+      // Direct draw deliberately bypasses the alpha used to hide the original
+      // RenderNode. Do not advance Animation.getTransformation a second time.
+      indicator.draw(canvas)
+    } finally {
+      canvas.restoreToCount(save)
+    }
   }
 
   private fun headerRegionAt(y: Float): String? {
@@ -1185,10 +1282,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     axes and ViewCompat.SCROLL_AXIS_VERTICAL != 0 && isCurrentPageTarget(target)
 
   override fun onNestedScrollAccepted(child: View, target: View, axes: Int, type: Int) {
+    if (type == ViewCompat.TYPE_TOUCH) pendingRefreshPull = null
     nestedScrollingParentHelper.onNestedScrollAccepted(child, target, axes, type)
   }
 
   override fun onStopNestedScroll(target: View, type: Int) {
+    if (pendingRefreshPull?.get() === target) pendingRefreshPull = null
     nestedScrollingParentHelper.onStopNestedScroll(target, type)
     onHeaderOffsetChanged?.invoke()
   }
@@ -1219,10 +1318,14 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     type: Int,
     consumed: IntArray,
   ) {
-    if (!isCurrentPageTarget(target) || dyUnconsumed >= 0 || headerOffsetPx <= 0) return
+    if (!isCurrentPageTarget(target) || dyUnconsumed >= 0) return
     val used = max(dyUnconsumed, -headerOffsetPx)
     setHeaderOffset(headerOffsetPx + used)
     consumed[1] += used
+    if (type == ViewCompat.TYPE_TOUCH && dyUnconsumed < used &&
+      target is SwipeRefreshLayout && target.isEnabled) {
+      pendingRefreshPull = WeakReference(target)
+    }
   }
 
   override fun onNestedScroll(
@@ -1244,6 +1347,20 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     )
   }
 
+  override fun onNestedPreFling(target: View, velocityX: Float, velocityY: Float): Boolean {
+    val refresh = pendingRefreshPull?.get()
+    val scrollable = primaryScrollableForPage(selectedPage)
+    if (nativeSmoothHeaderScrollEnabled && refresh != null && refresh === target && isCurrentPageTarget(target) &&
+      headerOffsetPx == 0 && scrollable != null && !scrollable.canScrollVertically(-1) &&
+      refresh.isEnabled && !refresh.isRefreshing &&
+      refreshIndicatorFor(refresh)?.visibility == View.VISIBLE) {
+      // A small release reversal must settle the current refresh pull, not fling
+      // content upward and make its first positive offset collapse the header.
+      return true
+    }
+    return super.onNestedPreFling(target, velocityX, velocityY)
+  }
+
   override fun getNestedScrollAxes() = nestedScrollingParentHelper.nestedScrollAxes
 
   override fun onAttachedToWindow() {
@@ -1259,6 +1376,8 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   override fun onDetachedFromWindow() {
+    pendingRefreshPull = null
+    releaseRefreshForeground()
     attachmentGeneration += 1
     headerDownEvent?.recycle()
     headerDownEvent = null
@@ -1283,7 +1402,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   companion object {
-    private val refreshIndicatorTranslations = WeakHashMap<View, NativeScrollerRefreshTranslation>()
+    private val refreshIndicatorAlphas = WeakHashMap<ImageView, NativeRefreshForegroundAlpha>()
     const val NATIVE_SCROLLER_ID_PREFIX = "rnc-collapsible-pager-native-scroller:"
     const val PAGE_SLOT_OFFSET = 2
   }

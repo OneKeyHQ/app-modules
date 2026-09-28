@@ -18,20 +18,24 @@ internal fun nativeScrollerPaddingWasResetByScrollAway(
 ): Boolean = appliedInset > 0 && left == 0 && top == 0 && right == 0 &&
   bottom == scrollAwayTop + scrollAwayBottom
 
-internal class NativeScrollerRefreshTranslation(initialTranslation: Float) {
-  private val contributions = WeakHashMap<Any, Float>()
-  private var baseline = initialTranslation
-  private var lastApplied = initialTranslation
+// The refresh controller publishes its actual combined ancestor compensation.
+internal fun nativeRefreshForegroundTop(indicatorTop: Int, appliedInset: Float): Float =
+  indicatorTop - appliedInset
+
+internal class NativeRefreshForegroundAlpha(initialAlpha: Float) {
+  private val owners = WeakHashMap<Any, Unit>()
+  private var baseline = initialAlpha
+  private var lastApplied = initialAlpha
 
   val isEmpty: Boolean
-    get() = contributions.isEmpty()
+    get() = owners.isEmpty()
+  val drawingAlpha: Float
+    get() = baseline
 
-  fun update(currentTranslation: Float, owner: Any, inset: Float?): Float {
-    // Native refresh layout owns top/scale, while an external translation is
-    // an absolute baseline rather than another copy of our previous inset.
-    if (currentTranslation != lastApplied) baseline = currentTranslation
-    if (inset == null) contributions.remove(owner) else contributions[owner] = inset
-    lastApplied = baseline + contributions.values.sum()
+  fun update(currentAlpha: Float, owner: Any, acquire: Boolean): Float {
+    if (currentAlpha != lastApplied) baseline = currentAlpha
+    if (acquire) owners[owner] = Unit else owners.remove(owner)
+    lastApplied = if (owners.isEmpty()) baseline else 0f
     return lastApplied
   }
 }

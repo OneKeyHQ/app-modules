@@ -592,6 +592,8 @@ class NativeListView(
   }
 
   private fun updateRefreshIndicatorOffset(offset: Int) {
+    // Let an ancestor render above its shared header without guessing caller offsets.
+    refreshLayout.setTag(R.id.onekey_native_scroll_coordinator_refresh_inset, offset)
     if (refreshIndicatorOffsetPx == offset) return
     refreshIndicatorOffsetPx = offset
     val refreshing = refreshLayout.isRefreshing
