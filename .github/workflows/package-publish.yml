@@ -114,6 +114,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_DIST_TAG: ${{ steps.channel.outputs.dist_tag }}
         run: node scripts/publish-missing.mjs "$NPM_DIST_TAG"
+      - name: Build NativeList workspace type dependency
+        if: github.event_name == 'workflow_dispatch' && inputs.only_workspace == '@onekeyfe/react-native-native-list'
+        run: yarn workspace @onekeyfe/react-native-image prepare
       - name: Publish a single workspace manually
         if: github.event_name == 'workflow_dispatch' && inputs.only_workspace != ''
         env:
