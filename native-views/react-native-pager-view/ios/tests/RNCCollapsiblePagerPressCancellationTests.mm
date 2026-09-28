@@ -1,6 +1,202 @@
 #import <XCTest/XCTest.h>
 #import <UIKit/UIGestureRecognizerSubclass.h>
 #import <React/RCTSurfaceTouchHandler.h>
+#import <React/RCTViewComponentView.h>
+#import <dlfcn.h>
+#import <mach/mach_time.h>
+#import <objc/message.h>
+
+#import "RNCCollapsiblePagerViewComponentView.h"
+#import <react/renderer/components/pagerview/Props.h>
+
+using namespace facebook::react;
+
+#pragma mark - UIKit gesture environment and touch delivery
+
+// Pod unit tests run in xctest without an application. UIKit then has no
+// gesture environment: every programmatic recognizer state change, including
+// Began on a plain UIGestureRecognizer, is dropped. Create the application
+// singleton (what UIApplicationMain does first) so recognizers run under the
+// real UIGestureEnvironment. Touches below are delivered through
+// -[UIWindow sendEvent:], the path UIApplication uses for touch events, using
+// the same private UITouch/UIEvent/IOHIDEvent calls as KIF. These are
+// test-only; a missing symbol fails the test instead of skipping it.
+@interface RNCPressCancellationTestApplication : UIApplication
+@end
+
+@implementation RNCPressCancellationTestApplication
+// UIApplicationMain never ran, so there is no event run loop. UIScrollView
+// pushes a tracking run-loop mode when its real pan begins; scheduling is
+// outside the recognizer semantics under test.
+- (void)_pushRunLoopMode:(id)mode requester:(id)requester reason:(id)reason {}
+- (void)_popRunLoopMode:(id)mode requester:(id)requester reason:(id)reason {}
+@end
+
+static BOOL RNCEnsureUIKitGestureEnvironment(void)
+{
+  if (UIApplication.sharedApplication != nil) return YES;
+  void (*instantiate)(Class) =
+    (void (*)(Class))dlsym(RTLD_DEFAULT, "UIApplicationInstantiateSingleton");
+  if (instantiate == NULL) return NO;
+  instantiate(RNCPressCancellationTestApplication.class);
+  return UIApplication.sharedApplication != nil;
+}
+
+typedef struct __IOHIDEvent *RNCTestHIDEventRef;
+
+@interface UITouch (RNCPressCancellationSynthesis)
+- (void)setWindow:(UIWindow *)window;
+- (void)setView:(UIView *)view;
+- (void)setGestureView:(UIView *)view;
+- (void)setPhase:(UITouchPhase)phase;
+- (void)setTimestamp:(NSTimeInterval)timestamp;
+- (void)setTapCount:(NSUInteger)tapCount;
+- (void)_setLocationInWindow:(CGPoint)location resetPrevious:(BOOL)resetPrevious;
+- (void)_setIsTapToClick:(BOOL)isTapToClick;
+- (void)_setHidEvent:(RNCTestHIDEventRef)event;
+@end
+
+@interface UIEvent (RNCPressCancellationSynthesis)
+- (instancetype)_init;
+- (void)_clearTouches;
+- (void)_addTouch:(UITouch *)touch forDelayedDelivery:(BOOL)delayed;
+- (void)_setHIDEvent:(RNCTestHIDEventRef)event;
+@end
+
+// Delivers one finger or several simultaneous fingers through a window.
+@interface RNCSynthesizedTouchDriver : NSObject
+- (instancetype)initWithWindow:(UIWindow *)window;
+@property (nonatomic, readonly) NSString *unavailableReason;
+- (UITouch *)beginAt:(CGPoint)windowPoint;
+- (void)move:(UITouch *)touch to:(CGPoint)windowPoint;
+- (void)end:(UITouch *)touch;
+@end
+
+@implementation RNCSynthesizedTouchDriver {
+  UIWindow *_window;
+  UIEvent *_event;
+  NSMutableArray<UITouch *> *_activeTouches;
+  NSTimeInterval _timestamp;
+  RNCTestHIDEventRef (*_createHand)(CFAllocatorRef, uint64_t, uint32_t, uint32_t, uint32_t,
+                                    uint32_t, uint32_t, double, double, double, double, double,
+                                    Boolean, Boolean, uint32_t);
+  RNCTestHIDEventRef (*_createFinger)(CFAllocatorRef, uint64_t, uint32_t, uint32_t, uint32_t,
+                                      double, double, double, double, double, double, double,
+                                      double, double, double, Boolean, Boolean, uint32_t);
+  void (*_setIntegerValue)(RNCTestHIDEventRef, uint32_t, long, uint32_t);
+  void (*_appendEvent)(RNCTestHIDEventRef, RNCTestHIDEventRef, uint32_t);
+  void (*_setSenderID)(RNCTestHIDEventRef, uint64_t);
+}
+
+- (instancetype)initWithWindow:(UIWindow *)window
+{
+  if (self = [super init]) {
+    _window = window;
+    _activeTouches = [NSMutableArray new];
+    _timestamp = NSProcessInfo.processInfo.systemUptime;
+    void *iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
+    _createHand = (decltype(_createHand))dlsym(iokit, "IOHIDEventCreateDigitizerEvent");
+    _createFinger =
+      (decltype(_createFinger))dlsym(iokit, "IOHIDEventCreateDigitizerFingerEventWithQuality");
+    _setIntegerValue =
+      (decltype(_setIntegerValue))dlsym(iokit, "IOHIDEventSetIntegerValueWithOptions");
+    _appendEvent = (decltype(_appendEvent))dlsym(iokit, "IOHIDEventAppendEvent");
+    _setSenderID = (decltype(_setSenderID))dlsym(iokit, "IOHIDEventSetSenderID");
+    Class eventClass = NSClassFromString(@"UITouchesEvent");
+    if (!RNCEnsureUIKitGestureEnvironment()) {
+      _unavailableReason = @"UIApplication singleton unavailable";
+    } else if (_createHand == NULL || _createFinger == NULL || _setIntegerValue == NULL ||
+               _appendEvent == NULL || _setSenderID == NULL) {
+      _unavailableReason = @"IOHIDEvent symbols unavailable";
+    } else if (eventClass == Nil || ![eventClass instancesRespondToSelector:@selector(_init)] ||
+               ![eventClass instancesRespondToSelector:@selector(_addTouch:forDelayedDelivery:)] ||
+               ![UITouch instancesRespondToSelector:@selector(_setLocationInWindow:resetPrevious:)] ||
+               ![UITouch instancesRespondToSelector:@selector(_setHidEvent:)]) {
+      _unavailableReason = @"UITouch/UITouchesEvent synthesis selectors unavailable";
+    } else {
+      _event = [[eventClass alloc] _init];
+    }
+  }
+  return self;
+}
+
+- (RNCTestHIDEventRef)newHIDEvent
+{
+  static const uint32_t kDigitizerDisplayIntegrated = (11 << 16) | 25;
+  static const uint32_t kIsBuiltIn = 4;
+  static const uint32_t kOptions = (uint32_t)-268435456;
+  uint64_t machTime = mach_absolute_time();
+  // Hand transducer, touch mask.
+  RNCTestHIDEventRef hand =
+    _createHand(kCFAllocatorDefault, machTime, 3, 0, 0, 1 << 1, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  _setIntegerValue(hand, kDigitizerDisplayIntegrated, 1, kOptions);
+  _setIntegerValue(hand, kIsBuiltIn, 1, kOptions);
+  _setSenderID(hand, 0x000000010000027F);
+  uint32_t index = 0;
+  for (UITouch *touch in _activeTouches) {
+    UITouchPhase phase = touch.phase;
+    // Position for moves; range and touch for contact changes.
+    uint32_t mask = phase == UITouchPhaseMoved ? (1 << 2) : ((1 << 0) | (1 << 1));
+    Boolean down = phase != UITouchPhaseEnded && phase != UITouchPhaseCancelled;
+    CGPoint point = [touch locationInView:_window];
+    RNCTestHIDEventRef finger = _createFinger(kCFAllocatorDefault, machTime, ++index, 2, mask,
+                                              point.x, point.y, 0, 0, 0, 5, 5, 1, 1, 1,
+                                              down, down, 0);
+    _setIntegerValue(finger, kDigitizerDisplayIntegrated, 1, kOptions);
+    _appendEvent(hand, finger, 0);
+    CFRelease(finger);
+  }
+  return hand;
+}
+
+- (void)sendChangingTouch:(UITouch *)changed phase:(UITouchPhase)phase
+{
+  NSAssert(_event != nil, @"%@", _unavailableReason);
+  _timestamp += 1.0 / 60.0;
+  for (UITouch *touch in _activeTouches) {
+    [touch setPhase:touch == changed ? phase : UITouchPhaseStationary];
+    [touch setTimestamp:_timestamp];
+  }
+  RNCTestHIDEventRef hid = [self newHIDEvent];
+  for (UITouch *touch in _activeTouches) [touch _setHidEvent:hid];
+  [_event _setHIDEvent:hid];
+  if (phase == UITouchPhaseBegan) [_event _addTouch:changed forDelayedDelivery:NO];
+  CFRelease(hid);
+  [_window sendEvent:_event];
+  if (phase == UITouchPhaseEnded || phase == UITouchPhaseCancelled) {
+    [_activeTouches removeObjectIdenticalTo:changed];
+    if (_activeTouches.count == 0) [_event _clearTouches];
+  }
+}
+
+- (UITouch *)beginAt:(CGPoint)windowPoint
+{
+  if (_activeTouches.count == 0) [_event _clearTouches];
+  UITouch *touch = [UITouch new];
+  UIView *view = [_window hitTest:windowPoint withEvent:nil];
+  [touch setWindow:_window];
+  [touch _setLocationInWindow:windowPoint resetPrevious:YES];
+  [touch setView:view];
+  if ([touch respondsToSelector:@selector(setGestureView:)]) [touch setGestureView:view];
+  [touch _setIsTapToClick:NO];
+  [touch setTapCount:1];
+  [_activeTouches addObject:touch];
+  [self sendChangingTouch:touch phase:UITouchPhaseBegan];
+  return touch;
+}
+
+- (void)move:(UITouch *)touch to:(CGPoint)windowPoint
+{
+  [touch _setLocationInWindow:windowPoint resetPrevious:NO];
+  [self sendChangingTouch:touch phase:UITouchPhaseMoved];
+}
+
+- (void)end:(UITouch *)touch
+{
+  [self sendChangingTouch:touch phase:UITouchPhaseEnded];
+}
+
+@end
 
 // Private declarations access the production class compiled into the pod.
 @interface RNCCollapsiblePagerContentPressCancellationGestureRecognizer : UIGestureRecognizer
@@ -9,8 +205,8 @@
 - (void)observeIncomingTouch:(UITouch *)touch;
 @end
 
-// UIKit can reset terminal states immediately outside real touch delivery.
-// Observe requests while retaining the production implementation and UIKit setter.
+// Terminal states are reset by UIKit once it processes them. Observe requests
+// while retaining the production implementation and UIKit setter.
 @interface RNCPressCancellationObservedBridge : RNCCollapsiblePagerContentPressCancellationGestureRecognizer
 @property (nonatomic, strong) NSMutableArray<NSNumber *> *requestedStates;
 @end
@@ -23,8 +219,9 @@
 }
 @end
 
-// These doubles supply input facts only. The production bridge owns its state
-// transitions; this suite does not claim to synthesize UIKit touch delivery.
+// These doubles supply input facts to the bridge's decision logic directly.
+// The production bridge owns its state transitions. End-to-end UIKit delivery
+// through the real pager is covered by the delivery suite below.
 @interface RNCPressCancellationTestTouch : UITouch
 @property (nonatomic, strong) UIView *testView;
 @property (nonatomic, assign) UITouchPhase testPhase;
@@ -65,6 +262,8 @@
 {
   [super setUp];
   XCTAssertTrue(NSThread.isMainThread);
+  // Without an application UIKit drops every programmatic recognizer state.
+  XCTAssertTrue(RNCEnsureUIKitGestureEnvironment());
   // Register the recognizers with a UIKit gesture environment without taking focus.
   self.window = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
   self.window.hidden = NO;
@@ -368,6 +567,193 @@
   [self beginSingleTouch];
   [self.bridge cancelPressForPan:self.pan];
   XCTAssertEqual(self.bridge.state, UIGestureRecognizerStatePossible);
+}
+
+@end
+
+#pragma mark - Real UIKit delivery through the production pager
+
+// Records what RN's Fabric touch handler observes. Its reset dispatches
+// touchCancel for every still-registered touch, which is how a Pressable loses
+// its press when an external recognizer prevents the handler.
+@interface RNCRecordingSurfaceTouchHandler : RCTSurfaceTouchHandler
+@property (nonatomic, strong) NSMutableArray<NSString *> *events;
+@property (nonatomic, assign) NSInteger registeredTouches;
+@end
+
+@implementation RNCRecordingSurfaceTouchHandler
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  [super touchesBegan:touches withEvent:event];
+  self.registeredTouches += touches.count;
+  [self.events addObject:@"began"];
+}
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  [super touchesMoved:touches withEvent:event];
+  if (![self.events.lastObject isEqualToString:@"moved"]) [self.events addObject:@"moved"];
+}
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  [super touchesEnded:touches withEvent:event];
+  self.registeredTouches -= touches.count;
+  [self.events addObject:@"ended"];
+}
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  [super touchesCancelled:touches withEvent:event];
+  self.registeredTouches -= touches.count;
+  [self.events addObject:@"cancelled"];
+}
+- (void)reset
+{
+  NSInteger pending = self.registeredTouches;
+  [super reset];
+  self.registeredTouches = 0;
+  if (pending > 0) [self.events addObject:@"reset-cancelled"];
+}
+@end
+
+@interface RNCCollapsiblePagerPressCancellationDeliveryTests : XCTestCase
+@property (nonatomic, strong) UIWindow *window;
+@property (nonatomic, strong) UIView *surface;
+@property (nonatomic, strong) RNCRecordingSurfaceTouchHandler *handler;
+@property (nonatomic, strong) RNCCollapsiblePagerViewComponentView *pager;
+@property (nonatomic, strong) RNCSynthesizedTouchDriver *driver;
+@property (nonatomic, strong) UIView *firstPage;
+@end
+
+@implementation RNCCollapsiblePagerPressCancellationDeliveryTests
+
+- (void)setUp
+{
+  [super setUp];
+  self.window = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 390, 800)];
+  self.window.hidden = NO;
+  UIView *host = [[UIView alloc] initWithFrame:self.window.bounds];
+  self.surface = [[UIView alloc] initWithFrame:host.bounds];
+  [self.window addSubview:host];
+  [host addSubview:self.surface];
+  self.handler = [RNCRecordingSurfaceTouchHandler new];
+  self.handler.events = [NSMutableArray new];
+  [self.handler attachToView:self.surface];
+
+  self.pager = [RNCCollapsiblePagerViewComponentView new];
+  auto props = std::make_shared<RNCCollapsiblePagerViewProps>();
+  props->nativeSmoothHeaderScrollEnabled = true;
+  props->headerHeight = 120;
+  props->stickyHeaderHeight = 44;
+  [self.pager updateProps:props oldProps:nullptr];
+  self.pager.frame = self.surface.bounds;
+  [self.surface addSubview:self.pager];
+  NSArray<UIView<RCTComponentViewProtocol> *> *children = @[
+    [RCTViewComponentView new],  // header
+    [RCTViewComponentView new],  // sticky header
+    [RCTViewComponentView new],  // page 0
+    [RCTViewComponentView new],  // page 1
+  ];
+  children[0].frame = CGRectMake(0, 0, 390, 120);
+  children[1].frame = CGRectMake(0, 0, 390, 44);
+  [children enumerateObjectsUsingBlock:^(UIView<RCTComponentViewProtocol> *child,
+                                         NSUInteger index,
+                                         BOOL *stop) {
+    [self.pager mountChildComponentView:child index:(NSInteger)index];
+  }];
+  self.firstPage = children[2];
+  [self.window layoutIfNeeded];
+  [self drainMainQueue];
+  self.firstPage.frame = self.firstPage.superview.bounds;
+  self.driver = [[RNCSynthesizedTouchDriver alloc] initWithWindow:self.window];
+}
+
+- (void)tearDown
+{
+  [self.pager removeFromSuperview];
+  [self.handler detachFromView:self.surface];
+  self.window.hidden = YES;
+  self.driver = nil;
+  self.firstPage = nil;
+  self.pager = nil;
+  self.handler = nil;
+  self.surface = nil;
+  self.window = nil;
+  [super tearDown];
+}
+
+- (void)drainMainQueue
+{
+  XCTestExpectation *drained = [self expectationWithDescription:@"main queue drained"];
+  dispatch_async(dispatch_get_main_queue(), ^{ [drained fulfill]; });
+  [self waitForExpectations:@[drained] timeout:2];
+}
+
+- (void)assertFixtureIsReadyForDelivery
+{
+  XCTAssertNil(self.driver.unavailableReason);
+  UIGestureRecognizer *bridge = [self.pager valueForKey:@"contentPressCancellationGesture"];
+  UIScrollView *pagerScrollView = [self.pager valueForKey:@"pagerScrollView"];
+  XCTAssertNotNil(bridge);
+  XCTAssertEqual([bridge valueForKey:@"reactTouchHandler"], self.handler);
+  XCTAssertEqual((id)pagerScrollView.delegate, self.pager);
+  XCTAssertGreaterThan(pagerScrollView.contentSize.width, CGRectGetWidth(pagerScrollView.bounds));
+  // The touch must start on React page content, outside the shared header.
+  CGPoint point = [self pressPoint];
+  UIView *hit = [self.window hitTest:point withEvent:nil];
+  XCTAssertTrue(hit == self.firstPage || [hit isDescendantOfView:self.firstPage],
+                @"hit view %@", hit);
+}
+
+- (CGPoint)pressPoint
+{
+  return CGPointMake(200, 600);
+}
+
+- (void)testHorizontalPagerDragCancelsReactPressBeforeFingerLifts
+{
+  [self assertFixtureIsReadyForDelivery];
+  UIScrollView *pagerScrollView = [self.pager valueForKey:@"pagerScrollView"];
+  CGPoint point = [self pressPoint];
+  UITouch *touch = [self.driver beginAt:point];
+  XCTAssertEqualObjects(self.handler.events, @[@"began"]);
+  XCTAssertEqual(self.handler.registeredTouches, 1);
+
+  for (NSInteger step = 1; step <= 8 && !pagerScrollView.isDragging; ++step) {
+    [self.driver move:touch to:CGPointMake(point.x - 12 * step, point.y)];
+  }
+  XCTAssertTrue(pagerScrollView.isDragging, @"the real pager pan must begin");
+  // Finger is still down: RN must already have cancelled its responder.
+  XCTAssertEqual(self.handler.registeredTouches, 0);
+  XCTAssertTrue([self.handler.events containsObject:@"reset-cancelled"] ||
+                  [self.handler.events containsObject:@"cancelled"],
+                @"handler events %@", self.handler.events);
+  XCTAssertFalse([self.handler.events containsObject:@"ended"]);
+  NSUInteger eventsBeforeLift = self.handler.events.count;
+
+  [self.driver end:touch];
+  // UIKit must not deliver the lift to the prevented handler as a press end.
+  XCTAssertFalse([self.handler.events containsObject:@"ended"], @"events %@", self.handler.events);
+  XCTAssertEqual(self.handler.events.count, eventsBeforeLift);
+}
+
+- (void)testStationaryTapKeepsReactPress
+{
+  [self assertFixtureIsReadyForDelivery];
+  UITouch *touch = [self.driver beginAt:[self pressPoint]];
+  [self.driver end:touch];
+  XCTAssertEqualObjects(self.handler.events, (@[@"began", @"ended"]));
+  XCTAssertEqual(self.handler.registeredTouches, 0);
+}
+
+- (void)testSmallMovementBelowPanThresholdKeepsReactPress
+{
+  [self assertFixtureIsReadyForDelivery];
+  UIScrollView *pagerScrollView = [self.pager valueForKey:@"pagerScrollView"];
+  CGPoint point = [self pressPoint];
+  UITouch *touch = [self.driver beginAt:point];
+  [self.driver move:touch to:CGPointMake(point.x - 2, point.y)];
+  XCTAssertFalse(pagerScrollView.isDragging);
+  [self.driver end:touch];
+  XCTAssertEqualObjects(self.handler.events, (@[@"began", @"moved", @"ended"]));
 }
 
 @end
