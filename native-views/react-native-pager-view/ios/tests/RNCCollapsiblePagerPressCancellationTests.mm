@@ -49,6 +49,7 @@
 @end
 
 @interface RNCCollapsiblePagerPressCancellationTests : XCTestCase
+@property (nonatomic, strong) UIWindow *window;
 @property (nonatomic, strong) UIView *host;
 @property (nonatomic, strong) UIView *surface;
 @property (nonatomic, strong) UIView *content;
@@ -63,9 +64,14 @@
 - (void)setUp
 {
   [super setUp];
+  XCTAssertTrue(NSThread.isMainThread);
+  // Register the recognizers with a UIKit gesture environment without taking focus.
+  self.window = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
+  self.window.hidden = NO;
   self.host = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
   self.surface = [[UIView alloc] initWithFrame:self.host.bounds];
   self.content = [[UIView alloc] initWithFrame:self.surface.bounds];
+  [self.window addSubview:self.host];
   [self.host addSubview:self.surface];
   [self.surface addSubview:self.content];
   self.handler = [RCTSurfaceTouchHandler new];
@@ -75,6 +81,8 @@
   self.bridge = [RNCPressCancellationObservedBridge new];
   self.bridge.reactTouchHandler = self.handler;
   [self.host addGestureRecognizer:self.bridge];
+  XCTAssertEqual(self.bridge.view.window, self.window);
+  XCTAssertEqual(self.handler.view.window, self.window);
   self.pan = [RNCPressCancellationTestPan new];
   self.pan.testState = UIGestureRecognizerStateBegan;
   self.touch = [self touchInView:self.content phase:UITouchPhaseBegan];
@@ -90,7 +98,10 @@
   self.pan = nil;
   self.content = nil;
   self.surface = nil;
+  [self.host removeFromSuperview];
   self.host = nil;
+  self.window.hidden = YES;
+  self.window = nil;
   [super tearDown];
 }
 
@@ -143,6 +154,8 @@
   }
   self.pan.testState = UIGestureRecognizerStateBegan;
   [self.bridge cancelPressForPan:self.pan];
+  XCTAssertTrue([self.bridge.requestedStates containsObject:@(UIGestureRecognizerStateBegan)],
+                @"The production bridge must request recognition before UIKit retains Began");
   XCTAssertEqual(self.bridge.state, UIGestureRecognizerStateBegan);
 }
 
@@ -178,6 +191,8 @@
   [self.bridge touchesBegan:[NSSet setWithObject:self.touch]
                  withEvent:[self eventWithTouches:[NSSet setWithObjects:self.touch, other, ended, cancelled, nil]]];
   [self.bridge cancelPressForPan:self.pan];
+  XCTAssertTrue([self.bridge.requestedStates containsObject:@(UIGestureRecognizerStateBegan)],
+                @"The production bridge must request recognition before UIKit retains Began");
   XCTAssertEqual(self.bridge.state, UIGestureRecognizerStateBegan);
 }
 
@@ -196,6 +211,8 @@
 {
   [self beginSingleTouch];
   [self.bridge cancelPressForPan:self.pan];
+  XCTAssertTrue([self.bridge.requestedStates containsObject:@(UIGestureRecognizerStateBegan)],
+                @"The production bridge must request recognition before UIKit retains Began");
   XCTAssertEqual(self.bridge.state, UIGestureRecognizerStateBegan);
   RNCPressCancellationTestTouch *second = [self touchInView:self.content phase:UITouchPhaseBegan];
   RNCPressCancellationTestEvent *event =
@@ -247,6 +264,8 @@
   [self.bridge reset];
   [self beginSingleTouch];
   [self.bridge cancelPressForPan:self.pan];
+  XCTAssertTrue([self.bridge.requestedStates containsObject:@(UIGestureRecognizerStateBegan)],
+                @"The production bridge must request recognition before UIKit retains Began");
   XCTAssertEqual(self.bridge.state, UIGestureRecognizerStateBegan);
 }
 
@@ -258,6 +277,8 @@
   [self beginSingleTouch];
   [self.bridge observeIncomingTouch:second];
   [self.bridge cancelPressForPan:self.pan];
+  XCTAssertTrue([self.bridge.requestedStates containsObject:@(UIGestureRecognizerStateBegan)],
+                @"The production bridge must request recognition before UIKit retains Began");
   XCTAssertEqual(self.bridge.state, UIGestureRecognizerStateBegan);
 }
 
@@ -279,6 +300,8 @@
   XCTAssertEqual(self.bridge.state, UIGestureRecognizerStatePossible);
   [self beginSingleTouch];
   [self.bridge cancelPressForPan:self.pan];
+  XCTAssertTrue([self.bridge.requestedStates containsObject:@(UIGestureRecognizerStateBegan)],
+                @"The production bridge must request recognition before UIKit retains Began");
   XCTAssertEqual(self.bridge.state, UIGestureRecognizerStateBegan);
 }
 
@@ -290,6 +313,8 @@
     weakEvent = event;
     [self.bridge touchesBegan:[NSSet setWithObject:self.touch] withEvent:event];
     [self.bridge cancelPressForPan:self.pan];
+    XCTAssertTrue([self.bridge.requestedStates containsObject:@(UIGestureRecognizerStateBegan)],
+                  @"The production bridge must request recognition before UIKit retains Began");
     XCTAssertEqual(self.bridge.state, UIGestureRecognizerStateBegan);
     self.touch.testPhase = UITouchPhaseEnded;
     [self.bridge touchesEnded:[NSSet setWithObject:self.touch] withEvent:event];
@@ -318,6 +343,8 @@
 {
   [self beginSingleTouch];
   [self.bridge cancelPressForPan:self.pan];
+  XCTAssertTrue([self.bridge.requestedStates containsObject:@(UIGestureRecognizerStateBegan)],
+                @"The production bridge must request recognition before UIKit retains Began");
   XCTAssertEqual(self.bridge.state, UIGestureRecognizerStateBegan);
   self.touch.testPhase = UITouchPhaseCancelled;
   [self.bridge touchesCancelled:[NSSet setWithObject:self.touch]
