@@ -390,9 +390,10 @@ only. Existing Web rendering and caller behavior are unchanged.
   Replacing the JS callback takes effect on the next event; disabling emits no event.
   Configuration updates reset hysteresis before recomputing current position.
 - iOS uses contentOffset + contentInset, excluding overscroll below zero. Android
-  accumulates consumed child scroll distance and rebases from first-item geometry.
-  Parent-pager header contributions and arbitrary index-jump acceptance are tracked
-  separately; no estimate-based parity claim is made for unverified jumps.
+  accumulates consumed child scroll distance and, after every layout pass or
+  zero-delta scroll, re-derives it from the measured extents above the first laid-out
+  item (see Android ancestor scroll distance). Parent-pager header contributions are
+  tracked separately.
 - `layout.gridColumns` accepts integers 2 through 7 on native. Native parsers
   clamp malformed external JSON to 1 through 7 as before; public JS validation
   rejects invalid requested counts. Grid geometry remains container-owned.
@@ -433,14 +434,22 @@ changing probe order or the terminal result contract; native runtime regression
 acceptance is still required. A tile owns at most one native player. On iOS,
 eligibility requires intersection with the window and every clipping/scroll
 ancestor viewport; native scroll, bounds, layer transform/position and visibility
-observations release retained offscreen pager pages. Detach, background,
-invisibility and recycle release the player; reattachment rebuilds its retained
-source while remaining paused. Android observes native global scroll/layout and
+observations release retained offscreen pager pages. A player lives only until
+its first rendered frame is copied (Android TextureView bitmap, iOS
+AVPlayerItemVideoOutput pixel buffer); the tile then shows that still frame with the
+same fit and letterbox and releases the player and its viewport observers. If no frame
+can be copied after a few frames, the paused player stays attached. Detach,
+background, invisibility and recycle release a player still awaiting its first frame;
+reattachment rebuilds its retained source while remaining paused. The still frame is
+kept across detach and same-identity rebinding and dropped on recycle or identity
+change. Android observes native global scroll/layout and
 pre-draw geometry (including property animations), checking ancestor alpha and
 getGlobalVisibleRect before allocating a player. These observers do not schedule
 frames or emit JavaScript events.
-Player count is bounded by intersecting native video tiles, including partially
-visible tiles; there is no numeric cap that blanks visible iPad cells. iOS requests
+Live player count is bounded by intersecting native video tiles that have not yet
+captured a frame, including partially visible tiles; there is no numeric cap that
+blanks visible iPad cells. Per-draw (Android) and ancestor-layer KVO (iOS) viewport
+observation exists only while a tile awaits its first frame. iOS requests
 one second of forward buffer; AVFoundation treats this as an advisory preference,
 not a hard byte limit. Android uses a 250–1000 ms forward buffer, zero back buffer
 and a 2 MiB target allocator; Media3 may exceed a target by allocation granularity.
@@ -479,14 +488,20 @@ Slots scroll with the native list. `fixedFooter` remains a separate fixed native
 row descriptor. `scrollToEnd` aligns the final scrolling slot bottom with the
 viewport end, including footer/empty/header-only slots taller than the viewport. Callers using `listEmpty` MUST omit `snapshot.emptyState`, whose
 existing native descriptor becomes a data item. Horizontal content padding applies
-to slots as well as data rows. Slot React trees own their internal layout and
+to slots as well as data rows: every platform places a slot root exactly
+`contentPaddingHorizontal ?? contentPadding` logical units from each edge, the same
+width React lays it out at. Android's narrow-screen row scale and section-index gutter
+apply to data rows only. Slot React trees own their internal layout and
 business actions; NativeList owns their scroll placement and lifecycle.
 
 The wrapper mounts exactly three non-collapsible slot roots and reports measured
 heights through `containerSlotHeightsJson` in header/empty/footer order. Native
 validates three finite, non-negative heights. Slot updates MUST NOT alter data-row
 keys or public row indices. No per-scroll-frame JS position updates are used.
-iOS mounts slot roots inside UICollectionView and reserves native layout space.
+iOS mounts each slot root inside a list-owned host view in UICollectionView and
+reserves native layout space. The host owns the slot's vertical position and clips to
+the reported height, so React frame updates cannot move a slot out of place and a slot
+whose height has not been reported yet (or has just grown) never draws over rows.
 Android uses ConcatAdapter with three single-item slot adapters around the existing
 data adapter; adapter binding indices stay local while layout-manager positions
 are explicitly translated. Slots span all grid columns, do not select/reorder,
@@ -558,7 +573,10 @@ source `description`; footer actions retain their existing source/keys and
 disabled behavior. All actions use the current host binding epoch.
 
 Rich rows measure the declared line/visual metrics; there is no six-line native
-truncation. The existing height override contract still applies. RTL follows
+truncation. iOS automatic height mirrors the rendered stacks: `lineGap` between the
+visible title/description/status lines, the description measured at the identity
+column's actual width (stacked or table, including the fee column), fee height and the
+footer-action button height. Android sizes the row to its content. The existing height override contract still applies. RTL follows
 semantic leading/trailing anchors. Clearing rich fields returns to the legacy
 renderer, and removing amount lines recycles their visual slots. Web rendering
 remains unchanged; rich fields are native-only until a separate Web migration.
@@ -581,12 +599,17 @@ same logical Home threshold as iOS normalized content scrolling, without a JS
 scroll-frame event. Changes to the listener or public callbacks do not replace
 native resource ownership.
 
-Child distance uses actual onScrolled dy and rebases from first-item geometry at
-top; scrollToOffset seeds a known explicit offset. It does not use RecyclerView's
-average-height scrollbar estimate. Continuous scrolling and return-to-top are
-covered by this policy; exact classification immediately after arbitrary distant
-scrollToIndex jumps remains pending measured-prefix correction and MUST NOT be
-claimed as verified. A later top anchor restores exact distance.
+Child distance uses actual onScrolled dy while scrolling continuously. Programmatic
+jumps (scrollToIndex/Key/End/Offset), anchor restores and inserts or height changes
+above the viewport report no dy, so every layout pass and zero-delta scroll re-derives
+the distance as the extent of all grid lines before the first laid-out item plus its
+offset from the padded top. Extents are those actually laid out (recorded per row key,
+including rows a jump lays out and leaves offscreen, pruned to the current rows); a row
+that was never laid out uses its explicit height, else the mean laid-out row extent.
+Slots use their reported heights. The result is exact once every item above the
+viewport has been laid out and an estimate only across never-laid-out rows; it does not
+use RecyclerView's average-height scrollbar estimate. Runtime acceptance for distant
+jumps remains pending.
 
 
 ### Container follow-up verification

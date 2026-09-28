@@ -10,11 +10,16 @@ private final class NativeListPausedVideoView: UIView {
   override func layoutSubviews() { super.layoutSubviews(); onLayoutChanged?() }
 }
 
-/// Uses the same AVPlayer source semantics as native Video, always paused and muted.
+/// Uses the same AVPlayer source semantics as native Video, always paused and muted. A player
+/// lives only until its first frame is copied; the tile then shows that still frame.
 final class NativeListMediaPreviewSlot {
   let view = UIView()
   private let image = NativeListImageSlot()
   private let video = NativeListPausedVideoView()
+  private let frameView = UIImageView()
+  private var videoOutput: AVPlayerItemVideoOutput?
+  private static let frameContext = CIContext(options: [.cacheIntermediates: false])
+  private static let frameCaptureAttempts = 6
   private var identity: String?
   private var epoch = 0
   private var candidateGeneration = 0
@@ -37,6 +42,10 @@ final class NativeListMediaPreviewSlot {
     }
     video.clipsToBounds = true
     video.isHidden = true
+    frameView.frame = video.bounds
+    frameView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    frameView.isHidden = true
+    video.addSubview(frameView)
     video.onWindowChanged = { [weak self] in self?.observeViewport(); self?.updateVisibility() }
     video.onLayoutChanged = { [weak self] in self?.updateVisibility() }
     lifecycleObservers = [
@@ -63,7 +72,9 @@ final class NativeListMediaPreviewSlot {
     recycle()
     identity = next
     self.completion = completion
-    video.playerLayer.videoGravity = (fit ?? source.string("contentFit")) == "cover" ? .resizeAspectFill : .resizeAspect
+    let cover = (fit ?? source.string("contentFit")) == "cover"
+    video.playerLayer.videoGravity = cover ? .resizeAspectFill : .resizeAspect
+    frameView.contentMode = cover ? .scaleAspectFill : .scaleAspectFit
     probe(source, key: key, fit: fit, placeholder: placeholder, order: probeOrder, attempt: 0, token: epoch)
   }
 
@@ -109,6 +120,11 @@ final class NativeListMediaPreviewSlot {
       let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": source.dictionary("headers") ?? [:]])
       let item = AVPlayerItem(asset: asset)
       item.preferredForwardBufferDuration = 1
+      let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+      ])
+      item.add(output)
+      self.videoOutput = output
       let player = AVPlayer(playerItem: item)
       player.isMuted = true
       player.pause()
@@ -123,12 +139,50 @@ final class NativeListMediaPreviewSlot {
       self.readyObservation = self.video.playerLayer.observe(\.isReadyForDisplay, options: [.initial, .new]) { [weak self] layer, _ in
         DispatchQueue.main.async {
           guard let self, self.playerGeneration == generation else { return }
-          if layer.isReadyForDisplay { finished(true) }
+          guard layer.isReadyForDisplay else { return }
+          finished(true)
+          self.captureFirstFrame(generation: generation, attemptsLeft: Self.frameCaptureAttempts)
         }
       }
     }
     observeViewport()
     updateVisibility()
+  }
+
+  /// A paused item may not have handed its preroll frame to the output yet, so copying retries
+  /// on later runloop turns. If no frame arrives the paused player stays attached.
+  private func captureFirstFrame(generation: Int, attemptsLeft: Int) {
+    guard playerGeneration == generation, let player, let item = player.currentItem, let output = videoOutput else { return }
+    let time = item.currentTime()
+    if let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil),
+       let still = Self.frameContext.createCGImage(CIImage(cvPixelBuffer: buffer), from: CGRect(
+         x: 0, y: 0, width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))) {
+      let transform = item.tracks.lazy.compactMap(\.assetTrack).first { $0.mediaType == .video }?.preferredTransform
+      frameView.image = UIImage(cgImage: still, scale: 1, orientation: Self.orientation(transform))
+      frameView.isHidden = false
+      resumeVideo = nil
+      viewportObservations.removeAll()
+      releasePlayer()
+      return
+    }
+    guard attemptsLeft > 1 else { return }
+    // An exact seek re-delivers the paused preroll frame to newly attached outputs.
+    if attemptsLeft == Self.frameCaptureAttempts {
+      player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+      self?.captureFirstFrame(generation: generation, attemptsLeft: attemptsLeft - 1)
+    }
+  }
+
+  private static func orientation(_ transform: CGAffineTransform?) -> UIImage.Orientation {
+    guard let transform else { return .up }
+    switch (transform.a, transform.b, transform.c, transform.d) {
+    case (0, 1, -1, 0): return .right
+    case (0, -1, 1, 0): return .left
+    case (-1, 0, 0, -1): return .down
+    default: return .up
+    }
   }
 
   private func observeViewport() {
@@ -148,6 +202,9 @@ final class NativeListMediaPreviewSlot {
       ancestor = current.superview
     }
   }
+
+  var hasLivePlayer: Bool { player != nil }
+  var capturedFrame: UIImage? { frameView.image }
 
   /// Retained pager pages can have a window while lying outside its clipped viewport.
   static func intersectsViewport(_ view: UIView) -> Bool {
@@ -173,6 +230,7 @@ final class NativeListMediaPreviewSlot {
     playerGeneration &+= 1
     itemObservation = nil
     readyObservation = nil
+    videoOutput = nil
     player?.pause()
     video.playerLayer.player = nil
     player?.replaceCurrentItem(with: nil)
@@ -187,6 +245,8 @@ final class NativeListMediaPreviewSlot {
     image.recycle()
     image.view.isHidden = false
     video.isHidden = true
+    frameView.image = nil
+    frameView.isHidden = true
     identity = nil
     result = nil
     completion = nil

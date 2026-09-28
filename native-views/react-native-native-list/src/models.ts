@@ -128,6 +128,7 @@ export const ROW_BOX_STYLE_KEYS_BY_TYPE = {
     'verticalPadding',
     'leadingGap',
     'lineGap',
+    'titleBadgeGap',
     'trailingGap',
     'image',
   ],

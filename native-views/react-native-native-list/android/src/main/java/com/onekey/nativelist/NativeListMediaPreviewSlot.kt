@@ -1,11 +1,13 @@
 package com.margelo.nitro.nativelist
 
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.view.ViewTreeObserver
 import android.view.Gravity
 import android.view.TextureView
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -25,7 +27,10 @@ import com.facebook.react.uimanager.ThemedReactContext
 import okhttp3.JavaNetCookieJar
 import org.json.JSONObject
 
-/** Uses Media3 like native Video, but never starts playback or requests audio focus. */
+/**
+ * Uses Media3 like native Video, but never starts playback or requests audio focus. A player
+ * lives only until its first frame is captured; the tile then shows that still frame.
+ */
 @OptIn(UnstableApi::class)
 internal class NativeListMediaPreviewSlot(private val context: ThemedReactContext) {
   val view: FrameLayout = object : FrameLayout(context) {
@@ -37,6 +42,7 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
   private val image = NativeListImageSlot(context)
   private val video = AspectRatioFrameLayout(context)
   private val texture = TextureView(context)
+  private val frame = ImageView(context)
   private var identity: String? = null
   private var epoch = 0
   private var candidateGeneration = 0
@@ -58,6 +64,9 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
     view.isFocusable = false
     view.descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
     video.addView(texture, FrameLayout.LayoutParams(-1, -1))
+    frame.scaleType = ImageView.ScaleType.FIT_XY
+    frame.visibility = View.GONE
+    video.addView(frame, FrameLayout.LayoutParams(-1, -1))
     view.addView(image.view, FrameLayout.LayoutParams(-1, -1))
     view.addView(video, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
     video.visibility = View.GONE
@@ -147,7 +156,11 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
         next.setAudioAttributes(androidx.media3.common.AudioAttributes.DEFAULT, false)
         next.setVideoTextureView(texture)
         next.addListener(object : Player.Listener {
-          override fun onRenderedFirstFrame() { if (playerGeneration == generation) finished(true, generation) }
+          override fun onRenderedFirstFrame() {
+            if (playerGeneration != generation) return
+            finished(true, generation)
+            captureFirstFrame(token, candidate, generation, FIRST_FRAME_CAPTURE_ATTEMPTS)
+          }
           override fun onPlayerError(error: PlaybackException) { if (playerGeneration == generation) finished(false, generation) }
           override fun onVideoSizeChanged(size: VideoSize) {
             if (playerGeneration == generation && size.height > 0) video.setAspectRatio(size.width * size.pixelWidthHeightRatio / size.height)
@@ -163,6 +176,40 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
     }
     observeViewport()
     updateVisibility()
+  }
+
+  /**
+   * The rendered frame reaches the TextureView asynchronously, so a transparent copy is
+   * retried on later frames. If no frame can be copied the paused player stays attached.
+   */
+  private fun captureFirstFrame(token: Int, candidate: Int, generation: Int, attemptsLeft: Int) {
+    view.postOnAnimation {
+      if (epoch != token || candidateGeneration != candidate || playerGeneration != generation) return@postOnAnimation
+      // Releasing first would make the queued success completion drop itself as stale.
+      if (result != true) {
+        captureFirstFrame(token, candidate, generation, attemptsLeft)
+        return@postOnAnimation
+      }
+      val still = if (texture.isAvailable && texture.width > 0 && texture.height > 0) {
+        runCatching { texture.getBitmap(texture.width, texture.height) }.getOrNull()
+      } else null
+      if (still == null || !hasVisiblePixels(still)) {
+        still?.recycle()
+        if (attemptsLeft > 1) captureFirstFrame(token, candidate, generation, attemptsLeft - 1)
+        return@postOnAnimation
+      }
+      frame.setImageBitmap(still)
+      frame.visibility = View.VISIBLE
+      resumeVideo = null
+      stopObservingViewport()
+      releasePlayer()
+    }
+  }
+
+  private fun hasVisiblePixels(bitmap: Bitmap): Boolean {
+    val columns = intArrayOf(bitmap.width / 4, bitmap.width / 2, bitmap.width * 3 / 4)
+    val rows = intArrayOf(bitmap.height / 4, bitmap.height / 2, bitmap.height * 3 / 4)
+    return columns.any { x -> rows.any { y -> (bitmap.getPixel(x, y) ushr 24) != 0 } }
   }
 
   private fun observeViewport() {
@@ -209,7 +256,13 @@ internal class NativeListMediaPreviewSlot(private val context: ThemedReactContex
     image.view.visibility = View.VISIBLE
     video.visibility = View.GONE
     video.setAspectRatio(0f)
+    frame.setImageDrawable(null)
+    frame.visibility = View.GONE
     identity = null; result = null; completion = null
+  }
+
+  private companion object {
+    const val FIRST_FRAME_CAPTURE_ATTEMPTS = 6
   }
   fun dispose() { recycle(); image.dispose() }
 }

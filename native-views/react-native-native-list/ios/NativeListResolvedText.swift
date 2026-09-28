@@ -104,6 +104,14 @@ struct NativeListResolvedText {
     return cache
   }()
 
+  /// Single-line natural width of the full-size text (subscript runs only make it narrower).
+  func measureWidth() -> CGFloat {
+    guard !text.isEmpty else { return 0 }
+    return ceil(attributed(direction: .leftToRight).boundingRect(
+      with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+      options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).width)
+  }
+
   func measure(width: CGFloat) -> CGFloat {
     guard !text.isEmpty else { return 0 }
     let width = max(1, width)

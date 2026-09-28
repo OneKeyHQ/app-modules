@@ -88,3 +88,38 @@ test('activity badges have bounded unique identities', () => {
     validateSnapshot(snapshot({ ...row, badges: [badges[0]!, badges[0]!] }))
   ).toThrow(/duplicate badge/);
 });
+
+test('rich data fields are not style keys; activity accepts titleBadgeGap', () => {
+  for (const key of [
+    'amounts',
+    'badges',
+    'presentation',
+    'fee',
+    'descriptionActionKey',
+  ]) {
+    expect(() =>
+      validateSnapshot(
+        snapshot({
+          ...row,
+          style: { [key]: { fontSize: 12 } },
+        } as unknown as ActivityRow)
+      )
+    ).toThrow(/is not a style key/);
+  }
+  expect(() =>
+    validateSnapshot(snapshot({ ...row, style: { titleBadgeGap: 6 } }))
+  ).not.toThrow();
+  expect(() =>
+    validateSnapshot({
+      ...snapshot(row),
+      rows: [
+        {
+          type: 'sectionHeader',
+          key: 'header',
+          title: 'Today',
+          style: { titleLoading: { fontSize: 12 } },
+        } as unknown as ActivityRow,
+      ],
+    })
+  ).toThrow(/is not a style key/);
+});

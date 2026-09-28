@@ -15,6 +15,8 @@ internal class NativeListScrollPositionTracker {
     this.end = end
   }
 
+  val isConfigured: Boolean get() = start != null && end != null
+
   fun resetDelivery() { previous = null }
 
   fun update(offset: Double): Boolean? {
@@ -26,4 +28,32 @@ internal class NativeListScrollPositionTracker {
     previous = next
     return next
   }
+}
+
+/**
+ * Content extent above [first]: whole grid lines (tallest item per line) that end before the
+ * line containing [first]. Span sizes follow GridLayoutManager's default line breaking.
+ */
+internal fun nativeListScrollPrefixPx(
+  first: Int,
+  spanCount: Int,
+  spanSize: (Int) -> Int,
+  extent: (Int) -> Int,
+): Long {
+  val columns = spanCount.coerceAtLeast(1)
+  var prefix = 0L
+  var lineExtent = 0
+  var lineSpans = 0
+  for (position in 0 until first) {
+    val span = spanSize(position).coerceIn(1, columns)
+    if (lineSpans + span > columns) {
+      prefix += lineExtent
+      lineExtent = 0
+      lineSpans = 0
+    }
+    lineSpans += span
+    lineExtent = maxOf(lineExtent, extent(position))
+  }
+  if (first > 0 && lineSpans + spanSize(first).coerceIn(1, columns) > columns) prefix += lineExtent
+  return prefix
 }

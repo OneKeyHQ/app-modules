@@ -58,6 +58,21 @@ private class NativeListGridLayoutManager(
   context: Context,
   spanCount: Int,
 ) : GridLayoutManager(context, spanCount) {
+  var onChildLaidOut: ((View, Int) -> Unit)? = null
+  var onLayoutPassCompleted: (() -> Unit)? = null
+
+  // Scroll fills and layout passes both place children here, including rows that a
+  // positional jump lays out and immediately leaves offscreen.
+  override fun layoutDecoratedWithMargins(child: View, left: Int, top: Int, right: Int, bottom: Int) {
+    super.layoutDecoratedWithMargins(child, left, top, right, bottom)
+    onChildLaidOut?.invoke(child, if (orientation == RecyclerView.VERTICAL) bottom - top else right - left)
+  }
+
+  override fun onLayoutCompleted(state: RecyclerView.State) {
+    super.onLayoutCompleted(state)
+    onLayoutPassCompleted?.invoke()
+  }
+
   override fun removeAndRecycleViewAt(index: Int, recycler: RecyclerView.Recycler) {
     val child = getChildAt(index) ?: return
     removeViewAt(index)
@@ -115,26 +130,32 @@ class NativeListView(
   private val coordinatorOffsetListener = Runnable { emitScrollPositionThresholdIfNeeded() }
   private var logicalScrollDistancePx = 0
   private val scrollPositionTracker = NativeListScrollPositionTracker()
+  private val measuredRowExtentsPx = HashMap<String, Int>()
+  private var measuredRowExtentSumPx = 0L
   var onScrollPositionThresholdChange: ((Boolean) -> Unit)? = null
     set(value) {
       field = value
       scrollPositionTracker.resetDelivery()
-      emitScrollPositionThresholdIfNeeded()
+      emitScrollPositionThresholdIfNeeded(resync = true)
     }
 
   fun setScrollPositionThresholdsJson(json: String) {
     val config = runCatching { JSONObject(json) }.getOrNull()
     scrollPositionTracker.configure(config?.optDouble("start"), config?.optDouble("end"))
-    emitScrollPositionThresholdIfNeeded()
+    emitScrollPositionThresholdIfNeeded(resync = true)
   }
 
-  private fun emitScrollPositionThresholdIfNeeded() {
+  /**
+   * Continuous scrolling accumulates the exact consumed dy. Layout passes and positional
+   * jumps (scrollToIndex/End, anchor restores, inserts above) report no dy, so they re-derive
+   * the distance from the laid-out first item plus the extents of every item before it.
+   */
+  private fun emitScrollPositionThresholdIfNeeded(resync: Boolean = false) {
     if (disposed) return
     val callback = onScrollPositionThresholdChange ?: return
-    if (layoutManager.findFirstVisibleItemPosition() == 0) {
-      layoutManager.findViewByPosition(0)?.let { first ->
-        logicalScrollDistancePx = (recyclerView.paddingTop - layoutManager.getDecoratedTop(first)).coerceAtLeast(0)
-      }
+    if (!scrollPositionTracker.isConfigured) return
+    if (resync || layoutManager.findFirstVisibleItemPosition() == 0) {
+      measuredScrollDistancePx()?.let { logicalScrollDistancePx = it }
     }
     val contributions = recyclerView.getTag(R.id.onekey_native_scroll_coordinator_consumed_offsets) as? Map<*, *>
     val parentDistance = contributions?.values?.sumOf { (it as? Int)?.coerceAtLeast(0)?.toLong() ?: 0L } ?: 0L
@@ -154,6 +175,7 @@ class NativeListView(
   private val density = resources.displayMetrics.density
   private val recyclerView = RecyclerView(context)
   private var configuredTopPaddingPx = 0
+  private var slotInsetPx = 0
   private var configuredBottomPaddingPx = 0
   private val refreshLayout = SwipeRefreshLayout(context)
   private val refreshIndicatorTravelPx = refreshLayout.progressViewEndOffset
@@ -201,6 +223,52 @@ class NativeListView(
   }
 
   private fun scrollPositionForRow(index: Int): Int = index + headerSlotAdapter.itemCount
+
+  private fun recordLaidOutRowExtent(child: View, extentPx: Int) {
+    val holder = recyclerView.getChildViewHolder(child) as? NativeListViewHolder ?: return
+    if (holder.bindingAdapter !== adapter) return
+    val key = adapter.itemAt(holder.bindingAdapterPosition)?.key ?: return
+    val previous = measuredRowExtentsPx.put(key, extentPx)
+    measuredRowExtentSumPx += extentPx - (previous ?: 0)
+  }
+
+  private fun pruneMeasuredRowExtents(items: List<NativeListItem>) {
+    if (measuredRowExtentsPx.isEmpty()) return
+    val keys = items.mapTo(HashSet(items.size)) { it.key }
+    measuredRowExtentsPx.keys.retainAll(keys)
+    measuredRowExtentSumPx = measuredRowExtentsPx.values.sumOf { it.toLong() }
+  }
+
+  /** Rows skipped by a jump have never been laid out; explicit heights beat the average. */
+  private fun estimatedScrollExtentPx(position: Int): Int {
+    val headerCount = headerSlotAdapter.itemCount
+    if (position < headerCount) return slotHeights[0]
+    val row = position - headerCount
+    if (row >= adapter.itemCount) {
+      return if (row - adapter.itemCount < emptySlotAdapter.itemCount) slotHeights[1] else slotHeights[2]
+    }
+    val item = adapter.itemAt(row)
+    item?.key?.let(measuredRowExtentsPx::get)?.let { return it }
+    val explicit = item?.styledHeight ?: item?.json?.optDouble("height")?.takeIf { it.isFinite() }
+    if (explicit != null) return (explicit * density).roundToInt()
+    return if (measuredRowExtentsPx.isEmpty()) 0 else (measuredRowExtentSumPx / measuredRowExtentsPx.size).toInt()
+  }
+
+  private fun measuredScrollDistancePx(): Int? {
+    if (layoutManager.orientation != RecyclerView.VERTICAL) return null
+    val first = layoutManager.findFirstVisibleItemPosition()
+    if (first == RecyclerView.NO_POSITION) return null
+    val view = layoutManager.findViewByPosition(first) ?: return null
+    val prefix = nativeListScrollPrefixPx(
+      first,
+      layoutManager.spanCount,
+      layoutManager.spanSizeLookup::getSpanSize,
+      ::estimatedScrollExtentPx,
+    )
+    val topMargin = (view.layoutParams as? ViewGroup.MarginLayoutParams)?.topMargin ?: 0
+    val top = layoutManager.getDecoratedTop(view) - topMargin
+    return (prefix + recyclerView.paddingTop - top).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+  }
   private fun rowPositionForScroll(index: Int): Int =
     if (index == RecyclerView.NO_POSITION) RecyclerView.NO_POSITION else index - headerSlotAdapter.itemCount
 
@@ -417,6 +485,9 @@ class NativeListView(
     recyclerView.addItemDecoration(reorderPlaceholderDecoration)
     // OneKey patch: full-width selector header backgrounds do not change row content insets.
     recyclerView.addItemDecoration(SelectorBackgroundDecoration(adapter))
+    recyclerView.addItemDecoration(ContainerSlotInsetDecoration { slotInsetPx })
+    layoutManager.onChildLaidOut = ::recordLaidOutRowExtent
+    layoutManager.onLayoutPassCompleted = { emitScrollPositionThresholdIfNeeded(resync = true) }
     recyclerView.setHasFixedSize(false)
     layoutManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
       override fun getSpanSize(position: Int): Int {
@@ -522,7 +593,7 @@ class NativeListView(
 
       override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
         logicalScrollDistancePx = (logicalScrollDistancePx + dy).coerceAtLeast(0)
-        emitScrollPositionThresholdIfNeeded()
+        emitScrollPositionThresholdIfNeeded(resync = dx == 0 && dy == 0)
         if (dx != 0 || dy != 0) invalidateActionAnchor("scroll")
         syncSectionIndexToVisibleRows()
         scheduleVisibleEvent()
@@ -687,6 +758,7 @@ class NativeListView(
       }
     } else null
     config = next
+    pruneMeasuredRowExtents(next.items)
     updateContainerSlots()
     usesSelectorSourceScale = next.items.any { it.usesSelectorSourceScale }
     adapter.usesSelectorSourceScale = usesSelectorSourceScale
@@ -1300,6 +1372,10 @@ class NativeListView(
     actionAnchor = null
     pendingScrollRequest = null
     visibleEventScheduled = false
+    layoutManager.onChildLaidOut = null
+    layoutManager.onLayoutPassCompleted = null
+    measuredRowExtentsPx.clear()
+    measuredRowExtentSumPx = 0L
     reorderTouchHandler?.removeCallbacksAndMessages(null)
     reorderTouchHandler = null
     reorderTouchListener?.let(recyclerView::removeOnItemTouchListener)
@@ -1332,6 +1408,8 @@ class NativeListView(
     // Content/theme snapshots must replace only the padding owned by NativeList.
     val coordinatorTopPadding = (recyclerView.paddingTop - configuredTopPaddingPx).coerceAtLeast(0)
     val coordinatorBottomPadding = (recyclerView.paddingBottom - configuredBottomPaddingPx).coerceAtLeast(0)
+    // Slot roots are laid out by React at the unscaled JS inset, without the index gutter.
+    slotInsetPx = (horizontalPadding * density).roundToInt()
     configuredTopPaddingPx = dp(topPadding)
     configuredBottomPaddingPx = dp(bottomPadding)
     recyclerView.setPaddingRelative(
@@ -2298,6 +2376,8 @@ class NativeListView(
             val child = recyclerView.findChildViewUnder(event.x, event.y)
             candidate = child
               ?.let(recyclerView::getChildViewHolder)
+              // Container-slot holders report binding position 0 in their own adapter.
+              ?.takeIf { holder -> holder is NativeListViewHolder && holder.bindingAdapter === adapter }
               ?.takeIf { holder ->
                 adapter.itemAt(holder.bindingAdapterPosition)?.let { item ->
                   // OneKey patch: any wallet group member can initiate the group drag.
@@ -2893,6 +2973,25 @@ private class ItemSpacingDecoration(
       ((sourceHeight + sourceSpacing) * density).roundToInt() - (sourceHeight * density).roundToInt()
     } else spacing
     if (horizontal) outRect.right = itemSpacing else outRect.bottom = itemSpacing
+  }
+}
+
+/**
+ * React lays out slot content at `contentPaddingHorizontal ?? contentPadding` logical units
+ * from each edge. Row padding may be scaled or widened by the section-index gutter, so slot
+ * holders offset themselves (possibly negatively) back to the JavaScript inset.
+ */
+private class ContainerSlotInsetDecoration(private val insetPx: () -> Int) : RecyclerView.ItemDecoration() {
+  override fun getItemOffsets(
+    outRect: android.graphics.Rect,
+    view: View,
+    parent: RecyclerView,
+    state: RecyclerView.State,
+  ) {
+    if (parent.getChildViewHolder(view) !is NativeListContainerSlotAdapter.Holder) return
+    val inset = insetPx()
+    outRect.left = inset - parent.paddingLeft
+    outRect.right = inset - parent.paddingRight
   }
 }
 

@@ -175,6 +175,34 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertEqual(list.contentOffset.y, maximum, accuracy: 0.5)
   }
 
+  func testReactSlotFramesCannotMoveSlotsOutOfNativePlacement() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 708))
+    // Fabric assigns each root the frame React computed: horizontal inset, top 0.
+    let slots = (0..<3).map { _ in UIView(frame: CGRect(x: 16, y: 0, width: 288, height: 44)) }
+    for (index, slot) in slots.enumerated() { view.mountContainerSlot(slot, atIndex: index) }
+    view.applySnapshotJson(try scrollingSnapshot(count: 3))
+    view.layoutIfNeeded()
+    let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    list.layoutIfNeeded()
+    let header = try XCTUnwrap(slots[0].superview)
+    XCTAssertTrue(header.clipsToBounds)
+    XCTAssertEqual(header.bounds.height, 0, "An unmeasured header cannot draw over the first rows")
+
+    view.setContainerSlotHeightsJson("[44,44,60]")
+    view.layoutIfNeeded()
+    list.layoutIfNeeded()
+    XCTAssertEqual(slots[0].convert(CGPoint.zero, to: list), CGPoint(x: 16, y: 0))
+    let footerY = 44 + 3 * 80 as CGFloat
+    XCTAssertEqual(slots[2].convert(CGPoint.zero, to: list).y, footerY)
+    // A React height update rewrites the root frame before the new height reaches native.
+    slots[2].frame = CGRect(x: 16, y: 0, width: 288, height: 90)
+    XCTAssertEqual(slots[2].convert(CGPoint.zero, to: list), CGPoint(x: 16, y: footerY))
+    XCTAssertTrue(slots[1].superview?.isHidden == true, "The empty slot stays hidden with rows")
+
+    view.unmountContainerSlot(slots[2])
+    XCTAssertNil(slots[2].superview)
+  }
+
   private func makeScrollingList() throws -> NativeListView {
     let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 708))
     for index in 0..<3 { view.mountContainerSlot(UIView(), atIndex: index) }

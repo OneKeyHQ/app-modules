@@ -6,21 +6,34 @@ import UniformTypeIdentifiers
 final class NativeListView: UIView {
   private var refreshEmittedForDrag = false
   private var minimumDragOffset: CGFloat = 0
-  private var reactContainerSlots: [UIView] = []
   private var containerSlotHeights: [CGFloat] = [0, 0, 0]
+  // Fabric keeps assigning each slot root the frame React computed (inset, 0, width, height).
+  // Each root therefore lives in a list-owned host whose origin the list alone controls, so a
+  // React layout update can never move a slot out of its native position, even for a frame.
+  private var reactContainerSlots: [(content: UIView, host: UIView)] = []
   private var lastLaidOutContentHeight: CGFloat?
   private var needsContentShrinkCorrection = false
   private var contentShrinkCorrectionScheduled = false
 
   @objc func mountContainerSlot(_ view: UIView, atIndex index: Int) {
-    reactContainerSlots.insert(view, at: min(index, reactContainerSlots.count))
-    collectionView.addSubview(view)
+    let host = UIView()
+    // Clipping to the reported height keeps new content from overlapping rows until the list
+    // has reserved space for it.
+    host.clipsToBounds = true
+    host.addSubview(view)
+    reactContainerSlots.insert((view, host), at: min(index, reactContainerSlots.count))
+    collectionView.addSubview(host)
+    layoutContainerSlots()
     setNeedsLayout()
   }
 
   @objc func unmountContainerSlot(_ view: UIView) {
-    reactContainerSlots.removeAll { $0 === view }
-    view.removeFromSuperview()
+    reactContainerSlots.removeAll { slot in
+      guard slot.content === view else { return false }
+      view.removeFromSuperview()
+      slot.host.removeFromSuperview()
+      return true
+    }
   }
 
   func setContainerSlotHeightsJson(_ json: String) {
@@ -29,11 +42,11 @@ final class NativeListView: UIView {
           heights.count == 3, heights.allSatisfy({ $0.isFinite && $0 >= 0 }) else { return }
     containerSlotHeights = heights.map { CGFloat($0) }
     if let config { configureLayout(config) }
+    layoutContainerSlots()
     setNeedsLayout()
   }
 
   private func layoutContainerSlots() {
-    guard reactContainerSlots.count == 3 else { return }
     let empty = config?.items.isEmpty ?? true
     let header = containerSlotHeights[0]
     let emptyHeight = empty ? containerSlotHeights[1] : 0
@@ -43,12 +56,11 @@ final class NativeListView: UIView {
     let footerY = max(paddingTop + header + emptyHeight,
       collectionView.contentSize.height - paddingBottom - footer)
     let positions = [paddingTop, paddingTop + header, footerY]
-    for (index, view) in reactContainerSlots.enumerated() {
-      view.isHidden = index == 1 && !empty
-      let horizontalPadding = config?.contentPaddingHorizontal ?? 0
-      view.frame = CGRect(x: horizontalPadding, y: positions[index],
-        width: max(0, collectionView.bounds.width - horizontalPadding * 2),
-        height: containerSlotHeights[index])
+    for (index, slot) in reactContainerSlots.prefix(3).enumerated() {
+      slot.host.isHidden = index == 1 && !empty
+      // React places the root at the horizontal inset inside this full-width host.
+      slot.host.frame = CGRect(x: 0, y: positions[index],
+        width: collectionView.bounds.width, height: containerSlotHeights[index])
     }
   }
 

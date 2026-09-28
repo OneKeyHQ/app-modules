@@ -49,25 +49,87 @@ final class NativeListActivityDetailsView: UIStackView {
   }
   required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+  private static let sizingButton: UIButton = {
+    let button = UIButton(type: .system)
+    button.titleLabel?.font = nativeListFont(ofSize: 14, weight: .medium)
+    button.contentEdgeInsets = UIEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+    return button
+  }()
+
+  /// Mirrors bind(): the same resolved texts, stack spacings and column widths, so the
+  /// automatic height matches the rendered stacks.
   static func measure(_ data: [String: Any], width: CGFloat) -> CGFloat {
     let style = data.dictionary("style") ?? [:]
-    let primary = style.dictionary("primaryAmount") ?? [:]
-    let secondary = style.dictionary("secondaryAmount") ?? [:]
-    let rows = data.dictionaries("amounts")
-    let gap = CGFloat(style.double("trailingGap", default: 2))
-    let amountsHeight = rows.reduce(CGFloat(0)) { height, row in
-      height + CGFloat(primary.double("lineHeight", default: 24)) +
-        (row.string("secondaryText").isEmpty ? 0 : CGFloat(secondary.double("lineHeight", default: 20)))
-    } + CGFloat(max(0, rows.count - 1)) * gap
-    let titleHeight = CGFloat(style.dictionary("title")?.double("lineHeight", default: 24) ?? 24)
+    let table = data.string("presentation") == "table"
+    let image = style.dictionary("image") ?? [:]
+    let horizontalPadding = CGFloat(style.double("horizontalPadding", default: table ? 16 : 12))
+    let verticalPadding = CGFloat(style.double("verticalPadding", default: 8))
+    let lineGap = CGFloat(style.double("lineGap"))
+    let gap = CGFloat(style.double("leadingGap", default: 12))
+    let imageWidth = CGFloat(image.double("width", default: 40))
+    let imageHeight = CGFloat(image.double("height", default: 40))
+    let mainWidth = max(0, width - horizontalPadding * 2)
+
+    let amounts = data.dictionaries("amounts").map { amount -> (width: CGFloat, height: CGFloat) in
+      let primary = NativeListResolvedText(amount.string("text"), style: style.dictionary("primaryAmount"),
+        size: 16, weight: .medium, color: .label, lineHeight: 24, lines: 1, tabular: true)
+      let secondary = NativeListResolvedText(amount.string("secondaryText"), style: style.dictionary("secondaryAmount"),
+        size: 14, color: .label, lineHeight: 20, lines: 1)
+      let visual: CGFloat = amount.dictionary("leading") == nil ? 0 : 20
+      return (
+        (visual > 0 ? visual + 6 : 0) + max(primary.measureWidth(), secondary.measureWidth()),
+        max(visual, primary.measure(width: .greatestFiniteMagnitude) + secondary.measure(width: .greatestFiniteMagnitude))
+      )
+    }
+    let amountsGap = CGFloat(style.double("trailingGap", default: 2))
+    let amountsHeight = amounts.reduce(CGFloat(0)) { $0 + $1.height } + CGFloat(max(0, amounts.count - 1)) * amountsGap
+    let amountsWidth = amounts.map(\.width).max() ?? 0
+
+    var feeWidth: CGFloat = 0
+    var feeHeight: CGFloat = 0
+    if let feeData = data.dictionary("fee") {
+      let secondaryStyle = style.dictionary("secondaryAmount")
+      let label = NativeListResolvedText(feeData.string("label"), style: secondaryStyle, size: 12, color: .label, lineHeight: 16, lines: 1)
+      let primary = NativeListResolvedText(feeData.string("primary"), style: secondaryStyle, size: 14, color: .label, lineHeight: 20, lines: 1)
+      let secondary = NativeListResolvedText(feeData.string("secondary"), style: secondaryStyle, size: 12, color: .label, lineHeight: 16, lines: 1)
+      let lineWidth = primary.measureWidth() + secondary.measureWidth() +
+        (primary.text.isEmpty || secondary.text.isEmpty ? 0 : 4)
+      feeWidth = max(label.measureWidth(), lineWidth)
+      feeHeight = label.measure(width: .greatestFiniteMagnitude) +
+        max(primary.measure(width: .greatestFiniteMagnitude), secondary.measure(width: .greatestFiniteMagnitude))
+    }
+    let feeColumn = data.dictionary("fee") == nil ? 0 : gap + feeWidth
+    let identityWidth: CGFloat
+    if table {
+      let shared = (mainWidth - imageWidth - gap * 2 - feeColumn) / 2
+      identityWidth = min(mainWidth * 0.42, shared)
+    } else {
+      identityWidth = mainWidth - imageWidth - gap * 2 - feeColumn - min(amountsWidth, mainWidth * 0.5)
+    }
+
+    let title = NativeListResolvedText(data.string("title"), style: style.dictionary("title"), size: 16,
+      weight: .medium, color: .label, lineHeight: 24, lines: 1)
+    let titleHeight = max(
+      title.measure(width: .greatestFiniteMagnitude),
+      data.dictionaries("badges").isEmpty ? 0 : 16)
     let description = NativeListResolvedText(data.string("description"), style: style.dictionary("description"),
       size: 14, color: .label, lineHeight: 20, lines: 2)
-    let identityHeight = titleHeight + description.measure(width: max(1, width * 0.4 - 52)) +
-      (data.string("status").isEmpty ? 0 : 16)
-    let imageHeight = CGFloat(style.dictionary("image")?.double("height", default: 40) ?? 40)
-    return max(imageHeight, identityHeight, amountsHeight) +
-      CGFloat(style.double("verticalPadding", default: 8)) * 2 +
-      (data.dictionaries("footerActions").isEmpty ? 0 : 40)
+    let status = NativeListResolvedText(data.string("status"), style: style.dictionary("status"),
+      size: 12, color: .label, lineHeight: 16, lines: 1)
+    var identityHeight = titleHeight
+    for text in [description, status] where !text.text.isEmpty {
+      identityHeight += lineGap + text.measure(width: max(1, identityWidth))
+    }
+
+    var actionsHeight: CGFloat = 0
+    let actions = data.dictionaries("footerActions")
+    if !actions.isEmpty {
+      actionsHeight = actions.reduce(CGFloat(0)) { height, action in
+        sizingButton.setTitle(action.string("label"), for: .normal)
+        return max(height, ceil(sizingButton.intrinsicContentSize.height))
+      } + 8
+    }
+    return max(imageHeight, identityHeight, amountsHeight, feeHeight) + actionsHeight + verticalPadding * 2
   }
 
   func bind(_ item: NativeListItem, theme: [String: Any]?) {
