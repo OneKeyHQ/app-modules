@@ -2998,7 +2998,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   BOOL attachedToList = _nativeSmoothHeaderScrollEnabled &&
     _sharedHeaderScrollView != nil && !_sharedHeadersLiftedForPagerTransition;
   if (attachedToList) {
-    _sharedHeaderHostView.transform = CGAffineTransformIdentity;
+    // UIRefreshControl temporarily adds a top inset while refreshing. The
+    // shared header lives in that scroll view, so exclude only that inset from
+    // its visual position while keeping the list's pull and indicator intact.
+    NSNumber *pagerTopInset = [_appliedTopInsets objectForKey:_sharedHeaderScrollView];
+    CGFloat refreshInset = _sharedHeaderScrollView.refreshControl != nil && pagerTopInset != nil
+      ? MAX(0, _sharedHeaderScrollView.contentInset.top - pagerTopInset.doubleValue)
+      : 0;
+    _sharedHeaderHostView.transform = CGAffineTransformMakeTranslation(0, -refreshInset);
     _headerView.transform = CGAffineTransformIdentity;
     CGFloat pinnedTranslation = MAX(0, _currentLogicalOffset - _headerHeight);
     CGAffineTransform stickyTransform = CGAffineTransformMakeTranslation(0, pinnedTranslation);

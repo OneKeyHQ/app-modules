@@ -306,6 +306,17 @@ and refresh completion, caller offset changes, late installation/replacement,
 retained-page switching, clipping and nested-owner cleanup. Programmatic UIKit
 unit tests do not substitute for real pull-gesture visibility acceptance.
 
+When a smooth shared header is attached to the active iOS scroll view, UIKit's
+temporary refresh top inset MUST NOT add a second downward displacement to that
+header. The pager uses its own applied top inset as the baseline and cancels only
+the refresh-added visual displacement. The scroll view's inset and offset, the
+refresh indicator, and refresh callback ownership remain unchanged. Removing the
+refresh inset or detaching the header restores its normal transform. This applies
+to RN NativeScroller and NativeList pages; non-smooth and detached headers keep
+their existing positioning. The 2026-09-30 Home Spot simulator checkpoint covers
+an active refresh with repeated vertical swipes and subsequent inset removal;
+other Home pages and physical-device acceptance remain open.
+
 ## iOS shared-header hit testing
 
 Smooth-header hit forwarding is restricted to the pager's own interactive

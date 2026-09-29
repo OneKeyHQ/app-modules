@@ -4,6 +4,7 @@
 @interface RNCCollapsiblePagerViewComponentView (RefreshControlTesting)
 - (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView;
 - (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView;
+- (void)applyHeaderOffset;
 @end
 
 @interface RNCCollapsiblePagerRefreshControlTests : XCTestCase
@@ -175,6 +176,36 @@
   [second releaseRefreshControlForScrollView:scroll];
   XCTAssertTrue(CATransform3DEqualToTransform(control.layer.sublayerTransform, baseline));
   XCTAssertTrue(control.layer.masksToBounds);
+}
+
+- (void)testRefreshTopInsetDoesNotDisplaceAttachedSharedHeader
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:64];
+  UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
+  scroll.refreshControl = [UIRefreshControl new];
+  [pager setValue:scroll forKey:@"sharedHeaderScrollView"];
+  NSMapTable<UIScrollView *, NSNumber *> *appliedTopInsets = [pager valueForKey:@"appliedTopInsets"];
+  [appliedTopInsets setObject:@340 forKey:scroll];
+  UIView *headerHost = [pager valueForKey:@"sharedHeaderHostView"];
+
+  scroll.contentInset = UIEdgeInsetsMake(340, 0, 0, 0);
+  [pager applyHeaderOffset];
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+
+  scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
+  [pager applyHeaderOffset];
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, -60, 0.001);
+  [pager applyHeaderOffset];
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, -60, 0.001);
+
+  scroll.contentInset = UIEdgeInsetsMake(340, 0, 0, 0);
+  [pager applyHeaderOffset];
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+
+  scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
+  scroll.refreshControl = nil;
+  [pager applyHeaderOffset];
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
 }
 
 @end
