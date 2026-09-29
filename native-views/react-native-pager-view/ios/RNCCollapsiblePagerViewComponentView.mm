@@ -1033,6 +1033,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   __weak UITouch *_trackedTouch;
   UIEvent *_touchEvent;
   BOOL _multipleSurfaceTouchesObserved;
+  CGPoint _trackedTouchStartPoint;
+  BOOL _didCancelReactPressForVerticalMovement;
 }
 
 - (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)other
@@ -1069,12 +1071,37 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     return;
   }
   _trackedTouch = touches.anyObject;
+  _trackedTouchStartPoint = [_trackedTouch locationInView:self.view];
+  _didCancelReactPressForVerticalMovement = NO;
   [self recordEvent:event];
 }
 
 - (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
 {
   [self recordEvent:event];
+  UITouch *touch = _trackedTouch;
+  UIGestureRecognizer *handler = self.reactTouchHandler;
+  if (touch == nil || ![touches containsObject:touch] ||
+      self.state != UIGestureRecognizerStatePossible ||
+      _didCancelReactPressForVerticalMovement || _multipleSurfaceTouchesObserved ||
+      handler.view == nil || self.view != handler.view.superview ||
+      handler.state == UIGestureRecognizerStateFailed ||
+      handler.state == UIGestureRecognizerStateCancelled ||
+      handler.state == UIGestureRecognizerStateEnded) return;
+  CGPoint point = [touch locationInView:self.view];
+  CGFloat dx = point.x - _trackedTouchStartPoint.x;
+  CGFloat dy = point.y - _trackedTouchStartPoint.y;
+  if (fabs(dy) < 10.0 || fabs(dy) <= fabs(dx)) return;
+  NSUInteger activeTouches = 0;
+  for (UITouch *activeTouch in event.allTouches) {
+    if (activeTouch.phase == UITouchPhaseEnded ||
+        activeTouch.phase == UITouchPhaseCancelled) continue;
+    if ([activeTouch.view isDescendantOfView:handler.view]) ++activeTouches;
+  }
+  if (activeTouches != 1) return;
+  _didCancelReactPressForVerticalMovement = YES;
+  handler.enabled = NO;
+  handler.enabled = YES;
 }
 
 - (void)cancelPressForPan:(UIPanGestureRecognizer *)pan
@@ -1108,6 +1135,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     ? UIGestureRecognizerStateEnded : UIGestureRecognizerStateFailed;
   _trackedTouch = nil;
   _touchEvent = nil;
+  _didCancelReactPressForVerticalMovement = NO;
 }
 
 - (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
@@ -1117,6 +1145,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     ? UIGestureRecognizerStateCancelled : UIGestureRecognizerStateFailed;
   _trackedTouch = nil;
   _touchEvent = nil;
+  _didCancelReactPressForVerticalMovement = NO;
 }
 
 - (void)reset
@@ -1125,6 +1154,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _trackedTouch = nil;
   _touchEvent = nil;
   _multipleSurfaceTouchesObserved = NO;
+  _didCancelReactPressForVerticalMovement = NO;
 }
 
 @end

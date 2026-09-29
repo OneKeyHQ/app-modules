@@ -744,6 +744,35 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
   XCTAssertEqual(self.handler.registeredTouches, 0);
 }
 
+- (void)testVerticalPageDragCancelsReactPressBeforeFingerLifts
+{
+  [self assertFixtureIsReadyForDelivery];
+  CGPoint point = [self pressPoint];
+  UITouch *touch = [self.driver beginAt:point];
+  XCTAssertEqual(self.handler.registeredTouches, 1);
+
+  [self.driver move:touch to:CGPointMake(point.x, point.y - 12)];
+  XCTAssertEqual(self.handler.registeredTouches, 0);
+  XCTAssertTrue([self.handler.events containsObject:@"reset-cancelled"] ||
+                  [self.handler.events containsObject:@"cancelled"],
+                @"handler events %@", self.handler.events);
+  XCTAssertFalse([self.handler.events containsObject:@"ended"]);
+
+  [self.driver end:touch];
+  XCTAssertFalse([self.handler.events containsObject:@"ended"], @"events %@", self.handler.events);
+}
+
+- (void)testSmallVerticalMovementKeepsReactPress
+{
+  [self assertFixtureIsReadyForDelivery];
+  CGPoint point = [self pressPoint];
+  UITouch *touch = [self.driver beginAt:point];
+  [self.driver move:touch to:CGPointMake(point.x, point.y - 8)];
+  XCTAssertEqual(self.handler.registeredTouches, 1);
+  [self.driver end:touch];
+  XCTAssertEqualObjects(self.handler.events, (@[@"began", @"moved", @"ended"]));
+}
+
 - (void)testSmallMovementBelowPanThresholdKeepsReactPress
 {
   [self assertFixtureIsReadyForDelivery];
