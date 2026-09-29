@@ -82,6 +82,11 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
   function NativeList(
     {
       snapshot,
+      listHeader: _listHeader,
+      listEmpty: _listEmpty,
+      listFooter: _listFooter,
+      scrollPositionThresholds: _scrollPositionThresholds,
+      onScrollPositionThresholdChange: _onScrollPositionThresholdChange,
       webVirtualizationEnabled = true,
       webSectionIndexContainerRef,
       keyboardDismissMode: _keyboardDismissMode,

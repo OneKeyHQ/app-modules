@@ -109,6 +109,7 @@ describe('CollapsiblePagerView native wrapper', () => {
     const pressTab = async (
       animationEnabled: boolean | undefined,
       position: number,
+      initialPage = 0,
     ) => {
       let renderer!: ReactTestRenderer.ReactTestRenderer;
       await ReactTestRenderer.act(() => {
@@ -116,6 +117,7 @@ describe('CollapsiblePagerView native wrapper', () => {
           <NativeCollapsiblePagerView
             {...requiredProps}
             nativeTabBar={nativeTabBar}
+            initialPage={initialPage}
             nativeTabPressAnimationEnabled={animationEnabled}
           >
             {pages(nativeTabBar.items.length)}
@@ -141,29 +143,130 @@ describe('CollapsiblePagerView native wrapper', () => {
       });
     };
 
-    it('animates the page change by default', async () => {
-      await pressTab(undefined, 3);
+    it.each([
+      [undefined, 0, 1, true],
+      [undefined, 0, 3, false],
+      [undefined, 3, 2, true],
+      [undefined, 3, 0, false],
+      [true, 0, 3, true],
+      [false, 0, 1, false],
+      [false, 0, 3, false],
+    ] as const)(
+      'uses animation=%s from %s to %s with animated command=%s',
+      async (animationEnabled, initialPage, target, animated) => {
+        await pressTab(animationEnabled, target, initialPage);
+        const command = animated
+          ? NativeCollapsiblePagerCommands.setPage
+          : NativeCollapsiblePagerCommands.setPageWithoutAnimation;
+        const otherCommand = animated
+          ? NativeCollapsiblePagerCommands.setPageWithoutAnimation
+          : NativeCollapsiblePagerCommands.setPage;
+        expect(command).toHaveBeenCalledTimes(1);
+        expect(command).toHaveBeenCalledWith(expect.anything(), target);
+        expect(otherCommand).not.toHaveBeenCalled();
+      },
+    );
 
-      expect(NativeCollapsiblePagerCommands.setPage).toHaveBeenCalledTimes(1);
-      expect(NativeCollapsiblePagerCommands.setPage).toHaveBeenCalledWith(
-        expect.anything(),
-        3,
+    const renderTabPager = async () => {
+      let renderer!: ReactTestRenderer.ReactTestRenderer;
+      await ReactTestRenderer.act(() => {
+        renderer = ReactTestRenderer.create(
+          <NativeCollapsiblePagerView
+            {...requiredProps}
+            nativeTabBar={nativeTabBar}
+          >
+            {pages(nativeTabBar.items.length)}
+          </NativeCollapsiblePagerView>,
+          { createNodeMock: () => ({}) },
+        );
+      });
+      const nativeHost = renderer.root.find(
+        node => typeof node.props.retainedPages === 'string',
       );
-      expect(
+      const press = async (position: number, runFrame = true) => {
+        await ReactTestRenderer.act(() => {
+          nativeHost.props.onNativeTabPress({
+            nativeEvent: { position, key: nativeTabBar.items[position].key },
+          });
+        });
+        if (runFrame) {
+          await ReactTestRenderer.act(() => {
+            jest.runOnlyPendingTimers();
+          });
+        }
+      };
+      const select = async (position: number) => {
+        await ReactTestRenderer.act(() => {
+          nativeHost.props.onPageSelected({ nativeEvent: { position } });
+        });
+      };
+      return { renderer, press, select };
+    };
+
+    const lastCommand = () => {
+      const animated = jest.mocked(NativeCollapsiblePagerCommands.setPage).mock
+        .invocationCallOrder;
+      const jumped = jest.mocked(
         NativeCollapsiblePagerCommands.setPageWithoutAnimation,
-      ).not.toHaveBeenCalled();
+      ).mock.invocationCallOrder;
+      const lastAnimated = Math.max(-1, ...animated);
+      const lastJump = Math.max(-1, ...jumped);
+      return lastAnimated > lastJump
+        ? {
+            animated: true,
+            target: jest.mocked(NativeCollapsiblePagerCommands.setPage).mock
+              .lastCall?.[1],
+          }
+        : {
+            animated: false,
+            target: jest.mocked(
+              NativeCollapsiblePagerCommands.setPageWithoutAnimation,
+            ).mock.lastCall?.[1],
+          };
+    };
+
+    it.each([
+      [2, true],
+      [0, false],
+      [1, false],
+    ] as const)(
+      'measures adjacency from an in-flight jump target when pressing %s',
+      async (target, animated) => {
+        const { renderer, press } = await renderTabPager();
+        await press(3);
+        expect(lastCommand()).toEqual({ animated: false, target: 3 });
+        // Native has not reported page 3 yet; the wrapper state still says 0.
+        await press(target);
+        expect(lastCommand()).toEqual({ animated, target });
+        await ReactTestRenderer.act(() => {
+          renderer.unmount();
+        });
+      },
+    );
+
+    it('ignores a superseded target that never reached native', async () => {
+      const { renderer, press } = await renderTabPager();
+      await press(3, false);
+      await press(2);
+      expect(NativeCollapsiblePagerCommands.setPage).not.toHaveBeenCalled();
+      expect(lastCommand()).toEqual({ animated: false, target: 2 });
+      await ReactTestRenderer.act(() => {
+        renderer.unmount();
+      });
     });
 
-    it('jumps straight to the pressed page when animation is disabled', async () => {
-      await pressTab(false, 3);
-
-      expect(
-        NativeCollapsiblePagerCommands.setPageWithoutAnimation,
-      ).toHaveBeenCalledTimes(1);
-      expect(
-        NativeCollapsiblePagerCommands.setPageWithoutAnimation,
-      ).toHaveBeenCalledWith(expect.anything(), 3);
-      expect(NativeCollapsiblePagerCommands.setPage).not.toHaveBeenCalled();
+    it('measures adjacency from the reported page after the transition', async () => {
+      const { renderer, press, select } = await renderTabPager();
+      await press(3);
+      await select(3);
+      await press(1);
+      expect(lastCommand()).toEqual({ animated: false, target: 1 });
+      await select(1);
+      await press(0);
+      expect(lastCommand()).toEqual({ animated: true, target: 0 });
+      await ReactTestRenderer.act(() => {
+        renderer.unmount();
+      });
     });
   });
 });

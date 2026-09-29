@@ -68,10 +68,63 @@ Web scroll child can opt in by exposing a DOM element with
 movement, so React is not updated on each vertical scroll frame.
 
 On iOS and Android, `nativeTabBar` renders the tab bar natively and
-`onNativeTabPress` reports presses. A press animates to the pressed page by
-default. Set `nativeTabPressAnimationEnabled={false}` to jump straight there,
-so pressing a distant tab does not scroll through every page in between,
-including unmounted pages that would show blank.
+`onNativeTabPress` reports presses. By default, adjacent tab presses animate and
+non-adjacent presses jump directly to the target without passing intermediate
+pages. Set `nativeTabPressAnimationEnabled={true}` to always animate, or `false`
+to always jump. Swipe gestures and imperative page commands are unchanged.
+
+> **Behavior change:** earlier versions animated every native tab press when
+> `nativeTabPressAnimationEnabled` was omitted. Pass
+> `nativeTabPressAnimationEnabled={true}` to keep that behavior.
 
 Thank you again to Callstack and everyone who contributes to
 `react-native-pager-view` 💙
+
+The native ancestor-scroll contribution protocol is specified in [docs/SPEC.md](docs/SPEC.md).
+
+## NativeScroller compatibility
+
+The independent iOS/Android `NativeScroller` has passing native builds and
+focused simulator checks. The complete acceptance matrix remains open; see
+[docs/SPEC.md](docs/SPEC.md) for the verified cases and limits. It is a
+non-virtualized vertical scroller with one internal React content View. Fabric/Yoga lays out React children and content padding; size
+changes are sent to native through layout props, not a JavaScript scroll loop.
+Shared Fabric native state tracks local scroll displacement and ancestor header
+travel separately, without per-frame JavaScript coordination. Descendant hit
+testing and `measureInWindow` use that state; device acceptance must compare the
+reported coordinates with visible React content after scrolling and page return.
+The automatic flexGrow minimum uses a native-reported usable content height,
+with static pager reservations accounted for once. This internal size event is
+not public API and does not run on scroll frames. Before it arrives the automatic
+minimum is zero; a larger explicit numeric minHeight remains authoritative.
+Refresh insets and content-dependent bottom fill do not change this minimum.
+Web continues using its existing ScrollView implementation.
+
+The supported ScrollView subset is `contentContainerStyle` (including padding,
+height, numeric minHeight and flexGrow), `onContentSizeChange`, `scrollEnabled`,
+`nestedScrollEnabled`, indicators, `bounces`, `alwaysBounceVertical`,
+`contentInset`, keyboard dismissal/persist-tap modes, `scrollEventThrottle`, and
+the scroll/drag/momentum callbacks. Standard View props remain available.
+`decelerationRate` applies on iOS; Android uses AndroidX's native fling physics.
+`bounces`/`alwaysBounceVertical` and refresh tint/title are iOS controls; Android
+uses refresh colors/background/size and does not expose a bounce policy here.
+Tap-to-dismiss uses RN 0.86's JavaScript TextInput registry to preserve taps on
+another input and child-handled presses; keyboard behavior requires device checks.
+Horizontal scrolling, sticky rows, snapping, zoom, automatic keyboard insets and
+the full ScrollView responder API are not provided.
+
+Pass a standard `<RefreshControl refreshing={value} onRefresh={callback} />` as
+`refreshControl`. Its enabled, tint/colors, background, offset, title/title color
+and size props map to the component's native refresh controller; the RN refresh
+element is not mounted. Refreshing remains controlled even if the callback does
+not change the value. Arbitrary custom refresh components are not supported.
+
+`NativeScrollerRef` exposes `scrollTo`, `scrollToEnd`, `flashScrollIndicators`,
+host measurement/focus methods, `getNativeScrollRef` and `getScrollableNode`.
+`pagerScrollKey` remains the stable primary-scroller identity. Native command
+events use the ScrollView event shape; UIKit/AndroidX continue owning gestures
+and momentum. Animated commands whose clamped target differs from the current
+position emit a momentum begin/end pair; a no-op emits no new pair. A new command,
+new touch, content-root replacement or detach ends the previous active sequence.
+The focused JS tests verify wrapper routing, not native scrolling,
+Yoga rendering, keyboard interaction or refresh placement on a device.

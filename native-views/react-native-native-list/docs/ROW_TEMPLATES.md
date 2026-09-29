@@ -143,6 +143,26 @@ separately from source implementation in STYLE_SPEC §9.
 - **Common-capability boundary:** `footerActions` are inside this activity row.
   The list footer is independently configured through the container.
 
+- **Native rich amounts:** optional `amounts` replaces the legacy two strings,
+  with at most 32 unique keyed entries. Each entry supports a leading visual,
+  tone, primary/secondary text and subscript segments. The title supports at
+  most four keyed badges. `descriptionActionKey` emits a description action.
+  `presentation: 'table'` allocates equal identity/amount columns and an
+  optional fee column; `stacked` keeps right-aligned amounts beside identity.
+  `fee.hidden` reserves its column while hiding its content. These native
+  additions do not change the Web renderer.
+
+```text
+stacked (phone)                     table (wide)
+┌────┬────────────────┬───────────┐  ┌────┬────────────┬────────────┬─────────┐
+│icon│title + badges  │amount 1   │  │icon│title/badges│amount 1    │fee label│
+│    │description ↗   │secondary  │  │    │description │secondary   │fee/fiat │
+│    │status          │amount 2…  │  │    │status      │amount 2…   │         │
+├────┴────────────────┴───────────┤  ├────┴────────────┴────────────┴─────────┤
+│     optional row action buttons│  │     optional row action buttons       │
+└────────────────────────────────┘  └───────────────────────────────────────┘
+```
+
 ## message
 
 ![Message: title and timestamp over body text, with optional leading visual and thumbnail](images/row-message.svg)
@@ -225,6 +245,19 @@ separately from source implementation in STYLE_SPEC §9.
 - **Use:** a gallery tile or browser preview.
 - **Required data:** `variant: gallery | browserPreview`, `title`. Optional
   image/image-state, subtitle, badge, network image and close-action key.
+- **Native media preview:** optional `media: { source: ImageSource, probeOrder }`
+  supplies one or two distinct `image`/`video` candidates. It takes precedence
+  over `image`; explicit `imageState: empty | error` still suppresses loading.
+  A video candidate uses a muted paused native player, with no playback/controls or
+  touch target. Detail playback remains caller-owned. Failure advances once to
+  the next candidate, then displays the standard error placeholder. The same
+  media box and caption diagram apply; this adds no new layout region.
+  Web keeps the existing `image` field and does not execute media probing.
+- **Native lifetime:** request identity includes row key, full source, fit,
+  placeholder and probe order. Rebinding only text preserves the preview;
+  changed identity or recycle cancels work and rejects late callbacks. Frame
+  loading owns at most one player per attached tile. Detach/background/recycle
+  releases player resources; no autoplay, audio focus or NativeList disk cache.
 - **Text style roles:** `title`, `subtitle`, `badge`.
 - **Layout boundary:** media stays above caption metadata; network/close/badge
   overlays keep their template anchors. A text style cannot change the grid
@@ -255,6 +288,18 @@ separately from source implementation in STYLE_SPEC §9.
   The standard card example alone cannot validate composite heading styling.
 
 ## sectionHeader
+
+Native-only optional title loading presentation (`titleLoading: true`):
+
+```text
+┌────────────────────────────────────────────────────────────┐
+│ [spinner 20pt]  Title                         Value/control │
+└────────────────────────────────────────────────────────────┘
+```
+
+The spinner inherits the resolved title color, has an 8-point trailing gap,
+and stops/disappears when loading clears or the row is recycled. It is section
+chrome and emits no row action. Omission preserves existing rendering.
 
 ![Section header: title/subtitle and optional summary value, help or selection control](images/row-section-header.svg)
 

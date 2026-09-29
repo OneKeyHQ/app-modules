@@ -9,6 +9,7 @@ import org.json.JSONObject
 
 internal class NativeListActivityRowView(context: ThemedReactContext) :
   NativeListRendererRowView(context) {
+  private val details = NativeListActivityDetailsView(context)
   private val content =
     LinearLayout(context).apply {
       orientation = HORIZONTAL
@@ -33,7 +34,7 @@ internal class NativeListActivityRowView(context: ThemedReactContext) :
   private val values = List(2) { NativeListTextView(context) }
   private val actions = LinearLayout(context).apply { orientation = HORIZONTAL }
   private val buttons = List(3) { NativeListTextView(context) }
-  override val assetFields = listOf("leading", "secondaryLeading")
+  override val assetFields = listOf("leading", "secondaryLeading", "amounts")
 
   init {
     titleLine.addView(title, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
@@ -48,10 +49,13 @@ internal class NativeListActivityRowView(context: ThemedReactContext) :
     content.addView(amounts)
     addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     addView(actions)
+    addView(details, LayoutParams(-1, -2))
+    details.visibility = GONE
+    details.onAction = { key, view, source, slot -> emitAction(key, view, source, slot) }
   }
 
   override fun defaultHeight(item: NativeListItem, layout: String) =
-    if ((item.json.optJSONArray("footerActions")?.length() ?: 0) > 0) 104 else 60
+    if (item.json.has("amounts")) 0 else if ((item.json.optJSONArray("footerActions")?.length() ?: 0) > 0) 104 else 60
 
   override fun bindContent(
     item: NativeListItem,
@@ -60,6 +64,21 @@ internal class NativeListActivityRowView(context: ThemedReactContext) :
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
     val data = item.json
+    val rich = data.has("amounts")
+    details.visibility = if (rich) VISIBLE else GONE
+    content.visibility = if (rich) GONE else VISIBLE
+    actions.visibility = if (rich) GONE else VISIBLE
+    if (rich) {
+      orientation = VERTICAL
+      val style = data.optJSONObject("style") ?: JSONObject()
+      val hp = if (style.has("horizontalPadding")) stylePx(style.optDouble("horizontalPadding")) else dp(if (data.optString("presentation") == "table") 16 else 12)
+      val vp = if (style.has("verticalPadding")) stylePx(style.optDouble("verticalPadding")) else dp(8)
+      setPadding(hp, vp, hp, vp)
+      visual.recycle()
+      details.bind(item, theme, sourceScale)
+      return
+    }
+    details.recycle()
     val style = data.optJSONObject("style") ?: JSONObject()
     val image = style.optJSONObject("image") ?: JSONObject()
     fun color(name: String, fallback: String) =
@@ -233,11 +252,13 @@ internal class NativeListActivityRowView(context: ThemedReactContext) :
 
   override fun recycleContent() {
     visual.recycle()
+    details.recycle()
     buttons.forEach { it.setOnClickListener(null) }
   }
 
   override fun disposeContent() {
     visual.dispose()
+    details.dispose()
     buttons.forEach { it.setOnClickListener(null) }
   }
 }

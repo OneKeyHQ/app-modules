@@ -4,9 +4,11 @@ final class NativeListActivityCell: NativeListRendererCell {
   override class func measure(
     _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
   ) -> CGFloat? {
+    if item.data["amounts"] != nil { return NativeListActivityDetailsView.measure(item.data, width: width) }
     return item.data.dictionaries("footerActions").isEmpty ? 60 : 100
   }
 
+  private let details = NativeListActivityDetailsView()
   private let visual = NativeListLeadingVisual()
   private let column = UIStackView()
   private let titleLine = UIStackView()
@@ -22,7 +24,7 @@ final class NativeListActivityCell: NativeListRendererCell {
   private let buttons = (0..<3).map { _ in UIButton(type: .system) }
   private var actionKeys: [String] = []
   private var dimensions: [NSLayoutConstraint] = []
-  override var assetFields: [String] { ["leading", "secondaryLeading"] }
+  override var assetFields: [String] { ["leading", "secondaryLeading", "amounts"] }
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -60,7 +62,11 @@ final class NativeListActivityCell: NativeListRendererCell {
       button.addTarget(self, action: #selector(pressed(_:)), for: .touchUpInside)
       actions.addArrangedSubview(button)
     }
-    [visual, column, amounts].forEach(root.addArrangedSubview)
+    [visual, column, amounts, details].forEach(root.addArrangedSubview)
+    details.isHidden = true
+    details.onAction = { [weak self] key, view, source, slot in
+      self?.emitAction(key, from: view, source: source, slot: slot)
+    }
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override func bindContent(
@@ -68,6 +74,21 @@ final class NativeListActivityCell: NativeListRendererCell {
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
     let data = item.data
+    let rich = data["amounts"] != nil
+    details.isHidden = !rich
+    [visual, column, amounts].forEach { $0.isHidden = rich }
+    root.axis = rich ? .vertical : .horizontal
+    root.alignment = rich ? .fill : .center
+    if rich {
+      let style = data.dictionary("style") ?? [:]
+      let hp = CGFloat(style.double("horizontalPadding", default: data.string("presentation") == "table" ? 16 : 12))
+      let vp = CGFloat(style.double("verticalPadding", default: 8))
+      contentInsets = UIEdgeInsets(top: vp, left: hp, bottom: vp, right: hp)
+      visual.recycle()
+      details.bind(item, theme: theme)
+      return
+    }
+    details.recycle()
     let style = data.dictionary("style") ?? [:]
     let image = style.dictionary("image") ?? [:]
     root.spacing = 12
@@ -173,6 +194,7 @@ final class NativeListActivityCell: NativeListRendererCell {
   }
   override func recycleContent() {
     visual.recycle()
+    details.recycle()
     actionKeys = []
     buttons.forEach { $0.isHidden = true }
   }

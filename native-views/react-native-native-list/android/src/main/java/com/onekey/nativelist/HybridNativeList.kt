@@ -11,6 +11,26 @@ class HybridNativeList(context: ThemedReactContext) : HybridNativeListSpec() {
 
   override val view: View = hostView
 
+  override var scrollPositionThresholdsJson: String = ""
+    set(value) {
+      if (field == value) return
+      field = value
+      dispatchToUi { hostView.setScrollPositionThresholdsJson(value) }
+    }
+
+  override var onScrollPositionThresholdChange: ((isBeyondThreshold: Boolean) -> Unit)? = null
+    set(value) {
+      field = value
+      dispatchToUi { hostView.onScrollPositionThresholdChange = value }
+    }
+
+  override var containerSlotHeightsJson: String = "[]"
+    set(value) {
+      if (field == value) return
+      field = value
+      dispatchToUi { hostView.setContainerSlotHeightsJson(value) }
+    }
+
   override var snapshotJson: String = ""
     get() = field
     set(value) {

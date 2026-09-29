@@ -1,4 +1,5 @@
 #import "RNCCollapsiblePagerViewComponentView.h"
+#import "RNCNativeScrollerComponentView.h"
 #import "RNCCollapsiblePagerReleasedStatePolicy.h"
 
 #import <react/renderer/components/pagerview/ComponentDescriptors.h>
@@ -11,6 +12,8 @@
 #import "React/RCTScrollViewComponentView.h"
 #import "React/RCTSurfaceTouchHandler.h"
 #import "React/RCTTouchHandler.h"
+#import <objc/runtime.h>
+#import <UIKit/UIGestureRecognizerSubclass.h>
 
 // OneKey patch: deduplicate structural mutation parents before scanning the page.
 #include <unordered_set>
@@ -18,6 +21,116 @@
 using namespace facebook::react;
 
 static void *RNCCollapsiblePagerContentOffsetContext = &RNCCollapsiblePagerContentOffsetContext;
+static void *RNCRefreshControlLayerContext = &RNCRefreshControlLayerContext;
+static void *RNCScrollRefreshControlContext = &RNCScrollRefreshControlContext;
+static char RNCRefreshControlOffsetKey;
+
+@interface RNCRefreshControlOffsetState : NSObject
++ (void)setOffset:(CGFloat)offset forControl:(UIRefreshControl *)control owner:(id)owner;
++ (void)removeControl:(UIRefreshControl *)control owner:(id)owner;
+@end
+
+@implementation RNCRefreshControlOffsetState {
+  __weak UIRefreshControl *_control;
+  NSMapTable<id, NSNumber *> *_offsets;
+  CATransform3D _baselineTransform;
+  CATransform3D _appliedTransform;
+  BOOL _originalMasksToBounds;
+  BOOL _applying;
+  BOOL _observing;
+}
+
+- (instancetype)initWithControl:(UIRefreshControl *)control
+{
+  if ((self = [super init])) {
+    _control = control;
+    _baselineTransform = control.layer.sublayerTransform;
+    _originalMasksToBounds = control.layer.masksToBounds;
+    _offsets = [NSMapTable weakToStrongObjectsMapTable];
+    [control.layer addObserver:self forKeyPath:@"sublayerTransform"
+                       options:NSKeyValueObservingOptionNew
+                       context:RNCRefreshControlLayerContext];
+    [control.layer addObserver:self forKeyPath:@"masksToBounds"
+                       options:NSKeyValueObservingOptionNew
+                       context:RNCRefreshControlLayerContext];
+    _observing = YES;
+  }
+  return self;
+}
+
+- (void)apply
+{
+  UIRefreshControl *control = _control;
+  if (control == nil) return;
+  CGFloat offset = 0;
+  for (NSNumber *value in _offsets.objectEnumerator) offset += value.doubleValue;
+  CATransform3D transform = CATransform3DConcat(
+    _baselineTransform, CATransform3DMakeTranslation(0, -offset, 0));
+  _appliedTransform = transform;
+  _applying = YES;
+  // Visual placement must not change UIKit's refresh geometry or RN's bounds
+  // origin (progressViewOffset). Allow the shifted indicator outside its host.
+  [CATransaction begin];
+  [CATransaction setDisableActions:YES];
+  control.layer.masksToBounds = _offsets.count == 0 ? _originalMasksToBounds : NO;
+  if (!CATransform3DEqualToTransform(control.layer.sublayerTransform, transform)) {
+    control.layer.sublayerTransform = transform;
+  }
+  [CATransaction commit];
+  _applying = NO;
+}
+
++ (void)setOffset:(CGFloat)offset forControl:(UIRefreshControl *)control owner:(id)owner
+{
+  if (control == nil) return;
+  RNCRefreshControlOffsetState *state = objc_getAssociatedObject(control, &RNCRefreshControlOffsetKey);
+  if (state == nil) {
+    state = [[self alloc] initWithControl:control];
+    objc_setAssociatedObject(control, &RNCRefreshControlOffsetKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+  }
+  [state->_offsets setObject:@(offset) forKey:owner];
+  [state apply];
+}
+
++ (void)removeControl:(UIRefreshControl *)control owner:(id)owner
+{
+  if (control == nil) return;
+  RNCRefreshControlOffsetState *state = objc_getAssociatedObject(control, &RNCRefreshControlOffsetKey);
+  if (state == nil) return;
+  [state->_offsets removeObjectForKey:owner];
+  [state apply];
+  if (state->_offsets.count == 0) {
+    [control.layer removeObserver:state forKeyPath:@"sublayerTransform" context:RNCRefreshControlLayerContext];
+    [control.layer removeObserver:state forKeyPath:@"masksToBounds" context:RNCRefreshControlLayerContext];
+    state->_observing = NO;
+    objc_setAssociatedObject(control, &RNCRefreshControlOffsetKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+  }
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object
+                      change:(NSDictionary<NSKeyValueChangeKey, id> *)change context:(void *)context
+{
+  if (context == RNCRefreshControlLayerContext) {
+    if (_applying) return;
+    if ([keyPath isEqualToString:@"sublayerTransform"]) {
+      CATransform3D next = [change[NSKeyValueChangeNewKey] CATransform3DValue];
+      if (CATransform3DEqualToTransform(next, _appliedTransform)) return;
+      _baselineTransform = next;
+    }
+    [self apply];
+    return;
+  }
+  [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+}
+
+- (void)dealloc
+{
+  if (_observing && _control != nil) {
+    [_control.layer removeObserver:self forKeyPath:@"sublayerTransform" context:RNCRefreshControlLayerContext];
+    [_control.layer removeObserver:self forKeyPath:@"masksToBounds" context:RNCRefreshControlLayerContext];
+  }
+}
+@end
 static NSString *const RNCCollapsiblePagerNativeScrollerIDPrefix =
   @"rnc-collapsible-pager-native-scroller:";
 
@@ -908,6 +1021,114 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 @end
 
+// This observer never competes for scrolling. The owning pager explicitly
+// recognizes it only after its real pan begins, so UIKit terminates RN presses.
+@interface RNCCollapsiblePagerContentPressCancellationGestureRecognizer : UIGestureRecognizer
+@property (nonatomic, weak) UIGestureRecognizer *reactTouchHandler;
+- (void)cancelPressForPan:(UIPanGestureRecognizer *)pan;
+- (void)observeIncomingTouch:(UITouch *)touch;
+@end
+
+@implementation RNCCollapsiblePagerContentPressCancellationGestureRecognizer {
+  __weak UITouch *_trackedTouch;
+  UIEvent *_touchEvent;
+  BOOL _multipleSurfaceTouchesObserved;
+}
+
+- (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)other
+{
+  return other == self.reactTouchHandler;
+}
+
+- (void)observeIncomingTouch:(UITouch *)touch
+{
+  if (_trackedTouch != nil && touch != _trackedTouch &&
+      [touch.view isDescendantOfView:self.reactTouchHandler.view]) {
+    _multipleSurfaceTouchesObserved = YES;
+  }
+}
+
+- (void)recordEvent:(UIEvent *)event
+{
+  _touchEvent = event;
+  NSUInteger count = 0;
+  for (UITouch *touch in event.allTouches) {
+    if (touch.phase != UITouchPhaseEnded && touch.phase != UITouchPhaseCancelled &&
+        [touch.view isDescendantOfView:self.reactTouchHandler.view]) ++count;
+  }
+  if (count > 1) _multipleSurfaceTouchesObserved = YES;
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  if (_trackedTouch != nil || touches.count != 1) {
+    _multipleSurfaceTouchesObserved = YES;
+    if (self.state == UIGestureRecognizerStatePossible) {
+      self.state = UIGestureRecognizerStateFailed;
+    }
+    return;
+  }
+  _trackedTouch = touches.anyObject;
+  [self recordEvent:event];
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  [self recordEvent:event];
+}
+
+- (void)cancelPressForPan:(UIPanGestureRecognizer *)pan
+{
+  UIGestureRecognizer *handler = self.reactTouchHandler;
+  UITouch *touch = _trackedTouch;
+  if (self.state != UIGestureRecognizerStatePossible || _multipleSurfaceTouchesObserved ||
+      pan.state != UIGestureRecognizerStateBegan || touch == nil ||
+      touch.phase == UITouchPhaseEnded || touch.phase == UITouchPhaseCancelled ||
+      handler.view == nil || self.view != handler.view.superview ||
+      handler.state == UIGestureRecognizerStateFailed ||
+      handler.state == UIGestureRecognizerStateCancelled ||
+      handler.state == UIGestureRecognizerStateEnded) return;
+
+  // RN cancellation belongs to a Surface, not one finger. Do not terminate an
+  // unrelated, already active touch on that Surface during a multi-touch sequence.
+  NSUInteger activeTouches = 0;
+  for (UITouch *activeTouch in _touchEvent.allTouches) {
+    if (activeTouch.phase == UITouchPhaseEnded ||
+        activeTouch.phase == UITouchPhaseCancelled) continue;
+    if ([activeTouch.view isDescendantOfView:handler.view]) ++activeTouches;
+  }
+  if (activeTouches != 1) return;
+  self.state = UIGestureRecognizerStateBegan;
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  if (![touches containsObject:_trackedTouch]) return;
+  self.state = self.state == UIGestureRecognizerStateBegan
+    ? UIGestureRecognizerStateEnded : UIGestureRecognizerStateFailed;
+  _trackedTouch = nil;
+  _touchEvent = nil;
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  if (![touches containsObject:_trackedTouch]) return;
+  self.state = self.state == UIGestureRecognizerStateBegan
+    ? UIGestureRecognizerStateCancelled : UIGestureRecognizerStateFailed;
+  _trackedTouch = nil;
+  _touchEvent = nil;
+}
+
+- (void)reset
+{
+  [super reset];
+  _trackedTouch = nil;
+  _touchEvent = nil;
+  _multipleSurfaceTouchesObserved = NO;
+}
+
+@end
+
 @interface RNCCollapsiblePagerOuterPagerPanGestureRecognizer : UIPanGestureRecognizer
 @property (nonatomic, strong) NSHashTable<UIGestureRecognizer *> *blockedPagerGestures;
 @end
@@ -954,7 +1175,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   UIPageViewControllerDelegate,
   UIScrollViewDelegate,
   UIGestureRecognizerDelegate,
-  RCTMountingTransactionObserving
+  RCTMountingTransactionObserving,
+  RNCNativeScrollerInsetCoordinator
 >
 - (void)finishPagerScrollEmittingSelection:(BOOL)emitSelection;
 - (void)completeTransitionOnNextRunLoopForGeneration:(NSUInteger)generation
@@ -973,6 +1195,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)preparePageForHorizontalTransitionAtIndex:(NSInteger)pageIndex;
 - (void)updateSharedHeaderPressCancellationGesture;
 - (void)detachSharedHeaderPressCancellationGesture;
+- (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView;
+- (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView;
 - (void)sharedHeaderPressCancellationGestureChanged:(UIPanGestureRecognizer *)recognizer;
 - (void)outerPagerGestureChanged:(UIPanGestureRecognizer *)recognizer;
 - (void)verticalPagerGuardGestureChanged:(UIPanGestureRecognizer *)recognizer;
@@ -1023,6 +1247,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSString *_retainedPages;
   NSMutableDictionary<NSString *, NSNumber *> *_pageOffsets;
   NSMapTable<UIScrollView *, NSValue *> *_originalInsets;
+  NSMapTable<UIScrollView *, UIRefreshControl *> *_managedRefreshControls;
+  NSHashTable<UIScrollView *> *_refreshControlObservedScrollViews;
   NSMapTable<UIScrollView *, NSNumber *> *_appliedTopInsets;
   NSMapTable<UIScrollView *, NSValue *> *_originalIndicatorInsets;
   NSMapTable<UIScrollView *, NSNumber *> *_originalAlwaysBounceVertical;
@@ -1036,6 +1262,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   __weak UIView *_sharedHeaderPressCancellationGestureHost;
   __weak UIGestureRecognizer *_reactTouchHandler;
   UIPanGestureRecognizer *_sharedHeaderPressCancellationGesture;
+  RNCCollapsiblePagerContentPressCancellationGestureRecognizer *_contentPressCancellationGesture;
   RNCCollapsiblePagerOuterPagerPanGestureRecognizer *_sharedHeaderOuterPagerGesture;
   UIPanGestureRecognizer *_verticalPagerGesture;
   BOOL _observingContentOffset;
@@ -1066,6 +1293,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _pageOffsets = [NSMutableDictionary new];
     _releasedPageScrollStates = [NSMutableDictionary new];
     _originalInsets = [NSMapTable weakToStrongObjectsMapTable];
+    _managedRefreshControls = [NSMapTable weakToWeakObjectsMapTable];
+    _refreshControlObservedScrollViews = [NSHashTable weakObjectsHashTable];
     _appliedTopInsets = [NSMapTable weakToStrongObjectsMapTable];
     _originalIndicatorInsets = [NSMapTable weakToStrongObjectsMapTable];
     _originalAlwaysBounceVertical = [NSMapTable weakToStrongObjectsMapTable];
@@ -1145,6 +1374,16 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
 {
+  // Shared headers can sit above their clipped viewport after collapsing.
+  // Forward only viewport touches, so invisible headers cannot cover siblings.
+  if (!self.userInteractionEnabled || self.hidden || self.alpha < 0.01 ||
+      ![self pointInside:point withEvent:event]) return nil;
+  const auto &viewProps =
+    *std::static_pointer_cast<const RNCCollapsiblePagerViewProps>(_props);
+  if (viewProps.pointerEvents == PointerEventsMode::None ||
+      viewProps.pointerEvents == PointerEventsMode::BoxOnly) {
+    return [super hitTest:point withEvent:event];
+  }
   if (_nativeSmoothHeaderScrollEnabled && !_isBeingRecycled &&
       _sharedHeaderHostView.superview != _containerView) {
     CGPoint headerPoint = [_sharedHeaderHostView convertPoint:point fromView:self];
@@ -1168,6 +1407,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   [super didMoveToWindow];
   [self updateSharedHeaderPressCancellationGesture];
+  for (UIScrollView *scrollView in _originalInsets.keyEnumerator) {
+    [self updateNativeScrollerViewport:scrollView stickyHeight:self.window == nil ? 0 : _stickyHeaderHeight];
+  }
   // OneKey patch: removing a decelerating page from its window can suppress
   // UIKit's final scroll callback. Restore the last acknowledged page on reattach.
   if (self.window != nil && _isPagerDragging &&
@@ -1191,6 +1433,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)dealloc
 {
+  for (UIScrollView *scrollView in _originalInsets.keyEnumerator) {
+    [self updateNativeScrollerViewport:scrollView stickyHeight:0];
+  }
+  for (UIScrollView *scrollView in _refreshControlObservedScrollViews.allObjects) {
+    [self releaseRefreshControlForScrollView:scrollView];
+  }
   [self detachSharedHeaderPressCancellationGesture];
 }
 
@@ -1729,7 +1977,11 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [self detachSharedHeaderPressCancellationGesture];
   [self detachScrollObserver];
   [self restoreSharedHeadersToContainer];
+  for (UIScrollView *scrollView in _refreshControlObservedScrollViews.allObjects) {
+    [self releaseRefreshControlForScrollView:scrollView];
+  }
   for (UIScrollView *scrollView in _originalInsets.keyEnumerator) {
+    [self updateNativeScrollerViewport:scrollView stickyHeight:0];
     NSValue *value = [_originalInsets objectForKey:scrollView];
     if (value != nil) {
       UIEdgeInsets original = value.UIEdgeInsetsValue;
@@ -1997,6 +2249,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     return [(RNCCollapsiblePagerViewComponentView *)view
       currentVerticalScrollViewForParentPager];
   }
+  if ([view isKindOfClass:RNCNativeScrollerComponentView.class]) {
+    return ((RNCNativeScrollerComponentView *)view).scrollView;
+  }
   if ([view isKindOfClass:RCTScrollViewComponentView.class]) {
     RCTScrollViewComponentView *componentView =
       (RCTScrollViewComponentView *)view;
@@ -2211,10 +2466,18 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   _observingContentOffset = NO;
   _observedScrollView = nil;
+  if ([scrollView.superview isKindOfClass:RNCNativeScrollerComponentView.class]) {
+    [(RNCNativeScrollerComponentView *)scrollView.superview stopScrolling];
+  }
 }
 
 - (void)detachSharedHeaderPressCancellationGesture
 {
+  if (_contentPressCancellationGesture.view != nil) {
+    [_contentPressCancellationGesture.view removeGestureRecognizer:_contentPressCancellationGesture];
+  }
+  _contentPressCancellationGesture.reactTouchHandler = nil;
+  _contentPressCancellationGesture = nil;
   if (_sharedHeaderPressCancellationGesture.view != nil) {
     [_sharedHeaderPressCancellationGesture.view
       removeGestureRecognizer:_sharedHeaderPressCancellationGesture];
@@ -2299,6 +2562,18 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _sharedHeaderOuterPagerGesture.maximumNumberOfTouches = 1;
   }
   _sharedHeaderOuterPagerGesture.blockedPagerGestures = outerPagerGestures;
+  if (_contentPressCancellationGesture == nil) {
+    _contentPressCancellationGesture =
+      [RNCCollapsiblePagerContentPressCancellationGestureRecognizer new];
+    _contentPressCancellationGesture.delegate = self;
+    // RN's external-recognizer path cancels its responder immediately only
+    // when this flag is set; otherwise reset can be deferred until finger-up.
+    _contentPressCancellationGesture.cancelsTouchesInView = YES;
+    _contentPressCancellationGesture.delaysTouchesBegan = NO;
+    _contentPressCancellationGesture.delaysTouchesEnded = NO;
+  }
+  _contentPressCancellationGesture.reactTouchHandler = reactTouchHandler;
+  [gestureHost addGestureRecognizer:_contentPressCancellationGesture];
   _reactTouchHandler = reactTouchHandler;
   _sharedHeaderPressCancellationGestureHost = gestureHost;
   [gestureHost addGestureRecognizer:_sharedHeaderPressCancellationGesture];
@@ -2418,10 +2693,45 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
 }
 
+- (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView
+{
+  if (!_nativeSmoothHeaderScrollEnabled || _isBeingRecycled) {
+    [self releaseRefreshControlForScrollView:scrollView];
+    return;
+  }
+  if (![_refreshControlObservedScrollViews containsObject:scrollView]) {
+    [_refreshControlObservedScrollViews addObject:scrollView];
+    [scrollView addObserver:self forKeyPath:@"refreshControl"
+                   options:NSKeyValueObservingOptionNew
+                   context:RNCScrollRefreshControlContext];
+  }
+  UIRefreshControl *previous = [_managedRefreshControls objectForKey:scrollView];
+  UIRefreshControl *current = scrollView.refreshControl;
+  if (previous != current) {
+    [RNCRefreshControlOffsetState removeControl:previous owner:self];
+    [_managedRefreshControls removeObjectForKey:scrollView];
+    if (current != nil) [_managedRefreshControls setObject:current forKey:scrollView];
+  }
+  [RNCRefreshControlOffsetState setOffset:_headerHeight + _stickyHeaderHeight
+                             forControl:current owner:self];
+}
+
+- (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView
+{
+  if ([_refreshControlObservedScrollViews containsObject:scrollView]) {
+    [scrollView removeObserver:self forKeyPath:@"refreshControl" context:RNCScrollRefreshControlContext];
+    [_refreshControlObservedScrollViews removeObject:scrollView];
+  }
+  [RNCRefreshControlOffsetState removeControl:[_managedRefreshControls objectForKey:scrollView] owner:self];
+  [_managedRefreshControls removeObjectForKey:scrollView];
+}
+
 // OneKey patch: release observers, headers and saved state while the scroll view
 // still represents the old list, before Fabric applies its next owner's props.
 - (void)restoreScrollViewState:(UIScrollView *)scrollView resetSavedOffset:(BOOL)resetSavedOffset
 {
+  [self updateNativeScrollerViewport:scrollView stickyHeight:0];
+  [self releaseRefreshControlForScrollView:scrollView];
   if (scrollView == _observedScrollView) {
     [self detachScrollObserver];
     if (resetSavedOffset) _pageOffsets[self.currentPageKey] = @(_headerOffset);
@@ -2538,6 +2848,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   // This host already includes the fixed header and safe area in its frame.
   // UIKit automatic adjustment would add them a second time to short pages.
   scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+  [self updateNativeScrollerViewport:scrollView stickyHeight:_stickyHeaderHeight];
+  [self updateRefreshControlForScrollView:scrollView];
   CGFloat previousTopInset = scrollView.contentInset.top;
   CGFloat previousLogicalOffset = scrollView.contentOffset.y + previousTopInset;
   NSNumber *appliedTop = [_appliedTopInsets objectForKey:scrollView];
@@ -2580,12 +2892,46 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     }
     targetOffset = restoredLogicalOffset - next.top;
     targetOffset = MAX(targetOffset, -next.top + _headerOffset);
+    // An inactive list may shrink after its offset observer was detached.
+    // Do not overwrite its corrected offset with a now-unreachable cached one.
+    targetOffset = RNCLimitRestoredScrollOffset(
+      targetOffset,
+      scrollView.contentSize.height,
+      scrollView.bounds.size.height,
+      next.top,
+      next.bottom
+    );
   }
   // A bottom-inset change must not cancel UIKit's refresh or bounce settlement.
   if (restore || previousTopInset != next.top) {
     [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, targetOffset) animated:NO];
   }
   if (pageIndex == _currentIndex) [self updateHeaderForScrollView:scrollView];
+}
+
+- (void)updateNativeScrollerViewport:(UIScrollView *)scrollView stickyHeight:(CGFloat)height
+{
+  if ([scrollView.superview isKindOfClass:RNCNativeScrollerComponentView.class]) {
+    [(RNCNativeScrollerComponentView *)scrollView.superview setPagerStickyHeight:height forOwner:self];
+  }
+}
+
+- (void)nativeScroller:(RNCNativeScrollerComponentView *)scroller
+    callerInsetChangedFrom:(UIEdgeInsets)previous to:(UIEdgeInsets)next
+{
+  UIScrollView *scrollView = scroller.scrollView;
+  NSValue *stored = [_originalInsets objectForKey:scrollView];
+  if (stored == nil) return;
+  UIEdgeInsets original = stored.UIEdgeInsetsValue;
+  original.top += next.top - previous.top;
+  original.left += next.left - previous.left;
+  original.bottom += next.bottom - previous.bottom;
+  original.right += next.right - previous.right;
+  [_originalInsets setObject:[NSValue valueWithUIEdgeInsets:original] forKey:scrollView];
+  NSNumber *appliedTop = [_appliedTopInsets objectForKey:scrollView];
+  if (appliedTop != nil) {
+    [_appliedTopInsets setObject:@(appliedTop.doubleValue + next.top - previous.top) forKey:scrollView];
+  }
 }
 
 - (void)reapplyInsetsToObservedScrollView
@@ -2617,6 +2963,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
                         change:(NSDictionary<NSKeyValueChangeKey,id> *)change
                        context:(void *)context
 {
+  if (context == RNCScrollRefreshControlContext) {
+    [self updateRefreshControlForScrollView:(UIScrollView *)object];
+    return;
+  }
   if (context == RNCCollapsiblePagerContentOffsetContext && object == _observedScrollView) {
     if ([keyPath isEqualToString:@"contentSize"]) {
       NSValue *oldSize = change[NSKeyValueChangeOldKey];
@@ -2849,6 +3199,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
 {
+  if (_nativeSmoothHeaderScrollEnabled && scrollView == _pagerScrollView) {
+    [_contentPressCancellationGesture cancelPressForPan:scrollView.panGestureRecognizer];
+  }
   if (_directNativePagerEnabled) {
     [self preparePageForHorizontalTransitionAtIndex:_currentIndex - 1];
     [self preparePageForHorizontalTransitionAtIndex:_currentIndex + 1];
@@ -3194,6 +3547,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       (unsigned long)_sharedHeaderOuterPagerGesture.blockedPagerGestures.count]);
     return YES;
   }
+  if (gestureRecognizer == _contentPressCancellationGesture) {
+    [_contentPressCancellationGesture observeIncomingTouch:touch];
+    UIView *touchView = touch.view;
+    return _nativeSmoothHeaderScrollEnabled && !_isBeingRecycled &&
+      _contentPressCancellationGesture.view != nil &&
+      [touchView isDescendantOfView:_pagerScrollView] &&
+      ![touchView isDescendantOfView:_sharedHeaderHostView];
+  }
   if (gestureRecognizer == _sharedHeaderPressCancellationGesture) {
     if (!_nativeSmoothHeaderScrollEnabled || _isBeingRecycled ||
         _sharedHeaderPressCancellationGestureHost == nil) return NO;
@@ -3233,6 +3594,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     return ![other isKindOfClass:RCTSurfaceTouchHandler.class] &&
       ![other isKindOfClass:RCTTouchHandler.class] &&
       ![_sharedHeaderOuterPagerGesture.blockedPagerGestures containsObject:other];
+  }
+  if (gestureRecognizer == _contentPressCancellationGesture ||
+      otherGestureRecognizer == _contentPressCancellationGesture) {
+    UIGestureRecognizer *other = gestureRecognizer == _contentPressCancellationGesture
+      ? otherGestureRecognizer : gestureRecognizer;
+    return other != _contentPressCancellationGesture.reactTouchHandler;
   }
   if (gestureRecognizer == _sharedHeaderPressCancellationGesture ||
       otherGestureRecognizer == _sharedHeaderPressCancellationGesture) {

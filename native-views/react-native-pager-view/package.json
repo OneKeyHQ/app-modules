@@ -21,6 +21,7 @@
     "lib",
     "android",
     "ios",
+    "docs",
     "react-native-pager-view.podspec",
     "!ios/build",
     "!android/build",
@@ -32,7 +33,9 @@
     "!**/__fixtures__",
     "!**/__mocks__",
     "!**/.*",
-    "!**/*.map"
+    "!**/*.map",
+    "common",
+    "react-native.config.js"
   ],
   "scripts": {
     "clean": "del-cli lib",
@@ -98,7 +101,8 @@
     "ios": {
       "componentProvider": {
         "RNCViewPager": "RNCPagerViewComponentView",
-        "RNCCollapsiblePagerView": "RNCCollapsiblePagerViewComponentView"
+        "RNCCollapsiblePagerView": "RNCCollapsiblePagerViewComponentView",
+        "RNCNativeScroller": "RNCNativeScrollerComponentView"
       }
     }
   }

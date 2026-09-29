@@ -94,11 +94,18 @@ repositories {
 }
 
 def kotlinVersion = getExtOrDefault("kotlinVersion")
+// Keep native media preview formats aligned with react-native-video's default.
+def media3Version = rootProject.ext.has("media3Version") ? rootProject.ext.get("media3Version") : "1.4.1"
 
 dependencies {
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
   implementation "androidx.recyclerview:recyclerview:1.4.0"
+  implementation "androidx.media3:media3-exoplayer:$media3Version"
+  implementation "androidx.media3:media3-exoplayer-hls:$media3Version"
+  implementation "androidx.media3:media3-exoplayer-dash:$media3Version"
+  implementation "androidx.media3:media3-ui:$media3Version"
+  implementation "androidx.media3:media3-datasource-okhttp:$media3Version"
   implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
   implementation project(":react-native-nitro-modules")
   implementation project(":onekeyfe_react-native-native-logger")

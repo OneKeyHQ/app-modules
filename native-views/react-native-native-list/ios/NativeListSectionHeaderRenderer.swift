@@ -99,7 +99,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     if layout == "table" { return 28 }
     if item.data.string("presentation") == "networkSelector" { return 47 }
     if item.data.string("variant") == "history" {
-      return 16
+      return item.data.bool("titleLoading") ? 20 : 16
     }
     if item.data.string("variant") == "summary" { return 68 }
     if item.data.string("variant") == "gallery" { return 32 }
@@ -110,6 +110,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
   private let mainStack = UIStackView()
   private let titleRowStack = UIStackView()
   private let titleLabel = NativeListDottedUnderlineLabel()
+  private let titleSpinner = UIActivityIndicatorView(style: .medium)
   private let subtitleLabel = NativeListTextLabel()
   private let trailingStack = UIStackView()
   private let accessoryButtons = [NativeListAccessoryButton(type: .system)]
@@ -132,6 +133,12 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     root.axis = .horizontal
     root.alignment = .center
     root.spacing = 12
+    titleSpinner.translatesAutoresizingMaskIntoConstraints = false
+    titleSpinner.isAccessibilityElement = false
+    NSLayoutConstraint.activate([
+      titleSpinner.widthAnchor.constraint(equalToConstant: 20),
+      titleSpinner.heightAnchor.constraint(equalToConstant: 20),
+    ])
     mainStack.axis = .vertical
     mainStack.alignment = .fill
     mainStack.spacing = 2
@@ -174,6 +181,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     selectorTypographyRestorers = []
     currentItem = item
     currentTheme = theme
+    titleSpinner.stopAnimating()
     NSLayoutConstraint.deactivate(selectorConstraints)
     selectorConstraints = []
     root.arrangedSubviews.forEach {
@@ -244,6 +252,8 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     if style["lineGap"] != nil { mainStack.spacing = CGFloat(style.double("lineGap")) }
     if style["trailingGap"] != nil { trailingStack.spacing = CGFloat(style.double("trailingGap")) }
     applyTextStyle(item)
+    titleSpinner.color = titleLabel.textColor
+    updateTitleSpinner()
     contentInsets = UIEdgeInsets(
       top: topInset, left: leftInset, bottom: -bottomInset, right: -rightInset)
     root.alignment =
@@ -301,6 +311,18 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
   override func recycleContent() {
     checkboxControl.reset()
     currentItem = nil
+    titleSpinner.stopAnimating()
+  }
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    updateTitleSpinner()
+  }
+  private func updateTitleSpinner() {
+    if window != nil, currentItem?.data.bool("titleLoading") == true {
+      titleSpinner.startAnimating()
+    } else {
+      titleSpinner.stopAnimating()
+    }
   }
   @objc private func titlePressed() {
     if let item = currentItem {
@@ -324,6 +346,10 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     layout: String,
     _ checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    if item.data.bool("titleLoading") {
+      root.addArrangedSubview(titleSpinner)
+      root.setCustomSpacing(8, after: titleSpinner)
+    }
     root.addArrangedSubview(mainStack)
     let variant = item.data.string("variant")
     // OneKey patch: title help is a separate target from checkbox and value actions.

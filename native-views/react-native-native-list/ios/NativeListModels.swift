@@ -93,6 +93,7 @@ struct NativeListConfig {
   var selectedKeys: Set<String>
   let reorderable: Bool
   let pullToRefresh: Bool
+  let refreshTriggerDistance: CGFloat?
   var refreshing: Bool
   let loadMore: Bool
   let endReachedThreshold: Double
@@ -144,7 +145,7 @@ struct NativeListConfig {
       generation: generation,
       layout: layout,
       orientation: layoutData["orientation"] as? String ?? "vertical",
-      gridColumns: min(4, max(1, layoutData["gridColumns"] as? Int ?? 1)),
+      gridColumns: min(7, max(1, layoutData["gridColumns"] as? Int ?? 1)),
       stickyHeaders: layoutData["stickyHeaders"] as? Bool ?? false,
       contentPadding: contentPadding,
       contentPaddingHorizontal: contentPaddingHorizontal,
@@ -156,6 +157,8 @@ struct NativeListConfig {
       selectedKeys: selectedKeys,
       reorderable: capabilities?["reorderable"] as? Bool ?? false,
       pullToRefresh: capabilities?["pullToRefresh"] as? Bool ?? false,
+      refreshTriggerDistance: (capabilities?["refreshTriggerDistance"] as? Double)
+        .flatMap { $0.isFinite && $0 > 0 ? CGFloat($0) : nil },
       refreshing: capabilities?["refreshing"] as? Bool ?? false,
       loadMore: capabilities?["loadMore"] as? Bool ?? false,
       endReachedThreshold: capabilities?["endReachedThreshold"] as? Double ?? 0.2,

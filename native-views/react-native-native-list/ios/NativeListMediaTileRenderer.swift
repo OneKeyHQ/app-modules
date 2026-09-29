@@ -8,7 +8,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
   }
 
   private let picture = UIView()
-  private let image = NativeListImageSlot()
+  private let image = NativeListMediaPreviewSlot()
   private let network = NativeListImageSlot()
   private let errorIcon = UIImageView()
   private let title = NativeListTextLabel()
@@ -27,7 +27,7 @@ final class NativeListMediaTileCell: NativeListRendererCell {
   override var defaultCornerRadius: CGFloat { 16 }
   override var showsSelection: Bool { false }
   override var pressChangesBackground: Bool { false }
-  override var assetFields: [String] { ["image", "networkImage"] }
+  override var assetFields: [String] { ["image", "media", "networkImage"] }
   override var isHighlighted: Bool { didSet { picture.alpha = isHighlighted ? 0.8 : 1 } }
 
   override init(frame: CGRect) {
@@ -120,7 +120,8 @@ final class NativeListMediaTileCell: NativeListRendererCell {
     errorIcon.isHidden = state != "error"
     errorIcon.image = nativeListIcon(named: "ImageSquareWavesOutline")
     errorIcon.tintColor = UIColor(nativeListHex: "#00000044", fallback: .lightGray)
-    if state != "empty", state != "error", let source = item.data.dictionary("image") {
+    let media = item.data.dictionary("media")
+    if state != "empty", state != "error", let source = media?.dictionary("source") ?? item.data.dictionary("image") {
       // Legacy source-backed media had a transparent container. Clear only a fill this
       // renderer applied, so OneKeyImage keeps ownership of its own placeholder color.
       if ownsImageFill {
@@ -129,7 +130,12 @@ final class NativeListMediaTileCell: NativeListRendererCell {
       }
       image.bind(
         source, key: "\(item.key):media", fit: imageStyle["contentFit"] as? String,
-        placeholder: placeholder)
+        placeholder: placeholder, probeOrder: media?["probeOrder"] as? [String] ?? ["image"]
+      ) { [weak self] loaded in
+        self?.errorIcon.isHidden = loaded
+        self?.ownsImageFill = !loaded
+        self?.image.view.backgroundColor = loaded ? .clear : UIColor(nativeListHex: placeholder, fallback: .lightGray)
+      }
     } else {
       image.recycle()
       image.view.backgroundColor =

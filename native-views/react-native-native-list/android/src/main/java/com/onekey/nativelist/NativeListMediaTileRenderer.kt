@@ -14,7 +14,7 @@ import org.json.JSONObject
 internal class NativeListMediaTileRowView(context: ThemedReactContext) :
     NativeListRendererRowView(context) {
     private val picture = FrameLayout(context)
-    private val image = NativeListImageSlot(context)
+    private val image = NativeListMediaPreviewSlot(context)
     private val network = NativeListImageSlot(context)
     private val errorIcon = OneKeyIconView(context)
     private val title = NativeListTextView(context)
@@ -32,7 +32,7 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext) :
     override val defaultCornerRadius = 16
     override val showsSelection = false
     override val pressChangesBackground = false
-    override val assetFields = listOf("image", "networkImage")
+    override val assetFields = listOf("image", "media", "networkImage")
 
     override fun horizontalWidth(item: NativeListItem) = dp(200)
 
@@ -141,15 +141,24 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext) :
         errorIcon.tintColor = parseNativeListColor("#00000044")
         errorIcon.useSourceScale = sourceScale
         errorIcon.layoutParams = FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER)
-        if (state != "empty" && state != "error" && item.json.has("image"))
+        val media = item.json.optJSONObject("media")
+        val source = media?.optJSONObject("source") ?: item.json.optJSONObject("image")
+        val order = media?.optJSONArray("probeOrder")?.let { values ->
+            (0 until values.length()).map { values.optString(it) }
+        } ?: listOf("image")
+        if (state != "empty" && state != "error" && source != null)
             image.bind(
-                item.json.getJSONObject("image"),
+                source,
                 "${item.key}:media",
                 fit = imageStyle.optString("contentFit").takeIf { it.isNotEmpty() },
                 placeholder =
                     theme?.optString("strongBackground", "#0000000F")?.takeIf(String::isNotEmpty)
                         ?: "#0000000F",
-            )
+                probeOrder = order,
+            ) { loaded ->
+                errorIcon.visibility = if (loaded) GONE else VISIBLE
+                if (!loaded) image.view.setBackgroundColor(tint("strongBackground", "#0000000F"))
+            }
         else image.recycle()
         // Legacy: only the empty/error states paint a slot fill; loaded images show
         // their own placeholder without a white backing.
@@ -157,7 +166,7 @@ internal class NativeListMediaTileRowView(context: ThemedReactContext) :
             when (state) {
                 "error" -> GradientDrawable().apply { setColor(tint("strongBackground", "#0000000F")) }
                 "empty" -> GradientDrawable().apply { setColor(Color.WHITE) }
-                else -> null
+                else -> if (errorIcon.visibility == VISIBLE) GradientDrawable().apply { setColor(tint("strongBackground", "#0000000F")) } else null
             }
         image.view.outlineProvider =
             object : ViewOutlineProvider() {

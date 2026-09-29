@@ -249,7 +249,7 @@ Each cell describes the same public contract on **Web + iOS + Android**.
 | `identity` | title, subtitle, tertiary, badge, value, valueSecondary | padding, leadingGap, lineGap, titleBadgeGap, trailingGap, image |
 | `walletGroup` | None; members own their identity styles | padding |
 | `rail` | title, badge, status | padding, leadingGap, titleBadgeGap, trailingGap, image |
-| `activity` | title, description, status, primaryAmount, secondaryAmount | padding, leadingGap, lineGap, trailingGap, image |
+| `activity` | title, description, status, primaryAmount, secondaryAmount | padding, leadingGap, lineGap, titleBadgeGap, trailingGap, image |
 | `message` | title, body, time | padding, leadingGap, lineGap, image |
 | `dataRow` | columns, columnSecondary, index | padding, leadingGap, lineGap, titleBadgeGap, image |
 | `market` | title, subtitle, price, change | padding, leadingGap, lineGap, titleBadgeGap, trailingGap, image; Market-specific properties below |
@@ -265,7 +265,9 @@ its existing template-specific style surface on every platform.
 
 Gap meanings are structural: `leadingGap` separates the primary visual from
 content; `lineGap` separates content text rows (primary/secondary per data column);
-`titleBadgeGap` separates a title and its badges (vertical for walletSidebar);
+`titleBadgeGap` separates a title and its badges (vertical for walletSidebar;
+for activity, the native failure label or rich title badges; Web has no activity
+badge target);
 `trailingGap` separates trailing values/controls (title/badge to status for rail).
 `walletGroup` padding applies only to the group; it never cascades into members.
 Composite metric-card `lineGap` separates heading/metric blocks and dividers; it
@@ -976,3 +978,11 @@ the contract; no shared cross-language renderer or code generator is required.
   before treating the refactor as device-accepted.
 
 Overflow fitting is the integrating developer's responsibility.
+
+### Native tablet grid allocation
+
+`layout.gridColumns` accepts integers 2 through 7. The container derives tile
+width from available width, content padding and spacing; mediaTile styles do
+not choose the column count. This extends native parser limits from four to
+seven without changing existing 2/3/4 geometry. Runtime acceptance for 6/7
+columns, rotation, and text scaling remains required.

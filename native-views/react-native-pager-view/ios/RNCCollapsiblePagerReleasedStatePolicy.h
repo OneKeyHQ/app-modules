@@ -9,4 +9,12 @@ FOUNDATION_EXPORT void RNCPruneReleasedPageStates(
   NSArray<NSString *> *validPageKeys
 );
 
+FOUNDATION_EXPORT CGFloat RNCLimitRestoredScrollOffset(
+  CGFloat offset,
+  CGFloat contentHeight,
+  CGFloat viewportHeight,
+  CGFloat topInset,
+  CGFloat bottomInset
+);
+
 NS_ASSUME_NONNULL_END

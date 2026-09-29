@@ -130,9 +130,8 @@ export interface CollapsiblePagerViewProps
   nativeTabBar?: CollapsiblePagerNativeTabBarConfig;
   onNativeTabPress?: (event: CollapsiblePagerViewOnNativeTabPressEvent) => void;
   /**
-   * Animates the page change started by a native tab press. Defaults to true.
-   * Set false to jump straight to the pressed page, so a distant tab does not
-   * scroll through every page in between, including unmounted ones.
+   * Defaults to animating adjacent native tab presses and jumping directly to
+   * non-adjacent pages. Set true to always animate, or false to always jump.
    */
   nativeTabPressAnimationEnabled?: boolean;
   /** Optional native secondary sticky header for iOS and Android. */
@@ -190,6 +189,10 @@ export class CollapsiblePagerView extends React.PureComponent<
   private nativeTabCommandId = 0;
 
   private latestNativeTabTarget: number | null = null;
+
+  // Target of the last tab command native has received and not yet reported
+  // as selected. Commands superseded before their frame never reach native.
+  private dispatchedNativeTabTarget: number | null = null;
 
   private latestNativeSelectedPage = this.state.selectedPage;
 
@@ -283,6 +286,7 @@ export class CollapsiblePagerView extends React.PureComponent<
           if (commandId !== this.nativeTabCommandId || !this.nativeRef) {
             return;
           }
+          this.dispatchedNativeTabTarget = position;
           if (animated) {
             CollapsiblePagerViewNativeCommands.setPage(
               this.nativeRef,
@@ -355,6 +359,7 @@ export class CollapsiblePagerView extends React.PureComponent<
       const transitionComplete = pendingTarget === position;
       if (transitionComplete) {
         this.latestNativeTabTarget = null;
+        this.dispatchedNativeTabTarget = null;
         this.nativeTabCommandQueuedDuringScroll = false;
       }
       this.setState(
@@ -387,6 +392,7 @@ export class CollapsiblePagerView extends React.PureComponent<
     ) {
       ++this.nativeTabCommandId;
       this.latestNativeTabTarget = null;
+      this.dispatchedNativeTabTarget = null;
       this.setState(
         { transientRetainedPages: [] },
         this.notifyMountedPagesChanged
@@ -409,9 +415,13 @@ export class CollapsiblePagerView extends React.PureComponent<
       (position !== this.state.selectedPage ||
         this.latestNativeTabTarget !== null)
     ) {
+      // Selection state lags an in-flight transition until native reports it.
+      const currentPage =
+        this.dispatchedNativeTabTarget ?? this.state.selectedPage;
       this.dispatchNativeTabPageCommand(
         position,
-        this.props.nativeTabPressAnimationEnabled ?? true
+        this.props.nativeTabPressAnimationEnabled ??
+          Math.abs(position - currentPage) <= 1
       );
     }
     this.props.onNativeTabPress?.(event);
