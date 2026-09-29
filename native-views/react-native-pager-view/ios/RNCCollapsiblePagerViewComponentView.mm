@@ -2438,6 +2438,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
                  options:NSKeyValueObservingOptionNew
                  context:RNCCollapsiblePagerContentOffsetContext];
   [candidate addObserver:self
+              forKeyPath:@"contentInset"
+                 options:NSKeyValueObservingOptionNew
+                 context:RNCCollapsiblePagerContentOffsetContext];
+  [candidate addObserver:self
               forKeyPath:@"contentSize"
                  options:NSKeyValueObservingOptionOld | NSKeyValueObservingOptionNew
                  context:RNCCollapsiblePagerContentOffsetContext];
@@ -2458,6 +2462,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     if (_observingContentOffset) {
       [scrollView removeObserver:self
                       forKeyPath:@"contentOffset"
+                         context:RNCCollapsiblePagerContentOffsetContext];
+      [scrollView removeObserver:self
+                      forKeyPath:@"contentInset"
                          context:RNCCollapsiblePagerContentOffsetContext];
       [scrollView removeObserver:self
                       forKeyPath:@"contentSize"
@@ -2932,6 +2939,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (appliedTop != nil) {
     [_appliedTopInsets setObject:@(appliedTop.doubleValue + next.top - previous.top) forKey:scrollView];
   }
+  if (scrollView == _observedScrollView) [self updateHeaderForScrollView:scrollView];
 }
 
 - (void)reapplyInsetsToObservedScrollView
@@ -2964,10 +2972,16 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
                        context:(void *)context
 {
   if (context == RNCScrollRefreshControlContext) {
-    [self updateRefreshControlForScrollView:(UIScrollView *)object];
+    UIScrollView *scrollView = (UIScrollView *)object;
+    [self updateRefreshControlForScrollView:scrollView];
+    if (scrollView == _observedScrollView) [self updateHeaderForScrollView:scrollView];
     return;
   }
   if (context == RNCCollapsiblePagerContentOffsetContext && object == _observedScrollView) {
+    if ([keyPath isEqualToString:@"contentInset"]) {
+      [self updateHeaderForScrollView:(UIScrollView *)object];
+      return;
+    }
     if ([keyPath isEqualToString:@"contentSize"]) {
       NSValue *oldSize = change[NSKeyValueChangeOldKey];
       NSValue *newSize = change[NSKeyValueChangeNewKey];

@@ -311,9 +311,12 @@ temporary refresh top inset MUST NOT add a second downward displacement to that
 header. The pager uses its own applied top inset as the baseline and cancels only
 the refresh-added visual displacement. The scroll view's inset and offset, the
 refresh indicator, and refresh callback ownership remain unchanged. Removing the
-refresh inset or detaching the header restores its normal transform. This applies
-to RN NativeScroller and NativeList pages; non-smooth and detached headers keep
-their existing positioning. The 2026-09-30 Home Spot simulator checkpoint covers
+refresh inset or control reapplies the header position immediately, even without
+a scroll-offset event. Caller inset changes update the pager baseline before the
+header position is reapplied. Detaching the header restores its normal
+transform. This applies to RN NativeScroller and NativeList pages; non-smooth
+and detached headers keep their existing positioning. The 2026-09-30 Home Spot
+simulator checkpoint covers
 an active refresh with repeated vertical swipes and subsequent inset removal;
 other Home pages and physical-device acceptance remain open.
 

@@ -4,7 +4,7 @@
 @interface RNCCollapsiblePagerViewComponentView (RefreshControlTesting)
 - (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView;
 - (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView;
-- (void)applyHeaderOffset;
+- (void)attachScrollObserverForCurrentPage;
 @end
 
 @interface RNCCollapsiblePagerRefreshControlTests : XCTestCase
@@ -183,29 +183,32 @@
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:64];
   UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
   scroll.refreshControl = [UIRefreshControl new];
-  [pager setValue:scroll forKey:@"sharedHeaderScrollView"];
-  NSMapTable<UIScrollView *, NSNumber *> *appliedTopInsets = [pager valueForKey:@"appliedTopInsets"];
-  [appliedTopInsets setObject:@340 forKey:scroll];
+  scroll.contentSize = CGSizeMake(320, 2000);
+  scroll.contentInset = UIEdgeInsetsMake(232, 0, 0, 0);
+  UIViewController *page = [UIViewController new];
+  [page.view addSubview:scroll];
+  NSMutableArray<UIViewController *> *pages = [pager valueForKey:@"pageControllers"];
+  [pages addObject:page];
+  [pager attachScrollObserverForCurrentPage];
   UIView *headerHost = [pager valueForKey:@"sharedHeaderHostView"];
+  XCTAssertEqual(headerHost.superview, scroll);
+  XCTAssertEqualWithAccuracy(scroll.contentInset.top, 340, 0.001);
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+
+  scroll.contentOffset = CGPointMake(0, 500);
+  CGPoint offset = scroll.contentOffset;
+  scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
+  XCTAssertTrue(CGPointEqualToPoint(scroll.contentOffset, offset));
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, -60, 0.001);
 
   scroll.contentInset = UIEdgeInsetsMake(340, 0, 0, 0);
-  [pager applyHeaderOffset];
   XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
 
   scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
-  [pager applyHeaderOffset];
   XCTAssertEqualWithAccuracy(headerHost.transform.ty, -60, 0.001);
-  [pager applyHeaderOffset];
-  XCTAssertEqualWithAccuracy(headerHost.transform.ty, -60, 0.001);
-
-  scroll.contentInset = UIEdgeInsetsMake(340, 0, 0, 0);
-  [pager applyHeaderOffset];
-  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
-
-  scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
   scroll.refreshControl = nil;
-  [pager applyHeaderOffset];
   XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+  [pager prepareForRecycle];
 }
 
 @end
