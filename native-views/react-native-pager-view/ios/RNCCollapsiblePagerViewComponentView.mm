@@ -3046,7 +3046,11 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     // moves both together, so translating the header would separate them.
     _sharedHeaderHostView.transform = CGAffineTransformIdentity;
     _headerView.transform = CGAffineTransformIdentity;
-    CGFloat pinnedTranslation = MAX(0, _currentLogicalOffset - _headerHeight);
+    UIScrollView *scrollView = _sharedHeaderScrollView;
+    NSNumber *appliedTop = [_appliedTopInsets objectForKey:scrollView];
+    CGFloat refreshInset = scrollView.refreshControl != nil && appliedTop != nil
+      ? MAX(0, scrollView.contentInset.top - appliedTop.doubleValue) : 0;
+    CGFloat pinnedTranslation = MAX(0, _currentLogicalOffset - _headerHeight - refreshInset);
     CGAffineTransform stickyTransform = CGAffineTransformMakeTranslation(0, pinnedTranslation);
     _stickyHeaderView.transform = stickyTransform;
     _nativeTabBarView.transform = stickyTransform;

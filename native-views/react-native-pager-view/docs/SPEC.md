@@ -335,11 +335,16 @@ pager MUST NOT apply a separate refresh translation to the header. The scroll
 view's inset and offset, the refresh indicator, and refresh callback ownership
 remain unchanged. Removing the refresh inset or control preserves this alignment
 even without a scroll-offset event. Caller inset changes update the pager
-baseline. Detaching the header restores its normal transform. This applies to
-RN NativeScroller and NativeList pages; non-smooth and detached headers keep
+baseline. The sticky tab row MUST pin against the baseline top inset; the
+refresh control's temporary inset MUST NOT move it below the content, including
+rapid direction reversals while the spinner is active. Detaching the header
+restores its normal transform. This applies to RN NativeScroller and NativeList
+pages; non-smooth and detached headers keep
 their existing positioning. The 2026-09-30 Home Spot simulator checkpoint covers
-an active refresh with repeated vertical swipes and subsequent inset removal;
-other Home pages and physical-device acceptance remain open.
+shared header/content alignment and inset removal. A separate source-identical
+local package build verified the sticky row during active-refresh vertical
+reversals; published-package, other Home pages and physical-device acceptance
+remain open.
 
 ## iOS shared-header hit testing
 
