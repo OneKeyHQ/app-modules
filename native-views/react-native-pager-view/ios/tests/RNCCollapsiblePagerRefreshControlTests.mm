@@ -185,6 +185,8 @@
   scroll.refreshControl = [UIRefreshControl new];
   scroll.contentSize = CGSizeMake(320, 2000);
   scroll.contentInset = UIEdgeInsetsMake(232, 0, 0, 0);
+  UIView *content = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 2000)];
+  [scroll addSubview:content];
   UIViewController *page = [UIViewController new];
   [page.view addSubview:scroll];
   NSMutableArray<UIViewController *> *pages = [pager valueForKey:@"pageControllers"];
@@ -199,13 +201,15 @@
   CGPoint offset = scroll.contentOffset;
   scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
   XCTAssertTrue(CGPointEqualToPoint(scroll.contentOffset, offset));
-  XCTAssertEqualWithAccuracy(headerHost.transform.ty, -60, 0.001);
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetMaxY(headerHost.frame), CGRectGetMinY(content.frame), 0.001);
 
   scroll.contentInset = UIEdgeInsetsMake(340, 0, 0, 0);
   XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
 
   scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
-  XCTAssertEqualWithAccuracy(headerHost.transform.ty, -60, 0.001);
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetMaxY(headerHost.frame), CGRectGetMinY(content.frame), 0.001);
   scroll.refreshControl = nil;
   XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
   [pager prepareForRecycle];
