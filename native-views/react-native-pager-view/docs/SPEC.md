@@ -165,6 +165,28 @@ warnings were observed. Keyboard, multi-touch, physical-device performance and
 the full lifecycle/interaction matrix remain unverified. These are local source
 builds; the currently installed npm version does not yet contain this migration.
 
+## iOS vertical-scroll press cancellation
+
+Status: implemented in source. A source-identical `node_modules` build was
+runtime verified on a dedicated iOS 26.5 HomePager simulator on 2026-09-30:
+a slow drag from the Show more button did not activate it, a fling from the
+same button scrolled the list, and a stationary tap activated it. The Pager
+XCTest suite passed 47/47 tests on a separate iOS 26.5 simulator with its data
+on the external drive on 2026-09-30.
+
+In `CollapsiblePagerView` smooth-header mode, a single-finger
+vertical drag beginning on React page content MUST cancel that Surface's active
+React press before finger-up once vertical displacement reaches 10 points and
+exceeds horizontal displacement. Cancellation MUST leave the native vertical
+scroller's pan and momentum intact. Stationary taps, movement below the threshold,
+horizontal drags, and multi-touch sequences MUST retain their existing behavior.
+The iOS content press bridge owns cancellation on the UI thread; the pager's
+existing horizontal-drag cancellation remains independent. The bridge MUST clear
+per-touch state on end, cancellation, and reuse. Android and Web behavior is
+unchanged. Acceptance requires a real iOS button-origin drag that does not fire
+the button, a button-origin fling that scrolls, an ordinary tap that fires, and
+focused native touch-delivery coverage.
+
 ## Native tab-press animation default
 
 Behavior change: previously an omitted `nativeTabPressAnimationEnabled` animated
@@ -305,6 +327,24 @@ There is no per-frame JavaScript work. Acceptance must cover real UIKit pulling
 and refresh completion, caller offset changes, late installation/replacement,
 retained-page switching, clipping and nested-owner cleanup. Programmatic UIKit
 unit tests do not substitute for real pull-gesture visibility acceptance.
+
+When a smooth shared header is attached to the active iOS scroll view, UIKit's
+temporary refresh top inset MUST keep the header and content aligned. Both are
+children of that scroll view and move together with its content offset; the
+pager MUST NOT apply a separate refresh translation to the header. The scroll
+view's inset and offset, the refresh indicator, and refresh callback ownership
+remain unchanged. Removing the refresh inset or control preserves this alignment
+even without a scroll-offset event. Caller inset changes update the pager
+baseline. The sticky tab row MUST pin against the baseline top inset; the
+refresh control's temporary inset MUST NOT move it below the content, including
+rapid direction reversals while the spinner is active. Detaching the header
+restores its normal transform. This applies to RN NativeScroller and NativeList
+pages; non-smooth and detached headers keep
+their existing positioning. The 2026-09-30 Home Spot simulator checkpoint covers
+shared header/content alignment and inset removal. A separate source-identical
+local package build verified the sticky row during active-refresh vertical
+reversals; published-package, other Home pages and physical-device acceptance
+remain open.
 
 ## iOS shared-header hit testing
 
