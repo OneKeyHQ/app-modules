@@ -1,0 +1,79 @@
+# OneKey Monero Runtime
+
+monero-oxide 之上的钱包状态层。**它提供密码学、扫描器与交易构造；存储这一层
+是我们自己写的，因为上游不提供。**
+
+## 为什么是这条路
+
+三条路都量过（数据见 `development/research`）：
+
+| | 我们要写 | 出厂体积 | 插件端 | 落盘 |
+|---|---|---|---|---|
+| monero-ts（wallet2 编 wasm） | 最少 | 6.2 MB JS | 可以 | ✗ 整块序列化 |
+| wallet2 + monero_c | 1.5–2.5k 行 | — | **不行**（零 wasm 支持） | ✓ |
+| **monero-oxide + SQLite** | 6–8.5k 行 | **3.37 MB / gzip 1.06 MB** | 可以 | **✓ 增量写** |
+
+决定性的是最后一列。monero-ts 把整个钱包放在 wasm 内存里，持久化只能
+`getData()` 整块序列化再写出去 —— 历史越长每次保存越贵，写一半崩了丢全部。
+这里是增量写 + 事务，和 Zcash runtime 同一个模型。
+
+代价写在明面上：多出来的六到八千行**正确性归我们自己**，上游不兜底。
+
+## 结构
+
+```
+error.rs     错误码契约（跨 wasm 边界稳定）
+storage.rs   SQLite 连接、OPFS VFS、落盘屏障
+schema.rs    表结构与迁移
+keys.rs      观察密钥对、地址、子地址派生
+wallet.rs    库句柄、身份管理、子地址注册表
+scan.rs      扫描循环 + 三道校验 + 落库
+sync.rs      有界推进编排（拉块 → 扫描 → 记进度）
+query.rs     余额、历史、可花输出
+spend.rs     key image 导入、选币、预留、构造、签名、广播
+network.rs   monerod 传输（浏览器 fetch / 原生 reqwest）
+runtime.rs   跨调用会话状态与并发防线
+bindgen.rs   wasm 边界
+```
+
+## 三件必须知道的事
+
+**一、观察钱包检测不到花费。** Monero 的花费检测需要 key image，而 key image
+需要花费私钥。这是协议性质不是实现取舍。所以宿主必须在解锁时调一次
+`importKeyImages`，否则余额会**偏高**（已花的看起来还在）。余额查询里的
+`unverifiableAtomic` 就是这部分的金额，宿主应当据此提示用户。
+
+**二、节点声称的 RingCT 输出索引不可验证。** 上游文档明确要求客户端自己维护
+这个索引并比对，不一致应当断开。`scan.rs` 实现了这个独立推算，不一致时报
+`RINGCT_INDEX_MISMATCH`。索引错了的后果是构环时取错输出、交易被网络拒绝，
+而且很难从现象反推。
+
+**三、调度归宿主。** `syncStep` 一次最多扫 `maxBlocks` 个块就返回，**永远不会
+自己循环到同步完成**。什么时候扫、扫多少、失败怎么退避全由宿主 TS 决定。
+
+## 构建
+
+```bash
+./scripts/build-wasm.sh          # release 到 pkg/
+cargo test --workspace           # 原生测试
+cargo check --workspace --target wasm32-unknown-unknown
+```
+
+**macOS 上必须有 llvm-ar**（`brew install llvm`）。系统自带的 `/usr/bin/ar`
+读不懂 wasm 目标文件，会把编译好的 `.o` **静默**打成一个 96 字节的空归档，
+链接期报一串 `undefined symbol: sqlite3_*`，而编译阶段不报任何错。归档器由
+`.cargo/config.toml` 指定。
+
+排查提示：本机 clang 是能编 wasm32 的，别往编译器上查。
+另外 `cargo check` **不链接**，这个坑在 check 下完全看不见。
+
+## 与 Zcash runtime 的关系
+
+两条链各自独立的工作区，没有代码依赖。目前唯一的重复是
+`crates/monero-runtime/build.rs`（SQLite 的 wasm 链接胶水，与链无关，实测只差
+8 行注释）—— 抽不了，因为两条链还在各自未合并的分支上，没有共同祖先能放共享
+crate。**两条都落 main 之后第一件事就是抽它。**
+
+一个刻意的差异：`runtime.rs` 在这里**不加 wasm-only 门**。Zcash 那边它是
+`#[cfg(target_arch = "wasm32")]`，导致 1,377 行在原生 `cargo test` 里根本不编译
+——那是真实的覆盖漏洞，这里的并发防线因此是可测的。

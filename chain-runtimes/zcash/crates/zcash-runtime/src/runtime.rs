@@ -122,6 +122,19 @@ fn not_open() -> RuntimeError {
     RuntimeError::new(ErrorCode::WalletNotOpen)
 }
 
+/// 库不在手上时说清楚是哪种：被一次异步操作借走（稍后重试即可）还是真没开
+/// （宿主要重开）。混成 NOT_OPEN 会让宿主在扫链途中把一个好好的钱包重开一遍。
+fn db_unavailable(operation: &str) -> RuntimeError {
+    if BUSY.with(Cell::get) {
+        RuntimeError::with(
+            ErrorCode::WalletBusy,
+            serde_json::json!({ "operation": operation }),
+        )
+    } else {
+        not_open()
+    }
+}
+
 fn no_client() -> RuntimeError {
     RuntimeError::new(ErrorCode::LightwalletdNotConfigured)
 }
@@ -153,7 +166,9 @@ pub fn set_client(client: LightClient) {
 /// 用「取出 → 使用 → 放回」而不是长期持有 `RefCell` 借用，
 /// 这样即便 `f` 里再次进入本模块也不会 panic。
 pub fn with_db<T>(f: impl FnOnce(&mut Db) -> Result<T>) -> Result<T> {
-    let mut db = DB.with(|c| c.borrow_mut().take()).ok_or_else(not_open)?;
+    let mut db = DB
+        .with(|c| c.borrow_mut().take())
+        .ok_or_else(|| db_unavailable("walletRead"))?;
     let out = f(&mut db);
     DB.with(|c| *c.borrow_mut() = Some(db));
     out

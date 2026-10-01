@@ -120,29 +120,16 @@ OPFS 仍受浏览器 origin、配额和清理策略约束；App 内嵌页面的�
 - [x] 发送路径的**错误契约** 9 项（不需要资金即可跑，`examples/web/send-errors.html`）：
       txid 非法/不存在、找零池参数错、PCZT 垃圾字节、电路版本错、
       reservation 非法/不存在各有可判定错误码
-- [x] **不设限制，改为提前告知**（`examples/web/insufficient-errors.html`，四情形实测）：
-      转账会花透明 UTXO —— 钱是用户的，链上也接受，运行时不替他拒绝。
-      `pcztQuote` 走的是与 `pcztCreate` 完全相同的提案路径，因此除手续费外
-      还报出**这笔实际会从哪些池取钱**：
-      `{sourceTransparentZat, sourceShieldedZat, linksTransparentToShielded}`。
-      `linksTransparentToShielded` 只在同一笔里既花透明又花屏蔽时为真 ——
-      那是花透明**唯一新增**的暴露（只花透明的话，对外与一笔屏蔽交易无异），
-      也就是唯一值得弹提醒的情形
-- [x] **真发不出去时错误说得清**：`INSUFFICIENT_FUNDS`（都不够）／
-      `FUNDS_NEED_SHIELDING`（宿主关掉了透明花费，钱在透明池里）／
-      `COINBASE_FUNDS_UNSPENDABLE`（差额只有 coinbase 能补，而本钱包
-      转账走 NonCoinbase、屏蔽走 NonCoinbaseOnly，两条路都碰不到它）。
-      三者都带 `{requiredZat, shieldedAvailableZat, shortfallZat,
-      transparentZat, transparentCoinbaseZat}`。
-      原来只有一个 `INSUFFICIENT_FUNDS { availableZat: 0 }` ——
-      而用户正看着账上有钱，那个 `availableZat` 说的是屏蔽池，名字里却没有
-      「屏蔽」二字，除了猜没有别的办法
+- [x] **付款来源由宿主指定**：私密付款只花宿主选定的那个私密池，不再混用透明
+      资金；透明付款由 keys runtime 无状态构造。`pcztQuote` 与 `pcztCreate`
+      走同一条提案路径，报价即实付手续费。余额不够时抛 `INSUFFICIENT_FUNDS`，
+      带 `shortfallZat`
 - [x] **端到端发送并广播上链**（testnet）：水龙头 0.1 TAZ 落 Ironwood 池 →
-      `pcztCreate` → `pcztProve`（Halo2 约 19s）→ `pcztSign` → `pcztSend` →
-      `broadcastTransaction`，链上确认。逐笔手续费对账到 zatoshi
+      `pcztCreate` → `pcztProve`（Halo2 约 19s）→ `pcztSign` → 提交并广播，
+      链上确认（当时是 `pcztSend` + `broadcastTransaction` 两步，现合并为 `pcztSubmit`）。逐笔手续费对账到 zatoshi
 - [x] **透明 ↔ 屏蔽双向**：隐私→透明地址、透明→隐私（当时走 `pcztShield`，含**透明
       输入签名**；该 API 已移除，屏蔽改由 keys runtime 无状态构造）、
-      透明→透明（需 `spendTransparent`），全部链上确认
+      透明→透明，全部链上确认
 - [x] **多账户共库**：acct0/1/2 同一个库，扫一遍服务全部账户
 
 **未验证 —— 别把这些当成能用**
@@ -204,13 +191,14 @@ rewindTo(height)                         回退重扫（破坏性）
 
 transactionHistory(uuid, limit, offset)  分页历史，limit 上限 500
 transactionDetails(uuid, txid)           单笔详情，查不到返回 "null"
-deleteWallet(dbName)                     擦掉本地缓存库（可重建），删账户/故障重置用
+deleteWallet(dbName)                     擦掉本地缓存库（可重建），最后一个账户移除/App 重置用
 
 pcztQuote(...)                           只报价，不建交易、不锁 note
 pcztCreate(...) → { pcztHex, reservationId }   构造并锁住选中的 note
 releaseReservation(id)                   用户取消时放开锁，幂等
-pcztProve(pczt, circuitVersion)  →  keys.pcztSign  →  pcztSend(pczt, reservationId) → txid
-broadcastTransaction(txid)               真正发出去（pcztSend 只落库，不发网络）
+pcztProve(pczt, circuitVersion)  →  keys.pcztSign  →  pcztSubmit(uuid, pczt, reservationId)
+                                         先广播；节点明确拒收则不落库、note 放回，否则落库
+broadcastTransaction(txid)               重播已落库的交易（同步循环用）
 selfCheck(network, dbName) / dependencyVersions()
 ```
 
@@ -231,14 +219,12 @@ keysDependencyVersions()
 runtime.pcztCreate()   构造（要钱包 DB：选币、witness、anchor）
 runtime.pcztProve()    零知识证明（慢，要建 halo2 电路）
 keys.pcztSign()        签名（要种子；在另一个包里）
-runtime.pcztSend()     终结 + 写回本地钱包，返回 txid（**不发网络**）
-runtime.broadcastTransaction(txid)   真正广播（不可逆）
+runtime.pcztSubmit()   终结 + 广播；未被拒才写回本地钱包，返回 {txid, broadcast}
 ```
 
 **顺序不能换**：证明必须在签名之前 —— 上游 Signer 需要能验证证明覆盖的是正确数据。
-广播是独立的一步，这样宿主能在落库之后、发出去之前插入确认环节，
-也能在广播失败时原样重试而不用重建交易。
-节点拒绝抛 `BROADCAST_REJECTED`（别重试，先查原因），网络故障抛 `NETWORK_ERROR`（可重试）。
+先广播后落库：节点明确拒收（含首次提交时的「输入已花」）返回 `rejected`，
+什么都不记、note 立即放回；网络不确定返回 `unknown`，照样落库，由同步循环重播原字节。
 `already known` / `already in mempool` / `already in blockchain` 视为幂等成功；所有触网调用
 都有 30 秒上限，避免 gRPC-web 静默挂起。
 

@@ -241,6 +241,18 @@ pub async fn remove_account(account_uuid: String) -> Result<(), JsValue> {
     Ok(())
 }
 
+/// 宿主已经删掉这个账户：有没有在途交易都清掉，不做 `removeAccount` 的空闲检查。
+///
+/// 钱在链上、助记词在用户手里，重新导入扫链就能找回；在途交易留着只会让一个
+/// 已删的账户继续占着库。
+#[wasm_bindgen(js_name = removeDeletedAccount)]
+pub async fn remove_deleted_account(account_uuid: String) -> Result<(), JsValue> {
+    runtime::with_db(|db| account::remove_account(db, &account_uuid))?;
+    send::forget_account_reservations(&account_uuid);
+    storage::durability_barrier().await?;
+    Ok(())
+}
+
 /// 按 UFVK 定位这个库里的账户，返回 `{ uuid }`，找不到返回 `"null"`。
 ///
 /// 共享库（每 network 一份，装全部钱包的全部账户）下，这是定位账户的唯一
@@ -327,32 +339,6 @@ pub async fn sync_tip() -> Result<String, JsValue> {
     )
 }
 
-/// 用宿主给的快照刷新账户的透明 UTXO。**必须单独调**。
-///
-/// 扫区块只产出屏蔽 note；透明 UTXO 在链上是公开的，由宿主的后端索引器提供 ——
-/// 运行时不自己去查，透明侧只有一个事实来源。不调的后果是静默的：隐私转账
-/// 想花透明输入时选不到钱，而扫链看起来一切正常。
-///
-/// `utxos_json` 是 `HostTransparentUtxo` 数组：
-/// `[{ txid, vout, valueZat, scriptPubKey, height }]`。归属由脚本反解的地址
-/// 决定，不属于本账户的条目会被丢掉。
-#[wasm_bindgen(js_name = syncTransparentUtxos)]
-pub async fn sync_transparent_utxos(
-    account_uuid: String,
-    utxos_json: String,
-) -> Result<String, JsValue> {
-    let utxos: Vec<sync::HostTransparentUtxo> = serde_json::from_str(&utxos_json)
-        .map_err(|e| RuntimeError::new(ErrorCode::InvalidTransparentUtxos).detail(e.to_string()))?;
-    Ok(
-        runtime::with_db_and_client(move |mut db, mut client| async move {
-            let r =
-                sync::refresh_transparent_utxos(&mut db, &mut client, &account_uuid, &utxos).await;
-            (db, client, r)
-        })
-        .await?,
-    )
-}
-
 /// 只读查看待扫区间，**不发网络请求**。返回
 /// `{ ranges: [{ start, end, len, priority }], totalBlocks }`。
 ///
@@ -391,7 +377,6 @@ pub fn pczt_quote(
     untrusted: u32,
     fallback_change_pool: String,
     pad_orchard_bundle: bool,
-    spend_transparent: Option<bool>,
     allow_zero_conf_shielding: Option<bool>,
     spend_source: Option<String>,
 ) -> Result<String, JsValue> {
@@ -402,7 +387,6 @@ pub fn pczt_quote(
         untrusted,
         &fallback_change_pool,
         pad_orchard_bundle,
-        spend_transparent,
         allow_zero_conf_shielding,
         spend_source.as_deref(),
     )?;
@@ -535,10 +519,10 @@ pub fn queue_rescan_from(from_height: u32) -> Result<String, JsValue> {
 
 // ── 发送 ────────────────────────────────────────────────────────────────
 //
-// 完整流程：pcztCreate → pcztProve → （keys 包）pcztSign → pcztSend
+// 完整流程：pcztCreate → pcztProve → （keys 包）pcztSign → pcztSubmit
 //
 // 证明在签名之前还是之后都可以（两者作用于 PCZT 的不同部分），
-// 但**都必须在 pcztSend 之前完成**，否则交易无效。
+// 但**都必须在 pcztSubmit 之前完成**，否则交易无效。
 
 /// 构造一笔转账的 PCZT（未证明、未签名），返回字节。
 ///
@@ -556,7 +540,6 @@ pub fn pczt_create(
     pad_orchard_bundle: bool,
     lock_for_blocks: u32,
     reservation_id: Option<String>,
-    spend_transparent: Option<bool>,
     allow_zero_conf_shielding: Option<bool>,
     spend_source: Option<String>,
 ) -> Result<String, JsValue> {
@@ -565,7 +548,6 @@ pub fn pczt_create(
         untrusted,
         &fallback_change_pool,
         pad_orchard_bundle,
-        spend_transparent,
         allow_zero_conf_shielding,
         spend_source.as_deref(),
     )?;
@@ -589,7 +571,7 @@ pub fn pczt_create(
     })?)
 }
 
-/// 生成 Orchard / Ironwood 零知识证明。**必须在 pcztSend 之前做**。
+/// 生成 Orchard / Ironwood 零知识证明。**必须在 pcztSubmit 之前做**。
 #[wasm_bindgen(js_name = pcztProve)]
 pub fn pczt_prove(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
     Ok(runtime::with_db(|db| send::prove_pczt(db, &pczt_bytes))?)
@@ -643,7 +625,7 @@ pub fn release_reservation(reservation_id: String) -> Result<bool, JsValue> {
 /// 在一件**已经不可逆地发生了**的事情之后做落盘屏障。
 ///
 /// 屏障失败的含义是「持久化有没有到达耐久存储未知」，不是「这件事失败了」。
-/// 两个调用点都已越过不可逆点 —— `pcztSend` 已提交交易并交出 note，
+/// 两个调用点都已越过不可逆点 —— `pcztSubmit` 已提交交易并交出 note，
 /// `broadcastTransaction` 已把交易发上网。把真实结局换成一个泛化的存储错误，
 /// 宿主就会去重试、或者把一笔已上链的交易显示成「未知失败」。
 ///
@@ -654,27 +636,49 @@ async fn barrier_after_irreversible(params: serde_json::Value) -> Result<(), cra
     })
 }
 
-/// 终结已证明且已签名的 PCZT，提取交易并**写回本地钱包**，返回 txid。
+/// 提交已证明且已签名的 PCZT：提取交易、广播，再按结局决定落不落库。
 ///
-/// **这一步不发网络。** 交易还没有广播出去，必须再调 `broadcastTransaction(txid)`。
-/// 两步分开，是为了让宿主能在落库之后、真正发出去之前插入确认环节，
-/// 也能在广播失败时原样重试而不必重建交易。
-#[wasm_bindgen(js_name = pcztSend)]
-pub async fn pczt_send(
+/// 返回 `{ txid, broadcast: "accepted" | "rejected" | "unknown", error? }`。
+/// 节点明确拒收时交易不落库、note 立即放回；结局未知时已落库，同步会重播。
+#[wasm_bindgen(js_name = pcztSubmit)]
+pub async fn pczt_submit(
     account_uuid: String,
     pczt_bytes: Vec<u8>,
     reservation_id: String,
 ) -> Result<String, JsValue> {
-    let txid = runtime::with_db(|db| {
-        send::extract_and_store(db, &account_uuid, &pczt_bytes, &reservation_id)
-    })?;
-    // Once extract_and_store commits, the transaction itself owns the spent
-    // notes. Drop the proposal before the durability barrier: a barrier error
-    // means the host does not know whether persistence reached durable storage,
-    // but it must never be allowed to unlock inputs that may already be spent.
-    send::forget_reservation(&reservation_id);
-    barrier_after_irreversible(serde_json::json!({ "operation": "finalizeTransaction" })).await?;
-    Ok(txid)
+    let outcome = runtime::with_db_and_client(move |mut db, mut client| async move {
+        let r = send::submit_signed_pczt(
+            &mut db,
+            &mut client,
+            &account_uuid,
+            &pczt_bytes,
+            &reservation_id,
+        )
+        .await;
+        (db, client, r)
+    })
+    .await?;
+    let json = match outcome {
+        send::SubmitOutcome::Accepted { txid } => {
+            serde_json::json!({ "txid": txid, "broadcast": "accepted" })
+        }
+        send::SubmitOutcome::Rejected { txid, error } => {
+            // 没落库，也就没有需要落盘屏障的东西。
+            return Ok(serde_json::json!({
+                "txid": txid,
+                "broadcast": "rejected",
+                "error": error.to_json(),
+            })
+            .to_string());
+        }
+        send::SubmitOutcome::Unknown { txid, error } => serde_json::json!({
+            "txid": txid,
+            "broadcast": "unknown",
+            "error": error.to_json(),
+        }),
+    };
+    barrier_after_irreversible(json.clone()).await?;
+    Ok(json.to_string())
 }
 
 /// Runtime-owned unresolved broadcast intents for this account. The host uses
@@ -705,7 +709,7 @@ pub fn rebroadcastable_txids(account_uuid: String) -> Result<String, JsValue> {
     })?)
 }
 
-/// 把 `pcztSend` 落库的交易广播到 lightwalletd。**不可逆。**
+/// 重播已落库、结局未知的交易（同步时调用）。**不可逆。**
 ///
 /// 节点拒绝抛 `BROADCAST_REJECTED`（不要重试，先查原因）；
 /// 网络本身出错抛 `NETWORK_ERROR`（可以重试，交易已在本地库里）。
@@ -762,7 +766,10 @@ pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
 /// 删除一个钱包库（连同 IndexedDB 里的字节）。**不可逆。**
 ///
 /// 库是纯派生缓存：UFVK 与 birthday 由宿主保管，不在库里，所以删掉只是要重扫。
-/// 用途一是出问题时手动重置，用途二是删账户时清掉已解密的屏蔽历史。
+/// 用途一是最后一个账户移除后删文件，用途二是 App 重置。
+///
+/// 不检查在途交易：两个用途都必须删成，交易本身已在链上或会过期。
+/// 需要等交易落定的操作（暂停、重置缓存）由宿主在调用前自己判断。
 ///
 /// 若删的正是当前打开的库，会先自动关闭 —— 底层要求删除前库必须已关闭。
 /// 返回 `true` 表示确实删掉了，`false` 表示本来就不存在（不算错误）。
@@ -771,29 +778,7 @@ pub async fn delete_wallet(db_name: String) -> Result<bool, JsValue> {
     if !storage::database_exists(&db_name).await? {
         return Ok(false);
     }
-    let is_open = runtime::open_db_name().as_deref() == Some(db_name.as_str());
-    // 闸门要在关库之前读，而且按整库判：库里装着全部钱包的全部账户。
-    //
-    // 读不出来就放行。这个接口的用途之一就是「库坏了，重置」，让一条查不动
-    // 的 SQL 把修复入口也锁死，比漏判一笔在途交易更糟 —— 而库都读不了的时候，
-    // 那笔交易的状态本来也已经取不回来了。
-    let idle = if is_open {
-        runtime::with_read_conn(|conn| {
-            guard::assert_idle(conn, None, "deleteWallet", guard::LockPolicy::Blocking)
-        })
-    } else {
-        storage::open_connection(&db_name).and_then(|conn| {
-            guard::assert_idle(&conn, None, "deleteWallet", guard::LockPolicy::Blocking)
-        })
-    };
-    match idle {
-        Ok(()) => {}
-        Err(e) if e.code == ErrorCode::WalletBusy => return Err(e.into()),
-        Err(e) => {
-            tracing::warn!("deleteWallet idle check unreadable, deleting anyway: {e}");
-        }
-    }
-    if is_open {
+    if runtime::open_db_name().as_deref() == Some(db_name.as_str()) {
         runtime::close()?;
     }
     Ok(storage::delete_database(&db_name).await?)
@@ -831,7 +816,6 @@ pub fn database_health() -> Result<String, JsValue> {
 /// 诊断：数一份 PCZT 里各 bundle 有多少输入。
 ///
 /// 用来回答「这笔钱是从哪个池出去的」——费用差只能间接推断，输入个数是直接证据。
-/// 判断 `spendTransparent` 会不会让一笔本可全屏蔽的交易混进公开输入，靠的就是它。
 #[wasm_bindgen(js_name = diagPcztInputCounts)]
 pub fn pczt_input_counts(pczt_bytes: Vec<u8>) -> Result<String, JsValue> {
     let pczt = pczt::Pczt::parse(&pczt_bytes).map_err(|e| {

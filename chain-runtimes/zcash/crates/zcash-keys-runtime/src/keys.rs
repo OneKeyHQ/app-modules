@@ -34,7 +34,7 @@ pub(crate) fn supported_recipient(
         return None;
     }
     match Address::decode(params, encoded)? {
-        address @ Address::Transparent(_) => Some(address),
+        address @ (Address::Transparent(_) | Address::Tex(_)) => Some(address),
         Address::Unified(address) if address.has_orchard() => Some(Address::Unified(address)),
         _ => None,
     }

@@ -71,7 +71,7 @@ tonic-web-wasm-client.workspace = true
 # 本 crate 不直接用 time —— 打开它只为传递 feature。zcash_client_backend 记
 # `created` 时绕过注入的 Clock，直接调 time::OffsetDateTime::now_utc()；不开这个
 # feature 它就落到 SystemTime::now()，而 wasm32-unknown-unknown 上 std 没有时间源，
-# 于是 pcztSend 落库时 panic（"time not implemented on this platform"）。
+# 于是 pcztSubmit 落库时 panic（"time not implemented on this platform"）。
 time = { version = "0.3", features = ["wasm-bindgen"] }
 
 [dev-dependencies]

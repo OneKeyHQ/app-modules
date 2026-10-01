@@ -101,7 +101,7 @@ pub fn insert_finalized(
                 FROM v_tx_outputs output
                 WHERE output.txid = ?1
                   AND output.from_account_uuid = ?2
-                  AND output.to_account_uuid IS NULL
+                  AND (output.to_account_uuid IS NULL OR output.to_account_uuid <> ?2)
                   AND COALESCE(output.is_change, 0) = 0
                 LIMIT 1),
                'pending'
@@ -275,6 +275,83 @@ pub fn remove_account_rows(ext: &ExtensionTransaction<'_>, account_uuid: &str) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clock::HostClock;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+    use zcash_client_sqlite::WalletDb;
+    use zcash_protocol::consensus::Network;
+
+    #[test]
+    fn finalized_recipient_is_external_to_the_sending_account() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE ext_onekey_tx_state (
+               txid BLOB PRIMARY KEY NOT NULL,
+               account_uuid BLOB NOT NULL,
+               reservation_id TEXT UNIQUE,
+               recipient TEXT,
+               broadcast_state TEXT NOT NULL,
+               rejection_code INTEGER,
+               rejection_reason TEXT
+             );
+             CREATE TABLE v_tx_outputs (
+               txid BLOB NOT NULL,
+               from_account_uuid BLOB,
+               to_account_uuid BLOB,
+               to_address TEXT,
+               is_change INTEGER
+             );",
+        )
+        .unwrap();
+        let sender = Uuid::from_u128(1);
+        let receiver = Uuid::from_u128(2);
+        let cases = [
+            (Some(receiver), false, Some("synthetic-recipient")),
+            (None, false, Some("synthetic-recipient")),
+            (Some(sender), false, None),
+            (Some(sender), true, None),
+        ];
+        for (index, (to_account, is_change, expected_recipient)) in cases.into_iter().enumerate() {
+            let txid = vec![index as u8; 32];
+            conn.execute(
+                "INSERT INTO v_tx_outputs (
+                   txid, from_account_uuid, to_account_uuid, to_address, is_change
+                 ) VALUES (?1, ?2, ?3, 'synthetic-recipient', ?4)",
+                params![
+                    txid,
+                    sender.as_bytes().as_slice(),
+                    to_account.map(|account| account.as_bytes().to_vec()),
+                    is_change
+                ],
+            )
+            .unwrap();
+            {
+                let mut db = WalletDb::from_connection(
+                    &mut conn,
+                    Network::TestNetwork,
+                    HostClock,
+                    ChaCha20Rng::from_seed([7; 32]),
+                );
+                db.transactionally_with_extension(|_wallet, ext| {
+                    insert_finalized(
+                        ext,
+                        &hex_display_order(&txid),
+                        &sender.to_string(),
+                        &format!("reservation-{index}"),
+                    )
+                })
+                .unwrap();
+            }
+            let recipient: Option<String> = conn
+                .query_row(
+                    "SELECT recipient FROM ext_onekey_tx_state WHERE txid = ?1",
+                    [txid],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(recipient.as_deref(), expected_recipient);
+        }
+    }
 
     #[test]
     fn only_runtime_owned_active_intents_are_unresolved_and_rebroadcastable() {

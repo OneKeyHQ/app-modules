@@ -11,6 +11,7 @@ use pczt::roles::{
 };
 use zcash_note_encryption::Domain;
 use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
+use zcash_primitives::transaction::fees::fixed::FeeRule as FixedFeeRule;
 use zcash_protocol::memo::MemoBytes;
 
 /// 本模块实际提供的入口。定义在实现旁边，删改实现必然改到这里。
@@ -100,8 +101,11 @@ fn create_with_public_key(plan: &TransactionPlan, key: &AccountPubKey) -> Result
             .add_transparent_output(&address, output.value)
             .map_err(failure)?;
     }
+    // The plan's fee, not a recomputed ZIP-317 one: change below the dust
+    // threshold is folded into the fee at quote time, and the ZIP-317 rule
+    // rejects that surplus as ChangeRequired after the user has approved it.
     let parts = builder
-        .build_for_pczt(rand::rngs::OsRng, &Zip317FeeRule::standard())
+        .build_for_pczt(rand::rngs::OsRng, &FixedFeeRule::non_standard(plan.fee))
         .map_err(failure)?;
     let pczt = Creator::build_from_parts(parts.pczt_parts)
         .ok_or_else(|| KeysError::new(ErrorCode::TransactionBuildFailed))?;
@@ -657,6 +661,38 @@ mod tests {
             .finish()
             .serialize()
             .unwrap()
+    }
+
+    // Regression: 100000 in, 83000/88000 out leaves change under the dust
+    // threshold, which the quote folds into the fee. Building used to redo the
+    // fee by ZIP-317 and fail with ChangeRequired after the user approved it.
+    #[test]
+    fn a_quote_with_sub_dust_change_folded_into_the_fee_still_builds() {
+        let fingerprint = "00".repeat(32);
+        let cases = [
+            (recipient(0), "83000", false),
+            (
+                transparent_address(0, 9)
+                    .to_zcash_address(NetworkType::Main)
+                    .to_string(),
+                "88000",
+                true,
+            ),
+        ];
+        for (to, amount, hardware) in cases {
+            let mut request = request(false);
+            request["recipients"] = json!([{ "address": to, "amountZat": amount }]);
+            let request = request.to_string();
+            let quote: Value = serde_json::from_str(&quote_json(&request).unwrap()).unwrap();
+            let folded = 100_000 - amount.parse::<u64>().unwrap();
+            assert_eq!(quote["feeZat"], folded.to_string(), "零头应当并进手续费");
+            if hardware {
+                create_with_account_xpub(&request, &account_xpub(), &fingerprint)
+                    .expect("硬件路径按报价的手续费构造");
+            } else {
+                create(&request, &SEED).expect("软件路径按报价的手续费构造");
+            }
+        }
     }
 
     #[test]

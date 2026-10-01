@@ -52,6 +52,13 @@ export AR_wasm32_unknown_unknown="${AR_wasm32_unknown_unknown:-$(dirname "${CLAN
 
 bash "${ROOT}/scripts/vendor-deps.sh" "$@"
 
+# --mode no-install 找不到 wasm-opt 只会打一行 INFO 然后跳过：产物不报错地胖一倍
+#（函数名段不剥、不做 -O）。release 必须有它。
+if [ "${PROFILE}" = "release" ] && ! command -v wasm-opt >/dev/null 2>&1; then
+  echo "✗ 找不到 wasm-opt（Binaryen），release 产物会不经优化直接输出" >&2
+  exit 1
+fi
+
 echo "==> wasm-pack build (${PROFILE})"
 cd "${ROOT}/crates/zcash-runtime"
 case "${PROFILE}" in
