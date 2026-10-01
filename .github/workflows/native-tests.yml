@@ -13,6 +13,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  native-overlay-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+      - name: Validate native overlay package
+        run: |
+          corepack enable
+          yarn install --immutable
+          yarn workspace @onekeyfe/react-native-native-overlay typecheck
+          yarn workspace @onekeyfe/react-native-native-overlay lint
+          yarn workspace @onekeyfe/react-native-native-overlay test --runInBand
+          yarn workspace @onekeyfe/react-native-native-overlay prepare
+          yarn workspace @onekeyfe/react-native-native-overlay pack --out "$RUNNER_TEMP/native-overlay.tgz"
+          mkdir "$RUNNER_TEMP/native-overlay"
+          tar -xzf "$RUNNER_TEMP/native-overlay.tgz" -C "$RUNNER_TEMP/native-overlay"
+          test -f "$RUNNER_TEMP/native-overlay/package/lib/module/index.js"
+          test -f "$RUNNER_TEMP/native-overlay/package/lib/typescript/src/index.d.ts"
+          test -f "$RUNNER_TEMP/native-overlay/package/common/cpp/react/renderer/components/RNCNativeOverlay/NativeOverlayShadowNode.cpp"
+          test -f "$RUNNER_TEMP/native-overlay/package/android/src/main/jni/CMakeLists.txt"
+          test -f "$RUNNER_TEMP/native-overlay/package/ios/RCTNativeOverlayComponentView.mm"
+
   android-unit:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -20,11 +45,11 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: '24.x'
+          node-version: "24.x"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
       - name: Install and generate native bindings
         run: |
@@ -33,7 +58,7 @@ jobs:
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'cd "$(dirname "$0")" && yarn nitrogen > /dev/null'
-      - name: Run nine Android unit test suites
+      - name: Run ten Android unit test suites
         working-directory: example/react-native/android
         run: |
           ./gradlew --continue --no-daemon --max-workers=2 --console=plain \
@@ -45,6 +70,7 @@ jobs:
             :onekeyfe_react-native-auto-size-input:testDebugUnitTest \
             :onekeyfe_react-native-image:testDebugUnitTest \
             :onekeyfe_react-native-native-list:testDebugUnitTest \
+            :onekeyfe_react-native-native-overlay:testDebugUnitTest \
             :onekeyfe_react-native-text-input:testDebugUnitTest
       - name: Verify every Android suite executed tests
         if: always()
@@ -62,6 +88,7 @@ jobs:
               'native-views/react-native-auto-size-input',
               'native-views/react-native-image',
               'native-views/react-native-native-list',
+              'native-views/react-native-native-overlay',
               'native-views/react-native-text-input',
           }
           total = 0
@@ -93,7 +120,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
       - name: Install verified Kotlin 2.3.21 compiler
         run: |
           curl -fsSLo kotlin-compiler.zip https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip
@@ -156,11 +183,11 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: '24.x'
+          node-version: "24.x"
       - uses: ruby/setup-ruby@v1
         with:
           working-directory: example/react-native
-          ruby-version: '3.4.4'
+          ruby-version: "3.4.4"
           bundler-cache: true
       - name: Select and verify Xcode and simulator
         run: |
@@ -204,11 +231,37 @@ jobs:
             ['git', 'show', 'HEAD:example/react-native/ios/Podfile.lock'], &:read
           )
           installed = File.read('Podfile.lock')
-          unless normalized_lockfile(committed) == normalized_lockfile(installed)
+          expected = normalized_lockfile(committed)
+          actual = normalized_lockfile(installed)
+          unless expected == actual
+            (expected.keys | actual.keys).sort.each do |section|
+              next if expected[section] == actual[section]
+              warn "Changed lockfile section: #{section}"
+              if expected[section].is_a?(Hash) && actual[section].is_a?(Hash)
+                (expected[section].keys | actual[section].keys).sort.each do |name|
+                  next if expected[section][name] == actual[section][name]
+                  warn "  #{name}: #{expected[section][name].inspect} -> #{actual[section][name].inspect}"
+                end
+              else
+                warn "  expected: #{expected[section].inspect}"
+                warn "  installed: #{actual[section].inspect}"
+              end
+            end
             abort 'CocoaPods changed the locked dependencies or checksums'
           end
           puts 'Podfile.lock matches: only the Hermes checksum and Specs CDN URL may differ'
           RUBY
+      - name: Compile native overlay pod on iOS Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/ios
+          xcodebuild build -workspace example/react-native/ios/example.xcworkspace \
+            -scheme NativeOverlay -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/native-tests-derived-data" \
+            -jobs 2 CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=16.4 \
+            'OTHER_LDFLAGS=$(inherited) -lc++' \
+            2>&1 | tee artifacts/ios/NativeOverlay-build.log
       - name: Run six pod XCTest suites on iOS Simulator
         shell: bash
         run: |
@@ -239,5 +292,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-native-test-results
-          path: artifacts/ios/
+          path: |
+            artifacts/ios/
+            example/react-native/ios/Podfile.lock
           if-no-files-found: warn
