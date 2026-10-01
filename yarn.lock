@@ -2962,6 +2962,7 @@ __metadata:
     "@onekeyfe/react-native-lite-card": "workspace:*"
     "@onekeyfe/react-native-native-list": "workspace:*"
     "@onekeyfe/react-native-native-logger": "workspace:*"
+    "@onekeyfe/react-native-native-overlay": "workspace:*"
     "@onekeyfe/react-native-native-sheet": "workspace:*"
     "@onekeyfe/react-native-network-info": "workspace:*"
     "@onekeyfe/react-native-pager-view": "workspace:*"
@@ -3590,7 +3591,7 @@ __metadata:
     react-test-renderer: "npm:19.2.3"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-skeleton": 3.0.156
+    "@onekeyfe/react-native-skeleton": 3.0.162-alpha.268
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3691,8 +3692,8 @@ __metadata:
     react-native-nitro-modules: "npm:0.37.0"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-image": 3.0.156
-    "@onekeyfe/react-native-native-logger": 3.0.156
+    "@onekeyfe/react-native-image": 3.0.162-alpha.268
+    "@onekeyfe/react-native-native-logger": 3.0.162-alpha.268
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -3732,6 +3733,45 @@ __metadata:
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
+  languageName: unknown
+  linkType: soft
+
+"@onekeyfe/react-native-native-overlay@workspace:*, @onekeyfe/react-native-native-overlay@workspace:native-views/react-native-native-overlay":
+  version: 0.0.0-use.local
+  resolution: "@onekeyfe/react-native-native-overlay@workspace:native-views/react-native-native-overlay"
+  dependencies:
+    "@commitlint/config-conventional": "npm:^19.8.1"
+    "@eslint/compat": "npm:^1.3.2"
+    "@eslint/eslintrc": "npm:^3.3.1"
+    "@eslint/js": "npm:^9.35.0"
+    "@react-native/babel-preset": "npm:0.86.2"
+    "@react-native/eslint-config": "npm:0.86.2"
+    "@release-it/conventional-changelog": "npm:^10.0.1"
+    "@types/jest": "npm:^29.5.14"
+    "@types/react": "npm:^19.2.0"
+    "@types/react-dom": "npm:19.2.3"
+    commitlint: "npm:^19.8.1"
+    del-cli: "npm:^6.0.0"
+    eslint: "npm:^9.35.0"
+    eslint-config-prettier: "npm:^10.1.8"
+    eslint-plugin-prettier: "npm:^5.5.4"
+    jest: "npm:^29.7.0"
+    lefthook: "npm:^2.0.3"
+    prettier: "npm:^2.8.8"
+    react: "npm:19.2.3"
+    react-dom: "npm:19.2.3"
+    react-native: "npm:0.86.2"
+    react-native-builder-bob: "npm:^0.40.13"
+    release-it: "npm:^19.0.4"
+    turbo: "npm:^2.5.6"
+    typescript: "npm:^5.9.2"
+  peerDependencies:
+    react: "*"
+    react-dom: "*"
+    react-native: "*"
+  peerDependenciesMeta:
+    react-dom:
+      optional: true
   languageName: unknown
   linkType: soft
 
@@ -3844,7 +3884,7 @@ __metadata:
     react-native-builder-bob: "npm:^0.40.13"
     typescript: "npm:^5.9.2"
   peerDependencies:
-    "@onekeyfe/react-native-native-logger": 3.0.156
+    "@onekeyfe/react-native-native-logger": 3.0.162-alpha.268
     react: "*"
     react-native: "*"
   languageName: unknown
@@ -5355,6 +5395,15 @@ __metadata:
   dependencies:
     parse-path: "npm:*"
   checksum: 10/3833919717ce61d479222bc03cf3e26a8692919cfe5476d970a50cc9227ebf02bcaa8fe782081f7f28713a40234ef785a2e752ba714beb5a51d9ede716833851
+  languageName: node
+  linkType: hard
+
+"@types/react-dom@npm:19.2.3":
+  version: 19.2.3
+  resolution: "@types/react-dom@npm:19.2.3"
+  peerDependencies:
+    "@types/react": ^19.2.0
+  checksum: 10/616c4a8aee250ea05fb1e7b98e7e00475dd3a6c1c30d7be18b4b93caba832f4203106b3a496a6b147e5acc2da14575eca47bce234c633bca1f8430ef8ffb234a
   languageName: node
   linkType: hard
 

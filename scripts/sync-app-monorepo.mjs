@@ -6,6 +6,14 @@ import { loadReleaseWorkspaces } from "./validate-npm-dist-tag.mjs";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
+export const appMonorepoManifests = [
+  ["apps/mobile/package.json", ["dependencies"]],
+  ["packages/components/package.json", ["dependencies"]],
+  ["packages/kit/package.json", ["dependencies"]],
+  ["apps/playground/package.json", ["dependencies"]],
+  ["package.json", ["dependencies", "resolutions"]],
+];
+
 function compareVersions(left, right) {
   const parse = (version) => {
     const match = /^(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?$/.exec(version);
@@ -45,6 +53,9 @@ export function updateMobileManifest(
   const byName = new Map(
     workspaces.map(({ name, version }) => [name, version])
   );
+  for (const version of versions) {
+    compareVersions(version, version);
+  }
   const updated = [];
   for (const section of sections) {
     for (const [name, current] of Object.entries(manifest[section] ?? {})) {
@@ -55,7 +66,10 @@ export function updateMobileManifest(
       if (!target || currentVersion === target) {
         continue;
       }
-      if (compareVersions(currentVersion, target) > 0) {
+      const migratingOverlay =
+        workspaceName === "@onekeyfe/react-native-native-overlay" &&
+        currentVersion === "workspace:*";
+      if (!migratingOverlay && compareVersions(currentVersion, target) > 0) {
         throw new Error(
           `Refusing to downgrade ${name} from ${currentVersion} to ${target}`
         );
@@ -75,22 +89,8 @@ export function updateMobileManifest(
   };
 }
 
-async function main() {
-  const [appMonorepoArg, releaseVersion] = process.argv.slice(2);
-  if (!appMonorepoArg || !releaseVersion) {
-    throw new Error(
-      "Usage: node scripts/sync-app-monorepo.mjs <app-monorepo-path> <release-version>"
-    );
-  }
-  const workspaces = (await loadReleaseWorkspaces(repoRoot)).map(
-    (workspace) => ({ ...workspace, version: releaseVersion })
-  );
-  const manifests = [
-    ["apps/mobile/package.json", ["dependencies"]],
-    ["packages/components/package.json", ["dependencies"]],
-    ["package.json", ["dependencies", "resolutions"]],
-  ];
-  for (const [relativePath, sections] of manifests) {
+export async function syncAppMonorepo(appMonorepoArg, workspaces) {
+  for (const [relativePath, sections] of appMonorepoManifests) {
     const manifestPath = join(resolve(appMonorepoArg), relativePath);
     const original = await readFile(manifestPath, "utf8");
     const { text, updated } = updateMobileManifest(
@@ -103,6 +103,19 @@ async function main() {
     }
     console.log(`Updated ${updated.length} dependencies in ${relativePath}`);
   }
+}
+
+async function main() {
+  const [appMonorepoArg, releaseVersion] = process.argv.slice(2);
+  if (!appMonorepoArg || !releaseVersion) {
+    throw new Error(
+      "Usage: node scripts/sync-app-monorepo.mjs <app-monorepo-path> <release-version>"
+    );
+  }
+  const workspaces = (await loadReleaseWorkspaces(repoRoot)).map(
+    (workspace) => ({ ...workspace, version: releaseVersion })
+  );
+  await syncAppMonorepo(appMonorepoArg, workspaces);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

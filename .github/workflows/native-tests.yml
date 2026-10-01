@@ -13,6 +13,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  native-overlay-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+      - name: Validate native overlay package
+        run: |
+          corepack enable
+          yarn install --immutable
+          yarn workspace @onekeyfe/react-native-native-overlay typecheck
+          yarn workspace @onekeyfe/react-native-native-overlay lint
+          yarn workspace @onekeyfe/react-native-native-overlay test --runInBand
+          yarn workspace @onekeyfe/react-native-native-overlay prepare
+          yarn workspace @onekeyfe/react-native-native-overlay pack --out "$RUNNER_TEMP/native-overlay.tgz"
+          mkdir "$RUNNER_TEMP/native-overlay"
+          tar -xzf "$RUNNER_TEMP/native-overlay.tgz" -C "$RUNNER_TEMP/native-overlay"
+          test -f "$RUNNER_TEMP/native-overlay/package/lib/module/index.js"
+          test -f "$RUNNER_TEMP/native-overlay/package/lib/typescript/src/index.d.ts"
+          test -f "$RUNNER_TEMP/native-overlay/package/common/cpp/react/renderer/components/RNCNativeOverlay/NativeOverlayShadowNode.cpp"
+          test -f "$RUNNER_TEMP/native-overlay/package/android/src/main/jni/CMakeLists.txt"
+          test -f "$RUNNER_TEMP/native-overlay/package/ios/RCTNativeOverlayComponentView.mm"
+
   android-unit:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -20,11 +45,11 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: '24.x'
+          node-version: "24.x"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
       - name: Install and generate native bindings
         run: |
@@ -93,7 +118,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
       - name: Install verified Kotlin 2.3.21 compiler
         run: |
           curl -fsSLo kotlin-compiler.zip https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip
@@ -156,11 +181,11 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: '24.x'
+          node-version: "24.x"
       - uses: ruby/setup-ruby@v1
         with:
           working-directory: example/react-native
-          ruby-version: '3.4.4'
+          ruby-version: "3.4.4"
           bundler-cache: true
       - name: Select and verify Xcode and simulator
         run: |
