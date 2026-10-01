@@ -2,7 +2,6 @@ package com.onekey.nativeoverlay
 
 import android.app.Activity
 import android.view.KeyEvent
-import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.widget.FrameLayout
@@ -54,7 +53,7 @@ internal class NativeOverlayHost private constructor(
       }
     }
   }
-  private val hiddenForAccessibility = mutableMapOf<View, Int>()
+  private val accessibilityIsolation = NativeOverlayAccessibilityIsolation()
 
   init {
     clipChildren = false
@@ -136,33 +135,28 @@ internal class NativeOverlayHost private constructor(
   /** Global overlays win; otherwise the topmost visible page overlay. */
   private fun topBlockingEntry(): NativeOverlayEntryRootView? =
     orderedEntries().lastOrNull { it.blocking && it.isShownForInput }
-      ?: NativeOverlayPageHostView.allHosts()
-        .filter { it.isAttachedToWindow && it.isShown }
+      ?: shownPageHosts()
         .flatMap { it.shownEntries() }
         .lastOrNull { it.blocking }
+
+  private fun shownPageHosts(): List<NativeOverlayPageHostView> =
+    NativeOverlayPageHostView.allHosts().filter {
+      it.isAttachedToWindow && it.isShown && it.rootView === activity.window.decorView
+    }
 
   /** TalkBack only reads the topmost blocking overlay and what is above it. */
   private fun updateAccessibility() {
     val entries = orderedEntries()
     val topIndex = entries.indexOfLast { it.blocking && it.isShownForInput }
-    val content = parent as? ViewGroup
-    val below = mutableListOf<View>()
+    val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
     if (topIndex >= 0) {
-      content?.let { group ->
-        (0 until group.childCount).map(group::getChildAt).filter { it !== this }.forEach(below::add)
-      }
-      below.addAll(entries.subList(0, topIndex))
+      accessibilityIsolation.update(content, this, entries.take(topIndex), this)
+      return
     }
-    val restore = hiddenForAccessibility.keys.filter { it !in below }
-    restore.forEach { view ->
-      view.importantForAccessibility = hiddenForAccessibility.remove(view) ?: IMPORTANT_FOR_ACCESSIBILITY_AUTO
-    }
-    below.forEach { view ->
-      if (view !in hiddenForAccessibility) {
-        hiddenForAccessibility[view] = view.importantForAccessibility
-        view.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-      }
-    }
+    val pageEntry = shownPageHosts().flatMap { it.shownEntries() }.lastOrNull { it.blocking }
+    val pageHost = pageEntry?.parent as? NativeOverlayPageHostView
+    val below = pageHost?.shownEntries()?.takeWhile { it !== pageEntry }.orEmpty()
+    accessibilityIsolation.update(content, pageHost, below, this)
   }
 
   companion object {

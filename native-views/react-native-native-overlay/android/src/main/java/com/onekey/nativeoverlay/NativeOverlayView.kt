@@ -135,6 +135,7 @@ class NativeOverlayView(
       config = OverlayAnimationConfig.parse(animationConfig)
     }
     entry?.let(::applyEntryConfiguration)
+    notifyHostEntriesChanged()
     if (visible) {
       cycleOpen = true
       if (phase == Phase.HIDDEN || phase == Phase.EXITING) present()
@@ -200,7 +201,7 @@ class NativeOverlayView(
     cancelAnimators()
     phase = Phase.ENTERING
     target.isShownForInput = true
-    host?.onEntriesChanged()
+    notifyHostEntriesChanged()
     if (blocking) {
       target.sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)
     }
@@ -226,7 +227,7 @@ class NativeOverlayView(
     cancelAnimators()
     phase = Phase.EXITING
     target.isShownForInput = false
-    host?.onEntriesChanged()
+    notifyHostEntriesChanged()
     val transition = config.exit.reduceMotionAdjusted(isReduceMotionEnabled())
     if (transition.kind == "none") return finishDismiss("programmatic")
     animate(target, hiddenState(target, transition), 0f, transition.motion) {
@@ -387,6 +388,10 @@ class NativeOverlayView(
         draggable = dismissOnPanDown,
       )
     }
+  }
+
+  private fun notifyHostEntriesChanged() {
+    reactContext.currentActivity?.let { NativeOverlayHost.of(it).onEntriesChanged() }
   }
 
   /**

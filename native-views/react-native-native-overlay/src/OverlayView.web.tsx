@@ -48,6 +48,7 @@ interface IWebOverlayEntryProps {
   /** Closed but kept mounted: hidden and inert. */
   parked?: boolean;
   stackOrder: number;
+  levelOrder: number;
   presented: boolean;
   animation: IResolvedOverlayAnimation;
   blocking: boolean;
@@ -69,6 +70,7 @@ function WebOverlayEntry({
   entryId,
   parked = false,
   stackOrder,
+  levelOrder,
   presented,
   animation,
   blocking,
@@ -196,6 +198,7 @@ function WebOverlayEntry({
       {...{ [ENTRY_ATTRIBUTE]: '' }}
       {...(ownerKey ? { [OVERLAY_OWNER_ATTRIBUTE]: ownerKey } : {})}
       data-stack-order={stackOrder}
+      data-overlay-level-order={levelOrder}
       data-testid={testID}
       role={blocking ? 'dialog' : undefined}
       aria-modal={blocking || undefined}
@@ -329,6 +332,7 @@ export function OverlayView(props: IOverlayViewProps) {
       parked={parked}
       entryId={entry?.id ?? parkedId}
       stackOrder={entry?.seq ?? 0}
+      levelOrder={OVERLAY_LEVEL_ORDER[level]}
       presented={!parked && presented}
       animation={animation}
       blocking={blocking ?? isBlockingLevel(level)}

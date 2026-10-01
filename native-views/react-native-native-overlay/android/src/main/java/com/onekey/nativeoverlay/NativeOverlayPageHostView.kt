@@ -3,6 +3,7 @@ package com.onekey.nativeoverlay
 import android.annotation.SuppressLint
 import android.content.Context
 import android.view.ViewGroup
+import com.facebook.react.bridge.ReactContext
 import com.facebook.react.uimanager.PointerEvents
 import com.facebook.react.uimanager.ReactPointerEventsView
 import java.lang.ref.WeakReference
@@ -33,6 +34,7 @@ class NativeOverlayPageHostView(context: Context) : ViewGroup(context), ReactPoi
     if (owners == suspendedOwners) return
     suspendedOwners = owners
     entries().forEach(::applySuspension)
+    onEntriesChanged()
   }
 
   internal fun attach(entry: NativeOverlayEntryRootView) {
@@ -44,10 +46,12 @@ class NativeOverlayPageHostView(context: Context) : ViewGroup(context), ReactPoi
     }
     layoutEntries()
     applySuspension(entry)
+    onEntriesChanged()
   }
 
   internal fun detach(entry: NativeOverlayEntryRootView) {
     removeView(entry)
+    onEntriesChanged()
   }
 
   /** Visible, input-ready entries in bottom-to-top order. */
@@ -56,6 +60,23 @@ class NativeOverlayPageHostView(context: Context) : ViewGroup(context), ReactPoi
 
   fun invalidateHost() {
     if (hostKey.isNotEmpty() && registry[hostKey]?.get() === this) registry.remove(hostKey)
+    onEntriesChanged()
+  }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    onEntriesChanged()
+  }
+
+  override fun onDetachedFromWindow() {
+    super.onDetachedFromWindow()
+    onEntriesChanged()
+  }
+
+  private fun onEntriesChanged() {
+    (context as? ReactContext)?.currentActivity?.let {
+      NativeOverlayHost.of(it).onEntriesChanged()
+    }
   }
 
   private var layoutScheduled = false

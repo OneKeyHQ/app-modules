@@ -35,7 +35,7 @@ retains its original implementation attribution in source comments.
 
 ### Release boundary
 
-This branch aligns all 42 publishable workspaces to `3.0.162-alpha.270`.
+This branch aligns all 42 publishable workspaces to `3.0.162-alpha.272`.
 Publish with the existing `package-publish` workflow dispatch, `npm_dist_tag=next`
 and an empty `only_workspace`, which publishes and registry-verifies all 42.
 Do not merge either repository PR or change the `latest` tag. The app-monorepo
@@ -273,9 +273,36 @@ Known divergences:
   such as the DatePicker month-row interpolation, are clipped inside the
   content.
 
+### Page interaction and accessibility isolation (review correction)
+
+The existing ordering and suspension contract also applies when a page entry
+mounts after its owner was suspended. Such entries MUST remain hidden and inert
+until that owner resumes. Resuming an owner MUST NOT clear isolation imposed by
+a higher blocking entry. Web page isolation compares level first, then request
+order within that level; dismissal restores entries no longer below a blocker.
+
+On Android, a blocking page entry MUST hide underlying page/navigation siblings
+from accessibility while preserving the page host and the blocking entry. Entries
+above it, including non-blocking global overlays, remain accessible. Global
+blockers still win over page entries. Attachment, detachment, suspension,
+resumption, input-readiness and blocking changes MUST refresh isolation and
+restore each view's original accessibility flag when it is no longer covered.
+
+These are corrections within the existing contract, not new public props. DOM
+and Robolectric tests will verify lifecycle and native flags; manual TalkBack
+navigation remains a separate runtime acceptance item.
+
 ## 5.9 Conformance and acceptance
 
 Automated (P0):
+
+- `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
+  DOM host and verifies late suspension, level ordering and restoration after
+  the blocking entry is removed.
+- `NativeOverlayAccessibilityIsolationTest` runs six Robolectric cases against
+  Android views: page/navigation siblings, entries above the blocker, original
+  flags, global/page transitions, detached hosts and changing blockers. These
+  tests do not replace manual TalkBack navigation.
 
 - `src/__tests__/OverlayStore.test.ts` covers:
   - level ordering regardless of request order;

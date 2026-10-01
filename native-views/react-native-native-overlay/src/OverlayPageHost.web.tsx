@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 import { useSuspendedPageOwners } from './useSuspendedPageOwners';
-import { registerOverlayPageHost } from './web/overlayLayers';
+import { registerOverlayPageHost, syncOverlayInert } from './web/overlayLayers';
 
 const OWNER_ATTRIBUTE = 'data-overlay-owner';
 
@@ -28,14 +28,29 @@ export function OverlayPageHost({ hostKey }: { hostKey: string }) {
       return;
     }
     const suspended = new Set(suspendedOwners);
-    element
-      .querySelectorAll<HTMLElement>(`[${OWNER_ATTRIBUTE}]`)
-      .forEach((node) => {
-        const hidden = suspended.has(node.getAttribute(OWNER_ATTRIBUTE) ?? '');
-        node.style.visibility = hidden ? 'hidden' : '';
-        node.inert = hidden;
-      });
-  }, [suspendedOwners]);
+    const applySuspension = () => {
+      element
+        .querySelectorAll<HTMLElement>(`[${OWNER_ATTRIBUTE}]`)
+        .forEach((node) => {
+          const hidden =
+            suspended.has(node.getAttribute(OWNER_ATTRIBUTE) ?? '') ||
+            node.getAttribute('aria-hidden') === 'true';
+          node.style.visibility = hidden ? 'hidden' : '';
+        });
+      // Combine suspension with blocking-level isolation; resuming an owner
+      // must not make an entry below a blocker interactive.
+      syncOverlayInert();
+    };
+    applySuspension();
+    const observer = new MutationObserver(applySuspension);
+    observer.observe(element, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: [OWNER_ATTRIBUTE, 'aria-hidden'],
+    });
+    return () => observer.disconnect();
+  }, [hostKey, suspendedOwners]);
 
   return (
     <div

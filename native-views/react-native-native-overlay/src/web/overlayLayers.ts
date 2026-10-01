@@ -6,7 +6,7 @@ import {
 import { overlayStore } from '../OverlayStore';
 
 import type { IOverlayRequestDismissReason } from '../OverlayViewTypes';
-import type { IOverlayLevel } from '../types';
+import type { IOverlayEntry, IOverlayLevel } from '../types';
 
 const LAYER_ATTRIBUTE = 'data-onekey-overlay-layer';
 export const ENTRY_ATTRIBUTE = 'data-onekey-overlay-entry';
@@ -68,16 +68,27 @@ function siblingsOutside(host: HTMLElement, root: HTMLElement) {
   return siblings;
 }
 
-function inertEntriesBelow(container: ParentNode, seq: number) {
+function inertEntriesBelow(container: ParentNode, top?: IOverlayEntry) {
   container
     .querySelectorAll<HTMLElement>(`[${ENTRY_ATTRIBUTE}]`)
     .forEach((node) => {
-      setInert(node, Number(node.dataset.stackOrder) < seq);
+      const level = Number(node.dataset.overlayLevelOrder);
+      const below =
+        !!top &&
+        (level < OVERLAY_LEVEL_ORDER[top.level] ||
+          (level === OVERLAY_LEVEL_ORDER[top.level] &&
+            Number(node.dataset.stackOrder) < top.seq));
+      setInert(
+        node,
+        below ||
+          node.style.visibility === 'hidden' ||
+          node.getAttribute('aria-hidden') === 'true'
+      );
     });
 }
 
 /** Everything rendered below the topmost blocking entry becomes inert. */
-function syncInert() {
+export function syncOverlayInert() {
   const top = overlayStore.getBlockingTop();
   const appRoot = document.getElementById(APP_ROOT_ID);
   let nextPageInert = new Set<HTMLElement>();
@@ -86,7 +97,6 @@ function syncInert() {
   if (top && pageHost && appRoot?.contains(pageHost)) {
     setInert(appRoot, false);
     nextPageInert = siblingsOutside(pageHost, appRoot);
-    inertEntriesBelow(pageHost, top.seq);
   } else {
     setInert(appRoot, !!top);
   }
@@ -98,15 +108,23 @@ function syncInert() {
   nextPageInert.forEach((element) => setInert(element, true));
   pageInertElements = nextPageInert;
 
+  for (const [hostKey, host] of pageHosts) {
+    inertEntriesBelow(
+      host,
+      top?.scope === 'page' && top.hostKey === hostKey ? top : undefined
+    );
+  }
+
   for (const [level, root] of layerRoots) {
     // Global layers render above every page overlay.
     const below =
       top?.scope === 'global' &&
       OVERLAY_LEVEL_ORDER[level] < OVERLAY_LEVEL_ORDER[top.level];
     setInert(root, below);
-    if (top?.scope === 'global' && level === top.level) {
-      inertEntriesBelow(root, top.seq);
-    }
+    inertEntriesBelow(
+      root,
+      top?.scope === 'global' && level === top.level ? top : undefined
+    );
   }
 }
 
@@ -131,7 +149,7 @@ function installOverlayWebManager() {
     return;
   }
   installed = true;
-  overlayStore.subscribe(syncInert);
+  overlayStore.subscribe(syncOverlayInert);
   document.addEventListener('keydown', onKeyDown, true);
 }
 
@@ -159,7 +177,7 @@ export function registerOverlayDismissRequester(
 
 /** Re-run after entry DOM nodes mount, since the store emits before commit. */
 export function scheduleOverlayInertSync() {
-  requestAnimationFrame(syncInert);
+  requestAnimationFrame(syncOverlayInert);
 }
 
 export function registerOverlayPageHost(
