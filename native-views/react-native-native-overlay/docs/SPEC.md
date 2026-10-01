@@ -35,7 +35,7 @@ retains its original implementation attribution in source comments.
 
 ### Release boundary
 
-This branch aligns all 42 publishable workspaces to `3.0.162-alpha.268`.
+This branch aligns all 42 publishable workspaces to `3.0.162-alpha.270`.
 Publish with the existing `package-publish` workflow dispatch, `npm_dist_tag=next`
 and an empty `only_workspace`, which publishes and registry-verifies all 42.
 Do not merge either repository PR or change the `latest` tag. The app-monorepo
@@ -691,3 +691,11 @@ Known gaps:
   the handoff. iOS runtime, physical devices, iPad, screen-reader cross-window
   modality and real password-lock flows remain outstanding; CI adds packaging
   checks and builds this pod through the example application.
+
+
+Release recovery: the first batch `3.0.162-alpha.268` left lite-card staged
+but unavailable. A single-package recovery returned npm E409 (previously
+staged version). Following the repository's verification guidance, the entire
+batch advances to `3.0.162-alpha.270`. Existing versions are never overwritten.
+The iOS lockfile failure was only local CocoaPods 1.17.0 versus the Gemfile's
+locked 1.16.2; the actual CI lockfile was adopted, preserving semantic checks.

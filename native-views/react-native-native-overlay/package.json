@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-native-overlay",
-  "version": "3.0.162-alpha.268",
+  "version": "3.0.162-alpha.270",
   "description": "Native and Web overlay hosts with ordered levels, page scope and Fabric measurement",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

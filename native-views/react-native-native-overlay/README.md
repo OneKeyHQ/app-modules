@@ -27,7 +27,7 @@ Fabric rather than Nitro under the explicit exception recorded in the SPEC.
 ## Release
 
 Use the repository `package-publish` CI workflow. This branch's synchronized
-42-package batch is `3.0.162-alpha.268`, published under `next`; no PR merge or
+42-package batch is `3.0.162-alpha.270`, published under `next`; no PR merge or
 stable-tag change is required. Consumers must pin the exact verified version.
 
 ## License
