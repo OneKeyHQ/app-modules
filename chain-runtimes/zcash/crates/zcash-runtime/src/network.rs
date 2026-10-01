@@ -181,8 +181,13 @@ pub async fn broadcast(client: &mut LightClient, tx_bytes: Vec<u8>) -> Result<()
         if broadcast_already_known(&resp.error_message) {
             return Ok(());
         }
+        let code = if broadcast_outcome_ambiguous(&resp.error_message) {
+            ErrorCode::BroadcastOutcomeUnknown
+        } else {
+            ErrorCode::BroadcastRejected
+        };
         return Err(RuntimeError::with(
-            ErrorCode::BroadcastRejected,
+            code,
             json!({
                 "errorCode": resp.error_code,
                 "errorMessage": resp.error_message,
@@ -193,6 +198,27 @@ pub async fn broadcast(client: &mut LightClient, tx_bytes: Vec<u8>) -> Result<()
     Ok(())
 }
 
+/// A rejection that a node also gives for a transaction it already mined or
+/// holds: its inputs are spent, possibly by this very transaction. Marking it
+/// rejected would show a failed send for a payment that went through.
+fn broadcast_outcome_ambiguous(message: &str) -> bool {
+    let message = message.to_lowercase();
+    [
+        // Zebra: zebra-consensus / zebrad mempool errors.
+        "double-spend",
+        "duplicate nullifier",
+        "could not find transparent input utxo",
+        "same effects",
+        // zcashd.
+        "bad-txns-inputs-spent",
+        "bad-txns-inputs-missingorspent",
+        "txn-mempool-conflict",
+        "missing inputs",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle))
+}
+
 fn broadcast_already_known(message: &str) -> bool {
     let message = message.to_lowercase();
     [
@@ -201,6 +227,9 @@ fn broadcast_already_known(message: &str) -> bool {
         "already in blockchain",
         "already have transaction",
         "txn-already-known",
+        // Zebra (behind Zaino): zebrad mempool::error.
+        "already exists in mempool",
+        "already queued for download",
     ]
     .iter()
     .any(|needle| message.contains(needle))
@@ -303,8 +332,33 @@ pub async fn tree_state(client: &mut LightClient, height: u32) -> Result<TreeSta
 
 #[cfg(test)]
 mod tests {
-    use super::{broadcast_already_known, with_timeout};
+    use super::{broadcast_already_known, broadcast_outcome_ambiguous, with_timeout};
     use crate::error::{ErrorCode, RuntimeError};
+
+    // A node gives these for our own tx once it is mined, as well as for a real
+    // conflict; they must stay "unknown" so scanning decides (mined or expired).
+    #[test]
+    fn spent_input_rejections_are_an_unknown_outcome_not_a_rejection() {
+        for message in [
+            "orchard double-spend: duplicate nullifier: Nullifier(..)",
+            "ironwood double-spend: duplicate nullifier: Nullifier(..)",
+            "transparent double-spend: OutPoint(..) is spent twice",
+            "could not find transparent input UTXO in the best chain or mempool",
+            "any transaction with the same effects will be rejected from the mempool until the next chain tip block: ..",
+            "bad-txns-inputs-spent",
+            "txn-mempool-conflict",
+        ] {
+            assert!(broadcast_outcome_ambiguous(message), "{message}");
+            assert!(!broadcast_already_known(message), "{message}");
+        }
+        for message in [
+            "transaction is non-standard",
+            "tx-overwinter-expired",
+            "bad-txns-fee-too-low",
+        ] {
+            assert!(!broadcast_outcome_ambiguous(message), "{message}");
+        }
+    }
 
     #[test]
     fn duplicate_broadcast_is_an_idempotent_success() {
@@ -312,6 +366,9 @@ mod tests {
             "txn-already-known",
             "Transaction already in mempool",
             "transaction already in block chain",
+            // Zebra's wording (zebrad/src/components/mempool/error.rs).
+            "transaction already exists in mempool",
+            "transaction dropped because it is already queued for download",
         ] {
             assert!(broadcast_already_known(message), "{message}");
         }

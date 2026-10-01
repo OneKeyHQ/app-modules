@@ -1,6 +1,6 @@
 # Stateless transparent transaction API
 
-This crate can quote and sign a mainnet transparent-to-transparent transaction without a
+This crate can quote and sign a mainnet transaction that spends transparent funds without a
 `WalletDb`, scanner, or network client. The host owns UTXO discovery, reservation, broadcast, and
 status reconciliation.
 
@@ -53,8 +53,10 @@ Amounts are decimal strings because JavaScript numbers cannot represent every va
 
 Only selected outpoints are spent. Every selection must resolve to exactly one supplied UTXO.
 Inputs must be confirmed, non-coinbase P2PKH coins controlled by their declared external or internal
-BIP-44 path. Recipient outputs may be mainnet P2PKH (`t1`) or P2SH (`t3`). Change must be an owned
-P2PKH address on internal scope `1`.
+BIP-44 path. Recipients may be mainnet P2PKH (`t1`), P2SH (`t3`), a ZIP-320 TEX address (`tex1`,
+paid as P2PKH), or a Unified Address with an
+Orchard receiver, which is paid an Ironwood note; a Unified Address without one is rejected rather
+than paid at a public receiver. Change must be an owned P2PKH address on internal scope `1`.
 
 For send-max, supply exactly one recipient and omit `amountZat` and `change`. The recipient receives
 the selected input total minus the ZIP-317 fee. For a fixed amount, change below the standard 5,000

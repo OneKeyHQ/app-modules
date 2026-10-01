@@ -1,0 +1,54 @@
+[package]
+name = "onekey-monero-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "OneKey Monero Runtime — monero-oxide 之上的钱包状态层（SQLite 落盘）"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+monero-wallet.workspace = true
+monero-address.workspace = true
+monero-daemon-rpc.workspace = true
+monero-interface.workspace = true
+monero-epee.workspace = true
+# Bounded concurrent block fetches (sync::fetch_scannable_blocks).
+futures-util.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+hex.workspace = true
+rand_core.workspace = true
+curve25519-dalek.workspace = true
+zeroize.workspace = true
+
+# wasm32 专属：SQLite 的 wasm 实现与 JS 互操作。原生目标（本机调试与测试）
+# 用系统 SQLite，不需要这些。
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# 原生传输：让浏览器里出的问题能在本机上真调试器复现。
+reqwest.workspace = true
+# 原生侧的重试退避（blocks_bin::backoff）。reqwest 本就跑在 Tokio 上。
+tokio.workspace = true
+
+[dev-dependencies]
+# 集成测试要直接构造地址取公钥
+monero-wallet.workspace = true
+futures-lite.workspace = true
+tokio.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+sqlite-wasm-rs.workspace = true
+sqlite-wasm-vfs.workspace = true
+wasm-bindgen.workspace = true
+gloo-timers.workspace = true
+js-sys.workspace = true
+wasm-bindgen-futures.workspace = true
+web-sys.workspace = true
+# monero-oxide 整条链走 rand_core 0.6 → getrandom 0.2，而 0.2 在
+# wasm32-unknown-unknown 上必须显式打开旧式的 "js" feature 才能编译。
+# 这条依赖我们代码里一次都不直接用，纯粹是为了把 feature 打开。
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }

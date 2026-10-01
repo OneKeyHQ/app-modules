@@ -1190,6 +1190,27 @@ mod tests {
     }
 
     #[test]
+    fn pays_a_tex_address_like_its_p2pkh_twin() {
+        let hash = [9u8; 20];
+        let mut request: serde_json::Value =
+            serde_json::from_str(&request_json(&[100_000], true)).unwrap();
+        request["recipients"][0]["address"] = TransparentAddress::PublicKeyHash(hash)
+            .to_zcash_address(NetworkType::Main)
+            .to_string()
+            .into();
+        let via_t1 = build_with_seed_json(&request.to_string(), &seed()).unwrap();
+        request["recipients"][0]["address"] =
+            <zcash_address::ZcashAddress as zcash_address::ToAddress>::from_tex(
+                NetworkType::Main,
+                hash,
+            )
+            .encode()
+            .into();
+        let via_tex = build_with_seed_json(&request.to_string(), &seed()).unwrap();
+        assert_eq!(via_tex, via_t1);
+    }
+
+    #[test]
     fn builds_deterministic_v6_transaction() {
         let raw = build_with_seed_json(&request_json(&[100_000], true), &seed()).unwrap();
         let result: TransparentBuildResult = serde_json::from_str(&raw).unwrap();
@@ -1217,6 +1238,11 @@ fn require_transparent(address: RecipientAddress) -> Result<TransparentAddress> 
 fn parse_recipient_address(encoded: &str) -> Result<RecipientAddress> {
     match crate::keys::supported_recipient(&MAIN_NETWORK, encoded) {
         Some(Address::Transparent(address)) => Ok(RecipientAddress::Transparent(address)),
+        // ZIP-320: a TEX address is a P2PKH hash that only accepts transparent
+        // inputs, which is all this builder spends.
+        Some(Address::Tex(hash)) => Ok(RecipientAddress::Transparent(
+            TransparentAddress::PublicKeyHash(hash),
+        )),
         // Unified Orchard receivers receive Ironwood notes after NU6.3. Never silently
         // fall back to a public receiver when a Unified Address lacks this receiver.
         Some(Address::Unified(address)) => address

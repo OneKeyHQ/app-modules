@@ -109,7 +109,8 @@ const HISTORY_ROW_SELECT: &str = "SELECT
             FROM v_tx_outputs output
             WHERE output.txid = tx_summary.txid
               AND output.from_account_uuid = tx_summary.account_uuid
-              AND output.to_account_uuid IS NULL
+              AND (output.to_account_uuid IS NULL
+                   OR output.to_account_uuid <> tx_summary.account_uuid)
               AND COALESCE(output.is_change, 0) = 0
             LIMIT 1)
          ) AS recipient,
@@ -117,7 +118,8 @@ const HISTORY_ROW_SELECT: &str = "SELECT
             FROM v_tx_outputs output
            WHERE output.txid = tx_summary.txid
              AND output.from_account_uuid = tx_summary.account_uuid
-             AND output.to_account_uuid IS NULL
+             AND (output.to_account_uuid IS NULL
+                  OR output.to_account_uuid <> tx_summary.account_uuid)
              AND COALESCE(output.is_change, 0) = 0
          ) AS external_output_count
      FROM v_transactions tx_summary
@@ -298,8 +300,9 @@ pub fn details(conn: &rusqlite::Connection, account_uuid: &str, txid: &str) -> R
 /// 官方 SDK 取交易详情走的也是它。三段的判定规则：
 ///
 /// - `received`：`to_account_uuid` 是本账户（`is_change` 区分找零与真收款）
-/// - `external`：`from_account_uuid` 是本账户、而 `to_account_uuid` 为空 ——
-///   即我们付给别人的输出。**只有自己发的交易才看得到收款地址**，
+/// - `external`: sent by this account to an unknown or different account,
+///   including another account registered in this wallet database.
+///   **只有自己发的交易才看得到收款地址**，
 ///   别人发给别人的输出我们既解不开也不该出现在这里
 /// - `spent`：本账户在更早交易里收到、且被这笔花掉的输出，走 `v_received_output_spends`
 ///
@@ -439,14 +442,10 @@ pub(crate) fn display_order_to_internal(txid: &str) -> Result<Vec<u8>> {
     Ok(bytes.into_iter().rev().collect())
 }
 
+// Byte slicing a `&str` panics on a non-ASCII boundary, and in wasm a panic
+// traps the whole runtime; `hex::decode` rejects such input instead.
 fn hex_decode(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
-        return None;
-    }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
-        .collect()
+    hex::decode(s).ok()
 }
 
 /// txid 在库里以内部序（小端）存储，浏览器展示用大端。翻转后转 hex。
@@ -463,6 +462,12 @@ mod tests {
 
     use super::*;
     use crate::clock::HostClock;
+
+    #[test]
+    fn a_non_ascii_txid_is_rejected_not_a_panic() {
+        // Four bytes, but byte 2 falls inside "é": slicing there panics.
+        assert!(display_order_to_internal("aéa").is_err());
+    }
 
     #[test]
     fn txid_is_reversed_for_display() {
@@ -502,8 +507,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn preserves_supported_pool_ids_and_hides_sapling() {
+    fn history_fixture() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         conn.execute_batch(
             "CREATE TABLE accounts (id INTEGER PRIMARY KEY, uuid BLOB NOT NULL);
@@ -558,6 +562,12 @@ mod tests {
         )
         .unwrap();
 
+        conn
+    }
+
+    #[test]
+    fn preserves_supported_pool_ids_and_hides_sapling() {
+        let conn = history_fixture();
         let account_uuid = uuid::Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
         conn.execute(
             "INSERT INTO accounts (id, uuid) VALUES (1, ?1)",
@@ -664,5 +674,81 @@ mod tests {
             mixed["perPoolBalanceDeltaZat"],
             json!({ "3": "-100", "4": "99" })
         );
+    }
+    #[test]
+    fn outgoing_outputs_are_external_relative_to_the_current_account() {
+        let conn = history_fixture();
+        let sender = uuid::Uuid::from_u128(1);
+        let receiver = uuid::Uuid::from_u128(2);
+        for (id, account) in [(1, sender), (2, receiver)] {
+            conn.execute(
+                "INSERT INTO accounts (id, uuid) VALUES (?1, ?2)",
+                rusqlite::params![id, account.as_bytes().as_slice()],
+            )
+            .unwrap();
+        }
+
+        let cases = [
+            (Some(receiver), false, 1),
+            (None, false, 1),
+            (Some(sender), false, 0),
+            (Some(sender), true, 0),
+        ];
+        for (index, (to_account, is_change, external_count)) in cases.into_iter().enumerate() {
+            let id = index as i64 + 1;
+            let txid = vec![id as u8; 32];
+            conn.execute(
+                "INSERT INTO transactions (id_tx, txid) VALUES (?1, ?2)",
+                rusqlite::params![id, txid],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO v_transactions (
+                   account_uuid, mined_height, txid, tx_index, block_time,
+                   expiry_height, expired_unmined, fee_paid,
+                   account_balance_delta, has_change, sent_note_count,
+                   received_note_count, memo_count, is_shielding, total_spent,
+                   total_received
+                 ) VALUES (?1, 100, ?2, ?3, 1000, 200, 0, 10, -90, 1, 2, 1, 0, 0, 100, 10)",
+                rusqlite::params![sender.as_bytes().as_slice(), txid, id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO v_received_outputs (
+                   id_within_pool_table, transaction_id, account_id, pool, value
+                 ) VALUES (?1, ?1, 1, 3, 10)",
+                [id],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO v_tx_outputs (
+                   txid, from_account_uuid, to_account_uuid, to_address, is_change
+                 ) VALUES (?1, ?2, ?3, 'synthetic-recipient', ?4)",
+                rusqlite::params![
+                    txid,
+                    sender.as_bytes().as_slice(),
+                    to_account.map(|account| account.as_bytes().to_vec()),
+                    is_change
+                ],
+            )
+            .unwrap();
+
+            let detail: serde_json::Value = serde_json::from_str(
+                &details(&conn, &sender.to_string(), &hex_display_order(&txid)).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(detail["externalOutputCount"], external_count);
+            assert_eq!(
+                detail["recipient"],
+                if external_count > 0 {
+                    json!("synthetic-recipient")
+                } else {
+                    json!(null)
+                }
+            );
+            let rows: Vec<serde_json::Value> =
+                serde_json::from_str(&list(&conn, &sender.to_string(), 20, 0).unwrap()).unwrap();
+            assert_eq!(rows[0], detail);
+        }
     }
 }

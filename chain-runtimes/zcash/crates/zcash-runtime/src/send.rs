@@ -6,7 +6,7 @@
 //!   runtime.pcztCreate()          构造（要钱包状态：选币、witness、anchor）
 //!   runtime.pcztProve()           证明，纯计算，不碰私钥
 //!   keys.pcztSign()               签名（要花费密钥，在 onekey-zcash-keys 里）
-//!   runtime.pcztSend()            终结 + 写回本地钱包（**不发网络**）
+//!   runtime.pcztSubmit()          提取 + 广播，非明确拒收才写回本地钱包
 //!   runtime.broadcastTransaction()  真正广播出去
 //! ```
 //!
@@ -104,81 +104,6 @@ where
     }
 }
 
-/// 把「余额不足」补成「钱在透明池里，先屏蔽」。
-///
-/// 普通转账不花透明 UTXO（见 `SendPolicy::spend_transparent`），所以一个只有
-/// 透明余额的账户拿到的原始错误是 `INSUFFICIENT_FUNDS { availableZat: 0 }` ——
-/// 而用户正看着账上有钱。那个 0 说的是「屏蔽池里可花的」，但错误里没有任何
-/// 东西提到池，用户只能去猜。
-///
-/// 这里查一次余额，把差额和透明余额一起放进错误。查询失败就原样返回原错误：
-/// 补充信息拿不到不该让整个操作换一个错因。
-fn explain_insufficient(
-    db: &Db,
-    account_id: <Db as WalletRead>::AccountId,
-    confirmations: zcash_client_backend::data_api::wallet::ConfirmationsPolicy,
-    err: RuntimeError,
-) -> RuntimeError {
-    if err.code != ErrorCode::InsufficientFunds {
-        return err;
-    }
-
-    // 必须用**这笔发送实际用的**确认数策略读余额，不能用 default()。
-    // 这个函数存在的唯一目的就是给准确指引，而两套门槛下「透明池里有多少钱
-    // 可用」的答案不一样 —— 用另一套读出来的数会把人指去屏蔽，结果还是不够。
-    // 本文件 `allow_zero_conf_shielding` 的注释早写了这条：读和花必须同源。
-    let Ok(Some(summary)) = db.get_wallet_summary(confirmations) else {
-        return err;
-    };
-    let Some(balances) = summary.account_balances().get(&account_id) else {
-        return err;
-    };
-
-    let regular = u64::from(balances.unshielded_regular_balance().total());
-    let coinbase = u64::from(balances.unshielded_coinbase_balance().total());
-
-    // 透明池为空时也要走完下面这段。早退会让同一个错误码出现两种形状 ——
-    // 空账户拿到上游原始的 `availableZat`，有钱的账户拿到补全过的字段，
-    // 宿主得写两套解析，而两者的差别恰恰是最难在测试里注意到的。
-    let num = |k: &str| err.params.get(k).and_then(|v| v.as_u64());
-    let shortfall = num("shortfallZat").unwrap_or(0);
-
-    // 三种结局要分开，因为用户该做的事完全不同：
-    //
-    // - 普通透明余额补得上：这次没花它（宿主把 spendTransparent 关了），
-    //   出路是屏蔽，或者允许花透明。
-    // - 只有 coinbase 补得上：本钱包**没有任何出口** —— 转账走 NonCoinbase、
-    //   屏蔽走 NonCoinbaseOnly，两条都绕开它。这时说「先屏蔽」是把人往死路指。
-    // - 都补不上：就是钱不够，但仍要把各池余额报全，用户才不用自己去对
-    //   为什么账上的数和错误里的数对不上。
-    // shortfall 为 0 时说明缺口读不出来（上游没给这个字段），无从判断哪种情形，
-    // 保持原样比猜一个更好 —— 否则 `0 >= 0` 会把它误判成「先屏蔽」。
-    let code = if shortfall == 0 {
-        ErrorCode::InsufficientFunds
-    } else if regular >= shortfall {
-        ErrorCode::FundsNeedShielding
-    } else if regular + coinbase >= shortfall {
-        ErrorCode::CoinbaseFundsUnspendable
-    } else {
-        ErrorCode::InsufficientFunds
-    };
-
-    RuntimeError::with(
-        code,
-        json!({
-            "stage": err.params.get("stage").cloned(),
-            "requiredZat": num("requiredZat"),
-            "shieldedAvailableZat": num("availableZat"),
-            "shortfallZat": shortfall,
-            "transparentZat": regular,
-            // coinbase 单列：成熟规则不同，而且只能走专门的 coinbase 屏蔽路径，
-            // 宿主的屏蔽碰不到它。并成一个数的话，用户会照着提示去点屏蔽，
-            // 然后发现钱没动。
-            "transparentCoinbaseZat": coinbase,
-        }),
-    )
-}
-
 /// 解析宿主传来的找零池名。构造与报价共用，避免两处各写一份而写歪。
 pub fn parse_change_pool(name: &str) -> Result<ShieldedPool> {
     match name {
@@ -224,14 +149,6 @@ pub struct SendPolicy {
     /// 是否给 Orchard bundle 填充到固定 action 数（隐藏真实 action 数量，
     /// 代价是交易更大、费用更高）。
     pub pad_orchard_bundle: bool,
-    /// 普通转账允不允许花透明 UTXO。
-    ///
-    /// **这是隐私策略，由宿主决定。** 花透明输入会把被选中的透明地址在链上
-    /// 关联起来；上游因此把它做成显式 opt-in，默认一个透明 UTXO 都不花。
-    ///
-    /// 关着的后果是具体的：一个只有透明余额的账户**发不出任何款**，
-    /// 唯一出口是先屏蔽（多一笔交易、多一份手续费、多一次等待）。
-    pub spend_transparent: bool,
     /// 零确认的自家屏蔽产出允不允许立刻再花（ZIP-315 建议允许）。
     ///
     /// 曾经硬编码 `false`，而余额读取那头却是参数 —— 宿主想跟进 ZIP-315
@@ -282,7 +199,6 @@ pub fn parse_send_policy(
     untrusted: u32,
     fallback_change_pool: &str,
     pad_orchard_bundle: bool,
-    spend_transparent: Option<bool>,
     allow_zero_conf_shielding: Option<bool>,
     spend_source: Option<&str>,
 ) -> Result<SendPolicy> {
@@ -291,7 +207,6 @@ pub fn parse_send_policy(
         untrusted,
         fallback_change_pool: parse_change_pool(fallback_change_pool)?,
         pad_orchard_bundle,
-        spend_transparent: spend_transparent.unwrap_or(false),
         allow_zero_conf_shielding: allow_zero_conf_shielding.unwrap_or(false),
         spend_source: parse_spend_source(spend_source)?,
     })
@@ -302,28 +217,29 @@ pub fn parse_send_policy(
 type TransferProposal =
     zcash_client_backend::proposal::Proposal<Zip317FeeRule, zcash_client_sqlite::ReceivedNoteId>;
 
-/// 这个收款地址收不收得进屏蔽池。
-///
-/// 不认识的 receiver 类型算「收得进」：UA 里可能有本 crate 的 `zcash_address`
-/// 还不认识的池子，把它判成纯透明会拒掉一笔合法的屏蔽转账 —— 比放过一笔
-/// 公开转账更糟。
-fn recipient_accepts_shielded(
+/// 收款只能落在 Sapling：Sapling 证明参数没随包发布（体积），这种交易必然在
+/// 证明阶段失败 —— 那时用户已经点了确认。在构造前就拒绝。
+fn recipient_needs_sapling_output(
     params: &zcash_protocol::consensus::Network,
     recipient: &zcash_address::ZcashAddress,
-) -> Result<bool> {
+) -> bool {
     use zcash_keys::address::Address;
-    let parsed = Address::try_from_zcash_address(params, recipient.clone()).map_err(|e| {
-        RuntimeError::with(
-            ErrorCode::InvalidAddress,
-            json!({ "stage": "recipientKind" }),
-        )
-        .detail(format!("{e:?}"))
-    })?;
-    Ok(match parsed {
-        Address::Transparent(_) | Address::Tex(_) => false,
-        Address::Sapling(_) => true,
-        Address::Unified(ua) => ua.has_orchard() || ua.has_sapling() || !ua.unknown().is_empty(),
-    })
+    match Address::try_from_zcash_address(params, recipient.clone()) {
+        Ok(Address::Sapling(_)) => true,
+        Ok(Address::Unified(ua)) => ua.has_sapling() && !ua.has_orchard(),
+        _ => false,
+    }
+}
+
+/// ZIP-320 TEX 地址只收透明输入；私密付款花的是屏蔽池，付不了它。
+fn recipient_is_tex(
+    params: &zcash_protocol::consensus::Network,
+    recipient: &zcash_address::ZcashAddress,
+) -> bool {
+    matches!(
+        zcash_keys::address::Address::try_from_zcash_address(params, recipient.clone()),
+        Ok(zcash_keys::address::Address::Tex(_))
+    )
 }
 
 fn build_proposal(
@@ -353,6 +269,20 @@ fn build_proposal(
         RuntimeError::with(ErrorCode::InvalidAddress, json!({ "value": to_address })).detail(e)
     })?;
 
+    if recipient_is_tex(&params, &recipient) {
+        return Err(RuntimeError::with(
+            ErrorCode::InvalidAddress,
+            json!({ "reason": "texRequiresTransparentSource" }),
+        ));
+    }
+
+    if recipient_needs_sapling_output(&params, &recipient) {
+        return Err(RuntimeError::with(
+            ErrorCode::InvalidAddress,
+            json!({ "reason": "saplingOnlyRecipient" }),
+        ));
+    }
+
     let memo_bytes = match memo {
         None => None,
         Some(m) => {
@@ -362,20 +292,6 @@ fn build_proposal(
             Some(MemoBytes::from(&parsed))
         }
     };
-
-    // 花透明输入换来的隐私代价，只有在收款方是屏蔽地址时才买到了东西：
-    // 那笔钱进了池子。收款方只能收透明时，这笔交易从头到尾公开，被选中的
-    // 透明地址还白白关联到了收款方 —— 用户为一个不存在的收益付了隐私。
-    //
-    // 宿主本来就只在收款方是屏蔽地址时才打开这个开关（见
-    // `shouldPreferTransparentForShieldedSend`）。这里是拦宿主的 bug：
-    // 这个开关的代价是用户看不见的，不能靠调用方自觉。
-    if policy.spend_transparent && !recipient_accepts_shielded(&params, &recipient)? {
-        return Err(RuntimeError::with(
-            ErrorCode::TransactionBuildError,
-            json!({ "stage": "spendTransparent", "reason": "transparentOnlyRecipient" }),
-        ));
-    }
 
     // Payment::new 会自己校验「透明地址不能带 memo」这类约束。
     let payment = zip321::Payment::new(recipient, Some(amount), memo_bytes, None, None, vec![])
@@ -393,13 +309,9 @@ fn build_proposal(
         policy.allow_zero_conf_shielding,
     )?;
 
-    // 花费来源策略。默认（SpendPolicy::default）**一个透明 UTXO 都不花** ——
-    // 于是只有透明余额的账户会以 INSUFFICIENT_FUNDS 收场，且 availableZat 报 0。
-    // 打开它就允许从本账户的透明 receiver 取，代价是被选中的地址在链上互相关联。
+    // 花费来源策略：只花所选的屏蔽池，一个透明 UTXO 都不花（与上游默认一致）。
     let spend_policy = {
-        use zcash_client_backend::data_api::wallet::input_selection::{
-            SpendPolicy, TransparentSpendPolicy,
-        };
+        use zcash_client_backend::data_api::wallet::input_selection::SpendPolicy;
         // 不用 SpendPolicy::default()：它允许 sapling。见 SendPolicy::spend_source。
         // 屏蔽池之间永不并池（docs/08），而"当前池"只在宿主一处定义
         // （ZCASH_CURRENT_SHIELDED_POOL）：这里不藏缺省，缺参直接拒绝。
@@ -409,12 +321,19 @@ fn build_proposal(
                 json!({ "stage": "spendSource", "reason": "required" }),
             )
         })?;
-        let base = SpendPolicy::shielded_pools([pool]);
-        if policy.spend_transparent {
-            base.with_transparent(TransparentSpendPolicy::any_account_addr())
-        } else {
-            base
+        let mut base = SpendPolicy::shielded_pools([pool]);
+        // A retry under the same reservation id must reselect what that id
+        // already holds. The default policy excludes every lock, the caller's
+        // own included, so the retry would lock a second set and leave the
+        // first frozen until expiry. Only this owner's locks are admitted.
+        if let Some(lock) = &lock {
+            use zcash_client_backend::data_api::locking::LockedInputPolicy;
+            use zcash_client_backend::data_api::wallet::input_selection::NonEmptyBTreeSet;
+            base = base.with_locked_input_policy(LockedInputPolicy::PreferLocked(
+                NonEmptyBTreeSet::singleton(lock.owner()),
+            ));
         }
+        base
     };
 
     let selector = GreedyInputSelector::<Db>::new();
@@ -440,21 +359,7 @@ fn build_proposal(
             None,
         );
 
-    // db 的可变借用到这里就结束了，所以失败路径上可以再查一次余额，
-    // 把「余额不足」补成「钱在透明池里」。
-    let proposal = match proposal {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(explain_insufficient(
-                db,
-                account_id,
-                confirmations,
-                propose_err("proposeTransfer", e),
-            ))
-        }
-    };
-
-    Ok(proposal)
+    proposal.map_err(|e| propose_err("proposeTransfer", e))
 }
 
 /// 只出费用，不构造 PCZT、不锁定 note。
@@ -476,59 +381,9 @@ pub fn quote(
         .map(|s| u64::from(s.balance().fee_required()))
         .sum();
 
-    // 这笔钱实际从哪儿取。宿主要给出「会花掉你的透明余额」这类提醒，就得先知道
-    // 答案 —— 而在真正构造之前，只有提案知道。光给手续费的话，宿主只能拿一个
-    // 布尔开关去问用户，而用户没有任何依据来回答。
-    let mut transparent_in = 0u64;
-    let mut shielded_in = 0u64;
-    for step in proposal.steps() {
-        transparent_in += step
-            .transparent_inputs()
-            .iter()
-            .map(|o| u64::from(o.txout().value()))
-            .sum::<u64>();
-        if let Some(inputs) = step.shielded_inputs() {
-            shielded_in += inputs
-                .notes()
-                .iter()
-                .map(|n| u64::from(n.note().value()))
-                .sum::<u64>();
-        }
-    }
-
-    // 用了透明输入时，顺手算一遍「只用屏蔽余额」要多少手续费。
-    //
-    // 这不是给运行时用来做决定的 —— 它只是把选择的代价摆出来。透明输入按
-    // ZIP-317 各自计入 logical action，实测同一笔付款用透明要 20000、只用屏蔽
-    // 要 10000。差一倍的事不告诉用户，用户就没法评估。
-    //
-    // 屏蔽余额本来就不够时提不出方案，此时报 null，宿主别显示这条建议。
-    let shielded_only_fee = if transparent_in > 0 {
-        let mut alt = policy;
-        alt.spend_transparent = false;
-        build_proposal(db, account_uuid, to_address, amount_zat, memo, alt, None)
-            .ok()
-            .map(|p| {
-                p.steps()
-                    .iter()
-                    .map(|s| u64::from(s.balance().fee_required()))
-                    .sum::<u64>()
-            })
-    } else {
-        None
-    };
-
     Ok(json!({
         "feeZat": fee,
         "steps": proposal.steps().len(),
-        "sourceTransparentZat": transparent_in,
-        "sourceShieldedZat": shielded_in,
-        // 同一笔里既花透明又花屏蔽 —— 链上因此把这个 t 地址和一次屏蔽花费绑在
-        // 一起。这是花透明输入唯一**新增**的暴露：只花透明的话，对外和一笔普通
-        // 屏蔽交易没有区别（透明进、屏蔽出）。值得单独提醒的就是这一种。
-        "linksTransparentToShielded": transparent_in > 0 && shielded_in > 0,
-        // 只用屏蔽余额的手续费；null = 屏蔽余额不够，提不出这个方案。
-        "shieldedOnlyFeeZat": shielded_only_fee,
     })
     .to_string())
 }
@@ -604,6 +459,9 @@ pub fn release_reservation(db: &mut Db, reservation_id: &str) -> Result<bool> {
             });
             return Err(build_err("unlockProposalInputs", format!("{e:?}")));
         }
+        // Anything else this owner still holds (a set locked before a retry
+        // replaced the in-memory proposal) goes too.
+        release_persisted_reservation(db, reservation_id, owner)?;
         return Ok(true);
     }
     release_persisted_reservation(db, reservation_id, owner)
@@ -691,14 +549,22 @@ pub fn forget_reservation(reservation_id: &str) {
     RESERVATIONS.with(|r| r.borrow_mut().remove(reservation_id));
 }
 
+/// 账户被删掉时，它还在内存里的提案一并丢弃：那些 note 已经随账户删了。
+pub fn forget_account_reservations(account_uuid: &str) {
+    RESERVATIONS.with(|r| {
+        r.borrow_mut()
+            .retain(|_, (owner_uuid, _)| owner_uuid.as_str() != account_uuid)
+    });
+}
+
 /// 构造一笔转账的 PCZT（未签名），并**锁住选中的 note**。
 ///
 /// 返回 `{ pcztHex, reservationId }`：`reservationId` 是这批 note 的占用凭证，
-/// 调用方必须一直带着它，直到交易发出（`pcztSend`）或用户取消（`releaseReservation`）。
+/// 调用方必须一直带着它，直到交易提交（`pcztSubmit`）或用户取消（`releaseReservation`）。
 /// 不释放也不会永久卡死 —— 锁有按区块高度的过期时间，但那是兜底，不是正常路径。
 ///
-/// `lock_for_blocks` 是策略：它要覆盖「构造完成 → 交易落库」的最坏耗时。
-/// 太短则用户还在审核页锁就过期了，太长则取消后 note 白白冻着。由宿主决定。
+/// `lock_for_blocks` 由宿主决定，但必须长过交易的过期高度：广播后、落库前崩溃时，
+/// 只有这把锁防止同一批 note 被再花一次。
 ///
 /// `reservation_id` 可由调用方传入（64 位 hex）。上游的设计意图就是**调用方持有
 /// 这个 token**：先生成、先持久化，再来构造。这样即使中途崩溃，恢复后仍然知道
@@ -787,17 +653,34 @@ pub fn create_pczt(
 
 /// 用哪个电路版本证明，由**共识分支**决定，不是产品选项。
 ///
-/// 这里从网络参数与当前链尖推导：链尖过了 NU6.3 激活高度就用 PostNu6_3，
+/// `height` 是交易所属分支的起始高度：过了 NU6.3 激活高度就用 PostNu6_3，
 /// 否则用 FixedPostNu6_2。`InsecurePreNu6_2` 永远不用于证明（上游明确标注）。
 fn circuit_version_for(
     params: &zcash_protocol::consensus::Network,
-    chain_tip: zcash_protocol::consensus::BlockHeight,
+    height: zcash_protocol::consensus::BlockHeight,
 ) -> orchard::circuit::OrchardCircuitVersion {
     use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
     match params.activation_height(NetworkUpgrade::Nu6_3) {
-        Some(height) if chain_tip >= height => orchard::circuit::OrchardCircuitVersion::PostNu6_3,
+        Some(activation) if height >= activation => {
+            orchard::circuit::OrchardCircuitVersion::PostNu6_3
+        }
         _ => orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2,
     }
+}
+
+/// The transaction's own branch decides, not our tip: around an upgrade the two
+/// disagree, and a proof under the wrong circuit is rejected. The tip is only
+/// the fallback for a branch id this build does not know.
+fn circuit_version_for_branch(
+    params: &zcash_protocol::consensus::Network,
+    consensus_branch_id: u32,
+    chain_tip: zcash_protocol::consensus::BlockHeight,
+) -> orchard::circuit::OrchardCircuitVersion {
+    let branch_start = zcash_protocol::consensus::BranchId::try_from(consensus_branch_id)
+        .ok()
+        .and_then(|branch| branch.height_bounds(params))
+        .map(|(start, _)| start);
+    circuit_version_for(params, branch_start.unwrap_or(chain_tip))
 }
 
 /// 给 PCZT 生成 Orchard / Ironwood 零知识证明。
@@ -933,11 +816,12 @@ pub fn prove_pczt_at_height(
     chain_tip: zcash_protocol::consensus::BlockHeight,
     pczt_bytes: &[u8],
 ) -> Result<Vec<u8>> {
-    let version = circuit_version_for(params, chain_tip);
     let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|error| {
         RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "parse" }))
             .detail(format!("{error:?}"))
     })?;
+    let version =
+        circuit_version_for_branch(params, *pczt.global().consensus_branch_id(), chain_tip);
     let prover = pczt::roles::prover::Prover::new(pczt);
 
     let prover = if prover.requires_ironwood_proof() {
@@ -975,33 +859,21 @@ pub fn prove_pczt_at_height(
     })
 }
 
-/// 终结已签名的 PCZT，提取交易并写回钱包，返回 txid。
-///
-/// 写回是必要的：钱包要立刻知道这笔花费占用了哪些 note，
-/// 否则下一笔可能重复选中同一批 —— `zcash_client_sqlite` 的 note locking 负责这件事。
-///
-/// **不校验零知识证明。** 上游允许在此处传入 verifying key 做一次证明校验，
-/// 但那需要现场构建 Orchard 电路（很贵），而这个 PCZT 是本机刚构造并签名的 ——
-/// 校验它等于校验自己。若将来接受外部传入的 PCZT（多签、离线签名机），
-/// 必须在这里补上校验，否则会把无效证明写进钱包。
-pub fn extract_and_store(
+/// 把签好名的 PCZT 落进钱包库：从这一刻起它花掉的 note 由这笔交易持有。
+fn store_signed_pczt(
     db: &mut Db,
     account_uuid: &str,
-    pczt_bytes: &[u8],
+    pczt: pczt::Pczt,
+    orchard_vk: &orchard::circuit::VerifyingKey,
     reservation_id: &str,
 ) -> Result<String> {
-    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| {
-        RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "parse" }))
-            .detail(format!("{e:?}"))
-    })?;
-
     db.transactionally_with_extension(|wallet, ext| {
-        if let Some(txid) = tx_state::existing_txid_for_reservation(ext, reservation_id)? {
-            return Ok(txid);
-        }
         let txid =
             extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
-                wallet, pczt, None, None,
+                wallet,
+                pczt,
+                None,
+                Some(orchard_vk),
             )
             .map_err(|e| build_err("extractAndStore", format!("{e:?}")))?
             .to_string();
@@ -1010,10 +882,128 @@ pub fn extract_and_store(
     })
 }
 
-/// 从钱包库取出已提取交易的原始字节，供广播使用。
+/// 一次提交的结局。
+pub enum SubmitOutcome {
+    Accepted {
+        txid: String,
+    },
+    /// 节点明确拒收：没落库，note 已放回。
+    Rejected {
+        txid: String,
+        error: RuntimeError,
+    },
+    /// 不知道节点收没收到：已落库，交易持有 note，同步时会重播。
+    Unknown {
+        txid: String,
+        error: RuntimeError,
+    },
+}
+
+/// 首次提交时这笔交易从没发出过：节点回「输入已花」只能是别的交易花了它们，
+/// 不是它自己已被打包 —— 按拒绝处理。`Ok` 是拒绝，`Err` 原样是其他错误。
+fn first_submit_rejection(error: RuntimeError) -> std::result::Result<RuntimeError, RuntimeError> {
+    match error.code {
+        ErrorCode::BroadcastRejected | ErrorCode::BroadcastOutcomeUnknown => Ok(RuntimeError {
+            code: ErrorCode::BroadcastRejected,
+            ..error
+        }),
+        _ => Err(error),
+    }
+}
+
+/// 提交签好名的 PCZT：先提取交易并广播，再按结局决定落不落库。
 ///
-/// `extract_and_store` 只落库、不发网络，广播是**独立的一步**：这样宿主可以在
-/// 落库之后、真正发出去之前插入确认环节，也能在广播失败后原样重试而不必重建交易。
+/// 先落库再广播的话，上游从落库那一刻起就把 note 算作已花，只有交易过期才放
+/// 回来；节点明确拒收的交易会把钱冻上几十个块。这里反过来：明确拒收就不落库，
+/// 直接放回 note。结局未知仍然落库 —— 交易可能已经传开，放回 note 会让用户重发
+/// 出第二笔。广播成功后落库失败按 FINALIZE_OUTCOME_UNKNOWN 报，由宿主查历史。
+pub async fn submit_signed_pczt(
+    db: &mut Db,
+    client: &mut crate::network::LightClient,
+    account_uuid: &str,
+    pczt_bytes: &[u8],
+    reservation_id: &str,
+) -> Result<SubmitOutcome> {
+    use pczt::roles::{spend_finalizer::SpendFinalizer, tx_extractor::TransactionExtractor};
+
+    // 上次提交已经落库（宿主没拿到回包就重试）：重播那一笔，不再提取第二次。
+    let stored = db.transactionally_with_extension(|_wallet, ext| {
+        tx_state::existing_txid_for_reservation(ext, reservation_id)
+    })?;
+    if let Some(txid) = stored {
+        let raw = raw_transaction(db, &txid)?;
+        return Ok(match crate::network::broadcast(client, raw).await {
+            Ok(()) => {
+                tx_state::mark_accepted(db, &txid)?;
+                SubmitOutcome::Accepted { txid }
+            }
+            Err(error) => SubmitOutcome::Unknown { txid, error },
+        });
+    }
+
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| {
+        RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "parse" }))
+            .detail(format!("{e:?}"))
+    })?;
+    let params = *db.params();
+    let chain_tip = db
+        .chain_height()
+        .map_err(|error| build_err("chainHeight", error))?
+        .ok_or_else(|| RuntimeError::new(ErrorCode::NotSynced))?;
+    let version =
+        circuit_version_for_branch(&params, *pczt.global().consensus_branch_id(), chain_tip);
+    // 构建一次，提取和落库共用：每次现场构建都要好几秒。
+    let orchard_vk = orchard::circuit::VerifyingKey::build(version);
+
+    let finalized = SpendFinalizer::new(pczt.clone())
+        .finalize_spends()
+        .map_err(|e| build_err("finalizeSpends", format!("{e:?}")))?;
+    let tx = TransactionExtractor::new(finalized)
+        .with_orchard(&orchard_vk)
+        .extract()
+        .map_err(|e| build_err("extractTransaction", format!("{e:?}")))?;
+    let txid = tx.txid().to_string();
+    let mut raw = Vec::new();
+    tx.write(&mut raw)
+        .map_err(|e| build_err("serializeTransaction", e))?;
+
+    let broadcast = match crate::network::broadcast(client, raw).await {
+        Err(error) => match first_submit_rejection(error) {
+            Ok(error) => {
+                release_reservation(db, reservation_id)?;
+                return Ok(SubmitOutcome::Rejected { txid, error });
+            }
+            Err(error) => Err(error),
+        },
+        Ok(()) => Ok(()),
+    };
+
+    let stored = store_signed_pczt(db, account_uuid, pczt, &orchard_vk, reservation_id).and_then(
+        |stored_txid| {
+            if broadcast.is_ok() {
+                tx_state::mark_accepted(db, &stored_txid)?;
+            }
+            Ok(stored_txid)
+        },
+    );
+    forget_reservation(reservation_id);
+    let stored_txid = stored.map_err(|error| {
+        RuntimeError::with(
+            ErrorCode::FinalizeOutcomeUnknown,
+            json!({ "txid": txid, "broadcast": if broadcast.is_ok() { "accepted" } else { "unknown" } }),
+        )
+        .detail(format!("{error:?}"))
+    })?;
+    Ok(match broadcast {
+        Ok(()) => SubmitOutcome::Accepted { txid: stored_txid },
+        Err(error) => SubmitOutcome::Unknown {
+            txid: stored_txid,
+            error,
+        },
+    })
+}
+
+/// 从钱包库取出已落库交易的原始字节，供重播使用。
 pub fn raw_transaction(db: &Db, txid: &str) -> Result<Vec<u8>> {
     use zcash_primitives::transaction::TxId;
 
@@ -1159,13 +1149,6 @@ mod reservation_recovery_tests {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod policy_tests {
     use super::*;
-    use zcash_address::ZcashAddress;
-    use zcash_keys::keys::{UnifiedAddressRequest, UnifiedSpendingKey};
-    use zcash_protocol::consensus::Network;
-
-    fn parse(encoded: &str) -> ZcashAddress {
-        ZcashAddress::try_from_encoded(encoded).expect("a valid address")
-    }
 
     /// Sapling 在这两处都不是合法取值，理由不同但结论一样：证明建不出来，
     /// 而且找零会落进一个只读不可花的池子。
@@ -1177,33 +1160,74 @@ mod policy_tests {
         assert!(parse_spend_source(Some("sapling")).is_err());
     }
 
+    /// 升级前后几块：本地链尖还在旧分支，交易已按新分支构造（或反过来）。
     #[test]
-    fn only_a_shielded_recipient_justifies_spending_transparent_inputs() {
-        let params = Network::MainNetwork;
-        let taddr = ::transparent::address::TransparentAddress::PublicKeyHash([3; 20]);
+    fn the_proving_circuit_follows_the_transactions_branch_not_the_tip() {
+        use orchard::circuit::OrchardCircuitVersion;
+        use zcash_protocol::consensus::{BranchId, NetworkUpgrade, Parameters};
+        let params = zcash_protocol::consensus::Network::MainNetwork;
+        let Some(activation) = params.activation_height(NetworkUpgrade::Nu6_3) else {
+            return;
+        };
+        let before = activation - 1;
+        assert_eq!(
+            circuit_version_for_branch(&params, u32::from(BranchId::Nu6_3), before),
+            OrchardCircuitVersion::PostNu6_3
+        );
+        assert_eq!(
+            circuit_version_for_branch(&params, u32::from(BranchId::Nu6_1), activation),
+            OrchardCircuitVersion::FixedPostNu6_2
+        );
+        assert_eq!(
+            circuit_version_for_branch(&params, 0xdead_beef, activation),
+            OrchardCircuitVersion::PostNu6_3,
+            "unknown branch falls back to the tip"
+        );
+    }
 
-        // 裸 t 地址、TEX 地址：整笔交易公开，花透明输入换不到任何隐私。
-        let t_encoded = zcash_keys::encoding::encode_transparent_address_p(&params, &taddr);
-        assert!(!recipient_accepts_shielded(&params, &parse(&t_encoded)).unwrap());
+    #[test]
+    fn a_sapling_only_recipient_is_refused_before_building() {
+        let params = zcash_protocol::consensus::Network::MainNetwork;
+        let ufvk = |seed: u8| {
+            zcash_keys::keys::UnifiedSpendingKey::from_seed(
+                &params,
+                &[seed; 32],
+                0u32.try_into().unwrap(),
+            )
+            .unwrap()
+            .to_unified_full_viewing_key()
+        };
+        let key = ufvk(9);
+        let sapling = key.sapling().unwrap().default_address().1;
+        let encoded = zcash_keys::encoding::encode_payment_address_p(&params, &sapling);
+        let parse = |s: &str| zcash_address::ZcashAddress::try_from_encoded(s).unwrap();
+        assert!(recipient_needs_sapling_output(&params, &parse(&encoded)));
+        let (ua, _) = key
+            .default_address(zcash_keys::keys::UnifiedAddressRequest::AllAvailableKeys)
+            .unwrap();
+        assert!(
+            !recipient_needs_sapling_output(&params, &parse(&ua.encode(&params))),
+            "a UA with an Orchard receiver is fine"
+        );
+    }
 
-        let tex = zcash_keys::address::Address::Tex([3; 20])
-            .to_zcash_address(&params)
-            .encode();
-        assert!(!recipient_accepts_shielded(&params, &parse(&tex)).unwrap());
-
-        // UA：钱进了屏蔽池，这才是这个开关买到的东西。
-        let ua = UnifiedSpendingKey::from_seed(
-            &params,
-            &[7u8; 32],
-            0u32.try_into().expect("valid ZIP-32 account index"),
-        )
-        .expect("test seed derives a USK")
-        .to_unified_full_viewing_key()
-        .default_address(UnifiedAddressRequest::ALLOW_ALL)
-        .expect("a default unified address")
-        .0
-        .encode(&params);
-        assert!(recipient_accepts_shielded(&params, &parse(&ua)).unwrap());
+    #[test]
+    fn a_tex_recipient_is_recognised() {
+        use zcash_address::ToAddress;
+        let params = zcash_protocol::consensus::Network::MainNetwork;
+        let tex = zcash_address::ZcashAddress::from_tex(
+            zcash_protocol::consensus::NetworkType::Main,
+            [9; 20],
+        );
+        let t1 = zcash_address::ZcashAddress::from_transparent_p2pkh(
+            zcash_protocol::consensus::NetworkType::Main,
+            [9; 20],
+        );
+        // Pinned: the app decodes this same pair in JS (sdkZcash/index.test.ts).
+        assert_eq!(tex.encode(), "tex1pyysjzgfpyysjzgfpyysjzgfpyysjzgfl7c006");
+        assert_eq!(t1.encode(), "t1JhNuqypTPZu5vdcjsvGHzbTCrTd9Xwtru");
+        assert!(recipient_is_tex(&params, &tex));
+        assert!(!recipient_is_tex(&params, &t1));
     }
 }
 
@@ -1362,6 +1386,33 @@ mod combine_tests {
             reason(&error).contains("transparentScriptSig"),
             "{}",
             reason(&error)
+        );
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod submit_tests {
+    use super::*;
+
+    #[test]
+    fn first_submit_treats_spent_inputs_as_rejection() {
+        let spent = RuntimeError::with(
+            ErrorCode::BroadcastOutcomeUnknown,
+            json!({ "errorCode": -26 }),
+        )
+        .detail("bad-txns-inputs-spent".to_string());
+        let rejection = first_submit_rejection(spent).unwrap();
+        assert_eq!(rejection.code, ErrorCode::BroadcastRejected);
+        assert_eq!(rejection.params["errorCode"], -26);
+        assert_eq!(rejection.detail.as_deref(), Some("bad-txns-inputs-spent"));
+    }
+
+    #[test]
+    fn first_submit_keeps_network_errors_unknown() {
+        let error = RuntimeError::new(ErrorCode::NetworkError);
+        assert_eq!(
+            first_submit_rejection(error).unwrap_err().code,
+            ErrorCode::NetworkError
         );
     }
 }

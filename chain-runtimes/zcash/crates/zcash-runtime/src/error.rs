@@ -77,20 +77,6 @@ pub enum ErrorCode {
     /// 屏蔽余额不足，但透明余额本可补上 —— 钱在，只是在透明池里。
     ///
     /// 与 `InsufficientFunds` 分开，是因为对用户来说这两件事完全不同：
-    /// 一个是「钱不够」，一个是「钱够但要先屏蔽」。合成一个码的话，宿主只能
-    /// 显示「余额不足」，而用户明明看着账上有钱 —— 那种提示只会让人去猜。
-    ///
-    /// 参数：`{ requiredZat, shieldedAvailableZat, shortfallZat,
-    ///          transparentZat, transparentCoinbaseZat }`
-    FundsNeedShielding,
-    /// 差额只有 coinbase 输出能补上，而本钱包花不了 coinbase。
-    ///
-    /// 转账用 `NonCoinbase`、屏蔽用 `NonCoinbaseOnly`，两条路都绕开它 ——
-    /// 矿工场景不在目标内。所以这笔钱在本钱包里**没有任何出口**，
-    /// 告诉用户「先屏蔽」等于把人往死路上指：屏蔽同样碰不到它。
-    ///
-    /// 参数同 `FundsNeedShielding`。
-    CoinbaseFundsUnspendable,
 
     // ── 外部依赖 ──
     /// lightwalletd 网络错误。参数：`{ operation }`
@@ -119,8 +105,6 @@ pub enum ErrorCode {
     InvalidReservationId,
     /// txid 格式不合法（不是 64 位 hex）。参数：`{ value }` 或 `{ value, byteLen }`
     InvalidTxid,
-    /// 宿主喂进来的透明 UTXO 快照解析失败。`detail` 里是 serde 的原文。
-    InvalidTransparentUtxos,
     /// PCZT 解析或序列化失败。参数：`{ stage }`
     PcztError,
     /// 交易构造失败（选币、费用、anchor 等）。参数：`{ stage }`
@@ -131,6 +115,10 @@ pub enum ErrorCode {
     /// 重发同一笔只会再被拒一次。宿主该做的是查明原因（费用不足、双花、
     /// 共识分支不对），而不是退避重试。
     BroadcastRejected,
+    /// 节点回了拒绝，但原因同样可能是「这笔交易已经上链/在池里」（双花、重复
+    /// nullifier、找不到输入）。不能判拒绝：交易保持待确认，由扫链见到上链或过期来定。
+    /// 参数：`{ errorCode }`，`detail` 里是节点原文。
+    BroadcastOutcomeUnknown,
     /// 本地交易没有持久化的广播授权。参数：`{ txid }`。
     BroadcastIntentNotFound,
     /// 广播授权存在，但当前状态不允许广播。参数：`{ txid, state }`。
@@ -163,8 +151,6 @@ impl ErrorCode {
             AccountNotFound => "ACCOUNT_NOT_FOUND",
             NotSynced => "NOT_SYNCED",
             InsufficientFunds => "INSUFFICIENT_FUNDS",
-            FundsNeedShielding => "FUNDS_NEED_SHIELDING",
-            CoinbaseFundsUnspendable => "COINBASE_FUNDS_UNSPENDABLE",
             NetworkError => "NETWORK_ERROR",
             DatabaseError => "DATABASE_ERROR",
             ReorgDetected => "REORG_DETECTED",
@@ -173,10 +159,10 @@ impl ErrorCode {
             NoActiveAccounts => "NO_ACTIVE_ACCOUNTS",
             InvalidReservationId => "INVALID_RESERVATION_ID",
             InvalidTxid => "INVALID_TXID",
-            InvalidTransparentUtxos => "INVALID_TRANSPARENT_UTXOS",
             PcztError => "PCZT_ERROR",
             TransactionBuildError => "TRANSACTION_BUILD_ERROR",
             BroadcastRejected => "BROADCAST_REJECTED",
+            BroadcastOutcomeUnknown => "BROADCAST_OUTCOME_UNKNOWN",
             BroadcastIntentNotFound => "BROADCAST_INTENT_NOT_FOUND",
             BroadcastIntentNotReady => "BROADCAST_INTENT_NOT_READY",
             FinalizeOutcomeUnknown => "FINALIZE_OUTCOME_UNKNOWN",
@@ -331,13 +317,11 @@ mod tests {
             PcztError,
             TransactionBuildError,
             BroadcastRejected,
+            BroadcastOutcomeUnknown,
             Unimplemented,
-            FundsNeedShielding,
-            CoinbaseFundsUnspendable,
             ReorgDetected,
             WalletBusy,
             InvalidScanPriority,
-            InvalidTransparentUtxos,
             BroadcastIntentNotFound,
             BroadcastIntentNotReady,
             FinalizeOutcomeUnknown,

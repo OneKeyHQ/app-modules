@@ -114,15 +114,13 @@ Current Shielded Output Pool。它不消费任何已有私密池，也不消费 
 
 _Avoid_: Shield、归集（单独使用时无法表达来源、目标和“全部”语义）
 
-## Transparent-first Preference（优先使用透明资金）
+## Payment Source（付款来源）
 
-账户允许向受支持私密目的地址付款时优先使用符合条件的透明资金，再由选定私池补足
-差额的偏好。它不是自动屏蔽，也不代表透明资金来源因此被隐藏。
+一笔付款花哪部分资金，由发送页的来源选择决定：私密池只花该池，透明只花透明，
+互不补足。
 
-_Avoid_: 内测专属透明花费、自动 Shield All
-
-产品定位与默认关闭的决定见
-[App ADR 0007](../../../app-monorepo/packages/kit-bg/src/vaults/impls/zcash/docs/adr/0007-align-payment-capabilities-and-balance-language.md)。
+_Avoid_: 优先使用透明资金（该账户偏好已移除，见
+[App ADR 0008](../../../app-monorepo/packages/kit-bg/src/vaults/impls/zcash/docs/adr/0008-payment-source-is-the-send-page-choice.md)）
 
 ## Transparent Mode（透明模式）
 

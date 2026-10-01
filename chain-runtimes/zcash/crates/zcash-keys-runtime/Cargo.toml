@@ -18,7 +18,7 @@ crate-type = ["cdylib", "rlib"]
 zcash_keys.workspace = true
 zcash_protocol.workspace = true
 zcash_address.workspace = true
-zcash_primitives = { workspace = true, features = ["transparent-inputs"] }
+zcash_primitives = { workspace = true, features = ["transparent-inputs", "non-standard-fees"] }
 zip32 = "0.2"
 bs58 = { version = "0.5", features = ["check"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }

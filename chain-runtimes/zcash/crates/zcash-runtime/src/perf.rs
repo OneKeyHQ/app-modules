@@ -32,7 +32,11 @@ pub fn span(name: &'static str) -> Option<Span> {
 impl Drop for Span {
     fn drop(&mut self) {
         let ms = now_ms() - self.started_ms;
-        log(&format!("[PRIV-PERF] rt {} {{\"ms\":{}}}", self.name, ms.round()));
+        log(&format!(
+            "[PRIV-PERF] rt {} {{\"ms\":{}}}",
+            self.name,
+            ms.round()
+        ));
     }
 }
 
