@@ -946,11 +946,9 @@ class NativeListView(
       return
     }
 
-    val provisionalOffset = (viewPosition * viewportLength(manager)).roundToInt() + offsetPx
-    // Keep an explicit target mounted until its measured size can be aligned.
-    val layoutOffset = if (nearest) provisionalOffset else {
-      provisionalOffset.coerceIn(0, (viewportLength(manager) - 1).coerceAtLeast(0))
-    }
+    val layoutOffset = nativeListProvisionalStart(
+      viewportLength(manager), viewPosition, offsetPx, nearest,
+    )
     manager.scrollToPositionWithOffset(index, layoutOffset)
     relayoutRecyclerView()
     alignAfterLayout(index, viewPosition, offsetPx, nearest)
@@ -1017,11 +1015,9 @@ class NativeListView(
     } else {
       manager.paddingLeft
     }
-    val alignmentSpace = viewportLength(manager) - itemLength
-    val resolvedSpace = if (nearest) alignmentSpace.coerceAtLeast(0) else alignmentSpace
-    val targetStart = viewportStart +
-      (viewPosition * resolvedSpace).roundToInt() +
-      viewOffset
+    val targetStart = nativeListAlignedStart(
+      viewportStart, viewportLength(manager), itemLength, viewPosition, viewOffset, nearest,
+    )
     val delta = itemStart - targetStart
     if (manager.orientation == RecyclerView.VERTICAL) {
       if (animated) recyclerView.smoothScrollBy(0, delta) else recyclerView.scrollBy(0, delta)
@@ -1044,11 +1040,9 @@ class NativeListView(
     } else {
       manager.paddingLeft
     }
-    val alignmentSpace = viewportLength(manager) - itemLength
-    val resolvedSpace = if (nearest) alignmentSpace.coerceAtLeast(0) else alignmentSpace
-    val targetStart = viewportStart +
-      (viewPosition * resolvedSpace).roundToInt() +
-      viewOffset
+    val targetStart = nativeListAlignedStart(
+      viewportStart, viewportLength(manager), itemLength, viewPosition, viewOffset, nearest,
+    )
     return targetStart - itemStart
   }
 
