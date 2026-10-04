@@ -192,6 +192,98 @@ describe('NativeList scrolling API', () => {
     ).toBe(700);
   });
 
+  it.each([
+    ['short/start', 100, 0, 0, 400],
+    ['short/center', 100, 0.5, 0, 300],
+    ['short/end', 100, 1, 0, 200],
+    ['short/start/positive offset', 100, 0, 24, 376],
+    ['short/center/positive offset', 100, 0.5, 24, 276],
+    ['short/end/positive offset', 100, 1, 24, 176],
+    ['short/start/negative offset', 100, 0, -24, 424],
+    ['short/center/negative offset', 100, 0.5, -24, 324],
+    ['short/end/negative offset', 100, 1, -24, 224],
+    ['oversized/start', 600, 0, 0, 400],
+    ['oversized/center', 600, 0.5, 0, 550],
+    ['oversized/end', 600, 1, 0, 700],
+    ['oversized/start/positive offset', 600, 0, 24, 376],
+    ['oversized/center/positive offset', 600, 0.5, 24, 526],
+    ['oversized/end/positive offset', 600, 1, 24, 676],
+    ['oversized/start/negative offset', 600, 0, -24, 424],
+    ['oversized/center/negative offset', 600, 0.5, -24, 574],
+    ['oversized/end/negative offset', 600, 1, -24, 724],
+  ] as const)(
+    'aligns %s in either scrolling axis',
+    (_name, itemLength, viewPosition, viewOffset, expected) => {
+      expect(
+        calculateAlignedScrollOffset({
+          itemOffset: 400,
+          itemLength,
+          viewportLength: 300,
+          contentLength: 2_000,
+          currentOffset: 0,
+          alignment: 'start',
+          viewPosition,
+          viewOffset,
+        })
+      ).toBe(expected);
+    }
+  );
+
+  it.each([
+    ['first short row', 0, 100, 2_000, 0.5, 0, 0],
+    ['first oversized row', 0, 600, 2_000, 0.5, 0, 150],
+    ['last short row', 1_900, 100, 2_000, 0, 0, 1_700],
+    ['last oversized row/end', 1_400, 600, 2_000, 1, 0, 1_700],
+    ['positive offset at start', 0, 600, 2_000, 0.5, 200, 0],
+    ['negative offset at end', 1_400, 600, 2_000, 1, -24, 1_700],
+    ['short content/start', 0, 100, 100, 0, 0, 0],
+    ['short content/center', 0, 100, 100, 0.5, 0, 0],
+    ['short content/end', 0, 100, 100, 1, -24, 0],
+    ['group member at content end', 2_008, 870, 2_886, 0.5, -320, 2_486],
+  ] as const)(
+    'clamps %s to the content bounds',
+    (
+      _name,
+      itemOffset,
+      itemLength,
+      contentLength,
+      viewPosition,
+      viewOffset,
+      expected
+    ) => {
+      expect(
+        calculateAlignedScrollOffset({
+          itemOffset,
+          itemLength,
+          viewportLength: _name === 'group member at content end' ? 400 : 300,
+          contentLength,
+          currentOffset: 0,
+          alignment: 'start',
+          viewPosition,
+          viewOffset,
+        })
+      ).toBe(expected);
+    }
+  );
+
+  it.each([0, 400, 450, 1_100])(
+    'preserves legacy nearest behavior for oversized rows at offset %s',
+    (currentOffset) => {
+      expect(
+        calculateAlignedScrollOffset({
+          itemOffset: 400,
+          itemLength: 600,
+          viewportLength: 300,
+          contentLength: 2_000,
+          currentOffset,
+          alignment: 'nearest',
+          viewPosition: 0,
+          viewOffset: 0,
+        })
+      ).toBe(400);
+    }
+  );
+
   it('reports RN-compatible failure measurements with a concrete reason', () => {
     expect(scrollFailure(rows, 8, 'index-out-of-range', 56)).toEqual({
       index: 8,
