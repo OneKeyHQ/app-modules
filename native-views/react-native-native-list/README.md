@@ -291,8 +291,8 @@ The ref exposes `applySnapshot`, `applyPatches`, `reconcileSelection`,
 `scrollToKey(key, animated, alignment)` signatures remain supported. Object
 parameters follow React Native list semantics: `viewPosition` is from `0`
 (start) through `1` (end), and a positive `viewOffset` leaves space before the
-target row. Web explicit position alignment also centers/ends oversized rows;
-`nearest` preserves its legacy behavior. See [scrolling contract](docs/SPEC.md)
+target row. Web and Android explicit position alignment also centers/ends
+oversized rows; `nearest` preserves its legacy behavior. See [scrolling contract](docs/SPEC.md)
 for platform status.
 
 Use `initialScrollIndex` or the stable-key extension `initialScrollKey` to set

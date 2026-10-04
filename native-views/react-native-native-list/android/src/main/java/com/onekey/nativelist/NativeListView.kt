@@ -920,9 +920,10 @@ class NativeListView(
       requestedViewPosition.coerceIn(0.0, 1.0)
     }
     val offsetPx = (viewOffset * density).roundToInt()
+    val nearest = alignment == "nearest"
 
     if (visibleView != null) {
-      alignVisibleView(manager, visibleView, viewPosition, offsetPx, animated)
+      alignVisibleView(manager, visibleView, viewPosition, offsetPx, animated, nearest)
       return
     }
     if (animated) {
@@ -932,12 +933,12 @@ class NativeListView(
 
         override fun calculateDyToMakeVisible(view: View, snapPreference: Int): Int {
           if (manager.orientation != RecyclerView.VERTICAL) return 0
-          return smoothAlignmentDelta(manager, view, viewPosition, offsetPx)
+          return smoothAlignmentDelta(manager, view, viewPosition, offsetPx, nearest)
         }
 
         override fun calculateDxToMakeVisible(view: View, snapPreference: Int): Int {
           if (manager.orientation != RecyclerView.HORIZONTAL) return 0
-          return smoothAlignmentDelta(manager, view, viewPosition, offsetPx)
+          return smoothAlignmentDelta(manager, view, viewPosition, offsetPx, nearest)
         }
       }
       smoothScroller.targetPosition = index
@@ -946,9 +947,13 @@ class NativeListView(
     }
 
     val provisionalOffset = (viewPosition * viewportLength(manager)).roundToInt() + offsetPx
-    manager.scrollToPositionWithOffset(index, provisionalOffset)
+    // Keep an explicit target mounted until its measured size can be aligned.
+    val layoutOffset = if (nearest) provisionalOffset else {
+      provisionalOffset.coerceIn(0, (viewportLength(manager) - 1).coerceAtLeast(0))
+    }
+    manager.scrollToPositionWithOffset(index, layoutOffset)
     relayoutRecyclerView()
-    alignAfterLayout(index, viewPosition, offsetPx)
+    alignAfterLayout(index, viewPosition, offsetPx, nearest)
   }
 
   private fun performOffsetScroll(offset: Double, animated: Boolean) {
@@ -981,6 +986,7 @@ class NativeListView(
     index: Int,
     viewPosition: Double,
     viewOffset: Int,
+    nearest: Boolean,
     attemptsRemaining: Int = 2,
   ) {
     recyclerView.post {
@@ -988,11 +994,11 @@ class NativeListView(
       val view = manager.findViewByPosition(index)
       if (view == null) {
         if (attemptsRemaining > 0) {
-          alignAfterLayout(index, viewPosition, viewOffset, attemptsRemaining - 1)
+          alignAfterLayout(index, viewPosition, viewOffset, nearest, attemptsRemaining - 1)
         }
         return@post
       }
-      alignVisibleView(manager, view, viewPosition, viewOffset, false)
+      alignVisibleView(manager, view, viewPosition, viewOffset, false, nearest)
     }
   }
 
@@ -1002,6 +1008,7 @@ class NativeListView(
     viewPosition: Double,
     viewOffset: Int,
     animated: Boolean,
+    nearest: Boolean,
   ) {
     val itemStart = decoratedStart(manager, view)
     val itemLength = decoratedEnd(manager, view) - itemStart
@@ -1010,8 +1017,10 @@ class NativeListView(
     } else {
       manager.paddingLeft
     }
+    val alignmentSpace = viewportLength(manager) - itemLength
+    val resolvedSpace = if (nearest) alignmentSpace.coerceAtLeast(0) else alignmentSpace
     val targetStart = viewportStart +
-      (viewPosition * (viewportLength(manager) - itemLength).coerceAtLeast(0)).roundToInt() +
+      (viewPosition * resolvedSpace).roundToInt() +
       viewOffset
     val delta = itemStart - targetStart
     if (manager.orientation == RecyclerView.VERTICAL) {
@@ -1026,6 +1035,7 @@ class NativeListView(
     view: View,
     viewPosition: Double,
     viewOffset: Int,
+    nearest: Boolean,
   ): Int {
     val itemStart = decoratedStart(manager, view)
     val itemLength = decoratedEnd(manager, view) - itemStart
@@ -1034,8 +1044,10 @@ class NativeListView(
     } else {
       manager.paddingLeft
     }
+    val alignmentSpace = viewportLength(manager) - itemLength
+    val resolvedSpace = if (nearest) alignmentSpace.coerceAtLeast(0) else alignmentSpace
     val targetStart = viewportStart +
-      (viewPosition * (viewportLength(manager) - itemLength).coerceAtLeast(0)).roundToInt() +
+      (viewPosition * resolvedSpace).roundToInt() +
       viewOffset
     return targetStart - itemStart
   }
