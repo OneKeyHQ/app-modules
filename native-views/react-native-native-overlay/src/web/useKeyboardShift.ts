@@ -99,7 +99,7 @@ export function useKeyboardShift({
         top = origin + sheet.offsetTop;
         bottom = top + sheet.offsetHeight;
       } else {
-        const extent = layoutExtent(contentRef.current);
+        const extent = layoutExtent(sheet ?? contentRef.current);
         if (extent) {
           top = origin + extent.top;
           bottom = origin + extent.bottom;

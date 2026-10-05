@@ -99,6 +99,17 @@ function WebOverlayEntry({
   callbacksRef.current = { onPresented, onDismissed };
 
   useLayoutEffect(() => {
+    if (!isSheet && sheetRef.current) {
+      // The host now survives a presentation switch; clear any in-flight pan.
+      sheetRef.current.style.removeProperty('transform');
+      sheetRef.current.style.removeProperty('transition');
+      if (backdropRef.current) {
+        backdropRef.current.style.opacity = '1';
+      }
+    }
+  }, [isSheet]);
+
+  useLayoutEffect(() => {
     const content = contentRef.current;
     if (!content) {
       return;
@@ -124,7 +135,7 @@ function WebOverlayEntry({
     // of the full-window React root.
     const contentRoot = isSheet
       ? content
-      : (content.firstElementChild as HTMLElement | null) ?? content;
+      : (sheetRef.current?.firstElementChild as HTMLElement | null) ?? content;
     const transition = direction === 'in' ? animation.enter : animation.exit;
     const running = [
       animateTransition(content, contentRoot, transition, direction),
@@ -244,48 +255,58 @@ function WebOverlayEntry({
           ref={contentRef}
           style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
         >
-          {sheet ? (
-            <div
-              ref={sheetRef}
-              style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: sheet.height,
-                maxHeight: sheet.maxHeight ?? DEFAULT_SHEET_MAX_HEIGHT,
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-                pointerEvents: 'auto',
-                touchAction: 'pan-y',
-                background: sheet.backgroundColor
-                  ? String(sheet.backgroundColor)
-                  : undefined,
-                borderTopLeftRadius: cornerRadius,
-                borderTopRightRadius: cornerRadius,
-              }}
+          {/* Keep both hosts and the content slot stable across presentations. */}
+          <div
+            ref={sheetRef}
+            style={
+              sheet
+                ? {
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: sheet.height,
+                    maxHeight: sheet.maxHeight ?? DEFAULT_SHEET_MAX_HEIGHT,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    pointerEvents: 'auto',
+                    touchAction: 'pan-y',
+                    background: sheet.backgroundColor
+                      ? String(sheet.backgroundColor)
+                      : undefined,
+                    borderTopLeftRadius: cornerRadius,
+                    borderTopRightRadius: cornerRadius,
+                  }
+                : {
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    pointerEvents: 'none',
+                  }
+            }
+          >
+            {sheet?.showHandle ? (
+              <div
+                style={{
+                  alignSelf: 'center',
+                  width: 36,
+                  height: 5,
+                  marginTop: 8,
+                  borderRadius: 2.5,
+                  background: 'rgba(0, 0, 0, 0.2)',
+                  flexShrink: 0,
+                }}
+              />
+            ) : null}
+            <View
+              pointerEvents={sheet ? undefined : 'box-none'}
+              style={sheet ? { flexShrink: 1 } : StyleSheet.absoluteFill}
             >
-              {sheet.showHandle ? (
-                <div
-                  style={{
-                    alignSelf: 'center',
-                    width: 36,
-                    height: 5,
-                    marginTop: 8,
-                    borderRadius: 2.5,
-                    background: 'rgba(0, 0, 0, 0.2)',
-                    flexShrink: 0,
-                  }}
-                />
-              ) : null}
-              <View style={{ flexShrink: 1 }}>{children}</View>
-            </div>
-          ) : (
-            <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
               {children}
             </View>
-          )}
+          </div>
         </div>
       </div>
     </div>

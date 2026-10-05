@@ -134,6 +134,9 @@ export function useSheetDrag({
     sheet.addEventListener('pointerup', onPointerUp);
     sheet.addEventListener('pointercancel', onPointerUp);
     return () => {
+      if (sheet.hasPointerCapture?.(pointerId)) {
+        sheet.releasePointerCapture(pointerId);
+      }
       sheet.removeEventListener('pointerdown', onPointerDown);
       sheet.removeEventListener('pointermove', onPointerMove);
       sheet.removeEventListener('pointerup', onPointerUp);

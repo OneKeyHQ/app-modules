@@ -208,6 +208,30 @@ request ─► queued ─► active ─► (enter anim) presented
 - Threads: store mutations happen on the JS thread. Native animation and layout
   run on the UI thread. Events are delivered as direct events.
 
+### Web presentation updates (OK-50653)
+
+For an open Web overlay that keeps its portal host, changing `presentation`
+between sheet and a non-sheet frame MUST preserve the mounted content subtree.
+Its props and React context continue to update normally. Changing the optional
+sheet handle MUST NOT move the content into a different React child slot.
+Closing without `keepContentMounted` still unmounts content after exit; reopening
+creates a fresh content lifecycle. Business entity changes and draft resets
+remain caller-owned; the overlay does not cache or persist form values.
+
+The stable sheet shell must not change non-sheet animation origins or keyboard
+avoidance geometry. Switching away from a sheet clears any pan offset and its
+backdrop opacity override, and releases an active pointer capture.
+
+Conformance: `src/__tests__/draftRetention.web.test.ts` exercises the real Web
+host, portal and store for presentation changes, live props/context/callbacks,
+close/reopen, animation origins, keyboard geometry and an interrupted pan.
+Chrome extension side-panel and ordinary-tab checks use synthetic content;
+this correction does not claim new iOS/Android runtime verification.
+
+These source changes require a new published package version before the app
+can consume them from npm. This fix leaves package versions and lockfiles at
+their existing values and does not publish a release.
+
 ## 5.5 Data, cache, and identity
 
 - Identity is the entry `id`: caller-provided, otherwise `overlay-<seq>`.
