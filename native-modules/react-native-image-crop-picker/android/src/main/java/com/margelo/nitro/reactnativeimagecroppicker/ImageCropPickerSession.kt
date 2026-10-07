@@ -85,7 +85,9 @@ internal class ImageCropPickerSession(
     val filename = queryDisplayName(uri)
     runInBackground(
       work = {
-        ImageCropPickerImageProcessor.makeResult(
+        if (config.preserveOriginal) {
+          ImageCropPickerImageProcessor.copyOriginal(activity, uri, config, filename)
+        } else ImageCropPickerImageProcessor.makeResult(
           activity,
           ImageCropPickerImageProcessor.decodeBitmap(activity, uri),
           config,

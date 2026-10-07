@@ -8,6 +8,7 @@ enum ImageCropPickerErrorCode: String {
   case cropperImageNotFound = "E_CROPPER_IMAGE_NOT_FOUND"
   case cannotSaveImage = "E_CANNOT_SAVE_IMAGE"
   case cleanupError = "E_ERROR_WHILE_CLEANING_FILES"
+  case noLibraryPermission = "E_NO_LIBRARY_PERMISSION"
 }
 
 // The JS wrapper parses the "<code>: <message>" description back into
@@ -53,5 +54,10 @@ struct ImageCropPickerError: Error, CustomStringConvertible {
   static let cleanupFailed = ImageCropPickerError(
     code: .cleanupError,
     message: "Error while cleaning up tmp files"
+  )
+
+  static let noLibraryPermission = ImageCropPickerError(
+    code: .noLibraryPermission,
+    message: "Adding photos is not authorized"
   )
 }

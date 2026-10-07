@@ -2708,6 +2708,31 @@ PODS:
     - ReactNativeDependencies
     - ReactNativeNativeLogger
     - Yoga
+  - ReactNativeImageCropPicker/Tests (3.0.156):
+    - hermes-engine
+    - NitroModules
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - ReactNativeNativeLogger
+    - Yoga
   - ReactNativeLiteCard (3.0.156):
     - hermes-engine
     - RCTRequired
@@ -3192,6 +3217,7 @@ DEPENDENCIES:
   - "ReactNativeDeviceUtils (from `../../../node_modules/@onekeyfe/react-native-device-utils`)"
   - "ReactNativeGetRandomValues (from `../../../node_modules/@onekeyfe/react-native-get-random-values`)"
   - "ReactNativeImageCropPicker (from `../../../node_modules/@onekeyfe/react-native-image-crop-picker`)"
+  - "ReactNativeImageCropPicker/Tests (from `../../../node_modules/@onekeyfe/react-native-image-crop-picker`)"
   - "ReactNativeLiteCard (from `../../../node_modules/@onekeyfe/react-native-lite-card`)"
   - "ReactNativeNativeLogger (from `../../../node_modules/@onekeyfe/react-native-native-logger`)"
   - "ReactNativePerfMemory (from `../../../node_modules/@onekeyfe/react-native-perf-memory`)"
@@ -3571,7 +3597,7 @@ SPEC CHECKSUMS:
   ReactNativeDependencies: 2bd6854ade79bf1b60586d1ab7813a389df1b6bf
   ReactNativeDeviceUtils: 5b6d250ff5b8c8ab60412d65c9f264e23966a6be
   ReactNativeGetRandomValues: a742b388d17ed96ddafbdaa7a373fc4fa546b1c9
-  ReactNativeImageCropPicker: 7b5924895c249de7f4fcf5f2a1b9d20f8b2268b4
+  ReactNativeImageCropPicker: 9fc811c6dd29146e4c2655bf47f22c4b198e3097
   ReactNativeLiteCard: b79da2fd6d8b9b4b937bbfff3639fb84527fa59c
   ReactNativeNativeLogger: a65544512307eaa7d837231f1e8e5dd81f6f3924
   ReactNativePerfMemory: b524752f61b1ffd81f6205f608d82862619e257f
@@ -3592,6 +3618,6 @@ SPEC CHECKSUMS:
   TcpSocket: 2725be5301911fb4a3bcc4f85915dcacfd0ccfb1
   Yoga: 9891cfb1c680f64de9c41b09e7453dea33454d2b
 
-PODFILE CHECKSUM: d163efd24ff4c7dc7da7c6c0f1023634b164196e
+PODFILE CHECKSUM: c5a42e803bf7ca99f5687ce3fee051c4ad21f041
 
 COCOAPODS: 1.16.2

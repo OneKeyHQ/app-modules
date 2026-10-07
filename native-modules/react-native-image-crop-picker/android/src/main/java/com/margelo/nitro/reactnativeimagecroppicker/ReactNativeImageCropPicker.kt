@@ -35,6 +35,12 @@ class ReactNativeImageCropPicker : HybridReactNativeImageCropPickerSpec() {
   override fun cleanSingle(path: String): Promise<Unit> =
     Promise.parallel { ImageCropPickerImageProcessor.removeFile(path) }
 
+  override fun getSavePermission(): Promise<PhotoSavePermission> = ImagePhotoLibrary.getPermission()
+
+  override fun requestSavePermission(): Promise<PhotoSavePermission> = ImagePhotoLibrary.requestPermission()
+
+  override fun saveToLibrary(path: String): Promise<Unit> = ImagePhotoLibrary.save(path)
+
   private fun startSession(
     mode: ImageCropPickerSession.Mode,
     config: ImageCropPickerConfig,

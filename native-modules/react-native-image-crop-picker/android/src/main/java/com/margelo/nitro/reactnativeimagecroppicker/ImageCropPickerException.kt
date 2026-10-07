@@ -17,6 +17,7 @@ internal class ImageCropPickerException(
     const val E_CANNOT_SAVE_IMAGE = "E_CANNOT_SAVE_IMAGE"
     const val E_LOW_MEMORY_ERROR = "E_LOW_MEMORY_ERROR"
     const val E_ERROR_WHILE_CLEANING_FILES = "E_ERROR_WHILE_CLEANING_FILES"
+    const val E_NO_LIBRARY_PERMISSION = "E_NO_LIBRARY_PERMISSION"
 
     fun cancelled() = ImageCropPickerException(E_PICKER_CANCELLED, "User cancelled image selection")
 
@@ -41,5 +42,7 @@ internal class ImageCropPickerException(
       ImageCropPickerException(E_LOW_MEMORY_ERROR, cause.message ?: "Out of memory", cause)
 
     fun cleanupFailed() = ImageCropPickerException(E_ERROR_WHILE_CLEANING_FILES, "Error while cleaning up tmp files")
+
+    fun noLibraryPermission() = ImageCropPickerException(E_NO_LIBRARY_PERMISSION, "Adding photos is not authorized")
   }
 }
