@@ -1,8 +1,10 @@
 # Add-only photo saving
 
-Status: Implemented extraction of the picker save implementation. JS tests, types, codegen and Android native build pass. iOS test code compiles
-and links; local execution is blocked by launchd_sim startup. Native runtime
-acceptance and final application artifacts remain pending.
+Status: Implemented extraction of the picker save implementation. JS tests,
+types, codegen and Android native builds pass. API 36 saves through MediaStore
+without a permission prompt, and failed input rejects with the documented code.
+iOS test code compiles and links; local execution is blocked by launchd_sim
+startup. iOS runtime and remaining application acceptance are pending.
 
 ## Purpose and boundaries
 
@@ -49,6 +51,11 @@ The module declares no Android storage/media-read permission. App configuration
 owns the legacy write declaration and iOS usage strings. No NSPhotoLibraryUsageDescription
 is needed. Android permission launch resolves the UI ReactHost activity rather
 than relying on the global Nitro context (which may belong to bg).
+
+On Android 8-9, the OS legacy storage permission group is broader than the APK
+declaration: granting WRITE_EXTERNAL_STORAGE also grants implicit read access.
+The maxSdkVersion cap limits this compatibility behavior to API 28 and below.
+API 29+ uses MediaStore without a storage permission request.
 
 ## Lifecycle, concurrency and ownership
 

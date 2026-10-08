@@ -17,13 +17,14 @@ final class ImageOriginalCopyTests: XCTestCase {
     let source = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
     try bytes.write(to: source)
     defer { try? FileManager.default.removeItem(at: source) }
-    let config = ImageCropPickerConfig(ImageCropPickerOptions(
+    let options: ImageCropPickerOptions = .init(
       width: nil, height: nil, cropping: false, includeBase64: true, preserveOriginal: true,
       compressImageQuality: 0.1, compressImageMaxWidth: 1, compressImageMaxHeight: 1,
       freeStyleCropEnabled: nil, cropperCircleOverlay: nil, cropperToolbarTitle: nil,
       cropperChooseText: nil, cropperCancelText: nil, cropperRotateButtonsHidden: nil,
       showCropGuidelines: nil, cropperAppearance: nil
-    ))
+    )
+    let config = ImageCropPickerConfig(options)
     let result = try ImageCropPickerImageProcessor.copyOriginal(at: source, config: config, filename: "source.png")
     defer { try? ImageCropPickerImageProcessor.removeFile(atPath: result.path) }
     let copied = try XCTUnwrap(URL(string: result.path))
