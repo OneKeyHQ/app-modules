@@ -34,17 +34,7 @@ final class CaptureProtectionTests: XCTestCase {
   }
 
   func testOneOwnerCannotReleaseAnotherOwnersSecureLayer() async throws {
-    let previousDelegate = UIApplication.shared.delegate
-    let delegate = CaptureTestDelegate()
-    let window = UIWindow(frame: UIScreen.main.bounds)
-    window.rootViewController = UIViewController()
-    delegate.window = window
-    UIApplication.shared.delegate = delegate
-    window.makeKeyAndVisible()
-    defer {
-      window.isHidden = true
-      UIApplication.shared.delegate = previousDelegate
-    }
+    let window = try XCTUnwrap(UIApplication.shared.delegate?.window ?? nil)
     let first = ReactNativeCaptureProtection()
     let second = ReactNativeCaptureProtection()
     try await first.prevent().await()
@@ -57,8 +47,4 @@ final class CaptureProtectionTests: XCTestCase {
     try await second.allow().await()
     XCTAssertEqual(field?.isSecureTextEntry, false)
   }
-}
-
-private final class CaptureTestDelegate: UIResponder, UIApplicationDelegate {
-  var window: UIWindow?
 }
