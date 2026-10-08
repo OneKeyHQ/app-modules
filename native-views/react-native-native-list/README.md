@@ -302,7 +302,9 @@ The ref exposes `applySnapshot`, `applyPatches`, `reconcileSelection`,
 `scrollToKey(key, animated, alignment)` signatures remain supported. Object
 parameters follow React Native list semantics: `viewPosition` is from `0`
 (start) through `1` (end), and a positive `viewOffset` leaves space before the
-target row.
+target row. Web, Android and iOS explicit position alignment also centers/ends
+oversized rows; `nearest` preserves its legacy behavior. See [scrolling contract](docs/SPEC.md#explicit-scroll-alignment-ok-64041)
+for platform status.
 
 Use `initialScrollIndex` or the stable-key extension `initialScrollKey` to set
 the first position. They are mutually exclusive, run once after the first
@@ -418,3 +420,17 @@ status. See [docs/DESIGN.md](docs/DESIGN.md) for the architecture and ownership 
 tokens, local layout-safety rules, common list capabilities and current implementation
 gaps. [docs/ROW_TEMPLATES.md](docs/ROW_TEMPLATES.md) defines all 12 row types with
 structural illustrations, required fields, variants and styling boundaries.
+
+## Native scrolling regression tests
+
+In a configured React Native example/consumer Android project, run
+`./gradlew :onekeyfe_react-native-native-list:testDebugUnitTest --tests com.margelo.nitro.nativelist.NativeListScrollAlignmentTest`.
+This uses the existing JUnit dependency and compiles the shipping Kotlin helper
+and NativeListView. The Gradle project name may differ in another consumer.
+
+Run `swift test --package-path tests/swiftpm` from this package for the native
+Swift geometry regression suite. Its source symlink compiles the shipping
+helper directly. These are geometry unit tests, not RecyclerView/UICollectionView
+integration tests. Full-app visibility, unmounted/deferred behavior and
+consumer-owned layout/input cancellation require separate runtime validation;
+see [the scrolling spec](docs/SPEC.md).

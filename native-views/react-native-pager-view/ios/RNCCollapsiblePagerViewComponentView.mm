@@ -1033,6 +1033,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   __weak UITouch *_trackedTouch;
   UIEvent *_touchEvent;
   BOOL _multipleSurfaceTouchesObserved;
+  CGPoint _trackedTouchStartPoint;
+  BOOL _didCancelReactPressForVerticalMovement;
 }
 
 - (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)other
@@ -1069,12 +1071,37 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     return;
   }
   _trackedTouch = touches.anyObject;
+  _trackedTouchStartPoint = [_trackedTouch locationInView:self.view];
+  _didCancelReactPressForVerticalMovement = NO;
   [self recordEvent:event];
 }
 
 - (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
 {
   [self recordEvent:event];
+  UITouch *touch = _trackedTouch;
+  UIGestureRecognizer *handler = self.reactTouchHandler;
+  if (touch == nil || ![touches containsObject:touch] ||
+      self.state != UIGestureRecognizerStatePossible ||
+      _didCancelReactPressForVerticalMovement || _multipleSurfaceTouchesObserved ||
+      handler.view == nil || self.view != handler.view.superview ||
+      handler.state == UIGestureRecognizerStateFailed ||
+      handler.state == UIGestureRecognizerStateCancelled ||
+      handler.state == UIGestureRecognizerStateEnded) return;
+  CGPoint point = [touch locationInView:self.view];
+  CGFloat dx = point.x - _trackedTouchStartPoint.x;
+  CGFloat dy = point.y - _trackedTouchStartPoint.y;
+  if (fabs(dy) < 10.0 || fabs(dy) <= fabs(dx)) return;
+  NSUInteger activeTouches = 0;
+  for (UITouch *activeTouch in event.allTouches) {
+    if (activeTouch.phase == UITouchPhaseEnded ||
+        activeTouch.phase == UITouchPhaseCancelled) continue;
+    if ([activeTouch.view isDescendantOfView:handler.view]) ++activeTouches;
+  }
+  if (activeTouches != 1) return;
+  _didCancelReactPressForVerticalMovement = YES;
+  handler.enabled = NO;
+  handler.enabled = YES;
 }
 
 - (void)cancelPressForPan:(UIPanGestureRecognizer *)pan
@@ -1108,6 +1135,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     ? UIGestureRecognizerStateEnded : UIGestureRecognizerStateFailed;
   _trackedTouch = nil;
   _touchEvent = nil;
+  _didCancelReactPressForVerticalMovement = NO;
 }
 
 - (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
@@ -1117,6 +1145,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     ? UIGestureRecognizerStateCancelled : UIGestureRecognizerStateFailed;
   _trackedTouch = nil;
   _touchEvent = nil;
+  _didCancelReactPressForVerticalMovement = NO;
 }
 
 - (void)reset
@@ -1125,6 +1154,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _trackedTouch = nil;
   _touchEvent = nil;
   _multipleSurfaceTouchesObserved = NO;
+  _didCancelReactPressForVerticalMovement = NO;
 }
 
 @end
@@ -2438,6 +2468,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
                  options:NSKeyValueObservingOptionNew
                  context:RNCCollapsiblePagerContentOffsetContext];
   [candidate addObserver:self
+              forKeyPath:@"contentInset"
+                 options:NSKeyValueObservingOptionNew
+                 context:RNCCollapsiblePagerContentOffsetContext];
+  [candidate addObserver:self
               forKeyPath:@"contentSize"
                  options:NSKeyValueObservingOptionOld | NSKeyValueObservingOptionNew
                  context:RNCCollapsiblePagerContentOffsetContext];
@@ -2458,6 +2492,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     if (_observingContentOffset) {
       [scrollView removeObserver:self
                       forKeyPath:@"contentOffset"
+                         context:RNCCollapsiblePagerContentOffsetContext];
+      [scrollView removeObserver:self
+                      forKeyPath:@"contentInset"
                          context:RNCCollapsiblePagerContentOffsetContext];
       [scrollView removeObserver:self
                       forKeyPath:@"contentSize"
@@ -2932,6 +2969,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (appliedTop != nil) {
     [_appliedTopInsets setObject:@(appliedTop.doubleValue + next.top - previous.top) forKey:scrollView];
   }
+  if (scrollView == _observedScrollView) [self updateHeaderForScrollView:scrollView];
 }
 
 - (void)reapplyInsetsToObservedScrollView
@@ -2964,10 +3002,16 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
                        context:(void *)context
 {
   if (context == RNCScrollRefreshControlContext) {
-    [self updateRefreshControlForScrollView:(UIScrollView *)object];
+    UIScrollView *scrollView = (UIScrollView *)object;
+    [self updateRefreshControlForScrollView:scrollView];
+    if (scrollView == _observedScrollView) [self updateHeaderForScrollView:scrollView];
     return;
   }
   if (context == RNCCollapsiblePagerContentOffsetContext && object == _observedScrollView) {
+    if ([keyPath isEqualToString:@"contentInset"]) {
+      [self updateHeaderForScrollView:(UIScrollView *)object];
+      return;
+    }
     if ([keyPath isEqualToString:@"contentSize"]) {
       NSValue *oldSize = change[NSKeyValueChangeOldKey];
       NSValue *newSize = change[NSKeyValueChangeNewKey];
@@ -2998,9 +3042,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   BOOL attachedToList = _nativeSmoothHeaderScrollEnabled &&
     _sharedHeaderScrollView != nil && !_sharedHeadersLiftedForPagerTransition;
   if (attachedToList) {
+    // The header and content share this scroll view. UIKit's refresh inset
+    // moves both together, so translating the header would separate them.
     _sharedHeaderHostView.transform = CGAffineTransformIdentity;
     _headerView.transform = CGAffineTransformIdentity;
-    CGFloat pinnedTranslation = MAX(0, _currentLogicalOffset - _headerHeight);
+    UIScrollView *scrollView = _sharedHeaderScrollView;
+    NSNumber *appliedTop = [_appliedTopInsets objectForKey:scrollView];
+    CGFloat refreshInset = scrollView.refreshControl != nil && appliedTop != nil
+      ? MAX(0, scrollView.contentInset.top - appliedTop.doubleValue) : 0;
+    CGFloat pinnedTranslation = MAX(0, _currentLogicalOffset - _headerHeight - refreshInset);
     CGAffineTransform stickyTransform = CGAffineTransformMakeTranslation(0, pinnedTranslation);
     _stickyHeaderView.transform = stickyTransform;
     _nativeTabBarView.transform = stickyTransform;

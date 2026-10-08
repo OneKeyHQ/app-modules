@@ -1,9 +1,11 @@
 #import <XCTest/XCTest.h>
+#import <React/RCTViewComponentView.h>
 #import "RNCCollapsiblePagerViewComponentView.h"
 
 @interface RNCCollapsiblePagerViewComponentView (RefreshControlTesting)
 - (void)updateRefreshControlForScrollView:(UIScrollView *)scrollView;
 - (void)releaseRefreshControlForScrollView:(UIScrollView *)scrollView;
+- (void)attachScrollObserverForCurrentPage;
 @end
 
 @interface RNCCollapsiblePagerRefreshControlTests : XCTestCase
@@ -175,6 +177,73 @@
   [second releaseRefreshControlForScrollView:scroll];
   XCTAssertTrue(CATransform3DEqualToTransform(control.layer.sublayerTransform, baseline));
   XCTAssertTrue(control.layer.masksToBounds);
+}
+
+- (void)testRefreshTopInsetDoesNotDisplaceAttachedSharedHeader
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:64];
+  [pager mountChildComponentView:[RCTViewComponentView new] index:0];
+  [pager mountChildComponentView:[RCTViewComponentView new] index:1];
+  UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
+  scroll.refreshControl = [UIRefreshControl new];
+  scroll.contentSize = CGSizeMake(320, 2000);
+  scroll.contentInset = UIEdgeInsetsMake(232, 0, 0, 0);
+  UIView *content = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 2000)];
+  [scroll addSubview:content];
+  UIViewController *page = [UIViewController new];
+  [page.view addSubview:scroll];
+  NSMutableArray<UIViewController *> *pages = [pager valueForKey:@"pageControllers"];
+  [pages addObject:page];
+  [pager attachScrollObserverForCurrentPage];
+  UIView *headerHost = [pager valueForKey:@"sharedHeaderHostView"];
+  UIView *stickyHeader = [pager valueForKey:@"stickyHeaderView"];
+  UIView *tabBar = [pager valueForKey:@"nativeTabBarView"];
+  XCTAssertNotNil(stickyHeader);
+  XCTAssertEqual(stickyHeader.superview, headerHost);
+  XCTAssertEqual(headerHost.superview, scroll);
+  XCTAssertEqualWithAccuracy(scroll.contentInset.top, 340, 0.001);
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+
+  scroll.contentOffset = CGPointMake(0, 500);
+  CGFloat baselineStickyTranslation = stickyHeader.transform.ty;
+  CGFloat baselineTabBarTranslation = tabBar.transform.ty;
+  XCTAssertEqualWithAccuracy(baselineStickyTranslation, 776, 0.001);
+  XCTAssertEqualWithAccuracy(baselineTabBarTranslation, 776, 0.001);
+  CGPoint offset = scroll.contentOffset;
+  scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
+  XCTAssertTrue(CGPointEqualToPoint(scroll.contentOffset, offset));
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+  XCTAssertEqualWithAccuracy(stickyHeader.transform.ty, baselineStickyTranslation, 0.001);
+  XCTAssertEqualWithAccuracy(tabBar.transform.ty, baselineTabBarTranslation, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetMaxY(headerHost.frame), CGRectGetMinY(content.frame), 0.001);
+
+  // Exercise actual scroll notifications while the temporary refresh inset is
+  // present, including direction reversals and the sticky/unpinned boundary.
+  // The pre-fix formula adds the extra 60 points on these scroll updates.
+  for (NSNumber *nextOffset in @[@620, @450, @-300, @-340, @500]) {
+    scroll.contentOffset = CGPointMake(0, nextOffset.doubleValue);
+    CGFloat expectedTranslation = MAX(0, nextOffset.doubleValue + 340 - 64);
+    XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+    XCTAssertEqualWithAccuracy(stickyHeader.transform.ty, expectedTranslation, 0.001);
+    XCTAssertEqualWithAccuracy(tabBar.transform.ty, expectedTranslation, 0.001);
+    XCTAssertEqualWithAccuracy(CGRectGetMaxY(headerHost.frame), CGRectGetMinY(content.frame), 0.001);
+  }
+
+  offset = scroll.contentOffset;
+  scroll.contentInset = UIEdgeInsetsMake(340, 0, 0, 0);
+  XCTAssertTrue(CGPointEqualToPoint(scroll.contentOffset, offset));
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+  XCTAssertEqualWithAccuracy(stickyHeader.transform.ty, baselineStickyTranslation, 0.001);
+  XCTAssertEqualWithAccuracy(tabBar.transform.ty, baselineTabBarTranslation, 0.001);
+
+  scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+  XCTAssertEqualWithAccuracy(stickyHeader.transform.ty, baselineStickyTranslation, 0.001);
+  XCTAssertEqualWithAccuracy(tabBar.transform.ty, baselineTabBarTranslation, 0.001);
+  XCTAssertEqualWithAccuracy(CGRectGetMaxY(headerHost.frame), CGRectGetMinY(content.frame), 0.001);
+  scroll.refreshControl = nil;
+  XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+  [pager prepareForRecycle];
 }
 
 @end

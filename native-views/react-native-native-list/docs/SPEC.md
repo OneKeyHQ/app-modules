@@ -619,3 +619,48 @@ tall empty slot with viewport padding, animated decorated-bottom correction,
 and short footer. These validate geometry, not actual RecyclerView animation or
 Fabric lifecycle. Native simulator acceptance remains required. The iOS fallback
 retains one refresh action per drag and leaves haptic feedback to its caller.
+
+
+## Explicit scroll alignment (OK-64041)
+
+Status: implemented on Web, Android and iOS. This change ports the 3.0.154
+maintenance fix to the current main protocol and layout. The maintenance
+application recordings below do not establish runtime acceptance of this port.
+
+Keys identify outer rows; a wallet group member is not a separate scroll key.
+Explicit `viewPosition`/start/center/end alignment MUST use the signed difference
+`viewportLength - itemLength`, then apply `viewOffset` and the existing content
+bounds. This applies to both axes. Positive `viewOffset` leaves space before the
+aligned target. An oversized row cannot be fully visible; center aligns its
+center and end aligns its trailing edge. `nearest` MUST retain its existing
+oversized-row behavior, defaults and request normalization.
+
+Android MUST pass the alignment mode through visible, deferred and smooth
+scrolling. For an unmounted explicit nonanimated target, the provisional leading
+edge stays inside the viewport until the existing deferred pass measures the
+real item. Existing container-slot row-position translation remains in force;
+this change adds no retries or bridge API. iOS uses UICollectionView layout
+attributes for mounted and unmounted targets and keeps its adjusted-inset-aware
+content clamp. Web uses the TypeScript calculation. Imperative requests run once
+at the current geometry; consumers own repositioning after layout changes and
+cancellation when the user takes control.
+
+Focused TypeScript, Kotlin/JUnit and SwiftPM/XCTest regressions exercise the
+shipping calculations: oversized, short and equal rows, signed offsets, nearest,
+content bounds and Android provisional boundaries. SwiftPM runs the Foundation
+helper on macOS; it does not instantiate UIKit. Geometry tests do not prove
+RecyclerView mounting, deferred callback timing or consumer cancellation.
+
+Historical maintenance-base acceptance recorded in PR #138 includes full-app
+Electron/Web 36/36 cases each, Android 27/27 visible-target cases and iOS 15/15
+primary cases. Parent/middle/last targets changed from 0/3 visible to 3/3 on both
+native platforms. Those results use NativeList 3.0.154 plus the patch. Current
+main combined-package runtime acceptance and native horizontal runtime remain
+pending; pixel-perfect wallet-member centering is not claimed.
+
+Port verification (2026-10-08): all 236 tests in seven NativeList suites,
+package typecheck, focused TypeScript lint and repository test-integrity pass.
+The consumer Gradle project compiles the actual NativeListView and passes all
+seven Kotlin alignment tests; SwiftPM compiles the shipping helper and passes
+all seven geometry tests. These are local unit/build checks, not a new
+combined-package application or physical-device acceptance run.

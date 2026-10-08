@@ -744,6 +744,59 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
   XCTAssertEqual(self.handler.registeredTouches, 0);
 }
 
+- (void)testVerticalPageDragCancelsReactPressBeforeFingerLifts
+{
+  [self assertFixtureIsReadyForDelivery];
+  CGPoint point = [self pressPoint];
+  UITouch *touch = [self.driver beginAt:point];
+  XCTAssertEqual(self.handler.registeredTouches, 1);
+
+  [self.driver move:touch to:CGPointMake(point.x, point.y - 12)];
+  XCTAssertEqual(self.handler.registeredTouches, 0);
+  XCTAssertTrue([self.handler.events containsObject:@"reset-cancelled"] ||
+                  [self.handler.events containsObject:@"cancelled"],
+                @"handler events %@", self.handler.events);
+  XCTAssertFalse([self.handler.events containsObject:@"ended"]);
+
+  [self.driver end:touch];
+  XCTAssertFalse([self.handler.events containsObject:@"ended"], @"events %@", self.handler.events);
+}
+
+- (void)testVerticalSiblingControlDragKeepsReactPress
+{
+  [self assertFixtureIsReadyForDelivery];
+  UIView *sibling = [RCTViewComponentView new];
+  sibling.frame = CGRectMake(160, 540, 80, 100);
+  [self.surface addSubview:sibling];
+  CGPoint point = [self pressPoint];
+  UIScrollView *pagerScrollView = [self.pager valueForKey:@"pagerScrollView"];
+  XCTAssertEqual(sibling.superview, self.pager.superview);
+  XCTAssertFalse([sibling isDescendantOfView:pagerScrollView]);
+  XCTAssertEqual([self.window hitTest:point withEvent:nil], sibling);
+
+  UITouch *touch = [self.driver beginAt:point];
+  XCTAssertEqual(self.handler.registeredTouches, 1);
+  [self.driver move:touch to:CGPointMake(point.x, point.y - 12)];
+  XCTAssertEqual(self.handler.registeredTouches, 1);
+  XCTAssertFalse([self.handler.events containsObject:@"reset-cancelled"]);
+  XCTAssertFalse([self.handler.events containsObject:@"cancelled"]);
+
+  [self.driver end:touch];
+  XCTAssertEqualObjects(self.handler.events, (@[@"began", @"moved", @"ended"]));
+  XCTAssertEqual(self.handler.registeredTouches, 0);
+}
+
+- (void)testSmallVerticalMovementKeepsReactPress
+{
+  [self assertFixtureIsReadyForDelivery];
+  CGPoint point = [self pressPoint];
+  UITouch *touch = [self.driver beginAt:point];
+  [self.driver move:touch to:CGPointMake(point.x, point.y - 8)];
+  XCTAssertEqual(self.handler.registeredTouches, 1);
+  [self.driver end:touch];
+  XCTAssertEqualObjects(self.handler.events, (@[@"began", @"moved", @"ended"]));
+}
+
 - (void)testSmallMovementBelowPanThresholdKeepsReactPress
 {
   [self assertFixtureIsReadyForDelivery];
