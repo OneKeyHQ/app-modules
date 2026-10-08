@@ -762,6 +762,30 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
   XCTAssertFalse([self.handler.events containsObject:@"ended"], @"events %@", self.handler.events);
 }
 
+- (void)testVerticalSiblingControlDragKeepsReactPress
+{
+  [self assertFixtureIsReadyForDelivery];
+  UIView *sibling = [RCTViewComponentView new];
+  sibling.frame = CGRectMake(160, 540, 80, 100);
+  [self.surface addSubview:sibling];
+  CGPoint point = [self pressPoint];
+  UIScrollView *pagerScrollView = [self.pager valueForKey:@"pagerScrollView"];
+  XCTAssertEqual(sibling.superview, self.pager.superview);
+  XCTAssertFalse([sibling isDescendantOfView:pagerScrollView]);
+  XCTAssertEqual([self.window hitTest:point withEvent:nil], sibling);
+
+  UITouch *touch = [self.driver beginAt:point];
+  XCTAssertEqual(self.handler.registeredTouches, 1);
+  [self.driver move:touch to:CGPointMake(point.x, point.y - 12)];
+  XCTAssertEqual(self.handler.registeredTouches, 1);
+  XCTAssertFalse([self.handler.events containsObject:@"reset-cancelled"]);
+  XCTAssertFalse([self.handler.events containsObject:@"cancelled"]);
+
+  [self.driver end:touch];
+  XCTAssertEqualObjects(self.handler.events, (@[@"began", @"moved", @"ended"]));
+  XCTAssertEqual(self.handler.registeredTouches, 0);
+}
+
 - (void)testSmallVerticalMovementKeepsReactPress
 {
   [self assertFixtureIsReadyForDelivery];
