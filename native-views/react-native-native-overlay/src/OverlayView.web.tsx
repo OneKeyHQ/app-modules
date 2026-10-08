@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef } from 'react';
-import type { ReactNode, SyntheticEvent } from 'react';
+import type { KeyboardEvent, ReactNode, SyntheticEvent } from 'react';
 
 import { createPortal } from 'react-dom';
 import { StyleSheet, View } from 'react-native';
@@ -7,6 +7,7 @@ import { StyleSheet, View } from 'react-native';
 import { OverlayLevelProvider } from './OverlayLevelContext';
 import { OVERLAY_LEVEL_ORDER, isBlockingLevel } from './OverlayLevels';
 import { OVERLAY_OWNER_ATTRIBUTE } from './OverlayPageHost.web';
+import { overlayStore } from './OverlayStore';
 import { useOverlayController } from './useOverlayController';
 import { animateBackdrop, animateTransition } from './web/animateTransition';
 import {
@@ -203,6 +204,72 @@ function WebOverlayEntry({
   const showBackdrop = !!backdropColor || blocking;
   const cornerRadius = sheet?.cornerRadius ?? DEFAULT_SHEET_CORNER_RADIUS;
 
+  const onKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>) => {
+    const root = entryRef.current;
+    if (
+      event.key !== 'Tab' ||
+      event.defaultPrevented ||
+      event.nativeEvent.isComposing ||
+      !root ||
+      !presented ||
+      parked ||
+      overlayStore.getBlockingTop()?.id !== entryId
+    ) {
+      return;
+    }
+    const tabbable = Array.from(
+      root.querySelectorAll<HTMLElement>(
+        'a[href], area[href], button, input:not([type="hidden"]), select, textarea, iframe, object, embed, [tabindex], [contenteditable]:not([contenteditable="false"])'
+      )
+    )
+      .filter((node) => {
+        if (
+          (node.tabIndex < 0 &&
+            (node.hasAttribute('tabindex') ||
+              !node.hasAttribute('contenteditable'))) ||
+          node.matches(':disabled')
+        ) {
+          return false;
+        }
+        for (
+          let ancestor: HTMLElement | null = node;
+          ancestor;
+          ancestor = ancestor.parentElement
+        ) {
+          const style = getComputedStyle(ancestor);
+          if (
+            ancestor.inert ||
+            ancestor.hasAttribute('inert') ||
+            ancestor.hidden ||
+            ancestor.getAttribute('aria-hidden') === 'true' ||
+            style.display === 'none' ||
+            style.visibility === 'hidden'
+          ) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const aOrder = a.tabIndex > 0 ? a.tabIndex : Infinity;
+        const bOrder = b.tabIndex > 0 ? b.tabIndex : Infinity;
+        return aOrder === bOrder ? 0 : aOrder - bOrder;
+      });
+    const active = document.activeElement;
+    const first = tabbable[0];
+    const last = tabbable[tabbable.length - 1];
+    if (
+      !first ||
+      active === root ||
+      !root.contains(active) ||
+      active === (event.shiftKey ? first : last)
+    ) {
+      event.preventDefault();
+      (event.shiftKey ? last : first)?.focus({ preventScroll: true });
+      if (!first) root.focus({ preventScroll: true });
+    }
+  };
+
   return (
     <div
       ref={entryRef}
@@ -225,6 +292,7 @@ function WebOverlayEntry({
         visibility: parked ? 'hidden' : undefined,
       }}
       {...ISOLATED_EVENT_HANDLERS}
+      onKeyDownCapture={onKeyDownCapture}
     >
       {showBackdrop ? (
         <div
