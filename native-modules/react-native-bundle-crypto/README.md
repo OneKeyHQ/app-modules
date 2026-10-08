@@ -1,16 +1,17 @@
 # react-native-bundle-crypto
 
-react-native-bundle-crypto
+Native update signature verification, file hashing and safe local file operations
+for OneKey on iOS and Android. The caller owns download and installation policy.
 
-[Native behavior specification](docs/SPEC.md)
+[Native behavior specification](https://github.com/OneKeyHQ/app-modules/blob/main/native-modules/react-native-bundle-crypto/docs/SPEC.md)
 
 ## Installation
 
 ```sh
 npm install @onekeyfe/react-native-bundle-crypto react-native-nitro-modules
+```
 
 > `react-native-nitro-modules` is required as this library relies on [Nitro Modules](https://nitro.margelo.com/).
-```
 
 ## Usage
 
@@ -30,6 +31,25 @@ const isSame = ReactNativeBundleCrypto.secureEqualHex(
 );
 console.log(isSame);
 ```
+
+## Verification and file operations
+
+`verifyGpgCleartext` and `verifyDetachedAsc` return a validity flag, an optional
+verified hash and a failure reason. Check validity before using the hash.
+`sha256OfFile` returns a digest or a failure reason; it does not establish that
+the file came from a trusted publisher on its own.
+
+`hashDir` and `verifyDirAgainstHashes` support directory integrity checks.
+Expected paths must stay inside the directory, and the verifier checks both
+hashes and completeness. `validateExtractedPathSafety` checks extracted paths;
+`atomicWriteFile`, `safeRename` and `listVersionDirs` expose local file helpers.
+The application owns destination selection and sequencing these operations.
+
+The complete types are in
+[src/ReactNativeBundleCrypto.nitro.ts](src/ReactNativeBundleCrypto.nitro.ts).
+Install the application's iOS pods and rebuild the native binary after adding
+this Nitro module. Native verification uses the embedded OneKey public key,
+not a caller-provided arbitrary verification key.
 
 ## Apple Gopenpgp framework
 
@@ -55,9 +75,8 @@ gomobile bind \
 
 ## Contributing
 
-- [Development workflow](CONTRIBUTING.md#development-workflow)
-- [Sending a pull request](CONTRIBUTING.md#sending-a-pull-request)
-- [Code of conduct](CODE_OF_CONDUCT.md)
+Follow the repository's
+[native development workflow](https://github.com/OneKeyHQ/app-modules/blob/main/docs/NATIVE_MODULE_DEVELOPMENT.md).
 
 ## License
 

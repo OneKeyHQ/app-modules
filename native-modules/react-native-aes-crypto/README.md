@@ -1,5 +1,42 @@
 # @onekeyfe/react-native-aes-crypto
 
+Native cryptographic primitives for OneKey on iOS and Android: AES encryption,
+authenticated GCM operations, PBKDF2, HMAC, hashing and random values.
+
+## Installation and usage
+
+```sh
+yarn add @onekeyfe/react-native-aes-crypto
+```
+
+Install the application's iOS pods and rebuild its native binary. The exported
+functions return promises and depend on the native TurboModule.
+
+```ts
+import { sha256, randomKey } from '@onekeyfe/react-native-aes-crypto';
+
+const digest = await sha256('example message');
+const randomBytes = await randomKey(32);
+```
+
+## API and formats
+
+Named exports include `encrypt`, `decrypt`, `aesGcmEncrypt`, `aesGcmDecrypt`,
+`pbkdf2`, `hmac256`, `hmac512`, `sha1`, `sha256`, `sha512`, `randomUuid` and
+`randomKey`. The default export is the native module.
+
+The GCM helpers use lowercase hex inputs, a 12-byte nonce, a valid AES key
+length and nonempty associated data. Encryption returns ciphertext followed
+by a 16-byte authentication tag, encoded as hex. Decryption rejects when the
+inputs or authentication tag are invalid. Those formats are specific to the
+GCM helpers; do not assume that every other method uses the same encoding.
+
+Use the exact signatures in [src/NativeAesCrypto.ts](src/NativeAesCrypto.ts) and
+the GCM contract comments in [src/index.tsx](src/index.tsx). Applications own
+key storage, nonce uniqueness, input encoding and handling promise failures.
+
+## Upstream attribution
+
 First, a sincere thank-you to tectiv3 and the
 `react-native-aes-crypto` maintainers for their excellent work 🙏
 
