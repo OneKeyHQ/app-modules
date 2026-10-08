@@ -210,7 +210,21 @@
   XCTAssertEqualWithAccuracy(tabBar.transform.ty, baselineTabBarTranslation, 0.001);
   XCTAssertEqualWithAccuracy(CGRectGetMaxY(headerHost.frame), CGRectGetMinY(content.frame), 0.001);
 
+  // Exercise actual scroll notifications while the temporary refresh inset is
+  // present, including direction reversals and the sticky/unpinned boundary.
+  // The pre-fix formula adds the extra 60 points on these scroll updates.
+  for (NSNumber *nextOffset in @[@620, @450, @-300, @-340, @500]) {
+    scroll.contentOffset = CGPointMake(0, nextOffset.doubleValue);
+    CGFloat expectedTranslation = MAX(0, nextOffset.doubleValue + 340 - 64);
+    XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
+    XCTAssertEqualWithAccuracy(stickyHeader.transform.ty, expectedTranslation, 0.001);
+    XCTAssertEqualWithAccuracy(tabBar.transform.ty, expectedTranslation, 0.001);
+    XCTAssertEqualWithAccuracy(CGRectGetMaxY(headerHost.frame), CGRectGetMinY(content.frame), 0.001);
+  }
+
+  offset = scroll.contentOffset;
   scroll.contentInset = UIEdgeInsetsMake(340, 0, 0, 0);
+  XCTAssertTrue(CGPointEqualToPoint(scroll.contentOffset, offset));
   XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
   XCTAssertEqualWithAccuracy(stickyHeader.transform.ty, baselineStickyTranslation, 0.001);
   XCTAssertEqualWithAccuracy(tabBar.transform.ty, baselineTabBarTranslation, 0.001);

@@ -121,7 +121,7 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version
           xcodebuild -version | grep -F 'Xcode 26.6'
-      - name: Run three SwiftPM suites and verify execution
+      - name: Run four SwiftPM suites and verify execution
         shell: bash
         run: |
           set -euo pipefail
@@ -130,10 +130,12 @@ jobs:
             native-modules/react-native-sni-connect
             native-modules/react-native-bundle-update
             native-modules/react-native-range-downloader/tests/swiftpm
+            native-views/react-native-native-list/tests/swiftpm
           )
           for package in "${packages[@]}"; do
             name=$(basename "$package")
             if [[ "$package" == *range-downloader* ]]; then name=range-downloader; fi
+            if [[ "$package" == *native-list* ]]; then name=native-list; fi
             swift test --package-path "$package" --scratch-path "$RUNNER_TEMP/swift-$name" \
               2>&1 | tee "artifacts/swiftpm/$name.log"
             if ! grep -Eq 'Executed [1-9][0-9]* tests?|Test run with [1-9][0-9]* tests?' "artifacts/swiftpm/$name.log"; then
