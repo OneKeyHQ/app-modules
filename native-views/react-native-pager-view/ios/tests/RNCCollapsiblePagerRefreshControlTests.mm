@@ -1,4 +1,5 @@
 #import <XCTest/XCTest.h>
+#import <React/RCTViewComponentView.h>
 #import "RNCCollapsiblePagerViewComponentView.h"
 
 @interface RNCCollapsiblePagerViewComponentView (RefreshControlTesting)
@@ -181,6 +182,8 @@
 - (void)testRefreshTopInsetDoesNotDisplaceAttachedSharedHeader
 {
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithHeader:64];
+  [pager mountChildComponentView:[RCTViewComponentView new] index:0];
+  [pager mountChildComponentView:[RCTViewComponentView new] index:1];
   UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 0, 320, 600)];
   scroll.refreshControl = [UIRefreshControl new];
   scroll.contentSize = CGSizeMake(320, 2000);
@@ -195,6 +198,8 @@
   UIView *headerHost = [pager valueForKey:@"sharedHeaderHostView"];
   UIView *stickyHeader = [pager valueForKey:@"stickyHeaderView"];
   UIView *tabBar = [pager valueForKey:@"nativeTabBarView"];
+  XCTAssertNotNil(stickyHeader);
+  XCTAssertEqual(stickyHeader.superview, headerHost);
   XCTAssertEqual(headerHost.superview, scroll);
   XCTAssertEqualWithAccuracy(scroll.contentInset.top, 340, 0.001);
   XCTAssertEqualWithAccuracy(headerHost.transform.ty, 0, 0.001);
@@ -202,6 +207,8 @@
   scroll.contentOffset = CGPointMake(0, 500);
   CGFloat baselineStickyTranslation = stickyHeader.transform.ty;
   CGFloat baselineTabBarTranslation = tabBar.transform.ty;
+  XCTAssertEqualWithAccuracy(baselineStickyTranslation, 776, 0.001);
+  XCTAssertEqualWithAccuracy(baselineTabBarTranslation, 776, 0.001);
   CGPoint offset = scroll.contentOffset;
   scroll.contentInset = UIEdgeInsetsMake(400, 0, 0, 0);
   XCTAssertTrue(CGPointEqualToPoint(scroll.contentOffset, offset));
