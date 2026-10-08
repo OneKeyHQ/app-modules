@@ -110,6 +110,15 @@ jobs:
             -include-runtime -d "$RUNNER_TEMP/bundle-storage-schema-tests.jar"
           java -jar "$RUNNER_TEMP/bundle-storage-schema-tests.jar" | tee "$RUNNER_TEMP/kotlin-tests.log"
           grep -Eq 'BundleStorageSchemaPolicy: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/kotlin-tests.log"
+      - name: Run pager weak-padding snapshot regression
+        working-directory: native-views/react-native-pager-view
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" \
+            tests/kotlin/WeakPaddingSnapshotTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/weak-padding-snapshot-tests.jar"
+          java -jar "$RUNNER_TEMP/weak-padding-snapshot-tests.jar" | tee "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
+          grep -Eq '^WeakPaddingSnapshot: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
 
   swiftpm:
     runs-on: macos-26
