@@ -59,6 +59,6 @@ final class CaptureProtectionTests: XCTestCase {
   }
 }
 
-private final class CaptureTestDelegate: NSObject, UIApplicationDelegate {
+private final class CaptureTestDelegate: UIResponder, UIApplicationDelegate {
   var window: UIWindow?
 }
