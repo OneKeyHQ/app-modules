@@ -6,13 +6,18 @@ it is not already defined.
 
 ## Installation and usage
 
+The current wrapper requires Expo modules and uses `expo-crypto` from Expo
+SDK 57. For a bare React Native app, first
+[install and configure Expo modules](https://docs.expo.dev/bare/installing-expo-modules/)
+with a compatible SDK.
+
 ```sh
 yarn add @onekeyfe/react-native-get-random-values react-native-nitro-modules
 ```
 
-The current wrapper also loads `expo-crypto` and `fast-base64-decode`; configure
-the consumer's existing dependencies accordingly. Install iOS pods and rebuild
-the native application before using the native path.
+`expo-crypto` and `fast-base64-decode` are runtime dependencies and are installed
+with this package. Install iOS pods and rebuild the native application before
+using the native path.
 
 ```ts
 import '@onekeyfe/react-native-get-random-values';
