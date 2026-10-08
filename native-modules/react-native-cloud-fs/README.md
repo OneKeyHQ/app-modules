@@ -1,5 +1,8 @@
 # @onekeyfe/react-native-cloud-fs
 
+See the [authorization contract](docs/SPEC.md) for permission boundaries and
+acceptance requirements.
+
 First, a sincere thank-you to the
 `react-native-cloud-fs` maintainers for their excellent work 🙏
 
