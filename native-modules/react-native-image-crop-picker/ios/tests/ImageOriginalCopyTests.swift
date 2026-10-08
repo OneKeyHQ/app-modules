@@ -1,21 +1,9 @@
-import Photos
 import UIKit
 import XCTest
 
 @testable import ReactNativeImageCropPicker
 
-final class ImagePhotoLibraryTests: XCTestCase {
-  func testSaveAuthorizationDoesNotTreatDenialAsRequestable() {
-    XCTAssertEqual(ImagePhotoLibrary.permission(for: .notDetermined).status, .undetermined)
-    XCTAssertTrue(ImagePhotoLibrary.permission(for: .notDetermined).canAskAgain)
-    XCTAssertEqual(ImagePhotoLibrary.permission(for: .authorized).status, .granted)
-    for status in [PHAuthorizationStatus.denied, .restricted] {
-      let permission = ImagePhotoLibrary.permission(for: status)
-      XCTAssertEqual(permission.status, .denied)
-      XCTAssertFalse(permission.canAskAgain)
-    }
-  }
-
+final class ImageOriginalCopyTests: XCTestCase {
   func testOriginalCopyPreservesPNGBytesAndDimensions() throws {
     let renderer = UIGraphicsImageRenderer(size: CGSize(width: 12, height: 8), format: {
       let format = UIGraphicsImageRendererFormat()

@@ -1,5 +1,7 @@
 import NitroModules
 import Photos
+import ImageIO
+import UniformTypeIdentifiers
 
 enum ImagePhotoLibrary {
   private static let saveQueue = DispatchQueue(label: "onekey.image-photo-library.save", qos: .userInitiated)
@@ -31,26 +33,46 @@ enum ImagePhotoLibrary {
     return promise
   }
 
+  static func fileURL(_ path: String) -> URL? {
+    if path.hasPrefix("/") { return URL(fileURLWithPath: path) }
+    guard path.hasPrefix("file://"), let url = URL(string: path), url.isFileURL,
+          url.host == nil || url.host == "" || url.host == "localhost" else { return nil }
+    return url
+  }
+
+  static func validateImage(at url: URL) throws {
+    let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+    let size = values?.fileSize ?? 0
+    guard values?.isRegularFile == true, size > 0, size <= 64 * 1024 * 1024,
+          let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+          let identifier = CGImageSourceGetType(source),
+          let type = UTType(identifier as String), type.conforms(to: .image),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+          let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+          width > 0, height > 0 else { throw PhotoLibraryError.noImageData }
+  }
+
   static func save(path: String) -> Promise<Void> {
     let promise = Promise<Void>()
     saveQueue.async {
       do {
         guard permission().status == .granted else {
-          throw ImageCropPickerError.noLibraryPermission
+          throw PhotoLibraryError.noLibraryPermission
         }
-        guard let url = ImageCropPickerImageProcessor.fileURL(fromPath: path) else {
-          throw ImageCropPickerError.noImageData
+        guard let url = fileURL(path) else {
+          throw PhotoLibraryError.noImageData
         }
-        _ = try ImageCropPickerImageProcessor.imageMetadata(at: url)
+        try validateImage(at: url)
         // Add a resource only. Never enumerate assets or read back the result.
         try PHPhotoLibrary.shared().performChangesAndWait {
           PHAssetCreationRequest.forAsset().addResource(with: .photo, fileURL: url, options: nil)
         }
         promise.resolve(withResult: ())
-      } catch let error as ImageCropPickerError {
+      } catch let error as PhotoLibraryError {
         promise.reject(withError: error)
       } catch {
-        promise.reject(withError: ImageCropPickerError.cannotSaveImage)
+        promise.reject(withError: PhotoLibraryError.cannotSaveImage)
       }
     }
     return promise

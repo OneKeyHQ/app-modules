@@ -22,13 +22,6 @@ export interface PickedImage {
 
 export type ImageCropperColorScheme = 'light' | 'dark';
 
-export type PhotoSavePermissionStatus = 'granted' | 'denied' | 'undetermined';
-
-export interface PhotoSavePermission {
-  status: PhotoSavePermissionStatus;
-  canAskAgain: boolean;
-}
-
 // Colors and fonts of the cropper screen, which is identical on iOS and
 // Android. Colors are CSS hex strings (#RGB, #RRGGBB or #RRGGBBAA). Anything
 // left out falls back to OneKey's own palette for `colorScheme`.
@@ -88,11 +81,6 @@ export interface ReactNativeImageCropPicker
     path: string,
     options: ImageCropPickerOptions
   ): Promise<PickedImage>;
-
-  getSavePermission(): Promise<PhotoSavePermission>;
-  requestSavePermission(): Promise<PhotoSavePermission>;
-  // Save a local image using add-only access. Does not request permission.
-  saveToLibrary(path: string): Promise<void>;
 
   // Delete every file this module wrote to its temporary directory.
   clean(): Promise<void>;

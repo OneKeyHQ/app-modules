@@ -2881,6 +2881,56 @@ PODS:
     - ReactNativeDependencies
     - ReactNativeNativeLogger
     - Yoga
+  - ReactNativePhotoLibrary (3.0.156):
+    - hermes-engine
+    - NitroModules
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - ReactNativeNativeLogger
+    - Yoga
+  - ReactNativePhotoLibrary/Tests (3.0.156):
+    - hermes-engine
+    - NitroModules
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - ReactNativeNativeLogger
+    - Yoga
   - ReactNativeRangeDownloader (3.0.156):
     - hermes-engine
     - NitroModules
@@ -3274,6 +3324,8 @@ DEPENDENCIES:
   - "ReactNativeNativeLogger (from `../../../node_modules/@onekeyfe/react-native-native-logger`)"
   - "ReactNativePerfMemory (from `../../../node_modules/@onekeyfe/react-native-perf-memory`)"
   - "ReactNativePerfStats (from `../../../node_modules/@onekeyfe/react-native-perf-stats`)"
+  - "ReactNativePhotoLibrary (from `../../../node_modules/@onekeyfe/react-native-photo-library`)"
+  - "ReactNativePhotoLibrary/Tests (from `../../../node_modules/@onekeyfe/react-native-photo-library`)"
   - "ReactNativeRangeDownloader (from `../../../node_modules/@onekeyfe/react-native-range-downloader`)"
   - "ReactNativeSplashScreen (from `../../../node_modules/@onekeyfe/react-native-splash-screen`)"
   - "ReactNativeZipArchive (from `../../../node_modules/@onekeyfe/react-native-zip-archive`)"
@@ -3520,6 +3572,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/@onekeyfe/react-native-perf-memory"
   ReactNativePerfStats:
     :path: "../../../node_modules/@onekeyfe/react-native-perf-stats"
+  ReactNativePhotoLibrary:
+    :path: "../../../node_modules/@onekeyfe/react-native-photo-library"
   ReactNativeRangeDownloader:
     :path: "../../../node_modules/@onekeyfe/react-native-range-downloader"
   ReactNativeSplashScreen:
@@ -3657,6 +3711,7 @@ SPEC CHECKSUMS:
   ReactNativeNativeLogger: a65544512307eaa7d837231f1e8e5dd81f6f3924
   ReactNativePerfMemory: b524752f61b1ffd81f6205f608d82862619e257f
   ReactNativePerfStats: f9c8c23d82c4ce4141647327d6e6e3c1b4e6a75e
+  ReactNativePhotoLibrary: c40d933f478310627d7fdc20087399a95d33edcb
   ReactNativeRangeDownloader: 82f0be0eb546c9310fd34e7aabdd4baf0932f2f5
   ReactNativeSplashScreen: 5fe6902a2e6e6dc6d909ee12fcdb89a2311297d7
   ReactNativeZipArchive: 2f6962133b7662e7254c55bddd79eb96310ee574
@@ -3673,6 +3728,6 @@ SPEC CHECKSUMS:
   TcpSocket: 2725be5301911fb4a3bcc4f85915dcacfd0ccfb1
   Yoga: 9891cfb1c680f64de9c41b09e7453dea33454d2b
 
-PODFILE CHECKSUM: b2bb84f7c7788668bb7ea7f800007f339ea82265
+PODFILE CHECKSUM: 3225b9e440a4f78064b5bd72c7daec02cc8f6d70
 
 COCOAPODS: 1.16.2

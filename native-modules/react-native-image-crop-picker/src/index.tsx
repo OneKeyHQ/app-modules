@@ -3,7 +3,6 @@ import { NitroModules } from 'react-native-nitro-modules';
 import type {
   ImageCropPickerOptions,
   PickedImage,
-  PhotoSavePermission,
   ReactNativeImageCropPicker as ReactNativeImageCropPickerSpec,
 } from './ReactNativeImageCropPicker.nitro';
 
@@ -32,7 +31,6 @@ const ERROR_CODES = [
   'E_CANNOT_SAVE_IMAGE',
   'E_LOW_MEMORY_ERROR',
   'E_ERROR_WHILE_CLEANING_FILES',
-  'E_NO_LIBRARY_PERMISSION',
 ] as const;
 
 export type ImageCropPickerErrorCode =
@@ -126,38 +124,11 @@ export async function cleanSingle(path: string): Promise<void> {
   }
 }
 
-export async function getSavePermission(): Promise<PhotoSavePermission> {
-  try {
-    return await getReactNativeImageCropPicker().getSavePermission();
-  } catch (error) {
-    throw toImageCropPickerError(error);
-  }
-}
-
-export async function requestSavePermission(): Promise<PhotoSavePermission> {
-  try {
-    return await getReactNativeImageCropPicker().requestSavePermission();
-  } catch (error) {
-    throw toImageCropPickerError(error);
-  }
-}
-
-export async function saveToLibrary(path: string): Promise<void> {
-  try {
-    await getReactNativeImageCropPicker().saveToLibrary(path);
-  } catch (error) {
-    throw toImageCropPickerError(error);
-  }
-}
-
 const ImageCropPicker = {
   openPicker,
   openCropper,
   clean,
   cleanSingle,
-  getSavePermission,
-  requestSavePermission,
-  saveToLibrary,
 };
 
 export default ImageCropPicker;

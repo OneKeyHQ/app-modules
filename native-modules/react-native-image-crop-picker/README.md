@@ -11,33 +11,19 @@ Both platforms show the same cropper screen, drawn by this package rather than b
 
 The behavioral contract and pending acceptance cases are in [docs/SPEC.md](docs/SPEC.md).
 
-## Original selection and saving
+## Original selection
 
 ```ts
 const image = await ImageCropPicker.openPicker({ preserveOriginal: true });
-const permission = await ImageCropPicker.requestSavePermission();
-if (permission.status === 'granted') {
-  await ImageCropPicker.saveToLibrary(image.path);
-}
+// Read the selected file before cleaning it.
 await ImageCropPicker.cleanSingle(image.path);
 ```
 
 Original selection preserves the selected representation without JPEG conversion.
-Compression options are ignored unless cropping is enabled. Original selections
-and save sources are limited to 64 MiB. Results retain their MIME type and use
-module-owned temporary files. Clean them only after consumers finish reading.
-
-`getSavePermission()` queries saving access; `requestSavePermission()` requests
-only iOS add-only access or Android API 26-28 write access. Android API 29+ needs
-no storage permission. A denied response with `canAskAgain: false` requires the
-consumer to guide the user to Settings. Declare `NSPhotoLibraryAddUsageDescription`
-on iOS. Do not infer that other libraries no longer need the read-purpose string.
-
-`saveToLibrary(path)` accepts a local absolute path or file:// URI, leaves the
-source intact, and resolves only once the photo is saved. It does not request
-permission implicitly or read back assets. Modern Android uses MediaStore; API
-26-28 writes Pictures/OneKey and scans the resulting file. Permission denial
-rejects `E_NO_LIBRARY_PERMISSION`.
+Compression options are ignored unless cropping is enabled. Originals are limited
+to 64 MiB. Saving and its authorization are provided by the separate
+`@onekeyfe/react-native-photo-library`; this picker exposes neither saving nor
+photo-library permission APIs.
 
 ## Installation
 

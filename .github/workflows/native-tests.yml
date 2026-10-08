@@ -33,7 +33,7 @@ jobs:
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'cd "$(dirname "$0")" && yarn nitrogen > /dev/null'
-      - name: Run nine Android unit test suites and build capture protection
+      - name: Run nine Android unit test suites and build capture protection and photo saving
         working-directory: example/react-native/android
         run: |
           ./gradlew --continue --no-daemon --max-workers=2 --console=plain \
@@ -46,7 +46,8 @@ jobs:
             :onekeyfe_react-native-image:testDebugUnitTest \
             :onekeyfe_react-native-native-list:testDebugUnitTest \
             :onekeyfe_react-native-text-input:testDebugUnitTest \
-            :onekeyfe_react-native-capture-protection:assembleDebug
+            :onekeyfe_react-native-capture-protection:assembleDebug \
+            :onekeyfe_react-native-photo-library:assembleDebug
       - name: Verify every Android suite executed tests
         if: always()
         run: |
@@ -210,13 +211,13 @@ jobs:
           end
           puts 'Podfile.lock matches: only the Hermes checksum and Specs CDN URL may differ'
           RUBY
-      - name: Run eight pod XCTest suites on iOS Simulator
+      - name: Run nine pod XCTest suites on iOS Simulator
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
-          schemes=(NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests)
+          schemes=(NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests)
           xcodebuild -list -workspace "$workspace" > artifacts/ios/schemes.log
           for scheme in "${schemes[@]}"; do
             grep -Fxq "        $scheme" artifacts/ios/schemes.log

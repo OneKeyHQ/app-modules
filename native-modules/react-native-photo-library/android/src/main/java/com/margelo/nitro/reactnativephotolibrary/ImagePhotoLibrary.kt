@@ -1,6 +1,9 @@
-package com.margelo.nitro.reactnativeimagecroppicker
+package com.margelo.nitro.reactnativephotolibrary
 
 import android.Manifest
+import android.app.Activity
+import android.graphics.BitmapFactory
+import com.facebook.react.ReactApplication
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
@@ -33,7 +36,26 @@ internal object ImagePhotoLibrary {
   private var permissionPending = false
   private const val REQUESTED = "writePermissionRequested"
 
-  private fun context(): Context = NitroModules.applicationContext ?: throw ImageCropPickerException.noActivity()
+  private fun context(): Context = NitroModules.applicationContext ?: throw PhotoLibraryException.noActivity()
+
+  private fun foregroundActivity(): Activity? {
+    // Nitro's global context can belong to bg; ReactHost owns the UI activity.
+    return (context().applicationContext as? ReactApplication)?.reactHost?.currentReactContext?.currentActivity
+      ?: NitroModules.applicationContext?.currentActivity
+  }
+
+  private fun imageMime(file: File): String {
+    if (!file.isFile || file.length() <= 0 || file.length() > 64 * 1024 * 1024) {
+      throw PhotoLibraryException.noImageData()
+    }
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, bounds)
+    val mime = bounds.outMimeType
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || mime?.startsWith("image/") != true) {
+      throw PhotoLibraryException.noImageData()
+    }
+    return mime
+  }
 
   fun permission(): PhotoSavePermission {
     if (Build.VERSION.SDK_INT >= 29) return PhotoSavePermission(PhotoSavePermissionStatus.GRANTED, true)
@@ -43,7 +65,7 @@ internal object ImagePhotoLibrary {
     }
     val requested = context.getSharedPreferences("onekey-photo-library", Context.MODE_PRIVATE).getBoolean(REQUESTED, false)
     if (!requested) return PhotoSavePermission(PhotoSavePermissionStatus.UNDETERMINED, true)
-    val activity = NitroModules.applicationContext?.currentActivity ?: throw ImageCropPickerException.noActivity()
+    val activity = foregroundActivity() ?: throw PhotoLibraryException.noActivity()
     return PhotoSavePermission(
       PhotoSavePermissionStatus.DENIED,
       ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE),
@@ -63,7 +85,7 @@ internal object ImagePhotoLibrary {
     mainHandler.post {
       var launcher: ActivityResultLauncher<String>? = null
       var observer: DefaultLifecycleObserver? = null
-      val activity = NitroModules.applicationContext?.currentActivity as? ComponentActivity
+      val activity = foregroundActivity() as? ComponentActivity
       var finished = false
       var ownsRequest = false
       fun finish(error: Exception? = null) {
@@ -83,17 +105,17 @@ internal object ImagePhotoLibrary {
           return@post
         }
         if (permissionPending) {
-          promise.reject(ImageCropPickerException.inProgress())
+          promise.reject(PhotoLibraryException.inProgress())
           return@post
         }
         if (activity == null || activity.isFinishing || activity.isDestroyed) {
-          promise.reject(ImageCropPickerException.noActivity())
+          promise.reject(PhotoLibraryException.noActivity())
           return@post
         }
         permissionPending = true
         ownsRequest = true
         observer = object : DefaultLifecycleObserver {
-          override fun onDestroy(owner: LifecycleOwner) { finish(ImageCropPickerException.noActivity()) }
+          override fun onDestroy(owner: LifecycleOwner) { finish(PhotoLibraryException.noActivity()) }
         }
         activity.lifecycle.addObserver(observer!!)
         launcher = activity.activityResultRegistry.register(
@@ -119,22 +141,24 @@ internal object ImagePhotoLibrary {
       try {
         val context = context()
         if (Build.VERSION.SDK_INT < 29 && ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-          throw ImageCropPickerException.noLibraryPermission()
+          throw PhotoLibraryException.noLibraryPermission()
         }
         val file = when {
           path.startsWith("/") -> File(path)
-          path.startsWith("file://") -> Uri.parse(path).path?.let { File(it) }
+          path.startsWith("file://") -> Uri.parse(path).let { uri ->
+            if (uri.authority.isNullOrEmpty() || uri.authority == "localhost") uri.path?.let { File(it) } else null
+          }
           else -> null
-        } ?: throw ImageCropPickerException.noImageData()
-        val mime = ImageCropPickerImageProcessor.imageBounds(file).outMimeType
+        } ?: throw PhotoLibraryException.noImageData()
+        val mime = imageMime(file)
         val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "img"
         val name = "onekey-${UUID.randomUUID()}.$extension"
         if (Build.VERSION.SDK_INT >= 29) saveModern(context, file, mime, name) else saveLegacy(context, file, mime, name)
         promise.resolve(Unit)
-      } catch (error: ImageCropPickerException) {
+      } catch (error: PhotoLibraryException) {
         promise.reject(error)
       } catch (error: Exception) {
-        promise.reject(ImageCropPickerException.cannotSaveImage(error))
+        promise.reject(PhotoLibraryException.cannotSaveImage(error))
       }
     }
     return promise
@@ -149,12 +173,12 @@ internal object ImagePhotoLibrary {
       put(MediaStore.Images.Media.IS_PENDING, 1)
     }
     val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-      ?: throw ImageCropPickerException.cannotSaveImage()
+      ?: throw PhotoLibraryException.cannotSaveImage()
     try {
-      val stream = resolver.openOutputStream(uri) ?: throw ImageCropPickerException.cannotSaveImage()
+      val stream = resolver.openOutputStream(uri) ?: throw PhotoLibraryException.cannotSaveImage()
       stream.use { output -> source.inputStream().use { it.copyTo(output) } }
       val published = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
-      if (resolver.update(uri, published, null, null) != 1) throw ImageCropPickerException.cannotSaveImage()
+      if (resolver.update(uri, published, null, null) != 1) throw PhotoLibraryException.cannotSaveImage()
     } catch (error: Exception) {
       try { resolver.delete(uri, null, null) } catch (_: Exception) { }
       throw error
@@ -164,7 +188,7 @@ internal object ImagePhotoLibrary {
   @Suppress("DEPRECATION")
   private fun saveLegacy(context: Context, source: File, mime: String, name: String) {
     val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "OneKey")
-    if (!directory.isDirectory && !directory.mkdirs()) throw ImageCropPickerException.cannotSaveImage()
+    if (!directory.isDirectory && !directory.mkdirs()) throw PhotoLibraryException.cannotSaveImage()
     val destination = File(directory, name)
     try {
       source.inputStream().use { input -> destination.outputStream().use { input.copyTo(it) } }
@@ -174,7 +198,7 @@ internal object ImagePhotoLibrary {
         savedUri = uri
         scanned.countDown()
       }
-      if (!scanned.await(30, TimeUnit.SECONDS) || savedUri == null) throw ImageCropPickerException.cannotSaveImage()
+      if (!scanned.await(30, TimeUnit.SECONDS) || savedUri == null) throw PhotoLibraryException.cannotSaveImage()
     } catch (error: Exception) {
       destination.delete()
       throw error

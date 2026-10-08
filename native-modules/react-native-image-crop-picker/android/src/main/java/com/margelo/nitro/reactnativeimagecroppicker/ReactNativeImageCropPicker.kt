@@ -3,6 +3,7 @@ package com.margelo.nitro.reactnativeimagecroppicker
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.ComponentActivity
+import com.facebook.react.ReactApplication
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
@@ -35,12 +36,6 @@ class ReactNativeImageCropPicker : HybridReactNativeImageCropPickerSpec() {
   override fun cleanSingle(path: String): Promise<Unit> =
     Promise.parallel { ImageCropPickerImageProcessor.removeFile(path) }
 
-  override fun getSavePermission(): Promise<PhotoSavePermission> = ImagePhotoLibrary.getPermission()
-
-  override fun requestSavePermission(): Promise<PhotoSavePermission> = ImagePhotoLibrary.requestPermission()
-
-  override fun saveToLibrary(path: String): Promise<Unit> = ImagePhotoLibrary.save(path)
-
   private fun startSession(
     mode: ImageCropPickerSession.Mode,
     config: ImageCropPickerConfig,
@@ -56,7 +51,9 @@ class ReactNativeImageCropPicker : HybridReactNativeImageCropPickerSpec() {
         session.abandon()
       }
 
-      val activity = NitroModules.applicationContext?.currentActivity as? ComponentActivity
+      val context = NitroModules.applicationContext
+      val activity = ((context?.applicationContext as? ReactApplication)?.reactHost?.currentReactContext?.currentActivity
+        ?: context?.currentActivity) as? ComponentActivity
       if (activity == null || activity.isFinishing || activity.isDestroyed) {
         promise.reject(ImageCropPickerException.noActivity())
         return@post
