@@ -1,5 +1,41 @@
 # @onekeyfe/react-native-tcp-socket
 
+Native TCP connection diagnostics for OneKey on iOS and Android. The package
+provides a promise-based connection attempt and a small legacy-style wrapper;
+it is not a general-purpose streaming socket implementation.
+
+## Installation and usage
+
+```sh
+yarn add @onekeyfe/react-native-tcp-socket
+```
+
+Install the application's iOS pods and rebuild the native application.
+
+```ts
+import { NativeTcpSocket } from '@onekeyfe/react-native-tcp-socket';
+
+const connectionMs = await NativeTcpSocket.connectWithTimeout('example.com', 443, 5000);
+```
+
+## API and wrapper limits
+
+`connectWithTimeout(host, port, timeoutMs)` resolves with connection time in
+milliseconds and rejects on connection failure. Callers own retry and how the
+measurement is interpreted. A TCP connection does not verify TLS or an
+application-level protocol.
+
+The default export offers `createConnection(options, connectCallback)` with
+`on('error', handler)`, `on('timeout', handler)` and `destroy()`. Its default
+timeout is 5000 ms. `destroy()` suppresses later wrapper callbacks; it does not
+expose native cancellation or a readable/writable socket stream.
+
+Do not assume Node.js socket methods are available on that wrapper. See
+[src/index.tsx](src/index.tsx) for its behavior and
+[src/NativeTcpSocket.ts](src/NativeTcpSocket.ts) for the native signature.
+
+## Upstream attribution
+
 First, a sincere thank-you to Rapsssito and the
 `react-native-tcp-socket` maintainers for their excellent work 🙏
 

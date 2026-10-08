@@ -1,7 +1,7 @@
 {
   "name": "@onekeyfe/react-native-skeleton",
   "version": "3.0.156",
-  "description": "react-native-skeleton",
+  "description": "Native shimmer loading placeholder for OneKey on iOS and Android",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
@@ -50,14 +50,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/native-views/react-native-skeleton.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-views/react-native-skeleton"
   },
   "author": "@onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/native-views/react-native-skeleton/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/native-views/react-native-skeleton#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-skeleton#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

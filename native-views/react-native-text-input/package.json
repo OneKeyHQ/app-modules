@@ -39,7 +39,10 @@
     "text-input",
     "paste"
   ],
-  "homepage": "https://github.com/OneKeyHQ/app-modules#readme",
+  "bugs": {
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
+  },
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-text-input#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/OneKeyHQ/app-modules.git",

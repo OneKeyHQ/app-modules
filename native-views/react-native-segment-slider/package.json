@@ -49,14 +49,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/native-views/react-native-segment-slider.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-views/react-native-segment-slider"
   },
   "author": "@onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/native-views/react-native-segment-slider/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/native-views/react-native-segment-slider#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-segment-slider#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
