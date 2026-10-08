@@ -48,7 +48,7 @@ internal class NativeOverlayHost private constructor(
   )
   private val backCallback = object : OnBackPressedCallback(false) {
     override fun handleOnBackPressed() {
-      topBlockingEntry()?.let { entry ->
+      topBackEntry()?.let { entry ->
         if (entry.dismissOnBackPress) entry.onRequestDismiss?.invoke("back")
       }
     }
@@ -66,7 +66,7 @@ internal class NativeOverlayHost private constructor(
    * predictive back, so the dispatcher alone never runs first.
    */
   fun handleBackKey(event: KeyEvent): Boolean {
-    val entry = topBlockingEntry() ?: return false
+    val entry = topBackEntry() ?: return false
     if (event.action == KeyEvent.ACTION_UP && !event.isCanceled && entry.dismissOnBackPress) {
       entry.onRequestDismiss?.invoke("back")
     }
@@ -108,14 +108,14 @@ internal class NativeOverlayHost private constructor(
   }
 
   fun onEntriesChanged() {
-    val hasBlocking = topBlockingEntry() != null
-    if (hasBlocking && !backCallback.isEnabled) {
+    val hasBackEntry = topBackEntry() != null
+    if (hasBackEntry && !backCallback.isEnabled) {
       // The most recently added callback wins; re-add so ours runs before
       // ReactActivity's and react-native-screens' callbacks.
       backCallback.remove()
       (activity as? ComponentActivity)?.onBackPressedDispatcher?.addCallback(backCallback)
     }
-    backCallback.isEnabled = hasBlocking
+    backCallback.isEnabled = hasBackEntry
     updateAccessibility()
   }
 
@@ -133,11 +133,11 @@ internal class NativeOverlayHost private constructor(
     }
 
   /** Global overlays win; otherwise the topmost visible page overlay. */
-  private fun topBlockingEntry(): NativeOverlayEntryRootView? =
-    orderedEntries().lastOrNull { it.blocking && it.isShownForInput }
+  private fun topBackEntry(): NativeOverlayEntryRootView? =
+    orderedEntries().lastOrNull { (it.blocking || it.dismissOnBackPress) && it.isShownForInput }
       ?: shownPageHosts()
         .flatMap { it.shownEntries() }
-        .lastOrNull { it.blocking }
+        .lastOrNull { it.blocking || it.dismissOnBackPress }
 
   private fun shownPageHosts(): List<NativeOverlayPageHostView> =
     NativeOverlayPageHostView.allHosts().filter {

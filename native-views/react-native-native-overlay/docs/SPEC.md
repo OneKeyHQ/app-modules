@@ -136,6 +136,11 @@ visible)`, `removePage(ownerKey)`.
 
 - `usePageOverlayHost()` resolves `hostKey` and `ownerKey` from navigation
   context.
+- A declarative page overlay keeps `scope: 'page'` while either key is
+  unavailable. It does not request or present an entry until both keys are
+  available; becoming ready while visible requests it in the page lane.
+  Hiding or unmounting before readiness creates no entry or close callback.
+  Direct store requests still throw for missing page keys.
 - `useInPageDialog`, `useInModalDialog`, and `useInTabDialog` become aliases of
   page scope. Tab scope is removed.
 
@@ -248,7 +253,7 @@ their existing values and does not publish a release.
 | Page host                                  | Fabric `PageOverlayHost` as the last child of the root-route screen. Custom-drawn sheet, because UIKit sheets cannot be page-scoped.                         | The same host inside the root-route screen. The ReactRootView already dispatches touches, so no nested RootView.                                                                                                                                                                                                                                                                                                        | `position: absolute` host inside the root-route card.                                                               |
 | Header / tab bar coverage (page)           | Covered: the host is above the tab controller and navigation bars.                                                                                           | Covered.                                                                                                                                                                                                                                                                                                                                                                                                                | Covered.                                                                                                            |
 | Touch passthrough (toast, debug, box-none) | `hitTest` returns nil on the window or root view.                                                                                                            | A non-blocking entry hit-tests its React content with `TouchTargetHelper` (honoring `box-none`) and falls through to the FrameLayout sibling on a miss.                                                                                                                                                                                                                                                                 | `pointer-events: none` root, `auto` per entry.                                                                      |
-| Back / Escape                              | Escape via `accessibilityPerformEscape`. The interactive pop gesture is disabled while a blocking page overlay is shown.                                     | A `Window.Callback` wrapper consumes `KEYCODE_BACK` while a blocking overlay is shown. `ReactActivity.onBackPressed` hands back to JS BackHandler (react-navigation) before the `OnBackPressedDispatcher`, and the app opts out of predictive back, so a dispatcher callback alone never runs first. The dispatcher callback is kept for the predictive-back path. The IME still gets back first to close the keyboard. | Capture-phase `keydown` that ignores IME composition.                                                               |
+| Back / Escape                              | Escape via `accessibilityPerformEscape`. The interactive pop gesture is disabled while a blocking page overlay is shown.                                     | A `Window.Callback` wrapper consumes `KEYCODE_BACK` for the topmost input-ready blocking or dismissible overlay. `ReactActivity.onBackPressed` hands back to JS BackHandler (react-navigation) before the `OnBackPressedDispatcher`, and the app opts out of predictive back, so a dispatcher callback alone never runs first. The dispatcher callback is kept for the predictive-back path. The IME still gets back first to close the keyboard. | Capture-phase `keydown` that ignores IME composition.                                                               |
 | Modality / accessibility                   | `accessibilityViewIsModal` on the blocking level window; `.screenChanged` posted on present.                                                                 | `IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS` on the content below.                                                                                                                                                                                                                                                                                                                                                 | `inert` on the app root and lower layers, `role=dialog`, `aria-modal`, focus trap and restore.                      |
 | Keyboard                                   | System sheet avoidance; `keyboardLayoutGuide` for custom presentations. The main window regains key status on dismiss.                                       | `WindowInsetsAnimationCompat` per sheet (the app uses `adjustPan`).                                                                                                                                                                                                                                                                                                                                                     | `visualViewport`.                                                                                                   |
 | Animation engine                           | `UIViewPropertyAnimator` + `UISpringTimingParameters(mass:stiffness:damping:)`, which maps 1:1 and supports damping ratio > 1.                               | `SpringAnimation` with `stiffness = k/m` and `dampingRatio`; `PathInterpolator` for timing curves.                                                                                                                                                                                                                                                                                                                      | WAAPI `element.animate`. Timing presets use `cubic-bezier`; custom springs use `linear()`.                          |
@@ -320,6 +325,13 @@ navigation remains a separate runtime acceptance item.
 
 Automated (P0):
 
+- `src/__tests__/useOverlayController.test.ts` exercises the actual hook and
+  page scope providers: missing/empty keys, delayed readiness, one request,
+  page suspension/removal, hiding/unmounting before readiness and global scope.
+- `NativeOverlayBackTest` exercises the Android host's key interceptor and
+  Back dispatcher with actual entry/page views: dismissible non-blockers,
+  blockers, input readiness, canceled key-up, global/page precedence,
+  suspension and blocking-only accessibility isolation.
 - `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
   DOM host and verifies late suspension, level ordering and restoration after
   the blocking entry is removed.
@@ -355,7 +367,10 @@ Runtime matrix, required per platform before migrating callers (P1–P3):
    - switch tab and come back: it restores;
    - remove the page: it closes with `page-removed`;
    - the native header and tab bar are covered.
-5. Back/Escape reaches the topmost blocking overlay; the lock swallows it.
+5. Back/Escape reaches the topmost input-ready overlay that is blocking or
+   explicitly dismissible, global before page. A non-dismissible blocker
+   consumes Back without closing; a passive non-blocking entry passes through.
+   Accessibility isolation remains blocking-only. The lock swallows Back.
 6. Keyboard: an input in a global sheet, a page sheet and a secure dialog.
 7. iOS: a system picker opened from an overlay appears above it.
 8. Split view: page overlays stay in their own pane.
@@ -386,8 +401,8 @@ P3 page scope notes:
   their global sheet implementation inside the page host.
 - Android back also resolves page entries: global overlays first, then the
   topmost visible page overlay.
-- A page request without a resolvable host or owner falls back to global
-  scope.
+- A declarative page overlay waits for a resolvable host and owner; it never
+  falls back to global scope. Direct store requests require both keys.
 
 P2 sheet notes:
 

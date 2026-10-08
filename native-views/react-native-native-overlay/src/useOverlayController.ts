@@ -69,9 +69,7 @@ export function useOverlayController(
   const pageScope = useOverlayPageScope();
   const hostKey = props.hostKey ?? pageScope.hostKey;
   const ownerKey = props.ownerKey ?? pageScope.ownerKey;
-  // Without a host or owner there is nowhere to anchor a page overlay.
-  const scope =
-    props.scope === 'page' && hostKey && ownerKey ? 'page' : 'global';
+  const scope = props.scope ?? 'global';
   const baseId = useId();
   const cycleRef = useRef(0);
   const [entryId, setEntryId] = useState<string | undefined>();
@@ -105,6 +103,11 @@ export function useOverlayController(
     if (entryId || closedByStoreRef.current) {
       return;
     }
+    // Page context can become ready after the caller first opens the overlay.
+    // Keep the request in its page boundary instead of presenting globally.
+    if (scope === 'page' && (!hostKey || !ownerKey)) {
+      return;
+    }
     cycleRef.current += 1;
     const id = `overlay-view${baseId}${cycleRef.current}`;
     overlayStore.request(
@@ -134,7 +137,7 @@ export function useOverlayController(
     setEntryId(id);
     // Level / strategy changes apply to the next open cycle only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, entryId]);
+  }, [visible, entryId, scope, hostKey, ownerKey]);
 
   useEffect(
     () => () => {
