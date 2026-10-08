@@ -88,7 +88,6 @@ async function main() {
   const manifests = [
     ["apps/mobile/package.json", ["dependencies"]],
     ["packages/components/package.json", ["dependencies"]],
-    ["packages/kit/package.json", ["dependencies"]],
     ["package.json", ["dependencies", "resolutions"]],
   ];
   for (const [relativePath, sections] of manifests) {
