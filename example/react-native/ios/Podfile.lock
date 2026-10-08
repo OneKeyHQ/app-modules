@@ -2607,6 +2607,56 @@ PODS:
     - ReactNativeRangeDownloader
     - SSZipArchive (>= 2.5.4)
     - Yoga
+  - ReactNativeCaptureProtection (3.0.156):
+    - hermes-engine
+    - NitroModules
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - ReactNativeNativeLogger
+    - Yoga
+  - ReactNativeCaptureProtection/Tests (3.0.156):
+    - hermes-engine
+    - NitroModules
+    - RCTRequired
+    - RCTTypeSafety
+    - React-callinvoker
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - ReactNativeNativeLogger
+    - Yoga
   - ReactNativeCheckBiometricAuthChanged (3.0.156):
     - hermes-engine
     - NitroModules
@@ -3212,6 +3262,8 @@ DEPENDENCIES:
   - "ReactNativeBundleCrypto (from `../../../node_modules/@onekeyfe/react-native-bundle-crypto`)"
   - "ReactNativeBundleCrypto/Tests (from `../../../node_modules/@onekeyfe/react-native-bundle-crypto`)"
   - "ReactNativeBundleUpdate (from `../../../node_modules/@onekeyfe/react-native-bundle-update`)"
+  - "ReactNativeCaptureProtection (from `../../../node_modules/@onekeyfe/react-native-capture-protection`)"
+  - "ReactNativeCaptureProtection/Tests (from `../../../node_modules/@onekeyfe/react-native-capture-protection`)"
   - "ReactNativeCheckBiometricAuthChanged (from `../../../node_modules/@onekeyfe/react-native-check-biometric-auth-changed`)"
   - ReactNativeDependencies (from `../../../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
   - "ReactNativeDeviceUtils (from `../../../node_modules/@onekeyfe/react-native-device-utils`)"
@@ -3448,6 +3500,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/@onekeyfe/react-native-bundle-crypto"
   ReactNativeBundleUpdate:
     :path: "../../../node_modules/@onekeyfe/react-native-bundle-update"
+  ReactNativeCaptureProtection:
+    :path: "../../../node_modules/@onekeyfe/react-native-capture-protection"
   ReactNativeCheckBiometricAuthChanged:
     :path: "../../../node_modules/@onekeyfe/react-native-check-biometric-auth-changed"
   ReactNativeDependencies:
@@ -3593,6 +3647,7 @@ SPEC CHECKSUMS:
   ReactNativeAppUpdate: 4880dff75e3bf33305882760cccaec0bccff2d21
   ReactNativeBundleCrypto: b156193d3236705100440499df94fbcdf1740e6e
   ReactNativeBundleUpdate: f07c516f08f30dfecc7c36c63495ca984642442c
+  ReactNativeCaptureProtection: 0c3a886488e836714b7fb0de351ae6c11abc4d5b
   ReactNativeCheckBiometricAuthChanged: 6b9c67db94c2a3b9f8454710d7a1eaf4e3b3e2a0
   ReactNativeDependencies: 2bd6854ade79bf1b60586d1ab7813a389df1b6bf
   ReactNativeDeviceUtils: 5b6d250ff5b8c8ab60412d65c9f264e23966a6be
@@ -3618,6 +3673,6 @@ SPEC CHECKSUMS:
   TcpSocket: 2725be5301911fb4a3bcc4f85915dcacfd0ccfb1
   Yoga: 9891cfb1c680f64de9c41b09e7453dea33454d2b
 
-PODFILE CHECKSUM: c5a42e803bf7ca99f5687ce3fee051c4ad21f041
+PODFILE CHECKSUM: b2bb84f7c7788668bb7ea7f800007f339ea82265
 
 COCOAPODS: 1.16.2

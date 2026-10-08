@@ -48,6 +48,7 @@ target 'example' do
   pod 'OneKeyTextInput', :path => '../../../node_modules/@onekeyfe/react-native-text-input', :testspecs => ['Tests']
   pod 'react-native-native-list', :path => '../../../node_modules/@onekeyfe/react-native-native-list', :testspecs => ['Tests']
   pod 'ReactNativeBundleCrypto', :path => '../../../node_modules/@onekeyfe/react-native-bundle-crypto', :testspecs => ['Tests']
+  pod 'ReactNativeCaptureProtection', :path => '../../../node_modules/@onekeyfe/react-native-capture-protection', :testspecs => ['Tests']
   pod 'ReactNativeImageCropPicker', :path => '../../../node_modules/@onekeyfe/react-native-image-crop-picker', :testspecs => ['Tests']
 
   # Copy optional offline TradingView chart material into the app bundle as
