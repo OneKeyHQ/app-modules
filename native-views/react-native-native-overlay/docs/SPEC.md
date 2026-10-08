@@ -245,6 +245,17 @@ their existing values and does not publish a release.
 
 ## 5.6 Platform contract
 
+### Web keyboard focus containment
+
+The topmost active, unsuspended blocking Web entry MUST contain sequential
+keyboard focus. Tab from its last tabbable child wraps to the first;
+Shift+Tab from its first wraps to the last. From the entry root, focus enters
+the first/last child respectively. With no tabbable children, focus stays on
+the entry root. Disabled, negative-tabindex, hidden and inert subtrees are
+excluded. Positive tabindex values precede ordinary DOM-order tab stops.
+Non-blocking, lower, closing, suspended and parked entries MUST NOT run a
+focus loop. Existing focus entry/restore and Escape policies are unchanged.
+
 | Concern                                    | iOS                                                                                                                                                          | Android                                                                                                                                                                                                                                                                                                                                                                                                                 | Web                                                                                                                 |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Global level host                          | One passthrough `UIWindow` per active level per `UIWindowScene`, ordered by `windowLevel`. `lock` sits above RN Alert (2001).                                | One `OverlayHost` FrameLayout in `android.R.id.content` above the ReactRootView, with one child container per level.                                                                                                                                                                                                                                                                                                    | Sibling `div[data-onekey-layer]` roots under `body`, one z-index band per level (`OVERLAY_WEB_Z_INDEX_BASE`).       |
@@ -325,6 +336,9 @@ navigation remains a separate runtime acceptance item.
 
 Automated (P0):
 
+- `src/__tests__/focusTrap.web.test.ts` mounts real Web overlays and checks
+  both Tab boundaries, root/empty fallback, inaccessible children, positive
+  tabindex order, top-entry precedence, page scope, suspension and parking.
 - `src/__tests__/useOverlayController.test.ts` exercises the actual hook and
   page scope providers: missing/empty keys, delayed readiness, one request,
   page suspension/removal, hiding/unmounting before readiness and global scope.
