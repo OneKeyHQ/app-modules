@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
-import { updateMobileManifest } from "./sync-app-monorepo.mjs";
+import { syncAppMonorepo, updateMobileManifest } from "./sync-app-monorepo.mjs";
 
 const workspaces = [
   { name: "@onekeyfe/react-native-image", version: "3.0.152" },
@@ -147,4 +150,68 @@ test("requires a synchronized app-modules release", () => {
       ]),
     /versions must match/
   );
+});
+
+test("migrates the temporary overlay workspace to its published exact version", () => {
+  const result = updateMobileManifest(
+    JSON.stringify({
+      dependencies: {
+        "@onekeyfe/react-native-native-overlay": "workspace:*",
+        "@onekeyhq/components": "workspace:*",
+      },
+    }),
+    [
+      {
+        name: "@onekeyfe/react-native-native-overlay",
+        version: "3.0.162-alpha.268",
+      },
+    ]
+  );
+  assert.deepEqual(JSON.parse(result.text).dependencies, {
+    "@onekeyfe/react-native-native-overlay": "3.0.162-alpha.268",
+    "@onekeyhq/components": "workspace:*",
+  });
+});
+
+test("does not silently migrate other published development workspaces", () => {
+  assert.throws(
+    () =>
+      updateMobileManifest(
+        JSON.stringify({
+          dependencies: {
+            "@onekeyfe/react-native-image": "workspace:*",
+          },
+        }),
+        workspaces
+      ),
+    /Expected an exact stable or alpha version/
+  );
+});
+
+test("syncs overlay consumers in mobile, components, kit and playground", async () => {
+  const root = await mkdtemp(join(tmpdir(), "overlay-sync-"));
+  const paths = [
+    "apps/mobile/package.json",
+    "packages/components/package.json",
+    "packages/kit/package.json",
+    "apps/playground/package.json",
+    "package.json",
+  ];
+  const name = "@onekeyfe/react-native-native-overlay";
+  try {
+    for (const path of paths) {
+      await mkdir(dirname(join(root, path)), { recursive: true });
+      await writeFile(
+        join(root, path),
+        JSON.stringify({ dependencies: { [name]: "workspace:*" } })
+      );
+    }
+    await syncAppMonorepo(root, [{ name, version: "3.0.162-alpha.268" }]);
+    for (const path of paths) {
+      const manifest = JSON.parse(await readFile(join(root, path), "utf8"));
+      assert.equal(manifest.dependencies[name], "3.0.162-alpha.268");
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

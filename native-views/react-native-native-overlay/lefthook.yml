@@ -1,0 +1,14 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: '*.{js,ts,tsx}'
+      run: yarn lint {staged_files}
+    typecheck:
+      files: git diff --name-only --cached
+      glob: '*.{js,ts,tsx}'
+      run: yarn typecheck
+commit-msg:
+  commands:
+    commitlint:
+      run: npx commitlint --edit {1}
