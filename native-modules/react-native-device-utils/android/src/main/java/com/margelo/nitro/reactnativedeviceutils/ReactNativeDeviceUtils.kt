@@ -43,6 +43,15 @@ private data class NavigationBarAppearance(
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
 
+  override fun getProcessMemory(key: String): String? = ProcessMemoryStore.get(key)
+
+  override fun setProcessMemory(key: String, value: String) = ProcessMemoryStore.set(key, value)
+
+  override fun removeProcessMemory(key: String): Boolean = ProcessMemoryStore.remove(key)
+
+  override fun setProcessMemoryIfAbsent(key: String, value: String): Boolean =
+    ProcessMemoryStore.setIfAbsent(key, value)
+
   /**
    * Foldable device model constants for various manufacturers.
    * Reference: https://storage.googleapis.com/play_public/supported_devices.html

@@ -173,6 +173,24 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         // Android-only system UI.
     }
 
+    // MARK: - Process memory
+
+    func getProcessMemory(key: String) throws -> String? {
+        return ProcessMemoryStore.shared.get(key)
+    }
+
+    func setProcessMemory(key: String, value: String) throws {
+        ProcessMemoryStore.shared.set(key, value)
+    }
+
+    func removeProcessMemory(key: String) throws -> Bool {
+        return ProcessMemoryStore.shared.remove(key)
+    }
+
+    func setProcessMemoryIfAbsent(key: String, value: String) throws -> Bool {
+        return ProcessMemoryStore.shared.setIfAbsent(key, value)
+    }
+
     // MARK: - LaunchOptionsManager
 
     func getLaunchOptions() throws -> Promise<LaunchOptions> {

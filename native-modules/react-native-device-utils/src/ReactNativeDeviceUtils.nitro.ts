@@ -73,6 +73,11 @@ export interface ReactNativeDeviceUtils
   saveDeviceToken(token: string): Promise<void>;
   registerDeviceToken(): Promise<boolean>;
   getStartupTime(): Promise<number>;
+  // Process-owned string Map, shared by all runtimes and never persisted.
+  getProcessMemory(key: string): string | undefined;
+  setProcessMemory(key: string, value: string): void;
+  removeProcessMemory(key: string): boolean;
+  setProcessMemoryIfAbsent(key: string, value: string): boolean;
   // Returns the JSON userInfo of a LOCAL notification the user tapped to launch
   // the (killed) app, then clears it so it is delivered exactly once. Empty
   // string when there is none. iOS-only meaningful; Android returns "".
