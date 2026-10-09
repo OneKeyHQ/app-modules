@@ -3510,6 +3510,8 @@ __metadata:
     eslint: "npm:^9.35.0"
     eslint-config-prettier: "npm:^10.1.8"
     eslint-plugin-prettier: "npm:^5.5.4"
+    expo-crypto: "npm:57.0.1"
+    fast-base64-decode: "npm:2.0.0"
     jest: "npm:^29.7.0"
     lefthook: "npm:^2.0.3"
     nitrogen: "npm:0.37.0"
@@ -3522,6 +3524,7 @@ __metadata:
     turbo: "npm:^2.5.6"
     typescript: "npm:^5.9.2"
   peerDependencies:
+    expo: "*"
     react: "*"
     react-native: "*"
     react-native-nitro-modules: 0.37.0
@@ -8124,6 +8127,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"expo-crypto@npm:57.0.1":
+  version: 57.0.1
+  resolution: "expo-crypto@npm:57.0.1"
+  peerDependencies:
+    expo: "*"
+  checksum: 10/83d954b0a43ceb2eb748102eda1151b8aa73185fd4e5824cda17c4977077866d21493187d1c0e5ca8d053c6a854be31a94339870f5b96295c171bb06a64dae5f
+  languageName: node
+  linkType: hard
+
 "exponential-backoff@npm:^3.1.1":
   version: 3.1.3
   resolution: "exponential-backoff@npm:3.1.3"
@@ -8138,7 +8150,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"fast-base64-decode@npm:*":
+"fast-base64-decode@npm:*, fast-base64-decode@npm:2.0.0":
   version: 2.0.0
   resolution: "fast-base64-decode@npm:2.0.0"
   checksum: 10/e09d7a9cb0727be47d8c78f6fd778e49bd07efe0e53a8aef7e9f289c41229524e1d8cb59538d600338a9c8df8635c7112ba849e3832a05da2e1bcd181ca7d56b

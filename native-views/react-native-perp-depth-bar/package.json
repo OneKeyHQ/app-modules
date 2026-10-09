@@ -1,7 +1,7 @@
 {
   "name": "@onekeyfe/react-native-perp-depth-bar",
   "version": "3.0.163",
-  "description": "react-native-perp-depth-bar",
+  "description": "Native order-book depth bars and bid/ask ratio views for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
@@ -49,14 +49,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/native-views/react-native-perp-depth-bar.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-views/react-native-perp-depth-bar"
   },
   "author": "@onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/native-views/react-native-perp-depth-bar/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/native-views/react-native-perp-depth-bar#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-perp-depth-bar#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

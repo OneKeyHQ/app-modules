@@ -49,11 +49,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-views/react-native-image"
   },
   "author": "@onekeyfe <huanming@onekey.so>",
   "license": "MIT",
-  "homepage": "https://github.com/OneKeyHQ/app-modules",
+  "bugs": {
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
+  },
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-image#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

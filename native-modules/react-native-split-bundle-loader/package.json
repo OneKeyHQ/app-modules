@@ -1,7 +1,7 @@
 {
   "name": "@onekeyfe/react-native-split-bundle-loader",
   "version": "3.0.163",
-  "description": "react-native-split-bundle-loader",
+  "description": "Native split JavaScript bundle context and segment loading for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
@@ -45,14 +45,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-split-bundle-loader.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-split-bundle-loader"
   },
   "author": "@onekeyhq <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/react-native-split-bundle-loader/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-split-bundle-loader#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-split-bundle-loader#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

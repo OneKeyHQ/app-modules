@@ -88,7 +88,7 @@ The behavior of the SNI connect module is governed by a normative,
 platform-agnostic standard that all implementations (iOS, Android, Node/Desktop,
 shared JS adapters, and any future platform) must conform to:
 
-**-> [OneKey SNI Connect Standard (OSCS)](./SPEC.md)**
+**-> [OneKey SNI Connect Standard (OSCS)](https://github.com/OneKeyHQ/app-modules/blob/main/native-modules/react-native-sni-connect/SPEC.md)**
 
 Any change to request validation, destination pinning, TLS validation, redirect
 handling, cancellation, response shape, or cache behavior must be checked

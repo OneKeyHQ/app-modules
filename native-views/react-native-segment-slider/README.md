@@ -64,7 +64,8 @@ const hybridRef = useMemo(
 
 ## Contributing
 
-See the [contributing guide](CONTRIBUTING.md) to learn how to contribute to the repository and the development workflow.
+Follow the repository's
+[native development workflow](https://github.com/OneKeyHQ/app-modules/blob/main/docs/NATIVE_MODULE_DEVELOPMENT.md).
 
 ## License
 

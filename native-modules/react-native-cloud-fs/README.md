@@ -1,7 +1,45 @@
 # @onekeyfe/react-native-cloud-fs
 
+Cloud file access for OneKey React Native applications. The native interface
+supports cloud availability checks, listing, copying, creating and deleting
+files, with iCloud-specific and Google Drive-specific methods.
+
 See the [authorization contract](docs/SPEC.md) for permission boundaries and
 acceptance requirements.
+
+## Installation and usage
+
+```sh
+yarn add @onekeyfe/react-native-cloud-fs
+```
+
+Install the application's iOS pods and rebuild its native binary. The consumer
+must configure its cloud provider, native entitlements and authentication flow.
+Package installation alone does not grant cloud access.
+
+```ts
+import { CloudFs } from '@onekeyfe/react-native-cloud-fs';
+
+const available = await CloudFs.isAvailable();
+```
+
+## API and platforms
+
+Shared methods include `syncCloud`, `listFiles`, `deleteFromCloud`, `fileExists`,
+`copyToCloud` and `createFile`. Their parameters use explicit provider scope,
+paths or file IDs; the application owns those identifiers and file contents.
+
+`getIcloudDocument` is iOS-specific. Android exposes `loginIfNeeded`, `logout`,
+`getGoogleDriveDocument` and `getCurrentlySignedInUserData` for its Google Drive
+integration. Route calls to the appropriate provider and handle promise failures
+such as missing account access or unavailable files.
+
+The package exports both the named `CloudFs` and the default native module.
+See [src/NativeCloudFs.ts](src/NativeCloudFs.ts) for complete option/result shapes.
+A successful availability check does not establish that a later transfer has
+completed or that every requested scope is permitted.
+
+## Upstream attribution
 
 First, a sincere thank-you to the
 `react-native-cloud-fs` maintainers for their excellent work 🙏

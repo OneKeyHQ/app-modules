@@ -1,7 +1,7 @@
 {
   "name": "@onekeyfe/react-native-bundle-update",
   "version": "3.0.163",
-  "description": "react-native-bundle-update",
+  "description": "Native JavaScript bundle download, verification and version management for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
@@ -50,14 +50,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-bundle-update.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-bundle-update"
   },
   "author": "onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/react-native-bundle-update/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-bundle-update#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-bundle-update#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

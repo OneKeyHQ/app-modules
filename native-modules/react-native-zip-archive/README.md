@@ -1,5 +1,43 @@
 # @onekeyfe/react-native-zip-archive
 
+Native ZIP archive operations for OneKey on iOS and Android. The Nitro module
+extracts archives, creates archives from directories or explicit file lists,
+and inspects password protection and uncompressed size.
+
+## Installation and usage
+
+```sh
+yarn add @onekeyfe/react-native-zip-archive react-native-nitro-modules
+```
+
+Install the application's iOS pods and rebuild the native application.
+
+```ts
+import { unzip, getUncompressedSize } from '@onekeyfe/react-native-zip-archive';
+
+const bytes = await getUncompressedSize('/absolute/path/archive.zip');
+const directory = await unzip('/absolute/path/archive.zip', '/absolute/path/output');
+```
+
+## API and caller responsibilities
+
+Named functions include `isPasswordProtected`, `unzip`, `unzipWithPassword`,
+`zipFolder`, `zipFiles` and `getUncompressedSize`. `zip` aliases `zipFolder`;
+`ZipArchive` exposes the underlying Nitro object. Extraction and creation
+methods resolve with the destination path.
+
+`getUncompressedSize` returns bytes, or -1 when inspection fails. File paths are
+local paths rather than remote URLs. The application owns destination selection,
+disk-space budgeting, trust decisions and cleanup after failed operations.
+Archive extraction alone does not verify an update's authenticity or integrity.
+
+Handle promise failures and inspect the destination through the consumer's
+existing validation flow before using extracted content. The full signatures
+are in [src/ReactNativeZipArchive.nitro.ts](src/ReactNativeZipArchive.nitro.ts),
+and [src/index.tsx](src/index.tsx) documents the compatibility exports.
+
+## Upstream attribution
+
 First, a sincere thank-you to Mockingbot and the
 `react-native-zip-archive` maintainers for their excellent work 🙏
 

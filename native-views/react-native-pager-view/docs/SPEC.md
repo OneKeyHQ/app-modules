@@ -453,3 +453,73 @@ The focused policy regression includes nonzero caller left/right/bottom padding,
 nonzero prior native insets, explicit caller padding changes/clear, and initial
 discovery before ownership. Current Home zero-padding behavior is unchanged by
 this ownership guard.
+
+## Weak padding-record cleanup
+
+Status: Implemented. Android detach/reattach acceptance passed on the
+pre-migration host described below. Remove-all and owned NativeScroller cleanup
+have source and focused regression coverage; current-host device acceptance is
+pending.
+
+### Scope and ownership
+
+This specification covers restoring child scroll insets when a collapsible pager
+detaches or removes all React children. Other pager behavior remains documented
+in the package README. Navigation animations belong to the consuming app.
+
+The native host owns its temporary inset changes and original-padding records.
+Android lifecycle callbacks and restoration run on the UI thread. Garbage
+collection can clear weak child references independently of that thread.
+
+### API, lifecycle, and identity
+
+No public props, events, defaults, or serialization formats change. Detaching
+and removing all children must restore the original insets of every still-live
+tracked RecyclerView, native ScrollView, and owned NativeScroller viewport.
+Restoration may remove entries from the tracking maps. Reattaching must remain supported.
+
+Padding records are keyed by native child identity using weak references. The
+host must not retain removed scroll children solely for later cleanup. A cleanup
+snapshot temporarily holds surviving children strongly until restoration ends.
+
+### Platforms and failure handling
+
+Android uses WeakHashMap padding records. Its snapshot must tolerate keys being
+collected between reading the collection size and enumerating it, including
+single-entry and multiple-entry maps. Collected children require no restoration;
+they must not cause NoSuchElementException. Live children must not be skipped
+because restoration changes the map.
+
+iOS uses weak-key NSMapTable records and keyEnumerator.allObjects snapshots in
+restoreDetachedScrollInsets. Its implementation is unchanged. Web has no Android
+native-padding records and is unaffected.
+
+### Resource budget
+
+Cleanup performs one snapshot and one restoration per surviving tracked child
+on the UI thread. Temporary storage is proportional to the existing padding
+records; no new persistent cache, retry, background task, or bridge traffic is
+introduced. This change makes no frame-rate claim.
+
+### Conformance and acceptance
+
+- Source: android/src/main/java/com/reactnativepagerview/CollapsiblePagerHost.kt,
+  removeAllReactChildren and onDetachedFromWindow.
+- Focused JVM regression: tests/kotlin/WeakPaddingSnapshotTest.kt checks a
+  shrinking weak-key collection and restoration that removes snapshot entries.
+- The same regression passed seven assertions on Android 36 ART using Kotlin
+  2.1.20. Compile it without additional dependencies, then run its main function.
+- Android acceptance: build the native host, repeatedly navigate from a populated
+  Market pager into stock/token details and back, and exercise modal dismissal.
+  Check native fatal logs and pager scroll/header state after returning.
+- Runtime evidence on 2026-10-08 against the pre-migration host (1e1809509):
+  four NVDA detail visits and gesture returns,
+  BTC detail, quick settings Sheet and chart settings modal dismissal, Market
+  Perps tab entry/return, and header collapse/expand passed. The app retained its
+  PID and produced no app-native fatal crash during this run.
+- Source and JVM checks do not establish native device acceptance or iOS visual
+  parity. Update runtime status only after the actual app has been exercised.
+
+The newly merged NativeScroller viewport tracking uses the same weak-key
+snapshot rule. Its cleanup has source and focused regression coverage; the
+pre-migration runtime checks above do not establish its device acceptance.

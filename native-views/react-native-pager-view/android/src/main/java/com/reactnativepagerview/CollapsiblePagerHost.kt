@@ -364,13 +364,14 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   fun removeAllReactChildren() {
     releaseRefreshForeground()
     detachPrimaryScrollObserver()
-    for (recycler in originalRecyclerPadding.keys.toList()) {
+    // Weak keys may disappear after size is read; Collection.toArray tolerates this.
+    for (recycler in originalRecyclerPadding.keys.toTypedArray()) {
       restoreRecyclerInsets(recycler)
     }
-    for (scroller in originalScrollerPadding.keys.toList()) {
+    for (scroller in originalScrollerPadding.keys.toTypedArray()) {
       restoreNativeScrollerInsets(scroller)
     }
-    for (scroller in ownedScrollerKeys.keys.toList()) restoreOwnedScrollerInsets(scroller)
+    for (scroller in ownedScrollerKeys.keys.toTypedArray()) restoreOwnedScrollerInsets(scroller)
     headerView?.let { view -> super.removeView(view) }
     stickyHeaderView?.let { view -> super.removeView(view) }
     headerView = null
@@ -1504,13 +1505,14 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     nestedNativeGestureStarted = false
     viewTreeObserver.removeOnPreDrawListener(pageContentLayoutListener)
     detachPrimaryScrollObserver()
-    for (recycler in originalRecyclerPadding.keys.toList()) {
+    // Snapshot live keys before restoration removes their padding records.
+    for (recycler in originalRecyclerPadding.keys.toTypedArray()) {
       restoreRecyclerInsets(recycler)
     }
-    for (scroller in originalScrollerPadding.keys.toList()) {
+    for (scroller in originalScrollerPadding.keys.toTypedArray()) {
       restoreNativeScrollerInsets(scroller)
     }
-    for (scroller in ownedScrollerKeys.keys.toList()) restoreOwnedScrollerInsets(scroller)
+    for (scroller in ownedScrollerKeys.keys.toTypedArray()) restoreOwnedScrollerInsets(scroller)
     log(
       "host-detach generation=$attachmentGeneration inner=$selectedPage " +
         "outer=${outerPagerIndex()} nativePages=${adapter.itemCount}",

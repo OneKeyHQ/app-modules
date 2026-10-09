@@ -49,11 +49,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nicholasxuu/app-modules.git",
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
     "directory": "native-views/react-native-tab-view"
   },
   "author": "OneKey",
-  "homepage": "https://github.com/nicholasxuu/app-modules#readme",
+  "bugs": {
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
+  },
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-tab-view#readme",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
