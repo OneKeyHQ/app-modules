@@ -45,6 +45,7 @@ cross-platform guarantee that a service or hardware feature is available.
 
 See [src/ReactNativeDeviceUtils.nitro.ts](src/ReactNativeDeviceUtils.nitro.ts)
 for the complete signatures, enum values and platform notes.
+See [docs/SPEC.md](docs/SPEC.md) for the InMemoryStore contract and acceptance status.
 
 ## In-memory store
 
@@ -63,10 +64,18 @@ the same native lock. A module recreation, JS reload, or main/background runtime
 recreation retains the same native Map. Process exit discards it. No data is
 persisted, and there is no implicit reset on React lifecycle events.
 
+Keys use exact UTF-8 identity, without Unicode normalization. The store holds at
+most 128 entries; keys are limited to 256 UTF-8 bytes and values to 4096 bytes.
+Overlong arguments or a new key at capacity throw synchronously without changing
+the Map. Existing keys can still be replaced or removed; no entry is evicted.
+Both write methods validate their arguments even when the key already exists.
+
 Use namespaced keys. For startup reporting, only main UI may claim
 `analytics:startup:jsReadyTime` or `analytics:startup:uiVisibleTime`. Claim and
 enqueue synchronously; remove the key if local enqueue throws. Keep the key after
 enqueue succeeds; network delivery remains the existing analytics path's job.
+A pending JS logger queue can still lose entries on runtime loss or later queue
+errors; acceptance into that queue does not guarantee delivery.
 
 This API requires a rebuilt native host containing the updated module. It is not
 an OTA-only change. Desktop/web/extension are not implemented by this package.

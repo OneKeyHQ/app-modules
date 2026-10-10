@@ -4,34 +4,66 @@ import Foundation
 // clears it; no value holds a JS object or writes to persistent storage.
 final class InMemoryStore {
     static let shared = InMemoryStore()
+    private static let maxEntries = 128
+    private static let maxKeyBytes = 256
+    private static let maxValueBytes = 4096
     private let lock = NSLock()
-    private var values: [String: String] = [:]
+    // Swift String equality normalizes Unicode; Data preserves exact key bytes.
+    private var values: [Data: String] = [:]
 
     private init() {}
 
-    func get(_ key: String) -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return values[key]
+    private func keyData(_ key: String) throws -> Data {
+        guard key.utf8.prefix(Self.maxKeyBytes + 1).count <= Self.maxKeyBytes else {
+            throw budgetError("InMemoryStore key exceeds 256 UTF-8 bytes")
+        }
+        return Data(key.utf8)
     }
 
-    func set(_ key: String, _ value: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        values[key] = value
+    private func validateValue(_ value: String) throws {
+        guard value.utf8.prefix(Self.maxValueBytes + 1).count <= Self.maxValueBytes else {
+            throw budgetError("InMemoryStore value exceeds 4096 UTF-8 bytes")
+        }
     }
 
-    func remove(_ key: String) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return values.removeValue(forKey: key) != nil
+    private func budgetError(_ message: String) -> NSError {
+        return NSError(domain: "InMemoryStore", code: 1,
+                       userInfo: [NSLocalizedDescriptionKey: message])
     }
 
-    func setIfAbsent(_ key: String, _ value: String) -> Bool {
+    func get(_ key: String) throws -> String? {
         lock.lock()
         defer { lock.unlock() }
-        guard values[key] == nil else { return false }
-        values[key] = value
+        return values[try keyData(key)]
+    }
+
+    func set(_ key: String, _ value: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let data = try keyData(key)
+        try validateValue(value)
+        guard values[data] != nil || values.count < Self.maxEntries else {
+            throw budgetError("InMemoryStore capacity exceeds 128 entries")
+        }
+        values[data] = value
+    }
+
+    func remove(_ key: String) throws -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return values.removeValue(forKey: try keyData(key)) != nil
+    }
+
+    func setIfAbsent(_ key: String, _ value: String) throws -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let data = try keyData(key)
+        try validateValue(value)
+        guard values[data] == nil else { return false }
+        guard values.count < Self.maxEntries else {
+            throw budgetError("InMemoryStore capacity exceeds 128 entries")
+        }
+        values[data] = value
         return true
     }
 }

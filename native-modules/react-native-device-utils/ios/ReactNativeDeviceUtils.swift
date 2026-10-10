@@ -176,19 +176,19 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     // MARK: - In-memory store
 
     func getInMemoryValue(key: String) throws -> String? {
-        return InMemoryStore.shared.get(key)
+        return try InMemoryStore.shared.get(key)
     }
 
     func setInMemoryValue(key: String, value: String) throws {
-        InMemoryStore.shared.set(key, value)
+        try InMemoryStore.shared.set(key, value)
     }
 
     func removeInMemoryValue(key: String) throws -> Bool {
-        return InMemoryStore.shared.remove(key)
+        return try InMemoryStore.shared.remove(key)
     }
 
     func setInMemoryValueIfAbsent(key: String, value: String) throws -> Bool {
-        return InMemoryStore.shared.setIfAbsent(key, value)
+        return try InMemoryStore.shared.setIfAbsent(key, value)
     }
 
     // MARK: - LaunchOptionsManager
