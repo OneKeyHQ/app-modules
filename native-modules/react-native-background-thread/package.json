@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-background-thread",
-  "version": "3.0.163",
+  "version": "3.0.164",
   "description": "Background JavaScript runtime, shared storage and RPC bridge for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
