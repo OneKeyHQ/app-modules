@@ -3699,7 +3699,7 @@ SPEC CHECKSUMS:
   ReactCodegen: 01cbf7a08c30e8b71ad71489bb56b5bed195fa5e
   ReactCommon: 9002f006f571256348994183f7d4387aa7cf84e8
   ReactNativeAppUpdate: 2234901ae896f886e5d95cac6725f974ba7f2019
-  ReactNativeBundleCrypto: 8bb560a339e0662260297b8e694bd42d70826604
+  ReactNativeBundleCrypto: 386e2ad868cbdc484ae4faf3459ebb5e645b3365
   ReactNativeBundleUpdate: 63e9f1de71dacf03e46aa836bb461bb11313aacb
   ReactNativeCaptureProtection: 26916f50831fb9c549016c5db453d4ecc8658367
   ReactNativeCheckBiometricAuthChanged: 1214e3b481a8fd0550dbf92d8e808398683515b8
