@@ -52,20 +52,26 @@ See [docs/SPEC.md](docs/SPEC.md) for the InMemoryStore contract and acceptance s
 `ReactNativeDeviceUtils` exposes synchronous Android/iOS methods:
 
 ```ts
-getInMemoryValue(key: string): string | undefined;
-setInMemoryValue(key: string, value: string): void;
+type InMemoryValue = string | boolean | number;
+
+getInMemoryValue(key: string): InMemoryValue | undefined;
+setInMemoryValue(key: string, value: InMemoryValue): void;
 removeInMemoryValue(key: string): boolean;
-setInMemoryValueIfAbsent(key: string, value: string): boolean;
+setInMemoryValueIfAbsent(key: string, value: InMemoryValue): boolean;
 ```
 
-Values are strings, including empty strings. `setInMemoryValueIfAbsent` inserts
+Values are strings (including empty strings), booleans, or numbers. Reads preserve
+the original type; false and 0 are stored values rather than missing keys. Numbers
+use IEEE-754 doubles, including negative zero, NaN, and infinities. Objects, arrays,
+null, and undefined are not supported. `setInMemoryValueIfAbsent` inserts
 only when the key is missing and returns whether it inserted. All operations use
 the same native lock. A module recreation, JS reload, or main/background runtime
 recreation retains the same native Map. Process exit discards it. No data is
 persisted, and there is no implicit reset on React lifecycle events.
 
 Keys use exact UTF-8 identity, without Unicode normalization. The store holds at
-most 128 entries; keys are limited to 256 UTF-8 bytes and values to 4096 bytes.
+most 128 entries; keys are limited to 256 UTF-8 bytes and string values to 4096
+bytes. Boolean and number payloads are fixed size.
 Overlong arguments or a new key at capacity throw synchronously without changing
 the Map. Existing keys can still be replaced or removed; no entry is evicted.
 Both write methods validate their arguments even when the key already exists.
@@ -80,9 +86,10 @@ errors; acceptance into that queue does not guarantee delivery.
 This API requires a rebuilt native host containing the updated module. It is not
 an OTA-only change. Desktop/web/extension are not implemented by this package.
 
-Run `node tests/in-memory-store.cjs` from this package to compile the production
-Swift/Kotlin stores, exercise concurrent claims and independent keys, and run
-each executable in two fresh processes. Requires Swift, Kotlin, and Java.
+After `yarn nitrogen`, run `node tests/in-memory-store.cjs` from this package to
+compile the production Swift/Kotlin stores with the generated primitive union,
+exercise type preservation, concurrent claims and independent keys, and run each
+executable in two fresh processes. Requires Swift, Kotlin, and Java.
 
 ## License
 

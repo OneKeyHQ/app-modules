@@ -5,7 +5,7 @@ internal object InMemoryStore {
     private const val MAX_ENTRIES = 128
     private const val MAX_KEY_BYTES = 256
     private const val MAX_VALUE_BYTES = 4096
-    private val values = mutableMapOf<String, String>()
+    private val values = mutableMapOf<String, InMemoryValue>()
 
     private fun validateKey(key: String) {
         require(key.length <= MAX_KEY_BYTES && key.toByteArray(Charsets.UTF_8).size <= MAX_KEY_BYTES) {
@@ -13,20 +13,21 @@ internal object InMemoryStore {
         }
     }
 
-    private fun validateValue(value: String) {
-        require(value.length <= MAX_VALUE_BYTES && value.toByteArray(Charsets.UTF_8).size <= MAX_VALUE_BYTES) {
+    private fun validateValue(value: InMemoryValue) {
+        val string = value.asSecondOrNull() ?: return
+        require(string.length <= MAX_VALUE_BYTES && string.toByteArray(Charsets.UTF_8).size <= MAX_VALUE_BYTES) {
             "InMemoryStore value exceeds 4096 UTF-8 bytes"
         }
     }
 
     @Synchronized
-    fun get(key: String): String? {
+    fun get(key: String): InMemoryValue? {
         validateKey(key)
         return values[key]
     }
 
     @Synchronized
-    fun set(key: String, value: String) {
+    fun set(key: String, value: InMemoryValue) {
         validateKey(key)
         validateValue(value)
         check(values.containsKey(key) || values.size < MAX_ENTRIES) {
@@ -42,7 +43,7 @@ internal object InMemoryStore {
     }
 
     @Synchronized
-    fun setIfAbsent(key: String, value: String): Boolean {
+    fun setIfAbsent(key: String, value: InMemoryValue): Boolean {
         validateKey(key)
         validateValue(value)
         if (values.containsKey(key)) return false

@@ -175,11 +175,11 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
     // MARK: - In-memory store
 
-    func getInMemoryValue(key: String) throws -> String? {
+    func getInMemoryValue(key: String) throws -> InMemoryValue? {
         return try InMemoryStore.shared.get(key)
     }
 
-    func setInMemoryValue(key: String, value: String) throws {
+    func setInMemoryValue(key: String, value: InMemoryValue) throws {
         try InMemoryStore.shared.set(key, value)
     }
 
@@ -187,7 +187,7 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         return try InMemoryStore.shared.remove(key)
     }
 
-    func setInMemoryValueIfAbsent(key: String, value: String) throws -> Bool {
+    func setInMemoryValueIfAbsent(key: String, value: InMemoryValue) throws -> Bool {
         return try InMemoryStore.shared.setIfAbsent(key, value)
     }
 

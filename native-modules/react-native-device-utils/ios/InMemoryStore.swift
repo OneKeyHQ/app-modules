@@ -9,7 +9,7 @@ final class InMemoryStore {
     private static let maxValueBytes = 4096
     private let lock = NSLock()
     // Swift String equality normalizes Unicode; Data preserves exact key bytes.
-    private var values: [Data: String] = [:]
+    private var values: [Data: InMemoryValue] = [:]
 
     private init() {}
 
@@ -20,8 +20,9 @@ final class InMemoryStore {
         return Data(key.utf8)
     }
 
-    private func validateValue(_ value: String) throws {
-        guard value.utf8.prefix(Self.maxValueBytes + 1).count <= Self.maxValueBytes else {
+    private func validateValue(_ value: InMemoryValue) throws {
+        guard case .second(let string) = value else { return }
+        guard string.utf8.prefix(Self.maxValueBytes + 1).count <= Self.maxValueBytes else {
             throw budgetError("InMemoryStore value exceeds 4096 UTF-8 bytes")
         }
     }
@@ -31,13 +32,13 @@ final class InMemoryStore {
                        userInfo: [NSLocalizedDescriptionKey: message])
     }
 
-    func get(_ key: String) throws -> String? {
+    func get(_ key: String) throws -> InMemoryValue? {
         lock.lock()
         defer { lock.unlock() }
         return values[try keyData(key)]
     }
 
-    func set(_ key: String, _ value: String) throws {
+    func set(_ key: String, _ value: InMemoryValue) throws {
         lock.lock()
         defer { lock.unlock() }
         let data = try keyData(key)
@@ -54,7 +55,7 @@ final class InMemoryStore {
         return values.removeValue(forKey: try keyData(key)) != nil
     }
 
-    func setIfAbsent(_ key: String, _ value: String) throws -> Bool {
+    func setIfAbsent(_ key: String, _ value: InMemoryValue) throws -> Bool {
         lock.lock()
         defer { lock.unlock() }
         let data = try keyData(key)

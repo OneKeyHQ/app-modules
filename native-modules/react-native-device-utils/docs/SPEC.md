@@ -4,20 +4,22 @@
 
 This specification covers the new InMemoryStore API in the existing DeviceUtils
 package. Other DeviceUtils APIs retain their existing TypeScript/native
-contracts. The bounded store below is Implemented. Its production Swift/Kotlin stores
-passed standalone compiled tests in two fresh processes per platform, including
-byte limits and concurrent capacity claims. Native-host integration and device
+contracts. The bounded primitive store is Implemented. Production Swift/Kotlin
+stores and generated union types passed standalone compiled tests in two fresh
+processes per platform, including type preservation, special numeric values,
+byte limits, and concurrent capacity claims. Native-host integration and device
 reload acceptance remain unverified.
 
-The store holds small string values for Android/iOS callers. It does not persist
-data, deliver analytics, identify devices, or implement desktop/web/extension
+The store holds small string, boolean, and number values for Android/iOS callers.
+It does not persist data, deliver analytics, identify devices, or implement
+desktop/web/extension
 storage. Consumers own key namespaces and their business-specific stage rules.
 
 ## Ownership and boundaries
 
 One native singleton owns the Map in each OS process. Main and background JS
 runtimes have separate heaps and initialize independently; their DeviceUtils
-HybridObjects access that shared singleton. Values are native string copies,
+HybridObjects access that shared singleton. Values are native primitive copies,
 never retained JS objects. Reads return a value copy to the calling runtime.
 Separate OS processes have separate stores.
 
@@ -26,14 +28,20 @@ Separate OS processes have separate stores.
 All four methods are synchronous:
 
 ```ts
-getInMemoryValue(key: string): string | undefined;
-setInMemoryValue(key: string, value: string): void;
+type InMemoryValue = string | boolean | number;
+
+getInMemoryValue(key: string): InMemoryValue | undefined;
+setInMemoryValue(key: string, value: InMemoryValue): void;
 removeInMemoryValue(key: string): boolean;
-setInMemoryValueIfAbsent(key: string, value: string): boolean;
+setInMemoryValueIfAbsent(key: string, value: InMemoryValue): boolean;
 ```
 
-Keys and values may be empty strings. Get returns undefined for a missing key;
-set replaces an existing value; remove returns whether a key was present.
+Keys and string values may be empty strings. Reads preserve the stored primitive
+type; false, 0, and empty string are present values, not missing keys. Number
+values use IEEE-754 doubles, including negative zero, NaN, and infinities.
+Objects, arrays, null, undefined, bigint, and functions are outside the Nitro
+contract and are rejected by the bridge before storage mutation. Get returns
+undefined for a missing key; set replaces an existing value; remove returns whether a key was present.
 Set-if-absent returns true only when it inserts, otherwise false. It validates
 both arguments before checking whether the key exists.
 
@@ -69,7 +77,8 @@ The same fixed limits apply on both platforms:
 
 - At most 128 entries.
 - Every key: at most 256 UTF-8 bytes, including keys passed to get/remove.
-- Every value: at most 4096 UTF-8 bytes.
+- Every string value: at most 4096 UTF-8 bytes. Boolean and number values use
+  fixed-size native primitive payloads and are not subject to string byte limits.
 
 An overlong key or value throws a synchronous native error. At capacity, writes
 to a new key throw; replacing an existing key is allowed, and a valid
@@ -104,9 +113,13 @@ runtime loss, eviction, or later processing errors.
 - iOS: `ios/InMemoryStore.swift`, forwarded by `ios/ReactNativeDeviceUtils.swift`.
 - Android: `android/src/main/java/com/margelo/nitro/reactnativedeviceutils/`
   `InMemoryStore.kt` and `ReactNativeDeviceUtils.kt`.
-- `node tests/in-memory-store.cjs` compiles the production stores and exercises
-  empty/missing values, removal/retry, Unicode key identity, byte limits,
+- After `yarn nitrogen`, `node tests/in-memory-store.cjs` compiles the production
+  stores with the generated union types and exercises primitive type
+  preservation, empty/missing values, removal/retry, Unicode key identity, byte limits,
   capacity/rejection atomicity, concurrent claims, and fresh processes.
+
+The Kotlin runner supplies only a marker annotation for the generated shrinker
+metadata; it does not substitute the union or storage implementation.
 
 Standalone store tests cannot establish Nitro host integration or real JS
 reload behavior. Remaining device acceptance on both Android and iOS: rebuild

@@ -43,13 +43,13 @@ private data class NavigationBarAppearance(
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
 
-  override fun getInMemoryValue(key: String): String? = InMemoryStore.get(key)
+  override fun getInMemoryValue(key: String): InMemoryValue? = InMemoryStore.get(key)
 
-  override fun setInMemoryValue(key: String, value: String) = InMemoryStore.set(key, value)
+  override fun setInMemoryValue(key: String, value: InMemoryValue) = InMemoryStore.set(key, value)
 
   override fun removeInMemoryValue(key: String): Boolean = InMemoryStore.remove(key)
 
-  override fun setInMemoryValueIfAbsent(key: String, value: String): Boolean =
+  override fun setInMemoryValueIfAbsent(key: String, value: InMemoryValue): Boolean =
     InMemoryStore.setIfAbsent(key, value)
 
   /**

@@ -1,6 +1,8 @@
 import type { HybridObject } from 'react-native-nitro-modules';
 
 
+export type InMemoryValue = string | boolean | number;
+
 export type UserInterfaceStyle = 'light' | 'dark' | 'unspecified';
 
 export type AndroidChannel =
@@ -73,11 +75,11 @@ export interface ReactNativeDeviceUtils
   saveDeviceToken(token: string): Promise<void>;
   registerDeviceToken(): Promise<boolean>;
   getStartupTime(): Promise<number>;
-  // Process-owned string Map, shared by all runtimes and never persisted.
-  getInMemoryValue(key: string): string | undefined;
-  setInMemoryValue(key: string, value: string): void;
+  // Process-owned primitive Map, shared by all runtimes and never persisted.
+  getInMemoryValue(key: string): InMemoryValue | undefined;
+  setInMemoryValue(key: string, value: InMemoryValue): void;
   removeInMemoryValue(key: string): boolean;
-  setInMemoryValueIfAbsent(key: string, value: string): boolean;
+  setInMemoryValueIfAbsent(key: string, value: InMemoryValue): boolean;
   // Returns the JSON userInfo of a LOCAL notification the user tapped to launch
   // the (killed) app, then clears it so it is delivered exactly once. Empty
   // string when there is none. iOS-only meaningful; Android returns "".
