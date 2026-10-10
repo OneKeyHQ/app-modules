@@ -557,6 +557,14 @@ Android already prepares discovered scroll children before draw and is unchanged
 Web is unchanged. Consumers own the decision to lazily mount or prepare a target
 page; this package does not import scene code or start business requests.
 
+The Home consumer uses the same lazy-mount trigger on iOS and Android: after
+entering the horizontal dragging state, the first received page-scroll progress
+with nonzero displacement relative to the starting page MUST trigger early
+mounting of the adjacent target page in that direction. There is no fixed
+distance or percentage threshold. Measured trigger percentages, such as 0.65%,
+are event samples rather than configured thresholds. Early mounting MUST NOT
+change the selected page; selection follows the existing native selection event.
+
 Conformance: RNCCollapsiblePagerViewComponentView.mm and the focused ownership /
 first-frame XCTest cases. Consumer acceptance confirmed a cold Spot-to-Perps
 swipe: the native skeleton received inset 340 and offset -340 at t=1791603349124
