@@ -22,22 +22,20 @@ fun main() {
 
     val pool = Executors.newFixedThreadPool(16)
     val start = CountDownLatch(1)
-    val done = CountDownLatch(256)
-    val winners = AtomicInteger()
-    repeat(256) {
-        pool.submit {
-            try {
-                start.await()
-                if (InMemoryStore.setIfAbsent("race", InMemoryValue.Second("winner"))) winners.incrementAndGet()
-            } finally {
-                done.countDown()
-            }
+    val claims = (0 until 256).map {
+        pool.submit<Boolean> {
+            start.await()
+            InMemoryStore.setIfAbsent("race", InMemoryValue.Second("winner"))
         }
     }
     start.countDown()
-    done.await()
-    pool.shutdown()
-    check(winners.get() == 1) { "Concurrent runtimes must have one winner" }
+    val results = try {
+        claims.map { it.get() }
+    } finally {
+        pool.shutdown()
+    }
+    check(results.count { it } == 1) { "Concurrent runtimes must have one winner" }
+    check(results.count { !it } == 255) { "Other claims must return false without throwing" }
     check(store.get("race")?.asSecondOrNull() == "winner")
 
     // Keep false and zero distinct from missing keys and preserve overwrite types.
