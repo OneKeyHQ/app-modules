@@ -64,6 +64,7 @@ class RCTTabViewContainerView: UIView {
   private var imageLoader: RCTImageLoaderProtocol?
   private let iconSize = CGSize(width: 27, height: 27)
   private var longPressHandler: LongPressGestureHandler?
+  private let dragCancellationGesture = TabBarDragCancellationGestureRecognizer()
   /// Cached view controllers keyed by tab key to avoid unnecessary reparenting
   private var cachedViewControllers: [String: UIViewController] = [:]
 
@@ -172,6 +173,7 @@ class RCTTabViewContainerView: UIView {
   override func layoutSubviews() {
     super.layoutSubviews()
     handleLayout()
+    connectDragCancellationGesture(in: tabBarController?.tabBar)
   }
 
   // MARK: - Bottom Accessory (iOS 26+)
@@ -212,6 +214,9 @@ class RCTTabViewContainerView: UIView {
 
     self.tabBarController = tbc
 
+    dragCancellationGesture.cancelsTouchesInView = true
+    dragCancellationGesture.delaysTouchesBegan = true
+    tbc.tabBar.addGestureRecognizer(dragCancellationGesture)
     setupLongPressGesture()
     rebuildViewControllers()
     updateTabBarAppearance()
@@ -226,6 +231,17 @@ class RCTTabViewContainerView: UIView {
         self.onTabBarMeasured?(["height": Double(tbc.tabBar.frame.size.height)])
       }
     }
+  }
+
+  // Native tab selection must wait until a touch ends without becoming a drag.
+  private func connectDragCancellationGesture(in view: UIView?) {
+    guard let view else { return }
+    for gesture in view.gestureRecognizers ?? [] {
+      if gesture !== dragCancellationGesture && !(gesture is UILongPressGestureRecognizer) {
+        gesture.require(toFail: dragCancellationGesture)
+      }
+    }
+    for child in view.subviews { connectDragCancellationGesture(in: child) }
   }
 
   // MARK: - Long press
@@ -680,6 +696,8 @@ class RCTTabViewContainerView: UIView {
   }
 
   func shouldSelectTab(at index: Int, isReselection: Bool) -> Bool {
+    logTabBarGesture("selection-request index=\(index) tracking=\(dragCancellationGesture.isTrackingTouch)")
+    if dragCancellationGesture.isTrackingTouch { return false }
     let filtered = filteredItems
     guard let tabData = filtered[safe: index] else { return false }
 
@@ -826,4 +844,103 @@ private class LongPressGestureHandler: NSObject {
       }
     }
   }
+}
+
+// A tap releases UIKit's existing selection path; a drag cancels that same touch.
+private class TabBarDragCancellationGestureRecognizer: UIGestureRecognizer {
+  private var startPoint = CGPoint.zero
+  private var activeTouches = Set<UITouch>()
+  private(set) var isTrackingTouch = false
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    activeTouches.formUnion(touches)
+    if state == .began || state == .changed {
+      logTabBarGesture("touch.second-held previous-state=\(state.rawValue) incoming=\(touches.count) active=\(activeTouches.count)")
+      state = .changed
+      return
+    }
+    guard touches.count == 1, !isTrackingTouch, let touch = touches.first else {
+      logTabBarGesture("touch.second previous-state=\(state.rawValue) incoming=\(touches.count) tracking=\(isTrackingTouch)")
+      if state == .possible {
+        isTrackingTouch = false
+        state = .failed
+      }
+      return
+    }
+    startPoint = touch.location(in: view)
+    isTrackingTouch = true
+    logTabBarGesture("touch.begin")
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard let touch = touches.first else { return }
+    let point = touch.location(in: view)
+    let dx = abs(point.x - startPoint.x), dy = abs(point.y - startPoint.y)
+    if state == .possible && max(dx, dy) > 10 {
+      logTabBarGesture("touch.cancel-drag dx=\(dx) dy=\(dy)")
+      state = .began
+    } else if state == .began || state == .changed {
+      state = .changed
+    }
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    activeTouches.subtract(touches)
+    if (state == .began || state == .changed), !activeTouches.isEmpty {
+      logTabBarGesture("touch.end-held active=\(activeTouches.count)")
+      state = .changed
+      return
+    }
+    if state == .possible, let touch = touches.first {
+      let point = touch.location(in: view)
+      let dx = abs(point.x - startPoint.x), dy = abs(point.y - startPoint.y)
+      if max(dx, dy) > 10 {
+        logTabBarGesture("touch.cancel-release dx=\(dx) dy=\(dy)")
+        state = .began
+      }
+    }
+    logTabBarGesture("touch.end drag=\(state != .possible)")
+    if state == .possible {
+      isTrackingTouch = false
+      state = .failed
+    } else if state == .began || state == .changed {
+      state = .ended
+    }
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+    activeTouches.subtract(touches)
+    if (state == .began || state == .changed), !activeTouches.isEmpty {
+      logTabBarGesture("touch.cancel-held active=\(activeTouches.count)")
+      state = .changed
+      return
+    }
+    if state == .possible {
+      isTrackingTouch = false
+      state = .failed
+    } else if state == .began || state == .changed {
+      state = .cancelled
+    }
+    logTabBarGesture("touch.cancel")
+  }
+
+  override func reset() {
+    super.reset()
+    activeTouches.removeAll()
+    isTrackingTouch = false
+  }
+
+  override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
+    false
+  }
+}
+
+private func logTabBarGesture(_ message: String) {
+  #if DEBUG
+  let logger = (NSClassFromString("ReactNativeNativeLogger.OneKeyLog")
+    ?? NSClassFromString("OneKeyLog")) as AnyObject?
+  let selector = NSSelectorFromString("debug::")
+  guard let logger, logger.responds(to: selector) else { return }
+  _ = logger.perform(selector, with: "NativeTabBar", with: message)
+  #endif
 }

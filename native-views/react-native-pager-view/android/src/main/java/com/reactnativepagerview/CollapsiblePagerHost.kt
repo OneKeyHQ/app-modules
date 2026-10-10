@@ -1301,9 +1301,15 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
       MotionEvent.ACTION_MOVE -> {
         if (!headerTouchActive) return super.dispatchTouchEvent(event)
+        val dx = event.x - headerDownX
+        val dy = event.y - headerDownY
+        // A horizontal header guard must not consume a later vertical drag.
+        if (headerGestureOwner != HeaderGestureOwner.LIST &&
+          kotlin.math.abs(dy) > touchSlopPx && kotlin.math.abs(dy) > kotlin.math.abs(dx)) {
+          headerGestureOwner = HeaderGestureOwner.LIST
+          log("direction-recover owner=list region=$headerTouchRegion dx=${dx.roundToInt()} dy=${dy.roundToInt()}")
+        }
         if (headerGestureOwner == HeaderGestureOwner.NONE) {
-          val dx = event.x - headerDownX
-          val dy = event.y - headerDownY
           if (kotlin.math.abs(dx) <= touchSlopPx && kotlin.math.abs(dy) <= touchSlopPx) {
             return super.dispatchTouchEvent(event)
           }

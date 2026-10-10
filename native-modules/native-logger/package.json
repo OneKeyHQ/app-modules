@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-native-logger",
-  "version": "3.0.165",
+  "version": "3.0.166",
   "description": "Native file logging and log export support for OneKey on iOS and Android",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

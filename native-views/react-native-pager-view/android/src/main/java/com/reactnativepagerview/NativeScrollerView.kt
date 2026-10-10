@@ -1,5 +1,7 @@
 package com.reactnativepagerview
 
+import com.margelo.nitro.nativelogger.OneKeyLog
+
 import android.content.Context
 import android.graphics.Color
 import android.os.SystemClock
@@ -380,6 +382,11 @@ internal class NativeScrollerViewport(context: Context, internal val host: Nativ
   private var stopping = false
   private var startingProgrammaticScroll = false
   private var downY = 0f
+  private var directionDownX = 0f
+  private var directionDownY = 0f
+  private var directionPointerId = MotionEvent.INVALID_POINTER_ID
+  private var smoothPagerTouch = false
+  private var touchAxis = 0
   private var velocityTracker: VelocityTracker? = null
   private var activePointerId = MotionEvent.INVALID_POINTER_ID
   private val maximumVelocity = ViewConfiguration.get(context).scaledMaximumFlingVelocity
@@ -391,16 +398,110 @@ internal class NativeScrollerViewport(context: Context, internal val host: Nativ
     overScrollMode = OVER_SCROLL_NEVER
   }
 
+  private fun updateTouchDirection(event: MotionEvent) {
+    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+      directionPointerId = event.getPointerId(0)
+      directionDownX = event.x
+      directionDownY = event.y
+      downY = event.y
+      touchAxis = 0
+      smoothPagerTouch = false
+      var ancestor = host.parent as? View
+      while (ancestor != null) {
+        if (ancestor is CollapsiblePagerHost && ancestor.nativeSmoothHeaderScrollEnabled) {
+          smoothPagerTouch = true
+          break
+        }
+        ancestor = ancestor.parent as? View
+      }
+      OneKeyLog.debug("NativeScroller", "viewport-down slop=$touchSlop density=${resources.displayMetrics.density} scrollY=$scrollY smooth=$smoothPagerTouch")
+    } else if (event.actionMasked == MotionEvent.ACTION_POINTER_UP &&
+      event.getPointerId(event.actionIndex) == directionPointerId) {
+      val replacement = if (event.actionIndex == 0) 1 else 0
+      directionPointerId = if (replacement < event.pointerCount) event.getPointerId(replacement)
+        else MotionEvent.INVALID_POINTER_ID
+      if (replacement < event.pointerCount) {
+        directionDownX = event.getX(replacement)
+        directionDownY = event.getY(replacement)
+      }
+    } else if (smoothPagerTouch && touchAxis == 0 && event.actionMasked == MotionEvent.ACTION_MOVE) {
+      val pointerIndex = event.findPointerIndex(directionPointerId)
+      if (pointerIndex < 0) return
+      val dx = abs(event.getX(pointerIndex) - directionDownX)
+      val dy = abs(event.getY(pointerIndex) - directionDownY)
+      if (dy > touchSlop && dy > dx) touchAxis = 1
+      else if (dx >= 32f * resources.displayMetrics.density && dx > dy) touchAxis = 2
+      if (touchAxis != 0) {
+        OneKeyLog.debug("NativeScroller", "viewport-direction axis=$touchAxis dx=$dx dy=$dy scrollY=$scrollY")
+      }
+    }
+  }
+
+  private var childDisallowsIntercept = false
+  private var loggedBlockedVertical = false
+
+  override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+      childDisallowsIntercept = false
+      loggedBlockedVertical = false
+    }
+    if (scrollEnabled) updateTouchDirection(event)
+    if (smoothPagerTouch && touchAxis == 1 && childDisallowsIntercept &&
+      event.actionMasked == MotionEvent.ACTION_MOVE) {
+      childDisallowsIntercept = false
+      OneKeyLog.debug("NativeScroller", "viewport-recover-vertical scrollY=$scrollY")
+      super.requestDisallowInterceptTouchEvent(false)
+    }
+    if (smoothPagerTouch && event.actionMasked == MotionEvent.ACTION_MOVE && !loggedBlockedVertical) {
+      val pointerIndex = event.findPointerIndex(directionPointerId)
+      if (pointerIndex >= 0) {
+        val dx = abs(event.getX(pointerIndex) - directionDownX)
+        val dy = abs(event.getY(pointerIndex) - directionDownY)
+        if (dy > touchSlop && dy > dx) {
+          loggedBlockedVertical = true
+          OneKeyLog.debug("NativeScroller", "viewport-dispatch-vertical dx=$dx dy=$dy axis=$touchAxis disallow=$childDisallowsIntercept scrollY=$scrollY")
+        }
+      }
+    }
+    try { return super.dispatchTouchEvent(event) } finally {
+      if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+        releaseTouchDirection()
+      }
+    }
+  }
+
+  override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+    childDisallowsIntercept = disallowIntercept
+    if (smoothPagerTouch) OneKeyLog.debug("NativeScroller", "viewport-child-disallow value=$disallowIntercept axis=$touchAxis scrollY=$scrollY")
+    super.requestDisallowInterceptTouchEvent(disallowIntercept)
+  }
+
   override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
     if (!scrollEnabled) return false
-    if (event.actionMasked == MotionEvent.ACTION_DOWN) downY = event.y
+    updateTouchDirection(event)
+    if (smoothPagerTouch && event.actionMasked == MotionEvent.ACTION_MOVE && touchAxis != 1) return false
     val intercepted = super.onInterceptTouchEvent(event)
-    if (intercepted && event.actionMasked == MotionEvent.ACTION_MOVE) beginDrag(event)
+    if (intercepted && event.actionMasked == MotionEvent.ACTION_MOVE) {
+      OneKeyLog.debug("NativeScroller", "viewport-intercept dy=${event.y - downY} slop=$touchSlop scrollY=$scrollY")
+      beginDrag(event)
+    }
     return intercepted
   }
 
   override fun onTouchEvent(event: MotionEvent): Boolean {
     if (!scrollEnabled) return false
+    updateTouchDirection(event)
+    if (smoothPagerTouch && touchAxis != 1) {
+      if (event.actionMasked == MotionEvent.ACTION_MOVE) return true
+      if (event.actionMasked == MotionEvent.ACTION_UP) {
+        val cancel = MotionEvent.obtain(event)
+        cancel.action = MotionEvent.ACTION_CANCEL
+        try { return super.onTouchEvent(cancel) } finally {
+          cancel.recycle()
+          releaseTouchDirection()
+        }
+      }
+    }
     when (event.actionMasked) {
       MotionEvent.ACTION_DOWN -> downY = event.y
       MotionEvent.ACTION_MOVE -> {
@@ -409,7 +510,19 @@ internal class NativeScrollerViewport(context: Context, internal val host: Nativ
       }
       MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> endDrag(event)
     }
-    return super.onTouchEvent(event)
+    try { return super.onTouchEvent(event) } finally {
+      if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+        releaseTouchDirection()
+      }
+    }
+  }
+
+  private fun releaseTouchDirection() {
+    childDisallowsIntercept = false
+    loggedBlockedVertical = false
+    directionPointerId = MotionEvent.INVALID_POINTER_ID
+    smoothPagerTouch = false
+    touchAxis = 0
   }
 
   // Record at the refresh boundary so interception does not truncate the pointer history.
@@ -435,6 +548,7 @@ internal class NativeScrollerViewport(context: Context, internal val host: Nativ
   }
 
   internal fun releaseTouchTracking() {
+    releaseTouchDirection()
     velocityTracker?.recycle()
     velocityTracker = null
     activePointerId = MotionEvent.INVALID_POINTER_ID
@@ -443,6 +557,7 @@ internal class NativeScrollerViewport(context: Context, internal val host: Nativ
   internal fun beginDrag(event: MotionEvent) {
     if (dragging) return
     dragging = true
+    OneKeyLog.debug("NativeScroller", "viewport-begin-drag dy=${event.y - downY} slop=$touchSlop scrollY=$scrollY")
     // Header-forwarded touches bypass the refresh boundary's touch stream.
     host.cancelPendingScrollRestore()
     if (host.keyboardDismissMode != "none") host.dismissKeyboard()
@@ -543,6 +658,8 @@ private class NativeScrollerRefreshLayout(context: Context) : SwipeRefreshLayout
   private var downX = 0f
   private var downY = 0f
   private var horizontal = false
+  private var vertical = false
+  private var smoothPagerGesture = false
   private var intercepted = false
   private val slop = ViewConfiguration.get(context).scaledTouchSlop
 
@@ -567,10 +684,26 @@ private class NativeScrollerRefreshLayout(context: Context) : SwipeRefreshLayout
       downX = event.x
       downY = event.y
       horizontal = false
+      vertical = false
+      smoothPagerGesture = false
+      var ancestor = parent as? View
+      while (ancestor != null) {
+        if (ancestor is CollapsiblePagerHost && ancestor.nativeSmoothHeaderScrollEnabled) {
+          smoothPagerGesture = true
+          break
+        }
+        ancestor = ancestor.parent as? View
+      }
       intercepted = false
-    } else if (event.actionMasked == MotionEvent.ACTION_MOVE && abs(event.x - downX) > slop &&
-      abs(event.x - downX) > abs(event.y - downY)) {
-      horizontal = true
+    } else if (event.actionMasked == MotionEvent.ACTION_MOVE && (!smoothPagerGesture || !vertical)) {
+      val dx = abs(event.x - downX)
+      val dy = abs(event.y - downY)
+      if (smoothPagerGesture && dy > slop && dy > dx) {
+        vertical = true
+        horizontal = false
+      } else if (dx > (if (smoothPagerGesture) 32f * resources.displayMetrics.density else slop.toFloat()) && dx > dy) {
+        horizontal = true
+      }
     }
     if (horizontal) return false
     val result = super.onInterceptTouchEvent(event)

@@ -187,6 +187,69 @@ unchanged. Acceptance requires a real iOS button-origin drag that does not fire
 the button, a button-origin fling that scrolls, an ordinary tap that fires, and
 focused native touch-delivery coverage.
 
+## Smooth-header touch direction and press retention
+
+
+Status: implemented in module source. Equivalent native gesture behavior was
+independently verified in the Home consumer's recorded round3 simulator cases.
+The module transplant preserves those decisions and excludes application-specific
+acceptance probes. Package compilation and packaging are checked separately;
+consumer evidence does not establish acceptance of a subsequently installed
+release. Physical-device feel and semantic accessibility activation remain
+unverified. No public API is added.
+
+Existing smooth-header callers MUST receive this behavior automatically, with no
+additional caller options.
+
+On iOS and Android, smooth-header mode MUST distinguish pending intent from a
+confirmed vertical or horizontal drag. A small horizontal start followed by
+vertical movement MUST be allowed to become a vertical scroll while intent is
+pending. A confirmed vertical drag MUST retain vertical ownership until end or
+cancellation, even if later movement becomes horizontal. This applies to page
+content, the shared header, and touches beginning on an inner horizontal banner.
+Normal taps MUST remain functional. Press-retention behavior in application
+controls belongs to the consuming responder implementation; the Pager package
+does not contain or publish Tamagui helpers. The native application tab bar has
+a separate contract in react-native-tab-view/docs/SPEC.md.
+
+The current native implementation confirms horizontal intent after at least
+32 points on iOS or 32 dp on Android, with horizontal displacement exceeding
+vertical displacement. Vertical intent uses the native vertical scroll threshold
+(Android touch slop; iOS guard 10 points) and vertical-dominant displacement.
+There is no timed wait and no percentage-of-page-width threshold. After horizontal
+intent is confirmed, page content may retain horizontal ownership: the contract
+does not require transferring an already established page swipe to a vertical
+scroller. Header forwarding can recover to the vertical list when vertical
+movement becomes dominant. An inner horizontal viewport that can consume a
+confirmed horizontal drag MUST have priority over the Home page pager.
+
+This intent confirmation MUST NOT add a second lazy-mount progress threshold.
+Once native horizontal dragging begins, the first nonzero page progress MUST
+prepare the target page on both platforms, as specified below.
+
+Acceptance MUST cover an initial small horizontal movement followed by vertical
+scrolling from ordinary content, header buttons, Prime/support controls and inner
+banners; vertical-first gestures that later turn horizontal; stationary taps;
+normal page swipes; inner banner swipes; and iOS fixed-control drag cancellation.
+Native logger traces and before/after frames MUST distinguish scrolling, unintended
+page changes and unintended control activation. Simulator acceptance establishes only the recorded touch sequences; it does not
+establish physical-device feel or untested multi-touch combinations.
+
+On Smooth Home, Android NativeScrollerViewport MUST use the same pending /
+vertical / horizontal direction decision on interception and on its own touch
+path. It MUST deliver the original DOWN to NestedScrollView, defer pending and
+horizontal MOVE scrolling, and retain confirmed vertical ownership until the
+sequence ends. Header-forwarded DOWN MUST initialize this decision independently
+of the refresh boundary. Dispatch MUST still observe child-owned movement; only
+a confirmed vertical Smooth Home gesture may release the viewport's child
+interception prohibition. Pending and horizontal movement MUST preserve it.
+
+iOS nested horizontal ownership MUST include enabled nonpaging horizontal-only
+ScrollViews, with content wider than bounds and no vertical content overflow.
+Both pan holding and failure dependencies MUST use the same eligibility. A
+second touch in the pending Pager guard fails recognition; an already active
+Pager guard cancels and restores each held pan's original minimum touch count.
+
 ## Native tab-press animation default
 
 Behavior change: previously an omitted `nativeTabPressAnimationEnabled` animated
@@ -570,5 +633,8 @@ first-frame XCTest cases. Consumer acceptance confirmed a cold Spot-to-Perps
 swipe: the native skeleton received inset 340 and offset -340 at t=1791603349124
 while transition=1, 427 ms before native drag settlement. Its window y=514 was
 below the header bottom y=502. These values are measured evidence, not package
-constants. Native view geometry is confirmed; screen-compositor frames, physical
-devices and the complete refresh/header/restoration matrix remain unverified.
+constants. Native view geometry is confirmed. Later finite consumer round3 simulator
+cases additionally verified recorded refresh, header, restoration and gesture
+paths; they do not establish every possible sequence or runtime acceptance of a
+newly installed module release. Physical-device feel and semantic accessibility
+activation remain unverified.
