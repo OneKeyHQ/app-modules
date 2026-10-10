@@ -9,6 +9,15 @@ enum NativeListFontWeight {
   case semibold
   case bold
 
+  fileprivate var postScriptName: String {
+    switch self {
+    case .regular: return "Roobert-Regular"
+    case .medium: return "Roobert-Medium"
+    case .semibold: return "Roobert-SemiBold"
+    case .bold: return "Roobert-Bold"
+    }
+  }
+
   fileprivate var systemWeight: UIFont.Weight {
     switch self {
     case .regular: return .regular
@@ -33,7 +42,8 @@ private enum NativeListResources {
 }
 
 func nativeListFont(ofSize size: CGFloat, weight: NativeListFontWeight = .regular) -> UIFont {
-  return UIFont.systemFont(ofSize: size, weight: weight.systemWeight)
+  return UIFont(name: weight.postScriptName, size: size)
+    ?? UIFont.systemFont(ofSize: size, weight: weight.systemWeight)
 }
 
 func nativeListTabularFont(

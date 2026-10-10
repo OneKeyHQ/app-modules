@@ -180,12 +180,16 @@ slots already sit on that step; slots that do not are listed in §4.
 | `$bodySm` | 12 / 16 | regular | `rail.title`, `market.subtitle`, `identity.badge` |
 | `$bodyXs` | 11 / 16 | regular | `metricCard` labels, `market` badges |
 
-Weight names are `regular`, `medium`, `semibold`, and `bold`. iOS uses those
-system-font weights. Android retains its system fallback mapping: regular/bold
-use `sans-serif`, medium/semibold use `sans-serif-medium`, with `Typeface.NORMAL`.
-Web uses the platform font stack. No font files are bundled; `fontFamily` is not
-part of the style surface. Text metrics differ by platform and need rendering
-acceptance with these fonts.
+Weight names are `regular`, `medium`, `semibold`, and `bold`. NativeList bundles
+and registers no fonts. iOS prefers the corresponding host-registered Roobert
+PostScript names, then the requested system-font weight. Android delegates each
+`Roobert-<weight>` request to ReactFontManager with `Typeface.NORMAL` and host
+assets, supporting host registrations and matching font assets. Missing families
+use React Native's standard system fallback, replacing the prior explicit
+`sans-serif-medium` fallback for medium/semibold. Web prefers a host-defined
+`Roobert` face before the platform font stack. Hosts own font licensing and
+should provide fonts before rendering; `fontFamily` is not part of the style
+surface. System fallback changes text metrics and needs rendering acceptance.
 
 ### 3.3 Spacing, radius, bounds
 

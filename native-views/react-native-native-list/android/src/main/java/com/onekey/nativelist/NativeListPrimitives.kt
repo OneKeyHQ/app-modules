@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.graphics.PathParser
+import com.facebook.react.common.assets.ReactFontManager
 import kotlin.math.roundToInt
 
 /** React Native color strings use CSS #RRGGBBAA ordering; Android expects #AARRGGBB. */
@@ -46,20 +47,16 @@ internal object NativeListScale {
 }
 
 internal object NativeListFonts {
-  private val cache = mutableMapOf<String, Typeface>()
+  private fun load(context: android.content.Context, weight: String): Typeface =
+    ReactFontManager.getInstance().getTypeface("Roobert-$weight", Typeface.NORMAL, context.assets)
 
-  private fun load(context: android.content.Context, weight: String, fallback: String): Typeface =
-    cache.getOrPut(weight) {
-      Typeface.create(fallback, Typeface.NORMAL)
-    }
+  fun regular(context: android.content.Context) = load(context, "Regular")
 
-  fun regular(context: android.content.Context) = load(context, "Regular", "sans-serif")
+  fun medium(context: android.content.Context) = load(context, "Medium")
 
-  fun medium(context: android.content.Context) = load(context, "Medium", "sans-serif-medium")
+  fun semibold(context: android.content.Context) = load(context, "SemiBold")
 
-  fun semibold(context: android.content.Context) = load(context, "SemiBold", "sans-serif-medium")
-
-  fun bold(context: android.content.Context) = load(context, "Bold", "sans-serif")
+  fun bold(context: android.content.Context) = load(context, "Bold")
 }
 
 internal class DottedUnderlineTextView(context: android.content.Context) :

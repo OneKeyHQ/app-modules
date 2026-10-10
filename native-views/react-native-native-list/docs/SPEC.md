@@ -88,18 +88,27 @@ engine. See [DESIGN.md](DESIGN.md) for their current ownership boundaries.
 
 ### Font resource ownership
 
-Status: implemented source; rendering acceptance with system fonts pending.
-NativeList distributes no font files and registers no fonts. iOS uses the system
-font with the requested regular, medium, semibold or bold weight; its tabular
-number feature remains enabled where requested. Android uses its existing system
-fallback mapping: regular/bold use `sans-serif`, medium/semibold use
-`sans-serif-medium`, all with `Typeface.NORMAL`. Web uses its existing platform
-font stack without a bundled font face. `fontFamily` is not a public row-style
-property. Host-owned font APIs in other packages are unaffected.
+Status: implemented source; rendering acceptance with host/system fonts pending.
+NativeList distributes no font files and registers no fonts. Hosts own font
+licensing, provisioning and registration. iOS first looks up the host-registered
+`Roobert-Regular`, `Roobert-Medium`, `Roobert-SemiBold` or `Roobert-Bold`
+PostScript name, then uses the system font with the requested weight. Its tabular
+number feature remains enabled where requested. Android delegates each request
+for `Roobert-<weight>` to ReactFontManager with `Typeface.NORMAL` and host assets.
+This uses the host's React Native registrations (including Expo's `setTypeface`
+path) or `fonts/Roobert-<weight>.ttf` assets. Missing families use React Native's
+standard system fallback. The prior NativeList-specific `sans-serif-medium`
+fallback for medium/semibold is no longer selected when the host font is absent.
+Web prefers a host-defined `Roobert` font face before the existing platform font
+stack. `fontFamily` is not a public row-style property. Host-owned font APIs in
+other packages are unaffected. Hosts should provision fonts before list
+rendering. NativeList keeps no Android font cache, so later host registrations
+are consulted on subsequent font requests. Existing displayed rows do not
+automatically rerender, and there is no new dynamic font-loading API.
 
-Replacing the previous bundled faces changes text metrics. Consumers must check
-fixed-height rows, truncation and numeric alignment on each platform; source and
-unit checks do not establish visual acceptance.
+Without host-provided faces, system fallback changes text metrics. Consumers
+must check fixed-height rows, truncation and numeric alignment on each platform;
+source and unit checks do not establish visual acceptance.
 
 ## Failures, fallback and limits
 
