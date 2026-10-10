@@ -43,14 +43,14 @@ private data class NavigationBarAppearance(
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
 
-  override fun getProcessMemory(key: String): String? = ProcessMemoryStore.get(key)
+  override fun getInMemoryValue(key: String): String? = InMemoryStore.get(key)
 
-  override fun setProcessMemory(key: String, value: String) = ProcessMemoryStore.set(key, value)
+  override fun setInMemoryValue(key: String, value: String) = InMemoryStore.set(key, value)
 
-  override fun removeProcessMemory(key: String): Boolean = ProcessMemoryStore.remove(key)
+  override fun removeInMemoryValue(key: String): Boolean = InMemoryStore.remove(key)
 
-  override fun setProcessMemoryIfAbsent(key: String, value: String): Boolean =
-    ProcessMemoryStore.setIfAbsent(key, value)
+  override fun setInMemoryValueIfAbsent(key: String, value: String): Boolean =
+    InMemoryStore.setIfAbsent(key, value)
 
   /**
    * Foldable device model constants for various manufacturers.

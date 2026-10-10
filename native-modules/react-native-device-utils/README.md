@@ -46,18 +46,18 @@ cross-platform guarantee that a service or hardware feature is available.
 See [src/ReactNativeDeviceUtils.nitro.ts](src/ReactNativeDeviceUtils.nitro.ts)
 for the complete signatures, enum values and platform notes.
 
-## Process memory
+## In-memory store
 
 `ReactNativeDeviceUtils` exposes synchronous Android/iOS methods:
 
 ```ts
-getProcessMemory(key: string): string | undefined;
-setProcessMemory(key: string, value: string): void;
-removeProcessMemory(key: string): boolean;
-setProcessMemoryIfAbsent(key: string, value: string): boolean;
+getInMemoryValue(key: string): string | undefined;
+setInMemoryValue(key: string, value: string): void;
+removeInMemoryValue(key: string): boolean;
+setInMemoryValueIfAbsent(key: string, value: string): boolean;
 ```
 
-Values are strings, including empty strings. `setProcessMemoryIfAbsent` inserts
+Values are strings, including empty strings. `setInMemoryValueIfAbsent` inserts
 only when the key is missing and returns whether it inserted. All operations use
 the same native lock. A module recreation, JS reload, or main/background runtime
 recreation retains the same native Map. Process exit discards it. No data is
@@ -71,7 +71,7 @@ enqueue succeeds; network delivery remains the existing analytics path's job.
 This API requires a rebuilt native host containing the updated module. It is not
 an OTA-only change. Desktop/web/extension are not implemented by this package.
 
-Run `node tests/process-memory.cjs` from this package to compile the production
+Run `node tests/in-memory-store.cjs` from this package to compile the production
 Swift/Kotlin stores, exercise concurrent claims and independent keys, and run
 each executable in two fresh processes. Requires Swift, Kotlin, and Java.
 

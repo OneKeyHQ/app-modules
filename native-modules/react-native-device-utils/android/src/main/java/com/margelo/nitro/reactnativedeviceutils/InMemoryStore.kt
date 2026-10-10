@@ -1,7 +1,7 @@
 package com.margelo.nitro.reactnativedeviceutils
 
 // Process-owned storage, independent of HybridObjects and React runtimes.
-internal object ProcessMemoryStore {
+internal object InMemoryStore {
     private val values = mutableMapOf<String, String>()
 
     @Synchronized

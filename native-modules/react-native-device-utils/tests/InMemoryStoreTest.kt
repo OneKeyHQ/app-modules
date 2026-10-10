@@ -5,10 +5,10 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 fun main() {
-    val store = ProcessMemoryStore
+    val store = InMemoryStore
     check(store.get("startup") == null) { "A fresh process must start empty" }
     check(store.setIfAbsent("startup", "first"))
-    check(!ProcessMemoryStore.setIfAbsent("startup", "reload"))
+    check(!InMemoryStore.setIfAbsent("startup", "reload"))
     check(store.get("startup") == "first")
     store.set("other", "")
     check(store.get("other") == "")
@@ -28,7 +28,7 @@ fun main() {
         pool.submit {
             try {
                 start.await()
-                if (ProcessMemoryStore.setIfAbsent("race", "winner")) winners.incrementAndGet()
+                if (InMemoryStore.setIfAbsent("race", "winner")) winners.incrementAndGet()
             } finally {
                 done.countDown()
             }
@@ -39,5 +39,5 @@ fun main() {
     pool.shutdown()
     check(winners.get() == 1) { "Concurrent runtimes must have one winner" }
     check(store.get("race") == "winner")
-    println("Kotlin process memory: passed")
+    println("Kotlin in-memory store: passed")
 }

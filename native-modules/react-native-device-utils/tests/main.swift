@@ -1,9 +1,9 @@
 import Foundation
 
-let store = ProcessMemoryStore.shared
+let store = InMemoryStore.shared
 precondition(store.get("startup") == nil, "A fresh process must start empty")
 precondition(store.setIfAbsent("startup", "first"))
-precondition(!ProcessMemoryStore.shared.setIfAbsent("startup", "reload"))
+precondition(!InMemoryStore.shared.setIfAbsent("startup", "reload"))
 precondition(store.get("startup") == "first")
 store.set("other", "")
 precondition(store.get("other") == "")
@@ -18,7 +18,7 @@ precondition(store.setIfAbsent("other", "retry"))
 let resultLock = NSLock()
 var winners = 0
 DispatchQueue.concurrentPerform(iterations: 256) { _ in
-    if ProcessMemoryStore.shared.setIfAbsent("race", "winner") {
+    if InMemoryStore.shared.setIfAbsent("race", "winner") {
         resultLock.lock()
         winners += 1
         resultLock.unlock()
@@ -26,4 +26,4 @@ DispatchQueue.concurrentPerform(iterations: 256) { _ in
 }
 precondition(winners == 1, "Concurrent runtimes must have one winner")
 precondition(store.get("race") == "winner")
-print("Swift process memory: passed")
+print("Swift in-memory store: passed")

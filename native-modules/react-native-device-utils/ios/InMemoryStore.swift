@@ -2,8 +2,8 @@ import Foundation
 
 // The singleton outlives HybridObjects and React runtimes. Only process exit
 // clears it; no value holds a JS object or writes to persistent storage.
-final class ProcessMemoryStore {
-    static let shared = ProcessMemoryStore()
+final class InMemoryStore {
+    static let shared = InMemoryStore()
     private let lock = NSLock()
     private var values: [String: String] = [:]
 
