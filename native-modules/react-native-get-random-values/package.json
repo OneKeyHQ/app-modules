@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-get-random-values",
-  "version": "3.0.156",
+  "version": "3.0.163",
   "description": "react-native-get-random-values",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -50,16 +50,21 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-get-random-values.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-get-random-values"
   },
   "author": "onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/react-native-get-random-values/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-get-random-values#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-get-random-values#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "expo-crypto": "57.0.1",
+    "fast-base64-decode": "2.0.0"
   },
   "devDependencies": {
     "@commitlint/config-conventional": "^19.8.1",
@@ -89,6 +94,7 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
+    "expo": "*",
     "react": "*",
     "react-native": "*",
     "react-native-nitro-modules": "0.37.0"

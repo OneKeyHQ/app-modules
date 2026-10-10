@@ -186,7 +186,7 @@ internal object ImageCropPickerImageProcessor {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     openStream(context, uri).use { BitmapFactory.decodeStream(it, null, bounds) }
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-      throw ImageCropPickerException.noImageData("Invalid image selected")
+      throw ImageCropPickerException.noImageData()
     }
 
     var sampleSize = 1
@@ -198,7 +198,7 @@ internal object ImageCropPickerImageProcessor {
       openStream(context, uri).use { BitmapFactory.decodeStream(it, null, options) }
     } catch (error: OutOfMemoryError) {
       throw ImageCropPickerException.lowMemory(error)
-    } ?: throw ImageCropPickerException.noImageData("Invalid image selected")
+    } ?: throw ImageCropPickerException.noImageData()
 
     val orientation = try {
       openStream(context, uri).use {

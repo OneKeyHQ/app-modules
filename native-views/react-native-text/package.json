@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-text",
-  "version": "3.0.156",
+  "version": "3.0.163",
   "description": "Opt-in native text rendering for React Native",
   "source": "./src/index.ts",
   "main": "./lib/module/index.js",
@@ -42,7 +42,10 @@
     "android",
     "text"
   ],
-  "homepage": "https://github.com/OneKeyHQ/app-modules#readme",
+  "bugs": {
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
+  },
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-text#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/OneKeyHQ/app-modules.git",

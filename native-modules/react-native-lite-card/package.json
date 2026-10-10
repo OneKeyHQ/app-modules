@@ -1,7 +1,7 @@
 {
   "name": "@onekeyfe/react-native-lite-card",
-  "version": "3.0.156",
-  "description": "lite card",
+  "version": "3.0.163",
+  "description": "OneKey Lite NFC card operations and connection events for React Native",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
@@ -49,14 +49,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/onekeyfe-react-native-lite-card.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-lite-card"
   },
   "author": "@onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/onekeyfe-react-native-lite-card/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/onekeyfe-react-native-lite-card#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-lite-card#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

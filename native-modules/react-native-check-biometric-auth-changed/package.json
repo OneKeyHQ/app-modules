@@ -1,7 +1,7 @@
 {
   "name": "@onekeyfe/react-native-check-biometric-auth-changed",
-  "version": "3.0.156",
-  "description": "react-native-check-biometric-auth-changed",
+  "version": "3.0.163",
+  "description": "Detect stored biometric authentication state changes on iOS",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
@@ -50,14 +50,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-check-biometric-auth-changed/onekeyfe-react-native-check-biometric-auth-changed.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-check-biometric-auth-changed"
   },
   "author": "@onekeyfeonekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules/react-native-check-biometric-auth-changed)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/react-native-check-biometric-auth-changed/onekeyfe-react-native-check-biometric-auth-changed/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-check-biometric-auth-changed/onekeyfe-react-native-check-biometric-auth-changed#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-check-biometric-auth-changed#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

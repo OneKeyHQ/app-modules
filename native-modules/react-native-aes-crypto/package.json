@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-aes-crypto",
-  "version": "3.0.156",
+  "version": "3.0.163",
   "description": "react-native-aes-crypto",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -40,14 +40,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-aes-crypto.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-aes-crypto"
   },
   "author": "@onekeyhq <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/react-native-aes-crypto/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-aes-crypto#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-aes-crypto#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

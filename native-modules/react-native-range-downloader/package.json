@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-range-downloader",
-  "version": "3.0.156",
+  "version": "3.0.163",
   "description": "react-native-range-downloader",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -49,14 +49,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-range-downloader.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-range-downloader"
   },
   "author": "onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/react-native-range-downloader/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-range-downloader#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-range-downloader#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

@@ -52,14 +52,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-photo-library.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-photo-library"
   },
   "author": "onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/react-native-photo-library/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-photo-library#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-photo-library#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

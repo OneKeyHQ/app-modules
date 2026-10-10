@@ -1,7 +1,7 @@
 {
   "name": "@onekeyfe/react-native-chart-webview",
-  "version": "3.0.156",
-  "description": "react-native-chart-webview",
+  "version": "3.0.163",
+  "description": "Native chart WebView with local assets, pooling and message bridging for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
   "exports": {
@@ -49,14 +49,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/native-views/react-native-chart-webview.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-views/react-native-chart-webview"
   },
   "author": "@onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/native-views/react-native-chart-webview/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/native-views/react-native-chart-webview#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-chart-webview#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-splash-screen",
-  "version": "3.0.156",
+  "version": "3.0.163",
   "description": "react-native-splash-screen",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -50,14 +50,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-splash-screen.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-splash-screen"
   },
   "author": "onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/react-native-splash-screen/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-splash-screen#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-splash-screen#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-sni-connect",
-  "version": "3.0.156",
+  "version": "3.0.163",
   "description": "A React Native library for SNI-based HTTP requests with DNS caching and request management",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -48,14 +48,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules/react-native-sni-connect.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-modules/react-native-sni-connect"
   },
   "author": "@onekeyhq <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/app-modules/react-native-sni-connect/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/app-modules/react-native-sni-connect#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-modules/react-native-sni-connect#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

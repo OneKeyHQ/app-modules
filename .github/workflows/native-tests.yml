@@ -112,6 +112,25 @@ jobs:
             -include-runtime -d "$RUNNER_TEMP/bundle-storage-schema-tests.jar"
           java -jar "$RUNNER_TEMP/bundle-storage-schema-tests.jar" | tee "$RUNNER_TEMP/kotlin-tests.log"
           grep -Eq 'BundleStorageSchemaPolicy: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/kotlin-tests.log"
+      - name: Run pager weak-padding snapshot regression
+        working-directory: native-views/react-native-pager-view
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" \
+            tests/kotlin/WeakPaddingSnapshotTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/weak-padding-snapshot-tests.jar"
+          java -jar "$RUNNER_TEMP/weak-padding-snapshot-tests.jar" | tee "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
+          grep -Eq '^WeakPaddingSnapshot: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
+      - name: Run picker error privacy regression
+        working-directory: native-modules/react-native-image-crop-picker
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" \
+            android/src/main/java/com/margelo/nitro/reactnativeimagecroppicker/ImageCropPickerException.kt \
+            tests/kotlin/ImageCropPickerExceptionTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/picker-error-privacy-tests.jar"
+          java -jar "$RUNNER_TEMP/picker-error-privacy-tests.jar" | tee "$RUNNER_TEMP/picker-error-privacy-tests.log"
+          grep -Eq '^ImageCropPickerException: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/picker-error-privacy-tests.log"
 
   swiftpm:
     runs-on: macos-26
@@ -123,7 +142,7 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version
           xcodebuild -version | grep -F 'Xcode 26.6'
-      - name: Run three SwiftPM suites and verify execution
+      - name: Run four SwiftPM suites and verify execution
         shell: bash
         run: |
           set -euo pipefail
@@ -132,10 +151,12 @@ jobs:
             native-modules/react-native-sni-connect
             native-modules/react-native-bundle-update
             native-modules/react-native-range-downloader/tests/swiftpm
+            native-views/react-native-native-list/tests/swiftpm
           )
           for package in "${packages[@]}"; do
             name=$(basename "$package")
             if [[ "$package" == *range-downloader* ]]; then name=range-downloader; fi
+            if [[ "$package" == *native-list* ]]; then name=native-list; fi
             swift test --package-path "$package" --scratch-path "$RUNNER_TEMP/swift-$name" \
               2>&1 | tee "artifacts/swiftpm/$name.log"
             if ! grep -Eq 'Executed [1-9][0-9]* tests?|Test run with [1-9][0-9]* tests?' "artifacts/swiftpm/$name.log"; then

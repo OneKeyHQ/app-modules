@@ -6,9 +6,9 @@ react-native-range-downloader
 
 ```sh
 npm install @onekeyfe/react-native-range-downloader react-native-nitro-modules
+```
 
 > `react-native-nitro-modules` is required as this library relies on [Nitro Modules](https://nitro.margelo.com/).
-```
 
 ## Usage
 
@@ -45,20 +45,19 @@ The behavior of the concurrent downloader is governed by a normative,
 platform-agnostic standard that **all** implementations (iOS, Android, Desktop,
 and any future platform) MUST conform to:
 
-**→ [OneKey Concurrent Download Standard (OCDS)](./SPEC.md)**
+**→ [OneKey Concurrent Download Standard (OCDS)](https://github.com/OneKeyHQ/app-modules/blob/main/native-modules/react-native-range-downloader/SPEC.md)**
 
 Any change to download behavior on any platform must be checked against OCDS.
 When an implementation and the standard disagree, the implementation is wrong.
 
 How each platform (Node / Android / iOS) is verified against OCDS — and the
 runnable verification code to re-run after any downloader change — lives in
-**→ [`conformance/`](./conformance/README.md)**.
+**→ [`conformance/`](https://github.com/OneKeyHQ/app-modules/blob/main/native-modules/react-native-range-downloader/conformance/README.md)**.
 
 ## Contributing
 
-- [Development workflow](CONTRIBUTING.md#development-workflow)
-- [Sending a pull request](CONTRIBUTING.md#sending-a-pull-request)
-- [Code of conduct](CODE_OF_CONDUCT.md)
+Follow the repository's
+[native development workflow](https://github.com/OneKeyHQ/app-modules/blob/main/docs/NATIVE_MODULE_DEVELOPMENT.md).
 
 ## License
 

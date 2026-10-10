@@ -20,6 +20,9 @@ RNFS; use the separate OneKey picker for user selection and cropping.
 iOS uses Photos `.addOnly`; keep `NSPhotoLibraryAddUsageDescription` in the App.
 Android 10+ uses MediaStore with no storage permission. Android 8-9 requires App
 `WRITE_EXTERNAL_STORAGE` capped at `maxSdkVersion=28`; request it only on Save.
-Neither platform needs whole-library read authorization. Permanent denial is
-returned as `{status: 'denied', canAskAgain: false}`. `PhotoLibraryError.code`
-identifies permission, missing input, activity/concurrency and save failures.
+iOS and Android 10+ do not request whole-library read authorization. On Android
+8-9, granting the legacy write permission also implicitly grants storage read
+access, and the system prompt describes access to photos, media and files.
+Permanent denial is returned as `{status: 'denied', canAskAgain: false}`.
+`PhotoLibraryError.code` identifies permission, missing input,
+activity/concurrency and save failures.

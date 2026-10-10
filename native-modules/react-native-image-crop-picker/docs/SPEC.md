@@ -62,6 +62,8 @@ add-only authorization, with declarations configured by the App.
 
 No automatic retry. Pick cancellation remains E_PICKER_CANCELLED. Original metadata (including location) is retained locally; consumers decide
 whether to upload it. Native logs must not contain source paths or photo bytes.
+Android picker/cropper failures use fixed error messages rather than provider,
+filesystem or crop-activity exception text; existing E_* codes are preserved.
 Consumers must not clean a file before scanning/saving finishes.
 
 ## Performance

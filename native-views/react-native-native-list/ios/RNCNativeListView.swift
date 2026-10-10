@@ -734,10 +734,15 @@ final class NativeListView: UIView {
     } else {
       resolvedPosition = CGFloat(min(1, max(0, viewPosition)))
     }
-    let target = itemStart
-      - startInset
-      - resolvedPosition * max(0, viewportLength - itemLength)
-      - CGFloat(viewOffset)
+    let target = nativeListAlignedScrollOffset(
+      itemStart: itemStart,
+      startInset: startInset,
+      viewportLength: viewportLength,
+      itemLength: itemLength,
+      viewPosition: resolvedPosition,
+      viewOffset: CGFloat(viewOffset),
+      nearest: alignment == "nearest"
+    )
     setScrollOffset(target, animated: animated)
     return true
   }
@@ -749,12 +754,13 @@ final class NativeListView: UIView {
     let contentLength = isHorizontal
       ? collectionView.contentSize.width
       : collectionView.contentSize.height
-    let minimum = -(isHorizontal ? insets.left : insets.top)
-    let maximum = max(
-      minimum,
-      contentLength - viewportLength + (isHorizontal ? insets.right : insets.bottom)
+    let offset = nativeListClampedScrollOffset(
+      requestedOffset,
+      viewportLength: viewportLength,
+      contentLength: contentLength,
+      startInset: isHorizontal ? insets.left : insets.top,
+      endInset: isHorizontal ? insets.right : insets.bottom
     )
-    let offset = min(maximum, max(minimum, requestedOffset))
     let point = isHorizontal
       ? CGPoint(x: offset, y: collectionView.contentOffset.y)
       : CGPoint(x: collectionView.contentOffset.x, y: offset)

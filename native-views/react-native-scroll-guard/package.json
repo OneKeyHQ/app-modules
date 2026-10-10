@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-scroll-guard",
-  "version": "3.0.156",
+  "version": "3.0.163",
   "description": "A native view wrapper that prevents parent scrollable containers (PagerView/ViewPager2) from intercepting child scroll gestures",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -49,10 +49,14 @@
     "scroll",
     "pager"
   ],
-  "homepage": "https://github.com/OneKeyHQ/app-modules#readme",
+  "bugs": {
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
+  },
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-scroll-guard#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/app-modules.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-views/react-native-scroll-guard"
   },
   "author": "@onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",

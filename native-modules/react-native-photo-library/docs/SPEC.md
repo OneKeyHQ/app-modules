@@ -1,10 +1,14 @@
 # Add-only photo saving
 
-Status: Implemented extraction of the picker save implementation. JS tests,
-types, codegen and Android native builds pass. API 36 saves through MediaStore
-without a permission prompt, and failed input rejects with the documented code.
-iOS test code compiles and links; local execution is blocked by launchd_sim
-startup. iOS runtime and remaining application acceptance are pending.
+Status: Implemented extraction of the picker save implementation. Before the
+latest main merge, JS tests, types, codegen and Android native builds passed;
+the three iOS validation/permission-mapping XCTest cases passed in CI at
+`d2278a337`. API 36 saves through MediaStore without a permission prompt, and
+failed input rejects with the documented code. API 28 saving and first
+grant/denial were exercised; permanent denial and lifecycle/failure cases remain
+pending. Actual iOS App add-only authorization and saving are unverified because
+the local App build failed in ExpoModulesJSI. SDK checks do not replace App UI
+acceptance, final release artifact inspection or validation after the main merge.
 
 ## Purpose and boundaries
 
