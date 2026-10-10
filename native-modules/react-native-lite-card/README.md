@@ -49,6 +49,18 @@ See [src/index.tsx](src/index.tsx) and
 [src/NativeReactNativeLiteCard.ts](src/NativeReactNativeLiteCard.ts) for the wrapper
 and callback/result types.
 
+## Result and subscription ownership
+
+`PromiseResult<T>` has nullable `error`, `data` and `cardInfo` fields. Inspect
+`error.code` against `CardErrors` before using `data`; a missing card-information
+field is not an empty successful card. The exported `CardInfo` includes
+`hasBackup`, `isNewCard`, `serialNum` and `pinRetryCount`.
+
+`addAccordListener()` also returns a native event subscription. Remove returned
+subscriptions explicitly: the current `removeConnectListeners()` wrapper is
+empty and is not a substitute for a subscription's `remove()` method.
+Keep mnemonic and PIN values out of diagnostic messages and event logs.
+
 ## License
 
 MIT.

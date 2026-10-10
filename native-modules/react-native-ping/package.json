@@ -23,7 +23,8 @@
     "!**/__mocks__",
     "!**/.*",
     "android",
-    "!**/*.map"
+    "!**/*.map",
+    "LICENSE.GBPing"
   ],
   "scripts": {
     "prepare": "bob build",
@@ -41,7 +42,7 @@
     "directory": "native-modules/react-native-ping"
   },
   "author": "@onekeyhq <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
-  "license": "MIT",
+  "license": "MIT AND Apache-2.0",
   "bugs": {
     "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },

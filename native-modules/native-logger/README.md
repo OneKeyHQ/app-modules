@@ -44,6 +44,18 @@ writing credentials or other private values into messages.
 The current bridge is defined in [src/NativeLogger.nitro.ts](src/NativeLogger.nitro.ts).
 Native behavior is implemented in the package's `ios` and `android` directories.
 
+## Exporting a log snapshot
+
+Flush pending repeated-message summaries before listing files for an export.
+`write` and `flushPendingRepeat` return synchronously; enumeration and deletion
+return promises. Await deletion before starting an application-owned export
+that would otherwise race cleanup. The package does not expose an upload API.
+
+The named `NativeLogger` export is created when this module is imported, so
+import it only in a native runtime with the matching registration. The exported
+TypeScript `NativeLogger` interface can be imported with `import type` without
+creating that native object.
+
 ## License
 
 MIT.

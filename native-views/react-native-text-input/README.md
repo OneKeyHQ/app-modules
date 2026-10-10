@@ -46,6 +46,19 @@ The public payload types are in [src/type.ts](src/type.ts). The
 [native behavior specification](https://github.com/OneKeyHQ/app-modules/blob/main/native-views/react-native-text-input/docs/SPEC.md)
 records event ownership, temporary-file handling and acceptance limits.
 
+## Consuming paste payloads
+
+Check `nativeEvent.items` before iterating: the public type allows it to be
+absent. Inspect each item's MIME `type` before interpreting its string `data`.
+A text string, a temporary iOS file URL and an Android content URI need distinct
+consumer handling; the callback does not copy them into a common byte format.
+
+On Android both Paste and Paste as plain text continue through the underlying
+input paste path after the optional event. On iOS the availability cache is only
+a menu hint; the actual paste action checks clipboard contents. The
+[specification](https://github.com/OneKeyHQ/app-modules/blob/main/native-views/react-native-text-input/docs/SPEC.md) separates these platform behaviors and documents
+pending device acceptance.
+
 ## License
 
 MIT.

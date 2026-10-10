@@ -53,6 +53,18 @@ For complete parameter and event types, see
 test helpers are also exposed there; applications should keep the production
 download and verification flow enabled.
 
+## Listener and artifact types
+
+`AppUpdateDownloadParams` requires `downloadUrl`, `notificationTitle` and
+`fileSize`; `AppUpdateFileParams` contains `downloadUrl`. Download callbacks
+receive a `DownloadEvent` with string `type`/`message` and numeric `progress`.
+These types are exported for application adapters.
+
+A listener ID belongs to the registration that returned it; retain that exact
+ID for `removeDownloadListener`. `clearApkCache()` removes cached APK artifacts
+without cancelling an active download. Invoke it through the application's
+update-state coordinator, after active work is finished.
+
 ## License
 
 MIT.

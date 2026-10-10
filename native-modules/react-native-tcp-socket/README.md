@@ -34,6 +34,18 @@ Do not assume Node.js socket methods are available on that wrapper. See
 [src/index.tsx](src/index.tsx) for its behavior and
 [src/NativeTcpSocket.ts](src/NativeTcpSocket.ts) for the native signature.
 
+## Registering wrapper callbacks
+
+The legacy wrapper accepts only `error` and `timeout` event handlers, each
+stored as one current callback. Register them immediately on the returned shim
+and call `destroy()` when the caller no longer wants completion callbacks.
+No `data`, `write`, `end` or native socket handle is exported by this shim.
+
+For a direct measurement use the named `NativeTcpSocket` promise API.
+The wrapper's connection callback signals successful connection, without a
+stream object or connection-time argument. Use the promise result when the
+elapsed connection time is needed.
+
 ## Upstream attribution
 
 First, a sincere thank-you to Rapsssito and the

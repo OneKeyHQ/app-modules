@@ -47,6 +47,17 @@ Android secure storage or infer a successful backup from a resolved stub call.
 
 The complete types are in [src/KeychainModule.nitro.ts](src/KeychainModule.nitro.ts).
 
+## Handling absent values
+
+`getItem({ key })` returns an object, not the stored string directly. Check for
+`null` before reading `item.value`; an empty stored string remains a present
+value. `hasItem` is a separate promise and cannot make a later read atomic.
+
+`SetItemParams` contains `key`, `value` and optional `enableSync`, `label` and
+`description`. The package exports these parameter/result types for consumer
+adapters. Serialize structured application values explicitly and handle parse
+failures outside the native storage boundary.
+
 ## License
 
 MIT.

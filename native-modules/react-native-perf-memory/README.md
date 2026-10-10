@@ -42,6 +42,18 @@ Use bounded sampling intervals suited to diagnostics rather than requesting a
 sample on every render. The exported interface is defined in
 [src/ReactNativePerfMemory.nitro.ts](src/ReactNativePerfMemory.nitro.ts).
 
+## Reading a diagnostic sample
+
+The named `ReactNativePerfMemory` object exposes only `getMemoryUsage()`.
+`MemoryUsage` is exported as a TypeScript type; it contains `rss`, with no
+JavaScript-heap breakdown, per-runtime allocation count or sampling timestamp.
+Record a timestamp in the caller if a time series needs one.
+
+A sample is process-wide even when requested from one JavaScript runtime.
+Keep platform, preferred/fallback measurement semantics and units alongside
+results when comparing runs. The module's zero fallback should be treated as
+an unavailable sample rather than included as measured zero consumption.
+
 ## License
 
 MIT.

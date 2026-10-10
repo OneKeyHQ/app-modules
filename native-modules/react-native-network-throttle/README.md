@@ -36,6 +36,18 @@ validate effects on the actual native request path it uses. A returned config
 is not a measurement of achieved throughput. See [src/index.tsx](src/index.tsx)
 for the public types, constants and native-linking failure behavior.
 
+## Applying a diagnostic profile
+
+The exported `NETWORK_THROTTLE_SLOW_4G_LATENCY_MS` preset is 562.5 ms.
+Download and upload preset constants both use 102 × 1024 bytes per second.
+`NetworkThrottleProfile`, `NetworkThrottleConfig` and `NetworkThrottleModule`
+are exported for application diagnostic controls.
+
+Partial updates perform a read followed by a write; they do not expose an atomic
+compare-and-set operation across independent callers. Coordinate changes in the
+application. If native registration is missing, accessing the wrapper throws
+an integration error with pod-install/rebuild guidance.
+
 ## Upstream attribution
 
 React Native native network throttle for OneKey iOS and Android development settings.

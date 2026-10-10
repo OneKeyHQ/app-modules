@@ -44,6 +44,18 @@ The wrapper is in [src/index.tsx](src/index.tsx); its native interface is
 Review the platform sources when integrating this signal into an authentication
 workflow.
 
+## Interpreting repeated checks
+
+`checkBiometricAuthChanged()` returns only a boolean: there is no enrollment
+count, authentication credential or event subscription in this API. On iOS the
+check attempts to persist an available comparison baseline, so callers should
+coordinate checks within their existing authentication workflow.
+
+Handle native-operation rejection separately from a resolved `false`. Neither
+an Android stub result nor missing iOS domain state can establish that enrollment
+has remained unchanged. The package exports the Nitro interface as a type for
+adapters; the public JavaScript call remains `checkBiometricAuthChanged()`.
+
 ## License
 
 MIT.

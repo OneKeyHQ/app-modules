@@ -59,7 +59,7 @@
     "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
   "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-native-list#readme",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"

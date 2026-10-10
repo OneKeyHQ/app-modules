@@ -37,6 +37,18 @@ that the first application frame is ready or that launch performance improved.
 The exported interface is in
 [src/ReactNativeSplashScreen.nitro.ts](src/ReactNativeSplashScreen.nitro.ts).
 
+## Coordinating application readiness
+
+Retention and hiding are independent asynchronous operations; await their
+promises when ordering matters in the application's startup flow. The module
+provides no readiness event or automatic coupling to navigation, data loading
+or the first JavaScript render.
+
+The named export is created through Nitro when imported, so a matching native
+registration is required. Use the exported `ReactNativeSplashScreen` interface
+as an `import type` in adapters that must avoid native initialization until the
+application's startup path loads the implementation.
+
 ## Upstream attribution
 
 First, a sincere thank-you to Crazycodeboy and the

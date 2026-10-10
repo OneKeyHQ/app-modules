@@ -50,6 +50,19 @@ See [src/ReactNativeBundleUpdate.nitro.ts](src/ReactNativeBundleUpdate.nitro.ts)
 for all methods, result objects and path APIs. This README documents the existing
 interface; it does not establish end-to-end update acceptance for a consumer.
 
+## Version and path result types
+
+`listLocalBundles()` returns `LocalBundleInfo[]`, containing `appVersion` and
+`bundleVersion`. `getFallbackUpdateBundleData()` returns records with those
+versions plus `signature`; fallback metadata and an installed directory are
+separate from a completed verification operation.
+
+The interface offers synchronous and asynchronous variants of the UI, background
+and embedded-Web path getters. Select the appropriate runtime path rather than
+assuming both runtimes use one JavaScript bundle. Application adapters can import
+`BundleDownloadParams`, `BundleDownloadResult`, `BundleVerifyParams`,
+`BundleInstallParams` and `BundleSwitchParams` as types from this package.
+
 ## License
 
 MIT.
