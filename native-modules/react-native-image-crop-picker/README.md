@@ -89,8 +89,6 @@ await ImageCropPicker.openPicker({
     backgroundColor: '#0f0f0f',
     confirmButtonColor: '#ffffffed',
     confirmButtonTextColor: '#000000df',
-    titleFontFamily: 'Roobert-SemiBold',
-    buttonFontFamily: 'Roobert-Medium',
   },
 });
 ```

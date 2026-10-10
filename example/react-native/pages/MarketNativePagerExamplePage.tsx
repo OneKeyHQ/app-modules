@@ -1134,7 +1134,6 @@ function MarketBadgeInfo({
     ? MARKET_SOURCE_STATUS_CHIPS[statusVariant]
     : undefined;
   const body = {
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
     fontWeight: '500' as const,
     fontSize: 16,
     lineHeight: 24,
@@ -1145,7 +1144,6 @@ function MarketBadgeInfo({
   };
   const regularBody = {
     ...body,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Regular',
     fontWeight: '400' as const,
   };
   return (
@@ -1459,8 +1457,6 @@ function MarketFavoritesEmpty({
                       {
                         fontSize: 14,
                         lineHeight: 20,
-                        fontFamily:
-                          Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
                         fontWeight: '500',
                         letterSpacing: 0,
                         fontVariant: ['tabular-nums'],
@@ -1489,8 +1485,6 @@ function MarketFavoritesEmpty({
                       fontSize: 12,
                       lineHeight: 16,
                       maxWidth: 70,
-                      fontFamily:
-                        Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Regular',
                       fontWeight: '400',
                       letterSpacing: 0,
                       fontVariant: ['tabular-nums'],
@@ -1536,7 +1530,6 @@ function MarketFavoritesEmpty({
             color: dark ? '#000000DF' : '#FFFFFFED',
             fontSize: 16,
             lineHeight: 24,
-            fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
             fontWeight: '500',
             letterSpacing: 0,
             fontVariant: Platform.OS === 'web' ? [] : ['tabular-nums'],
@@ -1640,8 +1633,6 @@ function MarketFavoritesDialog({
                     style={[
                       {
                         fontSize: 16,
-                        fontFamily:
-                          Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
                         fontWeight: '500',
                         letterSpacing: 0,
                         fontVariant: ['tabular-nums'],
@@ -1786,8 +1777,6 @@ export function MarketNativeSearchPage({
                 style={[
                   {
                     fontSize: 16,
-                    fontFamily:
-                      Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
                     fontWeight: '500',
                     letterSpacing: 0,
                     fontVariant: ['tabular-nums'],
@@ -2996,7 +2985,6 @@ const styles = StyleSheet.create({
   filterMenuTitle: {
     fontSize: 20,
     lineHeight: 28,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-SemiBold',
     fontWeight: '600',
     letterSpacing: 0,
     fontVariant: ['tabular-nums'],
@@ -3025,7 +3013,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     lineHeight: 24,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
     fontWeight: '500',
     letterSpacing: 0,
     fontVariant: ['tabular-nums'],
@@ -3065,7 +3052,6 @@ const styles = StyleSheet.create({
     height: 40,
     fontSize: 16,
     lineHeight: 22,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roobert-Regular',
     fontWeight: '400',
     paddingVertical: 0,
     ...(Platform.OS === 'web'
@@ -3083,13 +3069,11 @@ const styles = StyleSheet.create({
   primaryNavigationActive: {
     fontSize: 20,
     lineHeight: 28,
-    fontFamily: 'Roobert-SemiBold',
     fontWeight: '600',
   },
   primaryNavigationText: {
     fontSize: 20,
     lineHeight: 28,
-    fontFamily: 'Roobert-SemiBold',
     fontWeight: '600',
   },
   bannerList: { paddingHorizontal: 16, paddingVertical: 8, gap: 12 },
@@ -3108,7 +3092,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 14,
     lineHeight: 20,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-SemiBold',
     fontWeight: '600',
     letterSpacing: 0,
     fontVariant: ['tabular-nums'],
@@ -3116,7 +3099,6 @@ const styles = StyleSheet.create({
   bannerChange: {
     fontSize: 14,
     lineHeight: 20,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
     fontWeight: '500',
     marginTop: 2,
     letterSpacing: 0,
@@ -3129,7 +3111,6 @@ const styles = StyleSheet.create({
     color: '#70B8FF',
     fontSize: 10,
     lineHeight: 16,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Regular',
     fontWeight: '400',
     paddingHorizontal: 6,
     letterSpacing: 0,
@@ -3154,7 +3135,6 @@ const styles = StyleSheet.create({
   },
   dynamicHeaderProbeText: {
     fontSize: 13,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
     fontWeight: '500',
   },
   marketTabs: { height: 44, paddingHorizontal: 20, gap: 20 },
@@ -3162,7 +3142,6 @@ const styles = StyleSheet.create({
   marketTabText: {
     fontSize: 16,
     lineHeight: 24,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
     fontWeight: '500',
     letterSpacing: 0,
     fontVariant: ['tabular-nums'],
@@ -3199,7 +3178,6 @@ const styles = StyleSheet.create({
   filterChipText: {
     fontSize: 14,
     lineHeight: 20,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
     fontWeight: '500',
     letterSpacing: 0,
     fontVariant: ['tabular-nums'],
@@ -3213,7 +3191,7 @@ const styles = StyleSheet.create({
   },
   editGlyph: {
     fontSize: 20,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Regular',
+    fontWeight: '400',
   },
   columnHeader: {
     height: 32,
@@ -3225,7 +3203,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     lineHeight: 16,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
     fontWeight: '500',
     letterSpacing: 0,
     fontVariant: ['tabular-nums'],
@@ -3235,7 +3212,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontSize: 12,
     lineHeight: 16,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
     fontWeight: '500',
     letterSpacing: 0,
     fontVariant: ['tabular-nums'],
@@ -3245,7 +3221,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontSize: 12,
     lineHeight: 16,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Medium',
     fontWeight: '500',
     letterSpacing: 0,
     fontVariant: ['tabular-nums'],
@@ -3266,7 +3241,6 @@ const styles = StyleSheet.create({
   actionCardTitle: {
     fontSize: 14,
     lineHeight: 20,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-SemiBold',
     fontWeight: '600',
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -3292,7 +3266,6 @@ const styles = StyleSheet.create({
   messageToastText: {
     fontSize: 13,
     lineHeight: 18,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Regular',
     fontWeight: '400',
   },
   diagnosticsPanel: {
@@ -3321,20 +3294,17 @@ const styles = StyleSheet.create({
   diagnosticsTitle: {
     fontSize: 14,
     lineHeight: 20,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-SemiBold',
     fontWeight: '600',
   },
   diagnosticsControls: { gap: 6, paddingVertical: 6 },
   diagnosticsText: {
     fontSize: 11,
     lineHeight: 15,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Regular',
     fontWeight: '400',
   },
   diagnosticsSource: {
     fontSize: 10,
     lineHeight: 14,
-    fontFamily: Platform.OS === 'ios' ? 'Roobert' : 'Roobert-Regular',
     fontWeight: '400',
   },
 });

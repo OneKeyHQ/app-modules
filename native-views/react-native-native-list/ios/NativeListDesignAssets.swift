@@ -9,15 +9,6 @@ enum NativeListFontWeight {
   case semibold
   case bold
 
-  fileprivate var postScriptName: String {
-    switch self {
-    case .regular: return "Roobert-Regular"
-    case .medium: return "Roobert-Medium"
-    case .semibold: return "Roobert-SemiBold"
-    case .bold: return "Roobert-Bold"
-    }
-  }
-
   fileprivate var systemWeight: UIFont.Weight {
     switch self {
     case .regular: return .regular
@@ -39,25 +30,10 @@ private enum NativeListResources {
     }
     return Bundle(for: NativeListResourceToken.self)
   }()
-
-  static let registerFonts: Void = {
-    ["Regular", "Medium", "SemiBold", "Bold"].forEach { weight in
-      let directURL = bundle.url(forResource: "Roobert-\(weight)", withExtension: "ttf")
-      let nestedURL = bundle.url(
-        forResource: "Roobert-\(weight)",
-        withExtension: "ttf",
-        subdirectory: "fonts"
-      )
-      guard let url = directURL ?? nestedURL else { return }
-      CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
-    }
-  }()
 }
 
 func nativeListFont(ofSize size: CGFloat, weight: NativeListFontWeight = .regular) -> UIFont {
-  _ = NativeListResources.registerFonts
-  return UIFont(name: weight.postScriptName, size: size)
-    ?? UIFont.systemFont(ofSize: size, weight: weight.systemWeight)
+  return UIFont.systemFont(ofSize: size, weight: weight.systemWeight)
 }
 
 func nativeListTabularFont(

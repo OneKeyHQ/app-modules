@@ -161,9 +161,9 @@ full window and center it on the window's geometric midpoint.
 The web implementation renders the same explicit index entries as a DOM
 overlay, with click and pointer-drag navigation.
 
-The native templates bundle OneKey's Roobert Regular, Medium, SemiBold, and
-Bold faces and use them before the platform-font fallback. Their semantic
-icons and checkbox marks are the same vector paths as the OneKey component
+The templates use system fonts and distribute no font files. The platform
+weight mappings and text-metric acceptance requirements are documented in
+[STYLE_SPEC.md](docs/STYLE_SPEC.md). Their semantic icons and checkbox marks are the same vector paths as the OneKey component
 library, rendered by Core Graphics/UIKit on iOS and Canvas on Android.
 
 ### Market rows

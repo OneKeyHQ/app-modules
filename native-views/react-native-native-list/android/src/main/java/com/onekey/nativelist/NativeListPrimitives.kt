@@ -50,11 +50,7 @@ internal object NativeListFonts {
 
   private fun load(context: android.content.Context, weight: String, fallback: String): Typeface =
     cache.getOrPut(weight) {
-      try {
-        Typeface.createFromAsset(context.assets, "fonts/Roobert-$weight.ttf")
-      } catch (_: RuntimeException) {
-        Typeface.create(fallback, Typeface.NORMAL)
-      }
+      Typeface.create(fallback, Typeface.NORMAL)
     }
 
   fun regular(context: android.content.Context) = load(context, "Regular", "sans-serif")

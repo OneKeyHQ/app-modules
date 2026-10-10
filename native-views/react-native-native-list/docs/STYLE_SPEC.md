@@ -180,8 +180,12 @@ slots already sit on that step; slots that do not are listed in §4.
 | `$bodySm` | 12 / 16 | regular | `rail.title`, `market.subtitle`, `identity.badge` |
 | `$bodyXs` | 11 / 16 | regular | `metricCard` labels, `market` badges |
 
-Weight names map to the bundled Roobert faces: `regular`, `medium`, `semibold`,
-`bold`. No other family is available; `fontFamily` is not part of the style surface.
+Weight names are `regular`, `medium`, `semibold`, and `bold`. iOS uses those
+system-font weights. Android retains its system fallback mapping: regular/bold
+use `sans-serif`, medium/semibold use `sans-serif-medium`, with `Typeface.NORMAL`.
+Web uses the platform font stack. No font files are bundled; `fontFamily` is not
+part of the style surface. Text metrics differ by platform and need rendering
+acceptance with these fonts.
 
 ### 3.3 Spacing, radius, bounds
 

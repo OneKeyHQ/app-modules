@@ -86,6 +86,21 @@ Existing geometry/typography differences are recorded in
 them. iOS uses UICollectionView, Android RecyclerView, and Web a windowed DOM
 engine. See [DESIGN.md](DESIGN.md) for their current ownership boundaries.
 
+### Font resource ownership
+
+Status: implemented source; rendering acceptance with system fonts pending.
+NativeList distributes no font files and registers no fonts. iOS uses the system
+font with the requested regular, medium, semibold or bold weight; its tabular
+number feature remains enabled where requested. Android uses its existing system
+fallback mapping: regular/bold use `sans-serif`, medium/semibold use
+`sans-serif-medium`, all with `Typeface.NORMAL`. Web uses its existing platform
+font stack without a bundled font face. `fontFamily` is not a public row-style
+property. Host-owned font APIs in other packages are unaffected.
+
+Replacing the previous bundled faces changes text metrics. Consumers must check
+fixed-height rows, truncation and numeric alignment on each platform; source and
+unit checks do not establish visual acceptance.
+
 ## Failures, fallback and limits
 
 Snapshot validation rejects malformed/duplicate-key input without partial

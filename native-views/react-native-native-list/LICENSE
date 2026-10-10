@@ -1,13 +1,8 @@
 License scope
 
-The MIT grant below applies to OneKey-owned source code. It does not license
-common/fonts/Roobert-*.ttf, which retain their separate vendor terms.
-Those font files identify Copyright 2017-2026 Displaay Type Foundry s.r.o.
-and designer Martin Vacha. Their license information refers to
-https://displaay.net/about/licenses/ and restricts redistribution without
-an applicable grant. Evidence authorizing distribution of these bundled fonts
-has not been found in this repository. This notice preserves that unresolved
-authorization boundary; it does not grant font redistribution rights.
+The MIT grant below applies to OneKey-owned source code. The adapted avatar
+algorithms retain the upstream attribution below. No font files are distributed
+by this package.
 
 MIT License
 
