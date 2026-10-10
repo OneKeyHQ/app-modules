@@ -158,6 +158,28 @@ static UIView *RNCScrollComponentView(UIScrollView *scrollView)
   return nil;
 }
 
+// NativeList owns its collection through a Fabric contentView and its delegate.
+// A dropped Nitro view can remain in the hierarchy after its delegate is cleared.
+static RCTViewComponentView *RNCNativeListComponentForScrollView(UIScrollView *scrollView)
+{
+  Class nativeListClass = NSClassFromString(@"HybridNativeListComponent");
+  for (UIView *component = scrollView; component != nil; component = component.superview) {
+    if (![component isKindOfClass:RCTViewComponentView.class]) continue;
+    return nativeListClass != Nil && [component isKindOfClass:nativeListClass]
+      ? (RCTViewComponentView *)component : nil;
+  }
+  return nil;
+}
+
+static BOOL RNCIsMountedNativeListScrollView(UIScrollView *scrollView)
+{
+  if (![scrollView isKindOfClass:UICollectionView.class]) return NO;
+  RCTViewComponentView *component = RNCNativeListComponentForScrollView(scrollView);
+  UIView *content = component.contentView;
+  return component.tag > 0 && content != nil && [scrollView isDescendantOfView:content] &&
+    ((UICollectionView *)scrollView).delegate == (id)content;
+}
+
 typedef void (^RNCCollapsiblePagerNativeTabPressHandler)(NSInteger index, NSString *key);
 
 static CGFloat RNCClamp(CGFloat value, CGFloat minimum, CGFloat maximum)
@@ -1286,6 +1308,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   // OneKey patch: pair pre-mount release with recovery, including deferred mounts.
   NSMutableDictionary<NSString *, RNCCollapsiblePagerReleasedScrollState *> *_releasedPageScrollStates;
   BOOL _needsScrollObserverReattachAfterMount;
+  NSHashTable<UIScrollView *> *_mountingRemovedScrollViews;
   __weak UIScrollView *_observedScrollView;
   __weak UIScrollView *_sharedHeaderScrollView;
   __weak UIScrollView *_pendingFallbackScrollView;
@@ -1322,6 +1345,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _pageControllers = [NSMutableArray new];
     _pageOffsets = [NSMutableDictionary new];
     _releasedPageScrollStates = [NSMutableDictionary new];
+    _mountingRemovedScrollViews = [NSHashTable weakObjectsHashTable];
     _originalInsets = [NSMapTable weakToStrongObjectsMapTable];
     _managedRefreshControls = [NSMapTable weakToWeakObjectsMapTable];
     _refreshControlObservedScrollViews = [NSHashTable weakObjectsHashTable];
@@ -1758,6 +1782,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
         }
         break;
       }
+      // Quarantine only this mount transaction; moved views may be valid again.
+      [_mountingRemovedScrollViews addObject:scrollView];
       _needsScrollObserverReattachAfterMount = YES;
       [self restoreScrollViewState:scrollView resetSavedOffset:!belongsToPage];
       break;
@@ -1768,9 +1794,25 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)mountingTransactionDidMount:(const MountingTransaction &)transaction
                withSurfaceTelemetry:(const SurfaceTelemetry &)surfaceTelemetry
 {
-  if (!_nativeSmoothHeaderScrollEnabled || _transitioning ||
-      _isPagerDragging || _isBeingRecycled || self.window == nil ||
+  [_mountingRemovedScrollViews removeAllObjects];
+  if (!_nativeSmoothHeaderScrollEnabled || _isBeingRecycled || self.window == nil ||
       _currentIndex < 0 || _currentIndex >= _pageControllers.count) return;
+  // Prepare newly mounted owned scrollers before their first frame, even while
+  // horizontal selection still owns the shared header and observer.
+  NSInteger first = MAX(0, _currentIndex - 1);
+  NSInteger last = MIN((NSInteger)_pageControllers.count - 1, _currentIndex + 1);
+  for (NSInteger index = 0; index < _pageControllers.count; index++) {
+    if ((index < first || index > last) && index != _destinationIndex) continue;
+    UIScrollView *scrollView = [self verticalScrollViewForPageAtIndex:index];
+    BOOL isOwnedScroller = [scrollView.superview isKindOfClass:RNCNativeScrollerComponentView.class] &&
+      ((RNCNativeScrollerComponentView *)scrollView.superview).scrollView == scrollView &&
+      [scrollView isDescendantOfView:_pageControllers[index].view];
+    if ((RNCIsMountedNativeListScrollView(scrollView) || isOwnedScroller) &&
+        [_originalInsets objectForKey:scrollView] == nil) {
+      [self applyInsetsToScrollView:scrollView pageIndex:index restore:YES];
+    }
+  }
+  if (_transitioning || _isPagerDragging) return;
 
   // OneKey patch: a release must recover even when the changed parent is above
   // the page subtree. Missing lists keep their identity for a later insertion.
@@ -2002,6 +2044,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   _isBeingRecycled = YES;
   _generation++;
+  [_mountingRemovedScrollViews removeAllObjects];
   _needsScrollObserverReattachAfterMount = NO;
   [_releasedPageScrollStates removeAllObjects];
   [self detachSharedHeaderPressCancellationGesture];
@@ -2280,13 +2323,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       currentVerticalScrollViewForParentPager];
   }
   if ([view isKindOfClass:RNCNativeScrollerComponentView.class]) {
-    return ((RNCNativeScrollerComponentView *)view).scrollView;
+    UIScrollView *scrollView = ((RNCNativeScrollerComponentView *)view).scrollView;
+    return [_mountingRemovedScrollViews containsObject:scrollView] ? nil : scrollView;
   }
   if ([view isKindOfClass:RCTScrollViewComponentView.class]) {
     RCTScrollViewComponentView *componentView =
       (RCTScrollViewComponentView *)view;
     if ([componentView.nativeId hasPrefix:RNCCollapsiblePagerNativeScrollerIDPrefix]) {
-      return componentView.scrollView;
+      UIScrollView *scrollView = componentView.scrollView;
+      return [_mountingRemovedScrollViews containsObject:scrollView] ? nil : scrollView;
     }
   }
   for (UIView *subview in view.subviews) {
@@ -2307,7 +2352,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if ([view isKindOfClass:RCTScrollViewComponentView.class]) {
     UIScrollView *scrollView =
       ((RCTScrollViewComponentView *)view).scrollView;
-    if (!scrollView.alwaysBounceHorizontal) {
+    if (!scrollView.alwaysBounceHorizontal &&
+        ![_mountingRemovedScrollViews containsObject:scrollView]) {
       return scrollView;
     }
   }
@@ -2320,7 +2366,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (UIScrollView *)findVerticalScrollViewInView:(UIView *)view
 {
-  if (view == _sharedHeaderHostView) return nil;
+  if (view == _sharedHeaderHostView ||
+      ([view isKindOfClass:UIScrollView.class] &&
+       [_mountingRemovedScrollViews containsObject:(UIScrollView *)view])) return nil;
   // A parent pager must follow the nested pager's active page instead of the
   // first retained page found by recursive subview order.
   if (view != self &&
@@ -2332,6 +2380,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   if ([view isKindOfClass:UICollectionView.class]) {
     UICollectionView *collectionView = (UICollectionView *)view;
+    if (RNCNativeListComponentForScrollView(collectionView) != nil &&
+        !RNCIsMountedNativeListScrollView(collectionView)) return nil;
     UICollectionViewLayout *layout = collectionView.collectionViewLayout;
     BOOL hasUsableBounds = CGRectGetWidth(collectionView.bounds) > 0 &&
       CGRectGetHeight(collectionView.bounds) > 0;
@@ -2425,7 +2475,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     return;
   }
   if ([candidate isKindOfClass:UICollectionView.class] &&
-      candidate != _observedScrollView) {
+      candidate != _observedScrollView && !RNCIsMountedNativeListScrollView(candidate)) {
     if (_pendingFallbackScrollView != candidate) {
       _pendingFallbackScrollView = candidate;
       _pendingFallbackScrollViewDetectedAt = CACurrentMediaTime();
@@ -2831,7 +2881,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     // debounce each replacement candidate independently before rejecting the
     // released identity. A surviving native list is safe to accept immediately.
     BOOL needsFallbackDebounce = !sameList &&
-      [scrollView isKindOfClass:UICollectionView.class] && scrollView != _observedScrollView;
+      [scrollView isKindOfClass:UICollectionView.class] && scrollView != _observedScrollView &&
+      !RNCIsMountedNativeListScrollView(scrollView);
     if (needsFallbackDebounce) {
       CFTimeInterval now = CACurrentMediaTime();
       if (released.pendingFallbackScrollView != scrollView) {

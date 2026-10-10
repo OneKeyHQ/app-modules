@@ -523,3 +523,44 @@ introduced. This change makes no frame-rate claim.
 The newly merged NativeScroller viewport tracking uses the same weak-key
 snapshot rule. Its cleanup has source and focused regression coverage; the
 pre-migration runtime checks above do not establish its device acceptance.
+
+## iOS lazy-page first-frame preparation
+
+Status: implemented and runtime verified in the consuming app's local native
+build on iOS 26.5 (2026-10-10). This package change preserves the same functional
+source; app-specific diagnostic logs remain in that local build.
+
+In smooth-header mode, a newly mounted, owned NativeScroller or live NativeList
+on the current page, either adjacent page, or a programmatic destination MUST
+receive its pager insets and restored offset in Fabric's did-mount callback,
+before the next frame. This also applies during a horizontal drag or animation.
+Preparation MUST NOT change the selected page, move the shared header out of its
+transition owner, attach an offscreen page's observer, or repeatedly restore an
+already managed scroll view.
+
+A scroll view removed in a Fabric transaction MUST be excluded from discovery
+until that transaction finishes. The exclusion uses weak native identities,
+is cleared after did-mount and on recycle, and allows a moved view to be found
+again in its next owner. A NativeList collection is usable only while its nearest
+Fabric component owns it through contentView, has a registered tag, and retains
+that content view as collection delegate. A disposed or unregistered NativeList
+MUST NOT become a generic collection fallback.
+
+Verified NativeList collections bypass the existing 0.5-second generic collection
+fallback debounce, including replacement-state restoration. Other collection
+fallbacks keep that safety delay. Caller insets and retained logical offsets
+remain governed by the existing restoration policy.
+
+This is a UI-thread, main-runtime native coordination change with no new props,
+events, background-runtime work, persistence or retained strong view cache.
+Android already prepares discovered scroll children before draw and is unchanged;
+Web is unchanged. Consumers own the decision to lazily mount or prepare a target
+page; this package does not import scene code or start business requests.
+
+Conformance: RNCCollapsiblePagerViewComponentView.mm and the focused ownership /
+first-frame XCTest cases. Consumer acceptance confirmed a cold Spot-to-Perps
+swipe: the native skeleton received inset 340 and offset -340 at t=1791603349124
+while transition=1, 427 ms before native drag settlement. Its window y=514 was
+below the header bottom y=502. These values are measured evidence, not package
+constants. Native view geometry is confirmed; screen-compositor frames, physical
+devices and the complete refresh/header/restoration matrix remain unverified.
