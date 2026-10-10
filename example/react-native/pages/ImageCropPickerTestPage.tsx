@@ -3,8 +3,10 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import ImageCropPicker, {
   ImageCropPickerError,
   type Image as PickedImage,
-  type PhotoSavePermission,
 } from '@onekeyfe/react-native-image-crop-picker';
+import PhotoLibrary, {
+  type PhotoSavePermission,
+} from '@onekeyfe/react-native-photo-library';
 import { TestButton, TestPageBase, TestResult } from './TestPageBase';
 
 // Production consumers import from `react-native-image-crop-picker`, an npm
@@ -112,17 +114,17 @@ export function ImageCropPickerTestPage() {
       />
       <TestButton
         title="getSavePermission: add-only"
-        onPress={() => run(ImageCropPicker.getSavePermission)}
+        onPress={() => run(PhotoLibrary.getSavePermission)}
       />
       <TestButton
         title="requestSavePermission: add-only"
-        onPress={() => run(ImageCropPicker.requestSavePermission)}
+        onPress={() => run(PhotoLibrary.requestSavePermission)}
       />
       <TestButton
         title="saveToLibrary: last result"
         disabled={!image}
         onPress={() =>
-          run(() => ImageCropPicker.saveToLibrary(image?.path ?? ''))
+          run(() => PhotoLibrary.saveToLibrary(image?.path ?? ''))
         }
       />
       <TestButton
