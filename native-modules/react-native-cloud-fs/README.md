@@ -4,9 +4,6 @@ Cloud file access for OneKey React Native applications. The native interface
 supports cloud availability checks, listing, copying, creating and deleting
 files, with iCloud-specific and Google Drive-specific methods.
 
-See the [authorization contract](docs/SPEC.md) for permission boundaries and
-acceptance requirements.
-
 ## Installation and usage
 
 ```sh
