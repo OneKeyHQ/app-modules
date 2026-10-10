@@ -43,6 +43,15 @@ private data class NavigationBarAppearance(
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
 
+  override fun getInMemoryValue(key: String): InMemoryValue? = InMemoryStore.get(key)
+
+  override fun setInMemoryValue(key: String, value: InMemoryValue) = InMemoryStore.set(key, value)
+
+  override fun removeInMemoryValue(key: String): Boolean = InMemoryStore.remove(key)
+
+  override fun setInMemoryValueIfAbsent(key: String, value: InMemoryValue): Boolean =
+    InMemoryStore.setIfAbsent(key, value)
+
   /**
    * Foldable device model constants for various manufacturers.
    * Reference: https://storage.googleapis.com/play_public/supported_devices.html
