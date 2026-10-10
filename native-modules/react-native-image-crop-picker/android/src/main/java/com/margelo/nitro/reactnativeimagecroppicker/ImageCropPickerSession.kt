@@ -85,7 +85,9 @@ internal class ImageCropPickerSession(
     val filename = queryDisplayName(uri)
     runInBackground(
       work = {
-        ImageCropPickerImageProcessor.makeResult(
+        if (config.preserveOriginal) {
+          ImageCropPickerImageProcessor.copyOriginal(activity, uri, config, filename)
+        } else ImageCropPickerImageProcessor.makeResult(
           activity,
           ImageCropPickerImageProcessor.decodeBitmap(activity, uri),
           config,
@@ -169,9 +171,7 @@ internal class ImageCropPickerSession(
         )
       }
       ImageCropperActivity.RESULT_ERROR -> {
-        val message = data?.getStringExtra(ImageCropperActivity.EXTRA_ERROR_MESSAGE)
-          ?: "Cannot crop image"
-        finish(Result.failure(ImageCropPickerException.noImageData(message)))
+        finish(Result.failure(ImageCropPickerException.noImageData()))
       }
       else -> finish(Result.failure(ImageCropPickerException.cancelled()))
     }
@@ -212,7 +212,7 @@ internal class ImageCropPickerSession(
       } catch (error: OutOfMemoryError) {
         Result.failure(ImageCropPickerException.lowMemory(error))
       } catch (error: Exception) {
-        Result.failure(ImageCropPickerException.noImageData(error.message ?: "Cannot process image"))
+        Result.failure(ImageCropPickerException.noImageData())
       }
       mainHandler.post {
         isProcessing = false

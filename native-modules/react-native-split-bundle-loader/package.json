@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-split-bundle-loader",
-  "version": "3.0.163",
+  "version": "3.0.165",
   "description": "Native split JavaScript bundle context and segment loading for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

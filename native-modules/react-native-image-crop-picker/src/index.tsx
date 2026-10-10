@@ -74,7 +74,7 @@ function toImageCropPickerError(error: unknown): ImageCropPickerError {
 }
 
 // Options accepted for source compatibility with react-native-image-crop-picker.
-// Only single photos are supported, and results are always JPEG.
+// Only single photos are supported; processed results are JPEG.
 export interface Options extends ImageCropPickerOptions {
   mediaType?: 'photo';
   multiple?: false;

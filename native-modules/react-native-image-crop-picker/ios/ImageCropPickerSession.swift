@@ -136,6 +136,17 @@ final class ImageCropPickerSession: NSObject {
     showLoading(in: picker.view)
 
     provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { [self] url, _ in
+      if config.preserveOriginal && !config.cropping {
+        guard let url else {
+          completeOriginal(.failure(ImageCropPickerError.noImageData))
+          return
+        }
+        // The provider deletes its file when this callback returns.
+        completeOriginal(Result {
+          try ImageCropPickerImageProcessor.copyOriginal(at: url, config: config, filename: filename)
+        })
+        return
+      }
       // The file is removed once this handler returns, so decode it right here.
       if let url, let decoded = ImageCropPickerImageProcessor.decodeImage(at: url) {
         handlePickedImage(decoded, filename: filename)
@@ -147,6 +158,14 @@ final class ImageCropPickerSession: NSObject {
           filename: filename
         )
       }
+    }
+  }
+
+  private func completeOriginal(_ result: Result<PickedImage, Error>) {
+    DispatchQueue.main.async { [self] in
+      isBusy = false
+      hideLoading()
+      dismissAll { self.finish(result) }
     }
   }
 

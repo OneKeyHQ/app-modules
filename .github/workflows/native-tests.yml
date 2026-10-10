@@ -33,7 +33,7 @@ jobs:
           # shellcheck disable=SC2016
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'cd "$(dirname "$0")" && yarn nitrogen > /dev/null'
-      - name: Run nine Android unit test suites
+      - name: Run nine Android unit test suites and build capture protection and photo saving
         working-directory: example/react-native/android
         run: |
           ./gradlew --continue --no-daemon --max-workers=2 --console=plain \
@@ -45,7 +45,9 @@ jobs:
             :onekeyfe_react-native-auto-size-input:testDebugUnitTest \
             :onekeyfe_react-native-image:testDebugUnitTest \
             :onekeyfe_react-native-native-list:testDebugUnitTest \
-            :onekeyfe_react-native-text-input:testDebugUnitTest
+            :onekeyfe_react-native-text-input:testDebugUnitTest \
+            :onekeyfe_react-native-capture-protection:assembleDebug \
+            :onekeyfe_react-native-photo-library:assembleDebug
       - name: Verify every Android suite executed tests
         if: always()
         run: |
@@ -119,6 +121,16 @@ jobs:
             -include-runtime -d "$RUNNER_TEMP/weak-padding-snapshot-tests.jar"
           java -jar "$RUNNER_TEMP/weak-padding-snapshot-tests.jar" | tee "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
           grep -Eq '^WeakPaddingSnapshot: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
+      - name: Run picker error privacy regression
+        working-directory: native-modules/react-native-image-crop-picker
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" \
+            android/src/main/java/com/margelo/nitro/reactnativeimagecroppicker/ImageCropPickerException.kt \
+            tests/kotlin/ImageCropPickerExceptionTest.kt \
+            -include-runtime -d "$RUNNER_TEMP/picker-error-privacy-tests.jar"
+          java -jar "$RUNNER_TEMP/picker-error-privacy-tests.jar" | tee "$RUNNER_TEMP/picker-error-privacy-tests.log"
+          grep -Eq '^ImageCropPickerException: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/picker-error-privacy-tests.log"
 
   swiftpm:
     runs-on: macos-26
@@ -220,13 +232,13 @@ jobs:
           end
           puts 'Podfile.lock matches: only the Hermes checksum and Specs CDN URL may differ'
           RUBY
-      - name: Run six pod XCTest suites on iOS Simulator
+      - name: Run nine pod XCTest suites on iOS Simulator
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
-          schemes=(NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests ReactNativeBundleCrypto-Unit-Tests)
+          schemes=(NativeSheet-Unit-Tests react-native-pager-view-Unit-Tests OneKeyTextInput-Unit-Tests OneKeyImage-Unit-Tests react-native-native-list-Unit-Tests ReactNativeBundleCrypto-Unit-Tests ReactNativeImageCropPicker-Unit-Tests ReactNativeCaptureProtection-Unit-Tests ReactNativePhotoLibrary-Unit-Tests)
           xcodebuild -list -workspace "$workspace" > artifacts/ios/schemes.log
           for scheme in "${schemes[@]}"; do
             grep -Fxq "        $scheme" artifacts/ios/schemes.log

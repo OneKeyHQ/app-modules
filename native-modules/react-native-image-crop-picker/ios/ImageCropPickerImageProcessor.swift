@@ -1,6 +1,7 @@
 import Foundation
 import ImageIO
 import UIKit
+import UniformTypeIdentifiers
 
 // Plain Swift copy of the options, so no C++ backed struct outlives the JS call.
 struct ImageCropPickerConfig {
@@ -8,6 +9,7 @@ struct ImageCropPickerConfig {
   let height: Double?
   let cropping: Bool
   let includeBase64: Bool
+  let preserveOriginal: Bool
   let compressImageQuality: Double?
   let compressImageMaxWidth: Double?
   let compressImageMaxHeight: Double?
@@ -25,6 +27,7 @@ struct ImageCropPickerConfig {
     height = options.height
     cropping = forceCropping || (options.cropping ?? false)
     includeBase64 = options.includeBase64 ?? false
+    preserveOriginal = options.preserveOriginal ?? false
     compressImageQuality = options.compressImageQuality
     compressImageMaxWidth = options.compressImageMaxWidth
     compressImageMaxHeight = options.compressImageMaxHeight
@@ -58,6 +61,45 @@ enum ImageCropPickerImageProcessor {
   static let maxDecodedPixelSize = 4096
   static let defaultCompressQuality = 0.8
   static let temporaryDirectoryName = "react-native-image-crop-picker"
+  static let maxOriginalBytes = 64 * 1024 * 1024
+
+  static func imageMetadata(at url: URL) throws -> (width: Int, height: Int, type: UTType, size: Int) {
+    let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+    guard size > 0, size <= maxOriginalBytes,
+          let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+          let identifier = CGImageSourceGetType(source),
+          let type = UTType(identifier as String), type.conforms(to: .image),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+          let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+          width > 0, height > 0 else {
+      throw ImageCropPickerError.noImageData
+    }
+    return (width, height, type, size)
+  }
+
+  static func copyOriginal(at sourceURL: URL, config: ImageCropPickerConfig, filename: String?) throws -> PickedImage {
+    let metadata = try imageMetadata(at: sourceURL)
+    let destination = try temporaryDirectory()
+      .appendingPathComponent(UUID().uuidString)
+      .appendingPathExtension(metadata.type.preferredFilenameExtension ?? "img")
+    do {
+      try FileManager.default.copyItem(at: sourceURL, to: destination)
+      return PickedImage(
+        path: destination.absoluteString,
+        size: Double(metadata.size),
+        width: Double(metadata.width),
+        height: Double(metadata.height),
+        mime: metadata.type.preferredMIMEType ?? "application/octet-stream",
+        data: config.includeBase64 ? try Data(contentsOf: destination).base64EncodedString() : nil,
+        cropRect: nil,
+        filename: filename
+      )
+    } catch {
+      try? FileManager.default.removeItem(at: destination)
+      throw ImageCropPickerError.cannotSaveImage
+    }
+  }
 
   static func decodeImage(at url: URL) -> DecodedImage? {
     let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
