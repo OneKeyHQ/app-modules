@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-perp-depth-bar",
-  "version": "3.0.166",
+  "version": "3.0.167",
   "description": "Native order-book depth bars and bid/ask ratio views for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
