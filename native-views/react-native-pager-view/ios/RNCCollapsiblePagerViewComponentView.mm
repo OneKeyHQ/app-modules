@@ -2770,9 +2770,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   if (_pagerScrollView != nil && _verticalPagerGesture != nil) {
     _verticalPagerGesture.pagerPan = _pagerScrollView.panGestureRecognizer;
-    for (UIGestureRecognizer *gesture in _pagerScrollView.gestureRecognizers) {
-      [gesture requireGestureRecognizerToFail:_verticalPagerGesture];
-    }
+    [_pagerScrollView.panGestureRecognizer requireGestureRecognizerToFail:_verticalPagerGesture];
   }
 }
 

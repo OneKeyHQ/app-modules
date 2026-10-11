@@ -254,9 +254,11 @@ start a refresh gesture. Non-smooth refresh direction behavior remains unchanged
 iOS nested horizontal ownership MUST include enabled nonpaging horizontal-only
 ScrollViews, with content wider than bounds and no vertical content overflow.
 Both pan holding and failure dependencies MUST use the same eligibility. A
-failure dependency on the Pager guard MUST apply only to the horizontal pan;
+failure dependency on the Pager guard MUST apply only to the horizontal pan,
+both on the root Pager ScrollView and on eligible nested horizontal ScrollViews;
 independent non-pan recognizers, including stationary native long presses, MUST
-remain able to recognize before finger-up while Pager intent is pending. A
+remain able to deliver their target actions before finger-up while Pager intent
+is pending. A
 second touch in the pending Pager guard fails recognition; an already active
 Pager guard cancels and restores each held pan's original minimum touch count.
 

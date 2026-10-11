@@ -1011,6 +1011,37 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
   return point;
 }
 
+- (void)testRootPagerStationaryNativeLongPressRecognizesBeforeFingerUp
+{
+  [self assertFixtureIsReadyForDelivery];
+  [self assertDirectPagerForRegression];
+  UIScrollView *pager = [self.pager valueForKey:@"pagerScrollView"];
+  UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc]
+    initWithTarget:self action:@selector(nestedLongPress:)];
+  longPress.minimumPressDuration = 0.1;
+  [pager addGestureRecognizer:longPress];
+  // Exercise production wiring after a root recognizer is attached.
+  ((void (*)(id, SEL))objc_msgSend)(self.pager, NSSelectorFromString(@"connectVerticalPagerGuard"));
+  UITouch *touch = [self.driver beginAt:[self pressPoint]];
+  UIGestureRecognizer *guard = [self.pager valueForKey:@"verticalPagerGesture"];
+  XCTAssertEqual(guard.state, UIGestureRecognizerStatePossible);
+  XCTAssertEqual(pager.panGestureRecognizer.minimumNumberOfTouches, 2);
+  XCTestExpectation *hold = [self expectationWithDescription:@"root stationary finger held"];
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                 dispatch_get_main_queue(), ^{ [hold fulfill]; });
+  [self waitForExpectations:@[hold] timeout:2];
+  NSLog(@"[PagerPressDelivery] rootLongPress begins=%lu state=%ld touchPhase=%ld guardState=%ld pagerPanMinTouches=%lu",
+        (unsigned long)self.longPressBegins, (long)longPress.state, (long)touch.phase,
+        (long)guard.state, (unsigned long)pager.panGestureRecognizer.minimumNumberOfTouches);
+  // The UIKit target action must arrive before the real window receives UP.
+  XCTAssertEqual(self.longPressBegins, 1);
+  XCTAssertEqual(touch.phase, UITouchPhaseBegan);
+  XCTAssertEqual(guard.state, UIGestureRecognizerStatePossible);
+  XCTAssertEqual(pager.panGestureRecognizer.minimumNumberOfTouches, 2);
+  [self.driver end:touch];
+  XCTAssertEqual(pager.panGestureRecognizer.minimumNumberOfTouches, 1);
+}
+
 - (void)testNestedStationaryNativeLongPressRecognizesBeforeFingerUp
 {
   UIScrollView *scroll = [self mountNestedHorizontalScrollView];
