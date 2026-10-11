@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-device-utils",
-  "version": "3.0.165",
+  "version": "3.0.167",
   "description": "Native device, launch, system appearance and boot recovery utilities for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",

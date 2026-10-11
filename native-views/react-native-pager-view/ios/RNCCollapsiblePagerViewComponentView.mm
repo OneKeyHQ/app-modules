@@ -158,11 +158,51 @@ static UIView *RNCScrollComponentView(UIScrollView *scrollView)
   return nil;
 }
 
+// NativeList owns its collection through a Fabric contentView and its delegate.
+// A dropped Nitro view can remain in the hierarchy after its delegate is cleared.
+static RCTViewComponentView *RNCNativeListComponentForScrollView(UIScrollView *scrollView)
+{
+  Class nativeListClass = NSClassFromString(@"HybridNativeListComponent");
+  for (UIView *component = scrollView; component != nil; component = component.superview) {
+    if (![component isKindOfClass:RCTViewComponentView.class]) continue;
+    return nativeListClass != Nil && [component isKindOfClass:nativeListClass]
+      ? (RCTViewComponentView *)component : nil;
+  }
+  return nil;
+}
+
+static BOOL RNCIsMountedNativeListScrollView(UIScrollView *scrollView)
+{
+  if (![scrollView isKindOfClass:UICollectionView.class]) return NO;
+  RCTViewComponentView *component = RNCNativeListComponentForScrollView(scrollView);
+  UIView *content = component.contentView;
+  return component.tag > 0 && content != nil && [scrollView isDescendantOfView:content] &&
+    ((UICollectionView *)scrollView).delegate == (id)content;
+}
+
 typedef void (^RNCCollapsiblePagerNativeTabPressHandler)(NSInteger index, NSString *key);
 
 static CGFloat RNCClamp(CGFloat value, CGFloat minimum, CGFloat maximum)
 {
   return MIN(MAX(value, minimum), maximum);
+}
+
+static BOOL RNCIsEnabledHorizontalScrollOwner(UIScrollView *scroll)
+{
+  return scroll.scrollEnabled && scroll.panGestureRecognizer.enabled &&
+    scroll.contentSize.width > CGRectGetWidth(scroll.bounds) && !scroll.alwaysBounceVertical &&
+    scroll.contentSize.height <= CGRectGetHeight(scroll.bounds) + 0.5;
+}
+
+static void RNCGuardNestedHorizontalPans(UIView *view, UIGestureRecognizer *guard)
+{
+  if ([view isKindOfClass:UIScrollView.class]) {
+    UIScrollView *scroll = (UIScrollView *)view;
+    if (RNCIsEnabledHorizontalScrollOwner(scroll)) {
+      [scroll.panGestureRecognizer requireGestureRecognizerToFail:guard];
+    }
+  }
+  for (UIView *child in view.subviews) RNCGuardNestedHorizontalPans(child, guard);
 }
 
 static void RNCCollapsiblePagerLog(NSString *message)
@@ -995,6 +1035,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
         intent.y]);
       return NO;
     }
+    UIView *target = [self hitTest:[pan locationInView:self] withEvent:nil];
+    for (UIView *ancestor = target; ancestor != nil && ancestor != self; ancestor = ancestor.superview) {
+      if (![ancestor isKindOfClass:UIScrollView.class]) continue;
+      UIScrollView *inner = (UIScrollView *)ancestor;
+      CGFloat maximum = MAX(0, inner.contentSize.width - CGRectGetWidth(inner.bounds));
+      BOOL canScroll = maximum > 0 && (intent.x < 0
+        ? inner.contentOffset.x < maximum - 0.5 : inner.contentOffset.x > 0.5);
+      if (canScroll) return NO;
+    }
   }
   if (gestureRecognizer == self.panGestureRecognizer && self.excludedHeaderView != nil) {
     CGPoint point = [gestureRecognizer locationInView:self.excludedHeaderView];
@@ -1187,16 +1236,134 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 @end
 
-@interface RNCCollapsiblePagerVerticalPagerGuardGestureRecognizer : UIPanGestureRecognizer
+@interface RNCCollapsiblePagerVerticalPagerGuardGestureRecognizer : UIGestureRecognizer
+@property (nonatomic, weak) UIPanGestureRecognizer *pagerPan;
+- (CGPoint)translationInView:(UIView *)view;
+- (CGPoint)velocityInView:(UIView *)view;
 @end
 
-@implementation RNCCollapsiblePagerVerticalPagerGuardGestureRecognizer
-
-- (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)preventedGestureRecognizer
-{
-  return NO;
+@implementation RNCCollapsiblePagerVerticalPagerGuardGestureRecognizer {
+  __weak UITouch *_trackedTouch;
+  NSMapTable<UIPanGestureRecognizer *, NSNumber *> *_heldPans;
+  CGPoint _startPoint;
+  CGPoint _lastPoint;
+  CGPoint _velocity;
+  NSTimeInterval _lastTimestamp;
 }
 
+- (void)holdPan:(UIPanGestureRecognizer *)pan
+{
+  if (pan == nil || [_heldPans objectForKey:pan] != nil) return;
+  if (_heldPans == nil) _heldPans = [NSMapTable weakToStrongObjectsMapTable];
+  [_heldPans setObject:@(pan.minimumNumberOfTouches) forKey:pan];
+  // A failure dependency alone lets UIKit's pager pan cancel a descendant pan
+  // before intent resolves. Keep DOWN tracked while deferring one-finger begin.
+  pan.minimumNumberOfTouches = MAX(2, pan.minimumNumberOfTouches);
+}
+
+- (void)restoreHeldPans
+{
+  for (UIPanGestureRecognizer *pan in _heldPans.keyEnumerator) {
+    pan.minimumNumberOfTouches = [_heldPans objectForKey:pan].unsignedIntegerValue;
+    UIScrollView *scroll = [pan.view isKindOfClass:UIScrollView.class] ? (UIScrollView *)pan.view : nil;
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"gesture-restore pan=%@ min-touches=%lu offset=%@",
+      NSStringFromClass(pan.view.class), (unsigned long)pan.minimumNumberOfTouches,
+      scroll != nil ? NSStringFromCGPoint(scroll.contentOffset) : @"none"]);
+  }
+  [_heldPans removeAllObjects];
+}
+
+- (CGPoint)translationInView:(UIView *)view
+{
+  CGPoint start = [view convertPoint:_startPoint fromView:self.view];
+  CGPoint last = [view convertPoint:_lastPoint fromView:self.view];
+  return CGPointMake(last.x - start.x, last.y - start.y);
+}
+
+- (CGPoint)velocityInView:(UIView *)view { return _velocity; }
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  if (_trackedTouch != nil || touches.count != 1) {
+    RNCCollapsiblePagerLog([NSString stringWithFormat:
+      @"gesture-second-touch previous-state=%ld incoming=%lu held-pans=%lu",
+      (long)self.state, (unsigned long)touches.count, (unsigned long)_heldPans.count]);
+    [self restoreHeldPans];
+    if (self.state == UIGestureRecognizerStatePossible) {
+      self.state = UIGestureRecognizerStateFailed;
+    } else if (self.state == UIGestureRecognizerStateBegan || self.state == UIGestureRecognizerStateChanged) {
+      self.state = UIGestureRecognizerStateCancelled;
+    }
+    return;
+  }
+  _trackedTouch = touches.anyObject;
+  _startPoint = _lastPoint = [touches.anyObject locationInView:self.view];
+  _lastTimestamp = event.timestamp;
+  _velocity = CGPointZero;
+  [self holdPan:self.pagerPan];
+  for (UIView *view = _trackedTouch.view; view != nil && view != self.view; view = view.superview) {
+    if (![view isKindOfClass:UIScrollView.class]) continue;
+    UIScrollView *scroll = (UIScrollView *)view;
+    if (RNCIsEnabledHorizontalScrollOwner(scroll)) {
+      RNCCollapsiblePagerLog([NSString stringWithFormat:
+        @"gesture-hold inner=%@ paging=%d offset=%@ content=%@ bounds=%@",
+        NSStringFromClass(scroll.class), scroll.pagingEnabled, NSStringFromCGPoint(scroll.contentOffset),
+        NSStringFromCGSize(scroll.contentSize), NSStringFromCGSize(scroll.bounds.size)]);
+      [self holdPan:scroll.panGestureRecognizer];
+    }
+  }
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  CGPoint point = [touches.anyObject locationInView:self.view];
+  NSTimeInterval elapsed = event.timestamp - _lastTimestamp;
+  if (elapsed > 0) {
+    _velocity = CGPointMake((point.x - _lastPoint.x) / elapsed,
+                           (point.y - _lastPoint.y) / elapsed);
+  }
+  _lastPoint = point;
+  _lastTimestamp = event.timestamp;
+  if (self.state == UIGestureRecognizerStatePossible) {
+    CGFloat dx = fabs(point.x - _startPoint.x), dy = fabs(point.y - _startPoint.y);
+    // Keep intent pending until the explicit distance decision, instead of
+    // relying on UIPanGestureRecognizer's earlier recognition.
+    if ((dy >= 10 && dy > dx) || (dx >= 32 && dx > dy)) {
+      RNCCollapsiblePagerLog([NSString stringWithFormat:
+        @"gesture-intent axis=%@ dx=%.2f dy=%.2f held-pans=%lu",
+        dy > dx ? @"vertical" : @"horizontal", dx, dy, (unsigned long)_heldPans.count]);
+      self.state = UIGestureRecognizerStateBegan;
+      if (self.state == UIGestureRecognizerStateFailed) [self restoreHeldPans];
+    }
+  } else if (self.state == UIGestureRecognizerStateBegan || self.state == UIGestureRecognizerStateChanged) {
+    self.state = UIGestureRecognizerStateChanged;
+  }
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  [self restoreHeldPans];
+  self.state = self.state == UIGestureRecognizerStatePossible
+    ? UIGestureRecognizerStateFailed : UIGestureRecognizerStateEnded;
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+  [self restoreHeldPans];
+  self.state = UIGestureRecognizerStateCancelled;
+}
+
+- (void)reset
+{
+  [self restoreHeldPans];
+  [super reset];
+  _trackedTouch = nil;
+  _velocity = CGPointZero;
+}
+
+- (BOOL)canBePreventedByGestureRecognizer:(UIGestureRecognizer *)other { return NO; }
+- (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)other { return YES; }
 @end
 
 @interface RNCCollapsiblePagerViewComponentView () <
@@ -1282,10 +1449,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   NSMapTable<UIScrollView *, NSNumber *> *_appliedTopInsets;
   NSMapTable<UIScrollView *, NSValue *> *_originalIndicatorInsets;
   NSMapTable<UIScrollView *, NSNumber *> *_originalAlwaysBounceVertical;
+  NSMapTable<UIScrollView *, NSNumber *> *_originalDirectionalLockEnabled;
   NSMapTable<UIScrollView *, NSNumber *> *_originalInsetAdjustmentBehavior;
   // OneKey patch: pair pre-mount release with recovery, including deferred mounts.
   NSMutableDictionary<NSString *, RNCCollapsiblePagerReleasedScrollState *> *_releasedPageScrollStates;
   BOOL _needsScrollObserverReattachAfterMount;
+  NSHashTable<UIScrollView *> *_mountingRemovedScrollViews;
   __weak UIScrollView *_observedScrollView;
   __weak UIScrollView *_sharedHeaderScrollView;
   __weak UIScrollView *_pendingFallbackScrollView;
@@ -1294,7 +1463,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   UIPanGestureRecognizer *_sharedHeaderPressCancellationGesture;
   RNCCollapsiblePagerContentPressCancellationGestureRecognizer *_contentPressCancellationGesture;
   RNCCollapsiblePagerOuterPagerPanGestureRecognizer *_sharedHeaderOuterPagerGesture;
-  UIPanGestureRecognizer *_verticalPagerGesture;
+  RNCCollapsiblePagerVerticalPagerGuardGestureRecognizer *_verticalPagerGesture;
   BOOL _observingContentOffset;
   BOOL _scrollResolveRetryScheduled;
   CFTimeInterval _pendingFallbackScrollViewDetectedAt;
@@ -1322,12 +1491,14 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _pageControllers = [NSMutableArray new];
     _pageOffsets = [NSMutableDictionary new];
     _releasedPageScrollStates = [NSMutableDictionary new];
+    _mountingRemovedScrollViews = [NSHashTable weakObjectsHashTable];
     _originalInsets = [NSMapTable weakToStrongObjectsMapTable];
     _managedRefreshControls = [NSMapTable weakToWeakObjectsMapTable];
     _refreshControlObservedScrollViews = [NSHashTable weakObjectsHashTable];
     _appliedTopInsets = [NSMapTable weakToStrongObjectsMapTable];
     _originalIndicatorInsets = [NSMapTable weakToStrongObjectsMapTable];
     _originalAlwaysBounceVertical = [NSMapTable weakToStrongObjectsMapTable];
+    _originalDirectionalLockEnabled = [NSMapTable weakToStrongObjectsMapTable];
     _originalInsetAdjustmentBehavior = [NSMapTable weakToStrongObjectsMapTable];
     _pageKeys = @[];
     _retainedPages = @"[]";
@@ -1365,7 +1536,6 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _verticalPagerGesture.cancelsTouchesInView = NO;
     _verticalPagerGesture.enabled = NO;
     [self addGestureRecognizer:_verticalPagerGesture];
-
     _nativeTabBarView = [RNCCollapsiblePagerNativeTabBarView new];
     _nativeTabBarView.hidden = YES;
     __weak __typeof__(self) weakSelf = self;
@@ -1758,6 +1928,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
         }
         break;
       }
+      // Quarantine only this mount transaction; moved views may be valid again.
+      [_mountingRemovedScrollViews addObject:scrollView];
       _needsScrollObserverReattachAfterMount = YES;
       [self restoreScrollViewState:scrollView resetSavedOffset:!belongsToPage];
       break;
@@ -1768,9 +1940,25 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)mountingTransactionDidMount:(const MountingTransaction &)transaction
                withSurfaceTelemetry:(const SurfaceTelemetry &)surfaceTelemetry
 {
-  if (!_nativeSmoothHeaderScrollEnabled || _transitioning ||
-      _isPagerDragging || _isBeingRecycled || self.window == nil ||
+  [_mountingRemovedScrollViews removeAllObjects];
+  if (!_nativeSmoothHeaderScrollEnabled || _isBeingRecycled || self.window == nil ||
       _currentIndex < 0 || _currentIndex >= _pageControllers.count) return;
+  // Prepare newly mounted owned scrollers before their first frame, even while
+  // horizontal selection still owns the shared header and observer.
+  NSInteger first = MAX(0, _currentIndex - 1);
+  NSInteger last = MIN((NSInteger)_pageControllers.count - 1, _currentIndex + 1);
+  for (NSInteger index = 0; index < _pageControllers.count; index++) {
+    if ((index < first || index > last) && index != _destinationIndex) continue;
+    UIScrollView *scrollView = [self verticalScrollViewForPageAtIndex:index];
+    BOOL isOwnedScroller = [scrollView.superview isKindOfClass:RNCNativeScrollerComponentView.class] &&
+      ((RNCNativeScrollerComponentView *)scrollView.superview).scrollView == scrollView &&
+      [scrollView isDescendantOfView:_pageControllers[index].view];
+    if ((RNCIsMountedNativeListScrollView(scrollView) || isOwnedScroller) &&
+        [_originalInsets objectForKey:scrollView] == nil) {
+      [self applyInsetsToScrollView:scrollView pageIndex:index restore:YES];
+    }
+  }
+  if (_transitioning || _isPagerDragging) return;
 
   // OneKey patch: a release must recover even when the changed parent is above
   // the page subtree. Missing lists keep their identity for a later insertion.
@@ -2002,6 +2190,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   _isBeingRecycled = YES;
   _generation++;
+  [_mountingRemovedScrollViews removeAllObjects];
   _needsScrollObserverReattachAfterMount = NO;
   [_releasedPageScrollStates removeAllObjects];
   [self detachSharedHeaderPressCancellationGesture];
@@ -2027,6 +2216,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     }
     NSNumber *alwaysBounce = [_originalAlwaysBounceVertical objectForKey:scrollView];
     if (alwaysBounce != nil) scrollView.alwaysBounceVertical = alwaysBounce.boolValue;
+    NSNumber *directionalLock = [_originalDirectionalLockEnabled objectForKey:scrollView];
+    if (directionalLock != nil) scrollView.directionalLockEnabled = directionalLock.boolValue;
     NSNumber *adjustment = [_originalInsetAdjustmentBehavior objectForKey:scrollView];
     if (adjustment != nil) {
       scrollView.contentInsetAdjustmentBehavior = (UIScrollViewContentInsetAdjustmentBehavior)adjustment.integerValue;
@@ -2036,6 +2227,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [_appliedTopInsets removeAllObjects];
   [_originalIndicatorInsets removeAllObjects];
   [_originalAlwaysBounceVertical removeAllObjects];
+  [_originalDirectionalLockEnabled removeAllObjects];
   [_originalInsetAdjustmentBehavior removeAllObjects];
   // OneKey patch: Fabric reuses these views without resetting transforms
   // written by a native parent. Release our collapse translation with the slot.
@@ -2280,13 +2472,15 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       currentVerticalScrollViewForParentPager];
   }
   if ([view isKindOfClass:RNCNativeScrollerComponentView.class]) {
-    return ((RNCNativeScrollerComponentView *)view).scrollView;
+    UIScrollView *scrollView = ((RNCNativeScrollerComponentView *)view).scrollView;
+    return [_mountingRemovedScrollViews containsObject:scrollView] ? nil : scrollView;
   }
   if ([view isKindOfClass:RCTScrollViewComponentView.class]) {
     RCTScrollViewComponentView *componentView =
       (RCTScrollViewComponentView *)view;
     if ([componentView.nativeId hasPrefix:RNCCollapsiblePagerNativeScrollerIDPrefix]) {
-      return componentView.scrollView;
+      UIScrollView *scrollView = componentView.scrollView;
+      return [_mountingRemovedScrollViews containsObject:scrollView] ? nil : scrollView;
     }
   }
   for (UIView *subview in view.subviews) {
@@ -2307,7 +2501,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if ([view isKindOfClass:RCTScrollViewComponentView.class]) {
     UIScrollView *scrollView =
       ((RCTScrollViewComponentView *)view).scrollView;
-    if (!scrollView.alwaysBounceHorizontal) {
+    if (!scrollView.alwaysBounceHorizontal &&
+        ![_mountingRemovedScrollViews containsObject:scrollView]) {
       return scrollView;
     }
   }
@@ -2320,7 +2515,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (UIScrollView *)findVerticalScrollViewInView:(UIView *)view
 {
-  if (view == _sharedHeaderHostView) return nil;
+  if (view == _sharedHeaderHostView ||
+      ([view isKindOfClass:UIScrollView.class] &&
+       [_mountingRemovedScrollViews containsObject:(UIScrollView *)view])) return nil;
   // A parent pager must follow the nested pager's active page instead of the
   // first retained page found by recursive subview order.
   if (view != self &&
@@ -2332,6 +2529,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   if ([view isKindOfClass:UICollectionView.class]) {
     UICollectionView *collectionView = (UICollectionView *)view;
+    if (RNCNativeListComponentForScrollView(collectionView) != nil &&
+        !RNCIsMountedNativeListScrollView(collectionView)) return nil;
     UICollectionViewLayout *layout = collectionView.collectionViewLayout;
     BOOL hasUsableBounds = CGRectGetWidth(collectionView.bounds) > 0 &&
       CGRectGetHeight(collectionView.bounds) > 0;
@@ -2407,6 +2606,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _pendingFallbackScrollViewDetectedAt = 0;
   }
   UIScrollView *candidate = [self verticalScrollViewForPageAtIndex:_currentIndex];
+  if (_nativeSmoothHeaderScrollEnabled && _currentIndex >= 0 && _currentIndex < _pageControllers.count) {
+    RNCGuardNestedHorizontalPans(_pageControllers[_currentIndex].view, _verticalPagerGesture);
+  }
   if (candidate == nil) {
     [self detachScrollObserver];
     [self restoreSharedHeadersToContainer];
@@ -2425,7 +2627,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     return;
   }
   if ([candidate isKindOfClass:UICollectionView.class] &&
-      candidate != _observedScrollView) {
+      candidate != _observedScrollView && !RNCIsMountedNativeListScrollView(candidate)) {
     if (_pendingFallbackScrollView != candidate) {
       _pendingFallbackScrollView = candidate;
       _pendingFallbackScrollViewDetectedAt = CACurrentMediaTime();
@@ -2531,8 +2733,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 - (void)connectVerticalPagerGuard
 {
   if (_pagerScrollView != nil && _verticalPagerGesture != nil) {
-    [_pagerScrollView.panGestureRecognizer
-      requireGestureRecognizerToFail:_verticalPagerGesture];
+    _verticalPagerGesture.pagerPan = _pagerScrollView.panGestureRecognizer;
+    for (UIGestureRecognizer *gesture in _pagerScrollView.gestureRecognizers) {
+      [gesture requireGestureRecognizerToFail:_verticalPagerGesture];
+    }
   }
 }
 
@@ -2787,6 +2991,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     [_originalIndicatorInsets objectForKey:scrollView].UIEdgeInsetsValue;
   scrollView.alwaysBounceVertical =
     [_originalAlwaysBounceVertical objectForKey:scrollView].boolValue;
+  scrollView.directionalLockEnabled =
+    [_originalDirectionalLockEnabled objectForKey:scrollView].boolValue;
   scrollView.contentInsetAdjustmentBehavior = (UIScrollViewContentInsetAdjustmentBehavior)
     [_originalInsetAdjustmentBehavior objectForKey:scrollView].integerValue;
   [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, logicalOffset - original.top)
@@ -2795,6 +3001,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   [_appliedTopInsets removeObjectForKey:scrollView];
   [_originalIndicatorInsets removeObjectForKey:scrollView];
   [_originalAlwaysBounceVertical removeObjectForKey:scrollView];
+  [_originalDirectionalLockEnabled removeObjectForKey:scrollView];
   [_originalInsetAdjustmentBehavior removeObjectForKey:scrollView];
 }
 
@@ -2831,7 +3038,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     // debounce each replacement candidate independently before rejecting the
     // released identity. A surviving native list is safe to accept immediately.
     BOOL needsFallbackDebounce = !sameList &&
-      [scrollView isKindOfClass:UICollectionView.class] && scrollView != _observedScrollView;
+      [scrollView isKindOfClass:UICollectionView.class] && scrollView != _observedScrollView &&
+      !RNCIsMountedNativeListScrollView(scrollView);
     if (needsFallbackDebounce) {
       CFTimeInterval now = CACurrentMediaTime();
       if (released.pendingFallbackScrollView != scrollView) {
@@ -2879,12 +3087,17 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       setObject:[NSValue valueWithUIEdgeInsets:scrollView.verticalScrollIndicatorInsets]
       forKey:scrollView];
     [_originalAlwaysBounceVertical setObject:@(scrollView.alwaysBounceVertical) forKey:scrollView];
+    [_originalDirectionalLockEnabled setObject:@(scrollView.directionalLockEnabled) forKey:scrollView];
     [_originalInsetAdjustmentBehavior setObject:@(scrollView.contentInsetAdjustmentBehavior) forKey:scrollView];
   }
 
   // This host already includes the fixed header and safe area in its frame.
   // UIKit automatic adjustment would add them a second time to short pages.
   scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+  // This viewport is vertical-only; UIKit's first horizontal lock must not
+  // suppress its later vertical movement while the pager is still pending.
+  scrollView.directionalLockEnabled = _nativeSmoothHeaderScrollEnabled
+    ? NO : [_originalDirectionalLockEnabled objectForKey:scrollView].boolValue;
   [self updateNativeScrollerViewport:scrollView stickyHeight:_stickyHeaderHeight];
   [self updateRefreshControlForScrollView:scrollView];
   CGFloat previousTopInset = scrollView.contentInset.top;
@@ -3543,6 +3756,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       : velocity;
     BOOL hasMotion = MAX(fabs(intent.x), fabs(intent.y)) >= 1;
     BOOL vertical = hasMotion && fabs(intent.y) > fabs(intent.x);
+    if (gestureRecognizer == _sharedHeaderPressCancellationGesture) vertical = hasMotion;
     NSString *role = gestureRecognizer == _sharedHeaderPressCancellationGesture
       ? @"vertical-cancel"
       : @"vertical-pager-guard";

@@ -5,11 +5,15 @@ import android.util.AttributeSet
 import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewConfiguration
+import android.widget.HorizontalScrollView
 import android.widget.FrameLayout
+import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import androidx.viewpager2.widget.ViewPager2.ORIENTATION_HORIZONTAL
 import com.facebook.react.uimanager.events.NativeGestureUtil
+import com.margelo.nitro.nativelogger.OneKeyLog
 import kotlin.math.absoluteValue
 import kotlin.math.sign
 
@@ -32,6 +36,11 @@ open class NestedScrollableHost : FrameLayout {
   private var touchSlop = 0
   private var initialX = 0f
   private var initialY = 0f
+  private var smoothTouchActive = false
+  private var smoothTouchAxis = 0
+  private var smoothDownX = 0f
+  private var smoothDownY = 0f
+  private var nestedHorizontalOwner: View? = null
   protected var nestedNativeGestureStarted: Boolean = false
   private val parentViewPager: ViewPager2?
     get() {
@@ -57,8 +66,74 @@ open class NestedScrollableHost : FrameLayout {
     }
   }
 
+  private fun hasSmoothHeaderOwner(): Boolean {
+    var ancestor: View? = this
+    while (ancestor != null) {
+      if (ancestor is CollapsiblePagerHost && ancestor.nativeSmoothHeaderScrollEnabled) return true
+      ancestor = ancestor.parent as? View
+    }
+    return false
+  }
+
+  private fun horizontalOwnerAt(view: View, x: Float, y: Float): View? {
+    if (view is ViewGroup) {
+      for (index in view.childCount - 1 downTo 0) {
+        val nested = view.getChildAt(index)
+        if (nested.visibility != View.VISIBLE || nested.alpha <= 0f) continue
+        val localX = x + view.scrollX - nested.left - nested.translationX
+        val localY = y + view.scrollY - nested.top - nested.translationY
+        if (localX < 0 || localY < 0 || localX >= nested.width || localY >= nested.height) continue
+        horizontalOwnerAt(nested, localX, localY)?.let { return it }
+        break
+      }
+    }
+    // Exclude this host's own pager; only an inner horizontal viewport has priority.
+    if (view.parent !== child && (view is HorizontalScrollView || view is RecyclerView) &&
+      (view.canScrollHorizontally(-1) || view.canScrollHorizontally(1))) return view
+    return null
+  }
+
+  private fun coordinateSmoothTouch(e: MotionEvent) {
+    val pager = child as? ViewPager2 ?: return
+    if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+      smoothTouchActive = hasSmoothHeaderOwner()
+      smoothTouchAxis = 0
+      smoothDownX = e.x
+      smoothDownY = e.y
+      nestedHorizontalOwner = if (smoothTouchActive) horizontalOwnerAt(this, e.x, e.y) else null
+    }
+    if (!smoothTouchActive) return
+    val dx = e.x - smoothDownX
+    val dy = e.y - smoothDownY
+    if (e.actionMasked == MotionEvent.ACTION_MOVE && smoothTouchAxis == 0) {
+      smoothTouchAxis = when {
+        dy.absoluteValue > touchSlop && dy.absoluteValue > dx.absoluteValue -> 1
+        dx.absoluteValue >= 32f * resources.displayMetrics.density && dx.absoluteValue > dy.absoluteValue -> 2
+        else -> 0
+      }
+      if (smoothTouchAxis != 0) {
+        OneKeyLog.debug("CollapsiblePager", "content-direction owner=${if (smoothTouchAxis == 1) "list" else "horizontal"} dx=$dx dy=$dy nested=${nestedHorizontalOwner != null}")
+      }
+    }
+    val innerCanScroll = nestedHorizontalOwner?.canScrollHorizontally(-dx.sign.toInt()) == true
+    // Preserve DOWN in the real pager, but defer horizontal interception while
+    // intent is pending. Ancestor vertical lists must still be able to intercept.
+    (pager.getChildAt(0) as? RecyclerView)?.requestDisallowInterceptTouchEvent(smoothTouchAxis != 2 || innerCanScroll)
+    parent?.requestDisallowInterceptTouchEvent(false)
+  }
+
   override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+    coordinateSmoothTouch(e)
     val handled = super.dispatchTouchEvent(e)
+    if (smoothTouchActive && (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL)) {
+      if (nestedNativeGestureStarted) {
+        NativeGestureUtil.notifyNativeGestureEnded(this, e)
+        nestedNativeGestureStarted = false
+      }
+      smoothTouchActive = false
+      smoothTouchAxis = 0
+      nestedHorizontalOwner = null
+    }
 
     // After the full child dispatch cycle, a deeply-nested NestedScrollableHost may
     // have called requestDisallowInterceptTouchEvent(false) which propagates all the
