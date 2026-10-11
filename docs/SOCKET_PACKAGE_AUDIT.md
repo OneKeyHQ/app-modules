@@ -198,3 +198,15 @@ PR #145 在前述宿主字体兼容阶段之后新增 `configureNativeListFonts`
 此阶段不改上表43包官方分数或其历史采集时间，不发布npm。前述236项JS/19项JVM、旧tarball尺寸和阶段结果保留为此前版本的历史证据；新的源码、构建、测试和真实pack记录在 `.tmp/font-configuration/`，不构成新的Socket评分。先前“未push”字段亦属于原审计阶段快照，当前交付通过Draft PR #145与#13854继续审阅。
 
 当前全局配置阶段验证：248项JS（8 suites，含真实React双列表订阅、同值配置不重绘、unmount清理及snapshot不重放）和33项release脚本测试通过；包typecheck、lint（0 errors/24 existing warnings）、44测试文件integrity检查（1条原有非gate advisory）、prepare/Nitrogen通过。Android实际Kotlin编译与6 suites/19项JVM测试通过。iOS完整NativeList与XCTest目标arm64/x86_64 build-for-testing通过；SDWebImage旧部署目标仅在命令行覆盖至15.1，未改依赖或Podfile.lock。3项新增UIKit字体测试已编译，专用外置模拟器boot两次均因NSCocoaError513/NSPOSIX EPERM阻塞，故尚未运行，亦未完成App Roobert真机视觉验收。真实Chrome155字体harness的16检查通过、零page errors，使用系统可用字体检验四face/weight、portal、配置变更/重置和patch保留，不冒充实际Roobert/drag设备验收。最终tar与源码逐文件一致、SHA512核验通过、0字体文件；尺寸/hash保存在 `.tmp/font-configuration/pack-validation.json`，执行命令和失败边界见 `validation-summary.json`。
+
+## 后续运行时依赖与生物状态失败处理阶段（2026-10-11）
+
+前述“仅三个包声明 regular runtime dependencies”和未修改生物状态校验的说明属于原审计阶段。本阶段给 text-input 声明源码实际导入的 `invariant:^2.2.4` 与 `nullthrows:^1.1.1`；锁只补该 workspace 的两条声明，复用既有解析版本，没有修改 RN peer 或 paste 行为。真实新 tarball 安装到仓库之外的独立消费者后，锚定安装包的 `createRequire` 将两个 helper 均解析到消费者自己的目录，实际执行 helper 并成功打包产物中的 Input 模块；React/RN peers 在这个打包检查中作为外部依赖，未替代设备输入验收。
+
+biometric iOS 保留 boolean API、成功检查推进基线和 Android `false` stub。现在仅 Keychain `errSecItemNotFound` 代表缺失；当前 domain state 不可用、读取失败/成功非 Data、update/add 失败均拒绝，不能被当成 `false`。首用只有保存成功才返回 `false`，legacy 仅在保存成功后删除。原访问级别保留，真实同步事务用 process-wide lock 串行化，通过 Nitro `Promise.parallel` 的后台队列执行。新增 SPEC 与生产 core 随产物分发，故障测试位于生产 iOS glob 之外且不打进 npm 包。
+
+App PR #13854 的 PasswordVerify 将检查结果分为 unchanged/changed/unavailable，所有生物入口仅允许 unchanged；共享检查与完整认证的 in-flight Promise，changed/unavailable 在本次挂载锁存。未知不关闭持久开关、不显示已变更警告，仍可输入密码/口令；确认变更先锁存，只有关闭设置成功才显示原警告，关闭失败显示已有生物认证失败信息。检查等待期间关闭开关、开始输入、进入 VERIFYING/VERIFIED 或 unmount 均不能晚触发认证。App 不升级未发布 SDK，新 iOS 原生错误语义需未来实际发布、升级和重建；macOS 底层服务的 catch-to-false 路径未在本轮修改。
+
+本阶段验证：两个包实际 prepare/Nitrogen 及 TypeScript 产物生成通过；biometric iOS Simulator target 的 arm64/x86_64 实际编译通过。10 个真实 Swift core 故障场景（含 20 个并发事务）与 App 的 14 个真实组件测试通过；测试通过注入操作覆盖错误，不访问用户 Keychain。两个最终真实 tarball 全文件与当前源码逐字一致，SHA512 核验通过，规格与 core 都在 biometric 包中，命令/尺寸/hash 见 `.tmp/biometric-validation/validation-summary.json`、`pack-validation.json` 与 `consumer-validation.json`。App 必需提交 gate 独立记录，不能将聚焦测试替代 gate 通过。
+
+上述修改不构成新的官方 Socket 分数、Deep 或完整依赖安全闭包；上表 43 包历史字段保持不变。没有发布 npm、修改版本或合并 PR。真实设备 enrollment、protected-data/Keychain 状态、原生桥拒绝传递和 App 认证交互仍待验收。
