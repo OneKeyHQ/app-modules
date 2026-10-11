@@ -695,13 +695,13 @@ private class NativeScrollerRefreshLayout(context: Context) : SwipeRefreshLayout
         ancestor = ancestor.parent as? View
       }
       intercepted = false
-    } else if (event.actionMasked == MotionEvent.ACTION_MOVE && (!smoothPagerGesture || !vertical)) {
+    } else if (event.actionMasked == MotionEvent.ACTION_MOVE && (!smoothPagerGesture || (!vertical && !horizontal))) {
       val dx = abs(event.x - downX)
       val dy = abs(event.y - downY)
       if (smoothPagerGesture && dy > slop && dy > dx) {
         vertical = true
         horizontal = false
-      } else if (dx > (if (smoothPagerGesture) 32f * resources.displayMetrics.density else slop.toFloat()) && dx > dy) {
+      } else if ((if (smoothPagerGesture) dx >= 32f * resources.displayMetrics.density else dx > slop) && dx > dy) {
         horizontal = true
       }
     }

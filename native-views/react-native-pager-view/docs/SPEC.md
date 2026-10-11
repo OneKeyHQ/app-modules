@@ -244,6 +244,13 @@ of the refresh boundary. Dispatch MUST still observe child-owned movement; only
 a confirmed vertical Smooth Home gesture may release the viewport's child
 interception prohibition. Pending and horizontal movement MUST preserve it.
 
+In smooth-header mode, Android's NativeScroller refresh boundary MUST retain a
+confirmed horizontal or vertical direction until the touch sequence ends or is
+cancelled. It MUST classify MOVE direction only while neither direction is confirmed,
+and horizontal confirmation MUST include the 32 dp boundary, matching the
+viewport. Later vertical movement after confirmed horizontal intent MUST NOT
+start a refresh gesture. Non-smooth refresh direction behavior remains unchanged.
+
 iOS nested horizontal ownership MUST include enabled nonpaging horizontal-only
 ScrollViews, with content wider than bounds and no vertical content overflow.
 Both pan holding and failure dependencies MUST use the same eligibility. A
