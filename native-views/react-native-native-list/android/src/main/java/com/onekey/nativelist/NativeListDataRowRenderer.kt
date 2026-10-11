@@ -11,17 +11,17 @@ import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal class NativeListDataRowView(context: ThemedReactContext) :
-  NativeListRendererRowView(context) {
-  private val visual = NativeListLeadingVisual(context)
+internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
+  private val visual = NativeListLeadingVisual(context, fonts)
   private val favorite = OneKeyIconView(context)
-  private val accessories = NativeListAccessoryStack(context)
+  private val accessories = NativeListAccessoryStack(context, fonts)
   private val columns =
     LinearLayout(context).apply {
       orientation = HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
     }
-  private val cells = List(4) { NativeListTableColumnView(context) }
+  private val cells = List(4) { NativeListTableColumnView(context, fonts) }
 
   override fun unselectedBackground(
     item: NativeListItem,
@@ -212,7 +212,7 @@ internal class NativeListDataRowView(context: ThemedReactContext) :
   }
 }
 
-private class NativeListTableColumnView(context: android.content.Context) : LinearLayout(context) {
+private class NativeListTableColumnView(context: android.content.Context, private val fonts: NativeListFonts) : LinearLayout(context) {
   private val primaryLine = LinearLayout(context)
   private val primary = NativeListTextView(context)
   private val badges = LinearLayout(context)
@@ -231,7 +231,7 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
     primary.maxLines = 1
     primary.ellipsize = TextUtils.TruncateAt.END
     primary.textSize = sp(14f)
-    primary.typeface = NativeListFonts.medium(context)
+    primary.typeface = fonts.medium(context)
     TextViewCompat.setLineHeight(primary, dp(20))
     secondaryLine.orientation = HORIZONTAL
     secondaryLine.gravity = Gravity.CENTER_VERTICAL
@@ -241,7 +241,7 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
       label.maxLines = 1
       label.ellipsize = TextUtils.TruncateAt.END
       label.textSize = sp(12f)
-      label.typeface = NativeListFonts.regular(context)
+      label.typeface = fonts.regular(context)
       TextViewCompat.setLineHeight(label, dp(16))
     }
     secondaryLeading.maxWidth = dp(120)
@@ -322,7 +322,7 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
         JSONObject(style.optJSONObject(slot)?.toString() ?: "{}").apply {
           if (!has("alignment")) put("alignment", column.optString("alignment", "start"))
         }
-      NativeListResolvedText.resolve(context, value, resolved, size, weight, color, line, 1, false)
+      NativeListResolvedText.resolve(context, fonts, value, resolved, size, weight, color, line, 1, false)
         .bind(view)
       if (resolved.optString("truncate") != "clip") view.ellipsize = TextUtils.TruncateAt.END
     }
@@ -355,7 +355,7 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
             gravity = Gravity.CENTER
             text = rowBadges.getJSONObject(index).optString("text")
             textSize = sp(10f)
-            typeface = NativeListFonts.regular(context)
+            typeface = fonts.regular(context)
             setTextColor(infoColor)
             setPadding(dp(6), 0, dp(6), 0)
             background =
@@ -444,7 +444,7 @@ private class NativeListTableColumnView(context: android.content.Context) : Line
     primary.includeFontPadding = true
     primary.fontFeatureSettings = "tnum"
     primary.textSize = sp(16f)
-    primary.typeface = NativeListFonts.medium(context)
+    primary.typeface = fonts.medium(context)
     primary.setLineSpacing(0f, 1f)
     primary.letterSpacing = 0f
     primary.opticalOffsetY = 0f

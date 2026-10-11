@@ -607,6 +607,68 @@ describe('web row style', () => {
     JSDOM: new (html: string) => { window: { document: Document } };
   };
 
+  test('font configuration is instance-local, literal, and preserves patched rows', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const firstHost = document.createElement('div');
+    const secondHost = document.createElement('div');
+    document.body.append(firstHost, secondHost);
+    const initial = snapshot({ kind: 'sectioned' }, [
+      { type: 'message', key: 'm', title: 'Initial', body: 'Body', time: '' },
+    ]);
+    const literal = 'Host, "Quoted" Family';
+    const first = new NativeListWebEngine(
+      firstHost,
+      initial,
+      {},
+      false,
+      undefined,
+      JSON.stringify({ regular: literal, medium: 'Medium' })
+    );
+    const second = new NativeListWebEngine(secondHost, initial, {}, false);
+    try {
+      const root = firstHost.querySelector<HTMLElement>(
+        '.ok-native-list-root'
+      )!;
+      expect(root.style.getPropertyValue('--nl-font-regular')).toBe(
+        `${JSON.stringify(
+          literal
+        )},-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`
+      );
+      const secondRoot = secondHost.querySelector<HTMLElement>(
+        '.ok-native-list-root'
+      )!;
+      expect(
+        secondRoot.style.getPropertyValue('--nl-font-regular')
+      ).not.toContain('Host');
+      first.applyPatches([
+        { type: 'message', key: 'm', changes: { title: 'Patched' } },
+      ]);
+      first.setFontFamiliesJson(JSON.stringify({ bold: 'Bold' }));
+      expect(firstHost.textContent).toContain('Patched');
+      expect(firstHost.textContent).not.toContain('Initial');
+      expect(root.style.getPropertyValue('--nl-font-regular')).not.toContain(
+        'Host'
+      );
+      expect(root.style.getPropertyValue('--nl-font-bold')).toContain('"Bold"');
+      const preview = document.querySelector<HTMLElement>(
+        '.ok-native-list-reorder-preview'
+      )!;
+      expect(preview.style.getPropertyValue('--nl-font-bold')).toBe(
+        root.style.getPropertyValue('--nl-font-bold')
+      );
+      first.setFontFamiliesJson('{}');
+      expect(root.style.getPropertyValue('--nl-font-bold')).not.toContain(
+        'Bold'
+      );
+      expect(secondRoot.style.getPropertyValue('--nl-font-bold')).not.toContain(
+        'Bold'
+      );
+    } finally {
+      first.destroy();
+      second.destroy();
+    }
+  });
+
   const render = (styledRow: RowModel): HTMLElement => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const body = createRowBody(

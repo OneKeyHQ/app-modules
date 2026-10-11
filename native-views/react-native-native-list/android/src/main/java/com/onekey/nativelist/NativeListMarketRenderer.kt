@@ -26,9 +26,9 @@ import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal class NativeListMarketRowView(context: ThemedReactContext) :
-  NativeListRendererRowView(context) {
-  private val leadingFrame = NativeListLeadingVisual(context)
+internal class NativeListMarketRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
+  private val leadingFrame = NativeListLeadingVisual(context, fonts)
   private val leadingActionIcon = OneKeyIconView(context)
   private val mainColumn = LinearLayout(context)
   private val titleLine = PackedTitleLineLayout(context)
@@ -315,10 +315,10 @@ internal class NativeListMarketRowView(context: ThemedReactContext) :
 
   private fun marketTypeface(weight: String, fallback: String): Typeface =
     when (weight.ifEmpty { fallback }) {
-      "regular" -> NativeListFonts.regular(context)
-      "semibold" -> NativeListFonts.semibold(context)
-      "bold" -> NativeListFonts.bold(context)
-      else -> NativeListFonts.medium(context)
+      "regular" -> fonts.regular(context)
+      "semibold" -> fonts.semibold(context)
+      "bold" -> fonts.bold(context)
+      else -> fonts.medium(context)
     }
 
   private fun applyMarketTextStyle(

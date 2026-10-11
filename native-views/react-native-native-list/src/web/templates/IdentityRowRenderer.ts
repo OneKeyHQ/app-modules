@@ -1,3 +1,4 @@
+import { applyTextWeight } from './RowText';
 import { applyTabularNumbers, hasExplicitRowHeight } from './RowElements';
 import type {
   IdentityRow,
@@ -458,7 +459,7 @@ function bind(body: HTMLElement, row: IdentityRow, primitives: RowPrimitives) {
         if (fallback) {
           fallback.style.fontSize = '19px';
           fallback.style.lineHeight = '27px';
-          fallback.style.fontWeight = '600';
+          applyTextWeight(fallback, '600');
           fallback.style.color = 'var(--nl-inverse-text)';
         }
       }
@@ -471,14 +472,14 @@ function bind(body: HTMLElement, row: IdentityRow, primitives: RowPrimitives) {
       if (title) {
         title.style.fontSize = '16px';
         title.style.lineHeight = '24px';
-        title.style.fontWeight = '500';
+        applyTextWeight(title, '500');
       }
       body
         .querySelectorAll<HTMLElement>('.ok-native-list-accessory')
         .forEach((value) => {
           value.style.fontSize = '16px';
           value.style.lineHeight = '24px';
-          value.style.fontWeight = '500';
+          applyTextWeight(value, '500');
         });
     }
   }

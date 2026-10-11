@@ -2,7 +2,8 @@ import UIKit
 
 final class NativeListMarketCell: NativeListRendererCell {
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
     let style = item.data.dictionary("style")
     let stock = item.data.string("variant") == "stock"
@@ -135,7 +136,9 @@ final class NativeListMarketCell: NativeListRendererCell {
       (titleLabel, style?.dictionary("title")), (subtitleLabel, style?.dictionary("subtitle")),
       (tertiaryLabel, item.data.dictionary("subtitlePrefix")?.dictionary("style")),
     ] {
-      if let descriptor { NativeListTextStyles.applyStyledText(label, textLayoutStyle(descriptor)) }
+      if let descriptor {
+        NativeListTextStyles.applyStyledText(label, textLayoutStyle(descriptor), fonts: fonts)
+      }
     }
     root.alignment =
       style?.dictionary("container")?.string("contentVerticalAlignment") == "top"
@@ -269,7 +272,8 @@ final class NativeListMarketCell: NativeListRendererCell {
       data?.double("lineHeight", default: Double(defaultLineHeight)) ?? Double(defaultLineHeight))
     label.font = nativeListTabularFont(
       ofSize: size,
-      weight: marketFontWeight(data?.string("fontWeight") ?? "", fallback: defaultWeight))
+      weight: marketFontWeight(data?.string("fontWeight") ?? "", fallback: defaultWeight),
+      fonts: fonts)
     label.textColor =
       data?["color"].flatMap { $0 as? String }.map {
         UIColor(nativeListHex: $0, fallback: defaultColor)
@@ -299,7 +303,8 @@ final class NativeListMarketCell: NativeListRendererCell {
       text: button.title(for: .normal) ?? "",
       font: nativeListTabularFont(
         ofSize: size,
-        weight: marketFontWeight(data?.string("fontWeight") ?? "", fallback: defaultWeight)),
+        weight: marketFontWeight(data?.string("fontWeight") ?? "", fallback: defaultWeight),
+        fonts: fonts),
       color: data?["color"].flatMap { $0 as? String }.map {
         UIColor(nativeListHex: $0, fallback: color)
       } ?? color,
@@ -349,12 +354,14 @@ final class NativeListMarketCell: NativeListRendererCell {
         NSAttributedString(
           string: segment.string("text"),
           attributes: [
-            .font: nativeListTabularFont(ofSize: segmentSize, weight: weight),
+            .font: nativeListTabularFont(ofSize: segmentSize, weight: weight, fonts: fonts),
             .foregroundColor: resolvedColor,
             .kern: 0,
             .paragraphStyle: paragraph,
             .baselineOffset: max(
-              0, (lineHeight - nativeListTabularFont(ofSize: size, weight: weight).lineHeight) / 2),
+              0,
+              (lineHeight
+                - nativeListTabularFont(ofSize: size, weight: weight, fonts: fonts).lineHeight) / 2)
           ]))
     }
     return result
@@ -425,7 +432,8 @@ final class NativeListMarketCell: NativeListRendererCell {
               ? 8 : Double(min(imageWidth, imageHeight) / 2))
         ?? Double(min(imageWidth, imageHeight) / 2)
       visual.bitmapBorderWidth = descriptor.string("borderColor").isEmpty ? 0 : 1
-      visual.bind(descriptor, style: resolved, key: item.key, theme: theme, isUnread: false)
+      visual.bind(
+        descriptor, style: resolved, key: item.key, theme: theme, isUnread: false, fonts: fonts)
       root.addArrangedSubview(visual)
       let signature = NativeListImageSlot.signature([
         "key": item.key, "visual": descriptor, "fit": resolved["contentFit"] ?? NSNull(),
@@ -472,8 +480,8 @@ final class NativeListMarketCell: NativeListRendererCell {
       // OneKey patch: SizableText supplies tabular numerals for explicit Market metrics.
       let badgeFont =
         badgeStyle == nil
-        ? nativeListFont(ofSize: badgeFontSize, weight: badgeFontWeight)
-        : nativeListTabularFont(ofSize: badgeFontSize, weight: badgeFontWeight)
+        ? nativeListFont(ofSize: badgeFontSize, weight: badgeFontWeight, fonts: fonts)
+        : nativeListTabularFont(ofSize: badgeFontSize, weight: badgeFontWeight, fonts: fonts)
       let hasBuiltInIcon = badge.string("iconName") == "verified"
       let hasRemoteIcon = badge.dictionary("icon") != nil
       let hasIcon = hasBuiltInIcon || hasRemoteIcon
@@ -683,10 +691,10 @@ final class NativeListMarketCell: NativeListRendererCell {
     height.isActive = true
     accessorySizeConstraints.append(contentsOf: [width, height])
     if let priceStyle = style?.dictionary("price"), !textLayoutStyle(priceStyle).isEmpty {
-      NativeListTextStyles.applyStyledButton(price, textLayoutStyle(priceStyle))
+      NativeListTextStyles.applyStyledButton(price, textLayoutStyle(priceStyle), fonts: fonts)
     }
     if let changeStyle = style?.dictionary("change"), !textLayoutStyle(changeStyle).isEmpty {
-      NativeListTextStyles.applyStyledButton(change, textLayoutStyle(changeStyle))
+      NativeListTextStyles.applyStyledButton(change, textLayoutStyle(changeStyle), fonts: fonts)
     }
     accessibilityLabel = item.data.string(
       "accessibilityLabel",

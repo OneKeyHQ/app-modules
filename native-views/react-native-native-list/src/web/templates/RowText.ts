@@ -13,7 +13,7 @@ export function applyValueSegments(
   element.textContent = '';
   element.style.fontSize = String(fontSize) + 'px';
   element.style.lineHeight = String(lineHeight) + 'px';
-  element.style.fontWeight = String(weight);
+  applyTextWeight(element, String(weight));
   segments.forEach((segment) => {
     const span = createElement(
       element.ownerDocument,
@@ -148,7 +148,7 @@ export function applyTextStyleToSlot(
   if (style.lineHeight !== undefined)
     element.style.lineHeight = String(style.lineHeight) + 'px';
   if (style.fontWeight !== undefined)
-    element.style.fontWeight = String(fontWeight(style.fontWeight, 400));
+    applyTextWeight(element, String(fontWeight(style.fontWeight, 400)));
   if (style.color !== undefined) element.style.color = style.color;
   // Explicit overrides also apply to rich text runs, but never to sibling badges.
   // Subscript segments keep their legacy size relative to the field size.
@@ -160,7 +160,7 @@ export function applyTextStyleToSlot(
       else run.style.fontSize = String(style.fontSize) + 'px';
     }
     if (style.fontWeight !== undefined)
-      run.style.fontWeight = String(fontWeight(style.fontWeight, 400));
+      applyTextWeight(run, String(fontWeight(style.fontWeight, 400)));
     if (style.lineHeight !== undefined && !subscript)
       run.style.lineHeight = String(style.lineHeight) + 'px';
     if (style.lines !== undefined || style.truncate !== undefined)
@@ -178,4 +178,16 @@ export function fontWeight(
   if (value === 'medium') return 500;
   if (value === 'regular') return 400;
   return fallback;
+}
+
+export function applyTextWeight(
+  element: HTMLElement,
+  weight: string | number
+): void {
+  element.style.fontWeight = String(weight);
+  const face =
+    { '400': 'regular', '500': 'medium', '600': 'semibold', '700': 'bold' }[
+      String(weight)
+    ] ?? 'regular';
+  element.style.fontFamily = `var(--nl-font-${face})`;
 }

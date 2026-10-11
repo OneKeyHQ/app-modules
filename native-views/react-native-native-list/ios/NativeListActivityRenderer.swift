@@ -2,9 +2,12 @@ import UIKit
 
 final class NativeListActivityCell: NativeListRendererCell {
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
-    if item.data["amounts"] != nil { return NativeListActivityDetailsView.measure(item.data, width: width) }
+    if item.data["amounts"] != nil {
+      return NativeListActivityDetailsView.measure(item.data, width: width, fonts: fonts)
+    }
     return item.data.dictionaries("footerActions").isEmpty ? 60 : 100
   }
 
@@ -56,7 +59,7 @@ final class NativeListActivityCell: NativeListRendererCell {
     actions.spacing = 8
     for (index, button) in buttons.enumerated() {
       button.tag = index
-      button.titleLabel?.font = nativeListFont(ofSize: 12, weight: .medium)
+      button.titleLabel?.font = nativeListFont(ofSize: 12, weight: .medium, fonts: fonts)
       button.layer.cornerRadius = 8
       button.contentEdgeInsets = UIEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
       button.addTarget(self, action: #selector(pressed(_:)), for: .touchUpInside)
@@ -73,6 +76,9 @@ final class NativeListActivityCell: NativeListRendererCell {
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
+    buttons.forEach {
+      $0.titleLabel?.font = nativeListFont(ofSize: 12, weight: .medium, fonts: fonts)
+    }
     let data = item.data
     let rich = data["amounts"] != nil
     details.isHidden = !rich
@@ -85,7 +91,7 @@ final class NativeListActivityCell: NativeListRendererCell {
       let vp = CGFloat(style.double("verticalPadding", default: 8))
       contentInsets = UIEdgeInsets(top: vp, left: hp, bottom: vp, right: hp)
       visual.recycle()
-      details.bind(item, theme: theme)
+      details.bind(item, theme: theme, fonts: fonts)
       return
     }
     details.recycle()
@@ -115,7 +121,7 @@ final class NativeListActivityCell: NativeListRendererCell {
     if let leading = data.dictionary("leading") {
       visual.bind(
         leading, style: image, key: item.key, theme: theme, isUnread: false,
-        secondaryVisual: data.dictionary("secondaryLeading"))
+        secondaryVisual: data.dictionary("secondaryLeading"), fonts: fonts)
     } else {
       // Legacy kept an empty leading slot (no placeholder disc) when no visual was given.
       visual.clear()
@@ -126,7 +132,8 @@ final class NativeListActivityCell: NativeListRendererCell {
     ) {
       NativeListResolvedText(
         value, style: style.dictionary(slot), size: size, weight: weight, color: color,
-        lineHeight: line, lines: lines
+        lineHeight: line, lines: lines,
+        fonts: fonts
       ).bind(view)
     }
     bind(
@@ -139,11 +146,11 @@ final class NativeListActivityCell: NativeListRendererCell {
     bind(
       status, failed ? "" : data.string("status"), "status", size: 12,
       color: nativeListColor(theme, "secondaryText", "#646464"),
-      line: nativeListFont(ofSize: 12).lineHeight)
+      line: nativeListFont(ofSize: 12, fonts: fonts).lineHeight)
     bind(
       failure, failed ? "  Failed  " : "", "status", size: 12, weight: .medium,
       color: nativeListColor(theme, "negative", "#CE2C31"),
-      line: nativeListFont(ofSize: 12, weight: .medium).lineHeight)
+      line: nativeListFont(ofSize: 12, weight: .medium, fonts: fonts).lineHeight)
     failure.backgroundColor = nativeListColor(theme, "criticalBackground", "#F3000D14")
     failure.layer.cornerRadius = 4
     failure.clipsToBounds = true
@@ -163,12 +170,14 @@ final class NativeListActivityCell: NativeListRendererCell {
       button.rowTextOffsetY = 0
       let resolved = NativeListResolvedText(
         value, style: nil, size: index == 0 ? 16 : 14, weight: index == 0 ? .medium : .regular,
-        color: color, lineHeight: index == 0 ? 24 : 20, lines: 1, tabular: true)
+        color: color, lineHeight: index == 0 ? 24 : 20, lines: 1, tabular: true, fonts: fonts)
       button.setAttributedTitle(
         resolved.attributed(direction: button.effectiveUserInterfaceLayoutDirection), for: .normal)
       button.titleLabel?.font = resolved.font
       button.isHidden = value.isEmpty
-      if let text = style.dictionary(slot) { NativeListTextStyles.applyStyledButton(button, text) }
+      if let text = style.dictionary(slot) {
+        NativeListTextStyles.applyStyledButton(button, text, fonts: fonts)
+      }
     }
     let descriptors = Array(data.dictionaries("footerActions").prefix(3))
     actions.isHidden = descriptors.isEmpty

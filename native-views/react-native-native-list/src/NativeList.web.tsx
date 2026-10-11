@@ -1,3 +1,4 @@
+import { useNativeListFontFamiliesJson } from './fonts';
 import React, {
   forwardRef,
   useCallback,
@@ -107,6 +108,9 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     },
     forwardedRef
   ) {
+    const fontFamiliesJson = useNativeListFontFamiliesJson();
+    const fontFamiliesJsonRef = useRef(fontFamiliesJson);
+    fontFamiliesJsonRef.current = fontFamiliesJson;
     const [host, setHost] = useState<HTMLElement | null>(null);
     const engineRef = useRef<NativeListWebEngine | undefined>(undefined);
     const webVirtualizationEnabledRef = useRef(webVirtualizationEnabled);
@@ -182,7 +186,8 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         snapshotRef.current,
         callbacksRef.current,
         webVirtualizationEnabledRef.current,
-        webSectionIndexContainerRef?.current as unknown as HTMLElement | null
+        webSectionIndexContainerRef?.current as unknown as HTMLElement | null,
+        fontFamiliesJsonRef.current
       );
       engineRef.current = engine;
       appliedSnapshotRef.current = snapshotRef.current;
@@ -203,6 +208,10 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
         if (engineRef.current === engine) engineRef.current = undefined;
       };
     }, [host, webSectionIndexContainerRef]);
+
+    useEffect(() => {
+      engineRef.current?.setFontFamiliesJson(fontFamiliesJson);
+    }, [fontFamiliesJson]);
 
     useEffect(() => {
       engineRef.current?.setVirtualizationEnabled(webVirtualizationEnabled);

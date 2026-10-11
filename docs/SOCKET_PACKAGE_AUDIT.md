@@ -100,7 +100,7 @@ Socket 公开说明包含 README、包体积、依赖数量、下载量、项目
 | native-views/react-native-native-list | LICENSE | repository MIT notice and accurately scoped MyCrypto attribution; [source](../scripts/nitro-view/template/docs/LICENSE), [source](https://github.com/MyCryptoHQ/ethereum-blockies-base64/tree/1290187d9c099335a06a2f867d5240a6034a6631) |
 | native-modules/react-native-ping | LICENSE.GBPing | exact vendored Apache-2.0 notice restored; upstream RoJoHub MIT grant file remains unavailable; [source](https://raw.githubusercontent.com/lmirosevic/GBPing/bb1156f1c4425981f4cf495952623935d6e124d2/LICENSE) |
 
-已发布 native-list@3.0.165 包含4个Roobert字体，字体内嵌声明识别 Displaay Type Foundry 与 Martin Vácha，并限制再分发。现已取得[厂商官方价格](https://displaay.net/typeface/roobert)与[许可条款](https://displaay.net/help/licenses)：Roobert 属于付费零售字体，单样式标价 €55 起；App/Game 许可仅允许在许可主体的应用中嵌入，不能作为公开 npm 原始字体再分发的授权证据。免费字体类别未包含 Roobert，trial 限内部评估。仓库未找到单独覆盖 npm 再分发的授权，不能用 OneKey 的 MIT 声明替代厂商许可。按用户明确授权，已移除 SDK 的4个TTF、Pod/Android打包资源声明与SDK/示例的字体注册、font-face文件引用；保留宿主App的字体查找能力。最终NativeList tarball 为530,553字节（移除前1,137,509字节），字体文件数量为0，图标保留。历史已发布 tarball 与 Git 历史不会因本地删除自动更新；本轮不做 npm unpublish 或历史改写。这里不作历史侵权结论。原始name-table记录及4个SHA256见本地 `.tmp/socket-execution/font-license-audit.json`，官方条款观察见 `roobert-official-license-audit.json`。
+已发布 native-list@3.0.165 包含4个Roobert字体，字体内嵌声明识别 Displaay Type Foundry 与 Martin Vácha，并限制再分发。现已取得[厂商官方价格](https://displaay.net/typeface/roobert)与[许可条款](https://displaay.net/help/licenses)：Roobert 属于付费零售字体，单样式标价 €55 起；App/Game 许可仅允许在许可主体的应用中嵌入，不能作为公开 npm 原始字体再分发的授权证据。免费字体类别未包含 Roobert，trial 限内部评估。仓库未找到单独覆盖 npm 再分发的授权，不能用 OneKey 的 MIT 声明替代厂商许可。按用户明确授权，已移除 SDK 的4个TTF、Pod/Android打包资源声明与SDK/示例的字体注册、font-face文件引用；保留宿主App的字体查找能力。前一宿主兼容阶段的历史NativeList tarball 为530,553字节（移除前1,137,509字节），字体文件数量为0，图标保留。历史已发布 tarball 与 Git 历史不会因本地删除自动更新；本轮不做 npm unpublish 或历史改写。这里不作历史侵权结论。原始name-table记录及4个SHA256见本地 `.tmp/socket-execution/font-license-audit.json`，官方条款观察见 `roobert-official-license-audit.json`。
 
 ping 保存实际GBPing的Apache-2.0许可与署名，manifest 改为 `MIT AND Apache-2.0` 并显式包含 LICENSE.GBPing；RoJoHub 的 MIT 主体声明仅找到元数据，未恢复到物理许可证原文。cloud-fs 原上游 MIT 原文保留 `[year]` / `[fullname]` 占位符，未伪填版权作者。这两项需要向相应上游取得完整授权/署名证据。异构许可更正可能改变新 Socket License 分数，复扫前未知；不能为了保留旧100分误标。
 
@@ -133,16 +133,16 @@ SDK中已无字体二进制。字体家族名称、接收调用方字体名的AP
 | text | RN TextProps字体字段，经React Native字体通路 |
 | text-input | 保留RN TextInputProps字体字段，经React Native字体通路 |
 
-NativeList最终仍优先使用宿主的Roobert：iOS查已注册的weight-specific PostScript名，不自行注册；Android逐次调用ReactFontManager，覆盖宿主注册（含Expo setTypeface）与assets，移除本地fallback缓存；Web使用宿主定义的Roobert font face，缺失再回退系统字体。没有增加public `fontFamily`配置。Android缺宿主字体时采用RN标准system fallback，原medium/semibold显式fallback会变化，已同步SPEC/STYLE_SPEC；现有行不会仅因动态注册自动重绘，宿主应在绘制前提供字体。
+前一宿主兼容阶段（历史，已由下述全局配置阶段更新）的NativeList优先使用宿主的Roobert：iOS查已注册的weight-specific PostScript名，不自行注册；Android逐次调用ReactFontManager，覆盖宿主注册（含Expo setTypeface）与assets，移除本地fallback缓存；Web使用宿主定义的Roobert font face，缺失再回退系统字体。没有增加public `fontFamily`配置。Android缺宿主字体时采用RN标准system fallback，原medium/semibold显式fallback会变化，已同步SPEC/STYLE_SPEC；现有行不会仅因动态注册自动重绘，宿主应在绘制前提供字体。
 
 已只读核对App head `5b2d600922d1c114006fad7b6904c4dd077a797b`，并通过最终head比较确认下列字体文件、调用与依赖配置未变：
 
 - Android `apps/mobile/android/app/src/main/assets/fonts/`有4个Roobert文件，Provider还有同样4个；8份文件的Git blob逐一匹配删除前SDK的4个原字体。App的说明记录它们用于同步首帧字体测量。[App资产说明](https://github.com/OneKeyHQ/app-monorepo/blob/5b2d600922d1c114006fad7b6904c4dd077a797b/apps/mobile/android/app/src/main/assets/fonts/README.md)
 - Provider通过expo-font 57.0.1的useFonts注册4个Roobert-Weight别名；iOS UIAppFonts列4字体，Xcode Resources已有引用。[Provider](https://github.com/OneKeyHQ/app-monorepo/blob/5b2d600922d1c114006fad7b6904c4dd077a797b/packages/components/src/hocs/Provider/hooks/useLoadCustomFonts.ts)、[iOS配置](https://github.com/OneKeyHQ/app-monorepo/blob/5b2d600922d1c114006fad7b6904c4dd077a797b/apps/mobile/ios/OneKeyWallet/Info.plist)
 - Web/desktop/ext各自App入口import `web-fonts.css`，其中4个Roobert weight定义已存在。[Web字体定义](https://github.com/OneKeyHQ/app-monorepo/blob/5b2d600922d1c114006fad7b6904c4dd077a797b/packages/components/src/hocs/Provider/web-fonts.css)
-- App ImageCrop仍传Roobert-SemiBold/Medium，AutoSizeInput继续透传fontFamily，Market NativeList调用无需增加参数。[ImageCrop调用](https://github.com/OneKeyHQ/app-monorepo/blob/5b2d600922d1c114006fad7b6904c4dd077a797b/packages/components/src/composite/ImageCrop/index.native.tsx)
+- App ImageCrop仍传Roobert-SemiBold/Medium，AutoSizeInput继续透传fontFamily，Market NativeList调用无需逐实例参数，但新全局配置阶段需发布后在UI启动配置一次。[ImageCrop调用](https://github.com/OneKeyHQ/app-monorepo/blob/5b2d600922d1c114006fad7b6904c4dd077a797b/packages/components/src/composite/ImageCrop/index.native.tsx)
 
-App文件未修改。上述源码/配置支持升级后继续使用App提供的Roobert，实际渲染待验证；不等于已完成新App原生构建/设备视觉验收，也不证明公司已经取得App字体使用或源文件公开分发授权。SDK不附TTF不代替App自身的授权核对。原始调用/配置证据见 `.tmp/socket-execution/app-host-font-audit.json`、`app-host-font-usage.json`与 `other-library-host-font-audit.json`。
+前述只读宿主审计阶段未修改App；随后App PR #13854增加资产一致性检查和发布后初始化文档，运行时代码/SDK版本仍未修改。上述源码/配置支持升级后继续使用App提供的Roobert，实际渲染待验证；不等于已完成新App原生构建/设备视觉验收，也不证明公司已经取得App字体使用或源文件公开分发授权。SDK不附TTF不代替App自身的授权核对。原始调用/配置证据见 `.tmp/socket-execution/app-host-font-audit.json`、`app-host-font-usage.json`与 `other-library-host-font-audit.json`。
 
 ## 告警与原生能力
 
@@ -162,7 +162,7 @@ App文件未修改。上述源码/配置支持升级后继续使用App提供的R
 
 公开 Socket peer 解析树中 RN1000.0.0/React19.3 与实际 App RN0.86.2/React19.2.3 分开记录。此前 peer 树中观察到 image-size、ip、braces、node-forge 告警，不能未经闭包映射把全部归到每个 SDK；App lock 的对应问题也不能通过删除必要 peer 或在 SDK README 中改变分数解决。image-size 的 major 升级需要 Metro 调用兼容测试；其余缺少已确认修复版本的问题需要上游修复或经过审核的替代方案。
 
-包体积检查保留 bundle-crypto 的平台 xcframework，以及 9 包 podspec test_spec 用到的 native tests。按用户明确授权，移除 native-list 携带的付费 Roobert 字体及关联加载配置，保留宿主Roobert查找和缺字体回退；未为分数删 source maps、安全校验或必要原生功能。系统字体的字宽和截断效果需要设备视觉验收。
+包体积检查保留 bundle-crypto 的平台 xcframework，以及 9 包 podspec test_spec 用到的 native tests。按用户明确授权，移除 native-list 携带的付费 Roobert 字体及关联加载配置，随后全局配置阶段由宿主启动时显式配置face名称，未配置使用系统字体；未为分数删 source maps、安全校验或必要原生功能。系统字体的字宽和截断效果需要设备视觉验收。
 
 ## 本地验证与合约审计
 
@@ -188,3 +188,13 @@ App文件未修改。上述源码/配置支持升级后继续使用App提供的R
 6. 记录新扫描 source/time、完整依赖闭包与告警，对照本表。仅五项均 >90 且没有未处置高危风险才满足完整验收；任何未知字段或本地预测不能算达标。旧3.0.165分数不会被源码修改更新。
 
 外部条件包括新版本发布授权、可用的 npm 发布认证与 OIDC 环境、Socket API packages:list 权限或能提供完整结果的官方界面，以及真实使用/维护历史和上游修复。若复扫仍低于阈值，应向 Socket 请求具体评分因素与误报证据复核，逐项提出有依据的改动；不能伪造下载/发布历史或改评分展示。
+
+## 后续全局字体配置阶段（2026-10-11）
+
+PR #145 在前述宿主字体兼容阶段之后新增 `configureNativeListFonts`：四个可选face名称只配置当前JS runtime，宿主加载字体后、UI首次挂载列表前调用一次；未配置或 `{}` 使用系统字体。所有已挂载列表订阅这个runtime的配置，各原生列表持独立resolver，没有native mutable全局字体状态或公开逐实例override。App后续发布升级必须补UI启动配置，Web需请求并等待四个weight的实际font load；当前App PR #13854只记录待升级接入方式，不导入尚未发布的API。
+
+配置变更重绑文字并失效本列表布局/测量，不重放snapshot或覆盖imperative patches/selection；同值配置不产生更新。活动reorder沿现有路径取消；同名字体bytes变化不由此API感知。Android省略face在API28+使用请求的系统字重、24–27使用最近系统face；错误已配置名称走RNfallback，字重可能丢失。iOS与Web采用各自fallback边界。宿主许可与真机Roobert视觉验收仍待确认。
+
+此阶段不改上表43包官方分数或其历史采集时间，不发布npm。前述236项JS/19项JVM、旧tarball尺寸和阶段结果保留为此前版本的历史证据；新的源码、构建、测试和真实pack记录在 `.tmp/font-configuration/`，不构成新的Socket评分。先前“未push”字段亦属于原审计阶段快照，当前交付通过Draft PR #145与#13854继续审阅。
+
+当前全局配置阶段验证：248项JS（8 suites，含真实React双列表订阅、同值配置不重绘、unmount清理及snapshot不重放）和33项release脚本测试通过；包typecheck、lint（0 errors/24 existing warnings）、44测试文件integrity检查（1条原有非gate advisory）、prepare/Nitrogen通过。Android实际Kotlin编译与6 suites/19项JVM测试通过。iOS完整NativeList与XCTest目标arm64/x86_64 build-for-testing通过；SDWebImage旧部署目标仅在命令行覆盖至15.1，未改依赖或Podfile.lock。3项新增UIKit字体测试已编译，专用外置模拟器boot两次均因NSCocoaError513/NSPOSIX EPERM阻塞，故尚未运行，亦未完成App Roobert真机视觉验收。真实Chrome155字体harness的16检查通过、零page errors，使用系统可用字体检验四face/weight、portal、配置变更/重置和patch保留，不冒充实际Roobert/drag设备验收。最终tar与源码逐文件一致、SHA512核验通过、0字体文件；尺寸/hash保存在 `.tmp/font-configuration/pack-validation.json`，执行命令和失败边界见 `validation-summary.json`。

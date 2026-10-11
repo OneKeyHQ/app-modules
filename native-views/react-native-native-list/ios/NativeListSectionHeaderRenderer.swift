@@ -94,7 +94,8 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     !["summary", "gallery"].contains(item.data.string("variant"))
   }
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
     if layout == "table" { return 28 }
     if item.data.string("presentation") == "networkSelector" { return 47 }
@@ -210,7 +211,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       label.rowVerticalAlignment = nil
     }
     titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    subtitleLabel.font = nativeListFont(ofSize: 14)
+    subtitleLabel.font = nativeListFont(ofSize: 14, fonts: fonts)
     subtitleLabel.textColor = nativeListColor(theme, "secondaryText", "#646464")
     mainStack.alignment = .fill
     mainStack.spacing = 2
@@ -221,7 +222,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     let value = accessoryButtons[0]
     value.setTitle(nil, for: .normal)
     value.setAttributedTitle(nil, for: .normal)
-    value.titleLabel?.font = nativeListFont(ofSize: 16, weight: .medium)
+    value.titleLabel?.font = nativeListFont(ofSize: 16, weight: .medium, fonts: fonts)
     value.titleLabel?.numberOfLines = 1
     value.titleLabel?.lineBreakMode = .byTruncatingTail
     value.contentHorizontalAlignment = .center
@@ -275,13 +276,13 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
   private func applyTextStyle(_ item: NativeListItem) {
     let style = item.data.dictionary("style") ?? [:]
     if let title = style.dictionary("title") {
-      NativeListTextStyles.applyStyledText(titleLabel, title)
+      NativeListTextStyles.applyStyledText(titleLabel, title, fonts: fonts)
     }
     if let subtitle = style.dictionary("subtitle") {
-      NativeListTextStyles.applyStyledText(subtitleLabel, subtitle)
+      NativeListTextStyles.applyStyledText(subtitleLabel, subtitle, fonts: fonts)
     }
     if let value = style.dictionary("value") {
-      NativeListTextStyles.applyStyledButton(accessoryButtons[0], value)
+      NativeListTextStyles.applyStyledButton(accessoryButtons[0], value, fonts: fonts)
     }
   }
   override func bindSelectionContent(
@@ -305,8 +306,8 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     _ checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
     checkboxControl.bind(
-      item, descriptors: [descriptor], theme: currentTheme, style: [:], checkboxState: checkboxState
-    )
+      item, descriptors: [descriptor], theme: currentTheme, style: [:], checkboxState: checkboxState,
+      fonts: fonts)
   }
   override func recycleContent() {
     checkboxControl.reset()
@@ -382,8 +383,8 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
           : isGallery || layout == "sectioned" ? .semibold : .regular
     titleLabel.font = nativeListFont(
       ofSize: isGallery ? 18 : isSummary ? 16 : isTable ? 11 : isHistory ? 12 : 14,
-      weight: isHistory ? .semibold : headerWeight
-    )
+      weight: isHistory ? .semibold : headerWeight,
+      fonts: fonts)
     titleLabel.textColor = nativeListColor(
       theme,
       isSummary || isGallery ? "primaryText" : "secondaryText",
@@ -421,7 +422,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       if layout == "linear" {
         // TokenManager's section title is a plain body label with mt=10,
         // unlike the reusable 36-point SectionHeader used by sectioned lists.
-        titleLabel.font = nativeListFont(ofSize: 14)
+        titleLabel.font = nativeListFont(ofSize: 14, fonts: fonts)
         topInset = 10
         bottomInset = 0
       }
@@ -482,11 +483,12 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
         color: nativeListColor(theme, "secondaryText", "#646464")
       )
       accessoryButtons[0].titleLabel?.font = nativeListFont(
-        ofSize: 16, weight: isExplicitNetworkHeader ? .medium : .regular)
+        ofSize: 16, weight: isExplicitNetworkHeader ? .medium : .regular, fonts: fonts)
       setButtonLine(
         accessoryButtons[0],
         text: item.data.string("value"),
-        font: nativeListFont(ofSize: 16, weight: isExplicitNetworkHeader ? .medium : .regular),
+        font: nativeListFont(
+          ofSize: 16, weight: isExplicitNetworkHeader ? .medium : .regular, fonts: fonts),
         color: nativeListColor(theme, "secondaryText", "#646464"),
         lineHeight: 24
       )
@@ -497,7 +499,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
         trailingStack.axis = .horizontal
         trailingStack.alignment = .center
         trailingStack.spacing = 4
-        accessoryButtons[0].titleLabel?.font = nativeListFont(ofSize: 11)
+        accessoryButtons[0].titleLabel?.font = nativeListFont(ofSize: 11, fonts: fonts)
         accessoryButtons[0].setTitleColor(
           nativeListColor(theme, "secondaryText", "#646464"),
           for: .normal
@@ -535,12 +537,12 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
         bottomInset = -8
         accessoryButtons[0].titleLabel?.font = nativeListTabularFont(
           ofSize: 16,
-          weight: .medium
-        )
+          weight: .medium,
+          fonts: fonts)
         setButtonLine(
           accessoryButtons[0],
           text: item.data.string("value"),
-          font: nativeListTabularFont(ofSize: 16, weight: .medium),
+          font: nativeListTabularFont(ofSize: 16, weight: .medium, fonts: fonts),
           color: nativeListColor(theme, "primaryText", "#202020"),
           lineHeight: 24
         )
@@ -641,7 +643,7 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
     }
     for segment in segments {
       attributes[.font] = nativeListTabularFont(
-        ofSize: segment.string("style") == "subscript" ? 10 : 16, weight: .medium)
+        ofSize: segment.string("style") == "subscript" ? 10 : 16, weight: .medium, fonts: fonts)
       value.append(NSAttributedString(string: segment.string("text"), attributes: attributes))
     }
     button.setAttributedTitle(value, for: .normal)
@@ -679,7 +681,8 @@ final class NativeListSectionHeaderCell: NativeListRendererCell {
       setButtonLine(
         valueButton,
         text: value,
-        font: nativeListFont(ofSize: 16, weight: isExplicitNetworkHeader ? .medium : .regular),
+        font: nativeListFont(
+          ofSize: 16, weight: isExplicitNetworkHeader ? .medium : .regular, fonts: fonts),
         color: nativeListColor(currentTheme, "secondaryText", "#646464"),
         lineHeight: 24
       )

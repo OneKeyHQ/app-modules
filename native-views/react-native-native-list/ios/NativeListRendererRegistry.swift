@@ -34,10 +34,14 @@ enum NativeListRendererRegistry {
   static func appliesSizePreset(_ item: NativeListItem) -> Bool {
     hosts[item.rendererKey]!.type.appliesSizePreset(item)
   }
-  static func measure(_ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String)
+  static func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
+  )
     -> CGFloat?
   {
-    hosts[item.rendererKey]!.type.measure(item, width: width, theme: theme, layout: layout)
+    hosts[item.rendererKey]!.type.measure(
+      item, width: width, theme: theme, layout: layout, fonts: fonts)
   }
 }
 
@@ -45,6 +49,7 @@ enum NativeListRendererRegistry {
 /// (plus the size preset), no template content.
 final class NativeListUnsupportedCell: NativeListRendererCell {
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? { 56 }
 }

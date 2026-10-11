@@ -181,15 +181,17 @@ slots already sit on that step; slots that do not are listed in §4.
 | `$bodyXs` | 11 / 16 | regular | `metricCard` labels, `market` badges |
 
 Weight names are `regular`, `medium`, `semibold`, and `bold`. NativeList bundles
-and registers no fonts. iOS prefers the corresponding host-registered Roobert
-PostScript names, then the requested system-font weight. Android delegates each
-`Roobert-<weight>` request to ReactFontManager with `Typeface.NORMAL` and host
-assets, supporting host registrations and matching font assets. Missing families
-use React Native's standard system fallback, replacing the prior explicit
-`sans-serif-medium` fallback for medium/semibold. Web prefers a host-defined
-`Roobert` face before the platform font stack. Hosts own font licensing and
-should provide fonts before rendering; `fontFamily` is not part of the style
-surface. System fallback changes text metrics and needs rendering acceptance.
+and registers no fonts. `configureNativeListFonts` sets optional face names once
+per JavaScript runtime; omitted faces and `{}` use system fonts. iOS names are
+host-registered PostScript names; Android names are host React Native family keys
+or matching asset names. Web names are literal host-defined CSS font families,
+with the existing semantic weight. Every list owns the native resolver delivered
+from its runtime store; there is no mutable native-global font mapping or public
+row/instance override. Configuration changes rebind text and invalidate measured
+layout; identical normalized mappings do not. Hosts provision fonts before this
+configuration and remain responsible for licensing. `fontFamily` is not part of
+the style surface. See SPEC.md for validation, lifecycle and fallback boundaries.
+Rendering acceptance remains required when font metrics change.
 
 ### 3.3 Spacing, radius, bounds
 

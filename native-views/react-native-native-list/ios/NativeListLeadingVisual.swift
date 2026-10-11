@@ -3,6 +3,7 @@ import UIKit
 // Bounded visual primitive: three source slots, two optional overlays. It knows
 // visual descriptors and request lifetimes, never row types or business keys.
 final class NativeListLeadingVisual: UIView {
+  var fonts = NativeListFontFamilies()
   var glyphSize: CGFloat = 18
   var bitmapBorderWidth: CGFloat = 0
   private let fallback = NativeListTextLabel()
@@ -30,7 +31,7 @@ final class NativeListLeadingVisual: UIView {
     super.init(frame: frame)
     [fallback, icon, networkBackdrop, cornerBackdrop, corner, unread].forEach(addSubview)
     fallback.textAlignment = .center
-    fallback.font = nativeListFont(ofSize: 13, weight: .bold)
+    fallback.font = nativeListFont(ofSize: 13, weight: .bold, fonts: fonts)
     icon.contentMode = .scaleAspectFit
     corner.contentMode = .scaleAspectFit
     unread.backgroundColor = UIColor(nativeListHex: "#E5484D", fallback: .red)
@@ -43,8 +44,11 @@ final class NativeListLeadingVisual: UIView {
 
   func bind(
     _ visual: [String: Any], style: [String: Any], key: String, theme: [String: Any]?,
-    isUnread: Bool, secondaryVisual: [String: Any]? = nil
+    isUnread: Bool, secondaryVisual: [String: Any]? = nil,
+    fonts: NativeListFontFamilies
   ) {
+    self.fonts = fonts
+    fallback.font = nativeListFont(ofSize: 13, weight: .bold, fonts: fonts)
     self.visual = visual
     imageStyle = style
     let kind = visual.string("kind")
@@ -177,7 +181,8 @@ final class NativeListLeadingVisual: UIView {
         label.textAlignment = .center
         // A line-height box is the legacy wallet text badge: regular weight, centered metrics.
         label.font = nativeListFont(
-          ofSize: overlayTextFontSize, weight: overlayTextLineHeight == nil ? .medium : .regular)
+          ofSize: overlayTextFontSize, weight: overlayTextLineHeight == nil ? .medium : .regular,
+          fonts: fonts)
         if let line = overlayTextLineHeight {
           let paragraph = NSMutableParagraphStyle()
           paragraph.minimumLineHeight = line
@@ -310,7 +315,7 @@ final class NativeListLeadingVisual: UIView {
       let naturalWidth = textBadgeLine.map { _ -> CGFloat in
         let scale = max(1, window?.screen.scale ?? traitCollection.displayScale)
         let textWidth = (data.string("text") as NSString).size(withAttributes: [
-          .font: nativeListTabularFont(ofSize: overlayTextFontSize), .kern: 0,
+          .font: nativeListTabularFont(ofSize: overlayTextFontSize, fonts: fonts), .kern: 0
         ]).width
         return ceil(textWidth * scale) / scale + 4
       }

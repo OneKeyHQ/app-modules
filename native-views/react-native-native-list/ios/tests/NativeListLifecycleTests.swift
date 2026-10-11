@@ -19,7 +19,7 @@ final class NativeListLifecycleTests: XCTestCase {
         "style": ["title": ["color": "#FFAA00"]],
       ])
       cell.bind(item: item, theme: nil, layout: "sectioned", selected: false,
-                checkboxState: { _, _, fallback in fallback })
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
     }
     try bind(loading: true)
     let spinner = try XCTUnwrap(cell.root.arrangedSubviews.first as? UIActivityIndicatorView)
@@ -49,7 +49,7 @@ final class NativeListLifecycleTests: XCTestCase {
 
     func bind(_ item: NativeListItem) {
       cell.bind(item: item, theme: nil, layout: "linear", selected: false,
-                checkboxState: { _, _, fallback in fallback })
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
     }
 
     bind(first)
@@ -107,6 +107,81 @@ final class NativeListLifecycleTests: XCTestCase {
 
     view.applySnapshotJson(try snapshot(footer: nil))
     XCTAssertTrue(second.isHidden)
+  }
+
+  func testFontResolversMeasureBindResetAndKeepIndependentInstances() throws {
+    let first = NativeListFontFamilies(names: ["regular": "Courier", "bold": "Courier-Bold"])
+    let second = NativeListFontFamilies(names: ["regular": "Georgia", "bold": "Georgia-Bold"])
+    XCTAssertNotNil(UIFont(name: "Courier", size: 16))
+    XCTAssertNotNil(UIFont(name: "Georgia", size: 16))
+    func resolve(_ fonts: NativeListFontFamilies) -> NativeListResolvedText {
+      NativeListResolvedText(
+        "WWWWiiii", style: nil, size: 16, color: .label,
+        lineHeight: 24, lines: 1, fonts: fonts)
+    }
+    let a = resolve(first)
+    let b = resolve(second)
+    let label = NativeListTextLabel()
+    a.bind(label)
+    XCTAssertEqual(label.font.fontName, a.font.fontName)
+    XCTAssertEqual(a.measureWidth(), ceil(a.attributed(direction: .leftToRight).size().width))
+    XCTAssertNotEqual(a.font.fontName, b.font.fontName)
+    XCTAssertNotEqual(a.measureWidth(), b.measureWidth())
+    b.bind(label)
+    XCTAssertEqual(label.font.fontName, "Georgia")
+    resolve(NativeListFontFamilies()).bind(label)
+    XCTAssertEqual(label.font.fontName, UIFont.systemFont(ofSize: 16).fontName)
+    XCTAssertEqual(a.font.fontName, "Courier")
+  }
+
+  func testUnstyledLeadingVisualAndFooterRebindConfiguredFonts() throws {
+    let first = NativeListFontFamilies(names: ["regular": "Courier", "bold": "Courier-Bold"])
+    let second = NativeListFontFamilies(names: ["regular": "Georgia", "bold": "Georgia-Bold"])
+    let visual = NativeListLeadingVisual()
+    for fonts in [first, second] {
+      visual.bind(
+        ["kind": "account", "fallbackText": "A"], style: [:], key: "a", theme: nil,
+        isUnread: false, fonts: fonts)
+      XCTAssertEqual(
+        visual.fallbackTextView.font.fontName, fonts.font(ofSize: 13, weight: .bold).fontName)
+    }
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+    view.setFontFamiliesJson("{\"regular\":\"Courier\",\"medium\":\"Courier\"}")
+    view.applySnapshotJson(
+      try snapshot(footer: [
+        "key": "footer", "type": "action", "title": "Continue", "actionKey": "continue",
+      ]))
+    let footer = try XCTUnwrap(footerCell(in: view))
+    func labels(_ view: UIView) -> [UILabel] {
+      (view as? UILabel).map { [$0] } ?? view.subviews.flatMap(labels)
+    }
+    XCTAssertEqual(labels(footer).first { $0.text == "Continue" }?.font.fontName, "Courier")
+    view.setFontFamiliesJson("{\"regular\":\"Georgia\",\"medium\":\"Georgia\"}")
+    XCTAssertEqual(labels(footer).first { $0.text == "Continue" }?.font.fontName, "Georgia")
+    XCTAssertEqual(footer.accessibilityLabel, "Continue")
+  }
+
+  func testNestedWalletMembersAndDragBadgeFollowEachBindMapping() throws {
+    let group = NativeListWalletGroupCell(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+    let item = try NativeListItem(data: [
+      "type": "walletGroup", "key": "group",
+      "parent": ["type": "identity", "key": "parent", "title": "Parent", "variant": "wallet"],
+      "children": [["type": "identity", "key": "child", "title": "Child", "variant": "wallet"]],
+    ])
+    func labels(_ view: UIView) -> [UILabel] {
+      (view as? UILabel).map { [$0] } ?? view.subviews.flatMap(labels)
+    }
+    for face in ["Courier", "Georgia"] {
+      let fonts = NativeListFontFamilies(names: ["regular": face, "medium": face, "semibold": face])
+      group.bind(
+        item: item, theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: fonts)
+      let rendered = labels(group)
+      let members = rendered.filter { ["Parent", "Child"].contains($0.text ?? "") }
+      XCTAssertGreaterThanOrEqual(members.count, 2)
+      XCTAssertTrue(members.allSatisfy { $0.font.fontName == face })
+      XCTAssertEqual(rendered.first { $0.text == "+1" }?.font.fontName, face)
+    }
   }
 
   private func snapshot(footer: [String: Any]?) throws -> String {

@@ -18,6 +18,7 @@ internal class NativeListViewHolder(val rowView: NativeListRowHost) :
 
 internal class NativeListAdapter(
   private val context: ThemedReactContext,
+  private val fonts: NativeListFonts,
 ) : RecyclerView.Adapter<NativeListViewHolder>() {
   private var suppressDifferUpdates = false
   private var needsThemeRebind = false
@@ -76,7 +77,7 @@ internal class NativeListAdapter(
     requireNotNull(itemAt(position)).rendererKey.ordinal
 
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NativeListViewHolder {
-    val view = NativeListRendererRegistry.create(context, viewType)
+    val view = NativeListRendererRegistry.create(context, viewType, fonts)
     view.layoutParams = ViewGroup.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT,
       ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -135,6 +136,10 @@ internal class NativeListAdapter(
   override fun onViewRecycled(holder: NativeListViewHolder) {
     holder.rowView.recycle()
     super.onViewRecycled(holder)
+  }
+
+  fun rebindFonts() {
+    notifyItemRangeChanged(0, itemCount)
   }
 
   fun itemAt(position: Int): NativeListItem? =

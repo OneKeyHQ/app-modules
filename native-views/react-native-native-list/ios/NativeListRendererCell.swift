@@ -60,7 +60,7 @@ class NativeListRendererCell: NativeListRowHost {
   // The layout direction is an input because renderers resolve start/end alignment at bind.
   private var boundInputs:
     (
-      theme: NSDictionary?, layout: String, listStyle: NSDictionary?,
+      theme: NSDictionary?, layout: String, listStyle: NSDictionary?, fonts: NativeListFontFamilies,
       direction: UIUserInterfaceLayoutDirection
     )?
 
@@ -90,18 +90,20 @@ class NativeListRendererCell: NativeListRowHost {
 
   override func bind(
     item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int? = nil,
-    selected: Bool, checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+    selected: Bool, checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
+    fonts: NativeListFontFamilies
   ) {
+    self.fonts = fonts
     let update = update(from: self.item, to: item)
     let inputs = (
       theme: theme.map { $0 as NSDictionary }, layout: layout,
-      listStyle: listStyle.map { $0 as NSDictionary },
+      listStyle: listStyle.map { $0 as NSDictionary }, fonts: fonts,
       direction: effectiveUserInterfaceLayoutDirection
     )
     let inputsChanged =
       boundInputs.map {
         // A missing theme/listStyle is the empty object, as in the former `?? [:]` JSON digest.
-        $0.layout != inputs.layout || $0.direction != inputs.direction
+        $0.fonts != inputs.fonts || $0.layout != inputs.layout || $0.direction != inputs.direction
           || !nativeListValuesEqual($0.theme ?? [:], inputs.theme ?? [:])
           || !nativeListValuesEqual($0.listStyle ?? [:], inputs.listStyle ?? [:])
       } ?? true

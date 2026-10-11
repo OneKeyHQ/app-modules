@@ -19,8 +19,8 @@ internal enum class NativeListRendererUpdate {
 }
 
 // Shared chrome and binding lifetime; each renderer owns its content views.
-internal abstract class NativeListRendererRowView(protected val reactContext: ThemedReactContext) :
-  NativeListRowHost(reactContext) {
+internal abstract class NativeListRendererRowView(protected val reactContext: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRowHost(reactContext, fonts) {
   protected abstract fun bindContent(
     item: NativeListItem,
     theme: JSONObject?,
@@ -188,6 +188,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     val signature =
       nativeListCanonical(
         JSONObject()
+          .put("fonts", fonts.generation)
           .put("theme", theme)
           .put("layout", layout)
           .put("orientation", listOrientation)

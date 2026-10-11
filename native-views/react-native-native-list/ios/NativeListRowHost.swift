@@ -29,11 +29,15 @@ final class NativeListActionOrigin {
 
 // Common list-facing lifecycle; each renderer owns its view allocation and reset.
 class NativeListRowHost: UICollectionViewCell {
-  class func measure(_ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String)
+  class func measure(
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
+  )
     -> CGFloat?
   { nil }
   class func appliesSizePreset(_ item: NativeListItem) -> Bool { true }
 
+  var fonts = NativeListFontFamilies()
   var bindingEpoch = 0
   var listStyle: [String: Any]?
   var onAction: ((NativeListItem, String, NativeSelectionTarget?, NativeListActionOrigin?) -> Void)?
@@ -41,7 +45,8 @@ class NativeListRowHost: UICollectionViewCell {
 
   func bind(
     item: NativeListItem, theme: [String: Any]?, layout: String, itemIndex: Int? = nil,
-    selected: Bool, checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
+    selected: Bool, checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
+    fonts: NativeListFontFamilies
   ) {
     preconditionFailure("A row host must implement binding")
   }

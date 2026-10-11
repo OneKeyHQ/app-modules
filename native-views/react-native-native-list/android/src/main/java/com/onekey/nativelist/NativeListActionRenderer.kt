@@ -5,11 +5,11 @@ import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-internal class NativeListActionRowView(context: ThemedReactContext) :
-  NativeListRendererRowView(context) {
-  private val visual = NativeListLeadingVisual(context)
+internal class NativeListActionRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
+  private val visual = NativeListLeadingVisual(context, fonts)
   private val title = NativeListTextView(context)
-  private val accessories = NativeListAccessoryStack(context)
+  private val accessories = NativeListAccessoryStack(context, fonts)
   override val assetFields = listOf("icon")
 
   init {
@@ -77,7 +77,7 @@ internal class NativeListActionRowView(context: ThemedReactContext) :
       if (token == "negative") "#C40006D3"
       else if (selector || token == "secondaryText") "#0000009B" else "#000000DF"
     NativeListResolvedText.resolve(
-        context,
+        context, fonts,
         item.json.optString("title"),
         style.optJSONObject("title"),
         16f,

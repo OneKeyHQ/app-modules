@@ -90,6 +90,25 @@ private class NativeListGridLayoutManager(
 class NativeListView(
   private val reactContext: ThemedReactContext,
 ) : LinearLayout(reactContext) {
+  private val fonts = NativeListFonts()
+
+  fun setFontFamiliesJson(json: String) {
+    if (!fonts.configure(json)) return
+    invalidateActionAnchor("layout")
+    measuredRowExtentsPx.clear()
+    measuredRowExtentSumPx = 0L
+    config?.let { updateReordering(it) }
+    adapter.rebindFonts()
+    config?.let { bindFooter(it) }
+    sectionIndexView.refreshFonts()
+    sectionIndexPreview.typeface = fonts.regular(context)
+    stickyHeaderSignature = null
+    stickyHeaderConfig = null
+    updateStickyHeader()
+    recyclerView.requestLayout()
+    requestLayout()
+  }
+
   private data class VisibleMarketAnchor(
     val key: String,
     val offset: Int,
@@ -182,7 +201,7 @@ class NativeListView(
   private val defaultRefreshTriggerDistancePx = (64 * resources.displayMetrics.density).roundToInt()
   private var refreshIndicatorOffsetPx = 0
   private val contentContainer = FrameLayout(context)
-  private val adapter = NativeListAdapter(reactContext)
+  private val adapter = NativeListAdapter(reactContext, fonts)
   private val containerSlots = mutableListOf<View>()
   private val slotHeights = IntArray(3)
   private val headerSlotAdapter = NativeListContainerSlotAdapter()
@@ -370,13 +389,13 @@ class NativeListView(
     mass = REORDER_SPRING_MASS,
     durationSeconds = REORDER_SPRING_DURATION_MS / 1_000.0,
   )
-  private var footerView: NativeListRowHost = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.ACTION.ordinal)
+  private var footerView: NativeListRowHost = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.ACTION.ordinal, fonts)
   private var footerRendererKey = NativeListRendererKey.ACTION
-  private val sectionIndexView = NativeListSectionIndexView(context)
+  private val sectionIndexView = NativeListSectionIndexView(context, fonts)
   private val sectionIndexPreview = TextView(context)
   private var config: NativeListConfig? = null
   private var usesSelectorSourceScale = false
-  private val stickyHeaderView = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.SECTION_HEADER.ordinal)
+  private val stickyHeaderView = NativeListRendererRegistry.create(reactContext, NativeListRendererKey.SECTION_HEADER.ordinal, fonts)
   private var stickyHeaderSignature: String? = null
   private var stickyHeaderConfig: NativeListConfig? = null
   private val stickyHeaderHost = object : FrameLayout(reactContext) {
@@ -527,7 +546,7 @@ class NativeListView(
     sectionIndexPreview.apply {
       gravity = Gravity.CENTER
       textSize = 30f
-      typeface = NativeListFonts.regular(context)
+      typeface = fonts.regular(context)
       setPadding(0, 0, sectionIndexDp(10), 0)
       visibility = INVISIBLE
       alpha = 0f
@@ -1730,7 +1749,7 @@ class NativeListView(
         val position = indexOfChild(previous)
         previous.recycle()
         previous.dispose()
-        footerView = NativeListRendererRegistry.create(reactContext, footer.rendererKey.ordinal)
+        footerView = NativeListRendererRegistry.create(reactContext, footer.rendererKey.ordinal, fonts)
         footerView.onRowPress = ::handleRowPress
         footerView.onAction = ::handleAction
         footerView.onBindingInvalidated = ::handleBindingInvalidated
@@ -2741,6 +2760,7 @@ private data class NativeListSectionIndexEntry(
 
 private class NativeListSectionIndexView(
   context: android.content.Context,
+  private val fonts: NativeListFonts,
 ) : View(context) {
   var onSelect: ((Int, Boolean) -> Unit)? = null
   var onInteractionEnded: (() -> Unit)? = null
@@ -2751,14 +2771,20 @@ private class NativeListSectionIndexView(
   private var activeColor = Color.BLACK
   private var activeTextColor = Color.WHITE
   private var lastTouchIndex: Int? = null
+  fun refreshFonts() {
+    normalPaint.typeface = fonts.regular(context)
+    activePaint.typeface = fonts.medium(context)
+    invalidate()
+  }
+
   private val activeBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
   private val normalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = Paint.Align.CENTER
-    typeface = NativeListFonts.regular(context)
+    typeface = fonts.regular(context)
   }
   private val activePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textAlign = Paint.Align.CENTER
-    typeface = NativeListFonts.medium(context)
+    typeface = fonts.medium(context)
   }
 
   init {

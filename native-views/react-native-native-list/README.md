@@ -161,16 +161,37 @@ full window and center it on the window's geometric midpoint.
 The web implementation renders the same explicit index entries as a DOM
 overlay, with click and pointer-drag navigation.
 
-The templates distribute and register no font files. They can use Roobert
-provided by the host: register its weight-specific PostScript names on iOS,
-register `Roobert-<weight>` with ReactFontManager or provide matching
-`fonts/Roobert-<weight>.ttf` app assets on Android, or define a `Roobert`
-font face on Web before rendering. The host owns licensing and provisioning;
-missing fonts use the platform fallback. Android now uses React Native's
-standard fallback, replacing the previous explicit medium/semibold fallback.
-The weight mappings and
-text-metric acceptance requirements are documented in
-[STYLE_SPEC.md](docs/STYLE_SPEC.md). Their semantic icons and checkbox marks are
+The templates distribute and register no font files. Call
+`configureNativeListFonts` once during UI-runtime startup, after the host loads
+its fonts and before mounting lists. The four optional faces replace the whole
+mapping; omitted faces and `{}` use system fonts. Mounted lists subscribe to
+this runtime's mapping, with an independent native resolver per list. There is
+no public per-list override and no cross-runtime native-global mapping.
+
+```tsx
+import { configureNativeListFonts } from '@onekeyfe/react-native-native-list';
+
+// After the host provisions/registers these faces, before mounting lists:
+configureNativeListFonts({
+  regular: 'Roobert-Regular',
+  medium: 'Roobert-Medium',
+  semibold: 'Roobert-SemiBold',
+  bold: 'Roobert-Bold',
+});
+```
+
+On iOS these are registered PostScript names; on Android they are React Native
+family keys or matching `fonts/<family>.ttf` host assets. For Web, map each face
+to the host's CSS family (for example, `Roobert` for all four weights) and wait
+for the four weight-specific font loads before rendering. The host remains
+responsible for licensing and provisioning. Changed mappings rebind text and
+invalidate list geometry without replacing snapshots or selection; identical
+normalized mappings do nothing. Active reorders are cancelled. Missing configured
+names use the platform fallback, which on Android may lose the requested weight.
+Names must be nonempty trimmed strings, at most 128 UTF-16 units without control
+characters; invalid keys/values throw before changing any configuration. See
+[SPEC.md](docs/SPEC.md) and [STYLE_SPEC.md](docs/STYLE_SPEC.md) for lifecycle,
+system fallback and text-metric acceptance requirements. Their semantic icons and checkbox marks are
 the same vector paths as the OneKey component
 library, rendered by Core Graphics/UIKit on iOS and Canvas on Android.
 

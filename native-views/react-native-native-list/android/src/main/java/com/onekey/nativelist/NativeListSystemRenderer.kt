@@ -20,8 +20,8 @@ import kotlin.math.roundToInt
 import org.json.JSONObject
 
 /** System owns status content; placement and actions remain in the list host. */
-internal class NativeListSystemRowView(context: ThemedReactContext) :
-  NativeListRendererRowView(context) {
+internal class NativeListSystemRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
   private val title = NativeListTextView(context)
   private val message = NativeListTextView(context)
   private val action = NativeListTextView(context)
@@ -129,7 +129,7 @@ internal class NativeListSystemRowView(context: ThemedReactContext) :
         }
       var resolved =
         NativeListResolvedText.resolve(
-          context,
+          context, fonts,
           value,
           merged,
           size,
