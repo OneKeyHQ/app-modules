@@ -1070,11 +1070,12 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 @end
 
-// This observer never competes for scrolling. The owning pager explicitly
-// recognizes it only after its real pan begins, so UIKit terminates RN presses.
+// This observer never competes for scrolling. RN presses are terminated when
+// the pager pan begins or the existing guard resolves horizontal intent.
 @interface RNCCollapsiblePagerContentPressCancellationGestureRecognizer : UIGestureRecognizer
 @property (nonatomic, weak) UIGestureRecognizer *reactTouchHandler;
 - (void)cancelPressForPan:(UIPanGestureRecognizer *)pan;
+- (void)cancelPressForHorizontalTouch:(UITouch *)touch event:(UIEvent *)event;
 - (void)observeIncomingTouch:(UITouch *)touch;
 @end
 
@@ -1084,6 +1085,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   BOOL _multipleSurfaceTouchesObserved;
   CGPoint _trackedTouchStartPoint;
   BOOL _didCancelReactPressForVerticalMovement;
+  BOOL _didCancelReactPressForHorizontalMovement;
 }
 
 - (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)other
@@ -1122,6 +1124,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _trackedTouch = touches.anyObject;
   _trackedTouchStartPoint = [_trackedTouch locationInView:self.view];
   _didCancelReactPressForVerticalMovement = NO;
+  _didCancelReactPressForHorizontalMovement = NO;
   [self recordEvent:event];
 }
 
@@ -1149,6 +1152,31 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
   if (activeTouches != 1) return;
   _didCancelReactPressForVerticalMovement = YES;
+  handler.enabled = NO;
+  handler.enabled = YES;
+}
+
+- (void)cancelPressForHorizontalTouch:(UITouch *)touch event:(UIEvent *)event
+{
+  [self recordEvent:event];
+  UIGestureRecognizer *handler = self.reactTouchHandler;
+  BOOL eligible = touch != nil && touch == _trackedTouch &&
+    touch.phase != UITouchPhaseEnded && touch.phase != UITouchPhaseCancelled &&
+    self.state == UIGestureRecognizerStatePossible &&
+    !_multipleSurfaceTouchesObserved && !_didCancelReactPressForHorizontalMovement &&
+    handler.view != nil && self.view == handler.view.superview &&
+    (handler.state == UIGestureRecognizerStateBegan || handler.state == UIGestureRecognizerStateChanged);
+  NSUInteger activeTouches = 0;
+  for (UITouch *activeTouch in event.allTouches) {
+    if (activeTouch.phase == UITouchPhaseEnded || activeTouch.phase == UITouchPhaseCancelled) continue;
+    if ([activeTouch.view isDescendantOfView:handler.view]) ++activeTouches;
+  }
+  if (!eligible || activeTouches != 1) return;
+  // A coalesced move can resolve horizontal intent before the pager pan begins.
+  _didCancelReactPressForHorizontalMovement = YES;
+#if DEBUG
+  RNCCollapsiblePagerLog(@"content-press-cancel axis=horizontal");
+#endif
   handler.enabled = NO;
   handler.enabled = YES;
 }
@@ -1185,6 +1213,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _trackedTouch = nil;
   _touchEvent = nil;
   _didCancelReactPressForVerticalMovement = NO;
+  _didCancelReactPressForHorizontalMovement = NO;
 }
 
 - (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
@@ -1195,6 +1224,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _trackedTouch = nil;
   _touchEvent = nil;
   _didCancelReactPressForVerticalMovement = NO;
+  _didCancelReactPressForHorizontalMovement = NO;
 }
 
 - (void)reset
@@ -1204,6 +1234,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _touchEvent = nil;
   _multipleSurfaceTouchesObserved = NO;
   _didCancelReactPressForVerticalMovement = NO;
+  _didCancelReactPressForHorizontalMovement = NO;
 }
 
 @end
@@ -1238,6 +1269,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 @interface RNCCollapsiblePagerVerticalPagerGuardGestureRecognizer : UIGestureRecognizer
 @property (nonatomic, weak) UIPanGestureRecognizer *pagerPan;
+@property (nonatomic, weak) RNCCollapsiblePagerContentPressCancellationGestureRecognizer *contentPressCancellation;
 - (CGPoint)translationInView:(UIView *)view;
 - (CGPoint)velocityInView:(UIView *)view;
 @end
@@ -1333,6 +1365,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       RNCCollapsiblePagerLog([NSString stringWithFormat:
         @"gesture-intent axis=%@ dx=%.2f dy=%.2f held-pans=%lu",
         dy > dx ? @"vertical" : @"horizontal", dx, dy, (unsigned long)_heldPans.count]);
+      if (dx >= 32 && dx > dy) {
+        [self.contentPressCancellation cancelPressForHorizontalTouch:_trackedTouch event:event];
+      }
       self.state = UIGestureRecognizerStateBegan;
       if (self.state == UIGestureRecognizerStateFailed) [self restoreHeldPans];
     }
@@ -2716,6 +2751,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     [_contentPressCancellationGesture.view removeGestureRecognizer:_contentPressCancellationGesture];
   }
   _contentPressCancellationGesture.reactTouchHandler = nil;
+  _verticalPagerGesture.contentPressCancellation = nil;
   _contentPressCancellationGesture = nil;
   if (_sharedHeaderPressCancellationGesture.view != nil) {
     [_sharedHeaderPressCancellationGesture.view
@@ -2814,6 +2850,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     _contentPressCancellationGesture.delaysTouchesEnded = NO;
   }
   _contentPressCancellationGesture.reactTouchHandler = reactTouchHandler;
+  _verticalPagerGesture.contentPressCancellation = _contentPressCancellationGesture;
   [gestureHost addGestureRecognizer:_contentPressCancellationGesture];
   _reactTouchHandler = reactTouchHandler;
   _sharedHeaderPressCancellationGestureHost = gestureHost;

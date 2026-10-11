@@ -260,6 +260,18 @@ remain able to recognize before finger-up while Pager intent is pending. A
 second touch in the pending Pager guard fails recognition; an already active
 Pager guard cancels and restores each held pan's original minimum touch count.
 
+In iOS smooth-header mode, a confirmed horizontal guard displacement of at
+least 32 points, exceeding vertical displacement, MUST cancel the active React
+press on its one eligible content Surface before finger-up even when the pager
+pan has not begun. The content observer stays non-recognizing and resets only
+that Surface's already Began/Changed touch handler. Shared-header native controls,
+stationary taps, pending small-horizontal-to-vertical gestures, and multi-touch
+sequences retain their existing ownership. Cancellation is emitted at most once
+for the tracked touch; end, cancellation, and reuse clear that touch's state.
+The attached UIKit regression intentionally constrains the real pager pan to two
+required touches to prove the no-pan path; it is distinct from natural Home OS
+input, coalesced-event delivery, and physical-device acceptance.
+
 ## Native tab-press animation default
 
 Behavior change: previously an omitted `nativeTabPressAnimationEnabled` animated

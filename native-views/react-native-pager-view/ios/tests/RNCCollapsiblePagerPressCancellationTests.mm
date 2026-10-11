@@ -70,6 +70,9 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
 - (UITouch *)beginAt:(CGPoint)windowPoint;
 - (void)move:(UITouch *)touch to:(CGPoint)windowPoint;
 - (void)end:(UITouch *)touch;
+- (void)cancel:(UITouch *)touch;
+- (void)singleMoveKeepingDownTimestamp:(UITouch *)touch to:(CGPoint)point;
+- (void)endAfterTwoFrames:(UITouch *)touch;
 @end
 
 @implementation RNCSynthesizedTouchDriver {
@@ -196,6 +199,25 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
 - (void)end:(UITouch *)touch
 {
   [self sendChangingTouch:touch phase:UITouchPhaseEnded];
+}
+
+- (void)cancel:(UITouch *)touch
+{
+  [self sendChangingTouch:touch phase:UITouchPhaseCancelled];
+}
+
+- (void)singleMoveKeepingDownTimestamp:(UITouch *)touch to:(CGPoint)point
+{
+  // One controlled delivered MOVE shares DOWN's touch timestamp.
+  // This is controlled UIWindow delivery, not OS input or coalescing coverage.
+  _timestamp -= 1.0 / 60.0;
+  [self move:touch to:point];
+}
+
+- (void)endAfterTwoFrames:(UITouch *)touch
+{
+  _timestamp += 1.0 / 60.0;
+  [self end:touch];
 }
 
 @end
@@ -581,14 +603,32 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
 @interface RNCRecordingSurfaceTouchHandler : RCTSurfaceTouchHandler
 @property (nonatomic, strong) NSMutableArray<NSString *> *events;
 @property (nonatomic, assign) NSInteger registeredTouches;
+@property (nonatomic) NSUInteger enabledNoWithRegisteredTouch;
+@property (nonatomic, strong) NSMutableArray<NSDictionary *> *timeline;
 @end
 
 @implementation RNCRecordingSurfaceTouchHandler
+- (void)recordTimeline:(NSString *)event
+{
+  if (self.timeline == nil) self.timeline = [NSMutableArray new];
+  [self.timeline addObject:@{@"event": event, @"state": @(self.state),
+                            @"registered": @(self.registeredTouches),
+                            @"enabled": @(self.enabled)}];
+}
+- (void)setEnabled:(BOOL)enabled
+{
+  if (!enabled && self.registeredTouches > 0) {
+    self.enabledNoWithRegisteredTouch += 1;
+    [self recordTimeline:@"enabled-NO-before-super"];
+  }
+  [super setEnabled:enabled];
+}
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
 {
   [super touchesBegan:touches withEvent:event];
   self.registeredTouches += touches.count;
   [self.events addObject:@"began"];
+  [self recordTimeline:@"began"];
 }
 - (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
 {
@@ -606,13 +646,17 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
   [super touchesCancelled:touches withEvent:event];
   self.registeredTouches -= touches.count;
   [self.events addObject:@"cancelled"];
+  [self recordTimeline:@"cancelled"];
 }
 - (void)reset
 {
   NSInteger pending = self.registeredTouches;
   [super reset];
   self.registeredTouches = 0;
-  if (pending > 0) [self.events addObject:@"reset-cancelled"];
+  if (pending > 0) {
+    [self.events addObject:@"reset-cancelled"];
+    [self recordTimeline:@"reset-cancelled"];
+  }
 }
 @end
 
@@ -624,6 +668,7 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
 @property (nonatomic, strong) RNCSynthesizedTouchDriver *driver;
 @property (nonatomic, strong) UIView *firstPage;
 @property (nonatomic) NSUInteger longPressBegins;
+@property (nonatomic) NSUInteger pagerPanBegins;
 @end
 
 @implementation RNCCollapsiblePagerPressCancellationDeliveryTests
@@ -709,6 +754,127 @@ typedef struct __IOHIDEvent *RNCTestHIDEventRef;
 - (CGPoint)pressPoint
 {
   return CGPointMake(200, 600);
+}
+
+- (void)assertDirectPagerForRegression
+{
+  XCTAssertTrue([[self.pager valueForKey:@"directNativePagerEnabled"] boolValue]);
+  UIScrollView *pager = [self.pager valueForKey:@"pagerScrollView"];
+  XCTAssertTrue([pager isKindOfClass:NSClassFromString(@"RNCCollapsiblePagerDirectScrollView")]);
+}
+
+- (void)recordPagerPan:(UIPanGestureRecognizer *)pan
+{
+  if (pan.state == UIGestureRecognizerStateBegan) self.pagerPanBegins += 1;
+}
+
+- (UITouch *)beginSingleMoveHorizontalSequence
+{
+  [self assertFixtureIsReadyForDelivery];
+  [self assertDirectPagerForRegression];
+  UIScrollView *pager = [self.pager valueForKey:@"pagerScrollView"];
+  // A controlled absence of pager-pan recognition, independent of UIKit event timing.
+  // This does not model the natural Home OS recognizer configuration.
+  pager.panGestureRecognizer.minimumNumberOfTouches = 2;
+  XCTAssertTrue(pager.panGestureRecognizer.enabled);
+  XCTAssertEqual(pager.panGestureRecognizer.minimumNumberOfTouches, 2);
+  [pager.panGestureRecognizer addTarget:self action:@selector(recordPagerPan:)];
+  CGPoint point = CGPointMake(350, 600);
+  UIView *hit = [self.window hitTest:point withEvent:nil];
+  XCTAssertTrue(hit == self.firstPage || [hit isDescendantOfView:self.firstPage]);
+  UITouch *touch = [self.driver beginAt:point];
+  XCTAssertEqual(self.handler.registeredTouches, 1);
+  XCTAssertTrue(self.handler.state == UIGestureRecognizerStateBegan ||
+                self.handler.state == UIGestureRecognizerStateChanged);
+  UIGestureRecognizer *observer = [self.pager valueForKey:@"contentPressCancellationGesture"];
+  XCTAssertEqual(observer.state, UIGestureRecognizerStatePossible);
+  XCTAssertEqual([observer valueForKey:@"reactTouchHandler"], self.handler);
+  XCTAssertEqual(observer.view, self.handler.view.superview);
+  XCTAssertTrue([touch.view isDescendantOfView:self.handler.view]);
+  NSTimeInterval down = touch.timestamp;
+  [self.driver singleMoveKeepingDownTimestamp:touch to:CGPointMake(25, 600)];
+  XCTAssertEqualWithAccuracy(touch.timestamp, down, 0.000001);
+  XCTAssertEqual(self.pagerPanBegins, 0, @"A pager-pan callback cannot explain this cancellation");
+  XCTAssertFalse(pager.isDragging);
+  XCTAssertTrue([[observer valueForKey:@"didCancelReactPressForHorizontalMovement"] boolValue]);
+  XCTAssertEqual(self.handler.registeredTouches, 0);
+  NSUInteger cancellations = 0;
+  for (NSString *event in self.handler.events) {
+    if ([event isEqualToString:@"reset-cancelled"] || [event isEqualToString:@"cancelled"]) ++cancellations;
+  }
+  XCTAssertEqual(cancellations, 1, @"Exactly one real RN cancellation must occur before UP: %@", self.handler.events);
+  XCTAssertEqual(self.handler.enabledNoWithRegisteredTouch, 1);
+  NSPredicate *disabled = [NSPredicate predicateWithFormat:@"event == %@", @"enabled-NO-before-super"];
+  NSArray *disableCalls = [self.handler.timeline filteredArrayUsingPredicate:disabled];
+  XCTAssertEqual(disableCalls.count, 1);
+  XCTAssertEqualObjects(disableCalls.firstObject[@"registered"], @1);
+  XCTAssertFalse([self.handler.events containsObject:@"ended"]);
+  NSLog(@"[PagerPressDelivery] case=%@ oneMoveH=325 constrainedMinTouches=2 panBegins=%lu registered=%ld cancellationCount=%lu enabledNO=%lu events=%@ timeline=%@",
+        self.name, (unsigned long)self.pagerPanBegins, (long)self.handler.registeredTouches,
+        (unsigned long)cancellations, (unsigned long)self.handler.enabledNoWithRegisteredTouch,
+        self.handler.events, self.handler.timeline);
+  return touch;
+}
+
+- (void)testSingleDeliveredHorizontalMoveCancelsBeforeUpWithoutPagerPanBegan
+{
+  UITouch *touch = [self beginSingleMoveHorizontalSequence];
+  [self.driver endAfterTwoFrames:touch];
+  XCTAssertEqual(((UIScrollView *)[self.pager valueForKey:@"pagerScrollView"]).panGestureRecognizer.minimumNumberOfTouches, 2);
+  XCTAssertEqual(self.pagerPanBegins, 0);
+  XCTAssertFalse([self.handler.events containsObject:@"ended"]);
+}
+
+- (void)testSingleMoveHorizontalUpAllowsNextStationaryTap
+{
+  UITouch *touch = [self beginSingleMoveHorizontalSequence];
+  [self.driver endAfterTwoFrames:touch];
+  XCTAssertEqual(self.pagerPanBegins, 0);
+  XCTAssertEqual(((UIScrollView *)[self.pager valueForKey:@"pagerScrollView"]).panGestureRecognizer.minimumNumberOfTouches, 2);
+  [self drainMainQueue];
+  [self.handler.events removeAllObjects];
+  UITouch *next = [self.driver beginAt:[self pressPoint]];
+  [self.driver end:next];
+  XCTAssertEqualObjects(self.handler.events, (@[@"began", @"ended"]));
+  XCTAssertEqual(self.handler.registeredTouches, 0);
+}
+
+- (void)testSingleMoveHorizontalCancelAllowsNextStationaryTap
+{
+  UITouch *touch = [self beginSingleMoveHorizontalSequence];
+  [self.driver cancel:touch];
+  XCTAssertEqual(self.pagerPanBegins, 0);
+  XCTAssertEqual(((UIScrollView *)[self.pager valueForKey:@"pagerScrollView"]).panGestureRecognizer.minimumNumberOfTouches, 2);
+  [self drainMainQueue];
+  [self.handler.events removeAllObjects];
+  UITouch *next = [self.driver beginAt:[self pressPoint]];
+  [self.driver end:next];
+  XCTAssertEqualObjects(self.handler.events, (@[@"began", @"ended"]));
+  XCTAssertEqual(self.handler.registeredTouches, 0);
+}
+
+- (void)testSecondActiveTouchOnSameSurfaceBlocksSingleMoveHorizontalReset
+{
+  [self assertFixtureIsReadyForDelivery];
+  [self assertDirectPagerForRegression];
+  UIScrollView *pager = [self.pager valueForKey:@"pagerScrollView"];
+  pager.panGestureRecognizer.minimumNumberOfTouches = 2;
+  XCTAssertTrue(pager.panGestureRecognizer.enabled);
+  UIView *sibling = [RCTViewComponentView new];
+  sibling.frame = CGRectMake(0, 40, 100, 80);
+  [self.surface addSubview:sibling];
+  UITouch *first = [self.driver beginAt:CGPointMake(350, 600)];
+  UITouch *second = [self.driver beginAt:CGPointMake(50, 80)];
+  XCTAssertEqual(self.handler.registeredTouches, 2);
+  [self.driver singleMoveKeepingDownTimestamp:first to:CGPointMake(25, 600)];
+  XCTAssertEqual(self.handler.registeredTouches, 2);
+  XCTAssertFalse([self.handler.events containsObject:@"reset-cancelled"]);
+  XCTAssertFalse([self.handler.events containsObject:@"cancelled"]);
+  XCTAssertEqual(self.handler.enabledNoWithRegisteredTouch, 0);
+  [self.driver end:second];
+  [self.driver end:first];
+  XCTAssertEqual(pager.panGestureRecognizer.minimumNumberOfTouches, 2);
+  XCTAssertEqual(self.handler.registeredTouches, 0);
 }
 
 - (void)testHorizontalPagerDragCancelsReactPressBeforeFingerLifts
