@@ -50,6 +50,18 @@ as a persisted backup.
 See [src/CloudKitModule.nitro.ts](src/CloudKitModule.nitro.ts) for the exported
 parameter and result types.
 
+## Record payload boundaries
+
+`SaveRecordParams` carries `recordType`, `recordID`, `data` and `meta`, all
+strings. Serialize application data before calling the module and decode it in
+the consumer after reading. `fetchRecord` can return `null`, and
+`queryRecords` wraps its results in `{ records: RecordResult[] }`.
+
+The exported `RecordResult` contains `createdAt` and `modifiedAt` numbers in
+addition to the string payload. `AccountInfoResult.containerUserId` is optional;
+do not require it before inspecting `status` and `statusName`. Availability,
+a successful write and later retrieval are distinct checks in a backup flow.
+
 ## License
 
 MIT.

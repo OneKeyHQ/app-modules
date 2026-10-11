@@ -83,7 +83,6 @@ android {
   sourceSets {
     main {
       java.srcDirs += ["generated/java", "generated/jni"]
-      assets.srcDirs += ["../common"]
     }
   }
 }

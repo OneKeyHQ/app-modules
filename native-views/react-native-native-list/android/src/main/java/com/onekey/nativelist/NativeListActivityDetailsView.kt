@@ -12,11 +12,11 @@ import kotlin.math.roundToInt
 import org.json.JSONObject
 
 /** Bounded rich activity fields; no wallet or transaction semantics live here. */
-internal class NativeListActivityDetailsView(private val reactContext: ThemedReactContext) : LinearLayout(reactContext) {
+internal class NativeListActivityDetailsView(private val reactContext: ThemedReactContext, private val fonts: NativeListFonts) : LinearLayout(reactContext) {
   var onAction: ((String, View, String, Int) -> Unit)? = null
   private var sourceScale = false
   private val main = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-  private val visual = NativeListLeadingVisual(reactContext)
+  private val visual = NativeListLeadingVisual(reactContext, fonts)
   private val identity = LinearLayout(context).apply { orientation = VERTICAL }
   private val titleLine = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
   private val title = NativeListTextView(context)
@@ -62,7 +62,7 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
   }
   private fun text(label: NativeListTextView, value: String, style: JSONObject?, size: Float,
                    ink: Int, line: Int, weight: String = "regular", lines: Int = 1) {
-    NativeListResolvedText.resolve(context, value, style, size, weight, ink, line, lines, sourceScale).bind(label)
+    NativeListResolvedText.resolve(context, fonts, value, style, size, weight, ink, line, lines, sourceScale).bind(label)
   }
   fun bind(item: NativeListItem, theme: JSONObject?, sourceScale: Boolean) {
     this.sourceScale = sourceScale
@@ -150,7 +150,7 @@ internal class NativeListActivityDetailsView(private val reactContext: ThemedRea
   fun dispose() { recycle(); visual.dispose(); amountViews.forEach { it.dispose() } }
 
   private inner class AmountView : LinearLayout(context) {
-    private val leading = NativeListLeadingVisual(reactContext)
+    private val leading = NativeListLeadingVisual(reactContext, fonts)
     private val labels = LinearLayout(context).apply { orientation = VERTICAL }
     private val primary = NativeListTextView(context)
     private val secondary = NativeListTextView(context)

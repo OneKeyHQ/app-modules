@@ -1,3 +1,4 @@
+import { applyTextWeight } from './RowText';
 import type { MarketRow, MarketTextStyle } from '../../models';
 import { createElement, setData, markActionAnchorSource } from './RowElements';
 import {
@@ -60,8 +61,9 @@ function applyMarketTextStyle(
   element.style.fontSize = String(style?.fontSize ?? defaults.fontSize) + 'px';
   element.style.lineHeight =
     String(style?.lineHeight ?? defaults.lineHeight) + 'px';
-  element.style.fontWeight = String(
-    fontWeight(style?.fontWeight, defaults.weight)
+  applyTextWeight(
+    element,
+    String(fontWeight(style?.fontWeight, defaults.weight))
   );
   element.style.color = style?.color ?? '';
   element.style.textAlign = style?.alignment ?? defaults.alignment;

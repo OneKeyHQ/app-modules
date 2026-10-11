@@ -6,8 +6,8 @@ import com.facebook.react.uimanager.ThemedReactContext
 import kotlin.math.roundToInt
 import org.json.JSONObject
 
-internal class NativeListRailRowView(context: ThemedReactContext) :
-  NativeListRendererRowView(context) {
+internal class NativeListRailRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
   private val textLine =
     LinearLayout(context).apply {
       orientation = HORIZONTAL
@@ -56,7 +56,7 @@ internal class NativeListRailRowView(context: ThemedReactContext) :
       lineHeight: Int,
     ) {
       NativeListResolvedText.resolve(
-          reactContext,
+          reactContext, fonts,
           value,
           style.optJSONObject(field),
           12f,
@@ -113,7 +113,7 @@ internal class NativeListRailRowView(context: ThemedReactContext) :
     // Legacy: a rail without a visual still reserves its empty 20dp slot and gap.
     val source =
       item.json.optJSONObject("visual") ?: JSONObject().put("backgroundColor", "#00000000")
-    val view = visual ?: NativeListLeadingVisual(reactContext).also { visual = it }
+    val view = visual ?: NativeListLeadingVisual(reactContext, fonts).also { visual = it }
     view.bind(source, image, item.key, theme, false, sourceScale)
     val params = LayoutParams(leadingWidth, imageHeight).apply { marginEnd = leadingGap }
     if (view.parent == null) addView(view, 0, params) else view.layoutParams = params

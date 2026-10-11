@@ -1,3 +1,4 @@
+import { applyTextWeight } from './RowText';
 import { applyTabularNumbers, hasExplicitRowHeight } from './RowElements';
 import type { ActionRow } from '../../models';
 import { RowVisualStyle, type RowPrimitives } from './RowVisual';
@@ -31,7 +32,7 @@ function bind(body: HTMLElement, row: ActionRow, primitives: RowPrimitives) {
   v.title.textContent = row.title;
   v.title.dataset.tone = row.tone ?? '';
   if (row.presentation === 'accountSelector' && row.icon)
-    v.title.style.fontWeight = '500';
+    applyTextWeight(v.title, '500');
   if (style?.title) primitives.textStyle(v.title, style.title);
   const visualKey = JSON.stringify([row.key, row.icon]);
   if (v.visualKey !== visualKey) {

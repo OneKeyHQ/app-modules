@@ -18,19 +18,22 @@ enum NativeListMessageRenderer {
     let unread: Bool
     let alignment: UIStackView.Alignment
 
-    init(_ item: NativeListItem, theme: [String: Any]?, layout: String) {
+    init(
+      _ item: NativeListItem, theme: [String: Any]?, layout: String, fonts: NativeListFontFamilies
+    ) {
       let style = item.data.dictionary("style") ?? [:]
       title = NativeListResolvedText(
         item.data.string("title"), style: style.dictionary("title"), size: 14, weight: .semibold,
-        color: nativeListColor(theme, "primaryText", "#202020"), lineHeight: 20, lines: 2)
+        color: nativeListColor(theme, "primaryText", "#202020"), lineHeight: 20, lines: 2,
+        fonts: fonts)
       body = NativeListResolvedText(
         item.data.string("body"), style: style.dictionary("body"), size: 14,
         color: nativeListColor(theme, "secondaryText", "#646464"), lineHeight: 20,
-        lines: item.data.int("bodyLines", default: 3))
+        lines: item.data.int("bodyLines", default: 3), fonts: fonts)
       time = NativeListResolvedText(
         item.data.string("time"), style: style.dictionary("time"), size: 12,
         color: nativeListColor(theme, "disabledText", "#8D8D8D"), lineHeight: 16, lines: 1,
-        breakMode: .byWordWrapping)
+        breakMode: .byWordWrapping, fonts: fonts)
       horizontalPadding = CGFloat(
         style.double("horizontalPadding", default: layout == "table" ? 16 : 12))
       verticalPadding = CGFloat(style.double("verticalPadding", default: 16))
@@ -87,7 +90,10 @@ enum NativeListMessageRenderer {
       root.addArrangedSubview(column)
     }
 
-    func bind(_ resolved: Resolved, item: NativeListItem, theme: [String: Any]?) {
+    func bind(
+      _ resolved: Resolved, item: NativeListItem, theme: [String: Any]?,
+      fonts: NativeListFontFamilies
+    ) {
       resolved.title.bind(title)
       resolved.body.bind(body)
       resolved.time.bind(time)
@@ -102,7 +108,8 @@ enum NativeListMessageRenderer {
         leading = visual
         if visual.superview == nil { root.insertArrangedSubview(visual, at: 0) }
         visual.bind(
-          data, style: resolved.imageStyle, key: item.key, theme: theme, isUnread: resolved.unread)
+          data, style: resolved.imageStyle, key: item.key, theme: theme, isUnread: resolved.unread,
+          fonts: fonts)
         root.setCustomSpacing(resolved.leadingGap, after: visual)
         sizeConstraints += [
           visual.widthAnchor.constraint(equalToConstant: resolved.imageWidth),
@@ -144,9 +151,11 @@ enum NativeListMessageRenderer {
 
 final class NativeListMessageCell: NativeListRendererCell {
   override class func measure(
-    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String
+    _ item: NativeListItem, width: CGFloat, theme: [String: Any]?, layout: String,
+    fonts: NativeListFontFamilies
   ) -> CGFloat? {
-    return NativeListMessageRenderer.Resolved(item, theme: theme, layout: layout).measure(
+    return NativeListMessageRenderer.Resolved(item, theme: theme, layout: layout, fonts: fonts)
+      .measure(
       width: width)
   }
 
@@ -158,8 +167,9 @@ final class NativeListMessageCell: NativeListRendererCell {
     _ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String
   ) {
-    let resolved = NativeListMessageRenderer.Resolved(item, theme: theme, layout: layout)
-    views.bind(resolved, item: item, theme: theme)
+    let resolved = NativeListMessageRenderer.Resolved(
+      item, theme: theme, layout: layout, fonts: fonts)
+    views.bind(resolved, item: item, theme: theme, fonts: fonts)
     contentInsets = UIEdgeInsets(
       top: resolved.verticalPadding, left: resolved.horizontalPadding,
       bottom: resolved.verticalPadding, right: resolved.horizontalPadding)

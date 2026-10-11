@@ -36,6 +36,18 @@ See [src/NativeNetworkInfo.ts](src/NativeNetworkInfo.ts) for the full interface.
 The package exports the native object as `NetworkInfo` and its type as
 `NetworkInfoSpec`.
 
+## Nullable and platform-specific readings
+
+`getSSID`, `getBSSID` and `getBroadcast` return nullable strings;
+`getFrequency` returns a nullable number. A `null` result must remain distinct
+from a known network value. IP, gateway and subnet getters return strings and
+may reject through the native operation.
+
+`getIPAddress`, `getIPV4Address`, `getWIFIIPV4Address` and `getIPV6Address` are
+separate methods; use the reading appropriate to the connection being inspected.
+The exported `NetworkInfoSpec` provides their exact signatures. There is no
+network-change event API or continuous reachability monitor in this wrapper.
+
 ## Upstream attribution
 
 First, a sincere thank-you to the

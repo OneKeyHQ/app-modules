@@ -1,3 +1,4 @@
+import { applyTextWeight } from './RowText';
 import { applyTabularNumbers, hasExplicitRowHeight } from './RowElements';
 import type { SectionHeaderRow } from '../../models';
 import {
@@ -56,10 +57,12 @@ function createSectionHeader(
     body.style.gap = row.checkbox ? '12px' : '8px';
     title.style.fontSize = row.variant === 'summary' ? '16px' : '14px';
     title.style.lineHeight = row.variant === 'summary' ? '24px' : '20px';
-    title.style.fontWeight =
+    applyTextWeight(
+      title,
       row.variant === 'summary' || (row.titleActionKey && !row.checkbox)
         ? '500'
-        : '600';
+        : '600'
+    );
     if (row.titleActionKey) {
       const text = createElement(
         document,
@@ -129,7 +132,7 @@ function createSectionHeader(
       value.style.fontFamily = 'inherit';
       value.style.fontSize = '16px';
       value.style.lineHeight = '24px';
-      value.style.fontWeight = '500';
+      applyTextWeight(value, '500');
       if (row.valueActionKey) {
         value.style.color = 'var(--nl-secondary)';
         value.style.padding = '0';

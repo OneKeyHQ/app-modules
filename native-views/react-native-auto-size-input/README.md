@@ -53,6 +53,18 @@ TextInput prop is supported. Native input styling and keyboard behavior should
 be checked on each target platform when integrating a new configuration.
 The full interface is in [src/AutoSizeInput.nitro.ts](src/AutoSizeInput.nitro.ts).
 
+## Controlled text and keyboard options
+
+`onChangeText` receives a string directly, not a React Native event object.
+Keep `text` synchronized with the application's state as in the usage example.
+`onFocus` and `onBlur` have no event payload in this interface.
+
+`AutoSizeInputProps` and `AutoSizeInputMethods` are exported types. The view
+supports `mostRecentEventCount` for text-update coordination, but it does not
+expose every property of React Native `TextInput`. Prefix/suffix colors and
+margins are separate from the editable text's color and layout. Give the native
+view explicit layout space before relying on font-size fitting.
+
 ## License
 
 MIT.

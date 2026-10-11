@@ -16,7 +16,6 @@ Pod::Spec.new do |s|
   s.exclude_files = "ios/tests/**/*"
   s.resource_bundles = {
     "NativeListResources" => [
-      "common/fonts/*.ttf",
       "ios/Resources/NativeListIcons.xcassets"
     ]
   }

@@ -180,8 +180,18 @@ slots already sit on that step; slots that do not are listed in §4.
 | `$bodySm` | 12 / 16 | regular | `rail.title`, `market.subtitle`, `identity.badge` |
 | `$bodyXs` | 11 / 16 | regular | `metricCard` labels, `market` badges |
 
-Weight names map to the bundled Roobert faces: `regular`, `medium`, `semibold`,
-`bold`. No other family is available; `fontFamily` is not part of the style surface.
+Weight names are `regular`, `medium`, `semibold`, and `bold`. NativeList bundles
+and registers no fonts. `configureNativeListFonts` sets optional face names once
+per JavaScript runtime; omitted faces and `{}` use system fonts. iOS names are
+host-registered PostScript names; Android names are host React Native family keys
+or matching asset names. Web names are literal host-defined CSS font families,
+with the existing semantic weight. Every list owns the native resolver delivered
+from its runtime store; there is no mutable native-global font mapping or public
+row/instance override. Configuration changes rebind text and invalidate measured
+layout; identical normalized mappings do not. Hosts provision fonts before this
+configuration and remain responsible for licensing. `fontFamily` is not part of
+the style surface. See SPEC.md for validation, lifecycle and fallback boundaries.
+Rendering acceptance remains required when font metrics change.
 
 ### 3.3 Spacing, radius, bounds
 

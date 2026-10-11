@@ -2,6 +2,7 @@ import React, { createRef } from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import type { NativeListRef } from '../NativeList.types';
 import type { NativeListSnapshot } from '../models';
+import { configureNativeListFonts } from '../fonts';
 
 const mockNativeMethods = {
   applySnapshot: jest.fn(),
@@ -17,7 +18,9 @@ const mockNativeMethods = {
 let mockOnSelectionDelta: (payloadJson: string) => void;
 let mockOnReorder: (payloadJson: string) => void;
 let mockOnRowAction: (payloadJson: string) => void;
+const mockFontRenders = jest.fn();
 const mockWebEngine = {
+  setFontFamiliesJson: jest.fn(),
   applySnapshot: jest.fn(),
   setVirtualizationEnabled: jest.fn(),
   updateCallbacks: jest.fn(),
@@ -58,10 +61,14 @@ jest.mock('react-native-nitro-modules', () => ({
   getHostComponent: () =>
     function MockNativeListHost(props: {
       hybridRef: (ref: typeof mockNativeMethods) => void;
+      testID?: string;
+      fontFamiliesJson: string;
+      snapshotJson: string;
       onSelectionDelta: (payloadJson: string) => void;
       onReorder: (payloadJson: string) => void;
       onRowAction: (payloadJson: string) => void;
     }) {
+      mockFontRenders(props);
       mockOnSelectionDelta = props.onSelectionDelta;
       mockOnReorder = props.onReorder;
       mockOnRowAction = props.onRowAction;
@@ -116,6 +123,50 @@ const snapshot: NativeListSnapshot = {
 
 describe('NativeList imperative ref', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it('updates both mounted lists from the runtime store without replaying snapshots', async () => {
+    const { NativeList } = jest.requireActual(
+      '../NativeList'
+    ) as typeof import('../NativeList');
+    const first = createRef<NativeListRef>();
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      configureNativeListFonts({ regular: 'First' });
+      renderer = TestRenderer.create(
+        <>
+          <NativeList ref={first} testID="font-first" snapshot={snapshot} />
+          <NativeList testID="font-second" snapshot={snapshot} />
+        </>
+      );
+    });
+    const latest = (id: string) =>
+      mockFontRenders.mock.calls
+        .map(([props]) => props)
+        .filter((props) => props.testID === id)
+        .at(-1);
+    const originalSnapshot = latest('font-first').snapshotJson;
+    expect(latest('font-first').fontFamiliesJson).toBe('{"regular":"First"}');
+    expect(latest('font-second').fontFamiliesJson).toBe('{"regular":"First"}');
+    act(() =>
+      first.current?.applyPatches([
+        { key: 'a-0', type: 'system', changes: { message: 'Patched' } },
+      ])
+    );
+    mockNativeMethods.applySnapshot.mockClear();
+    await act(async () => configureNativeListFonts({ bold: 'Changed' }));
+    expect(latest('font-first').fontFamiliesJson).toBe('{"bold":"Changed"}');
+    expect(latest('font-second').fontFamiliesJson).toBe('{"bold":"Changed"}');
+    expect(latest('font-first').snapshotJson).toBe(originalSnapshot);
+    expect(mockNativeMethods.applySnapshot).not.toHaveBeenCalled();
+    expect(mockNativeMethods.applyPatches).toHaveBeenCalledTimes(1);
+    const renders = mockFontRenders.mock.calls.length;
+    await act(async () => configureNativeListFonts({ bold: 'Changed' }));
+    expect(mockFontRenders).toHaveBeenCalledTimes(renders);
+    await act(async () => renderer!.unmount());
+    const unmountedRenders = mockFontRenders.mock.calls.length;
+    await act(async () => configureNativeListFonts({}));
+    expect(mockFontRenders).toHaveBeenCalledTimes(unmountedRenders);
+  });
 
   it.each([true, false])(
     'consumes native container refresh separately from row actions (refresh callback: %s)',

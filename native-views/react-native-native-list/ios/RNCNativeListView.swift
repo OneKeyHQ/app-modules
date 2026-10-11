@@ -4,6 +4,26 @@ import UIKit
 import UniformTypeIdentifiers
 
 final class NativeListView: UIView {
+  private var fonts = NativeListFontFamilies()
+
+  func setFontFamiliesJson(_ json: String) {
+    guard let next = NativeListFontFamilies(json: json), next != fonts else { return }
+    fonts = next
+    if interactiveReorderSource != nil { cancelInteractiveReorderForStructuralUpdate() }
+    sectionIndexView.refreshFonts(fonts)
+    sectionIndexPreview.refreshFonts(fonts)
+    invalidateActionAnchor(reason: "layout")
+    configureFooterIfPresent()
+    var snapshot = dataSource.snapshot()
+    snapshot.reconfigureItems(snapshot.itemIdentifiers)
+    dataSource.apply(snapshot, animatingDifferences: false)
+    flowLayout.invalidateLayout()
+    setNeedsLayout()
+  }
+
+  private func configureFooterIfPresent() {
+    if let config { configureFooter(config) }
+  }
   private var refreshEmittedForDrag = false
   private var minimumDragOffset: CGFloat = 0
   private var containerSlotHeights: [CGFloat] = [0, 0, 0]
@@ -1516,7 +1536,8 @@ final class NativeListView: UIView {
       selected: item.data.bool("selected") || config.selectedKeys.contains(item.key),
       checkboxState: { [weak self] item, target, fallback in
         self?.resolveCheckboxState(item: item, target: target, fallback: fallback) ?? fallback
-      }
+      },
+      fonts: fonts
     )
     if item.key == interactiveReorderCompactKey {
       cell.setWalletGroupReorderCompact(true)
@@ -1879,7 +1900,9 @@ final class NativeListView: UIView {
       ? floor((availableWidth - CGFloat((config?.gridColumns ?? 2) - 1) * (config?.itemSpacing ?? 0)) / CGFloat(config?.gridColumns ?? 2))
       : availableWidth
     let rowWidth = allocatedWidth ?? (config?.orientation == "horizontal" ? 280 : columnWidth)
-    if let height = NativeListRendererRegistry.measure(item, width: rowWidth, theme: config?.theme, layout: config?.layout ?? "linear") {
+    if let height = NativeListRendererRegistry.measure(
+      item, width: rowWidth, theme: config?.theme, layout: config?.layout ?? "linear", fonts: fonts)
+    {
       return max(0, height + (NativeListRendererRegistry.appliesSizePreset(item) ? (item.data.string("size") == "small" ? -8 : item.data.string("size") == "large" ? 12 : 0) : 0))
     }
     return 56
@@ -2253,7 +2276,7 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
   }
 
   private func railWidth(_ item: NativeListItem) -> CGFloat {
-    NativeListRailRenderer.Resolved(item, theme: config?.theme).horizontalWidth
+    NativeListRailRenderer.Resolved(item, theme: config?.theme, fonts: fonts).horizontalWidth
   }
 
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
@@ -2498,6 +2521,11 @@ private struct NativeListSectionIndexEntry {
 }
 
 private final class NativeListSectionIndexPreviewView: UIView {
+  private var fonts = NativeListFontFamilies()
+  func refreshFonts(_ fonts: NativeListFontFamilies) {
+    self.fonts = fonts
+    label.font = nativeListFont(ofSize: 30, fonts: fonts)
+  }
   private let shapeLayer = CAShapeLayer()
   private let label = UILabel()
 
@@ -2513,7 +2541,7 @@ private final class NativeListSectionIndexPreviewView: UIView {
     layer.addSublayer(shapeLayer)
     label.textAlignment = .center
     label.adjustsFontForContentSizeCategory = true
-    label.font = nativeListFont(ofSize: 30)
+    label.font = nativeListFont(ofSize: 30, fonts: fonts)
     label.isAccessibilityElement = false
     addSubview(label)
   }
@@ -2568,6 +2596,11 @@ private final class NativeListSectionIndexPreviewView: UIView {
 // OneKey patch: arbitrate index scrubbing against ancestor dismissal gestures.
 // private final class NativeListSectionIndexView: UIControl {
 private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDelegate {
+  private var fonts = NativeListFontFamilies()
+  func refreshFonts(_ fonts: NativeListFontFamilies) {
+    self.fonts = fonts
+    updateLabelStyles()
+  }
   private static let edgePadding: CGFloat = 8
   private static let labelSize: CGFloat = 14
   private static let labelSpacing: CGFloat = 16
@@ -2785,7 +2818,7 @@ private final class NativeListSectionIndexView: UIControl, UIGestureRecognizerDe
       label.backgroundColor = active ? activeColor : .clear
       label.layer.cornerRadius = Self.labelSize / 2
       label.layer.masksToBounds = active
-      label.font = nativeListFont(ofSize: 10, weight: active ? .medium : .regular)
+      label.font = nativeListFont(ofSize: 10, weight: active ? .medium : .regular, fonts: fonts)
     }
   }
 }

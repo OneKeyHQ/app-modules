@@ -76,6 +76,7 @@ internal data class NativeListResolvedText(
   companion object {
     fun resolve(
       context: Context,
+      fonts: NativeListFonts,
       text: String,
       style: JSONObject?,
       size: Float,
@@ -95,10 +96,10 @@ internal data class NativeListResolvedText(
             context.resources.displayMetrics.scaledDensity
       val face =
         when (style?.optString("fontWeight", weight) ?: weight) {
-          "medium" -> NativeListFonts.medium(context)
-          "semibold" -> NativeListFonts.semibold(context)
-          "bold" -> NativeListFonts.bold(context)
-          else -> NativeListFonts.regular(context)
+          "medium" -> fonts.medium(context)
+          "semibold" -> fonts.semibold(context)
+          "bold" -> fonts.bold(context)
+          else -> fonts.regular(context)
         }
       val line =
         if (style?.has("lineHeight") == true) (style.optDouble("lineHeight") * density).roundToInt()

@@ -13,12 +13,12 @@ import kotlin.math.roundToInt
 import org.json.JSONObject
 
 /** Fixed visual slots; no row-template or business-key branching. */
-internal class NativeListLeadingVisual(private val reactContext: ThemedReactContext) :
+internal class NativeListLeadingVisual(private val reactContext: ThemedReactContext, val fonts: NativeListFonts) :
   FrameLayout(reactContext) {
   private val fallback =
     TextView(context).apply {
       gravity = Gravity.CENTER
-      typeface = NativeListFonts.bold(context)
+      typeface = fonts.bold(context)
     }
   private val icon = OneKeyIconView(context)
   private val unread = View(context)
@@ -94,6 +94,7 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
     sourceScale: Boolean,
     secondaryVisual: JSONObject? = null,
   ) {
+    fallback.typeface = fonts.bold(context)
     this.visual = visual
     this.style = style
     this.sourceScale = sourceScale
@@ -289,8 +290,8 @@ internal class NativeListLeadingVisual(private val reactContext: ThemedReactCont
               if (walletText) androidx.core.widget.TextViewCompat.setLineHeight(this, dp(16))
               else setLineSpacing(0f, 1f)
               typeface =
-                if (isWalletText(data)) NativeListFonts.regular(context)
-                else NativeListFonts.medium(context)
+                if (isWalletText(data)) fonts.regular(context)
+                else fonts.medium(context)
               setTextColor(color(data.optString("tintColor", "#0000009B")))
             }
           } else {

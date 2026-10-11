@@ -1,3 +1,4 @@
+import { useNativeListFontFamiliesJson } from './fonts';
 import React, {
   forwardRef,
   useEffect,
@@ -123,6 +124,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
     },
     forwardedRef
   ) {
+    const fontFamiliesJson = useNativeListFontFamiliesJson();
     const [slotHeights, setSlotHeights] = useState([0, 0, 0]);
     const containerSlotHeightsJson = JSON.stringify(slotHeights);
     const slotInset =
@@ -504,6 +506,7 @@ export const NativeList = forwardRef<NativeListRef, NativeListProps>(
       <NativeListHost
         {...viewProps}
         {...nativeCallbacks}
+        fontFamiliesJson={fontFamiliesJson}
         snapshotJson={snapshotJson}
         containerSlotHeightsJson={containerSlotHeightsJson}
         scrollPositionThresholdsJson={scrollPositionThresholdsJson}

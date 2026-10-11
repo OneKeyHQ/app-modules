@@ -35,13 +35,27 @@ Use the exact signatures in [src/NativeAesCrypto.ts](src/NativeAesCrypto.ts) and
 the GCM contract comments in [src/index.tsx](src/index.tsx). Applications own
 key storage, nonce uniqueness, input encoding and handling promise failures.
 
+## Authenticated-encryption interoperability
+
+`aesGcmEncrypt(data, key, nonce, aad)` and
+`aesGcmDecrypt(ciphertextWithTag, key, nonce, aad)` operate on hex strings.
+An empty plaintext is allowed and produces only the 16-byte tag. The ciphertext
+passed to decryption must contain at least that tag. Use the identical key,
+nonce and associated-data bytes when decrypting; mismatches reject.
+
+The bridge accepts 16-, 24- or 32-byte AES keys and exactly 12 nonce bytes.
+It rejects empty associated data and malformed hex. Keep these GCM parameters
+separate from `encrypt(data, key, iv, algorithm)` and
+`decrypt(base64, key, iv, algorithm)`, whose signatures and formats differ.
+The exported `AesCryptoSpec` type describes the raw native surface.
+
 ## Upstream attribution
 
 First, a sincere thank-you to tectiv3 and the
 `react-native-aes-crypto` maintainers for their excellent work 🙏
 
 This package is built on, and inspired by,
-[tectiv3/react-native-aes-crypto](https://github.com/tectiv3/react-native-aes-crypto).
+[tectiv3/react-native-aes](https://github.com/tectiv3/react-native-aes).
 
 Our original plan was to keep our customizations as patches on top of upstream
 `react-native-aes-crypto`.
@@ -55,7 +69,7 @@ development and delivery stable.
 
 ## Upstream Project
 
-- Repository: [tectiv3/react-native-aes-crypto](https://github.com/tectiv3/react-native-aes-crypto)
+- Repository: [tectiv3/react-native-aes](https://github.com/tectiv3/react-native-aes)
 - License: MIT
 
 ## Notes
