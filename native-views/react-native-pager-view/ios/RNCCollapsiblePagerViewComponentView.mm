@@ -199,9 +199,7 @@ static void RNCGuardNestedHorizontalPans(UIView *view, UIGestureRecognizer *guar
   if ([view isKindOfClass:UIScrollView.class]) {
     UIScrollView *scroll = (UIScrollView *)view;
     if (RNCIsEnabledHorizontalScrollOwner(scroll)) {
-      for (UIGestureRecognizer *gesture in scroll.gestureRecognizers) {
-        [gesture requireGestureRecognizerToFail:guard];
-      }
+      [scroll.panGestureRecognizer requireGestureRecognizerToFail:guard];
     }
   }
   for (UIView *child in view.subviews) RNCGuardNestedHorizontalPans(child, guard);
