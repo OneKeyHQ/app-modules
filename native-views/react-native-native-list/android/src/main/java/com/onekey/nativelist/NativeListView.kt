@@ -454,6 +454,7 @@ class NativeListView(
   private var stickyObservedTree: ViewTreeObserver? = null
   private var spacingDecoration: ItemSpacingDecoration? = null
   private var itemTouchHelper: ItemTouchHelper? = null
+  private var activeReorderHolder: NativeListViewHolder? = null
   private var reorderTouchListener: RecyclerView.OnItemTouchListener? = null
   private var reorderTouchHandler: Handler? = null
   private var endReachedGeneration: Int? = null
@@ -1407,8 +1408,19 @@ class NativeListView(
     reorderTouchListener = null
     recyclerView.removeOnItemTouchListener(keyboardTapTouchListener)
     recyclerView.removeOnItemTouchListener(pagerGestureTouchListener)
-    itemTouchHelper?.attachToRecyclerView(null)
+    val previousHelper = itemTouchHelper
     itemTouchHelper = null
+    if (previousHelper != null && activeReorderHolder != null) {
+      val now = SystemClock.uptimeMillis()
+      val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+      try {
+        recyclerView.onInterceptTouchEvent(cancel)
+      } finally {
+        cancel.recycle()
+      }
+    }
+    previousHelper?.attachToRecyclerView(null)
+    activeReorderHolder = null
     footerView.recycle()
     footerView.dispose()
     stopStickyHeaderTracking()
@@ -1992,15 +2004,44 @@ class NativeListView(
   }
 
   private fun updateReordering(next: NativeListConfig) {
+    dragFrom = RecyclerView.NO_POSITION
+    dragTo = RecyclerView.NO_POSITION
+    pendingReorder = null
+    reorderPlaceholderDecoration.position = RecyclerView.NO_POSITION
     stopReorderRelayoutLoop()
     reorderTouchHandler?.removeCallbacksAndMessages(null)
     reorderTouchHandler = null
     reorderTouchListener?.let(recyclerView::removeOnItemTouchListener)
     reorderTouchListener = null
-    itemTouchHelper?.attachToRecyclerView(null)
+    val previousHelper = itemTouchHelper
     itemTouchHelper = null
+    if (previousHelper != null && activeReorderHolder != null) {
+      // Detach alone leaves ItemTouchHelper's selection/auto-scroll runnable alive.
+      val now = SystemClock.uptimeMillis()
+      val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+      try {
+        recyclerView.onInterceptTouchEvent(cancel)
+      } finally {
+        cancel.recycle()
+      }
+    }
+    previousHelper?.attachToRecyclerView(null)
+    val rows = mutableSetOf<NativeListViewHolder>()
+    activeReorderHolder?.let(rows::add)
+    activeReorderHolder = null
+    for (index in 0 until recyclerView.childCount) {
+      (recyclerView.getChildViewHolder(recyclerView.getChildAt(index)) as? NativeListViewHolder)
+        ?.let(rows::add)
+    }
+    rows.forEach { holder ->
+      holder.itemView.animate().cancel()
+      ItemTouchHelper.Callback.getDefaultUIUtil().clearView(holder.itemView)
+      holder.rowView.setReorderActive(false)
+    }
+    recyclerView.invalidate()
     adapter.cancelReorder()
     if (!next.reorderable) return
+    lateinit var helper: ItemTouchHelper
     val callback = object : ItemTouchHelper.SimpleCallback(
       ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT,
       0,
@@ -2053,8 +2094,10 @@ class NativeListView(
       override fun isLongPressDragEnabled(): Boolean = false
 
       override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+        if (itemTouchHelper !== helper) return
         super.onSelectedChanged(viewHolder, actionState)
         if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+          activeReorderHolder = viewHolder as? NativeListViewHolder
           val position = viewHolder?.bindingAdapterPosition ?: RecyclerView.NO_POSITION
           val item = adapter.itemAt(position)
           reorderPlaceholderDecoration.position = position
@@ -2081,7 +2124,7 @@ class NativeListView(
           (viewHolder as? NativeListViewHolder)?.rowView?.setReorderActive(true)
           if (compactWalletGroupDrag && viewHolder != null) {
             recyclerView.postOnAnimation {
-              if (viewHolder.itemView.isAttachedToWindow) {
+              if (itemTouchHelper === helper && viewHolder.itemView.isAttachedToWindow) {
                 relayoutRecyclerViewImmediately()
               }
             }
@@ -2090,6 +2133,7 @@ class NativeListView(
       }
 
       override fun getMovementFlags(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder): Int {
+        if (itemTouchHelper !== helper) return makeMovementFlags(0, 0)
         if (viewHolder !is NativeListViewHolder) return makeMovementFlags(0, 0)
         val item = adapter.itemAt(viewHolder.bindingAdapterPosition)
         if (item == null || !item.isReorderable) return makeMovementFlags(0, 0)
@@ -2102,6 +2146,7 @@ class NativeListView(
         source: RecyclerView.ViewHolder,
         target: RecyclerView.ViewHolder,
       ): Boolean {
+        if (itemTouchHelper !== helper) return false
         if (source !is NativeListViewHolder || target !is NativeListViewHolder) return false
         val from = source.bindingAdapterPosition
         val to = target.bindingAdapterPosition
@@ -2143,7 +2188,7 @@ class NativeListView(
           )
         }
         val displacedView = target.itemView
-        prepareDisplacedReorderAnimation(displacedView)
+        prepareDisplacedReorderAnimation(displacedView, helper)
         val reordered = adapter.moveReordered(from, to)
         if (reordered == null) {
           logMoveAttempt(
@@ -2177,6 +2222,7 @@ class NativeListView(
         actionState: Int,
         isCurrentlyActive: Boolean,
       ) {
+        if (itemTouchHelper !== helper) return
         if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
           latestDragDx = dX
           latestDragDy = dY
@@ -2221,6 +2267,7 @@ class NativeListView(
         totalSize: Int,
         msSinceStartScroll: Long,
       ): Int {
+        if (itemTouchHelper !== helper) return 0
         val effectiveViewSize: Int
         val effectiveOutOfBounds: Int
         if (compactWalletGroupDrag) {
@@ -2274,6 +2321,9 @@ class NativeListView(
       }
 
       override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+        // Cancellation already restored rows before a replacement helper takes ownership.
+        if (itemTouchHelper !== helper) return
+        if (activeReorderHolder === viewHolder) activeReorderHolder = null
         stopReorderRelayoutLoop()
         val rowView = (viewHolder as? NativeListViewHolder)?.rowView
         val draggedGroupKey = (rowView?.tag as? NativeListItem)?.key
@@ -2308,6 +2358,7 @@ class NativeListView(
         val finishCompactWalletGroup = {
           if (wasCompactWalletGroupDrag) {
             recyclerView.postOnAnimation {
+              if (itemTouchHelper !== helper) return@postOnAnimation
               relayoutRecyclerViewImmediately()
               val resolvedPosition = draggedGroupKey
                 ?.let(adapter::positionOfKey)
@@ -2324,7 +2375,9 @@ class NativeListView(
                 REORDER_SPRING_DURATION_MS,
                 reorderSpringInterpolator,
               ) {
-                recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
+                recyclerView.postOnAnimation {
+                  if (itemTouchHelper === helper) relayoutRecyclerViewImmediately()
+                }
               }
             }
           }
@@ -2341,9 +2394,12 @@ class NativeListView(
             reordered.getOrNull(to + 1)?.let { payload.put("afterKey", it.key) }
             reorderPayload = payload
             adapter.commitReordered(reordered) {
+              if (itemTouchHelper !== helper) return@commitReordered
               finishCompactWalletGroup()
               if (!wasCompactWalletGroupDrag) {
-                recyclerView.postOnAnimation(::relayoutRecyclerViewImmediately)
+                recyclerView.postOnAnimation {
+                  if (itemTouchHelper === helper) relayoutRecyclerViewImmediately()
+                }
               }
             }
           }
@@ -2359,7 +2415,9 @@ class NativeListView(
         reorderPayload?.let { emit(REORDER, it) }
       }
     }
-    itemTouchHelper = ItemTouchHelper(callback).also { it.attachToRecyclerView(recyclerView) }
+    helper = ItemTouchHelper(callback)
+    itemTouchHelper = helper
+    helper.attachToRecyclerView(recyclerView)
     val handler = Handler(Looper.getMainLooper())
     reorderTouchHandler = handler
     val movementLimit = dp(REORDER_ALLOWABLE_MOVEMENT_DP).toFloat()
@@ -2381,8 +2439,8 @@ class NativeListView(
       }
 
       private fun beginDrag(holder: RecyclerView.ViewHolder) {
-        if (candidate !== holder || !holder.itemView.isAttachedToWindow) return
-        itemTouchHelper?.startDrag(holder)
+        if (itemTouchHelper !== helper || candidate !== holder || !holder.itemView.isAttachedToWindow) return
+        helper.startDrag(holder)
         holder.itemView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
       }
 
@@ -2392,6 +2450,7 @@ class NativeListView(
       }
 
       override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+        if (itemTouchHelper !== helper) return false
         when (event.actionMasked) {
           MotionEvent.ACTION_DOWN -> {
             cancelPending()
@@ -2433,7 +2492,7 @@ class NativeListView(
     }.also(recyclerView::addOnItemTouchListener)
   }
 
-  private fun prepareDisplacedReorderAnimation(view: View) {
+  private fun prepareDisplacedReorderAnimation(view: View, helper: ItemTouchHelper) {
     val previousX = view.x
     val previousY = view.y
     view.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
@@ -2449,6 +2508,7 @@ class NativeListView(
         oldBottom: Int,
       ) {
         changedView.removeOnLayoutChangeListener(this)
+        if (itemTouchHelper !== helper) return
         val deltaX = previousX - changedView.x
         val deltaY = previousY - changedView.y
         if (deltaX == 0f && deltaY == 0f) return

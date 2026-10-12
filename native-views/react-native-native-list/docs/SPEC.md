@@ -53,6 +53,30 @@ image that already loaded. Common container styling clears what it wrote on the
 next bind, including properties it set on template children. UI mutation remains on the platform
 UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
 
+### Android reorder cancellation
+
+Status: implemented; three real Android View/callback regressions verified on
+the task's API 34 emulator. Full MotionEvent long-press/edge-scroll gestures and
+physical-device acceptance remain pending.
+Replacing the reorder helper for a structural snapshot or changed font mapping
+MUST invalidate pending drag indices and transaction state before detaching the old
+helper, and restore the adapter's latest committed/submitted snapshot order
+during cancellation. An active helper's selection and auto-scroll ownership must
+end before detach, including disposal; ordinary non-reorder touch input is not
+force-cancelled.
+Cancellation emits no reorder event. It restores the active row's normal
+appearance, including wallet-group expansion and its declared opacity, removes
+the placeholder, and clears drag/displacement translation and temporary elevation.
+Callbacks and deferred displacement/drop animations owned by the detached helper
+MUST NOT change rows or commit a later gesture. A subsequent unmoved gesture
+emits no reorder event; a subsequent valid move retains the normal single commit
+with its own source/destination indices. This does not change the font API or
+ordinary successful-drop animation contract.
+In a repository source checkout, the opt-in platform-runner test and exact
+build/run commands are in `native-tests/android/README.md`; these tests
+drive the shipping NativeListView and ItemTouchHelper callbacks, not a copy of
+the cancellation implementation.
+
 ### Native section title loading indicator
 
 Status: implemented source; simulator rendering acceptance pending.
