@@ -6,17 +6,190 @@
 using namespace facebook::react;
 
 @interface RNCCollapsiblePagerViewComponentView (FirstFrameTesting)
+- (void)mountingTransactionWillMount:(const MountingTransaction &)transaction
+                withSurfaceTelemetry:(const SurfaceTelemetry &)telemetry;
 - (void)mountingTransactionDidMount:(const MountingTransaction &)transaction
                withSurfaceTelemetry:(const SurfaceTelemetry &)telemetry;
 - (UIScrollView *)findExplicitNativeScrollerInView:(UIView *)view;
 - (UIScrollView *)findVerticalScrollViewInView:(UIView *)view;
 - (void)attachScrollObserverForCurrentPage;
+- (void)attachScrollObserverForCurrentPageAfterTransition:(BOOL)selectionSettled;
+- (void)detachScrollObserver;
+- (void)beginPageStateTransition;
+- (void)updatePageStateTransitionProgress:(CGFloat)progress;
+- (void)finishPageStateTransition;
+- (void)preparePageForHorizontalTransitionAtIndex:(NSInteger)index;
+- (void)applyInsetsToScrollView:(UIScrollView *)scrollView pageIndex:(NSInteger)index restore:(BOOL)restore;
 @end
 
 @interface RNCCollapsiblePagerFirstFrameTests : XCTestCase
 @end
 
 @implementation RNCCollapsiblePagerFirstFrameTests
+
+- (void)testTransitionLayoutCannotSaveSourceOffsetIntoDestinationCache
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:2];
+  RNCNativeScrollerComponentView *source = [self addScrollerToPager:pager atIndex:0];
+  RNCNativeScrollerComponentView *target = [self addScrollerToPager:pager atIndex:1];
+  NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
+  offsets[@"page-0"] = @120;
+  offsets[@"page-1"] = @660;
+  [pager setValue:@120 forKey:@"headerOffset"];
+  [pager attachScrollObserverForCurrentPage];
+  XCTAssertEqualWithAccuracy(source.scrollView.contentOffset.y + source.scrollView.contentInset.top, 120, 0.01);
+  XCTAssertEqualObjects([pager valueForKey:@"headerOffset"], @120);
+  XCTAssertEqualObjects(offsets[@"page-1"], @660);
+  [pager detachScrollObserver];
+  [pager setValue:@YES forKey:@"transitioning"];
+  // A layout pass runs between programmatic transition start and completion.
+  [pager attachScrollObserverForCurrentPage];
+  [pager setValue:@1 forKey:@"currentIndex"];
+  [pager attachScrollObserverForCurrentPageAfterTransition:YES];
+  XCTAssertEqualWithAccuracy([offsets[@"page-1"] doubleValue], 660, 0.01);
+  XCTAssertEqualWithAccuracy(target.scrollView.contentOffset.y + target.scrollView.contentInset.top, 660, 0.01);
+  XCTAssertNotEqual([pager valueForKey:@"observedScrollView"], source.scrollView);
+}
+
+- (void)testSmoothTransitionRestoresWholePagePositionsAndCancellation
+{
+  for (NSNumber *targetQ in @[@0, @60, @660]) {
+    RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:2];
+    RNCNativeScrollerComponentView *source = [self addScrollerToPager:pager atIndex:0];
+    RNCNativeScrollerComponentView *target = [self addScrollerToPager:pager atIndex:1];
+    NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
+    offsets[@"page-0"] = @0;
+    offsets[@"page-1"] = targetQ;
+    [pager attachScrollObserverForCurrentPage];
+    [pager beginPageStateTransition];
+    [pager setValue:@YES forKey:@"isPagerDragging"];
+    [pager setValue:@YES forKey:@"transitioning"];
+    [pager updatePageStateTransitionProgress:0.5];
+    CGFloat displayH = MIN(targetQ.doubleValue, 120) / 2;
+    XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], displayH, 0.01);
+    XCTAssertEqualWithAccuracy(source.scrollView.contentOffset.y + source.scrollView.contentInset.top, displayH, 0.01);
+    XCTAssertEqualWithAccuracy(target.scrollView.contentOffset.y + target.scrollView.contentInset.top,
+                              MAX(targetQ.doubleValue - 120, 0) + displayH, 0.01);
+    XCTAssertEqualObjects(offsets[@"page-0"], @0);
+    XCTAssertEqualObjects(offsets[@"page-1"], targetQ);
+    // Cancelling the swipe restores both pages, not just the selected source.
+    [pager finishPageStateTransition];
+    XCTAssertEqualWithAccuracy(source.scrollView.contentOffset.y + source.scrollView.contentInset.top, 0, 0.01);
+    XCTAssertEqualWithAccuracy(target.scrollView.contentOffset.y + target.scrollView.contentInset.top, targetQ.doubleValue, 0.01);
+    XCTAssertEqualObjects(offsets[@"page-1"], targetQ);
+    [pager setValue:@NO forKey:@"isPagerDragging"];
+    [pager setValue:@NO forKey:@"transitioning"];
+    [pager attachScrollObserverForCurrentPage];
+    [pager beginPageStateTransition];
+    [pager setValue:@1 forKey:@"destinationIndex"];
+    [pager preparePageForHorizontalTransitionAtIndex:1];
+    [pager updatePageStateTransitionProgress:1];
+    XCTAssertEqualWithAccuracy(source.scrollView.contentOffset.y + source.scrollView.contentInset.top,
+                              MIN(targetQ.doubleValue, 120), 0.01);
+    [pager setValue:@1 forKey:@"currentIndex"];
+    [pager attachScrollObserverForCurrentPageAfterTransition:YES];
+    XCTAssertEqualWithAccuracy(target.scrollView.contentOffset.y + target.scrollView.contentInset.top, targetQ.doubleValue, 0.01);
+    XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], MIN(targetQ.doubleValue, 120), 0.01);
+  }
+}
+
+- (void)testNonAdjacentTransitionUsesFixedEndpointsAndRestoresIntermediatePage
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:4];
+  for (NSInteger index = 0; index < 4; index++) [self addScrollerToPager:pager atIndex:index];
+  NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
+  offsets[@"page-0"] = @0;
+  offsets[@"page-1"] = @60;
+  offsets[@"page-2"] = @360;
+  offsets[@"page-3"] = @660;
+  [pager attachScrollObserverForCurrentPage];
+  [pager beginPageStateTransition];
+  [pager setValue:@3 forKey:@"destinationIndex"];
+  [pager preparePageForHorizontalTransitionAtIndex:3];
+  [pager updatePageStateTransitionProgress:1];
+  XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], 40, 0.01);
+  [pager setValue:@3 forKey:@"currentIndex"];
+  [pager attachScrollObserverForCurrentPageAfterTransition:YES];
+  XCTAssertEqualObjects(offsets[@"page-1"], @60);
+  XCTAssertEqualObjects(offsets[@"page-2"], @360);
+  XCTAssertEqualObjects(offsets[@"page-3"], @660);
+  for (NSInteger index = 1; index < 4; index++) {
+    UIViewController *page = [pager valueForKey:@"pageControllers"][index];
+    RNCNativeScrollerComponentView *scroller = page.view.subviews.firstObject;
+    NSString *key = [NSString stringWithFormat:@"page-%ld", (long)index];
+    XCTAssertEqualWithAccuracy(scroller.scrollView.contentOffset.y + scroller.scrollView.contentInset.top,
+                              [offsets[key] doubleValue], 0.01);
+  }
+}
+
+- (void)testZeroLayoutPreservesPendingWholePageRestore
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  RNCNativeScrollerComponentView *scroller = [self addScrollerToPager:pager atIndex:0];
+  NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
+  offsets[@"page-0"] = @660;
+  scroller.scrollView.contentSize = CGSizeMake(0, 0);
+  [pager attachScrollObserverForCurrentPage];
+  XCTAssertEqualObjects(offsets[@"page-0"], @660);
+  XCTAssertTrue([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
+  // Releasing an observed but unmeasured identity must retain its pending Q.
+  scroller.tag = 91001;
+  ShadowView removedView;
+  removedView.tag = (Tag)scroller.tag;
+  MountingTransaction removal(1, 1, {ShadowViewMutation::RemoveMutation(1, removedView, 0)}, {});
+  SurfaceTelemetry telemetry;
+  [pager mountingTransactionWillMount:removal withSurfaceTelemetry:telemetry];
+  XCTAssertEqualObjects(offsets[@"page-0"], @660);
+  [self finishMount:pager];
+  XCTAssertEqualObjects(offsets[@"page-0"], @660);
+  scroller.scrollView.contentSize = CGSizeMake(320, 1500);
+  XCTAssertEqualObjects(offsets[@"page-0"], @660);
+  XCTAssertFalse([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
+  XCTAssertEqualWithAccuracy(scroller.scrollView.contentOffset.y + scroller.scrollView.contentInset.top, 660, 0.01);
+}
+
+- (void)testUnresolvedReplacementDoesNotCommitTemporaryClamp
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:2];
+  RNCNativeScrollerComponentView *source = [self addScrollerToPager:pager atIndex:0];
+  NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
+  offsets[@"page-0"] = @0;
+  offsets[@"page-1"] = @660;
+  [pager attachScrollObserverForCurrentPage];
+  [pager beginPageStateTransition];
+  [pager setValue:@1 forKey:@"destinationIndex"];
+  UICollectionView *replacement = [[UICollectionView alloc]
+    initWithFrame:CGRectMake(0, 0, 320, 600)
+    collectionViewLayout:[UICollectionViewFlowLayout new]];
+  UIViewController *page = [pager valueForKey:@"pageControllers"][1];
+  [page.view addSubview:replacement];
+  id released = [NSClassFromString(@"RNCCollapsiblePagerReleasedScrollState") new];
+  XCTAssertNotNil(released);
+  [released setValue:source.scrollView forKey:@"scrollView"];
+  [released setValue:source forKey:@"componentView"];
+  [released setValue:@(source.tag) forKey:@"componentTag"];
+  [pager valueForKey:@"releasedPageScrollStates"][@"page-1"] = released;
+  [pager preparePageForHorizontalTransitionAtIndex:1];
+  [pager setValue:@1 forKey:@"currentIndex"];
+  [pager finishPageStateTransition];
+  XCTAssertEqualObjects(offsets[@"page-1"], @660);
+  XCTAssertTrue([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-1"]);
+}
+
+- (void)testRenamedPageDoesNotResurrectPrunedObserverCache
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  RNCNativeScrollerComponentView *scroller = [self addScrollerToPager:pager atIndex:0];
+  NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
+  offsets[@"page-0"] = @60;
+  [pager attachScrollObserverForCurrentPage];
+  [pager setValue:@[@"replacement-key"] forKey:@"pageKeys"];
+  [offsets removeObjectForKey:@"page-0"];
+  scroller.scrollView.contentOffset = CGPointMake(0, 200);
+  [pager detachScrollObserver];
+  XCTAssertNil(offsets[@"page-0"]);
+  XCTAssertNil(offsets[@"replacement-key"]);
+}
 
 - (RNCCollapsiblePagerViewComponentView *)pagerWithPageCount:(NSInteger)count
 {

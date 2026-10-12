@@ -3,6 +3,42 @@
 Existing PagerView and CollapsiblePagerView APIs are documented in README.md.
 The sections below define native coordination boundaries without new React props.
 
+## Smooth per-page screen restoration
+
+When nativeSmoothHeaderScrollEnabled is enabled with a collapsible header, each
+page owns its header collapse and body offset. For a settled position outside
+pull overscroll, Q = H + L, H = min(Q, C), and L = max(Q - C, 0), where C is
+the header-collapse distance. These are semantic coordinates, not new props.
+An unvisited page starts expanded
+at body start. Leaving a page preserves its expanded, partial or collapsed header
+and its body position; tap, swipe and programmatic selection restore the same
+complete screen state. Legacy mode and pagers without a collapsible header retain
+their existing behavior.
+
+Horizontal progress interpolates the shared header between immutable source and
+target snapshots. Native body geometry follows that header without obscured rows
+or blank gaps. Temporary transition offsets MUST NOT overwrite page snapshots.
+Non-adjacent commands use the original source and destination, not intermediate
+pages, as the header interpolation endpoints. Cancellation restores the source
+and all temporarily compensated pages before observation resumes.
+
+A scroll observer owns one page identity and generation independently of mutable
+selection. Detach, replacement and late notifications MUST NOT save another
+page's offset. Zero layout and unresolved replacement identity preserve pending
+restoration until an actual usable layout; settled content shrink still clamps to
+the legal range. This state is native UI-thread state, not persistent wallet data
+or per-frame JavaScript synchronization. Vertical scrolling, refresh, snapping
+and repeated-current-page selection retain their existing contracts.
+
+Android owned NativeScroller restoration keeps its intent while a posted request
+has not executed or native content is still too short to reach the saved offset.
+Only the same viewport, page key and attachment generation may reconcile an
+issued request. Once native restoration settles or is cancelled by touch, an
+imperative command or content replacement, the host resumes recording its live
+body offset. Existing pre-draw observation also reconciles a same-position command
+that emits no scroll notification. Zero-sized geometry retains the pending intent;
+no timeout infers that delayed content is permanently short.
+
 ## Independent NativeScroller migration
 
 Status: implemented in source. Both native builds pass. Android focused emulator
@@ -454,7 +490,8 @@ When restoring a retained page's cached vertical offset, the pager limits only
 the upper bound to the current content height, viewport and applied insets. A
 cache captured before rows were removed MUST NOT restore an offset below the new
 content bottom, including when removal occurs during a page transition. Valid
-deep offsets and the existing lower-bound/header alignment rules are unchanged.
+deep offsets and pull-overscroll behavior are preserved; smooth-header selection
+follows the per-page reading-position contract above.
 This check runs only on explicit restoration, not on scroll frames; UIKit pull
 overscroll and refresh settlement retain their existing ownership. An unmeasured
 zero-height viewport defers this upper-bound limit to a later restoration.

@@ -123,6 +123,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private val originalScrollerPadding = WeakHashMap<ScrollView, ScrollerPadding>()
   private val restoredScrollerKeys = WeakHashMap<ScrollView, String>()
   private val ownedScrollerKeys = WeakHashMap<NativeScrollerViewport, String>()
+  private val ownedScrollerRestoreRequests = HashMap<String, Pair<WeakReference<NativeScrollerViewport>, Int?>>()
   private var foregroundRefreshIndicator: WeakReference<ImageView>? = null
   private var refreshForegroundWasVisible = false
   private val refreshForegroundMatrix = Matrix()
@@ -130,13 +131,23 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private val refreshForegroundAncestors = ArrayList<View>()
   private var refreshForegroundAncestorAlpha = 1f
   private val pageOffsets = HashMap<String, Int>()
+  private val pageHeaderOffsets = HashMap<String, Int>()
+  private var transitionHeaderOffsets: Map<String, Int>? = null
+  private var transitionPageOffsets: Map<String, Int>? = null
+  private var transitionSourcePage = 0
+  private var transitionTargetPage: Int? = null
+  private var syntheticPageRestore = false
+  private var resumeTransitionSource: Int? = null
+  private val pendingPageRestores = HashSet<String>()
   private var observedRecyclerView: RecyclerView? = null
+  private var observedRecyclerKey: String? = null
   private var observedScrollListener: RecyclerView.OnScrollListener? = null
   private var observedOwnedScroller: NativeScrollerViewport? = null
   private var observedOwnedScrollerKey: String? = null
   private var observedOwnedScrollerListener: ViewTreeObserver.OnScrollChangedListener? = null
   private var observedOwnedScrollerTreeObserver: ViewTreeObserver? = null
   private var observedNativeScroller: ScrollView? = null
+  private var observedNativeScrollerKey: String? = null
   private var observedNativeScrollerListener: ViewTreeObserver.OnScrollChangedListener? = null
   private var observedNativeScrollerTreeObserver: ViewTreeObserver? = null
   private var observedPageRemoved = false
@@ -228,6 +239,19 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   private fun log(message: String) {
     OneKeyLog.debug("CollapsiblePager", "host=$hostIdentity $message")
+  }
+
+  private var offsetDiagSequence = 0L
+
+  private fun offsetDiag(phase: String, view: View? = null, key: String = currentPageKey()) {
+    if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+    val safeKey = if (key in setOf("portfolio", "perps", "defi", "nft", "history")) key else "other"
+    val observed = observedOwnedScroller ?: observedNativeScroller ?: observedRecyclerView
+    OneKeyLog.debug("CollapsiblePager", "[HOME-OFFSET-DIAG] phase=$phase seq=${++offsetDiagSequence} " +
+      "wallMs=${System.currentTimeMillis()} monoMs=${SystemClock.uptimeMillis()} host=$hostIdentity " +
+      "generation=$attachmentGeneration page=$selectedPage key=$safeKey header=$headerOffsetPx headerHeight=$headerHeightPx " +
+      "view=${view?.let { System.identityHashCode(it) }} tag=${view?.id} observed=${observed?.let { System.identityHashCode(it) }} " +
+      "offset=${view?.let(::verticalScrollOffset)} cache=${pageOffsets[key]} boundsHeight=${view?.height}")
   }
 
   private fun outerPagerIndex(): Int {
@@ -386,16 +410,80 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   fun reactChildAt(index: Int) = logicalChildren[index]
 
+  internal fun beginPageTransition(target: Int? = null) {
+    if (!nativeSmoothHeaderScrollEnabled || headerHeightPx <= 0) return
+    if (transitionHeaderOffsets == null) {
+      pageHeaderOffsets[currentPageKey()] = headerOffsetPx
+      detachPrimaryScrollObserver()
+      transitionSourcePage = selectedPage
+      transitionHeaderOffsets = pageHeaderOffsets.toMap()
+      transitionPageOffsets = pageOffsets.toMap()
+    }
+    if (target != null) transitionTargetPage = target
+  }
+
+  internal fun onPagerScrolled(position: Int, offset: Float) {
+    val headers = transitionHeaderOffsets ?: return
+    val target = transitionTargetPage
+    val first = if (target != null) transitionSourcePage else position
+    val second = target ?: (position + 1).coerceAtMost(adapter.itemCount - 1)
+    val fraction = if (target != null && target != first) {
+      ((position + offset - first) / (target - first)).coerceIn(0f, 1f)
+    } else offset
+    val firstH = headers[pageKey(first)] ?: 0
+    val secondH = headers[pageKey(second)] ?: 0
+    syntheticPageRestore = true
+    setHeaderOffset((firstH + (secondH - firstH) * fraction).roundToInt())
+    syntheticPageRestore = false
+    updateNativeTabProgress(position, offset)
+  }
+
+  internal fun onPagerScrollStateChanged(state: Int) {
+    if (state == ViewPager2.SCROLL_STATE_DRAGGING || state == ViewPager2.SCROLL_STATE_SETTLING) {
+      beginPageTransition()
+    } else if (state == ViewPager2.SCROLL_STATE_IDLE && transitionHeaderOffsets != null) {
+      finishPageTransition(pager.currentItem)
+    }
+  }
+
+  private fun finishPageTransition(position: Int) {
+    val headers = transitionHeaderOffsets ?: return
+    detachPrimaryScrollObserver(recordOffset = false)
+    releaseRefreshForeground()
+    selectedPage = position.coerceIn(0, adapter.itemCount - 1)
+    syntheticPageRestore = true
+    setHeaderOffset(headers[currentPageKey()] ?: 0)
+    transitionHeaderOffsets = null
+    transitionPageOffsets = null
+    transitionTargetPage = null
+    syntheticPageRestore = false
+    pageHeaderOffsets[currentPageKey()] = headerOffsetPx
+    prepareAdjacentPages()
+    attachPrimaryScrollObserver()
+  }
+
   fun selectPage(position: Int) {
+    offsetDiag("select-begin-target=$position", observedOwnedScroller ?: observedNativeScroller ?: observedRecyclerView)
     pendingRefreshPull = null
     if (adapter.itemCount == 0) return
+    if (nativeSmoothHeaderScrollEnabled && headerHeightPx > 0) {
+      if (transitionHeaderOffsets != null) return
+      beginPageTransition(position)
+      finishPageTransition(position)
+      return
+    }
     detachPrimaryScrollObserver()
     releaseRefreshForeground()
     selectedPage = position.coerceIn(0, adapter.itemCount - 1)
     val savedOffset = pageOffsets[currentPageKey()]
       ?: primaryScrollableForPage(selectedPage)?.let(::verticalScrollOffset)
       ?: 0
-    if (savedOffset > 0) setHeaderOffset(headerHeightPx)
+    offsetDiag("select-offset=$savedOffset-source=${if (pageOffsets[currentPageKey()] != null) "saved" else "live"}")
+    if (savedOffset > 0) {
+      offsetDiag("select-force-collapse-before")
+      setHeaderOffset(headerHeightPx)
+      offsetDiag("select-force-collapse-after")
+    }
     postForCurrentAttachment {
       prepareAdjacentPages()
       attachPrimaryScrollObserver()
@@ -537,9 +625,14 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
 
   private fun setHeaderOffset(offset: Int) {
     // val next = offset.coerceIn(0, headerHeightPx)
-    val next = offset.coerceIn(0, maximumHeaderOffset())
+    val pending = nativeSmoothHeaderScrollEnabled && currentPageKey() in pendingPageRestores
+    val maximum = if (transitionHeaderOffsets != null || pending) headerHeightPx else maximumHeaderOffset()
+    val next = offset.coerceIn(0, maximum)
     if (headerOffsetPx == next) return
     headerOffsetPx = next
+    if (nativeSmoothHeaderScrollEnabled && transitionHeaderOffsets == null && !syntheticPageRestore && !pending) {
+      pageHeaderOffsets[currentPageKey()] = next
+    }
     applyHeaderOffset()
   }
 
@@ -656,13 +749,17 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   private fun attachPrimaryScrollObserver() {
+    if (transitionHeaderOffsets != null) return
     if (selectedPage !in 0 until adapter.itemCount) return
     val previous = observedRecyclerView ?: observedOwnedScroller ?: observedNativeScroller
     if (observedPageRemoved || previous != null && !isDescendant(previous, adapter.pageAt(selectedPage))) {
+      offsetDiag("primary-replacement-before-removed=$observedPageRemoved", previous)
       observedPageRemoved = false
-      detachPrimaryScrollObserver()
+      detachPrimaryScrollObserver(recordOffset = !nativeSmoothHeaderScrollEnabled)
       // A replacement scroller starts at the beginning while retaining header collapse.
-      pageOffsets[currentPageKey()] = 0
+      offsetDiag("primary-replacement-cache-before", previous)
+      if (!nativeSmoothHeaderScrollEnabled) pageOffsets[currentPageKey()] = 0
+      offsetDiag("primary-replacement-cache-after", previous)
     }
     when (val scrollable = primaryScrollableForPage(selectedPage)) {
       is RecyclerView -> attachRecyclerObserver(scrollable)
@@ -672,24 +769,33 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   }
 
   private fun attachRecyclerObserver(recycler: RecyclerView) {
-    if (observedRecyclerView === recycler) {
+    if (observedRecyclerView === recycler && observedRecyclerKey == currentPageKey()) {
       applyRecyclerInsets(recycler, selectedPage)
       publishConsumedOffset(recycler)
       return
     }
 
     detachPrimaryScrollObserver()
+    offsetDiag("recycler-attach-before", recycler)
     observedRecyclerView = recycler
+    observedRecyclerKey = currentPageKey()
     applyRecyclerInsets(recycler, selectedPage)
     publishConsumedOffset(recycler)
+    val key = currentPageKey()
     val listener = object : RecyclerView.OnScrollListener() {
       override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+        if (observedScrollListener !== this || observedRecyclerKey != key ||
+          key != currentPageKey() || !isAttachedToWindow ||
+          transitionHeaderOffsets != null || syntheticPageRestore || key in pendingPageRestores) return
         val contentOffset = recyclerView.computeVerticalScrollOffset()
-        pageOffsets[currentPageKey()] = contentOffset
+        if (pageOffsets[currentPageKey()] != contentOffset) offsetDiag("recycler-cache-before-new=$contentOffset", recyclerView)
+        pageOffsets[key] = contentOffset
         // Nested touch scrolling moves list content only after the header has
         // collapsed. Programmatic list jumps bypass those parent callbacks.
         if (contentOffset > 0 && headerOffsetPx < headerHeightPx) {
+          offsetDiag("recycler-positive-collapse-before", recyclerView)
           setHeaderOffset(headerHeightPx)
+          offsetDiag("recycler-positive-collapse-after", recyclerView)
         }
       }
     }
@@ -705,7 +811,11 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val recycler = observedRecyclerView
     val listener = observedScrollListener
     if (recycler != null) {
-      if (recordOffset) pageOffsets[currentPageKey()] = recycler.computeVerticalScrollOffset()
+      offsetDiag("recycler-detach-save-before-record=$recordOffset", recycler)
+      if (recordOffset && transitionPageOffsets == null) observedRecyclerKey?.let {
+        if (it !in pendingPageRestores) pageOffsets[it] = recycler.computeVerticalScrollOffset()
+      }
+      offsetDiag("recycler-detach-save-after", recycler)
       publishConsumedOffset(recycler, remove = true)
     }
     if (recycler != null && listener != null) recycler.removeOnScrollListener(listener)
@@ -716,28 +826,37 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       )
     }
     observedRecyclerView = null
+    observedRecyclerKey = null
     observedScrollListener = null
   }
 
   private fun attachNativeScrollerObserver(scroller: ScrollView) {
-    if (observedNativeScroller === scroller) {
+    if (observedNativeScroller === scroller && observedNativeScrollerKey == currentPageKey()) {
       applyNativeScrollerInsets(scroller, selectedPage)
       return
     }
 
     detachPrimaryScrollObserver()
+    offsetDiag("scrollview-attach-before", scroller)
     observedNativeScroller = scroller
+    observedNativeScrollerKey = currentPageKey()
     applyNativeScrollerInsets(scroller, selectedPage)
+    val key = currentPageKey()
     val listener = object : ViewTreeObserver.OnScrollChangedListener {
       override fun onScrollChanged() {
         if (observedNativeScrollerListener !== this) {
           removeScrollChangedListener(null, scroller, this)
           return
         }
+        if (key != currentPageKey() || !isAttachedToWindow ||
+          transitionHeaderOffsets != null || syntheticPageRestore || key in pendingPageRestores) return
         val contentOffset = scroller.scrollY
-        pageOffsets[currentPageKey()] = contentOffset
+        if (pageOffsets[currentPageKey()] != contentOffset) offsetDiag("scrollview-cache-before-new=$contentOffset", scroller)
+        pageOffsets[key] = contentOffset
         if (contentOffset > 0 && headerOffsetPx < headerHeightPx) {
+          offsetDiag("scrollview-positive-collapse-before", scroller)
           setHeaderOffset(headerHeightPx)
+          offsetDiag("scrollview-positive-collapse-after", scroller)
         }
       }
     }
@@ -754,7 +873,11 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private fun detachNativeScrollerObserver(recordOffset: Boolean) {
     val scroller = observedNativeScroller
     val listener = observedNativeScrollerListener
-    if (scroller != null && recordOffset) pageOffsets[currentPageKey()] = scroller.scrollY
+    offsetDiag("scrollview-detach-save-before-record=$recordOffset", scroller)
+    if (scroller != null && recordOffset && transitionPageOffsets == null) observedNativeScrollerKey?.let {
+      if (it !in pendingPageRestores) pageOffsets[it] = scroller.scrollY
+    }
+    offsetDiag("scrollview-detach-save-after", scroller)
     if (scroller != null && listener != null) {
       removeScrollChangedListener(observedNativeScrollerTreeObserver, scroller, listener)
     }
@@ -765,6 +888,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       )
     }
     observedNativeScroller = null
+    observedNativeScrollerKey = null
     observedNativeScrollerListener = null
     observedNativeScrollerTreeObserver = null
   }
@@ -793,9 +917,23 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val key = pageKey(pageIndex)
     if (ownedScrollerKeys[scroller] == key) return
     ownedScrollerKeys[scroller] = key
+    if (nativeSmoothHeaderScrollEnabled) {
+      pendingPageRestores.add(key)
+      ownedScrollerRestoreRequests[key] = WeakReference(scroller) to null
+    }
+    val generation = attachmentGeneration
     postForCurrentAttachment {
-      if (ownedScrollerKeys[scroller] == key && scroller.isAttachedToWindow) {
-        scroller.host.restoreScrollOffset(pageOffsets[key] ?: 0)
+      if (ownedScrollerKeys[scroller] == key && generation == attachmentGeneration &&
+        scroller.isAttachedToWindow && (!nativeSmoothHeaderScrollEnabled ||
+          (key in pendingPageRestores && ownedScrollerRestoreRequests[key]?.first?.get() === scroller))) {
+        offsetDiag("owned-restore-before", scroller, key)
+        val saved = transitionPageOffsets?.get(key) ?: pageOffsets[key] ?: 0
+        scroller.host.restoreScrollOffset(saved)
+        if (nativeSmoothHeaderScrollEnabled) {
+          ownedScrollerRestoreRequests[key] = WeakReference(scroller) to generation
+          recordOwnedScrollerOffset(scroller, key)
+        }
+        offsetDiag("owned-restore-after", scroller, key)
       }
     }
   }
@@ -803,7 +941,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private fun restoreOwnedScrollerInsets(scroller: NativeScrollerViewport) {
     scroller.stopMotion()
     scroller.host.cancelPendingScrollRestore()
-    ownedScrollerKeys.remove(scroller)
+    ownedScrollerKeys.remove(scroller)?.let { key ->
+      if (ownedScrollerRestoreRequests[key]?.first?.get() === scroller) ownedScrollerRestoreRequests.remove(key)
+    }
     publishConsumedOffset(scroller, remove = true)
     scroller.host.setPagerInset(this, null)
   }
@@ -811,9 +951,11 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private fun attachOwnedScrollerObserver(scroller: NativeScrollerViewport) {
     if (observedOwnedScroller === scroller && observedOwnedScrollerKey == currentPageKey()) {
       applyOwnedScrollerInsets(scroller, selectedPage)
+      if (nativeSmoothHeaderScrollEnabled) recordOwnedScrollerOffset(scroller, currentPageKey())
       return
     }
     detachPrimaryScrollObserver()
+    offsetDiag("owned-attach-before", scroller)
     observedOwnedScroller = scroller
     observedOwnedScrollerKey = currentPageKey()
     val key = currentPageKey()
@@ -824,9 +966,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
           removeScrollChangedListener(null, scroller, this)
           return
         }
-        val contentOffset = scroller.scrollY
-        pageOffsets[key] = contentOffset
-        if (contentOffset > 0 && headerOffsetPx < headerHeightPx) setHeaderOffset(headerHeightPx)
+        recordOwnedScrollerOffset(scroller, key)
       }
     }
     observedOwnedScrollerListener = listener
@@ -835,11 +975,37 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     }
   }
 
+  private fun recordOwnedScrollerOffset(scroller: NativeScrollerViewport, key: String) {
+    if (ownedScrollerKeys[scroller] != key || !isAttachedToWindow || !scroller.isAttachedToWindow) return
+    if (key in pendingPageRestores) {
+      // A false native pending flag before our posted request executes is not cancellation.
+      val request = ownedScrollerRestoreRequests[key]
+      if (request == null || request.first.get() !== scroller || request.second != attachmentGeneration ||
+        scroller.width <= 0 || scroller.height <= 0 || scroller.host.hasPendingScrollRestore()) return
+      pendingPageRestores.remove(key)
+      ownedScrollerRestoreRequests.remove(key)
+    }
+    if (observedOwnedScroller !== scroller || observedOwnedScrollerKey != key ||
+      key != currentPageKey() || transitionHeaderOffsets != null || syntheticPageRestore) return
+    val contentOffset = scroller.scrollY
+    if (pageOffsets[key] != contentOffset) offsetDiag("owned-cache-before-new=$contentOffset", scroller, key)
+    pageOffsets[key] = contentOffset
+    if (contentOffset > 0 && headerOffsetPx < headerHeightPx) {
+      offsetDiag("owned-positive-collapse-before", scroller, key)
+      setHeaderOffset(headerHeightPx)
+      offsetDiag("owned-positive-collapse-after", scroller, key)
+    }
+  }
+
   private fun detachOwnedScrollerObserver(recordOffset: Boolean) {
     val scroller = observedOwnedScroller ?: return
     scroller.stopMotion()
     publishConsumedOffset(scroller, remove = true)
-    if (recordOffset) observedOwnedScrollerKey?.let { pageOffsets[it] = scroller.scrollY }
+    offsetDiag("owned-detach-save-before-record=$recordOffset", scroller)
+    if (recordOffset && transitionPageOffsets == null) observedOwnedScrollerKey?.let {
+      if (it !in pendingPageRestores) pageOffsets[it] = scroller.scrollY
+    }
+    offsetDiag("owned-detach-save-after", scroller)
     observedOwnedScrollerListener?.let {
       removeScrollChangedListener(observedOwnedScrollerTreeObserver, scroller, it)
     }
@@ -893,6 +1059,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val key = pageKey(pageIndex)
     if (restoredRecyclerKeys[recycler] != key) {
       restoredRecyclerKeys[recycler] = key
+      if (nativeSmoothHeaderScrollEnabled) pendingPageRestores.add(key)
       val generation = attachmentGeneration
       recycler.post {
         if (!isAttachedToWindow || generation != attachmentGeneration ||
@@ -901,9 +1068,16 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
           if (restoredRecyclerKeys[recycler] == key) restoredRecyclerKeys.remove(recycler)
           return@post
         }
-        val saved = pageOffsets[key] ?: 0
+        val saved = transitionPageOffsets?.get(key) ?: pageOffsets[key] ?: 0
         val current = recycler.computeVerticalScrollOffset()
+        offsetDiag("recycler-restore-before-saved=$saved", recycler, key)
+        if (nativeSmoothHeaderScrollEnabled && (recycler.height <= 0 || recycler.childCount == 0)) {
+          restoredRecyclerKeys.remove(recycler)
+          return@post
+        }
         if (saved != current) recycler.scrollBy(0, saved - current)
+        pendingPageRestores.remove(key)
+        offsetDiag("recycler-restore-after", recycler, key)
       }
     }
   }
@@ -949,6 +1123,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val key = pageKey(pageIndex)
     if (restoredScrollerKeys[scroller] != key) {
       restoredScrollerKeys[scroller] = key
+      if (nativeSmoothHeaderScrollEnabled) pendingPageRestores.add(key)
       val generation = attachmentGeneration
       scroller.post {
         if (!isAttachedToWindow || generation != attachmentGeneration ||
@@ -957,8 +1132,16 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
           if (restoredScrollerKeys[scroller] == key) restoredScrollerKeys.remove(scroller)
           return@post
         }
-        val saved = pageOffsets[key] ?: 0
+        val saved = transitionPageOffsets?.get(key) ?: pageOffsets[key] ?: 0
+        offsetDiag("scrollview-restore-before-saved=$saved", scroller, key)
+        if (nativeSmoothHeaderScrollEnabled &&
+          (scroller.height <= 0 || (scroller.getChildAt(0)?.height ?: 0) <= 0)) {
+          restoredScrollerKeys.remove(scroller)
+          return@post
+        }
         if (scroller.scrollY != saved) scroller.scrollTo(scroller.scrollX, saved)
+        pendingPageRestores.remove(key)
+        offsetDiag("scrollview-restore-after", scroller, key)
       }
     }
   }
@@ -1399,6 +1582,10 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   override fun onNestedScrollAccepted(child: View, target: View, axes: Int, type: Int) {
     if (type == ViewCompat.TYPE_TOUCH) pendingRefreshPull = null
     nestedScrollingParentHelper.onNestedScrollAccepted(child, target, axes, type)
+    if (type == ViewCompat.TYPE_TOUCH) {
+      pendingPageRestores.remove(currentPageKey())
+      ownedScrollerRestoreRequests.remove(currentPageKey())
+    }
   }
 
   override fun onStopNestedScroll(target: View, type: Int) {
@@ -1492,6 +1679,13 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     restoredRecyclerKeys.clear()
     restoredScrollerKeys.clear()
     viewTreeObserver.addOnPreDrawListener(pageContentLayoutListener)
+    resumeTransitionSource?.let { source ->
+      resumeTransitionSource = null
+      if (source in 0 until adapter.itemCount) {
+        pager.setCurrentItem(source, false)
+        selectPage(source)
+      }
+    }
     log(
       "host-attach generation=$attachmentGeneration inner=$selectedPage " +
         "outer=${outerPagerIndex()} nativePages=${adapter.itemCount}",
@@ -1511,6 +1705,15 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     nestedNativeGestureStarted = false
     viewTreeObserver.removeOnPreDrawListener(pageContentLayoutListener)
     detachPrimaryScrollObserver()
+    transitionHeaderOffsets?.let { headers ->
+      resumeTransitionSource = transitionSourcePage
+      syntheticPageRestore = true
+      setHeaderOffset(headers[pageKey(transitionSourcePage)] ?: 0)
+      syntheticPageRestore = false
+    }
+    transitionHeaderOffsets = null
+    transitionPageOffsets = null
+    transitionTargetPage = null
     // Snapshot live keys before restoration removes their padding records.
     for (recycler in originalRecyclerPadding.keys.toTypedArray()) {
       restoreRecyclerInsets(recycler)

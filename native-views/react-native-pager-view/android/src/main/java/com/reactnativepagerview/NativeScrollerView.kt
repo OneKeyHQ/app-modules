@@ -255,6 +255,8 @@ class NativeScrollerView(context: Context) : FrameLayout(context) {
 
   internal fun cancelPendingScrollRestore() = pendingRestore.cancel()
 
+  internal fun hasPendingScrollRestore(): Boolean = pendingRestore.target != null
+
   internal fun setRefreshOffset(value: Int) {
     refreshOffset = value
     applyRefreshOffset()

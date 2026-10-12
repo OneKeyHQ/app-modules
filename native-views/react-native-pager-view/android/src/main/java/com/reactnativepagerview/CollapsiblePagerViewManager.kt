@@ -43,6 +43,7 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     )
     host.pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
       override fun onPageScrolled(position: Int, offset: Float, offsetPixels: Int) {
+        host.onPagerScrolled(position, offset)
         dispatch(reactContext, host, PageScrollEvent(host.id, position, offset))
       }
 
@@ -55,6 +56,7 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
       }
 
       override fun onPageScrollStateChanged(state: Int) {
+        host.onPagerScrollStateChanged(state)
         val value = when (state) {
           ViewPager2.SCROLL_STATE_IDLE -> "idle"
           ViewPager2.SCROLL_STATE_DRAGGING -> "dragging"
@@ -324,13 +326,19 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
 
   override fun setPage(view: CollapsiblePagerHost?, selectedPage: Int) {
     if (view != null && selectedPage in 0 until view.adapter.itemCount) {
+      view.beginPageTransition(selectedPage)
       view.pager.setCurrentItem(selectedPage, true)
+      if (view.pager.scrollState == ViewPager2.SCROLL_STATE_IDLE) {
+        view.onPagerScrollStateChanged(ViewPager2.SCROLL_STATE_IDLE)
+      }
     }
   }
 
   override fun setPageWithoutAnimation(view: CollapsiblePagerHost?, selectedPage: Int) {
     if (view != null && selectedPage in 0 until view.adapter.itemCount) {
+      view.beginPageTransition(selectedPage)
       view.pager.setCurrentItem(selectedPage, false)
+      view.onPagerScrollStateChanged(ViewPager2.SCROLL_STATE_IDLE)
     }
   }
 
