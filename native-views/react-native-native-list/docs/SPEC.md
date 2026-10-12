@@ -507,6 +507,15 @@ data adapter; adapter binding indices stay local while layout-manager positions
 are explicitly translated. Slots span all grid columns, do not select/reorder,
 and do not emit row actions, visible-row indices, or image-prefetch work.
 
+On Android, mounting/unmounting a slot or changing its actual rounded native
+height MUST request one coalesced RecyclerView measurement/layout repair. The
+repair runs after the current layout completes and only with a positive viewport
+size. A zero-sized or currently computing viewport retains the pending repair
+for the next layout/attachment opportunity rather than posting an unbounded
+retry loop. Disposal cancels the pending work. Equal height reports MUST NOT
+request another repair. This leaves Fabric-owned slot content and row indices
+unchanged; source checks alone do not establish first-layout visibility.
+
 Fabric mount/unmount ownership remains explicit even when RecyclerView detaches a
 slot holder. The native manager retains at most three roots until Fabric unmount;
 recycling detaches slot content without disposing its React tree. Unmount removes

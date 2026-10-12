@@ -185,6 +185,8 @@ class NativeListView(
   private val adapter = NativeListAdapter(reactContext)
   private val containerSlots = mutableListOf<View>()
   private val slotHeights = IntArray(3)
+  private var containerSlotRelayoutPending = false
+  private var containerSlotRelayoutScheduled = false
   private val headerSlotAdapter = NativeListContainerSlotAdapter()
   private val emptySlotAdapter = NativeListContainerSlotAdapter()
   private val footerSlotAdapter = NativeListContainerSlotAdapter()
@@ -193,6 +195,7 @@ class NativeListView(
   fun mountContainerSlot(view: View, index: Int) {
     containerSlots.add(index.coerceIn(0, containerSlots.size), view)
     updateContainerSlots()
+    scheduleContainerSlotRelayout()
   }
 
   fun containerSlotCount(): Int = containerSlots.size
@@ -201,6 +204,7 @@ class NativeListView(
     val view = containerSlots.removeAt(index)
     (view.parent as? ViewGroup)?.removeView(view)
     updateContainerSlots()
+    scheduleContainerSlotRelayout()
   }
 
   fun setContainerSlotHeightsJson(json: String) {
@@ -210,8 +214,32 @@ class NativeListView(
       val value = values.optDouble(index)
       if (!value.isFinite() || value < 0) return
     }
-    for (index in 0..2) slotHeights[index] = (values.getDouble(index) * density).roundToInt()
+    var changed = false
+    for (index in 0..2) {
+      val height = (values.getDouble(index) * density).roundToInt()
+      if (slotHeights[index] != height) changed = true
+      slotHeights[index] = height
+    }
     updateContainerSlots()
+    if (changed) scheduleContainerSlotRelayout()
+  }
+
+  private fun scheduleContainerSlotRelayout() {
+    if (disposed) return
+    containerSlotRelayoutPending = true
+    if (containerSlotRelayoutScheduled) return
+    containerSlotRelayoutScheduled = true
+    recyclerView.post {
+      containerSlotRelayoutScheduled = false
+      if (disposed) {
+        containerSlotRelayoutPending = false
+        return@post
+      }
+      if (!containerSlotRelayoutPending || recyclerView.width <= 0 ||
+        recyclerView.height <= 0 || recyclerView.isComputingLayout) return@post
+      containerSlotRelayoutPending = false
+      relayoutRecyclerViewImmediately()
+    }
   }
 
   private fun updateContainerSlots() {
@@ -487,7 +515,10 @@ class NativeListView(
     recyclerView.addItemDecoration(SelectorBackgroundDecoration(adapter))
     recyclerView.addItemDecoration(ContainerSlotInsetDecoration { slotInsetPx })
     layoutManager.onChildLaidOut = ::recordLaidOutRowExtent
-    layoutManager.onLayoutPassCompleted = { emitScrollPositionThresholdIfNeeded(resync = true) }
+    layoutManager.onLayoutPassCompleted = {
+      emitScrollPositionThresholdIfNeeded(resync = true)
+      if (containerSlotRelayoutPending) scheduleContainerSlotRelayout()
+    }
     recyclerView.setHasFixedSize(false)
     layoutManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
       override fun getSpanSize(position: Int): Int {
@@ -641,6 +672,7 @@ class NativeListView(
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
     super.onLayout(changed, left, top, right, bottom)
+    if (containerSlotRelayoutPending) scheduleContainerSlotRelayout()
     val first = config?.items?.firstOrNull()
     if (recyclerView.isLayoutRequested && (first?.type == "market" || first?.json?.optString("presentation") == "market")) {
       // A retained Market page can keep cached parent measurements after its diff.
@@ -675,6 +707,7 @@ class NativeListView(
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
+    if (containerSlotRelayoutPending) scheduleContainerSlotRelayout()
     recyclerView.setTag(R.id.onekey_native_scroll_coordinator_offset_listener, coordinatorOffsetListener)
     emitScrollPositionThresholdIfNeeded()
     startStickyHeaderTracking()
@@ -1364,6 +1397,7 @@ class NativeListView(
   fun dispose() {
     if (disposed) return
     disposed = true
+    containerSlotRelayoutPending = false
     onScrollPositionThresholdChange = null
     if (!isAttachedToWindow) disposeResources()
   }
