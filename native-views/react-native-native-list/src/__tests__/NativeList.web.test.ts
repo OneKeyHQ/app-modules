@@ -669,6 +669,54 @@ describe('web row style', () => {
     }
   });
 
+  test('semibold CSS templates use the configured face through updates and reset', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const host = document.createElement('div');
+    document.body.append(host);
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }),
+      {},
+      false,
+      undefined,
+      JSON.stringify({ semibold: 'Host Semibold' })
+    );
+    try {
+      const root = host.querySelector<HTMLElement>('.ok-native-list-root')!;
+      const rules = Array.from(
+        document.querySelector<HTMLStyleElement>('style')!.sheet!.cssRules
+      ).filter((rule): rule is CSSStyleRule => 'selectorText' in rule);
+      const selectors = [
+        '.ok-native-list-title',
+        '.ok-native-list-action-title',
+        '.ok-native-list-action-button',
+        '.ok-native-list-visual-fallback',
+        '.ok-native-list-composite-value',
+        '.ok-native-list-index-preview',
+        '.ok-native-list-reorder-count',
+      ];
+      const fallback = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+      for (const face of ['Host Semibold', 'Updated Semibold', undefined]) {
+        engine.setFontFamiliesJson(JSON.stringify({ semibold: face }));
+        for (const selector of selectors) {
+          const rule = rules.find((entry) => entry.selectorText === selector)!;
+          const font =
+            rule.style.getPropertyValue('font-family') ||
+            rule.style.getPropertyValue('font');
+          const variable = font.match(/var\((--nl-font-[a-z]+)\)/)?.[1];
+          expect(variable).toBeDefined();
+          expect(root.style.getPropertyValue(variable!)).toBe(
+            face === undefined
+              ? fallback
+              : `${JSON.stringify(face)},${fallback}`
+          );
+        }
+      }
+    } finally {
+      engine.destroy();
+    }
+  });
+
   const render = (styledRow: RowModel): HTMLElement => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const body = createRowBody(
