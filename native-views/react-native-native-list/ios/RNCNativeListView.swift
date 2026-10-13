@@ -657,28 +657,35 @@ final class NativeListView: UIView {
     requestScroll(.end(animated))
   }
 
-  private func acceptScrollCommand(_ request: ScrollRequest) {
-    guard !commandAcceptedForPendingScroll, let config else { return }
+  private func explicitTopForScrollCommand(_ request: ScrollRequest) -> Bool? {
+    guard let config else { return nil }
     let explicitTop: Bool
     switch request {
     case let .key(key, _, alignment, viewPosition, viewOffset):
-      guard config.items.contains(where: { $0.key == key }), viewPosition.isFinite, viewOffset.isFinite else { return }
+      guard config.items.contains(where: { $0.key == key }), viewPosition.isFinite, viewOffset.isFinite else { return nil }
       explicitTop = config.items.first?.key == key && alignment == "start" && viewPosition == 0 && viewOffset == 0
     case let .index(index, _, alignment, viewPosition, viewOffset):
-      guard index >= 0, index < config.items.count, viewPosition.isFinite, viewOffset.isFinite else { return }
+      guard index >= 0, index < config.items.count, viewPosition.isFinite, viewOffset.isFinite else { return nil }
       explicitTop = index == 0 && alignment == "start" && viewPosition == 0 && viewOffset == 0
     case let .offset(offset, _):
-      guard offset.isFinite else { return }
+      guard offset.isFinite else { return nil }
       explicitTop = offset <= 0
     case .end:
       explicitTop = false
     }
+    return explicitTop
+  }
+
+  private func acceptScrollCommand(_ request: ScrollRequest) {
+    guard !commandAcceptedForPendingScroll,
+          let explicitTop = explicitTopForScrollCommand(request) else { return }
     commandAcceptedForPendingScroll = true
     NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
       object: collectionView, userInfo: ["explicitTop": explicitTop, "phase": 0])
   }
 
   private func requestScroll(_ request: ScrollRequest) {
+    if config != nil && explicitTopForScrollCommand(request) == nil { return }
     animatedExplicitScrollCommand = false
     commandAcceptedForPendingScroll = false
     acceptScrollCommand(request)

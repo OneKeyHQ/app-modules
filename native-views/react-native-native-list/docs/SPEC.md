@@ -86,6 +86,9 @@ and scrollbar estimates MUST NOT be mistaken for data-row reading anchors.
 
 An accepted imperative command owns its request, execution, pending-layout and
 posted-alignment work. Invalid commands MUST NOT cancel a valid request.
+On iOS, known-configuration validation MUST precede changing accepted, pending
+or animated-command state; invalid input MUST preserve the existing terminal
+notification, while configuration-unavailable requests retain deferred validation.
 Completion on Android requires the current request to have finished dispatch,
 its own pending layout/alignment barriers to have completed, and native scrolling
 to be idle without an active layout-manager animation. A true animated top
