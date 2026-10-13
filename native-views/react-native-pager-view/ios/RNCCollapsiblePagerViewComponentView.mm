@@ -1517,6 +1517,16 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 #endif
   NSInteger _transitionSourceIndex;
   BOOL _syntheticPageRestore;
+  BOOL _headerSettledAtTop;
+  __weak UIScrollView *_headerSettledOwner;
+  NSString *_headerSettledKey;
+  NSUInteger _headerSettledGeneration;
+  NSString *_headerSettledGeometry;
+  CFTimeInterval _headerSettledSince;
+  BOOL _headerSettledWasBusy;
+  NSTimer *_headerSettledTimer;
+  __weak UIScrollView *_headerCommandOwner;
+
   BOOL _finishingPageStateTransition;
   NSMutableSet<NSString *> *_pendingPageRestoreKeys;
   __weak UIScrollView *_sharedHeaderScrollView;
@@ -1677,6 +1687,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 {
   [super didMoveToWindow];
   [self updateSharedHeaderPressCancellationGesture];
+  [self updateHeaderSettledStateForceBusy:NO];
   for (UIScrollView *scrollView in _originalInsets.keyEnumerator) {
     [self updateNativeScrollerViewport:scrollView stickyHeight:self.window == nil ? 0 : _stickyHeaderHeight];
   }
@@ -1703,6 +1714,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)dealloc
 {
+  [self cancelHeaderSettledCheck];
   [[NSNotificationCenter defaultCenter] removeObserver:self name:@"OneKeyNativeListScrollCommandAccepted" object:nil];
   for (UIScrollView *scrollView in _originalInsets.keyEnumerator) {
     [self updateNativeScrollerViewport:scrollView stickyHeight:0];
@@ -2363,6 +2375,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     }
   }
   [self layoutSharedHeaders];
+  [self updateHeaderSettledStateForceBusy:NO];
   dispatch_async(dispatch_get_main_queue(), ^{
     if (!self->_isBeingRecycled) {
       [self prepareAdjacentPageInsets];
@@ -2373,6 +2386,8 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)prepareForRecycle
 {
+  [self cancelHeaderSettledCheck];
+  [self publishHeaderSettledAtTop:NO identityChanged:NO];
   _isBeingRecycled = YES;
   _generation++;
   [_mountingRemovedScrollViews removeAllObjects];
@@ -2896,10 +2911,16 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   _currentLogicalOffset = candidate.contentOffset.y + candidate.contentInset.top;
   [self attachSharedHeadersToScrollView:candidate];
   [self updateSharedHeaderPressCancellationGesture];
+  [self updateHeaderSettledStateForceBusy:NO];
 }
 
 - (void)detachScrollObserver
 {
+  [self cancelHeaderSettledCheck];
+  _headerCommandOwner = nil;
+  _headerSettledGeometry = nil;
+  _headerSettledWasBusy = YES;
+  [self publishHeaderSettledAtTop:NO identityChanged:NO];
   [self cancelPagerTop];
   UIScrollView *scrollView = _observedScrollView;
   if (scrollView != nil) {
@@ -3117,6 +3138,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)observedListPanChanged:(UIPanGestureRecognizer *)recognizer
 {
+  if (recognizer == _observedScrollView.panGestureRecognizer) {
+    [self updateHeaderSettledStateForceBusy:
+      recognizer.state == UIGestureRecognizerStateBegan || recognizer.state == UIGestureRecognizerStateChanged];
+  }
   if (!_nativeSmoothHeaderScrollEnabled || recognizer != _observedScrollView.panGestureRecognizer) {
     return;
   }
@@ -3454,6 +3479,10 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
       _observedPageIndex != _currentIndex || _observedPageGeneration != _generation ||
       _transitioning || _isPagerDragging || _transitionPageOffsets != nil || _syntheticPageRestore) return;
   NSInteger phase = [notification.userInfo[@"phase"] integerValue];
+  [self updateHeaderSettledStateForceBusy:NO];
+  if (phase == 1) _headerCommandOwner = scrollView;
+  else if (phase == 0 || phase == 2) _headerCommandOwner = nil;
+  [self updateHeaderSettledStateForceBusy:phase != 2];
   if ([self matchesPagerTop:scrollView]) {
     if (phase == 0) [self cancelPagerTop];
     else return;
@@ -3569,6 +3598,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     return;
   }
   if (context == RNCCollapsiblePagerContentOffsetContext && object == _observedScrollView) {
+    if (![change[NSKeyValueChangeOldKey] isEqual:change[NSKeyValueChangeNewKey]]) {
+      [self updateHeaderSettledStateForceBusy:YES];
+    }
     if ((_nativeSmoothHeaderScrollEnabled || [_alignedBodyKeys containsObject:_observedPageKey]) &&
         (_observedPageGeneration != _generation || _observedPageKey == nil ||
          _observedPageIndex != _currentIndex || ![_observedPageKey isEqualToString:self.currentPageKey] ||
@@ -3668,6 +3700,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)applyHeaderOffset
 {
+  [self updateHeaderSettledStateForceBusy:NO];
   BOOL attachedToList = _nativeSmoothHeaderScrollEnabled &&
     _sharedHeaderScrollView != nil && !_sharedHeadersLiftedForPagerTransition;
   if (attachedToList) {
@@ -3884,6 +3917,7 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
 {
+  [self updateHeaderSettledStateForceBusy:YES];
   [self offsetDiag:@"pager-drag-begin" page:_currentIndex scroll:_observedScrollView];
   if (_nativeSmoothHeaderScrollEnabled && scrollView == _pagerScrollView) {
     [_contentPressCancellationGesture cancelPressForPan:scrollView.panGestureRecognizer];
@@ -4081,6 +4115,93 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   if (emitter) emitter->onPageSelected({.position = (double)position});
 }
 
+- (void)publishHeaderSettledAtTop:(BOOL)settled identityChanged:(BOOL)identityChanged
+{
+  if (_headerSettledAtTop == settled && !identityChanged) return;
+  _headerSettledAtTop = settled;
+  RNCCollapsiblePagerLog([NSString stringWithFormat:@"header-settled-state page=%ld generation=%lu settled=%d",
+    (long)_currentIndex, (unsigned long)_generation, settled]);
+  [self emitDiagnostics:@"header-settled-state"];
+}
+
+- (void)cancelHeaderSettledCheck
+{
+  [_headerSettledTimer invalidate];
+  _headerSettledTimer = nil;
+}
+
+- (void)updateHeaderSettledStateForceBusy:(BOOL)forceBusy
+{
+  UIScrollView *owner = _observedScrollView;
+  NSString *key = self.currentPageKey;
+  BOOL valid = !_isBeingRecycled && self.window != nil && _headerView.window == self.window &&
+    _headerHeight > 0 && owner.window == self.window && owner != nil &&
+    CGRectGetWidth(owner.bounds) > 0 && CGRectGetHeight(owner.bounds) > 0 &&
+    _observedPageGeneration == _generation && _observedPageIndex == _currentIndex &&
+    _currentIndex >= 0 && _currentIndex < _pageControllers.count &&
+    [_observedPageKey isEqualToString:key] && [owner isDescendantOfView:_pageControllers[_currentIndex].view];
+  BOOL identityChanged = _headerSettledOwner != owner || ![_headerSettledKey isEqualToString:key] ||
+    _headerSettledGeneration != _generation;
+  if (identityChanged) {
+    [self cancelHeaderSettledCheck];
+    _headerCommandOwner = nil;
+    _headerSettledOwner = owner;
+    _headerSettledKey = [key copy];
+    _headerSettledGeneration = _generation;
+    _headerSettledGeometry = nil;
+    _headerSettledWasBusy = YES;
+    [self publishHeaderSettledAtTop:NO identityChanged:YES];
+  }
+  if (!valid || fabs(_headerOffset) > 0.5) {
+    [self cancelHeaderSettledCheck];
+    _headerSettledGeometry = nil;
+    _headerSettledWasBusy = YES;
+    [self publishHeaderSettledAtTop:NO identityChanged:NO];
+    return;
+  }
+  CGRect headerRect = [_headerView convertRect:_headerView.bounds toView:self.window];
+  CGRect ownerRect = [owner convertRect:owner.bounds toView:self.window];
+  UIEdgeInsets inset = owner.contentInset;
+  UIEdgeInsets adjustedInset = owner.adjustedContentInset;
+  NSString *geometry = [NSString stringWithFormat:
+    @"%.4f:%ld:%ld:%@:%@:%@:%@:%@:%@:%@",
+    _headerOffset, (long)_headerHeight, (long)_stickyHeaderHeight,
+    NSStringFromCGPoint(owner.contentOffset), NSStringFromCGSize(owner.contentSize),
+    NSStringFromCGRect(owner.bounds), NSStringFromUIEdgeInsets(inset),
+    NSStringFromUIEdgeInsets(adjustedInset), NSStringFromCGRect(headerRect), NSStringFromCGRect(ownerRect)];
+  UIGestureRecognizerState panState = owner.panGestureRecognizer.state;
+  BOOL busy = forceBusy || _transitioning || _isPagerDragging || _transitionPageOffsets != nil ||
+    _syntheticPageRestore || _pagerTopPageKey != nil || _headerCommandOwner == owner ||
+    owner.isDragging || owner.isDecelerating || owner.isTracking ||
+    panState == UIGestureRecognizerStateBegan || panState == UIGestureRecognizerStateChanged;
+  CFTimeInterval now = CACurrentMediaTime();
+  if (![geometry isEqualToString:_headerSettledGeometry] || busy || _headerSettledWasBusy) {
+    _headerSettledSince = now;
+    _headerSettledGeometry = geometry;
+    [self cancelHeaderSettledCheck];
+    [self publishHeaderSettledAtTop:NO identityChanged:NO];
+  }
+  _headerSettledWasBusy = busy;
+  if (!busy && now - _headerSettledSince >= 0.15) {
+    [self cancelHeaderSettledCheck];
+    [self publishHeaderSettledAtTop:YES identityChanged:NO];
+    return;
+  }
+  if (_headerSettledTimer == nil) {
+    __weak RNCCollapsiblePagerViewComponentView *weakSelf = self;
+    __weak UIScrollView *weakOwner = owner;
+    NSUInteger generation = _generation;
+    _headerSettledTimer = [NSTimer scheduledTimerWithTimeInterval:0.15 repeats:NO block:^(NSTimer *timer) {
+      RNCCollapsiblePagerViewComponentView *strongSelf = weakSelf;
+      if (strongSelf == nil) return;
+      if (strongSelf->_headerSettledTimer != timer) return;
+      strongSelf->_headerSettledTimer = nil;
+      if (strongSelf->_generation == generation && [strongSelf.currentPageKey isEqualToString:key] &&
+          strongSelf->_observedScrollView == weakOwner) [strongSelf updateHeaderSettledStateForceBusy:NO];
+    }];
+  }
+}
+
 - (void)emitDiagnostics:(NSString *)reason
 {
   const auto emitter = [self eventEmitter];
@@ -4096,7 +4217,9 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
     .attachedPageCount = (int)attached,
     .observedScrollableCount = (int)_originalInsets.count,
     .retainedPages = std::string(_retainedPages.UTF8String ?: "[]"),
-    .reason = std::string(reason.UTF8String ?: "unknown")
+    .reason = std::string(reason.UTF8String ?: "unknown"),
+    .pageKey = std::string(self.currentPageKey.UTF8String ?: ""),
+    .headerSettledAtTop = (bool)_headerSettledAtTop
   });
 }
 

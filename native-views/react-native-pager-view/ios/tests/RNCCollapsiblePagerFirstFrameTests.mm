@@ -19,6 +19,7 @@ using namespace facebook::react;
 - (void)updatePageStateTransitionProgress:(CGFloat)progress;
 - (void)finishPageStateTransition;
 - (void)scrollToTop:(NSInteger)target animated:(BOOL)animated;
+- (void)updateHeaderSettledStateForceBusy:(BOOL)forceBusy;
 - (void)preparePageForHorizontalTransitionAtIndex:(NSInteger)index;
 - (void)applyInsetsToScrollView:(UIScrollView *)scrollView pageIndex:(NSInteger)index restore:(BOOL)restore;
 @end
@@ -32,6 +33,36 @@ using namespace facebook::react;
 @end
 
 @implementation RNCCollapsiblePagerFirstFrameTests
+
+- (void)testHeaderSettledAtTopRequiresCurrentQuietOwnerAndCancelsDetachedTimer
+{
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 120)];
+  [pager addSubview:header];
+  [pager setValue:header forKey:@"headerView"];
+  RNCNativeScrollerComponentView *scroller = [self addScrollerToPager:pager atIndex:0];
+  [pager attachScrollObserverForCurrentPage];
+  [pager updateHeaderSettledStateForceBusy:NO];
+  XCTAssertFalse([[pager valueForKey:@"headerSettledAtTop"] boolValue]);
+  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.25]];
+  XCTAssertTrue([[pager valueForKey:@"headerSettledAtTop"] boolValue]);
+
+  [scroller scrollTo:0 y:200 - scroller.scrollView.contentInset.top animated:NO];
+  XCTAssertFalse([[pager valueForKey:@"headerSettledAtTop"] boolValue]);
+  [scroller scrollTo:0 y:-scroller.scrollView.adjustedContentInset.top animated:NO];
+  [pager updateHeaderSettledStateForceBusy:NO];
+  XCTAssertFalse([[pager valueForKey:@"headerSettledAtTop"] boolValue]);
+  [pager detachScrollObserver];
+  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.25]];
+  XCTAssertFalse([[pager valueForKey:@"headerSettledAtTop"] boolValue]);
+  XCTAssertNil([pager valueForKey:@"headerSettledTimer"]);
+
+  [pager attachScrollObserverForCurrentPage];
+  [pager updateHeaderSettledStateForceBusy:NO];
+  XCTAssertFalse([[pager valueForKey:@"headerSettledAtTop"] boolValue]);
+  [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.25]];
+  XCTAssertTrue([[pager valueForKey:@"headerSettledAtTop"] boolValue]);
+}
 
 - (void)testReachableTopCommandBeforeLayoutMustNotReplayPendingPagePosition
 {

@@ -35,6 +35,8 @@ export type OnCollapsibleStateChangedEventData = Readonly<{
   observedScrollableCount: Int32;
   retainedPages: string;
   reason: string;
+  pageKey: string;
+  headerSettledAtTop: boolean;
 }>;
 
 export type OnNativeTabPressEventData = Readonly<{

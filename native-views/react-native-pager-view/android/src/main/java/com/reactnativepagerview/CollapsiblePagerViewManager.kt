@@ -94,6 +94,9 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
         ),
       )
     }
+    host.onHeaderSettledStateChanged = {
+      dispatchDiagnostics(reactContext, host, "header-settled-state")
+    }
     host.onHeaderOffsetChanged = {
       if (!host.pager.isFakeDragging && host.pager.scrollState == ViewPager2.SCROLL_STATE_IDLE) {
         dispatchDiagnostics(reactContext, host, "vertical-idle")
@@ -127,6 +130,8 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
         host.observedScrollableCount(),
         host.retainedPages,
         reason,
+        host.headerStatePageKey(),
+        host.headerSettledAtTop,
       ),
     )
   }

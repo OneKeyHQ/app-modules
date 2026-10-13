@@ -717,3 +717,12 @@ cases additionally verified recorded refresh, header, restoration and gesture
 paths; they do not establish every possible sequence or runtime acceptance of a
 newly installed module release. Physical-device feel and semantic accessibility
 activation remain unverified.
+
+
+### Native Header stability snapshot
+
+`onCollapsibleStateChanged` retains its existing diagnostic fields and reasons and adds native-only `pageKey: string` and `headerSettledAtTop: boolean`. The key is the actual mounted React child key, not an application tab identifier. Unattached, unknown, replaced or transitioning owners MUST report false. A mounted current owner emits an initial identity snapshot without requiring a first user scroll.
+
+The Header is settled only when C is at its expanded top, the current attached view/key/index/generation still matches, and there is no actual drag, deceleration, scrolling command or horizontal transition. Offset/inset/content/header geometry MUST remain stable for 150ms before true is emitted. Motion or geometry changes revoke true promptly. Deferred reading memory alone MUST NOT be treated as active motion. Pull-to-refresh may settle at a normalized negative offset after drag, bounce and inset geometry stop; network refreshing alone is not a motion gate. Checks stop for collapsed, detached and recycled owners; delayed callbacks revalidate their captured identity. State changes are deduplicated; identity changes still publish an unknown/false snapshot.
+
+The native Home Spotlight adapter consumes this snapshot in the main UI runtime and keeps unknown states paused. It MUST use the mounted page-key mapping and reject old page/source callbacks. Native snapshots already include the 150ms stabilization delay: consumers MUST NOT add another such delay. Legacy Tabs keep their existing normalized-offset and debounce behavior. Anchor measurement, guide qualification and the existing display delay remain independent gates.
