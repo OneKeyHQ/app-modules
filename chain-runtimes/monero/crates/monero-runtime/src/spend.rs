@@ -257,12 +257,25 @@ pub fn select_inputs(
     })
 }
 
-/// Unsigned review reservations expire; signed inputs remain held until resolved.
+/// 未签名的预留一小时后作废：用户在确认页退出不会通知这里。
 pub const RESERVATION_TTL_SECS: i64 = 60 * 60;
+
+/// 已签名、但没走到广播的预留一天后作废。
+///
+/// 广播会在发出前把输入标已花、写在途记录，所以留到这里的签名从没发出去
+/// （设备上拒绝、取消、签完被杀）。永远锁着，下一笔就只能换一批输入花；
+/// 那份旧签名万一之后又被广播，两笔都会上链。放开后同一批输入重新排在
+/// 选币的前面，两笔争同一批 key image，链上只会成一笔。
+pub const SIGNED_RESERVATION_TTL_SECS: i64 = 24 * 60 * 60;
 
 /// 仍然有效的预留的下限时间：`locked_at` 大于它才算数。
 pub fn reservation_cutoff() -> i64 {
     crate::wallet::now_secs() - RESERVATION_TTL_SECS
+}
+
+/// 已签名预留的下限时间：`signed_at` 大于它才算数。
+pub fn signed_reservation_cutoff() -> i64 {
+    crate::wallet::now_secs() - SIGNED_RESERVATION_TTL_SECS
 }
 
 /// 预留选中的输出，防止被第二笔在途交易重复选中。
@@ -277,8 +290,12 @@ pub fn reserve(db: &mut Db, reservation_id: &str, output_ids: &[i64]) -> Result<
         .map_err(|e| db_err("beginReserve", e))?;
     // 用户在确认页退出不会通知这里，作废的预留只能在这时清掉。
     tx.execute(
-        "DELETE FROM locked_outputs WHERE locked_at <= ?1 AND signed_at IS NULL",
-        [now - RESERVATION_TTL_SECS],
+        "DELETE FROM locked_outputs
+         WHERE (signed_at IS NULL AND locked_at <= ?1) OR signed_at <= ?2",
+        params![
+            now - RESERVATION_TTL_SECS,
+            now - SIGNED_RESERVATION_TTL_SECS
+        ],
     )
     .map_err(|e| db_err("expireReservations", e))?;
     for id in output_ids {
@@ -1072,6 +1089,28 @@ mod tests {
     }
 
     #[test]
+    fn signed_reservations_that_never_broadcast_expire_after_a_day() {
+        let (mut db, id) = db_with_identity();
+        let input = add_output(&db, id, 500, 10, true);
+        reserve(&mut db, "signed", &[input]).unwrap();
+        mark_signed(&mut db, "signed", 1).unwrap();
+        db.conn()
+            .execute(
+                "UPDATE locked_outputs SET locked_at = ?1, signed_at = ?1",
+                [signed_reservation_cutoff() - 1],
+            )
+            .unwrap();
+        assert_eq!(query::spendable_rows(&db, id, 100).unwrap().len(), 1);
+        assert_eq!(
+            query::balance(&db, id, Some(100))
+                .unwrap()
+                .locked_by_reservation_atomic,
+            0
+        );
+        reserve(&mut db, "replacement", &[input]).expect("过期的签名预留让位");
+    }
+
+    #[test]
     fn signed_reservations_stay_unspendable_after_the_unsigned_ttl() {
         let (mut db, id) = db_with_identity();
         let input = add_output(&db, id, 500, 10, true);
@@ -1182,6 +1221,54 @@ mod tests {
         assert_eq!(outgoing.as_deref(), Some("123"));
     }
 
+    /// 记账在广播之前：被拒时只撤这一次新建的记录；重发同一笔不算新建。
+    #[test]
+    fn a_rejected_first_broadcast_is_undone_but_a_retry_is_not_fresh() {
+        let (mut db, id) = db_with_identity();
+        let a = add_output(&db, id, 500, 10, true);
+        reserve(&mut db, "r", &[a]).unwrap();
+        let key_image: Vec<u8> = db
+            .conn()
+            .query_row("SELECT key_image FROM outputs WHERE id = ?1", [a], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let key_image = <[u8; 32]>::try_from(key_image.as_slice()).unwrap();
+        let txid = [0x66u8; 32];
+        let record = |db: &Db| {
+            record_broadcast(
+                db,
+                id,
+                &txid,
+                &[key_image],
+                "r",
+                900,
+                SentAmounts::default(),
+            )
+            .unwrap()
+        };
+
+        assert!(record(&db), "第一次是新建");
+        assert!(
+            crate::query::spendable_rows(&db, id, 10_000)
+                .unwrap()
+                .is_empty(),
+            "广播前输入就已不可选"
+        );
+        assert!(!record(&db), "同一笔再记一次不是新建");
+
+        undo_recorded_broadcast(&db, id, &txid).unwrap();
+        assert_eq!(
+            crate::query::spendable_rows(&db, id, 10_000).unwrap().len(),
+            1
+        );
+        let rows: i64 = db
+            .conn()
+            .query_row("SELECT count(*) FROM transactions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 0, "被拒的交易不留在历史里");
+    }
+
     /// 同一笔输出不能被两个预留同时持有 —— 否则两笔交易花同一个输出，
     /// 第二笔必然被网络拒绝。
     #[test]
@@ -1228,15 +1315,54 @@ mod tests {
 
 // ── 端到端发送 ──────────────────────────────────────────────────────────
 
-/// 手续费率的理智上限（piconero / weight）。
+/// 各优先级手续费率的上限（piconero / weight）。
 ///
 /// 上游 `fee_rate` 强制要求给一个上限，理由很实在：**手续费率来自节点，
 /// 而节点可能撒谎**。报一个天价费率会让用户把余额全付成手续费。
 ///
-/// Monero 常规优先级的费率约在 20,000 piconero/weight 量级，最高优先级约
-/// 十倍。这里取 1,000,000 —— 比最高优先级还宽 5 倍，正常波动碰不到，
-/// 但挡得住数量级级别的胡说。
-pub const MAX_FEE_PER_WEIGHT: u64 = 1_000_000;
+/// monerod 的四档是基础费率的固定倍数，主网现值为 20,000 / 80,000 /
+/// 320,000 / 4,000,000。基础费率随区块奖励与区块大小中位数算出：交易一多
+/// 区块变大，费率反而下降；尾部发行固定后奖励也不再变。所以各档按现值留
+/// 5 倍余量，正常波动碰不到，挡得住数量级级别的胡说。碰到上限的结果是这一档
+/// 发不出去，不会多付。
+pub fn max_fee_per_weight(priority: monero_wallet::interface::FeePriority) -> u64 {
+    use monero_wallet::interface::FeePriority;
+    match priority {
+        FeePriority::Unimportant => 100_000,
+        FeePriority::Normal => 400_000,
+        FeePriority::Elevated => 1_600_000,
+        FeePriority::Priority | FeePriority::Custom { .. } => 20_000_000,
+    }
+}
+
+/// 手续费的取整单位（piconero）。
+///
+/// 这不是价格，是 monerod 写死的常量（`PER_KB_FEE_QUANTIZATION_DECIMALS = 8`，
+/// 即 10^(12-8)），不随网络繁忙变化。上游拿节点给的值把手续费向上取整到它的
+/// 整数倍，不设上限 —— 节点报一个大 mask，手续费就跟着翻几百倍。所以只认这一个值。
+pub const FEE_QUANTIZATION_MASK: u64 = 10_000;
+
+/// 上游 `FeeRate` 不暴露 mask，只能从它的序列化里取：先 per_weight 后 mask，
+/// 各 8 字节小端。布局由测试钉住，上游改了会先在测试里炸。
+fn fee_mask(rate: &monero_wallet::interface::FeeRate) -> Option<u64> {
+    let bytes = rate.serialize();
+    Some(u64::from_le_bytes(bytes.get(8..16)?.try_into().ok()?))
+}
+
+fn check_fee_rate(rate: &monero_wallet::interface::FeeRate) -> Result<()> {
+    let mask = fee_mask(rate);
+    if mask != Some(FEE_QUANTIZATION_MASK) {
+        return Err(RuntimeError::with(
+            ErrorCode::NetworkError,
+            json!({
+                "operation": "feeRate",
+                "reason": "unexpectedQuantizationMask",
+                "mask": mask.map(|m| m.to_string()),
+            }),
+        ));
+    }
+    Ok(())
+}
 
 /// 手续费优先级。字符串而非数字：数字跨边界时无从校验。
 pub fn parse_priority(name: &str) -> Result<monero_wallet::interface::FeePriority> {
@@ -1292,12 +1418,13 @@ pub async fn prepare_for_host(
 
     let network = db.network();
     let rate = daemon
-        .fee_rate(priority, MAX_FEE_PER_WEIGHT)
+        .fee_rate(priority, max_fee_per_weight(priority))
         .await
         .map_err(|e| {
             RuntimeError::with(ErrorCode::NetworkError, json!({ "operation": "feeRate" }))
                 .detail(format!("{e:?}"))
         })?;
+    check_fee_rate(&rate)?;
 
     // 当前共识：CLSAG + Bulletproofs+。跟着硬分叉走，由我们发版控制，
     // 不问节点 —— 节点说错了交易会被全网拒绝。
@@ -1377,7 +1504,6 @@ pub fn sign_for_host(signable_hex: &str, spend_private: &[u8], review_json: &str
     }))
 }
 
-/// 广播成功后的记账：输入标已花、记一条在途转出、释放预留。一个事务。
 /// 自己发出的一笔交易的金额（只有广播时知道）。
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SentAmounts {
@@ -1387,6 +1513,10 @@ pub struct SentAmounts {
     pub change_atomic: Option<u64>,
 }
 
+/// 广播前的记账：输入标已花、记一条在途转出、释放预留。一个事务。
+///
+/// 返回这条在途记录是不是这一次新建的。已有记录说明同一笔交易以前发过
+/// （重试同一份签名），那次的结局可能已经是「节点收下了」。
 fn record_broadcast(
     db: &Db,
     identity_id: i64,
@@ -1395,11 +1525,18 @@ fn record_broadcast(
     reservation_id: &str,
     chain_tip: u64,
     amounts: SentAmounts,
-) -> Result<()> {
+) -> Result<bool> {
     let tx_db = db
         .conn()
         .unchecked_transaction()
         .map_err(|e| db_err("beginRecordSend", e))?;
+    let existed: bool = tx_db
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM transactions WHERE identity_id = ?1 AND txid = ?2)",
+            params![identity_id, txid.as_slice()],
+            |r| r.get(0),
+        )
+        .map_err(|e| db_err("findRecordedSend", e))?;
     for key_image in key_images {
         tx_db
             .execute(
@@ -1438,13 +1575,37 @@ fn record_broadcast(
             [reservation_id],
         )
         .map_err(|e| db_err("releaseAfterBroadcast", e))?;
-    tx_db.commit().map_err(|e| db_err("commitRecordSend", e))
+    tx_db.commit().map_err(|e| db_err("commitRecordSend", e))?;
+    Ok(!existed)
 }
 
-/// 广播一笔已签名的交易，并记账。**不可逆。**
+/// 撤销这一次新建的在途记录：节点明确拒收，这笔不会上链，输入放回可用。
+fn undo_recorded_broadcast(db: &Db, identity_id: i64, txid: &[u8; 32]) -> Result<()> {
+    let tx_db = db
+        .conn()
+        .unchecked_transaction()
+        .map_err(|e| db_err("beginUndoSend", e))?;
+    tx_db
+        .execute(
+            "UPDATE outputs SET spent_at_height = NULL, spent_in_txid = NULL
+             WHERE identity_id = ?1 AND spent_in_txid = ?2",
+            params![identity_id, txid.as_slice()],
+        )
+        .map_err(|e| db_err("releaseRejectedInputs", e))?;
+    tx_db
+        .execute(
+            "DELETE FROM transactions WHERE identity_id = ?1 AND txid = ?2 AND height IS NULL",
+            params![identity_id, txid.as_slice()],
+        )
+        .map_err(|e| db_err("forgetRejectedSend", e))?;
+    tx_db.commit().map_err(|e| db_err("commitUndoSend", e))
+}
+
+/// 记账，然后广播一笔已签名的交易。**不可逆。**
 ///
-/// 广播成功后立刻把被花的输出标记掉：不标的话下一次选币会再选中它们，
-/// 构出一笔必然被网络拒绝的交易。
+/// 先记账再广播：输入先标已花、先有一条在途记录，之后任何一刻被打断
+/// （Worker 被杀、回包丢失），重启后这笔都看得见，输入也不会被下一笔选中
+/// 而换一批去花 —— 换一批花，两笔都会上链，用户付两次。
 pub async fn broadcast_signed(
     db: &Db,
     daemon: &crate::network::Daemon,
@@ -1465,22 +1626,8 @@ pub async fn broadcast_signed(
         .map_err(|e| db_err("parseSignedTransaction", e))?;
     let txid = tx.hash();
 
-    // 明确拒收说明这笔不会上链，输入放回可用。其余错误分不清节点收没收到：
-    // 照样记成在途交易，输入不会被重选（重发换一批输入就可能付两次）；
-    // 节点真没收到的话，在途检查过了扩散期会判失败并放回输入。
-    // 「双花」也可能是这笔自己早已上链（回包丢过、重试了同一份签名），同样当
-    // 不确定处理：真是别人花的，扩散期后在途检查会判失败。
-    let mut unknown = match broadcast(daemon, &raw).await {
-        Ok(()) => None,
-        Err(e) if e.code == ErrorCode::BroadcastRejected && !is_double_spend(&e) => {
-            release(db, reservation_id)?;
-            return Err(e);
-        }
-        Err(e) => Some(e),
-    };
-
-    // 广播已经发生，不可逆。立刻记账。按交易自己的 key image 标，不靠预留：
-    // 预留可能已经过期，或者签名失败释放后又拿同一份签名重发。
+    // 按交易自己的 key image 标，不靠预留：预留可能已经过期，或者签名失败
+    // 释放后又拿同一份签名重发。
     let key_images: Vec<[u8; 32]> = tx
         .prefix()
         .inputs
@@ -1492,9 +1639,8 @@ pub async fn broadcast_signed(
             _ => None,
         })
         .collect();
-    // 记账失败也不能报「发送失败」：交易可能已经在网上，报失败会引人重发。
-    // 按不确定返回；扫链按 key image 会认出这笔。
-    if let Err(e) = record_broadcast(
+    // 记不上账就不发：这时什么都还没发生，报错是真话。
+    let fresh = record_broadcast(
         db,
         identity_id,
         &txid,
@@ -1502,9 +1648,22 @@ pub async fn broadcast_signed(
         reservation_id,
         chain_tip,
         amounts,
-    ) {
-        unknown = Some(e);
-    }
+    )?;
+
+    // 明确拒收说明这笔不会上链：这次新建的记录撤掉，输入放回可用。
+    // 其余错误分不清节点收没收到：记录留着，输入不会被重选；节点真没收到的话，
+    // 在途检查过了扩散期会判失败并放回输入。
+    // 「双花」也可能是这笔自己早已上链（回包丢过、重试了同一份签名），同样当
+    // 不确定处理。以前发过的同一笔（`fresh` 为假）被拒也当不确定：上一次的
+    // 结局可能是节点收下了。
+    let unknown = match broadcast(daemon, &raw).await {
+        Ok(()) => None,
+        Err(e) if e.code == ErrorCode::BroadcastRejected && !is_double_spend(&e) && fresh => {
+            undo_recorded_broadcast(db, identity_id, &txid)?;
+            return Err(e);
+        }
+        Err(e) => Some(e),
+    };
 
     Ok(json!({
         "txid": hex::encode(txid),
@@ -1569,6 +1728,38 @@ mod cached_decoys_tests {
 #[cfg(test)]
 mod double_spend_tests {
     use super::*;
+
+    #[test]
+    fn only_the_protocol_quantization_mask_is_accepted() {
+        use monero_wallet::interface::FeeRate;
+        let rate = FeeRate::new(80_000, FEE_QUANTIZATION_MASK).unwrap();
+        assert_eq!(
+            fee_mask(&rate),
+            Some(FEE_QUANTIZATION_MASK),
+            "序列化布局变了"
+        );
+        check_fee_rate(&rate).unwrap();
+        for mask in [1, 9_999, 10_001, 10_000_000_000] {
+            let rate = FeeRate::new(80_000, mask).unwrap();
+            assert_eq!(fee_mask(&rate), Some(mask));
+            let e = check_fee_rate(&rate).unwrap_err();
+            assert_eq!(e.params["reason"], "unexpectedQuantizationMask");
+        }
+    }
+
+    /// 主网现值（2026-10）各档都要能发，且离上限至少 5 倍。
+    #[test]
+    fn current_mainnet_fee_rates_fit_every_priority() {
+        use monero_wallet::interface::FeePriority;
+        for (priority, current) in [
+            (FeePriority::Unimportant, 20_000),
+            (FeePriority::Normal, 80_000),
+            (FeePriority::Elevated, 320_000),
+            (FeePriority::Priority, 4_000_000),
+        ] {
+            assert!(current * 5 <= max_fee_per_weight(priority));
+        }
+    }
 
     #[test]
     fn a_double_spend_rejection_is_not_treated_as_final() {

@@ -50,6 +50,9 @@ pub enum ErrorCode {
     // ── 外部世界 ────────────────────────────────────────────────────────
     /// 节点地址没配。
     NodeNotConfigured,
+    /// 节点不在钱包所属的网络上（按创世块判断），或认不出它在哪条链上。
+    /// 参数：`{ nodeNetwork, walletNetwork }` 或 `{ nodeGenesis }`
+    NodeNetworkMismatch,
     /// 网络请求失败或超时。参数：`{ operation }`
     NetworkError,
     /// 节点返回的数据解不开（epee/JSON 格式不对）。参数：`{ operation }`
@@ -86,6 +89,7 @@ impl ErrorCode {
             RingCtIndexMismatch => "RINGCT_INDEX_MISMATCH",
             ScanFailed => "SCAN_FAILED",
             NodeNotConfigured => "NODE_NOT_CONFIGURED",
+            NodeNetworkMismatch => "NODE_NETWORK_MISMATCH",
             NetworkError => "NETWORK_ERROR",
             MalformedNodeResponse => "MALFORMED_NODE_RESPONSE",
             BroadcastRejected => "BROADCAST_REJECTED",

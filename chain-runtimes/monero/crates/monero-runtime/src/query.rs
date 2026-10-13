@@ -62,14 +62,18 @@ pub fn balance(db: &Db, identity_id: i64, chain_tip: Option<u64>) -> Result<Bala
                             WHERE p.identity_id = o.identity_id
                               AND p.out_txid = o.txid AND p.out_index = o.index_in_tx) AS maybe_spent
              FROM outputs o
-             LEFT JOIN locked_outputs l ON l.output_id = o.id AND (l.locked_at > ?2 OR l.signed_at IS NOT NULL)
+             LEFT JOIN locked_outputs l ON l.output_id = o.id AND (l.locked_at > ?2 OR l.signed_at > ?3)
              WHERE o.identity_id = ?1 AND o.spent_at_height IS NULL",
         )
         .map_err(|e| db_err("balanceQuery", e))?;
 
     let rows = stmt
         .query_map(
-            params![identity_id, crate::spend::reservation_cutoff()],
+            params![
+                identity_id,
+                crate::spend::reservation_cutoff(),
+                crate::spend::signed_reservation_cutoff()
+            ],
             |r| {
                 Ok((
                     r.get::<_, i64>(0)? as u128,
@@ -173,7 +177,7 @@ pub fn spendable_rows(db: &Db, identity_id: i64, chain_tip: u64) -> Result<Vec<S
         .prepare(
             "SELECT o.id, o.amount_atomic, o.global_index, o.height, o.additional_timelock
              FROM outputs o
-             LEFT JOIN locked_outputs l ON l.output_id = o.id AND (l.locked_at > ?2 OR l.signed_at IS NOT NULL)
+             LEFT JOIN locked_outputs l ON l.output_id = o.id AND (l.locked_at > ?2 OR l.signed_at > ?3)
              WHERE o.identity_id = ?1
                AND o.spent_at_height IS NULL
                AND o.key_image IS NOT NULL
@@ -184,7 +188,11 @@ pub fn spendable_rows(db: &Db, identity_id: i64, chain_tip: u64) -> Result<Vec<S
 
     let rows = stmt
         .query_map(
-            params![identity_id, crate::spend::reservation_cutoff()],
+            params![
+                identity_id,
+                crate::spend::reservation_cutoff(),
+                crate::spend::signed_reservation_cutoff()
+            ],
             |r| {
                 Ok((
                     r.get::<_, i64>(0)?,

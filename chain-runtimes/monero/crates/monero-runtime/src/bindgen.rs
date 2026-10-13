@@ -64,13 +64,16 @@ pub async fn set_node_url(url: &str) -> std::result::Result<(), JsValue> {
     if url.trim().is_empty() {
         return Ok(());
     }
-    let daemon = network::connect(url).await?;
-    runtime::set_daemon(daemon);
+    let (daemon, node_network) = network::connect(url).await?;
+    runtime::set_daemon(daemon, node_network);
     Ok(())
 }
 
 /// 问链尖。**不要求钱包库已打开** —— 建账户时要用它定 birthday，
 /// 而那一刻库还没建。
+///
+/// 返回 `{ height, network }`：`network` 是节点所在的链（按创世块认定）。
+/// 这一步还没有钱包库可比对，宿主定 birthday 前须确认它与要建的钱包一致。
 #[wasm_bindgen(js_name = chainTip)]
 pub async fn chain_tip() -> std::result::Result<String, JsValue> {
     let tip: u64 = runtime::with_daemon(|daemon| async move {
@@ -78,7 +81,10 @@ pub async fn chain_tip() -> std::result::Result<String, JsValue> {
         (daemon, r)
     })
     .await?;
-    json(serde_json::json!({ "height": tip }))
+    json(serde_json::json!({
+        "height": tip,
+        "network": runtime::daemon_network().map(crate::keys::network_name),
+    }))
 }
 
 /// 注册一个身份（观察密钥对）。

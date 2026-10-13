@@ -428,7 +428,7 @@ pub type Daemon = MoneroDaemon<Transport>;
 ///
 /// 节点地址**由宿主给**，这里没有内置默认值 —— 内置一个默认节点等于替用户
 /// 决定把自己的 IP 和查询交给谁，那是隐私决策，不该藏在 runtime 里。
-pub async fn connect(base_url: &str) -> Result<Daemon> {
+pub async fn connect(base_url: &str) -> Result<(Daemon, monero_wallet::address::Network)> {
     if base_url.trim().is_empty() {
         return Err(RuntimeError::new(ErrorCode::NodeNotConfigured));
     }
@@ -441,8 +441,54 @@ pub async fn connect(base_url: &str) -> Result<Daemon> {
     let daemon = MoneroDaemon::new(Transport::new(base_url))
         .await
         .map_err(|e| net_err("connect", format!("{e:?}")))?;
+    let network = node_network(&daemon).await?;
     CURRENT_NODE_URL.with(|c| *c.borrow_mut() = Some(base_url.to_owned()));
-    Ok(daemon)
+    Ok((daemon, network))
+}
+
+/// 各网络的创世块哈希。
+///
+/// 同一套密钥在三个网络上推出同样的输出密钥：测试网钱包连上主网节点，
+/// 扫到的就是真 XMR，按测试网地址发出去的也是真 XMR。只看地址前缀挡不住，
+/// 必须确认节点所在的链。
+const GENESIS_HASHES: [(monero_wallet::address::Network, &str); 3] = [
+    (
+        monero_wallet::address::Network::Mainnet,
+        "418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3",
+    ),
+    (
+        monero_wallet::address::Network::Testnet,
+        "48ca7cd3c8de5b6a4d53d2861fbdaedca141553559f9be9520068053cda8430b",
+    ),
+    (
+        monero_wallet::address::Network::Stagenet,
+        "76ee3cc98646292206cd3e86f74d88b4dcc1d937088645e9b0cbca84b7ce74eb",
+    ),
+];
+
+pub(crate) fn network_for_genesis(hash: &[u8; 32]) -> Option<monero_wallet::address::Network> {
+    let hash = hex::encode(hash);
+    GENESIS_HASHES
+        .iter()
+        .find(|(_, genesis)| *genesis == hash)
+        .map(|(network, _)| *network)
+}
+
+/// 按创世块认出节点在哪条链上。认不出就不连：宁可没有节点，也不要一个
+/// 不知道在哪条链上的节点。
+async fn node_network(daemon: &Daemon) -> Result<monero_wallet::address::Network> {
+    use monero_daemon_rpc::prelude::*;
+
+    let genesis = daemon
+        .block_hash(0)
+        .await
+        .map_err(|e| net_err("genesisHash", format!("{e:?}")))?;
+    network_for_genesis(&genesis).ok_or_else(|| {
+        RuntimeError::with(
+            ErrorCode::NodeNetworkMismatch,
+            json!({ "nodeGenesis": hex::encode(genesis) }),
+        )
+    })
 }
 
 thread_local! {
@@ -463,6 +509,17 @@ pub fn forget_node_url() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn genesis_hashes_identify_each_network() {
+        use monero_wallet::address::Network;
+        for (network, genesis) in GENESIS_HASHES {
+            let bytes: [u8; 32] = hex::decode(genesis).unwrap().try_into().unwrap();
+            assert_eq!(network_for_genesis(&bytes), Some(network));
+        }
+        assert_eq!(network_for_genesis(&[0u8; 32]), None);
+        assert_ne!(Network::Mainnet, Network::Stagenet);
+    }
 
     /// 不内置默认节点：内置一个等于替用户决定把 IP 和查询交给谁。
     #[test]
