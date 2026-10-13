@@ -744,22 +744,25 @@ fn timelock_to_i64(timelock: monero_wallet::transaction::Timelock) -> i64 {
 
 /// Rewinds to `height`, dropping all scan results above it.
 ///
-/// Destructive; used for reorg recovery. Our own broadcasts are kept: a
-/// reorged-out send usually returns to the pool and is mined again, and
-/// releasing its inputs could let a second send with other inputs also confirm.
-/// They revert to pending (height cleared) with inputs still spent, left to
-/// the pending check and scanning.
-pub fn rewind_to(db: &mut Db, identity_id: i64, height: u64) -> Result<()> {
+/// Destructive; used for reorg recovery and user rescans. Our own broadcasts
+/// within the reorg window of `tip` are kept: a reorged-out send usually
+/// returns to the pool and is mined again, and releasing its inputs could let
+/// a second send with other inputs also confirm. They revert to pending
+/// (height cleared) with inputs still spent, left to the pending check and
+/// scanning. Deeper sends cannot be reorged out; they are dropped and found
+/// again by the rescan, so a rescan does not turn old history pending.
+pub fn rewind_to(db: &mut Db, identity_id: i64, height: u64, tip: u64) -> Result<()> {
     let tx = db
         .conn_mut()
         .transaction()
         .map_err(|e| db_err("beginRewind", e))?;
 
     // Must run before clearing spend marks: that step keeps marks for pending transactions.
+    let reorgable_above = height.max(tip.saturating_sub(REORG_WINDOW_BLOCKS));
     tx.execute(
         "UPDATE transactions SET height = NULL, failed = 0, pool_checked_at = NULL
          WHERE identity_id = ?1 AND height > ?2 AND sent_at IS NOT NULL",
-        params![identity_id, height as i64],
+        params![identity_id, reorgable_above as i64],
     )
     .map_err(|e| db_err("rewindOwnSends", e))?;
 
@@ -926,7 +929,7 @@ mod tests {
                 .unwrap();
         }
 
-        rewind_to(&mut db, a, 50).unwrap();
+        rewind_to(&mut db, a, 50, 60).unwrap();
 
         assert!(previous_block_state(&db, a, 101).unwrap().is_none());
         assert!(previous_block_state(&db, b, 101).unwrap().is_some());
@@ -1094,13 +1097,40 @@ mod tests {
             )
             .unwrap();
 
-        rewind_to(&mut db, id, 490).unwrap();
+        rewind_to(&mut db, id, 490, 505).unwrap();
 
         let spent_in: Option<Vec<u8>> = db
             .conn()
             .query_row("SELECT spent_in_txid FROM outputs", [], |r| r.get(0))
             .unwrap();
         assert_eq!(spent_in, Some(txid.to_vec()));
+    }
+
+    /// A rescan far below the reorg window drops our old send instead of
+    /// turning it pending; scanning finds it again.
+    #[test]
+    fn a_deep_rewind_does_not_turn_old_sends_pending() {
+        let (mut db, id) = db_with_identity();
+        let ours = [3u8; 32];
+        db.conn()
+            .execute(
+                "INSERT INTO transactions (identity_id, txid, height, direction, sent_at)
+                 VALUES (?1, ?2, 500, 'out', 1000)",
+                params![id, ours.as_slice()],
+            )
+            .unwrap();
+
+        rewind_to(&mut db, id, 490, 500 + REORG_WINDOW_BLOCKS + 10).unwrap();
+
+        let pending: i64 = db
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM transactions WHERE height IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(pending, 0);
     }
 
     /// Our confirmed send reorged out reverts to pending; inputs stay spent.
@@ -1127,7 +1157,7 @@ mod tests {
             )
             .unwrap();
 
-        rewind_to(&mut db, id, 490).unwrap();
+        rewind_to(&mut db, id, 490, 505).unwrap();
 
         let rows: Vec<(Vec<u8>, Option<i64>)> = db
             .conn()

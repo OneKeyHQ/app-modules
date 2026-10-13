@@ -407,7 +407,7 @@ pub fn peek(db: &Db, identity_id: i64) -> Result<Value> {
 
 /// Reorg recovery: rewind to `height` and requeue everything above it.
 pub fn rewind_and_requeue(db: &mut Db, identity_id: i64, height: u64, tip: u64) -> Result<Value> {
-    scan::rewind_to(db, identity_id, height)?;
+    scan::rewind_to(db, identity_id, height, tip)?;
     // Rewind progress too, or the next step resumes from a discarded height and the
     // gap is never rescanned. Keep NULL if nothing was scanned: 0 would make the next
     // `update_chain_tip` queue from genesis.
