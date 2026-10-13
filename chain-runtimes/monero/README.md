@@ -14,12 +14,15 @@ cargo check --workspace --target wasm32-unknown-unknown
 ```
 
 `smoke.js` runs offline; set `XMR_NODE=<monerod RPC URL>` to add node checks.
-Builds need the `wasm-bindgen-cli` version pinned in `Cargo.lock`.
+The toolchain matches the Zcash runtime, so one install builds both: Rust 1.93.0
+(pinned in `rust-toolchain.toml`), wasm-pack 0.15.0, `wasm-bindgen-cli` at the
+version in `Cargo.lock`, and `wasm-opt` (Binaryen 133 in CI).
 
 **macOS needs `llvm-ar`** (`brew install llvm`). `/usr/bin/ar` cannot read wasm
 objects and silently writes an empty archive; linking then fails with
 `undefined symbol: sqlite3_*`. `cargo check` does not link, so it never shows this.
-The archiver is set in `.cargo/config.toml`.
+`build-wasm.sh` finds Homebrew's clang and `llvm-ar` on Apple Silicon and Intel;
+`.cargo/config.toml` sets the Apple Silicon archiver for direct `cargo` builds.
 
 ## Host contract
 

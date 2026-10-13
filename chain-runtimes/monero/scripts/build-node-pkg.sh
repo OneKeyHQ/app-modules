@@ -3,6 +3,4 @@
 # Shipped builds use the web target from build-wasm.sh.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "${ROOT}/crates/monero-runtime"
-wasm-pack build --mode no-install --locked --target nodejs \
-  --out-dir "${ROOT}/pkg-node" --release
+WASM_PACK_TARGET=nodejs OUT="${ROOT}/pkg-node" exec bash "${ROOT}/scripts/build-wasm.sh" release
