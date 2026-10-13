@@ -345,6 +345,8 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 {
   if (!_momentumActive) return;
   _momentumActive = NO;
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"OneKeyNativeListScrollCommandAccepted"
+    object:_scrollView userInfo:@{@"phase": @2}];
   [self emitScrollEvent:4 velocity:CGPointZero target:_scrollView.contentOffset];
 }
 
@@ -443,11 +445,15 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
     MAX(-inset.top, MIN(y,
     MAX(-inset.top, _scrollView.contentSize.height - _scrollView.bounds.size.height + inset.bottom))));
   if (CGPointEqualToPoint(target, _scrollView.contentOffset)) return;
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"OneKeyNativeListScrollCommandAccepted"
+    object:_scrollView userInfo:@{@"phase": @1}];
   if (animated) {
     _momentumActive = YES;
     [self emitScrollEvent:3 velocity:CGPointZero target:target];
   }
   [_scrollView setContentOffset:target animated:animated];
+  if (!animated) [[NSNotificationCenter defaultCenter] postNotificationName:@"OneKeyNativeListScrollCommandAccepted"
+    object:_scrollView userInfo:@{@"phase": @2}];
 }
 
 - (void)scrollToEnd:(BOOL)animated

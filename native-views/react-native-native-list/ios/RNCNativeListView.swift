@@ -167,6 +167,10 @@ final class NativeListView: UIView {
   private var sectionIndexHapticsEnabled = true
   private var lastLayoutDirection: UIUserInterfaceLayoutDirection?
   private var lastLayoutSize: CGSize?
+  private var commandAcceptedForPendingScroll = false
+  private var performingExplicitScrollCommand = false
+  private var animatedExplicitScrollCommand = false
+  private var pagerCommandCancelObserver: NSObjectProtocol?
   private var pendingScrollRequest: ScrollRequest?
   private let sectionIndexFeedback = UISelectionFeedbackGenerator()
   private lazy var reorderLongPress = UILongPressGestureRecognizer(
@@ -217,6 +221,17 @@ final class NativeListView: UIView {
 
   override init(frame: CGRect) {
     super.init(frame: frame)
+    pagerCommandCancelObserver = NotificationCenter.default.addObserver(
+      forName: Notification.Name("OneKeyNativeListCancelScrollCommand"),
+      object: collectionView, queue: .main
+    ) { [weak self] notification in
+      guard let self, !self.disposed, (notification.object as? UICollectionView) === self.collectionView else { return }
+      self.pendingScrollRequest = nil
+      self.commandAcceptedForPendingScroll = false
+      self.scrollViewDidEndScrollingAnimation(self.collectionView)
+      self.performingExplicitScrollCommand = false
+      self.collectionView.setContentOffset(self.collectionView.contentOffset, animated: false)
+    }
     NativeListRendererRegistry.register(in: collectionView)
     collectionView.backgroundColor = .clear
     collectionView.delegate = self
@@ -390,6 +405,10 @@ final class NativeListView: UIView {
           let indexPath = collectionView.indexPathForItem(at: point),
           let item = item(at: indexPath) else { return false }
     return item.isRowPressEnabled
+  }
+
+  deinit {
+    if let pagerCommandCancelObserver { NotificationCenter.default.removeObserver(pagerCommandCancelObserver) }
   }
 
   required init?(coder: NSCoder) {
@@ -638,7 +657,31 @@ final class NativeListView: UIView {
     requestScroll(.end(animated))
   }
 
+  private func acceptScrollCommand(_ request: ScrollRequest) {
+    guard !commandAcceptedForPendingScroll, let config else { return }
+    let explicitTop: Bool
+    switch request {
+    case let .key(key, _, alignment, viewPosition, viewOffset):
+      guard config.items.contains(where: { $0.key == key }), viewPosition.isFinite, viewOffset.isFinite else { return }
+      explicitTop = config.items.first?.key == key && alignment == "start" && viewPosition == 0 && viewOffset == 0
+    case let .index(index, _, alignment, viewPosition, viewOffset):
+      guard index >= 0, index < config.items.count, viewPosition.isFinite, viewOffset.isFinite else { return }
+      explicitTop = index == 0 && alignment == "start" && viewPosition == 0 && viewOffset == 0
+    case let .offset(offset, _):
+      guard offset.isFinite else { return }
+      explicitTop = offset <= 0
+    case .end:
+      explicitTop = false
+    }
+    commandAcceptedForPendingScroll = true
+    NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+      object: collectionView, userInfo: ["explicitTop": explicitTop, "phase": 0])
+  }
+
   private func requestScroll(_ request: ScrollRequest) {
+    animatedExplicitScrollCommand = false
+    commandAcceptedForPendingScroll = false
+    acceptScrollCommand(request)
     if performScroll(request) {
       pendingScrollRequest = nil
     } else {
@@ -647,7 +690,9 @@ final class NativeListView: UIView {
   }
 
   private func performPendingScrollIfNeeded() {
-    guard let request = pendingScrollRequest, performScroll(request) else { return }
+    guard let request = pendingScrollRequest else { return }
+    acceptScrollCommand(request)
+    guard performScroll(request) else { return }
     pendingScrollRequest = nil
   }
 
@@ -660,6 +705,8 @@ final class NativeListView: UIView {
       : collectionView.bounds.height
     guard viewportLength > 0 else { return false }
     collectionView.layoutIfNeeded()
+    performingExplicitScrollCommand = commandAcceptedForPendingScroll
+    defer { performingExplicitScrollCommand = false }
 
     switch request {
     case let .key(key, animated, alignment, viewPosition, viewOffset):
@@ -764,7 +811,17 @@ final class NativeListView: UIView {
     let point = isHorizontal
       ? CGPoint(x: offset, y: collectionView.contentOffset.y)
       : CGPoint(x: collectionView.contentOffset.x, y: offset)
+    let moved = point != collectionView.contentOffset
+    if performingExplicitScrollCommand && moved {
+      NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+        object: collectionView, userInfo: ["phase": 1])
+    }
+    if performingExplicitScrollCommand && moved { animatedExplicitScrollCommand = animated }
     collectionView.setContentOffset(point, animated: animated)
+    if performingExplicitScrollCommand && moved && !animated {
+      NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+        object: collectionView, userInfo: ["phase": 2])
+    }
   }
 
   private func contentLayoutDidChange() {
@@ -1981,7 +2038,14 @@ final class NativeListView: UIView {
     config = nil
     itemsByKey.removeAll()
     sectionIndexEntries.removeAll()
+    if let pagerCommandCancelObserver {
+      NotificationCenter.default.removeObserver(pagerCommandCancelObserver)
+      self.pagerCommandCancelObserver = nil
+    }
     pendingScrollRequest = nil
+    performingExplicitScrollCommand = false
+    animatedExplicitScrollCommand = false
+    commandAcceptedForPendingScroll = false
     needsContentShrinkCorrection = false
     lastLaidOutContentHeight = nil
     lastVisibleRange = nil
@@ -2281,7 +2345,15 @@ extension NativeListView: UICollectionViewDelegateFlowLayout {
     return item.isRowPressEnabled
   }
 
+  func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+    guard animatedExplicitScrollCommand else { return }
+    animatedExplicitScrollCommand = false
+    NotificationCenter.default.post(name: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
+      object: collectionView, userInfo: ["phase": 2])
+  }
+
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    scrollViewDidEndScrollingAnimation(scrollView)
     minimumDragOffset = 0
     refreshEmittedForDrag = false
   }

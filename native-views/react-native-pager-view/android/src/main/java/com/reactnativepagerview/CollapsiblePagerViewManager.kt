@@ -324,6 +324,10 @@ class CollapsiblePagerViewManager : ViewGroupManager<CollapsiblePagerHost>(),
     delegate.receiveCommand(root, commandId, args)
   }
 
+  override fun scrollToTop(view: CollapsiblePagerHost?, target: Int, animated: Boolean) {
+    view?.scrollToTop(target, animated)
+  }
+
   override fun setPage(view: CollapsiblePagerHost?, selectedPage: Int) {
     if (view != null && selectedPage in 0 until view.adapter.itemCount) {
       view.beginPageTransition(selectedPage)

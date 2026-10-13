@@ -18,6 +18,7 @@ using namespace facebook::react;
 - (void)beginPageStateTransition;
 - (void)updatePageStateTransitionProgress:(CGFloat)progress;
 - (void)finishPageStateTransition;
+- (void)scrollToTop:(NSInteger)target animated:(BOOL)animated;
 - (void)preparePageForHorizontalTransitionAtIndex:(NSInteger)index;
 - (void)applyInsetsToScrollView:(UIScrollView *)scrollView pageIndex:(NSInteger)index restore:(BOOL)restore;
 @end
@@ -39,6 +40,7 @@ using namespace facebook::react;
     RNCNativeScrollerComponentView *scroller = [self addScrollerToPager:pager atIndex:0];
     NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
     offsets[@"page-0"] = @660;
+    [pager setValue:@120 forKey:@"headerOffset"];
     scroller.scrollView.contentSize = CGSizeMake(0, 0);
     [pager attachScrollObserverForCurrentPage];
     XCTAssertTrue([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
@@ -58,14 +60,14 @@ using namespace facebook::react;
       else [scroller scrollTo:0 y:-scroller.scrollView.adjustedContentInset.top animated:NO];
       XCTAssertEqualWithAccuracy(scroller.scrollView.contentOffset.y + scroller.scrollView.contentInset.top, command.integerValue == 2 ? 120 : 0, 0.01);
       XCTAssertFalse([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
-      XCTAssertEqualWithAccuracy([offsets[@"page-0"] doubleValue], command.integerValue == 2 ? 120 : 0, 0.01);
+      XCTAssertEqualWithAccuracy([offsets[@"page-0"] doubleValue], 0, 0.01);
       XCTAssertEqual([pager valueForKey:@"observedScrollView"], scroller.scrollView);
       XCTAssertEqualObjects([pager valueForKey:@"observedPageKey"], @"page-0");
     }
     // The existing observed content-size path retries the pending restoration.
     scroller.scrollView.contentSize = CGSizeMake(320, 1500);
     XCTAssertFalse([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
-    CGFloat expected = command.integerValue == 2 ? 120 : (command.boolValue ? 0 : 660);
+    CGFloat expected = command.integerValue == 2 ? 120 : (command.boolValue ? 0 : 780);
     XCTAssertEqualWithAccuracy(scroller.scrollView.contentOffset.y + scroller.scrollView.contentInset.top,
                               expected, 0.01, @"command=%@ must not replay a cancelled reading position", command);
     XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], command.integerValue == 1 ? 0 : 120, 0.01);
@@ -80,6 +82,7 @@ using namespace facebook::react;
     RNCNativeScrollerComponentView *other = [self addScrollerToPager:pager atIndex:1];
     NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
     offsets[@"page-0"] = @660;
+    [pager setValue:@120 forKey:@"headerOffset"];
     offsets[@"page-1"] = @360;
     current.scrollView.contentSize = CGSizeMake(0, 0);
     [pager attachScrollObserverForCurrentPage];
@@ -103,12 +106,42 @@ using namespace facebook::react;
   NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
   offsets[@"page-0"] = @0;
   offsets[@"page-1"] = @360;
+  [pager setValue:@120 forKey:@"headerOffset"];
   [pager attachScrollObserverForCurrentPage];
   XCTAssertFalse([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
   [current scrollTo:0 y:200 - current.scrollView.contentInset.top animated:NO];
   XCTAssertEqualWithAccuracy(current.scrollView.contentOffset.y + current.scrollView.contentInset.top, 200, 0.01);
-  XCTAssertEqualWithAccuracy([offsets[@"page-0"] doubleValue], 200, 0.01);
+  XCTAssertEqualWithAccuracy([offsets[@"page-0"] doubleValue], 80, 0.01);
   XCTAssertEqualObjects(offsets[@"page-1"], @360);
+}
+
+- (void)testPagerTopCommandsClearOnlyCurrentReadingMemoryInBothModes
+{
+  for (NSNumber *smooth in @[@NO, @YES]) {
+    for (NSNumber *target in @[@0, @1]) {
+      RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:2];
+      [pager setValue:smooth forKey:@"nativeSmoothHeaderScrollEnabled"];
+      RNCNativeScrollerComponentView *current = [self addScrollerToPager:pager atIndex:0];
+      [self addScrollerToPager:pager atIndex:1];
+      NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
+      offsets[@"page-0"] = smooth.boolValue ? @660 : @780;
+      offsets[@"page-1"] = @360;
+      [pager setValue:@120 forKey:@"headerOffset"];
+      [pager attachScrollObserverForCurrentPage];
+      [pager scrollToTop:target.integerValue animated:NO];
+      CGFloat expectedQ = target.boolValue ? 120 : 0;
+      XCTAssertEqualWithAccuracy(current.scrollView.contentOffset.y + current.scrollView.contentInset.top, expectedQ, 0.01);
+      XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], expectedQ, 0.01);
+      XCTAssertEqualWithAccuracy([offsets[@"page-0"] doubleValue], smooth.boolValue ? 0 : expectedQ, 0.01);
+      XCTAssertEqualObjects(offsets[@"page-1"], @360);
+      XCTAssertFalse([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
+      XCTAssertNil([pager valueForKey:@"pagerTopScrollView"]);
+      // A same-target call cannot resurrect the old reading position.
+      [pager scrollToTop:target.integerValue animated:NO];
+      XCTAssertEqualWithAccuracy(current.scrollView.contentOffset.y + current.scrollView.contentInset.top, expectedQ, 0.01);
+      XCTAssertEqualObjects(offsets[@"page-1"], @360);
+    }
+  }
 }
 
 - (void)testTransitionLayoutCannotSaveSourceOffsetIntoDestinationCache
@@ -117,7 +150,7 @@ using namespace facebook::react;
   RNCNativeScrollerComponentView *source = [self addScrollerToPager:pager atIndex:0];
   RNCNativeScrollerComponentView *target = [self addScrollerToPager:pager atIndex:1];
   NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
-  offsets[@"page-0"] = @120;
+  offsets[@"page-0"] = @0;
   offsets[@"page-1"] = @660;
   [pager setValue:@120 forKey:@"headerOffset"];
   [pager attachScrollObserverForCurrentPage];
@@ -131,49 +164,50 @@ using namespace facebook::react;
   [pager setValue:@1 forKey:@"currentIndex"];
   [pager attachScrollObserverForCurrentPageAfterTransition:YES];
   XCTAssertEqualWithAccuracy([offsets[@"page-1"] doubleValue], 660, 0.01);
-  XCTAssertEqualWithAccuracy(target.scrollView.contentOffset.y + target.scrollView.contentInset.top, 660, 0.01);
+  XCTAssertEqualWithAccuracy(target.scrollView.contentOffset.y + target.scrollView.contentInset.top, 780, 0.01);
   XCTAssertNotEqual([pager valueForKey:@"observedScrollView"], source.scrollView);
 }
 
-- (void)testSmoothTransitionRestoresWholePagePositionsAndCancellation
+- (void)testSmoothTransitionKeepsGlobalHeaderAndIndependentBodyMemory
 {
-  for (NSNumber *targetQ in @[@0, @60, @660]) {
-    RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:2];
-    RNCNativeScrollerComponentView *source = [self addScrollerToPager:pager atIndex:0];
-    RNCNativeScrollerComponentView *target = [self addScrollerToPager:pager atIndex:1];
-    NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
-    offsets[@"page-0"] = @0;
-    offsets[@"page-1"] = targetQ;
-    [pager attachScrollObserverForCurrentPage];
-    [pager beginPageStateTransition];
-    [pager setValue:@YES forKey:@"isPagerDragging"];
-    [pager setValue:@YES forKey:@"transitioning"];
-    [pager updatePageStateTransitionProgress:0.5];
-    CGFloat displayH = MIN(targetQ.doubleValue, 120) / 2;
-    XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], displayH, 0.01);
-    XCTAssertEqualWithAccuracy(source.scrollView.contentOffset.y + source.scrollView.contentInset.top, displayH, 0.01);
-    XCTAssertEqualWithAccuracy(target.scrollView.contentOffset.y + target.scrollView.contentInset.top,
-                              MAX(targetQ.doubleValue - 120, 0) + displayH, 0.01);
-    XCTAssertEqualObjects(offsets[@"page-0"], @0);
-    XCTAssertEqualObjects(offsets[@"page-1"], targetQ);
-    // Cancelling the swipe restores both pages, not just the selected source.
-    [pager finishPageStateTransition];
-    XCTAssertEqualWithAccuracy(source.scrollView.contentOffset.y + source.scrollView.contentInset.top, 0, 0.01);
-    XCTAssertEqualWithAccuracy(target.scrollView.contentOffset.y + target.scrollView.contentInset.top, targetQ.doubleValue, 0.01);
-    XCTAssertEqualObjects(offsets[@"page-1"], targetQ);
-    [pager setValue:@NO forKey:@"isPagerDragging"];
-    [pager setValue:@NO forKey:@"transitioning"];
-    [pager attachScrollObserverForCurrentPage];
-    [pager beginPageStateTransition];
-    [pager setValue:@1 forKey:@"destinationIndex"];
-    [pager preparePageForHorizontalTransitionAtIndex:1];
-    [pager updatePageStateTransitionProgress:1];
-    XCTAssertEqualWithAccuracy(source.scrollView.contentOffset.y + source.scrollView.contentInset.top,
-                              MIN(targetQ.doubleValue, 120), 0.01);
-    [pager setValue:@1 forKey:@"currentIndex"];
-    [pager attachScrollObserverForCurrentPageAfterTransition:YES];
-    XCTAssertEqualWithAccuracy(target.scrollView.contentOffset.y + target.scrollView.contentInset.top, targetQ.doubleValue, 0.01);
-    XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], MIN(targetQ.doubleValue, 120), 0.01);
+  for (NSNumber *collapse in @[@0, @60, @120]) {
+    for (NSNumber *body in @[@0, @60, @660]) {
+      RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:2];
+      RNCNativeScrollerComponentView *source = [self addScrollerToPager:pager atIndex:0];
+      RNCNativeScrollerComponentView *target = [self addScrollerToPager:pager atIndex:1];
+      NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
+      offsets[@"page-0"] = @0;
+      offsets[@"page-1"] = body;
+      [pager setValue:collapse forKey:@"headerOffset"];
+      [pager attachScrollObserverForCurrentPage];
+      [pager beginPageStateTransition];
+      [pager setValue:@YES forKey:@"isPagerDragging"];
+      [pager setValue:@YES forKey:@"transitioning"];
+      [pager updatePageStateTransitionProgress:0.5];
+      CGFloat targetQ = collapse.doubleValue + (collapse.doubleValue == 120 ? body.doubleValue : 0);
+      XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], collapse.doubleValue, 0.01);
+      XCTAssertEqualWithAccuracy(source.scrollView.contentOffset.y + source.scrollView.contentInset.top, collapse.doubleValue, 0.01);
+      XCTAssertEqualWithAccuracy(target.scrollView.contentOffset.y + target.scrollView.contentInset.top, targetQ, 0.01);
+      XCTAssertEqualObjects(offsets[@"page-0"], @0);
+      XCTAssertEqualObjects(offsets[@"page-1"], body);
+      // Cancellation restores the source display without consuming either reading memory.
+      [pager finishPageStateTransition];
+      XCTAssertEqualWithAccuracy(source.scrollView.contentOffset.y + source.scrollView.contentInset.top, collapse.doubleValue, 0.01);
+      XCTAssertEqualObjects(offsets[@"page-1"], body);
+      [pager setValue:@NO forKey:@"isPagerDragging"];
+      [pager setValue:@NO forKey:@"transitioning"];
+      [pager attachScrollObserverForCurrentPage];
+      [pager beginPageStateTransition];
+      [pager setValue:@1 forKey:@"destinationIndex"];
+      [pager preparePageForHorizontalTransitionAtIndex:1];
+      [pager updatePageStateTransitionProgress:1];
+      XCTAssertEqualWithAccuracy(source.scrollView.contentOffset.y + source.scrollView.contentInset.top, collapse.doubleValue, 0.01);
+      [pager setValue:@1 forKey:@"currentIndex"];
+      [pager attachScrollObserverForCurrentPageAfterTransition:YES];
+      XCTAssertEqualWithAccuracy(target.scrollView.contentOffset.y + target.scrollView.contentInset.top, targetQ, 0.01);
+      XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], collapse.doubleValue, 0.01);
+      XCTAssertEqualObjects(offsets[@"page-1"], body);
+    }
   }
 }
 
@@ -186,12 +220,13 @@ using namespace facebook::react;
   offsets[@"page-1"] = @60;
   offsets[@"page-2"] = @360;
   offsets[@"page-3"] = @660;
+  [pager setValue:@60 forKey:@"headerOffset"];
   [pager attachScrollObserverForCurrentPage];
   [pager beginPageStateTransition];
   [pager setValue:@3 forKey:@"destinationIndex"];
   [pager preparePageForHorizontalTransitionAtIndex:3];
   [pager updatePageStateTransitionProgress:1];
-  XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], 40, 0.01);
+  XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], 60, 0.01);
   [pager setValue:@3 forKey:@"currentIndex"];
   [pager attachScrollObserverForCurrentPageAfterTransition:YES];
   XCTAssertEqualObjects(offsets[@"page-1"], @60);
@@ -200,23 +235,23 @@ using namespace facebook::react;
   for (NSInteger index = 1; index < 4; index++) {
     UIViewController *page = [pager valueForKey:@"pageControllers"][index];
     RNCNativeScrollerComponentView *scroller = page.view.subviews.firstObject;
-    NSString *key = [NSString stringWithFormat:@"page-%ld", (long)index];
     XCTAssertEqualWithAccuracy(scroller.scrollView.contentOffset.y + scroller.scrollView.contentInset.top,
-                              [offsets[key] doubleValue], 0.01);
+                              60, 0.01);
   }
 }
 
-- (void)testZeroLayoutPreservesPendingWholePageRestore
+- (void)testZeroLayoutPreservesPendingBodyRestore
 {
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
   RNCNativeScrollerComponentView *scroller = [self addScrollerToPager:pager atIndex:0];
   NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
   offsets[@"page-0"] = @660;
+  [pager setValue:@120 forKey:@"headerOffset"];
   scroller.scrollView.contentSize = CGSizeMake(0, 0);
   [pager attachScrollObserverForCurrentPage];
   XCTAssertEqualObjects(offsets[@"page-0"], @660);
   XCTAssertTrue([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
-  // Releasing an observed but unmeasured identity must retain its pending Q.
+  // Releasing an observed but unmeasured identity must retain its pending B.
   scroller.tag = 91001;
   ShadowView removedView;
   removedView.tag = (Tag)scroller.tag;
@@ -229,7 +264,7 @@ using namespace facebook::react;
   scroller.scrollView.contentSize = CGSizeMake(320, 1500);
   XCTAssertEqualObjects(offsets[@"page-0"], @660);
   XCTAssertFalse([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
-  XCTAssertEqualWithAccuracy(scroller.scrollView.contentOffset.y + scroller.scrollView.contentInset.top, 660, 0.01);
+  XCTAssertEqualWithAccuracy(scroller.scrollView.contentOffset.y + scroller.scrollView.contentInset.top, 780, 0.01);
 }
 
 - (void)testUnresolvedReplacementDoesNotCommitTemporaryClamp
@@ -239,6 +274,7 @@ using namespace facebook::react;
   NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
   offsets[@"page-0"] = @0;
   offsets[@"page-1"] = @660;
+  [pager setValue:@120 forKey:@"headerOffset"];
   [pager attachScrollObserverForCurrentPage];
   [pager beginPageStateTransition];
   [pager setValue:@1 forKey:@"destinationIndex"];

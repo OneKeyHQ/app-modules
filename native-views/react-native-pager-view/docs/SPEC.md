@@ -3,53 +3,59 @@
 Existing PagerView and CollapsiblePagerView APIs are documented in README.md.
 The sections below define native coordination boundaries without new React props.
 
-## Smooth per-page screen restoration
+## Smooth shared-header and per-page body memory
 
-When nativeSmoothHeaderScrollEnabled is enabled with a collapsible header, each
-page owns its header collapse and body offset. For a settled position outside
-pull overscroll, Q = H + L, H = min(Q, C), and L = max(Q - C, 0), where C is
-the header-collapse distance. These are semantic coordinates, not new props.
-An unvisited page starts expanded
-at body start. Leaving a page preserves its expanded, partial or collapsed header
-and its body position; tap, swipe and programmatic selection restore the same
-complete screen state. Legacy mode and pagers without a collapsible header retain
-their existing behavior.
+With nativeSmoothHeaderScrollEnabled, the header collapse C is shared across all
+pages and the available collapse distance is D. Each page separately remembers
+its sticky-body reading distance B (unvisited pages default to zero). Outside
+pull overscroll, the rendered whole-page distance is Q = C + effectiveB.
+B denotes the saved reading position. For an owned vertical LinearLayoutManager
+RecyclerView, restoration uses the first visible adapter position and its
+decorated top relative to padding; scrollbar offset estimates MUST NOT decide
+completion of that anchor restoration.
+When C = D, selection restores the destination's saved B. When C < D, effectiveB
+is zero while the previous saved B remains suspended. Horizontal selection by
+tap, swipe or an existing programmatic command MUST preserve C throughout.
 
-Horizontal progress interpolates the shared header between immutable source and
-target snapshots. Native body geometry follows that header without obscured rows
-or blank gaps. Temporary transition offsets MUST NOT overwrite page snapshots.
-Non-adjacent commands use the original source and destination, not intermediate
-pages, as the header interpolation endpoints. Cancellation restores the source
-and all temporarily compensated pages before observation resumes.
+Alignment, prefetch, replacement, inset changes and pending restoration MUST NOT
+commit new B. Actual consumed vertical scrolling takes over the visible body
+position; reaching full collapse during that gesture MUST NOT resurrect the old
+suspended B. Selecting a page anew at full collapse may restore its saved B.
+Valid explicit native scroll commands, including same-offset commands, cancel
+only their current owned restoration and take over body memory. Invalid commands
+and stale owners do not affect another page. Existing command coordinate systems
+are unchanged; in particular NativeScroller iOS uses physical offsets whereas
+NativeList offset commands exclude the content-start inset.
 
-A scroll observer owns one page identity and generation independently of mutable
-selection. Detach, replacement and late notifications MUST NOT save another
-page's offset. Zero layout and unresolved replacement identity preserve pending
-restoration until an actual usable layout; settled content shrink still clamps to
-the legal range. This state is native UI-thread state, not persistent wallet data
-or per-frame JavaScript synchronization. Vertical scrolling, refresh, snapping
-and repeated-current-page selection retain their existing contracts.
+Transitions use immutable destination memory and the source's actual displayed
+position. Cancellation restores that source presentation, even when a cached B
+was temporarily unreachable. Loading or zero geometry preserves pending intent;
+a genuinely short page clamps its display without silently replacing saved B.
+Cancelling a horizontal gesture invalidates queued callbacks, but preserves
+unreachable reading intent until real vertical consumption or a valid command
+takes over; later usable geometry may resume it.
+Late callbacks cannot revive cancelled restoration or erase a newer request.
+Observers and commands must match page key, view identity and generation.
+Removed or recycled owners cannot apply callbacks to another page; recycling
+resets owned memory.
+Legacy mode and pagers without a collapsible header retain their existing
+behavior. Vertical scrolling, refresh, snapping and repeated-current-tab behavior
+are unchanged. This state belongs to native UI instances, with no new React prop
+or per-frame JavaScript synchronization.
 
-Android owned NativeScroller restoration keeps its intent while a posted request
-has not executed or native content is still too short to reach the saved offset.
-Only the same viewport, page key and attachment generation may reconcile an
-issued request. Once native restoration settles or is cancelled by touch, an
-imperative command or content replacement, the host resumes recording its live
-body offset. Existing pre-draw observation also reconciles a same-position command
-that emits no scroll notification. Zero-sized geometry retains the pending intent;
-no timeout infers that delayed content is permanently short.
+## Current-page top commands
 
-In smooth-header mode, Android queued RecyclerView and native ScrollView
-restoration requests belong to one page, native view and attachment generation.
-Touch cancellation or replacement MUST invalidate the old request. A stale posted
-callback MUST NOT restore its offset or clear a newer request's pending state.
-
-On iOS, a valid scrollTo or scrollToEnd command for the currently observed page
-MUST cancel that page's pre-layout restoration intent before executing, including
-commands whose target is already the current offset. The command takes ownership
-of the live reading position; other pages' pending intent is unchanged. This
-coordination does not apply during horizontal transitions or synthetic alignment,
-and does not change legacy mode or invalid-command behavior.
+`scrollToPageTop(options?: Readonly<{ animated?: boolean }>)` restores the current
+page to C = 0 and B = 0. `scrollToStickyTop(options?: Readonly<{ animated?: boolean }>)`
+restores it to C = D and B = 0, including from a partially expanded header.
+Animation defaults to true. Neither command clears another page's memory.
+Both commands require a stable, attached current owner; horizontal transitions
+or missing owners reject them rather than queueing a command for another page.
+Acceptance cancels older owned list commands and pending restoration before the
+new target is established. Same-target commands also take over old reading
+intent. Real vertical consumption, a newer valid command, or owner detachment
+releases the target. Existing NativeList and NativeScroller public coordinates
+are unchanged. The same page-top/sticky-top destinations are available without smooth-header mode.
 
 ## Independent NativeScroller migration
 
@@ -503,7 +509,7 @@ the upper bound to the current content height, viewport and applied insets. A
 cache captured before rows were removed MUST NOT restore an offset below the new
 content bottom, including when removal occurs during a page transition. Valid
 deep offsets and pull-overscroll behavior are preserved; smooth-header selection
-follows the per-page reading-position contract above.
+follows the shared-header and per-page body-memory contract above.
 This check runs only on explicit restoration, not on scroll frames; UIKit pull
 overscroll and refresh settlement retain their existing ownership. An unmeasured
 zero-height viewport defers this upper-bound limit to a later restoration.

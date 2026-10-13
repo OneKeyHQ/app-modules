@@ -70,6 +70,50 @@ Acceptance requires loading → idle → loading reuse, title color updates and
 detachment on each native platform. A title's localized confirming text remains
 caller-owned; the renderer does not infer transaction status.
 
+
+### First-fill position and imperative command ownership
+
+Status: implemented in source and verified in the consuming app's local native
+builds; acceptance of the newly published package remains pending.
+
+On Android, empty-to-populated data MUST preserve the actual body-start anchor
+through the first committed layout. This applies only when the old body was
+empty and the view was actually at its start; it MUST NOT reset a non-empty
+refresh, pagination, deep reading position, or a newer accepted command.
+Continuous snapshots retain this intent until the first populated layout.
+A real drag or valid command invalidates the intent. Container-slot positions
+and scrollbar estimates MUST NOT be mistaken for data-row reading anchors.
+
+An accepted imperative command owns its request, execution, pending-layout and
+posted-alignment work. Invalid commands MUST NOT cancel a valid request.
+Completion on Android requires the current request to have finished dispatch,
+its own pending layout/alignment barriers to have completed, and native scrolling
+to be idle without an active layout-manager animation. A true animated top
+no-op completes without starting redundant native motion. Non-animated key and
+end alignment complete after their requested layout/alignment, not beforehand.
+An unrelated layout request MUST NOT indefinitely postpone command completion.
+Replacement, actual drag, detach and disposal invalidate old callbacks; a stale
+callback MUST NOT move the view or clear a newer command's barriers.
+
+A valid command can privately notify the owning Pager before execution, including
+a same-position no-op; this does not add a public NativeList API. A Pager-owned
+page-top or sticky-top command can privately cancel only its owned list's old
+pending command and native animation before acquiring its own target. On iOS
+the notification identifies the collection view; on Android the listener belongs
+to the actual owned RecyclerView. No notification may take over another owner.
+
+On Web, the owned viewport's private cancellation event clears pending list
+commands and stops old browser smooth motion. A newly accepted valid list
+command invalidates a queued Pager target; invalid commands do not. Destroy
+removes the exact listeners and clears pending work. Other list viewports and
+rendering work remain independent.
+
+Conformance: NativeListView.kt, RNCNativeListView.swift, NativeListWebEngine.ts,
+and the related Pager owner coordination. Runtime acceptance must exercise
+first populated layout, command replacement, animated/non-animated completion,
+true top no-op, and short pending content followed by usable geometry on the
+actual installed package; source or helper-only checks are not runtime evidence.
+
 ## Data, cache and identity
 
 `row.key` identifies data; renderer reuse identity describes compatible view
