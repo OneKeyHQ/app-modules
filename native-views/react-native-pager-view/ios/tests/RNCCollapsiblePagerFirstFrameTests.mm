@@ -37,10 +37,18 @@ using namespace facebook::react;
 - (void)testHeaderSettledAtTopRequiresCurrentQuietOwnerAndCancelsDetachedTimer
 {
   RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+  // The fixture mounts page 0 directly; UIKit must not select it again.
+  [pager setValue:@YES forKey:@"hasAppliedInitialPage"];
   UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 120)];
   [pager addSubview:header];
   [pager setValue:header forKey:@"headerView"];
   RNCNativeScrollerComponentView *scroller = [self addScrollerToPager:pager atIndex:0];
+  [pager.window layoutIfNeeded];
+  [pager layoutIfNeeded];
+  XCTestExpectation *initialLayout = [self expectationWithDescription:@"Initial observer attachment drained"];
+  dispatch_async(dispatch_get_main_queue(), ^{ [initialLayout fulfill]; });
+  [self waitForExpectations:@[initialLayout] timeout:1];
+  [pager detachScrollObserver];
   [pager attachScrollObserverForCurrentPage];
   [pager updateHeaderSettledStateForceBusy:NO];
   XCTAssertFalse([[pager valueForKey:@"headerSettledAtTop"] boolValue]);
