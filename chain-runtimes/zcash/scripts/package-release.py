@@ -21,9 +21,10 @@ def version(root):
 
 
 def check_version(value, expected, tag):
-    if value != expected or not re.fullmatch(r"\d+\.\d+\.\d+(?:-rc\.\d+)?", value):
+    match = re.fullmatch(r"\d+\.\d+\.\d+(?:-(alpha|rc)\.\d+)?", value)
+    if value != expected or not match:
         raise ValueError("Release version must exactly match the workspace version")
-    required_tag = "rc" if "-rc." in value else "latest"
+    required_tag = match.group(1) or "latest"
     if tag != required_tag:
         raise ValueError(f"Version {value} requires npm dist-tag {required_tag}")
 
@@ -106,7 +107,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("prepare", "pack"))
     parser.add_argument("--version")
-    parser.add_argument("--tag", choices=("rc", "latest"))
+    parser.add_argument("--tag", choices=("alpha", "rc", "latest"))
     parser.add_argument("--revision")
     parser.add_argument("--allow-dirty", action="store_true", help="Local pack checks only; never publish these archives")
     args = parser.parse_args()
