@@ -25,7 +25,7 @@ def check_version(value, expected, tag):
     match = re.fullmatch(r"\d+\.\d+\.\d+(?:-(alpha|rc)\.\d+)?", value)
     if value != expected or not match:
         raise ValueError("Release version must exactly match the workspace version")
-    required_tag = {"alpha": "next", "rc": "rc"}.get(match.group(1), "latest")
+    required_tag = "next" if match.group(1) else "latest"
     if tag != required_tag:
         raise ValueError(f"Version {value} requires npm dist-tag {required_tag}")
 
@@ -52,7 +52,7 @@ def prepare(root=ROOT):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
-    parser.add_argument("--tag", required=True, choices=["next", "rc", "latest"])
+    parser.add_argument("--tag", required=True, choices=["next", "latest"])
     args = parser.parse_args()
     check_version(args.version, workspace_version(), args.tag)
     prepare()
