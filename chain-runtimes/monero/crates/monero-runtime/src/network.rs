@@ -182,6 +182,11 @@ fn describe_js(value: &wasm_bindgen::JsValue) -> String {
 #[cfg(target_arch = "wasm32")]
 const REQUEST_TIMEOUT_MS: u32 = 45_000;
 
+// The host enforces a per-chunk idle limit. Its backstop must allow a large
+// response to keep progressing on a slow link, matching the Worker relay.
+#[cfg(target_arch = "wasm32")]
+const HOST_REQUEST_TIMEOUT_MS: u32 = 10 * 60 * 1000;
+
 /// 浏览器载体里的传输实现，基于 `fetch`。
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug)]
@@ -209,12 +214,17 @@ impl FetchTransport {
 
         let url = format!("{base_url}/{}", route.trim_start_matches('/'));
         let request = Box::pin(Self::post_untimed(base_url, route, body, limit));
-        let timeout = gloo_timers::future::TimeoutFuture::new(REQUEST_TIMEOUT_MS);
+        let timeout_ms = if host_handler().is_some() {
+            HOST_REQUEST_TIMEOUT_MS
+        } else {
+            REQUEST_TIMEOUT_MS
+        };
+        let timeout = gloo_timers::future::TimeoutFuture::new(timeout_ms);
         match select(request, timeout).await {
             Either::Left((result, _)) => result,
             Either::Right(_) => Err(InterfaceError::InterfaceError(format!(
                 "{url}: {} 秒没有响应",
-                REQUEST_TIMEOUT_MS / 1000
+                timeout_ms / 1000
             ))),
         }
     }

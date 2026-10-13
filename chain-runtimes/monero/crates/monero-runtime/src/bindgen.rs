@@ -282,10 +282,13 @@ pub fn validate_address(network: &str, address: &str) -> std::result::Result<boo
     Ok(keys::validate_address(net, address))
 }
 
-/// 宿主签好名后调用：之后的准备发送不会把这笔预留当成被放弃的。
+/// Called before signing; every selected input must still belong to this review.
 #[wasm_bindgen(js_name = markReservationSigned)]
-pub fn mark_reservation_signed(reservation_id: &str) -> std::result::Result<String, JsValue> {
-    let n = runtime::with_db(|db| spend::mark_signed(db, reservation_id))?;
+pub fn mark_reservation_signed(
+    reservation_id: &str,
+    expected_inputs: u32,
+) -> std::result::Result<String, JsValue> {
+    let n = runtime::with_db(|db| spend::mark_signed(db, reservation_id, expected_inputs))?;
     json(serde_json::json!({ "marked": n }))
 }
 
@@ -437,9 +440,21 @@ pub async fn prepare_transaction(
 pub fn sign_transaction(
     signable_hex: &str,
     spend_private_key_hex: &str,
+    review_json: &str,
 ) -> std::result::Result<String, JsValue> {
     let spend = Zeroizing::new(decode_hex(spend_private_key_hex, "spendPrivateKeyHex")?);
-    json(spend::sign_for_host(signable_hex, &spend)?)
+    json(spend::sign_for_host(signable_hex, &spend, review_json)?)
+}
+
+/// Validate actual payment effects before the host presents its confirmation.
+#[wasm_bindgen(js_name = verifyTransaction)]
+pub fn verify_transaction(
+    signable_hex: &str,
+    review_json: &str,
+) -> std::result::Result<(), JsValue> {
+    let request = crate::review::parse_request(review_json)?;
+    crate::review::verify(signable_hex, &request, None)?;
+    Ok(())
 }
 
 /// 广播一笔已签名的交易。**不可逆。**
