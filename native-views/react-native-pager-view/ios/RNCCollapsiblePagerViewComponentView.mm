@@ -3398,6 +3398,25 @@ static void RNCLogNativeTabScrollBoundary(NSString *owner,
   }
 }
 
+- (void)nativeScrollerWillReceiveScrollCommand:(RNCNativeScrollerComponentView *)scroller
+{
+  UIScrollView *scrollView = scroller.scrollView;
+  NSString *ownerKey = _observedPageKey;
+  if (!_nativeSmoothHeaderScrollEnabled || scrollView != _observedScrollView ||
+      ownerKey == nil || ![ownerKey isEqualToString:self.currentPageKey] ||
+      _observedPageIndex != _currentIndex || _currentIndex < 0 || _currentIndex >= _pageControllers.count ||
+      _observedPageGeneration != _generation || _transitioning || _isPagerDragging ||
+      _transitionPageOffsets != nil || _syntheticPageRestore ||
+      ![_pendingPageRestoreKeys containsObject:ownerKey]) return;
+  [self offsetDiag:@"command-pending-cancel-before" page:_observedPageIndex scroll:scrollView];
+  [_pendingPageRestoreKeys removeObject:ownerKey];
+  _currentLogicalOffset = scrollView.contentOffset.y + scrollView.contentInset.top;
+  _pageOffsets[ownerKey] = @(_currentLogicalOffset);
+  [self updateHeaderForScrollView:scrollView];
+  [self offsetDiag:@"command-pending-cancel-after" page:_observedPageIndex scroll:scrollView];
+}
+
+
 - (void)nativeScroller:(RNCNativeScrollerComponentView *)scroller
     callerInsetChangedFrom:(UIEdgeInsets)previous to:(UIEdgeInsets)next
 {

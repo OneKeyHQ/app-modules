@@ -428,6 +428,14 @@ static Event RNCScrollerMetrics(UIScrollView *scroll, CGPoint velocity, CGPoint 
 - (void)scrollTo:(double)x y:(double)y animated:(BOOL)animated
 {
   if (_recycled || !isfinite(x) || !isfinite(y)) return;
+  for (UIView *owner = self.superview; owner != nil; owner = owner.superview) {
+    if ([owner conformsToProtocol:@protocol(RNCNativeScrollerInsetCoordinator)]) {
+      [(id<RNCNativeScrollerInsetCoordinator>)owner nativeScrollerWillReceiveScrollCommand:self];
+    }
+  }
+#if DEBUG
+  [self offsetDiag:[NSString stringWithFormat:@"command-scrollTo-enter-x=%.4f-y=%.4f-animated=%d", x, y, animated]];
+#endif
   [self stopScrolling];
   UIEdgeInsets inset = _scrollView.adjustedContentInset;
   CGPoint target = CGPointMake(MAX(-inset.left, MIN(x,

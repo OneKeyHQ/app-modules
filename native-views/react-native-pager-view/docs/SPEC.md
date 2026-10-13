@@ -39,6 +39,18 @@ body offset. Existing pre-draw observation also reconciles a same-position comma
 that emits no scroll notification. Zero-sized geometry retains the pending intent;
 no timeout infers that delayed content is permanently short.
 
+In smooth-header mode, Android queued RecyclerView and native ScrollView
+restoration requests belong to one page, native view and attachment generation.
+Touch cancellation or replacement MUST invalidate the old request. A stale posted
+callback MUST NOT restore its offset or clear a newer request's pending state.
+
+On iOS, a valid scrollTo or scrollToEnd command for the currently observed page
+MUST cancel that page's pre-layout restoration intent before executing, including
+commands whose target is already the current offset. The command takes ownership
+of the live reading position; other pages' pending intent is unchanged. This
+coordination does not apply during horizontal transitions or synthetic alignment,
+and does not change legacy mode or invalid-command behavior.
+
 ## Independent NativeScroller migration
 
 Status: implemented in source. Both native builds pass. Android focused emulator

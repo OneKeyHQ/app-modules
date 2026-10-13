@@ -22,10 +22,94 @@ using namespace facebook::react;
 - (void)applyInsetsToScrollView:(UIScrollView *)scrollView pageIndex:(NSInteger)index restore:(BOOL)restore;
 @end
 
+@interface RNCNativeScrollerComponentView (ScrollCommandTesting)
+- (void)scrollTo:(double)x y:(double)y animated:(BOOL)animated;
+- (void)scrollToEnd:(BOOL)animated;
+@end
+
 @interface RNCCollapsiblePagerFirstFrameTests : XCTestCase
 @end
 
 @implementation RNCCollapsiblePagerFirstFrameTests
+
+- (void)testReachableTopCommandBeforeLayoutMustNotReplayPendingPagePosition
+{
+  for (NSNumber *command in @[@0, @1, @2]) {
+    RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:1];
+    RNCNativeScrollerComponentView *scroller = [self addScrollerToPager:pager atIndex:0];
+    NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
+    offsets[@"page-0"] = @660;
+    scroller.scrollView.contentSize = CGSizeMake(0, 0);
+    [pager attachScrollObserverForCurrentPage];
+    XCTAssertTrue([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
+    XCTAssertEqualObjects(offsets[@"page-0"], @660);
+    XCTAssertEqual([pager valueForKey:@"observedScrollView"], scroller.scrollView);
+    XCTAssertEqualObjects([pager valueForKey:@"observedPageKey"], @"page-0");
+    XCTAssertEqualObjects([pager valueForKey:@"currentIndex"], @0);
+    if (command.boolValue) {
+      if (command.integerValue == 2) {
+        CGFloat reachableEndQ = MAX(-scroller.scrollView.adjustedContentInset.top,
+          scroller.scrollView.contentSize.height - scroller.scrollView.bounds.size.height +
+          scroller.scrollView.adjustedContentInset.bottom) + scroller.scrollView.contentInset.top;
+        XCTAssertEqualWithAccuracy(reachableEndQ, 120, 0.01);
+        XCTAssertEqualWithAccuracy(scroller.scrollView.contentOffset.y + scroller.scrollView.contentInset.top, reachableEndQ, 0.01);
+        [scroller scrollToEnd:NO];
+      }
+      else [scroller scrollTo:0 y:-scroller.scrollView.adjustedContentInset.top animated:NO];
+      XCTAssertEqualWithAccuracy(scroller.scrollView.contentOffset.y + scroller.scrollView.contentInset.top, command.integerValue == 2 ? 120 : 0, 0.01);
+      XCTAssertFalse([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
+      XCTAssertEqualWithAccuracy([offsets[@"page-0"] doubleValue], command.integerValue == 2 ? 120 : 0, 0.01);
+      XCTAssertEqual([pager valueForKey:@"observedScrollView"], scroller.scrollView);
+      XCTAssertEqualObjects([pager valueForKey:@"observedPageKey"], @"page-0");
+    }
+    // The existing observed content-size path retries the pending restoration.
+    scroller.scrollView.contentSize = CGSizeMake(320, 1500);
+    XCTAssertFalse([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
+    CGFloat expected = command.integerValue == 2 ? 120 : (command.boolValue ? 0 : 660);
+    XCTAssertEqualWithAccuracy(scroller.scrollView.contentOffset.y + scroller.scrollView.contentInset.top,
+                              expected, 0.01, @"command=%@ must not replay a cancelled reading position", command);
+    XCTAssertEqualWithAccuracy([[pager valueForKey:@"headerOffset"] doubleValue], command.integerValue == 1 ? 0 : 120, 0.01);
+  }
+}
+
+- (void)testScrollCommandCancellationRespectsOwnerAndValidity
+{
+  for (NSNumber *mode in @[@0, @1, @2]) {
+    RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:2];
+    RNCNativeScrollerComponentView *current = [self addScrollerToPager:pager atIndex:0];
+    RNCNativeScrollerComponentView *other = [self addScrollerToPager:pager atIndex:1];
+    NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
+    offsets[@"page-0"] = @660;
+    offsets[@"page-1"] = @360;
+    current.scrollView.contentSize = CGSizeMake(0, 0);
+    [pager attachScrollObserverForCurrentPage];
+    XCTAssertTrue([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
+    if (mode.integerValue == 0) {
+      [current scrollTo:0 y:NAN animated:NO];
+    } else if (mode.integerValue == 1) {
+      [other scrollTo:0 y:-other.scrollView.adjustedContentInset.top animated:NO];
+    } else {
+      NSUInteger generation = [[pager valueForKey:@"generation"] unsignedIntegerValue];
+      [pager setValue:@(generation + 1) forKey:@"observedPageGeneration"];
+      [current scrollTo:0 y:-current.scrollView.adjustedContentInset.top animated:NO];
+    }
+    XCTAssertTrue([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
+    XCTAssertEqualObjects(offsets[@"page-0"], @660);
+    XCTAssertEqualObjects(offsets[@"page-1"], @360);
+  }
+  RNCCollapsiblePagerViewComponentView *pager = [self pagerWithPageCount:2];
+  RNCNativeScrollerComponentView *current = [self addScrollerToPager:pager atIndex:0];
+  [self addScrollerToPager:pager atIndex:1];
+  NSMutableDictionary *offsets = [pager valueForKey:@"pageOffsets"];
+  offsets[@"page-0"] = @0;
+  offsets[@"page-1"] = @360;
+  [pager attachScrollObserverForCurrentPage];
+  XCTAssertFalse([[pager valueForKey:@"pendingPageRestoreKeys"] containsObject:@"page-0"]);
+  [current scrollTo:0 y:200 - current.scrollView.contentInset.top animated:NO];
+  XCTAssertEqualWithAccuracy(current.scrollView.contentOffset.y + current.scrollView.contentInset.top, 200, 0.01);
+  XCTAssertEqualWithAccuracy([offsets[@"page-0"] doubleValue], 200, 0.01);
+  XCTAssertEqualObjects(offsets[@"page-1"], @360);
+}
 
 - (void)testTransitionLayoutCannotSaveSourceOffsetIntoDestinationCache
 {

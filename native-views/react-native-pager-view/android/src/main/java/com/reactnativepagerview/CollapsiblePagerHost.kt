@@ -139,6 +139,34 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private var syntheticPageRestore = false
   private var resumeTransitionSource: Int? = null
   private val pendingPageRestores = HashSet<String>()
+  private class PageRestoreRequest(view: View, val pageIndex: Int, val generation: Int) {
+    val view = WeakReference(view)
+  }
+  private val pageRestoreRequests = HashMap<String, PageRestoreRequest>()
+
+  private fun registerPageRestore(key: String, view: View, pageIndex: Int): PageRestoreRequest? {
+    if (!nativeSmoothHeaderScrollEnabled) return null
+    val previous = pageRestoreRequests[key]?.view?.get()
+    if (previous is NativeScrollerViewport && previous !== view) previous.host.cancelPendingScrollRestore()
+    ownedScrollerRestoreRequests.remove(key)
+    return PageRestoreRequest(view, pageIndex, attachmentGeneration).also {
+      pageRestoreRequests[key] = it
+      pendingPageRestores.add(key)
+    }
+  }
+
+  private fun isCurrentPageRestore(key: String, request: PageRestoreRequest?): Boolean =
+    !nativeSmoothHeaderScrollEnabled || (request != null && pageRestoreRequests[key] === request &&
+      key in pendingPageRestores && request.generation == attachmentGeneration &&
+      pageKey(request.pageIndex) == key)
+
+  private fun clearPageRestoreForView(key: String, view: View, request: PageRestoreRequest? = null) {
+    if (request != null && pageRestoreRequests[key] !== request) return
+    if (pageRestoreRequests[key]?.view?.get() !== view) return
+    pageRestoreRequests.remove(key)
+    pendingPageRestores.remove(key)
+    ownedScrollerRestoreRequests.remove(key)
+  }
   private var observedRecyclerView: RecyclerView? = null
   private var observedRecyclerKey: String? = null
   private var observedScrollListener: RecyclerView.OnScrollListener? = null
@@ -200,6 +228,18 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   var headerOffsetPx = 0
     private set
   var pageKeys: List<String> = emptyList()
+    set(value) {
+      if (field == value) return
+      pageRestoreRequests.entries.toList().forEach { (key, request) ->
+        if ((value.getOrNull(request.pageIndex) ?: "page-${request.pageIndex}") != key) {
+          (request.view.get() as? NativeScrollerViewport)?.host?.cancelPendingScrollRestore()
+          pageRestoreRequests.remove(key)
+          pendingPageRestores.remove(key)
+          ownedScrollerRestoreRequests.remove(key)
+        }
+      }
+      field = value
+    }
   var retainedPages: String = "[]"
   var onHeaderOffsetChanged: (() -> Unit)? = null
   var nativeSmoothHeaderScrollEnabled = false
@@ -388,6 +428,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   fun removeAllReactChildren() {
     releaseRefreshForeground()
     detachPrimaryScrollObserver()
+    pageRestoreRequests.clear()
+    pendingPageRestores.clear()
+    ownedScrollerRestoreRequests.clear()
     // Weak keys may disappear after size is read; Collection.toArray tolerates this.
     for (recycler in originalRecyclerPadding.keys.toTypedArray()) {
       restoreRecyclerInsets(recycler)
@@ -917,13 +960,11 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val key = pageKey(pageIndex)
     if (ownedScrollerKeys[scroller] == key) return
     ownedScrollerKeys[scroller] = key
-    if (nativeSmoothHeaderScrollEnabled) {
-      pendingPageRestores.add(key)
-      ownedScrollerRestoreRequests[key] = WeakReference(scroller) to null
-    }
+    val restoreRequest = registerPageRestore(key, scroller, pageIndex)
+    if (nativeSmoothHeaderScrollEnabled) ownedScrollerRestoreRequests[key] = WeakReference(scroller) to null
     val generation = attachmentGeneration
     postForCurrentAttachment {
-      if (ownedScrollerKeys[scroller] == key && generation == attachmentGeneration &&
+      if (isCurrentPageRestore(key, restoreRequest) && ownedScrollerKeys[scroller] == key && generation == attachmentGeneration &&
         scroller.isAttachedToWindow && (!nativeSmoothHeaderScrollEnabled ||
           (key in pendingPageRestores && ownedScrollerRestoreRequests[key]?.first?.get() === scroller))) {
         offsetDiag("owned-restore-before", scroller, key)
@@ -942,6 +983,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     scroller.stopMotion()
     scroller.host.cancelPendingScrollRestore()
     ownedScrollerKeys.remove(scroller)?.let { key ->
+      clearPageRestoreForView(key, scroller)
       if (ownedScrollerRestoreRequests[key]?.first?.get() === scroller) ownedScrollerRestoreRequests.remove(key)
     }
     publishConsumedOffset(scroller, remove = true)
@@ -982,8 +1024,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
       val request = ownedScrollerRestoreRequests[key]
       if (request == null || request.first.get() !== scroller || request.second != attachmentGeneration ||
         scroller.width <= 0 || scroller.height <= 0 || scroller.host.hasPendingScrollRestore()) return
-      pendingPageRestores.remove(key)
-      ownedScrollerRestoreRequests.remove(key)
+      clearPageRestoreForView(key, scroller)
     }
     if (observedOwnedScroller !== scroller || observedOwnedScrollerKey != key ||
       key != currentPageKey() || transitionHeaderOffsets != null || syntheticPageRestore) return
@@ -1059,13 +1100,18 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val key = pageKey(pageIndex)
     if (restoredRecyclerKeys[recycler] != key) {
       restoredRecyclerKeys[recycler] = key
-      if (nativeSmoothHeaderScrollEnabled) pendingPageRestores.add(key)
+      val restoreRequest = registerPageRestore(key, recycler, pageIndex)
       val generation = attachmentGeneration
       recycler.post {
+        if (!isCurrentPageRestore(key, restoreRequest)) {
+          offsetDiag("post-skip-cancelled-page=$pageIndex", recycler, key)
+          return@post
+        }
         if (!isAttachedToWindow || generation != attachmentGeneration ||
           restoredRecyclerKeys[recycler] != key ||
           originalRecyclerPadding[recycler] !== original) {
           if (restoredRecyclerKeys[recycler] == key) restoredRecyclerKeys.remove(recycler)
+          clearPageRestoreForView(key, recycler, restoreRequest)
           return@post
         }
         val saved = transitionPageOffsets?.get(key) ?: pageOffsets[key] ?: 0
@@ -1073,10 +1119,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         offsetDiag("recycler-restore-before-saved=$saved", recycler, key)
         if (nativeSmoothHeaderScrollEnabled && (recycler.height <= 0 || recycler.childCount == 0)) {
           restoredRecyclerKeys.remove(recycler)
+          if (pageRestoreRequests[key] === restoreRequest) pageRestoreRequests.remove(key)
           return@post
         }
         if (saved != current) recycler.scrollBy(0, saved - current)
-        pendingPageRestores.remove(key)
+        if (nativeSmoothHeaderScrollEnabled) clearPageRestoreForView(key, recycler, restoreRequest)
+        else pendingPageRestores.remove(key)
         offsetDiag("recycler-restore-after", recycler, key)
       }
     }
@@ -1123,13 +1171,18 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     val key = pageKey(pageIndex)
     if (restoredScrollerKeys[scroller] != key) {
       restoredScrollerKeys[scroller] = key
-      if (nativeSmoothHeaderScrollEnabled) pendingPageRestores.add(key)
+      val restoreRequest = registerPageRestore(key, scroller, pageIndex)
       val generation = attachmentGeneration
       scroller.post {
+        if (!isCurrentPageRestore(key, restoreRequest)) {
+          offsetDiag("post-skip-cancelled-page=$pageIndex", scroller, key)
+          return@post
+        }
         if (!isAttachedToWindow || generation != attachmentGeneration ||
           restoredScrollerKeys[scroller] != key ||
           originalScrollerPadding[scroller] !== original) {
           if (restoredScrollerKeys[scroller] == key) restoredScrollerKeys.remove(scroller)
+          clearPageRestoreForView(key, scroller, restoreRequest)
           return@post
         }
         val saved = transitionPageOffsets?.get(key) ?: pageOffsets[key] ?: 0
@@ -1137,10 +1190,12 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
         if (nativeSmoothHeaderScrollEnabled &&
           (scroller.height <= 0 || (scroller.getChildAt(0)?.height ?: 0) <= 0)) {
           restoredScrollerKeys.remove(scroller)
+          if (pageRestoreRequests[key] === restoreRequest) pageRestoreRequests.remove(key)
           return@post
         }
         if (scroller.scrollY != saved) scroller.scrollTo(scroller.scrollX, saved)
-        pendingPageRestores.remove(key)
+        if (nativeSmoothHeaderScrollEnabled) clearPageRestoreForView(key, scroller, restoreRequest)
+        else pendingPageRestores.remove(key)
         offsetDiag("scrollview-restore-after", scroller, key)
       }
     }
@@ -1200,7 +1255,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     publishConsumedOffset(recycler, remove = true)
     val original = originalRecyclerPadding.remove(recycler) ?: return
     updateRecyclerPaddingOwnership(recycler, original)
-    restoredRecyclerKeys.remove(recycler)
+    restoredRecyclerKeys.remove(recycler)?.let { clearPageRestoreForView(it, recycler) }
     recycler.clipToPadding = original.clipToPadding
     recycler.setPadding(original.left, original.top, original.right, original.bottom)
   }
@@ -1208,7 +1263,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
   private fun restoreNativeScrollerInsets(scroller: ScrollView) {
     val original = originalScrollerPadding.remove(scroller) ?: return
     updateScrollerPaddingOwnership(scroller, original)
-    restoredScrollerKeys.remove(scroller)
+    restoredScrollerKeys.remove(scroller)?.let { clearPageRestoreForView(it, scroller) }
     if (scroller is ReactScrollView) {
       val state = scroller.reactScrollViewScrollState
       scroller.setScrollAwayPaddingEnabledUnstable(
@@ -1583,6 +1638,7 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     if (type == ViewCompat.TYPE_TOUCH) pendingRefreshPull = null
     nestedScrollingParentHelper.onNestedScrollAccepted(child, target, axes, type)
     if (type == ViewCompat.TYPE_TOUCH) {
+      pageRestoreRequests.remove(currentPageKey())
       pendingPageRestores.remove(currentPageKey())
       ownedScrollerRestoreRequests.remove(currentPageKey())
     }
@@ -1705,6 +1761,9 @@ class CollapsiblePagerHost(context: Context) : NestedScrollableHost(context), Ne
     nestedNativeGestureStarted = false
     viewTreeObserver.removeOnPreDrawListener(pageContentLayoutListener)
     detachPrimaryScrollObserver()
+    pageRestoreRequests.clear()
+    pendingPageRestores.clear()
+    ownedScrollerRestoreRequests.clear()
     transitionHeaderOffsets?.let { headers ->
       resumeTransitionSource = transitionSourcePage
       syntheticPageRestore = true

@@ -1,6 +1,6 @@
 {
   "name": "@onekeyfe/react-native-keychain-module",
-  "version": "3.0.171",
+  "version": "3.0.172",
   "description": "iOS Keychain string storage with optional iCloud synchronization for OneKey",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
