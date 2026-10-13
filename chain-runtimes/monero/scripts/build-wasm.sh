@@ -13,7 +13,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROFILE="${1:-release}"
 OUT="${ROOT}/pkg"
 
-AR="$(sed -n 's/^AR_wasm32_unknown_unknown = "\(.*\)"/\1/p' "${ROOT}/.cargo/config.toml")"
+# CI sets AR_wasm32_unknown_unknown itself; cargo's [env] does not override it.
+AR="${AR_wasm32_unknown_unknown:-$(sed -n 's/^AR_wasm32_unknown_unknown = "\(.*\)"/\1/p' "${ROOT}/.cargo/config.toml")}"
 if [[ -n "${AR}" && ! -x "${AR}" ]]; then
   echo "✗ ${AR} not found" >&2
   echo "  wasm targets need llvm-ar; the system ar silently writes empty archives." >&2
