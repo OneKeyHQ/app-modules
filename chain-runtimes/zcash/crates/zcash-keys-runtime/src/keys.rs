@@ -96,15 +96,19 @@ pub fn ufvk_from_seed_bytes(params: Network, seed: &[u8], account_index: u32) ->
 /// 也决定了这个地址会不会把你的透明活动和屏蔽活动关联起来。所以由宿主指定。
 ///
 /// Runtime 只负责校验组合在协议上是否成立。
+///
+/// **任何取值都不含 Sapling receiver。** 本 runtime 不能花 Sapling（不带它的
+/// prover），地址里放一个 Sapling receiver，只认 Sapling 的付款方就会把钱打
+/// 进一个这里花不出去的池子。`"shielded"` 因此与 `"orchard"` 相同，保留这个
+/// 取值只为不打断已有的调用方。
 fn receiver_policy(name: &str) -> Result<zcash_keys::keys::UnifiedAddressRequest> {
-    use zcash_keys::keys::UnifiedAddressRequest as R;
+    use zcash_keys::keys::{ReceiverRequirement::*, UnifiedAddressRequest as R};
     match name {
         // 空串不再当作 `"all"`。缺省最省事的那个取值恰好是隐私上最贵的一个：
         // 带 transparent receiver 的 UA 会把用户的透明活动和屏蔽活动绑在
         // 同一个字符串里，而调用方什么都没写，也就什么都没同意。
-        "all" => Ok(R::ALLOW_ALL),
-        "shielded" => Ok(R::SHIELDED),
-        "orchard" => Ok(R::ORCHARD),
+        "all" => Ok(R::unsafe_custom(Require, Omit, Allow)),
+        "shielded" | "orchard" => Ok(R::ORCHARD),
         other => Err(KeysError::with(
             ErrorCode::InvalidUfvk,
             json!({ "stage": "receiverPolicy", "value": other }),
@@ -136,8 +140,9 @@ pub fn transparent_address(network: &str, ufvk_str: &str) -> Result<String> {
     let ufvk = UnifiedFullViewingKey::decode(&params, ufvk_str)
         .map_err(|e| KeysError::new(ErrorCode::InvalidUfvk).detail(e))?;
 
+    // 与 `"all"` 取同一个地址，保证这里的 t 地址就是 UA 里的透明 receiver。
     let (addr, _) = ufvk
-        .default_address(zcash_keys::keys::UnifiedAddressRequest::ALLOW_ALL)
+        .default_address(receiver_policy("all")?)
         .map_err(|e| KeysError::new(ErrorCode::DeriveFailed).detail(format!("{e:?}")))?;
 
     let t = addr.transparent().ok_or_else(|| {
@@ -207,6 +212,45 @@ mod tests {
         let ua = unified_address_with("test", &ufvk, "all").unwrap();
         assert!(ua.starts_with("utest"), "UA 前缀应为 utest");
         assert_ne!(t, ua, "t 地址与 UA 是两种呈现，不该相同");
+    }
+
+    #[test]
+    fn no_address_policy_includes_a_sapling_receiver() {
+        use zcash_address::unified::{Address, Container, Encoding, Receiver};
+
+        for network in ["main", "test"] {
+            let ufvk = ufvk_from_mnemonic(network, TEST_MNEMONIC, 0).unwrap();
+            for policy in ["all", "shielded", "orchard"] {
+                let ua = unified_address_with(network, &ufvk, policy).unwrap();
+                let (_, address) = Address::decode(&ua).unwrap();
+                let receivers = address.items();
+                assert!(
+                    !receivers.iter().any(|r| matches!(r, Receiver::Sapling(_))),
+                    "{network}/{policy} 不能含 Sapling receiver"
+                );
+                assert!(receivers.iter().any(|r| matches!(r, Receiver::Orchard(_))));
+                assert_eq!(
+                    receivers.iter().any(|r| matches!(r, Receiver::P2pkh(_))),
+                    policy == "all",
+                    "{network}/{policy}"
+                );
+            }
+            // 「all」里的透明 receiver 必须就是单独给出的那个 t 地址（/0/0）。
+            let params = parse_network(network).unwrap();
+            let all = unified_address_with(network, &ufvk, "all").unwrap();
+            let Some(zcash_keys::address::Address::Unified(all)) =
+                zcash_keys::address::Address::decode(&params, &all)
+            else {
+                panic!("{network}: 应解析为 UA");
+            };
+            assert_eq!(
+                zcash_keys::encoding::encode_transparent_address_p(
+                    &params,
+                    all.transparent().unwrap()
+                ),
+                transparent_address(network, &ufvk).unwrap()
+            );
+        }
     }
 
     // 公开测试向量，切勿用于真实资金。
