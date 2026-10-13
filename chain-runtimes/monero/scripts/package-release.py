@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pack the Monero runtime npm archive from a wasm-pack build.
 
-Usage: python3 scripts/package-release.py --version 0.1.0-alpha.1 --tag alpha
+Usage: python3 scripts/package-release.py --version 0.1.0-alpha.1 --tag next
 """
 
 import argparse
@@ -25,7 +25,7 @@ def check_version(value, expected, tag):
     match = re.fullmatch(r"\d+\.\d+\.\d+(?:-(alpha|rc)\.\d+)?", value)
     if value != expected or not match:
         raise ValueError("Release version must exactly match the workspace version")
-    required_tag = match.group(1) or "latest"
+    required_tag = {"alpha": "next", "rc": "rc"}.get(match.group(1), "latest")
     if tag != required_tag:
         raise ValueError(f"Version {value} requires npm dist-tag {required_tag}")
 
@@ -52,7 +52,7 @@ def prepare(root=ROOT):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
-    parser.add_argument("--tag", required=True, choices=["alpha", "rc", "latest"])
+    parser.add_argument("--tag", required=True, choices=["next", "rc", "latest"])
     args = parser.parse_args()
     check_version(args.version, workspace_version(), args.tag)
     prepare()
