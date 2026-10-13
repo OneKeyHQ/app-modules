@@ -7,7 +7,8 @@ workspaces or their shared version/publish commands.
 
 ## Zcash
 
-See [zcash](./zcash/README.md) and its [import record](./zcash/IMPORT.md).
+See [zcash](./zcash/README.md), its [import record](./zcash/IMPORT.md) and
+[release process](./zcash/RELEASING.md).
 
 From the repository root:
 
@@ -19,6 +20,11 @@ yarn zcash:build
 
 These convenience commands dispatch to the Rust project. The equivalent direct
 commands in the Zcash README do not require installing the root Node dependencies.
-Generated WASM stays out of Git. The Zcash CI workflow builds
-both runtime and keys packages together and stores them as one artifact; it does
-not publish npm packages.
+Generated WASM stays out of Git. The Zcash CI workflow builds both runtime and keys
+packages together and stores them as one artifact; npm publishing is a separate,
+manually triggered workflow described in the release process.
+
+## Monero
+
+See [monero](./monero/README.md). It is built and tested from its own directory
+(`cargo test --workspace`, `bash scripts/build-wasm.sh`) and is not published yet.

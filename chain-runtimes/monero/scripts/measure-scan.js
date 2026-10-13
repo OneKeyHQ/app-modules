@@ -10,7 +10,11 @@
  *   XMR_NODE=http://your-node:18081 node scripts/measure-scan.js
  */
 (async () => {
-  await rt.setNodeUrl(process.env.XMR_NODE || 'http://node.monerodevs.org:18089');
+  if (!process.env.XMR_NODE) {
+    console.error('Set XMR_NODE to a monerod RPC URL.');
+    process.exit(1);
+  }
+  await rt.setNodeUrl(process.env.XMR_NODE);
   const tip = JSON.parse(await rt.chainTip());
   const key = '0'.repeat(63) + '7';
   const a = JSON.parse(rt.deriveAccount('mainnet', key));

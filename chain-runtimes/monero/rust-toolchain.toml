@@ -1,18 +1,10 @@
 # 跟当前 stable 走，不钉死版本号。
 #
 # 这**不是** MSRV —— crate 声明的最低版本是 1.85（见 Cargo.toml 的
-# `rust-version`）。
+# `rust-version`）。若用 mise 等工具管理 Rust，请让它同样跟随 stable，
+# 否则这里的声明与实际使用的工具链会不一致。
 #
-# 为什么不写具体版本：本机的 cargo/rustc 由 mise 接管
-# （`~/.config/mise/config.toml` 里是 `rust = latest`），`rust-toolchain.toml`
-# 和 `RUSTUP_TOOLCHAIN` 在这台机器上都不生效。写死一个数字，等 mise 跟着
-# latest 往前走，这里就会变成一句和现实矛盾的声明 —— 曾经因为这种不一致
-# 白查过一小时（当时以为是代码或目录搬迁的问题，其实是工具链）。
-#
-# 写 `stable` 则两边永远一致：mise 跟 latest stable，rustup 用户跟 stable。
-#
-# 如果将来需要可复现的 wasm 产物（逐字节一致），再换成具体版本号，
-# 并且**同时**改 mise 配置，两处必须一起动。
+# 如果将来需要可复现的 wasm 产物（逐字节一致），再换成具体版本号。
 [toolchain]
 channel = "stable"
 profile = "minimal"
