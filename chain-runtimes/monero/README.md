@@ -26,11 +26,11 @@ objects and silently writes an empty archive; linking then fails with
 
 ## Release
 
-`onekey-monero-runtime` follows the Zcash runtime's release rules: a manual
-**Publish Monero runtime** run publishes `X.Y.Z-alpha.N` to the npm `next` tag from any branch, and
-`rc`/`latest` versions publish only when a `Cargo.toml` version change is merged
-to `main`. Locally, `python3 scripts/package-release.py --version <v> --tag <t>`
-packs the archive into `dist/` without publishing.
+The **Monero runtime** workflow follows the Zcash runtime's rules: a manual run
+publishes the branch's `X.Y.Z-alpha.N` version to the npm `next` tag, and `rc` or
+`latest` versions publish only when merged to `main`. Locally,
+`python3 scripts/package-release.py --version <v> --tag <t>` packs the archive
+into `dist/` without publishing.
 
 ## Host contract
 

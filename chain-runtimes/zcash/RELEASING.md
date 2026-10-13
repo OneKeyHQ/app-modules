@@ -36,26 +36,19 @@ archives or manually rewrite the manifest to make an old artifact pass.
 
 ## Publish
 
-The **Publish Zcash runtime** workflow has two triggers:
+The **Zcash runtime** workflow builds, tests and packs on every runtime change,
+and publishes the two npm packages with the repository's `NPM_TOKEN`, like the
+native modules' `package-publish`:
 
-- **Manual run, alpha only.** Run it from any branch with the exact workspace
-  version (`X.Y.Z-alpha.N`). Any other version is refused.
-- **Merge to `main`, rc and latest only.** When a change to `Cargo.toml` lands
-  on `main` with an `X.Y.Z-rc.N` or `X.Y.Z` version not yet on npm, it publishes
-  with the matching `rc` or `latest` tag. Alpha versions on `main` are skipped.
-
-Both reuse the build/test workflow, verify the downloaded artifact again, and
-publish only these two npm packages. The native-module publish workflow is
-unchanged.
-
-Repository maintainers must configure `NPM_TOKEN` with permission to publish
-`onekey-zcash-runtime` and `onekey-zcash-keys`. Configure required reviewers for
-the `npm-zcash` GitHub environment if a separate release approval is desired.
-The environment name alone does not enable approval protection.
+- **Manual run: alpha only.** Running it on a branch publishes that branch's
+  `X.Y.Z-alpha.N` version to the npm `next` tag. Any other version is refused.
+- **Merge to `main`: rc and latest only.** A push to `main` whose version is
+  `X.Y.Z-rc.N` or `X.Y.Z` and not yet on npm publishes it with the `rc` or
+  `latest` tag. Alpha versions on `main` are not published.
 
 npm cannot publish two packages atomically. If publishing one succeeds and the
-other fails, do not consume the version until both exist. Restore the exact
-verified artifact from that workflow run and publish only the missing package;
+other fails, do not consume the version until both exist. Download the
+`zcash-npm-<sha>` artifact from that run and publish only the missing package;
 never overwrite an existing version or rebuild different bytes under that version.
 
 ## App cutover
