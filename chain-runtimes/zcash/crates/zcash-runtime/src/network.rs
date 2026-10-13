@@ -197,10 +197,10 @@ pub async fn broadcast(client: &mut LightClient, tx_bytes: Vec<u8>) -> Result<()
         if broadcast_already_known(&resp.error_message) {
             return Ok(());
         }
-        let code = if broadcast_outcome_ambiguous(&resp.error_message) {
-            ErrorCode::BroadcastOutcomeUnknown
-        } else {
+        let code = if broadcast_definitely_invalid(&resp.error_message) {
             ErrorCode::BroadcastRejected
+        } else {
+            ErrorCode::BroadcastOutcomeUnknown
         };
         return Err(RuntimeError::with(
             code,
@@ -233,6 +233,26 @@ fn broadcast_outcome_ambiguous(message: &str) -> bool {
     ]
     .iter()
     .any(|needle| message.contains(needle))
+}
+
+/// 只有能确定这份字节**永远上不了链**的回复才算拒收。
+///
+/// 拒收会让宿主显示失败、不再把它当在途交易，用户随之重发；而原交易占着的
+/// note 要到过期高度才回来，重发只能换一批 note 去花。原交易若其实已经传播
+/// 出去（上一次超时其实发出去了，或节点一边转发一边回错），两笔都会上链。
+/// 所以这里是白名单：共识上无效（证明、签名、金额、分支不对）或已过期。
+/// 节点忙、内存池满、同步落后、非标准这类临时或策略性回复都不算 —— 记成
+/// 结局未知，同步时重播，过期后自然了结。
+fn broadcast_definitely_invalid(message: &str) -> bool {
+    if broadcast_outcome_ambiguous(message) {
+        return false;
+    }
+    let message = message.to_lowercase();
+    // zcashd: main.cpp 的共识检查拒因。`tx-expiring-soon` 是策略（还剩几块
+    // 才过期，别的节点仍可能打包），不在其列。
+    ["bad-txns-", "bad-tx-", "tx-overwinter-expired"]
+        .iter()
+        .any(|needle| message.contains(needle))
 }
 
 fn broadcast_already_known(message: &str) -> bool {
@@ -348,7 +368,10 @@ pub async fn tree_state(client: &mut LightClient, height: u32) -> Result<TreeSta
 
 #[cfg(test)]
 mod tests {
-    use super::{broadcast_already_known, broadcast_outcome_ambiguous, with_timeout};
+    use super::{
+        broadcast_already_known, broadcast_definitely_invalid, broadcast_outcome_ambiguous,
+        with_timeout,
+    };
     use crate::error::{ErrorCode, RuntimeError};
 
     // A node gives these for our own tx once it is mined, as well as for a real
@@ -373,6 +396,31 @@ mod tests {
             "bad-txns-fee-too-low",
         ] {
             assert!(!broadcast_outcome_ambiguous(message), "{message}");
+        }
+    }
+
+    // 拒收是白名单：没把握的回复一律是「结局未知」，交易留在途、继续重播。
+    #[test]
+    fn only_consensus_invalid_or_expired_replies_count_as_a_rejection() {
+        for message in [
+            "tx-overwinter-expired",
+            "bad-txns-fee-too-low",
+            "bad-txns-orchard-verification-failed",
+            "16: bad-txns-vout-negative",
+        ] {
+            assert!(broadcast_definitely_invalid(message), "{message}");
+        }
+        for message in [
+            "bad-txns-inputs-spent",
+            "bad-txns-inputs-missingorspent",
+            "tx-expiring-soon",
+            "transaction is non-standard",
+            "transaction dropped because the queue is full",
+            "mempool is disabled since synchronization is behind the chain tip",
+            "",
+            "something nobody has seen before",
+        ] {
+            assert!(!broadcast_definitely_invalid(message), "{message}");
         }
     }
 

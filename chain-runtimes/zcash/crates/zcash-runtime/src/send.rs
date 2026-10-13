@@ -6,8 +6,7 @@
 //!   runtime.pcztCreate()          构造（要钱包状态：选币、witness、anchor）
 //!   runtime.pcztProve()           证明，纯计算，不碰私钥
 //!   keys.pcztSign()               签名（要花费密钥，在 onekey-zcash-keys 里）
-//!   runtime.pcztSubmit()          提取 + 广播，非明确拒收才写回本地钱包
-//!   runtime.broadcastTransaction()  真正广播出去
+//!   runtime.pcztSubmit()          提取、先落库、再广播（重试只重播落库的那份字节）
 //! ```
 //!
 //! 证明必须排在签名之前：上游 Signer 角色的文档写明，它需要足以「验证证明覆盖的是
@@ -120,8 +119,8 @@ pub fn parse_change_pool(name: &str) -> Result<ShieldedPool> {
     }
 }
 
-/// 解析宿主传来的「只从这个池子花」。`None` 表示不限制（见
-/// `SendPolicy::spend_source`）。
+/// 解析宿主传来的「只从这个池子花」。构造与报价都要求给出（见
+/// `build_proposal`），`None` 在那里会被拒绝。
 ///
 /// Orchard remains a valid spend source, but cannot receive new change.
 /// Sapling spending is unsupported because this runtime does not ship its prover.
@@ -154,7 +153,7 @@ pub struct SendPolicy {
     /// 曾经硬编码 `false`，而余额读取那头却是参数 —— 宿主想跟进 ZIP-315
     /// 就会造出「余额显示可花、选币拒花」的错配。读和花必须同源。
     pub allow_zero_conf_shielding: bool,
-    /// 只从这一个屏蔽池选 note。`None` = 本方案能花的全部池子。
+    /// 只从这一个屏蔽池选 note。必填：`None` 会在构造时被拒绝。
     ///
     /// 存在的理由有两个，都不是可选的：
     ///
@@ -570,14 +569,29 @@ pub fn forget_account_reservations(account_uuid: &str) {
     });
 }
 
+/// 一个 reservation 只对应一笔交易。已经落库过的 id 再拿来构造，会在同一个
+/// owner 下再锁一批 note，而提交只会重播旧的那笔：新锁既用不上也解不开。
+fn refuse_submitted_reservation(db: &mut Db, reservation_id: &str) -> Result<()> {
+    let submitted = db.transactionally_with_extension(|_wallet, ext| {
+        tx_state::existing_txid_for_reservation(ext, reservation_id, None)
+    })?;
+    match submitted {
+        Some(txid) => Err(RuntimeError::with(
+            ErrorCode::InvalidReservationId,
+            json!({ "reason": "alreadySubmitted", "txid": txid }),
+        )),
+        None => Ok(()),
+    }
+}
+
 /// 构造一笔转账的 PCZT（未签名），并**锁住选中的 note**。
 ///
 /// 返回 `{ pcztHex, reservationId }`：`reservationId` 是这批 note 的占用凭证，
 /// 调用方必须一直带着它，直到交易提交（`pcztSubmit`）或用户取消（`releaseReservation`）。
 /// 不释放也不会永久卡死 —— 锁有按区块高度的过期时间，但那是兜底，不是正常路径。
 ///
-/// `lock_for_blocks` 由宿主决定，但必须长过交易的过期高度：广播后、落库前崩溃时，
-/// 只有这把锁防止同一批 note 被再花一次。
+/// `lock_for_blocks` 由宿主决定，但必须长过交易的过期高度。提交时交易先落库
+/// 再广播，落库之后由交易本身占住这批 note；锁管的是从构造到落库这一段。
 ///
 /// `reservation_id` 可由调用方传入（64 位 hex）。上游的设计意图就是**调用方持有
 /// 这个 token**：先生成、先持久化，再来构造。这样即使中途崩溃，恢复后仍然知道
@@ -602,6 +616,7 @@ pub fn create_pczt(
         None => LockOwner::random(&mut rand::rngs::OsRng),
     };
     let reservation_id = hex32(owner.as_bytes());
+    refuse_submitted_reservation(db, &reservation_id)?;
     let proposal = build_proposal(
         db,
         account_uuid,
@@ -1175,6 +1190,15 @@ mod reservation_recovery_tests {
             ));
             tx_state::assert_broadcastable(&mut db, &txid).unwrap();
         }
+    }
+
+    #[test]
+    fn a_reservation_that_already_has_a_stored_transaction_cannot_build_again() {
+        let (mut db, txid) = outcome_wallet(false);
+        let e = refuse_submitted_reservation(&mut db, "review").unwrap_err();
+        assert_eq!(e.code, ErrorCode::InvalidReservationId);
+        assert_eq!(e.params["txid"], txid);
+        refuse_submitted_reservation(&mut db, &"ab".repeat(32)).unwrap();
     }
 
     #[test]

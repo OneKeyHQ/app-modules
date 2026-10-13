@@ -644,10 +644,13 @@ async fn barrier_after_irreversible(params: serde_json::Value) -> Result<(), cra
     })
 }
 
-/// 提交已证明且已签名的 PCZT：提取交易、广播，再按结局决定落不落库。
+/// 提交已证明且已签名的 PCZT：提取交易、先落库、再广播。
 ///
 /// 返回 `{ txid, broadcast: "accepted" | "rejected" | "unknown", error? }`。
-/// 节点明确拒收时交易不落库、note 立即放回；结局未知时已落库，同步会重播。
+/// - `rejected`：节点明确判定共识无效或已过期，永远上不了链。交易仍在库里，
+///   它花的 note 要到过期高度才回来。
+/// - `unknown`：不能确定节点收没收到。交易保持待确认、同步时重播，宿主**不得**
+///   当作发送失败。
 #[wasm_bindgen(js_name = pcztSubmit)]
 pub async fn pczt_submit(
     account_uuid: String,
@@ -670,15 +673,11 @@ pub async fn pczt_submit(
         send::SubmitOutcome::Accepted { txid } => {
             serde_json::json!({ "txid": txid, "broadcast": "accepted" })
         }
-        send::SubmitOutcome::Rejected { txid, error } => {
-            // 没落库，也就没有需要落盘屏障的东西。
-            return Ok(serde_json::json!({
-                "txid": txid,
-                "broadcast": "rejected",
-                "error": error.to_json(),
-            })
-            .to_string());
-        }
+        send::SubmitOutcome::Rejected { txid, error } => serde_json::json!({
+            "txid": txid,
+            "broadcast": "rejected",
+            "error": error.to_json(),
+        }),
         send::SubmitOutcome::Unknown { txid, error } => serde_json::json!({
             "txid": txid,
             "broadcast": "unknown",
@@ -719,8 +718,9 @@ pub fn rebroadcastable_txids(account_uuid: String) -> Result<String, JsValue> {
 
 /// 重播已落库、结局未知的交易（同步时调用）。**不可逆。**
 ///
-/// 节点拒绝抛 `BROADCAST_REJECTED`（不要重试，先查原因）；
-/// 网络本身出错抛 `NETWORK_ERROR`（可以重试，交易已在本地库里）。
+/// 节点明确判定无效抛 `BROADCAST_REJECTED`（不要重试，先查原因）；
+/// 节点回了错误但不能确定上不了链时抛 `BROADCAST_OUTCOME_UNKNOWN`，网络本身出错
+/// 抛 `NETWORK_ERROR` —— 这两种交易都仍待确认，下次同步照常重播。
 #[wasm_bindgen(js_name = broadcastTransaction)]
 pub async fn broadcast_transaction(txid: String) -> Result<(), JsValue> {
     let result = runtime::with_db_and_client(move |mut db, mut client| async move {

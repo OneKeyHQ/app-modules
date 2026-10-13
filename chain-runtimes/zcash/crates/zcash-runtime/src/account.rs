@@ -45,6 +45,7 @@ pub async fn import_ufvk(
     // 所以需要「birthday 之前」的树状态作为锚点。
     let anchor_height = birthday_height.saturating_sub(1);
     let treestate = network::tree_state(client, anchor_height).await?;
+    check_birthday_tree_state(&treestate, anchor_height, &params)?;
 
     let birthday = AccountBirthday::from_treestate(treestate, None).map_err(|e| {
         RuntimeError::with(
@@ -274,4 +275,63 @@ pub fn confirmations_policy(
     let t = std::num::NonZeroU32::new(trusted).ok_or_else(bad)?;
     let u = std::num::NonZeroU32::new(untrusted).ok_or_else(bad)?;
     ConfirmationsPolicy::new(t, u, allow_zero_conf_shielding).map_err(|e| bad().detail(e))
+}
+
+/// 生日取自服务端给的树状态：上游按它报的高度 + 1 定生日，不核对是不是
+/// 我们要的那一块。报高了，生日之前那段收款永远不扫；报错了网络，整个账户
+/// 都在别的链上。所以高度必须正好是请求的那一块，网络（服务端给了的话）
+/// 必须是钱包的网络。
+fn check_birthday_tree_state(
+    treestate: &zcash_client_backend::proto::service::TreeState,
+    anchor_height: u32,
+    params: &zcash_protocol::consensus::Network,
+) -> Result<()> {
+    use zcash_protocol::consensus::Network;
+    let expected_network = match params {
+        Network::MainNetwork => "main",
+        Network::TestNetwork => "test",
+    };
+    let network_ok = treestate.network.is_empty() || treestate.network == expected_network;
+    if treestate.height != u64::from(anchor_height) || !network_ok {
+        return Err(RuntimeError::with(
+            ErrorCode::InvalidBlockHeight,
+            json!({
+                "stage": "birthdayTreeState",
+                "requestedHeight": anchor_height,
+                "returnedHeight": treestate.height,
+                "returnedNetwork": treestate.network,
+            }),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod birthday_tests {
+    use super::check_birthday_tree_state;
+    use zcash_client_backend::proto::service::TreeState;
+    use zcash_protocol::consensus::Network;
+
+    fn state(network: &str, height: u64) -> TreeState {
+        TreeState {
+            network: network.to_owned(),
+            height,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_birthday_tree_state_must_be_the_requested_block_on_our_network() {
+        let main = Network::MainNetwork;
+        check_birthday_tree_state(&state("main", 3_000_000), 3_000_000, &main).unwrap();
+        check_birthday_tree_state(&state("", 3_000_000), 3_000_000, &main).unwrap();
+        for bad in [
+            state("main", 3_000_001),
+            state("main", 2_999_999),
+            state("test", 3_000_000),
+        ] {
+            assert!(check_birthday_tree_state(&bad, 3_000_000, &main).is_err());
+        }
+        check_birthday_tree_state(&state("test", 10), 10, &Network::TestNetwork).unwrap();
+    }
 }
