@@ -8,7 +8,7 @@ members = [
 exclude = ["vendor/sqlite-wasm-vfs-0.2.0"]
 
 [workspace.package]
-version = "0.1.0-rc.1"
+version = "0.1.0-alpha.1"
 edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.85"
