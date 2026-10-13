@@ -10,7 +10,8 @@ it, and wasm-pack generates the npm versions from those crates. Update the three
 workspace entries in `Cargo.lock` with `cargo check --workspace --offline` and
 review the lockfile diff; dependency upgrades are a separate change.
 
-Development builds use `X.Y.Z-alpha.N` on the npm `alpha` tag and may be
+Development builds use `X.Y.Z-alpha.N` on the npm `next` tag (as the native
+modules' previews do) and may be
 published from any branch. Release candidates use `X.Y.Z-rc.N` on the npm `rc`
 tag; final releases use `latest`. Runtime and keys always share a version and source commit. The
 benchmark ships as a runtime subdirectory to keep the App developer tools' import

@@ -1,6 +1,7 @@
 name: Publish Monero runtime
 
-# Manual runs publish alpha builds only, from any branch. rc and latest are
+# Manual runs publish alpha builds (npm `next`, like the native previews)
+# only, from any branch. rc and latest are
 # published only when a version change in chain-runtimes/monero/Cargo.toml is
 # merged to main.
 on:
@@ -42,14 +43,14 @@ jobs:
         run: |
           VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("chain-runtimes/monero/Cargo.toml", "rb"))["workspace"]["package"]["version"])')
           case "$VERSION" in
-            *-alpha.*) TAG=alpha ;;
+            *-alpha.*) TAG=next ;;
             *-rc.*) TAG=rc ;;
             *) TAG=latest ;;
           esac
           if [ "$EVENT_NAME" = workflow_dispatch ]; then
             test "$INPUT_VERSION" = "$VERSION" || { echo "Input $INPUT_VERSION does not match workspace $VERSION" >&2; exit 1; }
-            test "$TAG" = alpha || { echo "Manual runs publish alpha only; merge $VERSION to main instead" >&2; exit 1; }
-          elif [ "$TAG" = alpha ]; then
+            test "$TAG" = next || { echo "Manual runs publish alpha only; merge $VERSION to main instead" >&2; exit 1; }
+          elif [ "$TAG" = next ]; then
             echo "Alpha versions are published manually; nothing to do on main" >> "$GITHUB_STEP_SUMMARY"
             echo "publish=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
