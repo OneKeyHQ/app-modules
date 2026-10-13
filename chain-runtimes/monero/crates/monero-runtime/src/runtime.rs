@@ -11,10 +11,13 @@ use std::cell::{Cell, RefCell};
 use crate::error::{ErrorCode, Result, RuntimeError};
 use crate::network::Daemon;
 use crate::wallet::Db;
+use monero_wallet::address::Network;
 
 thread_local! {
     static DB: RefCell<Option<Db>> = const { RefCell::new(None) };
     static DAEMON: RefCell<Option<Daemon>> = const { RefCell::new(None) };
+    /// 当前节点所在的网络，连接时按创世块认定。与 DAEMON 同进同出。
+    static DAEMON_NETWORK: Cell<Option<Network>> = const { Cell::new(None) };
     static DB_NAME: RefCell<Option<String>> = const { RefCell::new(None) };
 
     // ── 并发防线 ────────────────────────────────────────────────────────
@@ -101,14 +104,36 @@ pub fn set_db(db: Db, db_name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn set_daemon(daemon: Daemon) {
+pub fn set_daemon(daemon: Daemon, network: Network) {
     DAEMON.with(|c| *c.borrow_mut() = Some(daemon));
+    DAEMON_NETWORK.with(|n| n.set(Some(network)));
     bump_daemon_generation();
+}
+
+/// 钱包库与节点必须在同一个网络上。不一致时什么都不做：测试网钱包连着主网
+/// 节点扫到的是真 XMR，发出去的也是。
+fn check_node_network(node: Option<Network>, wallet: Network) -> Result<()> {
+    if node == Some(wallet) {
+        return Ok(());
+    }
+    Err(RuntimeError::with(
+        ErrorCode::NodeNetworkMismatch,
+        serde_json::json!({
+            "nodeNetwork": node.map(crate::keys::network_name),
+            "walletNetwork": crate::keys::network_name(wallet),
+        }),
+    ))
+}
+
+/// 当前节点所在的网络（连接时按创世块认定）。没有节点时为 `None`。
+pub fn daemon_network() -> Option<Network> {
+    DAEMON_NETWORK.with(Cell::get)
 }
 
 /// 断开当前节点。借出中的客户端放回时按世代号作废，不会复活。
 pub fn clear_daemon() {
     DAEMON.with(|c| *c.borrow_mut() = None);
+    DAEMON_NETWORK.with(|n| n.set(None));
     bump_daemon_generation();
 }
 
@@ -121,6 +146,7 @@ pub fn close() -> Result<()> {
     assert_idle("closeWallet")?;
     DB.with(|c| *c.borrow_mut() = None);
     DAEMON.with(|c| *c.borrow_mut() = None);
+    DAEMON_NETWORK.with(|n| n.set(None));
     DB_NAME.with(|c| *c.borrow_mut() = None);
     bump_generation();
     bump_daemon_generation();
@@ -167,6 +193,11 @@ where
             return Err(no_daemon());
         }
     };
+    if let Err(e) = check_node_network(DAEMON_NETWORK.with(Cell::get), db.network()) {
+        DB.with(|cell| *cell.borrow_mut() = Some(db));
+        DAEMON.with(|cell| *cell.borrow_mut() = Some(daemon));
+        return Err(e);
+    }
 
     let (db, daemon, out) = f(db, daemon).await;
 
@@ -267,6 +298,19 @@ mod tests {
         // 借不到客户端时 DB 必须被放回去，否则钱包就凭空关了
         assert!(open_db_name().is_some(), "失败不该顺手把库弄丢");
         with_db_read(|_| Ok(())).expect("库应当还在");
+    }
+
+    #[test]
+    fn a_node_on_another_network_is_refused() {
+        check_node_network(Some(Network::Mainnet), Network::Mainnet).unwrap();
+        for (node, wallet) in [
+            (Some(Network::Mainnet), Network::Stagenet),
+            (Some(Network::Testnet), Network::Mainnet),
+            (None, Network::Mainnet),
+        ] {
+            let e = check_node_network(node, wallet).unwrap_err();
+            assert_eq!(e.code, ErrorCode::NodeNetworkMismatch);
+        }
     }
 
     /// 关库必须让在途的客户端借用作废。否则它结束时会把旧节点盖回去，

@@ -746,13 +746,23 @@ fn timelock_to_i64(timelock: monero_wallet::transaction::Timelock) -> i64 {
 
 /// 回退到指定高度：丢掉该高度**之上**的全部扫描结果。
 ///
-/// **破坏性。** 用于重组恢复。已广播的交易不受影响（它们在链上），但本地
-/// 未确认记录会丢。
+/// **破坏性。** 用于重组恢复。例外是自己广播过的交易：它所在的块被重组掉，
+/// 交易通常回到交易池、稍后重新上链。删掉它会让它花的输入重新可选，用户
+/// 换一批输入再发一次，两笔都上链。所以它退回在途（高度清空），输入保持
+/// 已花，交给在途检查与扫描判定。
 pub fn rewind_to(db: &mut Db, identity_id: i64, height: u64) -> Result<()> {
     let tx = db
         .conn_mut()
         .transaction()
         .map_err(|e| db_err("beginRewind", e))?;
+
+    // 放在撤销花费标记之前：下面那条按「在途交易」保留标记。
+    tx.execute(
+        "UPDATE transactions SET height = NULL, failed = 0, pool_checked_at = NULL
+         WHERE identity_id = ?1 AND height > ?2 AND sent_at IS NOT NULL",
+        params![identity_id, height as i64],
+    )
+    .map_err(|e| db_err("rewindOwnSends", e))?;
 
     tx.execute(
         "DELETE FROM outputs WHERE identity_id = ?1 AND height > ?2",
@@ -1099,6 +1109,56 @@ mod tests {
             .query_row("SELECT spent_in_txid FROM outputs", [], |r| r.get(0))
             .unwrap();
         assert_eq!(spent_in, Some(txid.to_vec()));
+    }
+
+    /// 自己发出、已上链的交易所在块被重组掉：退回在途，输入不放回。
+    #[test]
+    fn a_rewind_turns_our_confirmed_send_back_into_a_pending_one() {
+        let (mut db, id) = db_with_identity();
+        let ours = [3u8; 32];
+        let scanned = [4u8; 32];
+        for (n, txid) in [(1u8, ours), (2u8, scanned)] {
+            db.conn()
+                .execute(
+                    "INSERT INTO outputs (identity_id, blob, txid, global_index, index_in_tx,
+                                          amount_atomic, height, key_image, spent_at_height, spent_in_txid)
+                     VALUES (?1, x'00', ?2, ?3, 0, 700, 10, ?4, 500, ?5)",
+                    params![id, [9u8 + n; 32].as_slice(), n, [n; 32].as_slice(), txid.as_slice()],
+                )
+                .unwrap();
+        }
+        db.conn()
+            .execute(
+                "INSERT INTO transactions (identity_id, txid, height, direction, sent_at)
+                 VALUES (?1, ?2, 500, 'out', 1000), (?1, ?3, 500, 'out', NULL)",
+                params![id, ours.as_slice(), scanned.as_slice()],
+            )
+            .unwrap();
+
+        rewind_to(&mut db, id, 490).unwrap();
+
+        let rows: Vec<(Vec<u8>, Option<i64>)> = db
+            .conn()
+            .prepare("SELECT txid, height FROM transactions")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![(ours.to_vec(), None)],
+            "自己的退回在途，扫到的照删"
+        );
+        let spent: Vec<Option<Vec<u8>>> = db
+            .conn()
+            .prepare("SELECT spent_in_txid FROM outputs ORDER BY global_index")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(spent, vec![Some(ours.to_vec()), None]);
     }
 
     /// 空批次是合法的 no-op，不该报错也不该动任何状态。
