@@ -4,14 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact workspace version (for example 0.1.0-rc.1)
+        description: Exact workspace version (for example 0.1.0-alpha.1)
         required: true
         type: string
       tag:
         description: npm dist-tag
         required: true
         type: choice
-        options: [rc, latest]
+        options: [alpha, rc, latest]
 
 permissions:
   contents: read
@@ -25,12 +25,14 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - name: Require main and the exact release version
+      - name: Require the exact release version (rc and latest only from main)
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          test "$GITHUB_REF" = refs/heads/main
+          if [ "$RELEASE_TAG" != alpha ]; then
+            test "$GITHUB_REF" = refs/heads/main
+          fi
           python3 - <<'PY'
           import importlib.util, os
           from pathlib import Path

@@ -36,11 +36,17 @@ class PackageReleaseTests(unittest.TestCase):
                 release.prepare(root)
 
     def test_prereleases_cannot_update_latest(self):
+        release.check_version("0.1.0-alpha.1", "0.1.0-alpha.1", "alpha")
         release.check_version("0.1.0-rc.1", "0.1.0-rc.1", "rc")
         release.check_version("0.1.0", "0.1.0", "latest")
         for expected, tag in (("0.1.0-rc.1", "latest"), ("0.1.0-rc.2", "rc")):
             with self.assertRaises(ValueError):
                 release.check_version("0.1.0-rc.1", expected, tag)
+        for tag in ("rc", "latest"):
+            with self.assertRaises(ValueError):
+                release.check_version("0.1.0-alpha.1", "0.1.0-alpha.1", tag)
+        with self.assertRaises(ValueError):
+            release.check_version("0.1.0-beta.1", "0.1.0-beta.1", "rc")
 
     def test_missing_benchmark_and_changed_bytes_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

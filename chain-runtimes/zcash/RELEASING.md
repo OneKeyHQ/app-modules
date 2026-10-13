@@ -10,8 +10,9 @@ it, and wasm-pack generates the npm versions from those crates. Update the three
 workspace entries in `Cargo.lock` with `cargo check --workspace --offline` and
 review the lockfile diff; dependency upgrades are a separate change.
 
-Release candidates use `X.Y.Z-rc.N` on the npm `rc` tag; final releases use
-`latest`. Runtime and keys always share a version and source commit. The
+Development builds use `X.Y.Z-alpha.N` on the npm `alpha` tag and may be
+published from any branch. Release candidates use `X.Y.Z-rc.N` on the npm `rc`
+tag; final releases use `latest`. Runtime and keys always share a version and source commit. The
 benchmark ships as a runtime subdirectory to keep the App developer tools' import
 path; it is not a third package, and production App bundles exclude it.
 
@@ -34,9 +35,10 @@ archives or manually rewrite the manifest to make an old artifact pass.
 
 ## Publish
 
-Merge the release changes to `main` first. The **Publish Zcash runtime** workflow
-is manual, accepts the exact version and `rc`/`latest` tag, and refuses other
-branches. It reuses the build/test workflow, verifies the downloaded artifact
+For `rc` and `latest`, merge the release changes to `main` first; the
+**Publish Zcash runtime** workflow refuses other branches for those tags. An
+`alpha` can be published from any branch. The workflow is manual, accepts the
+exact version and `alpha`/`rc`/`latest` tag, reuses the build/test workflow, verifies the downloaded artifact
 again, and publishes only these two npm packages. The native-module publish
 workflow is unchanged.
 
