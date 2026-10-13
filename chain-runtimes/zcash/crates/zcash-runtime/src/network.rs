@@ -13,6 +13,17 @@ use zcash_client_backend::proto::service::{
 use crate::error::{ErrorCode, Result, RuntimeError};
 use serde_json::json;
 
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static REQUEST_HANDLER: std::cell::RefCell<Option<js_sys::Function>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The handler belongs to this WASM instance, and is installed before networking.
+#[cfg(target_arch = "wasm32")]
+pub fn set_request_handler(handler: Option<js_sys::Function>) {
+    REQUEST_HANDLER.with(|slot| *slot.borrow_mut() = handler);
+}
+
 // 浏览器走 gRPC-web（没有原生 HTTP/2 裸连接），原生目标走 tonic 自带 transport。
 // 上层的 `LightClient` 签名在两边一致，`chain_tip` / `tree_state` 等函数不用分叉。
 #[cfg(target_arch = "wasm32")]
@@ -95,8 +106,13 @@ pub fn connect(base_url: &str) -> Result<LightClient> {
             json!({ "reason": "httpsRequired" }),
         ));
     }
+    let mut options = tonic_web_wasm_client::options::FetchOptions::new();
+    options.fetch = REQUEST_HANDLER.with(|slot| slot.borrow().clone());
     Ok(CompactTxStreamerClient::new(
-        tonic_web_wasm_client::Client::new(base_url.to_owned()),
+        tonic_web_wasm_client::Client::new_with_options(
+            base_url.trim_end_matches('/').to_owned(),
+            options,
+        ),
     ))
 }
 

@@ -25,12 +25,17 @@ use zcash_address::unified::{Container, Encoding, Fvk, Ufvk};
 use zcash_client_backend::data_api::chain::error::Error as ChainError;
 use zcash_client_backend::data_api::chain::{BlockSource, ChainState, CommitmentTreeRoot};
 use zcash_client_backend::data_api::scanning::{ScanPriority, ScanRange};
-use zcash_client_backend::data_api::{WalletCommitmentTrees, WalletRead, WalletWrite};
+use zcash_client_backend::data_api::{
+    TransactionDataRequest, TransactionStatus, WalletCommitmentTrees, WalletRead, WalletWrite,
+};
+use zcash_client_backend::decrypt_transaction;
 use zcash_client_backend::proto::service;
 use zcash_client_backend::scanning::{scan_block, Nullifiers, ScanningKeys};
+use zcash_client_sqlite::AccountUuid;
 use zcash_keys::keys::UnifiedFullViewingKey;
 use zcash_primitives::merkle_tree::HashSer;
-use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
+use zcash_primitives::transaction::{Transaction, TxId};
+use zcash_protocol::consensus::{BlockHeight, BranchId, NetworkUpgrade, Parameters};
 
 use crate::blockcache::MemoryBlockCache;
 use crate::error::{ErrorCode, Result, RuntimeError};
@@ -375,6 +380,16 @@ pub async fn step(
         batches_done += 1;
     }
 
+    // Compact blocks cannot supply full outgoing amounts, fees or memos.
+    // Bound the optional enrichment work independently of the scan lanes.
+    // The host visits several scan lanes per turn; enrich only on historic
+    // steps, or standalone steps, to keep the network budget bounded.
+    let enhancement = if preferred.is_none() || preferred == Some(ScanPriority::Historic) {
+        enhance_transactions(db, client, active_ufvks).await
+    } else {
+        Ok(0)
+    };
+
     // 扫完之后重新问一次，把剩余量报给宿主做进度条。
     let remaining = db
         .suggest_scan_ranges()
@@ -383,6 +398,8 @@ pub async fn step(
 
     Ok(json!({
         "done": remaining_blocks == 0,
+        "transactionsEnhanced": enhancement.as_ref().copied().unwrap_or(0),
+        "enhancementError": enhancement.err().map(|error| error.to_string()),
         "activeAccounts": active_account_count,
         "batchesDone": batches_done,
         "blocksScanned": blocks_scanned,
@@ -397,6 +414,143 @@ pub async fn step(
         "msScan": ms_scan as u32,
     })
     .to_string())
+}
+
+// Use the official decrypt/store APIs with only explicitly enabled identities.
+// The convenience decrypt_and_store_transaction helper would try every stored
+// UFVK, including accounts whose Privacy Mode has been switched off.
+
+async fn enhance_transactions(
+    db: &mut Db,
+    client: &mut LightClient,
+    active_ufvks: &[String],
+) -> Result<u32> {
+    let params = *db.params();
+    let active: HashSet<&str> = active_ufvks.iter().map(String::as_str).collect();
+    let keys = db
+        .get_unified_full_viewing_keys()
+        .map_err(|error| db_err("enhancementKeys", error))?
+        .into_iter()
+        .filter(|(_, key)| active.contains(key.encode(&params).as_str()))
+        .collect::<HashMap<_, _>>();
+    if keys.is_empty() {
+        return Ok(0);
+    }
+    let requests = db
+        .transaction_data_requests()
+        .map_err(|error| db_err("transactionDataRequests", error))?;
+    let mut txids = requests
+        .into_iter()
+        .filter_map(|request| match request {
+            TransactionDataRequest::Enhancement(txid) => Some((0, txid)),
+            TransactionDataRequest::GetStatus(txid) => Some((1, txid)),
+            // Public address discovery remains owned by the transparent indexer.
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    // Never disclose a paused account's transaction ID to the sync endpoint.
+    txids = select_enhancement_requests(db, &keys.keys().copied().collect::<Vec<_>>(), txids)?;
+    txids.sort_by_key(|(priority, txid)| (*priority, txid.to_string()));
+    txids.dedup_by_key(|(_, txid)| *txid);
+    // Advance even after a failed fetch so one missing transaction cannot
+    // permanently starve the rest. This scalar belongs to the runtime instance.
+    thread_local! { static ENHANCEMENT_CURSOR: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+    if !txids.is_empty() {
+        let offset = ENHANCEMENT_CURSOR.with(|cursor| {
+            let value = cursor.get();
+            cursor.set(value.wrapping_add(1));
+            value % txids.len()
+        });
+        txids.rotate_left(offset);
+    }
+    let mut enhanced = 0;
+    for (_, txid) in txids.into_iter().take(2) {
+        let response = crate::network::with_timeout(
+            async {
+                match client
+                    .get_transaction(service::TxFilter {
+                        hash: txid.as_ref().to_vec(),
+                        ..Default::default()
+                    })
+                    .await
+                {
+                    Ok(response) => Ok(Some(response.into_inner())),
+                    Err(status) if status.code() == tonic::Code::NotFound => Ok(None),
+                    Err(error) => Err(net_err("enhanceTransaction", error)),
+                }
+            },
+            5_000,
+            "enhanceTransaction",
+        )
+        .await?;
+        let Some(raw) = response else {
+            db.set_transaction_status(txid, TransactionStatus::TxidNotRecognized)
+                .map_err(|error| db_err("enhancementStatus", error))?;
+            continue;
+        };
+        let mined_height = match raw.height {
+            0 | u64::MAX => None,
+            height => Some(BlockHeight::from_u32(u32::try_from(height).map_err(
+                |error| RuntimeError::new(ErrorCode::InvalidBlockHeight).detail(error),
+            )?)),
+        };
+        let tip = db
+            .chain_height()
+            .map_err(|error| db_err("enhancementChainHeight", error))?;
+        let branch = BranchId::for_height(
+            &params,
+            mined_height.or(tip).unwrap_or(BlockHeight::from_u32(0)),
+        );
+        let tx = parse_enhancement(&raw.data, branch, txid)?;
+        let height = mined_height.or(db
+            .get_tx_height(txid)
+            .map_err(|error| db_err("enhancementTxHeight", error))?);
+        db.store_decrypted_tx(decrypt_transaction(&params, height, tip, &tx, &keys))
+            .map_err(|error| db_err("storeEnhancedTransaction", error))?;
+        db.set_transaction_status(
+            txid,
+            mined_height
+                .map(TransactionStatus::Mined)
+                .unwrap_or(TransactionStatus::NotInMainChain),
+        )
+        .map_err(|error| db_err("enhancementStatus", error))?;
+        enhanced += 1;
+    }
+    Ok(enhanced)
+}
+
+fn select_enhancement_requests(
+    db: &mut Db,
+    active_accounts: &[AccountUuid],
+    requests: Vec<(u8, TxId)>,
+) -> Result<Vec<(u8, TxId)>> {
+    db.transactionally_with_extension(|_, ext| {
+        let mut selected = Vec::new();
+        for request in requests {
+            for account in active_accounts {
+                let visible: bool = ext.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM v_transactions WHERE txid = ?1 AND account_uuid = ?2)",
+                    rusqlite::params![request.1.as_ref(), account.expose_uuid()],
+                    |row| row.get(0),
+                )?;
+                if visible { selected.push(request); break; }
+            }
+        }
+        Ok::<_, rusqlite::Error>(selected)
+    }).map_err(|error| db_err("enhancementOwnership", error))
+}
+
+fn parse_enhancement(data: &[u8], branch: BranchId, expected: TxId) -> Result<Transaction> {
+    let mut reader = std::io::Cursor::new(data);
+    let tx = Transaction::read(&mut reader, branch)
+        .map_err(|error| net_err("parseEnhancedTransaction", error))?;
+    if reader.position() != data.len() as u64 || tx.txid() != expected {
+        return Err(net_err(
+            "parseEnhancedTransaction",
+            "transaction identity or length mismatch",
+        ));
+    }
+    Ok(tx)
 }
 
 /// 就地扫描一批区块并落库。**不使用上游的 `scan_cached_blocks`。**
@@ -733,6 +887,7 @@ const DOWNLOAD_SOFT_BUDGET_MS: f64 = 30_000.0;
 /// 每条流消息各自套 DEFAULT_TIMEOUT_MS 的**停滞**超时：只有一颗块都没
 /// 收到过的停滞才向上抛错（交给调用方重试/对半）；已有收获的停滞和
 /// 预算超线一样，截断收工。
+
 async fn download_batch(
     client: &mut LightClient,
     cache: &MemoryBlockCache,
@@ -885,6 +1040,58 @@ mod tests {
     use super::*;
     use zcash_keys::keys::UnifiedSpendingKey;
     use zcash_protocol::consensus::Network;
+
+    #[test]
+    fn enhancement_only_requests_transactions_owned_by_enabled_accounts() {
+        use rand::SeedableRng;
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE v_transactions (txid BLOB, account_uuid BLOB)")
+            .unwrap();
+        let active = AccountUuid::from_uuid(uuid::Uuid::from_bytes([1; 16]));
+        let paused = AccountUuid::from_uuid(uuid::Uuid::from_bytes([2; 16]));
+        let active_tx = TxId::from_bytes([3; 32]);
+        let paused_tx = TxId::from_bytes([4; 32]);
+        for (account, txid) in [(active, active_tx), (paused, paused_tx)] {
+            conn.execute(
+                "INSERT INTO v_transactions VALUES (?1, ?2)",
+                rusqlite::params![txid.as_ref(), account.expose_uuid()],
+            )
+            .unwrap();
+        }
+        let mut db = zcash_client_sqlite::WalletDb::from_connection(
+            conn,
+            Network::TestNetwork,
+            crate::clock::HostClock,
+            rand_chacha::ChaCha20Rng::from_seed([7; 32]),
+        );
+        assert_eq!(
+            select_enhancement_requests(&mut db, &[active], vec![(0, active_tx), (0, paused_tx)])
+                .unwrap(),
+            vec![(0, active_tx)]
+        );
+        assert!(
+            select_enhancement_requests(&mut db, &[], vec![(0, active_tx)])
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn enhancement_validates_identity_and_complete_serialization() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../zcash-keys-runtime/tests/fixtures/previous-transactions.json"
+        ))
+        .unwrap();
+        let entry = &fixture["transactions"][0];
+        let raw = hex::decode(entry["rawTx"].as_str().unwrap()).unwrap();
+        let expected = Transaction::read(&raw[..], BranchId::Nu6_2).unwrap().txid();
+        assert!(parse_enhancement(&raw, BranchId::Nu6_2, expected).is_ok());
+        assert!(parse_enhancement(&raw, BranchId::Nu6_2, TxId::from_bytes([0; 32])).is_err());
+        assert!(parse_enhancement(&raw[..4], BranchId::Nu6_2, expected).is_err());
+        let mut trailing = raw;
+        trailing.push(0);
+        assert!(parse_enhancement(&trailing, BranchId::Nu6_2, expected).is_err());
+    }
 
     fn test_ufvk(network: &Network, seed_byte: u8) -> UnifiedFullViewingKey {
         UnifiedSpendingKey::from_seed(

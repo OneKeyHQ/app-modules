@@ -70,16 +70,22 @@ fn db_err(operation: &'static str, error: impl std::fmt::Display) -> RuntimeErro
 pub fn existing_txid_for_reservation(
     ext: &ExtensionTransaction<'_>,
     reservation_id: &str,
+    expected_account_uuid: Option<&str>,
 ) -> Result<Option<String>> {
     let txid = ext
         .query_row(
-            &format!("SELECT txid FROM {TABLE} WHERE reservation_id = ?1"),
+            &format!("SELECT txid, account_uuid FROM {TABLE} WHERE reservation_id = ?1"),
             [reservation_id],
-            |row| row.get::<_, Vec<u8>>(0),
+            |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )
         .optional()
         .map_err(|error| db_err("findBroadcastIntent", error))?;
-    Ok(txid.map(|bytes| hex_display_order(&bytes)))
+    if let (Some((_, owner)), Some(expected)) = (&txid, expected_account_uuid) {
+        if *owner != uuid_blob(expected)? {
+            return Err(RuntimeError::new(ErrorCode::InvalidReservationId));
+        }
+    }
+    Ok(txid.map(|(bytes, _)| hex_display_order(&bytes)))
 }
 
 pub fn insert_finalized(

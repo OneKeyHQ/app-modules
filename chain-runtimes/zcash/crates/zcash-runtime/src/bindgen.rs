@@ -26,6 +26,12 @@ use crate::{
     guard, history, network, runtime, send, storage, sync, tx_state, wallet,
 };
 
+/// Inject a Fetch-compatible host transport; None retains browser Fetch.
+#[wasm_bindgen(js_name = setRequestHandler)]
+pub fn set_request_handler(handler: Option<js_sys::Function>) {
+    network::set_request_handler(handler);
+}
+
 // ── 生命周期 ────────────────────────────────────────────────────────────
 
 /// 安装存储层。必须在其他任何调用之前 await 一次。幂等。
@@ -161,7 +167,7 @@ pub fn close_wallet() -> Result<(), JsValue> {
 /// 配置 lightwalletd 端点，形如 `https://host:port`。
 ///
 /// 端点由宿主决定 —— 本 runtime 不硬编码任何服务器地址。
-/// 注意该端点必须支持 gRPC-web 与 CORS，否则浏览器侧会以网络错误失败。
+/// The endpoint must support gRPC-web. CORS is required only without a host transport.
 #[wasm_bindgen(js_name = setLightwalletdUrl)]
 pub fn set_lightwalletd_url(base_url: &str) -> Result<(), JsValue> {
     runtime::set_client(network::connect(base_url)?);
@@ -379,6 +385,7 @@ pub fn pczt_quote(
     pad_orchard_bundle: bool,
     allow_zero_conf_shielding: Option<bool>,
     spend_source: Option<String>,
+    memo_hex: Option<String>,
 ) -> Result<String, JsValue> {
     // 与 `pcztCreate` 同一个构造入口，参数顺序也刻意对齐：报价用的选币规则
     // 只要有一个字段和真正发送不同，报出来的费用就不是实付的费用。
@@ -396,7 +403,7 @@ pub fn pczt_quote(
             &account_uuid,
             &to_address,
             amount_zat,
-            memo.as_deref(),
+            send::parse_memo(memo.as_deref(), memo_hex.as_deref())?.as_ref(),
             policy,
         )
     })?)
@@ -542,6 +549,7 @@ pub fn pczt_create(
     reservation_id: Option<String>,
     allow_zero_conf_shielding: Option<bool>,
     spend_source: Option<String>,
+    memo_hex: Option<String>,
 ) -> Result<String, JsValue> {
     let policy = send::parse_send_policy(
         trusted,
@@ -557,7 +565,7 @@ pub fn pczt_create(
             &account_uuid,
             &to_address,
             amount_zat,
-            memo.as_deref(),
+            send::parse_memo(memo.as_deref(), memo_hex.as_deref())?.as_ref(),
             policy,
             lock_for_blocks,
             reservation_id.as_deref(),
@@ -874,6 +882,16 @@ pub fn self_check(network_name: &str, db_name: &str) -> Result<String, JsValue> 
     .to_string())
 }
 
+/// Builds only public circuit parameters without opening wallet storage.
+#[wasm_bindgen(js_name = prewarmPczt)]
+pub fn prewarm_pczt(network_name: &str, target_height: u32) -> Result<(), JsValue> {
+    install_panic_hook();
+    Ok(send::prewarm_pczt(
+        &wallet::parse_network(network_name)?,
+        target_height.into(),
+    )?)
+}
+
 /// Proves a locally constructed PCZT without opening a wallet or initializing storage.
 #[wasm_bindgen(js_name = pcztProveAtHeight)]
 pub fn pczt_prove_at_height(target_height: u32, pczt_bytes: Vec<u8>) -> Result<Vec<u8>, JsValue> {
@@ -891,9 +909,7 @@ pub fn pczt_extract_stateless(pczt_bytes: Vec<u8>) -> Result<String, JsValue> {
     install_panic_hook();
     let failure = |error: String| RuntimeError::new(ErrorCode::PcztError).detail(error);
     let pczt = pczt::Pczt::parse(&pczt_bytes).map_err(|e| failure(format!("{e:?}")))?;
-    let tx = pczt::roles::tx_extractor::TransactionExtractor::new(pczt)
-        .extract()
-        .map_err(|e| failure(format!("{e:?}")))?;
+    let tx = send::extract_pczt(pczt)?;
     let mut bytes = Vec::new();
     tx.write(&mut bytes)
         .map_err(|e| failure(format!("{e:?}")))?;

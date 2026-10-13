@@ -86,7 +86,7 @@ fn create_with_public_key(plan: &TransactionPlan, key: &AccountPubKey) -> Result
                     None,
                     address,
                     output.value,
-                    MemoBytes::empty(),
+                    output.memo.clone(),
                 )
                 .map_err(failure)?,
         }
@@ -320,11 +320,13 @@ fn validate_ironwood(bundle: &orchard::pczt::Bundle, plan: &TransactionPlan) -> 
         .recipients
         .iter()
         .filter_map(|output| match output.address {
-            RecipientAddress::Ironwood(address) => Some((address, u64::from(output.value))),
+            RecipientAddress::Ironwood(address) => {
+                Some((address, u64::from(output.value), output.memo.clone()))
+            }
             RecipientAddress::Transparent(_) => None,
         })
         .collect::<Vec<_>>();
-    let total = expected.iter().map(|(_, value)| value).sum::<u64>();
+    let total = expected.iter().map(|(_, value, _)| value).sum::<u64>();
     let action_count = if expected.is_empty() {
         0
     } else {
@@ -360,12 +362,13 @@ fn validate_ironwood(bundle: &orchard::pczt::Bundle, plan: &TransactionPlan) -> 
         output.verify_note_commitment(spend).map_err(failure)?;
         let recipient = output.recipient().ok_or_else(mismatch)?;
         let value = output.value().ok_or_else(mismatch)?;
+        let mut approved_memo = MemoBytes::empty();
         if value.inner() != 0 {
             let index = expected
                 .iter()
-                .position(|entry| *entry == (recipient, value.inner()))
+                .position(|entry| entry.0 == recipient && entry.1 == value.inner())
                 .ok_or_else(mismatch)?;
-            expected.remove(index);
+            approved_memo = expected.remove(index).2;
         }
         // A matching commitment alone does not ensure the recipient can decrypt the note.
         // Dummy output ciphertexts may be randomized by the upstream builder.
@@ -384,7 +387,7 @@ fn validate_ironwood(bundle: &orchard::pczt::Bundle, plan: &TransactionPlan) -> 
             let encryptor = orchard::note_encryption::IronwoodNoteEncryption::new(
                 None,
                 note,
-                *MemoBytes::empty().as_array(),
+                *approved_memo.as_array(),
             );
             if encryptor.encrypt_note_plaintext() != output.encrypted_note().enc_ciphertext
                 || orchard::note_encryption::IronwoodDomain::epk_bytes(encryptor.epk()).0
@@ -857,6 +860,27 @@ mod tests {
         serde_json::from_value::<pczt::v2::Pczt>(value)
             .unwrap()
             .serialize()
+    }
+
+    #[test]
+    fn shielding_memo_is_bound_to_the_approved_request() {
+        for max in [false, true] {
+            for prefix in ["e4b8ade6968720f09f9982", "ff000102"] {
+                let mut approved = request(max);
+                approved["recipients"][0]["memoHex"] =
+                    Value::String(format!("{prefix}{}", "00".repeat(512 - prefix.len() / 2)));
+                let original = create(&approved.to_string(), &SEED).unwrap();
+                sign(&approved.to_string(), &SEED, &original, &original).unwrap();
+                approved["recipients"][0]["memoHex"] =
+                    Value::String(format!("ff99{}", "00".repeat(510)));
+                assert!(sign(&approved.to_string(), &SEED, &original, &original).is_err());
+                approved["recipients"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("memoHex");
+                assert!(sign(&approved.to_string(), &SEED, &original, &original).is_err());
+            }
+        }
     }
 
     #[test]

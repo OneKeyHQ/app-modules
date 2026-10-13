@@ -24,6 +24,7 @@
 // 也就是说移动端**可以**跑完整的钱包逻辑，不必退化成 keys-only。
 pub mod account;
 pub mod blockcache;
+mod circuit_keys;
 pub mod clock;
 pub mod error;
 pub mod guard;

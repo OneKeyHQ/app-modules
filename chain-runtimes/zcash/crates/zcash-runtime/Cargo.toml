@@ -10,6 +10,7 @@ description = "OneKey Zcash Runtime — 官方 librustzcash 之上的最薄 wasm
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+blake2b_simd.workspace = true
 zcash_client_backend.workspace = true
 zcash_client_sqlite.workspace = true
 zcash_keys.workspace = true
