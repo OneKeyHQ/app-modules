@@ -346,16 +346,23 @@ pub fn details_outputs(
             }
 
             if to_acct.as_deref() == Some(me.as_slice()) {
+                let (memo_text, memo_binary) =
+                    memo.as_deref().map(memo_details).unwrap_or((None, None));
                 received.push(json!({
                     "valueZat": value,
                     "pool": pool,
                     "poolName": pool_name(pool),
                     "isChange": is_change,
-                    "memo": memo.as_deref().and_then(decode_memo),
+                    "memo": memo_text,
+                    "memoBinary": memo_binary,
                     "address": address,
                 }));
             } else if from_acct.as_deref() == Some(me.as_slice()) {
+                let (memo_text, memo_binary) =
+                    memo.as_deref().map(memo_details).unwrap_or((None, None));
                 external.push(json!({
+                    "memo": memo_text,
+                    "memoBinary": memo_binary,
                     "valueZat": value,
                     "pool": pool,
                     "poolName": pool_name(pool),
@@ -420,13 +427,63 @@ fn pool_name(pool: i64) -> &'static str {
     }
 }
 
-/// memo 里全零表示「没有 memo」，0xF6 开头是协议保留，都不该当文本给出去。
-fn decode_memo(bytes: &[u8]) -> Option<String> {
-    if bytes.is_empty() || bytes.iter().all(|b| *b == 0) || bytes[0] == 0xF6 {
-        return None;
+#[derive(Debug, PartialEq)]
+enum DecodedMemo {
+    None,
+    Text(String),
+    /// `hex`: the field without its zero padding. `hash`: BLAKE2b-256 of the
+    /// whole 512-byte field, hex.
+    Binary {
+        hex: String,
+        hash: String,
+    },
+}
+
+/// Classified per ZIP 302: text is shown as is; arbitrary-data and
+/// future-format memos cannot be, so they are identified by a hash.
+fn decode_memo(bytes: &[u8]) -> DecodedMemo {
+    use zcash_protocol::memo::{Memo, MemoBytes};
+    let Ok(memo_bytes) = MemoBytes::from_bytes(bytes) else {
+        return DecodedMemo::None;
+    };
+    match Memo::try_from(&memo_bytes) {
+        Ok(Memo::Empty) => DecodedMemo::None,
+        // All zeroes decodes as empty text; it means no memo too.
+        Ok(Memo::Text(text)) if text.is_empty() => DecodedMemo::None,
+        Ok(Memo::Text(text)) => DecodedMemo::Text(String::from(text)),
+        // Invalid UTF-8 in the text range is still data the sender put there.
+        Ok(Memo::Future(_)) | Ok(Memo::Arbitrary(_)) | Err(_) => {
+            let hash = blake2b_simd::Params::new()
+                .hash_length(32)
+                .hash(memo_bytes.as_array());
+            DecodedMemo::Binary {
+                hex: hex::encode(memo_bytes.as_slice()),
+                hash: hex::encode(hash.as_bytes()),
+            }
+        }
     }
-    let end = bytes.iter().rposition(|b| *b != 0).map_or(0, |i| i + 1);
-    String::from_utf8(bytes[..end].to_vec()).ok()
+}
+
+/// Preserve the exact padded field for both text and binary memo displays.
+fn memo_details(bytes: &[u8]) -> (Option<String>, Option<serde_json::Value>) {
+    let text = match decode_memo(bytes) {
+        DecodedMemo::None => return (None, None),
+        DecodedMemo::Text(text) => Some(text),
+        DecodedMemo::Binary { .. } => None,
+    };
+    let Ok(field) = zcash_protocol::memo::MemoBytes::from_bytes(bytes) else {
+        return (None, None);
+    };
+    let hash = blake2b_simd::Params::new()
+        .hash_length(32)
+        .hash(field.as_array());
+    (
+        text,
+        Some(json!({
+            "hex": hex::encode(field.as_array()),
+            "hash": hex::encode(hash.as_bytes()),
+        })),
+    )
 }
 
 /// 显示序（大端 hex）→ 内部序（小端字节）。
@@ -462,6 +519,62 @@ mod tests {
 
     use super::*;
     use crate::clock::HostClock;
+
+    // Expected hashes from Python: hashlib.blake2b(field, digest_size=32),
+    // where field is the memo padded with zeroes to 512 bytes.
+    #[test]
+    fn memos_are_classified_per_zip_302() {
+        assert_eq!(decode_memo(b"hello"), DecodedMemo::Text("hello".into()));
+        assert_eq!(decode_memo(&[0xF6]), DecodedMemo::None);
+        assert_eq!(decode_memo(&[0u8; 512]), DecodedMemo::None);
+        assert_eq!(
+            decode_memo(&[0xFF, 1, 2, 3]),
+            DecodedMemo::Binary {
+                hex: "ff010203".into(),
+                hash: "65f2f3b6161331db680c67819cb0419fbebc46d460926cb5b2251300be0bab19".into(),
+            }
+        );
+        assert_eq!(
+            decode_memo(&[0xF5, 9]),
+            DecodedMemo::Binary {
+                hex: "f509".into(),
+                hash: "0e72c1749d69b52a0360b93c9d8598c99c03ff333a1b011504f35a9983560f73".into(),
+            }
+        );
+        assert_eq!(
+            decode_memo(&[0xC3, 0x28]),
+            DecodedMemo::Binary {
+                hex: "c328".into(),
+                hash: "e839917e76e97f37720fabe711e787adf8819788647c7407363819b8e4bf80ae".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn memo_details_preserve_full_text_and_binary_fields() {
+        let (text, raw) = memo_details("  中文\n🙂  ".as_bytes());
+        assert_eq!(text.as_deref(), Some("  中文\n🙂  "));
+        let raw = raw.unwrap();
+        assert_eq!(raw["hex"].as_str().unwrap().len(), 1024);
+        assert!(raw["hex"]
+            .as_str()
+            .unwrap()
+            .starts_with("2020e4b8ade696870af09f99822020"));
+        assert_eq!(
+            raw["hash"],
+            "8ddea12a10d4fba7353a20aff34eb4a0a4e9533eabc637a5fca9e6e90ab7eeef"
+        );
+        let (text, raw) = memo_details(&[0xff, 1, 2, 3]);
+        assert_eq!(text, None);
+        let raw = raw.unwrap();
+        assert_eq!(raw["hex"], format!("ff010203{}", "00".repeat(508)));
+        assert_eq!(
+            raw["hash"],
+            "65f2f3b6161331db680c67819cb0419fbebc46d460926cb5b2251300be0bab19"
+        );
+        assert_eq!(memo_details(&[0xf6]), (None, None));
+        assert_eq!(memo_details(&[0; 512]), (None, None));
+    }
 
     #[test]
     fn a_non_ascii_txid_is_rejected_not_a_panic() {
@@ -675,6 +788,60 @@ mod tests {
             json!({ "3": "-100", "4": "99" })
         );
     }
+    #[test]
+    fn decrypted_memos_are_visible_only_to_the_output_sender_or_receiver() {
+        let conn = history_fixture();
+        conn.execute_batch(
+            "ALTER TABLE v_tx_outputs ADD COLUMN output_pool INTEGER DEFAULT 4;
+             ALTER TABLE v_tx_outputs ADD COLUMN value INTEGER DEFAULT 10000;
+             ALTER TABLE v_tx_outputs ADD COLUMN memo BLOB;
+             ALTER TABLE v_received_outputs ADD COLUMN address_id INTEGER;
+             CREATE TABLE addresses (id INTEGER PRIMARY KEY, address TEXT);",
+        )
+        .unwrap();
+        let sender = uuid::Uuid::from_u128(1);
+        let receiver = uuid::Uuid::from_u128(2);
+        let stranger = uuid::Uuid::from_u128(3);
+        let txid = [7u8; 32];
+        let text = "  中文\n🙂  ";
+        conn.execute(
+            "INSERT INTO v_tx_outputs
+             (txid, from_account_uuid, to_account_uuid, to_address, is_change, memo)
+             VALUES (?1, ?2, ?3, 'synthetic-recipient', 0, ?4)",
+            rusqlite::params![
+                txid.as_slice(),
+                sender.as_bytes().as_slice(),
+                receiver.as_bytes().as_slice(),
+                text.as_bytes(),
+            ],
+        )
+        .unwrap();
+        for (account, field) in [(sender, "external"), (receiver, "received")] {
+            let output: serde_json::Value = serde_json::from_str(
+                &details_outputs(&conn, &account.to_string(), &hex_display_order(&txid)).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(output[field][0]["memo"], text);
+            assert_eq!(
+                output[field][0]["memoBinary"]["hex"]
+                    .as_str()
+                    .unwrap()
+                    .len(),
+                1024
+            );
+            assert_eq!(
+                output[field][0]["memoBinary"]["hash"],
+                "8ddea12a10d4fba7353a20aff34eb4a0a4e9533eabc637a5fca9e6e90ab7eeef"
+            );
+        }
+        let output: serde_json::Value = serde_json::from_str(
+            &details_outputs(&conn, &stranger.to_string(), &hex_display_order(&txid)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(output["external"], json!([]));
+        assert_eq!(output["received"], json!([]));
+    }
+
     #[test]
     fn outgoing_outputs_are_external_relative_to_the_current_account() {
         let conn = history_fixture();

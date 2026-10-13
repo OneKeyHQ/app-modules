@@ -23,6 +23,7 @@ rust-version = "1.85"
 # 那个 feature 会在构建期编译 SQLite 的 C 源码，而 wasm32 没有 libc sysroot。
 # Zcash Rust 源码零改动。VFS 的持久化补丁另见 patches/manifest.json。
 [workspace.dependencies]
+blake2b_simd = "1"
 zcash_client_backend = { version = "0.24.0", default-features = false, features = ["orchard", "transparent-inputs", "lightwalletd-tonic", "sync", "pczt"] }
 # serde: create_pczt_from_proposal 要求 AccountId: Serialize
 zcash_client_sqlite = { version = "0.22.0", default-features = false, features = ["orchard", "transparent-inputs", "serde"] }
@@ -77,6 +78,7 @@ tonic-web-wasm-client = "0.9.1"
 # 先跑 `bash scripts/vendor-deps.sh` 生成 vendor/ 目录。
 [patch.crates-io]
 zcash_client_sqlite = { path = "vendor/zcash_client_sqlite-0.22.0" }
+tonic-web-wasm-client = { path = "vendor/tonic-web-wasm-client-0.9.1" }
 
 [profile.release]
 # "s" 是量过的选择，不是省事的默认：opt-level = 3 在主网扫描上快不出

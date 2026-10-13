@@ -80,6 +80,7 @@ pub struct OutpointRef {
 pub struct TransparentRecipient {
     pub address: String,
     pub amount_zat: Option<String>,
+    pub memo_hex: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -136,6 +137,7 @@ enum RecipientAddress {
 struct PlannedOutput {
     address: RecipientAddress,
     user_address: String,
+    memo: zcash_protocol::memo::MemoBytes,
     value: Zatoshis,
 }
 
@@ -232,6 +234,20 @@ impl TransactionPlan {
     }
 }
 
+pub(crate) fn parse_memo_hex(hex: Option<&str>) -> Result<zcash_protocol::memo::MemoBytes> {
+    match hex {
+        None => Ok(zcash_protocol::memo::MemoBytes::empty()),
+        Some(hex) => {
+            let invalid = || KeysError::new(ErrorCode::InvalidTransactionRequest);
+            if hex.len() != 1024 {
+                return Err(invalid());
+            }
+            let bytes = hex::decode(hex).map_err(|_| invalid())?;
+            zcash_protocol::memo::MemoBytes::from_bytes(&bytes).map_err(|_| invalid())
+        }
+    }
+}
+
 fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
     if request.network != "main" {
         return Err(KeysError::with(
@@ -310,6 +326,10 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
         .into_iter()
         .map(|recipient| {
             let address = parse_recipient_address(&recipient.address)?;
+            let memo = parse_memo_hex(recipient.memo_hex.as_deref())?;
+            if recipient.memo_hex.is_some() && matches!(address, RecipientAddress::Transparent(_)) {
+                return Err(KeysError::new(ErrorCode::InvalidTransactionRequest));
+            }
             if request.send_max {
                 if recipient.amount_zat.is_some() {
                     return Err(KeysError::with(
@@ -317,7 +337,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
                         serde_json::json!({ "field": "amountZat", "reason": "mustBeOmittedForSendMax" }),
                     ));
                 }
-                Ok((address, None, recipient.address))
+                Ok((address, None, recipient.address, memo))
             } else {
                 let amount = recipient.amount_zat.as_deref().ok_or_else(|| {
                     KeysError::with(
@@ -326,7 +346,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
                     )
                 })?;
                 let value = parse_positive_zatoshis(amount, "recipient.amountZat")?;
-                Ok((address, Some(value), recipient.address))
+                Ok((address, Some(value), recipient.address, memo))
             }
         })
         .collect::<Result<Vec<_>>>()?;
@@ -346,6 +366,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
             recipients: vec![PlannedOutput {
                 address,
                 user_address: parsed_recipients[0].2.clone(),
+                memo: parsed_recipients[0].3.clone(),
                 value: send_amount,
             }],
             change: None,
@@ -357,7 +378,8 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
 
     let recipients = parsed_recipients
         .into_iter()
-        .map(|(address, value, user_address)| PlannedOutput {
+        .map(|(address, value, user_address, memo)| PlannedOutput {
+            memo,
             address,
             user_address,
             value: value.expect("non-send-max recipients were checked above"),
@@ -450,6 +472,7 @@ fn plan_transaction(request: TransparentTxRequest) -> Result<TransactionPlan> {
                     PlannedOutput {
                         address: RecipientAddress::Transparent(change_address),
                         user_address: change_request.address,
+                        memo: zcash_protocol::memo::MemoBytes::empty(),
                         value: change_value,
                     },
                     change_path,

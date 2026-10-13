@@ -10,5 +10,11 @@
     "version": "0.2.0",
     "sha256": "7f7a5c9ac229421d577bb5a9bb59048838509958b218dd4e0b3c1214a87c361e",
     "patch": "sqlite-wasm-vfs-0.2.0-opfs-durability.patch"
+  },
+  {
+    "name": "tonic-web-wasm-client",
+    "version": "0.9.1",
+    "sha256": "3c0469c353de5f665c95f898074b5b004b500c6722214c3249f1dc79c0a2a3f6",
+    "patch": "tonic-web-wasm-client-0.9.1-host-fetch.patch"
   }
 ]

@@ -242,12 +242,33 @@ fn recipient_is_tex(
     )
 }
 
+// Keep the legacy text argument compatible; new hosts pass the exact ZIP 302 field.
+pub fn parse_memo(text: Option<&str>, hex: Option<&str>) -> Result<Option<MemoBytes>> {
+    let invalid = || RuntimeError::new(ErrorCode::InvalidMemo);
+    match (text, hex) {
+        (Some(_), Some(_)) => Err(invalid()),
+        (_, Some(hex)) => {
+            if hex.len() != 1024 {
+                return Err(invalid());
+            }
+            let bytes = hex::decode(hex).map_err(|_| invalid())?;
+            Ok(Some(MemoBytes::from_bytes(&bytes).map_err(|_| invalid())?))
+        }
+        (Some(text), None) => {
+            let memo =
+                zcash_protocol::memo::Memo::from_bytes(text.as_bytes()).map_err(|_| invalid())?;
+            Ok(Some(MemoBytes::from(&memo)))
+        }
+        (None, None) => Ok(None),
+    }
+}
+
 fn build_proposal(
     db: &mut Db,
     account_uuid: &str,
     to_address: &str,
     amount_zat: u64,
-    memo: Option<&str>,
+    memo: Option<&MemoBytes>,
     policy: SendPolicy,
     lock: Option<zcash_client_backend::data_api::wallet::LockRequest>,
 ) -> Result<TransferProposal> {
@@ -283,18 +304,8 @@ fn build_proposal(
         ));
     }
 
-    let memo_bytes = match memo {
-        None => None,
-        Some(m) => {
-            let parsed = zcash_protocol::memo::Memo::from_bytes(m.as_bytes()).map_err(|e| {
-                RuntimeError::with(ErrorCode::InvalidMemo, json!({ "byteLen": m.len() })).detail(e)
-            })?;
-            Some(MemoBytes::from(&parsed))
-        }
-    };
-
     // Payment::new 会自己校验「透明地址不能带 memo」这类约束。
-    let payment = zip321::Payment::new(recipient, Some(amount), memo_bytes, None, None, vec![])
+    let payment = zip321::Payment::new(recipient, Some(amount), memo.cloned(), None, None, vec![])
         .map_err(|e| {
             RuntimeError::with(ErrorCode::InvalidMemo, json!({ "reason": "payment" }))
                 .detail(format!("{e:?}"))
@@ -371,7 +382,7 @@ pub fn quote(
     account_uuid: &str,
     to_address: &str,
     amount_zat: u64,
-    memo: Option<&str>,
+    memo: Option<&MemoBytes>,
     policy: SendPolicy,
 ) -> Result<String> {
     let proposal = build_proposal(db, account_uuid, to_address, amount_zat, memo, policy, None)?;
@@ -403,7 +414,7 @@ pub fn quote(
 // 提案本身要留在内存里：`unlock_proposal_inputs` 需要提案才知道该解锁哪些 note。
 thread_local! {
     static RESERVATIONS: std::cell::RefCell<
-        std::collections::HashMap<String, (String, TransferProposal)>,
+        std::collections::HashMap<String, (String, TransferProposal, Vec<u8>)>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
@@ -442,20 +453,22 @@ pub fn release_reservation(db: &mut Db, reservation_id: &str) -> Result<bool> {
     // selected notes. In that state release must only discard the in-memory
     // proposal; unlocking its inputs would make spent notes selectable again.
     let finalized_txid = db.transactionally_with_extension(|_wallet, ext| {
-        tx_state::existing_txid_for_reservation(ext, reservation_id)
+        tx_state::existing_txid_for_reservation(ext, reservation_id, None)
     })?;
     if finalized_txid.is_some() {
         forget_reservation(reservation_id);
         return Ok(false);
     }
 
-    if let Some((account_uuid, proposal)) =
+    if let Some((account_uuid, proposal, approved_pczt)) =
         RESERVATIONS.with(|r| r.borrow_mut().remove(reservation_id))
     {
         if let Err(e) = unlock_proposal_inputs(db, &proposal, owner) {
             RESERVATIONS.with(|r| {
-                r.borrow_mut()
-                    .insert(reservation_id.to_owned(), (account_uuid, proposal));
+                r.borrow_mut().insert(
+                    reservation_id.to_owned(),
+                    (account_uuid, proposal, approved_pczt),
+                );
             });
             return Err(build_err("unlockProposalInputs", format!("{e:?}")));
         }
@@ -481,7 +494,7 @@ fn release_persisted_reservation(
     use zcash_protocol::PoolType;
 
     db.transactionally_with_extension(|wallet, ext| {
-        if tx_state::existing_txid_for_reservation(ext, reservation_id)?.is_some() {
+        if tx_state::existing_txid_for_reservation(ext, reservation_id, None)?.is_some() {
             return Ok(false);
         }
         let mut released = false;
@@ -553,7 +566,7 @@ pub fn forget_reservation(reservation_id: &str) {
 pub fn forget_account_reservations(account_uuid: &str) {
     RESERVATIONS.with(|r| {
         r.borrow_mut()
-            .retain(|_, (owner_uuid, _)| owner_uuid.as_str() != account_uuid)
+            .retain(|_, (owner_uuid, _, _)| owner_uuid.as_str() != account_uuid)
     });
 }
 
@@ -576,7 +589,7 @@ pub fn create_pczt(
     account_uuid: &str,
     to_address: &str,
     amount_zat: u64,
-    memo: Option<&str>,
+    memo: Option<&MemoBytes>,
     policy: SendPolicy,
     lock_for_blocks: u32,
     reservation_id: Option<&str>,
@@ -645,8 +658,10 @@ pub fn create_pczt(
 
     // 提案要留着：解锁时需要它才知道该放开哪些 note。
     RESERVATIONS.with(|r| {
-        r.borrow_mut()
-            .insert(reservation_id.clone(), (account_uuid.to_owned(), proposal));
+        r.borrow_mut().insert(
+            reservation_id.clone(),
+            (account_uuid.to_owned(), proposal, bytes.clone()),
+        );
     });
     Ok((bytes, reservation_id, fee_zat))
 }
@@ -810,6 +825,44 @@ pub fn prove_pczt(db: &Db, pczt_bytes: &[u8]) -> Result<Vec<u8>> {
     prove_pczt_at_height(&params, chain_tip, pczt_bytes)
 }
 
+/// Builds only public parameters, without a wallet, proposal, or spending key.
+pub fn prewarm_pczt(
+    params: &zcash_protocol::consensus::Network,
+    target_height: zcash_protocol::consensus::BlockHeight,
+) -> Result<()> {
+    let version = circuit_version_for(params, target_height);
+    crate::circuit_keys::proving_key(version)?;
+    crate::circuit_keys::verifying_key(version);
+    Ok(())
+}
+
+/// Retains upstream proof/signature validation while reusing public parameters.
+pub fn extract_pczt(pczt: pczt::Pczt) -> Result<zcash_primitives::transaction::Transaction> {
+    use orchard::circuit::OrchardCircuitVersion;
+    use zcash_protocol::consensus::{BranchId, OrchardProtocolRevision};
+
+    let version = BranchId::try_from(*pczt.global().consensus_branch_id())
+        .ok()
+        .and_then(|branch| branch.orchard_protocol_revision())
+        .map(|revision| match revision {
+            OrchardProtocolRevision::InsecureV1 => OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardProtocolRevision::V2 => OrchardCircuitVersion::FixedPostNu6_2,
+            OrchardProtocolRevision::V3 => OrchardCircuitVersion::PostNu6_3,
+        });
+    let has_shielded_bundle =
+        !pczt.orchard().actions().is_empty() || !pczt.ironwood().actions().is_empty();
+    let extractor = pczt::roles::tx_extractor::TransactionExtractor::new(pczt);
+    let extractor = match version.filter(|_| has_shielded_bundle) {
+        Some(version) => extractor.with_orchard(crate::circuit_keys::verifying_key(version)),
+        // Let upstream report unsupported branches and malformed bundles.
+        None => extractor,
+    };
+    extractor.extract().map_err(|error| {
+        RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "extract" }))
+            .detail(format!("{error:?}"))
+    })
+}
+
 /// Pure proving: no wallet, database, scan, or storage initialization.
 pub fn prove_pczt_at_height(
     params: &zcash_protocol::consensus::Network,
@@ -825,13 +878,11 @@ pub fn prove_pczt_at_height(
     let prover = pczt::roles::prover::Prover::new(pczt);
 
     let prover = if prover.requires_ironwood_proof() {
-        let proving_key = orchard::circuit::ProvingKey::build(version);
-        prover
-            .create_ironwood_proof(&proving_key)
-            .map_err(|error| {
-                RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "ironwoodProof" }))
-                    .detail(format!("{error:?}"))
-            })?
+        let proving_key = crate::circuit_keys::proving_key(version)?;
+        prover.create_ironwood_proof(proving_key).map_err(|error| {
+            RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "ironwoodProof" }))
+                .detail(format!("{error:?}"))
+        })?
     } else {
         prover
     };
@@ -844,8 +895,8 @@ pub fn prove_pczt_at_height(
     }
 
     let prover = if prover.requires_orchard_proof() {
-        let proving_key = orchard::circuit::ProvingKey::build(version);
-        prover.create_orchard_proof(&proving_key).map_err(|error| {
+        let proving_key = crate::circuit_keys::proving_key(version)?;
+        prover.create_orchard_proof(proving_key).map_err(|error| {
             RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "orchardProof" }))
                 .detail(format!("{error:?}"))
         })?
@@ -887,7 +938,7 @@ pub enum SubmitOutcome {
     Accepted {
         txid: String,
     },
-    /// 节点明确拒收：没落库，note 已放回。
+    /// The trusted node rejected it; keep the durable record until chain expiry.
     Rejected {
         txid: String,
         error: RuntimeError,
@@ -899,24 +950,33 @@ pub enum SubmitOutcome {
     },
 }
 
-/// 首次提交时这笔交易从没发出过：节点回「输入已花」只能是别的交易花了它们，
-/// 不是它自己已被打包 —— 按拒绝处理。`Ok` 是拒绝，`Err` 原样是其他错误。
+// A spent-input/duplicate-nullifier reply can refer to this transaction itself.
 fn first_submit_rejection(error: RuntimeError) -> std::result::Result<RuntimeError, RuntimeError> {
-    match error.code {
-        ErrorCode::BroadcastRejected | ErrorCode::BroadcastOutcomeUnknown => Ok(RuntimeError {
-            code: ErrorCode::BroadcastRejected,
-            ..error
-        }),
-        _ => Err(error),
+    if error.code == ErrorCode::BroadcastRejected {
+        Ok(error)
+    } else {
+        Err(error)
     }
 }
 
-/// 提交签好名的 PCZT：先提取交易并广播，再按结局决定落不落库。
-///
-/// 先落库再广播的话，上游从落库那一刻起就把 note 算作已花，只有交易过期才放
-/// 回来；节点明确拒收的交易会把钱冻上几十个块。这里反过来：明确拒收就不落库，
-/// 直接放回 note。结局未知仍然落库 —— 交易可能已经传开，放回 note 会让用户重发
-/// 出第二笔。广播成功后落库失败按 FINALIZE_OUTCOME_UNKNOWN 报，由宿主查历史。
+fn record_submit_outcome(db: &mut Db, txid: String, result: Result<()>) -> SubmitOutcome {
+    match result {
+        Ok(()) => match tx_state::mark_accepted(db, &txid) {
+            Ok(()) => SubmitOutcome::Accepted { txid },
+            Err(error) => SubmitOutcome::Unknown { txid, error },
+        },
+        Err(error) => match first_submit_rejection(error) {
+            Ok(error) => match tx_state::mark_rejected(db, &txid, &error) {
+                Ok(()) => SubmitOutcome::Rejected { txid, error },
+                Err(error) => SubmitOutcome::Unknown { txid, error },
+            },
+            Err(error) => SubmitOutcome::Unknown { txid, error },
+        },
+    }
+}
+
+/// Persist the exact authorized transaction before any external broadcast.
+/// Retries and crash recovery always rebroadcast the stored bytes.
 pub async fn submit_signed_pczt(
     db: &mut Db,
     client: &mut crate::network::LightClient,
@@ -924,24 +984,42 @@ pub async fn submit_signed_pczt(
     pczt_bytes: &[u8],
     reservation_id: &str,
 ) -> Result<SubmitOutcome> {
-    use pczt::roles::{spend_finalizer::SpendFinalizer, tx_extractor::TransactionExtractor};
-
     // 上次提交已经落库（宿主没拿到回包就重试）：重播那一笔，不再提取第二次。
     let stored = db.transactionally_with_extension(|_wallet, ext| {
-        tx_state::existing_txid_for_reservation(ext, reservation_id)
+        tx_state::existing_txid_for_reservation(ext, reservation_id, Some(account_uuid))
     })?;
     if let Some(txid) = stored {
-        let raw = raw_transaction(db, &txid)?;
-        return Ok(match crate::network::broadcast(client, raw).await {
-            Ok(()) => {
-                tx_state::mark_accepted(db, &txid)?;
-                SubmitOutcome::Accepted { txid }
-            }
-            Err(error) => SubmitOutcome::Unknown { txid, error },
-        });
+        if let Err(error) = tx_state::assert_broadcastable(db, &txid) {
+            return Ok(if error.code == ErrorCode::BroadcastRejected {
+                SubmitOutcome::Rejected { txid, error }
+            } else {
+                SubmitOutcome::Unknown { txid, error }
+            });
+        }
+        let raw = match raw_transaction(db, &txid) {
+            Ok(raw) => raw,
+            Err(error) => return Ok(SubmitOutcome::Unknown { txid, error }),
+        };
+        let result = crate::network::broadcast(client, raw).await;
+        return Ok(record_submit_outcome(db, txid, result));
     }
 
-    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| {
+    let approved_pczt = RESERVATIONS
+        .with(|reservations| {
+            reservations
+                .borrow()
+                .get(reservation_id)
+                .filter(|(owner, _, _)| owner == account_uuid)
+                .map(|(_, _, pczt)| pczt.clone())
+        })
+        .ok_or_else(|| {
+            RuntimeError::with(
+                ErrorCode::InvalidReservationId,
+                json!({ "reason": "missingOrWrongAccount" }),
+            )
+        })?;
+    let bound_pczt = combine_pczt(&approved_pczt, pczt_bytes)?;
+    let pczt = pczt::Pczt::parse(&bound_pczt).map_err(|e| {
         RuntimeError::with(ErrorCode::PcztError, json!({ "stage": "parse" }))
             .detail(format!("{e:?}"))
     })?;
@@ -952,55 +1030,25 @@ pub async fn submit_signed_pczt(
         .ok_or_else(|| RuntimeError::new(ErrorCode::NotSynced))?;
     let version =
         circuit_version_for_branch(&params, *pczt.global().consensus_branch_id(), chain_tip);
-    // 构建一次，提取和落库共用：每次现场构建都要好几秒。
-    let orchard_vk = orchard::circuit::VerifyingKey::build(version);
+    let orchard_vk = crate::circuit_keys::verifying_key(version);
 
-    let finalized = SpendFinalizer::new(pczt.clone())
-        .finalize_spends()
-        .map_err(|e| build_err("finalizeSpends", format!("{e:?}")))?;
-    let tx = TransactionExtractor::new(finalized)
-        .with_orchard(&orchard_vk)
-        .extract()
-        .map_err(|e| build_err("extractTransaction", format!("{e:?}")))?;
-    let txid = tx.txid().to_string();
-    let mut raw = Vec::new();
-    tx.write(&mut raw)
-        .map_err(|e| build_err("serializeTransaction", e))?;
-
-    let broadcast = match crate::network::broadcast(client, raw).await {
-        Err(error) => match first_submit_rejection(error) {
-            Ok(error) => {
-                release_reservation(db, reservation_id)?;
-                return Ok(SubmitOutcome::Rejected { txid, error });
-            }
-            Err(error) => Err(error),
-        },
-        Ok(()) => Ok(()),
-    };
-
-    let stored = store_signed_pczt(db, account_uuid, pczt, &orchard_vk, reservation_id).and_then(
-        |stored_txid| {
-            if broadcast.is_ok() {
-                tx_state::mark_accepted(db, &stored_txid)?;
-            }
-            Ok(stored_txid)
-        },
-    );
+    // This transaction atomically stores raw bytes and the reservation/txid association.
+    // If it fails, nothing has been sent and the caller can safely abandon the proposal.
+    let stored_txid = store_signed_pczt(db, account_uuid, pczt, orchard_vk, reservation_id)?;
     forget_reservation(reservation_id);
-    let stored_txid = stored.map_err(|error| {
-        RuntimeError::with(
-            ErrorCode::FinalizeOutcomeUnknown,
-            json!({ "txid": txid, "broadcast": if broadcast.is_ok() { "accepted" } else { "unknown" } }),
-        )
-        .detail(format!("{error:?}"))
-    })?;
-    Ok(match broadcast {
-        Ok(()) => SubmitOutcome::Accepted { txid: stored_txid },
-        Err(error) => SubmitOutcome::Unknown {
-            txid: stored_txid,
-            error,
-        },
-    })
+    // Extraction randomizes binding signatures. Broadcast only the stored bytes,
+    // so the first attempt and every recovery attempt use identical authorizations.
+    let raw = match raw_transaction(db, &stored_txid) {
+        Ok(raw) => raw,
+        Err(error) => {
+            return Ok(SubmitOutcome::Unknown {
+                txid: stored_txid,
+                error,
+            })
+        }
+    };
+    let result = crate::network::broadcast(client, raw).await;
+    Ok(record_submit_outcome(db, stored_txid, result))
 }
 
 /// 从钱包库取出已落库交易的原始字节，供重播使用。
@@ -1054,7 +1102,7 @@ pub fn clear_locked_outputs(db: &mut Db, account_uuid: &str) -> Result<u32> {
 
     RESERVATIONS.with(|r| {
         r.borrow_mut()
-            .retain(|_, (owner_account_uuid, _)| owner_account_uuid != account_uuid);
+            .retain(|_, (owner_account_uuid, _, _)| owner_account_uuid != account_uuid);
     });
     Ok(n as u32)
 }
@@ -1077,6 +1125,79 @@ mod reservation_recovery_tests {
         )
     }
 
+    fn outcome_wallet(fail_update: bool) -> (Db, String) {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE ext_onekey_tx_state (txid BLOB PRIMARY KEY, account_uuid BLOB, reservation_id TEXT, broadcast_state TEXT, rejection_code INTEGER, rejection_reason TEXT);").unwrap();
+        conn.execute("INSERT INTO ext_onekey_tx_state (txid,account_uuid,reservation_id,broadcast_state) VALUES (?1,?2,'review','pending')", rusqlite::params![[1u8;32].as_slice(), uuid::Uuid::from_u128(1).as_bytes().as_slice()]).unwrap();
+        if fail_update {
+            conn.execute_batch("CREATE TRIGGER fail_state BEFORE UPDATE ON ext_onekey_tx_state BEGIN SELECT RAISE(ABORT,'synthetic write failure'); END;").unwrap();
+        }
+        (wallet(conn), "01".repeat(32))
+    }
+
+    #[test]
+    fn both_first_and_retried_broadcasts_record_definitive_node_outcomes() {
+        let (mut db, txid) = outcome_wallet(false);
+        assert!(matches!(
+            record_submit_outcome(&mut db, txid.clone(), Ok(())),
+            SubmitOutcome::Accepted { .. }
+        ));
+        let rejected = RuntimeError::new(ErrorCode::BroadcastRejected).detail("bad-txns-expired");
+        assert!(matches!(
+            record_submit_outcome(&mut db, txid.clone(), Err(rejected)),
+            SubmitOutcome::Rejected { .. }
+        ));
+        assert_eq!(
+            tx_state::assert_broadcastable(&mut db, &txid)
+                .unwrap_err()
+                .code,
+            ErrorCode::BroadcastRejected
+        );
+    }
+
+    #[test]
+    fn accepted_broadcast_with_failed_state_write_keeps_its_known_txid() {
+        let (mut db, txid) = outcome_wallet(true);
+        match record_submit_outcome(&mut db, txid.clone(), Ok(())) {
+            SubmitOutcome::Unknown { txid: retained, .. } => assert_eq!(retained, txid),
+            _ => panic!("an accepted transaction must not become a signing failure"),
+        }
+        tx_state::assert_broadcastable(&mut db, &txid).unwrap();
+    }
+
+    #[test]
+    fn duplicate_spend_or_network_failure_keeps_the_persisted_send_pending() {
+        for code in [ErrorCode::BroadcastOutcomeUnknown, ErrorCode::NetworkError] {
+            let (mut db, txid) = outcome_wallet(false);
+            assert!(matches!(
+                record_submit_outcome(&mut db, txid.clone(), Err(RuntimeError::new(code))),
+                SubmitOutcome::Unknown { .. }
+            ));
+            tx_state::assert_broadcastable(&mut db, &txid).unwrap();
+        }
+    }
+
+    #[test]
+    fn retry_cannot_use_another_accounts_reservation() {
+        let (mut db, txid) = outcome_wallet(false);
+        let owner = uuid::Uuid::from_u128(1).to_string();
+        let other = uuid::Uuid::from_u128(2).to_string();
+        db.transactionally_with_extension(|_, ext| {
+            assert_eq!(
+                tx_state::existing_txid_for_reservation(ext, "review", Some(&owner))?,
+                Some(txid)
+            );
+            assert_eq!(
+                tx_state::existing_txid_for_reservation(ext, "review", Some(&other))
+                    .unwrap_err()
+                    .code,
+                ErrorCode::InvalidReservationId
+            );
+            Ok::<(), RuntimeError>(())
+        })
+        .unwrap();
+    }
+
     #[test]
     fn restart_cancellation_releases_only_its_owner_and_preserves_finalized_locks() {
         let path =
@@ -1086,7 +1207,7 @@ mod reservation_recovery_tests {
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch(
             "CREATE TABLE transactions (id_tx INTEGER PRIMARY KEY, txid BLOB);
-                            CREATE TABLE ext_onekey_tx_state (txid BLOB, reservation_id TEXT);",
+                            CREATE TABLE ext_onekey_tx_state (txid BLOB, reservation_id TEXT, account_uuid BLOB);",
         )
         .unwrap();
         conn.execute("INSERT INTO transactions VALUES (1, ?1)", [[3_u8; 32]])
@@ -1127,8 +1248,8 @@ mod reservation_recovery_tests {
             assert_eq!(released, 1);
         }
         conn.execute(
-            "INSERT INTO ext_onekey_tx_state VALUES (?1, ?2)",
-            rusqlite::params![[4_u8; 32], hex32(&other_owner)],
+            "INSERT INTO ext_onekey_tx_state (txid, reservation_id, account_uuid) VALUES (?1, ?2, ?3)",
+            rusqlite::params![[4_u8; 32], hex32(&other_owner), uuid::Uuid::from_u128(1).as_bytes()],
         )
         .unwrap();
         assert!(!release_reservation(&mut db, &hex32(&other_owner)).unwrap());
@@ -1395,14 +1516,14 @@ mod submit_tests {
     use super::*;
 
     #[test]
-    fn first_submit_treats_spent_inputs_as_rejection() {
+    fn first_submit_keeps_spent_inputs_unknown() {
         let spent = RuntimeError::with(
             ErrorCode::BroadcastOutcomeUnknown,
             json!({ "errorCode": -26 }),
         )
         .detail("bad-txns-inputs-spent".to_string());
-        let rejection = first_submit_rejection(spent).unwrap();
-        assert_eq!(rejection.code, ErrorCode::BroadcastRejected);
+        let rejection = first_submit_rejection(spent).unwrap_err();
+        assert_eq!(rejection.code, ErrorCode::BroadcastOutcomeUnknown);
         assert_eq!(rejection.params["errorCode"], -26);
         assert_eq!(rejection.detail.as_deref(), Some("bad-txns-inputs-spent"));
     }
@@ -1414,5 +1535,26 @@ mod submit_tests {
             first_submit_rejection(error).unwrap_err().code,
             ErrorCode::NetworkError
         );
+    }
+}
+
+#[cfg(test)]
+mod memo_tests {
+    use super::*;
+    #[test]
+    fn text_and_hex_fields_preserve_bytes_and_reject_ambiguous_input() {
+        let text = parse_memo(Some(" 中文\n🙂 "), None).unwrap().unwrap();
+        let hex = hex::encode(text.as_array());
+        assert_eq!(parse_memo(None, Some(&hex)).unwrap().unwrap(), text);
+        let binary = format!("ff000102{}", "00".repeat(508));
+        assert_eq!(
+            hex::encode(parse_memo(None, Some(&binary)).unwrap().unwrap().as_array()),
+            binary
+        );
+        assert!(parse_memo(Some("text"), Some(&hex)).is_err());
+        assert!(parse_memo(None, Some("ff00")).is_err());
+        assert!(parse_memo(None, Some(&"zz".repeat(512))).is_err());
+        assert!(parse_memo(Some(&"🙂".repeat(129)), None).is_err());
+        assert!(parse_memo(None, None).unwrap().is_none());
     }
 }

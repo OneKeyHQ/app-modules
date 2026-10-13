@@ -1687,6 +1687,7 @@ dependencies = [
 name = "onekey-zcash-runtime"
 version = "0.1.0-rc.1"
 dependencies = [
+ "blake2b_simd",
  "console_error_panic_hook",
  "futures",
  "futures-util",
@@ -2932,8 +2933,6 @@ dependencies = [
 [[package]]
 name = "tonic-web-wasm-client"
 version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c0469c353de5f665c95f898074b5b004b500c6722214c3249f1dc79c0a2a3f6"
 dependencies = [
  "base64",
  "byteorder",

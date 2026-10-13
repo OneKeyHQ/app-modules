@@ -5,7 +5,7 @@
 use wasm_bindgen::prelude::*;
 use zeroize::Zeroizing;
 
-use crate::{keys, sign, transparent_prevouts, transparent_send};
+use crate::{keys, review, sign, transparent_prevouts, transparent_send};
 
 /// Check recipient encoding, network, and supported receivers locally.
 #[wasm_bindgen(js_name = validateAddress)]
@@ -51,15 +51,23 @@ pub fn pczt_sign_with_seed(
     seed: Vec<u8>,
     account_index: u32,
     pczt_bytes: Vec<u8>,
+    review_json: &str,
 ) -> Result<Vec<u8>, JsValue> {
     let seed = Zeroizing::new(seed);
     let params = keys::parse_network(network)?;
+    review::verify_signer(params, &seed, account_index, &pczt_bytes, review_json)?;
     Ok(sign::sign_pczt_with_seed(
         params,
         &seed,
         account_index,
         &pczt_bytes,
     )?)
+}
+
+/// Verify a private payment before showing its confirmation or contacting a signer.
+#[wasm_bindgen(js_name = pcztVerifyReview)]
+pub fn pczt_verify_review(pczt_bytes: Vec<u8>, review_json: &str) -> Result<(), JsValue> {
+    Ok(review::verify_json(&pczt_bytes, review_json)?)
 }
 
 /// 从 UFVK 取透明收款地址（t 地址）。离线可算，不需要钱包库。
