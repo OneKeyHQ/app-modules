@@ -41,7 +41,7 @@ fn connects_and_reads_the_chain_tip() {
     };
 
     block_on(async {
-        let daemon = network::connect(&url).await.expect("连接节点");
+        let (daemon, _) = network::connect(&url).await.expect("连接节点");
         let tip = sync::chain_tip(&daemon).await.expect("取链尖");
         println!("链尖 = {tip}");
         assert!(tip > 3_000_000, "主网高度早就过 300 万了，{tip} 不合理");
@@ -65,7 +65,7 @@ fn scans_real_blocks_without_false_alarms() {
     };
 
     block_on(async {
-        let daemon = network::connect(&url).await.expect("连接节点");
+        let (daemon, _) = network::connect(&url).await.expect("连接节点");
         let tip = sync::chain_tip(&daemon).await.expect("取链尖");
 
         // 从链尖往回 200 块开始扫 40 块：足够覆盖有交易的块，又不至于太慢。
@@ -124,7 +124,7 @@ fn scans_a_real_wallet_if_view_keys_are_supplied() {
     let view = hex::decode(view_hex.trim()).expect("XMR_VIEW_PRIV 必须是 hex");
 
     block_on(async {
-        let daemon = network::connect(&url).await.expect("连接节点");
+        let (daemon, _) = network::connect(&url).await.expect("连接节点");
         let tip = sync::chain_tip(&daemon).await.expect("取链尖");
 
         let mut db =
@@ -186,7 +186,7 @@ fn rewind_actually_rolls_back_and_requeues() {
     };
 
     block_on(async {
-        let daemon = network::connect(&url).await.expect("连接节点");
+        let (daemon, _) = network::connect(&url).await.expect("连接节点");
         let tip = sync::chain_tip(&daemon).await.expect("取链尖");
         let start = tip.saturating_sub(50);
 
