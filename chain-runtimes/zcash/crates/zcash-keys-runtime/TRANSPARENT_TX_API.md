@@ -9,6 +9,13 @@ status reconciliation.
 - `transparentTxQuote(requestJson)`
 - `transparentTxBuildWithSeed(requestJson, seed)`
 - `transparentTxBuildWithAccountXprv(requestJson, accountXprv)`
+- `transparentShield{Create,Sign}With{Seed,AccountXprv}`: Unified Address recipients
+  through a proved PCZT
+- `transparentTxCreateWithAccountXpub(requestJson, accountXpub, seedFingerprintHex)` and
+  `transparentTxCombineHardwareSigned(requestJson, accountXpub, original, signed)`: hardware
+  signing
+
+The PCZT call sequences are in the Zcash README. All entry points take the same request.
 
 The xprv entry point accepts an account-level BIP-44 xprv. Its required derivation path is
 `m/44'/133'/account'`. An account xprv cannot attest its ancestors, so the crate verifies its depth
