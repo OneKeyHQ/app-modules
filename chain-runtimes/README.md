@@ -7,8 +7,7 @@ workspaces or their shared version/publish commands.
 
 ## Zcash
 
-See [zcash](./zcash/README.md), its [import record](./zcash/IMPORT.md) and
-[release process](./zcash/RELEASING.md).
+See [zcash](./zcash/README.md) and its [release process](./zcash/RELEASING.md).
 
 From the repository root:
 

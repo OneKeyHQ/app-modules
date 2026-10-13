@@ -267,7 +267,7 @@ pub fn account_by_ufvk(ufvk: String) -> Result<String, JsValue> {
 /// Per-account sync status, derived from the account birthday and the database's remaining scan ranges.
 ///
 /// Global progress misleads in a shared database: adding an account makes all accounts look unsynced.
-/// The official schema has no per-account cursor and is not changed for this (see D15); this is read-only.
+/// The official schema has no per-account cursor and is not changed for this; this is read-only.
 ///
 /// Returns block heights, not a percentage: the upstream progress ratio is over notes in a moving
 /// window and never reaches 100%.

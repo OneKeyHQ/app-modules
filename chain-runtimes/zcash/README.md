@@ -3,7 +3,6 @@
 > Install `wasm-bindgen-cli` at the `wasm-bindgen` version in `Cargo.lock`
 > and provide `wasm-opt` (Binaryen), or reuse the matching wasm-pack tool cache.
 > Builds use `--mode no-install` and never update `Cargo.lock`.
-> See [IMPORT.md](./IMPORT.md) for the source revision and vendor patches.
 
 # OneKey Zcash Runtime
 
@@ -94,7 +93,7 @@ OPFS 仍受浏览器 origin、配额和清理策略约束；App 内嵌页面的�
   gRPC-web 能通）。端点由宿主注入，runtime 不硬编码。
 - **扫描不走上游的 `scan_cached_blocks`**，改用自己的 `scan_blocks_inline`。
   上游把试解密交给 `rayon::spawn_fifo`，而 wasm32 单线程环境下 rayon 没有工作线程，
-  任务永远不会执行，随后取结果时永久堵死主线程。见 `docs/decisions.md` D8。
+  任务永远不会执行，随后取结果时永久堵死主线程。
   代价是失去批量试解密的摊销优化。用 `syncPeek()` 的 `remainingBlocks` 画进度条。
 - `syncPrepare()` 要下载各池的全部子树根。宿主应给它独立的「准备中」状态，
   主网子树数量比 testnet 多得多。
