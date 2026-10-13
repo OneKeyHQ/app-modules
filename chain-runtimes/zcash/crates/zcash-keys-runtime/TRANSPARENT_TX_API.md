@@ -56,11 +56,13 @@ Inputs must be confirmed, non-coinbase P2PKH coins controlled by their declared 
 BIP-44 path. Recipients may be mainnet P2PKH (`t1`), P2SH (`t3`), a ZIP-320 TEX address (`tex1`,
 paid as P2PKH), or a Unified Address with an
 Orchard receiver, which is paid an Ironwood note; a Unified Address without one is rejected rather
-than paid at a public receiver. Change must be an owned P2PKH address on internal scope `1`.
+than paid at a public receiver. Change must be an owned P2PKH address on internal scope `1` with an address index below 40.
 
 For send-max, supply exactly one recipient and omit `amountZat` and `change`. The recipient receives
-the selected input total minus the ZIP-317 fee. For a fixed amount, change below the standard 5,000
-zatoshi marginal fee is rejected instead of silently adding it to the fee.
+the selected input total minus the ZIP-317 fee. For a fixed amount, a surplus too small to fund a
+change output (below the 5,000 zatoshi marginal fee, or not enough to pay for the extra output) is
+added to the fee and shown in the quote; the overpayment stays below about 0.0001 ZEC.
+Any larger surplus requires a `change` entry.
 
 The target height must be on the mainnet NU6.3 branch. `expiryHeight` is mandatory and is supplied
 by the host's transaction policy. The crate validates that it is after the target height and no more

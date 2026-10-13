@@ -30,6 +30,5 @@ The app-monorepo job checks the existing module-ID registry but does not regener
 
 ## Chain runtimes
 
-Rust chain libraries live in [chain-runtimes](./chain-runtimes/README.md), separately
-from React Native workspaces. Zcash is the first runtime; see its build and test
-commands there.
+Rust chain libraries (Zcash and Monero) live in [chain-runtimes](./chain-runtimes/README.md),
+separately from React Native workspaces; see their build and test commands there.

@@ -1,8 +1,8 @@
 //! 对**真实节点**的集成测试。默认全部跳过。
 //!
 //! ```bash
-//! # 随便一个公共节点，或你自己的
-//! XMR_NODE=http://node.monerodevs.org:18089 cargo test --test live_node -- --nocapture
+//! # 你自己的节点，或一个可信的公共节点（建议 https）
+//! XMR_NODE=<monerod RPC URL> cargo test --test live_node -- --nocapture
 //!
 //! # 想扫自己的钱包（只需要观察密钥，不需要花费私钥）
 //! XMR_NODE=... \

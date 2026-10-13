@@ -65,6 +65,7 @@ _Avoid_: Test seed、测试钱包助记词（两者都容易被误解为可以�
 另一次选币挑中同一批。
 
 token 由**调用方持有**：先生成、先持久化、再构造，这样崩溃恢复后仍知道该释放哪一批。
+一个 token 只对应一笔交易：交易落库后，该 token 不能再用于构造新交易。
 
 ## Capability（能力声明）
 
@@ -94,9 +95,9 @@ _Avoid_: Ironwood 地址、最新池地址
 
 ## Current Shielded Output Pool（当前私密输出池）
 
-当前网络升级下，新私密输出、Shield All 目标和私密找零实际落入的池，当前为
-Ironwood。它与 Private Receive UA Policy、可花费来源池是三个不同维度；调用方不得
-各自写死池名。
+当前网络升级下，新私密输出和 Shield All 目标实际落入的池，当前为 Ironwood。
+私密找零不一定落在这里：从 Orchard 花费时，上游可能把找零留在 Orchard。它与
+Private Receive UA Policy、可花费来源池是三个不同维度；调用方不得各自写死池名。
 
 _Avoid_: Current Receiving Pool、最新池、默认隐私池
 
@@ -119,8 +120,7 @@ _Avoid_: Shield、归集（单独使用时无法表达来源、目标和“全�
 一笔付款花哪部分资金，由发送页的来源选择决定：私密池只花该池，透明只花透明，
 互不补足。
 
-_Avoid_: 优先使用透明资金（该账户偏好已移除，见
-[App ADR 0008](../../../app-monorepo/packages/kit-bg/src/vaults/impls/zcash/docs/adr/0008-payment-source-is-the-send-page-choice.md)）
+_Avoid_: 优先使用透明资金（该账户偏好已移除，付款来源只由发送页决定）
 
 ## Transparent Mode（透明模式）
 

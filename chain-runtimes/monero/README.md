@@ -5,7 +5,7 @@ monero-oxide 之上的钱包状态层。**它提供密码学、扫描器与交�
 
 ## 为什么是这条路
 
-三条路都量过（数据见 `development/research`）：
+三条路都量过：
 
 | | 我们要写 | 出厂体积 | 插件端 | 落盘 |
 |---|---|---|---|---|
@@ -31,6 +31,8 @@ scan.rs      扫描循环 + 三道校验 + 落库
 sync.rs      有界推进编排（拉块 → 扫描 → 记进度）
 query.rs     余额、历史、可花输出
 spend.rs     key image 导入、选币、预留、构造、签名、广播
+review.rs    签名前按用户确认的请求校验收款方、金额、手续费与找零
+pool.rs      自己广播、尚未上链的交易的存活检查
 network.rs   monerod 传输（浏览器 fetch / 原生 reqwest）
 runtime.rs   跨调用会话状态与并发防线
 bindgen.rs   wasm 边界
@@ -69,11 +71,8 @@ cargo check --workspace --target wasm32-unknown-unknown
 
 ## 与 Zcash runtime 的关系
 
-两条链各自独立的工作区，没有代码依赖。目前唯一的重复是
-`crates/monero-runtime/build.rs`（SQLite 的 wasm 链接胶水，与链无关，实测只差
-8 行注释）—— 抽不了，因为两条链还在各自未合并的分支上，没有共同祖先能放共享
-crate。**两条都落 main 之后第一件事就是抽它。**
+两条链各自独立的工作区，没有代码依赖。`crates/monero-runtime/build.rs`（SQLite 的
+wasm 链接胶水，与链无关）与 Zcash 那边基本相同，改一边记得同步另一边。
 
-一个刻意的差异：`runtime.rs` 在这里**不加 wasm-only 门**。Zcash 那边它是
-`#[cfg(target_arch = "wasm32")]`，导致 1,377 行在原生 `cargo test` 里根本不编译
-——那是真实的覆盖漏洞，这里的并发防线因此是可测的。
+一个刻意的差异：`runtime.rs` 在这里**不加 wasm-only 门**，所以并发防线（BUSY 守卫、
+世代号）在原生 `cargo test` 里也能测。
