@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 /**
- * 量「拉块」与「扫描」各占多少。
- *
- * 这条脚本存在的理由：0.6 块/秒这个端到端数字**没有意义**，除非知道它是
- * 网络慢还是解密慢 —— 两者的结论完全相反。实测（Mac，公共节点，单观察密钥）：
- * 拉块 99.6%、扫描 0.4%，纯扫描 153 块/秒。
+ * Split sync time into block fetching and scanning, since an end-to-end
+ * blocks/sec figure cannot tell network latency from decryption cost.
+ * Measured (Mac, public node, one view key): fetch 99.6%, scan 0.4%,
+ * scan-only 153 blocks/sec.
  *
  *   ./scripts/build-node-pkg.sh
  *   XMR_NODE=http://your-node:18081 node scripts/measure-scan.js
  */
+const path = require('path');
+const pkg = process.env.XMR_NODE_PKG || path.join(__dirname, '..', 'pkg-node');
+const rt = require(path.join(pkg, 'onekey_monero_runtime.js'));
+
 (async () => {
   if (!process.env.XMR_NODE) {
     console.error('Set XMR_NODE to a monerod RPC URL.');
@@ -28,10 +31,10 @@
     const p = JSON.parse(await rt.syncStep(id, 10n));
     if (!p.blocksScanned) break;
     dl += p.msDownload; sc += p.msScan; n += p.blocksScanned;
-    console.log(`  ${p.blocksScanned}块: 拉块 ${p.msDownload}ms / 扫描 ${p.msScan}ms`);
+    console.log(`  ${p.blocksScanned} blocks: fetch ${p.msDownload}ms / scan ${p.msScan}ms`);
     if (p.done) break;
   }
-  console.log(`\n合计 ${n} 块: 拉块 ${dl}ms (${(dl*100/(dl+sc)).toFixed(0)}%) / 扫描 ${sc}ms (${(sc*100/(dl+sc)).toFixed(0)}%)`);
-  console.log(`纯扫描速率: ${(n/(sc/1000)).toFixed(0)} 块/秒`);
-  console.log(`端到端速率: ${(n/((dl+sc)/1000)).toFixed(1)} 块/秒`);
+  console.log(`\ntotal ${n} blocks: fetch ${dl}ms (${(dl*100/(dl+sc)).toFixed(0)}%) / scan ${sc}ms (${(sc*100/(dl+sc)).toFixed(0)}%)`);
+  console.log(`scan-only rate: ${(n/(sc/1000)).toFixed(0)} blocks/sec`);
+  console.log(`end-to-end rate: ${(n/((dl+sc)/1000)).toFixed(1)} blocks/sec`);
 })();
