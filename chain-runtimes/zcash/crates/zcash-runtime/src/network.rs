@@ -229,6 +229,9 @@ fn broadcast_outcome_ambiguous(message: &str) -> bool {
         "bad-txns-inputs-missingorspent",
         "txn-mempool-conflict",
         "missing inputs",
+        // REJECT_DUPLICATE for a fully shielded tx whose nullifiers are already
+        // spent, including by this tx once mined.
+        "bad-txns-shielded-requirements-not-met",
     ]
     .iter()
     .any(|needle| message.contains(needle))
@@ -383,6 +386,7 @@ mod tests {
             "any transaction with the same effects will be rejected from the mempool until the next chain tip block: ..",
             "bad-txns-inputs-spent",
             "txn-mempool-conflict",
+            "18: bad-txns-shielded-requirements-not-met",
         ] {
             assert!(broadcast_outcome_ambiguous(message), "{message}");
             assert!(!broadcast_already_known(message), "{message}");
@@ -411,6 +415,7 @@ mod tests {
         for message in [
             "bad-txns-inputs-spent",
             "bad-txns-inputs-missingorspent",
+            "bad-txns-shielded-requirements-not-met",
             "tx-expiring-soon",
             "transaction is non-standard",
             "transaction dropped because the queue is full",
