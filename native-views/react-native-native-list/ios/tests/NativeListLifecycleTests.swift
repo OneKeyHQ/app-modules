@@ -7,7 +7,19 @@ final class NativeListLifecycleTests: XCTestCase {
   func testInvalidCommandsPreserveAcceptedAnimationCompletion() throws {
     for invalid in 0..<3 {
       let view = try makeScrollingList()
+      let window = UIWindow(frame: view.frame)
+      let controller = UIViewController()
+      window.rootViewController = controller
+      controller.view.addSubview(view)
+      window.isHidden = false
+      defer { window.isHidden = true }
+      window.layoutIfNeeded()
+      view.layoutIfNeeded()
+      drainMainQueue()
       let list = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      XCTAssertNotNil(view.window)
+      XCTAssertGreaterThan(list.contentSize.height - list.bounds.height +
+        list.adjustedContentInset.top + list.adjustedContentInset.bottom, 800)
       let phases = NSMutableArray()
       let observer = NotificationCenter.default.addObserver(
         forName: Notification.Name("OneKeyNativeListScrollCommandAccepted"),
